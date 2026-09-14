@@ -106,6 +106,15 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     fetchSavedModels: mock(async () => null),
     fetchSamplers: mock(async () => null),
     fetchDraftModels: mock(async () => []),
+    favorites: [],
+    starModel: mock(async () => {}),
+    unstarModel: mock(async () => {}),
+    modelOverlay: null,
+    overlayDirty: false,
+    loadModelOverlay: mock(async () => {}),
+    bindModelOverlay: mock(async () => {}),
+    unbindModelOverlay: mock(async () => {}),
+    setModelOverlay: mock(() => {}),
     ...overrides,
   };
 }

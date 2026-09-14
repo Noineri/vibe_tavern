@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useT } from "../../../../i18n/context.js";
 import { ImageGenProviderForm } from "./ImageGenProviderForm.js";
 import { ImageGenBaseCard } from "./ImageGenBaseCard.js";
+import { ImageGenPane } from "./ImageGenPane.js";
 import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
 import { Icons } from "../../../shared/icons.js";
 import type { ImageGenProfileForm, useImageProfiles } from "../../../../hooks/use-image-profiles.js";
@@ -95,7 +96,6 @@ export function ImageGenProfileEditor({ imageGen }: { imageGen: ImageGenHook }) 
       ) : savedProfile !== null ? (
         <>
           <ImageGenBaseCard form={form} onEdit={imageGen.startEdit} />
-
           {/* Saved-profile connection actions (view mode): Probe + Fetch
               models. Width budget: two auto-width buttons in a flex-wrap
               row — the detail pane's ~820px budget against worst-case RU
@@ -155,6 +155,11 @@ export function ImageGenProfileEditor({ imageGen }: { imageGen: ImageGenHook }) 
               </div>
             )}
           </div>
+
+          {/* Second level (IG-12): picker + favorites + per-mode sizes +
+              bind-routed params — view mode only (edit mode keeps the
+              level-1 connection form alone, the governing rule). */}
+          <ImageGenPane imageGen={imageGen} />
         </>
       ) : null}
 

@@ -18,7 +18,11 @@ import type { z } from "zod";
 import type {
   CreateImageGenProfileInput,
   DraftImageGenModelsInput,
+  FavoriteImageGenModelInput,
+  ImageGenModelFavoriteValue,
   ImageGenModelInfoValue,
+  ImageGenModelSettingsOverlayValue,
+  ImageGenModelSettingsValue,
   ImageGenProfileValue,
   ImageGenProbeResultValue,
   ImageGenSamplerInfoValue,
@@ -162,4 +166,73 @@ export async function draftListImageGenModels(
   });
   if (!response.ok) throw await rawError("Image-gen draft model list", response);
   return (await response.json()) as ImageGenModelEntry[];
+}
+
+// ─── Model favorites + per-model overlay (IG-12b — typed Hono RPC, the
+//     CRUD family: no abort-signal needs surfaced by the pane in v1) ─────────
+
+/** Starred models of a saved profile (persisted bookmarks — the picker
+ *  pins them on top). */
+export async function listImageGenModelFavorites(id: string): Promise<ImageGenModelFavoriteValue[]> {
+  const response = await client.api["image-gen"].profiles[":id"]["model-favorites"].$get({ param: { id } });
+  return unwrapRpc(response);
+}
+
+/** Star a model (idempotent; refreshes the label when re-starred). */
+export async function addImageGenModelFavorite(
+  id: string,
+  body: FavoriteImageGenModelInput,
+): Promise<ImageGenModelFavoriteValue> {
+  const response = await client.api["image-gen"].profiles[":id"]["model-favorites"].$post({
+    param: { id },
+    json: body,
+  });
+  return unwrapRpc(response);
+}
+
+/** Un-star a model (the overlay row SURVIVES — favorites are bookmarks,
+ *  overlays are config; the provider-twin rule). */
+export async function removeImageGenModelFavorite(id: string, modelId: string): Promise<void> {
+  const response = await client.api["image-gen"].profiles[":id"]["model-favorites"].$delete({
+    param: { id },
+    json: { modelId },
+  });
+  if (!response.ok) throw await unwrapError(response);
+}
+
+ /** One model's overlay — null = no bound settings yet (inherit the
+  *  profile base) or unknown profile; both are "start empty" for the
+  *  editor. */
+export async function getImageGenModelSettings(
+  id: string,
+  modelId: string,
+): Promise<ImageGenModelSettingsValue | null> {
+  const response = await client.api["image-gen"].profiles[":id"]["model-settings"][":modelId"].$get({
+    param: { id, modelId },
+  });
+  if (response.status === 404) return null;
+  const body: unknown = await response.json();
+  return body === null ? null : (body as ImageGenModelSettingsValue);
+}
+
+/** Upsert a model's overlay (idempotent on (profile, model); replaces the
+ *  stored overlay wholesale — absent fields go back to inheriting the base). */
+export async function upsertImageGenModelSettings(
+  id: string,
+  modelId: string,
+  overlay: ImageGenModelSettingsOverlayValue,
+): Promise<ImageGenModelSettingsValue> {
+  const response = await client.api["image-gen"].profiles[":id"]["model-settings"][":modelId"].$put({
+    param: { id, modelId },
+    json: overlay,
+  });
+  return unwrapRpc(response);
+}
+
+/** Delete a model's overlay — the model reverts to the profile base. */
+export async function deleteImageGenModelSettings(id: string, modelId: string): Promise<void> {
+  const response = await client.api["image-gen"].profiles[":id"]["model-settings"][":modelId"].$delete({
+    param: { id, modelId },
+  });
+  if (!response.ok) throw await unwrapError(response);
 }

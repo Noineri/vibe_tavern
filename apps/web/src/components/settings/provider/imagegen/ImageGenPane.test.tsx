@@ -1,0 +1,703 @@
+import { describe, expect, it, afterEach, mock } from "bun:test";
+import React from "react";
+import { useDomEnv } from "../../../../../test/dom-env.js";
+
+useDomEnv();
+
+const realI18n = await import("../../../../i18n/context.js");
+mock.module("../../../../i18n/context.js", () => ({
+  ...realI18n,
+  useT: () => ({
+    t: (key: string, params?: Record<string, unknown>) =>
+      params && typeof params === "object" && Object.keys(params).length > 0
+        ? `${key}:${Object.values(params).join(",")}`
+        : key,
+    tDynamic: (key: string) => key,
+    locale: "en",
+    setLocale: () => {},
+    ready: true,
+  }),
+}));
+
+// Real-hook seam (the use-image-profiles.test.tsx harness): the api module
+// mocked with the `...real` spread — only the IG-12b functions the overlay
+// round-trip needs are overridden; the mocked-hook describes below never
+// reach this seam (their hook object is a local factory).
+const realImageGenApi = await import("../../../../api/image-gen-api.js");
+
+type ImageGenRecord = import("../../../../api/image-gen-api.js").ImageGenProfileRecord;
+type ImageGenModelEntry = import("../../../../api/image-gen-api.js").ImageGenModelEntry;
+type ImageGenModelSettings = import("@vibe-tavern/api-contracts").ImageGenModelSettingsValue;
+type ImageGenModelFavorite = import("@vibe-tavern/api-contracts").ImageGenModelFavoriteValue;
+
+let apiStore: ImageGenRecord[] = [];
+let settingsRow: ImageGenModelSettings | null = null;
+let favoritesList: ImageGenModelFavorite[] = [];
+const listAllApi = mock(async (): Promise<ImageGenRecord[]> => [...apiStore]);
+const updateProfileApi = mock(async (id: string, body: Record<string, unknown>): Promise<ImageGenRecord> => {
+  const idx = apiStore.findIndex((p) => p.id === id);
+  if (idx === -1) throw new Error("not found");
+  const updated = { ...apiStore[idx], ...body } as ImageGenRecord;
+  apiStore[idx] = updated;
+  return updated;
+});
+const getSettingsApi = mock(async (_id: string, _modelId: string): Promise<ImageGenModelSettings | null> => settingsRow);
+const upsertSettingsApi = mock(
+  async (id: string, modelId: string, overlay: Record<string, unknown>): Promise<ImageGenModelSettings> => {
+    settingsRow = {
+      id: "ms1",
+      profileId: id,
+      modelId,
+      settings: overlay as ImageGenModelSettings["settings"],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return settingsRow;
+  },
+);
+const deleteSettingsApi = mock(async (): Promise<void> => {
+  settingsRow = null;
+});
+const listFavoritesApi = mock(async (): Promise<ImageGenModelFavorite[]> => [...favoritesList]);
+const addFavoriteApi = mock(
+  async (id: string, body: { modelId: string; label?: string }): Promise<ImageGenModelFavorite> => {
+    const row: ImageGenModelFavorite = {
+      id: `fav-${body.modelId}`,
+      profileId: id,
+      modelId: body.modelId,
+      label: body.label ?? null,
+      createdAt: new Date().toISOString(),
+    };
+    favoritesList = [...favoritesList.filter((f) => f.modelId !== body.modelId), row];
+    return row;
+  },
+);
+const removeFavoriteApi = mock(async (_id: string, modelId: string): Promise<void> => {
+  favoritesList = favoritesList.filter((f) => f.modelId !== modelId);
+});
+const listSamplersApi = mock(async (): Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerInfoValue[]> => [
+  { name: "Euler a", aliases: [] },
+  { name: "DPM++ 2M", aliases: [] },
+]);
+
+mock.module("../../../../api/image-gen-api.js", () => ({
+  ...realImageGenApi,
+  listAllImageGenProfiles: listAllApi,
+  updateImageGenProfile: updateProfileApi,
+  getImageGenModelSettings: getSettingsApi,
+  upsertImageGenModelSettings: upsertSettingsApi,
+  deleteImageGenModelSettings: deleteSettingsApi,
+  listImageGenModelFavorites: listFavoritesApi,
+  addImageGenModelFavorite: addFavoriteApi,
+  removeImageGenModelFavorite: removeFavoriteApi,
+  listImageGenSamplers: listSamplersApi,
+}));
+
+const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { ImageGenPane } = await import("./ImageGenPane.js");
+const { useImageProfiles } = await import("../../../../hooks/use-image-profiles.js");
+const { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES } = await import("@vibe-tavern/domain");
+
+type ImageGenHook = ReturnType<typeof useImageProfiles>;
+
+/** All six v1 modes — the pane must render a row for EVERY one (domain
+ *  order is the render order). */
+const ALL_MODES = Object.values(IMAGE_GENERATION_MODES) as string[];
+
+function makeCaps(overrides: Partial<ImageGenRecord["capabilities"]> = {}): ImageGenRecord["capabilities"] {
+  return {
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    sizeSupport: { kind: "vendor-set", sizes: ["1024x1024", "832x1248"] },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    ...overrides,
+  };
+}
+
+function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
+  return {
+    id: "ig1",
+    name: "OpenRouter art",
+    backend: "openrouter",
+    presetId: "openrouter",
+    endpoint: "https://openrouter.ai/api/v1",
+    hasStoredApiKey: false,
+    modelId: undefined,
+    defaultParams: {},
+    modeSizePresets: {},
+    llmAssistEnabled: false,
+    llmProviderProfileId: undefined,
+    llmModelId: undefined,
+    capabilities: makeCaps(),
+    sortOrder: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function makeForm(overrides: Partial<NonNullable<ImageGenHook["form"]>> = {}): NonNullable<ImageGenHook["form"]> {
+  return {
+    id: "ig1",
+    name: "OpenRouter art",
+    backend: IMAGE_GEN_BACKENDS.OpenRouter,
+    presetId: "openrouter",
+    endpoint: "https://openrouter.ai/api/v1",
+    apiKey: "",
+    hasStoredApiKey: false,
+    modelId: null,
+    defaultParams: {},
+    modeSizePresets: {},
+    llmAssistEnabled: false,
+    llmProviderProfileId: null,
+    llmModelId: null,
+    capabilities: makeCaps(),
+    ...overrides,
+  };
+}
+
+function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
+  return {
+    profiles: [] as ImageGenRecord[],
+    loading: false,
+    editingId: "ig1",
+    form: makeForm(),
+    dirty: false,
+    error: null,
+    saving: false,
+    headerMode: "view",
+    modelsByProfile: {},
+    samplersByProfile: {},
+    probeOutcome: null,
+    startEdit: mock(() => {}),
+    startCreate: mock(() => {}),
+    select: mock(() => {}),
+    setForm: mock(() => {}),
+    save: mock(async () => {}),
+    remove: mock(async () => {}),
+    cancelEdit: mock(() => {}),
+    reload: mock(async () => {}),
+    probeSaved: mock(async () => null),
+    fetchSavedModels: mock(async () => null),
+    fetchSamplers: mock(async () => null),
+    fetchDraftModels: mock(async () => []),
+    favorites: [],
+    starModel: mock(async () => {}),
+    unstarModel: mock(async () => {}),
+    modelOverlay: null,
+    overlayDirty: false,
+    loadModelOverlay: mock(async () => {}),
+    bindModelOverlay: mock(async () => {}),
+    unbindModelOverlay: mock(async () => {}),
+    setModelOverlay: mock(() => {}),
+    ...overrides,
+  };
+}
+
+/** Find a cmdk option by exact text and click it — portal content lives
+ *  in document.body, not the RTL container (the editor-harness pattern). */
+async function findAndClickOption(label: string) {
+  const option = await waitFor(() => {
+    const el = Array.from(document.body.querySelectorAll("[cmdk-item]")).find(
+      (n) => n.textContent?.trim() === label,
+    );
+    expect(el).toBeTruthy();
+    return el!;
+  });
+  await act(async () => {
+    (option as HTMLElement).click();
+  });
+}
+
+/** Open a Radix/cmdk dropdown by its trigger and click the option whose
+ *  textContent matches (first click OPENS — do not call on an already-open
+ *  popover: the trigger toggles). */
+async function pickOption(view: { getByTestId: (id: string) => HTMLElement }, triggerId: string, label: string) {
+  await act(async () => {
+    view.getByTestId(triggerId).click();
+  });
+  await findAndClickOption(label);
+}
+
+afterEach(async () => {
+  await act(async () => {});
+  cleanup();
+  apiStore = [];
+  settingsRow = null;
+  favoritesList = [];
+  for (const m of [
+    listAllApi,
+    updateProfileApi,
+    getSettingsApi,
+    upsertSettingsApi,
+    deleteSettingsApi,
+    listFavoritesApi,
+    addFavoriteApi,
+    removeFavoriteApi,
+    listSamplersApi,
+  ]) {
+    m.mockClear();
+  }
+});
+
+describe("ImageGenPane — second level rendering", () => {
+  it("renders the pane with a size row for EVERY v1 mode (six) and the params section", async () => {
+    const view = render(<ImageGenPane imageGen={makeImageGen()} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-pane")).toBeTruthy());
+    expect(view.getByTestId("image-gen-sizes-section")).toBeTruthy();
+    expect(view.getByTestId("image-gen-params-section")).toBeTruthy();
+    for (const mode of ALL_MODES) {
+      expect(view.getByTestId(`image-gen-mode-row-${mode}`)).toBeTruthy();
+    }
+  });
+
+  it("renders nothing without a form or for an UNSAVED profile (form.id null)", async () => {
+    const noForm = render(<ImageGenPane imageGen={makeImageGen({ form: null })} />);
+    expect(noForm.container.querySelector("[data-testid='image-gen-pane']")).toBeNull();
+    cleanup();
+    const unsaved = render(<ImageGenPane imageGen={makeImageGen({ form: makeForm({ id: null }) })} />);
+    expect(unsaved.container.querySelector("[data-testid='image-gen-pane']")).toBeNull();
+  });
+});
+
+describe("ImageGenPane — model picker (cached catalog + persisted stars)", () => {
+  it("lists the cached models in the popover, favorites PINNED above the rest", async () => {
+    const imageGen = makeImageGen({
+      modelsByProfile: {
+        ig1: [
+          { id: "m-alpha", label: "Alpha" },
+          { id: "m-zeta", label: "Zeta" },
+        ],
+      },
+      favorites: [
+        { id: "fav1", profileId: "ig1", modelId: "m-zeta", label: "Zeta", createdAt: new Date().toISOString() },
+      ],
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-field-model")).toBeTruthy());
+    await act(async () => {
+      view.getByTestId("image-gen-field-model").click();
+    });
+    const options = await waitFor(() => {
+      const nodes = Array.from(document.body.querySelectorAll("[data-testid='image-gen-model-option']"));
+      expect(nodes.length).toBe(2);
+      return nodes;
+    });
+    // Zeta is the favorite — it must render ABOVE Alpha despite the label
+    // sort putting Alpha first (pinned rows precede the rest).
+    expect((options[0] as HTMLElement).textContent).toContain("Zeta");
+    expect((options[1] as HTMLElement).textContent).toContain("Alpha");
+  });
+
+  it("star click calls starModel with the selected id + cached label; unstar mirrors it", async () => {
+    const starModel = mock(async () => {});
+    const unstarModel = mock(async () => {});
+    const imageGen = makeImageGen({
+      form: makeForm({ modelId: "m-alpha" }),
+      modelsByProfile: { ig1: [{ id: "m-alpha", label: "Alpha" }] },
+      starModel,
+      unstarModel,
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-star-model")).toBeTruthy());
+    fireEvent.click(view.getByTestId("image-gen-star-model"));
+    await waitFor(() => expect(starModel).toHaveBeenCalledTimes(1));
+    expect((starModel.mock.calls[0] as unknown[])).toEqual(["m-alpha", "Alpha"]);
+    cleanup();
+
+    // Starred: the button flips to unstar and routes the DELETE-shaped call.
+    const starred = makeImageGen({
+      form: makeForm({ modelId: "m-alpha" }),
+      favorites: [
+        { id: "fav1", profileId: "ig1", modelId: "m-alpha", label: "Alpha", createdAt: new Date().toISOString() },
+      ],
+      unstarModel,
+    });
+    const view2 = render(<ImageGenPane imageGen={starred} />);
+    await waitFor(() => expect(view2.getByTestId("image-gen-unstar-model")).toBeTruthy());
+    fireEvent.click(view2.getByTestId("image-gen-unstar-model"));
+    await waitFor(() => expect(unstarModel).toHaveBeenCalledTimes(1));
+    expect((unstarModel.mock.calls[0] as unknown[])).toEqual(["m-alpha"]);
+  });
+
+  it("a custom slug typed in the search field becomes the modelId via setForm (use-custom-model)", async () => {
+    const setForm = mock(() => {});
+    const imageGen = makeImageGen({
+      modelsByProfile: { ig1: [{ id: "m-alpha", label: "Alpha" }] },
+      setForm,
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-field-model")).toBeTruthy());
+    await act(async () => {
+      view.getByTestId("image-gen-field-model").click();
+    });
+    const search = await waitFor(() => {
+      const input = Array.from(document.body.querySelectorAll("input")).find((i) =>
+        i.placeholder.includes("search_models"),
+      );
+      expect(input).toBeTruthy();
+      return input!;
+    });
+    await act(async () => {
+      fireEvent.change(search, { target: { value: "my-hand-typed-model" } });
+    });
+    await findAndClickOption("use_custom_model_id:my-hand-typed-model");
+    await waitFor(() => expect(setForm).toHaveBeenCalled());
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    expect(patch["modelId"]).toBe("my-hand-typed-model");
+  });
+
+  it("refresh re-fetches the SAVED profile's model catalog", async () => {
+    const fetchSavedModels = mock(async () => null);
+    const imageGen = makeImageGen({ fetchSavedModels });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-models-refresh")).toBeTruthy());
+    fireEvent.click(view.getByTestId("image-gen-models-refresh"));
+    await waitFor(() => expect(fetchSavedModels).toHaveBeenCalledTimes(1));
+    expect((fetchSavedModels.mock.calls[0] as unknown[])).toEqual(["ig1"]);
+  });
+});
+
+describe("ImageGenPane — per-mode sizes", () => {
+  it("vendor-set backends: a dropdown per mode with the capability grid; picking one patches modeSizePresets", async () => {
+    const setForm = mock(() => {});
+    const imageGen = makeImageGen({ setForm });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-mode-size-portrait")).toBeTruthy());
+    // Unset mode → the auto placeholder label shows in the trigger.
+    expect(view.getByTestId("image-gen-mode-size-portrait").textContent).toContain("image_gen_size_auto");
+    await pickOption(view, "image-gen-mode-size-portrait", "832x1248");
+    await waitFor(() => expect(setForm).toHaveBeenCalled());
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, unknown> };
+    expect(patch.modeSizePresets).toEqual({ portrait: { width: 832, height: 1248 } });
+  });
+
+  it("free-size backends (a1111): free W×H inputs per mode, EMPTY by default; typing patches one dimension", async () => {
+    const setForm = mock(() => {});
+    const imageGen = makeImageGen({
+      form: makeForm({
+        backend: IMAGE_GEN_BACKENDS.A1111,
+        capabilities: makeCaps({
+          supportsNegativePrompt: true,
+          supportsSamplers: true,
+          supportsSeed: true,
+          sizeSupport: { kind: "free" },
+          noApiKey: true,
+          supportsLiveProgress: true,
+        }),
+      }),
+      setForm,
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await waitFor(() => expect((view.getByTestId("image-gen-mode-width-portrait") as HTMLInputElement).value).toBe(""));
+    expect((view.getByTestId("image-gen-mode-height-portrait") as HTMLInputElement).value).toBe("");
+    // Vendor-set dropdowns must NOT render for a free backend.
+    expect(view.queryByTestId("image-gen-mode-size-portrait")).toBeNull();
+    await act(async () => {
+      fireEvent.change(view.getByTestId("image-gen-mode-width-portrait"), { target: { value: "512" } });
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalled());
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, unknown> };
+    expect(patch.modeSizePresets).toEqual({ portrait: { width: 512 } });
+  });
+});
+
+describe("ImageGenPane — params: sampler gating + bind routing + advanced", () => {
+  it("sampler dropdown renders ONLY for supportsSamplers backends and feeds from samplersByProfile", async () => {
+    const setForm = mock(() => {});
+    const a1111 = makeImageGen({
+      form: makeForm({
+        backend: IMAGE_GEN_BACKENDS.A1111,
+        capabilities: makeCaps({
+          supportsNegativePrompt: true,
+          supportsSamplers: true,
+          supportsSeed: true,
+          sizeSupport: { kind: "free" },
+          noApiKey: true,
+          supportsLiveProgress: true,
+        }),
+      }),
+      samplersByProfile: { ig1: [{ name: "Euler a", aliases: [] }, { name: "DPM++ 2M", aliases: [] }] },
+      setForm,
+    });
+    const view = render(<ImageGenPane imageGen={a1111} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-field-sampler")).toBeTruthy());
+    await pickOption(view, "image-gen-field-sampler", "Euler a");
+    await waitFor(() => expect(setForm).toHaveBeenCalled());
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch.defaultParams).toEqual({ sampler: "Euler a" });
+    cleanup();
+
+    // OpenRouter (no sampler surface): the control must not render at all.
+    const openrouter = makeImageGen({ setForm });
+    const view2 = render(<ImageGenPane imageGen={openrouter} />);
+    await waitFor(() => expect(view2.getByTestId("image-gen-params-section")).toBeTruthy());
+    expect(view2.queryByTestId("image-gen-field-sampler")).toBeNull();
+  });
+
+  it("advanced expand reveals steps/cfg/seed/clip-skip and every numeric field is EMPTY (no code defaults)", async () => {
+    const view = render(<ImageGenPane imageGen={makeImageGen()} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
+    expect(view.queryByTestId("image-gen-advanced-body")).toBeNull();
+    await act(async () => {
+      view.getByTestId("image-gen-advanced-header").click();
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-advanced-body")).toBeTruthy());
+    for (const fieldId of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-seed", "image-gen-field-clip-skip"]) {
+      expect((view.getByTestId(fieldId) as HTMLInputElement).value).toBe("");
+    }
+    // The pane's param surface is EXACTLY these four numerics (+ the gated
+    // sampler above): the negative prompt is NOT a pane field — the
+    // IG-13/IG-17 surfaces own it (plan line 80/88), so nothing may sprout
+    // here.
+    expect(view.getByTestId("image-gen-advanced-body").querySelectorAll("input").length).toBe(4);
+  });
+
+  it("bind OFF: numeric edits route to the PROFILE BASE (setForm defaultParams), overlay untouched", async () => {
+    const setForm = mock(() => {});
+    const setModelOverlay = mock(() => {});
+    const imageGen = makeImageGen({ form: makeForm({ modelId: "m-alpha" }), setForm, setModelOverlay });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
+    // Unbound: no overlay-inherit hint renders.
+    expect(view.queryByTestId("image-gen-overlay-inherit-hint")).toBeNull();
+    await act(async () => {
+      view.getByTestId("image-gen-advanced-header").click();
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-field-steps")).toBeTruthy());
+    await act(async () => {
+      fireEvent.change(view.getByTestId("image-gen-field-steps"), { target: { value: "30" } });
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch.defaultParams).toEqual({ steps: 30 });
+    expect(setModelOverlay).not.toHaveBeenCalled();
+  });
+
+  it("bind ON: the inherit hint renders, edits route to the overlay, toggle-off calls unbindModelOverlay", async () => {
+    const setForm = mock(() => {});
+    const setModelOverlay = mock(() => {});
+    const bindModelOverlay = mock(async () => {});
+    const unbindModelOverlay = mock(async () => {});
+    // Phase 1 — UNBOUND (modelOverlay null): the toggle is off, no hint;
+    // clicking it routes through bindModelOverlay.
+    const unbound = makeImageGen({
+      form: makeForm({ modelId: "m-alpha" }),
+      setForm,
+      setModelOverlay,
+      bindModelOverlay,
+      unbindModelOverlay,
+    });
+    const view1 = render(<ImageGenPane imageGen={unbound} />);
+    await waitFor(() => expect(view1.getByTestId("image-gen-params-section")).toBeTruthy());
+    expect(view1.queryByTestId("image-gen-overlay-inherit-hint")).toBeNull();
+    fireEvent.click(view1.getByRole("switch", { name: "image_gen_bind_per_model" }));
+    await waitFor(() => expect(bindModelOverlay).toHaveBeenCalledTimes(1));
+    cleanup();
+
+    // Phase 2 — BOUND (modelOverlay {}): the inherit hint renders; numeric
+    // edits route to the overlay, never to the profile base.
+    const imageGen = makeImageGen({
+      form: makeForm({ modelId: "m-alpha" }),
+      modelOverlay: {},
+      setForm,
+      setModelOverlay,
+      bindModelOverlay,
+      unbindModelOverlay,
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-overlay-inherit-hint")).toBeTruthy());
+
+    await act(async () => {
+      view.getByTestId("image-gen-advanced-header").click();
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-field-steps")).toBeTruthy());
+    await act(async () => {
+      fireEvent.change(view.getByTestId("image-gen-field-steps"), { target: { value: "30" } });
+    });
+    await waitFor(() => expect(setModelOverlay).toHaveBeenCalledTimes(1));
+    expect((setModelOverlay.mock.calls[0] as unknown[])[0]).toEqual({ steps: 30 });
+    expect(setForm).not.toHaveBeenCalled();
+
+    // Unbind is the destructive revert — the toggle-off wires to it.
+    fireEvent.click(view.getByRole("switch", { name: "image_gen_bind_per_model" }));
+    await waitFor(() => expect(unbindModelOverlay).toHaveBeenCalledTimes(1));
+  });
+
+  it("the bind toggle renders ONLY when a model is selected", async () => {
+    const view = render(<ImageGenPane imageGen={makeImageGen({ form: makeForm({ modelId: null }) })} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-params-section")).toBeTruthy());
+    expect(view.queryByRole("switch")).toBeNull();
+  });
+});
+
+describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)", () => {
+  function Harness({ hookRef }: { hookRef: { current: ImageGenHook | null } }) {
+    const hook = useImageProfiles();
+    hookRef.current = hook;
+    return <ImageGenPane imageGen={hook} />;
+  }
+
+  it("bind → edit → save PUTs the overlay after the profile PATCH; reload restores the bound state", async () => {
+    apiStore = [
+      makeRecord({
+        id: "p1",
+        name: "Forge local",
+        backend: IMAGE_GEN_BACKENDS.A1111,
+        presetId: undefined,
+        endpoint: "http://127.0.0.1:7860",
+        modelId: "sd_xl",
+        capabilities: makeCaps({
+          supportsNegativePrompt: true,
+          supportsSamplers: true,
+          supportsSeed: true,
+          sizeSupport: { kind: "free" },
+          noApiKey: true,
+          supportsLiveProgress: true,
+        }),
+      }),
+    ];
+    const hookRef: { current: ImageGenHook | null } = { current: null };
+    const view = render(<Harness hookRef={hookRef} />);
+    // The hook loads the profile list on mount; select() is a lookup over
+    // that list — wait for the load before selecting (the hook-test
+    // harness rule).
+    await waitFor(() => expect(hookRef.current!.profiles.length).toBe(1));
+    const hook = hookRef.current!;
+    await act(async () => {
+      hook.select("p1");
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-pane")).toBeTruthy());
+
+    // 1 — bind ON: the stored overlay is fetched (none yet) and the editor
+    //     opens empty-but-bound.
+    await act(async () => {
+      fireEvent.click(view.getByRole("switch", { name: "image_gen_bind_per_model" }));
+    });
+    await waitFor(() => expect(getSettingsApi).toHaveBeenCalled());
+    await waitFor(() => expect(hookRef.current!.modelOverlay).toEqual({}));
+
+    // 2 — an overlay edit (advanced steps) marks the overlay dirty.
+    await act(async () => {
+      view.getByTestId("image-gen-advanced-header").click();
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-field-steps")).toBeTruthy());
+    await act(async () => {
+      fireEvent.change(view.getByTestId("image-gen-field-steps"), { target: { value: "30" } });
+    });
+    await waitFor(() => expect(hookRef.current!.overlayDirty).toBe(true));
+
+    // 3 — save: the profile PATCH goes first, then the overlay PUT with the
+    //     right (profileId, modelId, overlay) triple.
+    await act(async () => {
+      await hookRef.current!.save();
+    });
+    await waitFor(() => expect(upsertSettingsApi).toHaveBeenCalledTimes(1));
+    expect((upsertSettingsApi.mock.calls[0] as unknown[])[0]).toBe("p1");
+    expect((upsertSettingsApi.mock.calls[0] as unknown[])[1]).toBe("sd_xl");
+    expect((upsertSettingsApi.mock.calls[0] as unknown[])[2]).toEqual({ steps: 30 });
+    expect(updateProfileApi).toHaveBeenCalledTimes(1);
+    expect(hookRef.current!.error).toBeNull();
+
+    // 4 — reload: a fresh session re-selects the profile; the stored overlay
+    //     resurfaces as the BOUND state with its values (persisted).
+    cleanup();
+    const view2 = render(<Harness hookRef={hookRef} />);
+    await waitFor(() => expect(hookRef.current!.profiles.length).toBe(1));
+    await act(async () => {
+      hookRef.current!.select("p1");
+    });
+    await waitFor(() => expect(view2.getByRole("switch", { name: "image_gen_bind_per_model" }).getAttribute("aria-checked")).toBe("true"));
+    await act(async () => {
+      view2.getByTestId("image-gen-advanced-header").click();
+    });
+    await waitFor(() => expect((view2.getByTestId("image-gen-field-steps") as HTMLInputElement).value).toBe("30"));
+  });
+
+  it("unbind immediately DELETEs the stored overlay (the revert is the destructive action)", async () => {
+    settingsRow = {
+      id: "ms1",
+      profileId: "p1",
+      modelId: "sd_xl",
+      settings: { steps: 30 },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    apiStore = [
+      makeRecord({
+        id: "p1",
+        backend: IMAGE_GEN_BACKENDS.A1111,
+        modelId: "sd_xl",
+        capabilities: makeCaps({
+          supportsNegativePrompt: true,
+          supportsSamplers: true,
+          supportsSeed: true,
+          sizeSupport: { kind: "free" },
+          noApiKey: true,
+          supportsLiveProgress: true,
+        }),
+      }),
+    ];
+    const hookRef: { current: ImageGenHook | null } = { current: null };
+    const view = render(<Harness hookRef={hookRef} />);
+    await waitFor(() => expect(hookRef.current!.profiles.length).toBe(1));
+    await act(async () => {
+      hookRef.current!.select("p1");
+    });
+    await waitFor(() =>
+      expect(view.getByRole("switch", { name: "image_gen_bind_per_model" }).getAttribute("aria-checked")).toBe("true"),
+    );
+    await act(async () => {
+      fireEvent.click(view.getByRole("switch", { name: "image_gen_bind_per_model" }));
+    });
+    await waitFor(() => expect(deleteSettingsApi).toHaveBeenCalledTimes(1));
+    expect((deleteSettingsApi.mock.calls[0] as unknown[])[0]).toBe("p1");
+    expect((deleteSettingsApi.mock.calls[0] as unknown[])[1]).toBe("sd_xl");
+    await waitFor(() =>
+      expect(view.getByRole("switch", { name: "image_gen_bind_per_model" }).getAttribute("aria-checked")).toBe("false"),
+    );
+  });
+
+  it("stars ride the API seam: star POSTs (modelId + cached label), unstar DELETEs", async () => {
+    apiStore = [
+      makeRecord({
+        id: "p1",
+        backend: IMAGE_GEN_BACKENDS.A1111,
+        modelId: "sd_xl",
+        capabilities: makeCaps({
+          supportsNegativePrompt: true,
+          supportsSamplers: true,
+          supportsSeed: true,
+          sizeSupport: { kind: "free" },
+          noApiKey: true,
+          supportsLiveProgress: true,
+        }),
+      }),
+    ];
+    const hookRef: { current: ImageGenHook | null } = { current: null };
+    const view = render(<Harness hookRef={hookRef} />);
+    await waitFor(() => expect(hookRef.current!.profiles.length).toBe(1));
+    await act(async () => {
+      hookRef.current!.select("p1");
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-star-model")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(view.getByTestId("image-gen-star-model"));
+    });
+    await waitFor(() => expect(addFavoriteApi).toHaveBeenCalledTimes(1));
+    expect((addFavoriteApi.mock.calls[0] as unknown[])[0]).toBe("p1");
+    expect((addFavoriteApi.mock.calls[0] as unknown[])[1]).toEqual({ modelId: "sd_xl" });
+    // After the POST the favorites list reloads and the button flips to unstar.
+    await waitFor(() => expect(view.getByTestId("image-gen-unstar-model")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(view.getByTestId("image-gen-unstar-model"));
+    });
+    await waitFor(() => expect(removeFavoriteApi).toHaveBeenCalledTimes(1));
+    expect((removeFavoriteApi.mock.calls[0] as unknown[])).toEqual(["p1", "sd_xl"]);
+    await waitFor(() => expect(view.getByTestId("image-gen-star-model")).toBeTruthy());
+  });
+});

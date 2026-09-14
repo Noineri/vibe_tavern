@@ -33,21 +33,29 @@ import type {
   ImageGenCapabilityFlagsValue,
   ImageGenDefaultParamsValue,
   ImageGenModeSizePresetsValue,
+  ImageGenModelFavoriteValue,
   ImageGenModelInfoValue,
+  ImageGenModelSettingsOverlayValue,
   ImageGenProfileValue,
   ImageGenProbeResultValue,
   ImageGenSamplerInfoValue,
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
 import {
+  addImageGenModelFavorite,
   createImageGenProfile,
+  deleteImageGenModelSettings,
   deleteImageGenProfile,
   draftListImageGenModels,
+  getImageGenModelSettings,
   listAllImageGenProfiles,
   listImageGenModels,
+  listImageGenModelFavorites,
   listImageGenSamplers,
   probeImageGenProfile,
+  removeImageGenModelFavorite,
   updateImageGenProfile,
+  upsertImageGenModelSettings,
   type CreateImageGenProfileBody,
   type ImageGenModelEntry,
   type ImageGenProfileRecord,
@@ -161,6 +169,35 @@ export function useImageProfiles(): {
    *  the form's own is empty and the endpoint matches. Returns the entries
    *  (transient — never cached); failures land in `error` and rethrow. */
   fetchDraftModels(): Promise<ImageGenModelEntry[]>;
+  /** Persisted star-bookmarks for the editing profile (IG-12b). */
+  favorites: ImageGenModelFavoriteValue[];
+  /** Star a model (immediate POST — bookmarks are not form-dirty state;
+   *  re-starring refreshes the label). */
+  starModel(modelId: string, label?: string): Promise<void>;
+  /** Un-star (immediate DELETE; the model's overlay row survives —
+   *  favorites are bookmarks, overlays are config). */
+  unstarModel(modelId: string): Promise<void>;
+  /** The editing profile's CURRENT per-model overlay state (IG-12b, the
+   *  bindPerModel mechanic on data instead of a profile column): non-null
+   *  while per-model binding is ON for the selected model — edits ride the
+   *  form-dirty Save; null = the fields below route to the profile base. */
+  modelOverlay: ImageGenModelSettingsOverlayValue | null;
+  /** True when `modelOverlay` has unsaved edits (folded into `dirty`). */
+  overlayDirty: boolean;
+  /** Load the selected model's overlay from the server (non-dirtying —
+   *  used on select / model switch / after save to sync the bind state:
+   *  non-null GET result turns binding ON). */
+  loadModelOverlay(): Promise<void>;
+  /** Turn per-model binding ON for the selected model (opens the overlay
+   *  editor at the stored overlay or empty — empty fields inherit the
+   *  profile base). No-op without a selected model. */
+  bindModelOverlay(): Promise<void>;
+  /** Turn binding OFF: immediately DELETE the overlay (the model reverts
+   *  to the profile base — the revert is the destructive action, mirroring
+   *  how the LLM toggle off routes writes back to the base). */
+  unbindModelOverlay(): Promise<void>;
+  /** Edit the open overlay (form-dirty). */
+  setModelOverlay(patch: Partial<ImageGenModelSettingsOverlayValue>): void;
 } {
   const [profiles, setProfiles] = useState<ImageGenProfileRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -173,6 +210,9 @@ export function useImageProfiles(): {
   const [modelsByProfile, setModelsByProfile] = useState<Record<string, ImageGenModelEntry[]>>({});
   const [samplersByProfile, setSamplersByProfile] = useState<Record<string, ImageGenSamplerInfoValue[]>>({});
   const [probeOutcome, setProbeOutcome] = useState<ImageGenProbeOutcome | null>(null);
+  const [favorites, setFavorites] = useState<ImageGenModelFavoriteValue[]>([]);
+  const [modelOverlay, setModelOverlayState] = useState<ImageGenModelSettingsOverlayValue | null>(null);
+  const [overlayDirty, setOverlayDirty] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -212,6 +252,97 @@ export function useImageProfiles(): {
     };
   }
 
+  const loadFavorites = useCallback(async (profileId: string) => {
+    setError(null);
+    try {
+      setFavorites(await listImageGenModelFavorites(profileId));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, []);
+
+  const loadModelOverlay = useCallback(async () => {
+    if (form?.id === null || form?.id === undefined || form.modelId === null) {
+      setModelOverlayState(null);
+      setOverlayDirty(false);
+      return;
+    }
+    setError(null);
+    try {
+      const row = await getImageGenModelSettings(form.id, form.modelId);
+      setModelOverlayState(row === null ? null : { ...row.settings });
+      setOverlayDirty(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [form]);
+
+  const starModel = useCallback(
+    async (modelId: string, label?: string) => {
+      if (!form?.id) return;
+      setError(null);
+      try {
+        await addImageGenModelFavorite(form.id, { modelId, ...(label !== undefined ? { label } : {}) });
+        await loadFavorites(form.id);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    },
+    [form, loadFavorites],
+  );
+
+  const unstarModel = useCallback(
+    async (modelId: string) => {
+      if (!form?.id) return;
+      setError(null);
+      try {
+        await removeImageGenModelFavorite(form.id, modelId);
+        await loadFavorites(form.id);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    },
+    [form, loadFavorites],
+  );
+
+  const bindModelOverlay = useCallback(async () => {
+    if (form?.id === null || form?.id === undefined || form.modelId === null) return;
+    setError(null);
+    try {
+      const row = await getImageGenModelSettings(form.id, form.modelId);
+      setModelOverlayState(row === null ? {} : { ...row.settings });
+      setOverlayDirty(row !== null);
+      // Binding ON with a stored overlay is already the persisted state —
+      // dirty only when the editor must PUT something new (an empty bind on
+      // a model with no overlay stays non-dirty until a field is touched).
+      if (row === null) setOverlayDirty(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [form]);
+
+  const unbindModelOverlay = useCallback(async () => {
+    if (form?.id === null || form?.id === undefined || form.modelId === null) {
+      setModelOverlayState(null);
+      setOverlayDirty(false);
+      return;
+    }
+    setError(null);
+    try {
+      await deleteImageGenModelSettings(form.id, form.modelId);
+      setModelOverlayState(null);
+      setOverlayDirty(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [form]);
+
+  const setModelOverlay = useCallback((patch: Partial<ImageGenModelSettingsOverlayValue>) => {
+    setModelOverlayState((prev) => (prev === null ? prev : { ...prev, ...patch }));
+    setOverlayDirty(true);
+    setDirty(true);
+  }, []);
+
   const select = useCallback(
     (id: string) => {
       const record = profiles.find((p) => p.id === id);
@@ -221,8 +352,28 @@ export function useImageProfiles(): {
       setDirty(false);
       setHeaderMode("view");
       setError(null);
+      // Second-level state follows the selection (IG-12): stars + the
+      // selected model's bind state reload per profile. The overlay load is
+      // the SAME fire-and-forget GET as the setForm model-switch branch
+      // below — select() hydrates directly (no setForm), so without this the
+      // bind toggle would render OFF for a model with a STORED overlay until
+      // the user toggled it (the "reload — persisted" plan rule).
+      void loadFavorites(id);
+      setModelOverlayState(null);
+      setOverlayDirty(false);
+      if (record.modelId != null) {
+        const nextModelId = record.modelId;
+        void (async () => {
+          try {
+            const row = await getImageGenModelSettings(id, nextModelId);
+            setModelOverlayState(row === null ? null : { ...row.settings });
+          } catch {
+            // Non-fatal: the pane's bind toggle re-fetches on demand.
+          }
+        })();
+      }
     },
-    [profiles],
+    [profiles, loadFavorites],
   );
 
   const startCreate = useCallback((defaultName: string, backend: ImageGenBackendType) => {
@@ -274,6 +425,25 @@ export function useImageProfiles(): {
           modeSizePresets: {},
           capabilities: capabilitySnapshot(nextBackend),
         };
+      }
+      if (patch.modelId !== undefined && patch.modelId !== prev.modelId) {
+        // Model switch (IG-12): the bind state follows the SELECTION — drop
+        // the open overlay (unsaved edits discard, the cancelEdit family
+        // rule) and load the new model's stored overlay fire-and-forget.
+        setModelOverlayState(null);
+        setOverlayDirty(false);
+        if (prev.id !== null && patch.modelId !== null) {
+          const profileId = prev.id;
+          const nextModelId = patch.modelId;
+          void (async () => {
+            try {
+              const row = await getImageGenModelSettings(profileId, nextModelId);
+              setModelOverlayState(row === null ? null : { ...row.settings });
+            } catch {
+              // Non-fatal: the pane's bind toggle re-fetches on demand.
+            }
+          })();
+        }
       }
       return { ...prev, ...patch };
     });
@@ -346,12 +516,27 @@ export function useImageProfiles(): {
       setFormState(hydrate(saved));
       setDirty(false);
       setHeaderMode("view");
+      // Per-model overlay routing (IG-12b, the bindPerModel mechanic on
+      // data): a bound + edited overlay PUTs AFTER the profile PATCH — the
+      // overlay is the LLM twin's "route the save to the model" arm. An
+      // overlay PUT failure surfaces into `error` with the profile already
+      // saved (two writes, one Save button — the master-detail contract).
+      if (modelOverlay !== null && overlayDirty && form.modelId !== null) {
+        try {
+          await upsertImageGenModelSettings(saved.id, form.modelId, modelOverlay);
+          setOverlayDirty(false);
+        } catch (cause) {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      } else {
+        setOverlayDirty(false);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setSaving(false);
     }
-  }, [form]);
+  }, [form, modelOverlay, overlayDirty]);
 
   const remove = useCallback(async () => {
     if (!form?.id) {
@@ -470,6 +655,9 @@ export function useImageProfiles(): {
     modelsByProfile,
     samplersByProfile,
     probeOutcome,
+    favorites,
+    modelOverlay,
+    overlayDirty,
     startEdit,
     startCreate,
     select,
@@ -482,5 +670,11 @@ export function useImageProfiles(): {
     fetchSavedModels,
     fetchSamplers,
     fetchDraftModels,
+    starModel,
+    unstarModel,
+    loadModelOverlay,
+    bindModelOverlay,
+    unbindModelOverlay,
+    setModelOverlay,
   };
 }
