@@ -124,7 +124,7 @@ interface ModelOption {
 
 type HeaderMode = "edit" | "view";
 
-export type ProviderCategoryTab = "llm" | "audio" | "stt";
+export type ProviderCategoryTab = "llm" | "audio" | "stt" | "image";
 
 interface ProviderModalProps {
   providerProfiles: ProviderProfileRecord[];
@@ -731,16 +731,19 @@ export function ProviderModal({
               ? stt.form
                 ? stt.form.name || t("stt_profile_new_title")
                 : t("stt_section_title")
-              : form?.name ?? t("provider_settings_title")
+              : activeCategory === "image"
+                ? t("image_gen_section_title")
+                : form?.name ?? t("provider_settings_title")
         }
         dirty={
-          activeCategory === "audio" ? tts.dirty : activeCategory === "stt" ? stt.dirty : dirty
+          activeCategory === "audio" ? tts.dirty : activeCategory === "stt" ? stt.dirty : activeCategory === "image" ? false : dirty
         }
         tabs={{
           items: [
             { value: "llm", label: t("providers_category_llm") },
             { value: "audio", label: t("providers_category_audio") },
             { value: "stt", label: t("providers_category_stt") },
+            { value: "image", label: t("providers_category_image") },
           ],
           active: activeCategory,
           onChange: (v) => setActiveCategory(v),
@@ -750,7 +753,11 @@ export function ProviderModal({
         headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
         headerActions={providerModalOrigin === "coauthor" ? <button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => requestClose("return")}>{t("back")}</button> : undefined}
         masterContent={() =>
-          activeCategory === "stt" ? (
+          activeCategory === "image" ? (
+            <div data-testid="image-gen-section" className="flex flex-1 min-h-0 flex-col items-center justify-center p-3 text-center font-ui text-[13px] text-t3">
+              {t("image_gen_section_placeholder")}
+            </div>
+          ) : activeCategory === "stt" ? (
             <SttSection stt={stt} />
           ) : activeCategory === "audio" ? (
             <TtsSection tts={tts} />
@@ -773,7 +780,11 @@ export function ProviderModal({
           )
         }
         detailContent={
-          activeCategory === "stt" ? (
+          activeCategory === "image" ? (
+            <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+              {t("image_gen_section_placeholder")}
+            </div>
+          ) : activeCategory === "stt" ? (
             stt.form ? (
               <SttProfileEditor stt={stt} />
             ) : (
@@ -902,7 +913,7 @@ export function ProviderModal({
           )
         }
         footer={
-          activeCategory === "stt" ? (
+          activeCategory === "image" ? null : activeCategory === "stt" ? (
             <SttFooter stt={stt} />
           ) : activeCategory === "audio" ? (
             <TtsAudioFooter tts={tts} />
