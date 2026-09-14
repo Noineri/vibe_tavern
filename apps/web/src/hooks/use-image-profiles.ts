@@ -17,8 +17,9 @@
  *   autoKeyProviderName).
  * - Capability flags ride the form: the create contract requires the
  *   capability mirror, so `startCreate`/backend-switch snapshot it from the
- *   static `IMAGE_GEN_BACKEND_CAPABILITIES` table (imported through the
- *   @vibe-tavern/api barrel — the registry's documented consumption path),
+ *   static `IMAGE_GEN_BACKEND_CAPABILITIES` table (imported from the domain
+ *   leaf — web-safe; NEVER from the @vibe-tavern/api barrel, which drags
+ *   bun:sqlite into the browser bundle),
  *   `select` hydrates it from the saved record, and `save` sends it verbatim.
  * - The API key is the STT tri-state on the wire: blank form field = keep
  *   the stored key on update (`undefined` sent); a visible clear affordance
@@ -26,7 +27,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { IMAGE_GEN_BACKENDS, type ImageGenBackendType } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_BACKENDS, type ImageGenBackendType } from "@vibe-tavern/domain";
 import type {
   CreateImageGenProfileInput,
   ImageGenCapabilityFlagsValue,
@@ -38,7 +39,6 @@ import type {
   ImageGenSamplerInfoValue,
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
-import { IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern/api";
 import {
   createImageGenProfile,
   deleteImageGenProfile,

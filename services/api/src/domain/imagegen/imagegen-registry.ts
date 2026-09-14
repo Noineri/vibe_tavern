@@ -15,7 +15,7 @@
  * capability-gated controls from it without a live round-trip.
  */
 
-import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern/domain";
 import type { ImageGenBackendType, ImageGenCapabilityFlags } from "@vibe-tavern/domain";
 
 import type {
@@ -37,79 +37,19 @@ export type {
   ImageGenProgressInfo,
 } from "./imagegen-backend.js";
 export type { ImageGenBackendType, ImageGenCapabilityFlags } from "@vibe-tavern/domain";
+// The static capability table lives in the DOMAIN leaf
+// (packages/domain/src/imagegen-capabilities.ts — the stt-presets.ts
+// precedent): apps/web imports it directly for capability-gated controls,
+// so it must not live behind this module (importing it here would be fine
+// for API-side code, but the table itself must stay browser-safe). It is
+// re-exported so API-side consumers keep one import path (the registry
+// remains the single source of truth for per-backend capability flags +
+// factory lookup).
+export { IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern/domain";
 
 // ---------------------------------------------------------------------------
-// Capability data
+// Capability lookup (data lives in the domain leaf — see the re-export above)
 // ---------------------------------------------------------------------------
-
-/**
- * Static capability flags for the FULL v1 image-gen roster — pure data, no
- * I/O; flags describe OUR integration surface, not raw vendor potential.
- *
- * The vendor-set size lists are the vendors' documented grids verbatim
- * (research-report cards, doc-verified 2026-09-07): OpenRouter documents
- * aspect ratios with pixel grids for six of them — the adapter maps a
- * selected W×H back onto the exact ratio string via this same table (the
- * other ratios exist upstream but carry no documented pixel grid, so they
- * are not offered); the OpenAI-images protocol's GPT Image grid is
- * 1024x1024 / 1536x1024 / 1024x1536 (arbitrary W×H exists on gpt-image-2
- * only — not assumed for Custom endpoints).
- */
-export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGenCapabilityFlags> = {
-  [IMAGE_GEN_BACKENDS.OpenRouter]: {
-    // Chat-completions transport (modalities), no negative/steps/seed/sampler
-    // surface — per the OpenRouter card.
-    supportsNegativePrompt: false,
-    supportsSamplers: false,
-    supportsSeed: false,
-    sizeSupport: {
-      kind: "vendor-set",
-      // Documented pixel grids from the OpenRouter card (ratio → W×H):
-      // 1:1, 2:3, 3:4, 9:16, 16:9, 21:9. Ratios without a documented grid
-      // (3:2, 4:3, 4:5, 5:4) are NOT offered — no invented values.
-      sizes: [
-        "1024x1024",
-        "832x1248",
-        "864x1184",
-        "768x1344",
-        "1344x768",
-        "1536x672",
-      ],
-    },
-    noApiKey: false,
-    supportsLiveProgress: false,
-    supportsImg2img: false,
-    supportsInpaint: false,
-  },
-  [IMAGE_GEN_BACKENDS.OpenAiImages]: {
-    // POST /v1/images/generations: prompt/size only in our v1 arm — no
-    // negative prompt, no steps/seed/sampler surface.
-    supportsNegativePrompt: false,
-    supportsSamplers: false,
-    supportsSeed: false,
-    sizeSupport: {
-      kind: "vendor-set",
-      sizes: ["1024x1024", "1536x1024", "1024x1536"],
-    },
-    noApiKey: false,
-    supportsLiveProgress: false,
-    supportsImg2img: false,
-    supportsInpaint: false,
-  },
-  [IMAGE_GEN_BACKENDS.A1111]: {
-    // /sdapi/v1/txt2img: full param surface — negative prompt, samplers
-    // (GET /samplers), seed (reported back), free W×H integers, live
-    // GET /progress. Keyless by default (--api-auth optional).
-    supportsNegativePrompt: true,
-    supportsSamplers: true,
-    supportsSeed: true,
-    sizeSupport: { kind: "free" },
-    noApiKey: true,
-    supportsLiveProgress: true,
-    supportsImg2img: false,
-    supportsInpaint: false,
-  },
-};
 
 const KNOWN_SLUGS = new Set<string>(Object.values(IMAGE_GEN_BACKENDS));
 

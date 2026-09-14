@@ -136,7 +136,7 @@ mock.module("../api/image-gen-api.js", () => ({
 
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
 const { useImageProfiles, toImageGenBackend } = await import("./use-image-profiles.js");
-const { IMAGE_GEN_BACKEND_CAPABILITIES } = await import("@vibe-tavern/api");
+const { IMAGE_GEN_BACKEND_CAPABILITIES } = await import("@vibe-tavern/domain");
 
 afterEach(async () => {
   await act(async () => {});

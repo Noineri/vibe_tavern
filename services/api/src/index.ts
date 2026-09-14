@@ -14,9 +14,10 @@ export function buildEmptyPromptTrace(): AssemblePromptResponse {
 export * from "./domain/chat/chat-application-service.js";
 export * from "./domain/prompt/prompt-assembly-service.js";
 export type { AppType } from "./api/routes/index.js";
-// Image-gen static capability table — pure data, no I/O, import-safe for the
-// web bundle (IG-10): the Providers editor snapshots it onto profiles on
-// create/backend-switch (the create contract carries the capability mirror)
-// and renders capability-gated controls from it (the registry's own
-// documented consumption path).
-export { IMAGE_GEN_BACKEND_CAPABILITIES } from "./domain/imagegen/imagegen-registry.js";
+// Image-gen static capability table: lives in the DOMAIN leaf
+// (packages/domain/src/imagegen-capabilities.ts) — NOT re-exported from this
+// barrel. apps/web imports it from @vibe-tavern/domain directly: this barrel
+// exposes the full server surface (db, bun:sqlite), and any browser-side
+// import through it breaks the web bundle (caught by dev-server tests,
+// 2026-09-14). API-side code keeps importing it from the image-gen registry,
+// which re-exports the domain table.

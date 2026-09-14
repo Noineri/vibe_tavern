@@ -1,5 +1,5 @@
-import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE } from "@vibe-tavern/domain";
-import type { ProviderPresetGroup, ProviderPresetId } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, PROVIDER_PRESET_GROUP, PROVIDER_TYPE } from "@vibe-tavern/domain";
+import type { ImageGenBackendType, ProviderPresetGroup, ProviderPresetId } from "@vibe-tavern/domain";
 
 export interface ProviderPreset {
   id: ProviderPresetId;
@@ -75,4 +75,79 @@ export function getVisiblePresetGroups(isArmServer: boolean): Array<{ id: Provid
 
 export function getPresetGroup(presetId: string): ProviderPresetGroup | null {
   return PROVIDER_PRESETS.find((f) => f.id === presetId)?.group ?? null;
+}
+
+// ─── Image generation presets (IMAGE_GENERATION_PLAN IG-11) ─────────────────
+
+/** One named image-gen provider row. The v1 roster is locked to the three
+ *  adapter arms (plan scope: OpenRouter + Custom cloud (OpenAI-images
+ *  protocol) + A1111-compatible local) — every row rides one of the
+ *  `IMAGE_GEN_BACKENDS` adapters, so unlike the LLM table there is no
+ *  `type` discriminator: the backend slug IS the wire protocol. Facts are
+ *  doc-verified from the research cards (IMAGE_GEN_CLOUD_PROVIDERS_RESEARCH /
+ *  IMAGE_GEN_LOCAL_BACKENDS_RESEARCH, both 2026-09-07). */
+export interface ImageGenProviderPreset {
+  /** Row slug — stored verbatim as the profile's `presetId` (the wire field
+   *  exists, so no endpoint auto-detection is ever needed). */
+  id: string;
+  /** Vendor label (literal, brand names — the LLM-table precedent). */
+  label: string;
+  /** The adapter that executes this preset (one of IMAGE_GEN_BACKENDS). */
+  backend: ImageGenBackendType;
+  /** Prefilled base URL (user-editable after apply — local ports move). */
+  baseUrl: string;
+  /** Level-1 segment taxonomy (the LLM-tab group field; the picker derives
+   *  its segments from the groups present here — v1 has no `native` rows,
+   *  so no Native segment renders). */
+  group: ProviderPresetGroup;
+  /** True when the API key is optional at connect time (A1111 keyless
+   *  default; `--api-auth` may add basic auth — the field still renders). */
+  keyOptional?: boolean;
+}
+
+/** The v1 image-gen roster. Rows (doc-verified):
+ *  - OpenRouter — chat-completions transport, https://openrouter.ai/api/v1
+ *    (cloud card: aggregator, allowed alongside direct vendors);
+ *  - OpenAI — the canonical /v1/images/generations target; the existing VT
+ *    `openai` preset baseUrl matches directly (cloud card);
+ *  - A1111-compatible — the /sdapi/v1 family (A1111 · Forge · Forge-Neo ·
+ *    reForge · SD.Next), default port 7860, keyless by default (local
+ *    card: "the A1111-family adapter's prime local target today"). */
+export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    backend: IMAGE_GEN_BACKENDS.OpenRouter,
+    baseUrl: "https://openrouter.ai/api/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    backend: IMAGE_GEN_BACKENDS.OpenAiImages,
+    baseUrl: "https://api.openai.com/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
+  {
+    id: "a1111",
+    label: "A1111-compatible (Forge)",
+    backend: IMAGE_GEN_BACKENDS.A1111,
+    baseUrl: "http://127.0.0.1:7860",
+    group: PROVIDER_PRESET_GROUP.local,
+    keyOptional: true,
+  },
+];
+
+/** Protocol picker entries for the Custom segment (the design's
+ *  "bare endpoint + protocol picker") — one per adapter, literal labels
+ *  (the LLM TYPE_LABELS precedent). */
+export const IMAGE_GEN_PROTOCOLS: ReadonlyArray<{ id: ImageGenBackendType; label: string }> = [
+  { id: IMAGE_GEN_BACKENDS.OpenRouter, label: "OpenRouter API" },
+  { id: IMAGE_GEN_BACKENDS.OpenAiImages, label: "OpenAI Images API" },
+  { id: IMAGE_GEN_BACKENDS.A1111, label: "A1111-compatible (local)" },
+];
+
+/** Image-gen preset lookup by row slug. */
+export function getImageGenProviderPreset(id: string): ImageGenProviderPreset | undefined {
+  return IMAGE_GEN_PROVIDER_PRESETS.find((preset) => preset.id === id);
 }

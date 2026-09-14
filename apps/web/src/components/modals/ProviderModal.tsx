@@ -38,6 +38,10 @@ import { SttSection } from "../settings/provider/stt/SttSection.js";
 import { SttProfileEditor } from "../settings/provider/stt/SttProfileEditor.js";
 import { SttFooter } from "../settings/provider/stt/SttFooter.js";
 import { useSttProfiles } from "../settings/provider/stt/use-stt-profiles.js";
+import { ImageGenSection } from "../settings/provider/imagegen/ImageGenSection.js";
+import { ImageGenProfileEditor } from "../settings/provider/imagegen/ImageGenProfileEditor.js";
+import { ImageGenFooter } from "../settings/provider/imagegen/ImageGenFooter.js";
+import { useImageProfiles } from "../../hooks/use-image-profiles.js";
 
 export interface FormState {
   id: string;
@@ -266,6 +270,7 @@ export function ProviderModal({
   const [activeCategory, setActiveCategory] = useState<ProviderCategoryTab>("llm");
   const tts = useTtsProfiles();
   const stt = useSttProfiles();
+  const imageGen = useImageProfiles();
 
   // ── Header mode: edit vs view ──
   const [isNew, setIsNew] = useState(false);
@@ -499,7 +504,8 @@ export function ProviderModal({
     if (
       (dirty && activeCategory === "llm") ||
       (tts.dirty && activeCategory === "audio") ||
-      (stt.dirty && activeCategory === "stt")
+      (stt.dirty && activeCategory === "stt") ||
+      (imageGen.dirty && activeCategory === "image")
     ) {
       setCloseTarget(target);
       setConfirmClose(true);
@@ -732,11 +738,13 @@ export function ProviderModal({
                 ? stt.form.name || t("stt_profile_new_title")
                 : t("stt_section_title")
               : activeCategory === "image"
-                ? t("image_gen_section_title")
+                ? imageGen.form
+                  ? imageGen.form.name || t("image_gen_profile_new_title")
+                  : t("image_gen_section_title")
                 : form?.name ?? t("provider_settings_title")
         }
         dirty={
-          activeCategory === "audio" ? tts.dirty : activeCategory === "stt" ? stt.dirty : activeCategory === "image" ? false : dirty
+          activeCategory === "audio" ? tts.dirty : activeCategory === "stt" ? stt.dirty : activeCategory === "image" ? imageGen.dirty : dirty
         }
         tabs={{
           items: [
@@ -754,9 +762,7 @@ export function ProviderModal({
         headerActions={providerModalOrigin === "coauthor" ? <button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => requestClose("return")}>{t("back")}</button> : undefined}
         masterContent={() =>
           activeCategory === "image" ? (
-            <div data-testid="image-gen-section" className="flex flex-1 min-h-0 flex-col items-center justify-center p-3 text-center font-ui text-[13px] text-t3">
-              {t("image_gen_section_placeholder")}
-            </div>
+            <ImageGenSection imageGen={imageGen} />
           ) : activeCategory === "stt" ? (
             <SttSection stt={stt} />
           ) : activeCategory === "audio" ? (
@@ -781,9 +787,13 @@ export function ProviderModal({
         }
         detailContent={
           activeCategory === "image" ? (
-            <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
-              {t("image_gen_section_placeholder")}
-            </div>
+            imageGen.form ? (
+              <ImageGenProfileEditor imageGen={imageGen} />
+            ) : (
+              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+                {t("image_gen_section_placeholder")}
+              </div>
+            )
           ) : activeCategory === "stt" ? (
             stt.form ? (
               <SttProfileEditor stt={stt} />
@@ -913,7 +923,9 @@ export function ProviderModal({
           )
         }
         footer={
-          activeCategory === "image" ? null : activeCategory === "stt" ? (
+          activeCategory === "image" ? (
+            <ImageGenFooter imageGen={imageGen} />
+          ) : activeCategory === "stt" ? (
             <SttFooter stt={stt} />
           ) : activeCategory === "audio" ? (
             <TtsAudioFooter tts={tts} />

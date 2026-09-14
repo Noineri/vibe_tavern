@@ -12,6 +12,7 @@ export * from "./chat-notification.js";
 export * from "./coauthor-transport-capabilities.js";
 export * from "./dice.js";
 export * from "./entities.js";
+export * from "./imagegen-capabilities.js";
 export * from "./event-bus.js";
 export * from "./extract-thinking-tags.js";
 export * from "./generation-format.js";
