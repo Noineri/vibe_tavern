@@ -1096,6 +1096,33 @@ export interface ImageGenRuntimeApi {
 		assetId: string,
 		characterId: string,
 	) => Promise<import("@vibe-tavern/api-contracts").ImageGenGalleryPromoteResponseValue>;
+	/** Starred models of a saved profile (IG-12b — the LLM model-favorites
+	 *  mechanic; deviations named on the domain type). Null = unknown
+	 *  profile (route → 404). */
+	listImageGenModelFavorites: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelFavoriteValue[] | null>;
+	/** Star (or refresh a star's label) — idempotent on (profile, model). */
+	addImageGenModelFavorite: (
+		id: string,
+		body: import("@vibe-tavern/api-contracts").FavoriteImageGenModelInput,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelFavoriteValue | null>;
+	/** Un-star a model. Null = unknown profile (route → 404). */
+	removeImageGenModelFavorite: (id: string, modelId: string) => Promise<void | null>;
+	/** Per-model image-field overlay rows of a profile (IG-12b — the LLM
+	 *  per-model settings mechanic). Null = unknown profile (route → 404). */
+	listImageGenModelSettings: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelSettingsValue[] | null>;
+	/** One model's overlay — null = no bound settings (inherit base) OR
+	 *  unknown profile (the route distinguishes via a profile read, the
+	 *  samplers-route ladder). */
+	getImageGenModelSettings: (id: string, modelId: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelSettingsValue | null>;
+	/** Upsert a model's overlay — idempotent on (profile, model). */
+	upsertImageGenModelSettings: (
+		id: string,
+		modelId: string,
+		overlay: import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelSettingsValue | null>;
+	/** Delete a model's overlay (revert to profile base). Null = unknown
+	 *  profile (route → 404). */
+	deleteImageGenModelSettings: (id: string, modelId: string) => Promise<void | null>;
 }
 
 export interface RuntimeApi {

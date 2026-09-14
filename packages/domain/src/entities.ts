@@ -1170,6 +1170,54 @@ export interface ImageGenProfileLink {
   targetId: string;
 }
 
+/** Per-model settings overlay for an image-gen profile (IG-12b, the LLM
+ *  `ModelSettingsOverlay` mechanic composed with image fields per the
+ *  design): applied when the profile's selected model matches the overlay's
+ *  modelId, merged OVER the profile base. EVERY field optional — absent
+ *  means "inherit the profile base" (the provider-twin semantics, no code
+ *  defaults per the hardcoded-parameters ban). */
+export interface ImageGenModelSettingsOverlay {
+  steps?: number;
+  cfgScale?: number;
+  sampler?: string;
+  seed?: number;
+  clipSkip?: number;
+  /** Per-mode size presets for this model (the same shape as the profile's;
+   *  a mode absent here falls back to the profile's own preset). */
+  modeSizePresets?: ImageGenModeSizePresets;
+}
+
+/** Starred model row (IG-12b, the LLM model-favorites mechanic). DEVIATION
+ *  from the provider twin, named: no `scope` (image-gen has ONE consumption
+ *  surface — the pane picker and later the chat fine-tuning chip — while the
+ *  LLM scope exists to separate rp/coauthor/copilot surfaces) and no
+ *  `contextLength` (no context concept for image models). `label` keeps the
+ *  display-name enrichment from the fetched catalog. */
+export interface ImageGenModelFavorite {
+  id: string;
+  imageGenProfileId: ImageGenProfileId;
+  modelId: string;
+  label: string | null;
+  createdAt: Timestamp;
+}
+
+/** Write input for starring a model (label optional — the picker may star an
+ *  offline/manual-entry model with no catalog row). */
+export interface ImageGenModelFavoriteData {
+  modelId: string;
+  label?: string;
+}
+
+/** Persisted per-model overlay row (`image_gen_model_settings`). */
+export interface ImageGenModelSettings {
+  id: string;
+  imageGenProfileId: ImageGenProfileId;
+  modelId: string;
+  settings: ImageGenModelSettingsOverlay;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
 // ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────
 //
 // The pure notation/rolling/arith-validators live in `dice.ts`; these are the

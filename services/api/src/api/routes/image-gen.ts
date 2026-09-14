@@ -18,6 +18,13 @@
  *   POST   /api/image-gen/draft/models                 (shared fetch-by-endpoint)
  *   POST   /api/chats/:chatId/image-gen/generate       (image message slot)
  *   POST   /api/image-gen/attachments/:assetId/promote-to-gallery
+ *   GET    /api/image-gen/profiles/:id/model-favorites  (IG-12b)
+ *   POST   /api/image-gen/profiles/:id/model-favorites
+ *   DELETE /api/image-gen/profiles/:id/model-favorites
+ *   GET    /api/image-gen/profiles/:id/model-settings   (IG-12b)
+ *   GET    /api/image-gen/profiles/:id/model-settings/:modelId
+ *   PUT    /api/image-gen/profiles/:id/model-settings/:modelId
+ *   DELETE /api/image-gen/profiles/:id/model-settings/:modelId
  */
 
 import { Hono } from "hono";
@@ -203,5 +210,49 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
           throw error;
         }
       },
-    );
+    )
+    // ── Model favorites (IG-12b — the provider model-favorites twin) ────
+    .get("/api/image-gen/profiles/:id/model-favorites", async (c) => {
+      const rows = await runtime.listImageGenModelFavorites(c.req.param("id"));
+      if (rows === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(rows);
+    })
+    .post("/api/image-gen/profiles/:id/model-favorites", zValidator("json", schemas.favoriteImageGenModelSchema), async (c) => {
+      const row = await runtime.addImageGenModelFavorite(c.req.param("id"), c.req.valid("json"));
+      if (row === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(row, 201);
+    })
+    .delete("/api/image-gen/profiles/:id/model-favorites", zValidator("json", schemas.favoriteImageGenModelSchema.pick({ modelId: true })), async (c) => {
+      const removed = await runtime.removeImageGenModelFavorite(c.req.param("id"), c.req.valid("json").modelId);
+      if (removed === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json({ ok: true });
+    })
+    // ── Per-model settings overlay (IG-12b — the provider twin split) ──
+    .get("/api/image-gen/profiles/:id/model-settings", async (c) => {
+      const rows = await runtime.listImageGenModelSettings(c.req.param("id"));
+      if (rows === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(rows);
+    })
+    .get("/api/image-gen/profiles/:id/model-settings/:modelId", async (c) => {
+      // Null alone cannot distinguish "unknown profile" from "model has no
+      // overlay yet" — resolve the profile to pick the status (the samplers
+      // ladder).
+      const row = await runtime.getImageGenModelSettings(c.req.param("id"), c.req.param("modelId"));
+      if (row === null) {
+        const profile = await runtime.getImageGenProfile(c.req.param("id"));
+        if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+        return c.json(null);
+      }
+      return c.json(row);
+    })
+    .put("/api/image-gen/profiles/:id/model-settings/:modelId", zValidator("json", schemas.imageGenModelSettingsOverlaySchema), async (c) => {
+      const row = await runtime.upsertImageGenModelSettings(c.req.param("id"), c.req.param("modelId"), c.req.valid("json"));
+      if (row === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(row);
+    })
+    .delete("/api/image-gen/profiles/:id/model-settings/:modelId", async (c) => {
+      const removed = await runtime.deleteImageGenModelSettings(c.req.param("id"), c.req.param("modelId"));
+      if (removed === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json({ ok: true });
+    });
 }

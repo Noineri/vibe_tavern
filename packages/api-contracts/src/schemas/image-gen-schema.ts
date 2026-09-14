@@ -289,3 +289,48 @@ export const imageGenGalleryPromoteResponseSchema = z.object({
   order: z.number(),
 });
 export type ImageGenGalleryPromoteResponseValue = z.infer<typeof imageGenGalleryPromoteResponseSchema>;
+
+// ─── Model favorites + per-model overlay (IG-12b) ───────────────────────
+
+/** Body of starring a model — the image twin of
+ *  `favoriteProviderModelSchema` (deviations named on the domain type: no
+ *  scope, no contextLength). */
+export const favoriteImageGenModelSchema = z.object({
+  modelId: z.string().min(1),
+  label: z.string().optional(),
+});
+export type FavoriteImageGenModelInput = z.infer<typeof favoriteImageGenModelSchema>;
+
+/** Starred-model wire record. */
+export const imageGenModelFavoriteSchema = z.object({
+  id: z.string(),
+  profileId: z.string(),
+  modelId: z.string(),
+  label: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type ImageGenModelFavoriteValue = z.infer<typeof imageGenModelFavoriteSchema>;
+
+/** Per-model image-field overlay — flat all-optional merge over the profile
+ *  base (the `modelSettingsOverlaySchema` twin): an absent field inherits the
+ *  profile's defaultParams / modeSizePresets; no value ships as code. */
+export const imageGenModelSettingsOverlaySchema = z.object({
+  steps: z.number().optional(),
+  cfgScale: z.number().optional(),
+  sampler: z.string().optional(),
+  seed: z.number().optional(),
+  clipSkip: z.number().optional(),
+  modeSizePresets: imageGenModeSizePresetsSchema.optional(),
+});
+export type ImageGenModelSettingsOverlayValue = z.infer<typeof imageGenModelSettingsOverlaySchema>;
+
+/** Persisted per-model overlay wire record. */
+export const imageGenModelSettingsSchema = z.object({
+  id: z.string(),
+  profileId: z.string(),
+  modelId: z.string(),
+  settings: imageGenModelSettingsOverlaySchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ImageGenModelSettingsValue = z.infer<typeof imageGenModelSettingsSchema>;

@@ -7,6 +7,10 @@ import type {
   ImageGenDefaultParams,
   ImageGenModeSizePreset,
   ImageGenModeSizePresets,
+  ImageGenModelFavorite,
+  ImageGenModelFavoriteData,
+  ImageGenModelSettings,
+  ImageGenModelSettingsOverlay,
   ImageGenProfile,
   ImageGenProfileId,
   ImageGenProfileLink,
@@ -14,7 +18,7 @@ import type {
 } from '@vibe-tavern/domain';
 
 import type { AppDb } from '../db-connection.js';
-import { imageGenLinks, imageGenProfiles } from '../db-schema.js';
+import { imageGenLinks, imageGenModelFavorites, imageGenModelSettings, imageGenProfiles } from '../db-schema.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
@@ -383,5 +387,166 @@ export class ImageGenStore {
     // the store).
     if (row.apiKey) profile.apiKey = row.apiKey;
     return profile;
+  }
+
+  // ─── Model favorites (IG-12b — the LLM provider_model_favorites
+  //     mechanic; deviations from the twin are named on the domain type)
+
+  /** Starred models of a profile (no scope — single consumption surface). */
+  async listModelFavorites(profileId: string): Promise<ImageGenModelFavorite[]> {
+    const rows = await this.db
+      .select()
+      .from(imageGenModelFavorites)
+      .where(eq(imageGenModelFavorites.imageGenProfileId, profileId))
+      .all();
+    return rows.map((row) => this.mapModelFavoriteRow(row));
+  }
+
+  /** Star (or refresh the label of an existing star). Idempotent on
+   *  `(profileId, modelId)` — the provider-twin upsert shape. */
+  async addModelFavorite(profileId: string, model: ImageGenModelFavoriteData): Promise<ImageGenModelFavorite> {
+    const existing = await this.db
+      .select()
+      .from(imageGenModelFavorites)
+      .where(and(
+        eq(imageGenModelFavorites.imageGenProfileId, profileId),
+        eq(imageGenModelFavorites.modelId, model.modelId),
+      ))
+      .get();
+
+    if (existing) {
+      const [row] = await this.db
+        .update(imageGenModelFavorites)
+        .set({ label: model.label ?? existing.label })
+        .where(eq(imageGenModelFavorites.id, existing.id))
+        .returning();
+      return this.mapModelFavoriteRow(row!);
+    }
+
+    const [row] = await this.db
+      .insert(imageGenModelFavorites)
+      .values({
+        id: this.idGen.next('image_gen_fav'),
+        imageGenProfileId: profileId,
+        modelId: model.modelId,
+        label: model.label ?? null,
+        createdAt: this.clock.now(),
+      })
+      .returning();
+    return this.mapModelFavoriteRow(row!);
+  }
+
+  /** Un-star a model. No-op when not starred. */
+  async removeModelFavorite(profileId: string, modelId: string): Promise<void> {
+    await this.db
+      .delete(imageGenModelFavorites)
+      .where(and(
+        eq(imageGenModelFavorites.imageGenProfileId, profileId),
+        eq(imageGenModelFavorites.modelId, modelId),
+      ))
+      .run();
+  }
+
+  // ─── Per-model settings overlay (IG-12b — the LLM
+  //     provider_model_settings mechanic)
+
+  /** Parse a stored settingsJson row. Returns `{}` (empty overlay = inherit
+   *  all profile base) on missing/invalid JSON — the rows-survive hygiene. */
+  private parseSettingsOverlay(raw: string): ImageGenModelSettingsOverlay {
+    return parseJsonObject(raw, {});
+  }
+
+  private mapModelFavoriteRow(row: typeof imageGenModelFavorites.$inferSelect): ImageGenModelFavorite {
+    return {
+      id: row.id,
+      imageGenProfileId: brandId<ImageGenProfileId>(row.imageGenProfileId),
+      modelId: row.modelId,
+      label: row.label,
+      createdAt: row.createdAt,
+    };
+  }
+
+  private mapModelSettingsRow(row: typeof imageGenModelSettings.$inferSelect): ImageGenModelSettings {
+    return {
+      id: row.id,
+      imageGenProfileId: brandId<ImageGenProfileId>(row.imageGenProfileId),
+      modelId: row.modelId,
+      settings: this.parseSettingsOverlay(row.settingsJson),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  /** One model's overlay, or null when the model has no bound settings yet
+   *  (inherit the profile base). */
+  async getModelSettings(profileId: string, modelId: string): Promise<ImageGenModelSettings | null> {
+    const row = await this.db
+      .select()
+      .from(imageGenModelSettings)
+      .where(and(
+        eq(imageGenModelSettings.imageGenProfileId, profileId),
+        eq(imageGenModelSettings.modelId, modelId),
+      ))
+      .get();
+    return row ? this.mapModelSettingsRow(row) : null;
+  }
+
+  /** Every overlay of a profile (populates the picker's per-model badges). */
+  async listModelSettings(profileId: string): Promise<ImageGenModelSettings[]> {
+    const rows = await this.db
+      .select()
+      .from(imageGenModelSettings)
+      .where(eq(imageGenModelSettings.imageGenProfileId, profileId))
+      .all();
+    return rows.map((row) => this.mapModelSettingsRow(row));
+  }
+
+  /** Insert or update (upsert) a model's overlay. Idempotent on
+   *  `(profileId, modelId)`. */
+  async upsertModelSettings(profileId: string, modelId: string, settings: ImageGenModelSettingsOverlay): Promise<ImageGenModelSettings> {
+    const now = this.clock.now();
+    const settingsJson = JSON.stringify(stripSecrets(settings as Record<string, unknown>));
+    const existing = await this.db
+      .select()
+      .from(imageGenModelSettings)
+      .where(and(
+        eq(imageGenModelSettings.imageGenProfileId, profileId),
+        eq(imageGenModelSettings.modelId, modelId),
+      ))
+      .get();
+
+    if (existing) {
+      const [row] = await this.db
+        .update(imageGenModelSettings)
+        .set({ settingsJson, updatedAt: now })
+        .where(eq(imageGenModelSettings.id, existing.id))
+        .returning();
+      return this.mapModelSettingsRow(row!);
+    }
+
+    const [row] = await this.db
+      .insert(imageGenModelSettings)
+      .values({
+        id: this.idGen.next('image_gen_ms'),
+        imageGenProfileId: profileId,
+        modelId,
+        settingsJson,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    return this.mapModelSettingsRow(row!);
+  }
+
+  /** Delete a model's overlay (the model reverts to the profile base).
+   *  No-op if none exists. */
+  async deleteModelSettings(profileId: string, modelId: string): Promise<void> {
+    await this.db
+      .delete(imageGenModelSettings)
+      .where(and(
+        eq(imageGenModelSettings.imageGenProfileId, profileId),
+        eq(imageGenModelSettings.modelId, modelId),
+      ))
+      .run();
   }
 }

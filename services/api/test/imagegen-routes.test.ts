@@ -647,3 +647,104 @@ describe("image-gen routes — gallery promotion", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("image-gen routes — model favorites + per-model settings (IG-12b)", () => {
+  test("star → list → un-star round-trips; unknown profile 404s on every verb", async () => {
+    const { app } = await makeApp();
+    const id = await seedProfile(app, { backend: "a1111", endpoint: "http://127.0.0.1:7860" });
+
+    const star = await app.request(`/api/image-gen/profiles/${id}/model-favorites`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modelId: "sd_xl", label: "SD XL" }),
+    });
+    expect(star.status).toBe(201);
+    const starred = (await star.json()) as { modelId: string; label: string | null; profileId: string };
+    expect(starred.modelId).toBe("sd_xl");
+    expect(starred.label).toBe("SD XL");
+    expect(starred.profileId).toBe(id);
+
+    const list = await app.request(`/api/image-gen/profiles/${id}/model-favorites`);
+    expect(list.status).toBe(200);
+    expect(((await list.json()) as unknown[]).length).toBe(1);
+
+    const unstar = await app.request(`/api/image-gen/profiles/${id}/model-favorites`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modelId: "sd_xl" }),
+    });
+    expect(unstar.status).toBe(200);
+
+    const empty = await app.request(`/api/image-gen/profiles/${id}/model-favorites`);
+    expect(((await empty.json()) as unknown[]).length).toBe(0);
+
+    for (const [method, path] of [
+      ["GET", "/api/image-gen/profiles/missing/model-favorites"],
+      ["POST", "/api/image-gen/profiles/missing/model-favorites"],
+      ["DELETE", "/api/image-gen/profiles/missing/model-favorites"],
+      ["GET", "/api/image-gen/profiles/missing/model-settings"],
+      ["GET", "/api/image-gen/profiles/missing/model-settings/m"],
+      ["PUT", "/api/image-gen/profiles/missing/model-settings/m"],
+      ["DELETE", "/api/image-gen/profiles/missing/model-settings/m"],
+    ] as const) {
+      const res = await app.request(path, {
+        method,
+        ...(method !== "GET" && method !== "DELETE"
+          ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelId: "m" }) }
+          : method === "DELETE"
+            ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelId: "m" }) }
+            : {}),
+      });
+      expect(res.status).toBe(404);
+    }
+  });
+
+  test("overlay PUT → GET → DELETE round-trips through the API; a model without an overlay GETs null", async () => {
+    const { app } = await makeApp();
+    const id = await seedProfile(app, { backend: "a1111", endpoint: "http://127.0.0.1:7860" });
+
+    const overlay = {
+      steps: 30,
+      sampler: "DPM++ 2M",
+      modeSizePresets: { portrait: { width: 832, height: 1216 } },
+    };
+    const put = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(overlay),
+    });
+    expect(put.status).toBe(200);
+    expect(await put.json()).toMatchObject({
+      profileId: id,
+      modelId: "sd_xl",
+      settings: overlay,
+    });
+
+    const get = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl`);
+    expect(get.status).toBe(200);
+    expect(((await get.json()) as { settings: typeof overlay }).settings).toEqual(overlay);
+
+    const list = await app.request(`/api/image-gen/profiles/${id}/model-settings`);
+    expect(((await list.json()) as unknown[]).length).toBe(1);
+
+    const absent = await app.request(`/api/image-gen/profiles/${id}/model-settings/other`);
+    expect(absent.status).toBe(200);
+    expect(await absent.json()).toBe(null);
+
+    const del = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl`, { method: "DELETE" });
+    expect(del.status).toBe(200);
+    const after = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl`);
+    expect(await after.json()).toBe(null);
+  });
+
+  test("an overlay with an unknown mode key is rejected by the contract (422)", async () => {
+    const { app } = await makeApp();
+    const id = await seedProfile(app, { backend: "a1111", endpoint: "http://127.0.0.1:7860" });
+    const res = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modeSizePresets: { "not-a-mode": { width: 512 } } }),
+    });
+    expect(res.status).toBe(400);
+  });
+});

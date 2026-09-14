@@ -1763,3 +1763,38 @@ export const imageGenLinks = sqliteTable('image_gen_links', {
   targetIdx: index('idx_image_gen_links_target').on(table.targetType, table.targetId),
   profileIdx: index('idx_image_gen_links_profile').on(table.imageGenProfileId),
 }));
+
+// ─── imageGenModelFavorites (IMAGE_GENERATION_PLAN IG-12b) ────────────────
+//
+// Starred image models per profile — the LLM provider_model_favorites
+// mechanic cloned for image profiles (design: "the image analog composes
+// both"). Deviations from the provider twin are named in the domain type
+// doc: no `scope` (single consumption surface), no `context_length` (no
+// context concept); `label` keeps the catalog display-name enrichment.
+export const imageGenModelFavorites = sqliteTable('image_gen_model_favorites', {
+  id: text('id').primaryKey(),
+  imageGenProfileId: text('image_gen_profile_id').notNull().references(() => imageGenProfiles.id, { onDelete: 'cascade' }),
+  modelId: text('model_id').notNull(),
+  label: text('label'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  profileModelUnique: uniqueIndex('idx_image_gen_model_favorites_unique').on(table.imageGenProfileId, table.modelId),
+}));
+
+// ─── imageGenModelSettings ────────────────────────────────────────────────────
+// Per-model image-field overlay (IG-12b, the LLM provider_model_settings
+// mechanic): applied when the profile's selected model matches `modelId`,
+// merged over the profile base. Absent fields in the JSON = inherit the
+// profile base. Rows survive un-starring a model (favorites are bookmarks;
+// overlays are config — the provider-twin comment verbatim).
+export const imageGenModelSettings = sqliteTable('image_gen_model_settings', {
+  id: text('id').primaryKey(),
+  imageGenProfileId: text('image_gen_profile_id').notNull().references(() => imageGenProfiles.id, { onDelete: 'cascade' }),
+  modelId: text('model_id').notNull(),
+  /** Stringified ImageGenModelSettingsOverlay JSON. */
+  settingsJson: text('settings_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  profileModelUnique: uniqueIndex('idx_image_gen_model_settings_unique').on(table.imageGenProfileId, table.modelId),
+}));

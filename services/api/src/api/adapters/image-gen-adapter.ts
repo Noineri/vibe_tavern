@@ -31,10 +31,14 @@
 import type {
   CreateImageGenProfileInput,
   DraftImageGenModelsInput,
+  FavoriteImageGenModelInput,
   GenerateImageGenInput,
   ImageGenGenerateResponseValue,
   ImageGenGalleryPromoteResponseValue,
+  ImageGenModelFavoriteValue,
   ImageGenModelInfoValue,
+  ImageGenModelSettingsOverlayValue,
+  ImageGenModelSettingsValue,
   ImageGenProbeResultValue,
   ImageGenProfileValue,
   ImageGenSamplerInfoValue,
@@ -45,7 +49,7 @@ import type {
   StoreContainer,
   UpdateImageGenProfileData,
 } from "@vibe-tavern/db";
-import type { Attachment, ImageGenProfile } from "@vibe-tavern/domain";
+import type { Attachment, ImageGenModelSettings, ImageGenProfile } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import type {
@@ -105,6 +109,20 @@ function toClientProfile(profile: ImageGenProfile): ImageGenProfileValue {
   if (profile.llmProviderProfileId !== undefined) record.llmProviderProfileId = profile.llmProviderProfileId;
   if (profile.llmModelId !== undefined) record.llmModelId = profile.llmModelId;
   return record;
+}
+
+/** Per-model overlay row → wire record (the branded FK flattens to
+ *  `profileId`, timestamps pass through as strings — toClientProfile's
+ *  shape for the IG-12b rows). */
+function toClientModelSettings(row: ImageGenModelSettings): ImageGenModelSettingsValue {
+  return {
+    id: row.id,
+    profileId: row.imageGenProfileId,
+    modelId: row.modelId,
+    settings: row.settings,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
 }
 
 /** Adapter config from a stored profile: the typed key is injected
@@ -395,6 +413,72 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       order,
     });
     return { assetRowId: created.id, characterId, ext: created.ext, mimeType: created.mimeType, order: created.order };
+  };
+
+  // ─── Model favorites + per-model overlay (IG-12b — pure store passes; the
+  //     wire projection flattens the branded FK to `profileId` and timestamps
+  //     to strings, matching toClientProfile's shape)
+
+  listImageGenModelFavorites = async (id: string): Promise<ImageGenModelFavoriteValue[] | null> => {
+    if ((await this.stores.imageGen.getById(id)) === null) return null;
+    const rows = await this.stores.imageGen.listModelFavorites(id);
+    return rows.map((row) => ({
+      id: row.id,
+      profileId: row.imageGenProfileId,
+      modelId: row.modelId,
+      label: row.label,
+      createdAt: row.createdAt,
+    }));
+  };
+
+  addImageGenModelFavorite = async (
+    id: string,
+    body: FavoriteImageGenModelInput,
+  ): Promise<ImageGenModelFavoriteValue | null> => {
+    if ((await this.stores.imageGen.getById(id)) === null) return null;
+    const row = await this.stores.imageGen.addModelFavorite(id, body);
+    return {
+      id: row.id,
+      profileId: row.imageGenProfileId,
+      modelId: row.modelId,
+      label: row.label,
+      createdAt: row.createdAt,
+    };
+  };
+
+  removeImageGenModelFavorite = async (id: string, modelId: string): Promise<void | null> => {
+    if ((await this.stores.imageGen.getById(id)) === null) return null;
+    await this.stores.imageGen.removeModelFavorite(id, modelId);
+  };
+
+  listImageGenModelSettings = async (id: string): Promise<ImageGenModelSettingsValue[] | null> => {
+    if ((await this.stores.imageGen.getById(id)) === null) return null;
+    const rows = await this.stores.imageGen.listModelSettings(id);
+    return rows.map(toClientModelSettings);
+  };
+
+  getImageGenModelSettings = async (
+    id: string,
+    modelId: string,
+  ): Promise<ImageGenModelSettingsValue | null> => {
+    if ((await this.stores.imageGen.getById(id)) === null) return null;
+    const row = await this.stores.imageGen.getModelSettings(id, modelId);
+    return row ? toClientModelSettings(row) : null;
+  };
+
+  upsertImageGenModelSettings = async (
+    id: string,
+    modelId: string,
+    overlay: ImageGenModelSettingsOverlayValue,
+  ): Promise<ImageGenModelSettingsValue | null> => {
+    if ((await this.stores.imageGen.getById(id)) === null) return null;
+    const row = await this.stores.imageGen.upsertModelSettings(id, modelId, overlay);
+    return toClientModelSettings(row);
+  };
+
+  deleteImageGenModelSettings = async (id: string, modelId: string): Promise<void | null> => {
+    if ((await this.stores.imageGen.getById(id)) === null) return null;
+    await this.stores.imageGen.deleteModelSettings(id, modelId);
   };
 }
 
