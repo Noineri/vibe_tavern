@@ -366,6 +366,7 @@ export async function countAiAssistantTokens(
 export async function* streamAiAssistant(
   request: AiAssistantStreamRequest,
   deps: StreamDeps,
+  signal?: AbortSignal,
 ): AsyncGenerator<AiAssistantStreamChunk> {
   try {
     const prepared = await prepareAiAssistantRequest(request, deps);
@@ -390,6 +391,7 @@ export async function* streamAiAssistant(
           allowSystemInMessages: true,
           temperature: request.temperature ?? 0,
           maxOutputTokens: request.maxOutputTokens ?? 6000,
+          abortSignal: signal,
         });
 
         const mdReasoningState: ReasoningSplitState = {
@@ -422,6 +424,11 @@ export async function* streamAiAssistant(
           }
         }
 
+        // The SDK ends textStream silently on abort (no exception), so an
+        // aborted turn reaches this point with a truncated fullText — parsing
+        // it would fabricate a parse error for a consumer that is gone.
+        if (signal?.aborted) return;
+
         const parsed = mergeMdImportWithSourceSections(
           extractMdImportObjectFromText(fullText),
           request.existingContent ?? "",
@@ -436,6 +443,9 @@ export async function* streamAiAssistant(
           yield { type: "error", error: "Model returned output, but no importable fields could be parsed. See raw output above." };
         }
       } catch (err) {
+        // The consumer is gone (client hit Stop / closed the modal) — an error
+        // event on a dead stream is noise; stop quietly, as the chat SSE routes do.
+        if (signal?.aborted) return;
         const msg = err instanceof Error ? err.message : String(err);
         deps.logDebug?.("api.ai-assistant.md-import.error", { error: msg });
         yield { type: "error", error: msg };
@@ -452,6 +462,7 @@ export async function* streamAiAssistant(
       allowSystemInMessages: true,
       temperature: request.temperature ?? 0.3,
       maxOutputTokens: request.maxOutputTokens ?? undefined,
+      abortSignal: signal,
     });
 
     const splitState: ReasoningSplitState = {
@@ -499,15 +510,20 @@ export async function* streamAiAssistant(
       }
     }
     if (prepared.doneMetadata) {
+      if (signal?.aborted) return;
       yield {
         type: "done",
         ...prepared.doneMetadata,
         finishReason: await result.finishReason,
       };
     } else {
+      if (signal?.aborted) return;
       yield { type: "done" };
     }
   } catch (err) {
+    // Same quiet-exit rule as the md_import branch above: after a caller abort
+    // there is nobody left to receive an error event.
+    if (signal?.aborted) return;
     const message = err instanceof Error ? err.message : String(err);
     yield { type: "error", error: message };
   }
