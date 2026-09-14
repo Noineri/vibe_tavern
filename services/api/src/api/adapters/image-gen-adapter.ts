@@ -62,6 +62,8 @@ import type {
   ImageGenAdapterConfig,
   ImageGenGenerateRequest,
 } from "../../domain/imagegen/imagegen-backend.js";
+import { IMAGE_GENERATION_CLOUD_TIMEOUT_MS, withImageGenTimeoutMs } from "../../domain/imagegen/imagegen-backend.js";
+import { TEST_CHAT_TIMEOUT_MS } from "../../domain/providers/provider-transport.js";
 import { createImageGenBackend } from "../../domain/imagegen/imagegen-registry.js";
 import type { ImageGenRuntimeApi } from "../contract/runtime-api.js";
 
@@ -81,6 +83,10 @@ export class ImageGenNotFoundError extends Error {
     this.name = "ImageGenNotFoundError";
   }
 }
+
+/** A timed-out CLOUD call (route → 504) — re-exported for the route ladder
+ *  (definition lives with the timeout helper in the domain module). */
+export { ImageGenTimeoutError } from "../../domain/imagegen/imagegen-backend.js";
 
 /** A well-formed request that names an inconsistent state (route → 400). */
 export class ImageGenValidationError extends Error {
@@ -229,14 +235,19 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
     const backend = createImageGenBackend(profile.backend, configFromProfile(profile, this.fetchOverride));
-    return backend.probe(signal);
+    // Probe rides the SAME timeout budget as the LLM provider test
+    // (TEST_CHAT_TIMEOUT_MS, owner 2026-09-14) — one budget for "is this
+    // endpoint alive" across surfaces.
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "probe", (inner) => backend.probe(inner));
   };
 
   listImageGenProfileModels = async (id: string, signal?: AbortSignal) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
     const backend = createImageGenBackend(profile.backend, configFromProfile(profile, this.fetchOverride));
-    return backend.listModels(signal);
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "model list", (inner) =>
+      backend.listModels(inner),
+    );
   };
 
   listImageGenProfileSamplers = async (id: string, signal?: AbortSignal) => {
@@ -253,7 +264,10 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // twin): a backend without the sampler method reports "not supported",
     // not an empty catalog.
     if (typeof backend.listSamplers !== "function") return null;
-    return backend.listSamplers(signal);
+    const listSamplers = backend.listSamplers.bind(backend);
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "sampler list", (inner) =>
+      listSamplers(inner),
+    );
   };
 
   draftListImageGenModels: ImageGenRuntimeApi["draftListImageGenModels"] = async (body: DraftImageGenModelsInput) => {
@@ -366,7 +380,16 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     };
 
     const backend = createImageGenBackend(profile.backend, configFromProfile(profile, this.fetchOverride));
-    const result = await backend.generate(request);
+    // Owner 2026-09-14: LOCAL backends have NO generation timeout (explicit
+    // cancel only); CLOUD backends carry the 3-minute budget.
+    const result = profile.capabilities.localExecution
+      ? await backend.generate(request)
+      : await withImageGenTimeoutMs(
+          signal,
+          IMAGE_GENERATION_CLOUD_TIMEOUT_MS,
+          "generation",
+          (inner) => backend.generate({ ...request, ...(inner !== undefined ? { signal: inner } : {}) }),
+        );
 
     // Persist every image as a FLAT asset (bytes server-side, immutable) and
     // build the slot's attachment entries — the same shape a client upload

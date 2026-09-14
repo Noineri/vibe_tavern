@@ -27,6 +27,7 @@ const a1111Capabilities: ImageGenCapabilityFlags = {
 	sizeSupport: { kind: 'free' },
 	noApiKey: true,
 	supportsLiveProgress: true,
+	localExecution: true,
 	supportsImg2img: false,
 	supportsInpaint: false,
 };
@@ -38,6 +39,7 @@ const openaiImagesCapabilities: ImageGenCapabilityFlags = {
 	sizeSupport: { kind: 'vendor-set', sizes: ['1024x1024', '1024x1536', '1536x1024'] },
 	noApiKey: false,
 	supportsLiveProgress: false,
+	localExecution: false,
 	supportsImg2img: false,
 	supportsInpaint: false,
 };
@@ -185,6 +187,7 @@ describe('ImageGenStore CRUD', () => {
 			sizeSupport: { kind: 'free' },
 			noApiKey: false,
 			supportsLiveProgress: false,
+			localExecution: false,
 			supportsImg2img: false,
 			supportsInpaint: false,
 		});

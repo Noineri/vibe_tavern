@@ -32,7 +32,7 @@ import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";
 
 import type { ImageGenRuntimeApi } from "../contract/runtime-api.js";
-import { ImageGenNotFoundError, ImageGenValidationError } from "../adapters/image-gen-adapter.js";
+import { ImageGenNotFoundError, ImageGenTimeoutError, ImageGenValidationError } from "../adapters/image-gen-adapter.js";
 import { ImageGenBackendNotRegisteredError, ImageGenUnknownBackendError } from "../../domain/imagegen/imagegen-registry.js";
 import {
   OpenRouterImageGenConfigError,
@@ -180,6 +180,9 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
           }
           if (error instanceof ImageGenUnknownBackendError || error instanceof ImageGenBackendNotRegisteredError) {
             return c.json({ error: error.message }, 400);
+          }
+          if (error instanceof ImageGenTimeoutError) {
+            return c.json({ error: error.message }, 504);
           }
           const mapped = backendErrorResponse(error);
           if (mapped) return c.json(mapped.body, mapped.status);

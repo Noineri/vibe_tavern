@@ -41,6 +41,9 @@ export const imageGenCapabilityFlagsSchema = z.object({
   sizeSupport: imageGenSizeSupportSchema,
   noApiKey: z.boolean(),
   supportsLiveProgress: z.boolean(),
+  /** Execution locality (owner 2026-09-14): local = no generation timeout
+   *  (explicit cancel only); cloud = IMAGE_GENERATION_CLOUD_TIMEOUT_MS. */
+  localExecution: z.boolean(),
   supportsImg2img: z.boolean(),
   supportsInpaint: z.boolean(),
 });

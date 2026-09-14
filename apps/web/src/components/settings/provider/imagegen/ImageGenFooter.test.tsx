@@ -66,6 +66,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
         sizeSupport: { kind: "vendor-set", sizes: ["1024x1024"] },
         noApiKey: false,
         supportsLiveProgress: false,
+        localExecution: false,
         supportsImg2img: false,
         supportsInpaint: false,
       },

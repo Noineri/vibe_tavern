@@ -48,6 +48,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
       sizeSupport: { kind: "vendor-set", sizes: ["1024x1024"] },
       noApiKey: false,
       supportsLiveProgress: false,
+        localExecution: false,
       supportsImg2img: false,
       supportsInpaint: false,
     },

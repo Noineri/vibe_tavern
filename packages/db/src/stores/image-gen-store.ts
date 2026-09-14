@@ -71,7 +71,10 @@ function parseModeSizePresets(raw: string): ImageGenModeSizePresets {
 }
 
 /** Capability degrade: zero-capability + free sizes — conservative (the UI
- *  hides provider-gated controls rather than offering unsupported ones). */
+ *  hides provider-gated controls rather than offering unsupported ones).
+ *  Degraded shape defaults to NON-local: the degraded cloud profile keeps the
+ *  cloud timeout budget; a degraded local profile is not a thing we can
+ *  verify anyway. */
 const DEGRADED_CAPABILITIES: ImageGenCapabilityFlags = {
   supportsNegativePrompt: false,
   supportsSamplers: false,
@@ -79,6 +82,7 @@ const DEGRADED_CAPABILITIES: ImageGenCapabilityFlags = {
   sizeSupport: { kind: 'free' },
   noApiKey: false,
   supportsLiveProgress: false,
+  localExecution: false,
   supportsImg2img: false,
   supportsInpaint: false,
 };
@@ -92,6 +96,7 @@ function parseCapabilities(raw: string): ImageGenCapabilityFlags {
   if (typeof parsed.supportsSeed === 'boolean') flags.supportsSeed = parsed.supportsSeed;
   if (typeof parsed.noApiKey === 'boolean') flags.noApiKey = parsed.noApiKey;
   if (typeof parsed.supportsLiveProgress === 'boolean') flags.supportsLiveProgress = parsed.supportsLiveProgress;
+  if (typeof parsed.localExecution === 'boolean') flags.localExecution = parsed.localExecution;
   if (typeof parsed.supportsImg2img === 'boolean') flags.supportsImg2img = parsed.supportsImg2img;
   if (typeof parsed.supportsInpaint === 'boolean') flags.supportsInpaint = parsed.supportsInpaint;
   if (

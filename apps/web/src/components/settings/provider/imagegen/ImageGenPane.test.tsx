@@ -112,6 +112,7 @@ function makeCaps(overrides: Partial<ImageGenRecord["capabilities"]> = {}): Imag
     sizeSupport: { kind: "vendor-set", sizes: ["1024x1024", "832x1248"] },
     noApiKey: false,
     supportsLiveProgress: false,
+        localExecution: false,
     supportsImg2img: false,
     supportsInpaint: false,
     ...overrides,
@@ -388,6 +389,7 @@ describe("ImageGenPane — per-mode sizes", () => {
           sizeSupport: { kind: "free" },
           noApiKey: true,
           supportsLiveProgress: true,
+        localExecution: true,
         }),
       }),
       setForm,
@@ -419,6 +421,7 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
           sizeSupport: { kind: "free" },
           noApiKey: true,
           supportsLiveProgress: true,
+        localExecution: true,
         }),
       }),
       samplersByProfile: { ig1: [{ name: "Euler a", aliases: [] }, { name: "DPM++ 2M", aliases: [] }] },
@@ -558,6 +561,7 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
           sizeSupport: { kind: "free" },
           noApiKey: true,
           supportsLiveProgress: true,
+        localExecution: true,
         }),
       }),
     ];
@@ -639,6 +643,7 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
           sizeSupport: { kind: "free" },
           noApiKey: true,
           supportsLiveProgress: true,
+        localExecution: true,
         }),
       }),
     ];
@@ -675,6 +680,7 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
           sizeSupport: { kind: "free" },
           noApiKey: true,
           supportsLiveProgress: true,
+        localExecution: true,
         }),
       }),
     ];

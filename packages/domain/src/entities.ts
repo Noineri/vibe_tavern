@@ -1080,6 +1080,10 @@ export interface ImageGenCapabilityFlags {
   noApiKey: boolean;
   /** Local live-progress streaming (GET /progress on A1111-compat). */
   supportsLiveProgress: boolean;
+  /** Execution locality (owner 2026-09-14): LOCAL backends (self-hosted
+   *  servers) have NO generation timeout — explicit cancel only; cloud
+   *  backends time out at IMAGE_GENERATION_CLOUD_TIMEOUT_MS. */
+  localExecution: boolean;
   /** Reserved for later batches — unused in v1. */
   supportsImg2img: boolean;
   /** Reserved for later batches — unused in v1. */

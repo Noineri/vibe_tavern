@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "bun:test";
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
 import type { ImageGenBackendType } from "@vibe-tavern/domain";
+import { ImageGenTimeoutError, withImageGenTimeoutMs } from "../src/domain/imagegen/imagegen-backend.js";
 import {
   IMAGE_GEN_BACKEND_CAPABILITIES,
   getImageGenBackendCapabilities,
@@ -38,7 +39,7 @@ afterAll(() => {
 
 describe("imagegen registry", () => {
   describe("getImageGenBackendCapabilities", () => {
-    it("returns an object with exactly the 8 flag keys for every slug", () => {
+    it("returns an object with exactly the 9 flag keys for every slug", () => {
       for (const slug of ALL_SLUGS) {
         const caps = getImageGenBackendCapabilities(slug);
         expect(Object.keys(caps).sort()).toEqual(
@@ -49,6 +50,7 @@ describe("imagegen registry", () => {
             "sizeSupport",
             "noApiKey",
             "supportsLiveProgress",
+            "localExecution",
             "supportsImg2img",
             "supportsInpaint",
           ].sort(),
@@ -168,5 +170,50 @@ describe("imagegen registry", () => {
     it("is exhaustive over the roster (typecheck-enforced; runtime-verified)", () => {
       expect(Object.keys(IMAGE_GEN_BACKEND_CAPABILITIES).sort()).toEqual([...ALL_SLUGS].sort());
     });
+  });
+});
+
+// ─── withImageGenTimeoutMs (owner 2026-09-14 timeout batch) ──────────────────
+
+describe("withImageGenTimeoutMs", () => {
+  it("times a hanging call out and throws ImageGenTimeoutError with the seconds budget", async () => {
+    const run = (signal: AbortSignal | undefined) =>
+      new Promise<never>((_, reject) => {
+        signal?.addEventListener("abort", () =>
+          reject(new DOMException("Aborted", "AbortError")),
+        );
+      });
+    let caught: unknown;
+    try {
+      await withImageGenTimeoutMs(undefined, 30, "probe", run);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught instanceof ImageGenTimeoutError).toBe(true);
+    expect((caught as Error).message).toBe("Image-gen probe timed out after 0s");
+  });
+
+  it("forwards the caller's abort as a plain AbortError (user cancel, not timeout)", async () => {
+    const outer = new AbortController();
+    const run = (signal: AbortSignal | undefined) =>
+      new Promise<never>((_, reject) => {
+        signal?.addEventListener("abort", () =>
+          reject(new DOMException("Aborted", "AbortError")),
+        );
+      });
+    setTimeout(() => outer.abort(), 20);
+    let caught: unknown;
+    try {
+      await withImageGenTimeoutMs(outer.signal, 5_000, "generation", run);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught instanceof ImageGenTimeoutError).toBe(false);
+    expect((caught as Error).name).toBe("AbortError");
+  });
+
+  it("returns the value untouched when the call completes in budget", async () => {
+    const result = await withImageGenTimeoutMs(undefined, 1_000, "model list", async () => 42);
+    expect(result).toBe(42);
   });
 });

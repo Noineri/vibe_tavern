@@ -61,9 +61,57 @@ export interface ImageGenGenerateRequest {
   seed?: number;
   clipSkip?: number;
   /** Cooperative cancellation — adapters forward it to their HTTP calls.
-   *  No default timeout ships in code (the owner's constants batch is
-   *  pending approval); routes inject signals once approved. */
+   *  LOCAL backends carry no timeout (owner 2026-09-14: explicit cancel
+   *  only); CLOUD backends are wrapped at the adapter layer with
+   *  IMAGE_GENERATION_CLOUD_TIMEOUT_MS. */
   signal?: AbortSignal;
+}
+
+/** Cloud generation timeout budget (owner-approved 2026-09-14: 3 minutes).
+ *  Applies ONLY to non-local backends — local servers (A1111) render as long
+ *  as they render; the user's explicit cancel is the only local limit. */
+export const IMAGE_GENERATION_CLOUD_TIMEOUT_MS = 180_000;
+
+/** A timed-out CLOUD call (route → 504). Local backends never throw this —
+ *  they run until the user's explicit cancel (owner 2026-09-14). */
+export class ImageGenTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ImageGenTimeoutError";
+  }
+}
+
+/** Wrap an async backend call with a timeout budget (owner 2026-09-14):
+ *  the caller's signal is honored (immediate abort), the internal timer
+ *  aborts after `ms`, and a TIMER-caused abort surfaces as a timeout error
+ *  message instead of a silent user-cancel. Pure helper — no adapter state. */
+export async function withImageGenTimeoutMs<T>(
+  outer: AbortSignal | undefined,
+  ms: number,
+  operation: string,
+  run: (signal: AbortSignal | undefined) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  const forwardOuter = () => controller.abort();
+  if (outer?.aborted) {
+    clearTimeout(timer);
+    throw new DOMException("Aborted", "AbortError");
+  }
+  outer?.addEventListener("abort", forwardOuter);
+  try {
+    return await run(controller.signal);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError" && !(outer?.aborted ?? false)) {
+      throw new ImageGenTimeoutError(
+        `Image-gen ${operation} timed out after ${Math.floor(ms / 1000)}s`,
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    outer?.removeEventListener("abort", forwardOuter);
+  }
 }
 
 /** One generated image — RAW BYTES already downloaded server-side (the
