@@ -5,6 +5,7 @@ import {
   type VisionGateConfig,
 } from "../src/infrastructure/ai/vision-gate.js";
 import type { Attachment } from "@vibe-tavern/domain";
+import { filterPromptVisibleAttachments, withImageGenPromptFallback } from "@vibe-tavern/domain";
 
 // Vision gate is a pure transform over message attachments: the primary model's
 // vision capability decides pixels-vs-text, and `description` matters only on
@@ -27,6 +28,27 @@ function rawImage(id = "img_1"): Attachment {
 
 function describedImage(id = "img_1", description = "a red square"): Attachment {
   return { ...rawImage(id), description };
+}
+
+function slotImage(id = "slot_1", overrides: Partial<Attachment> = {}): Attachment {
+  return {
+    id,
+    assetId: `asset_${id}`,
+    type: "image",
+    name: `${id}.png`,
+    mimeType: "image/png",
+    sizeBytes: 4,
+    description: null,
+    includeInPrompt: true,
+    imageGen: { mode: "portrait", profileId: "prof1", prompt: "a lighthouse at dusk", params: {} },
+    ...overrides,
+  };
+}
+
+/** The assembly-line composition (prompt-assembly-service.ts): filter, then
+ *  the IG-CF9 prompt fallback, before the gate. */
+function assemblyVisible(attachments: Attachment[]): Attachment[] {
+  return withImageGenPromptFallback(filterPromptVisibleAttachments(attachments));
 }
 
 function assetLoader(assetId: string): Promise<Buffer | null> {
@@ -123,5 +145,45 @@ describe("vision-gate: resolveMultimodalContent routing", () => {
     const text = parts.map((p) => (p.type === "text" ? p.text : "")).join("\n");
     expect(text).toContain("a historical image of a cat");
     expect(parts.some((p) => p.type === "image")).toBe(false);
+  });
+
+  test("(f) non-vision primary + included slot with provenance.prompt → generation-prompt text, NO VisionNotSupportedError (IG-CF9)", async () => {
+    // The slot bypasses the describe path (no description), so without the
+    // assembly fallback the gate would throw on the rawImages branch. The
+    // fallback backfills description from the slot's OWN generation prompt.
+    const parts = await resolveMultimodalContent(
+      { role: "user", content: "earlier turn", attachments: assemblyVisible([slotImage()]) },
+      NO_VISION_GATE,
+      assetLoader,
+    );
+    expect(parts).toHaveLength(2);
+    expect(parts[1]).toMatchObject({ type: "text" });
+    expect((parts[1] as { text: string }).text).toContain("a lighthouse at dusk");
+    expect(parts.some((p) => p.type === "image")).toBe(false);
+  });
+
+  test("(g) vision primary + included slot → image part as usual, fallback changes nothing (IG-CF9)", async () => {
+    const parts = await resolveMultimodalContent(
+      { role: "user", content: "earlier turn", attachments: assemblyVisible([slotImage()]) },
+      VISION_GATE,
+      assetLoader,
+    );
+    expect(parts).toHaveLength(2);
+    expect(parts[1]).toMatchObject({ type: "image" });
+    expect(parts.some((p) => p.type === "text" && /lighthouse at dusk/.test(p.text))).toBe(false);
+  });
+
+  test("(h) excluded slot (includeInPrompt off) → nothing about it in parts (IG-CF9)", async () => {
+    // The assembly filter drops the slot before the gate ever sees it — the
+    // fallback must not resurrect it (it only backfills, never re-includes).
+    const excluded = slotImage("slot_off", { includeInPrompt: false });
+    expect(assemblyVisible([excluded])).toEqual([]);
+    const parts = await resolveMultimodalContent(
+      { role: "user", content: "earlier turn", attachments: assemblyVisible([excluded]) },
+      NO_VISION_GATE,
+      assetLoader,
+    );
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatchObject({ type: "text", text: "earlier turn" });
   });
 });

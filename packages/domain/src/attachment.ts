@@ -227,3 +227,30 @@ export function filterPromptVisibleAttachments(attachments: Attachment[]): Attac
   return attachments.filter((a) => a.imageGen === undefined || a.includeInPrompt === true);
 }
 
+/** Textual fallback for included image-gen slots (IMAGE_GENERATION_PLAN
+ *  IG-CF9): when a slot IS included in the prompt (`includeInPrompt === true`
+ *  — the explicit per-slot eye button, no auto-describing), its textual
+ *  representation falls back to its OWN generation prompt (`description ??
+ *  provenance.prompt`). Zero AI calls, semantically honest (the image is
+ *  described by what was asked).
+ *
+ *  Apply AFTER {@link filterPromptVisibleAttachments} at assembly (the
+ *  filter is the include gate; this function backfills text only). The
+ *  backfilled description rides the EXISTING described-image text path
+ *  (`[Image attachment: name]\nImage description: …`) with zero
+ *  special-casing: on a non-vision primary the vision gate sends the prompt
+ *  text instead of throwing VisionNotSupportedError, and on a vision primary
+ *  the gate ignores the description and sends pixels as usual. Legacy slots
+ *  without `prompt` are unaffected — they keep today's behavior. Pure: never
+ *  mutates its input (untouched items keep their reference; backfilled items
+ *  are shallow copies). */
+export function withImageGenPromptFallback(attachments: Attachment[]): Attachment[] {
+  return attachments.map((a) => {
+    if (a.imageGen === undefined) return a;
+    if (a.description?.trim()) return a;
+    const prompt = a.imageGen.prompt;
+    if (prompt === undefined || prompt.trim() === "") return a;
+    return { ...a, description: prompt };
+  });
+}
+
