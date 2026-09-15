@@ -725,9 +725,14 @@ function DesktopMessageActions(props: {
 
       {!isUser && !isGreeting && variantCount > 1 && canSwitchVariant && variantControls}
 
+      {/* Pre-CF6 affordance: the generic per-message delete. The IG-CF6
+          worker initially tagged it image-slot-delete, which broke the
+          slot-shaped gate tests on text messages — the generic delete is
+          part of the TEXT surface, not slot chrome. The SLOT row's delete
+          keeps image-slot-delete. */}
       {!isGreeting && (
         <span
-          data-testid="image-slot-delete"
+          data-testid="message-delete"
           className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
           onClick={() => { if (!isBusy) onDelete(); }}
         ><Icons.Trash /></span>

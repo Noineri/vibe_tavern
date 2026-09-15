@@ -113,37 +113,61 @@ export function ImageGenMessageMenu({ chatId, messageId, variant, disabled = fal
   }
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <CustomTooltip content={t("image_gen_action_tooltip")}>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            data-testid="image-gen-message-trigger"
-            aria-label={t("image_gen_action_tooltip")}
-            aria-disabled={disabled}
-            disabled={disabled}
-            className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
-          >
-            <Icons.images />
-            <span className="text-t4">
-              <Icons.Caret direction="d" />
-            </span>
-          </button>
-        </Popover.Trigger>
-      </CustomTooltip>
-      <Popover.Portal container={getModalPortal() ?? document.body}>
-        <Popover.Content
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          className="glass-blur z-50 rounded-lg border border-border bg-glass-bg p-2 shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+    // CF11: the closed menu must not mount Radix popover machinery. A closed
+    // Popover.Root still settles with one extra internal commit right after
+    // mount, and one menu rides EVERY message row — that per-row settle reads
+    // as a MessageBlock re-render in commit-counting isolation tests (and is
+    // N dead Radix contexts in a long chat). So: closed = plain button inside
+    // the tooltip; the real popover mounts only once opened (the mobile side's
+    // BottomSheet-on-open twin). Keyboard/mouse open the same setOpen path.
+    <CustomTooltip content={t("image_gen_action_tooltip")}>
+      {open ? (
+        <Popover.Root open={open} onOpenChange={setOpen}>
+          <Popover.Trigger asChild>
+            <button
+              type="button"
+              data-testid="image-gen-message-trigger"
+              aria-label={t("image_gen_action_tooltip")}
+              aria-disabled={disabled}
+              disabled={disabled}
+              className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
+            >
+              <Icons.images />
+              <span className="text-t4">
+                <Icons.Caret direction="d" />
+              </span>
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal container={getModalPortal() ?? document.body}>
+            <Popover.Content
+              side="bottom"
+              align="start"
+              sideOffset={4}
+              className="glass-blur z-50 rounded-lg border border-border bg-glass-bg p-2 shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+            >
+              <div className="w-[260px]">
+                <ImageGenMenuBody chatId={chatId} messageId={messageId} onDone={() => setOpen(false)} />
+              </div>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+      ) : (
+        <button
+          onClick={() => setOpen(true)}
+          type="button"
+          data-testid="image-gen-message-trigger"
+          aria-label={t("image_gen_action_tooltip")}
+          aria-disabled={disabled}
+          disabled={disabled}
+          className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
         >
-          <div className="w-[260px]">
-            <ImageGenMenuBody chatId={chatId} messageId={messageId} onDone={() => setOpen(false)} />
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+          <Icons.images />
+          <span className="text-t4">
+            <Icons.Caret direction="d" />
+          </span>
+        </button>
+      )}
+    </CustomTooltip>
   );
 }
 

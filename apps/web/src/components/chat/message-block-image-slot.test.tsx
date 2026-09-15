@@ -225,7 +225,7 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
       expect(view.queryByText(label), `text action "${label}"`).toBeNull();
     }
     // Token meta is gone.
-    expect(view.queryByText("tokens_label")).toBeNull();
+    expect(view.queryByText(/^\d+ tokens_label$/)).toBeNull();
 
     // The slot's own controls replace the text row.
     expect(view.getByTestId("image-gen-slot-regenerate")).toBeTruthy();
@@ -262,7 +262,7 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
     const view = render(<MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast prevRole={null} />);
     expect(view.getByText("copy")).toBeTruthy();
     expect(view.getByText("edit")).toBeTruthy();
-    expect(view.getByText("tokens_label")).toBeTruthy();
+    expect(view.getByText(/^\d+ tokens_label$/)).toBeTruthy();
     expect(view.queryByTestId("image-gen-slot-regenerate")).toBeNull();
     expect(view.queryByTestId("image-slot-delete")).toBeNull();
   });
@@ -276,7 +276,7 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
 
     const view = render(<MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast prevRole={null} />);
     expect(view.getByText("copy")).toBeTruthy();
-    expect(view.getByText("tokens_label")).toBeTruthy();
+    expect(view.getByText(/^\d+ tokens_label$/)).toBeTruthy();
     // The generated image still renders through the justified row.
     expect(view.getAllByTestId("image-block-img").length).toBe(1);
     // No slot control row (the message is a text message now).
@@ -290,7 +290,7 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
 
     const view = render(<MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast prevRole={null} />);
     expect(view.getByText("copy")).toBeTruthy();
-    expect(view.getByText("tokens_label")).toBeTruthy();
+    expect(view.getByText(/^\d+ tokens_label$/)).toBeTruthy();
   });
 });
 
