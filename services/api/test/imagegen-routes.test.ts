@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createStoreContainer, ServicePromptProfileStore, UiSettingsStore, type StoreContainer } from "@vibe-tavern/db";
-import { IMAGE_GEN_BACKENDS, type ChatId } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, parseStoredAttachments, type ChatId } from "@vibe-tavern/domain";
 
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { ImageGenAdapter, type ImageGenAssistDeps } from "../src/api/adapters/image-gen-adapter.js";
@@ -906,6 +906,84 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     expect(serialized).not.toContain("OVERRIDE");
 
     await new UiSettingsStore(scene.stores.db).update({ activeServicePromptProfileId: null });
+  });
+
+  test("slot prompt visibility (IG-18): excluded from the RP assembly by default, included on the per-image opt-in", async () => {
+    const scene = await makeScene(promptCapturingTransport([]));
+    const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+
+    // Generate a slot into the chat (default includeInPrompt: OFF).
+    const genRes = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+    expect(genRes.status).toBe(200);
+    const gen = (await genRes.json()) as { messageId: string; attachments: Array<{ assetId: string }> };
+    const assetId = gen.attachments[0]!.assetId;
+
+    const character = await scene.stores.characters.getById(scene.charId);
+    const resolver: PromptAssemblyResolver = {
+      getCharacter: async () => ({
+        id: character!.id,
+        name: character!.name,
+        description: character!.description,
+        scenario: character!.defaultScenario,
+        systemPrompt: null,
+        personality: character!.personalitySummary,
+        mesExample: null,
+        postHistoryInstructions: null,
+      }),
+      getPersona: async () => null,
+      getPromptPreset: async () => null,
+      listActiveLoreEntries: async () => [],
+      listRetrievedMemories: async () => [],
+      executeScripts: async () => ({
+        character: { personality: "", scenario: "" },
+        injectedMessages: [],
+        updatedScriptState: {},
+        errors: [],
+        scriptRuns: [],
+      }),
+      getToolInstructions: () => null,
+    };
+    const fileStore = {
+      dataRoot: "/mock",
+      resolvePath: (_folder: string, relativePath: string) => `/mock/${relativePath}`,
+      readJson: async <T>() => null as T,
+      writeJson: async () => {},
+      asyncWriteJson: async () => {},
+    };
+    const assemblyService = new PromptAssemblyService(scene.stores, resolver, fileStore);
+    const assembleSerialized = async () =>
+      JSON.stringify(
+        (
+          await assemblyService.assembleForChat({
+            chatId: scene.chatId as ChatId,
+            model: "test-model",
+          })
+        ).prompt,
+      );
+
+    // Default: the slot is pure illustration — its attachment never reaches
+    // the assembled RP prompt (the image prompt never enters the RP prompt;
+    // the pixels do not either).
+    const excluded = await assembleSerialized();
+    expect(excluded).toContain(LAST_MSG); // sanity: the RP prompt DID assemble
+    expect(excluded).not.toContain(assetId);
+
+    // Opt-in flips the flag → the described image rides the prompt like any
+    // described attachment (the adapter enforces a description before this
+    // point; the assembly only checks the flag).
+    const slotMessage = await scene.stores.messages.getMessageById(gen.messageId);
+    const stored = parseStoredAttachments(slotMessage!.attachmentsJson) ?? [];
+    expect(stored[0]!.imageGen).toBeDefined(); // sanity: it IS a slot
+    await scene.stores.messages.updateMessageAttachments(
+      gen.messageId,
+      JSON.stringify(stored.map((a) => ({ ...a, includeInPrompt: true, description: a.description ?? "described" }))),
+    );
+    const included = await assembleSerialized();
+    expect(included).toContain(assetId);
   });
 });
 
