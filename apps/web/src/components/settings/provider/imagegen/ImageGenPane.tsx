@@ -11,6 +11,7 @@ import { TextInput } from "../../../shared/text-input.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { getModalPortal } from "../../../shared/modal-helpers.js";
+import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import type { ImageGenModelEntry } from "../../../../api/image-gen-api.js";
 import { fetchProviderProfileModels, listProviderProfiles } from "../../../../api/provider-api.js";
 import type { useImageProfiles } from "../../../../hooks/use-image-profiles.js";
@@ -84,6 +85,7 @@ function ModelPicker({
   onRefresh: () => void;
 }) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -237,14 +239,38 @@ function ModelPicker({
             )}
           </div>
         </div>
+        {/** IG-16 clone rule: the refresh button is the ProviderModelSelector
+         *  picker-row canon VERBATIM (the `provider-models-refresh` shape —
+         *  Icons.Regen, py-[6px] matching the trigger, mobile icon-only 34px,
+         *  genp dots while fetching). The first cut had cloned the wrong
+         *  sibling (the local-status chip's mini button, line 109) — caught by
+         *  the owner 2026-09-16. */}
         <button
           type="button"
           data-testid="image-gen-models-refresh"
           onClick={() => onRefresh()}
           disabled={fetching}
-          className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto"
+          className={cn(
+            "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
+            // Mobile stays the icon-only 34px shape but must match the closed
+            // dropdown's height: 2px borders + 2×6px py + 13px×1.5 line box
+            // (Tailwind preflight html line-height) = 33.5px. The row is
+            // items-end, so a shorter button would leave the row top edges
+            // misaligned (MOBILE_UI_DEFECTS_REPORT step 5).
+            isMobile ? "flex w-[34px] min-h-[33.5px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2",
+          )}
+          title={t("refresh_models")}
         >
-          {fetching ? t("testing") : t("refresh_models")}
+          {fetching ? (
+            <span className="ml-[3px] inline-flex items-center gap-[3px] align-middle">
+              <span className="h-1 w-1 animate-genp rounded-full bg-accent" />
+              <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.18s]" />
+              <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.36s]" />
+            </span>
+          ) : (
+            <Icons.Regen />
+          )}
+          {!isMobile && <> {t("refresh_models")}</>}
         </button>
       </div>
     </div>
