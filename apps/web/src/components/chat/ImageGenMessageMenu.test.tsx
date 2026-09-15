@@ -172,10 +172,12 @@ describe("ImageGenMessageMenu — desktop popover (IG-16)", () => {
     const free = within(view.baseElement).getByTestId("image-gen-mode-free") as HTMLButtonElement;
     expect(free.disabled).toBe(true);
     expect(within(view.baseElement).getByText("image_gen_free_hint")).toBeTruthy();
-    // The fine-tuning switch (shared Toggle → role=switch) and the profile
-    // picker both live in the popover.
+    // The fine-tuning switch (shared Toggle → role=switch) lives in the
+    // popover; the profile pick does NOT (CF2: the popover is modes + toggle
+    // only — provider+model belong to the fine-tuning pill's editor; the
+    // menu consumes the chat's active profile read-only from the store).
     expect(within(view.baseElement).getByRole("switch", { name: "image_gen_fine_tuning" })).toBeTruthy();
-    expect(within(view.baseElement).getByTestId("image-gen-profile-select")).toBeTruthy();
+    expect(within(view.baseElement).queryByTestId("image-gen-profile-select")).toBeNull();
   });
 
   it("selecting a mode fires the client generate call at the API seam with mode + anchor message", async () => {
