@@ -39,7 +39,7 @@ afterAll(() => {
 
 describe("imagegen registry", () => {
   describe("getImageGenBackendCapabilities", () => {
-    it("returns an object with exactly the 9 flag keys for every slug", () => {
+    it("returns an object with exactly the 10 flag keys for every slug (9 flags + paramRanges, IG-CF5)", () => {
       for (const slug of ALL_SLUGS) {
         const caps = getImageGenBackendCapabilities(slug);
         expect(Object.keys(caps).sort()).toEqual(
@@ -53,6 +53,7 @@ describe("imagegen registry", () => {
             "localExecution",
             "supportsImg2img",
             "supportsInpaint",
+            "paramRanges",
           ].sort(),
         );
       }

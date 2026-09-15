@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, type ImageGenerationMode, type ImageGenParamRange, type ImageGenParamRanges } from "@vibe-tavern/domain";
+import { IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, type ImageGenerationMode, type ImageGenParamRange } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
@@ -517,13 +517,10 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const models: ImageGenModelEntry[] = imageGen.modelsByProfile[profileId] ?? [];
   const samplers = imageGen.samplersByProfile[profileId] ?? [];
   const caps = form.capabilities;
-  // IG-CF5: slider ranges resolve backend-first from the capability mirror,
-  // global IMAGE_GEN_PARAM_RANGES defaults otherwise. The cast bridges the
-  // zod-erased boundary: imageGenCapabilityFlagsSchema does not declare the
-  // optional paramRanges yet (api-contracts untouched per scope), but the
-  // hook spreads the stored snapshot verbatim so a stamped mirror survives
-  // at runtime — absent/empty falls back below in every case.
-  const paramRanges = (caps as unknown as { paramRanges?: ImageGenParamRanges }).paramRanges;
+  // IG-CF5: slider ranges resolve backend-first from the capability mirror
+  // (paramRanges is a declared schema field — it survives the zod boundary),
+  // global IMAGE_GEN_PARAM_RANGES defaults otherwise. Empty/absent today.
+  const paramRanges = caps.paramRanges;
   const stepsRange = paramRanges?.steps ?? IMAGE_GEN_PARAM_RANGES.steps;
   const cfgRange = paramRanges?.cfgScale ?? IMAGE_GEN_PARAM_RANGES.cfgScale;
   const clipSkipRange = paramRanges?.clipSkip ?? IMAGE_GEN_PARAM_RANGES.clipSkip;

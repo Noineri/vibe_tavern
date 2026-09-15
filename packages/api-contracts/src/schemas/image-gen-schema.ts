@@ -31,6 +31,27 @@ export const imageGenSizeSupportSchema = z.union([
 ]);
 export type ImageGenSizeSupportValue = z.infer<typeof imageGenSizeSupportSchema>;
 
+/** A closed numeric range for one advanced slider param (IG-CF5). */
+const imageGenParamRangeSchema = z.object({
+  min: z.number(),
+  max: z.number(),
+  step: z.number(),
+});
+
+/** Per-backend slider-range overrides for the advanced numeric params
+ *  (IG-CF5). Every member optional: absent member / absent object → the
+ *  editor falls back to the global defaults in the domain table
+ *  (IMAGE_GEN_PARAM_RANGES). Mechanism ships empty today (no vendor exports
+ *  machine-readable param limits); declared here so the stamped mirror
+ *  survives this zod boundary instead of being stripped — the reserved-fields
+ *  precedent (supportsImg2img/inpaint). */
+export const imageGenParamRangesSchema = z.object({
+  steps: imageGenParamRangeSchema.optional(),
+  cfgScale: imageGenParamRangeSchema.optional(),
+  clipSkip: imageGenParamRangeSchema.optional(),
+});
+export type ImageGenParamRangesValue = z.infer<typeof imageGenParamRangesSchema>;
+
 /** Adapter capability snapshot persisted on the profile (the editor renders
  *  provider-gated controls from it). `supportsImg2img`/`supportsInpaint` are
  *  reserved schema fields — adapters stamp false, no UI reads them in v1. */
@@ -46,6 +67,7 @@ export const imageGenCapabilityFlagsSchema = z.object({
   localExecution: z.boolean(),
   supportsImg2img: z.boolean(),
   supportsInpaint: z.boolean(),
+  paramRanges: imageGenParamRangesSchema.optional(),
 });
 export type ImageGenCapabilityFlagsValue = z.infer<typeof imageGenCapabilityFlagsSchema>;
 
