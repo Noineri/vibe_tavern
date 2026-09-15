@@ -10,7 +10,6 @@ const realImageGenApi = await import("../api/image-gen-api.js");
 
 type ImageGenRecord = import("../api/image-gen-api.js").ImageGenProfileRecord;
 type ImageGenModelEntry = import("../api/image-gen-api.js").ImageGenModelEntry;
-type ImageGenProbeResult = import("@vibe-tavern/api-contracts").ImageGenProbeResultValue;
 type ImageGenSampler = import("@vibe-tavern/api-contracts").ImageGenSamplerInfoValue;
 
 function makeCaps(overrides: Partial<ImageGenRecord["capabilities"]> = {}): ImageGenRecord["capabilities"] {
@@ -101,10 +100,6 @@ const updateMock = mock(
 const deleteMock = mock(async (id: string) => {
   store = store.filter((p) => p.id !== id);
 });
-const probeMock = mock(async (id: string): Promise<ImageGenProbeResult | null> => {
-  if (id === "missing") return null;
-  return { ok: true, detail: "2 image models", status: 200 };
-});
 const modelsMock = mock(async (id: string): Promise<ImageGenModelEntry[] | null> => {
   if (id === "missing") return null;
   return [
@@ -129,7 +124,6 @@ mock.module("../api/image-gen-api.js", () => ({
   createImageGenProfile: createMock,
   updateImageGenProfile: updateMock,
   deleteImageGenProfile: deleteMock,
-  probeImageGenProfile: probeMock,
   listImageGenModels: modelsMock,
   listImageGenSamplers: samplersMock,
   draftListImageGenModels: draftModelsMock,
@@ -148,7 +142,6 @@ afterEach(async () => {
   createMock.mockClear();
   updateMock.mockClear();
   deleteMock.mockClear();
-  probeMock.mockClear();
   modelsMock.mockClear();
   samplersMock.mockClear();
   draftModelsMock.mockClear();
@@ -352,28 +345,7 @@ describe("useImageProfiles — backend switch hygiene", () => {
   });
 });
 
-describe("useImageProfiles — probe / models / samplers / draft", () => {
-  it("probeSaved is a no-op on an unsaved form and records the outcome on a saved one", async () => {
-    store = [makeRecord({ id: "p1", name: "Alpha" })];
-    let hook: any = null;
-    function Probe() {
-      hook = useImageProfiles();
-      return null;
-    }
-    render(React.createElement(Probe));
-    await waitFor(() => expect(hook?.profiles.length).toBe(1));
-
-    await hook!.probeSaved();
-    expect(probeMock).not.toHaveBeenCalled();
-    expect(hook?.probeOutcome).toBeNull();
-
-    hook!.select("p1");
-    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
-    await hook!.probeSaved();
-    await waitFor(() => expect(hook?.probeOutcome).toEqual({ profileId: "p1", result: { ok: true, detail: "2 image models", status: 200 } }));
-    expect(probeMock.mock.calls[0][0]).toBe("p1");
-  });
-
+describe("useImageProfiles — models / samplers / draft", () => {
   it("fetchSavedModels caches per profile and maps the 404 null to an error", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha" })];
     let hook: any = null;

@@ -37,7 +37,6 @@ import type {
   ImageGenModelInfoValue,
   ImageGenModelSettingsOverlayValue,
   ImageGenProfileValue,
-  ImageGenProbeResultValue,
   ImageGenSamplerInfoValue,
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
@@ -52,7 +51,6 @@ import {
   listImageGenModels,
   listImageGenModelFavorites,
   listImageGenSamplers,
-  probeImageGenProfile,
   removeImageGenModelFavorite,
   updateImageGenProfile,
   upsertImageGenModelSettings,
@@ -91,14 +89,6 @@ export interface ImageGenProfileForm {
  *  shown compact with fields below; "edit" = the connection form alone. */
 export type ImageGenHeaderMode = "view" | "edit";
 
-/** Last probe outcome for the editing profile (probe-only validation, no
- *  test-generate — owner). Failures are data: `{ok:false}` results land
- *  here intact, transport errors land in `error`. */
-export interface ImageGenProbeOutcome {
-  profileId: string;
-  result: ImageGenProbeResultValue;
-}
-
 /** Wire-boundary normalizer: defensive against unknown backend slugs —
  *  degrades to the OpenRouter roster default (the toSttBackend rule without
  *  a blind cast). */
@@ -136,8 +126,6 @@ export function useImageProfiles(): {
   modelsByProfile: Record<string, ImageGenModelEntry[]>;
   /** Sampler cache per saved profile (capability-gated consumers, IG-12). */
   samplersByProfile: Record<string, ImageGenSamplerInfoValue[]>;
-  /** Last probe result for the editing profile (null before the first probe). */
-  probeOutcome: ImageGenProbeOutcome | null;
   /** Open the connection form screen (Edit settings). */
   startEdit(): void;
   /** Start a new profile. The seed values come from the caller (the pane
@@ -149,11 +137,6 @@ export function useImageProfiles(): {
   remove(): Promise<void>;
   cancelEdit(): void;
   reload(): Promise<void>;
-  /** Probe the SAVED profile under the editor (no draft probe route in v1 —
-   *  the pane gates the button on `form.id !== null`). Returns the result
-   *  and records it in `probeOutcome`; unknown profile/transport errors land
-   *  in `error`. */
-  probeSaved(): Promise<ImageGenProbeResultValue | null>;
   /** Fetch + cache the model catalog for a saved profile (defaults to the
    *  editing one). Null = unknown profile; upstream failures throw and are
    *  recorded in `error`. */
@@ -209,7 +192,6 @@ export function useImageProfiles(): {
   const [headerMode, setHeaderMode] = useState<ImageGenHeaderMode>("view");
   const [modelsByProfile, setModelsByProfile] = useState<Record<string, ImageGenModelEntry[]>>({});
   const [samplersByProfile, setSamplersByProfile] = useState<Record<string, ImageGenSamplerInfoValue[]>>({});
-  const [probeOutcome, setProbeOutcome] = useState<ImageGenProbeOutcome | null>(null);
   const [favorites, setFavorites] = useState<ImageGenModelFavoriteValue[]>([]);
   const [modelOverlay, setModelOverlayState] = useState<ImageGenModelSettingsOverlayValue | null>(null);
   const [overlayDirty, setOverlayDirty] = useState(false);
@@ -561,23 +543,6 @@ export function useImageProfiles(): {
     }
   }, [form]);
 
-  const probeSaved = useCallback(async (): Promise<ImageGenProbeResultValue | null> => {
-    if (!form?.id) return null;
-    setError(null);
-    try {
-      const result = await probeImageGenProfile(form.id);
-      if (result === null) {
-        setError("Image-gen profile not found");
-        return null;
-      }
-      setProbeOutcome({ profileId: form.id, result });
-      return result;
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      return null;
-    }
-  }, [form]);
-
   const fetchSavedModels = useCallback(
     async (id?: string): Promise<ImageGenModelEntry[] | null> => {
       const targetId = id ?? form?.id;
@@ -654,7 +619,6 @@ export function useImageProfiles(): {
     headerMode,
     modelsByProfile,
     samplersByProfile,
-    probeOutcome,
     favorites,
     modelOverlay,
     overlayDirty,
@@ -666,7 +630,6 @@ export function useImageProfiles(): {
     remove,
     cancelEdit,
     reload,
-    probeSaved,
     fetchSavedModels,
     fetchSamplers,
     fetchDraftModels,

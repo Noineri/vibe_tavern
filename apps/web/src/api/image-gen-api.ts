@@ -24,7 +24,6 @@ import type {
   ImageGenModelSettingsOverlayValue,
   ImageGenModelSettingsValue,
   ImageGenProfileValue,
-  ImageGenProbeResultValue,
   ImageGenSamplerInfoValue,
   GenerateImageGenInput,
   ImageGenGenerateResponseValue,
@@ -95,24 +94,6 @@ async function rawError(operation: string, response: Response): Promise<Error> {
   return new Error(
     `${operation} failed: ${response.status} ${response.statusText}${text ? `: ${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}` : ""}`,
   );
-}
-
-/** Probe a saved profile's endpoint/credential (probe-only validation — no
- *  test-generate, owner). Failures arrive as `{ok:false}` data (the adapter
- *  contract), never thrown; only transport/route errors throw. Null = the
- *  route's 404 (unknown profile). */
-export async function probeImageGenProfile(
-  id: string,
-  signal?: AbortSignal,
-): Promise<ImageGenProbeResultValue | null> {
-  const baseUrl = getGatewayBaseUrl();
-  const response = await fetch(
-    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/probe`),
-    { method: "POST", signal },
-  );
-  if (response.status === 404) return null;
-  if (!response.ok) throw await rawError("Image-gen probe", response);
-  return (await response.json()) as ImageGenProbeResultValue;
 }
 
 /** Live model catalog for a saved profile (picker data source). Null = the

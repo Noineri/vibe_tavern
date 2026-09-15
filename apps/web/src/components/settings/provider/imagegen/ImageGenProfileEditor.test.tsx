@@ -94,7 +94,6 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     headerMode: "edit",
     modelsByProfile: {},
     samplersByProfile: {},
-    probeOutcome: null,
     startEdit: mock(() => {}),
     startCreate: mock(() => {}),
     select: mock(() => {}),
@@ -103,7 +102,6 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     remove: mock(async () => {}),
     cancelEdit: mock(() => {}),
     reload: mock(async () => {}),
-    probeSaved: mock(async () => null),
     fetchSavedModels: mock(async () => null),
     fetchSamplers: mock(async () => null),
     fetchDraftModels: mock(async () => []),
@@ -310,60 +308,18 @@ describe("ImageGenProfileEditor — view mode (saved profile)", () => {
     await waitFor(() => expect(view.getByTestId("image-gen-base-card-keyless")).toBeTruthy());
   });
 
-  it("Probe hits the SAVED profile route (probeSaved) and renders the result badge + detail", async () => {
+  it("CF4: view mode renders NO connection-actions card (probe lives in the connection form's test card; model refresh lives in the Pane)", async () => {
     const imageGen = makeViewImageGen();
-    // Stateful probe mock — the REAL hook records probeOutcome on the hook
-    // state; the pane renders FROM that state, so the mock mutates the hook
-    // object and the test re-renders with it (the state→render boundary).
-    imageGen.probeSaved = mock(async () => {
-      const result = { ok: true, detail: "3 image models" };
-      imageGen.probeOutcome = { profileId: imageGen.editingId ?? "", result };
-      return result;
-    });
     const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
-    await waitFor(() => expect(view.getByTestId("image-gen-probe-btn")).toBeTruthy());
-    fireEvent.click(view.getByTestId("image-gen-probe-btn"));
-    await waitFor(() => expect(imageGen.probeSaved).toHaveBeenCalledTimes(1));
-    await act(async () => {
-      view.rerender(<ImageGenProfileEditor imageGen={imageGen} />);
-    });
-    await waitFor(() => expect(view.getByTestId("image-gen-probe-success")).toBeTruthy());
-    expect(view.getByTestId("image-gen-probe-detail").textContent).toBe("3 image models");
-  });
-
-  it("Fetch models populates the cache via fetchSavedModels and shows the count", async () => {
-    const fetchSavedModels = mock(async () => [
-      { id: "m1", label: "Model One" },
-      { id: "m2", label: "Model Two" },
-    ]);
-    const imageGen = makeViewImageGen({ fetchSavedModels });
-    const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
-    await waitFor(() => expect(view.getByTestId("image-gen-fetch-models-btn")).toBeTruthy());
-    fireEvent.click(view.getByTestId("image-gen-fetch-models-btn"));
-    await waitFor(() => expect(view.getByTestId("image-gen-models-count")).toBeTruthy());
-    expect(view.getByTestId("image-gen-models-count").textContent).toContain("2");
-    expect(fetchSavedModels).toHaveBeenCalledTimes(1);
-  });
-
-  it("Fetch models failure renders the inline error (fail-closed auth)", async () => {
-    const fetchSavedModels = mock(async () => {
-      throw new Error("401: bad key");
-    });
-    const imageGen = makeViewImageGen({ fetchSavedModels });
-    const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
-    await waitFor(() => expect(view.getByTestId("image-gen-fetch-models-btn")).toBeTruthy());
-    fireEvent.click(view.getByTestId("image-gen-fetch-models-btn"));
-    await waitFor(() => expect(view.getByTestId("image-gen-models-error")).toBeTruthy());
-  });
-
-  it("a stale probeOutcome from another profile does not render", async () => {
-    const imageGen = makeViewImageGen({
-      probeOutcome: { profileId: "other", result: { ok: true, detail: "stale" } },
-    });
-    const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
-    await waitFor(() => expect(view.getByTestId("image-gen-connection-actions")).toBeTruthy());
+    // The base card + the IG-12 pane stay; the whole duplicated-actions
+    // card is gone (both buttons, the probe badge/detail, the count/error
+    // lines — one boundary: the card's testid).
+    await waitFor(() => expect(view.getByTestId("image-gen-base-card")).toBeTruthy());
+    expect(view.queryByTestId("image-gen-connection-actions")).toBeNull();
+    expect(view.queryByTestId("image-gen-probe-btn")).toBeNull();
+    expect(view.queryByTestId("image-gen-fetch-models-btn")).toBeNull();
     expect(view.queryByTestId("image-gen-probe-success")).toBeNull();
-    expect(view.queryByTestId("image-gen-probe-detail")).toBeNull();
+    expect(view.queryByTestId("image-gen-models-count")).toBeNull();
   });
 
   it("Edit settings flips the editor into edit mode (startEdit)", async () => {
