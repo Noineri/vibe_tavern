@@ -652,6 +652,7 @@ export class MessageStore {
     toolCallId?: string | null,
     coauthorModuleId?: string | null,
     coauthorSkillId?: string | null,
+    attachmentsJson?: string | null,
   ): Promise<MessageVariant> {
     // Find max variantIndex
     const lastVariant = await this.db
@@ -693,6 +694,7 @@ export class MessageStore {
           toolCallId: toolCallId ?? null,
           coauthorModuleId: coauthorModuleId ?? null,
           coauthorSkillId: coauthorSkillId ?? null,
+          attachmentsJson: attachmentsJson ?? null,
           createdAt: now,
         })
         .run();
@@ -1055,6 +1057,7 @@ export class MessageStore {
       toolCallId: row.toolCallId,
       sceneTracker: row.sceneTrackerJson ? JSON.parse(row.sceneTrackerJson) : null,
       ttsAnnotation: row.ttsAnnotation ?? null,
+      attachmentsJson: row.attachmentsJson ?? null,
       createdAt: row.createdAt,
     };
   }

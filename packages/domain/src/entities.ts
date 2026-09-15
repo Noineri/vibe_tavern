@@ -1908,6 +1908,12 @@ export interface MessageVariant {
    *  Null/undefined = not annotated; narration then reads the content itself.
    *  A persisted fact: content edits do NOT clear it. */
   ttsAnnotation?: string | null;
+  /** IG-18a: image-gen slot variants carry their image attachments here
+   * (raw JSON column, the messages table's attachmentsJson discipline —
+   * parse with parseStoredAttachments). Null = this variant carries none;
+   * the DTO layer merges (selected variant overrides the message's
+   * attachments), so ordinary text variants stay null forever. */
+  attachmentsJson?: string | null;
 }
 
 export interface SummaryMemorySnapshot {

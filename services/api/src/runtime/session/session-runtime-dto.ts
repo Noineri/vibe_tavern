@@ -113,7 +113,14 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
   // typed array keeps `selectedVariant.sceneTracker` correctly typed.
   const domainVariants = variants as MessageVariant[];
   const selectedVariant = domainVariants.find((variant) => variant.isSelected) ?? null;
-  const attachments = parseStoredAttachments('attachmentsJson' in message ? message.attachmentsJson : null);
+  // IG-18a merge point: an image-gen slot's variants carry their own
+  // attachments (regenerate-as-variant); the selected variant's set
+  // overrides the message row's. Null variant attachments (every text
+  // variant, and slot variant 0 for legacy slots) fall through to the
+  // message's attachmentsJson — bit-identical legacy projection.
+  const attachments = parseStoredAttachments(
+    selectedVariant?.attachmentsJson ?? ('attachmentsJson' in message ? message.attachmentsJson : null) ?? null,
+  );
   return {
     id: message.id as MessageId,
     chatId: message.chatId as ChatId,

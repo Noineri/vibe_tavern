@@ -526,6 +526,13 @@
       "when": 1789407189728,
       "tag": "0074_powerful_turbo",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1789444540494,
+      "tag": "0075_cynical_skullbuster",
+      "breakpoints": true
     }
   ]
 }

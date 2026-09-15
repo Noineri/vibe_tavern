@@ -746,6 +746,13 @@ export const messageVariants = sqliteTable('message_variants', {
   // authored side-data on edit proved awful UX). Owned by the immutable
   // variant id, same as scene_tracker_json.
   ttsAnnotation: text('tts_annotation'),
+  // IG-18a (IMAGE_GENERATION_PLAN): image-gen slot variants carry their
+  // image attachments HERE (the message row keeps the FIRST generation's
+  // attachments for legacy slots; the DTO layer merges — selected variant's
+  // attachments override the message's). Null = this variant carries none
+  // (every text variant; slots created before IG-18a). Raw JSON column,
+  // parsed with the messages table's parseStoredAttachments discipline.
+  attachmentsJson: text('attachments_json'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   uniqueVariant: uniqueIndex('idx_message_variants_unique').on(table.messageId, table.variantIndex),
