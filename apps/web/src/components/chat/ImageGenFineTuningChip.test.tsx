@@ -71,6 +71,16 @@ mock.module("../../api/image-gen-api.js", () => ({
   listImageGenSamplers: (id: string) => Promise.resolve([...(samplersStore[id] ?? [])]),
 }));
 
+// The pill self-forks on `useIsMobile` (CF1: the variant prop is gone). Mock
+// it to a controllable flag so the mobile BottomSheet path is testable — the
+// ExperienceCopilotShell pattern (capture real, spread, override one fn).
+const realMobile = await import("../../hooks/use-mobile.js");
+let mobileOverride = false;
+mock.module("../../hooks/use-mobile.js", () => ({
+  ...realMobile,
+  useIsMobile: () => mobileOverride,
+}));
+
 const { ImageGenFineTuningChip } = await import("./ImageGenFineTuningChip.js");
 const { useImageGenChatStore } = await import("../../stores/image-gen-chat-store.js");
 const { TooltipProvider } = await import("../shared/Tooltip.js");
@@ -121,6 +131,7 @@ afterEach(() => {
   profilesStore = [];
   modelsStore = {};
   samplersStore = {};
+  mobileOverride = false;
   // The store is a module singleton shared across files in this worker —
   // leave every map pristine.
   useImageGenChatStore.setState({
@@ -131,31 +142,66 @@ afterEach(() => {
   });
 });
 
-describe("ImageGenFineTuningChip — the IG-16 gate (IG-17)", () => {
+describe("ImageGenFineTuningChip — the IG-16 gate + pill canon (IG-17, CF1)", () => {
   it("renders nothing while the chat's Fine-tuning toggle is off; appears when it flips on", async () => {
     profilesStore = [profile("p1", "OpenRouter main", noCaps())];
-    const view = renderChip(<ImageGenFineTuningChip chatId="chat-gate" variant="desktop" />);
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-gate" />);
     expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(0);
     act(() => armChat("chat-gate"));
     await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
-    // …and the summary label resolves to the effective profile's name.
+  });
+
+  it("the pill label is FIXED — no profile name, no model id (the dice-pill rule; internals live in the editor)", async () => {
+    profilesStore = [profile("p1", "A1111 local", fullCaps(), "sdxl-base")];
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-label" />);
+    act(() => armChat("chat-label"));
+    const chip = await waitFor(() => {
+      const el = view.container.querySelector('[data-testid="image-gen-ft-chip"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // Mocked t returns the key — the label is exactly the fine-tuning string.
+    expect(chip.textContent).toContain("image_gen_fine_tuning");
+    expect(chip.textContent).not.toContain("A1111 local");
+    expect(chip.textContent).not.toContain("sdxl-base");
+  });
+
+  it("accent state tracks the armed draft prompt (the dice pill's readyCount tint analog)", async () => {
+    profilesStore = [profile("p1", "OpenRouter main", fullCaps())];
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-accent" />);
+    act(() => armChat("chat-accent"));
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
+    let chip = view.container.querySelector('[data-testid="image-gen-ft-chip"]') as HTMLElement;
+    expect(chip.className).not.toContain("bg-accent-dim");
+
+    act(() => {
+      useImageGenChatStore.getState().setFineTuningDraft("chat-accent", { prompt: "a castle at dawn" });
+    });
     await waitFor(() => {
-      const chip = view.container.querySelector('[data-testid="image-gen-ft-chip"]');
-      expect(chip?.textContent).toContain("OpenRouter main");
+      chip = view.container.querySelector('[data-testid="image-gen-ft-chip"]') as HTMLElement;
+      expect(chip.className).toContain("bg-accent-dim");
+      expect(chip.className).toContain("text-accent-t");
+    });
+
+    // Clearing the draft de-accents the pill.
+    act(() => {
+      useImageGenChatStore.getState().clearFineTuningDraft("chat-accent");
+    });
+    await waitFor(() => {
+      chip = view.container.querySelector('[data-testid="image-gen-ft-chip"]') as HTMLElement;
+      expect(chip.className).not.toContain("bg-accent-dim");
     });
   });
 
-  it("the mobile variant shows the same chip when the toggle is on", async () => {
+  it("the mobile fork opens the same editor body in a BottomSheet", async () => {
+    mobileOverride = true;
     profilesStore = [profile("p1", "A1111 local", fullCaps(), "sdxl-base")];
-    const view = renderChip(<ImageGenFineTuningChip chatId="chat-mob" variant="mobile" />);
-    act(() => armChat("chat-mob"));
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-mobile" />);
+    act(() => armChat("chat-mobile"));
     await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
-    await waitFor(() => {
-      const chip = view.container.querySelector('[data-testid="image-gen-ft-chip"]');
-      expect(chip?.textContent).toContain("A1111 local");
-      // The profile's saved model shows in the summary while no override is set.
-      expect(chip?.textContent).toContain("sdxl-base");
-    });
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
+    expect(within(view.baseElement).getByTestId("image-gen-ft-profile-select")).toBeTruthy();
   });
 });
 
@@ -163,7 +209,7 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
   it("profile/model/sampler/prompt render; negative + sampler rows are capability-gated OFF for a no-caps profile", async () => {
     profilesStore = [profile("p1", "OpenRouter main", noCaps(), "flux-1")];
     modelsStore = { p1: [{ id: "flux-1", label: "Flux 1" }, { id: "sdxl", label: "SDXL" }] };
-    const view = renderChip(<ImageGenFineTuningChip chatId="chat-body" variant="desktop" />);
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-body" />);
     act(() => armChat("chat-body"));
     await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
     openChip();
@@ -180,7 +226,7 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
     profilesStore = [profile("p1", "A1111 local", fullCaps(), "sdxl-base")];
     modelsStore = { p1: [{ id: "sdxl-base", label: "SDXL Base" }, { id: "pony-v6", label: "Pony V6" }] };
     samplersStore = { p1: [{ name: "Euler a" }, { name: "DPM++ 2M" }] };
-    const view = renderChip(<ImageGenFineTuningChip chatId="chat-edit" variant="desktop" />);
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-edit" />);
     act(() => armChat("chat-edit"));
     await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
     openChip();
@@ -211,7 +257,7 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
     act(() => armChat("chat-persist"));
     useImageGenChatStore.getState().setFineTuningDraft("chat-persist", { prompt: "keep me" });
 
-    const first = renderChip(<ImageGenFineTuningChip chatId="chat-persist" variant="desktop" />);
+    const first = renderChip(<ImageGenFineTuningChip chatId="chat-persist" />);
     await waitFor(() => expect(first.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
     openChip();
     await waitFor(() => expect(within(first.baseElement).getByTestId("image-gen-ft-prompt")).toBeTruthy());
@@ -219,7 +265,7 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
 
     // Remount (same chat, toggle still on) — the value survives.
     first.unmount();
-    const second = renderChip(<ImageGenFineTuningChip chatId="chat-persist" variant="desktop" />);
+    const second = renderChip(<ImageGenFineTuningChip chatId="chat-persist" />);
     await waitFor(() => expect(second.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
     openChip();
     await waitFor(() => expect(within(second.baseElement).getByTestId("image-gen-ft-prompt")).toBeTruthy());

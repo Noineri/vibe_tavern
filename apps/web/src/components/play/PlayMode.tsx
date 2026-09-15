@@ -3,6 +3,7 @@ import { MessageList } from "../chat/MessageList.js";
 import { QueueManager } from "../chat/QueueManager.js";
 import { DicePanel } from "../chat/DicePanel.js";
 import { NarrationPlaylistPanel } from "../chat/NarrationPlaylistPanel.js";
+import { ImageGenFineTuningChip } from "../chat/ImageGenFineTuningChip.js";
 import { MessageAiEditorModal } from "../chat/MessageAiEditorModal.js";
 import { ExperienceLauncher } from "../experience/ExperienceLauncher.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -24,15 +25,20 @@ export function PlayMode() {
   // the last message so the message controls can be scrolled clear of the
   // chips. Empty bar (all launchers null) measures 0 → no extra clearance.
   const [launcherBarRef, launcherBarHeight] = useElementHeight<HTMLDivElement>();
+  // The launcher bar's chat id (the FT pill's gate reads it; DicePanel reads
+  // its own chat context internally).
+  const launcherChatId = useSnapshotStore((s) => s.activeChat?.id ?? null);
   return (
     <>
       <MessageList key={activeScope} bottomInset={launcherBarHeight} />
       <div className="relative shrink-0">
         <QueueManager />
-        {/* Shared absolute launcher bar: Dice and the Experience launcher are
-         * independent siblings. Either may return null; the other remains
-         * correctly centered/usable. They coexist with a gap and no overlap
-         * (IR-73B). Both are `docked` so the bar owns the centering. */}
+        {/* Shared absolute launcher bar: Dice, the Experience launcher, and
+         * the IG-17 fine-tuning pill are independent siblings. Any may return
+         * null; the others remain correctly centered/usable. They coexist with
+         * a gap and no overlap (IR-73B). All are `docked` so the bar owns the
+         * centering — the FT pill joins the dice tray per the design's
+         * "chip above the input joins them" line. */}
         <div ref={launcherBarRef} className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 flex -translate-x-1/2 items-center gap-2">
           <div className="pointer-events-auto">
             <DicePanel docked />
@@ -43,6 +49,11 @@ export function PlayMode() {
           <div className="pointer-events-auto">
             <ExperienceLauncher docked />
           </div>
+          {launcherChatId && (
+            <div className="pointer-events-auto">
+              <ImageGenFineTuningChip chatId={launcherChatId} />
+            </div>
+          )}
         </div>
         <InputArea />
       </div>

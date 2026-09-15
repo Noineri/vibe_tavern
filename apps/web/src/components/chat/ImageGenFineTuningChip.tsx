@@ -1,10 +1,16 @@
 /**
- * Fine-tuning chip above the chat input (IMAGE_GENERATION_PLAN IG-17).
+ * Fine-tuning pill above the chat input (IMAGE_GENERATION_PLAN IG-17,
+ * restyled to the DicePanel pill canon 2026-09-15 — owner: "chip like the
+ * dice one"). Lives in the PlayMode shared launcher bar next to DicePanel /
+ * NarrationPlaylistPanel (the design's "chip above the input joins the dice
+ * tray" line).
  *
  * Visible ONLY while the chat's "Fine tuning" toggle is on (the IG-16 gate
- * in `useImageGenChatStore.fineTuningByChat`). A compact summary row (image
- * icon + profile + model) opens the editor: desktop a Radix popover, mobile
- * a BottomSheet — the same body on both (the ImageGenMessageMenu pattern).
+ * in `useImageGenChatStore.fineTuningByChat`). A compact pill (image icon +
+ * label + caret; accent state while a draft prompt is armed) opens the
+ * editor: desktop a Radix popover, mobile a BottomSheet — the same body on
+ * both (the DicePanel pattern). The pill label is FIXED (the dice pill never
+ * shows roll internals); profile/model/samplers live in the editor body.
  *
  * The editor holds the design's chip contents (design lines 30/160):
  * profile + model pick, sampler (only when the profile's capabilities
@@ -21,10 +27,11 @@ import * as Popover from "@radix-ui/react-popover";
 import { Icons } from "../shared/icons.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
-import { CustomTooltip } from "../shared/Tooltip.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { lblCls } from "../../lib/field-tokens.js";
+import { cn } from "../../lib/cn.js";
+import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import {
   listAllImageGenProfiles,
@@ -38,92 +45,67 @@ import { EMPTY_IMAGE_GEN_DRAFT, useImageGenChatStore } from "../../stores/image-
 
 export interface ImageGenFineTuningChipProps {
   chatId: string;
-  variant: "desktop" | "mobile";
 }
 
-export function ImageGenFineTuningChip({ chatId, variant }: ImageGenFineTuningChipProps) {
+export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   const fineTuning = useImageGenChatStore((s) => s.fineTuningByChat[chatId] ?? false);
-  const activeProfileId = useImageGenChatStore((s) => s.activeProfileIdByChat[chatId]);
   const draft = useImageGenChatStore((s) => s.fineTuningDraftByChat[chatId]);
   const [open, setOpen] = useState(false);
-  const [profiles, setProfiles] = useState<ImageGenProfileRecord[] | null>(null);
-
-  // Profile list for the summary label (the menu's load-once pattern — the
-  // chip is mounted while the toggle is on, so mount-load == open-load).
-  useEffect(() => {
-    if (!fineTuning) return;
-    let cancelled = false;
-    void listAllImageGenProfiles()
-      .then((list) => {
-        if (!cancelled) setProfiles(list);
-      })
-      .catch(() => {
-        if (!cancelled) setProfiles([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [fineTuning]);
 
   if (!fineTuning) return null;
 
-  const effective = profiles?.find((p) => p.id === activeProfileId) ?? profiles?.[0] ?? null;
-  const summaryModel = draft?.model ?? effective?.modelId ?? null;
   const hasPrompt = (draft?.prompt.trim() ?? "") !== "";
 
-  const triggerButton = (
-    <button
-      type="button"
-      data-testid="image-gen-ft-chip"
-      aria-label={t("image_gen_fine_tuning")}
-      aria-expanded={open}
-      className="flex h-[26px] min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-t3 transition-colors hover:bg-s2 hover:text-t1"
-    >
-      <span className="shrink-0 text-accent-t">
-        <Icons.images />
-      </span>
-      <span className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-3px)]">
-        {effective === null ? t("image_gen_fine_tuning") : effective.name}
-        {summaryModel !== null && summaryModel !== "" ? ` · ${summaryModel}` : ""}
-      </span>
-      {hasPrompt && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
-      <span className="shrink-0 text-t4">
-        <Icons.Caret direction="u" />
-      </span>
-    </button>
-  );
+  const body = <ImageGenFineTuningBody chatId={chatId} />;
 
-  if (variant === "mobile") {
-    return (
-      <div className="flex items-center" data-testid="image-gen-ft-chip-row">
-        {triggerButton}
-        <BottomSheet open={open} onClose={() => setOpen(false)} title={t("image_gen_fine_tuning")}>
-          <ImageGenFineTuningBody chatId={chatId} />
-        </BottomSheet>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center" data-testid="image-gen-ft-chip-row">
-      <Popover.Root open={open} onOpenChange={setOpen}>
-        <CustomTooltip content={t("image_gen_chip_tooltip")}>
-          <Popover.Trigger asChild>{triggerButton}</Popover.Trigger>
-        </CustomTooltip>
+  // The DicePanel structure verbatim: ONE popover (Root + Trigger own the
+  // click → open on BOTH platforms), its Popover content desktop-only, and a
+  // BottomSheet sibling for mobile — the same `body` on both.
+  const popover = (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          data-testid="image-gen-ft-chip"
+          aria-label={t("image_gen_fine_tuning")}
+          aria-expanded={open}
+          className={cn(
+            "glass-blur flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-border2 bg-glass-bg px-2.5 py-1 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 shadow-sm transition-colors hover:bg-s3 hover:text-t1",
+            hasPrompt && "border-accent/40 bg-accent-dim text-accent-t",
+          )}
+        >
+          <Icons.images />
+          <span>{t("image_gen_fine_tuning")}</span>
+          <Icons.Caret direction={open ? "d" : "u"} />
+        </button>
+      </Popover.Trigger>
+      {!isMobile && (
         <Popover.Portal container={getModalPortal() ?? document.body}>
           <Popover.Content
             side="top"
-            align="start"
-            sideOffset={6}
-            className="glass-blur z-50 rounded-lg border border-border bg-glass-bg p-2 shadow-[0_12px_36px_rgba(0,0,0,.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+            align="center"
+            sideOffset={4}
+            className="glass-blur z-[220] w-[300px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border2 bg-glass-bg p-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
-            <div className="w-[300px]">
-              <ImageGenFineTuningBody chatId={chatId} />
-            </div>
+            {body}
           </Popover.Content>
         </Popover.Portal>
-      </Popover.Root>
+      )}
+    </Popover.Root>
+  );
+
+  const sheet = open && isMobile && (
+    <BottomSheet open={true} onClose={() => setOpen(false)} title={t("image_gen_fine_tuning")}>
+      {body}
+    </BottomSheet>
+  );
+
+  return (
+    <div className="flex items-center" data-testid="image-gen-ft-chip-row">
+      {popover}
+      {sheet}
     </div>
   );
 }

@@ -1171,7 +1171,6 @@ export default interface Resources {
     "image_gen_chip_negative_placeholder": "What to avoid in the image…",
     "image_gen_chip_prompt_label": "Positive prompt",
     "image_gen_chip_prompt_placeholder": "Describe the image… (empty = built from the scene)",
-    "image_gen_chip_tooltip": "Fine-tune the next image generation",
     "image_gen_clip_skip_label": "CLIP skip",
     "image_gen_favorites_group": "Favorites",
     "image_gen_fetch_models": "Fetch models",

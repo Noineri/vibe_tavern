@@ -541,7 +541,6 @@
   "image_gen_open_settings": "Open settings",
   "image_gen_free_hint": "custom prompt required",
   "image_gen_generating": "Generating…",
-  "image_gen_chip_tooltip": "Fine-tune the next image generation",
   "image_gen_chip_model_label": "Model",
   "image_gen_chip_model_default": "Profile default",
   "image_gen_chip_models_failed": "Failed to load models",

@@ -545,7 +545,6 @@
   "image_gen_open_settings": "Открыть настройки",
   "image_gen_free_hint": "нужен свой промпт",
   "image_gen_generating": "Генерация…",
-  "image_gen_chip_tooltip": "Тонкая настройка следующей генерации",
   "image_gen_chip_model_label": "Модель",
   "image_gen_chip_model_default": "По умолчанию из профиля",
   "image_gen_chip_models_failed": "Не удалось загрузить модели",

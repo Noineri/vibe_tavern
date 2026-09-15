@@ -20,7 +20,6 @@ import { DictationButton } from "./DictationButton.js";
 import { VoiceMessageButton } from "./VoiceMessageButton.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PerSendPrefillStrip } from "./PerSendPrefillStrip.js";
-import { ImageGenFineTuningChip } from "./ImageGenFineTuningChip.js";
 import { useInputArea, type InputAreaData } from "./use-input-area.js";
 
 export function MobileInputArea({ data }: { data: InputAreaData }) {
@@ -59,9 +58,6 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
       {/* LS-4b: per-send prefill strip — one-shot override over the input
           area; visibility gated on local-backend prefill capability. */}
       <PerSendPrefillStrip supported={data.perSendPrefillSupported} />
-      {/* IG-17: the image fine-tuning chip above the input — self-gated on
-          the chat's Fine-tuning toggle (renders null while off). */}
-      {activeChatId && <ImageGenFineTuningChip chatId={activeChatId} variant="mobile" />}
       <div className="flex flex-col gap-1.5 rounded-xl bg-s2 p-1.5">
         {/* Toolbar row: persona + starred models */}
         <div className="flex items-center gap-2">
