@@ -54,6 +54,12 @@ export interface MessageVariant {
    *  Null = not annotated — narration reads the content itself. A persisted
    *  fact like the Scene record: content edits do NOT clear it. */
   ttsAnnotation: string | null;
+  /** IG-18a: image-gen slot variants carry their image attachments here
+   * (raw JSON string, parsed at the DTO boundary with
+   * parseStoredAttachments). Null = this variant carries none — every text
+   * variant, and slot variant 0 for legacy slots (those fall through to the
+   * message row's attachments at the DTO merge point). */
+  attachmentsJson: string | null;
 }
 
 /**
