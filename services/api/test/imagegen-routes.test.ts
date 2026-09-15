@@ -1474,3 +1474,125 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     expect(assist.calls[0]!.signal).toBe(controller.signal);
   });
 });
+
+describe("image-gen routes — regenerate-as-variant (IG-18a)", () => {
+  /** Two-image transport: each completions call returns a DIFFERENT image so
+   *  the variant's attachment is distinguishable from the slot's first. */
+  function twoImageTransport(captured: { calls: number }) {
+    return mock(async (input: FetchArgs[0], _init?: FetchArgs[1]) => {
+      captured.calls += 1;
+      const n = captured.calls;
+      if (String(input).endsWith("/chat/completions")) {
+        return new Response(
+          JSON.stringify({
+            choices: [
+              { message: { role: "assistant", images: [{ image_url: { url: `data:image/png;base64,${PNG_B64(0x10 + n)}` } }] } },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(PNG_BYTES(0x10 + n), { status: 200, headers: { "Content-Type": "image/png" } });
+    });
+  }
+
+  test("targetMessageId lands the result as a VARIANT of the slot (not a sibling); selected variant carries the new attachments", async () => {
+    const captured = { calls: 0 };
+    const { app, stores } = await makeApp(twoImageTransport(captured));
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+
+    // First generation: the sibling-append slot (IG-14 behavior, unchanged).
+    const first = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "first image" }),
+    });
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as { messageId: string; attachments: Array<{ assetId: string }> };
+
+    // Regenerate onto that slot.
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: id, mode: "portrait", prompt: "second image",
+        anchorMessageId: firstBody.messageId, targetMessageId: firstBody.messageId,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { messageId: string; attachments: Array<{ assetId: string }> };
+
+    // The response points at the SAME slot (variant append, not a sibling).
+    expect(body.messageId).toBe(firstBody.messageId);
+    expect(body.attachments[0]!.assetId).not.toBe(firstBody.attachments[0]!.assetId);
+
+    // Variant mechanics: two variants on the slot, the new one selected,
+    // carrying ITS attachments; the slot's message row keeps the FIRST set
+    // (legacy projection fallback) — the DTO merge resolves per selection.
+    const variants = await stores.messages.getVariants(firstBody.messageId);
+    expect(variants).toHaveLength(2);
+    const selected = variants.find((v) => v.isSelected);
+    expect(selected?.attachmentsJson).not.toBeNull();
+    const selectedAttachments = JSON.parse(selected!.attachmentsJson!) as Array<{ assetId: string; imageGen?: { mode: string } }>;
+    expect(selectedAttachments).toHaveLength(1);
+    expect(selectedAttachments[0]!.assetId).toBe(body.attachments[0]!.assetId);
+    expect(selectedAttachments[0]!.imageGen?.mode).toBe("portrait");
+    expect(variants[0]!.attachmentsJson).toBeNull();
+    const slot = await stores.messages.getMessageById(firstBody.messageId);
+    const slotAttachments = JSON.parse(slot!.attachmentsJson ?? "[]") as Array<{ assetId: string }>;
+    expect(slotAttachments[0]!.assetId).toBe(firstBody.attachments[0]!.assetId);
+
+    // One completions + one download per generation — nothing extra.
+    expect(captured.calls).toBe(4);
+  });
+
+  test("targetMessageId pointing at a non-slot message → 400 (variant-append only onto image-gen slots)", async () => {
+    const { app, stores } = await makeApp(async () => {
+      throw new TypeError("must not be called");
+    });
+    const chatId = await makeChat(stores);
+    const plain = await stores.messages.addMessage({
+      chatId,
+      branchId: (await stores.chats.getById(chatId))!.activeBranchId as string,
+      role: "user",
+      authorType: "user",
+      content: "just text",
+    });
+    const id = await seedProfile(app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p", targetMessageId: plain.id }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("targetMessageId from another chat → 400", async () => {
+    const { app, stores } = await makeApp(async () => {
+      throw new TypeError("must not be called");
+    });
+    const chatId = await makeChat(stores);
+    const otherChatId = await makeChat(stores);
+    // A real image-gen slot — but of ANOTHER chat.
+    const otherSlot = await stores.messages.addMessage({
+      chatId: otherChatId,
+      branchId: (await stores.chats.getById(otherChatId))!.activeBranchId as string,
+      role: "assistant",
+      authorType: "assistant",
+      content: "",
+      attachmentsJson: JSON.stringify([
+        { id: "a", assetId: "s", type: "image", name: "i", mimeType: "image/png", sizeBytes: 1, imageGen: { mode: "portrait", profileId: "p" } },
+      ]),
+    });
+    const id = await seedProfile(app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p", targetMessageId: otherSlot.id }),
+    });
+    expect(res.status).toBe(400);
+  });
+});

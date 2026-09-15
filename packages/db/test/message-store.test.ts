@@ -489,4 +489,30 @@ describe("MessageStore TTS annotation (TPE-1)", () => {
     expect(variants[0]!.ttsAnnotation).toBe("First [sigh]");
     expect(variants[1]!.ttsAnnotation).toBeNull();
   });
+
+  // ── IG-18a: variant attachments (image-gen slot swipe variants) ──────────
+
+  test("addVariant round-trips attachmentsJson; legacy variants read as null", async () => {
+    const msg = await messages.addMessage({
+      chatId: "chat_1", branchId: "brnch_1",
+      role: "assistant", authorType: "assistant", content: "",
+    });
+    const slotAttachments = JSON.stringify([
+      { id: "att_1", assetId: "asset_1", type: "image", name: "img.png", mimeType: "image/png", sizeBytes: 12, imageGen: { mode: "portrait", profileId: "prof_1" } },
+    ]);
+
+    // Regenerate-as-variant: the twelfth positional arg is attachmentsJson.
+    await messages.addVariant(
+      msg.id, "", undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, slotAttachments,
+    );
+
+    const variants = await messages.getVariants(msg.id);
+    expect(variants).toHaveLength(2);
+    // Legacy variant 0 (created by addMessage, no column value) reads null —
+    // the DTO merge point then falls through to the message's attachments.
+    expect(variants[0]!.attachmentsJson).toBeNull();
+    expect(variants[1]!.attachmentsJson).toBe(slotAttachments);
+    expect(variants[1]!.isSelected).toBeTrue();
+  });
 });

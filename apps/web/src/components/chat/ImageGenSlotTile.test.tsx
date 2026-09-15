@@ -26,10 +26,26 @@ const realGalleryViewer = await import("../build/editors/GalleryViewer.js");
 const promoteCalls: Array<[string, string]> = [];
 const describeCalls: Array<[string, string, string]> = [];
 const includeCalls: Array<[string, string, string, boolean]> = [];
+const runGenerationCalls: Array<[string, { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string }]> = [];
 const toastSuccess: string[] = [];
 const toastError: string[] = [];
 let describeShouldFail: Error | null = null;
 let promoteShouldFail: Error | null = null;
+let storeRunning = false;
+
+const realChatStore = await import("../../stores/image-gen-chat-store.js");
+// Spy the REAL store's runGeneration (the component reads runningByChat via
+// the selector and fires runGeneration via getState — both hit this store).
+const realRun = realChatStore.useImageGenChatStore.getState().runGeneration;
+realChatStore.useImageGenChatStore.setState({
+  runGeneration: (chatId: string, input: { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string }) => {
+    runGenerationCalls.push([chatId, input]);
+    return Promise.resolve();
+  },
+});
+mock.module("../../stores/image-gen-chat-store.js", () => ({
+  ...realChatStore,
+}));
 
 mock.module("../../api/image-gen-api.js", () => ({
   ...realImageGenApi,
@@ -140,10 +156,41 @@ afterEach(() => {
   promoteCalls.length = 0;
   describeCalls.length = 0;
   includeCalls.length = 0;
+  runGenerationCalls.length = 0;
   toastSuccess.length = 0;
   toastError.length = 0;
   describeShouldFail = null;
   promoteShouldFail = null;
+  storeRunning = false;
+  realChatStore.useImageGenChatStore.setState({ runningByChat: {} });
+});
+
+describe("ImageGenSlotTile — regenerate-as-variant (IG-18a)", () => {
+  it("fires runGeneration with the slot's provenance + targetMessageId (variant target = the slot itself)", async () => {
+    const view = renderTile(<ImageGenSlotTile attachment={slotAtt()} messageId="m1" chatId="chat-1" />);
+    const btn = await view.findByTestId("image-gen-slot-regenerate");
+    fireEvent.click(btn);
+    expect(runGenerationCalls).toEqual([
+      ["chat-1", { profileId: "p1", mode: "portrait", anchorMessageId: "m1", targetMessageId: "m1" }],
+    ]);
+  });
+
+  it("without a chatId the button is not rendered (tests mount grid-less)", async () => {
+    const view = renderTile(<ImageGenSlotTile attachment={slotAtt()} messageId="m1" />);
+    await view.findByTestId("image-gen-slot-mode");
+    expect(view.queryByTestId("image-gen-slot-regenerate")).toBeNull();
+  });
+
+  it("disabled while a generation is in-flight (one-per-chat guard)", async () => {
+    realChatStore.useImageGenChatStore.setState({
+      runningByChat: { "chat-1": { mode: "portrait", anchorMessageId: "m1" } },
+    });
+    const view = renderTile(<ImageGenSlotTile attachment={slotAtt()} messageId="m1" chatId="chat-1" />);
+    const btn = await view.findByTestId("image-gen-slot-regenerate");
+    expect(btn.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(btn);
+    expect(runGenerationCalls).toHaveLength(0);
+  });
 });
 
 describe("ImageGenSlotTile — rendering + viewer seam", () => {
