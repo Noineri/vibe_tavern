@@ -261,7 +261,15 @@ function parseModelInfos(parsed: unknown): ImageGenModelInfo[] {
       };
       const prompt = toNumber(p.prompt);
       const completion = toNumber(p.completion);
-      if (prompt !== null && completion !== null) info.isFree = prompt === 0 && completion === 0;
+      const image = toNumber(p.image);
+      // free is TRUE only when EVERY priced field the catalog carries is 0 —
+      // text-only zeros are NOT free for image models (OpenRouter prices
+      // generation per megapixel via `pricing.image`; owner catch 2026-09-15:
+      // the old prompt/completion-only rule labeled per-pixel models "free").
+      // A missing `image` field on a catalog entry leaves isFree unset (no
+      // claim — better silent than wrong).
+      const priced = [prompt, completion, image].filter((v): v is number => v !== null);
+      if (priced.length > 0) info.isFree = priced.every((v) => v === 0);
     }
     out.push(info);
   }

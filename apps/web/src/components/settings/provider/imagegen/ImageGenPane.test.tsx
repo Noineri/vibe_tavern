@@ -109,10 +109,19 @@ mock.module("../../../../api/provider-api.js", () => ({
   fetchProviderProfileModels: fetchLlmModelsApi,
 }));
 
-const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, cleanup, fireEvent, render: render_impl, waitFor } = await import("@testing-library/react");
 const { ImageGenPane } = await import("./ImageGenPane.js");
 const { useImageProfiles } = await import("../../../../hooks/use-image-profiles.js");
 const { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES } = await import("@vibe-tavern/domain");
+const { TooltipProvider } = await import("../../../shared/Tooltip.js");
+
+/** App-realistic tree: app.tsx mounts TooltipProvider at the root, so the
+ *  picker's CustomTooltip-wrapped in-row stars (CF3) render inside it in
+ *  production — the harness wraps with the same provider (the menu-test
+ *  pattern). */
+function render(node: React.ReactElement): ReturnType<typeof render_impl> {
+  return render_impl(<TooltipProvider delayDuration={200}>{node}</TooltipProvider>);
+}
 
 type ImageGenHook = ReturnType<typeof useImageProfiles>;
 
@@ -284,7 +293,7 @@ describe("ImageGenPane — second level rendering", () => {
 });
 
 describe("ImageGenPane — model picker (cached catalog + persisted stars)", () => {
-  it("lists the cached models in the popover, favorites PINNED above the rest", async () => {
+  it("lists the cached models in the popover, favorites first in the FLAT sort (no group headers)", async () => {
     const imageGen = makeImageGen({
       modelsByProfile: {
         ig1: [
@@ -307,38 +316,69 @@ describe("ImageGenPane — model picker (cached catalog + persisted stars)", () 
       return nodes;
     });
     // Zeta is the favorite — it must render ABOVE Alpha despite the label
-    // sort putting Alpha first (pinned rows precede the rest).
+    // sort putting Alpha first (favorites-first SORT, the LLM canon).
     expect((options[0] as HTMLElement).textContent).toContain("Zeta");
     expect((options[1] as HTMLElement).textContent).toContain("Alpha");
+    // The LLM dropdown is FLAT: the favorites group headers never render
+    // (CF3 — the owner ruling: the LLM picker is the canon, and it sorts,
+    // it does not section).
+    expect(document.body.textContent).not.toContain("image_gen_favorites_group");
+    expect(document.body.textContent).not.toContain("image_gen_all_models_group");
+    // Every row carries its own in-row star toggle (h-5 w-5, the LLM canon).
+    expect(options[0].querySelector('[data-testid="image-gen-model-star"]')).toBeTruthy();
+    expect(options[1].querySelector('[data-testid="image-gen-model-star"]')).toBeTruthy();
   });
 
-  it("star click calls starModel with the selected id + cached label; unstar mirrors it", async () => {
+  it("the in-row star toggles favorites: star calls starModel(id, label); starred row's star calls unstarModel(id)", async () => {
     const starModel = mock(async () => {});
     const unstarModel = mock(async () => {});
     const imageGen = makeImageGen({
-      form: makeForm({ modelId: "m-alpha" }),
-      modelsByProfile: { ig1: [{ id: "m-alpha", label: "Alpha" }] },
+      modelsByProfile: {
+        ig1: [
+          { id: "m-alpha", label: "Alpha" },
+          { id: "m-zeta", label: "Zeta" },
+        ],
+      },
       starModel,
       unstarModel,
     });
     const view = render(<ImageGenPane imageGen={imageGen} />);
-    await waitFor(() => expect(view.getByTestId("image-gen-star-model")).toBeTruthy());
-    fireEvent.click(view.getByTestId("image-gen-star-model"));
+    await waitFor(() => expect(view.getByTestId("image-gen-field-model")).toBeTruthy());
+    await act(async () => {
+      view.getByTestId("image-gen-field-model").click();
+    });
+    const options = await waitFor(() => {
+      const nodes = Array.from(document.body.querySelectorAll("[data-testid='image-gen-model-option']"));
+      expect(nodes.length).toBe(2);
+      return nodes;
+    });
+    // Click Alpha's in-row star — not Alpha's selection, the star INSIDE the
+    // row (stopPropagation keeps the click off the row's own onSelect).
+    fireEvent.click(options.find((n) => n.textContent?.includes("Alpha"))!.querySelector('[data-testid="image-gen-model-star"]')!);
     await waitFor(() => expect(starModel).toHaveBeenCalledTimes(1));
     expect((starModel.mock.calls[0] as unknown[])).toEqual(["m-alpha", "Alpha"]);
+    expect(unstarModel).not.toHaveBeenCalled();
     cleanup();
 
-    // Starred: the button flips to unstar and routes the DELETE-shaped call.
+    // Starred: the SAME in-row star now routes the DELETE-shaped call.
     const starred = makeImageGen({
-      form: makeForm({ modelId: "m-alpha" }),
+      modelsByProfile: { ig1: [{ id: "m-alpha", label: "Alpha" }, { id: "m-zeta", label: "Zeta" }] },
       favorites: [
         { id: "fav1", profileId: "ig1", modelId: "m-alpha", label: "Alpha", createdAt: new Date().toISOString() },
       ],
       unstarModel,
     });
     const view2 = render(<ImageGenPane imageGen={starred} />);
-    await waitFor(() => expect(view2.getByTestId("image-gen-unstar-model")).toBeTruthy());
-    fireEvent.click(view2.getByTestId("image-gen-unstar-model"));
+    await waitFor(() => expect(view2.getByTestId("image-gen-field-model")).toBeTruthy());
+    await act(async () => {
+      view2.getByTestId("image-gen-field-model").click();
+    });
+    const options2 = await waitFor(() => {
+      const nodes = Array.from(document.body.querySelectorAll("[data-testid='image-gen-model-option']"));
+      expect(nodes.length).toBe(2);
+      return nodes;
+    });
+    fireEvent.click(options2.find((n) => n.textContent?.includes("Alpha"))!.querySelector('[data-testid="image-gen-model-star"]')!);
     await waitFor(() => expect(unstarModel).toHaveBeenCalledTimes(1));
     expect((unstarModel.mock.calls[0] as unknown[])).toEqual(["m-alpha"]);
   });
@@ -710,21 +750,41 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
     await act(async () => {
       hookRef.current!.select("p1");
     });
-    await waitFor(() => expect(view.getByTestId("image-gen-star-model")).toBeTruthy());
+    // CF3: the star is the IN-ROW toggle inside the opened dropdown — open
+    // the picker and click the synthesized selected-id row's star.
+    await waitFor(() => expect(view.getByTestId("image-gen-field-model")).toBeTruthy());
     await act(async () => {
-      fireEvent.click(view.getByTestId("image-gen-star-model"));
+      view.getByTestId("image-gen-field-model").click();
+    });
+    const starButton = await waitFor(() => {
+      const rows = Array.from(document.body.querySelectorAll("[data-testid='image-gen-model-option']"));
+      const row = rows.find((n) => n.textContent?.includes("sd_xl"));
+      const star = row?.querySelector('[data-testid="image-gen-model-star"]');
+      expect(star).toBeTruthy();
+      return star as HTMLElement;
+    });
+    await act(async () => {
+      fireEvent.click(starButton);
     });
     await waitFor(() => expect(addFavoriteApi).toHaveBeenCalledTimes(1));
     expect((addFavoriteApi.mock.calls[0] as unknown[])[0]).toBe("p1");
-    expect((addFavoriteApi.mock.calls[0] as unknown[])[1]).toEqual({ modelId: "sd_xl" });
-    // After the POST the favorites list reloads and the button flips to unstar.
-    await waitFor(() => expect(view.getByTestId("image-gen-unstar-model")).toBeTruthy());
+    // The synthesized selected-id row carries label = id (the picker's own
+    // convention for non-catalog models) — the POST rides it along.
+    expect((addFavoriteApi.mock.calls[0] as unknown[])[1]).toEqual({ modelId: "sd_xl", label: "sd_xl" });
+    // After the POST the favorites list reloads and the SAME in-row star
+    // routes the DELETE-shaped call (the star icon flips, the row stays).
+    const starredStar = await waitFor(() => {
+      const rows = Array.from(document.body.querySelectorAll("[data-testid='image-gen-model-option']"));
+      const row = rows.find((n) => n.textContent?.includes("sd_xl"));
+      const star = row?.querySelector('[data-testid="image-gen-model-star"]');
+      expect(star).toBeTruthy();
+      return star as HTMLElement;
+    });
     await act(async () => {
-      fireEvent.click(view.getByTestId("image-gen-unstar-model"));
+      fireEvent.click(starredStar);
     });
     await waitFor(() => expect(removeFavoriteApi).toHaveBeenCalledTimes(1));
     expect((removeFavoriteApi.mock.calls[0] as unknown[])).toEqual(["p1", "sd_xl"]);
-    await waitFor(() => expect(view.getByTestId("image-gen-star-model")).toBeTruthy());
   });
 });
 

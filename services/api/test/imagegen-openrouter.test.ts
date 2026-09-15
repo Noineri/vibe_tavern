@@ -272,6 +272,29 @@ describe("openrouter image-gen adapter", () => {
       expect(headers.Authorization).toBe(`Bearer ${API_KEY}`);
     });
 
+    it("marks per-megapixel-priced models non-free even when text pricing is zero", async () => {
+      const { transport } = makeTransport(() =>
+        Response.json({
+          data: [
+            {
+              id: "pixel/priced",
+              pricing: { prompt: "0", completion: "0", image: "0.002" },
+            },
+            {
+              id: "fully/free",
+              pricing: { prompt: "0", completion: "0", image: "0" },
+            },
+          ],
+        }),
+      );
+      const backend = backendWith(transport);
+      const models = await backend.listModels();
+      expect(models).toEqual([
+        { id: "pixel/priced", label: "pixel/priced", isFree: false },
+        { id: "fully/free", label: "fully/free", isFree: true },
+      ]);
+    });
+
     it("surfaces a non-2xx model list as a typed error with the status", async () => {
       const { transport } = makeTransport(() => new Response("nope", { status: 500 }));
       const backend = backendWith(transport);
