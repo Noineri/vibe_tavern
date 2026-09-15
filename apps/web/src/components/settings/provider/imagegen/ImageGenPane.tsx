@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GENERATION_MODES, type ImageGenerationMode } from "@vibe-tavern/domain";
+import { IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, type ImageGenerationMode, type ImageGenParamRange, type ImageGenParamRanges } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
@@ -37,6 +37,10 @@ type ImageGenHook = ReturnType<typeof useImageProfiles>;
  * Numeric fields use TextInput with inputMode="numeric" (the LogitBiasPanel
  * precedent) instead of NumberInput: NumberInput requires a concrete number
  * (no empty state), and this pane's contract is optional-empty numerics.
+ * Steps / CFG / CLIP-skip pair the canon range input with that same
+ * empty-able numeric cell (IG-CF5) — NumberInput stays out deliberately:
+ * non-nullable value, blur reverts a clear instead of committing undefined,
+ * no testid passthrough (supervisor decision 2026-09-15).
  */
 
 /** Picker option — the models cache entry verbatim. */
@@ -282,6 +286,70 @@ function OptionalNumberField({
   );
 }
 
+// ─── Optional slider+number field (IG-CF5: steps / CFG / CLIP-skip) ─────────
+//
+// The ProviderSamplerPanel slider canon (range classes verbatim) composed
+// with this pane's empty-able numeric cell instead of NumberInput (see the
+// file doc comment): undefined = "don't send, use backend default" — the
+// number box renders EMPTY and the range sits at min; a range move or a
+// typed number commits a real value; clearing the box commits undefined.
+// Typed numbers clamp to the resolved [min, max] on commit (the shared
+// NumberInput self-clamps — that semantics must not be lost); empty still
+// commits undefined. Seed keeps the plain OptionalNumberField above (a
+// 0..2^32 slider is meaningless — owner-approved).
+
+function OptionalSliderField({
+  value,
+  onChange,
+  label,
+  testId,
+  rangeTestId,
+  range,
+}: {
+  value: number | undefined;
+  onChange: (next: number | undefined) => void;
+  label: string;
+  testId: string;
+  rangeTestId: string;
+  range: ImageGenParamRange;
+}) {
+  return (
+    <div className="min-w-0">
+      <label className={lblCls}>{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="range"
+          data-testid={rangeTestId}
+          min={range.min}
+          max={range.max}
+          step={range.step}
+          value={value ?? range.min}
+          onChange={(e) => {
+            const parsed = Number(e.target.value);
+            if (Number.isFinite(parsed)) onChange(parsed);
+          }}
+          className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
+        />
+        <TextInput
+          inputMode="numeric"
+          data-testid={testId}
+          className="h-[30px] w-[60px] shrink-0"
+          value={value === undefined ? "" : String(value)}
+          onChange={(e) => {
+            const raw = e.target.value.trim();
+            if (raw === "") {
+              onChange(undefined);
+              return;
+            }
+            const parsed = Number(raw);
+            if (Number.isFinite(parsed)) onChange(Math.max(range.min, Math.min(range.max, parsed)));
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ─── LLM assist (IG-15): explicit per-profile toggle + LLM profile/model pick ──
 
 /** The assist section's provider row — the LLM provider list mapped down to
@@ -449,6 +517,16 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const models: ImageGenModelEntry[] = imageGen.modelsByProfile[profileId] ?? [];
   const samplers = imageGen.samplersByProfile[profileId] ?? [];
   const caps = form.capabilities;
+  // IG-CF5: slider ranges resolve backend-first from the capability mirror,
+  // global IMAGE_GEN_PARAM_RANGES defaults otherwise. The cast bridges the
+  // zod-erased boundary: imageGenCapabilityFlagsSchema does not declare the
+  // optional paramRanges yet (api-contracts untouched per scope), but the
+  // hook spreads the stored snapshot verbatim so a stamped mirror survives
+  // at runtime — absent/empty falls back below in every case.
+  const paramRanges = (caps as unknown as { paramRanges?: ImageGenParamRanges }).paramRanges;
+  const stepsRange = paramRanges?.steps ?? IMAGE_GEN_PARAM_RANGES.steps;
+  const cfgRange = paramRanges?.cfgScale ?? IMAGE_GEN_PARAM_RANGES.cfgScale;
+  const clipSkipRange = paramRanges?.clipSkip ?? IMAGE_GEN_PARAM_RANGES.clipSkip;
   const bound = imageGen.modelOverlay !== null;
   const overlay = imageGen.modelOverlay;
 
@@ -612,17 +690,21 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           </button>
           {advancedOpen && (
             <div className="grid grid-cols-1 gap-3 bg-surface p-3 sm:grid-cols-2" data-testid="image-gen-advanced-body">
-              <OptionalNumberField
+              <OptionalSliderField
                 value={params.steps}
                 onChange={(steps) => setParam({ steps })}
                 label={t("image_gen_steps_label")}
                 testId="image-gen-field-steps"
+                rangeTestId="image-gen-range-steps"
+                range={stepsRange}
               />
-              <OptionalNumberField
+              <OptionalSliderField
                 value={params.cfgScale}
                 onChange={(cfgScale) => setParam({ cfgScale })}
                 label={t("image_gen_cfg_label")}
                 testId="image-gen-field-cfg"
+                rangeTestId="image-gen-range-cfg"
+                range={cfgRange}
               />
               <OptionalNumberField
                 value={params.seed}
@@ -630,11 +712,13 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                 label={t("image_gen_seed_label")}
                 testId="image-gen-field-seed"
               />
-              <OptionalNumberField
+              <OptionalSliderField
                 value={params.clipSkip}
                 onChange={(clipSkip) => setParam({ clipSkip })}
                 label={t("image_gen_clip_skip_label")}
                 testId="image-gen-field-clip-skip"
+                rangeTestId="image-gen-range-clip-skip"
+                range={clipSkipRange}
               />
             </div>
           )}

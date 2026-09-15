@@ -112,7 +112,7 @@ mock.module("../../../../api/provider-api.js", () => ({
 const { act, cleanup, fireEvent, render: render_impl, waitFor } = await import("@testing-library/react");
 const { ImageGenPane } = await import("./ImageGenPane.js");
 const { useImageProfiles } = await import("../../../../hooks/use-image-profiles.js");
-const { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES } = await import("@vibe-tavern/domain");
+const { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES } = await import("@vibe-tavern/domain");
 const { TooltipProvider } = await import("../../../shared/Tooltip.js");
 
 /** App-realistic tree: app.tsx mounts TooltipProvider at the root, so the
@@ -509,11 +509,15 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     for (const fieldId of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-seed", "image-gen-field-clip-skip"]) {
       expect((view.getByTestId(fieldId) as HTMLInputElement).value).toBe("");
     }
-    // The pane's param surface is EXACTLY these four numerics (+ the gated
+    // IG-CF5 (named reason for the count change below): steps/CFG/CLIP-skip
+    // are slider+number pairs now — each adds ONE range input beside its
+    // number box (3 ranges + 4 numbers = 7). Seed stays a lone numeric with
+    // no range (asserted in the IG-CF5 block).
+    // The pane's param surface is EXACTLY these fields (+ the gated
     // sampler above): the negative prompt is NOT a pane field — the
     // IG-13/IG-17 surfaces own it (plan line 80/88), so nothing may sprout
     // here.
-    expect(view.getByTestId("image-gen-advanced-body").querySelectorAll("input").length).toBe(4);
+    expect(view.getByTestId("image-gen-advanced-body").querySelectorAll("input").length).toBe(7);
   });
 
   it("bind OFF: numeric edits route to the PROFILE BASE (setForm defaultParams), overlay untouched", async () => {
@@ -593,6 +597,123 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     // The BIND toggle's section must hold no switch without a model (the
     // assist toggle lives in its own section and is always present — IG-15).
     expect(view.getByTestId("image-gen-params-section").querySelector('[role="switch"]')).toBeNull();
+  });
+});
+
+describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
+  async function openAdvanced(view: { getByTestId: (id: string) => HTMLElement }) {
+    await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
+    await act(async () => {
+      view.getByTestId("image-gen-advanced-header").click();
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-advanced-body")).toBeTruthy());
+  }
+
+  it("a range move commits the value to the profile base (bind off)", async () => {
+    const setForm = mock(() => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    await openAdvanced(view);
+    const max = IMAGE_GEN_PARAM_RANGES.steps.max;
+    await act(async () => {
+      fireEvent.change(view.getByTestId("image-gen-range-steps"), { target: { value: String(max) } });
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch.defaultParams).toEqual({ steps: max });
+  });
+
+  it("a typed number commits through the slider field's number cell", async () => {
+    const setForm = mock(() => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    await openAdvanced(view);
+    const max = IMAGE_GEN_PARAM_RANGES.cfgScale.max;
+    await act(async () => {
+      fireEvent.change(view.getByTestId("image-gen-field-cfg"), { target: { value: String(max) } });
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch.defaultParams).toEqual({ cfgScale: max });
+  });
+
+  it("clearing the number box commits back to undefined (param not sent)", async () => {
+    const setForm = mock(() => {});
+    const imageGen = makeImageGen({
+      form: makeForm({ defaultParams: { steps: IMAGE_GEN_PARAM_RANGES.steps.max } }),
+      setForm,
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await openAdvanced(view);
+    // Precondition: the committed value shows in the box (not the min).
+    expect((view.getByTestId("image-gen-field-steps") as HTMLInputElement).value).toBe(
+      String(IMAGE_GEN_PARAM_RANGES.steps.max),
+    );
+    await act(async () => {
+      fireEvent.change(view.getByTestId("image-gen-field-steps"), { target: { value: "" } });
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch.defaultParams["steps"]).toBe(undefined);
+  });
+
+  it("seed stays a plain numeric field with NO range input", async () => {
+    const setForm = mock(() => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    await openAdvanced(view);
+    // A 0..2^32 range is meaningless on a slider (owner-approved) — no
+    // range input exists for seed, only the plain numeric cell.
+    expect(view.queryByTestId("image-gen-range-seed")).toBeNull();
+    const seed = view.getByTestId("image-gen-field-seed") as HTMLInputElement;
+    expect(seed.tagName).toBe("INPUT");
+    expect(seed.value).toBe("");
+    await act(async () => {
+      fireEvent.change(seed, { target: { value: "12345" } });
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch.defaultParams).toEqual({ seed: 12345 });
+  });
+
+  it("an a1111 profile renders the steps slider with the domain min/max/step (no duplicated literals)", async () => {
+    const imageGen = makeImageGen({ form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111 }) });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await openAdvanced(view);
+    // All three slider pairs exist; the steps triple is pinned attribute by
+    // attribute against the domain constants (assert, never re-literalize).
+    expect(view.getByTestId("image-gen-range-cfg")).toBeTruthy();
+    expect(view.getByTestId("image-gen-range-clip-skip")).toBeTruthy();
+    const range = view.getByTestId("image-gen-range-steps");
+    expect(range.getAttribute("min")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.min));
+    expect(range.getAttribute("max")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.max));
+    expect(range.getAttribute("step")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.step));
+  });
+
+  it("undefined params render an EMPTY number box with the range parked at min", async () => {
+    const view = render(<ImageGenPane imageGen={makeImageGen()} />);
+    await openAdvanced(view);
+    const pairs: Array<[string, string, keyof typeof IMAGE_GEN_PARAM_RANGES]> = [
+      ["image-gen-field-steps", "image-gen-range-steps", "steps"],
+      ["image-gen-field-cfg", "image-gen-range-cfg", "cfgScale"],
+      ["image-gen-field-clip-skip", "image-gen-range-clip-skip", "clipSkip"],
+    ];
+    for (const [fieldId, rangeId, key] of pairs) {
+      // The min must never masquerade as a committed value in the box.
+      expect((view.getByTestId(fieldId) as HTMLInputElement).value).toBe("");
+      expect((view.getByTestId(rangeId) as HTMLInputElement).value).toBe(String(IMAGE_GEN_PARAM_RANGES[key].min));
+    }
+  });
+
+  it("a typed out-of-range number commits CLAMPED to the domain max (the NumberInput semantics)", async () => {
+    const setForm = mock(() => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    await openAdvanced(view);
+    // Ten-times-max via string concat (no literals): forces the clamp lane.
+    const over = `${IMAGE_GEN_PARAM_RANGES.steps.max}0`;
+    await act(async () => {
+      fireEvent.change(view.getByTestId("image-gen-field-steps"), { target: { value: over } });
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch.defaultParams).toEqual({ steps: IMAGE_GEN_PARAM_RANGES.steps.max });
   });
 });
 

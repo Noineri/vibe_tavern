@@ -23,7 +23,19 @@
  */
 
 import { IMAGE_GEN_BACKENDS } from "./entities.js";
-import type { ImageGenBackendType, ImageGenCapabilityFlags } from "./entities.js";
+import type { ImageGenBackendType, ImageGenCapabilityFlags, ImageGenParamRange } from "./entities.js";
+
+/** Global default slider ranges for the advanced numeric params
+ *  (IMAGE_GENERATION_PLAN IG-CF5) — the single named constants block both
+ *  the editor pane and its tests import (no scattered literals): steps
+ *  1–150 step 1, CFG 1–30 step 0.5, CLIP-skip 1–12 step 1. Per-backend
+ *  overrides (currently all empty — no vendor publishes limits) live on
+ *  each row's `paramRanges` and win over these when present. */
+export const IMAGE_GEN_PARAM_RANGES: Record<"steps" | "cfgScale" | "clipSkip", ImageGenParamRange> = {
+  steps: { min: 1, max: 150, step: 1 },
+  cfgScale: { min: 1, max: 30, step: 0.5 },
+  clipSkip: { min: 1, max: 12, step: 1 },
+};
 
 export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGenCapabilityFlags> = {
   [IMAGE_GEN_BACKENDS.OpenRouter]: {
@@ -51,6 +63,7 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     localExecution: false,
     supportsImg2img: false,
     supportsInpaint: false,
+    paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
   [IMAGE_GEN_BACKENDS.OpenAiImages]: {
     // POST /v1/images/generations: prompt/size only in our v1 arm — no
@@ -67,6 +80,7 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     localExecution: false,
     supportsImg2img: false,
     supportsInpaint: false,
+    paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
   [IMAGE_GEN_BACKENDS.A1111]: {
     // /sdapi/v1/txt2img: full param surface — negative prompt, samplers
@@ -81,5 +95,6 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     localExecution: true,
     supportsImg2img: false,
     supportsInpaint: false,
+    paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
 };

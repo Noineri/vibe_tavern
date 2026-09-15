@@ -1067,6 +1067,27 @@ export type ImageGenSizeSupport =
   | { kind: "vendor-set"; sizes: string[] }
   | { kind: "free" };
 
+/** A closed numeric range for one image-gen advanced slider param
+ *  (IMAGE_GENERATION_PLAN IG-CF5): the min/max/step triple the editor's
+ *  slider+number pair renders from. */
+export interface ImageGenParamRange {
+  min: number;
+  max: number;
+  step: number;
+}
+
+/** Per-backend slider-range overrides for the advanced numeric params
+ *  (IMAGE_GENERATION_PLAN IG-CF5). EVERY member optional: an absent member
+ *  (or an absent/empty `paramRanges` outright) falls back to the global
+ *  {@link IMAGE_GEN_PARAM_RANGES} defaults in `imagegen-capabilities.ts`.
+ *  No vendor exports machine-readable limits today — the mechanism ships
+ *  now, values arrive in a future batch. */
+export interface ImageGenParamRanges {
+  steps?: ImageGenParamRange;
+  cfgScale?: ImageGenParamRange;
+  clipSkip?: ImageGenParamRange;
+}
+
 /** Adapter capability mirror, snapshotted onto the profile so the editor UI
  *  renders provider-gated controls without a live registry round-trip.
  *  `supportsImg2img`/`supportsInpaint` are RESERVED schema fields (design:
@@ -1088,6 +1109,10 @@ export interface ImageGenCapabilityFlags {
   supportsImg2img: boolean;
   /** Reserved for later batches — unused in v1. */
   supportsInpaint: boolean;
+  /** Per-backend advanced-slider ranges (IG-CF5) — optional by design:
+   *  absent or partially empty falls back to the global
+   *  `IMAGE_GEN_PARAM_RANGES` defaults (see {@link ImageGenParamRanges}). */
+  paramRanges?: ImageGenParamRanges;
 }
 
 /** Profile-level default generation params. EVERY field optional by design
