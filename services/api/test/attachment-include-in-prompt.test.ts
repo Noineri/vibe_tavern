@@ -8,10 +8,15 @@ import { parseStoredAttachments, type Attachment } from "@vibe-tavern/domain";
 import { AssetService } from "../src/domain/asset/asset-service.js";
 import { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
 import { ChatAdapter } from "../src/api/adapters/chat-adapter.js";
+import type { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import type { ChatSummaryService } from "../src/domain/chat/chat-summary-service.js";
+import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import type { ChatRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 
-const noop = {} as never;
+const noop = undefined as unknown as LiveChatOrchestrator;
+const noopSummary = undefined as unknown as ChatSummaryService;
+const noopProviders = undefined as unknown as ProviderProfileService;
 
 /** Distinct PNG-signatured bytes per asset so we can tell them apart on disk. */
 const TAG = (b: number) => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, b, b, b, b]);
@@ -33,7 +38,7 @@ async function setup() {
 		chatRuntime: {},
 	} as unknown as SessionRuntime;
 
-	const chat = new ChatAdapter(stores, sessionRuntime, noop, noop, noop, assetService) as unknown as ChatRuntimeApi;
+	const chat = new ChatAdapter(stores, sessionRuntime, noop, noopSummary, noopProviders, assetService) as unknown as ChatRuntimeApi;
 	return { stores, assetService, chatApp, chat };
 }
 
