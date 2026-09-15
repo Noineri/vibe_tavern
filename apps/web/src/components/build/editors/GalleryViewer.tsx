@@ -36,15 +36,25 @@ function getFitZoom(naturalWidth: number, naturalHeight: number): number {
   return Math.min(1, maxVisualWidth / naturalWidth, maxVisualHeight / naturalHeight);
 }
 
-export function GalleryViewer({ characterId, asset, onClose }: GalleryViewerProps) {
+/** Src-based floating zoom/pan viewer (IG-18 seam): the zoom/pan machinery
+ *  shared by the character gallery (`GalleryViewer`) and the chat image-gen
+ *  slot tile. Zero behavior change for the gallery — the adapter below
+ *  delegates. */
+export function FloatingImageViewer({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
   const isMobile = useIsMobile();
-  const src = serveCharacterAssetUrl(characterId, asset.id as string);
-  const alt = asset.caption || "Gallery image";
 
   if (isMobile) {
     return <MobileLightbox src={src} alt={alt} onClose={onClose} />;
   }
   return <DesktopGalleryPanel src={src} alt={alt} onClose={onClose} />;
+}
+
+/** Gallery adapter over {@link FloatingImageViewer}: resolves the gallery
+ *  row's served URL + caption and delegates to the shared viewer. */
+export function GalleryViewer({ characterId, asset, onClose }: GalleryViewerProps) {
+  const src = serveCharacterAssetUrl(characterId, asset.id as string);
+  const alt = asset.caption || "Gallery image";
+  return <FloatingImageViewer src={src} alt={alt} onClose={onClose} />;
 }
 
 // ── Desktop: draggable floating panel (copy of AvatarPanel's DesktopAvatarPanel) ──

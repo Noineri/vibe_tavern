@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from "react";
 import { splitVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
+import { ImageGenSlotTile } from "./ImageGenSlotTile.js";
 import { useKeyDown } from "../../hooks/use-key-down.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
@@ -73,7 +74,7 @@ function VoiceBubble({ att }: { att: Attachment }) {
   );
 }
 
-export function AttachmentGrid({ attachments, messageId }: { attachments?: Attachment[]; messageId?: string }) {
+export function AttachmentGrid({ attachments, messageId, characterId }: { attachments?: Attachment[]; messageId?: string; characterId?: string | null }) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   if (!attachments || attachments.length === 0) return null;
@@ -84,6 +85,8 @@ export function AttachmentGrid({ attachments, messageId }: { attachments?: Attac
         {attachments.map((att, idx) =>
           att.type === "audio" ? (
             <VoiceBubble key={att.id || att.assetId} att={att} />
+          ) : att.imageGen !== undefined ? (
+            <ImageGenSlotTile key={att.id || att.assetId} attachment={att} messageId={messageId} characterId={characterId} />
           ) : (
           <button
             key={att.id || att.assetId}
