@@ -1222,6 +1222,7 @@ export default interface Resources {
     "image_gen_slot_promote": "Add to character gallery",
     "image_gen_slot_promote_failed": "Failed to add to the gallery",
     "image_gen_slot_promoted": "Added to the character gallery",
+    "image_gen_slot_regenerate": "Regenerate this image (new swipe variant)",
     "image_gen_slot_view": "View generated image",
     "image_gen_star_model": "Favorite",
     "image_gen_steps_label": "Steps",

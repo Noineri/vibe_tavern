@@ -3148,5 +3148,6 @@
   "image_gen_slot_promote_failed": "Не удалось добавить в галерею",
   "image_gen_slot_include_in_prompt": "Включать в промпт",
   "image_gen_slot_exclude_from_prompt": "Не включать в промпт",
-  "image_gen_slot_include_failed": "Не удалось изменить включение в промпт"
+  "image_gen_slot_include_failed": "Не удалось изменить включение в промпт",
+  "image_gen_slot_regenerate": "Перегенерировать (новый вариант для свайпа)"
 }

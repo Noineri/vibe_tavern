@@ -74,7 +74,7 @@ function VoiceBubble({ att }: { att: Attachment }) {
   );
 }
 
-export function AttachmentGrid({ attachments, messageId, characterId }: { attachments?: Attachment[]; messageId?: string; characterId?: string | null }) {
+export function AttachmentGrid({ attachments, messageId, characterId, chatId }: { attachments?: Attachment[]; messageId?: string; characterId?: string | null; chatId?: string }) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   if (!attachments || attachments.length === 0) return null;
@@ -86,7 +86,7 @@ export function AttachmentGrid({ attachments, messageId, characterId }: { attach
           att.type === "audio" ? (
             <VoiceBubble key={att.id || att.assetId} att={att} />
           ) : att.imageGen !== undefined ? (
-            <ImageGenSlotTile key={att.id || att.assetId} attachment={att} messageId={messageId} characterId={characterId} />
+            <ImageGenSlotTile key={att.id || att.assetId} attachment={att} messageId={messageId} characterId={characterId} chatId={chatId} />
           ) : (
           <button
             key={att.id || att.assetId}

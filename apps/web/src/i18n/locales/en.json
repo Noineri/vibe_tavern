@@ -3106,5 +3106,6 @@
   "image_gen_slot_promote_failed": "Failed to add to the gallery",
   "image_gen_slot_include_in_prompt": "Include in prompt",
   "image_gen_slot_exclude_from_prompt": "Exclude from prompt",
-  "image_gen_slot_include_failed": "Failed to update prompt inclusion"
+  "image_gen_slot_include_failed": "Failed to update prompt inclusion",
+  "image_gen_slot_regenerate": "Regenerate this image (new swipe variant)"
 }

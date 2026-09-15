@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { useT } from "../../i18n/context.js";
+import { useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
@@ -29,13 +30,17 @@ export interface ImageGenSlotTileProps {
   messageId?: string;
   /** The chat's character (gallery-promote target); null hides promote. */
   characterId?: string | null;
+  /** IG-18a regenerate-as-variant: the owning chat (runGeneration target).
+   *  Absent hides the regenerate button (tests mount without it). */
+  chatId?: string;
 }
 
-export function ImageGenSlotTile({ attachment, messageId, characterId = null }: ImageGenSlotTileProps) {
+export function ImageGenSlotTile({ attachment, messageId, characterId = null, chatId }: ImageGenSlotTileProps) {
   const { t } = useT();
   const [viewerOpen, setViewerOpen] = useState(false);
   const [promoting, setPromoting] = useState(false);
   const [describing, setDescribing] = useState(false);
+  const running = useImageGenChatStore((s) => (chatId !== undefined ? s.runningByChat[chatId] !== undefined : false));
 
   const provenance = attachment.imageGen;
   const src = `${getGatewayBaseUrl()}/api/assets/${attachment.assetId}`;
@@ -113,6 +118,20 @@ export function ImageGenSlotTile({ attachment, messageId, characterId = null }: 
   // branches on it); the guard keeps TS honest for the provenance reads.
   if (!provenance) return null;
 
+  /** IG-18a: regenerate this slot — the mode/profile defaults come from the
+   *  slot's own provenance (the generation that produced it); the result
+   *  lands as a swipe VARIANT of this slot (targetMessageId), and the one-
+   *  per-chat guard disables the button while any generation runs. */
+  const regenerate = () => {
+    if (!chatId || !messageId || running) return;
+    void useImageGenChatStore.getState().runGeneration(chatId, {
+      profileId: provenance.profileId,
+      mode: provenance.mode,
+      anchorMessageId: messageId,
+      targetMessageId: messageId,
+    });
+  };
+
   return (
     <div data-testid="image-gen-slot" className="flex flex-col gap-1">
       <button
@@ -138,6 +157,20 @@ export function ImageGenSlotTile({ attachment, messageId, characterId = null }: 
           {t(`image_gen_mode_${provenance.mode}`)}
         </span>
         <div className="ml-auto flex items-center gap-1">
+          {chatId && messageId && (
+            <CustomTooltip content={t("image_gen_slot_regenerate")}>
+              <button
+                type="button"
+                data-testid="image-gen-slot-regenerate"
+                aria-label={t("image_gen_slot_regenerate")}
+                disabled={running}
+                onClick={regenerate}
+                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-t3 transition-colors hover:bg-s3 hover:text-t1 disabled:opacity-40 [&_svg]:h-3.5 [&_svg]:w-3.5"
+              >
+                <Icons.regen />
+              </button>
+            </CustomTooltip>
+          )}
           {characterId && (
             <CustomTooltip content={t("image_gen_slot_promote")}>
               <button
