@@ -119,10 +119,13 @@ export function ImageGenSlotControls({
       }
       return;
     }
-    // Enabling: describe first when there is no description yet (the design's
-    // toggle-on describe flow — the server rejects include without one).
+    // Enabling: the slot's textual identity in the prompt is `description ??
+    // provenance.prompt` (IG-CF9, owner 2026-09-16) — a CF6-stamped prompt
+    // satisfies the server gate, so the opt-in costs zero AI calls. Describe
+    // first ONLY when NEITHER exists (legacy slots without a stamped prompt:
+    // the server still requires one of the two).
     let description = att.description;
-    if (!description?.trim()) {
+    if (!description?.trim() && !att.imageGen?.prompt?.trim()) {
       setDescribingIds((prev) => new Set(prev).add(att.id));
       try {
         const res = await regenerateAttachmentDescription("_", messageId, att.id);

@@ -4,7 +4,8 @@
  * shared ImageBlock; the controls replaced the text action row). Boundary
  * pins carried over verbatim from ImageGenSlotTile.test.tsx: regenerate
  * payload at the store seam, promote at the API seam (success + normalized
- * failure), the include-in-prompt ladder (describe-first + optimistic store
+ * failure), the include-in-prompt ladder (describe-first for prompt-less
+ * slots; a CF6-stamped prompt satisfies the gate with zero AI calls, IG-CF9
  * flip with rollback), and the desktop/mobile shape split.
  */
 
@@ -211,6 +212,22 @@ describe("ImageGenSlotControls — include-in-prompt toggle (IG-18 slice D)", ()
     const stored = useSnapshotStore.getState().messagesById["m1"];
     flushSync(() => {});
     expect(stored?.attachments?.[0]?.includeInPrompt).toBe(true);
+  });
+
+  it("prompt-stamped slot (IG-CF9): enabling skips vision-describe entirely — zero AI calls, straight include", async () => {
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p1", params: {}, prompt: "a painted knight portrait, oil on canvas" } });
+    seedMessage("m1", [att]);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
+    fireEvent.click(view.getByTestId("image-gen-slot-include"));
+
+    await waitFor(() => expect(includeCalls).toEqual([["_", "m1", "att-1", true]]));
+    expect(describeCalls.length).toBe(0);
+    const stored = useSnapshotStore.getState().messagesById["m1"];
+    flushSync(() => {});
+    expect(stored?.attachments?.[0]?.includeInPrompt).toBe(true);
+    // The stamped prompt is NOT written into the description client-side —
+    // the assembly-time fallback (withImageGenPromptFallback) owns that.
+    expect(stored?.attachments?.[0]?.description).toBeNull();
   });
 
   it("enabling without a description runs vision-describe first, persists the description, then flips", async () => {

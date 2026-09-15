@@ -134,6 +134,20 @@ describe("Attachment include-in-prompt (IG-18): ChatAdapter.updateAttachmentIncl
 		expect((await storedAttachments(stores, messageId))[0]?.includeInPrompt).toBe(false);
 	});
 
+	test("prompt-stamped slot (IG-CF9): the generation prompt satisfies the gate — include succeeds, zero describe", async () => {
+		const { stores, assetService, chat } = await setup();
+		const { chatId, branchId } = await makeChat(stores);
+		const slot = await makeSlotAttachment(assetService, BYTES_A, 1, {
+			imageGen: { mode: "portrait", profileId: "prof1", params: {}, prompt: "a painted knight portrait, oil on canvas" },
+		});
+		const messageId = await seedMessage(stores, chatId, branchId, [slot]);
+
+		// No description exists — the CF6-stamped generation prompt is the slot's
+		// textual identity (owner 2026-09-16, `description ?? provenance.prompt`).
+		await expect(chat.updateAttachmentIncludeInPrompt("_", messageId, slot.id, true)).resolves.toEqual({ ok: true });
+		expect((await storedAttachments(stores, messageId))[0]?.includeInPrompt).toBe(true);
+	});
+
 	test("non-slot attachment → validation error (ordinary uploads keep always-included semantics)", async () => {
 		const { stores, assetService, chat } = await setup();
 		const { chatId, branchId } = await makeChat(stores);

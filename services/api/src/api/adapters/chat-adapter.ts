@@ -357,10 +357,13 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	/**
 	 * Set the per-image "include in prompt" opt-in on a generated-image slot
-	 * attachment (IMAGE_GENERATION_PLAN IG-18). Enabling requires a filled
-	 * vision description (the design's toggle-on describe flow — the non-vision
-	 * RP path sends that text; without it the send would fail with
-	 * VisionNotSupportedError). Restricted to image-gen slots: ordinary user
+	 * attachment (IMAGE_GENERATION_PLAN IG-18). Enabling requires a textual
+	 * identity for the slot: a filled vision description OR the CF6-stamped
+	 * generation prompt (IG-CF9, owner 2026-09-16: `description ??
+	 * provenance.prompt` — the prompt satisfies the gate, so an opt-in costs
+	 * zero AI calls; assembly backfills the description from it when needed).
+	 * Without either, the non-vision RP path would still fail with
+	 * VisionNotSupportedError. Restricted to image-gen slots: ordinary user
 	 * uploads keep their always-included semantics.
 	 */
 	updateAttachmentIncludeInPrompt = async (chatId: string, messageId: string, attachmentId: string, includeInPrompt: boolean) => {
@@ -372,7 +375,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		if (att.imageGen === undefined) {
 			throw validation("Only generated image slots have an include-in-prompt toggle.");
 		}
-		if (includeInPrompt && !att.description?.trim()) {
+		if (includeInPrompt && !att.description?.trim() && !att.imageGen.prompt?.trim()) {
 			throw validation("Describe the image before including it in the prompt.");
 		}
 		await this.sessionRuntime.chatApp.updateSingleAttachmentIncludeInPrompt(messageId, attachmentId, includeInPrompt);
