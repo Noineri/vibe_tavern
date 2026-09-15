@@ -52,6 +52,7 @@ import type {
   UpdateImageGenProfileData,
 } from "@vibe-tavern/db";
 import type { Attachment, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance } from "@vibe-tavern/domain";
+import { parseStoredAttachments } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import {
@@ -361,6 +362,26 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       }
     }
 
+    // IG-18a regenerate-as-variant: the target is the SLOT being
+    // regenerated. It must exist, belong to this chat, and BE an image-gen
+    // slot (the message's attachments carry imageGen provenance — otherwise
+    // a client could variant-attach onto an ordinary message and break its
+    // projection). The result lands as a VARIANT of this message below.
+    let targetSlot: Awaited<ReturnType<typeof this.stores.messages.getMessageById>> = null;
+    if (body.targetMessageId !== undefined) {
+      targetSlot = await this.stores.messages.getMessageById(body.targetMessageId);
+      const targetAttachments = parseStoredAttachments(targetSlot?.attachmentsJson ?? null) ?? [];
+      const isImageGenSlot =
+        targetSlot !== null &&
+        targetSlot.chatId === chat.id &&
+        targetAttachments.some((a) => a.imageGen !== undefined);
+      if (!isImageGenSlot) {
+        throw new ImageGenValidationError(
+          `Target message ${body.targetMessageId} is not an image-gen slot of chat ${chatId}`,
+        );
+      }
+    }
+
     // Effective params: request overrides WIN, then the profile's per-mode
     // size preset (width/height) and default params (steps/cfg/sampler/seed/
     // clipSkip), then the vendor default (field simply not sent). No value is
@@ -478,17 +499,42 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // on the chat's active branch, appended at the feed tail (MessageStore has
     // no mid-history insert; the anchor is recorded in the response for the
     // client + IG-14's context-aware regeneration).
-    const message = await this.stores.messages.addMessage({
-      chatId: chat.id,
-      branchId: chat.activeBranchId,
-      role: "assistant",
-      authorType: "assistant",
-      content: "",
-      attachmentsJson: JSON.stringify(attachments),
-    });
+    // IG-18a: with targetMessageId the generation lands as a VARIANT of that
+    // slot instead — the addVariant transaction deselects the previous
+    // variant and syncs messages.content (the text-regenerate mechanism,
+    // mirrored); the variant carries the attachments, and the DTO merge point
+    // resolves the selected variant's set onto the wire.
+    let messageId: string;
+    if (targetSlot !== null) {
+      await this.stores.messages.addVariant(
+        targetSlot.id,
+        "",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        JSON.stringify(attachments),
+      );
+      messageId = targetSlot.id;
+    } else {
+      const message = await this.stores.messages.addMessage({
+        chatId: chat.id,
+        branchId: chat.activeBranchId,
+        role: "assistant",
+        authorType: "assistant",
+        content: "",
+        attachmentsJson: JSON.stringify(attachments),
+      });
+      messageId = message.id;
+    }
 
     return {
-      messageId: message.id,
+      messageId,
       mode: body.mode,
       profileId: profile.id,
       ...(model !== undefined && model !== "" ? { model } : {}),

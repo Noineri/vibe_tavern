@@ -247,6 +247,12 @@ export const generateImageGenSchema = z.object({
   /** The message the generation was requested from (provenance for the
    *  slot position + context-aware prompt building). */
   anchorMessageId: z.string().optional(),
+  /** IG-18a regenerate-as-variant: present → the result is appended as a
+   *  VARIANT of this existing image message slot (the design's swipe-variant
+   * regeneration — mode/profile defaults come from the slot's provenance on
+   * the client; the server just variant-appends). The target must be a
+   * message of THIS chat; absent → today's sibling-append slot. */
+  targetMessageId: z.string().optional(),
   overrides: imageGenGenerateOverridesSchema.optional(),
 });
 export type GenerateImageGenInput = z.infer<typeof generateImageGenSchema>;
