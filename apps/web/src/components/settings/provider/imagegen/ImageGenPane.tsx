@@ -4,6 +4,7 @@ import { Command } from "cmdk";
 import { useT, type TFunc } from "../../../../i18n/context.js";
 import { IMAGE_GENERATION_MODES, type ImageGenerationMode } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
+import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { TextInput } from "../../../shared/text-input.js";
@@ -67,8 +68,7 @@ function ModelPicker({
   models,
   fetching,
   favoriteIds,
-  onStar,
-  onUnstar,
+  onToggleFavorite,
   onRefresh,
 }: {
   value: string | null;
@@ -76,8 +76,7 @@ function ModelPicker({
   models: ModelOption[];
   fetching: boolean;
   favoriteIds: Set<string>;
-  onStar: () => void;
-  onUnstar: () => void;
+  onToggleFavorite: (model: ModelOption) => void;
   onRefresh: () => void;
 }) {
   const { t } = useT();
@@ -89,8 +88,6 @@ function ModelPicker({
   // list (a hand-typed or since-removed model) — the STT/LLM selector rule.
   const listModels = selectedModel || !value ? models : [{ id: value, label: value }, ...models];
   const portalContainer = getModalPortal() ?? undefined;
-
-  const starred = value !== null && favoriteIds.has(value);
 
   const selectModel = (model: ModelOption) => {
     onChange(model.id);
@@ -104,15 +101,21 @@ function ModelPicker({
   };
 
   const query = search.trim().toLowerCase();
+  // The LLM ProviderModelList sort verbatim: favorites first, then label —
+  // NO group headers (the owner says the LLM dropdown is the canon; its
+  // favorites are a sort, not a section split).
   const visible = listModels
     .filter((model) => !query || model.id.toLowerCase().includes(query) || model.label.toLowerCase().includes(query))
-    .sort((a, b) => a.label.localeCompare(b.label));
-  const favoriteRows = visible.filter((model) => favoriteIds.has(model.id));
-  const otherRows = visible.filter((model) => !favoriteIds.has(model.id));
+    .sort((a, b) => {
+      const favoriteOrder = Number(favoriteIds.has(b.id)) - Number(favoriteIds.has(a.id));
+      return favoriteOrder || a.label.localeCompare(b.label);
+    });
   const customSlug = search.trim();
   const hasExactMatch = listModels.some((model) => model.id === customSlug);
 
-  const renderRow = (model: ModelOption) => (
+  const renderRow = (model: ModelOption) => {
+    const favorite = favoriteIds.has(model.id);
+    return (
     <Command.Item
       key={model.id}
       value={model.id}
@@ -125,11 +128,29 @@ function ModelPicker({
           : "text-t2 hover:bg-s2 hover:text-t1 data-[selected=true]:bg-s2 data-[selected=true]:text-t1",
       )}
     >
+      <CustomTooltip content={favorite ? t("remove_from_favorites") : t("add_to_favorites")}>
+        <button
+          type="button"
+          data-testid="image-gen-model-star"
+          className={cn(
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text",
+            favorite && "text-warning-text",
+          )}
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleFavorite(model);
+          }}
+        >
+          {favorite ? <Icons.StarFilled /> : <Icons.Star />}
+        </button>
+      </CustomTooltip>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t1">{model.label || model.id}</span>
           {model.isFree && (
-            <span className="shrink-0 rounded bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">free</span>
+            <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4">free</span>
           )}
         </div>
         {model.label && model.label !== model.id && (
@@ -139,7 +160,8 @@ function ModelPicker({
         )}
       </div>
     </Command.Item>
-  );
+    );
+  };
 
   return (
     <div className="my-4">
@@ -187,18 +209,7 @@ function ModelPicker({
                       />
                     </div>
                     <Command.List className="max-h-[200px] overflow-y-auto bg-surface p-1">
-                      {favoriteRows.length > 0 && (
-                        <div className="px-2.5 pb-1 pt-1.5 font-ui text-[10px] font-medium uppercase tracking-wide text-t4">
-                          {t("image_gen_favorites_group")}
-                        </div>
-                      )}
-                      {favoriteRows.map(renderRow)}
-                      {otherRows.length > 0 && favoriteRows.length > 0 && (
-                        <div className="px-2.5 pb-1 pt-1.5 font-ui text-[10px] font-medium uppercase tracking-wide text-t4">
-                          {t("image_gen_all_models_group")}
-                        </div>
-                      )}
-                      {otherRows.map(renderRow)}
+                      {visible.map(renderRow)}
                       {customSlug && !hasExactMatch && (
                         <Command.Item
                           data-testid="use-custom-model"
@@ -222,41 +233,14 @@ function ModelPicker({
             )}
           </div>
         </div>
-        {value !== null && (
-          <button
-            type="button"
-            data-testid={starred ? "image-gen-unstar-model" : "image-gen-star-model"}
-            onClick={() => (starred ? void onUnstar() : void onStar())}
-            className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-md border px-4 py-[6px] font-ui text-[13px] font-medium transition-colors",
-              starred
-                ? "border-accent/40 bg-accent/10 text-accent-t"
-                : "border-border bg-s2 text-t2 hover:border-border2 hover:text-t1",
-            )}
-            title={starred ? t("image_gen_unstar_model") : t("image_gen_star_model")}
-          >
-            <span className={starred ? "text-accent" : "text-t3"}>{starred ? <Icons.starFilled /> : <Icons.star />}</span>
-            {starred ? t("image_gen_unstar_model") : t("image_gen_star_model")}
-          </button>
-        )}
         <button
           type="button"
           data-testid="image-gen-models-refresh"
           onClick={() => onRefresh()}
           disabled={fetching}
-          className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-s2 px-4 py-[6px] font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
-          title={t("refresh_models")}
+          className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto"
         >
-          {fetching ? (
-            <span className="ml-[3px] inline-flex items-center gap-[3px] align-middle">
-              <span className="h-1 w-1 animate-genp rounded-full bg-accent" />
-              <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.18s]" />
-              <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.36s]" />
-            </span>
-          ) : (
-            <Icons.Regen />
-          )}
-          {t("refresh_models")}
+          {fetching ? t("testing") : t("refresh_models")}
         </button>
       </div>
     </div>
@@ -489,7 +473,6 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   };
 
   const favoriteIds = new Set(imageGen.favorites.map((f) => f.modelId));
-  const selectedLabel = models.find((model) => model.id === form.modelId)?.label;
 
   return (
     <div data-testid="image-gen-pane" className="mt-1 flex flex-col gap-4">
@@ -505,8 +488,9 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
         models={models}
         fetching={false}
         favoriteIds={favoriteIds}
-        onStar={() => form.modelId !== null && void imageGen.starModel(form.modelId, selectedLabel)}
-        onUnstar={() => form.modelId !== null && void imageGen.unstarModel(form.modelId!)}
+        onToggleFavorite={(model) =>
+          void (favoriteIds.has(model.id) ? imageGen.unstarModel(model.id) : imageGen.starModel(model.id, model.label))
+        }
         onRefresh={() => void imageGen.fetchSavedModels(profileId)}
       />
 
