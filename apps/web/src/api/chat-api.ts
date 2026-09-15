@@ -274,6 +274,31 @@ export async function updateAttachmentDescription(
   return response.json();
 }
 
+/** IG-18: set the per-image "include in prompt" opt-in on a generated-image
+ *  slot attachment (server validates: slots only; enabling requires a filled
+ *  vision description). Returns the route's { ok: true } envelope. */
+export async function updateAttachmentIncludeInPrompt(
+  chatId: string,
+  messageId: string,
+  attachmentId: string,
+  includeInPrompt: boolean,
+): Promise<{ ok: boolean }> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/chats/${chatId}/messages/${messageId}/attachments/${attachmentId}/include-in-prompt`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ includeInPrompt }),
+    },
+  );
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Failed to update include-in-prompt: ${response.status}`);
+  }
+  return response.json();
+}
+
 export async function deleteAttachment(
   chatId: string,
   messageId: string,

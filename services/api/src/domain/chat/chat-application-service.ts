@@ -198,6 +198,21 @@ export class ChatApplicationService {
   }
 
   /**
+   * Set the per-image "include in prompt" flag on a generated-image slot
+   * attachment (IMAGE_GENERATION_PLAN IG-18). Persistence only — the caller
+   * (ChatAdapter) validates the slot semantics. Absent flag = OFF.
+   */
+  async updateSingleAttachmentIncludeInPrompt(messageId: string, attachmentId: string, includeInPrompt: boolean): Promise<void> {
+    const message = await this.messageStore.getMessageById(messageId);
+    if (!message) return;
+    const currentAttachments: Attachment[] = parseStoredAttachments(message.attachmentsJson) ?? [];
+    const updated = currentAttachments.map((att) =>
+      att.id === attachmentId ? { ...att, includeInPrompt } : att,
+    );
+    await this.messageStore.updateMessageAttachments(messageId, JSON.stringify(updated));
+  }
+
+  /**
    * Remove a single attachment from a message by its id. Persists the remaining
    * attachments (or null when none are left so the column stays empty) and
    * returns the removed attachment so the caller can clean up its stored asset

@@ -42,6 +42,14 @@ export interface Attachment {
   purpose?: AudioPurpose;
   /** Audio-only: clip length in milliseconds (voice-message bubble UI). */
   durationMs?: number;
+  /** Image-gen-slot only (IMAGE_GENERATION_PLAN IG-18; design: "per-image
+   *  'include in prompt' opt-in (default off — pure illustration)"). Absent =
+   *  OFF — the assembly drops the slot's attachment from the RP prompt
+   *  entirely (see {@link filterPromptVisibleAttachments}). Enabling requires
+   *  a vision description (server-enforced) so the non-vision executor path
+   *  always has text to send. Ordinary user uploads never carry this flag
+   *  and keep their always-included behavior. */
+  includeInPrompt?: boolean;
   /** Image-gen-only: slot provenance (IMAGE_GENERATION_PLAN IG-14, design:
    *  "a message carrying a single image attachment + provenance metadata:
    *  mode, profileId, model, effective params, seed") — exactly the design
@@ -197,3 +205,17 @@ export function parseStoredAttachments(raw: string | null | undefined): Attachme
       : { ...(a as object), id: crypto.randomUUID() } as Attachment,
   );
 }
+
+/** Prompt-visibility filter for message attachments (IG-18): generated image
+ * slots are pure illustration by default — the attachment is dropped from
+ * the assembled prompt unless the per-image opt-in is ON. Everything else
+ * (user uploads, voice notes, files) keeps its existing behavior. Without
+ * this gate a slot in history would ride the executor's multimodal path
+ * unconditionally: pixels for vision primaries, and a hard
+ * VisionNotSupportedError on every later RP turn for non-vision primaries
+ * (the slot's image is undescribed — the describe step covers only the
+ * current user message's attachments). */
+export function filterPromptVisibleAttachments(attachments: Attachment[]): Attachment[] {
+  return attachments.filter((a) => a.imageGen === undefined || a.includeInPrompt === true);
+}
+

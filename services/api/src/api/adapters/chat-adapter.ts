@@ -356,6 +356,30 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	/**
+	 * Set the per-image "include in prompt" opt-in on a generated-image slot
+	 * attachment (IMAGE_GENERATION_PLAN IG-18). Enabling requires a filled
+	 * vision description (the design's toggle-on describe flow — the non-vision
+	 * RP path sends that text; without it the send would fail with
+	 * VisionNotSupportedError). Restricted to image-gen slots: ordinary user
+	 * uploads keep their always-included semantics.
+	 */
+	updateAttachmentIncludeInPrompt = async (chatId: string, messageId: string, attachmentId: string, includeInPrompt: boolean) => {
+		const message = await this.stores.messages.getMessageById(messageId);
+		if (!message?.attachmentsJson) throw validation("Message has no attachments.");
+		const attachments = parseStoredAttachments(message.attachmentsJson);
+		const att = attachments?.find((a) => a.id === attachmentId);
+		if (!att) throw notFound("Attachment not found.");
+		if (att.imageGen === undefined) {
+			throw validation("Only generated image slots have an include-in-prompt toggle.");
+		}
+		if (includeInPrompt && !att.description?.trim()) {
+			throw validation("Describe the image before including it in the prompt.");
+		}
+		await this.sessionRuntime.chatApp.updateSingleAttachmentIncludeInPrompt(messageId, attachmentId, includeInPrompt);
+		return { ok: true };
+	};
+
+	/**
 	 * Force re-describe a single attachment via the configured vision model,
 	 * ignoring any existing (possibly hand-edited) description. Uses the SAME
 	 * vision resolution path as send: active profile's visionModel + the

@@ -264,3 +264,27 @@ export async function deleteImageGenModelSettings(id: string, modelId: string): 
   });
   if (!response.ok) throw await unwrapError(response);
 }
+
+/** IG-18: copy a generated image asset into the character's gallery (the
+ *  existing promote route; the sent message's attachment stays immutable).
+ *  The gallery entry rides the character's gallery store exactly like an
+ *  uploaded gallery image. */
+export async function promoteImageGenAttachmentToGallery(
+  assetId: string,
+  characterId: string,
+): Promise<import("@vibe-tavern/api-contracts").ImageGenGalleryPromoteResponseValue> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/image-gen/attachments/${encodeURIComponent(assetId)}/promote-to-gallery`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ characterId }),
+    },
+  );
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Failed to add to gallery: ${response.status}`);
+  }
+  return response.json();
+}
