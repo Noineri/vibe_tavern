@@ -37,6 +37,7 @@ import { useChatController } from "../../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../../lib/macros.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MessageShell, type MessageShellAuthorInfo } from "./MessageShell.js";
+import { ImageGenSlotControls } from "./ImageGenSlotControls.js";
 import { useMessageNarration } from "./use-message-narration.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { StreamingMarkdown } from "./StreamingMarkdown.js";
@@ -305,6 +306,21 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // transformed — a partial stream would double-apply partial matches; the
   // settled render picks the transform up the moment streaming ends.
   const renderContent = regexDisplayContent ?? activeContent;
+
+  // ── IG-CF6 (IMAGE_GENERATION_PLAN): pure image-slot detection ──
+  // IG-14 made the slot an assistant message for the variant machinery, but
+  // an empty-content message whose every attachment is a generated image is
+  // a DIFFERENT MESSAGE KIND, not a text message: it renders as an image
+  // (AttachmentGrid → ImageBlock) with the slot's own controls replacing the
+  // text action row (owner review 2026-09-15). Any text content or any
+  // non-imageGen attachment disqualifies — that message is a text message
+  // (with images attached) and keeps the full text surface.
+  const slotAttachments = msg.attachments ?? [];
+  const isPureImageSlot =
+    msg.role === "assistant" &&
+    !(renderContent ?? "").trim() &&
+    slotAttachments.length > 0 &&
+    slotAttachments.every((a) => a.imageGen !== undefined);
   // TPE-1 (AN-1): narration prefers the selected variant's TTS annotation —
   // it's the content plus inserted expressive tags, authored FOR narration,
   // so it's used verbatim (the tag-preservation wrapper downstream keeps the
@@ -422,7 +438,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 opacity-88 [&_em]:italic [&_em]:text-msg-t2">
         <Markdown text={renderContent} />
       </div>
-      <AttachmentGrid attachments={msg.attachments} messageId={msg.id} characterId={activeCharacterId} chatId={authorInfo.activeChatId} />
+      <AttachmentGrid attachments={msg.attachments} messageId={msg.id} />
     </div>
   ) : isGenerating && !renderContent?.trim() ? (
     <div className={isMobile ? "my-0.5 w-full" : ""}>
@@ -458,12 +474,15 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               translate="yes"
               className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
             >
-              <Markdown text={renderContent} />
+              {/* IG-CF6: a pure image slot has no text body — the empty
+                  Markdown shell renders nothing and only adds a stray
+                  zero-content block above the image. */}
+              {!isPureImageSlot && <Markdown text={renderContent} />}
             </motion.div>
           </AnimatePresence>
         </div>
       )}
-      <AttachmentGrid attachments={msg.attachments} messageId={msg.id} characterId={activeCharacterId} chatId={authorInfo.activeChatId} />
+      <AttachmentGrid attachments={msg.attachments} messageId={msg.id} />
       {isGenerating && <GenerationDots label={t("generating_response")} />}
     </div>
   );
@@ -591,6 +610,17 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       desktopVariantControls={desktopVariantControls}
       mobileVariantControls={mobileVariantControls}
       narrating={narrationHook.narrating}
+      imageSlot={isPureImageSlot}
+      slotControls={
+        isPureImageSlot ? (
+          <ImageGenSlotControls
+            attachments={slotAttachments}
+            messageId={msg.id}
+            characterId={activeCharacterId}
+            chatId={authorInfo.activeChatId}
+          />
+        ) : undefined
+      }
       actions={{
         onCopy: async () => {
           const result = await copyText(msg.displayContent);

@@ -794,7 +794,7 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     expect(orBodies[0]).not.toContain("watermark");
   });
 
-  test("slot provenance: mode + profileId + model + effective params + backend-reported seed stamped on the attachment", async () => {
+  test("slot provenance: mode + profileId + model + effective params + backend-reported seed + the final assembled prompt stamped on the attachment", async () => {
     const sent: string[] = [];
     const scene = await makeScene(promptCapturingTransport(sent));
     const id = await seedProfile(scene.app, {
@@ -821,6 +821,7 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
         mode: string;
         profileId: string;
         model?: string;
+        prompt?: string;
         params: Record<string, unknown>;
         seed?: number;
       };
@@ -830,6 +831,10 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
       mode: "portrait",
       profileId: id,
       model: "chip-model",
+      // IG-CF6: the FINAL assembled image prompt — exactly the text the
+      // backend received on the wire (template + macros resolved), stamped
+      // so the slot can render it.
+      prompt: sent[0],
       params: { width: 832, height: 1248, steps: 30 },
       // The openrouter transport double reports no seed — the field stays
       // absent, never invented.
@@ -1534,14 +1539,19 @@ describe("image-gen routes — regenerate-as-variant (IG-18a)", () => {
     expect(variants).toHaveLength(2);
     const selected = variants.find((v) => v.isSelected);
     expect(selected?.attachmentsJson).not.toBeNull();
-    const selectedAttachments = JSON.parse(selected!.attachmentsJson!) as Array<{ assetId: string; imageGen?: { mode: string } }>;
+    const selectedAttachments = JSON.parse(selected!.attachmentsJson!) as Array<{ assetId: string; imageGen?: { mode: string; prompt?: string } }>;
     expect(selectedAttachments).toHaveLength(1);
     expect(selectedAttachments[0]!.assetId).toBe(body.attachments[0]!.assetId);
     expect(selectedAttachments[0]!.imageGen?.mode).toBe("portrait");
+    // IG-CF6: the regenerate-as-variant path stamps its prompt too — the
+    // chip-edit prompt rides verbatim (the IG-14 contract: a caller prompt
+    // is finished text, never re-substituted).
+    expect(selectedAttachments[0]!.imageGen?.prompt).toBe("second image");
     expect(variants[0]!.attachmentsJson).toBeNull();
     const slot = await stores.messages.getMessageById(firstBody.messageId);
-    const slotAttachments = JSON.parse(slot!.attachmentsJson ?? "[]") as Array<{ assetId: string }>;
+    const slotAttachments = JSON.parse(slot!.attachmentsJson ?? "[]") as Array<{ assetId: string; imageGen?: { prompt?: string } }>;
     expect(slotAttachments[0]!.assetId).toBe(firstBody.attachments[0]!.assetId);
+    expect(slotAttachments[0]!.imageGen?.prompt).toBe("first image");
 
     // One completions + one download per generation — nothing extra.
     expect(captured.calls).toBe(4);

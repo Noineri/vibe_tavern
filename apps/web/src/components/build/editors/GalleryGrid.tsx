@@ -26,9 +26,36 @@ interface GalleryGridProps {
   onSetAsAvatar: (asset: CharacterAsset) => void;
 }
 
+/** IG-CF6 (IMAGE_GENERATION_PLAN): the justified-tile fixed image-height
+ *  budget — the gallery's own numbers and their single home. The chat
+ *  ImageBlock (image-gen slot images + inline markdown images) reuses them
+ *  BY IMPORT; never re-declare these numbers elsewhere. */
+export const GALLERY_TILE_HEIGHT_DESKTOP = 350;
+export const GALLERY_TILE_HEIGHT_MOBILE = 220;
+
 /** Max image-area aspect-derived width as a fraction of the grid container, so
  *  a single ultra-wide panorama can't eat a whole row (cap, then crop). */
-const MAX_TILE_WIDTH_RATIO = 0.92;
+export const MAX_TILE_WIDTH_RATIO = 0.92;
+
+/** Panorama cap: a tile's width never exceeds this multiple of the tile
+ *  height (the second half of the ultra-wide guard — MAX_TILE_WIDTH_RATIO
+ *  bounds it against the CONTAINER, this bounds it against the HEIGHT). */
+const MAX_TILE_WIDTH_TO_HEIGHT = 3;
+
+/** Fixed image height by viewport kind — the justified row's height budget.
+ *  Desktop 350 (rich gallery view under the accordion), mobile ~220 so two
+ *  portraits still fit a phone screen side by side. */
+export function justifiedTileHeight(isMobile: boolean): number {
+  return isMobile ? GALLERY_TILE_HEIGHT_MOBILE : GALLERY_TILE_HEIGHT_DESKTOP;
+}
+
+/** The justified-tile width arithmetic, shared with the chat ImageBlock:
+ *  width derived from the fixed height × the image's own aspect ratio
+ *  (square footprint until the ratio resolves), capped for panoramas. */
+export function justifiedTileWidth(aspectRatio: number | null, tileHeight: number): number {
+  const rawWidth = aspectRatio !== null ? tileHeight * aspectRatio : tileHeight;
+  return Math.min(rawWidth, tileHeight * MAX_TILE_WIDTH_TO_HEIGHT);
+}
 
 /** Module-level aspect-ratio cache, keyed by asset URL. Survives accordion
  *  unmount/remount and tile re-render, so re-opening the gallery never reflows
@@ -88,9 +115,7 @@ function GalleryTile({
   // while the first decode completes.
   const [ratio, setRatio] = useState<number | null>(() => aspectCache.get(url) ?? null);
   const imgHeight = tileHeight;
-  const rawWidth = ratio ? imgHeight * ratio : imgHeight;
-  // Cap panorama width so a single ultra-wide image can't monopolise a row.
-  const tileWidth = Math.min(rawWidth, tileHeight * 3);
+  const tileWidth = justifiedTileWidth(ratio, imgHeight);
 
   // Synchronous resolve for already-cached bitmaps: if the browser decoded the
   // image before paint (HTTP cache or a repeated open), adopt its ratio now so
@@ -444,9 +469,7 @@ function GalleryTile({
 
 export function GalleryGrid({ characterId, assets, selectedIds, onToggleSelection, onSetAsAvatar }: GalleryGridProps) {
   const isMobile = useIsMobile();
-  // Desktop 350 (rich gallery view under the accordion), mobile ~220 so two
-  // portraits still fit a phone screen side by side.
-  const tileHeight = isMobile ? 220 : 350;
+  const tileHeight = justifiedTileHeight(isMobile);
   // Multiple floating panels may be open at once (original design intent):
   // each entry in the set renders its own independent GalleryViewer.
   const [openPanels, setOpenPanels] = useState<Set<number>>(new Set());

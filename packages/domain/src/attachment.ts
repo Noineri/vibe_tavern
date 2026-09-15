@@ -72,6 +72,14 @@ export interface ImageGenSlotProvenance {
   profileId: string;
   /** Effective model id (override > profile; absent = vendor default). */
   model?: string;
+  /** The FINAL assembled image prompt (IG-CF6): the exact text sent to the
+   *  backend — template + macros + chip edits + assist all resolved. Stamped
+   *  at generation time so the slot can show what was asked (owner
+   *  2026-09-15: "промпт от модели совершенно не виден нигде. его надо
+   *  отображать тоже в слоте с изображением"). Absent on legacy slots
+   *  generated before CF6 — free-form JSON inside attachmentsJson, no
+   *  migration. */
+  prompt?: string;
   /** Effective generation params sent with the request. */
   params: {
     width?: number;

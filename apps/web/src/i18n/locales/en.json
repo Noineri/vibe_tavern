@@ -3094,7 +3094,7 @@
   "stt_local_run_note_riva": "whisper-large-v3 covers 100+ languages incl. Russian with auto-detect; parakeet-1-1b-rnnt-multilingual is another option. Check the served model id with GET /v1/models and put it in the model field.",
   "stt_local_wire_needs_whisper_cpp": "This server speaks the whisper.cpp protocol — use the whisper.cpp preset in the Local group.",
   "stt_local_wire_needs_compat": "This server is OpenAI-compatible — use the generic local-server preset in the Local group.",
-  "image_gen_slot_view": "View generated image",
+  "image_gen_slot_prompt": "Generation prompt",
   "image_gen_slot_promote": "Add to character gallery",
   "image_gen_slot_promoted": "Added to the character gallery",
   "image_gen_slot_promote_failed": "Failed to add to the gallery",

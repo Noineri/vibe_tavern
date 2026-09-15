@@ -464,11 +464,16 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // produces, so rendering/vision-describe/promote all work unchanged —
     // plus the design's slot provenance (mode, profileId, model, effective
     // params, backend-reported seed) stamped on every entry (IG-14; the
-    // regeneration path in IG-18 rebuilds its request from it).
+    // regeneration path in IG-18 rebuilds its request from it). IG-CF6 also
+    // stamps the FINAL assembled prompt (`prompts.prompt` = the exact wire
+    // text, verbatim chip edits included) so the slot can render it — the
+    // same provenance object serves the sibling-append and the
+    // regenerate-as-variant path below.
     const provenance: ImageGenSlotProvenance = {
       mode: body.mode,
       profileId: profile.id,
       ...(model !== undefined && model !== "" ? { model } : {}),
+      prompt: prompts.prompt,
       params: {
         ...(width !== undefined ? { width } : {}),
         ...(height !== undefined ? { height } : {}),

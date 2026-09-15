@@ -1,3 +1,13 @@
+/**
+ * ImageGenSlotControls (IG-CF6, IMAGE_GENERATION_PLAN): the slot's action-row
+ * controls — the IG-18/IG-18a tile's logic relocated (the tile became the
+ * shared ImageBlock; the controls replaced the text action row). Boundary
+ * pins carried over verbatim from ImageGenSlotTile.test.tsx: regenerate
+ * payload at the store seam, promote at the API seam (success + normalized
+ * failure), the include-in-prompt ladder (describe-first + optimistic store
+ * flip with rollback), and the desktop/mobile shape split.
+ */
+
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -21,7 +31,6 @@ mock.module("../../i18n/context.js", () => ({
 const realImageGenApi = await import("../../api/image-gen-api.js");
 const realChatApi = await import("../../api/chat-api.js");
 const realSonner = await import("sonner");
-const realGalleryViewer = await import("../build/editors/GalleryViewer.js");
 
 const promoteCalls: Array<[string, string]> = [];
 const describeCalls: Array<[string, string, string]> = [];
@@ -31,12 +40,10 @@ const toastSuccess: string[] = [];
 const toastError: string[] = [];
 let describeShouldFail: Error | null = null;
 let promoteShouldFail: Error | null = null;
-let storeRunning = false;
 
 const realChatStore = await import("../../stores/image-gen-chat-store.js");
 // Spy the REAL store's runGeneration (the component reads runningByChat via
 // the selector and fires runGeneration via getState — both hit this store).
-const realRun = realChatStore.useImageGenChatStore.getState().runGeneration;
 realChatStore.useImageGenChatStore.setState({
   runGeneration: (chatId: string, input: { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string }) => {
     runGenerationCalls.push([chatId, input]);
@@ -67,9 +74,9 @@ mock.module("../../api/chat-api.js", () => ({
     chatId: string,
     messageId: string,
     attachmentId: string,
-    includeInPrompt: boolean,
+    includePrompt: boolean,
   ) => {
-    includeCalls.push([chatId, messageId, attachmentId, includeInPrompt]);
+    includeCalls.push([chatId, messageId, attachmentId, includePrompt]);
     return Promise.resolve({ ok: true });
   },
 }));
@@ -86,24 +93,13 @@ mock.module("sonner", () => ({
   },
 }));
 
-// The viewer is the gallery's tested surface; for the tile we pin the SEAM:
-// FloatingImageViewer opens with the slot's src. Mocking keeps the tile test
-// deterministic (no zoom/pan window machinery).
-mock.module("../build/editors/GalleryViewer.js", () => ({
-  ...realGalleryViewer,
-  FloatingImageViewer: ({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) => (
-    <div data-testid="floating-viewer" data-src={src} data-alt={alt} onClick={onClose} />
-  ),
-}));
-
-const { ImageGenSlotTile } = await import("./ImageGenSlotTile.js");
-const { AttachmentGrid } = await import("./AttachmentGrid.js");
+const { ImageGenSlotControls } = await import("./ImageGenSlotControls.js");
 const { render, fireEvent, waitFor, cleanup } = await import("@testing-library/react");
 const { TooltipProvider } = await import("../shared/Tooltip.js");
 
 /** CustomTooltip requires a TooltipProvider ancestor (the app mounts one at
- *  the shell level); isolated tile renders wrap themselves. */
-function renderTile(ui: React.ReactElement) {
+ *  the shell level); isolated renders wrap themselves. */
+function renderControls(ui: React.ReactElement) {
   return render(<TooltipProvider>{ui}</TooltipProvider>);
 }
 const { useSnapshotStore } = await import("../../stores/snapshot-store.js");
@@ -124,18 +120,6 @@ function slotAtt(overrides?: Partial<Attachment>): Attachment {
     description: null,
     imageGen: { mode: "portrait", profileId: "p1", params: {} },
     ...overrides,
-  };
-}
-
-function plainAtt(): Attachment {
-  return {
-    id: "att-plain",
-    assetId: "asset-plain",
-    type: "image",
-    name: "upload.png",
-    mimeType: "image/png",
-    sizeBytes: 12,
-    description: null,
   };
 }
 
@@ -161,13 +145,12 @@ afterEach(() => {
   toastError.length = 0;
   describeShouldFail = null;
   promoteShouldFail = null;
-  storeRunning = false;
   realChatStore.useImageGenChatStore.setState({ runningByChat: {} });
 });
 
-describe("ImageGenSlotTile — regenerate-as-variant (IG-18a)", () => {
+describe("ImageGenSlotControls — regenerate-as-variant (IG-18a)", () => {
   it("fires runGeneration with the slot's provenance + targetMessageId (variant target = the slot itself)", async () => {
-    const view = renderTile(<ImageGenSlotTile attachment={slotAtt()} messageId="m1" chatId="chat-1" />);
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
     const btn = await view.findByTestId("image-gen-slot-regenerate");
     fireEvent.click(btn);
     expect(runGenerationCalls).toEqual([
@@ -175,8 +158,8 @@ describe("ImageGenSlotTile — regenerate-as-variant (IG-18a)", () => {
     ]);
   });
 
-  it("without a chatId the button is not rendered (tests mount grid-less)", async () => {
-    const view = renderTile(<ImageGenSlotTile attachment={slotAtt()} messageId="m1" />);
+  it("without a chatId the button is not rendered (tests mount row-less)", async () => {
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" />);
     await view.findByTestId("image-gen-slot-mode");
     expect(view.queryByTestId("image-gen-slot-regenerate")).toBeNull();
   });
@@ -185,7 +168,7 @@ describe("ImageGenSlotTile — regenerate-as-variant (IG-18a)", () => {
     realChatStore.useImageGenChatStore.setState({
       runningByChat: { "chat-1": { mode: "portrait", anchorMessageId: "m1" } },
     });
-    const view = renderTile(<ImageGenSlotTile attachment={slotAtt()} messageId="m1" chatId="chat-1" />);
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
     const btn = await view.findByTestId("image-gen-slot-regenerate");
     expect(btn.hasAttribute("disabled")).toBe(true);
     fireEvent.click(btn);
@@ -193,25 +176,9 @@ describe("ImageGenSlotTile — regenerate-as-variant (IG-18a)", () => {
   });
 });
 
-describe("ImageGenSlotTile — rendering + viewer seam", () => {
-  it("renders the thumbnail with the provenance mode label; clicking opens the shared floating viewer", () => {
-    const view = renderTile(<ImageGenSlotTile attachment={slotAtt()} messageId="m1" characterId="char1" />);
-    expect(view.getByTestId("image-gen-slot-mode").textContent).toBe("image_gen_mode_portrait");
-    const img = view.container.querySelector('img[src*="/api/assets/asset-1"]');
-    expect(img).toBeTruthy();
-
-    expect(view.queryByTestId("floating-viewer")).toBeNull();
-    fireEvent.click(view.getByTestId("image-gen-slot-thumb"));
-    const viewer = view.getByTestId("floating-viewer");
-    expect(viewer.getAttribute("data-src")).toContain("/api/assets/asset-1");
-    fireEvent.click(viewer);
-    expect(view.queryByTestId("floating-viewer")).toBeNull();
-  });
-});
-
-describe("ImageGenSlotTile — gallery promote (slice C)", () => {
+describe("ImageGenSlotControls — gallery promote (IG-18 slice C)", () => {
   it("calls the promote seam with the slot's assetId + the chat's character, toasts success", async () => {
-    const view = renderTile(<ImageGenSlotTile attachment={slotAtt()} messageId="m1" characterId="char1" />);
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" characterId="char1" />);
     fireEvent.click(view.getByTestId("image-gen-slot-promote"));
     await waitFor(() => expect(promoteCalls).toEqual([["asset-1", "char1"]]));
     await waitFor(() => expect(toastSuccess).toEqual(["image_gen_slot_promoted"]));
@@ -219,17 +186,22 @@ describe("ImageGenSlotTile — gallery promote (slice C)", () => {
 
   it("failure toasts the server's normalized message", async () => {
     promoteShouldFail = new Error("No gallery quota");
-    const view = renderTile(<ImageGenSlotTile attachment={slotAtt()} messageId="m1" characterId="char1" />);
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" characterId="char1" />);
     fireEvent.click(view.getByTestId("image-gen-slot-promote"));
     await waitFor(() => expect(toastError).toEqual(["No gallery quota"]));
   });
+
+  it("without a character the promote button is hidden", () => {
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" />);
+    expect(view.queryByTestId("image-gen-slot-promote")).toBeNull();
+  });
 });
 
-describe("ImageGenSlotTile — include-in-prompt toggle (slice D)", () => {
+describe("ImageGenSlotControls — include-in-prompt toggle (IG-18 slice D)", () => {
   it("defaults OFF (aria-pressed false); with a description present, enabling flips the flag without describing", async () => {
     const att = slotAtt({ description: "Existing description." });
     seedMessage("m1", [att]);
-    const view = renderTile(<ImageGenSlotTile attachment={att} messageId="m1" characterId="char1" />);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
     const btn = view.getByTestId("image-gen-slot-include");
     expect(btn.getAttribute("aria-pressed")).toBe("false");
 
@@ -244,7 +216,7 @@ describe("ImageGenSlotTile — include-in-prompt toggle (slice D)", () => {
   it("enabling without a description runs vision-describe first, persists the description, then flips", async () => {
     const att = slotAtt();
     seedMessage("m1", [att]);
-    const view = renderTile(<ImageGenSlotTile attachment={att} messageId="m1" characterId="char1" />);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
     fireEvent.click(view.getByTestId("image-gen-slot-include"));
 
     await waitFor(() => expect(describeCalls).toEqual([["_", "m1", "att-1"]]));
@@ -258,7 +230,7 @@ describe("ImageGenSlotTile — include-in-prompt toggle (slice D)", () => {
     describeShouldFail = new Error("No vision model configured");
     const att = slotAtt();
     seedMessage("m1", [att]);
-    const view = renderTile(<ImageGenSlotTile attachment={att} messageId="m1" characterId="char1" />);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
     fireEvent.click(view.getByTestId("image-gen-slot-include"));
 
     await waitFor(() => expect(toastError).toEqual(["No vision model configured"]));
@@ -270,7 +242,7 @@ describe("ImageGenSlotTile — include-in-prompt toggle (slice D)", () => {
   it("disabling flips the flag off without describing", async () => {
     const att = slotAtt({ description: "d", includeInPrompt: true });
     seedMessage("m1", [att]);
-    const view = renderTile(<ImageGenSlotTile attachment={att} messageId="m1" characterId="char1" />);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
     expect(view.getByTestId("image-gen-slot-include").getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(view.getByTestId("image-gen-slot-include"));
     await waitFor(() => expect(includeCalls).toEqual([["_", "m1", "att-1", false]]));
@@ -278,21 +250,20 @@ describe("ImageGenSlotTile — include-in-prompt toggle (slice D)", () => {
   });
 });
 
-describe("AttachmentGrid — slot routing parity", () => {
-  it("imageGen attachments render the slot tile; ordinary images keep the lightbox", () => {
-    seedMessage("m1", [slotAtt(), plainAtt()]);
-    const view = renderTile(<AttachmentGrid attachments={[slotAtt(), plainAtt()]} messageId="m1" characterId="char1" />);
-    expect(view.container.querySelectorAll('[data-testid="image-gen-slot"]').length).toBe(1);
+describe("ImageGenSlotControls — desktop/mobile shape (IG-CF6)", () => {
+  it("desktop renders the provenance mode label; mobile omits it (row-width budget, AD-022)", async () => {
+    // NOTE: two live renders in one test — this RTL setup binds the returned
+    // queries to document.body (NOT the per-render container), so negatives
+    // and positives here query through `container` explicitly.
+    const desktop = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    expect(desktop.container.querySelector('[data-testid="image-gen-slot-mode"]')?.textContent).toBe("image_gen_mode_portrait");
 
-    // The ordinary upload still opens the plain lightbox, not the slot viewer.
-    const plainImg = view.container.querySelector('img[src*="asset-plain"]');
-    expect(plainImg).toBeTruthy();
-    const plainButton = plainImg!.closest("button");
-    expect(plainButton).toBeTruthy();
-    fireEvent.click(plainButton!);
-    expect(view.queryByTestId("floating-viewer")).toBeNull();
-    // The lightbox full view (the AttachmentGrid's own viewer) appears for
-    // the plain upload — keyed by its name in the full-view alt slot.
-    expect(view.baseElement.querySelector('img[alt="upload.png"]')).toBeTruthy();
+    const mobile = renderControls(
+      <ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" mobile />,
+    );
+    expect(mobile.container.querySelector('[data-testid="image-gen-slot-mode"]')).toBeNull();
+    // 44px touch targets in the mobile action row (compact h-6 on desktop).
+    expect(mobile.container.querySelector('[data-testid="image-gen-slot-regenerate"]')?.className).toContain("h-11");
+    expect(desktop.container.querySelector('[data-testid="image-gen-slot-regenerate"]')?.className).toContain("h-6");
   });
 });

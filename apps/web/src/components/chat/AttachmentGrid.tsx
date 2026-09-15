@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from "react";
 import { splitVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
-import { ImageGenSlotTile } from "./ImageGenSlotTile.js";
+import { ImageBlock, type ImageBlockImage } from "./ImageBlock.js";
 import { useKeyDown } from "../../hooks/use-key-down.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
@@ -74,10 +74,23 @@ function VoiceBubble({ att }: { att: Attachment }) {
   );
 }
 
-export function AttachmentGrid({ attachments, messageId, characterId, chatId }: { attachments?: Attachment[]; messageId?: string; characterId?: string | null; chatId?: string }) {
+export function AttachmentGrid({ attachments, messageId }: { attachments?: Attachment[]; messageId?: string }) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   if (!attachments || attachments.length === 0) return null;
+
+  // IG-CF6: generated-image attachments render through the shared ImageBlock
+  // (justified gallery-pattern row + generation-prompt caption), OUTSIDE this
+  // h-24 attachment-preview grid — the slot's image is the message's CONTENT,
+  // not an attachment-to-text. All imageGen attachments share ONE justified
+  // row (the gallery mechanism); ordinary attachments keep the grid below.
+  const slotImages: ImageBlockImage[] = attachments
+    .filter((att) => att.imageGen !== undefined)
+    .map((att) => ({
+      src: `${getGatewayBaseUrl()}/api/assets/${att.assetId}`,
+      alt: att.name || "Generated image",
+      ...(att.imageGen?.prompt ? { caption: att.imageGen.prompt } : {}),
+    }));
 
   return (
     <>
@@ -85,9 +98,7 @@ export function AttachmentGrid({ attachments, messageId, characterId, chatId }: 
         {attachments.map((att, idx) =>
           att.type === "audio" ? (
             <VoiceBubble key={att.id || att.assetId} att={att} />
-          ) : att.imageGen !== undefined ? (
-            <ImageGenSlotTile key={att.id || att.assetId} attachment={att} messageId={messageId} characterId={characterId} chatId={chatId} />
-          ) : (
+          ) : att.imageGen !== undefined ? null : (
           <button
             key={att.id || att.assetId}
             type="button"
@@ -117,6 +128,8 @@ export function AttachmentGrid({ attachments, messageId, characterId, chatId }: 
           )
         )}
       </div>
+
+      {slotImages.length > 0 && <ImageBlock images={slotImages} className="mt-2.5" />}
 
       {lightboxIndex !== null && (
         <Lightbox
