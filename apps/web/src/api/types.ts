@@ -5,7 +5,7 @@
  * derive from the api-contracts schemas. Hand-written interfaces remain only
  * where no route or schema declares the shape.
  */
-import type { ChatBranch, Message, MessageVariant, PromptTraceRecordDto, SceneTrackerRecord } from "@vibe-tavern/domain";
+import type { Attachment, ChatBranch, Message, MessageVariant, PromptTraceRecordDto, SceneTrackerRecord } from "@vibe-tavern/domain";
 import type { DiceActorType, DiceAttempt, DiceCheckDefinition, DiceMode, DiceRollSnapshot } from "@vibe-tavern/domain";
 import type {
 	ExperienceActionDescriptor,
@@ -99,7 +99,19 @@ type WireSessionSnapshot = NonNullable<RpcData<Api["bootstrap"]["$get"]>["snapsh
 
 /** Message with variant data. `sceneTracker` mirrors the selected variant (swapped
  *  locally on selection); `diceRolls` is present only on user messages with bound rolls. */
-export type AppMessage = WireSessionSnapshot["messages"][number];
+export type AppMessage = WireSessionSnapshot["messages"][number] & {
+  /**
+   * IG-CF10: client-only shadow of the message ROW's attachment set (the
+   * fallthrough behind the server DTO merge — session-runtime-dto.ts IG-18a).
+   * The row set itself never reaches the wire (only the merged `attachments`
+   * do), so the snapshot store stamps it at ingest whenever the merge
+   * provably equals the row set, and preserves it across wholesale message
+   * replacements. Never sent by the server, never serialized back — swipe
+   * (`selectVariant`) reads it when the target variant carries no
+   * attachmentsJson. Absent = the row set was never visible on the wire.
+   */
+  messageLevelAttachments?: Attachment[];
+};
 
 /** PATCH body for `updateInsightsConfig`: toggles + an optional partial tracker config (deep-merged server-side). */
 export type InsightsConfigPatch = NonNullable<z.input<typeof updateInsightsConfigSchema>["insightsConfig"]>;

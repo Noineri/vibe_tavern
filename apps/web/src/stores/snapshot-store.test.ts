@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { wireCharacter } from "../../test/wire-fixtures.js";
-import type { ChatId, ChatBranchId, MessageVariantId, Timestamp } from "@vibe-tavern/domain";
+import type { Attachment, ChatId, ChatBranchId, MessageVariantId, Timestamp } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "./snapshot-store.js";
 import type { AppCharacter, AppMessage, AppSnapshot } from "../api/types.js";
 
@@ -289,5 +289,114 @@ describe("selectVariant — Scene swap (SCN-4)", () => {
     // Both per-variant records remain on their own variants.
     expect(afterSelect.variants[0]!.sceneTracker).toEqual(sceneA);
     expect(afterSelect.variants[1]!.sceneTracker).toEqual(sceneB);
+  });
+});
+
+// ── IG-CF10: swipe swaps slot attachments ───────────────────────────────
+//
+// Fixture idiom mirrors the SCN-4 block above: a slot message whose ROW
+// carries the original image (variant 0 is null-carrying, so the server DTO
+// merge falls through to the message-level set) and whose variant 1 carries
+// its own regenerated image via attachmentsJson.
+
+function slotAttachment(id: string, assetId: string): Attachment {
+  return {
+    id,
+    assetId,
+    type: "image",
+    name: `${id}.png`,
+    mimeType: "image/png",
+    sizeBytes: 1234,
+    imageGen: { mode: "portrait", profileId: "p1", params: {} },
+  };
+}
+
+const ROW_ATTS: Attachment[] = [slotAttachment("att-row", "asset-row")];
+const V1_ATTS: Attachment[] = [slotAttachment("att-v1", "asset-v1")];
+
+function makeSlotMessage(): AppMessage {
+  return {
+    id: "slot-1",
+    role: "assistant",
+    content: "",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    attachments: ROW_ATTS,
+    variants: [
+      { id: "var_0", messageId: "slot-1", variantIndex: 0, content: "", isSelected: true, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: null },
+      { id: "var_1", messageId: "slot-1", variantIndex: 1, content: "", isSelected: false, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: JSON.stringify(V1_ATTS) },
+    ],
+    selectedVariantIndex: 0,
+    modelId: null,
+    sceneTracker: null,
+  } as unknown as AppMessage;
+}
+
+describe("selectVariant — slot attachment swap (IG-CF10)", () => {
+  test("selecting a variant carrying attachmentsJson swaps msg.attachments to its parsed set", () => {
+    useSnapshotStore.getState().ingestSnapshot({ messages: [makeSlotMessage()] } as AppSnapshot);
+    useSnapshotStore.getState().selectVariant("slot-1", 1, 1);
+    const after = useSnapshotStore.getState().messagesById["slot-1"]!;
+    expect(after.selectedVariantIndex).toBe(1);
+    expect(after.attachments).toEqual(V1_ATTS);
+    // The swap never rewrites the variant records themselves.
+    expect(after.variants[0]!.attachmentsJson).toBeNull();
+    expect(after.variants[1]!.attachmentsJson).toBe(JSON.stringify(V1_ATTS));
+  });
+
+  test("switching to a null (legacy) variant falls back to the message-level attachments", () => {
+    useSnapshotStore.getState().ingestSnapshot({ messages: [makeSlotMessage()] } as AppSnapshot);
+    useSnapshotStore.getState().selectVariant("slot-1", 1, 1);
+    expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(V1_ATTS);
+    useSnapshotStore.getState().selectVariant("slot-1", 0, -1);
+    const after = useSnapshotStore.getState().messagesById["slot-1"]!;
+    expect(after.selectedVariantIndex).toBe(0);
+    // Not the previously selected variant's stale set — the row set.
+    expect(after.attachments).toEqual(ROW_ATTS);
+  });
+
+  test("the message-level fallback survives swipe round-trips and a post-regen re-ingest", () => {
+    useSnapshotStore.getState().ingestSnapshot({ messages: [makeSlotMessage()] } as AppSnapshot);
+    // Swipe round-trip: v0 -> v1 -> v0 resolves the row set every time.
+    useSnapshotStore.getState().selectVariant("slot-1", 1, 1);
+    useSnapshotStore.getState().selectVariant("slot-1", 0, -1);
+    expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(ROW_ATTS);
+
+    // Post-regen refresh: the server lands with the new variant selected, so
+    // the wire merge shows ITS set and the row set is unknowable from this
+    // snapshot — the previously captured shadow must survive the wholesale
+    // replacement.
+    const postRegen = {
+      ...makeSlotMessage(),
+      attachments: V1_ATTS,
+      selectedVariantIndex: 1,
+      variants: [
+        { id: "var_0", messageId: "slot-1", variantIndex: 0, content: "", isSelected: false, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: null },
+        { id: "var_1", messageId: "slot-1", variantIndex: 1, content: "", isSelected: true, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: JSON.stringify(V1_ATTS) },
+      ],
+    } as unknown as AppMessage;
+    useSnapshotStore.getState().ingestSnapshot({ messages: [postRegen] } as AppSnapshot);
+    expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(V1_ATTS);
+    // Swiping back to the legacy variant still resolves the original row set.
+    useSnapshotStore.getState().selectVariant("slot-1", 0, -1);
+    expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(ROW_ATTS);
+  });
+
+  test("fresh ingest landing on an attachment-carrying variant keeps the current set for null targets", () => {
+    // The row set never appeared on the wire (no prior shadow): the client
+    // cannot invent it, so swiping to the null variant keeps the current
+    // set instead of overwriting it with a guess.
+    const landedOnV1 = {
+      ...makeSlotMessage(),
+      attachments: V1_ATTS,
+      selectedVariantIndex: 1,
+      variants: [
+        { id: "var_0", messageId: "slot-1", variantIndex: 0, content: "", isSelected: false, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: null },
+        { id: "var_1", messageId: "slot-1", variantIndex: 1, content: "", isSelected: true, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: JSON.stringify(V1_ATTS) },
+      ],
+    } as unknown as AppMessage;
+    useSnapshotStore.getState().ingestSnapshot({ messages: [landedOnV1] } as AppSnapshot);
+    useSnapshotStore.getState().selectVariant("slot-1", 0, -1);
+    expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(V1_ATTS);
   });
 });
