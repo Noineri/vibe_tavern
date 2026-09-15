@@ -505,7 +505,6 @@
   "image_gen_section_title": "Image Generation",
   "image_gen_section_placeholder": "Image generation profiles will appear here",
   "image_gen_segment_local": "Local server",
-  "image_gen_field_protocol": "Protocol",
   "image_gen_field_endpoint": "Endpoint",
   "image_gen_key_optional_hint": "Optional — enter user:pass only if the server was started with --api-auth",
   "image_gen_keyless_note": "No API key (local server)",

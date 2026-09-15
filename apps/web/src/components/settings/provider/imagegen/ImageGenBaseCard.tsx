@@ -1,6 +1,6 @@
 import { useT } from "../../../../i18n/context.js";
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
-import { getImageGenProviderPreset, IMAGE_GEN_PROTOCOLS } from "../../../../provider-presets.js";
+import { getImageGenProviderPreset } from "../../../../provider-presets.js";
 import { Icons } from "../../../shared/icons.js";
 import type { ImageGenProfileForm } from "../../../../hooks/use-image-profiles.js";
 
@@ -11,12 +11,12 @@ interface ImageGenBaseCardProps {
 }
 
 /** View-mode connection label: a preset-backed profile shows the preset row
- *  label (a Custom one shows its protocol label — the LLM TYPE_LABELS
- *  precedent) with the endpoint host beside it. */
-function backendLabelFor(form: ImageGenProfileForm): string {
+ *  label; a Custom profile shows the Custom label (IG-CF8 — bare custom,
+ *  no protocol table) with the endpoint host beside it. */
+function backendLabelFor(form: ImageGenProfileForm, customLabel: string): string {
   const preset = form.presetId !== null ? getImageGenProviderPreset(form.presetId) : undefined;
   if (preset) return preset.label;
-  return IMAGE_GEN_PROTOCOLS.find((p) => p.id === form.backend)?.label ?? form.backend;
+  return customLabel;
 }
 
 function endpointHost(form: ImageGenProfileForm): string {
@@ -37,7 +37,7 @@ function endpointHost(form: ImageGenProfileForm): string {
 export function ImageGenBaseCard({ form, onEdit }: ImageGenBaseCardProps) {
   const { t } = useT();
 
-  const label = backendLabelFor(form);
+  const label = backendLabelFor(form, t("custom"));
   const host = endpointHost(form);
   const keylessByDesign = form.backend === IMAGE_GEN_BACKENDS.A1111;
   const hasKey = form.hasStoredApiKey || form.apiKey.trim() !== "";

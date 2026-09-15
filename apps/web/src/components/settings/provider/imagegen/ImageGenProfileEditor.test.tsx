@@ -144,10 +144,37 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
     expect(view.queryByText("cfg_scale")).toBeNull();
   });
 
-  it("segment defaults to Custom for a preset-less form; the protocol picker renders instead of preset rows", async () => {
+  it("CF8: custom segment is BARE — no protocol select, no preset dropdown (the SttProviderForm twin rule)", async () => {
     const view = render(<ImageGenProfileEditor imageGen={makeImageGen()} />);
-    await waitFor(() => expect(view.getByTestId("image-gen-protocol-select")).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId("image-gen-provider-form")).toBeTruthy());
+    expect(view.queryByTestId("image-gen-protocol-select")).toBeNull();
     expect(view.queryByTestId("image-gen-preset-select")).toBeNull();
+  });
+
+  it("CF8: segment switch to Custom pins the backend to openai-images under the hood + drops the preset slug", async () => {
+    const setForm = mock(() => {});
+    const imageGen = makeImageGen({
+      setForm,
+      form: makeForm({ presetId: "a1111", backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" }),
+    });
+    const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-segment-select")).toBeTruthy());
+    await act(async () => {
+      view.getByTestId("image-gen-segment-select").click();
+    });
+    const option = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll("[cmdk-item]")).find(
+        (n) => n.textContent?.trim() === "custom",
+      );
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    await act(async () => {
+      (option as HTMLElement).click();
+    });
+    const calls = (setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
+    expect(calls.some((patch) => patch["backend"] === IMAGE_GEN_BACKENDS.OpenAiImages)).toBe(true);
+    expect(calls.some((patch) => patch["presetId"] === null)).toBe(true);
   });
 
   it("preset-backed form renders the preset dropdown + read-only preset endpoint (cloud rows)", async () => {

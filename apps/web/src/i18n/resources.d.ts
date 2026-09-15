@@ -1178,7 +1178,6 @@ export default interface Resources {
     "image_gen_field_api_key_status_stored": "A key is saved with this profile. Leave the field empty to keep it; type a new key to replace it.",
     "image_gen_field_api_key_stored": "API key saved — leave empty to keep it",
     "image_gen_field_endpoint": "Endpoint",
-    "image_gen_field_protocol": "Protocol",
     "image_gen_fine_tuning": "Fine tuning",
     "image_gen_free_hint": "custom prompt required",
     "image_gen_generating": "Generating…",

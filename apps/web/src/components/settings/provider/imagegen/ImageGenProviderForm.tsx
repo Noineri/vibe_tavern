@@ -1,9 +1,9 @@
 import { useState } from "react";
+import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
 import {
   getImageGenProviderPreset,
   IMAGE_GEN_PROVIDER_PRESETS,
-  IMAGE_GEN_PROTOCOLS,
 } from "../../../../provider-presets.js";
 import { Icons } from "../../../shared/icons.js";
 import { cn } from "../../../../lib/cn.js";
@@ -12,7 +12,7 @@ import { lblCls } from "../../../../lib/field-tokens.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { ImageGenApiKeyField } from "./ImageGenApiKeyField.js";
 import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
-import { toImageGenBackend, type ImageGenProfileForm, type useImageProfiles } from "../../../../hooks/use-image-profiles.js";
+import { type ImageGenProfileForm, type useImageProfiles } from "../../../../hooks/use-image-profiles.js";
 
 type ImageGenHook = ReturnType<typeof useImageProfiles>;
 
@@ -51,8 +51,12 @@ interface ImageGenProviderFormProps {
  *  - No endpoint→preset auto-detection: the profile STORES `presetId` (a
  *    wire field STT never had — STT detects by endpoint because its
  *    profile has no preset column). Explicit slug, no guessing.
- *  - Custom = protocol picker (IMAGE_GEN_PROTOCOLS) + bare endpoint — the
- *    design's "Custom = bare endpoint + protocol picker".
+ *  - Custom is BARE (IG-CF8, owner 2026-09-15 — the SttProviderForm twin
+ *    rule: "кастомный, значит, кастомный"): endpoint + API key, no preset
+ *    rows and no pickers of any kind. The wire backend is an
+ *    implementation fact, not a UI choice — a custom profile speaks the
+ *    OpenAI-images dialect (the only implemented cloud dialect for custom
+ *    endpoints), pinned on segment switch.
  *  - The API-key field always renders: the two cloud rows require keys, and
  *    A1111's key is OPTIONAL (keyless default; `--api-auth "user:pass"`
  *    basic auth) — the preset's `keyOptional` flag carries the hint.
@@ -71,7 +75,8 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
     { value: "custom", label: t("custom") },
   ];
 
-  // Rows of the active group; Custom carries none (protocol picker instead).
+  // Rows of the active group; Custom carries none (bare endpoint + key —
+  // IG-CF8, no pickers of any kind).
   const groupPresets =
     segment === "cloud" || segment === "local"
       ? IMAGE_GEN_PROVIDER_PRESETS.filter((p) => p.group === segment)
@@ -108,9 +113,11 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
       if (first) applyPreset(first.id);
       return;
     }
-    // Custom: drop the preset slug, keep backend + endpoint — the protocol
-    // picker below switches the backend (the hook resets the rest), and the
-    // endpoint becomes the user's bare URL to edit.
+    // Custom (IG-CF8): bare endpoint + key. The backend pins to the
+    // OpenAI-images dialect (the hook's backend-switch branch resets the
+    // preset slug, endpoint, and key when it differs); presetId drops so
+    // the segment stays Custom on re-open.
+    updateForm("backend", IMAGE_GEN_BACKENDS.OpenAiImages);
     updateForm("presetId", null);
   }
 
@@ -166,26 +173,10 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
         </div>
       </div>
 
-      {/* Row 2a (cloud/local): named preset rows + read-only preset endpoint.
-          Row 2b (custom): the protocol picker — the design's "Custom = bare
-          endpoint + protocol picker". */}
-      {segment === "custom" ? (
-        <div className="mb-3">
-          <label className={lblCls}>{t("image_gen_field_protocol")}</label>
-          <DropdownSelect
-            value={form.backend}
-            options={IMAGE_GEN_PROTOCOLS.map((p) => ({ id: p.id, label: p.label }))}
-            onChange={(backend) => {
-              // Wire-boundary normalization (toImageGenBackend) — the
-              // helper is the one spelling of "string → backend slug".
-              const next = toImageGenBackend(backend);
-              if (next !== form.backend) updateForm("backend", next);
-            }}
-            searchable={false}
-            triggerTestId="image-gen-protocol-select"
-          />
-        </div>
-      ) : (
+      {/* Row 2 (cloud/local only): named preset rows + read-only preset
+          endpoint. Custom renders NOTHING here — bare endpoint + key
+          below (IG-CF8, the SttProviderForm custom arm). */}
+      {(segment === "cloud" || segment === "local") && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="mb-3">
             <label className={lblCls}>{t("api_format_label")}</label>

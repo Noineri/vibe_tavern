@@ -138,15 +138,6 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
   },
 ];
 
-/** Protocol picker entries for the Custom segment (the design's
- *  "bare endpoint + protocol picker") — one per adapter, literal labels
- *  (the LLM TYPE_LABELS precedent). */
-export const IMAGE_GEN_PROTOCOLS: ReadonlyArray<{ id: ImageGenBackendType; label: string }> = [
-  { id: IMAGE_GEN_BACKENDS.OpenRouter, label: "OpenRouter API" },
-  { id: IMAGE_GEN_BACKENDS.OpenAiImages, label: "OpenAI Images API" },
-  { id: IMAGE_GEN_BACKENDS.A1111, label: "A1111-compatible (local)" },
-];
-
 /** Image-gen preset lookup by row slug. */
 export function getImageGenProviderPreset(id: string): ImageGenProviderPreset | undefined {
   return IMAGE_GEN_PROVIDER_PRESETS.find((preset) => preset.id === id);

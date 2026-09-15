@@ -507,7 +507,6 @@
   "image_gen_section_title": "Генерация изображений",
   "image_gen_section_placeholder": "Профили генерации изображений появятся здесь",
   "image_gen_segment_local": "Локальный сервер",
-  "image_gen_field_protocol": "Протокол",
   "image_gen_field_endpoint": "Адрес сервера",
   "image_gen_key_optional_hint": "Необязательно — введите user:pass, только если сервер запущен с --api-auth",
   "image_gen_keyless_note": "Без API-ключа (локальный сервер)",
