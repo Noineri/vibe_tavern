@@ -6,6 +6,7 @@ import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { AssistantContextHeader } from "./AssistantContextHeader.js";
+import { ImageGenMessageMenu } from "./ImageGenMessageMenu.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -180,6 +181,18 @@ export function MessageShell(props: MessageShellProps) {
   const { t, tDynamic } = useT();
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // IG-16: the image-generation menu rides both action rows (desktop +
+  // mobile) on every message — any message can anchor a generation, and the
+  // in-flight Stop morph lives on the same triggers.
+  const imageMenu = (
+    <ImageGenMessageMenu
+      chatId={chatId}
+      messageId={messageId}
+      variant={isMobile ? "mobile" : "desktop"}
+      disabled={isBusy}
+    />
+  );
 
   // Build slot context
   const slotCtx: MessageSlotContext = {
@@ -402,6 +415,7 @@ export function MessageShell(props: MessageShellProps) {
               editLabel={editLabel}
               continueTooltip={continueLabel}
               hiddenVariantControls={!!variantControlsOverlay}
+              imageMenu={imageMenu}
               isBusy={isBusy}
               isBranching={isBranching}
               isGreeting={isGreeting}
@@ -443,6 +457,7 @@ export function MessageShell(props: MessageShellProps) {
               isBusy={isBusy}
               isBranching={isBranching}
               isGreeting={isGreeting}
+              imageMenu={imageMenu}
               isUser={isUser}
               regenLabel={regenLabel}
               resendLabel={resendLabel}
@@ -537,6 +552,8 @@ function DesktopMessageActions(props: {
   copyLabel: string;
   editLabel: string;
   hiddenVariantControls: boolean;
+  /** IG-16: the image-generation menu (trigger + popover + Stop morph). */
+  imageMenu: ReactNode;
   isBusy: boolean;
   isBranching: boolean;
   isGreeting: boolean;
@@ -565,6 +582,7 @@ function DesktopMessageActions(props: {
     aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
     branchLabel, canBranch, canRegenerate, canResend, canContinue, continueTooltip, canSwitchVariant,
     copied, copiedLabel, copyLabel, editLabel, hiddenVariantControls,
+    imageMenu,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControlsRef, variantCount,
     variantControls,
@@ -655,6 +673,9 @@ function DesktopMessageActions(props: {
       {canBranch && <span className={desktopActionClass} aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }}>{isBranching ? <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" /> : <Icons.Branch />}{branchLabel}</span>}
       {canRegenerate && <span className={desktopActionClass} onClick={() => { if (!isBusy) onRegenerate(); }}><Icons.Regen />{regenLabel}</span>}
 
+      {/* IG-16: image generation menu (icon+caret popover; Stop while running). */}
+      {imageMenu}
+
       {!isUser && !isGreeting && variantCount > 1 && canSwitchVariant && variantControls}
 
       {!isGreeting && (
@@ -681,6 +702,8 @@ function MobileMessageActions(props: {
   canRegenerate: boolean;
   canResend: boolean;
   canSwitchVariant: boolean;
+  /** IG-16: the image-generation menu (icon button + sheet + Stop morph). */
+  imageMenu: ReactNode;
   isBusy: boolean;
   isBranching: boolean;
   isGreeting: boolean;
@@ -703,6 +726,7 @@ function MobileMessageActions(props: {
   const {
     aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
     branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
+    imageMenu,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControls,
     onAiEdit, onAiAnnotate, onBranch, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
@@ -721,6 +745,8 @@ function MobileMessageActions(props: {
         {!isUser && !isGreeting && canSwitchVariant && variantControls}
       </div>
       <div className="flex justify-end gap-1">
+        {/* IG-16: image generation menu (icon button + sheet; Stop while running). */}
+        {imageMenu}
         {onNarrate && (
           <button type="button" aria-label={narrating ? narrateStopTooltip : narrateTooltip} data-testid="mobile-narrate-btn" className={cn("flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg active:bg-s2 [&_svg]:h-5 [&_svg]:w-5", narrating ? "text-accent animate-pulse" : "text-t3")} onClick={() => { if (!isBusy) onNarrate(); }} title={narrating ? narrateStopTooltip : narrateTooltip}>
             {narrating ? <Icons.stopSquare /> : <Icons.speaker />}

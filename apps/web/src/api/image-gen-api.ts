@@ -10,8 +10,8 @@
  * Wire types come from @vibe-tavern/api-contracts (IG-3/IG-8) — never
  * re-declared locally. The secret rides the top-level write-only `apiKey`
  * field and is projected back as `hasStoredApiKey` (the STT/TTS key rule).
- * Scope: CRUD + probe/models/samplers only — generate and gallery-promote
- * are chat-surface actions owned by later units, not profile CRUD.
+ * Scope: CRUD + probe/models/samplers + the chat-surface generate call
+ * (IG-16); gallery-promote is the remaining later-unit surface.
  */
 
 import type { z } from "zod";
@@ -26,6 +26,8 @@ import type {
   ImageGenProfileValue,
   ImageGenProbeResultValue,
   ImageGenSamplerInfoValue,
+  GenerateImageGenInput,
+  ImageGenGenerateResponseValue,
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
 import { createImageGenProfileSchema } from "@vibe-tavern/api-contracts";
@@ -166,6 +168,32 @@ export async function draftListImageGenModels(
   });
   if (!response.ok) throw await rawError("Image-gen draft model list", response);
   return (await response.json()) as ImageGenModelEntry[];
+}
+
+// ─── Chat-surface generate (IG-16 — raw fetch, abort-signal aware) ──────────
+
+/** Fire ONE image generation in a chat (the IG-8/IG-14 locked contract:
+ * profile + mode + anchor message; the server builds the prompt, appends
+ * the image slot, and returns its provenance). The signal is the Stop
+ * control's seam — a user abort maps server-side to a silent cancel (the
+ * route distinguishes it from the 180s cloud timer). */
+export async function generateImageGen(
+  chatId: string,
+  body: GenerateImageGenInput,
+  signal?: AbortSignal,
+): Promise<ImageGenGenerateResponseValue> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/chats/${encodeURIComponent(chatId)}/image-gen/generate`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    },
+  );
+  if (!response.ok) throw await rawError("Image-gen generate", response);
+  return (await response.json()) as ImageGenGenerateResponseValue;
 }
 
 // ─── Model favorites + per-model overlay (IG-12b — typed Hono RPC, the
