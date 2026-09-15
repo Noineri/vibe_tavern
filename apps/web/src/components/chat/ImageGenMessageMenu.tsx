@@ -16,9 +16,11 @@
  * aborts the shared per-chat AbortController (one in-flight generation per
  * chat in v1). Mode rows are inert while running.
  *
- * The `free` recipe is disabled until the IG-17 chip lands: the server
- * REQUIRES its raw prompt (`prompt` on the generate contract), and that
- * field belongs to the chip's positive-prompt editor — not this popover.
+ * The `free` recipe is enabled only while Fine tuning is on AND the IG-17
+ * chip's positive prompt is non-empty: the server REQUIRES free's raw
+ * prompt (`prompt` on the generate contract), and that field is the chip's
+ * positive-prompt editor. With the toggle off (or an empty chip prompt) the
+ * row stays disabled with its hint.
  */
 
 import { useEffect, useState } from "react";
@@ -33,8 +35,9 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { useT } from "../../i18n/context.js";
 import { listAllImageGenProfiles, type ImageGenProfileRecord } from "../../api/image-gen-api.js";
-import { useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
+import { EMPTY_IMAGE_GEN_DRAFT, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useModalStore } from "../../stores/modal-store.js";
+import type { GenerateImageGenInput, ImageGenGenerateOverridesValue } from "@vibe-tavern/api-contracts";
 
 /** The v1 mode order the popover lists (registry order, no new names). */
 const MODES: ImageGenerationMode[] = Object.values(IMAGE_GENERATION_MODES);
@@ -156,6 +159,7 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
   const setFineTuning = useImageGenChatStore((s) => s.setFineTuning);
   const setActiveProfile = useImageGenChatStore((s) => s.setActiveProfile);
   const runGeneration = useImageGenChatStore((s) => s.runGeneration);
+  const draft = useImageGenChatStore((s) => s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT);
   const setIsProviderModalOpen = useModalStore((s) => s.setIsProviderModalOpen);
   const [profiles, setProfiles] = useState<ImageGenProfileRecord[] | null>(null);
 
@@ -182,7 +186,26 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
 
   const startMode = (mode: ImageGenerationMode): void => {
     if (running !== undefined || effective === null) return;
-    void runGeneration(chatId, { profileId: effective.id, mode, anchorMessageId: messageId });
+    const input: GenerateImageGenInput = { profileId: effective.id, mode, anchorMessageId: messageId };
+    // IG-17: while Fine tuning is on the chip's draft rides the request —
+    // the positive prompt VERBATIM (the IG-14 contract: a present prompt is
+    // never re-templated server-side), the picks + negative as overrides.
+    // Empty trimmed strings are not sent (the contract's fallback
+    // semantics); the negative additionally gates on the profile's
+    // capability (IG-13) so an unsupported backend never receives one.
+    if (fineTuning) {
+      const prompt = draft.prompt.trim();
+      if (prompt !== "") input.prompt = prompt;
+      const overrides: ImageGenGenerateOverridesValue = {};
+      const negative = draft.negative.trim();
+      if (negative !== "" && effective.capabilities.supportsNegativePrompt) {
+        overrides.negativePrompt = negative;
+      }
+      if (draft.model !== undefined && draft.model !== "") overrides.model = draft.model;
+      if (draft.sampler !== undefined && draft.sampler !== "") overrides.sampler = draft.sampler;
+      if (Object.keys(overrides).length > 0) input.overrides = overrides;
+    }
+    void runGeneration(chatId, input);
     onDone();
   };
 
@@ -242,12 +265,13 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
       )}
 
       {MODES.map((mode) => {
-        // `free` stays disabled in IG-16: its raw prompt field is the IG-17
-        // chip's positive-prompt editor — without it the server rejects a
-        // prompt-less free request (the locked contract). Not even the
-        // Fine-tuning toggle changes that until the chip exists.
+        // `free` unparks with IG-17: enabled while Fine tuning is on AND the
+        // chip's positive prompt is non-empty (its raw payload — the locked
+        // contract rejects a prompt-less free request). Off-toggle or an
+        // empty chip prompt keeps the row disabled with the hint.
         const isFree = mode === IMAGE_GENERATION_MODES.Free;
-        const disabledRow = busy || isFree;
+        const freeBlocked = !fineTuning || draft.prompt.trim() === "";
+        const disabledRow = busy || (isFree && freeBlocked);
         return (
           <button
             key={mode}
@@ -259,7 +283,7 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
             onClick={() => startMode(mode)}
           >
             <span>{tDynamic(`image_gen_mode_${mode}`)}</span>
-            {isFree && <span className="text-[calc(var(--ui-fs)-3px)] text-t4">{t("image_gen_free_hint")}</span>}
+            {isFree && freeBlocked && <span className="text-[calc(var(--ui-fs)-3px)] text-t4">{t("image_gen_free_hint")}</span>}
           </button>
         );
       })}

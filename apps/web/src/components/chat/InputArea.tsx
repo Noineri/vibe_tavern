@@ -13,6 +13,7 @@ import { usePerSendPrefillStore } from "../../stores/per-send-prefill-store.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
+import { ImageGenFineTuningChip } from "./ImageGenFineTuningChip.js";
 import { VoiceMessageButton } from "./VoiceMessageButton.js";
 import { MobileInputArea } from "./MobileInputArea.js";
 import { QuotaIndicator } from "./QuotaIndicator.js";
@@ -97,6 +98,9 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
           {/* LS-8: per-send prefill renders as a chip + in-frame bubble (below);
             the desktop LS-4b strip is retired. Both gated upstream on the
             capability AND the active preset's opt-in toggle. */}
+      {/* IG-17: the image fine-tuning chip above the input — self-gated on
+          the chat's Fine-tuning toggle (renders null while off). */}
+      {activeChatId && <ImageGenFineTuningChip chatId={activeChatId} variant="desktop" />}
         <div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
           {showGenerateMore && (
             <div className="absolute right-2 top-2 z-20">

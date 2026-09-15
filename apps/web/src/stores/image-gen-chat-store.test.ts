@@ -82,6 +82,9 @@ afterEach(() => {
   generateCalls.length = 0;
   refreshCalls.length = 0;
   toastErrors.length = 0;
+  // The store is a module singleton shared across files in this worker —
+  // leave every IG-17 draft map pristine for the next test/file.
+  useImageGenChatStore.setState({ fineTuningDraftByChat: {} });
 });
 
 describe("image-gen chat store (IG-16)", () => {
@@ -155,5 +158,38 @@ describe("image-gen chat store (IG-16)", () => {
     expect(useImageGenChatStore.getState().fineTuningByChat["chat-h"]).toBeUndefined();
     expect(useImageGenChatStore.getState().activeProfileIdByChat["chat-g"]).toBe("p2");
     expect(useImageGenChatStore.getState().activeProfileIdByChat["chat-h"]).toBeUndefined();
+  });
+});
+
+describe("image-gen chat store — fine-tuning draft (IG-17)", () => {
+  it("starts pristine; setFineTuningDraft patches from EMPTY and keeps the rest", () => {
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-i"]).toBeUndefined();
+    useImageGenChatStore.getState().setFineTuningDraft("chat-i", { prompt: "a castle at dawn" });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-i"]).toEqual({
+      prompt: "a castle at dawn",
+      negative: "",
+    });
+    // A second patch keeps the earlier fields (partial-update semantics).
+    useImageGenChatStore.getState().setFineTuningDraft("chat-i", { sampler: "Euler a" });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-i"]).toEqual({
+      prompt: "a castle at dawn",
+      negative: "",
+      sampler: "Euler a",
+    });
+  });
+
+  it("clearFineTuningDraft resets the chat to pristine (undefined)", () => {
+    useImageGenChatStore.getState().setFineTuningDraft("chat-j", { prompt: "x", model: "m-1" });
+    useImageGenChatStore.getState().clearFineTuningDraft("chat-j");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-j"]).toBeUndefined();
+  });
+
+  it("drafts are isolated across chats", () => {
+    useImageGenChatStore.getState().setFineTuningDraft("chat-k", { prompt: "one" });
+    useImageGenChatStore.getState().setFineTuningDraft("chat-l", { negative: "blur" });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-k"]?.prompt).toBe("one");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-k"]?.negative).toBe("");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l"]?.prompt).toBe("");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l"]?.negative).toBe("blur");
   });
 });

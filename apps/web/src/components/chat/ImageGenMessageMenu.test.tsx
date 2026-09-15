@@ -26,7 +26,7 @@ type GenerateCall = [string, import("@vibe-tavern/api-contracts").GenerateImageG
 let profilesStore: ProfileRecord[] = [profile("p1", "OpenRouter main"), profile("p2", "A1111 local")];
 const generateCalls: GenerateCall[] = [];
 
-function profile(id: string, name: string): ProfileRecord {
+function profile(id: string, name: string, caps?: Partial<ProfileRecord["capabilities"]>): ProfileRecord {
   return {
     id,
     name,
@@ -46,6 +46,7 @@ function profile(id: string, name: string): ProfileRecord {
       localExecution: false,
       supportsImg2img: false,
       supportsInpaint: false,
+      ...caps,
     },
     sortOrder: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -141,6 +142,14 @@ afterEach(() => {
   refreshCalls.length = 0;
   profilesStore = [profile("p1", "OpenRouter main"), profile("p2", "A1111 local")];
   useModalStore.getState().setIsProviderModalOpen(false);
+  // The store is a module singleton shared across files in this worker —
+  // leave the IG-16/IG-17 maps pristine for the next test/file.
+  useImageGenChatStore.setState({
+    fineTuningByChat: {},
+    fineTuningDraftByChat: {},
+    activeProfileIdByChat: {},
+    runningByChat: {},
+  });
 });
 
 describe("ImageGenMessageMenu — desktop popover (IG-16)", () => {
@@ -286,5 +295,130 @@ describe("ImageGenMessageMenu — mobile sheet (IG-16)", () => {
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
     expect(within(view.baseElement).getByRole("switch", { name: "image_gen_fine_tuning" })).toBeTruthy();
     expect(within(view.baseElement).getByText("image_gen_section_title")).toBeTruthy();
+  });
+});
+
+describe("ImageGenMessageMenu — chip draft reaches the generate payload (IG-17)", () => {
+  function armWithDraft(chatId: string, draft: { prompt?: string; negative?: string; model?: string; sampler?: string }): void {
+    useImageGenChatStore.getState().setFineTuning(chatId, true);
+    useImageGenChatStore.getState().setFineTuningDraft(chatId, draft);
+  }
+
+  function settle(chatId: string): void {
+    pendingByChat.get(chatId)!.resolve();
+  }
+
+  it("fine tuning on + full caps profile: prompt verbatim, negative/model/sampler as overrides", async () => {
+    profilesStore = [profile("p1", "A1111 local", { supportsNegativePrompt: true, supportsSamplers: true })];
+    armWithDraft("chat-ft", { prompt: "  a castle at dawn  ", negative: "blurry", model: "pony-v6", sampler: "Euler a" });
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-ft" messageId="m-1" variant="desktop" />);
+    openPopover(view);
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-portrait"));
+    });
+    expect(generateCalls.length).toBe(1);
+    const [, body] = generateCalls[0];
+    // The IG-14 verbatim contract: the trimmed chip text, never re-templated.
+    expect(body.prompt).toBe("a castle at dawn");
+    expect(body.overrides).toEqual({ negativePrompt: "blurry", model: "pony-v6", sampler: "Euler a" });
+    settle("chat-ft");
+    await act(async () => { await Promise.resolve(); });
+  });
+
+  it("capability gates: no-caps profile never receives a negative (and the sampler pick is a UI impossibility); model still rides", async () => {
+    profilesStore = [profile("p1", "OpenRouter main")];
+    armWithDraft("chat-gated", { prompt: "x", negative: "should-not-send", model: "flux-1" });
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-gated" messageId="m-1" variant="desktop" />);
+    openPopover(view);
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-portrait"));
+    });
+    expect(generateCalls.length).toBe(1);
+    const [, body] = generateCalls[0];
+    expect(body.overrides).toEqual({ model: "flux-1" });
+    expect("negativePrompt" in (body.overrides ?? {})).toBe(false);
+    settle("chat-gated");
+    await act(async () => { await Promise.resolve(); });
+  });
+
+  it("whitespace-only prompt/negative are not sent; an empty draft sends no overrides key at all", async () => {
+    profilesStore = [profile("p1", "A1111 local", { supportsNegativePrompt: true, supportsSamplers: true })];
+    armWithDraft("chat-empty", { prompt: "   ", negative: "" });
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-empty" messageId="m-1" variant="desktop" />);
+    openPopover(view);
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-portrait"));
+    });
+    expect(generateCalls.length).toBe(1);
+    const [, body] = generateCalls[0];
+    expect("prompt" in body).toBe(false);
+    expect("overrides" in body).toBe(false);
+    settle("chat-empty");
+    await act(async () => { await Promise.resolve(); });
+  });
+
+  it("fine tuning OFF ignores the draft entirely (legacy payload: mode + anchor + profile only)", async () => {
+    profilesStore = [profile("p1", "A1111 local", { supportsNegativePrompt: true })];
+    useImageGenChatStore.getState().setFineTuningDraft("chat-off", { prompt: "ignored", negative: "ignored" });
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-off" messageId="m-1" variant="desktop" />);
+    openPopover(view);
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-portrait"));
+    });
+    expect(generateCalls.length).toBe(1);
+    const [, body] = generateCalls[0];
+    expect("prompt" in body).toBe(false);
+    expect("overrides" in body).toBe(false);
+    settle("chat-off");
+    await act(async () => { await Promise.resolve(); });
+  });
+});
+
+describe("ImageGenMessageMenu — free mode unparks with the chip (IG-17)", () => {
+  function settle(chatId: string): void {
+    pendingByChat.get(chatId)!.resolve();
+  }
+
+  it("fine tuning on + non-empty chip prompt: free is enabled and carries the chip prompt as the raw payload", async () => {
+    useImageGenChatStore.getState().setFineTuning("chat-free", true);
+    useImageGenChatStore.getState().setFineTuningDraft("chat-free", { prompt: "watercolor dragon" });
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-free" messageId="m-1" variant="desktop" />);
+    openPopover(view);
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-free")).toBeTruthy());
+    const free = within(view.baseElement).getByTestId("image-gen-mode-free") as HTMLButtonElement;
+    expect(free.disabled).toBe(false);
+    // The hint hides once the requirement is satisfied.
+    expect(within(view.baseElement).queryByText("image_gen_free_hint")).toBeNull();
+    act(() => {
+      fireEvent.click(free);
+    });
+    expect(generateCalls.length).toBe(1);
+    const [, body] = generateCalls[0];
+    expect(body.mode).toBe("free");
+    expect(body.prompt).toBe("watercolor dragon");
+    settle("chat-free");
+    await act(async () => { await Promise.resolve(); });
+  });
+
+  it("fine tuning on + EMPTY chip prompt: free stays disabled with the hint (the contract's required payload)", async () => {
+    useImageGenChatStore.getState().setFineTuning("chat-free2", true);
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-free2" messageId="m-1" variant="desktop" />);
+    openPopover(view);
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-free")).toBeTruthy());
+    const free = within(view.baseElement).getByTestId("image-gen-mode-free") as HTMLButtonElement;
+    expect(free.disabled).toBe(true);
+    expect(within(view.baseElement).getByText("image_gen_free_hint")).toBeTruthy();
+    // Other modes still fire — the block is free-specific.
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-portrait"));
+    });
+    expect(generateCalls.length).toBe(1);
+    expect(generateCalls[0][1].mode).toBe("portrait");
+    settle("chat-free2");
+    await act(async () => { await Promise.resolve(); });
   });
 });

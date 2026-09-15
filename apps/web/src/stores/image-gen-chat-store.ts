@@ -14,6 +14,11 @@
  * is prevented by the UI (the trigger morphs into Stop) and guarded here.
  * The AbortControllers live in a module-level map, NOT in zustand state —
  * controllers are imperative handles, not renderable state.
+ *
+ * IG-17: `fineTuningDraftByChat` is the chip's editable draft (positive /
+ * negative prompt, model + sampler picks) — per chat, UI-only, lives while
+ * the toggle is on; the message popover folds it into the next generate
+ * payload (prompt verbatim, picks → overrides).
  */
 
 import { create } from "zustand";
@@ -31,6 +36,28 @@ export interface ImageGenRunState {
   anchorMessageId: string;
 }
 
+/** The IG-17 chip's per-chat draft — every field optional/empty-able; empty
+ *  means "not sent" (the generate contract's fallback semantics). The
+ *  profile pick is NOT here: it lives in `activeProfileIdByChat` (IG-16),
+ *  shared by the popover and the chip. */
+export interface ImageGenFineTuningDraft {
+  /** Positive prompt — verbatim (the IG-14 contract): non-free modes use it
+   *  as the resolved prompt; free REQUIRES it. "" = server builds. */
+  prompt: string;
+  /** Negative prompt — sent only when non-empty AND the profile's
+   *  capabilities allow negatives (the IG-13 gate, enforced at the call
+   *  site). */
+  negative: string;
+  /** Per-chat model pick → overrides.model. undefined = the profile's
+   *  selected model. */
+  model?: string;
+  /** Per-chat sampler pick → overrides.sampler. undefined = server default. */
+  sampler?: string;
+}
+
+/** A pristine draft (shared empty instance — never mutated; setters copy). */
+export const EMPTY_IMAGE_GEN_DRAFT: ImageGenFineTuningDraft = { prompt: "", negative: "" };
+
 interface ImageGenChatState {
   /** Per-chat "Fine tuning" toggle (default off — the IG-16 gate). */
   fineTuningByChat: Record<string, boolean>;
@@ -38,6 +65,8 @@ interface ImageGenChatState {
   activeProfileIdByChat: Record<string, string | undefined>;
   /** ChatId → in-flight run; undefined = idle. */
   runningByChat: Record<string, ImageGenRunState | undefined>;
+  /** IG-17 chip drafts, per chat; undefined = pristine (EMPTY_IMAGE_GEN_DRAFT). */
+  fineTuningDraftByChat: Record<string, ImageGenFineTuningDraft | undefined>;
 }
 
 interface ImageGenChatActions {
@@ -50,6 +79,11 @@ interface ImageGenChatActions {
   /** Abort the chat's in-flight generation (the Stop control). The pending
    *  runGeneration settles silently via its AbortError path. */
   abortGeneration(chatId: string): void;
+  /** Patch the chat's fine-tuning draft (creates it from EMPTY on first
+   *  touch). */
+  setFineTuningDraft(chatId: string, patch: Partial<ImageGenFineTuningDraft>): void;
+  /** Reset the chat's draft to pristine (the chip's Clear). */
+  clearFineTuningDraft(chatId: string): void;
 }
 
 export type ImageGenChatStore = ImageGenChatState & ImageGenChatActions;
@@ -65,6 +99,7 @@ export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
   fineTuningByChat: {},
   activeProfileIdByChat: {},
   runningByChat: {},
+  fineTuningDraftByChat: {},
 
   setFineTuning: (chatId, on) => {
     set((s) => ({ fineTuningByChat: { ...s.fineTuningByChat, [chatId]: on } }));
@@ -121,6 +156,23 @@ export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
 
   abortGeneration: (chatId) => {
     controllers.get(chatId)?.abort();
+  },
+
+  setFineTuningDraft: (chatId, patch) => {
+    set((s) => ({
+      fineTuningDraftByChat: {
+        ...s.fineTuningDraftByChat,
+        [chatId]: { ...(s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT), ...patch },
+      },
+    }));
+  },
+
+  clearFineTuningDraft: (chatId) => {
+    set((s) => {
+      const next = { ...s.fineTuningDraftByChat };
+      delete next[chatId];
+      return { fineTuningDraftByChat: next };
+    });
   },
 }));
 
