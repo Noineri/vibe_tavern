@@ -751,6 +751,7 @@ export class ChatStore {
               toolCallId: null,
               sceneTrackerJson: null,
               ttsAnnotation: null,
+              attachmentsJson: null,
               createdAt: this.clock.now(),
             }).run();
             currentVariants = [{
@@ -770,6 +771,7 @@ export class ChatStore {
               toolCallId: null,
               sceneTrackerJson: null,
               ttsAnnotation: null,
+              attachmentsJson: null,
               createdAt: this.clock.now(),
             }];
             changed = true;
@@ -804,6 +806,7 @@ export class ChatStore {
               toolCallId: null,
               sceneTrackerJson: null,
               ttsAnnotation: null,
+              attachmentsJson: null,
               createdAt: now,
             }))).run();
             currentVariants = [
@@ -825,6 +828,7 @@ export class ChatStore {
                 toolCallId: null,
                 sceneTrackerJson: null,
                 ttsAnnotation: null,
+                attachmentsJson: null,
                 createdAt: now,
               })),
             ];
