@@ -6,6 +6,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { PluggableList } from "unified";
 import { copyText } from "./clipboard.js";
+import { ImageBlock } from "../components/chat/ImageBlock.js";
 
 const sanitizeSchema = {
   ...defaultSchema,
@@ -540,11 +541,15 @@ const components: Record<string, React.ComponentType<MarkdownComponentProps>> = 
     );
   },
 
-  // Images — constrain width so they never break layout
-  img({ src, alt, ...props }) {
-    return (
-      <img className="md-img" src={src as string | undefined} alt={(alt as string | undefined) ?? ""} {...props} />
-    );
+  // Images — inline markdown images reuse the shared ImageBlock primitive
+  // (the image-gen slot's gallery tile: fixed height, click opens the viewer).
+  // NOTE: react-markdown nests this override inside a <p>, so ImageBlock's
+  // block-level <div> lands as div-in-p — fine because the app is CSR-only
+  // (no hydration parser to complain); do not "fix" by re-implementing.
+  img({ src, alt }) {
+    const srcStr = (src as string | undefined) ?? "";
+    const altStr = (alt as string | undefined) ?? "";
+    return <ImageBlock images={[{ src: srcStr, alt: altStr }]} />;
   },
 
   // Task-list checkboxes (GFM - [x] / - [ ])

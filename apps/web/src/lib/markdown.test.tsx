@@ -14,11 +14,25 @@
  * These assertions are written against the pre-memoization component and must
  * hold identically after it, which is the whole point of pinning them.
  */
-import { beforeAll, describe, expect, it } from "bun:test";
+import { beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
-const { render } = await import("@testing-library/react");
+const { fireEvent, render } = await import("@testing-library/react");
+
+// Viewer seam — the SAME mock shape as ImageBlock.test.tsx (IG-CF6) pins:
+// FloatingImageViewer replaced by a marker div carrying the opened image's
+// src/alt. Identical factory on purpose: mock.module is process-global, so if
+// both files ever share a worker the leak is behavior-identical either way.
+const realGalleryViewer = await import("../components/build/editors/GalleryViewer.js");
+mock.module("../components/build/editors/GalleryViewer.js", () => ({
+  ...realGalleryViewer,
+  FloatingImageViewer: ({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) => (
+    <div data-testid="floating-viewer" data-src={src} data-alt={alt} onClick={onClose} />
+  ),
+}));
+
+const { justifiedTileHeight } = await import("../components/build/editors/GalleryGrid.js");
 
 let Markdown: typeof import("./markdown.js").Markdown;
 
@@ -92,5 +106,50 @@ describe("Markdown — className", () => {
     const { container } = render(<Markdown text="hi" className="custom-wrap" />);
     expect(container.querySelector(".custom-wrap")).not.toBeNull();
     expect(container.querySelector(".md-content")).toBeNull();
+  });
+});
+
+/**
+ * Markdown — inline images render through the shared ImageBlock (IG-CF7).
+ *
+ * Owner decision 2026-09-15: `![alt](url)` must use the SAME media-gallery
+ * display pattern as the image-gen slot, reusing the CF6 `ImageBlock`
+ * primitive — not the old bare `<img class="md-img">` (no height cap, no
+ * viewer). Each inline image is its own single-image ImageBlock with its own
+ * viewer state; no caption (no provenance prompt exists for inline images).
+ */
+describe("Markdown — inline images via ImageBlock", () => {
+  it("renders ![alt](url) through ImageBlock, not the bare md-img", () => {
+    const { container, getByTestId } = render(<Markdown text="![pic alt](https://example.com/a.png)" />);
+    const img = getByTestId("image-block-img");
+    expect(img.getAttribute("src")).toBe("https://example.com/a.png");
+    expect(img.getAttribute("alt")).toBe("pic alt");
+    expect(container.querySelector(".md-img")).toBeNull();
+  });
+
+  it("clicking the inline image opens the FloatingImageViewer", () => {
+    const view = render(<Markdown text="![pic alt](https://example.com/a.png)" />);
+    expect(view.queryByTestId("floating-viewer")).toBeNull();
+    fireEvent.click(view.getByTestId("image-block-img"));
+    const viewer = view.getByTestId("floating-viewer");
+    expect(viewer.getAttribute("data-src")).toBe("https://example.com/a.png");
+    expect(viewer.getAttribute("data-alt")).toBe("pic alt");
+  });
+
+  it("gives the inline image the fixed justified tile height", () => {
+    const view = render(<Markdown text="![tall](https://example.com/tall.png)" />);
+    const img = view.getByTestId("image-block-img");
+    // The image area (the img's parent) carries the gallery's fixed height
+    // budget — imported from the gallery's own module, never re-declared.
+    // happy-dom's default viewport is desktop-wide, so the desktop budget.
+    const area = img.parentElement;
+    expect(area?.getAttribute("style")).toContain(`height: ${justifiedTileHeight(false)}px`);
+  });
+
+  it("keeps surrounding text around a mid-sentence inline image", () => {
+    const view = render(<Markdown text="before ![mid](https://example.com/m.png) after" />);
+    expect(view.container.textContent).toContain("before");
+    expect(view.container.textContent).toContain("after");
+    expect(view.getByTestId("image-block-img").getAttribute("alt")).toBe("mid");
   });
 });
