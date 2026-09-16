@@ -25,6 +25,10 @@ import type {
   ImageGenModelSettingsValue,
   ImageGenProfileValue,
   ImageGenSamplerInfoValue,
+  ImageGenSamplerSet,
+  ImageGenSamplerSetCreate,
+  ImageGenSamplerSetImport,
+  ImageGenSamplerSetUpdate,
   GenerateImageGenInput,
   ImageGenGenerateResponseValue,
   UpdateImageGenProfileInput,
@@ -225,15 +229,21 @@ export async function getImageGenModelSettings(
 }
 
 /** Upsert a model's overlay (idempotent on (profile, model); replaces the
- *  stored overlay wholesale — absent fields go back to inheriting the base). */
+ *  stored overlay wholesale — absent fields go back to inheriting the base).
+ *  `samplerSetId` rides the same upsert (IG-CF15): absent = keep the stored
+ *  pointer, null = clear, string = set. */
 export async function upsertImageGenModelSettings(
   id: string,
   modelId: string,
   overlay: ImageGenModelSettingsOverlayValue,
+  samplerSetId?: string | null,
 ): Promise<ImageGenModelSettingsValue> {
   const response = await client.api["image-gen"].profiles[":id"]["model-settings"][":modelId"].$put({
     param: { id, modelId },
-    json: overlay,
+    json: {
+      settings: overlay,
+      ...(samplerSetId !== undefined ? { samplerSetId } : {}),
+    },
   });
   return unwrapRpc(response);
 }
@@ -244,6 +254,51 @@ export async function deleteImageGenModelSettings(id: string, modelId: string): 
     param: { id, modelId },
   });
   if (!response.ok) throw await unwrapError(response);
+}
+
+// ─── Named image-gen sampler sets (IG-CF15 — the sampler-set-api twin) ────────
+
+/** The set library in store order (global — not scoped to a profile). */
+export async function listImageGenSamplerSets(): Promise<ImageGenSamplerSet[]> {
+  const response = await client.api["image-gen"]["sampler-sets"].$get();
+  return unwrapRpc(response);
+}
+
+/** Create a set from the pane's current values (the «+» flow). */
+export async function createImageGenSamplerSet(
+  input: ImageGenSamplerSetCreate,
+): Promise<ImageGenSamplerSet> {
+  const response = await client.api["image-gen"]["sampler-sets"].$post({ json: input });
+  return unwrapRpc(response);
+}
+
+/** Rename and/or overwrite the stored payload (pencil / 💾 flows). */
+export async function updateImageGenSamplerSet(
+  setId: string,
+  input: ImageGenSamplerSetUpdate,
+): Promise<ImageGenSamplerSet> {
+  const response = await client.api["image-gen"]["sampler-sets"][":setId"].$patch({
+    param: { setId },
+    json: input,
+  });
+  return unwrapRpc(response);
+}
+
+/** Delete a set; overlay rows' provenance pointers to it are cleared
+ *  server-side first (LS-5e twin — applied values stay). */
+export async function deleteImageGenSamplerSet(setId: string): Promise<void> {
+  const response = await client.api["image-gen"]["sampler-sets"][":setId"].$delete({
+    param: { setId },
+  });
+  if (!response.ok) throw await unwrapError(response);
+}
+
+/** Point import (upload button): name + raw parsed JSON (VT-native). */
+export async function importImageGenSamplerSet(
+  input: ImageGenSamplerSetImport,
+): Promise<{ set: ImageGenSamplerSet; notes: string[] }> {
+  const response = await client.api["image-gen"]["sampler-sets"].import.$post({ json: input });
+  return unwrapRpc(response);
 }
 
 /** IG-18: copy a generated image asset into the character's gallery (the

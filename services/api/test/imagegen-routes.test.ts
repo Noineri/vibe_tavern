@@ -25,6 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createStoreContainer, ServicePromptProfileStore, UiSettingsStore, type StoreContainer } from "@vibe-tavern/db";
+import { domainErrorToJson, httpStatusForDomainError, isDomainError } from "../src/shared/errors.js";
 import { IMAGE_GEN_BACKENDS, parseStoredAttachments, type ChatId } from "@vibe-tavern/domain";
 
 import { AssetService } from "../src/domain/asset/asset-service.js";
@@ -90,6 +91,15 @@ async function makeApp(
   const assetService = new AssetService(assetsDir, stores.content);
   const adapter = new ImageGenAdapter(stores, assetService, transport, assistDeps);
   const app = createImageGenRoutes(adapter);
+  // The production onError mounts in app-factory; surface the same DomainError
+  // mapping here so 409 (set-name collision) / 400 (validation) pin their real
+  // statuses instead of 500 (the sampler-set-routes test pattern).
+  app.onError((err, c) => {
+    if (isDomainError(err)) {
+      return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 404 | 409 | 422 | 500);
+    }
+    return c.json({ error: { kind: "Internal", message: err instanceof Error ? err.message : "error" } }, 500);
+  });
   return { app, stores, assetService, dataRoot };
 }
 
@@ -405,28 +415,29 @@ describe("image-gen routes — draft model listing (fetch-by-endpoint)", () => {
   });
 });
 
-describe("image-gen routes — generate (image message slot)", () => {
-  /** OpenRouter happy-path transport: one completions call + one data-URL download. */
-  function openRouterTransport(captured: { url?: string; init?: RequestInit; calls: number }) {
-    return mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
-      captured.calls += 1;
-      const url = String(input);
-      if (url.endsWith("/chat/completions")) {
-        captured.url = url;
-        captured.init = init;
-        return new Response(
-          JSON.stringify({
-            choices: [
-              { message: { role: "assistant", images: [{ image_url: { url: `data:image/png;base64,${PNG_B64(0x11)}` } }] } },
-            ],
-          }),
-          { status: 200 },
-        );
-      }
-      return new Response(PNG_BYTES(0x11), { status: 200, headers: { "Content-Type": "image/png" } });
-    });
-  }
+/** OpenRouter happy-path transport (module-scoped, shared by the generate
+ *  describes): one completions call + one data-URL download. */
+function openRouterTransport(captured: { url?: string; init?: RequestInit; calls: number }) {
+  return mock(async (input: FetchArgs[0], init?: FetchArgs[1]) => {
+    captured.calls += 1;
+    const url = String(input);
+    if (url.endsWith("/chat/completions")) {
+      captured.url = url;
+      captured.init = init;
+      return new Response(
+        JSON.stringify({
+          choices: [
+            { message: { role: "assistant", images: [{ image_url: { url: `data:image/png;base64,${PNG_B64(0x11)}` } }] } },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    return new Response(PNG_BYTES(0x11), { status: 200, headers: { "Content-Type": "image/png" } });
+  });
+}
 
+describe("image-gen routes — generate (image message slot)", () => {
   test("unknown chat → 404; unknown profile → 404", async () => {
     const { app, stores } = await makeApp(async () => {
       throw new TypeError("must not be called");
@@ -1099,13 +1110,15 @@ describe("image-gen routes — model favorites + per-model settings (IG-12b)", (
       ["PUT", "/api/image-gen/profiles/missing/model-settings/m"],
       ["DELETE", "/api/image-gen/profiles/missing/model-settings/m"],
     ] as const) {
+      const body =
+        path.endsWith("/model-settings/m") && method === "PUT"
+          ? { settings: {} } // IG-CF15 upsert body (values under `settings`)
+          : { modelId: "m" };
       const res = await app.request(path, {
         method,
-        ...(method !== "GET" && method !== "DELETE"
-          ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelId: "m" }) }
-          : method === "DELETE"
-            ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelId: "m" }) }
-            : {}),
+        ...(method !== "GET"
+          ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+          : {}),
       });
       expect(res.status).toBe(404);
     }
@@ -1123,13 +1136,14 @@ describe("image-gen routes — model favorites + per-model settings (IG-12b)", (
     const put = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(overlay),
+      body: JSON.stringify({ settings: overlay, samplerSetId: "set_1" }),
     });
     expect(put.status).toBe(200);
     expect(await put.json()).toMatchObject({
       profileId: id,
       modelId: "sd_xl",
       settings: overlay,
+      samplerSetId: "set_1",
     });
 
     const get = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl`);
@@ -1155,9 +1169,218 @@ describe("image-gen routes — model favorites + per-model settings (IG-12b)", (
     const res = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ modeSizePresets: { "not-a-mode": { width: 512 } } }),
+      body: JSON.stringify({ settings: { modeSizePresets: { "not-a-mode": { width: 512 } } } }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("image-gen routes — named sampler sets (IG-CF15)", () => {
+  test("library CRUD round-trips; create/list order follows sortOrder; duplicate names 409", async () => {
+    const { app } = await makeApp();
+
+    const created = await app.request("/api/image-gen/sampler-sets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Crisp", payload: { steps: 30, sampler: "DPM++ 2M" } }),
+    });
+    expect(created.status).toBe(200);
+    const first = (await created.json()) as { id: string; sortOrder: number; payload: Record<string, unknown> };
+    expect(first.sortOrder).toBe(0);
+    expect(first.payload).toEqual({ steps: 30, sampler: "DPM++ 2M" });
+
+    const second = await app.request("/api/image-gen/sampler-sets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Soft", payload: { cfgScale: 5.5 } }),
+    });
+    const soft = (await second.json()) as { id: string; sortOrder: number };
+    expect(soft.sortOrder).toBe(1);
+
+    const list = await app.request("/api/image-gen/sampler-sets");
+    expect(((await list.json()) as unknown[]).map((s) => (s as { name: string }).name)).toEqual(["Crisp", "Soft"]);
+
+    // Duplicate name (case-insensitive) → 409 with the colliding id.
+    const dup = await app.request("/api/image-gen/sampler-sets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "  crisp ", payload: {} }),
+    });
+    expect(dup.status).toBe(409);
+
+    // Rename + payload overwrite (the pencil / 💾 flows).
+    const renamed = await app.request(`/api/image-gen/sampler-sets/${first.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Crispy", payload: { steps: 28 } }),
+    });
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toMatchObject({ name: "Crispy", payload: { steps: 28 } });
+
+    // Rename onto an existing name → 409; unknown set → 400.
+    const clash = await app.request(`/api/image-gen/sampler-sets/${first.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Soft" }),
+    });
+    expect(clash.status).toBe(409);
+    const missing = await app.request("/api/image-gen/sampler-sets/none", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "X" }),
+    });
+    expect(missing.status).toBe(400);
+
+    const del = await app.request(`/api/image-gen/sampler-sets/${soft.id}`, { method: "DELETE" });
+    expect(del.status).toBe(200);
+    const after = await app.request("/api/image-gen/sampler-sets");
+    expect(((await after.json()) as unknown[]).length).toBe(1);
+  });
+
+  test("import accepts VT-native payload JSON and rejects empty/foreign shapes loudly", async () => {
+    const { app } = await makeApp();
+
+    const good = await app.request("/api/image-gen/sampler-sets/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Imported", raw: { steps: 25, seed: 123 } }),
+    });
+    expect(good.status).toBe(200);
+    expect(await good.json()).toMatchObject({ set: { name: "Imported", payload: { steps: 25, seed: 123 } }, notes: [] });
+
+    // An empty object would silently land as an empty set — must 400.
+    const empty = await app.request("/api/image-gen/sampler-sets/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Empty", raw: {} }),
+    });
+    expect(empty.status).toBe(400);
+
+    // A random JSON file (unknown keys only) also fails the payload schema.
+    const foreign = await app.request("/api/image-gen/sampler-sets/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Foreign", raw: { totally: "unrelated" } }),
+    });
+    expect(foreign.status).toBe(400);
+  });
+
+  test("deleting a set clears overlay rows' pointers but keeps their applied values (LS-5e twin)", async () => {
+    const { app } = await makeApp();
+    const id = await seedProfile(app, { backend: "a1111", endpoint: "http://127.0.0.1:7860" });
+
+    const set = (await (await app.request("/api/image-gen/sampler-sets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Crisp", payload: { steps: 30 } }),
+    })).json()) as { id: string };
+
+    const put = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { steps: 30 }, samplerSetId: set.id }),
+    });
+    expect(put.status).toBe(200);
+
+    const del = await app.request(`/api/image-gen/sampler-sets/${set.id}`, { method: "DELETE" });
+    expect(del.status).toBe(200);
+
+    const overlay = (await (await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl`)).json()) as {
+      settings: { steps?: number };
+      samplerSetId: string | null;
+    };
+    expect(overlay.samplerSetId).toBe(null);
+    expect(overlay.settings.steps).toBe(30);
+  });
+
+  test("overlay upsert pointer semantics: absent keeps, null clears, string sets", async () => {
+    const { app } = await makeApp();
+    const id = await seedProfile(app, { backend: "a1111", endpoint: "http://127.0.0.1:7860" });
+
+    const put1 = await app.request(`/api/image-gen/profiles/${id}/model-settings/m1`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { steps: 10 }, samplerSetId: "set_a" }),
+    });
+    expect(((await put1.json()) as { samplerSetId: string | null }).samplerSetId).toBe("set_a");
+
+    // A values-only save must NOT wipe the pointer.
+    const put2 = await app.request(`/api/image-gen/profiles/${id}/model-settings/m1`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { steps: 20 } }),
+    });
+    expect(((await put2.json()) as { samplerSetId: string | null }).samplerSetId).toBe("set_a");
+
+    // Explicit null clears it.
+    const put3 = await app.request(`/api/image-gen/profiles/${id}/model-settings/m1`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { steps: 20 }, samplerSetId: null }),
+    });
+    expect(((await put3.json()) as { samplerSetId: string | null }).samplerSetId).toBe(null);
+  });
+});
+
+describe("image-gen routes — generate with the per-model overlay (IG-CF15)", () => {
+  test("the ACTIVE model's overlay merges between request overrides and the profile base; another model's overlay never applies", async () => {
+    const captured = { calls: 0 };
+    const { app, stores } = await makeApp(openRouterTransport(captured));
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      apiKey: "sk-own",
+      modelId: "gpt-image-2",
+      modeSizePresets: { portrait: { width: 832, height: 1248 } },
+    });
+
+    // The active model's overlay: its mode preset beats the profile's own;
+    // another model's overlay (with a DIFFERENT preset) must stay inert.
+    const putActive = await app.request(`/api/image-gen/profiles/${id}/model-settings/gpt-image-2`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: { modeSizePresets: { portrait: { width: 1024, height: 1024 } } },
+      }),
+    });
+    expect(putActive.status).toBe(200);
+    const putOther = await app.request(`/api/image-gen/profiles/${id}/model-settings/other-model`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: { modeSizePresets: { portrait: { width: 512, height: 512 } } },
+      }),
+    });
+    expect(putOther.status).toBe(200);
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { width?: number; height?: number; model?: string };
+    expect(body.model).toBe("gpt-image-2");
+    expect(body.width).toBe(1024);
+    expect(body.height).toBe(1024);
+    const wire = JSON.parse(String(captured.init?.body)) as { image_config?: { aspect_ratio: string } };
+    expect(wire.image_config).toEqual({ aspect_ratio: "1:1" });
+
+    // Request overrides still WIN over the overlay.
+    captured.calls = 0;
+    const res2 = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: id,
+        mode: "portrait",
+        prompt: "p",
+        overrides: { width: 1344, height: 768 },
+      }),
+    });
+    expect(res2.status).toBe(200);
+    const body2 = (await res2.json()) as { width?: number; height?: number };
+    expect(body2.width).toBe(1344);
+    expect(body2.height).toBe(768);
   });
 });
 

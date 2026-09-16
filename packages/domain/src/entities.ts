@@ -1243,6 +1243,36 @@ export interface ImageGenModelSettings {
   imageGenProfileId: ImageGenProfileId;
   modelId: string;
   settings: ImageGenModelSettingsOverlay;
+  /** The applied sampler set's id (IG-CF15, the LLM `samplerSetId` twin on
+   *  provider profiles): provenance for the pane's set row (dropdown
+   *  pre-selection + dirty dot), NOT a live link — applying a set copies the
+   *  values in (copy-on-select); editing the set later never rewrites this
+   *  row. Cleared when that set is deleted. */
+  samplerSetId: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** Sampler-set payload for image-gen (IG-CF15, the LLM
+ *  `SamplerSetPayload` twin). The five scalar generation params ONLY —
+ *  `modeSizePresets` deliberately NOT here (the owner's set concept is
+ *  «настройки семплеров»; sizes are the profile/model layer's own surface,
+ *  IG-CF14). An inert template: applying copies the values into the target
+ *  overlay; no value ships as code. */
+export interface ImageGenSamplerSetPayload {
+  steps?: number;
+  cfgScale?: number;
+  sampler?: string;
+  seed?: number;
+  clipSkip?: number;
+}
+
+/** Persisted named image-gen sampler set row (`image_gen_sampler_sets`). */
+export interface ImageGenSamplerSet {
+  id: string;
+  name: string;
+  sortOrder: number;
+  payload: ImageGenSamplerSetPayload;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

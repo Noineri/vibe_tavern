@@ -1115,15 +1115,36 @@ export interface ImageGenRuntimeApi {
 	 *  unknown profile (the route distinguishes via a profile read, the
 	 *  samplers-route ladder). */
 	getImageGenModelSettings: (id: string, modelId: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelSettingsValue | null>;
-	/** Upsert a model's overlay — idempotent on (profile, model). */
+	/** Upsert a model's overlay — idempotent on (profile, model). The
+	 *  optional `samplerSetId` rides the same upsert: absent = keep the
+	 *  stored pointer, null = clear, string = set (IG-CF15). */
 	upsertImageGenModelSettings: (
 		id: string,
 		modelId: string,
 		overlay: import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue,
+		samplerSetId?: string | null,
 	) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelSettingsValue | null>;
 	/** Delete a model's overlay (revert to profile base). Null = unknown
 	 *  profile (route → 404). */
 	deleteImageGenModelSettings: (id: string, modelId: string) => Promise<void | null>;
+
+	// ── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin;
+	//    a GLOBAL library, no profile scoping) ──
+	listImageGenSamplerSets: () => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerSetList>;
+	createImageGenSamplerSet: (
+		input: import("@vibe-tavern/api-contracts").ImageGenSamplerSetCreate,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerSet>;
+	updateImageGenSamplerSet: (
+		setId: string,
+		input: import("@vibe-tavern/api-contracts").ImageGenSamplerSetUpdate,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerSet>;
+	deleteImageGenSamplerSet: (setId: string) => Promise<void>;
+	/** Point import (upload button): name + RAW parsed JSON — VT-native set
+	 *  JSON only (no ST TextGen target for image-gen); empty/foreign shapes
+	 *  fail loudly. */
+	importImageGenSamplerSet: (
+		input: import("@vibe-tavern/api-contracts").ImageGenSamplerSetImport,
+	) => Promise<{ set: import("@vibe-tavern/api-contracts").ImageGenSamplerSet; notes: string[] }>;
 }
 
 export interface RuntimeApi {

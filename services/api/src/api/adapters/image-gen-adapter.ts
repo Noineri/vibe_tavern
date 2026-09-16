@@ -30,6 +30,7 @@
  * IG-18 include-in-prompt opt-in only).
  */
 
+import { conflict, validation } from "../../shared/errors.js";
 import type {
   CreateImageGenProfileInput,
   DraftImageGenModelsInput,
@@ -44,8 +45,14 @@ import type {
   ImageGenProbeResultValue,
   ImageGenProfileValue,
   ImageGenSamplerInfoValue,
+  ImageGenSamplerSet,
+  ImageGenSamplerSetCreate,
+  ImageGenSamplerSetImport,
+  ImageGenSamplerSetList,
+  ImageGenSamplerSetUpdate,
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
+import { imageGenSamplerSetPayloadSchema } from "@vibe-tavern/api-contracts";
 import type {
   CreateImageGenProfileData,
   StoreContainer,
@@ -161,9 +168,47 @@ function toClientModelSettings(row: ImageGenModelSettings): ImageGenModelSetting
     profileId: row.imageGenProfileId,
     modelId: row.modelId,
     settings: row.settings,
+    samplerSetId: row.samplerSetId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+/** Map a store row onto the image-gen sampler-set wire shape (payload is a
+ *  parsed record; the store-row type is structurally compatible). */
+function imageGenSamplerSetRowToWire(row: {
+  id: string;
+  name: string;
+  sortOrder: number;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}): ImageGenSamplerSet {
+  return {
+    id: row.id,
+    name: row.name,
+    sortOrder: row.sortOrder,
+    payload: row.payload as ImageGenSamplerSet["payload"],
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/** Case-insensitive name-collision probe shared by create / rename / import
+ *  — the SamplerSetAdapter rule verbatim (trim + lowercase, excluding self). */
+async function assertImageGenSetNameAvailable(
+  stores: ImageGenAdapterStores,
+  name: string,
+  selfId: string | null,
+): Promise<void> {
+  const trimmed = name.trim().toLowerCase();
+  const rows = await stores.imageGenSamplerSets.list();
+  const existing = rows.find((row) => row.name.trim().toLowerCase() === trimmed && row.id !== selfId);
+  if (existing) {
+    throw conflict(`An image-gen sampler set named '${name.trim()}' already exists.`, {
+      samplerSetId: existing.id,
+    });
+  }
 }
 
 /** Adapter config from a stored profile: the typed key is injected
@@ -186,7 +231,7 @@ function configFromProfile(
 
 type ImageGenAdapterStores = Pick<
   StoreContainer,
-  "imageGen" | "chats" | "messages" | "characterAssets" | "db" | "characters" | "personas"
+  "imageGen" | "imageGenSamplerSets" | "chats" | "messages" | "characterAssets" | "db" | "characters" | "personas"
 >;
 
 export class ImageGenAdapter implements ImageGenRuntimeApi {
@@ -382,21 +427,29 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       }
     }
 
-    // Effective params: request overrides WIN, then the profile's per-mode
-    // size preset (width/height) and default params (steps/cfg/sampler/seed/
+    // Effective params (IG-CF15): request overrides WIN, then the ACTIVE
+    // MODEL's overlay row (the per-model layer — applied at generation when
+    // the resolved model matches, the owner's «слой применяется при
+    // генерации, когда активна та модель»), then the profile's per-mode size
+    // preset (width/height) and default params (steps/cfg/sampler/seed/
     // clipSkip), then the vendor default (field simply not sent). No value is
     // ever invented here (owner's hardcoded-parameters ban).
     const overrides = body.overrides ?? {};
+    const model = overrides.model ?? profile.modelId;
+    const overlayRow = model !== undefined && model !== ""
+      ? await this.stores.imageGen.getModelSettings(body.profileId, model)
+      : null;
+    const overlay = overlayRow?.settings ?? {};
+    const overlayModePreset = overlay.modeSizePresets?.[body.mode];
     const modePreset = profile.modeSizePresets[body.mode];
     const defaults = profile.defaultParams;
-    const model = overrides.model ?? profile.modelId;
-    const width = overrides.width ?? modePreset?.width;
-    const height = overrides.height ?? modePreset?.height;
-    const steps = overrides.steps ?? defaults.steps;
-    const cfgScale = overrides.cfgScale ?? defaults.cfgScale;
-    const sampler = overrides.sampler ?? defaults.sampler;
-    const seed = overrides.seed ?? defaults.seed;
-    const clipSkip = overrides.clipSkip ?? defaults.clipSkip;
+    const width = overrides.width ?? overlayModePreset?.width ?? modePreset?.width;
+    const height = overrides.height ?? overlayModePreset?.height ?? modePreset?.height;
+    const steps = overrides.steps ?? overlay.steps ?? defaults.steps;
+    const cfgScale = overrides.cfgScale ?? overlay.cfgScale ?? defaults.cfgScale;
+    const sampler = overrides.sampler ?? overlay.sampler ?? defaults.sampler;
+    const seed = overrides.seed ?? overlay.seed ?? defaults.seed;
+    const clipSkip = overrides.clipSkip ?? overlay.clipSkip ?? defaults.clipSkip;
 
     // IG-15 assist runner: built when the profile's assist is ENABLED and
     // BOTH picks exist (absent picks = assist inert — bit-identical legacy
@@ -669,15 +722,68 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     id: string,
     modelId: string,
     overlay: ImageGenModelSettingsOverlayValue,
+    samplerSetId?: string | null,
   ): Promise<ImageGenModelSettingsValue | null> => {
     if ((await this.stores.imageGen.getById(id)) === null) return null;
-    const row = await this.stores.imageGen.upsertModelSettings(id, modelId, overlay);
+    const row = await this.stores.imageGen.upsertModelSettings(id, modelId, overlay, samplerSetId);
     return toClientModelSettings(row);
   };
 
   deleteImageGenModelSettings = async (id: string, modelId: string): Promise<void | null> => {
     if ((await this.stores.imageGen.getById(id)) === null) return null;
     await this.stores.imageGen.deleteModelSettings(id, modelId);
+  };
+
+  // ─── Named image-gen sampler sets (IG-CF15 — the SamplerSetAdapter fork;
+  //     global library, image-gen payload dialect) ───────────────────────────
+
+  listImageGenSamplerSets = async (): Promise<ImageGenSamplerSetList> => {
+    const rows = await this.stores.imageGenSamplerSets.list();
+    return rows.map(imageGenSamplerSetRowToWire);
+  };
+
+  createImageGenSamplerSet = async (input: ImageGenSamplerSetCreate): Promise<ImageGenSamplerSet> => {
+    await assertImageGenSetNameAvailable(this.stores, input.name, null);
+    return imageGenSamplerSetRowToWire(
+      await this.stores.imageGenSamplerSets.create({ name: input.name, payload: input.payload }),
+    );
+  };
+
+  updateImageGenSamplerSet = async (
+    setId: string,
+    input: ImageGenSamplerSetUpdate,
+  ): Promise<ImageGenSamplerSet> => {
+    const existing = await this.stores.imageGenSamplerSets.getById(setId);
+    if (!existing) {
+      throw validation(`Image-gen sampler set '${setId}' was not found.`);
+    }
+    if (input.name !== undefined && input.name !== existing.name) {
+      await assertImageGenSetNameAvailable(this.stores, input.name, setId);
+    }
+    return imageGenSamplerSetRowToWire(await this.stores.imageGenSamplerSets.update(setId, input));
+  };
+
+  deleteImageGenSamplerSet = async (setId: string): Promise<void> => {
+    // Clear dangling overlay pointers BEFORE the row disappears (LS-5e twin:
+    // deleting a set never leaves model layers pointing at a ghost; the
+    // values they applied stay — copy-on-select, sets are inert templates).
+    await this.stores.imageGen.clearSamplerSetReferences(setId);
+    await this.stores.imageGenSamplerSets.delete(setId);
+  };
+
+  importImageGenSamplerSet = async (
+    input: ImageGenSamplerSetImport,
+  ): Promise<{ set: ImageGenSamplerSet; notes: string[] }> => {
+    await assertImageGenSetNameAvailable(this.stores, input.name, null);
+    // VT-native set JSON only — no ST TextGen target exists for image-gen.
+    // The all-optional payload schema would accept ANY object as an (empty)
+    // set, so an empty parse must fail loudly (the SamplerSetAdapter rule).
+    const vt = imageGenSamplerSetPayloadSchema.safeParse(input.raw);
+    if (!vt.success || Object.keys(vt.data).length === 0) {
+      throw validation("The file does not contain a valid image-gen sampler set.");
+    }
+    const created = await this.stores.imageGenSamplerSets.create({ name: input.name, payload: vt.data });
+    return { set: imageGenSamplerSetRowToWire(created), notes: [] };
   };
 }
 

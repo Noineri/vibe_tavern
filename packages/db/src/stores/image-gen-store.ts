@@ -477,6 +477,7 @@ export class ImageGenStore {
       imageGenProfileId: brandId<ImageGenProfileId>(row.imageGenProfileId),
       modelId: row.modelId,
       settings: this.parseSettingsOverlay(row.settingsJson),
+      samplerSetId: row.samplerSetId ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -507,10 +508,18 @@ export class ImageGenStore {
   }
 
   /** Insert or update (upsert) a model's overlay. Idempotent on
-   *  `(profileId, modelId)`. */
-  async upsertModelSettings(profileId: string, modelId: string, settings: ImageGenModelSettingsOverlay): Promise<ImageGenModelSettings> {
+   *  `(profileId, modelId)`. `samplerSetId` rides the same upsert (the LLM
+   *  provider_profiles.sampler_set_id twin: provenance for the pane's set
+   *  row — copy-on-select, never a live link). */
+  async upsertModelSettings(
+    profileId: string,
+    modelId: string,
+    settings: ImageGenModelSettingsOverlay,
+    samplerSetId?: string | null,
+  ): Promise<ImageGenModelSettings> {
     const now = this.clock.now();
     const settingsJson = JSON.stringify(stripSecrets(settings as Record<string, unknown>));
+    const setPointer = samplerSetId ?? null;
     const existing = await this.db
       .select()
       .from(imageGenModelSettings)
@@ -523,7 +532,12 @@ export class ImageGenStore {
     if (existing) {
       const [row] = await this.db
         .update(imageGenModelSettings)
-        .set({ settingsJson, updatedAt: now })
+        // `samplerSetId === undefined` keeps the existing pointer (the LLM
+        // PATCH twin: an overlay-values save must not wipe set provenance;
+        // only an explicit null/string rewrites it).
+        .set(samplerSetId === undefined
+          ? { settingsJson, updatedAt: now }
+          : { settingsJson, updatedAt: now, samplerSetId: setPointer })
         .where(eq(imageGenModelSettings.id, existing.id))
         .returning();
       return this.mapModelSettingsRow(row!);
@@ -536,11 +550,25 @@ export class ImageGenStore {
         imageGenProfileId: profileId,
         modelId,
         settingsJson,
+        samplerSetId: setPointer,
         createdAt: now,
         updatedAt: now,
       })
       .returning();
     return this.mapModelSettingsRow(row!);
+  }
+
+  /** Null the sampler-set pointer on every overlay row referencing `setId`
+   *  (IG-CF15, the LS-5e twin): deleting a set never leaves overlay rows
+   *  pointing at a ghost — the applied VALUES stay (copy-on-select), only
+   *  the provenance pointer clears. Called by the set-delete adapter path
+   *  BEFORE the set row disappears. */
+  async clearSamplerSetReferences(setId: string): Promise<void> {
+    await this.db
+      .update(imageGenModelSettings)
+      .set({ samplerSetId: null, updatedAt: this.clock.now() })
+      .where(eq(imageGenModelSettings.samplerSetId, setId))
+      .run();
   }
 
   /** Delete a model's overlay (the model reverts to the profile base).

@@ -1800,8 +1800,33 @@ export const imageGenModelSettings = sqliteTable('image_gen_model_settings', {
   modelId: text('model_id').notNull(),
   /** Stringified ImageGenModelSettingsOverlay JSON. */
   settingsJson: text('settings_json').notNull(),
+  /** The applied image-gen sampler set's id (IG-CF15, the LLM
+   *  provider_profiles.sampler_set_id twin): provenance for the pane's set
+   *  row, not a live link (copy-on-select — see ImageGenSamplerSetStore).
+   *  Deliberately FK-less, same as the LLM column: drizzle-kit emits no ON
+   *  DELETE on ALTER ADD COLUMN, and runtime FK enforcement would make set
+   *  deletion throw instead of clearing; the clearing is app-level
+   *  (ImageGenStore.clearSamplerSetReferences, LS-5e twin). */
+  samplerSetId: text('sampler_set_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   profileModelUnique: uniqueIndex('idx_image_gen_model_settings_unique').on(table.imageGenProfileId, table.modelId),
 }));
+
+// ─── imageGenSamplerSets ──────────────────────────────────────────────────────
+// Named image-gen sampler sets (IG-CF15, the sampler_sets LS-5a twin): a
+// global library of inert sampler value bundles the image-gen per-model
+// layer applies copy-on-select. Payload = the five scalar generation params
+// (ImageGenSamplerSetPayload — no modeSizePresets: sizes are the model
+// layer's own surface, IG-CF14). Same named-library precedent as
+// sampler_sets: no links, no enabled flag.
+export const imageGenSamplerSets = sqliteTable('image_gen_sampler_sets', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  /** Stringified ImageGenSamplerSetPayload JSON. */
+  payloadJson: text('payload_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});

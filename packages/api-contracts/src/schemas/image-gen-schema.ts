@@ -362,13 +362,77 @@ export const imageGenModelSettingsOverlaySchema = z.object({
 });
 export type ImageGenModelSettingsOverlayValue = z.infer<typeof imageGenModelSettingsOverlaySchema>;
 
-/** Persisted per-model overlay wire record. */
+/** Persisted per-model overlay wire record. `samplerSetId` = the applied
+ *  image-gen sampler set's provenance pointer (IG-CF15, the LLM
+ *  provider-profile `samplerSetId` twin): copy-on-select — applying a set
+ *  copies its values into `settings` and records the pointer; editing the
+ *  set later never rewrites this row. */
 export const imageGenModelSettingsSchema = z.object({
   id: z.string(),
   profileId: z.string(),
   modelId: z.string(),
   settings: imageGenModelSettingsOverlaySchema,
+  samplerSetId: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type ImageGenModelSettingsValue = z.infer<typeof imageGenModelSettingsSchema>;
+
+/** Upsert body — the overlay values plus the optional set pointer (absent =
+ *  keep the stored pointer; null = clear it). */
+export const upsertImageGenModelSettingsSchema = z.object({
+  settings: imageGenModelSettingsOverlaySchema,
+  samplerSetId: z.string().nullable().optional(),
+});
+export type UpsertImageGenModelSettingsValue = z.infer<typeof upsertImageGenModelSettingsSchema>;
+
+// ─── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin) ─────
+
+/** Set payload: the five scalar generation params (no `modeSizePresets` —
+ *  sizes are the model layer's own surface, IG-CF14). All-optional like the
+ *  overlay: an inert template, empty = nothing to apply. */
+export const imageGenSamplerSetPayloadSchema = z.object({
+  steps: z.number().optional(),
+  cfgScale: z.number().optional(),
+  sampler: z.string().optional(),
+  seed: z.number().optional(),
+  clipSkip: z.number().optional(),
+});
+export type ImageGenSamplerSetPayloadValue = z.infer<typeof imageGenSamplerSetPayloadSchema>;
+
+/** Wire record — as served by GET /api/image-gen/sampler-sets. */
+export const imageGenSamplerSetSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  sortOrder: z.number().int(),
+  payload: imageGenSamplerSetPayloadSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ImageGenSamplerSet = z.infer<typeof imageGenSamplerSetSchema>;
+
+export const imageGenSamplerSetListSchema = z.array(imageGenSamplerSetSchema);
+export type ImageGenSamplerSetList = z.infer<typeof imageGenSamplerSetListSchema>;
+
+/** Create from the pane's current values (the «+» flow): name + payload. */
+export const createImageGenSamplerSetSchema = z.object({
+  name: z.string().min(1),
+  payload: imageGenSamplerSetPayloadSchema,
+});
+export type ImageGenSamplerSetCreate = z.infer<typeof createImageGenSamplerSetSchema>;
+
+/** Partial update: rename (pencil morph) and/or overwrite the payload (💾). */
+export const updateImageGenSamplerSetSchema = z.object({
+  name: z.string().min(1).optional(),
+  payload: imageGenSamplerSetPayloadSchema.optional(),
+});
+export type ImageGenSamplerSetUpdate = z.infer<typeof updateImageGenSamplerSetSchema>;
+
+/** Import body (upload button): `name` + the RAW parsed JSON — VT-native set
+ *  JSON only (no ST TextGen target exists for image-gen); the backend
+ *  validates against the payload schema and rejects empty objects loudly. */
+export const importImageGenSamplerSetSchema = z.object({
+  name: z.string().min(1),
+  raw: z.unknown(),
+});
+export type ImageGenSamplerSetImport = z.infer<typeof importImageGenSamplerSetSchema>;

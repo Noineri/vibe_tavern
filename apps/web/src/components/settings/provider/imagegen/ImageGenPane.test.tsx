@@ -49,6 +49,7 @@ const upsertSettingsApi = mock(
       profileId: id,
       modelId,
       settings: overlay as ImageGenModelSettings["settings"],
+      samplerSetId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -990,6 +991,7 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
       profileId: "p1",
       modelId: "sd_xl",
       settings: { steps: 30 },
+      samplerSetId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

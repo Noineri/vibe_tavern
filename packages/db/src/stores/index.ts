@@ -94,6 +94,8 @@ export type {
 
 export { CopilotProfileStore } from './copilot-profile-store.js';
 export { SamplerSetStore } from './sampler-set-store.js';
+export { ImageGenSamplerSetStore } from './image-gen-sampler-set-store.js';
+export type { ImageGenSamplerSetRow, CreateImageGenSamplerSetData, UpdateImageGenSamplerSetData } from './image-gen-sampler-set-store.js';
 export type {
   SamplerSetRow,
   SamplerSetPayload,

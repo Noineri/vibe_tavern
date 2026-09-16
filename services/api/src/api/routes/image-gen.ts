@@ -256,14 +256,38 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
       }
       return c.json(row);
     })
-    .put("/api/image-gen/profiles/:id/model-settings/:modelId", zValidator("json", schemas.imageGenModelSettingsOverlaySchema), async (c) => {
-      const row = await runtime.upsertImageGenModelSettings(c.req.param("id"), c.req.param("modelId"), c.req.valid("json"));
+    .put("/api/image-gen/profiles/:id/model-settings/:modelId", zValidator("json", schemas.upsertImageGenModelSettingsSchema), async (c) => {
+      const body = c.req.valid("json");
+      const row = await runtime.upsertImageGenModelSettings(
+        c.req.param("id"),
+        c.req.param("modelId"),
+        body.settings,
+        body.samplerSetId,
+      );
       if (row === null) return c.json({ error: "Image-gen profile not found" }, 404);
       return c.json(row);
     })
     .delete("/api/image-gen/profiles/:id/model-settings/:modelId", async (c) => {
       const removed = await runtime.deleteImageGenModelSettings(c.req.param("id"), c.req.param("modelId"));
       if (removed === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json({ ok: true });
+    })
+    // ── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin;
+    //    a GLOBAL library, no profile scoping) ──
+    .get("/api/image-gen/sampler-sets", async (c) => {
+      return c.json(await runtime.listImageGenSamplerSets());
+    })
+    .post("/api/image-gen/sampler-sets/import", zValidator("json", schemas.importImageGenSamplerSetSchema), async (c) => {
+      return c.json(await runtime.importImageGenSamplerSet(c.req.valid("json")));
+    })
+    .post("/api/image-gen/sampler-sets", zValidator("json", schemas.createImageGenSamplerSetSchema), async (c) => {
+      return c.json(await runtime.createImageGenSamplerSet(c.req.valid("json")));
+    })
+    .patch("/api/image-gen/sampler-sets/:setId", zValidator("json", schemas.updateImageGenSamplerSetSchema), async (c) => {
+      return c.json(await runtime.updateImageGenSamplerSet(c.req.param("setId"), c.req.valid("json")));
+    })
+    .delete("/api/image-gen/sampler-sets/:setId", async (c) => {
+      await runtime.deleteImageGenSamplerSet(c.req.param("setId"));
       return c.json({ ok: true });
     });
 }
