@@ -60,6 +60,13 @@ export interface ImageGenGenerateRequest {
   sampler?: string;
   seed?: number;
   clipSkip?: number;
+  /** ADetailer face-fix model (IG-CF15/PG-4 v1, A1111-family only):
+   *  PRESENCE = enabled — the a1111 adapter sends
+   *  `alwayson_scripts: {ADetailer: {args: [true, {ad_model}]}}` (the
+   *  extension script's own arg signature: a leading enable bool plus
+   *  pydantic dicts whose `ad_model` names the face detector; "None" skips).
+   *  Other backends ignore the field. */
+  adetailerModel?: string;
   /** Cooperative cancellation — adapters forward it to their HTTP calls.
    *  LOCAL backends carry no timeout (owner 2026-09-14: explicit cancel
    *  only); CLOUD backends are wrapped at the adapter layer with
@@ -188,6 +195,9 @@ export interface ImageGenBackend {
   listModels(signal?: AbortSignal): Promise<ImageGenModelInfo[]>;
   /** Sampler listing — capability-gated (A1111-compat only in v1). */
   listSamplers?(signal?: AbortSignal): Promise<ImageGenSamplerInfo[]>;
+  /** Server-extension listing (A1111-compat only in v1) — extension dir
+   *  names for feature detection (IG-CF15/PG-4: the ADetailer probe). */
+  listExtensions?(signal?: AbortSignal): Promise<string[]>;
   /** Generate one image request per the v1 mode recipe. Downloads bytes
    *  server-side before resolving. */
   generate(request: ImageGenGenerateRequest): Promise<ImageGenGenerateResult>;

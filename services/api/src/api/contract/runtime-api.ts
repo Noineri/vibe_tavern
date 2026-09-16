@@ -1074,6 +1074,7 @@ export interface ImageGenRuntimeApi {
 	 *  used here — a backend without the surface returns null too (route →
 	 *  400 "sampler listing not supported", the STT null contract). */
 	listImageGenProfileSamplers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerInfoValue[] | null>;
+	listImageGenProfileExtensions: (id: string, signal?: AbortSignal) => Promise<string[] | null>;
 	/** Shared fetch-by-endpoint model listing over the TRANSIENT draft config
 	 *  (the STT draft twin): the form's current config plus optional
 	 *  `profileId` for stored-key resolution (endpoint-guarded). Null = the

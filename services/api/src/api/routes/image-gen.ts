@@ -128,6 +128,24 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
         throw error;
       }
     })
+    // ── Extensions (A1111-dialect feature detection — the ADetailer probe) ──
+    .get("/api/image-gen/profiles/:id/extensions", async (c) => {
+      try {
+        const extensions = await runtime.listImageGenProfileExtensions(c.req.param("id"), c.req.raw.signal);
+        if (extensions === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "extension listing not supported" }, 400);
+        }
+        return c.json(extensions);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
     // ── Samplers (capability-gated) ───────────────────────────────────────
     .get("/api/image-gen/profiles/:id/samplers", async (c) => {
       try {

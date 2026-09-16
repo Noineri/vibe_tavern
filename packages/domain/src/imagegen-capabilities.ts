@@ -37,6 +37,33 @@ export const IMAGE_GEN_PARAM_RANGES: Record<"steps" | "cfgScale" | "clipSkip", I
   clipSkip: { min: 1, max: 12, step: 1 },
 };
 
+/** ADetailer face-model presets (IG-CF15/PG-4 v1) — the extension's own
+ *  README face-model table verbatim (Bing-su/adetailer, the 2D/realistic
+ *  face rows + the bundled mediapipe faces; hand/person models are out of
+ *  the v1 face-fix scope). The first entry is the preset default; the
+ *  ultralytics .pt files must exist in the server's models/adetailer dir
+ *  (the extension's download button), the mediapipe faces need nothing. */
+export const IMAGE_GEN_ADETAILER_FACE_MODELS = [
+  "face_yolov8n.pt",
+  "face_yolov8s.pt",
+  "mediapipe_face_full",
+  "mediapipe_face_short",
+  "mediapipe_face_mesh",
+] as const;
+
+/** The face-model preset sent when the overlay enables ADetailer without
+ *  picking a model (the UI default = the extension's commonly shipped
+ *  lightweight face detector). */
+export const IMAGE_GEN_ADETAILER_DEFAULT_MODEL: (typeof IMAGE_GEN_ADETAILER_FACE_MODELS)[number] =
+  IMAGE_GEN_ADETAILER_FACE_MODELS[0];
+
+/** Match an A1111 `/sdapi/v1/extensions` entry name against the ADetailer
+ *  extension (case-insensitive substring — the family's dirnames vary:
+ *  `adetailer`, `sd-webui-adetailer`, forks). */
+export function hasAdetailerExtension(names: readonly string[]): boolean {
+  return names.some((name) => name.toLowerCase().includes("adetailer"));
+}
+
 export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGenCapabilityFlags> = {
   [IMAGE_GEN_BACKENDS.OpenRouter]: {
     // Chat-completions transport (modalities), no negative/steps/seed/sampler

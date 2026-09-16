@@ -3,7 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { toast } from "sonner";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, hasAdetailerExtension, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
@@ -22,6 +22,7 @@ import {
   createImageGenSamplerSet,
   deleteImageGenSamplerSet,
   importImageGenSamplerSet,
+  listImageGenExtensions,
   listImageGenSamplerSets,
   updateImageGenSamplerSet,
 } from "../../../../api/image-gen-api.js";
@@ -966,6 +967,31 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     // fill per profile; imageGen actions are stable callbacks.
   }, [guardProfileId, guardSamplers]);
 
+  // ADetailer availability (IG-CF15 15d / PG-4 v1): A1111-dialect servers
+  // report their extensions; the pane row (and the chip's nested accordion
+  // on its own fetch) renders only when the server has the extension.
+  // Guard-style null-safe values — this hook sits above the null guard too.
+  const guardIsA1111 = form?.backend === IMAGE_GEN_BACKENDS.A1111;
+  const [hasAdetailer, setHasAdetailer] = useState(false);
+  useEffect(() => {
+    if (!guardIsA1111 || guardProfileId === null) {
+      setHasAdetailer(false);
+      return;
+    }
+    let cancelled = false;
+    setHasAdetailer(false);
+    void listImageGenExtensions(guardProfileId)
+      .then((names) => {
+        if (!cancelled) setHasAdetailer(names !== null && hasAdetailerExtension(names));
+      })
+      .catch(() => {
+        if (!cancelled) setHasAdetailer(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [guardIsA1111, guardProfileId]);
+
   if (form === null || form.id === null) return null;
   const profileId = form.id;
   const models: ImageGenModelEntry[] = imageGen.modelsByProfile[profileId] ?? [];
@@ -1304,6 +1330,38 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                 rangeTestId="image-gen-range-clip-skip"
                 cellTestId="image-gen-field-clip-skip"
               />
+              {/* ADetailer (IG-CF15 15d / PG-4 v1): the pane's twin of the
+                  chip's nested accordion — same overlay fields, extensions-
+                  gated; one source of truth, two surfaces. Overlay-only (the
+                  profile base carries no face-fix flag in v1). */}
+              {bound && hasAdetailer && (
+                <div
+                  className="col-span-full flex flex-col gap-2 rounded-md border border-border bg-s2/50 p-2.5"
+                  data-testid="image-gen-adetailer-row"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
+                      {t("image_gen_adetailer")}
+                    </span>
+                    <Toggle
+                      checked={overlay?.adetailer === true}
+                      onChange={(checked) => imageGen.setModelOverlay({ adetailer: checked })}
+                      aria-label={t("image_gen_adetailer")}
+                    />
+                  </div>
+                  {overlay?.adetailer === true && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t("image_gen_adetailer_model")}</span>
+                      <DropdownSelect
+                        value={overlay?.adetailerModel ?? IMAGE_GEN_ADETAILER_DEFAULT_MODEL}
+                        options={IMAGE_GEN_ADETAILER_FACE_MODELS.map((m) => ({ id: m, label: m }))}
+                        onChange={(id) => imageGen.setModelOverlay({ adetailerModel: id })}
+                        triggerTestId="image-gen-adetailer-model"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

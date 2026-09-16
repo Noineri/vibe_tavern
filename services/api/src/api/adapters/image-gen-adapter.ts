@@ -59,7 +59,7 @@ import type {
   UpdateImageGenProfileData,
 } from "@vibe-tavern/db";
 import type { Attachment, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance } from "@vibe-tavern/domain";
-import { parseStoredAttachments } from "@vibe-tavern/domain";
+import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import {
@@ -348,6 +348,24 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     );
   };
 
+  listImageGenProfileExtensions = async (id: string, signal?: AbortSignal) => {
+    const profile = await this.stores.imageGen.getById(id);
+    if (!profile) return null;
+    // Static dialect gate FIRST (the samplers capability-gate twin): the
+    // extension surface exists ONLY on the A1111 dialect — factories eagerly
+    // validate config, and a capability question must not depend on live
+    // config validity.
+    if (profile.backend !== IMAGE_GEN_BACKENDS.A1111) return null;
+    // Interface-driven second gate: a backend without the extension-listing
+    // method reports "not supported", not an empty list.
+    const backend = createImageGenBackend(profile.backend, configFromProfile(profile, this.fetchOverride));
+    if (typeof backend.listExtensions !== "function") return null;
+    const listExtensions = backend.listExtensions.bind(backend);
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "extension list", (inner) =>
+      listExtensions(inner),
+    );
+  };
+
   draftListImageGenModels: ImageGenRuntimeApi["draftListImageGenModels"] = async (body: DraftImageGenModelsInput) => {
     const config: Record<string, unknown> = { ...body.config };
     const formKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";
@@ -450,6 +468,15 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const sampler = overrides.sampler ?? overlay.sampler ?? defaults.sampler;
     const seed = overrides.seed ?? overlay.seed ?? defaults.seed;
     const clipSkip = overrides.clipSkip ?? overlay.clipSkip ?? defaults.clipSkip;
+    // ADetailer (IG-CF15/PG-4 v1): OVERLAY-ONLY — the face-fix flag rides the
+    // per-model layer (no request-level override and no profile-base field
+    // in v1); enabled = the overlay's boolean, the model preset falls back
+    // to the domain default. Only the a1111 dialect consumes it; other
+    // backends ignore the field.
+    const adetailerModel =
+      overlay.adetailer === true
+        ? overlay.adetailerModel?.trim() || IMAGE_GEN_ADETAILER_DEFAULT_MODEL
+        : undefined;
 
     // IG-15 assist runner: built when the profile's assist is ENABLED and
     // BOTH picks exist (absent picks = assist inert — bit-identical legacy
@@ -497,6 +524,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(sampler !== undefined ? { sampler } : {}),
       ...(seed !== undefined ? { seed } : {}),
       ...(clipSkip !== undefined ? { clipSkip } : {}),
+      ...(adetailerModel !== undefined ? { adetailerModel } : {}),
       ...(signal !== undefined ? { signal } : {}),
     };
 

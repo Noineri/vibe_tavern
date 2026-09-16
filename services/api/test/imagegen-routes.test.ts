@@ -323,6 +323,41 @@ describe("image-gen routes — samplers (capability-gated)", () => {
   });
 });
 
+describe("image-gen routes — extensions (A1111-dialect feature detection)", () => {
+  test("a1111 profile lists extension names via /sdapi/v1/extensions", async () => {
+    let capturedUrl = "";
+    const { app } = await makeApp(async (input) => {
+      capturedUrl = String(input);
+      return new Response(
+        JSON.stringify([
+          { name: "adetailer", enabled: true },
+          { name: "sd-webui-infinite-image-browsing", enabled: false },
+        ]),
+        { status: 200 },
+      );
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/extensions`);
+    expect(res.status).toBe(200);
+    const list = (await res.json()) as string[];
+    expect(list).toEqual(["adetailer", "sd-webui-infinite-image-browsing"]);
+    expect(capturedUrl).toBe("http://127.0.0.1:7860/sdapi/v1/extensions");
+  });
+
+  test("openrouter profile → 400 extension listing not supported; unknown profile → 404", async () => {
+    const { app } = await makeApp(async () => modelsBody());
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.OpenRouter });
+
+    const gated = await app.request(`/api/image-gen/profiles/${id}/extensions`);
+    expect(gated.status).toBe(400);
+    expect(((await gated.json()) as { error: string }).error).toBe("extension listing not supported");
+
+    const missing = await app.request("/api/image-gen/profiles/missing/extensions");
+    expect(missing.status).toBe(404);
+  });
+});
+
 describe("image-gen routes — draft model listing (fetch-by-endpoint)", () => {
   test("form key rides through to the documented URL", async () => {
     let capturedUrl = "";
@@ -1381,6 +1416,80 @@ describe("image-gen routes — generate with the per-model overlay (IG-CF15)", (
     const body2 = (await res2.json()) as { width?: number; height?: number };
     expect(body2.width).toBe(1344);
     expect(body2.height).toBe(768);
+  });
+});
+
+describe("image-gen routes — generate with ADetailer (IG-CF15/PG-4 v1)", () => {
+  /** One txt2img call answering with a single base64 PNG (the card's
+   *  delivery shape; the bytes only need the PNG signature). */
+  function txt2imgTransport(captured: { url?: string; init?: RequestInit }) {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    return async (input: RequestInfo | URL, init?: RequestInit) => {
+      captured.url = String(input);
+      captured.init = init;
+      return new Response(JSON.stringify({ images: [png.toString("base64")] }), { status: 200 });
+    };
+  }
+
+  test("overlay adetailer:true sends the alwayson script with the chosen face model; disabled or unset sends none", async () => {
+    const captured: { url?: string; init?: RequestInit } = {};
+    const { app, stores } = await makeApp(txt2imgTransport(captured));
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      endpoint: "http://127.0.0.1:7860",
+      modelId: "sd_xl_refiner",
+    });
+
+    // Enabled WITH a chosen preset → the preset ships.
+    const putOn = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl_refiner`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { adetailer: true, adetailerModel: "face_yolov8s.pt" } }),
+    });
+    expect(putOn.status).toBe(200);
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "free", prompt: "a portrait" }),
+    });
+    expect(res.status).toBe(200);
+    expect(captured.url).toBe("http://127.0.0.1:7860/sdapi/v1/txt2img");
+    let wire = JSON.parse(String(captured.init?.body)) as { alwayson_scripts?: unknown };
+    expect(wire.alwayson_scripts).toEqual({
+      ADetailer: { args: [true, { ad_model: "face_yolov8s.pt" }] },
+    });
+
+    // Enabled WITHOUT a preset → the domain default face model ships.
+    await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl_refiner`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { adetailer: true } }),
+    });
+    await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "free", prompt: "a portrait" }),
+    });
+    wire = JSON.parse(String(captured.init?.body)) as { alwayson_scripts?: unknown };
+    expect(wire.alwayson_scripts).toEqual({
+      ADetailer: { args: [true, { ad_model: "face_yolov8n.pt" }] },
+    });
+
+    // Flag off → nothing on the wire.
+    await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl_refiner`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { adetailer: false } }),
+    });
+    await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "free", prompt: "a portrait" }),
+    });
+    wire = JSON.parse(String(captured.init?.body)) as { alwayson_scripts?: unknown };
+    expect("alwayson_scripts" in wire).toBe(false);
   });
 });
 

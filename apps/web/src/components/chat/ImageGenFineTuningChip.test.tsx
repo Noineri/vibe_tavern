@@ -63,12 +63,39 @@ function profile(id: string, name: string, capabilities: Caps, modelId?: string)
 let profilesStore: ProfileRecord[] = [];
 let modelsStore: Record<string, ModelEntry[]> = {};
 let samplersStore: Record<string, SamplerEntry[]> = {};
+let extensionsStore: Record<string, string[]> = {};
+let overlayStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue> = {};
+const upsertCalls: Array<{
+  profileId: string;
+  modelId: string;
+  settings: import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue;
+}> = [];
 
 mock.module("../../api/image-gen-api.js", () => ({
   ...realImageGenApi,
   listAllImageGenProfiles: () => Promise.resolve([...profilesStore]),
   listImageGenModels: (id: string) => Promise.resolve([...(modelsStore[id] ?? [])]),
   listImageGenSamplers: (id: string) => Promise.resolve([...(samplersStore[id] ?? [])]),
+  listImageGenExtensions: (id: string) => Promise.resolve([...(extensionsStore[id] ?? [])]),
+  getImageGenModelSettings: (id: string, modelId: string) =>
+    Promise.resolve(overlayStore[`${id}/${modelId}`] ? { settings: overlayStore[`${id}/${modelId}`] } : null),
+  upsertImageGenModelSettings: (
+    id: string,
+    modelId: string,
+    settings: import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue,
+  ) => {
+    upsertCalls.push({ profileId: id, modelId, settings });
+    overlayStore[`${id}/${modelId}`] = { ...settings };
+    return Promise.resolve({
+      id: "row1",
+      profileId: id,
+      modelId,
+      settings: { ...settings },
+      samplerSetId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+  },
 }));
 
 // The pill self-forks on `useIsMobile` (CF1: the variant prop is gone). Mock
@@ -131,6 +158,9 @@ afterEach(() => {
   profilesStore = [];
   modelsStore = {};
   samplersStore = {};
+  extensionsStore = {};
+  overlayStore = {};
+  upsertCalls.length = 0;
   mobileOverride = false;
   // The store is a module singleton shared across files in this worker —
   // leave every map pristine.
@@ -277,5 +307,130 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
       expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-persist"]).toBeUndefined(),
     );
     expect((within(second.baseElement).getByTestId("image-gen-ft-prompt") as HTMLTextAreaElement).value).toBe("");
+  });
+});
+
+describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", () => {
+  /** Open the chip, pick a concrete model, and open the model-settings
+   *  accordion — returns the popover root to query inside. */
+  async function openAccordion(chatId: string) {
+    const view = renderChip(<ImageGenFineTuningChip chatId={chatId} />);
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-model-select")).toBeTruthy());
+    await pickOption("image-gen-ft-model-select", "SDXL Base");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
+    );
+    await act(async () => {
+      within(view.baseElement).getByTestId("image-gen-ft-model-settings-header").click();
+    });
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings-body")).toBeTruthy(),
+    );
+    return view;
+  }
+
+  it("renders ONLY when a concrete model is picked — the default-model state has no accordion", async () => {
+    profilesStore = [profile("ig1", "Local Forge", fullCaps())];
+    modelsStore["ig1"] = [{ id: "sdxl-base", label: "SDXL Base" }];
+    armChat("chat-ms1");
+
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-ms1" />);
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-model-select")).toBeTruthy());
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-model-settings")).toBeNull();
+
+    await pickOption("image-gen-ft-model-select", "SDXL Base");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
+    );
+  });
+
+  it("overlay edits merge over the loaded row and persist through upsert (one truth, two surfaces)", async () => {
+    profilesStore = [profile("ig1", "Local Forge", fullCaps())];
+    modelsStore["ig1"] = [{ id: "sdxl-base", label: "SDXL Base" }];
+    overlayStore["ig1/sdxl-base"] = { sampler: "Euler a", steps: 20 };
+    armChat("chat-ms2");
+
+    const view = await openAccordion("chat-ms2");
+    // Loaded overlay shows through: the steps range sits at the stored 20.
+    const range = within(view.baseElement).getByTestId("image-gen-range-overlay-steps") as HTMLInputElement;
+    expect(range.value).toBe("20");
+
+    await act(async () => {
+      fireEvent.change(range, { target: { value: "40" } });
+    });
+    await waitFor(() => expect(upsertCalls.length).toBe(1));
+    // The write carries the MERGED overlay — the loaded sampler survives.
+    expect(upsertCalls[0]).toEqual({
+      profileId: "ig1",
+      modelId: "sdxl-base",
+      settings: { sampler: "Euler a", steps: 40 },
+    });
+  });
+
+  it("ADetailer is hidden for non-A1111 backends and for servers without the extension", async () => {
+    profilesStore = [profile("ig1", "Cloud", fullCaps())];
+    modelsStore["ig1"] = [{ id: "m1", label: "SDXL Base" }];
+    extensionsStore["ig1"] = ["adetailer"]; // even WITH the extension present
+    armChat("chat-ms3");
+
+    const view = await openAccordion("chat-ms3");
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer")).toBeNull();
+
+    // A1111 dialect but the server does not list the extension → hidden too.
+    cleanup();
+    upsertCalls.length = 0;
+    profilesStore = [{ ...profile("ig2", "Forge", fullCaps()), backend: "a1111" }];
+    modelsStore = { ig2: [{ id: "sdxl-base", label: "SDXL Base" }] };
+    extensionsStore = { ig2: ["sd-webui-controlnet"] };
+    const view2 = await openAccordion("chat-ms3");
+    expect(within(view2.baseElement).queryByTestId("image-gen-ft-adetailer")).toBeNull();
+  });
+
+  it("ADetailer nests INSIDE the samplers accordion; toggle + face model write the overlay", async () => {
+    profilesStore = [{ ...profile("ig2", "Forge", fullCaps()), backend: "a1111" }];
+    modelsStore["ig2"] = [{ id: "sdxl-base", label: "SDXL Base" }];
+    extensionsStore["ig2"] = ["adetailer", "sd-webui-controlnet"];
+    armChat("chat-ms4");
+
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-ms4" />);
+    openChip();
+    await pickOption("image-gen-ft-model-select", "SDXL Base");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
+    );
+    // Parent accordion COLLAPSED → the nested accordion is not in the DOM.
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer")).toBeNull();
+
+    await act(async () => {
+      within(view.baseElement).getByTestId("image-gen-ft-model-settings-header").click();
+    });
+    const adHeader = await waitFor(() => {
+      const el = within(view.baseElement).getByTestId("image-gen-ft-adetailer-header");
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // Nesting pin: the adetailer header lives inside the samplers body.
+    const parentBody = within(view.baseElement).getByTestId("image-gen-ft-model-settings-body");
+    expect(parentBody.contains(adHeader)).toBe(true);
+
+    await act(async () => {
+      adHeader.click();
+    });
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-adetailer-body")).toBeTruthy(),
+    );
+    const toggle = within(view.baseElement).getByRole("switch");
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    await waitFor(() => expect(upsertCalls.length).toBe(1));
+    expect(upsertCalls[0].settings).toEqual({ adetailer: true });
+
+    // Toggle ON reveals the face-model dropdown; picking writes merged.
+    await pickOption("image-gen-ft-adetailer-model", "face_yolov8s.pt");
+    await waitFor(() => expect(upsertCalls.length).toBe(2));
+    expect(upsertCalls[1].settings).toEqual({ adetailer: true, adetailerModel: "face_yolov8s.pt" });
   });
 });

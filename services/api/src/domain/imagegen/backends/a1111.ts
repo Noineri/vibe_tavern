@@ -46,9 +46,14 @@
  *   but no owner-approved VT value exists, and omitting keeps VT
  *   side-effect-free on shared local servers.
  * - `scheduler`, `batch_size`, `n_iter`, `restore_faces`, `tiling`,
- *   `sampler_index` (legacy alias), `script_name`/`script_args`,
- *   `alwayson_scripts` are never sent — the v1 request interface carries
- *   no field for them and inventing values is banned. `clip_skip` is
+ *   `sampler_index` (legacy alias), and `script_name`/`script_args` are
+ *   never sent — the v1 request interface carries no field for them and
+ *   inventing values is banned. The ONE script surface is ADetailer
+ *   (IG-CF15/PG-4 v1): when the request carries `adetailerModel`, it ships
+ *   as `alwayson_scripts.ADetailer.args = [true, {ad_model}]` — the
+ *   extension script's own arg contract (source-pinned: a leading enable
+ *   bool + pydantic dicts with `extra=forbid`, an `ad_model` of "None"
+ *   means skip, all other fields default server-side). `clip_skip` is
  *   likewise absent: it is NOT in the card's enumerated core param
  *   surface (prompt, negative_prompt, steps, cfg_scale, width, height,
  *   seed, sampler_name, scheduler, batch_size, n_iter, restore_faces,
@@ -284,6 +289,21 @@ function parseSamplerInfos(parsed: unknown): ImageGenSamplerInfo[] {
   return out;
 }
 
+/** Parse the `GET /sdapi/v1/extensions` list — a top-level array of
+ *  `{name, dirname, enabled, builtin}` records; `name` is the extension's
+ *  directory identifier (the ADetailer probe's `adetailer`). Entries
+ *  without a string name are skipped (the malformed-entry discipline). */
+function parseExtensionNames(parsed: unknown): string[] {
+  if (!Array.isArray(parsed)) return [];
+  const out: string[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const name = (entry as Record<string, unknown>).name;
+    if (typeof name === "string" && name.length > 0) out.push(name);
+  }
+  return out;
+}
+
 /** Parse the `GET /sdapi/v1/progress` snapshot. `progress` (0..1) is the
  *  documented core and required; `eta_relative` maps when numeric;
  *  `state` passes through only as a string (object shape not
@@ -371,6 +391,14 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
         // Card: model switching accepts title, filename, or hash — verbatim.
         body.override_settings = { sd_model_checkpoint: model };
       }
+      // ADetailer (IG-CF15/PG-4 v1): presence = enabled — the extension
+      // script's own arg contract (see the module doc gate).
+      const adetailerModel = setOrUndefined(request.adetailerModel);
+      if (adetailerModel !== undefined) {
+        body.alwayson_scripts = {
+          ADetailer: { args: [true, { ad_model: adetailerModel }] },
+        };
+      }
 
       const response = await fetchOrWrap(
         cfg.fetch,
@@ -455,6 +483,28 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       }
       const parsed: unknown = await response.json().catch(() => null);
       return parseSamplerInfos(parsed);
+    },
+
+    async listExtensions(signal?: AbortSignal): Promise<string[]> {
+      const response = await fetchOrWrap(
+        cfg.fetch,
+        `${cfg.endpoint}/extensions`,
+        {
+          method: "GET",
+          headers: buildSdApiHeaders(cfg.apiKey, false),
+          signal,
+        },
+        "extension list",
+      );
+      if (!response.ok) {
+        const excerpt = await readProviderErrorBody(response);
+        throw new A1111ImageGenError(
+          `A1111 extension list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          { status: response.status },
+        );
+      }
+      const parsed: unknown = await response.json().catch(() => null);
+      return parseExtensionNames(parsed);
     },
 
     async progress(signal?: AbortSignal): Promise<ImageGenProgressInfo> {

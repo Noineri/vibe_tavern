@@ -321,6 +321,62 @@ describe("a1111 adapter", () => {
     });
   });
 
+  describe("listExtensions", () => {
+    it("queries /extensions and maps name per entry (the ADetailer probe source)", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json([
+          { name: "adetailer", dirname: "adetailer", enabled: true, builtin: false },
+          { name: "sd-webui-controlnet", enabled: true, builtin: false },
+          { dirname: "nameless", enabled: true, builtin: false },
+          "garbage",
+        ]),
+      );
+      const backend = backendWith(transport);
+      const extensions = await backend.listExtensions();
+      expect(extensions).toEqual(["adetailer", "sd-webui-controlnet"]);
+      expect(calls[0].url).toBe(`${SD_API_ROOT}/extensions`);
+      expect(calls[0].init?.method).toBe("GET");
+    });
+
+    it("surfaces a non-2xx extension list as a typed error with the status", async () => {
+      const { transport } = makeTransport(() => new Response("nope", { status: 500 }));
+      const backend = backendWith(transport);
+      const promise = backend.listExtensions();
+      await expect(promise).rejects.toBeInstanceOf(A1111ImageGenError);
+      await expect(promise).rejects.toMatchObject({ status: 500 });
+    });
+  });
+
+  describe("generate — ADetailer (IG-CF15/PG-4 v1)", () => {
+    it("sends alwayson_scripts.ADetailer with the enable bool + ad_model dict when adetailerModel is set", async () => {
+      const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
+      const backend = backendWith(transport);
+
+      await backend.generate({ prompt: "a bard", adetailerModel: "face_yolov8s.pt" });
+
+      // The extension script's own arg contract (source-pinned): a leading
+      // enable bool + pydantic dict whose ad_model names the face detector.
+      expect(sentJson(calls[0])).toEqual({
+        prompt: "a bard",
+        send_images: true,
+        alwayson_scripts: {
+          ADetailer: { args: [true, { ad_model: "face_yolov8s.pt" }] },
+        },
+      });
+    });
+
+    it("omits alwayson_scripts entirely when adetailerModel is absent or blank", async () => {
+      const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
+      const backend = backendWith(transport);
+
+      await backend.generate({ prompt: "a bard" });
+      expect("alwayson_scripts" in sentJson(calls[0])).toBe(false);
+
+      await backend.generate({ prompt: "a bard", adetailerModel: "   " });
+      expect("alwayson_scripts" in sentJson(calls[1])).toBe(false);
+    });
+  });
+
   describe("progress", () => {
     it("returns a single-fetch snapshot of /progress per the card shape", async () => {
       const { transport, calls } = makeTransport(() =>

@@ -28,6 +28,9 @@ import { Icons } from "../shared/icons.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { SliderField } from "../shared/SliderField.js";
+import { Toggle } from "../shared/Toggle.js";
+import { TextInput } from "../shared/text-input.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
@@ -37,10 +40,20 @@ import {
   listAllImageGenProfiles,
   listImageGenModels,
   listImageGenSamplers,
+  listImageGenExtensions,
+  getImageGenModelSettings,
+  upsertImageGenModelSettings,
   type ImageGenModelEntry,
   type ImageGenProfileRecord,
 } from "../../api/image-gen-api.js";
-import type { ImageGenSamplerInfoValue } from "@vibe-tavern/api-contracts";
+import type { ImageGenSamplerInfoValue, ImageGenModelSettingsOverlayValue } from "@vibe-tavern/api-contracts";
+import {
+  IMAGE_GEN_BACKENDS,
+  IMAGE_GEN_PARAM_RANGES,
+  IMAGE_GEN_ADETAILER_FACE_MODELS,
+  IMAGE_GEN_ADETAILER_DEFAULT_MODEL,
+  hasAdetailerExtension,
+} from "@vibe-tavern/domain";
 import { EMPTY_IMAGE_GEN_DRAFT, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 
 export interface ImageGenFineTuningChipProps {
@@ -87,7 +100,7 @@ export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) 
             side="top"
             align="center"
             sideOffset={4}
-            className="glass-blur z-[220] w-[300px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border2 bg-glass-bg p-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+            className="glass-blur z-[220] flex max-h-[70vh] w-[300px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border2 bg-glass-bg p-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
             {body}
           </Popover.Content>
@@ -229,6 +242,22 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
         )}
       </div>
 
+      {/* The loaded model's own settings (IG-CF15 15d): edits the per-model
+          overlay directly — one source of truth with the providers pane,
+          the chip acting as the quick pult. Only with a concrete model
+          picked; the ADetailer accordion nests INSIDE it when the server
+          reports the extension (owner 2026-09-17). */}
+      {effectiveId !== null && draft.model !== undefined && (
+        <ImageGenModelSettingsAccordion
+          profileId={effectiveId}
+          modelId={draft.model}
+          supportsSamplers={supportsSamplers}
+          samplers={supportsSamplers ? (samplers ?? []) : []}
+          isA1111={effective?.backend === IMAGE_GEN_BACKENDS.A1111}
+          disabled={busy}
+        />
+      )}
+
       {supportsSamplers && (
         <div className="flex flex-col gap-1.5 px-1.5" data-testid="image-gen-ft-sampler-row">
           <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_sampler_label")}</span>
@@ -285,6 +314,234 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
           {t("image_gen_chip_clear")}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── Per-model settings accordion (IG-CF15 15d) ─────────────────────────
+
+/** The loaded model's overlay editor — the chip's «quick pult» view of the
+ *  same data the providers pane edits (one source of truth, two surfaces).
+ *  Fields mirror the pane's advanced section contract: slider cells display
+ *  the range-min anchor for an unset field and commit on interaction; seed
+ *  stays a plain optional numeric cell (empty = inherit). The ADetailer
+ *  accordion NESTS INSIDE this accordion's body (owner 2026-09-17) and is
+ *  hidden entirely unless the profile's server reports the extension. */
+function ImageGenModelSettingsAccordion({
+  profileId,
+  modelId,
+  supportsSamplers,
+  samplers,
+  isA1111,
+  disabled,
+}: {
+  profileId: string;
+  modelId: string;
+  supportsSamplers: boolean;
+  samplers: ImageGenSamplerInfoValue[];
+  isA1111: boolean;
+  disabled: boolean;
+}) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const [adOpen, setAdOpen] = useState(false);
+  const [overlay, setOverlay] = useState<ImageGenModelSettingsOverlayValue | null>(null);
+  const [extensions, setExtensions] = useState<string[] | null>(null);
+  const [saveError, setSaveError] = useState(false);
+
+  // Overlay load — keyed by (profileId, modelId); null until first load.
+  useEffect(() => {
+    let cancelled = false;
+    setOverlay(null);
+    void getImageGenModelSettings(profileId, modelId)
+      .then((row) => {
+        if (!cancelled) setOverlay(row?.settings ?? {});
+      })
+      .catch(() => {
+        if (!cancelled) setOverlay({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileId, modelId]);
+
+  // Extension probe — A1111 dialect only; a failed probe hides ADetailer
+  // (feature absence, not an error surface).
+  useEffect(() => {
+    if (!isA1111) {
+      setExtensions(null);
+      return;
+    }
+    let cancelled = false;
+    setExtensions(null);
+    void listImageGenExtensions(profileId)
+      .then((names) => {
+        if (!cancelled) setExtensions(names ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setExtensions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileId, isA1111]);
+
+  const hasAdetailer = extensions !== null && hasAdetailerExtension(extensions);
+
+  /** Merge a patch into the overlay and persist it (the overlay row is the
+   *  whole truth — every edit writes the full merged settings; an undefined
+   *  patch value clears the field back to inherit — JSON drops the key). */
+  function commit(patch: Partial<ImageGenModelSettingsOverlayValue>) {
+    setOverlay((prev) => {
+      const next = { ...(prev ?? {}), ...patch };
+      void upsertImageGenModelSettings(profileId, modelId, next)
+        .then(() => setSaveError(false))
+        .catch(() => setSaveError(true));
+      return next;
+    });
+  }
+
+  if (overlay === null) {
+    return (
+      <div className="flex h-8 items-center justify-center px-1.5" data-testid="image-gen-ft-model-settings-loading">
+        <span className="text-[calc(var(--ui-fs)-3px)] text-t3">…</span>
+      </div>
+    );
+  }
+
+  const steps = overlay.steps;
+  const cfgScale = overlay.cfgScale;
+  const clipSkip = overlay.clipSkip;
+  const seed = overlay.seed;
+  const sampler = overlay.sampler;
+  const adetailer = overlay.adetailer === true;
+  const adetailerModel = overlay.adetailerModel;
+
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-model-settings">
+      <button
+        type="button"
+        data-testid="image-gen-ft-model-settings-header"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full cursor-pointer items-center justify-between rounded-md px-1.5 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
+      >
+        <span>{t("image_gen_model_settings")}</span>
+        <Icons.Caret direction={open ? "d" : "u"} />
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-2 px-1.5" data-testid="image-gen-ft-model-settings-body">
+          {supportsSamplers && (
+            <div className="flex flex-col gap-1.5">
+              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_sampler_label")}</span>
+              <DropdownSelect
+                value={sampler ?? ""}
+                options={[
+                  { id: "", label: t("image_gen_sampler_auto") },
+                  ...samplers.map((s) => ({ id: s.name, label: s.name })),
+                ]}
+                onChange={(id) => commit(id === "" ? { sampler: undefined } : { sampler: id })}
+                disabled={disabled}
+                triggerTestId="image-gen-ft-overlay-sampler"
+              />
+            </div>
+          )}
+
+          <SliderField
+            label={t("image_gen_steps_label")}
+            value={steps ?? IMAGE_GEN_PARAM_RANGES.steps.min}
+            min={IMAGE_GEN_PARAM_RANGES.steps.min}
+            max={IMAGE_GEN_PARAM_RANGES.steps.max}
+            step={IMAGE_GEN_PARAM_RANGES.steps.step}
+            onChange={(value) => commit({ steps: value })}
+            disabled={disabled}
+            rangeTestId="image-gen-range-overlay-steps"
+          />
+          <SliderField
+            label={t("image_gen_cfg_label")}
+            value={cfgScale ?? IMAGE_GEN_PARAM_RANGES.cfgScale.min}
+            min={IMAGE_GEN_PARAM_RANGES.cfgScale.min}
+            max={IMAGE_GEN_PARAM_RANGES.cfgScale.max}
+            step={IMAGE_GEN_PARAM_RANGES.cfgScale.step}
+            onChange={(value) => commit({ cfgScale: value })}
+            disabled={disabled}
+            rangeTestId="image-gen-range-overlay-cfg"
+          />
+          <SliderField
+            label={t("image_gen_clip_skip_label")}
+            value={clipSkip ?? IMAGE_GEN_PARAM_RANGES.clipSkip.min}
+            min={IMAGE_GEN_PARAM_RANGES.clipSkip.min}
+            max={IMAGE_GEN_PARAM_RANGES.clipSkip.max}
+            step={IMAGE_GEN_PARAM_RANGES.clipSkip.step}
+            onChange={(value) => commit({ clipSkip: value })}
+            disabled={disabled}
+            rangeTestId="image-gen-range-overlay-clip"
+          />
+
+          <div className="flex flex-col gap-1.5">
+            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_seed_label")}</span>
+            <TextInput
+              value={seed === undefined ? "" : String(seed)}
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                commit(raw === "" || Number.isNaN(Number(raw)) ? { seed: undefined } : { seed: Number(raw) });
+              }}
+              placeholder="—"
+              disabled={disabled}
+              aria-label={t("image_gen_seed_label")}
+              data-testid="image-gen-ft-overlay-seed"
+            />
+          </div>
+
+          {saveError && (
+            <span className="text-[calc(var(--ui-fs)-3px)] text-danger">{t("image_gen_overlay_save_failed")}</span>
+          )}
+
+          {/* ADetailer — NESTED inside the samplers accordion (owner
+              2026-09-17); the whole block is hidden unless the server
+              reports the extension. */}
+          {hasAdetailer && (
+            <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-adetailer">
+              <button
+                type="button"
+                data-testid="image-gen-ft-adetailer-header"
+                aria-expanded={adOpen}
+                onClick={() => setAdOpen((v) => !v)}
+                className="flex w-full cursor-pointer items-center justify-between rounded-md border border-border bg-s3 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
+              >
+                <span>{t("image_gen_adetailer")}</span>
+                <Icons.Caret direction={adOpen ? "d" : "u"} />
+              </button>
+              {adOpen && (
+                <div className="flex flex-col gap-2 px-0.5" data-testid="image-gen-ft-adetailer-body">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t2">{t("image_gen_adetailer")}</span>
+                    <Toggle
+                      checked={adetailer}
+                      onChange={(checked) => commit({ adetailer: checked })}
+                      disabled={disabled}
+                      aria-label={t("image_gen_adetailer")}
+                    />
+                  </div>
+                  {adetailer && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_adetailer_model")}</span>
+                      <DropdownSelect
+                        value={adetailerModel ?? IMAGE_GEN_ADETAILER_DEFAULT_MODEL}
+                        options={IMAGE_GEN_ADETAILER_FACE_MODELS.map((m) => ({ id: m, label: m }))}
+                        onChange={(id) => commit({ adetailerModel: id })}
+                        disabled={disabled}
+                        triggerTestId="image-gen-ft-adetailer-model"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

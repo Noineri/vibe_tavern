@@ -358,6 +358,12 @@ export const imageGenModelSettingsOverlaySchema = z.object({
   sampler: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
+  /** ADetailer face-fix switch (IG-CF15/PG-4 v1) — A1111-family only. */
+  adetailer: z.boolean().optional(),
+  /** Face-model preset — one of the domain's IMAGE_GEN_ADETAILER_FACE_MODELS
+   *  (validated client-side against the constant; kept a plain string here
+   *  so the list can grow without a contract bump). */
+  adetailerModel: z.string().optional(),
   modeSizePresets: imageGenModeSizePresetsSchema.optional(),
 });
 export type ImageGenModelSettingsOverlayValue = z.infer<typeof imageGenModelSettingsOverlaySchema>;

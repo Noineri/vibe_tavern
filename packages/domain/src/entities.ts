@@ -1211,6 +1211,14 @@ export interface ImageGenModelSettingsOverlay {
   sampler?: string;
   seed?: number;
   clipSkip?: number;
+  /** ADetailer face-fix switch (IG-CF15/PG-4 v1, A1111-family only):
+   *  true = the generation for this model sends the ADetailer
+   *  alwayson script with the face-model preset. The availability probe
+   *  (server extensions) gates the UI, not the stored flag. */
+  adetailer?: boolean;
+  /** Face-model preset for ADetailer (one of IMAGE_GEN_ADETAILER_FACE_MODELS;
+   *  absent = the default entry). Ignored unless `adetailer` is true. */
+  adetailerModel?: string;
   /** Per-mode size presets for this model (the same shape as the profile's;
    *  a mode absent here falls back to the profile's own preset). */
   modeSizePresets?: ImageGenModeSizePresets;

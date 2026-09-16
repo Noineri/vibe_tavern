@@ -91,6 +91,8 @@ const listSamplerSetsApi = mock(async (): Promise<ImageGenSamplerSet[]> => [
     updatedAt: "2026-09-17T00:00:00.000Z",
   },
 ]);
+let extensionsValue: string[] = [];
+const listExtensionsApi = mock(async (): Promise<string[]> => [...extensionsValue]);
 
 mock.module("../../../../api/image-gen-api.js", () => ({
   ...realImageGenApi,
@@ -104,6 +106,7 @@ mock.module("../../../../api/image-gen-api.js", () => ({
   removeImageGenModelFavorite: removeFavoriteApi,
   listImageGenSamplers: listSamplersApi,
   listImageGenSamplerSets: listSamplerSetsApi,
+  listImageGenExtensions: listExtensionsApi,
 }));
 
 // IG-15: the LLM-assist pickers fetch the LLM provider list + model catalog
@@ -122,7 +125,7 @@ mock.module("../../../../api/provider-api.js", () => ({
   fetchProviderProfileModels: fetchLlmModelsApi,
 }));
 
-const { act, cleanup, fireEvent, render: render_impl, waitFor } = await import("@testing-library/react");
+const { act, cleanup, fireEvent, render: render_impl, waitFor, within } = await import("@testing-library/react");
 const { ImageGenPane } = await import("./ImageGenPane.js");
 const { useImageProfiles } = await import("../../../../hooks/use-image-profiles.js");
 const { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES } = await import("@vibe-tavern/domain");
@@ -281,9 +284,12 @@ afterEach(async () => {
     listSamplersApi,
     listLlmProfilesApi,
     fetchLlmModelsApi,
+    listSamplerSetsApi,
+    listExtensionsApi,
   ]) {
     m.mockClear();
   }
+  extensionsValue = [];
 });
 
 // IG-CF13: the slider cell is NumberInput inside a testid wrapper. Typing
@@ -813,16 +819,16 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
   });
 });
 
+/** Open the advanced accordion (module scope — shared across describes). */
+async function openAdvanced(view: { getByTestId: (id: string) => HTMLElement; getByText: (text: string) => HTMLElement }) {
+  await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
+  await act(async () => {
+    fireEvent.click(view.getByText("image_gen_advanced"));
+  });
+  await waitFor(() => expect(view.getByTestId("image-gen-advanced-body")).toBeTruthy());
+}
+
 describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
-  async function openAdvanced(view: { getByTestId: (id: string) => HTMLElement; getByText: (text: string) => HTMLElement }) {
-    await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
-    await act(async () => {
-      fireEvent.click(view.getByText("image_gen_advanced"));
-    });
-    await waitFor(() => expect(view.getByTestId("image-gen-advanced-body")).toBeTruthy());
-  }
-
-
   it("a range move commits the value to the profile base (bind off)", async () => {
     const setForm = mock(() => {});
     const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
@@ -976,6 +982,81 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
     await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
     expect(view.queryByTestId("image-gen-model-set-row")).toBeNull();
     expect(view.queryByTestId("image-gen-set-new")).toBeNull();
+  });
+});
+
+describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () => {
+  it("bound a1111 profile with the extension: the row lives in the advanced body; the toggle writes the overlay", async () => {
+    extensionsValue = ["adetailer", "sd-webui-controlnet"];
+    const setModelOverlay = mock((_patch: Partial<import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue>) => {});
+    const imageGen = makeImageGen({
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha" }),
+      modelOverlay: {},
+      setModelOverlay,
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await openAdvanced(view);
+    const row = view.getByTestId("image-gen-adetailer-row");
+    expect(row).toBeTruthy();
+    // No dropdown while OFF — the preset only exists when enabled.
+    expect(view.queryByTestId("image-gen-adetailer-model")).toBeNull();
+
+    const toggle = within(row).getByRole("switch");
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(setModelOverlay.mock.calls[0]?.[0]).toEqual({ adetailer: true });
+  });
+
+  it("enabled overlay reveals the face-model dropdown; a pick writes the overlay", async () => {
+    extensionsValue = ["adetailer"];
+    const setModelOverlay = mock((_patch: Partial<import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue>) => {});
+    const imageGen = makeImageGen({
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha" }),
+      modelOverlay: { adetailer: true },
+      setModelOverlay,
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await openAdvanced(view);
+    await pickOption(view, "image-gen-adetailer-model", "face_yolov8s.pt");
+    expect((setModelOverlay.mock.calls.at(-1) as unknown[])[0]).toEqual({ adetailerModel: "face_yolov8s.pt" });
+  });
+
+  it("hidden when the server lacks the extension (a1111, bound)", async () => {
+    extensionsValue = ["sd-webui-controlnet"];
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha" }),
+          modelOverlay: {},
+        })}
+      />,
+    );
+    await openAdvanced(view);
+    expect(view.queryByTestId("image-gen-adetailer-row")).toBeNull();
+  });
+
+  it("hidden when unbound (no overlay row) — even with the extension present", async () => {
+    extensionsValue = ["adetailer"];
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha" }),
+          modelOverlay: null,
+        })}
+      />,
+    );
+    await openAdvanced(view);
+    expect(view.queryByTestId("image-gen-adetailer-row")).toBeNull();
+  });
+
+  it("hidden on cloud backends — no extension surface at all", async () => {
+    extensionsValue = ["adetailer"]; // even if the mock would answer
+    const view = render(
+      <ImageGenPane imageGen={makeImageGen({ form: makeForm({ modelId: "m-alpha" }), modelOverlay: {} })} />,
+    );
+    await openAdvanced(view);
+    expect(view.queryByTestId("image-gen-adetailer-row")).toBeNull();
   });
 });
 

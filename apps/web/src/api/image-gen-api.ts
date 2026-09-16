@@ -135,6 +135,24 @@ export async function listImageGenSamplers(
   return (await response.json()) as ImageGenSamplerInfoValue[];
 }
 
+/** Server extension names for a saved profile — A1111-dialect feature
+ *  detection (IG-CF15/PG-4: the ADetailer probe). Null = unknown profile;
+ *  a non-A1111 backend throws the route's 400 ("extension listing not
+ *  supported") — callers gate on the profile's backend before calling. */
+export async function listImageGenExtensions(
+  id: string,
+  signal?: AbortSignal,
+): Promise<string[] | null> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/extensions`),
+    { signal },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw await rawError("Image-gen extension list", response);
+  return (await response.json()) as string[];
+}
+
 /** Shared fetch-by-endpoint model listing over the TRANSIENT draft config
  *  (the STT draft twin): the form's just-typed key rides INSIDE `config`;
  *  `profileId` lets the server inject the stored key when the form's own is
