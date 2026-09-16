@@ -186,3 +186,55 @@ describe("SttLocalServerPanel", () => {
     expect(view.getByTestId("stt-help-wire-mismatch").textContent).toBe("stt_local_wire_needs_compat");
   });
 });
+
+describe("SttLocalServerPanel — local status chip (IG-CF12c)", () => {
+  test("before any scan: UNKNOWN state, empty endpoint renders no endpoint line", () => {
+    const view = renderPanel(openaiForm(), mock(() => {}));
+    const chip = view.getByTestId("stt-local-status");
+    expect(chip.className).toContain("border-border2");
+    expect(chip.className).toContain("bg-s2");
+  });
+
+  test("mid-scan: CHECKING state (accent pulse row)", async () => {
+    __setSttDiscoveryDepsForTests({ discover: mock(async () => new Promise<ProbeOutcome[]>(() => {})) });
+    const view = renderPanel(openaiForm(), mock(() => {}));
+    await act(async () => {
+      await userEvent.click(view.getByTestId("stt-local-scan"));
+    });
+    expect(view.getByTestId("stt-local-status").className).toContain("border-accent/30");
+  });
+
+  test("scan found a server → ONLINE; scan found none → OFFLINE", async () => {
+    const found: ProbeOutcome[] = [
+      { port: 8000, status: "found", server: foundServer(8000, ["m"]) },
+    ];
+    __setSttDiscoveryDepsForTests({ discover: mock(async () => found) });
+    const view = renderPanel(openaiForm(), mock(() => {}));
+    await act(async () => {
+      await userEvent.click(view.getByTestId("stt-local-scan"));
+    });
+    expect(view.getByTestId("stt-local-status").className).toContain("border-success/30");
+    view.unmount();
+
+    const none: ProbeOutcome[] = [{ port: 8000, status: "refused" }];
+    __setSttDiscoveryDepsForTests({ discover: mock(async () => none) });
+    const view2 = renderPanel(openaiForm(), mock(() => {}));
+    await act(async () => {
+      await userEvent.click(view2.getByTestId("stt-local-scan"));
+    });
+    expect(view2.getByTestId("stt-local-status").className).toContain("border-danger/30");
+  });
+
+  test("the chip's re-check button re-runs the discovery scan", async () => {
+    const outcomes: ProbeOutcome[] = [];
+    const discover = mock(async () => outcomes);
+    __setSttDiscoveryDepsForTests({ discover });
+    const view = renderPanel(openaiForm(), mock(() => {}));
+    const recheck = view.getByTestId("stt-local-status").querySelector("button");
+    expect(recheck).toBeTruthy();
+    await act(async () => {
+      recheck!.click();
+    });
+    expect(discover).toHaveBeenCalledTimes(1);
+  });
+});

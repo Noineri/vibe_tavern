@@ -11,9 +11,8 @@ import { Toggle } from "../../shared/Toggle.js";
 import { isFreeModel } from "../../../lib/provider-model-capabilities.js";
 import { ProviderModelList, type ProviderModelListOption } from "./ProviderModelList.js";
 import { TextInput } from "../../shared/text-input.js";
+import { LocalConnectionStatusChip, type LocalConnectionStatus } from "../../shared/LocalConnectionStatus.js";
 import { lblCls } from "../../../lib/field-tokens.js";
-
-type LocalConnectionStatus = "unknown" | "checking" | "online" | "offline";
 
 interface ProviderModelSelectorProps {
   form: FormState;
@@ -62,12 +61,6 @@ export function ProviderModelSelector({
     ? freeFiltered
     : [{ id: currentValue, label: currentValue, toolSupport: "unknown" as const }, ...freeFiltered];
   const portalContainer = getModalPortal() ?? undefined;
-  const localStatus = {
-    unknown: { label: t("local_connection_unknown"), className: "border-border2 bg-s2 text-t3", dotClassName: "bg-t4" },
-    checking: { label: t("local_connection_checking"), className: "border-accent/30 bg-accent/10 text-accent-t", dotClassName: "bg-accent animate-pulse" },
-    online: { label: t("local_connection_online"), className: "border-success/30 bg-success/10 text-success", dotClassName: "bg-success" },
-    offline: { label: t("local_connection_offline"), className: "border-danger/30 bg-danger/10 text-danger", dotClassName: "bg-danger" },
-  }[localConnectionStatus];
 
   const formatContext = (contextLength?: number) => {
     if (contextLength == null || !Number.isFinite(contextLength)) return null;
@@ -104,10 +97,14 @@ export function ProviderModelSelector({
           </div>
         </div>
       )}
-      {isLocalProvider && <div className={cn("mb-2.5 flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[12px] sm:flex-row sm:items-center sm:justify-between", localStatus.className)}>
-        <span className="inline-flex min-w-0 items-center gap-2"><span className={cn("h-2 w-2 shrink-0 rounded-full", localStatus.dotClassName)} /><span className="shrink-0 font-medium">{localStatus.label}</span>{localEndpoint && <span className="min-w-0 truncate text-t3">{t("local_connection_endpoint", { url: localEndpoint })}</span>}</span>
-        {showRefreshButton && <button type="button" onClick={() => void onFetchModels()} disabled={fetching} className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto">{fetching ? t("testing") : t("refresh_models")}</button>}
-      </div>}
+      {isLocalProvider && <LocalConnectionStatusChip
+        status={localConnectionStatus}
+        endpoint={localEndpoint}
+        onRefresh={showRefreshButton ? () => void onFetchModels() : undefined}
+        refreshing={fetching}
+        refreshLabel={t("refresh_models")}
+        className="mb-2.5"
+      />}
       <div className="flex items-end gap-3"><div className="flex-1"><label className={lblCls}>{t("selected_model_label")}</label>
         {models.length > 0 ? <div className="relative"><Popover.Root open={modelListOpen} onOpenChange={setModelListOpen}><Popover.Trigger asChild><button type="button" className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"><span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">{selectedModel?.label || currentValue || placeholderOverride || t("select_model")}{showContextLength && formatContext(selectedModel?.contextLength) && <span className="ml-2 text-[11px] font-medium text-t2">{formatContext(selectedModel?.contextLength)}</span>}</span><span className="text-t3"><Icons.Caret direction="d" /></span></button></Popover.Trigger><Popover.Portal container={portalContainer}><Popover.Content sideOffset={4} align="start" onCloseAutoFocus={(event) => event.preventDefault()} className="glass-blur z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]" style={{ width: "var(--radix-popover-trigger-width)", maxHeight: 260 }}><Command shouldFilter={false} loop className="flex flex-col outline-none"><div className="border-b border-border2 bg-s2 p-2"><Command.Input placeholder={t("search_models")} value={modelSearch} onValueChange={setModelSearch} className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent" /></div><ProviderModelList models={listModels} selectedId={currentValue} search={modelSearch} favorites={favoriteModels} onSelect={selectModel} onToggleFavorite={onToggleFavoriteModel} onUseCustomSlug={useCustomSlug} groupByOwner={form.modelGroupByOwner} showContextLength={showContextLength} /></Command></Popover.Content></Popover.Portal></Popover.Root>{!selectedModel && currentValue && <div className="mt-2 font-ui text-[12px] font-medium text-accent">{t("custom_model", { name: currentValue })}</div>}</div> : <TextInput value={currentValue} onChange={(event) => updateForm(modelKey, event.target.value as FormState[typeof modelKey])} placeholder={t("custom_model_id_placeholder")} />}
       </div>{showRefreshButton && <button type="button" data-testid="provider-models-refresh" onClick={() => void onFetchModels()} disabled={fetching} className={cn(

@@ -7,6 +7,7 @@ import { cn } from "../../../../lib/cn.js";
 import { lblCls, codeQuoteCls } from "../../../../lib/field-tokens.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../../shared/icons.js";
+import { LocalConnectionStatusChip } from "../../../shared/LocalConnectionStatus.js";
 import {
   TTS_SERVER_SETUP_GUIDES,
   detectTtsOsKind,
@@ -72,26 +73,18 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
 
   return (
     <div data-testid="tts-local-server-panel" className="flex flex-col gap-4">
-      {/* Honest docker availability (D8): probed server-side once. The cards
-          below always show the non-docker variant too, so neither state is a
-          dead end. */}
-      <div data-testid="tts-docker-status" className="flex items-center gap-2 font-ui text-[11px] text-t3">
-        {docker.error !== null ? (
-          t("tts_docker_status_unknown")
-        ) : docker.status === null ? (
-          t("tts_docker_status_probing")
-        ) : docker.status.available ? (
-          <>
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            {t("tts_docker_status_ok", { version: docker.status.version ?? "" })}
-          </>
-        ) : (
-          <>
-            <span className="h-1.5 w-1.5 rounded-full bg-danger" />
-            {t("tts_docker_status_missing")}
-          </>
-        )}
-      </div>
+      {/* Honest docker availability (D8): probed server-side once, shown in
+          the canonical local-connection chip (IG-CF12c — the bespoke status
+          line adopted the shared primitive; the probe itself stays D8:
+          one-shot on mount, no retries, no polling — hence no re-check
+          button). The cards below always show the non-docker variant too,
+          so neither state is a dead end. Named trade-off: the chip canon has
+          no version slot — the docker version text is dropped. */}
+      <LocalConnectionStatusChip
+        testId="tts-docker-status"
+        status={docker.error !== null ? "unknown" : docker.status === null ? "checking" : docker.status.available ? "online" : "offline"}
+        endpoint={currentEndpoint}
+      />
 
       {/* Setup help accordion — disclosure block forked verbatim from
           ProviderSamplerPanel.tsx (advOpen + caret rotate-90 chrome). */}

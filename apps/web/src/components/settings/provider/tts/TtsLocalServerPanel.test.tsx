@@ -144,34 +144,39 @@ afterEach(() => {
 });
 
 describe("TtsLocalServerPanel", () => {
-  test("docker status line: available with version (D8)", async () => {
+  test("docker status chip (IG-CF12c): available → ONLINE state class (canon chip, no version slot)", async () => {
     dockerStatusNext = { available: true, version: "27.3.1" };
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
     // The mount-effect probe settles AFTER render's act scope closes
     // (fetcher promise resolves on a later microtask). Drain it inside
     // act — otherwise its setState lands outside act (warning) and the
-    // status text below is read in the "probing" state (CI flake race).
+    // status below is read in the "checking" state (CI flake race).
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     const status = view.getByTestId("tts-docker-status");
-    expect(status.textContent).toContain("tts_docker_status_ok");
-    expect(status.textContent).toContain("27.3.1");
+    expect(status.className).toContain("border-success/30");
+    expect(status.className).toContain("bg-success/10");
+    // D8 stays one-shot: no retries/polling → the chip carries no re-check
+    // button (the probe contract is "untouched", IG-CF12c).
+    expect(status.querySelector("button")).toBeNull();
     cleanup();
   });
 
-  test("docker status line: transport failure → unknown, panel stays usable", async () => {
+  test("docker status chip (IG-CF12c): transport failure → UNKNOWN state, panel stays usable", async () => {
     dockerStatusNext = new Error("route unreachable");
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
     // Same settle-inside-act drain: the rejection microtask commits
     // setError only after render returns; asserting before it lands
-    // observed "probing" under runner load (stress repro, suite run 3).
+    // observed "checking" under runner load (stress repro, suite run 3).
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(view.getByTestId("tts-docker-status").textContent).toContain("tts_docker_status_unknown");
+    const status = view.getByTestId("tts-docker-status");
+    expect(status.className).toContain("border-border2");
+    expect(status.querySelector("button")).toBeNull();
     expect(view.getByTestId("tts-discover-btn")).toBeTruthy();
     cleanup();
     dockerStatusNext = { available: false, version: null };

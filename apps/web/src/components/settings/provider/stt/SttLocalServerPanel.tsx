@@ -8,6 +8,7 @@ import { detectTtsOsKind, worstDiagnostic, diagnosticI18nKey } from "../../../..
 import { lblCls, codeQuoteCls } from "../../../../lib/field-tokens.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../../shared/icons.js";
+import { LocalConnectionStatusChip } from "../../../shared/LocalConnectionStatus.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { useGuideChecklist } from "../../../../hooks/use-guide-checklist.js";
 import { GuideCommandRow } from "../GuideCommandRow.js";
@@ -78,6 +79,32 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
 
   return (
     <div data-testid="stt-local-server-panel" className="flex flex-col gap-4">
+      {/* Canonical local-connection chip (IG-CF12c; owner: the LLM pane's
+          chip is canonical for every local-preset provider panel). STT's
+          signal is the port scan (D8 deliberately has NO docker probe for
+          STT — untouched): unknown before any scan / while the scan route
+          itself fails, checking mid-scan, online when a server was found,
+          offline when the scan completed and found none. Re-check re-runs
+          the scan (the same probe the Discover section's button fires). */}
+      <LocalConnectionStatusChip
+        testId="stt-local-status"
+        status={
+          discovery.error !== null
+            ? "unknown"
+            : discovery.scanning
+              ? "checking"
+              : discovery.servers.length > 0
+                ? "online"
+                : discovery.notFoundCodes !== null
+                  ? "offline"
+                  : "unknown"
+        }
+        endpoint={currentEndpoint}
+        onRefresh={() => void discovery.discover()}
+        refreshing={discovery.scanning}
+        refreshLabel={t("stt_local_scan_btn")}
+      />
+
       {/* Setup help accordion — disclosure block mirroring TtsLocalServerPanel. */}
       <div className="overflow-hidden rounded-lg border border-border2" data-testid="stt-setup-help-accordion">
         <div
