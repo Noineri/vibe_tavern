@@ -116,6 +116,9 @@ export const Ic = {
   // Counterclockwise curved arrow — the copilot editor's «Отменить изменения»
   // (revert to turn-start snapshot). Lucide undo-2 geometry scaled to 16.
   undo:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9.33 2.67 6 6 2.67"/><path d="M2.67 6h7a3.67 3.67 0 0 1 0 7.33H7.33"/></svg>,
+  // Two opposing horizontal arrows — «поменять местами» (swap W↔H) in the
+  // IG per-mode size rows (IG-CF14). Lucide arrow-left-right at 16.
+  swap:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12.67 4.67 15.33 7.33"/><path d="M3.5 7.33h11.83"/><path d="M12.67 10 15.33 7.33"/><path d="M3.33 11.33 0.67 8.67"/><path d="M12.5 8.67H0.67"/><path d="M3.33 6 0.67 8.67"/></svg>,
   // Fast-forward «>>» — the Continue-generation action (LS-4a): two right
   // triangles, the owner's «перемотка» glyph, stroke-outline to match the
   // action-row icon language (copy/edit/regen).

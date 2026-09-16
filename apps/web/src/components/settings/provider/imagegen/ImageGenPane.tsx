@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, type ImageGenerationMode, type ImageGenParamRange } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { TextInput } from "../../../shared/text-input.js";
+import { NumberInput } from "../../../shared/NumberInput.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { getModalPortal } from "../../../shared/modal-helpers.js";
@@ -43,6 +44,13 @@ type ImageGenHook = ReturnType<typeof useImageProfiles>;
  * empty-able numeric cell (IG-CF5) — NumberInput stays out deliberately:
  * non-nullable value, blur reverts a clear instead of committing undefined,
  * no testid passthrough (supervisor decision 2026-09-15).
+ * SUPERSEDED FOR SIZES (IG-CF14, owner 2026-09-16 «сырое позорище. надо
+ * переделать»): the per-mode size rows now use NumberInput WITH a concrete
+ * display anchor (IMAGE_SIZE_DEFAULT when unset) — the empty/inherit reset
+ * moved into the row's preset dropdown («Авто»), so the non-nullable-value
+ * objection no longer applies there; the params cells (steps/CFG/seed/clip)
+ * keep the optional-empty TextInput contract above. Testids attach via a
+ * wrapper div (the primitive has no passthrough).
  */
 
 /** Picker option — the models cache entry verbatim. */
@@ -64,6 +72,14 @@ const MODE_LABEL_KEYS: Record<ImageGenerationMode, Parameters<TFunc>[0]> = {
   [IMAGE_GENERATION_MODES.UserPersona]: "image_gen_mode_user-persona",
   [IMAGE_GENERATION_MODES.SceneIllustration]: "image_gen_mode_scene-illustration",
   [IMAGE_GENERATION_MODES.Free]: "image_gen_mode_free",
+};
+
+/** Purpose-word per preset orientation (IG-CF14): «Квадрат 1:1 · 1024×1024» —
+ *  purpose + ratio + concrete resolution, never a bare ratio. */
+const PRESET_LABEL_KEYS: Record<ImageSizeOrientation, Parameters<TFunc>[0]> = {
+  square: "image_gen_preset_square",
+  portrait: "image_gen_preset_portrait",
+  landscape: "image_gen_preset_landscape",
 };
 
 // ─── Model picker (SttModelPicker fork: favorites pinned + custom-slug) ──────
@@ -522,6 +538,10 @@ function LlmAssistSection({
 export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const { t } = useT();
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // IG-CF14: the sizes table starts collapsed (owner: the whole grid under
+  // an accordion — six rows of steppers is reference material, not the
+  // first thing you see when the pane opens).
+  const [sizesOpen, setSizesOpen] = useState(false);
 
   const form = imageGen.form;
   // Hook-order invariant: EVERY hook sits above the null guard — an early
@@ -627,24 +647,65 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
         onRefresh={() => void imageGen.fetchSavedModels(profileId)}
       />
 
-      {/* ── Sizes per mode (profile base or the bound model's override) ── */}
-      <section className="rounded-lg border border-border bg-surface p-3.5" data-testid="image-gen-sizes-section">
-        <div className="mb-3 font-ui text-[14px] font-semibold text-t1">{t("image_gen_sizes_section_title")}</div>
-        <div className="flex flex-col gap-2.5">
+      {/* ── Sizes per mode (profile base or the bound model's override),
+          IG-CF14: collapsed accordion + compact table rows. The old grid
+          was «a table wearing field-clothes» — 12 full-height labeled
+          fields, Ширина/Высота repeated 6× (owner 2026-09-16: «сырое
+          позорище. надо переделать»). Now: one slim row per mode — mode
+          label, W/H steppers walking the ±128px ladder (domain
+          IMAGE_SIZE_STEP_PX; owner example 720 → 848↑ / 592↓; raw typing
+          never snaps), a W↔H swap button, and the preset dropdown
+          («Портрет 3:4 · 896×1152» — purpose + ratio + resolution, never a
+          bare ratio). UNSET rows display the domain default as the anchor
+          without storing anything — «Авто» in the dropdown is the honest
+          state until the user edits, steps, swaps, or picks. Vendor-set
+          backends keep their capability-grid dropdown (the vendor list IS
+          the size vocabulary there). */}
+      <section
+        className="overflow-hidden rounded-lg border border-border bg-surface"
+        data-testid="image-gen-sizes-section"
+      >
+        <button
+          type="button"
+          data-testid="image-gen-sizes-header"
+          onClick={() => setSizesOpen((prev) => !prev)}
+          className={cn(
+            "flex w-full cursor-pointer items-center gap-2 bg-s2 px-3.5 py-3 font-ui text-[14px] font-semibold text-t1 transition-colors hover:bg-[var(--border)]",
+            sizesOpen && "!rounded-b-none",
+          )}
+        >
+          <span className={cn("transition-transform", sizesOpen && "rotate-90")}>
+            <Icons.Caret direction="r" />
+          </span>
+          {t("image_gen_sizes_section_title")}
+        </button>
+        {sizesOpen && (
+          <div className="flex flex-col gap-2.5 p-3.5" data-testid="image-gen-sizes-body">
           {MODES.map((mode) => {
             const preset = sizes[mode as keyof typeof sizes];
-            const key = preset !== undefined && preset.width !== undefined && preset.height !== undefined
-              ? `${preset.width}x${preset.height}`
-              : "";
+            const displayWidth = preset?.width ?? IMAGE_SIZE_DEFAULT.width;
+            const displayHeight = preset?.height ?? IMAGE_SIZE_DEFAULT.height;
+            const presetKey =
+              preset?.width !== undefined && preset?.height !== undefined
+                ? `${preset.width}x${preset.height}`
+                : "";
+            // Editing EITHER cell of an unset/legacy-partial row pins the
+            // pair: the untouched side commits its displayed anchor — a
+            // stored preset is always a complete W/H pair (or absent).
+            const editWidth = (width: number) =>
+              setModeSize(mode, { width, height: preset?.height ?? displayHeight });
+            const editHeight = (height: number) =>
+              setModeSize(mode, { width: preset?.width ?? displayWidth, height });
             return (
-              <div key={mode} className="flex flex-wrap items-center gap-3" data-testid={`image-gen-mode-row-${mode}`}>
+              <div key={mode} className="flex flex-wrap items-center gap-2" data-testid={`image-gen-mode-row-${mode}`}>
                 <div className="w-[180px] shrink-0 font-ui text-[13px] text-t2">{t(MODE_LABEL_KEYS[mode])}</div>
                 {caps.sizeSupport.kind === "vendor-set" ? (
                   <DropdownSelect
-                    value={key}
+                    value={presetKey}
                     triggerTestId={`image-gen-mode-size-${mode}`}
                     searchable={false}
                     className="w-auto max-w-[260px]"
+                    defaultOption={t("image_gen_size_auto")}
                     options={[
                       { id: "", label: t("image_gen_size_auto") },
                       ...caps.sizeSupport.sizes.map((size) => ({ id: size, label: size })),
@@ -659,29 +720,81 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     }}
                   />
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <div className="w-[110px]">
-                      <OptionalNumberField
-                        value={preset?.width}
-                        onChange={(width) => setModeSize(mode, { ...preset, width })}
-                        label={t("image_gen_width_label")}
-                        testId={`image-gen-mode-width-${mode}`}
+                  <>
+                    <div className="w-[110px] shrink-0" data-testid={`image-gen-mode-width-${mode}`}>
+                      <NumberInput
+                        value={displayWidth}
+                        min={IMAGE_SIZE_MIN_PX}
+                        max={IMAGE_SIZE_MAX_PX}
+                        step={IMAGE_SIZE_STEP_PX}
+                        onChange={editWidth}
                       />
                     </div>
-                    <div className="w-[110px]">
-                      <OptionalNumberField
-                        value={preset?.height}
-                        onChange={(height) => setModeSize(mode, { ...preset, height })}
-                        label={t("image_gen_height_label")}
-                        testId={`image-gen-mode-height-${mode}`}
+                    <span className="select-none font-ui text-[13px] text-t3" aria-hidden="true">×</span>
+                    <div className="w-[110px] shrink-0" data-testid={`image-gen-mode-height-${mode}`}>
+                      <NumberInput
+                        value={displayHeight}
+                        min={IMAGE_SIZE_MIN_PX}
+                        max={IMAGE_SIZE_MAX_PX}
+                        step={IMAGE_SIZE_STEP_PX}
+                        onChange={editHeight}
                       />
                     </div>
-                  </div>
+                    <button
+                      type="button"
+                      data-testid={`image-gen-mode-swap-${mode}`}
+                      title={t("image_gen_size_swap")}
+                      aria-label={t("image_gen_size_swap")}
+                      onClick={() =>
+                        // Swaps the DISPLAYED pair and pins it (a swap is an
+                        // explicit act — on an unset row it pins the anchor
+                        // swapped, leaving «Авто» behind).
+                        setModeSize(mode, { width: displayHeight, height: displayWidth })
+                      }
+                      className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-s3 text-t2 transition-all hover:bg-s2 hover:text-t1"
+                    >
+                      <Icons.swap />
+                    </button>
+                    <DropdownSelect
+                      value={presetKey}
+                      triggerTestId={`image-gen-mode-preset-${mode}`}
+                      searchable={false}
+                      className="w-auto max-w-[240px]"
+                      defaultOption={t("image_gen_size_auto")}
+                      options={[
+                        { id: "", label: t("image_gen_size_auto") },
+                        ...IMAGE_SIZE_PRESETS.map((p) => ({
+                          id: `${p.width}x${p.height}`,
+                          label: t(PRESET_LABEL_KEYS[p.orientation], {
+                            ratio: p.ratio,
+                            size: `${p.width}×${p.height}`,
+                          }),
+                        })),
+                        // A stored custom/legacy pair outside the table gets
+                        // its own entry so the trigger shows the truth with
+                        // the typographic × (the bare-value fallback would
+                        // render the raw key).
+                        ...(presetKey !== "" &&
+                        !IMAGE_SIZE_PRESETS.some((p) => `${p.width}x${p.height}` === presetKey)
+                          ? [{ id: presetKey, label: presetKey.replace("x", "×") }]
+                          : []),
+                      ]}
+                      onChange={(next) => {
+                        if (next === "") {
+                          setModeSize(mode, undefined);
+                          return;
+                        }
+                        const [width, height] = next.split("x").map(Number);
+                        setModeSize(mode, { width, height });
+                      }}
+                    />
+                  </>
                 )}
               </div>
             );
           })}
-        </div>
+          </div>
+        )}
       </section>
 
       {/* ── Parameters: bind toggle + sampler + advanced expand ── */}

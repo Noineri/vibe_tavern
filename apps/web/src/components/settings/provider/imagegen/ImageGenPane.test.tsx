@@ -272,11 +272,16 @@ afterEach(async () => {
 });
 
 describe("ImageGenPane — second level rendering", () => {
-  it("renders the pane with a size row for EVERY v1 mode (six) and the params section", async () => {
+  it("renders the pane with the sizes accordion + params section; opening reveals a size row for EVERY v1 mode (six)", async () => {
     const view = render(<ImageGenPane imageGen={makeImageGen()} />);
     await waitFor(() => expect(view.getByTestId("image-gen-pane")).toBeTruthy());
     expect(view.getByTestId("image-gen-sizes-section")).toBeTruthy();
     expect(view.getByTestId("image-gen-params-section")).toBeTruthy();
+    // IG-CF14: the table starts collapsed — no rows until the header opens it.
+    expect(view.queryByTestId("image-gen-sizes-body")).toBeNull();
+    await act(async () => {
+      view.getByTestId("image-gen-sizes-header").click();
+    });
     for (const mode of ALL_MODES) {
       expect(view.getByTestId(`image-gen-mode-row-${mode}`)).toBeTruthy();
     }
@@ -499,11 +504,139 @@ describe("ImageGenPane — local connection status (IG-CF12a)", () => {
   });
 });
 
-describe("ImageGenPane — per-mode sizes", () => {
+describe("ImageGenPane — per-mode sizes (IG-CF14: accordion + stepper ladder + swap + preset dropdown)", () => {
+  const freeBackend = (formOverrides: Partial<NonNullable<ImageGenHook["form"]>> = {}) =>
+    makeForm({
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      capabilities: makeCaps({
+        supportsNegativePrompt: true,
+        supportsSamplers: true,
+        supportsSeed: true,
+        sizeSupport: { kind: "free" },
+        noApiKey: true,
+        supportsLiveProgress: true,
+        localExecution: true,
+      }),
+      ...formOverrides,
+    });
+
+  async function renderFree(formOverrides: Parameters<typeof freeBackend>[0] = {}) {
+    const setForm = mock(() => {});
+    const imageGen = makeImageGen({ form: freeBackend(formOverrides), setForm });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await act(async () => {
+      view.getByTestId("image-gen-sizes-header").click();
+    });
+    return { view, setForm };
+  }
+
+  /** NumberInput has no testid passthrough — the pane wraps it in one; the
+   * steppers are the two buttons inside (minus first, plus second). */
+  function sizeCell(view: { getByTestId: (id: string) => HTMLElement }, side: "width" | "height", mode = "portrait") {
+    return view.getByTestId(`image-gen-mode-${side}-${mode}`);
+  }
+
+  it("unset rows display the anchor defaults (1024×1024) and store NOTHING until edited", async () => {
+    const { view } = await renderFree();
+    const width = sizeCell(view, "width");
+    const height = sizeCell(view, "height");
+    expect((width.querySelector("input") as HTMLInputElement).value).toBe("1024");
+    expect((height.querySelector("input") as HTMLInputElement).value).toBe("1024");
+    expect(view.getByTestId("image-gen-mode-preset-portrait").textContent).toContain("image_gen_size_auto");
+    // The vendor-set dropdown must not render for a free backend.
+    expect(view.queryByTestId("image-gen-mode-size-portrait")).toBeNull();
+  });
+
+  it("steppers walk the ±128 ladder (owner example: 720 → 848↑ / 592↓) and pin the untouched side", async () => {
+    const { view, setForm } = await renderFree({ modeSizePresets: { portrait: { width: 720, height: 1280 } } });
+    const width = sizeCell(view, "width");
+    const minus = width.querySelectorAll("button")[0]!;
+    const plus = width.querySelectorAll("button")[1]!;
+    await act(async () => {
+      plus.click();
+    });
+    const patchAt = (i: number) =>
+      ((setForm.mock.calls[i] as unknown[])[0] as { modeSizePresets: Record<string, { width: number; height: number }> })
+        .modeSizePresets.portrait;
+    // setForm is a mock — the form never rerenders, so NumberInput keeps its
+    // internal string and the walk continues from the stepped value: the
+    // owner's ladder example pinned at every step (720 ↑848, back down
+    // through 720 to 592).
+    expect(patchAt(0)).toEqual({ width: 848, height: 1280 });
+    await act(async () => {
+      minus.click();
+    });
+    expect(patchAt(1)).toEqual({ width: 720, height: 1280 });
+    await act(async () => {
+      minus.click();
+    });
+    expect(patchAt(2)).toEqual({ width: 592, height: 1280 });
+  });
+
+  it("stepping an UNSET row pins the pair: the untouched side commits its displayed anchor", async () => {
+    const { view, setForm } = await renderFree();
+    const height = sizeCell(view, "height");
+    await act(async () => {
+      height.querySelectorAll("button")[1]!.click();
+    });
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, { width: number; height: number }> };
+    expect(patch.modeSizePresets.portrait).toEqual({ width: 1024, height: 1152 });
+  });
+
+  it("raw typing never snaps: 733 stays 733 after blur", async () => {
+    const { view, setForm } = await renderFree();
+    const width = sizeCell(view, "width");
+    const input = width.querySelector("input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "733" } });
+      fireEvent.blur(input);
+    });
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, { width: number; height: number }> };
+    expect(patch.modeSizePresets.portrait).toEqual({ width: 733, height: 1024 });
+    expect((width.querySelector("input") as HTMLInputElement).value).toBe("733");
+  });
+
+  it("swap flips W↔H (the i18n'd tooltip names it); preset dropdown entries carry ratio + resolution", async () => {
+    const { view, setForm } = await renderFree({ modeSizePresets: { portrait: { width: 720, height: 1280 } } });
+    const swap = view.getByTestId("image-gen-mode-swap-portrait");
+    // The i18n mock renders raw keys — the aria-label pins the swap key.
+    expect(swap.getAttribute("aria-label")).toBe("image_gen_size_swap");
+    await act(async () => {
+      swap.click();
+    });
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, { width: number; height: number }> };
+    expect(patch.modeSizePresets.portrait).toEqual({ width: 1280, height: 720 });
+  });
+
+  it("picking a preset fills BOTH fields; «Авто» clears the row back to unset", async () => {
+    const { view, setForm } = await renderFree();
+    // The i18n mock renders preset labels as key:params — pick the full mocked string.
+    await pickOption(view, "image-gen-mode-preset-portrait", "image_gen_preset_portrait:2:3,832×1216");
+    await waitFor(() => expect(setForm).toHaveBeenCalled());
+    let patch = (setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, { width: number; height: number }> };
+    expect(patch.modeSizePresets.portrait).toEqual({ width: 832, height: 1216 });
+    cleanup();
+
+    // From a stored table pair, «Авто» deletes the row preset entirely.
+    const second = await renderFree({ modeSizePresets: { portrait: { width: 832, height: 1216 } } });
+    await pickOption(second.view, "image-gen-mode-preset-portrait", "image_gen_size_auto");
+    await waitFor(() => expect(second.setForm).toHaveBeenCalled());
+    const secondPatch = (second.setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, unknown> };
+    expect(secondPatch.modeSizePresets).toEqual({});
+  });
+
+  it("a stored custom pair outside the table renders its own dropdown entry (never lies about the value)", async () => {
+    const { view } = await renderFree({ modeSizePresets: { portrait: { width: 733, height: 900 } } });
+    expect(view.getByTestId("image-gen-mode-preset-portrait").textContent).toContain("733×900");
+  });
+
   it("vendor-set backends: a dropdown per mode with the capability grid; picking one patches modeSizePresets", async () => {
     const setForm = mock(() => {});
     const imageGen = makeImageGen({ setForm });
     const view = render(<ImageGenPane imageGen={imageGen} />);
+    await act(async () => {
+      view.getByTestId("image-gen-sizes-header").click();
+    });
     await waitFor(() => expect(view.getByTestId("image-gen-mode-size-portrait")).toBeTruthy());
     // Unset mode → the auto placeholder label shows in the trigger.
     expect(view.getByTestId("image-gen-mode-size-portrait").textContent).toContain("image_gen_size_auto");
@@ -511,36 +644,6 @@ describe("ImageGenPane — per-mode sizes", () => {
     await waitFor(() => expect(setForm).toHaveBeenCalled());
     const patch = (setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, unknown> };
     expect(patch.modeSizePresets).toEqual({ portrait: { width: 832, height: 1248 } });
-  });
-
-  it("free-size backends (a1111): free W×H inputs per mode, EMPTY by default; typing patches one dimension", async () => {
-    const setForm = mock(() => {});
-    const imageGen = makeImageGen({
-      form: makeForm({
-        backend: IMAGE_GEN_BACKENDS.A1111,
-        capabilities: makeCaps({
-          supportsNegativePrompt: true,
-          supportsSamplers: true,
-          supportsSeed: true,
-          sizeSupport: { kind: "free" },
-          noApiKey: true,
-          supportsLiveProgress: true,
-        localExecution: true,
-        }),
-      }),
-      setForm,
-    });
-    const view = render(<ImageGenPane imageGen={imageGen} />);
-    await waitFor(() => expect((view.getByTestId("image-gen-mode-width-portrait") as HTMLInputElement).value).toBe(""));
-    expect((view.getByTestId("image-gen-mode-height-portrait") as HTMLInputElement).value).toBe("");
-    // Vendor-set dropdowns must NOT render for a free backend.
-    expect(view.queryByTestId("image-gen-mode-size-portrait")).toBeNull();
-    await act(async () => {
-      fireEvent.change(view.getByTestId("image-gen-mode-width-portrait"), { target: { value: "512" } });
-    });
-    await waitFor(() => expect(setForm).toHaveBeenCalled());
-    const patch = (setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, unknown> };
-    expect(patch.modeSizePresets).toEqual({ portrait: { width: 512 } });
   });
 });
 
