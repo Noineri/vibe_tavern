@@ -278,7 +278,7 @@ export function MessageAiEditorModal() {
   const canMerge = (targetMessage?.variants.length ?? 0) > 6;
   /** FS-4: Merge is forbidden on greeting targets even when the jump
    *  browser exists (>6 variants) — parity with row-level
-   *  `canAiEdit = !isGreeting` (owner: «конечно запретить»). The in-modal
+   *  `canAiEdit = !isGreeting` (owner: forbid it). The in-modal
    *  mode switcher is the only path that could offer it (annotate-entry on
    *  a greeting), so hiding the option closes the hole. */
   const canOfferMerge = canMerge && !isGreetingTarget;

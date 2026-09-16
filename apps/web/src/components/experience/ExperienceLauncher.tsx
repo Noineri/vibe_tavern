@@ -322,7 +322,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
 
   const title = session?.manifest.name ?? config!.scriptId ?? "";
   const incompatible = hasSession && session!.visualSource === null;
-  // Endgame (lobby Б3): a terminal branch session (completed or interrupted)
+  // Endgame (lobby B3): a terminal branch session (completed or interrupted)
   // swaps the primary launcher action for the restart pair. Status is a plain
   // string union — no domain constant is needed.
   const terminal = hasSession && (session!.status === "completed" || session!.status === "interrupted");
@@ -401,7 +401,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     useExperienceStore.getState().closeModal();
   }
 
-  // ── Endgame «Играть снова» (Б3): one-shot restart, NO setup modal — an
+  // ── Endgame "Play again" (B3): one-shot restart, NO setup modal — an
   // empty body makes the server reuse the source match's frozen snapshots,
   // the plain rehydrate discovers the successor as the branch's active
   // session, and the session modal opens on the NEW match.
@@ -421,7 +421,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     }
   }
 
-  // ── Endgame «Изменить настройки» (Б3): open the setup modal PREFILLED from
+  // ── Endgame "Change settings" (B3): open the setup modal PREFILLED from
   //  the finished match's frozen snapshots (LB-5) — Start then restarts.
   function handleRestartChangeSettings(): void {
     setPopoverOpen(false);
@@ -429,7 +429,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
     setSetupOpen(true);
   }
 
-  // ── In-session settings entry (Б4): the session modal's trusted-chrome
+  // ── In-session settings entry (B4): the session modal's trusted-chrome
   // confirm routed here — close the session modal FIRST so the setup modal
   // is the only open surface.
   function handleOpenSessionSettings(): void {
@@ -568,7 +568,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
         {statusLine && <span className="font-ui text-[11px] text-t4">{statusLine}</span>}
       </div>
       {terminal && !incompatible ? (
-        // Endgame (Б3): the primary action is replaced by the restart pair.
+        // Endgame (B3): the primary action is replaced by the restart pair.
         <div className="flex flex-col gap-2">
           <button
             type="button"
@@ -712,7 +712,7 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
           onDetach={isRealtimeLive ? undefined : handleDetach}
           onFinishExperience={() => void handleFinishExperience()}
           onEndSessionQuiet={handleEndSessionQuiet}
-          // Б4 is the RUNNING-game entry: terminal games use the popover
+          // B4 is the RUNNING-game entry: terminal games use the popover
           // restart pair instead, so the in-session settings entry is wired
           // only for an active, compatible match.
           onOpenSessionSettings={

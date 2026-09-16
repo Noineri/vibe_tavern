@@ -6,13 +6,13 @@
  * profile's config; loading a different model swaps it (the client chains
  * loads — see whisper-client.ts).
  *
- * GPU lane (owner decision 2026-09-05, "конечно добавить" — the video card
+ * GPU lane (owner decision 2026-09-05, "of course, add it" — the video card
  * is faster): when WebGPU is available the model loads on the GPU with the
  * per-file dtype pair fp32-encoder + q4-decoder (WEBGPU_WHISPER_DTYPES);
  * q8 quantized weights are the wasm/CPU path. The fp32-encoder + q4-decoder
  * pair is deliberate — a whole-model fp16 load is NOT usable for whisper:
  * the fp16 DECODER degenerates into repetition loops on garbage logits
- * (owner-observed 2026-09-06: Russian dictation on small → "Доооо…"), and a
+ * (owner-observed 2026-09-06: Russian dictation on small → "Doooo…"), and a
  * missing shader-f16 feature makes the whole load throw — so the GPU lane
  * would either garble or silently drop to slow CPU. The official
  * transformers.js webgpu default is fp32; q4 is the proven-good compact

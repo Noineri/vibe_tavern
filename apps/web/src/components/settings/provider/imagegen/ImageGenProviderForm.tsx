@@ -52,7 +52,7 @@ interface ImageGenProviderFormProps {
  *    wire field STT never had — STT detects by endpoint because its
  *    profile has no preset column). Explicit slug, no guessing.
  *  - Custom is BARE (IG-CF8, owner 2026-09-15 — the SttProviderForm twin
- *    rule: "кастомный, значит, кастомный"): endpoint + API key, no preset
+ *    rule: "custom means custom"): endpoint + API key, no preset
  *    rows and no pickers of any kind. The wire backend is an
  *    implementation fact, not a UI choice — a custom profile speaks the
  *    OpenAI-images dialect (the only implemented cloud dialect for custom

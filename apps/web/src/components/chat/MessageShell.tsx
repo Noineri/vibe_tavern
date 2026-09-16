@@ -653,8 +653,8 @@ function DesktopMessageActions(props: {
 
       {/* LS-4a: Continue — icon-only, directly next to Edit, last AI reply
           only (canContinue is gated upstream in MessageBlock), tooltip on
-          hover per the owner spec («перемотка >>, без подписи, подсветка
-          тултипом»). */}
+          hover per the owner spec (fast-forward >>, no caption, tooltip
+          highlight). */}
       {canContinue && onContinue && (
         <CustomTooltip content={continueTooltip ?? ""}>
           <button

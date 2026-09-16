@@ -29,7 +29,7 @@ import {
  *
  * TAG-7 adds `todoByThread` — the SESSION-scoped live todo panel state (NOT
  * turn-scoped): it mirrors the backend's `todo_json` on the thread row
- * («время жизни туду должно быть на всю сессию»), so `clearTurn` deliberately
+ * ("todos should live for the whole session"), so `clearTurn` deliberately
  * does NOT drop it (a turn starting must not blank the pinned panel until the
  * refetch re-seeds it). It is seeded from the thread wire (`thread.todo`) by
  * the controller and upserted by live `todo` tool events — full-rewrite

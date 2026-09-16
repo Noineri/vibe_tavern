@@ -509,7 +509,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
             into the scroll container's OWN padding region, which is inside the
             overflow clip rectangle — so it is NOT clipped. If the padding lived
             on this outer wrapper instead, the bar's negative top would escape
-            the scroll container and the top half (incl. Сохранить) would be
+            the scroll container and the top half (incl. the Save button) would be
             clipped, while a zero top would leave a gap between the bar and the
             header above. See CharacterForm.tsx sticky-bar doc comment. */}
         <div

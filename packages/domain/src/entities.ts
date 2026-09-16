@@ -1256,7 +1256,7 @@ export interface ImageGenModelSettings {
 /** Sampler-set payload for image-gen (IG-CF15, the LLM
  *  `SamplerSetPayload` twin). The five scalar generation params ONLY —
  *  `modeSizePresets` deliberately NOT here (the owner's set concept is
- *  «настройки семплеров»; sizes are the profile/model layer's own surface,
+ *  "sampler settings"; sizes are the profile/model layer's own surface,
  *  IG-CF14). An inert template: applying copies the values into the target
  *  overlay; no value ships as code. */
 export interface ImageGenSamplerSetPayload {

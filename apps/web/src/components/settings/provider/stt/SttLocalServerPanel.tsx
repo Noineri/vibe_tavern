@@ -48,7 +48,7 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
 
   const currentEndpoint = configString(form.config, "endpoint");
 
-  // IG-CF12d (owner: «должен быть честный пинг»): the chip's state is the
+  // IG-CF12d (owner: the ping must be honest): the chip's state is the
   // CONFIGURED ENDPOINT's reachability via the draft-models route — the
   // compat row lists its model catalog; whisper.cpp has no catalog, and the
   // route falls back to the backend probe (SPE-7: green on a healthy

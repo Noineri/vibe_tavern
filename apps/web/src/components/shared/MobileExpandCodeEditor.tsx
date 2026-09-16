@@ -24,11 +24,11 @@ interface MobileExpandCodeEditorProps {
 /**
  * The code-editor counterpart of MobileExpandTextarea: on mobile, overlays an
  * expand button on the inline editor and opens a fullscreen CodeMirror session
- * with the same chrome (← label Готово, `fixed inset-0` glass overlay).
+ * with the same chrome (← Done label, `fixed inset-0` glass overlay).
  *
  * Deliberate divergence from the textarea wrapper: NO draft/commit step. A code
  * buffer is itself a draft (the copilot buffers have their own dirty/save flow
- * via the toolbar save button), so edits pass through live and «Готово» just
+ * via the toolbar save button), so edits pass through live and "Done" just
  * closes. Review-mode `readOnly` and the diff decorations are mirrored in, so
  * the fullscreen session is exactly the inline document, only bigger.
  *

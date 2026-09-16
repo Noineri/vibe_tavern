@@ -1,6 +1,6 @@
 /**
  * Tetris realtime port (TETRIS_REALTIME_PORT_PLAN, TR-1..TR-3) — the user's
- * timer-mode mini-app «Тетрис» (`C:/Users/user/Downloads/Тетрис.vtapp.json`)
+ * timer-mode mini-app "Tetris" (`C:/Users/user/Downloads/Tetris.vtapp.json`)
  * rewritten onto the realtime engine (REALTIME_EXPERIENCE_MODE_PLAN): fixed
  * `update(context, dt)` tick, input as `reduce` nudges without round-trips,
  * one commit at round end. Game logic is ported 1:1 (piece tables, colors,
@@ -8,8 +8,8 @@
  * [0,100,300,500,800]×level, level = floor(lines/10)+1, CW-only rotation,
  * no wall kick, top-out on blocked spawn).
  *
- * TR-2 addition (user quote, the source of truth): «я еще хочу, чтобы у него
- * была физика, когда блоки остаются без опоры, то они падают вниз» — cascade
+ * TR-2 addition (user quote, the source of truth): he also wants physics so
+ * that when blocks lose support they fall down — cascade
  * physics. When a line clear leaves cells without support, they fall (one row
  * per tick, whole stacks together); after settling, full lines clear again
  * (chain reactions), each scored with the same table; the next piece spawns

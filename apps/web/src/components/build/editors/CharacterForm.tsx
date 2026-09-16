@@ -582,7 +582,7 @@ export function CharacterForm({
         style={{ top: isMobile ? -16 : -32 }}
       >
       {/* Header row. `mb-3` is MOBILE-ONLY: on mobile the toolbar is a separate
-          row below this one, so the margin is the gap between Сохранить and the
+          row below this one, so the margin is the gap between the Save button and the
           toolbar (GAP A). On desktop the toolbar is inline in this same row, so a
           bottom margin would just dangle an empty tail under the bar. */}
       <div className={cn("flex items-center justify-between gap-2", isMobile && "mb-3")}>
@@ -683,7 +683,7 @@ export function CharacterForm({
         )}
       </div>
       {/* Mobile toolbar row. No bottom margin on the row: the gap above (to
-          Сохранить) is the header row's `mb-3`; a bottom margin here would
+          the Save button) is the header row's `mb-3`; a bottom margin here would
           dangle a tail between the bar and the form content below. */}
       {isMobile && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

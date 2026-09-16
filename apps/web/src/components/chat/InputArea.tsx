@@ -38,7 +38,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
 
   const [isDragOver, setIsDragOver] = useState(false);
   // ── Per-send prefill (LS-8, owner design): a labeled chip (human icon +
-  // «префилл») in the chip row opens the one-shot prefill input as a BUBBLE
+  // "prefill") in the chip row opens the one-shot prefill input as a BUBBLE
   // inside the input frame, DIRECTLY ABOVE the chip row (owner correction
   // 2026-09-09: chat line → bubble → chip row). Sending consumes the store
   // value (one-shot); any transition to disarmed collapses the bubble.
@@ -181,7 +181,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
 
           <div className="relative flex items-center gap-[7px] pt-1.5 pb-[9px] pl-3 pr-[135px]">
             {/* LS-8: the per-send prefill chip (human icon + label) — replaces
-                the retired «Говорить как» text label; the stale multi-persona
+                the retired "Speak as" text label; the stale multi-persona
                 tooltip (a mode VT does not have) goes with it. The persona
                 button itself is untouched. */}
             {data.perSendPrefillSupported && (

@@ -378,7 +378,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [regexConfirmDeleteOpen, setRegexConfirmDeleteOpen] = useState(false);
   const [profileConfirmDeleteId, setProfileConfirmDeleteId] = useState<string | null>(null);
   const regexImportInputRef = useRef<HTMLInputElement>(null);
-  // R-7 list badge («Не применяется»): link counts for non-global presets —
+  // R-7 list badge ("Not applied"): link counts for non-global presets —
   // a bind-mode preset with zero links applies in no chat. Fetched lazily per
   // unknown id; undefined = not loaded yet (badge withheld until known), so
   // rows never flash a false «unbound» while links load.
@@ -454,7 +454,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     }
   }, [regexProfiles, regexProfileLinkCounts]);
 
-  /** R-7 «Активен» instant toggle: patch ONLY `disabled` server-side right
+  /** R-7 "Active" instant toggle: patch ONLY `disabled` server-side right
    *  away — never blocked by a dirty draft (the unsaved-changes indicator
    *  keeps carrying the draft≠saved story). List row and draft follow the
    *  patch optimistically; a failure reverts both and toasts. */

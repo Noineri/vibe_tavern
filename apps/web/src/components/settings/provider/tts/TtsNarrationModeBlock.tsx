@@ -54,7 +54,7 @@ export function TtsNarrationModeBlock() {
           dictation selects are the reference) — content-sized trigger with a
           cap, NEVER the w-full form-field chrome; the per-mode description
           renders only in the opened list items, not in the trigger line.
-          MUI W7: cap 220px — the longest RU label «Игнорировать *звёздочки*»
+          MUI W7: cap 220px — the longest RU label "Ignore *asterisks*"
           (~205px with chrome) must not ellipsize (authored strings are never
           truncated); side="top" — footer triggers sit ~45px above the screen
           edge on phones, so the list opens upward into the modal body. */}

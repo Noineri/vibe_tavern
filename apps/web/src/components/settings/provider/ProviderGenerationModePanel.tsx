@@ -14,7 +14,7 @@ interface ProviderGenerationModePanelProps {
 }
 
 /**
- * Generation-format toggle (LOCAL_SUPPORT_PLAN LS-2a) — «Формат генерации».
+ * Generation-format toggle (LOCAL_SUPPORT_PLAN LS-2a) — "Generation format".
  *
  * Chooses how the server talks to this provider's backend: chat completions
  * (default) or raw text completion (one flat prompt string to `/completions`).
@@ -27,7 +27,7 @@ interface ProviderGenerationModePanelProps {
  * ollama, and the cloud-native protocols hide the toggle entirely).
  *
  * LS-10: the format block (ProviderFormatPanel) parks DIRECTLY UNDER this
- * switch — rendered in Текст mode, and ALWAYS for the native-TC preset
+ * switch — rendered in Text mode, and ALWAYS for the native-TC preset
  * (KoboldCPP has no switch but is always text completion; owner option A).
  */
 export function ProviderGenerationModePanel({ form, updateForm, tcTemplateSource }: ProviderGenerationModePanelProps) {
@@ -58,7 +58,7 @@ export function ProviderGenerationModePanel({ form, updateForm, tcTemplateSource
         </>
       )}
 
-      {/* LS-10: the format block lives HERE (under the mode switch) — in Текст
+      {/* LS-10: the format block lives HERE (under the mode switch) — in Text
           mode, and always for native-TC KoboldCPP. */}
       {formatBlockVisible && (
         <ProviderFormatPanel

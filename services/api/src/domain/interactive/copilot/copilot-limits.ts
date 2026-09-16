@@ -31,11 +31,11 @@ export const COPILOT_RESPONSE_RESERVE_TOKENS = 32_000;
 
 /**
  * Nominal ceiling for the multi-step tool loop (TAG-4). The profile-level
- * `maxSteps` limit was removed entirely by user decision — verbatim: «по
- * механике это должна быть карта пошаговых действий для модели, потому что
- * мини-приложение - это полноценная разработка. поэтому лимит на 20 шагов
- * надо вообще убрать, пользователь может просто нажать отмену генерации, он
- * бессмысленен.» / «давай просто скопируем как у них» — pi parity: the loop
+ * `maxSteps` limit was removed entirely by user decision — by design this
+ * should be a step-by-step action map for the model, and a mini-app is a
+ * full development effort, so the 20-step cap had to go: the user can
+ * simply cancel generation, the cap is pointless. "Let's just copy how
+ * they do it" — pi parity: the loop
  * runs until the model stops calling tools; the only stop is the user's cancel.
  * The AI SDK still requires a finite `stopWhen` predicate, so the stream feeds
  * it this deliberately unreachable bound (1,000,000 steps). No user-visible

@@ -9,9 +9,9 @@
  *  image side by a sensible amount, ±16 is noise). Raw typing is never
  *  snapped: 733 stays 733; only the bounds below clamp it.
  *
- *  Preset labels are built as «purpose + ratio + concrete resolution» —
- *  NEVER a bare ratio (owner: «не писать сырое соотношение без отображения
- *  разрешения»): the ratio string is approximate community shorthand (the
+ *  Preset labels are built as "purpose + ratio + concrete resolution" —
+ *  NEVER a bare ratio (owner: never write a raw ratio without showing the
+ *  resolution): the ratio string is approximate community shorthand (the
  *  canonical SDXL buckets), the exact pixels beside it are the truth. */
 export const IMAGE_SIZE_STEP_PX = 128;
 export const IMAGE_SIZE_MIN_PX = 64;

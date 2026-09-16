@@ -84,7 +84,7 @@ interface RegexPresetEditorProps {
    *  syncs list + draft. Without a preset the toggle edits the draft alone. */
   onActiveChange?: (nextActive: boolean) => void;
   /** Notify the parent that this preset's binding count changed (R-7 list
-   *  badge: «Не применяется» needs to know non-global presets with zero
+   *  badge: "Not applied" needs to know non-global presets with zero
    *  links). Called after the links PUT resolves. */
   onLinksChanged?: (presetId: string, linkCount: number) => void;
   /** R-13c: when the rule belongs to a profile, show the profile chip instead of the own scope block. */
@@ -126,7 +126,7 @@ const DEPTH_MODES: Array<{ value: DepthMode; labelKey: I18nKey }> = [
   { value: "older", labelKey: "promptManager.regex.depthModeOlder" },
   { value: "range", labelKey: "promptManager.regex.depthModeRange" },
 ];
-/** Owner-pinned default for «Последние N» (and the single-N modes generally):
+/** Owner-pinned default for "Last N" (and the single-N modes generally):
  *  ST's convention — the last 4 messages. */
 const DEPTH_DEFAULT_N = "4";
 
@@ -145,8 +145,8 @@ const MESSAGE_PLACEMENTS: RegexPlacement[] = [REGEX_PLACEMENT.UserInput, REGEX_P
 
 /**
  * Detail editor for one regex preset (R-7 owner-approved layout, top→down):
- * name + «Активен» instant toggle → «Применение» scope + bindings →
- * «Как срабатывает» (placement chips, 4-mode depth, apply-target) → rule
+ * name + "Active" instant toggle → "Application" scope + bindings →
+ * "How it triggers" (placement chips, 4-mode depth, apply-target) → rule
  * fields (mono at input size) → live test pane with macro substitution,
  * no-match/empty distinction and an honesty disclaimer.
  */
@@ -218,7 +218,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
     [bindLinks, resolvableIds],
   );
 
-  // «Не применяется» (R-7 owner follow-up): enabled + bind mode + zero
+  // "Not applied" (R-7 owner follow-up): enabled + bind mode + zero
   // resolvable links — the list's red dot spelled out under the name.
   // Mirrors the bindings dead-zone condition exactly.
   const notApplied = presetId !== null && !draft.isGlobal && !draft.disabled && effectiveBindCount === 0;
@@ -245,7 +245,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
     onDraftChange({ ...draft, [key]: value });
   };
 
-  /** Активен toggle (R-7): for a saved preset the parent patches ONLY
+  /** Active toggle (R-7): for a saved preset the parent patches ONLY
    *  `disabled` on the server right away — a dirty draft never blocks it and
    *  the unsaved-changes indicator keeps carrying the draft≠saved story.
    *  Without a preset record (defensive; the modal only mounts the editor for
@@ -271,11 +271,11 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
       case "all":
         onDraftChange({ ...draft, minDepth: "", maxDepth: "" });
         break;
-      // «Последние N»: max=N (default 4, owner-pinned); min unbounded.
+      // "Last N": max=N (default 4, owner-pinned); min unbounded.
       case "recent":
         onDraftChange({ ...draft, minDepth: "", maxDepth: draft.maxDepth.trim() === "" ? DEPTH_DEFAULT_N : draft.maxDepth });
         break;
-      // «Старше N»: min=N, max unbounded — one-sided, must NOT normalize.
+      // "Older than N": min=N, max unbounded — one-sided, must NOT normalize.
       case "older":
         onDraftChange({ ...draft, minDepth: draft.minDepth.trim() === "" ? DEPTH_DEFAULT_N : draft.minDepth, maxDepth: "" });
         break;
@@ -368,7 +368,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Name + Активен (R-7): the toggle is positive-polarity and, for a
+      {/* Name + Active (R-7): the toggle is positive-polarity and, for a
           saved preset, applies instantly — see handleActiveToggle. */}
       <div className="flex items-end gap-4">
         <div className="min-w-0 flex-1">
@@ -469,7 +469,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
         </>
       )}
 
-      {/* Как срабатывает (R-7): placement chips → depth modes → apply-target. */}
+      {/* How it triggers (R-7): placement chips → depth modes → apply-target. */}
       <div>
         <div className={lblCls}>{t("promptManager.regex.behaviorLabel")}</div>
         <div className="flex flex-col gap-4">

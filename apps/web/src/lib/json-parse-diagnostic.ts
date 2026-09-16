@@ -1,6 +1,6 @@
 /**
  * JSON authoring diagnostics for the interactive tester / playground panels
- * (UX 2026-08-16 remark 5: «сделать более подробную диагностику жсон»).
+ * (UX 2026-08-16 remark 5: make the JSON diagnostics more detailed).
  *
  * The panels' local `parseOptionalJson` copies swallowed the SyntaxError
  * entirely — the user saw a flat "must be valid JSON" label with no reason and

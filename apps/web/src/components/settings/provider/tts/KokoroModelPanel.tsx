@@ -10,9 +10,9 @@
  * ready state the variant can be switched (disposes the old model; the
  * browser cache keeps both copies).
  *
- * States: idle → picker + [Скачать модель]; downloading → progress bar with
+ * States: idle → picker + [Download model]; downloading → progress bar with
  * live % and MB counters (aggregated per-file transformers events via
- * useKokoroModel); ready → check + active variant + [Сменить вариант]; error
+ * useKokoroModel); ready → check + active variant + [Change variant]; error
  * → danger text + Retry. A gpu→cpu fallback surfaces as a warning line. The
  * panel and the preview share the client singleton, so a download started
  * here is joined (never duplicated) by an impatient Preview click.

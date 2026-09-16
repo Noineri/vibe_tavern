@@ -1,6 +1,6 @@
 /**
  * ImageBlock — the chat's shared justified image row (IMAGE_GENERATION_PLAN
- * IG-CF6; owner-named 2026-09-15: «это тогда имейдж блок будет»). One
+ * IG-CF6; owner-named 2026-09-15: "this will then be the image block"). One
  * primitive for BOTH image kinds in chat: image-gen slot attachments (via
  * AttachmentGrid) and inline markdown images (CF7).
  *

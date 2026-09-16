@@ -429,8 +429,8 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
 
     // Effective params (IG-CF15): request overrides WIN, then the ACTIVE
     // MODEL's overlay row (the per-model layer — applied at generation when
-    // the resolved model matches, the owner's «слой применяется при
-    // генерации, когда активна та модель»), then the profile's per-mode size
+    // the resolved model matches, per the owner's "the layer applies at
+    // generation when that model is active"), then the profile's per-mode size
     // preset (width/height) and default params (steps/cfg/sampler/seed/
     // clipSkip), then the vendor default (field simply not sent). No value is
     // ever invented here (owner's hardcoded-parameters ban).

@@ -15,7 +15,7 @@ export type LocalConnectionStatus = "unknown" | "checking" | "online" | "offline
  *  re-check means (LLM pane: refetch models; IG pane: refetch samplers;
  *  TTS/STT local panels: re-ping the configured endpoint). An optional
  *  `detail` second line spans the chip below the status row (IG-CF12d,
- *  owner: «просто расширить примитив» — TTS carries its docker text there). */
+ *  owner: just extend the primitive — TTS carries its docker text there). */
 export function LocalConnectionStatusChip({
   status,
   endpoint = "",

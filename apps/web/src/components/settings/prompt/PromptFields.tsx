@@ -24,7 +24,7 @@ function SectionHeader({ title }: { title: string }) {
 /**
  * Chat-level prompt fields of a preset (system / jailbreak / prefill /
  * author's note). The former "Service Prompts" section (summary + AI-assistant
- * mode overrides) moved to the dedicated «Служебные» tab (ServicePromptsPane,
+ * mode overrides) moved to the dedicated service-prompts tab (ServicePromptsPane,
  * SP-8/SP-9); the service-related draft fields stay in the preset DTO only as
  * migration source data (SP-7).
  */

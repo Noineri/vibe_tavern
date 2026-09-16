@@ -1,5 +1,5 @@
 /**
- * Registry of the app's base "service" (служебные) system prompts.
+ * Registry of the app's base "service" (service prompts) system prompts.
  *
  * This module drives the Service Prompt Profiles feature (dedicated
  * tab, independent from prompt presets, globally active profile).

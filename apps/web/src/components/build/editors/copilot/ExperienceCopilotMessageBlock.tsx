@@ -73,7 +73,7 @@ export const ExperienceCopilotMessageBlock = memo(function ExperienceCopilotMess
   );
 });
 
-/** CM-9: the collapsed compaction-digest card. «Контекст сжат» header + caption
+/** CM-9: the collapsed compaction-digest card. "Context compacted" header + caption
  *  (covers N messages / relative time), expand on click to the raw summary text.
  *  Reuses the durable tool-card chrome (a bordered `bg-s2` row with an icon +
  *  caret) rather than inventing new visual language. No fixed heights — the

@@ -14,8 +14,8 @@ export type InlineRenameInputProps = Omit<React.ComponentProps<"input">, "classN
  * appears" shapes (sidebar chat/branch renames, preset + regex list renames,
  * service prompts pane, lorebook accordion, coauthor rail, character chats
  * sheet) — same gesture, but each site carried its own padding, font-size and
- * border dialect. FS-8c (owner 2026-09-10, «не открытые, запиши как
- * предложил») made this a DESIGNED family with one shape: the canon single-line
+ * border dialect. FS-8c (owner 2026-09-10, closed inputs — write it as
+ * proposed) made this a DESIGNED family with one shape: the canon single-line
  * field minus the height, with the ACCENT border as the edit-state marker —
  * you are always inside "rename mode" while this input is visible, so the
  * accent border is not a focus state, it is the mode signal.

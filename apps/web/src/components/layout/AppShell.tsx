@@ -214,7 +214,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
   // LS-10: the generation-format surface moved to the provider settings (the
-  // format block under the Чат/Текст switch) — the prompt-manager tab and its
+  // format block under the Chat/Text switch) — the prompt-manager tab and its
   // AppShell activation gate retired. No tc* derivations remain here.
 
   // Shell dispatch via the chat-mode registry (SURFACE_REGISTRY step 2):

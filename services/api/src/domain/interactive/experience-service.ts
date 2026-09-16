@@ -24,7 +24,7 @@
  *     replay reproduce the exact stream. `context.chance` (ephemeral,
  *     Math.random, non-recorded) is injected into `choose`/`flavor` only — it
  *     lets a script make a varied move or cosmetic detail without disturbing
- *     the cursor (Variant Б of the choose-randomness design).
+ *     the cursor (Variant B of the choose-randomness design).
  *
  * Isolation invariant: imports only the kernel, the resource service, the store
  * container, and domain/shared helpers. No prompt assembly, no provider calls,
@@ -529,14 +529,14 @@ export class ExperienceService {
 
   /**
    * Restart a session as a NEW match on the same chat+branch (lobby report
-   * LB-2 / Track B — «играть снова» / «изменить настройки»). A restart is a
+   * LB-2 / Track B — "play again" / "change settings"). A restart is a
    * NEW session id, never a replay: the successor runs a fresh `create` under
    * a NEW random seed; the source match's journal and reports are preserved.
    *
    * Resolution semantics:
    *  - settings/participants default to the source session's frozen snapshots
    *    (`initialSettingsJson` / `participantsJson`); explicit overrides win —
-   *    the lobby modal sends edited values, one-click «играть снова» sends
+   *    the lobby modal sends edited values, one-click "play again" sends
    *    neither and gets the same match shape.
    *  - The CURRENT effective setup is re-resolved (rules/visual/grants/
    *    context): an author's rule fix or grant change lands in the new match;

@@ -75,8 +75,8 @@ export interface ImageGenSlotProvenance {
   /** The FINAL assembled image prompt (IG-CF6): the exact text sent to the
    *  backend — template + macros + chip edits + assist all resolved. Stamped
    *  at generation time so the slot can show what was asked (owner
-   *  2026-09-15: "промпт от модели совершенно не виден нигде. его надо
-   *  отображать тоже в слоте с изображением"). Absent on legacy slots
+   *  2026-09-15: "the model's prompt is nowhere visible; it should also be
+   *  displayed in the image slot"). Absent on legacy slots
    *  generated before CF6 — free-form JSON inside attachmentsJson, no
    *  migration. */
   prompt?: string;

@@ -19,7 +19,7 @@ export interface VoicedVariantSource {
   snippet: string;
 }
 
-/** RD-live-fix: first THREE source lines of the voiced text (owner decision 2026-09-08: «да, можно три строки» — the RD-9 worker changed only the CSS clamp and left this cut at two, so even fresh rows stored 2-line snippets). Splitting is by SOURCE newlines, not visual lines: a long unbroken paragraph still counts as one line and the CSS line-clamp does the visual truncation. */
+/** RD-live-fix: first THREE source lines of the voiced text (owner decision 2026-09-08: "yes, three lines is fine" — the RD-9 worker changed only the CSS clamp and left this cut at two, so even fresh rows stored 2-line snippets). Splitting is by SOURCE newlines, not visual lines: a long unbroken paragraph still counts as one line and the CSS line-clamp does the visual truncation. */
 export function firstThreeLines(text: string): string {
   return text.split("\n").slice(0, 3).join("\n");
 }

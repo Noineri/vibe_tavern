@@ -342,7 +342,7 @@ export async function discoverLocalTtsServers(): Promise<ProbeOutcome[]> {
 }
 
 /** One-shot preview synthesis from an unsaved form config — the
- *  "Прослушать голос" path for server backends BEFORE saving. */
+ *  "Listen to voice" path for server backends BEFORE saving. */
 export async function previewTtsDraft(body: {
   backend: string;
   config: Record<string, unknown>;

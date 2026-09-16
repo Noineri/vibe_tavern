@@ -1,8 +1,8 @@
 /**
  * CopilotAskCard (TAG-9) — the `ask_user` card in the copilot message feed:
  * the model's ONE clarifying question with the hybrid answer affordances
- * (verbatim user decisions: «насчет аска: стиль б. формат: гибрид» +
- * «8 да, рекомендуемый» — option chips AND free text, one option flagged
+ * (verbatim user decisions: about the ask — style B, format: hybrid +
+ * "8 — yes, recommended" — option chips AND free text, one option flagged
  * recommended).
  *
  * Submitting goes through the TAG-5 split-turn answer mode (style B): the

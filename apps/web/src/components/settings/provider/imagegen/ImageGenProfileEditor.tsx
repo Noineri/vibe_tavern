@@ -12,7 +12,7 @@ type ImageGenHook = ReturnType<typeof useImageProfiles>;
  *  IG-CF4 (owner review 2026-09-15): view mode has NO connection-actions
  *  card. Probe lives INSIDE the connection settings (ImageGenProviderForm's
  *  test card, the STT P10 shape — works on drafts); model refresh lives in
- *  the Pane ("Обновить модели"). The old view-mode Probe + Fetch-models
+ *  the Pane ("Update models"). The old view-mode Probe + Fetch-models
  *  buttons duplicated both and were deleted together with their hook/api
  *  ladder (probeSaved/probeOutcome → probeImageGenProfile client wrapper;
  *  the server probe ROUTE stays — the draft-probe contract surface). */

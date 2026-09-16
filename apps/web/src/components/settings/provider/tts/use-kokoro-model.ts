@@ -1,11 +1,11 @@
 /**
- * Kokoro model download hook — the explicit "Скачать модель" action plus the
+ * Kokoro model download hook — the explicit "Download model" action plus the
  * variant picker state (owner decision 2026-08-28: gpu = full model/WebGPU,
  * cpu = lightweight/wasm; see kokoro-load-options.ts).
  *
  * First kokoro use pulls the ONNX model (~90–310 MB depending on variant)
  * from huggingface.co via transformers.js. Hiding that inside the preview
- * button read as a hang ("нажимаю и генерация виснет"); this hook fronts it
+ * button read as a hang ("press and generation hangs"); this hook fronts it
  * as a deliberate action with live progress: per-file transformers progress
  * events are aggregated into an overall loaded/total byte counter.
  *

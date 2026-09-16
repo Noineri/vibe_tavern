@@ -43,7 +43,7 @@ export type AudioDecoder = (blob: Blob) => Promise<Float32Array>;
  *  model download before giving up with an actionable error — the downloads
  *  come through the server mirror, but a blackholed connection would
  *  otherwise hang the load promise FOREVER with zero feedback (the exact
- *  Kokoro "Послушать виснет" defect class). Progress events reset the timer. */
+ *  Kokoro "Listen hangs" defect class). Progress events reset the timer. */
 export const WHISPER_LOAD_STALL_MS = 30_000;
 
 let stallMsForTests: number | null = null;

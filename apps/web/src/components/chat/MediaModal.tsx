@@ -152,7 +152,7 @@ export function MediaModal({ open, onClose, characterId, characterName }: MediaM
  * zoomed (D5b) + double-tap toggle, all via the shared useImageZoomPan hook.
  * Before this, the lightbox had no gesture handling at all — a pinch fell
  * through to the browser's viewport zoom, which only pans with two fingers
- * (the reported mobile defect: "двигать могу только двумя пальцами").
+ * (the reported mobile defect: the user can only move it with two fingers).
  * touch-action none makes the app own the gestures; tap targets (close, send)
  * still fire because a tap without movement never enters the pan path.
  */

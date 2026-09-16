@@ -124,7 +124,7 @@ const CREATION_STEP_ORDER: readonly ExperienceCopilotStep[] = ["rules", "appeara
 
 /** E6 (MOBILE_DEFECTS_ROUND_2): the editor's management cluster (name input,
  *  trust pill + toggle, save-state, save, duplicate, delete) as ONE component
- *  rendered both in the desktop top bar and as the mobile Правка-tab header —
+ *  rendered both in the desktop top bar and as the mobile Edit-tab header —
  *  the two surfaces cannot drift. Module-level (not an inner function) so the
  *  name input keeps focus across parent re-renders. */
 interface ExperienceManagementControlsProps {
@@ -174,7 +174,7 @@ function ExperienceManagementControls({
       {/* The action cluster (pill → delete) is a flat `display:contents`
           group on desktop — a single flex-wrap row with the name — and becomes
           a nested flex row on mobile, so the header composes into exactly two
-          rows: [имя] / [статус, тумблер, сохранить(flex-1), дубль, удалить].
+          rows: [name] / [status, toggle, save(flex-1), duplicate, delete].
           (A plain `flex-1` on the name cannot force this: basis-0 lets the
           shrink-0 pill/toggle squeeze onto row 1 at 40px of leftover width.) */}
       <div className="contents max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-1.5">
@@ -185,7 +185,7 @@ function ExperienceManagementControls({
               scriptEnabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text",
             )}
           >
-            {/* Mobile: the status pill uses the short form (вкл/выкл · on/off)
+            {/* Mobile: the status pill uses the short form ('on/off')
                 below 768px so the whole action cluster fits one row; desktop
                 keeps the full word. */}
             {t(
@@ -202,7 +202,7 @@ function ExperienceManagementControls({
         />
 
         {/* Save-state text is desktop-only: on mobile the state is conveyed by
-            the SaveButton's visual state + the Правка-tab dirty badge (E6). */}
+            the SaveButton's visual state + the Edit-tab dirty badge (E6). */}
         <span
           className={cn("shrink-0 max-md:hidden font-ui text-[12px]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
           title={saveError ?? undefined}
@@ -618,8 +618,8 @@ export function ExperienceEditor() {
     }));
   };
 
-  /** Create a completely blank visual (empty name + source) — the «+ Новый
-   *  визуал» path. Unlike the starters it seeds no skeleton: the copilot
+  /** Create a completely blank visual (empty name + source) — the "+ New
+   *  visual" path. Unlike the starters it seeds no skeleton: the copilot
    *  (write_buffer target=visual) or the user fills it by hand. */
   const handleNewBlankVisual = () => {
     setActiveVisualId(createPendingVisual({
@@ -1003,7 +1003,7 @@ export function ExperienceEditor() {
   };
 
   // E6: the trust-blocked hint renders below the bar on desktop and inside
-  // the mobile Правка-tab header — one definition, two placements.
+  // the mobile Edit-tab header — one definition, two placements.
   const trustBlockedHint = enableLocked && (
     <div className="shrink-0 border-b border-warning/40 bg-warning-dim/30 px-3 py-1 text-[11px] leading-[1.4] text-t3">
       {t("experience_editor_trust_blocked_hint")}
@@ -1011,7 +1011,7 @@ export function ExperienceEditor() {
   );
 
   // E6: the management cluster is ONE shared component — desktop top bar and
-  // mobile Правка-tab header render the same node, so they cannot drift.
+  // mobile Edit-tab header render the same node, so they cannot drift.
   const managementControls = (
     <ExperienceManagementControls
       name={activeScript.name}
@@ -1034,7 +1034,7 @@ export function ExperienceEditor() {
   return (
     <div className="flex h-full w-full flex-col">
       {/* Top bar is desktop-only (E6): on mobile the management cluster moved
-          into the Правка tab and back lives in the shell's tab-bar row, so the
+          into the Edit tab and back lives in the shell's tab-bar row, so the
           chat tab keeps its full height. */}
       {!isMobile && (
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2">

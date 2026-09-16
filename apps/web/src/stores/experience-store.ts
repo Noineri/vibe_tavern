@@ -160,7 +160,7 @@ export interface ExperienceActions {
     score?: number;
     summary?: string;
   }) => Promise<ExperienceQueuedAttachmentResponse | null>;
-  /** Restart as a NEW match on the same branch (lobby Б3/Б4). The server
+  /** Restart as a NEW match on the same branch (lobby B3/B4). The server
    *  finishes the old match and the successor becomes the branch's active
    *  session, so a plain rehydrate after success discovers it — there is NO
    *  terminal attachment writeback here (unlike `endSession`). Omitted

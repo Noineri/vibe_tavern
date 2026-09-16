@@ -112,7 +112,7 @@ export interface FormState {
    *  routes to a model overlay. null = "no set". */
   samplerSetId: string | null;
   /** LS-10: the provider-side generation format (the format block under the
-   *  Чат/Текст switch). Null = unset — the active preset's format keeps
+   *  Chat/Text switch). Null = unset — the active preset's format keeps
    *  applying as the fallback source (supervisor decision (c)). */
   generationFormat: ProviderGenerationFormat | null;
 }

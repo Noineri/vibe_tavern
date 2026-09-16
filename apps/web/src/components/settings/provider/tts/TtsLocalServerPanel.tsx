@@ -54,7 +54,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
 
   const currentEndpoint = configString(form.config, "endpoint");
 
-  // IG-CF12d (owner: «должен быть честный пинг» — the green state must mean
+  // IG-CF12d (owner: the ping must be honest — the green state must mean
   // the SERVER answers, not merely that docker exists). The honest signal is
   // the draft-models route — the same call the Test-connection button makes
   // (the model list IS the reachability proof, STT's SPE-7 wording): one
@@ -104,7 +104,7 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
       {/* Canonical local-connection chip (IG-CF12c/12d). Status = the honest
           endpoint ping above; the docker probe (D8, one-shot on mount, no
           retries) moved into the chip's detail line — owner 2026-09-16:
-          «вернуть стоит» (the version text survives there; docker on Windows
+          "worth restoring" (the version text survives there; docker on Windows
           is genuinely hard to install, so the non-docker hint stays useful).
           The cards below always show the non-docker variant too, so neither
           docker state is a dead end. */}
