@@ -702,6 +702,7 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
       setForm,
     });
     const view = render(<ImageGenPane imageGen={a1111} />);
+    await openAdvanced(view);
     await waitFor(() => expect(view.getByTestId("image-gen-field-sampler")).toBeTruthy());
     await pickOption(view, "image-gen-field-sampler", "Euler a");
     await waitFor(() => expect(setForm).toHaveBeenCalled());
@@ -709,10 +710,12 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     expect(patch.defaultParams).toEqual({ sampler: "Euler a" });
     cleanup();
 
-    // OpenRouter (no sampler surface): the control must not render at all.
+    // OpenRouter (no sampler surface): the control must not render at all —
+    // checked with the accordion OPEN so the pin is about GATING, not about
+    // the collapsed state hiding it.
     const openrouter = makeImageGen({ setForm });
     const view2 = render(<ImageGenPane imageGen={openrouter} />);
-    await waitFor(() => expect(view2.getByTestId("image-gen-params-section")).toBeTruthy());
+    await openAdvanced(view2);
     expect(view2.queryByTestId("image-gen-field-sampler")).toBeNull();
   });
 

@@ -21,6 +21,7 @@ import { describe, it, expect } from "bun:test";
 import i18next from "i18next";
 import en from "./locales/en.json";
 import ru from "./locales/ru.json";
+import { initI18n } from "./i18n.js";
 
 /** SillyTavern macro tokens that are meant to be shown as literal text, not interpolated. */
 const LITERAL_MACROS = new Set(["user", "char"]);
@@ -76,5 +77,17 @@ describe("i18n interpolation delimiter hygiene", () => {
 			interpolation: { prefix: "{", suffix: "}" },
 		});
 		expect(String(inst.t("dialog_examples_placeholder", { user: "Bob" }))).toBe("{{user}}: Hi!");
+	});
+
+	it("the APP config interpolates verbatim — i18next's HTML escaper is off (a URL's / must not become &#x2F;)", () => {
+		// initI18n configures the REAL global instance the app renders with —
+		// this pins the production options, not a replica (owner 2026-09-17:
+		// the local-status endpoint showed "http:&#x2F;&#x2F;127.0.0.1:7860").
+		initI18n("en");
+		expect(String(i18next.t("local_connection_endpoint", { url: "http://127.0.0.1:7860" }))).toBe(
+			"http://127.0.0.1:7860",
+		);
+		// The escaper also mangled & < > ' " — pin those too.
+		expect(String(i18next.t("local_connection_endpoint", { url: "a&b<c>'d\"e" }))).toBe("a&b<c>'d\"e");
 	});
 });

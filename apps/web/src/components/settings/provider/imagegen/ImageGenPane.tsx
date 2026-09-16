@@ -1258,23 +1258,6 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           </div>
         )}
 
-        {caps.supportsSamplers && (
-          <div className="mb-3">
-            <label className={lblCls}>{t("image_gen_sampler_label")}</label>
-            <DropdownSelect
-              value={params.sampler ?? ""}
-              triggerTestId="image-gen-field-sampler"
-              searchable={false}
-              className="w-auto max-w-[320px]"
-              options={[
-                { id: "", label: t("image_gen_sampler_auto") },
-                ...samplers.map((sampler) => ({ id: sampler.name, label: sampler.name })),
-              ]}
-              onChange={(next) => setParam({ sampler: next === "" ? undefined : next })}
-            />
-          </div>
-        )}
-
         {/* Advanced expand — header cloned from the LLM sampler accordion
             (ProviderSamplerPanel): the title span toggles; the named-set row
             lives on the header's right side and columnates under the title
@@ -1300,6 +1283,26 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           </div>
           {advancedOpen && (
             <div className="grid grid-cols-1 gap-3 bg-surface p-3 sm:grid-cols-2" data-testid="image-gen-advanced-body">
+              {/* The sampler pick lives INSIDE the advanced accordion with the
+                  rest of the sampler settings (owner 2026-09-17 — it used to
+                  stand as a separate row above; the accordion IS the model's
+                  sampler-settings surface). Full-width cell, first row. */}
+              {caps.supportsSamplers && (
+                <div className="min-w-0 sm:col-span-2">
+                  <label className={lblCls}>{t("image_gen_sampler_label")}</label>
+                  <DropdownSelect
+                    value={params.sampler ?? ""}
+                    triggerTestId="image-gen-field-sampler"
+                    searchable={false}
+                    className="w-auto max-w-[320px]"
+                    options={[
+                      { id: "", label: t("image_gen_sampler_auto") },
+                      ...samplers.map((sampler) => ({ id: sampler.name, label: sampler.name })),
+                    ]}
+                    onChange={(next) => setParam({ sampler: next === "" ? undefined : next })}
+                  />
+                </div>
+              )}
               <SamplerSliderField
                 label={t("image_gen_steps_label")}
                 value={params.steps}
