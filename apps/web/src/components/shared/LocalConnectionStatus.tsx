@@ -12,13 +12,17 @@ export type LocalConnectionStatus = "unknown" | "checking" | "online" | "offline
  *  `className`, which extends the baked base per FS-8b).
  *
  *  `onRefresh` presence gates the mini button; the caller owns what a
- *  re-check means (LLM pane: refetch models; IG pane: refetch samplers). */
+ *  re-check means (LLM pane: refetch models; IG pane: refetch samplers;
+ *  TTS/STT local panels: re-ping the configured endpoint). An optional
+ *  `detail` second line spans the chip below the status row (IG-CF12d,
+ *  owner: «просто расширить примитив» — TTS carries its docker text there). */
 export function LocalConnectionStatusChip({
   status,
   endpoint = "",
   onRefresh,
   refreshing = false,
   refreshLabel = "",
+  detail,
   className,
   testId,
 }: {
@@ -30,6 +34,9 @@ export function LocalConnectionStatusChip({
    *  is present (TTS's docker chip renders D8's one-shot probe with no
    *  re-check, so it passes neither). */
   refreshLabel?: string;
+  /** Optional second line inside the chip (full-width, muted) — e.g. TTS
+   *  carries its docker-availability text + version there. */
+  detail?: string;
   className?: string;
   testId?: string;
 }) {
@@ -45,26 +52,29 @@ export function LocalConnectionStatusChip({
     <div
       data-testid={testId}
       className={cn(
-        "flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[12px] sm:flex-row sm:items-center sm:justify-between",
+        "flex flex-col gap-1.5 rounded-md border px-3 py-2 font-ui text-[12px]",
         style.className,
         className,
       )}
     >
-      <span className="inline-flex min-w-0 items-center gap-2">
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", style.dotClassName)} />
-        <span className="shrink-0 font-medium">{style.label}</span>
-        {endpoint && <span className="min-w-0 truncate text-t3">{t("local_connection_endpoint", { url: endpoint })}</span>}
-      </span>
-      {onRefresh && (
-        <button
-          type="button"
-          onClick={() => onRefresh()}
-          disabled={refreshing}
-          className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto"
-        >
-          {refreshing ? t("testing") : refreshLabel}
-        </button>
-      )}
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+        <span className="inline-flex min-w-0 items-center gap-2">
+          <span className={cn("h-2 w-2 shrink-0 rounded-full", style.dotClassName)} />
+          <span className="shrink-0 font-medium">{style.label}</span>
+          {endpoint && <span className="min-w-0 truncate text-t3">{t("local_connection_endpoint", { url: endpoint })}</span>}
+        </span>
+        {onRefresh && (
+          <button
+            type="button"
+            onClick={() => onRefresh()}
+            disabled={refreshing}
+            className="self-start rounded border border-current/20 px-2 py-0.5 font-ui text-[11px] font-medium opacity-80 transition-opacity hover:opacity-100 disabled:opacity-50 sm:self-auto"
+          >
+            {refreshing ? t("testing") : refreshLabel}
+          </button>
+        )}
+      </div>
+      {detail && <div className="font-ui text-[11px] text-t3">{detail}</div>}
     </div>
   );
 }

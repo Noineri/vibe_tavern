@@ -1,20 +1,21 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { STT_BACKENDS } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
+import { listSttDraftModels } from "../../../../api/stt-api.js";
 import { copyText } from "../../../../lib/clipboard.js";
 import { cn } from "../../../../lib/cn.js";
 import { detectTtsOsKind, worstDiagnostic, diagnosticI18nKey } from "../../../../lib/tts/quickstarts.js";
 import { lblCls, codeQuoteCls } from "../../../../lib/field-tokens.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../../shared/icons.js";
-import { LocalConnectionStatusChip } from "../../../shared/LocalConnectionStatus.js";
+import { LocalConnectionStatusChip, type LocalConnectionStatus } from "../../../shared/LocalConnectionStatus.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { useGuideChecklist } from "../../../../hooks/use-guide-checklist.js";
 import { GuideCommandRow } from "../GuideCommandRow.js";
 import { STT_SERVER_GUIDES, type SttHelpStep, type SttOsKind } from "../../../../lib/stt/stt-server-guides.js";
 import { useSttDiscovery } from "./use-stt-discovery.js";
-import { configString, updateConfigField } from "./stt-form-helpers.js";
+import { configString, formDraftConfig, updateConfigField } from "./stt-form-helpers.js";
 import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
@@ -46,6 +47,35 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
   const isCompat = form.backend === STT_BACKENDS.OpenAiCompat;
 
   const currentEndpoint = configString(form.config, "endpoint");
+
+  // IG-CF12d (owner: «должен быть честный пинг»): the chip's state is the
+  // CONFIGURED ENDPOINT's reachability via the draft-models route — the
+  // compat row lists its model catalog; whisper.cpp has no catalog, and the
+  // route falls back to the backend probe (SPE-7: green on a healthy
+  // server, red on a dead one). One mount probe + the re-check button; an
+  // empty endpoint draws no conclusion. (The 12c scan-driven mapping —
+  // «online = some port answered» — was the same antipattern the owner
+  // rejected on the TTS side: a found server on ANOTHER port said nothing
+  // about this endpoint.)
+  const [pingStatus, setPingStatus] = useState<LocalConnectionStatus>("unknown");
+  const pingServer = useCallback(async () => {
+    if (configString(form.config, "endpoint").trim() === "") {
+      setPingStatus("unknown");
+      return;
+    }
+    setPingStatus("checking");
+    try {
+      await listSttDraftModels({ backend: form.backend, config: formDraftConfig(form), profileId: form.id ?? undefined });
+      setPingStatus("online");
+    } catch {
+      setPingStatus("offline");
+    }
+  }, [form]);
+  useEffect(() => {
+    void pingServer();
+    // Mount-only one-shot: the re-check button re-fires with the CURRENT
+    // form; edits do not auto-re-ping.
+  }, []);
 
   const worstCode = discovery.notFoundCodes !== null ? worstDiagnostic(discovery.notFoundCodes) : null;
   const diagKey = worstCode !== null ? diagnosticI18nKey(worstCode) : null;
@@ -79,30 +109,18 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
 
   return (
     <div data-testid="stt-local-server-panel" className="flex flex-col gap-4">
-      {/* Canonical local-connection chip (IG-CF12c; owner: the LLM pane's
-          chip is canonical for every local-preset provider panel). STT's
-          signal is the port scan (D8 deliberately has NO docker probe for
-          STT — untouched): unknown before any scan / while the scan route
-          itself fails, checking mid-scan, online when a server was found,
-          offline when the scan completed and found none. Re-check re-runs
-          the scan (the same probe the Discover section's button fires). */}
+      {/* Canonical local-connection chip (IG-CF12c/12d; owner: the LLM
+          pane's chip is canonical for every local-preset provider panel).
+          Status = the honest endpoint ping above (STT's D8 deliberately has
+          NO docker probe — untouched); the port-scan block below keeps its
+          own discover button and results. */}
       <LocalConnectionStatusChip
         testId="stt-local-status"
-        status={
-          discovery.error !== null
-            ? "unknown"
-            : discovery.scanning
-              ? "checking"
-              : discovery.servers.length > 0
-                ? "online"
-                : discovery.notFoundCodes !== null
-                  ? "offline"
-                  : "unknown"
-        }
+        status={pingStatus}
         endpoint={currentEndpoint}
-        onRefresh={() => void discovery.discover()}
-        refreshing={discovery.scanning}
-        refreshLabel={t("stt_local_scan_btn")}
+        onRefresh={() => void pingServer()}
+        refreshing={pingStatus === "checking"}
+        refreshLabel={t("test_connection")}
       />
 
       {/* Setup help accordion — disclosure block mirroring TtsLocalServerPanel. */}

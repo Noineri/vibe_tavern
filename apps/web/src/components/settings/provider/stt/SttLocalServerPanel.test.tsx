@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 
@@ -19,6 +19,21 @@ mock.module("../../../../i18n/context.js", () => ({
 
 const { render, act, cleanup } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
+
+// IG-CF12d: the chip's honest ping — deterministic per test (default: an
+// empty successful catalog). Leak-safe ...real (the discovery seam below
+// covers the scan block; this covers the endpoint ping).
+let listModelsNext: unknown[] | Error = [];
+const listModelsMock = mock(async () => {
+  if (listModelsNext instanceof Error) throw listModelsNext;
+  return listModelsNext;
+});
+const realSttApi = await import("../../../../api/stt-api.js");
+mock.module("../../../../api/stt-api.js", () => ({
+  ...realSttApi,
+  listSttDraftModels: listModelsMock,
+}));
+
 const { SttLocalServerPanel } = await import("./SttLocalServerPanel.js");
 const { __setSttDiscoveryDepsForTests } = await import("./use-stt-discovery.js");
 const { STT_BACKENDS } = await import("@vibe-tavern/domain");
@@ -187,54 +202,59 @@ describe("SttLocalServerPanel", () => {
   });
 });
 
-describe("SttLocalServerPanel — local status chip (IG-CF12c)", () => {
-  test("before any scan: UNKNOWN state, empty endpoint renders no endpoint line", () => {
+describe("SttLocalServerPanel — local status chip (IG-CF12d: honest endpoint ping)", () => {
+  beforeEach(() => {
+    listModelsNext = [];
+    listModelsMock.mockClear();
+  });
+
+  test("empty endpoint → UNKNOWN and no ping fires", () => {
     const view = renderPanel(openaiForm(), mock(() => {}));
     const chip = view.getByTestId("stt-local-status");
     expect(chip.className).toContain("border-border2");
-    expect(chip.className).toContain("bg-s2");
+    expect(listModelsMock).not.toHaveBeenCalled();
   });
 
-  test("mid-scan: CHECKING state (accent pulse row)", async () => {
-    __setSttDiscoveryDepsForTests({ discover: mock(async () => new Promise<ProbeOutcome[]>(() => {})) });
-    const view = renderPanel(openaiForm(), mock(() => {}));
+  test("endpoint answers → ONLINE; dead endpoint → OFFLINE (docker-green antipattern dead on STT too)", async () => {
+    const form = { ...openaiForm(), config: { endpoint: "http://127.0.0.1:8000/v1", model: "" } };
+    const view = renderPanel(form, mock(() => {}));
     await act(async () => {
-      await userEvent.click(view.getByTestId("stt-local-scan"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(view.getByTestId("stt-local-status").className).toContain("border-accent/30");
-  });
-
-  test("scan found a server → ONLINE; scan found none → OFFLINE", async () => {
-    const found: ProbeOutcome[] = [
-      { port: 8000, status: "found", server: foundServer(8000, ["m"]) },
-    ];
-    __setSttDiscoveryDepsForTests({ discover: mock(async () => found) });
-    const view = renderPanel(openaiForm(), mock(() => {}));
-    await act(async () => {
-      await userEvent.click(view.getByTestId("stt-local-scan"));
-    });
+    expect(listModelsMock).toHaveBeenCalledTimes(1);
     expect(view.getByTestId("stt-local-status").className).toContain("border-success/30");
     view.unmount();
 
-    const none: ProbeOutcome[] = [{ port: 8000, status: "refused" }];
-    __setSttDiscoveryDepsForTests({ discover: mock(async () => none) });
-    const view2 = renderPanel(openaiForm(), mock(() => {}));
+    listModelsNext = new Error("STT draft model list failed: 502");
+    const view2 = renderPanel(form, mock(() => {}));
     await act(async () => {
-      await userEvent.click(view2.getByTestId("stt-local-scan"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(view2.getByTestId("stt-local-status").className).toContain("border-danger/30");
   });
 
-  test("the chip's re-check button re-runs the discovery scan", async () => {
-    const outcomes: ProbeOutcome[] = [];
-    const discover = mock(async () => outcomes);
-    __setSttDiscoveryDepsForTests({ discover });
-    const view = renderPanel(openaiForm(), mock(() => {}));
+  test("the re-check button re-pings the endpoint (NOT the port scan)", async () => {
+    const form = { ...openaiForm(), config: { endpoint: "http://127.0.0.1:8000/v1", model: "" } };
+    const view = renderPanel(form, mock(() => {}));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     const recheck = view.getByTestId("stt-local-status").querySelector("button");
     expect(recheck).toBeTruthy();
     await act(async () => {
       recheck!.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(discover).toHaveBeenCalledTimes(1);
+    expect(listModelsMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("whisper.cpp row pings too (route falls back to the backend probe, SPE-7)", async () => {
+    const form = { ...whisperCppForm(), config: { endpoint: "http://127.0.0.1:9000" } };
+    const view = renderPanel(form, mock(() => {}));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(listModelsMock).toHaveBeenCalledTimes(1);
+    expect(view.getByTestId("stt-local-status").className).toContain("border-success/30");
   });
 });

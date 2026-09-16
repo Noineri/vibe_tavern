@@ -87,7 +87,9 @@ describe("ProviderModelSelector local status chip (IG-CF12b)", () => {
       />,
     );
     const label = view.getByText("local_connection_online");
-    const chip = label.closest("div")!;
+    // Two divs up: the status row wrapper (CF-12d) sits between the label
+    // and the chip body that carries the state class + placement margin.
+    const chip = label.closest("div")!.parentElement!;
     expect(chip.className).toContain("border-success/30");
     expect(chip.className).toContain("mb-2.5");
     view.unmount();
@@ -100,7 +102,7 @@ describe("ProviderModelSelector local status chip (IG-CF12b)", () => {
       />,
     );
     const label = view.getByText("local_connection_unknown");
-    const chip = label.closest("div")!;
+    const chip = label.closest("div")!.parentElement!;
     expect(chip.querySelector("button")).toBeNull();
     view.unmount();
   });
