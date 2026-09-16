@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, type ImageGenerationMode, type ImageGenParamRange } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, type ImageGenerationMode, type ImageGenParamRange } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
@@ -11,6 +11,7 @@ import { TextInput } from "../../../shared/text-input.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { getModalPortal } from "../../../shared/modal-helpers.js";
+import { LocalConnectionStatusChip, type LocalConnectionStatus } from "../../../shared/LocalConnectionStatus.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import type { ImageGenModelEntry } from "../../../../api/image-gen-api.js";
 import { fetchProviderProfileModels, listProviderProfiles } from "../../../../api/provider-api.js";
@@ -542,6 +543,16 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const profileId = form.id;
   const models: ImageGenModelEntry[] = imageGen.modelsByProfile[profileId] ?? [];
   const samplers = imageGen.samplersByProfile[profileId] ?? [];
+  // IG-CF12a: the A1111-family pane is a LOCAL control surface — the shared
+  // status chip rides above the picker, driven by the sampler fetch signal
+  // (`samplerStatusByProfile`), and an offline server greys out the whole
+  // control panel below the chip (owner 2026-09-16: «если сервер НЕ
+  // ОТВЕЧАЕТ, мы гасим панель управления серым"). The chip's re-check button
+  // is the recovery affordance — it stays interactive while the panel is
+  // greyed. Cloud backends (openrouter/openai-images) render no chip.
+  const isLocalBackend = form.backend === IMAGE_GEN_BACKENDS.A1111;
+  const localStatus: LocalConnectionStatus = imageGen.samplerStatusByProfile[profileId] ?? "unknown";
+  const localOffline = isLocalBackend && localStatus === "offline";
   const caps = form.capabilities;
   // IG-CF5: slider ranges resolve backend-first from the capability mirror
   // (paramRanges is a declared schema field — it survives the zod boundary),
@@ -577,6 +588,27 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
 
   return (
     <div data-testid="image-gen-pane" className="mt-1 flex flex-col gap-4">
+      {isLocalBackend && (
+        <LocalConnectionStatusChip
+          testId="image-gen-local-status"
+          status={localStatus}
+          endpoint={form.endpoint}
+          onRefresh={() => void imageGen.fetchSamplers(profileId)}
+          refreshing={localStatus === "checking"}
+          refreshLabel={t("test_connection")}
+        />
+      )}
+      {/* The control panel (IG-CF12a): a real <fieldset> so `disabled`
+          natively kills EVERY interactive descendant — native buttons
+          (dropdown triggers, refresh, stars) AND inputs — for mouse AND
+          keyboard, with no per-control prop threading. `m-0 border-0 p-0`
+          pins the preflight reset so the fieldset adds no chrome. */}
+      <fieldset
+        disabled={localOffline}
+        aria-disabled={localOffline}
+        data-testid="image-gen-pane-controls"
+        className={cn("m-0 flex min-w-0 flex-col gap-4 border-0 p-0", localOffline && "pointer-events-none opacity-50")}
+      >
       {/* ── Model: picker + star + refresh (bare, the first level-2 section) ── */}
       <ModelPicker
         value={form.modelId}
@@ -761,6 +793,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
         }
         onPickModel={(next) => imageGen.setForm({ llmModelId: next === "" ? null : next })}
       />
+      </fieldset>
     </div>
   );
 }

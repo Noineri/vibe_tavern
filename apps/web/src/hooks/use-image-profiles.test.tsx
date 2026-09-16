@@ -11,6 +11,7 @@ const realImageGenApi = await import("../api/image-gen-api.js");
 type ImageGenRecord = import("../api/image-gen-api.js").ImageGenProfileRecord;
 type ImageGenModelEntry = import("../api/image-gen-api.js").ImageGenModelEntry;
 type ImageGenSampler = import("@vibe-tavern/api-contracts").ImageGenSamplerInfoValue;
+type ImageGenFavorite = import("@vibe-tavern/api-contracts").ImageGenModelFavoriteValue;
 
 function makeCaps(overrides: Partial<ImageGenRecord["capabilities"]> = {}): ImageGenRecord["capabilities"] {
   return {
@@ -111,6 +112,11 @@ const samplersMock = mock(async (id: string): Promise<ImageGenSampler[] | null> 
   if (id === "missing") return null;
   return [{ name: "Euler a", aliases: ["k_euler_a"] }, { name: "DPM++ 2M" }];
 });
+// IG-12b: select() quietly loads the profile's star-favorites — mocked
+// empty so the REAL fetch never runs in happy-dom (its network-block error
+// used to be masked by fetchSamplers' old setError(null) wipe, which
+// IG-CF12a removed; the pane-test harness already mocks this seam).
+const favoritesMock = mock(async (_id: string): Promise<ImageGenFavorite[]> => []);
 const draftModelsMock = mock(
   async (body: { backend: string; config: Record<string, unknown>; profileId?: string }): Promise<ImageGenModelEntry[]> => {
     if (body.config.endpoint === "https://boom.example") throw new Error("draft boom");
@@ -126,6 +132,7 @@ mock.module("../api/image-gen-api.js", () => ({
   deleteImageGenProfile: deleteMock,
   listImageGenModels: modelsMock,
   listImageGenSamplers: samplersMock,
+  listImageGenModelFavorites: favoritesMock,
   draftListImageGenModels: draftModelsMock,
 }));
 
@@ -144,6 +151,7 @@ afterEach(async () => {
   deleteMock.mockClear();
   modelsMock.mockClear();
   samplersMock.mockClear();
+  favoritesMock.mockClear();
   draftModelsMock.mockClear();
 });
 
@@ -367,7 +375,7 @@ describe("useImageProfiles — models / samplers / draft", () => {
     await waitFor(() => expect(hook?.error).toBe("Image-gen profile not found"));
   });
 
-  it("fetchSamplers caches per profile; an unsupported backend surfaces the route message", async () => {
+  it("fetchSamplers caches per profile; failures land in the per-profile OFFLINE status, never the shared error (IG-CF12a)", async () => {
     store = [makeRecord({ id: "p1", name: "Alpha", backend: "a1111" })];
     samplersMock.mockImplementationOnce(async () => {
       throw new Error("Image-gen sampler list failed: 400 Bad Request: sampler listing not supported");
@@ -382,14 +390,27 @@ describe("useImageProfiles — models / samplers / draft", () => {
     hook!.select("p1");
     await waitFor(() => expect(hook?.form?.id).toBe("p1"));
 
+    // The OLD boundary pinned the failure into `error` — exactly the CF12
+    // defect (an A1111-down painted «profiles failed to load» while the
+    // profiles had loaded fine). The new boundary: connectivity is a
+    // per-profile status; `error` stays clean.
     await hook!.fetchSamplers();
-    await waitFor(() => expect(hook?.error).toContain("sampler listing not supported"));
+    await waitFor(() => expect(hook?.samplerStatusByProfile.p1).toBe("offline"));
+    expect(hook?.error).toBeNull();
     expect(hook?.samplersByProfile.p1).toBeUndefined();
 
+    // Recovery (the status chip's re-check): refetch flips online + caches.
     const samplers = await hook!.fetchSamplers();
     expect(samplers?.length).toBe(2);
-    await waitFor(() => expect(hook?.samplersByProfile.p1?.length).toBe(2));
+    await waitFor(() => expect(hook?.samplerStatusByProfile.p1).toBe("online"));
+    expect(hook?.samplersByProfile.p1?.length).toBe(2);
     expect(hook?.error).toBeNull();
+
+    // Unknown-profile nulls STILL surface in `error` and draw no conclusion
+    // in the status (owner decision: profile-not-found stays an error).
+    await hook!.fetchSamplers("missing");
+    await waitFor(() => expect(hook?.error).toBe("Image-gen profile not found"));
+    expect(hook?.samplerStatusByProfile.missing).toBe("unknown");
   });
 
   it("fetchDraftModels sends the live form config with the typed key inside it", async () => {

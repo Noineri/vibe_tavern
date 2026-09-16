@@ -198,6 +198,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     headerMode: "view",
     modelsByProfile: {},
     samplersByProfile: {},
+    samplerStatusByProfile: {},
     startEdit: mock(() => {}),
     startCreate: mock(() => {}),
     select: mock(() => {}),
@@ -416,6 +417,85 @@ describe("ImageGenPane — model picker (cached catalog + persisted stars)", () 
     fireEvent.click(view.getByTestId("image-gen-models-refresh"));
     await waitFor(() => expect(fetchSavedModels).toHaveBeenCalledTimes(1));
     expect((fetchSavedModels.mock.calls[0] as unknown[])).toEqual(["ig1"]);
+  });
+});
+
+describe("ImageGenPane — local connection status (IG-CF12a)", () => {
+  /** The A1111 form twin: local backend + sampler-capable + free sizes. */
+  function makeLocalForm(overrides: Partial<NonNullable<ImageGenHook["form"]>> = {}) {
+    return makeForm({
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      endpoint: "http://127.0.0.1:7860",
+      capabilities: makeCaps({ supportsSamplers: true, sizeSupport: { kind: "free" } }),
+      ...overrides,
+    });
+  }
+
+  it("offline: chip + endpoint above the picker, the control panel greyed AND natively disabled, shared error NOT set", async () => {
+    const fetchSamplers = mock(async () => null);
+    const imageGen = makeImageGen({
+      form: makeLocalForm(),
+      samplerStatusByProfile: { ig1: "offline" },
+      fetchSamplers,
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+
+    const chip = view.getByTestId("image-gen-local-status");
+    expect(chip.textContent).toContain("local_connection_offline");
+    expect(chip.textContent).toContain("http://127.0.0.1:7860");
+    // The pane never writes the shared error for connectivity (that was the
+    // CF12 origin defect — the synthetic hook pins the pane side: the pane
+    // reads the status, not the error, to grey the panel).
+    const controls = view.getByTestId("image-gen-pane-controls");
+    expect(controls.hasAttribute("disabled")).toBe(true);
+    expect(controls.getAttribute("aria-disabled")).toBe("true");
+    expect(controls.className).toContain("opacity-50");
+    expect(controls.className).toContain("pointer-events-none");
+    // happy-dom does not implement fieldset-descendant disabling (neither
+    // the `:disabled` pseudo nor IDL propagation) — in real browsers the
+    // native `disabled` additionally blocks keyboard focus/activation; the
+    // grey + pointer-events-none classes are the observable pins here.
+  });
+
+  it("online: no disabled attribute, no grey, panel fully interactive", async () => {
+    const imageGen = makeImageGen({
+      form: makeLocalForm(),
+      samplerStatusByProfile: { ig1: "online" },
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    const chip = view.getByTestId("image-gen-local-status");
+    expect(chip.textContent).toContain("local_connection_online");
+    const controls = view.getByTestId("image-gen-pane-controls");
+    expect(controls.hasAttribute("disabled")).toBe(false);
+    expect(controls.className).not.toContain("opacity-50");
+    expect(controls.className).not.toContain("pointer-events-none");
+  });
+
+  it("the chip's re-check button refetches samplers for THIS profile (the recovery affordance while greyed)", async () => {
+    const fetchSamplers = mock(async (_id?: string) => null);
+    const imageGen = makeImageGen({
+      form: makeLocalForm(),
+      samplerStatusByProfile: { ig1: "offline" },
+      fetchSamplers,
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    // The mini button sits INSIDE the chip (outside the fieldset) — clickable
+    // while the panel is greyed.
+    const chip = view.getByTestId("image-gen-local-status");
+    const recheck = chip.querySelector("button");
+    expect(recheck).toBeTruthy();
+    await act(async () => {
+      recheck!.click();
+    });
+    expect(fetchSamplers.mock.calls[0]?.[0]).toBe("ig1");
+  });
+
+  it("cloud backends render NO chip (openrouter form — the default factory shape)", async () => {
+    const view = render(<ImageGenPane imageGen={makeImageGen()} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-pane-controls")).toBeTruthy());
+    expect(view.container.querySelector("[data-testid='image-gen-local-status']")).toBeNull();
+    // And the controls wrapper is never disabled for cloud profiles.
+    expect(view.getByTestId("image-gen-pane-controls").hasAttribute("disabled")).toBe(false);
   });
 });
 

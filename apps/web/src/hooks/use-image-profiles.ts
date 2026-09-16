@@ -28,6 +28,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_BACKENDS, type ImageGenBackendType } from "@vibe-tavern/domain";
+import type { LocalConnectionStatus } from "../components/shared/LocalConnectionStatus.js";
 import type {
   CreateImageGenProfileInput,
   ImageGenCapabilityFlagsValue,
@@ -126,6 +127,13 @@ export function useImageProfiles(): {
   modelsByProfile: Record<string, ImageGenModelEntry[]>;
   /** Sampler cache per saved profile (capability-gated consumers, IG-12). */
   samplersByProfile: Record<string, ImageGenSamplerInfoValue[]>;
+  /** Local-server connectivity per saved profile, driven by sampler fetches
+   *  (IG-CF12a): `checking` while in flight, `online` on success, `offline`
+   *  on ANY fetch failure — connectivity is deliberately NOT routed through
+   *  the shared `error` (an A1111-down used to paint «profiles failed to
+   *  load» while the profiles had loaded fine). Unknown-profile misses keep
+   *  going to `error`. */
+  samplerStatusByProfile: Record<string, LocalConnectionStatus>;
   /** Open the connection form screen (Edit settings). */
   startEdit(): void;
   /** Start a new profile. The seed values come from the caller (the pane
@@ -143,8 +151,9 @@ export function useImageProfiles(): {
   fetchSavedModels(id?: string): Promise<ImageGenModelEntry[] | null>;
   /** Fetch + cache samplers for a saved profile (defaults to the editing
    *  one) — call only for `capabilities.supportsSamplers` backends. Null =
-   *  unknown profile; an unsupported backend throws the route's 400 message
-   *  into `error`. */
+   *  unknown profile (recorded in `error`); fetch failures land in the
+   *  per-profile `samplerStatusByProfile` as `offline` (IG-CF12a), never
+   *  in the shared `error`. */
   fetchSamplers(id?: string): Promise<ImageGenSamplerInfoValue[] | null>;
   /** Shared fetch-by-endpoint model listing over the TRANSIENT form config
    *  (the STT draft twin): the just-typed endpoint/key ride inside the
@@ -192,6 +201,7 @@ export function useImageProfiles(): {
   const [headerMode, setHeaderMode] = useState<ImageGenHeaderMode>("view");
   const [modelsByProfile, setModelsByProfile] = useState<Record<string, ImageGenModelEntry[]>>({});
   const [samplersByProfile, setSamplersByProfile] = useState<Record<string, ImageGenSamplerInfoValue[]>>({});
+  const [samplerStatusByProfile, setSamplerStatusByProfile] = useState<Record<string, LocalConnectionStatus>>({});
   const [favorites, setFavorites] = useState<ImageGenModelFavoriteValue[]>([]);
   const [modelOverlay, setModelOverlayState] = useState<ImageGenModelSettingsOverlayValue | null>(null);
   const [overlayDirty, setOverlayDirty] = useState(false);
@@ -568,17 +578,26 @@ export function useImageProfiles(): {
     async (id?: string): Promise<ImageGenSamplerInfoValue[] | null> => {
       const targetId = id ?? form?.id;
       if (!targetId) return null;
-      setError(null);
+      // IG-CF12a: connectivity is a per-profile status, not the shared
+      // `error` — an A1111-down sampler fetch used to paint «profiles
+      // failed to load» over a perfectly loaded list. checking → online on
+      // success; ANY fetch failure → offline (the route's 400 drift and a
+      // dead server are indistinguishable client-side, and both mean "the
+      // sampler surface is unusable right now"). Unknown-profile nulls stay
+      // in `error` and reset the status to `unknown` (no conclusion drawn).
+      setSamplerStatusByProfile((prev) => ({ ...prev, [targetId]: "checking" }));
       try {
         const samplers = await listImageGenSamplers(targetId);
         if (samplers === null) {
+          setSamplerStatusByProfile((prev) => ({ ...prev, [targetId]: "unknown" }));
           setError("Image-gen profile not found");
           return null;
         }
+        setSamplerStatusByProfile((prev) => ({ ...prev, [targetId]: "online" }));
         setSamplersByProfile((prev) => ({ ...prev, [targetId]: samplers }));
         return samplers;
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+      } catch {
+        setSamplerStatusByProfile((prev) => ({ ...prev, [targetId]: "offline" }));
         return null;
       }
     },
@@ -619,6 +638,7 @@ export function useImageProfiles(): {
     headerMode,
     modelsByProfile,
     samplersByProfile,
+    samplerStatusByProfile,
     favorites,
     modelOverlay,
     overlayDirty,

@@ -94,6 +94,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     headerMode: "edit",
     modelsByProfile: {},
     samplersByProfile: {},
+    samplerStatusByProfile: {},
     startEdit: mock(() => {}),
     startCreate: mock(() => {}),
     select: mock(() => {}),

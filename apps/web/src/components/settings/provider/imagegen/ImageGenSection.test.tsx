@@ -72,6 +72,7 @@ function makeImageGen(overrides: Record<string, unknown> = {}): ImageGenHook {
     headerMode: "view",
     modelsByProfile: {},
     samplersByProfile: {},
+    samplerStatusByProfile: {},
     startEdit: mock(() => {}),
     startCreate: mock(() => {}),
     select: mock(() => {}),
