@@ -835,6 +835,7 @@
   "sampler_set_saved": "Набор сэмплеров сохранён",
   "sampler_set_renamed": "Набор сэмплеров переименован",
   "sampler_set_deleted": "Набор сэмплеров удалён",
+  "sampler_set_delete_confirm": "Удалить набор семплеров «{name}»? Модели, применившие его, сохранят значения — очистится только ссылка.",
   "sampler_set_imported": "Набор сэмплеров «{name}» импортирован",
   "sampler_set_import_failed": "Файл не содержит корректный набор сэмплеров",
   "sampler_set_import_default_name": "Импортированный набор",

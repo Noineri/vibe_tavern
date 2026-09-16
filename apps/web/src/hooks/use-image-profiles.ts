@@ -190,6 +190,13 @@ export function useImageProfiles(): {
   unbindModelOverlay(): Promise<void>;
   /** Edit the open overlay (form-dirty). */
   setModelOverlay(patch: Partial<ImageGenModelSettingsOverlayValue>): void;
+  /** The applied sampler set's id on the open overlay (IG-CF15 — provenance
+   *  for the pane's set row; copy-on-select, never a live link). */
+  modelOverlaySetId: string | null;
+  /** Bind the open overlay to a set (apply) or clear the pointer
+   *  (No set — values stay); an apply with `values` also copies the
+   *  set's payload into the overlay. Form-dirty like any overlay edit. */
+  setModelSamplerSetBinding(setId: string | null, values?: Partial<ImageGenModelSettingsOverlayValue>): void;
 } {
   const [profiles, setProfiles] = useState<ImageGenProfileRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -205,6 +212,7 @@ export function useImageProfiles(): {
   const [favorites, setFavorites] = useState<ImageGenModelFavoriteValue[]>([]);
   const [modelOverlay, setModelOverlayState] = useState<ImageGenModelSettingsOverlayValue | null>(null);
   const [overlayDirty, setOverlayDirty] = useState(false);
+  const [modelOverlaySetId, setModelOverlaySetIdState] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -263,6 +271,7 @@ export function useImageProfiles(): {
     try {
       const row = await getImageGenModelSettings(form.id, form.modelId);
       setModelOverlayState(row === null ? null : { ...row.settings });
+      setModelOverlaySetIdState(row?.samplerSetId ?? null);
       setOverlayDirty(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -303,6 +312,7 @@ export function useImageProfiles(): {
     try {
       const row = await getImageGenModelSettings(form.id, form.modelId);
       setModelOverlayState(row === null ? {} : { ...row.settings });
+      setModelOverlaySetIdState(row?.samplerSetId ?? null);
       setOverlayDirty(row !== null);
       // Binding ON with a stored overlay is already the persisted state —
       // dirty only when the editor must PUT something new (an empty bind on
@@ -316,6 +326,7 @@ export function useImageProfiles(): {
   const unbindModelOverlay = useCallback(async () => {
     if (form?.id === null || form?.id === undefined || form.modelId === null) {
       setModelOverlayState(null);
+      setModelOverlaySetIdState(null);
       setOverlayDirty(false);
       return;
     }
@@ -323,6 +334,7 @@ export function useImageProfiles(): {
     try {
       await deleteImageGenModelSettings(form.id, form.modelId);
       setModelOverlayState(null);
+      setModelOverlaySetIdState(null);
       setOverlayDirty(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -334,6 +346,22 @@ export function useImageProfiles(): {
     setOverlayDirty(true);
     setDirty(true);
   }, []);
+
+  const setModelSamplerSetBinding = useCallback(
+    (setId: string | null, values?: Partial<ImageGenModelSettingsOverlayValue>) => {
+      // Apply (setId + values): copy the set's payload into the overlay AND
+      // record the pointer. "No set" (setId null, no values): clear the
+      // pointer only — the overlay's current values stay (the LLM
+      // handleSelectSet rule).
+      if (values !== undefined) {
+        setModelOverlayState((prev) => (prev === null ? prev : { ...prev, ...values }));
+      }
+      setModelOverlaySetIdState(setId);
+      setOverlayDirty(true);
+      setDirty(true);
+    },
+    [],
+  );
 
   const select = useCallback(
     (id: string) => {
@@ -352,6 +380,7 @@ export function useImageProfiles(): {
       // the user toggled it (the "reload — persisted" plan rule).
       void loadFavorites(id);
       setModelOverlayState(null);
+      setModelOverlaySetIdState(null);
       setOverlayDirty(false);
       if (record.modelId != null) {
         const nextModelId = record.modelId;
@@ -359,6 +388,7 @@ export function useImageProfiles(): {
           try {
             const row = await getImageGenModelSettings(id, nextModelId);
             setModelOverlayState(row === null ? null : { ...row.settings });
+            setModelOverlaySetIdState(row?.samplerSetId ?? null);
           } catch {
             // Non-fatal: the pane's bind toggle re-fetches on demand.
           }
@@ -423,6 +453,7 @@ export function useImageProfiles(): {
         // the open overlay (unsaved edits discard, the cancelEdit family
         // rule) and load the new model's stored overlay fire-and-forget.
         setModelOverlayState(null);
+        setModelOverlaySetIdState(null);
         setOverlayDirty(false);
         if (prev.id !== null && patch.modelId !== null) {
           const profileId = prev.id;
@@ -431,6 +462,7 @@ export function useImageProfiles(): {
             try {
               const row = await getImageGenModelSettings(profileId, nextModelId);
               setModelOverlayState(row === null ? null : { ...row.settings });
+              setModelOverlaySetIdState(row?.samplerSetId ?? null);
             } catch {
               // Non-fatal: the pane's bind toggle re-fetches on demand.
             }
@@ -515,7 +547,7 @@ export function useImageProfiles(): {
       // saved (two writes, one Save button — the master-detail contract).
       if (modelOverlay !== null && overlayDirty && form.modelId !== null) {
         try {
-          await upsertImageGenModelSettings(saved.id, form.modelId, modelOverlay);
+          await upsertImageGenModelSettings(saved.id, form.modelId, modelOverlay, modelOverlaySetId);
           setOverlayDirty(false);
         } catch (cause) {
           setError(cause instanceof Error ? cause.message : String(cause));
@@ -528,7 +560,7 @@ export function useImageProfiles(): {
     } finally {
       setSaving(false);
     }
-  }, [form, modelOverlay, overlayDirty]);
+  }, [form, modelOverlay, overlayDirty, modelOverlaySetId]);
 
   const remove = useCallback(async () => {
     if (!form?.id) {
@@ -659,5 +691,7 @@ export function useImageProfiles(): {
     bindModelOverlay,
     unbindModelOverlay,
     setModelOverlay,
+    modelOverlaySetId,
+    setModelSamplerSetBinding,
   };
 }

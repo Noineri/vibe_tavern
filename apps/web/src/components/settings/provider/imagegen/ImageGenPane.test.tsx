@@ -27,6 +27,7 @@ const realImageGenApi = await import("../../../../api/image-gen-api.js");
 
 type ImageGenRecord = import("../../../../api/image-gen-api.js").ImageGenProfileRecord;
 type ImageGenModelEntry = import("../../../../api/image-gen-api.js").ImageGenModelEntry;
+type ImageGenSamplerSet = import("@vibe-tavern/api-contracts").ImageGenSamplerSet;
 type ImageGenModelSettings = import("@vibe-tavern/api-contracts").ImageGenModelSettingsValue;
 type ImageGenModelFavorite = import("@vibe-tavern/api-contracts").ImageGenModelFavoriteValue;
 
@@ -80,6 +81,16 @@ const listSamplersApi = mock(async (): Promise<import("@vibe-tavern/api-contract
   { name: "Euler a", aliases: [] },
   { name: "DPM++ 2M", aliases: [] },
 ]);
+const listSamplerSetsApi = mock(async (): Promise<ImageGenSamplerSet[]> => [
+  {
+    id: "set-a",
+    name: "Cinematic 30",
+    sortOrder: 0,
+    payload: { steps: 30, cfgScale: 5, sampler: "Euler a", clipSkip: 1 },
+    createdAt: "2026-09-17T00:00:00.000Z",
+    updatedAt: "2026-09-17T00:00:00.000Z",
+  },
+]);
 
 mock.module("../../../../api/image-gen-api.js", () => ({
   ...realImageGenApi,
@@ -92,6 +103,7 @@ mock.module("../../../../api/image-gen-api.js", () => ({
   addImageGenModelFavorite: addFavoriteApi,
   removeImageGenModelFavorite: removeFavoriteApi,
   listImageGenSamplers: listSamplersApi,
+  listImageGenSamplerSets: listSamplerSetsApi,
 }));
 
 // IG-15: the LLM-assist pickers fetch the LLM provider list + model catalog
@@ -220,6 +232,8 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     bindModelOverlay: mock(async () => {}),
     unbindModelOverlay: mock(async () => {}),
     setModelOverlay: mock(() => {}),
+    modelOverlaySetId: null,
+    setModelSamplerSetBinding: mock(() => {}),
     ...overrides,
   };
 }
@@ -271,6 +285,20 @@ afterEach(async () => {
     m.mockClear();
   }
 });
+
+// IG-CF13: the slider cell is NumberInput inside a testid wrapper. Typing
+// commits on blur (NumberInput's commit contract — steppers commit on
+// click, typed text on blur-with-change).
+async function typeCell(view: { getByTestId: (id: string) => HTMLElement }, cellId: string, value: string) {
+  const input = view.getByTestId(cellId).querySelector("input");
+  if (!input) throw new Error(`no <input> inside ${cellId}`);
+  await act(async () => {
+    fireEvent.change(input, { target: { value } });
+  });
+  await act(async () => {
+    fireEvent.blur(input);
+  });
+}
 
 describe("ImageGenPane — second level rendering", () => {
   it("renders the pane with the sizes accordion + params section; opening reveals a size row for EVERY v1 mode (six)", async () => {
@@ -609,7 +637,7 @@ describe("ImageGenPane — per-mode sizes (IG-CF14: accordion + stepper ladder +
     expect(patch.modeSizePresets.portrait).toEqual({ width: 1280, height: 720 });
   });
 
-  it("picking a preset fills BOTH fields; «Авто» clears the row back to unset", async () => {
+  it("picking a preset fills BOTH fields; Auto clears the row back to unset", async () => {
     const { view, setForm } = await renderFree();
     // The i18n mock renders preset labels as key:params — pick the full mocked string.
     await pickOption(view, "image-gen-mode-preset-portrait", "image_gen_preset_portrait:2:3,832×1216");
@@ -618,7 +646,7 @@ describe("ImageGenPane — per-mode sizes (IG-CF14: accordion + stepper ladder +
     expect(patch.modeSizePresets.portrait).toEqual({ width: 832, height: 1216 });
     cleanup();
 
-    // From a stored table pair, «Авто» deletes the row preset entirely.
+    // From a stored table pair, Auto deletes the row preset entirely.
     const second = await renderFree({ modeSizePresets: { portrait: { width: 832, height: 1216 } } });
     await pickOption(second.view, "image-gen-mode-preset-portrait", "image_gen_size_auto");
     await waitFor(() => expect(second.setForm).toHaveBeenCalled());
@@ -682,16 +710,21 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     expect(view2.queryByTestId("image-gen-field-sampler")).toBeNull();
   });
 
-  it("advanced expand reveals steps/cfg/seed/clip-skip and every numeric field is EMPTY (no code defaults)", async () => {
+  it("advanced expand reveals steps/cfg/seed/clip-skip; seed stays EMPTY, sliders show anchors — nothing is a committed default (IG-CF13)", async () => {
     const view = render(<ImageGenPane imageGen={makeImageGen()} />);
     await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
     expect(view.queryByTestId("image-gen-advanced-body")).toBeNull();
     await act(async () => {
-      view.getByTestId("image-gen-advanced-header").click();
+      fireEvent.click(view.getByText("image_gen_advanced"));
     });
     await waitFor(() => expect(view.getByTestId("image-gen-advanced-body")).toBeTruthy());
-    for (const fieldId of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-seed", "image-gen-field-clip-skip"]) {
-      expect((view.getByTestId(fieldId) as HTMLInputElement).value).toBe("");
+    // Seed keeps its empty-able plain numeric cell (CF13 ruling: seed stays
+    // a plain optional field). The three slider cells show their anchors
+    // (range min) — the no-code-defaults rule now lives in "anchors commit
+    // nothing", pinned in the IG-CF5 block.
+    expect((view.getByTestId("image-gen-field-seed") as HTMLInputElement).value).toBe("");
+    for (const fieldId of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-clip-skip"]) {
+      expect(view.getByTestId(fieldId).querySelector("input")).toBeTruthy();
     }
     // IG-CF5 (named reason for the count change below): steps/CFG/CLIP-skip
     // are slider+number pairs now — each adds ONE range input beside its
@@ -713,12 +746,10 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     // Unbound: no overlay-inherit hint renders.
     expect(view.queryByTestId("image-gen-overlay-inherit-hint")).toBeNull();
     await act(async () => {
-      view.getByTestId("image-gen-advanced-header").click();
+      fireEvent.click(view.getByText("image_gen_advanced"));
     });
     await waitFor(() => expect(view.getByTestId("image-gen-field-steps")).toBeTruthy());
-    await act(async () => {
-      fireEvent.change(view.getByTestId("image-gen-field-steps"), { target: { value: "30" } });
-    });
+    await typeCell(view, "image-gen-field-steps", "30");
     await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
     const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
     expect(patch.defaultParams).toEqual({ steps: 30 });
@@ -760,12 +791,10 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     await waitFor(() => expect(view.getByTestId("image-gen-overlay-inherit-hint")).toBeTruthy());
 
     await act(async () => {
-      view.getByTestId("image-gen-advanced-header").click();
+      fireEvent.click(view.getByText("image_gen_advanced"));
     });
     await waitFor(() => expect(view.getByTestId("image-gen-field-steps")).toBeTruthy());
-    await act(async () => {
-      fireEvent.change(view.getByTestId("image-gen-field-steps"), { target: { value: "30" } });
-    });
+    await typeCell(view, "image-gen-field-steps", "30");
     await waitFor(() => expect(setModelOverlay).toHaveBeenCalledTimes(1));
     expect((setModelOverlay.mock.calls[0] as unknown[])[0]).toEqual({ steps: 30 });
     expect(setForm).not.toHaveBeenCalled();
@@ -785,13 +814,14 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
 });
 
 describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
-  async function openAdvanced(view: { getByTestId: (id: string) => HTMLElement }) {
+  async function openAdvanced(view: { getByTestId: (id: string) => HTMLElement; getByText: (text: string) => HTMLElement }) {
     await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
     await act(async () => {
-      view.getByTestId("image-gen-advanced-header").click();
+      fireEvent.click(view.getByText("image_gen_advanced"));
     });
     await waitFor(() => expect(view.getByTestId("image-gen-advanced-body")).toBeTruthy());
   }
+
 
   it("a range move commits the value to the profile base (bind off)", async () => {
     const setForm = mock(() => {});
@@ -811,32 +841,30 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
     const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
     await openAdvanced(view);
     const max = IMAGE_GEN_PARAM_RANGES.cfgScale.max;
-    await act(async () => {
-      fireEvent.change(view.getByTestId("image-gen-field-cfg"), { target: { value: String(max) } });
-    });
+    await typeCell(view, "image-gen-field-cfg", String(max));
     await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
     const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
     expect(patch.defaultParams).toEqual({ cfgScale: max });
   });
 
-  it("clearing the number box commits back to undefined (param not sent)", async () => {
-    const setForm = mock(() => {});
+  it("IG-CF13/CF15: a BOUND overlay with an empty field shows the range-min anchor, not the profile base (owner rollback 2026-09-17)", async () => {
+    // The inherit-display variant (empty overlay cell showing the profile
+    // base value) was rolled back by the owner: SamplerSliderField stays
+    // verbatim CF13 — `value ?? range.min`. An empty bound overlay cell
+    // shows the same range-min anchor as an unbound one; the generation
+    // merge ladder (overlay > base > vendor) is where inheritance actually
+    // resolves, not in the cell display.
     const imageGen = makeImageGen({
-      form: makeForm({ defaultParams: { steps: IMAGE_GEN_PARAM_RANGES.steps.max } }),
-      setForm,
+      form: makeForm({ modelId: "m-alpha", defaultParams: { steps: IMAGE_GEN_PARAM_RANGES.steps.max } }),
+      modelOverlay: {},
     });
     const view = render(<ImageGenPane imageGen={imageGen} />);
     await openAdvanced(view);
-    // Precondition: the committed value shows in the box (not the min).
-    expect((view.getByTestId("image-gen-field-steps") as HTMLInputElement).value).toBe(
-      String(IMAGE_GEN_PARAM_RANGES.steps.max),
-    );
-    await act(async () => {
-      fireEvent.change(view.getByTestId("image-gen-field-steps"), { target: { value: "" } });
-    });
-    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
-    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
-    expect(patch.defaultParams["steps"]).toBe(undefined);
+    const input = view.getByTestId("image-gen-field-steps").querySelector("input");
+    if (!input) throw new Error("no steps input");
+    expect((input as HTMLInputElement).value).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.min));
+    // The anchor display alone commits NOTHING (untouched params don't send).
+    expect((imageGen.setForm as ReturnType<typeof mock>).mock.calls.length).toBe(0);
   });
 
   it("seed stays a plain numeric field with NO range input", async () => {
@@ -871,8 +899,9 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
     expect(range.getAttribute("step")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.step));
   });
 
-  it("undefined params render an EMPTY number box with the range parked at min", async () => {
-    const view = render(<ImageGenPane imageGen={makeImageGen()} />);
+  it("IG-CF13: undefined params render the range-min anchor (SamplerField `value ?? min` — no empty box); nothing commits on open", async () => {
+    const setForm = mock(() => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
     await openAdvanced(view);
     const pairs: Array<[string, string, keyof typeof IMAGE_GEN_PARAM_RANGES]> = [
       ["image-gen-field-steps", "image-gen-range-steps", "steps"],
@@ -880,10 +909,13 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
       ["image-gen-field-clip-skip", "image-gen-range-clip-skip", "clipSkip"],
     ];
     for (const [fieldId, rangeId, key] of pairs) {
-      // The min must never masquerade as a committed value in the box.
-      expect((view.getByTestId(fieldId) as HTMLInputElement).value).toBe("");
+      // The cell displays the min as the editing ANCHOR (the LLM SamplerField
+      // display) — the anchor alone commits nothing (param not sent).
+      const input = view.getByTestId(fieldId).querySelector("input") as HTMLInputElement;
+      expect(input.value).toBe(String(IMAGE_GEN_PARAM_RANGES[key].min));
       expect((view.getByTestId(rangeId) as HTMLInputElement).value).toBe(String(IMAGE_GEN_PARAM_RANGES[key].min));
     }
+    expect(setForm).not.toHaveBeenCalled();
   });
 
   it("a typed out-of-range number commits CLAMPED to the domain max (the NumberInput semantics)", async () => {
@@ -892,12 +924,58 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
     await openAdvanced(view);
     // Ten-times-max via string concat (no literals): forces the clamp lane.
     const over = `${IMAGE_GEN_PARAM_RANGES.steps.max}0`;
-    await act(async () => {
-      fireEvent.change(view.getByTestId("image-gen-field-steps"), { target: { value: over } });
-    });
+    await typeCell(view, "image-gen-field-steps", over);
     await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
     const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
     expect(patch.defaultParams).toEqual({ steps: IMAGE_GEN_PARAM_RANGES.steps.max });
+  });
+});
+
+describe("ImageGenPane — named set row in the advanced header (CF15c, LLM accordion clone)", () => {
+  it("bound: the set row lives in the header, columnates on mobile, and never toggles the accordion", async () => {
+    const imageGen = makeImageGen({
+      form: makeForm({ modelId: "m-alpha" }),
+      modelOverlay: {},
+      modelOverlaySetId: "set-a",
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    const header = await waitFor(() => {
+      const h = view.getByTestId("image-gen-advanced-header");
+      expect(h).toBeTruthy();
+      return h;
+    });
+    // Header shape parity with the LLM sampler accordion (ProviderSamplerPanel):
+    // mobile-first column, desktop row with title left / set row right.
+    expect(header.className).toContain("flex-col");
+    expect(header.className).toContain("max-md:items-stretch");
+    expect(header.className).toContain("md:flex-row");
+    expect(header.className).toContain("md:justify-between");
+    // The set cluster is the header's second child and columnates too.
+    const cluster = view.getByTestId("image-gen-model-set-row");
+    expect(cluster.parentElement).toBe(header);
+    expect(cluster.className).toContain("max-md:flex-col");
+    expect(cluster.className).toContain("md:flex-row");
+    // The full icon-action row is present (7 actions + hidden file input).
+    for (const action of ["new", "save", "rename", "revert", "delete", "import", "export"]) {
+      expect(view.getByTestId(`image-gen-set-${action}`)).toBeTruthy();
+    }
+    // Title-only toggle: the body stays closed until the TITLE is clicked.
+    expect(view.queryByTestId("image-gen-advanced-body")).toBeNull();
+    await act(async () => {
+      fireEvent.click(view.getByTestId("image-gen-model-set-trigger"));
+    });
+    expect(view.queryByTestId("image-gen-advanced-body")).toBeNull();
+    await act(async () => {
+      fireEvent.click(view.getByText("image_gen_advanced"));
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-advanced-body")).toBeTruthy());
+  });
+
+  it("unbound: the header renders title-only — no set row, no set actions", async () => {
+    const view = render(<ImageGenPane imageGen={makeImageGen()} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
+    expect(view.queryByTestId("image-gen-model-set-row")).toBeNull();
+    expect(view.queryByTestId("image-gen-set-new")).toBeNull();
   });
 });
 
@@ -950,11 +1028,15 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
 
     // 2 — an overlay edit (advanced steps) marks the overlay dirty.
     await act(async () => {
-      view.getByTestId("image-gen-advanced-header").click();
+      fireEvent.click(view.getByText("image_gen_advanced"));
     });
     await waitFor(() => expect(view.getByTestId("image-gen-field-steps")).toBeTruthy());
+    const cellInput = view.getByTestId("image-gen-field-steps").querySelector("input")!;
     await act(async () => {
-      fireEvent.change(view.getByTestId("image-gen-field-steps"), { target: { value: "30" } });
+      fireEvent.change(cellInput, { target: { value: "30" } });
+    });
+    await act(async () => {
+      fireEvent.blur(cellInput);
     });
     await waitFor(() => expect(hookRef.current!.overlayDirty).toBe(true));
 
@@ -980,9 +1062,11 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
     });
     await waitFor(() => expect(view2.getByRole("switch", { name: "image_gen_bind_per_model" }).getAttribute("aria-checked")).toBe("true"));
     await act(async () => {
-      view2.getByTestId("image-gen-advanced-header").click();
+      fireEvent.click(view2.getByText("image_gen_advanced"));
     });
-    await waitFor(() => expect((view2.getByTestId("image-gen-field-steps") as HTMLInputElement).value).toBe("30"));
+    await waitFor(() =>
+      expect((view2.getByTestId("image-gen-field-steps").querySelector("input") as HTMLInputElement).value).toBe("30"),
+    );
   });
 
   it("unbind immediately DELETEs the stored overlay (the revert is the destructive action)", async () => {

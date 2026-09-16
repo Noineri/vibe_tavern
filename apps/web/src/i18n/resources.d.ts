@@ -2200,6 +2200,7 @@ export default interface Resources {
     "sampler_set_created": "Sampler set created",
     "sampler_set_delete": "Delete set",
     "sampler_set_delete_body": "Delete \"{name}\"? Profiles that applied it keep its values.",
+    "sampler_set_delete_confirm": "Delete the sampler set \"{name}\"? Models that applied it keep their values; only the reference clears.",
     "sampler_set_delete_title": "Delete sampler set",
     "sampler_set_deleted": "Sampler set deleted",
     "sampler_set_export": "Export sampler set (VT-native JSON)",

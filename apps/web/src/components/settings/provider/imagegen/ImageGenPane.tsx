@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
+import { toast } from "sonner";
 import { useT, type TFunc } from "../../../../i18n/context.js";
 import { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
@@ -11,10 +12,19 @@ import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
+import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
 import { getModalPortal } from "../../../shared/modal-helpers.js";
 import { LocalConnectionStatusChip, type LocalConnectionStatus } from "../../../shared/LocalConnectionStatus.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
+import type { ImageGenSamplerSet } from "@vibe-tavern/api-contracts";
 import type { ImageGenModelEntry } from "../../../../api/image-gen-api.js";
+import {
+  createImageGenSamplerSet,
+  deleteImageGenSamplerSet,
+  importImageGenSamplerSet,
+  listImageGenSamplerSets,
+  updateImageGenSamplerSet,
+} from "../../../../api/image-gen-api.js";
 import { fetchProviderProfileModels, listProviderProfiles } from "../../../../api/provider-api.js";
 import type { useImageProfiles } from "../../../../hooks/use-image-profiles.js";
 
@@ -44,10 +54,10 @@ type ImageGenHook = ReturnType<typeof useImageProfiles>;
  * empty-able numeric cell (IG-CF5) — NumberInput stays out deliberately:
  * non-nullable value, blur reverts a clear instead of committing undefined,
  * no testid passthrough (supervisor decision 2026-09-15).
- * SUPERSEDED FOR SIZES (IG-CF14, owner 2026-09-16 «сырое позорище. надо
- * переделать»): the per-mode size rows now use NumberInput WITH a concrete
+ * SUPERSEDED FOR SIZES (IG-CF14, owner ruling 2026-09-16 — the old grid
+ * was unacceptable and must be redone): the per-mode size rows now use NumberInput WITH a concrete
  * display anchor (IMAGE_SIZE_DEFAULT when unset) — the empty/inherit reset
- * moved into the row's preset dropdown («Авто»), so the non-nullable-value
+ * moved into the row's preset dropdown (the Auto entry), so the non-nullable-value
  * objection no longer applies there; the params cells (steps/CFG/seed/clip)
  * keep the optional-empty TextInput contract above. Testids attach via a
  * wrapper div (the primitive has no passthrough).
@@ -74,7 +84,7 @@ const MODE_LABEL_KEYS: Record<ImageGenerationMode, Parameters<TFunc>[0]> = {
   [IMAGE_GENERATION_MODES.Free]: "image_gen_mode_free",
 };
 
-/** Purpose-word per preset orientation (IG-CF14): «Квадрат 1:1 · 1024×1024» —
+/** Purpose-word per preset orientation (IG-CF14): "Square 1:1 · 1024×1024" —
  *  purpose + ratio + concrete resolution, never a bare ratio. */
 const PRESET_LABEL_KEYS: Record<ImageSizeOrientation, Parameters<TFunc>[0]> = {
   square: "image_gen_preset_square",
@@ -329,33 +339,34 @@ function OptionalNumberField({
   );
 }
 
-// ─── Optional slider+number field (IG-CF5: steps / CFG / CLIP-skip) ─────────
-//
-// The ProviderSamplerPanel slider canon (range classes verbatim) composed
-// with this pane's empty-able numeric cell instead of NumberInput (see the
-// file doc comment): undefined = "don't send, use backend default" — the
-// number box renders EMPTY and the range sits at min; a range move or a
-// typed number commits a real value; clearing the box commits undefined.
-// Typed numbers clamp to the resolved [min, max] on commit (the shared
-// NumberInput self-clamps — that semantics must not be lost); empty still
-// commits undefined. Seed keeps the plain OptionalNumberField above (a
-// 0..2^32 slider is meaningless — owner-approved).
+// ─── Slider+number field (IG-CF13: the ProviderSamplerPanel SamplerField
+//     taken VERBATIM per the owner's 2026-09-16 ruling — take the existing
+//     LLM implementation, don't reshape it). The CF5 "empty box /
+//     clear-to-undefined" optionality was supervisor spec invention, not an
+//     owner requirement — killed. The cell is NumberInput (h-[30px] w-[60px]
+//     hideControls — its own self-clamping), the label is the uppercase micro
+//     canon, and the display value is `value ?? min` exactly like the LLM
+//     panel. Untouched params still don't send until edited. Seed keeps the
+//     plain OptionalNumberField above (a 0..2^32 slider is meaningless —
+//     owner-approved).
 
-function OptionalSliderField({
+function SamplerSliderField({
+  label,
   value,
   onChange,
-  label,
-  testId,
-  rangeTestId,
   range,
+  rangeTestId,
+  cellTestId,
 }: {
-  value: number | undefined;
-  onChange: (next: number | undefined) => void;
   label: string;
-  testId: string;
-  rangeTestId: string;
+  /** The layer's own value (undefined = not set on this layer). */
+  value: number | undefined;
+  onChange: (next: number) => void;
   range: ImageGenParamRange;
+  rangeTestId: string;
+  cellTestId: string;
 }) {
+  const val = value ?? range.min;
   return (
     <div className="min-w-0">
       <label className={lblCls}>{label}</label>
@@ -366,28 +377,24 @@ function OptionalSliderField({
           min={range.min}
           max={range.max}
           step={range.step}
-          value={value ?? range.min}
+          value={val}
           onChange={(e) => {
             const parsed = Number(e.target.value);
             if (Number.isFinite(parsed)) onChange(parsed);
           }}
           className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
         />
-        <TextInput
-          inputMode="numeric"
-          data-testid={testId}
-          className="h-[30px] w-[60px] shrink-0"
-          value={value === undefined ? "" : String(value)}
-          onChange={(e) => {
-            const raw = e.target.value.trim();
-            if (raw === "") {
-              onChange(undefined);
-              return;
-            }
-            const parsed = Number(raw);
-            if (Number.isFinite(parsed)) onChange(Math.max(range.min, Math.min(range.max, parsed)));
-          }}
-        />
+        <div className="w-[60px] shrink-0" data-testid={cellTestId}>
+          <NumberInput
+            className="h-[30px] w-[60px]"
+            min={range.min}
+            max={range.max}
+            step={range.step}
+            value={val}
+            onChange={onChange}
+            hideControls
+          />
+        </div>
       </div>
     </div>
   );
@@ -533,6 +540,406 @@ function LlmAssistSection({
   );
 }
 
+// ─── Model sampler-set row (IG-CF15 — the ProviderSamplerPanel LS-5 set
+//     row twin, model-scoped): bounded inline dropdown + 7 icon-only actions
+//     (+ 💾 ✏ 🔄 🗑 ⬆ ⬇) + the dirty dot. Semantics fork the LLM row verbatim:
+//     apply (select / re-select / 🔄) copies the payload into the open
+//     overlay (copy-on-select) + records the pointer; 💾 overwrites the set
+//     from the overlay; «+» saves the overlay under a new name; delete never
+//     touches applied values — the pointer clears. Edits ride the SAME
+//     form-dirty Save as every other overlay edit (one Save button). ───────
+
+/** The set payload projection of an overlay: the five scalar params ONLY
+ *  (modeSizePresets is the model layer's own surface, IG-CF14). */
+function setPayloadOf(overlay: Record<string, unknown>): { steps?: number; cfgScale?: number; sampler?: string; seed?: number; clipSkip?: number } {
+  const payload: { steps?: number; cfgScale?: number; sampler?: string; seed?: number; clipSkip?: number } = {};
+  if (typeof overlay.steps === "number") payload.steps = overlay.steps;
+  if (typeof overlay.cfgScale === "number") payload.cfgScale = overlay.cfgScale;
+  if (typeof overlay.sampler === "string") payload.sampler = overlay.sampler;
+  if (typeof overlay.seed === "number") payload.seed = overlay.seed;
+  if (typeof overlay.clipSkip === "number") payload.clipSkip = overlay.clipSkip;
+  return payload;
+}
+
+function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
+  const { t } = useT();
+  const [sets, setSets] = useState<ImageGenSamplerSet[]>([]);
+  const [setsLoaded, setSetsLoaded] = useState(false);
+  const [morph, setMorph] = useState<null | { intent: "new" | "rename"; value: string }>(null);
+  const [morphConflict, setMorphConflict] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const appliedRef = useRef<{ setId: string; baseline: ReturnType<typeof setPayloadOf> } | null>(null);
+  const [, forceRender] = useState(0);
+  const bumpApplied = () => forceRender((n) => n + 1);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listImageGenSamplerSets()
+      .then((list) => {
+        if (cancelled) return;
+        setSets(list);
+        setSetsLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) setSetsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const overlay = imageGen.modelOverlay ?? {};
+  const selected = sets.find((s) => s.id === imageGen.modelOverlaySetId) ?? null;
+
+  // Back-fill the dirty-dot baseline from the pre-selected set once the
+  // library arrives (previous-session pre-selection — no re-apply).
+  useEffect(() => {
+    if (!setsLoaded || imageGen.modelOverlaySetId === null) return;
+    if (appliedRef.current?.setId === imageGen.modelOverlaySetId) return;
+    const set = sets.find((s) => s.id === imageGen.modelOverlaySetId);
+    if (!set) return;
+    appliedRef.current = { setId: set.id, baseline: { ...set.payload } };
+    bumpApplied();
+  });
+
+  const isDirty = Boolean(
+    selected &&
+      appliedRef.current?.setId === selected.id &&
+      JSON.stringify(appliedRef.current.baseline) !== JSON.stringify(setPayloadOf(overlay)),
+  );
+
+  const applySet = (set: ImageGenSamplerSet) => {
+    imageGen.setModelSamplerSetBinding(set.id, set.payload);
+    appliedRef.current = { setId: set.id, baseline: { ...set.payload } };
+    bumpApplied();
+    toast.success(t("sampler_set_applied", { name: set.name }));
+  };
+
+  const handleSelectSet = (id: string) => {
+    if (id === "") {
+      // Explicit "no set": clear the pointer, keep the overlay's values.
+      imageGen.setModelSamplerSetBinding(null);
+      appliedRef.current = null;
+      bumpApplied();
+      return;
+    }
+    const set = sets.find((s) => s.id === id);
+    if (set) applySet(set);
+  };
+
+  const handleSaveIntoSet = async () => {
+    if (!selected) return;
+    const payload = setPayloadOf(overlay);
+    try {
+      const updated = await updateImageGenSamplerSet(selected.id, { payload });
+      setSets((list) => list.map((s) => (s.id === updated.id ? updated : s)));
+      appliedRef.current = { setId: updated.id, baseline: { ...updated.payload } };
+      bumpApplied();
+      toast.success(t("sampler_set_saved"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("sampler_set_action_failed"));
+    }
+  };
+
+  const handleMorphConfirm = async () => {
+    if (!morph) return;
+    const name = morph.value.trim();
+    if (!name) return;
+    if (morph.intent === "new") {
+      try {
+        const created = await createImageGenSamplerSet({ name, payload: setPayloadOf(overlay) });
+        setSets((list) => [...list, created]);
+        imageGen.setModelSamplerSetBinding(created.id, created.payload);
+        appliedRef.current = { setId: created.id, baseline: { ...created.payload } };
+        bumpApplied();
+        setMorph(null);
+        setMorphConflict(false);
+        toast.success(t("sampler_set_created"));
+      } catch (error) {
+        setMorphConflict(true);
+        toast.error(error instanceof Error ? error.message : t("sampler_set_action_failed"));
+      }
+      return;
+    }
+    if (!selected) return;
+    try {
+      const updated = await updateImageGenSamplerSet(selected.id, { name });
+      setSets((list) => list.map((s) => (s.id === updated.id ? updated : s)));
+      setMorph(null);
+      setMorphConflict(false);
+      toast.success(t("sampler_set_renamed"));
+    } catch (error) {
+      setMorphConflict(true);
+      toast.error(error instanceof Error ? error.message : t("sampler_set_action_failed"));
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDeleteId) return;
+    try {
+      await deleteImageGenSamplerSet(confirmDeleteId);
+      setSets((list) => list.filter((s) => s.id !== confirmDeleteId));
+      if (imageGen.modelOverlaySetId === confirmDeleteId) {
+        imageGen.setModelSamplerSetBinding(null);
+      }
+      if (appliedRef.current?.setId === confirmDeleteId) {
+        appliedRef.current = null;
+        bumpApplied();
+      }
+      setConfirmDeleteId(null);
+      toast.success(t("sampler_set_deleted"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("sampler_set_action_failed"));
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(await file.text());
+    } catch {
+      toast.error(t("sampler_set_import_failed"));
+      return;
+    }
+    const name = file.name.replace(/\.json$/i, "").trim() || t("sampler_set_import_default_name");
+    try {
+      const { set, notes } = await importImageGenSamplerSet({ name, raw });
+      setSets((list) => [...list.filter((s) => s.id !== set.id), set]);
+      if (notes.length > 0) toast.warning(notes.join(" · "));
+      toast.success(t("sampler_set_imported", { name: set.name }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("sampler_set_import_failed"));
+    }
+  };
+
+  const handleExportSet = () => {
+    if (!selected) return;
+    const payloadJson = JSON.stringify(selected.payload, null, 2);
+    const blob = new Blob([payloadJson], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${selected.name.replace(/[/\\:*?"<>|]/g, "_")}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  };
+
+  const morphName = morph?.value.trim() ?? "";
+  const morphSelfId = morph?.intent === "rename" ? selected?.id : null;
+  const morphClientConflict =
+    morphName.length > 0 &&
+    sets.some((s) => s.id !== morphSelfId && s.name.trim().toLowerCase() === morphName.toLowerCase());
+  const morphShowConflict = morphClientConflict || morphConflict;
+  const morphConfirmDisabled = morphName.length === 0 || morphShowConflict;
+
+  return (
+    <div className="flex max-md:flex-col max-md:items-stretch max-md:gap-2 md:flex-row md:items-center md:gap-1" data-testid="image-gen-model-set-row">
+      {morph ? (
+        <div className="flex min-w-0 items-center gap-1">
+          <div className="flex min-w-0 flex-col">
+            <TextInput
+              data-testid="image-gen-set-name-input"
+              className={cn("w-[180px]", morphShowConflict && "!border-danger")}
+              value={morph.value}
+              onChange={(e) => {
+                setMorph({ ...morph, value: e.target.value });
+                setMorphConflict(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleMorphConfirm();
+                if (e.key === "Escape") setMorph(null);
+              }}
+              placeholder={t("sampler_set_name_placeholder")}
+              autoFocus
+            />
+            {morphShowConflict && (
+              <div className="mt-0.5 flex items-center gap-1 text-[10px] text-warning">
+                <span className="[&_svg]:h-[10px] [&_svg]:w-[10px]"><Icons.Alert /></span>
+                {t("sampler_set_name_exists")}
+              </div>
+            )}
+          </div>
+          <CustomTooltip content={t("confirm")}>
+            <button
+              type="button"
+              data-testid="image-gen-set-morph-confirm"
+              disabled={morphConfirmDisabled}
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleMorphConfirm();
+              }}
+              className="flex h-7 w-7 items-center justify-center rounded text-accent-t transition-colors hover:bg-[var(--border)] disabled:pointer-events-none disabled:opacity-40"
+              aria-label={t("confirm")}
+            >
+              <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Check /></span>
+            </button>
+          </CustomTooltip>
+          <CustomTooltip content={t("cancel")}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMorph(null);
+              }}
+              className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1"
+              aria-label={t("cancel")}
+            >
+              <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Close /></span>
+            </button>
+          </CustomTooltip>
+        </div>
+      ) : (
+        <div className="flex min-w-0 items-center">
+          <DropdownSelect
+            value={imageGen.modelOverlaySetId ?? ""}
+            options={sets.map((s) => ({ id: s.id, label: s.name }))}
+            defaultOption={t("sampler_set_none")}
+            placeholder={t("sampler_set_placeholder")}
+            onChange={handleSelectSet}
+            triggerClassName="h-7 w-auto max-w-[200px] rounded border border-border bg-s2 px-2 py-0 text-[12px] hover:border-accent"
+            triggerDetail={false}
+            contentWidth={260}
+            triggerLeading={
+              isDirty ? (
+                <span data-testid="image-gen-set-dirty-dot" className="h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />
+              ) : undefined
+            }
+            triggerTestId="image-gen-model-set-trigger"
+          />
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-1">
+        <CustomTooltip content={t("sampler_set_new")}>
+          <button
+            type="button"
+            data-testid="image-gen-set-new"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMorph({ intent: "new", value: "" });
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1"
+            aria-label={t("sampler_set_new")}
+          >
+            <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Plus /></span>
+          </button>
+        </CustomTooltip>
+        <CustomTooltip content={t("sampler_set_save")}>
+          <button
+            type="button"
+            data-testid="image-gen-set-save"
+            disabled={!selected}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleSaveIntoSet();
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1 disabled:pointer-events-none disabled:opacity-40"
+            aria-label={t("sampler_set_save")}
+          >
+            <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Floppy /></span>
+          </button>
+        </CustomTooltip>
+        <CustomTooltip content={t("sampler_set_rename")}>
+          <button
+            type="button"
+            data-testid="image-gen-set-rename"
+            disabled={!selected}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMorph({ intent: "rename", value: selected?.name ?? "" });
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1 disabled:pointer-events-none disabled:opacity-40"
+            aria-label={t("sampler_set_rename")}
+          >
+            <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Edit /></span>
+          </button>
+        </CustomTooltip>
+        <CustomTooltip content={t("sampler_set_revert")}>
+          <button
+            type="button"
+            data-testid="image-gen-set-revert"
+            disabled={!selected}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (selected) applySet(selected);
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1 disabled:pointer-events-none disabled:opacity-40"
+            aria-label={t("sampler_set_revert")}
+          >
+            <span className="[&_svg]:h-[11px] [&_svg]:w-[11px]"><Icons.Regen /></span>
+          </button>
+        </CustomTooltip>
+        <CustomTooltip content={t("sampler_set_delete")}>
+          <button
+            type="button"
+            data-testid="image-gen-set-delete"
+            disabled={!selected}
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmDeleteId(selected?.id ?? null);
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-danger disabled:pointer-events-none disabled:opacity-40"
+            aria-label={t("sampler_set_delete")}
+          >
+            <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Trash /></span>
+          </button>
+        </CustomTooltip>
+        <CustomTooltip content={t("sampler_set_import")}>
+          <button
+            type="button"
+            data-testid="image-gen-set-import"
+            onClick={(e) => {
+              e.stopPropagation();
+              fileInputRef.current?.click();
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1"
+            aria-label={t("sampler_set_import")}
+          >
+            <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Import /></span>
+          </button>
+        </CustomTooltip>
+        <CustomTooltip content={t("sampler_set_export")}>
+          <button
+            type="button"
+            data-testid="image-gen-set-export"
+            disabled={!selected}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleExportSet();
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded text-t3 transition-colors hover:bg-[var(--border)] hover:text-t1 disabled:pointer-events-none disabled:opacity-40"
+            aria-label={t("sampler_set_export")}
+          >
+            <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Download /></span>
+          </button>
+        </CustomTooltip>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void handleImportFile(file);
+          }}
+        />
+      </div>
+      {confirmDeleteId !== null && (
+        <DestructiveConfirmModal
+          title={t("sampler_set_delete")}
+          body={t("sampler_set_delete_confirm", { name: selected?.name ?? "" })}
+          confirmLabel={t("delete")}
+          onConfirm={() => void handleConfirmDelete()}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── The pane ────────────────────────────────────────────────────────────────
 
 export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
@@ -566,8 +973,8 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // IG-CF12a: the A1111-family pane is a LOCAL control surface — the shared
   // status chip rides above the picker, driven by the sampler fetch signal
   // (`samplerStatusByProfile`), and an offline server greys out the whole
-  // control panel below the chip (owner 2026-09-16: «если сервер НЕ
-  // ОТВЕЧАЕТ, мы гасим панель управления серым"). The chip's re-check button
+  // control panel below the chip (owner ruling 2026-09-16: an unresponsive
+  // server greys out the whole control panel). The chip's re-check button
   // is the recovery affordance — it stays interactive while the panel is
   // greyed. Cloud backends (openrouter/openai-images) render no chip.
   const isLocalBackend = form.backend === IMAGE_GEN_BACKENDS.A1111;
@@ -649,15 +1056,15 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
 
       {/* ── Sizes per mode (profile base or the bound model's override),
           IG-CF14: collapsed accordion + compact table rows. The old grid
-          was «a table wearing field-clothes» — 12 full-height labeled
-          fields, Ширина/Высота repeated 6× (owner 2026-09-16: «сырое
-          позорище. надо переделать»). Now: one slim row per mode — mode
+          was a table wearing field-clothes — 12 full-height labeled
+          fields, width/height labels repeated 6x (owner ruling
+          2026-09-16: unacceptable, redo). Now: one slim row per mode — mode
           label, W/H steppers walking the ±128px ladder (domain
           IMAGE_SIZE_STEP_PX; owner example 720 → 848↑ / 592↓; raw typing
           never snaps), a W↔H swap button, and the preset dropdown
-          («Портрет 3:4 · 896×1152» — purpose + ratio + resolution, never a
+          (the "Portrait 3:4 · 896×1152" entry — purpose + ratio + resolution, never a
           bare ratio). UNSET rows display the domain default as the anchor
-          without storing anything — «Авто» in the dropdown is the honest
+          without storing anything — "Auto" in the dropdown is the honest
           state until the user edits, steps, swaps, or picks. Vendor-set
           backends keep their capability-grid dropdown (the vendor list IS
           the size vocabulary there). */}
@@ -748,7 +1155,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       onClick={() =>
                         // Swaps the DISPLAYED pair and pins it (a swap is an
                         // explicit act — on an unset row it pins the anchor
-                        // swapped, leaving «Авто» behind).
+                        // swapped, leaving Auto behind).
                         setModeSize(mode, { width: displayHeight, height: displayWidth })
                       }
                       className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-s3 text-t2 transition-all hover:bg-s2 hover:text-t1"
@@ -802,17 +1209,19 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
         <div className="mb-3 font-ui text-[14px] font-semibold text-t1">{t("image_gen_params_section_title")}</div>
 
         {form.modelId !== null && (
-          <div className="mb-3 flex items-center gap-3 rounded-lg border border-border2 bg-s2 px-4 py-2.5">
-            <Toggle
-              checked={bound}
-              onChange={(v) => (v ? void imageGen.bindModelOverlay() : void imageGen.unbindModelOverlay())}
-              className="!mb-0 !inline-flex"
-              aria-label={t("image_gen_bind_per_model")}
-            />
-            <div className="min-w-0">
-              <div className="font-ui text-[13px] font-medium text-t1">{t("image_gen_bind_per_model")}</div>
-              <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
-                {t("image_gen_bind_per_model_hint", { model: form.modelId })}
+          <div className="mb-3 rounded-lg border border-border2 bg-s2 px-4 py-2.5">
+            <div className="flex items-center gap-3">
+              <Toggle
+                checked={bound}
+                onChange={(v) => (v ? void imageGen.bindModelOverlay() : void imageGen.unbindModelOverlay())}
+                className="!mb-0 !inline-flex"
+                aria-label={t("image_gen_bind_per_model")}
+              />
+              <div className="min-w-0">
+                <div className="font-ui text-[13px] font-medium text-t1">{t("image_gen_bind_per_model")}</div>
+                <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
+                  {t("image_gen_bind_per_model_hint", { model: form.modelId })}
+                </div>
               </div>
             </div>
           </div>
@@ -840,39 +1249,46 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           </div>
         )}
 
-        {/* Advanced expand (the ProviderSamplerPanel accordion header shape) */}
+        {/* Advanced expand — header cloned from the LLM sampler accordion
+            (ProviderSamplerPanel): the title span toggles; the named-set row
+            lives on the header's right side and columnates under the title
+            on mobile (max-md). */}
         <div className="mt-2 overflow-hidden rounded-lg border border-border2">
-          <button
-            type="button"
+          <div
             data-testid="image-gen-advanced-header"
-            onClick={() => setAdvancedOpen((prev) => !prev)}
             className={cn(
-              "flex w-full cursor-pointer items-center gap-2 bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)]",
+              "flex w-full flex-col bg-s2 px-3 py-3 font-ui text-[13px] font-medium text-t1 transition-colors hover:bg-[var(--border)] cursor-pointer max-md:items-stretch max-md:gap-2 md:flex-row md:items-center md:justify-between",
               advancedOpen && "!rounded-b-none",
             )}
           >
-            <span className={cn("transition-transform", advancedOpen && "rotate-90")}>
-              <Icons.Caret direction="r" />
+            <span
+              className="flex items-center gap-2"
+              onClick={() => setAdvancedOpen((prev) => !prev)}
+            >
+              <span className={cn("transition-transform", advancedOpen && "rotate-90")}>
+                <Icons.Caret direction="r" />
+              </span>
+              {t("image_gen_advanced")}
             </span>
-            {t("image_gen_advanced")}
-          </button>
+            {bound && form.modelId !== null && <ModelSamplerSetRow imageGen={imageGen} />}
+          </div>
           {advancedOpen && (
             <div className="grid grid-cols-1 gap-3 bg-surface p-3 sm:grid-cols-2" data-testid="image-gen-advanced-body">
-              <OptionalSliderField
+              <SamplerSliderField
+                label={t("image_gen_steps_label")}
                 value={params.steps}
                 onChange={(steps) => setParam({ steps })}
-                label={t("image_gen_steps_label")}
-                testId="image-gen-field-steps"
-                rangeTestId="image-gen-range-steps"
                 range={stepsRange}
+                rangeTestId="image-gen-range-steps"
+                cellTestId="image-gen-field-steps"
               />
-              <OptionalSliderField
+              <SamplerSliderField
+                label={t("image_gen_cfg_label")}
                 value={params.cfgScale}
                 onChange={(cfgScale) => setParam({ cfgScale })}
-                label={t("image_gen_cfg_label")}
-                testId="image-gen-field-cfg"
-                rangeTestId="image-gen-range-cfg"
                 range={cfgRange}
+                rangeTestId="image-gen-range-cfg"
+                cellTestId="image-gen-field-cfg"
               />
               <OptionalNumberField
                 value={params.seed}
@@ -880,13 +1296,13 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                 label={t("image_gen_seed_label")}
                 testId="image-gen-field-seed"
               />
-              <OptionalSliderField
+              <SamplerSliderField
+                label={t("image_gen_clip_skip_label")}
                 value={params.clipSkip}
                 onChange={(clipSkip) => setParam({ clipSkip })}
-                label={t("image_gen_clip_skip_label")}
-                testId="image-gen-field-clip-skip"
-                rangeTestId="image-gen-range-clip-skip"
                 range={clipSkipRange}
+                rangeTestId="image-gen-range-clip-skip"
+                cellTestId="image-gen-field-clip-skip"
               />
             </div>
           )}

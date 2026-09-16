@@ -801,6 +801,7 @@
   "sampler_set_saved": "Sampler set saved",
   "sampler_set_renamed": "Sampler set renamed",
   "sampler_set_deleted": "Sampler set deleted",
+  "sampler_set_delete_confirm": "Delete the sampler set \"{name}\"? Models that applied it keep their values; only the reference clears.",
   "sampler_set_imported": "Sampler set \"{name}\" imported",
   "sampler_set_import_failed": "The file does not contain a valid sampler set",
   "sampler_set_import_default_name": "Imported set",
