@@ -1044,6 +1044,7 @@ export const IMAGE_GEN_BACKENDS = {
   OpenRouter: "openrouter",
   OpenAiImages: "openai-images",
   A1111: "a1111",
+  ComfyUI: "comfyui",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

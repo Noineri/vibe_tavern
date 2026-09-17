@@ -37,6 +37,7 @@ import { createImageGenRoutes } from "../src/api/routes/image-gen.js";
 import { openRouterImageGenFactory } from "../src/domain/imagegen/backends/openrouter.js";
 import { openAiImagesFactory } from "../src/domain/imagegen/backends/openai-images.js";
 import { a1111Factory } from "../src/domain/imagegen/backends/a1111.js";
+import { comfyImageGenFactory } from "../src/domain/imagegen/backends/comfyui.js";
 import {
   IMAGE_GEN_BACKEND_CAPABILITIES,
   __resetImageGenRegistryForTests,
@@ -63,6 +64,7 @@ beforeEach(() => {
   registerImageGenBackend(IMAGE_GEN_BACKENDS.OpenRouter, openRouterImageGenFactory);
   registerImageGenBackend(IMAGE_GEN_BACKENDS.OpenAiImages, openAiImagesFactory);
   registerImageGenBackend(IMAGE_GEN_BACKENDS.A1111, a1111Factory);
+  registerImageGenBackend(IMAGE_GEN_BACKENDS.ComfyUI, comfyImageGenFactory);
 });
 
 /** Distinct PNG-signatured bytes so disk round-trips are verifiable. */
@@ -693,6 +695,103 @@ describe("image-gen routes — schedulers (PG-3, dialect-gated)", () => {
       imageGen?: { params: Record<string, unknown> };
     }>;
     expect(attachments[0]!.imageGen!.params.scheduler).toBe("karras");
+  });
+
+  test("generate (comfyui): queues the flat fields onto the checkpoint graph, downloads /view, persists the slot (CG-A1)", async () => {
+    const queuedBodies: Array<Record<string, unknown>> = [];
+    const seenUrls: string[] = [];
+    const { app, stores } = await makeApp(async (input, init) => {
+      const url = new URL(String(input));
+      seenUrls.push(`${url.pathname}${url.search}`);
+      if (url.pathname === "/prompt") {
+        queuedBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ prompt_id: "pid-route", number: 1, node_errors: {} }));
+      }
+      if (url.pathname === "/history/pid-route") {
+        return new Response(
+          JSON.stringify({
+            "pid-route": {
+              outputs: { "9": { images: [{ filename: "vt_imagegen_00001_.png", subfolder: "", type: "output" }] } },
+              status: { status_str: "success", completed: true, messages: [] },
+            },
+          }),
+        );
+      }
+      if (url.pathname === "/view") {
+        return new Response(new Uint8Array(PNG_BYTES(0x63)));
+      }
+      return new Response("unexpected", { status: 404 });
+    });
+    const chatId = await makeChat(stores);
+    const profileId = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.ComfyUI,
+      endpoint: "http://127.0.0.1:8188",
+      modelId: "graycolor_v18.safetensors",
+      defaultParams: { steps: 4, scheduler: "simple", sampler: "euler" },
+      modeSizePresets: { portrait: { width: 832, height: 1216 } },
+    });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId, mode: "portrait", prompt: "a tavern" }),
+    });
+    expect(res.status).toBe(200);
+
+    // The flat ladder reached the graph: profile defaults + mode preset +
+    // the checkpoint from the profile's modelId.
+    const graph = queuedBodies[0]!.prompt as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+    expect(graph["4"]!.inputs.ckpt_name).toBe("graycolor_v18.safetensors");
+    expect(graph["3"]!.inputs.steps).toBe(4);
+    expect(graph["3"]!.inputs.sampler_name).toBe("euler");
+    expect(graph["3"]!.inputs.scheduler).toBe("simple");
+    expect(graph["5"]!.inputs.width).toBe(832);
+    expect(graph["5"]!.inputs.height).toBe(1216);
+    expect(queuedBodies[0]!.client_id).toMatch(/^[\da-f-]{36}$/);
+    expect(seenUrls[2]).toBe(
+      "/view?filename=vt_imagegen_00001_.png&subfolder=&type=output",
+    );
+
+    // The slot persisted with the downloaded bytes + provenance.
+    const body = (await res.json()) as { messageId: string; attachments: Array<{ mimeType: string }> };
+    const slot = await stores.messages.getMessageById(body.messageId);
+    const attachments = JSON.parse(slot!.attachmentsJson ?? "[]") as Array<{
+      mimeType: string;
+      imageGen?: { params: Record<string, unknown>; model?: string };
+    }>;
+    expect(attachments[0]!.mimeType).toBe("image/png");
+    expect(attachments[0]!.imageGen!.model).toBe("graycolor_v18.safetensors");
+    expect(attachments[0]!.imageGen!.params.steps).toBe(4);
+    expect(attachments[0]!.imageGen!.params.scheduler).toBe("simple");
+  });
+
+  test("generate (comfyui): a graph rejection (node_errors) surfaces as 400 with the node ids", async () => {
+    const { app, stores } = await makeApp(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/prompt") {
+        return new Response(
+          JSON.stringify({
+            prompt_id: "pid-bad",
+            number: 1,
+            node_errors: { "4": { errors: [{ type: "value_not_in_list" }] } },
+          }),
+        );
+      }
+      return new Response("unexpected", { status: 404 });
+    });
+    const chatId = await makeChat(stores);
+    const profileId = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.ComfyUI,
+      endpoint: "http://127.0.0.1:8188",
+      modelId: "missing.safetensors",
+    });
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId, mode: "portrait", prompt: "p" }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("node 4");
   });
 });
 

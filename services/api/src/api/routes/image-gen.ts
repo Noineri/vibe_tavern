@@ -53,6 +53,11 @@ import {
   A1111ImageGenError,
   A1111ImageGenSizeError,
 } from "../../domain/imagegen/backends/a1111.js";
+import {
+  ComfyImageGenConfigError,
+  ComfyImageGenError,
+  ComfyImageGenSizeError,
+} from "../../domain/imagegen/backends/comfyui.js";
 
 /** Upstream failures with an HTTP status: a 4xx upstream is the caller's
  *  problem (400), anything else is gateway-class (502) — the STT ladder. */
@@ -70,16 +75,19 @@ function backendErrorResponse(error: unknown): { body: { error: string }; status
     error instanceof OpenRouterImageGenConfigError ||
     error instanceof OpenAiImagesConfigError ||
     error instanceof A1111ImageGenConfigError ||
+    error instanceof ComfyImageGenConfigError ||
     error instanceof OpenRouterImageGenSizeError ||
     error instanceof OpenAiImagesSizeError ||
-    error instanceof A1111ImageGenSizeError
+    error instanceof A1111ImageGenSizeError ||
+    error instanceof ComfyImageGenSizeError
   ) {
     return { body: { error: error.message }, status: 400 };
   }
   if (
     error instanceof OpenRouterImageGenError ||
     error instanceof OpenAiImagesError ||
-    error instanceof A1111ImageGenError
+    error instanceof A1111ImageGenError ||
+    error instanceof ComfyImageGenError
   ) {
     return { body: { error: error.message }, status: upstreamStatus(error.status) };
   }

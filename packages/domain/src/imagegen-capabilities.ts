@@ -124,4 +124,24 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
+  [IMAGE_GEN_BACKENDS.ComfyUI]: {
+    // Raw ComfyUI API (COMFYUI_BACKEND_PLAN CG-A1): flat form mapped onto
+    // workflow templates — checkpoint template in A1 (negative prompt,
+    // samplers/schedulers as graph values, seed resolved client-side and
+    // reported back), free W×H integers. Keyless (core has no auth).
+    // supportsSamplers flips the sampler dropdown on once CG-A3 ships the
+    // live KSampler unions; supportsLiveProgress flips on with the WS
+    // step-bar of CG-C1 (A1 leaves both off — the A1111-only surfaces stay
+    // A1111-only until their comfy arms land).
+    supportsNegativePrompt: true,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: true,
+    supportsLiveProgress: false,
+    localExecution: true,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
+  },
 };

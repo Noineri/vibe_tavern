@@ -110,6 +110,18 @@ describe("imagegen registry", () => {
       expect(a1111.supportsLiveProgress).toBe(true);
       expect(a1111.sizeSupport).toEqual({ kind: "free" });
 
+      // ComfyUI (CG-A1): flat-form local dialect — negative prompt and seed
+      // surface now; the sampler union (CG-A3) and WS live progress (CG-C1)
+      // flip their flags on with their units.
+      const comfy = getImageGenBackendCapabilities(IMAGE_GEN_BACKENDS.ComfyUI);
+      expect(comfy.supportsNegativePrompt).toBe(true);
+      expect(comfy.supportsSamplers).toBe(false);
+      expect(comfy.supportsSeed).toBe(true);
+      expect(comfy.noApiKey).toBe(true);
+      expect(comfy.supportsLiveProgress).toBe(false);
+      expect(comfy.localExecution).toBe(true);
+      expect(comfy.sizeSupport).toEqual({ kind: "free" });
+
       // Reserved flags stay stamped off across the whole v1 roster.
       for (const slug of ALL_SLUGS) {
         expect(getImageGenBackendCapabilities(slug).supportsImg2img).toBe(false);
@@ -161,9 +173,9 @@ describe("imagegen registry", () => {
   });
 
   describe("listImageGenBackendSlugs", () => {
-    it("contains exactly the three v1 slugs", () => {
+    it("contains exactly the four v1 slugs", () => {
       expect(listImageGenBackendSlugs().sort()).toEqual([...ALL_SLUGS].sort());
-      expect(ALL_SLUGS).toHaveLength(3);
+      expect(ALL_SLUGS).toHaveLength(4);
     });
   });
 

@@ -97,6 +97,7 @@ import type { ImageGenRuntimeApi } from "../contract/runtime-api.js";
 import "../../domain/imagegen/backends/openrouter.js";
 import "../../domain/imagegen/backends/openai-images.js";
 import "../../domain/imagegen/backends/a1111.js";
+import "../../domain/imagegen/backends/comfyui.js";
 
 // ─── Route-ladder errors ─────────────────────────────────────────────────────
 
