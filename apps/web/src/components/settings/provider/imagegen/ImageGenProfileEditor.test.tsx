@@ -173,6 +173,26 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
     expect(view.queryByTestId("image-gen-key-source-hint")).toBeNull();
   });
 
+  it("PG-1: the local-segment form mounts the local-server help panel", async () => {
+    const local = makeImageGen({
+      form: makeForm({
+        id: "p1",
+        backend: IMAGE_GEN_BACKENDS.A1111,
+        presetId: "a1111",
+        endpoint: "http://127.0.0.1:7860",
+      }),
+    });
+    const view = render(<ImageGenProfileEditor imageGen={local} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-local-server-panel")).toBeTruthy());
+  });
+
+  it("PG-1: the cloud-segment form never mounts the local-server help panel", async () => {
+    const cloud = makeImageGen({ form: makeForm({ id: "p1" }) });
+    const view = render(<ImageGenProfileEditor imageGen={cloud} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-provider-form")).toBeTruthy());
+    expect(view.queryByTestId("image-gen-local-server-panel")).toBeNull();
+  });
+
   it("CF8: segment switch to Custom pins the backend to openai-images under the hood + drops the preset slug", async () => {
     const setForm = mock(() => {});
     const imageGen = makeImageGen({

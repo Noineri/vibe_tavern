@@ -13,6 +13,7 @@ import { TextInput } from "../../../shared/text-input.js";
 import { ImageGenApiKeyField } from "./ImageGenApiKeyField.js";
 import { ConnectionAutoKeyHint } from "../../../shared/connection-auto-key-hint.js";
 import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
+import { ImageGenLocalServerPanel } from "./ImageGenLocalServerPanel.js";
 import { type ImageGenProfileForm, type useImageProfiles } from "../../../../hooks/use-image-profiles.js";
 
 type ImageGenHook = ReturnType<typeof useImageProfiles>;
@@ -269,6 +270,10 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
           )}
         </div>
       </div>
+
+      {/* Local-server setup help (PG-1) — the SttLocalServerPanel twin:
+          the panel belongs to the Local segment only. */}
+      {segment === "local" && <ImageGenLocalServerPanel form={form} updateForm={updateForm} />}
     </div>
   );
 }
