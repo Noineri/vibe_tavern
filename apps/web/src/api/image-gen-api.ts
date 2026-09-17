@@ -26,6 +26,7 @@ import type {
   ImageGenProfileValue,
   ImageGenProgressInfoValue,
   ImageGenSamplerInfoValue,
+  ImageGenSchedulerInfoValue,
   ImageGenSamplerSet,
   ImageGenSamplerSetCreate,
   ImageGenSamplerSetImport,
@@ -152,6 +153,24 @@ export async function listImageGenExtensions(
   if (response.status === 404) return null;
   if (!response.ok) throw await rawError("Image-gen extension list", response);
   return (await response.json()) as string[];
+}
+
+/** Scheduler (schedule type) list for a saved A1111-dialect profile
+ *  (PG-3): the live `GET /sdapi/v1/schedulers` catalog for the advanced
+ *  panel's dropdown — fetched at form time, never hardcoded. Null =
+ *  unknown profile; throws on transport/5xx. */
+export async function listImageGenSchedulers(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ImageGenSchedulerInfoValue[] | null> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/schedulers`),
+    { signal },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw await rawError("Image-gen scheduler list", response);
+  return (await response.json()) as ImageGenSchedulerInfoValue[];
 }
 
 /** One live progress snapshot for a saved local profile (PG-2): polled by

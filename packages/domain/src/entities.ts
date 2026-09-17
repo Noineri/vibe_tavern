@@ -1129,6 +1129,12 @@ export interface ImageGenDefaultParams {
   seed?: number;
   /** CLIP skip (A1111-compat dialect). */
   clipSkip?: number;
+  /** Schedule type — the A1111-dialect sampler schedule (PG-3): rides the
+   *  txt2img payload per request; absent = the server's own default
+   *  (empty = vendor default, the CF5 no-silent-defaults rule). NOT part
+   *  of the sampler-set payload (the set concept stays the five LS-5
+   *  scalars). */
+  scheduler?: string;
 }
 
 /** Per-mode width/height preset on the profile. Optional members — an unset
@@ -1226,6 +1232,9 @@ export interface ImageGenModelSettingsOverlay {
   steps?: number;
   cfgScale?: number;
   sampler?: string;
+  /** Schedule type (PG-3) — the sampler's schedule on the A1111 dialect;
+   *  the overlay twin of `ImageGenDefaultParams.scheduler`. */
+  scheduler?: string;
   seed?: number;
   clipSkip?: number;
   /** ADetailer face-fix switch (IG-CF15/PG-4 v1, A1111-family only):

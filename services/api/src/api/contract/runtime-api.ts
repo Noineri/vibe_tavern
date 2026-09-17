@@ -1074,6 +1074,10 @@ export interface ImageGenRuntimeApi {
 	 *  used here — a backend without the surface returns null too (route →
 	 *  400 "sampler listing not supported", the STT null contract). */
 	listImageGenProfileSamplers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerInfoValue[] | null>;
+	/** Scheduler (schedule type) listing for a saved profile — A1111-dialect
+	 *  gate (PG-3, the extensions-arm twin): null = unknown profile or
+	 *  unsupported backend (route → 404/400, the samplers ladder). */
+	listImageGenProfileSchedulers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenSchedulerInfoValue[] | null>;
 	/** Live progress snapshot for a saved profile — capability-gated
 	 *  (supportsLiveProgress, A1111 dialect in v1). Null = unknown profile
 	 *  or unsupported backend (route → 404/400, the samplers ladder). */

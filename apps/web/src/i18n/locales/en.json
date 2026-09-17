@@ -582,6 +582,7 @@
   "image_gen_bind_per_model_hint": "When on, the sizes and parameters below apply only to {model}; empty fields inherit the profile base.",
   "image_gen_overlay_inherit_hint": "Empty fields inherit the profile base settings.",
   "image_gen_sampler_label": "Sampler",
+  "image_gen_scheduler_label": "Scheduler",
   "image_gen_sampler_auto": "Auto (server default)",
   "image_gen_advanced": "Advanced",
   "image_gen_steps_label": "Steps",

@@ -52,6 +52,7 @@ import type {
   ImageGenProbeResultValue,
   ImageGenProfileValue,
   ImageGenSamplerInfoValue,
+  ImageGenSchedulerInfoValue,
   ImageGenSamplerSet,
   ImageGenSamplerSetCreate,
   ImageGenSamplerSetImport,
@@ -454,6 +455,24 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     );
   };
 
+  listImageGenProfileSchedulers = async (id: string, signal?: AbortSignal) => {
+    const profile = await this.stores.imageGen.getById(id);
+    if (!profile) return null;
+    // Static dialect gate FIRST (the extensions-arm twin, PG-3): the
+    // schedule-type surface exists ONLY on the A1111 dialect — schedulers
+    // are not a cross-vendor capability, so no capability flag exists for
+    // them; the dialect check answers without live config validity.
+    if (profile.backend !== IMAGE_GEN_BACKENDS.A1111) return null;
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
+    // Interface-driven second gate: a backend without the scheduler method
+    // reports "not supported", not an empty list.
+    if (typeof backend.listSchedulers !== "function") return null;
+    const listSchedulers = backend.listSchedulers.bind(backend);
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "scheduler list", (inner) =>
+      listSchedulers(inner),
+    );
+  };
+
   listImageGenProfileExtensions = async (id: string, signal?: AbortSignal) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
@@ -610,6 +629,10 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const steps = overrides.steps ?? overlay.steps ?? defaults.steps;
     const cfgScale = overrides.cfgScale ?? overlay.cfgScale ?? defaults.cfgScale;
     const sampler = overrides.sampler ?? overlay.sampler ?? defaults.sampler;
+    // Schedule type (PG-3): the sampler's ladder MINUS the overrides rung —
+    // the chip's scheduler is an overlay field (the advanced-panel dropdown),
+    // no one-shot draft row ships in v1.
+    const scheduler = overlay.scheduler ?? defaults.scheduler;
     const seed = overrides.seed ?? overlay.seed ?? defaults.seed;
     const clipSkip = overrides.clipSkip ?? overlay.clipSkip ?? defaults.clipSkip;
     // ADetailer (IG-CF15/PG-4 v1): OVERLAY-ONLY — the face-fix flag rides the
@@ -666,6 +689,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(steps !== undefined ? { steps } : {}),
       ...(cfgScale !== undefined ? { cfgScale } : {}),
       ...(sampler !== undefined ? { sampler } : {}),
+      ...(scheduler !== undefined ? { scheduler } : {}),
       ...(seed !== undefined ? { seed } : {}),
       ...(clipSkip !== undefined ? { clipSkip } : {}),
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
@@ -705,6 +729,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         ...(steps !== undefined ? { steps } : {}),
         ...(cfgScale !== undefined ? { cfgScale } : {}),
         ...(sampler !== undefined ? { sampler } : {}),
+        ...(scheduler !== undefined ? { scheduler } : {}),
         ...(seed !== undefined ? { seed } : {}),
         ...(clipSkip !== undefined ? { clipSkip } : {}),
       },

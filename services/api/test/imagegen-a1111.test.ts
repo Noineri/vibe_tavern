@@ -95,7 +95,7 @@ describe("a1111 adapter", () => {
       expect("Authorization" in headers).toBe(false);
 
       // The exact card body: prompt + ONLY the set overrides + send_images.
-      // No sampler_index (legacy), no scheduler, no clip_skip, no
+      // No sampler_index (legacy), no clip_skip, no
       // override_settings_restore_afterwards — nothing invented.
       expect(sentJson(post)).toEqual({
         prompt: "a tavern at dusk",
@@ -122,6 +122,18 @@ describe("a1111 adapter", () => {
       const backend = backendWith(transport);
       await backend.generate({ prompt: "p" });
       expect(sentJson(calls[0])).toEqual({ prompt: "p", send_images: true });
+    });
+
+    it("sends the schedule type verbatim when set (PG-3) — absent means the server's own default", async () => {
+      const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
+      const backend = backendWith(transport);
+      await backend.generate({ prompt: "p", sampler: "DPM++ 2M", scheduler: "Karras" });
+      expect(sentJson(calls[0])).toEqual({
+        prompt: "p",
+        send_images: true,
+        sampler_name: "DPM++ 2M",
+        scheduler: "Karras",
+      });
     });
 
     it("sends width and height independently (free W×H, no coupled grid)", async () => {
@@ -316,6 +328,35 @@ describe("a1111 adapter", () => {
       const { transport } = makeTransport(() => new Response("nope", { status: 503 }));
       const backend = backendWith(transport);
       const promise = backend.listSamplers();
+      await expect(promise).rejects.toBeInstanceOf(A1111ImageGenError);
+      await expect(promise).rejects.toMatchObject({ status: 503 });
+    });
+  });
+
+  describe("listSchedulers (PG-3)", () => {
+    it("queries /schedulers and maps {name, label} per entry (nameless skipped)", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json([
+          { name: "Automatic", label: "Automatic", aliases: null, options: {} },
+          { name: "SGM Uniform", label: "SGM Uniform", options: {} },
+          { label: "no-name" },
+          "garbage",
+        ]),
+      );
+      const backend = backendWith(transport);
+      const schedulers = await backend.listSchedulers();
+      expect(schedulers).toEqual([
+        { name: "Automatic", label: "Automatic" },
+        { name: "SGM Uniform", label: "SGM Uniform" },
+      ]);
+      expect(calls[0].url).toBe(`${SD_API_ROOT}/schedulers`);
+      expect(calls[0].init?.method).toBe("GET");
+    });
+
+    it("surfaces a non-2xx scheduler list as a typed error with the status", async () => {
+      const { transport } = makeTransport(() => new Response("nope", { status: 503 }));
+      const backend = backendWith(transport);
+      const promise = backend.listSchedulers();
       await expect(promise).rejects.toBeInstanceOf(A1111ImageGenError);
       await expect(promise).rejects.toMatchObject({ status: 503 });
     });

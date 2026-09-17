@@ -15,6 +15,7 @@
  *   POST   /api/image-gen/profiles/:id/probe
  *   GET    /api/image-gen/profiles/:id/models
  *   GET    /api/image-gen/profiles/:id/samplers        (capability-gated)
+ *   GET    /api/image-gen/profiles/:id/schedulers       (dialect-gated, PG-3)
  *   GET    /api/image-gen/profiles/:id/progress        (capability-gated, PG-2)
  *   POST   /api/image-gen/profiles/:id/interrupt       (capability-gated, PG-2)
  *   POST   /api/image-gen/draft/models                 (shared fetch-by-endpoint)
@@ -160,6 +161,24 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
           return c.json({ error: "sampler listing not supported" }, 400);
         }
         return c.json(samplers);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Schedulers / schedule type (dialect-gated, PG-3) ─────────────
+    .get("/api/image-gen/profiles/:id/schedulers", async (c) => {
+      try {
+        const schedulers = await runtime.listImageGenProfileSchedulers(c.req.param("id"), c.req.raw.signal);
+        if (schedulers === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "scheduler listing not supported" }, 400);
+        }
+        return c.json(schedulers);
       } catch (error) {
         const mapped = backendErrorResponse(error);
         if (mapped) return c.json(mapped.body, mapped.status);

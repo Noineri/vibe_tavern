@@ -978,6 +978,18 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // on its own fetch) renders only when the server has the extension.
   // Guard-style null-safe values — this hook sits above the null guard too.
   const guardIsA1111 = form?.backend === IMAGE_GEN_BACKENDS.A1111;
+  // Scheduler list (PG-3) — the A1111-dialect schedule-type catalog, one-shot
+  // cache fill per profile (the samplers-guard twin, dialect-gated: the
+  // schedulers route exists only on the A1111 family). Failure = empty
+  // options, no connectivity signal (the samplers fetch owns that).
+  useEffect(() => {
+    if (guardProfileId === null || !guardIsA1111) return;
+    if ((imageGen.schedulersByProfile[guardProfileId] ?? []).length === 0) {
+      void imageGen.fetchSchedulers(guardProfileId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
+    // fill per profile; imageGen actions are stable callbacks.
+  }, [guardProfileId, guardIsA1111]);
   const [hasAdetailer, setHasAdetailer] = useState(false);
   useEffect(() => {
     if (!guardIsA1111 || guardProfileId === null) {
@@ -1002,6 +1014,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const profileId = form.id;
   const models: ImageGenModelEntry[] = imageGen.modelsByProfile[profileId] ?? [];
   const samplers = imageGen.samplersByProfile[profileId] ?? [];
+  const schedulers = imageGen.schedulersByProfile[profileId] ?? [];
   // IG-CF12a: the A1111-family pane is a LOCAL control surface — the shared
   // status chip rides above the picker, driven by the sampler fetch signal
   // (`samplerStatusByProfile`), and an offline server greys out the whole
@@ -1440,6 +1453,31 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       ...samplers.map((sampler) => ({ id: sampler.name, label: sampler.name })),
                     ]}
                     onChange={(next) => setParam({ sampler: next === "" ? undefined : next })}
+                  />
+                </div>
+              )}
+              {/* Schedule type (PG-3) — the sampler's schedule, A1111
+                  dialect only (the route is dialect-gated; cloud backends
+                  have no scheduler surface). Empty = vendor default, the
+                  CF5 no-silent-defaults rule; the SAME bind routing as the
+                  sampler above (bound → overlay, unbound → profile
+                  defaults). Full-width cell, right under the sampler. */}
+              {isLocalBackend && (
+                <div className="min-w-0 sm:col-span-2">
+                  <label className={lblCls}>{t("image_gen_scheduler_label")}</label>
+                  <DropdownSelect
+                    value={params.scheduler ?? ""}
+                    triggerTestId="image-gen-field-scheduler"
+                    searchable={false}
+                    className="w-auto max-w-[320px]"
+                    options={[
+                      { id: "", label: t("image_gen_sampler_auto") },
+                      ...schedulers.map((scheduler) => ({
+                        id: scheduler.name,
+                        label: scheduler.label ?? scheduler.name,
+                      })),
+                    ]}
+                    onChange={(next) => setParam({ scheduler: next === "" ? undefined : next })}
                   />
                 </div>
               )}

@@ -40,13 +40,14 @@ import {
   listAllImageGenProfiles,
   listImageGenModels,
   listImageGenSamplers,
+  listImageGenSchedulers,
   listImageGenExtensions,
   getImageGenModelSettings,
   upsertImageGenModelSettings,
   type ImageGenModelEntry,
   type ImageGenProfileRecord,
 } from "../../api/image-gen-api.js";
-import type { ImageGenSamplerInfoValue, ImageGenModelSettingsOverlayValue } from "@vibe-tavern/api-contracts";
+import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue } from "@vibe-tavern/api-contracts";
 import {
   IMAGE_GEN_BACKENDS,
   IMAGE_GEN_PARAM_RANGES,
@@ -347,6 +348,7 @@ function ImageGenModelSettingsAccordion({
   const [adOpen, setAdOpen] = useState(false);
   const [overlay, setOverlay] = useState<ImageGenModelSettingsOverlayValue | null>(null);
   const [extensions, setExtensions] = useState<string[] | null>(null);
+  const [schedulers, setSchedulers] = useState<ImageGenSchedulerInfoValue[] | null>(null);
   const [saveError, setSaveError] = useState(false);
 
   // Overlay load — keyed by (profileId, modelId); null until first load.
@@ -386,6 +388,28 @@ function ImageGenModelSettingsAccordion({
     };
   }, [profileId, isA1111]);
 
+  // Scheduler list (PG-3) — the A1111-dialect schedule-type catalog for the
+  // dropdown next to the sampler; fetched on the accordion's own profile
+  // (the extensions-probe twin — failure = empty options, not an error).
+  useEffect(() => {
+    if (!isA1111) {
+      setSchedulers(null);
+      return;
+    }
+    let cancelled = false;
+    setSchedulers(null);
+    void listImageGenSchedulers(profileId)
+      .then((list) => {
+        if (!cancelled) setSchedulers(list ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setSchedulers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileId, isA1111]);
+
   const hasAdetailer = extensions !== null && hasAdetailerExtension(extensions);
 
   /** Merge a patch into the overlay and persist it (the overlay row is the
@@ -414,6 +438,7 @@ function ImageGenModelSettingsAccordion({
   const clipSkip = overlay.clipSkip;
   const seed = overlay.seed;
   const sampler = overlay.sampler;
+  const scheduler = overlay.scheduler;
   const adetailer = overlay.adetailer === true;
   const adetailerModel = overlay.adetailerModel;
 
@@ -444,6 +469,26 @@ function ImageGenModelSettingsAccordion({
                 onChange={(id) => commit(id === "" ? { sampler: undefined } : { sampler: id })}
                 disabled={disabled}
                 triggerTestId="image-gen-ft-overlay-sampler"
+              />
+            </div>
+          )}
+
+          {/* Schedule type (PG-3) — right under the sampler, A1111 dialect
+              only (the schedulers route is dialect-gated). Empty = the
+              server's own default; commits the overlay like every field
+              here (one source of truth with the pane). */}
+          {isA1111 && (
+            <div className="flex flex-col gap-1.5">
+              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_scheduler_label")}</span>
+              <DropdownSelect
+                value={scheduler ?? ""}
+                options={[
+                  { id: "", label: t("image_gen_sampler_auto") },
+                  ...(schedulers ?? []).map((s) => ({ id: s.name, label: s.label ?? s.name })),
+                ]}
+                onChange={(id) => commit(id === "" ? { scheduler: undefined } : { scheduler: id })}
+                disabled={disabled}
+                triggerTestId="image-gen-ft-overlay-scheduler"
               />
             </div>
           )}

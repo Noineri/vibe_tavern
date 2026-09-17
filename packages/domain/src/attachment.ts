@@ -71,8 +71,7 @@ export interface ImageGenSlotProvenance {
   /** The image-gen profile used (regeneration target). */
   profileId: string;
   /** Effective model id (override > profile; absent = vendor default). */
-  model?: string;
-  /** The FINAL assembled image prompt (IG-CF6): the exact text sent to the
+  model?: string;  /** The FINAL assembled image prompt (IG-CF6): the exact text sent to the
    *  backend — template + macros + chip edits + assist all resolved. Stamped
    *  at generation time so the slot can show what was asked (owner
    *  2026-09-15: "the model's prompt is nowhere visible; it should also be
@@ -87,6 +86,9 @@ export interface ImageGenSlotProvenance {
     steps?: number;
     cfgScale?: number;
     sampler?: string;
+    /** Schedule type (PG-3, A1111 dialect) — recorded when sent so a
+     *  regenerated slot reproduces the same schedule. */
+    scheduler?: string;
     seed?: number;
     clipSkip?: number;
   };

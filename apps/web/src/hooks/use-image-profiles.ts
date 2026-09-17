@@ -42,6 +42,7 @@ import type {
   ImageGenModelSettingsOverlayValue,
   ImageGenProfileValue,
   ImageGenSamplerInfoValue,
+  ImageGenSchedulerInfoValue,
   ImageGenUserSizeEntryValue,
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
@@ -56,6 +57,7 @@ import {
   listImageGenModels,
   listImageGenModelFavorites,
   listImageGenSamplers,
+  listImageGenSchedulers,
   removeImageGenModelFavorite,
   updateImageGenProfile,
   upsertImageGenModelSettings,
@@ -143,6 +145,12 @@ export function useImageProfiles(): {
   modelsByProfile: Record<string, ImageGenModelEntry[]>;
   /** Sampler cache per saved profile (capability-gated consumers, IG-12). */
   samplersByProfile: Record<string, ImageGenSamplerInfoValue[]>;
+  /** Scheduler (schedule type) cache per saved profile (PG-3, A1111 dialect
+   *  only): options data for the advanced-panel dropdown — deliberately NOT
+   *  wired into `samplerStatusByProfile` (a scheduler fetch failure is empty
+   *  options, not a connectivity conclusion — the samplers fetch already
+   *  owns that signal). */
+  schedulersByProfile: Record<string, ImageGenSchedulerInfoValue[]>;
   /** Local-server connectivity per saved profile, driven by sampler fetches
    *  (IG-CF12a): `checking` while in flight, `online` on success, `offline`
    *  on ANY fetch failure — connectivity is deliberately NOT routed through
@@ -171,6 +179,11 @@ export function useImageProfiles(): {
    *  per-profile `samplerStatusByProfile` as `offline` (IG-CF12a), never
    *  in the shared `error`. */
   fetchSamplers(id?: string): Promise<ImageGenSamplerInfoValue[] | null>;
+  /** Fetch + cache schedulers for a saved A1111-dialect profile (PG-3,
+   *  defaults to the editing one). Null = unknown profile or unsupported
+   *  backend; failures land ONLY in the cache as absent (never in the
+   *  shared `error` — see `schedulersByProfile`). */
+  fetchSchedulers(id?: string): Promise<ImageGenSchedulerInfoValue[] | null>;
   /** Shared fetch-by-endpoint model listing over the TRANSIENT form config
    *  (the STT draft twin): the just-typed endpoint/key ride inside the
    *  draft config; `profileId` lets the server inject the stored key when
@@ -224,6 +237,7 @@ export function useImageProfiles(): {
   const [headerMode, setHeaderMode] = useState<ImageGenHeaderMode>("view");
   const [modelsByProfile, setModelsByProfile] = useState<Record<string, ImageGenModelEntry[]>>({});
   const [samplersByProfile, setSamplersByProfile] = useState<Record<string, ImageGenSamplerInfoValue[]>>({});
+  const [schedulersByProfile, setSchedulersByProfile] = useState<Record<string, ImageGenSchedulerInfoValue[]>>({});
   const [samplerStatusByProfile, setSamplerStatusByProfile] = useState<Record<string, LocalConnectionStatus>>({});
   const [favorites, setFavorites] = useState<ImageGenModelFavoriteValue[]>([]);
   const [modelOverlay, setModelOverlayState] = useState<ImageGenModelSettingsOverlayValue | null>(null);
@@ -695,6 +709,25 @@ export function useImageProfiles(): {
     [form],
   );
 
+  const fetchSchedulers = useCallback(
+    async (id?: string): Promise<ImageGenSchedulerInfoValue[] | null> => {
+      const targetId = id ?? form?.id;
+      if (!targetId) return null;
+      // PG-3: options data only — a failure leaves the cache untouched
+      // (empty options) and draws NO connectivity conclusion; the samplers
+      // fetch owns `samplerStatusByProfile`.
+      try {
+        const schedulers = await listImageGenSchedulers(targetId);
+        if (schedulers === null) return null;
+        setSchedulersByProfile((prev) => ({ ...prev, [targetId]: schedulers }));
+        return schedulers;
+      } catch {
+        return null;
+      }
+    },
+    [form],
+  );
+
   const fetchDraftModels = useCallback(async (): Promise<ImageGenModelEntry[]> => {
     if (!form) throw new Error("no image-gen form");
     setError(null);
@@ -730,6 +763,7 @@ export function useImageProfiles(): {
     draftAutoKeyProviderName,
     modelsByProfile,
     samplersByProfile,
+    schedulersByProfile,
     samplerStatusByProfile,
     favorites,
     modelOverlay,
@@ -744,6 +778,7 @@ export function useImageProfiles(): {
     reload,
     fetchSavedModels,
     fetchSamplers,
+    fetchSchedulers,
     fetchDraftModels,
     starModel,
     unstarModel,

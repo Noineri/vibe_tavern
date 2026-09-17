@@ -82,6 +82,9 @@ export const imageGenDefaultParamsSchema = z.object({
   sampler: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
+  /** Schedule type (PG-3, A1111 dialect) — the sampler's schedule; empty
+   *  = vendor default. */
+  scheduler: z.string().optional(),
 });
 export type ImageGenDefaultParamsValue = z.infer<typeof imageGenDefaultParamsSchema>;
 
@@ -231,6 +234,14 @@ export const imageGenSamplerInfoSchema = z.object({
   aliases: z.array(z.string()).optional(),
 });
 export type ImageGenSamplerInfoValue = z.infer<typeof imageGenSamplerInfoSchema>;
+
+/** One scheduler entry (A1111-compat `GET /sdapi/v1/schedulers` shape:
+ *  `{name, label, aliases, options}` — PG-3). */
+export const imageGenSchedulerInfoSchema = z.object({
+  name: z.string(),
+  label: z.string().optional(),
+});
+export type ImageGenSchedulerInfoValue = z.infer<typeof imageGenSchedulerInfoSchema>;
 
 /** Live progress snapshot (A1111-compat `GET /sdapi/v1/progress`) — the
  *  adapter interface's `ImageGenProgressInfo` verbatim: `progress` is
@@ -388,6 +399,9 @@ export const imageGenModelSettingsOverlaySchema = z.object({
   steps: z.number().optional(),
   cfgScale: z.number().optional(),
   sampler: z.string().optional(),
+  /** Schedule type (PG-3, A1111 dialect) — the overlay twin of the
+   *  profile-default `scheduler`. */
+  scheduler: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
   /** ADetailer face-fix switch (IG-CF15/PG-4 v1) — A1111-family only. */

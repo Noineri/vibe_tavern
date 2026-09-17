@@ -115,6 +115,10 @@ const samplersMock = mock(async (id: string): Promise<ImageGenSampler[] | null> 
   if (id === "missing") return null;
   return [{ name: "Euler a", aliases: ["k_euler_a"] }, { name: "DPM++ 2M" }];
 });
+const schedulersMock = mock(async (id: string): Promise<Array<{ name: string; label?: string }> | null> => {
+  if (id === "missing") return null;
+  return [{ name: "karras", label: "Karras" }, { name: "sgm_uniform" }];
+});
 // IG-12b: select() quietly loads the profile's star-favorites — mocked
 // empty so the REAL fetch never runs in happy-dom (its network-block error
 // used to be masked by fetchSamplers' old setError(null) wipe, which
@@ -145,6 +149,7 @@ mock.module("../api/image-gen-api.js", () => ({
   deleteImageGenProfile: deleteMock,
   listImageGenModels: modelsMock,
   listImageGenSamplers: samplersMock,
+  listImageGenSchedulers: schedulersMock,
   listImageGenModelFavorites: favoritesMock,
   draftListImageGenModels: draftModelsMock,
 }));
@@ -429,6 +434,40 @@ describe("useImageProfiles — models / samplers / draft", () => {
     await hook!.fetchSamplers("missing");
     await waitFor(() => expect(hook?.error).toBe("Image-gen profile not found"));
     expect(hook?.samplerStatusByProfile.missing).toBe("unknown");
+  });
+
+  it("fetchSchedulers caches per profile (PG-3); failures leave the cache + error + connectivity status untouched", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "a1111" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+
+    const schedulers = await hook!.fetchSchedulers();
+    expect(schedulers?.length).toBe(2);
+    await waitFor(() => expect(hook?.schedulersByProfile.p1?.length).toBe(2));
+    // Options data only: no connectivity conclusion, no shared error.
+    expect(hook?.samplerStatusByProfile.p1).toBeUndefined();
+    expect(hook?.error).toBeNull();
+
+    // A failed fetch returns null and paints NOTHING anywhere.
+    schedulersMock.mockImplementationOnce(async () => {
+      throw new Error("Image-gen scheduler list failed: 503");
+    });
+    const failed = await hook!.fetchSchedulers();
+    expect(failed).toBeNull();
+    expect(hook?.error).toBeNull();
+    expect(hook?.samplerStatusByProfile.p1).toBeUndefined();
+
+    // Unknown profile: null, still no shared error (unlike fetchSamplers —
+    // a scheduler miss is not a load conclusion).
+    expect(await hook!.fetchSchedulers("missing")).toBeNull();
+    expect(hook?.error).toBeNull();
   });
 
   it("IG-21: draftAutoKeyProviderName mirrors the server cascade (saved name wins; drafts match by rule; keyless providers never match)", async () => {

@@ -22,7 +22,9 @@
  *   strings decoded in-process; no URLs, no expiry problem.
  * - model discovery: `GET /sdapi/v1/sd-models` → `{title, model_name,
  *   hash, sha256, filename, config}` per checkpoint.
- * - samplers: `GET /sdapi/v1/samplers` → `{name, aliases, options}`.
+ * - samplers: `GET /sdapi/v1/samplers` → `{name, aliases, options}`;
+ *   schedulers: `GET /sdapi/v1/schedulers` → `{name, label, aliases,
+ *   options}` (PG-3 — the schedule-type picker's live list).
  * - progress: `GET /sdapi/v1/progress` → `{progress: 0..1, eta_relative,
  *   state, current_image (b64 preview, needs show_progress_every_n_steps),
  *   textinfo}` — exposed as a single-fetch snapshot; the route layer owns
@@ -47,7 +49,7 @@
  *   default (true) applies; the card documents the double-reload tradeoff
  *   but no owner-approved VT value exists, and omitting keeps VT
  *   side-effect-free on shared local servers.
- * - `scheduler`, `batch_size`, `n_iter`, `restore_faces`, `tiling`,
+ * - `batch_size`, `n_iter`, `restore_faces`, `tiling`,
  *   `sampler_index` (legacy alias), and `script_name`/`script_args` are
  *   never sent — the v1 request interface carries no field for them and
  *   inventing values is banned. The ONE script surface is ADetailer
@@ -91,6 +93,7 @@ import type {
   ImageGenProbeResult,
   ImageGenProgressInfo,
   ImageGenSamplerInfo,
+  ImageGenSchedulerInfo,
 } from "../imagegen-backend.js";
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
@@ -291,6 +294,26 @@ function parseSamplerInfos(parsed: unknown): ImageGenSamplerInfo[] {
   return out;
 }
 
+/** Parse the `GET /sdapi/v1/schedulers` list (PG-3) — a top-level array
+ *  of `{name, label, aliases, options}` records mapped onto
+ *  `{name, label?}`; entries without a usable name are skipped. */
+function parseSchedulerInfos(parsed: unknown): ImageGenSchedulerInfo[] {
+  if (!Array.isArray(parsed)) return [];
+  const out: ImageGenSchedulerInfo[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const item = entry as Record<string, unknown>;
+    const name = item.name;
+    if (typeof name !== "string" || name.length === 0) continue;
+    const info: ImageGenSchedulerInfo = { name };
+    if (typeof item.label === "string" && item.label.length > 0) {
+      info.label = item.label;
+    }
+    out.push(info);
+  }
+  return out;
+}
+
 /** Parse the `GET /sdapi/v1/extensions` list — a top-level array of
  *  `{name, dirname, enabled, builtin}` records; `name` is the extension's
  *  directory identifier (the ADetailer probe's `adetailer`). Entries
@@ -388,6 +411,10 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       if (request.seed !== undefined) body.seed = request.seed;
       const sampler = setOrUndefined(request.sampler);
       if (sampler !== undefined) body.sampler_name = sampler;
+      // Schedule type (PG-3): the per-request txt2img override — sent ONLY
+      // when the ladder produced a value (empty = the server's default).
+      const scheduler = setOrUndefined(request.scheduler);
+      if (scheduler !== undefined) body.scheduler = scheduler;
       const model = setOrUndefined(request.model) ?? cfg.model;
       if (model !== undefined) {
         // Card: model switching accepts title, filename, or hash — verbatim.
@@ -485,6 +512,28 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       }
       const parsed: unknown = await response.json().catch(() => null);
       return parseSamplerInfos(parsed);
+    },
+
+    async listSchedulers(signal?: AbortSignal): Promise<ImageGenSchedulerInfo[]> {
+      const response = await fetchOrWrap(
+        cfg.fetch,
+        `${cfg.endpoint}/schedulers`,
+        {
+          method: "GET",
+          headers: buildSdApiHeaders(cfg.apiKey, false),
+          signal,
+        },
+        "scheduler list",
+      );
+      if (!response.ok) {
+        const excerpt = await readProviderErrorBody(response);
+        throw new A1111ImageGenError(
+          `A1111 scheduler list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          { status: response.status },
+        );
+      }
+      const parsed: unknown = await response.json().catch(() => null);
+      return parseSchedulerInfos(parsed);
     },
 
     async listExtensions(signal?: AbortSignal): Promise<string[]> {

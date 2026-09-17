@@ -64,6 +64,7 @@ function profile(id: string, name: string, capabilities: Caps, modelId?: string)
 let profilesStore: ProfileRecord[] = [];
 let modelsStore: Record<string, ModelEntry[]> = {};
 let samplersStore: Record<string, SamplerEntry[]> = {};
+let schedulersStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenSchedulerInfoValue[]> = {};
 let extensionsStore: Record<string, string[]> = {};
 let overlayStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue> = {};
 const upsertCalls: Array<{
@@ -77,6 +78,7 @@ mock.module("../../api/image-gen-api.js", () => ({
   listAllImageGenProfiles: () => Promise.resolve([...profilesStore]),
   listImageGenModels: (id: string) => Promise.resolve([...(modelsStore[id] ?? [])]),
   listImageGenSamplers: (id: string) => Promise.resolve([...(samplersStore[id] ?? [])]),
+  listImageGenSchedulers: (id: string) => Promise.resolve([...(schedulersStore[id] ?? [])]),
   listImageGenExtensions: (id: string) => Promise.resolve([...(extensionsStore[id] ?? [])]),
   getImageGenModelSettings: (id: string, modelId: string) =>
     Promise.resolve(overlayStore[`${id}/${modelId}`] ? { settings: overlayStore[`${id}/${modelId}`] } : null),
@@ -368,6 +370,29 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
       modelId: "sdxl-base",
       settings: { sampler: "Euler a", steps: 40 },
     });
+  });
+
+  it("scheduler dropdown (PG-3): A1111 dialect only, right under the sampler, commits the overlay", async () => {
+    profilesStore = [{ ...profile("ig2", "Forge", fullCaps()), backend: "a1111" }];
+    modelsStore = { ig2: [{ id: "sdxl-base", label: "SDXL Base" }] };
+    schedulersStore = { ig2: [{ name: "karras", label: "Karras" }, { name: "sgm_uniform" }] };
+    armChat("chat-sch1");
+
+    const view = await openAccordion("chat-sch1");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-scheduler")).toBeTruthy(),
+    );
+    await pickOption("image-gen-ft-overlay-scheduler", "Karras");
+    await waitFor(() => expect(upsertCalls.length).toBe(1));
+    expect(upsertCalls[0].settings).toEqual({ scheduler: "karras" });
+
+    // Cloud dialect: no scheduler surface — the control must not render.
+    cleanup();
+    upsertCalls.length = 0;
+    profilesStore = [profile("ig3", "Cloud", fullCaps())];
+    modelsStore = { ig3: [{ id: "m1", label: "SDXL Base" }] };
+    const view2 = await openAccordion("chat-sch1");
+    expect(within(view2.baseElement).queryByTestId("image-gen-ft-overlay-scheduler")).toBeNull();
   });
 
   it("ADetailer is hidden for non-A1111 backends and for servers without the extension", async () => {

@@ -64,6 +64,9 @@ export interface ImageGenGenerateRequest {
   steps?: number;
   cfgScale?: number;
   sampler?: string;
+  /** Schedule type (PG-3, A1111 dialect) — the sampler's schedule riding
+   *  the txt2img payload per request; absent = the server's own default. */
+  scheduler?: string;
   seed?: number;
   clipSkip?: number;
   /** ADetailer face-fix model (IG-CF15/PG-4 v1, A1111-family only):
@@ -180,6 +183,14 @@ export interface ImageGenSamplerInfo {
   aliases?: string[];
 }
 
+/** One scheduler entry (A1111-compat `GET /sdapi/v1/schedulers` shape:
+ *  `{name, label, aliases, options}` — PG-3; `label` is the display name
+ *  when the server provides one). */
+export interface ImageGenSchedulerInfo {
+  name: string;
+  label?: string;
+}
+
 /** Live progress (A1111-compat `GET /sdapi/v1/progress`): `progress` is
  *  0..1; `previewBase64` is the interim preview image when the server
  *  produces one. */
@@ -201,6 +212,10 @@ export interface ImageGenBackend {
   listModels(signal?: AbortSignal): Promise<ImageGenModelInfo[]>;
   /** Sampler listing — capability-gated (A1111-compat only in v1). */
   listSamplers?(signal?: AbortSignal): Promise<ImageGenSamplerInfo[]>;
+  /** Scheduler (schedule type) listing — A1111-dialect only in v1 (PG-3;
+   *  the extensions-arm dialect gate, not a capability flag: schedulers are
+   *  an A1111-compat surface, not a cross-vendor capability). */
+  listSchedulers?(signal?: AbortSignal): Promise<ImageGenSchedulerInfo[]>;
   /** Server-extension listing (A1111-compat only in v1) — extension dir
    *  names for feature detection (IG-CF15/PG-4: the ADetailer probe). */
   listExtensions?(signal?: AbortSignal): Promise<string[]>;

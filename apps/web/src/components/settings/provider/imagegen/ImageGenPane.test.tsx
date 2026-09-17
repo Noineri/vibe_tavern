@@ -219,6 +219,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     draftAutoKeyProviderName: null,
     modelsByProfile: {},
     samplersByProfile: {},
+    schedulersByProfile: {},
     samplerStatusByProfile: {},
     startEdit: mock(() => {}),
     startCreate: mock(() => {}),
@@ -230,6 +231,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     reload: mock(async () => {}),
     fetchSavedModels: mock(async () => null),
     fetchSamplers: mock(async () => null),
+    fetchSchedulers: mock(async () => null),
     fetchDraftModels: mock(async () => []),
     favorites: [],
     starModel: mock(async () => {}),
@@ -811,6 +813,41 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     const view2 = render(<ImageGenPane imageGen={openrouter} />);
     await openAdvanced(view2);
     expect(view2.queryByTestId("image-gen-field-sampler")).toBeNull();
+  });
+
+  it("scheduler dropdown renders ONLY for the A1111 dialect, feeds from schedulersByProfile, and routes through setParam (PG-3)", async () => {
+    const setForm = mock(() => {});
+    const a1111 = makeImageGen({
+      form: makeForm({
+        backend: IMAGE_GEN_BACKENDS.A1111,
+        capabilities: makeCaps({
+          supportsNegativePrompt: true,
+          supportsSamplers: true,
+          supportsSeed: true,
+          sizeSupport: { kind: "free" },
+          noApiKey: true,
+          supportsLiveProgress: true,
+        localExecution: true,
+        }),
+      }),
+      schedulersByProfile: { ig1: [{ name: "karras", label: "Karras" }, { name: "sgm_uniform" }] },
+      setForm,
+    });
+    const view = render(<ImageGenPane imageGen={a1111} />);
+    await openAdvanced(view);
+    await waitFor(() => expect(view.getByTestId("image-gen-field-scheduler")).toBeTruthy());
+    await pickOption(view, "image-gen-field-scheduler", "Karras");
+    await waitFor(() => expect(setForm).toHaveBeenCalled());
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch.defaultParams).toEqual({ scheduler: "karras" });
+    cleanup();
+
+    // OpenRouter: no scheduler surface on cloud dialects — the control must
+    // not render at all (accordion open, so the pin is about GATING).
+    const openrouter = makeImageGen({ setForm });
+    const view2 = render(<ImageGenPane imageGen={openrouter} />);
+    await openAdvanced(view2);
+    expect(view2.queryByTestId("image-gen-field-scheduler")).toBeNull();
   });
 
   it("advanced expand reveals steps/cfg/seed/clip-skip; seed stays EMPTY, sliders show anchors — nothing is a committed default (IG-CF13)", async () => {

@@ -613,6 +613,89 @@ describe("image-gen routes — extensions (A1111-dialect feature detection)", ()
   });
 });
 
+describe("image-gen routes — schedulers (PG-3, dialect-gated)", () => {
+  test("a1111 profile lists schedulers via /sdapi/v1/schedulers (name+label mapped, malformed skipped)", async () => {
+    let capturedUrl = "";
+    const { app } = await makeApp(async (input) => {
+      capturedUrl = String(input);
+      return new Response(
+        JSON.stringify([
+          { name: "Automatic", label: "Automatic", aliases: null, options: {} },
+          { name: "Karras", label: "Karras" },
+          { label: "no-name entry" },
+          "garbage",
+        ]),
+        { status: 200 },
+      );
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/schedulers`);
+    expect(res.status).toBe(200);
+    const list = (await res.json()) as Array<{ name: string; label?: string }>;
+    expect(list).toEqual([
+      { name: "Automatic", label: "Automatic" },
+      { name: "Karras", label: "Karras" },
+    ]);
+    expect(capturedUrl).toBe("http://127.0.0.1:7860/sdapi/v1/schedulers");
+  });
+
+  test("cloud profile → 400 scheduler listing not supported; unknown profile → 404", async () => {
+    const { app } = await makeApp(async () => modelsBody());
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.OpenRouter });
+
+    const gated = await app.request(`/api/image-gen/profiles/${id}/schedulers`);
+    expect(gated.status).toBe(400);
+    expect(((await gated.json()) as { error: string }).error).toBe("scheduler listing not supported");
+
+    const missing = await app.request("/api/image-gen/profiles/missing/schedulers");
+    expect(missing.status).toBe(404);
+  });
+
+  test("generate: the ladder's scheduler rides the txt2img body + the slot provenance; absent → never sent", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const { app, stores } = await makeApp(async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ images: [PNG_B64(0x61)] }), { status: 200 });
+    });
+    const chatId = await makeChat(stores);
+    const withScheduler = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      endpoint: "http://127.0.0.1:7860",
+      defaultParams: { scheduler: "karras" },
+    });
+    const without = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      endpoint: "http://127.0.0.1:7861",
+    });
+
+    const first = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: withScheduler, mode: "portrait", prompt: "p" }),
+    });
+    expect(first.status).toBe(200);
+    const second = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: without, mode: "portrait", prompt: "p" }),
+    });
+    expect(second.status).toBe(200);
+
+    // Wire: sent when the ladder produced a value, ABSENT otherwise (the
+    // no-silent-defaults rule — the server's own default applies).
+    expect(bodies[0]!.scheduler).toBe("karras");
+    expect("scheduler" in bodies[1]!).toBe(false);
+
+    // Provenance: params records the scheduler that was actually sent.
+    const slot = await stores.messages.getMessageById(((await first.json()) as { messageId: string }).messageId);
+    const attachments = JSON.parse(slot!.attachmentsJson ?? "[]") as Array<{
+      imageGen?: { params: Record<string, unknown> };
+    }>;
+    expect(attachments[0]!.imageGen!.params.scheduler).toBe("karras");
+  });
+});
+
 describe("image-gen routes — draft model listing (fetch-by-endpoint)", () => {
   test("form key rides through to the documented URL", async () => {
     let capturedUrl = "";

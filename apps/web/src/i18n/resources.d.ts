@@ -1230,6 +1230,7 @@ export default interface Resources {
     "image_gen_profiles_load_failed": "Failed to load image generation profiles",
     "image_gen_sampler_auto": "Auto (server default)",
     "image_gen_sampler_label": "Sampler",
+    "image_gen_scheduler_label": "Scheduler",
     "image_gen_section_placeholder": "Image generation profiles will appear here",
     "image_gen_section_title": "Image Generation",
     "image_gen_seed_label": "Seed",

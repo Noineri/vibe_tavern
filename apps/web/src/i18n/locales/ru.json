@@ -584,6 +584,7 @@
   "image_gen_bind_per_model_hint": "Если включено, размеры и параметры ниже применяются только к модели {model}; пустые поля наследуют базовые настройки профиля.",
   "image_gen_overlay_inherit_hint": "Пустые поля наследуют базовые настройки профиля.",
   "image_gen_sampler_label": "Семплер",
+  "image_gen_scheduler_label": "Планировщик",
   "image_gen_sampler_auto": "Авто (по умолчанию сервера)",
   "image_gen_advanced": "Дополнительно",
   "image_gen_steps_label": "Шаги",
