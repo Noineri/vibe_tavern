@@ -1074,6 +1074,14 @@ export interface ImageGenRuntimeApi {
 	 *  used here — a backend without the surface returns null too (route →
 	 *  400 "sampler listing not supported", the STT null contract). */
 	listImageGenProfileSamplers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerInfoValue[] | null>;
+	/** Live progress snapshot for a saved profile — capability-gated
+	 *  (supportsLiveProgress, A1111 dialect in v1). Null = unknown profile
+	 *  or unsupported backend (route → 404/400, the samplers ladder). */
+	getImageGenProfileProgress: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenProgressInfoValue | null>;
+	/** Ask the profile's local instance to cancel its current job
+	 *  (`POST /sdapi/v1/interrupt`, capability-gated as above). Null =
+	 *  unknown profile or unsupported backend; `true` = interrupt sent. */
+	interruptImageGenProfile: (id: string, signal?: AbortSignal) => Promise<boolean | null>;
 	listImageGenProfileExtensions: (id: string, signal?: AbortSignal) => Promise<string[] | null>;
 	/** Shared fetch-by-endpoint model listing over the TRANSIENT draft config
 	 *  (the STT draft twin): the form's current config plus optional

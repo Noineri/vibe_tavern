@@ -14,6 +14,8 @@ type GenerateCall = [string, GenerateImageGenInput, AbortSignal | undefined];
 const generateCalls: GenerateCall[] = [];
 const refreshCalls: string[] = [];
 const toastErrors: string[] = [];
+/** PG-2 interrupt calls (profileId per call). */
+const interruptCalls: string[] = [];
 
 /** Parked generate double (the fetch-abort twin): resolves/rejects on demand
  *  and rejects with a DOMException AbortError when the caller aborts —
@@ -55,6 +57,10 @@ mock.module("../api/image-gen-api.js", () => ({
     pendingByChat.set(chatId, parked);
     return parked.promise;
   },
+  interruptImageGenProfile: (id: string) => {
+    interruptCalls.push(id);
+    return Promise.resolve();
+  },
 }));
 
 mock.module("./api-actions/chat-actions.js", () => ({
@@ -82,6 +88,7 @@ afterEach(() => {
   generateCalls.length = 0;
   refreshCalls.length = 0;
   toastErrors.length = 0;
+  interruptCalls.length = 0;
   // The store is a module singleton shared across files in this worker —
   // leave every IG-17 draft map pristine for the next test/file.
   useImageGenChatStore.setState({ fineTuningDraftByChat: {} });
@@ -102,6 +109,8 @@ describe("image-gen chat store (IG-16)", () => {
     expect(useImageGenChatStore.getState().runningByChat["chat-a"]).toEqual({
       mode: "portrait",
       anchorMessageId: "m1",
+      profileId: "p1",
+      liveProgress: false,
     });
     pendingByChat.get("chat-a")!.resolve();
     await run;
@@ -191,5 +200,42 @@ describe("image-gen chat store — fine-tuning draft (IG-17)", () => {
     expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-k"]?.negative).toBe("");
     expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l"]?.prompt).toBe("");
     expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l"]?.negative).toBe("blur");
+  });
+
+  // ── PG-2: run metadata + server-side interrupt ─────────────────────
+
+  it("PG-2: the run state carries the profileId and the start-time liveProgress snapshot", async () => {
+    const run = useImageGenChatStore.getState().runGeneration("chat-m", input("portrait"), {
+      liveProgress: true,
+    });
+    await Promise.resolve(); // let the call start
+    expect(useImageGenChatStore.getState().runningByChat["chat-m"]).toEqual({
+      mode: "portrait",
+      anchorMessageId: "m1",
+      profileId: "p1",
+      liveProgress: true,
+    });
+    pendingByChat.get("chat-m")!.resolve();
+    await run;
+  });
+
+  it("PG-2: Stop on a live-progress run ALSO interrupts the server-side job", async () => {
+    const run = useImageGenChatStore.getState().runGeneration("chat-n", input("portrait"), {
+      liveProgress: true,
+    });
+    await Promise.resolve(); // let the call start
+    useImageGenChatStore.getState().abortGeneration("chat-n");
+    await run;
+    expect(interruptCalls).toEqual(["p1"]);
+    // The user-cancel stays silent (no toast over the abort path).
+    expect(toastErrors).toEqual([]);
+  });
+
+  it("PG-2: Stop on a cloud run (no live progress) never interrupts", async () => {
+    const run = useImageGenChatStore.getState().runGeneration("chat-o", input("portrait"));
+    await Promise.resolve(); // let the call start
+    useImageGenChatStore.getState().abortGeneration("chat-o");
+    await run;
+    expect(interruptCalls).toEqual([]);
   });
 });

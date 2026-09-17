@@ -25,15 +25,29 @@ import { create } from "zustand";
 import { toast } from "sonner";
 
 import { brandId, type ChatId } from "@vibe-tavern/domain";
-import { generateImageGen } from "../api/image-gen-api.js";
+import { generateImageGen, interruptImageGenProfile } from "../api/image-gen-api.js";
 import { fetchChatAction } from "./api-actions/chat-actions.js";
 import type { GenerateImageGenInput } from "@vibe-tavern/api-contracts";
 
 /** What the UI needs about a running generation (renderable projection —
- *  the AbortController stays in the module map below). */
+ *  the AbortController stays in the module map below). `profileId` powers
+ *  the PG-2 progress poll; `liveProgress` is the profile's capability
+ *  snapshot at START time — the abort path and the progress row gate on it
+ *  (a profile switch mid-run must not change what the in-flight run can
+ *  do). */
 export interface ImageGenRunState {
   mode: string;
   anchorMessageId: string;
+  profileId: string;
+  /** True when the run's profile was local-with-live-progress (A1111
+   *  dialect in v1) — Stop then ALSO interrupts the server-side job. */
+  liveProgress: boolean;
+}
+
+/** PG-2 run metadata supplied by the STARTER (it holds the effective
+ *  profile record with its capabilities). */
+export interface ImageGenRunMeta {
+  liveProgress: boolean;
 }
 
 /** The IG-17 chip's per-chat draft — every field optional/empty-able; empty
@@ -74,10 +88,13 @@ interface ImageGenChatActions {
   setActiveProfile(chatId: string, profileId: string | undefined): void;
   /** Fire ONE generation (guarded one-per-chat); resolves when the run
    *  settles. User-aborts are silent; failures toast the normalized server
-   *  message; success refreshes the chat through fetchChatAction. */
-  runGeneration(chatId: string, input: GenerateImageGenInput): Promise<void>;
+   *  message; success refreshes the chat through fetchChatAction. `meta`
+   *  carries the START-side capability snapshot (PG-2). */
+  runGeneration(chatId: string, input: GenerateImageGenInput, meta?: ImageGenRunMeta): Promise<void>;
   /** Abort the chat's in-flight generation (the Stop control). The pending
-   *  runGeneration settles silently via its AbortError path. */
+   *  runGeneration settles silently via its AbortError path. For a
+   * live-progress run this ALSO asks the local instance to cancel its
+   * server-side job (PG-2, fire-and-forget). */
   abortGeneration(chatId: string): void;
   /** Patch the chat's fine-tuning draft (creates it from EMPTY on first
    *  touch). */
@@ -109,14 +126,19 @@ export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
     set((s) => ({ activeProfileIdByChat: { ...s.activeProfileIdByChat, [chatId]: profileId } }));
   },
 
-  runGeneration: async (chatId, input) => {
+  runGeneration: async (chatId, input, meta) => {
     if (get().runningByChat[chatId] !== undefined || controllers.has(chatId)) return;
     const controller = new AbortController();
     controllers.set(chatId, controller);
     set((s) => ({
       runningByChat: {
         ...s.runningByChat,
-        [chatId]: { mode: input.mode, anchorMessageId: input.anchorMessageId ?? "" },
+        [chatId]: {
+          mode: input.mode,
+          anchorMessageId: input.anchorMessageId ?? "",
+          profileId: input.profileId,
+          liveProgress: meta?.liveProgress ?? false,
+        },
       },
     }));
     try {
@@ -155,6 +177,14 @@ export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
   },
 
   abortGeneration: (chatId) => {
+    // PG-2: a live-progress run cancels its server-side job too — the
+    // transport abort below is client-side only. Fire-and-forget: a dead
+    // interrupt (server already done, instance down) must not surface over
+    // the silent-cancel contract.
+    const run = get().runningByChat[chatId];
+    if (run?.liveProgress) {
+      void interruptImageGenProfile(run.profileId).catch(() => {});
+    }
     controllers.get(chatId)?.abort();
   },
 

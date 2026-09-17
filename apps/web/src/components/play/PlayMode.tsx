@@ -4,6 +4,7 @@ import { QueueManager } from "../chat/QueueManager.js";
 import { DicePanel } from "../chat/DicePanel.js";
 import { NarrationPlaylistPanel } from "../chat/NarrationPlaylistPanel.js";
 import { ImageGenFineTuningChip } from "../chat/ImageGenFineTuningChip.js";
+import { ImageGenProgressRow } from "../chat/ImageGenProgressRow.js";
 import { MessageAiEditorModal } from "../chat/MessageAiEditorModal.js";
 import { ExperienceLauncher } from "../experience/ExperienceLauncher.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -52,6 +53,11 @@ export function PlayMode() {
           {launcherChatId && (
             <div className="pointer-events-auto">
               <ImageGenFineTuningChip chatId={launcherChatId} />
+            </div>
+          )}
+          {launcherChatId && (
+            <div className="pointer-events-auto">
+              <ImageGenProgressRow chatId={launcherChatId} />
             </div>
           )}
         </div>

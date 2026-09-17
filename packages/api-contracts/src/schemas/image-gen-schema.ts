@@ -232,6 +232,18 @@ export const imageGenSamplerInfoSchema = z.object({
 });
 export type ImageGenSamplerInfoValue = z.infer<typeof imageGenSamplerInfoSchema>;
 
+/** Live progress snapshot (A1111-compat `GET /sdapi/v1/progress`) — the
+ *  adapter interface's `ImageGenProgressInfo` verbatim: `progress` is
+ *  0..1; `previewBase64` is the interim preview when the server produces
+ *  one (needs `show_progress_every_n_steps`). */
+export const imageGenProgressInfoSchema = z.object({
+  progress: z.number().min(0).max(1),
+  etaRelative: z.number().optional(),
+  state: z.string().optional(),
+  previewBase64: z.string().optional(),
+});
+export type ImageGenProgressInfoValue = z.infer<typeof imageGenProgressInfoSchema>;
+
 /** Body of the shared fetch-by-endpoint model listing (`POST
  *  /api/image-gen/draft/models`) — the image-gen twin of
  *  `draftSttModelsSchema`: a TRANSIENT draft request over the CURRENT form

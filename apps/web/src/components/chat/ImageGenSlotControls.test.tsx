@@ -167,7 +167,7 @@ describe("ImageGenSlotControls — regenerate-as-variant (IG-18a)", () => {
 
   it("disabled while a generation is in-flight (one-per-chat guard)", async () => {
     realChatStore.useImageGenChatStore.setState({
-      runningByChat: { "chat-1": { mode: "portrait", anchorMessageId: "m1" } },
+      runningByChat: { "chat-1": { mode: "portrait", anchorMessageId: "m1", profileId: "p1", liveProgress: false } },
     });
     const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
     const btn = await view.findByTestId("image-gen-slot-regenerate");

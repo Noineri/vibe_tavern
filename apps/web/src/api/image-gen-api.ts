@@ -24,6 +24,7 @@ import type {
   ImageGenModelSettingsOverlayValue,
   ImageGenModelSettingsValue,
   ImageGenProfileValue,
+  ImageGenProgressInfoValue,
   ImageGenSamplerInfoValue,
   ImageGenSamplerSet,
   ImageGenSamplerSetCreate,
@@ -151,6 +152,41 @@ export async function listImageGenExtensions(
   if (response.status === 404) return null;
   if (!response.ok) throw await rawError("Image-gen extension list", response);
   return (await response.json()) as string[];
+}
+
+/** One live progress snapshot for a saved local profile (PG-2): polled by
+ *  the chat surface ONLY while our own generate request is in flight
+ *  (A1111's progress is global-per-instance — cross-talk is ignored by
+ *  construction outside a run). Throws on transport/5xx; callers treat any
+ *  failure as "no data this tick". */
+export async function fetchImageGenProgress(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ImageGenProgressInfoValue | null> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/progress`),
+    { signal },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw await rawError("Image-gen progress", response);
+  return (await response.json()) as ImageGenProgressInfoValue;
+}
+
+/** Ask the profile's local instance to cancel its current job (PG-2,
+ *  `POST /sdapi/v1/interrupt` through our server). Fire-and-forget by
+ *  design: the transport abort is the user-visible cancel, this stops the
+ *  GPU work behind it. Throws on failure; the store swallows (a dead
+ *  interrupt must not mask the cancel). */
+export async function interruptImageGenProfile(id: string, signal?: AbortSignal): Promise<void> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/interrupt`),
+    { method: "POST", signal },
+  );
+  if (!response.ok && response.status !== 204) {
+    throw await rawError("Image-gen interrupt", response);
+  }
 }
 
 /** Shared fetch-by-endpoint model listing over the TRANSIENT draft config

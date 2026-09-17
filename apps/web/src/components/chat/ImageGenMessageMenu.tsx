@@ -232,7 +232,11 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
       if (draft.sampler !== undefined && draft.sampler !== "") overrides.sampler = draft.sampler;
       if (Object.keys(overrides).length > 0) input.overrides = overrides;
     }
-    void runGeneration(chatId, input);
+    void runGeneration(chatId, input, {
+      // PG-2: the START-time capability snapshot rides the run — Stop then
+      // interrupts the local server-side job, the progress row polls it.
+      liveProgress: effective.capabilities.supportsLiveProgress,
+    });
     onDone();
   };
 

@@ -15,6 +15,8 @@
  *   POST   /api/image-gen/profiles/:id/probe
  *   GET    /api/image-gen/profiles/:id/models
  *   GET    /api/image-gen/profiles/:id/samplers        (capability-gated)
+ *   GET    /api/image-gen/profiles/:id/progress        (capability-gated, PG-2)
+ *   POST   /api/image-gen/profiles/:id/interrupt       (capability-gated, PG-2)
  *   POST   /api/image-gen/draft/models                 (shared fetch-by-endpoint)
  *   POST   /api/chats/:chatId/image-gen/generate       (image message slot)
  *   POST   /api/image-gen/attachments/:assetId/promote-to-gallery
@@ -158,6 +160,39 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
           return c.json({ error: "sampler listing not supported" }, 400);
         }
         return c.json(samplers);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Live progress (capability-gated, PG-2) ───────────────────────
+    .get("/api/image-gen/profiles/:id/progress", async (c) => {
+      try {
+        const snapshot = await runtime.getImageGenProfileProgress(c.req.param("id"), c.req.raw.signal);
+        if (snapshot === null) {
+          // Unknown profile vs unsupported backend (the samplers ladder).
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "live progress not supported" }, 400);
+        }
+        return c.json(snapshot);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Interrupt (capability-gated, PG-2) ─────────────────────────────
+    .post("/api/image-gen/profiles/:id/interrupt", async (c) => {
+      try {
+        const sent = await runtime.interruptImageGenProfile(c.req.param("id"), c.req.raw.signal);
+        if (sent === null) {
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "interrupt not supported" }, 400);
+        }
+        return c.body(null, 204);
       } catch (error) {
         const mapped = backendErrorResponse(error);
         if (mapped) return c.json(mapped.body, mapped.status);

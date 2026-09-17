@@ -516,6 +516,68 @@ describe("image-gen routes — samplers (capability-gated)", () => {
   });
 });
 
+describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", () => {
+  test("a1111 profile surfaces the progress snapshot (mapped field names)", async () => {
+    let capturedUrl = "";
+    let capturedMethod = "";
+    const { app } = await makeApp(async (input, init) => {
+      capturedUrl = String(input);
+      capturedMethod = init?.method ?? "GET";
+      return new Response(
+        JSON.stringify({ progress: 0.42, eta_relative: 7.5, state: "sampling…", current_image: "cHJldmlldw==" }),
+        { status: 200 },
+      );
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/progress`);
+    expect(res.status).toBe(200);
+    const snapshot = (await res.json()) as {
+      progress: number;
+      etaRelative?: number;
+      state?: string;
+      previewBase64?: string;
+    };
+    expect(snapshot).toEqual({ progress: 0.42, etaRelative: 7.5, state: "sampling…", previewBase64: "cHJldmlldw==" });
+    expect(capturedUrl).toBe("http://127.0.0.1:7860/sdapi/v1/progress");
+    expect(capturedMethod).toBe("GET");
+  });
+
+  test("a1111 interrupt POSTs the documented endpoint and returns 204", async () => {
+    let capturedUrl = "";
+    let capturedMethod = "";
+    const { app } = await makeApp(async (input, init) => {
+      capturedUrl = String(input);
+      capturedMethod = init?.method ?? "GET";
+      return new Response(null, { status: 200 });
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/interrupt`, { method: "POST" });
+    expect(res.status).toBe(204);
+    expect(capturedUrl).toBe("http://127.0.0.1:7860/sdapi/v1/interrupt");
+    expect(capturedMethod).toBe("POST");
+  });
+
+  test("cloud profile → 400 not supported; unknown profile → 404 (both routes)", async () => {
+    const { app } = await makeApp(async () => modelsBody());
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.OpenRouter });
+
+    const gatedProgress = await app.request(`/api/image-gen/profiles/${id}/progress`);
+    expect(gatedProgress.status).toBe(400);
+    expect(((await gatedProgress.json()) as { error: string }).error).toBe("live progress not supported");
+
+    const gatedInterrupt = await app.request(`/api/image-gen/profiles/${id}/interrupt`, { method: "POST" });
+    expect(gatedInterrupt.status).toBe(400);
+    expect(((await gatedInterrupt.json()) as { error: string }).error).toBe("interrupt not supported");
+
+    const missingProgress = await app.request("/api/image-gen/profiles/missing/progress");
+    expect(missingProgress.status).toBe(404);
+    const missingInterrupt = await app.request("/api/image-gen/profiles/missing/interrupt", { method: "POST" });
+    expect(missingInterrupt.status).toBe(404);
+  });
+});
+
 describe("image-gen routes — extensions (A1111-dialect feature detection)", () => {
   test("a1111 profile lists extension names via /sdapi/v1/extensions", async () => {
     let capturedUrl = "";

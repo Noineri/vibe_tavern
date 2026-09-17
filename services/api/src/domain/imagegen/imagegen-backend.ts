@@ -209,6 +209,11 @@ export interface ImageGenBackend {
   generate(request: ImageGenGenerateRequest): Promise<ImageGenGenerateResult>;
   /** Local live progress polling (A1111-compat only in v1). */
   progress?(signal?: AbortSignal): Promise<ImageGenProgressInfo>;
+  /** Ask the local instance to cancel its current job (A1111-compat
+   *  `POST /sdapi/v1/interrupt`; A1111 dialect only in v1). Resolves on
+   *  acceptance — completion is observed through the progress endpoint /
+   *  the aborted request. */
+  interrupt?(signal?: AbortSignal): Promise<void>;
   /** Release any held resources. Idempotent-safe. */
   dispose(): Promise<void>;
 }

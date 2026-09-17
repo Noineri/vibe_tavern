@@ -472,6 +472,34 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     );
   };
 
+  getImageGenProfileProgress: ImageGenRuntimeApi["getImageGenProfileProgress"] = async (id, signal) => {
+    const profile = await this.stores.imageGen.getById(id);
+    if (!profile) return null;
+    // Static capability gate FIRST (the samplers capability-gate twin): a
+    // live-progress question must not depend on live config validity, and
+    // cloud dialects have no progress surface at all.
+    if (!profile.capabilities.supportsLiveProgress) return null;
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
+    // Interface-driven second gate: a backend without the progress method
+    // reports "not supported", not an error.
+    if (typeof backend.progress !== "function") return null;
+    const progress = backend.progress.bind(backend);
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "progress", (inner) => progress(inner));
+  };
+
+  interruptImageGenProfile: ImageGenRuntimeApi["interruptImageGenProfile"] = async (id, signal) => {
+    const profile = await this.stores.imageGen.getById(id);
+    if (!profile) return null;
+    // The same two-gate discipline as progress (the interrupt surface is
+    // the same A1111 dialect).
+    if (!profile.capabilities.supportsLiveProgress) return null;
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
+    if (typeof backend.interrupt !== "function") return null;
+    const interrupt = backend.interrupt.bind(backend);
+    await withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "interrupt", (inner) => interrupt(inner));
+    return true;
+  };
+
   draftListImageGenModels: ImageGenRuntimeApi["draftListImageGenModels"] = async (body: DraftImageGenModelsInput) => {
     const config: Record<string, unknown> = { ...body.config };
     const formKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";

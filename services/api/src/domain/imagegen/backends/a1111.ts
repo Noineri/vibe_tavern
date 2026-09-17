@@ -27,6 +27,8 @@
  *   state, current_image (b64 preview, needs show_progress_every_n_steps),
  *   textinfo}` — exposed as a single-fetch snapshot; the route layer owns
  *   any repetition (NO polling interval constant in code).
+ * - interrupt: `POST /sdapi/v1/interrupt` → empty 200 — cancels the
+ *   instance's CURRENT job (global-per-instance, no job id in v1).
  * - auth: keyless by default on localhost; `--api-auth "user:pass"` puts
  *   HTTP Basic on the API routes — the optional apiKey carries the
  *   "user:pass" string and becomes an `Authorization: Basic` header.
@@ -527,6 +529,26 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       }
       const parsed: unknown = await response.json().catch(() => null);
       return parseProgressInfo(parsed);
+    },
+
+    async interrupt(signal?: AbortSignal): Promise<void> {
+      const response = await fetchOrWrap(
+        cfg.fetch,
+        `${cfg.endpoint}/interrupt`,
+        {
+          method: "POST",
+          headers: buildSdApiHeaders(cfg.apiKey, false),
+          signal,
+        },
+        "interrupt",
+      );
+      if (!response.ok) {
+        const excerpt = await readProviderErrorBody(response);
+        throw new A1111ImageGenError(
+          `A1111 interrupt failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          { status: response.status },
+        );
+      }
     },
 
     async probe(signal?: AbortSignal): Promise<ImageGenProbeResult> {
