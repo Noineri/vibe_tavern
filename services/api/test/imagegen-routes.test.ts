@@ -121,6 +121,7 @@ interface ProfileSeed {
   modelId?: string;
   defaultParams?: Record<string, number | string>;
   modeSizePresets?: Record<string, { width?: number; height?: number }>;
+  userSizes?: Array<{ width: number; height: number; ratio?: string }>;
   llmAssistEnabled?: boolean;
   llmProviderProfileId?: string;
   llmModelId?: string;
@@ -139,6 +140,7 @@ async function seedProfile(app: ReturnType<typeof createImageGenRoutes>, seed: P
       ...(seed.modelId !== undefined ? { modelId: seed.modelId } : {}),
       defaultParams: seed.defaultParams ?? {},
       modeSizePresets: seed.modeSizePresets ?? {},
+      ...(seed.userSizes !== undefined ? { userSizes: seed.userSizes } : {}),
       ...(seed.llmAssistEnabled !== undefined ? { llmAssistEnabled: seed.llmAssistEnabled } : {}),
       ...(seed.llmProviderProfileId !== undefined ? { llmProviderProfileId: seed.llmProviderProfileId } : {}),
       ...(seed.llmModelId !== undefined ? { llmModelId: seed.llmModelId } : {}),
@@ -207,6 +209,42 @@ describe("image-gen routes — profile CRUD", () => {
     const delRes = await app.request("/api/image-gen/profiles/missing", { method: "DELETE" });
     expect(delRes.status).toBe(200);
     expect(((await delRes.json()) as { ok: boolean }).ok).toBe(true);
+  });
+
+  test("IG-20a: user size entries ride the CRUD round-trip (create carries, PATCH replaces, PATCH [] clears)", async () => {
+    const { app } = await makeApp();
+    const id = await seedProfile(app, {
+      userSizes: [
+        { width: 1152, height: 896, ratio: "9:7" },
+        { width: 1216, height: 896 },
+      ],
+    });
+
+    const getRes = await app.request(`/api/image-gen/profiles/${id}`);
+    expect(getRes.status).toBe(200);
+    const created = (await getRes.json()) as { userSizes?: Array<{ width: number; height: number; ratio?: string }> };
+    expect(created.userSizes).toEqual([
+      { width: 1152, height: 896, ratio: "9:7" },
+      { width: 1216, height: 896 },
+    ]);
+
+    const patchRes = await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userSizes: [{ width: 1024, height: 576, ratio: "16:9" }] }),
+    });
+    expect(patchRes.status).toBe(200);
+    const patched = (await patchRes.json()) as { userSizes?: unknown[] };
+    expect(patched.userSizes).toEqual([{ width: 1024, height: 576, ratio: "16:9" }]);
+
+    const clearRes = await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userSizes: [] }),
+    });
+    expect(clearRes.status).toBe(200);
+    const cleared = (await clearRes.json()) as { userSizes?: unknown[] };
+    expect(cleared.userSizes).toBeUndefined();
   });
 
   test("PATCH tri-state: apiKey \"\" clears the stored key; modelId null clears the pointer", async () => {
@@ -626,6 +664,34 @@ describe("image-gen routes — generate (image message slot)", () => {
     const errBody = (await res.json()) as { error: string };
     expect(errBody.error).toContain("999x999");
     expect(captured.calls).toBe(0);
+  });
+
+  test("IG-20a: a profile's user size entry extends the grid at generation (announced ratio on the wire)", async () => {
+    const captured: { url?: string; init?: RequestInit; calls: number } = { calls: 0 };
+    const { app, stores } = await makeApp(openRouterTransport(captured));
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      apiKey: "sk-own",
+      modelId: "gpt-image-2",
+      userSizes: [{ width: 1152, height: 896, ratio: "9:7" }],
+    });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: id,
+        mode: "portrait",
+        prompt: "p",
+        overrides: { width: 1152, height: 896 },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const wire = JSON.parse(String(captured.init?.body)) as { image_config?: { aspect_ratio: string } };
+    expect(wire.image_config).toEqual({ aspect_ratio: "9:7" });
+    const body = (await res.json()) as { width?: number; height?: number };
+    expect(body.width).toBe(1152);
+    expect(body.height).toBe(896);
   });
 
   test("upstream 500 → 502 through the route ladder", async () => {

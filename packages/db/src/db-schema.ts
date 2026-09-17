@@ -1743,6 +1743,7 @@ export const imageGenProfiles = sqliteTable('image_gen_profiles', {
   modelId: text('model_id'),
   defaultParamsJson: text('default_params_json').notNull().default('{}'),
   modeSizePresetsJson: text('mode_size_presets_json').notNull().default('{}'),
+  userSizesJson: text('user_sizes_json'),
   llmAssistEnabled: integer('llm_assist_enabled', { mode: 'boolean' }).notNull().default(false),
   llmProviderProfileId: text('llm_provider_profile_id'),
   llmModelId: text('llm_model_id'),

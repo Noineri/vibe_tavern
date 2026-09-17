@@ -1139,6 +1139,20 @@ export interface ImageGenModeSizePreset {
   height?: number;
 }
 
+/** User-added vendor-size entry (IG-20a): extends a vendor-set size table
+ *  with a pair the VENDOR announced but our static table lacks (owner
+ *  2026-09-14: the user enters what the vendor communicated until our table
+ *  catches up — the grid never invents values). `ratio` is required by
+ *  ratio-wire backends (OpenRouter's wire accepts only aspect-ratio strings;
+ *  its pixel grids do NOT reduce to them — 864×1184 is "3:4" upstream but
+ *  reduces to "27:37") and ignored by pixel-wire backends (the OpenAI-images
+ *  family sends "WxH" verbatim). */
+export interface ImageGenUserSizeEntry {
+  width: number;
+  height: number;
+  ratio?: string;
+}
+
 /** Size presets keyed by generation mode — only modes the user configured
  *  carry entries. */
 export type ImageGenModeSizePresets = Partial<Record<ImageGenerationMode, ImageGenModeSizePreset>>;
@@ -1168,6 +1182,9 @@ export interface ImageGenProfile {
   defaultParams: ImageGenDefaultParams;
   /** Per-mode size presets (width/height). */
   modeSizePresets: ImageGenModeSizePresets;
+  /** User-added vendor-size entries (IG-20a) — extend the vendor-set grid
+   *  until our static table catches up; absent/empty = table only. */
+  userSizes?: ImageGenUserSizeEntry[];
   /** LLM-assisted image-prompt writing (owner decision 7.3): explicit
    *  per-profile toggle; when on, the quiet pre-pass writes the image prompt
    *  using this LLM provider profile + model (saved on the profile). */

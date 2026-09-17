@@ -15,6 +15,7 @@ import type {
   ImageGenProfileId,
   ImageGenProfileLink,
   ImageGenTargetType,
+  ImageGenUserSizeEntry,
 } from '@vibe-tavern/domain';
 
 import type { AppDb } from '../db-connection.js';
@@ -68,6 +69,33 @@ function parseModeSizePresets(raw: string): ImageGenModeSizePresets {
     }
   }
   return presets;
+}
+
+/** User-added vendor-size entries (IG-20a) — tolerant read of the JSON
+ *  column: a missing/null column reads as "none" (pre-IG-20a rows), and
+ *  malformed members are dropped (forward-compat, the parseModeSizePresets
+ *  discipline: no crash, no junk). Unlike the object-shaped JSON columns,
+ *  this one stores an ARRAY, so parseJsonObject does not apply (it rejects
+ *  arrays by design) — the parse is local with the same tolerance. */
+function parseUserSizes(raw: string | null): ImageGenUserSizeEntry[] {
+  if (raw === null) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const entries: ImageGenUserSizeEntry[] = [];
+  for (const value of parsed) {
+    if (typeof value !== 'object' || value === null) continue;
+    const record = value as Record<string, unknown>;
+    if (typeof record.width !== 'number' || typeof record.height !== 'number') continue;
+    const entry: ImageGenUserSizeEntry = { width: record.width, height: record.height };
+    if (typeof record.ratio === 'string' && record.ratio !== '') entry.ratio = record.ratio;
+    entries.push(entry);
+  }
+  return entries;
 }
 
 /** Capability degrade: zero-capability + free sizes — conservative (the UI
@@ -204,6 +232,7 @@ export class ImageGenStore {
           modelId: input.modelId ?? null,
           defaultParamsJson: JSON.stringify(stripSecrets(input.defaultParams as Record<string, unknown>)),
           modeSizePresetsJson: JSON.stringify(stripSecrets(input.modeSizePresets as Record<string, unknown>)),
+          userSizesJson: input.userSizes !== undefined && input.userSizes.length > 0 ? JSON.stringify(input.userSizes) : null,
           llmAssistEnabled: input.llmAssistEnabled,
           llmProviderProfileId: input.llmProviderProfileId ?? null,
           llmModelId: input.llmModelId ?? null,
@@ -236,6 +265,9 @@ export class ImageGenStore {
     }
     if (patch.modeSizePresets !== undefined) {
       values.modeSizePresetsJson = JSON.stringify(stripSecrets(patch.modeSizePresets as Record<string, unknown>));
+    }
+    if (patch.userSizes !== undefined) {
+      values.userSizesJson = patch.userSizes.length > 0 ? JSON.stringify(patch.userSizes) : null;
     }
     if (patch.llmAssistEnabled !== undefined) values.llmAssistEnabled = patch.llmAssistEnabled;
     if (patch.llmProviderProfileId !== undefined) values.llmProviderProfileId = patch.llmProviderProfileId ?? null;
@@ -367,6 +399,8 @@ export class ImageGenStore {
   // ─── Internals ─────────────────────────────────────────────────────────────
 
   private mapRow(row: typeof imageGenProfiles.$inferSelect): ImageGenProfile {
+    // Parsed once — the spread below only reuses it.
+    const userSizes = parseUserSizes(row.userSizesJson);
     const profile: ImageGenProfile = {
       id: brandId<ImageGenProfileId>(row.id),
       name: row.name,
@@ -377,6 +411,7 @@ export class ImageGenStore {
       endpoint: row.endpoint,
       defaultParams: parseDefaultParams(row.defaultParamsJson),
       modeSizePresets: parseModeSizePresets(row.modeSizePresetsJson),
+      ...(userSizes.length > 0 ? { userSizes } : {}),
       llmAssistEnabled: row.llmAssistEnabled,
       capabilities: parseCapabilities(row.capabilitiesJson),
       sortOrder: row.sortOrder,

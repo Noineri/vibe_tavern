@@ -56,6 +56,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
       modelId: null,
       defaultParams: {},
       modeSizePresets: {},
+      userSizes: [],
       llmAssistEnabled: false,
       llmProviderProfileId: null,
       llmModelId: null,

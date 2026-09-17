@@ -102,6 +102,17 @@ export const imageGenModeSizePresetsSchema = z.partialRecord(
 );
 export type ImageGenModeSizePresetsValue = z.infer<typeof imageGenModeSizePresetsSchema>;
 
+/** User-added vendor-size entry (IG-20a) — a pair the vendor announced but
+ *  our static table lacks. Formally validated (positive integers, ratio
+ *  `N:N`); semantic fit stays fail-closed at the adapter seam (the backend
+ *  accepts a size only from its table ∪ the profile's entries). */
+export const imageGenUserSizeEntrySchema = z.object({
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  ratio: z.string().regex(/^\d+:\d+$/).optional(),
+});
+export type ImageGenUserSizeEntryValue = z.infer<typeof imageGenUserSizeEntrySchema>;
+
 // ─── Profile wire record ──────────────────────────────────────────────────────
 
 /** Full image-gen profile as served by the API — SECURITY PROJECTION of the
@@ -127,6 +138,8 @@ export const imageGenProfileSchema = z.object({
   modelId: z.string().optional(),
   defaultParams: imageGenDefaultParamsSchema,
   modeSizePresets: imageGenModeSizePresetsSchema,
+  /** User-added vendor-size entries (IG-20a); absent = none. */
+  userSizes: z.array(imageGenUserSizeEntrySchema).optional(),
   /** LLM-assisted image-prompt writing (explicit per-profile toggle). */
   llmAssistEnabled: z.boolean(),
   llmProviderProfileId: z.string().optional(),
@@ -155,6 +168,7 @@ export const createImageGenProfileSchema = z.object({
   modelId: z.string().optional(),
   defaultParams: imageGenDefaultParamsSchema,
   modeSizePresets: imageGenModeSizePresetsSchema,
+  userSizes: z.array(imageGenUserSizeEntrySchema).optional(),
   llmAssistEnabled: z.boolean().optional().default(false),
   llmProviderProfileId: z.string().optional(),
   llmModelId: z.string().optional(),
@@ -175,6 +189,7 @@ export const updateImageGenProfileSchema = z.object({
   modelId: z.string().nullable().optional(),
   defaultParams: imageGenDefaultParamsSchema.optional(),
   modeSizePresets: imageGenModeSizePresetsSchema.optional(),
+  userSizes: z.array(imageGenUserSizeEntrySchema).optional(),
   llmAssistEnabled: z.boolean().optional(),
   llmProviderProfileId: z.string().nullable().optional(),
   llmModelId: z.string().nullable().optional(),

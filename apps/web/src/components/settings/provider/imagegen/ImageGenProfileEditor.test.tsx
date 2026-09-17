@@ -74,6 +74,7 @@ function makeForm(overrides: Partial<ImageGenHook["form"]> = {}): NonNullable<Im
     modelId: null,
     defaultParams: {},
     modeSizePresets: {},
+    userSizes: [],
     llmAssistEnabled: false,
     llmProviderProfileId: null,
     llmModelId: null,

@@ -37,6 +37,7 @@
  */
 
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
+import type { ImageGenUserSizeEntry } from "@vibe-tavern/domain";
 
 import type {
   ImageGenAdapterConfig,
@@ -101,19 +102,35 @@ export const OPENROUTER_IMAGE_SIZES: ReadonlyMap<string, { ratio: string; width:
   ["1536x672", { ratio: "21:9", width: 1536, height: 672 }],
 ]);
 
-/** Map a complete W×H onto the documented grid. Throws
- *  {@link OpenRouterImageGenSizeError} for a size that is not documented —
- *  the adapter never guesses a nearby ratio. */
-function mapSizeToRatio(width: number, height: number): { ratio: string; width: number; height: number } {
+/** Map a complete W×H onto the documented grid — the static table first,
+ *  then the profile's user-added entries (IG-20a: a pair the vendor
+ *  announced but our table lacks). An entry carries the ratio string the
+ *  vendor published (pixel grids do NOT reduce to it upstream — 864×1184 is
+ *  "3:4", not "27:37"), so a ratio-less entry is a configuration error,
+ *  not a guess. Everything else stays the fail-closed mapping error (the
+ *  adapter never guesses a ratio). */
+function mapSizeToRatio(
+  width: number,
+  height: number,
+  userSizes: readonly ImageGenUserSizeEntry[],
+): { ratio: string; width: number; height: number } {
   const key = `${width}x${height}`;
   const entry = OPENROUTER_IMAGE_SIZES.get(key);
-  if (!entry) {
-    throw new OpenRouterImageGenSizeError(
-      `OpenRouter image generation has no documented aspect ratio for ${key} — ` +
-        `documented sizes: ${[...OPENROUTER_IMAGE_SIZES.keys()].join(", ")}`,
-    );
+  if (entry) return entry;
+  const user = userSizes.find((u) => u.width === width && u.height === height);
+  if (user) {
+    if (user.ratio === undefined || user.ratio === "") {
+      throw new OpenRouterImageGenSizeError(
+        `OpenRouter image generation has no aspect ratio for the custom size ${key} — ` +
+          `add the ratio the vendor announced to the profile's custom size entry`,
+      );
+    }
+    return { ratio: user.ratio, width, height };
   }
-  return entry;
+  throw new OpenRouterImageGenSizeError(
+    `OpenRouter image generation has no documented aspect ratio for ${key} — ` +
+      `documented sizes: ${[...OPENROUTER_IMAGE_SIZES.keys()].join(", ")}`,
+  );
 }
 
 // ─── Data-URL / download helpers ─────────────────────────────────────────────
@@ -136,6 +153,7 @@ interface OpenRouterImageGenConfig {
   endpoint: string;
   apiKey: string;
   model: string | undefined;
+  userSizes: readonly ImageGenUserSizeEntry[];
   fetch: typeof fetch;
 }
 
@@ -153,7 +171,7 @@ function parseConfig(config: ImageGenAdapterConfig): OpenRouterImageGenConfig {
     );
   }
   const model = config.model !== undefined && config.model.trim() !== "" ? config.model : undefined;
-  return { endpoint, apiKey, model, fetch: config.fetch ?? fetch };
+  return { endpoint, apiKey, model, userSizes: config.userSizes ?? [], fetch: config.fetch ?? fetch };
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
@@ -301,7 +319,7 @@ export const openRouterImageGenFactory = (config: ImageGenAdapterConfig): ImageG
       let imageConfig: { aspect_ratio: string } | undefined;
       let gridSize: { ratio: string; width: number; height: number } | undefined;
       if (request.width !== undefined && request.height !== undefined) {
-        gridSize = mapSizeToRatio(request.width, request.height);
+        gridSize = mapSizeToRatio(request.width, request.height, cfg.userSizes);
         imageConfig = { aspect_ratio: gridSize.ratio };
       }
 

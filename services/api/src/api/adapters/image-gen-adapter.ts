@@ -146,6 +146,7 @@ function toClientProfile(profile: ImageGenProfile): ImageGenProfileValue {
     hasStoredApiKey: typeof profile.apiKey === "string" && profile.apiKey !== "",
     defaultParams: profile.defaultParams,
     modeSizePresets: profile.modeSizePresets,
+    ...(profile.userSizes !== undefined && profile.userSizes.length > 0 ? { userSizes: profile.userSizes } : {}),
     llmAssistEnabled: profile.llmAssistEnabled,
     capabilities: profile.capabilities,
     sortOrder: profile.sortOrder,
@@ -222,6 +223,7 @@ function configFromProfile(
     endpoint: profile.endpoint,
     ...(profile.apiKey !== undefined && profile.apiKey !== "" ? { apiKey: profile.apiKey } : {}),
     ...(profile.modelId !== undefined && profile.modelId !== "" ? { model: profile.modelId } : {}),
+    ...(profile.userSizes !== undefined && profile.userSizes.length > 0 ? { userSizes: profile.userSizes } : {}),
     ...(transport !== undefined ? { fetch: transport } : {}),
   };
   return config;
@@ -272,6 +274,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       modelId: body.modelId,
       defaultParams: body.defaultParams,
       modeSizePresets: body.modeSizePresets,
+      userSizes: body.userSizes,
       llmAssistEnabled: body.llmAssistEnabled,
       llmProviderProfileId: body.llmProviderProfileId,
       llmModelId: body.llmModelId,
@@ -294,6 +297,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     if (body.modelId !== undefined) patch.modelId = body.modelId;
     if (body.defaultParams !== undefined) patch.defaultParams = body.defaultParams;
     if (body.modeSizePresets !== undefined) patch.modeSizePresets = body.modeSizePresets;
+    if (body.userSizes !== undefined) patch.userSizes = body.userSizes;
     if (body.llmAssistEnabled !== undefined) patch.llmAssistEnabled = body.llmAssistEnabled;
     if (body.llmProviderProfileId !== undefined) patch.llmProviderProfileId = body.llmProviderProfileId;
     if (body.llmModelId !== undefined) patch.llmModelId = body.llmModelId;

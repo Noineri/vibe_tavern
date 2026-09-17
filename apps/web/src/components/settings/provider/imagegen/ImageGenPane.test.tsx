@@ -171,6 +171,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     modelId: undefined,
     defaultParams: {},
     modeSizePresets: {},
+    userSizes: [],
     llmAssistEnabled: false,
     llmProviderProfileId: undefined,
     llmModelId: undefined,
@@ -194,6 +195,7 @@ function makeForm(overrides: Partial<NonNullable<ImageGenHook["form"]>> = {}): N
     modelId: null,
     defaultParams: {},
     modeSizePresets: {},
+    userSizes: [],
     llmAssistEnabled: false,
     llmProviderProfileId: null,
     llmModelId: null,
@@ -679,6 +681,95 @@ describe("ImageGenPane — per-mode sizes (IG-CF14: accordion + stepper ladder +
     await waitFor(() => expect(setForm).toHaveBeenCalled());
     const patch = (setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, unknown> };
     expect(patch.modeSizePresets).toEqual({ portrait: { width: 832, height: 1248 } });
+  });
+
+  it("custom size block (IG-20a): OpenRouter shows the ratio field, duplicates stay disabled, a complete entry adds to userSizes", async () => {
+    const setForm = mock(() => {});
+    const imageGen = makeImageGen({ setForm });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await act(async () => {
+      view.getByTestId("image-gen-sizes-header").click();
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-user-sizes")).toBeTruthy());
+    // OpenRouter's wire is ratio-native → the ratio field renders.
+    expect(view.getByTestId("image-gen-user-size-ratio")).toBeTruthy();
+    // Default draft 1024×1024 duplicates the vendor table → Add disabled.
+    expect((view.getByTestId("image-gen-user-size-add") as HTMLButtonElement).disabled).toBe(true);
+    await typeCell(view, "image-gen-user-size-width", "1152");
+    await typeCell(view, "image-gen-user-size-height", "896");
+    // Off-table pair but ratio still empty → still disabled.
+    expect((view.getByTestId("image-gen-user-size-add") as HTMLButtonElement).disabled).toBe(true);
+    const ratioInput = view.getByTestId("image-gen-user-size-ratio").querySelector("input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(ratioInput, { target: { value: "9:7" } });
+    });
+    await waitFor(() =>
+      expect((view.getByTestId("image-gen-user-size-add") as HTMLButtonElement).disabled).toBe(false),
+    );
+    await act(async () => {
+      view.getByTestId("image-gen-user-size-add").click();
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalled());
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as {
+      userSizes: Array<{ width: number; height: number; ratio?: string }>;
+    };
+    expect(patch.userSizes).toEqual([{ width: 1152, height: 896, ratio: "9:7" }]);
+  });
+
+  it("custom size block (IG-20a): pixel-wire backends have NO ratio field; a bare W×H entry adds", async () => {
+    const setForm = mock(() => {});
+    const imageGen = makeImageGen({
+      setForm,
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.OpenAiImages }),
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await act(async () => {
+      view.getByTestId("image-gen-sizes-header").click();
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-user-sizes")).toBeTruthy());
+    expect(view.queryByTestId("image-gen-user-size-ratio")).toBeNull();
+    await typeCell(view, "image-gen-user-size-width", "1216");
+    await typeCell(view, "image-gen-user-size-height", "896");
+    await waitFor(() =>
+      expect((view.getByTestId("image-gen-user-size-add") as HTMLButtonElement).disabled).toBe(false),
+    );
+    await act(async () => {
+      view.getByTestId("image-gen-user-size-add").click();
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalled());
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as {
+      userSizes: Array<{ width: number; height: number; ratio?: string }>;
+    };
+    expect(patch.userSizes).toEqual([{ width: 1216, height: 896 }]);
+  });
+
+  it("user entries (IG-20a) join the mode dropdowns with their ratio label and delete removes them", async () => {
+    const setForm = mock(() => {});
+    const imageGen = makeImageGen({
+      setForm,
+      form: makeForm({ userSizes: [{ width: 1152, height: 896, ratio: "9:7" }] }),
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await act(async () => {
+      view.getByTestId("image-gen-sizes-header").click();
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-user-sizes-list")).toBeTruthy());
+    expect(view.getByTestId("image-gen-user-sizes-list").textContent).toContain("1152×896");
+    expect(view.getByTestId("image-gen-user-sizes-list").textContent).toContain("9:7");
+    // The entry is pickable in a mode dropdown — label carries the ratio.
+    await pickOption(view, "image-gen-mode-size-portrait", "1152×896 · 9:7");
+    await waitFor(() => expect(setForm).toHaveBeenCalled());
+    const pickPatch = (setForm.mock.calls[0] as unknown[])[0] as { modeSizePresets: Record<string, unknown> };
+    expect(pickPatch.modeSizePresets).toEqual({ portrait: { width: 1152, height: 896 } });
+    // Delete drops the entry from the profile form.
+    await act(async () => {
+      view.getByTestId("image-gen-user-size-delete-1152x896").click();
+    });
+    await waitFor(() => expect(setForm.mock.calls.length).toBe(2));
+    const deletePatch = (setForm.mock.calls[1] as unknown[])[0] as {
+      userSizes: Array<{ width: number; height: number; ratio?: string }>;
+    };
+    expect(deletePatch.userSizes).toEqual([]);
   });
 });
 

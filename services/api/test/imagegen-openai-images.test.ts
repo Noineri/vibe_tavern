@@ -154,6 +154,37 @@ describe("openai-images adapter", () => {
       expect(calls).toHaveLength(0);
     });
 
+    it("IG-20a: a user entry goes on the wire VERBATIM (arbitrary W×H is the vendor-documented gpt-image surface)", async () => {
+      const { transport, calls } = makeTransport(() => b64Response([PNG_BYTES]));
+      const backend = openAiImagesFactory({
+        endpoint: ENDPOINT,
+        apiKey: API_KEY,
+        userSizes: [{ width: 1152, height: 896 }],
+        fetch: transport,
+      });
+      const result = await backend.generate({ prompt: "p", model: "gpt-image-2", width: 1152, height: 896 });
+      const body = sentJson(calls[0]);
+      expect(body.size).toBe("1152x896");
+      expect(result.width).toBe(1152);
+      expect(result.height).toBe(896);
+    });
+
+    it("IG-20a: a ratio field on the entry is ignored (pixel-wire backend) and entries never weaken the grid", async () => {
+      const { transport, calls } = makeTransport(() => b64Response([PNG_BYTES]));
+      const backend = openAiImagesFactory({
+        endpoint: ENDPOINT,
+        apiKey: API_KEY,
+        userSizes: [{ width: 1152, height: 896, ratio: "9:7" }],
+        fetch: transport,
+      });
+      await backend.generate({ prompt: "p", model: "gpt-image-2", width: 1152, height: 896 });
+      expect(sentJson(calls[0]).size).toBe("1152x896");
+      // Off table AND off entries → still the fail-closed error.
+      await expect(backend.generate({ prompt: "p", model: "gpt-image-2", width: 999, height: 999 })).rejects.toBeInstanceOf(
+        OpenAiImagesSizeError,
+      );
+    });
+
     it("omits size when no complete size is set (vendor auto default applies)", async () => {
       const { transport, calls } = makeTransport(() => b64Response([PNG_BYTES]));
       const backend = backendWith(transport);

@@ -950,6 +950,12 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // an accordion — six rows of steppers is reference material, not the
   // first thing you see when the pane opens).
   const [sizesOpen, setSizesOpen] = useState(false);
+  // IG-20a custom-size draft row (vendor-set backends only): W/H steppers
+  // walk the same ±128 ladder; the ratio field is OpenRouter-only (its wire
+  // takes aspect-ratio strings — pixel grids don't reduce to them).
+  const [draftWidth, setDraftWidth] = useState<number>(IMAGE_SIZE_DEFAULT.width);
+  const [draftHeight, setDraftHeight] = useState<number>(IMAGE_SIZE_DEFAULT.height);
+  const [draftRatio, setDraftRatio] = useState("");
 
   const form = imageGen.form;
   // Hook-order invariant: EVERY hook sits above the null guard — an early
@@ -1038,6 +1044,46 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   };
 
   const favoriteIds = new Set(imageGen.favorites.map((f) => f.modelId));
+
+  // ── IG-20a user size entries (vendor-set backends only) ──────────────
+  // The entries extend the vendor grid until our static table catches up
+  // (owner 2026-09-14: the user enters what the vendor announced). Shared
+  // by every mode dropdown — the vocabulary is backend-level, not per-mode.
+  const isVendorSet = caps.sizeSupport.kind === "vendor-set";
+  // OpenRouter's wire takes aspect-ratio STRINGS (its pixel grids do not
+  // reduce to the published ratios), so entries there MUST carry the ratio
+  // from the vendor announcement; the OpenAI-images family sends "WxH"
+  // verbatim and needs none.
+  const needsRatio = form.backend === IMAGE_GEN_BACKENDS.OpenRouter;
+  const userSizeOptions = form.userSizes.map((entry) => ({
+    id: `${entry.width}x${entry.height}`,
+    label:
+      entry.ratio !== undefined
+        ? `${entry.width}×${entry.height} · ${entry.ratio}`
+        : `${entry.width}×${entry.height}`,
+  }));
+  const knownSizeIds = new Set<string>(
+    caps.sizeSupport.kind === "vendor-set"
+      ? [...caps.sizeSupport.sizes, ...userSizeOptions.map((option) => option.id)]
+      : [],
+  );
+  const draftRatioOk = !needsRatio || /^\d+:\d+$/.test(draftRatio.trim());
+  const draftKey = `${draftWidth}x${draftHeight}`;
+  const canAddUserSize = !knownSizeIds.has(draftKey) && draftRatioOk;
+  const addUserSize = () => {
+    if (!canAddUserSize) return;
+    const ratio = needsRatio ? draftRatio.trim() : undefined;
+    imageGen.setForm({
+      userSizes: [
+        ...form.userSizes,
+        { width: draftWidth, height: draftHeight, ...(ratio !== undefined && ratio !== "" ? { ratio } : {}) },
+      ],
+    });
+    setDraftRatio("");
+  };
+  const removeUserSize = (index: number) => {
+    imageGen.setForm({ userSizes: form.userSizes.filter((_, i) => i !== index) });
+  };
 
   return (
     <div data-testid="image-gen-pane" className="mt-1 flex flex-col gap-4">
@@ -1142,6 +1188,15 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     options={[
                       { id: "", label: t("image_gen_size_auto") },
                       ...caps.sizeSupport.sizes.map((size) => ({ id: size, label: size })),
+                      // IG-20a: the user's vendor-announced entries extend
+                      // the grid (shared vocabulary across modes).
+                      ...userSizeOptions,
+                      // A stored pair outside table ∪ entries keeps its own
+                      // option so the trigger shows the truth (the free-row
+                      // twin — e.g. an entry deleted after a mode pinned it).
+                      ...(presetKey !== "" && !knownSizeIds.has(presetKey)
+                        ? [{ id: presetKey, label: presetKey.replace("x", "×") }]
+                        : []),
                     ]}
                     onChange={(next) => {
                       if (next === "") {
@@ -1226,6 +1281,91 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
               </div>
             );
           })}
+          {isVendorSet && (
+            <div
+              className="mt-1 flex flex-col gap-2 rounded-lg border border-border2 bg-s2 p-3"
+              data-testid="image-gen-user-sizes"
+            >
+              <div className="font-ui text-[13px] font-medium text-t1">{t("image_gen_user_sizes_title")}</div>
+              <div className="text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
+                {t("image_gen_user_sizes_hint")}
+              </div>
+              {form.userSizes.length > 0 && (
+                <div className="flex flex-col gap-1.5" data-testid="image-gen-user-sizes-list">
+                  {form.userSizes.map((entry, index) => (
+                    <div
+                      key={`${entry.width}x${entry.height}`}
+                      className="flex items-center gap-2"
+                      data-testid="image-gen-user-size-row"
+                    >
+                      <span className="font-ui text-[13px] text-t2">
+                        {entry.width}×{entry.height}
+                        {entry.ratio !== undefined ? ` · ${entry.ratio}` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        data-testid={`image-gen-user-size-delete-${entry.width}x${entry.height}`}
+                        aria-label={t("image_gen_user_size_delete", { size: `${entry.width}×${entry.height}` })}
+                        onClick={() => removeUserSize(index)}
+                        className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-s3 text-t2 transition-all hover:bg-s2 hover:text-t1"
+                      >
+                        <Icons.Close />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="w-[110px] shrink-0" data-testid="image-gen-user-size-width">
+                  <NumberInput
+                    value={draftWidth}
+                    min={IMAGE_SIZE_MIN_PX}
+                    max={IMAGE_SIZE_MAX_PX}
+                    step={IMAGE_SIZE_STEP_PX}
+                    aria-label={t("image_gen_user_size_width")}
+                    onChange={setDraftWidth}
+                  />
+                </div>
+                <span className="select-none font-ui text-[13px] text-t3" aria-hidden="true">×</span>
+                <div className="w-[110px] shrink-0" data-testid="image-gen-user-size-height">
+                  <NumberInput
+                    value={draftHeight}
+                    min={IMAGE_SIZE_MIN_PX}
+                    max={IMAGE_SIZE_MAX_PX}
+                    step={IMAGE_SIZE_STEP_PX}
+                    aria-label={t("image_gen_user_size_height")}
+                    onChange={setDraftHeight}
+                  />
+                </div>
+                {needsRatio && (
+                  <div className="w-[90px] shrink-0" data-testid="image-gen-user-size-ratio">
+                    <TextInput
+                      value={draftRatio}
+                      onChange={(e) => setDraftRatio(e.target.value)}
+                      aria-label={t("image_gen_user_size_ratio")}
+                      placeholder="5:4"
+                    />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  data-testid="image-gen-user-size-add"
+                  disabled={!canAddUserSize}
+                  title={
+                    !draftRatioOk
+                      ? t("image_gen_user_size_ratio_required")
+                      : knownSizeIds.has(draftKey)
+                        ? t("image_gen_user_size_duplicate")
+                        : undefined
+                  }
+                  onClick={addUserSize}
+                  className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
+                >
+                  {t("image_gen_user_size_add")}
+                </button>
+              </div>
+            </div>
+          )}
           </div>
         )}
       </section>

@@ -13,7 +13,7 @@
  * dialect (per IMAGE_GEN_LOCAL_BACKENDS_RESEARCH).
  */
 
-import type { ImageGenCapabilityFlags } from "@vibe-tavern/domain";
+import type { ImageGenCapabilityFlags, ImageGenUserSizeEntry } from "@vibe-tavern/domain";
 
 /** Factory config — resolved from the profile by the caller: the endpoint
  *  base URL, the write-only API key (absent for keyless backends), and the
@@ -28,6 +28,12 @@ export interface ImageGenAdapterConfig {
   apiKey?: string;
   /** Selected model id (level-2 picker); optional per the STT P8 pattern. */
   model?: string;
+  /** User-added vendor-size entries (IG-20a) — consulted AFTER the static
+   *  documented table at the size-mapping seam: table hit → wire value from
+   *  the table; user-entry hit → wire value from the entry (OpenRouter uses
+   *  its `ratio`, the OpenAI-images family uses "WxH" verbatim); anything
+   *  else stays the fail-closed mapping error. */
+  userSizes?: readonly ImageGenUserSizeEntry[];
   /** Transport injection seam — the fetch function every HTTP call goes
    *  through (generation POST, model list, server-side byte download of
    *  returned images). Defaults to the global fetch. Tests inject a double

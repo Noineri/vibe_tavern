@@ -147,6 +147,51 @@ describe("openrouter image-gen adapter", () => {
       expect(calls).toHaveLength(0);
     });
 
+    it("IG-20a: a user entry WITH its vendor-announced ratio maps off-table pixels onto the wire", async () => {
+      const { transport, calls } = makeTransport(() => completionsResponse([PNG_DATA_URL]));
+      const backend = openRouterImageGenFactory({
+        endpoint: ENDPOINT,
+        apiKey: API_KEY,
+        userSizes: [{ width: 1152, height: 896, ratio: "9:7" }],
+        fetch: transport,
+      });
+      const result = await backend.generate({ prompt: "p", model: "m", width: 1152, height: 896 });
+      const body = sentJson(calls[0]);
+      // The wire carries the ANNOUNCED ratio string verbatim — pixel grids
+      // never reduce to it upstream (864×1184 is "3:4", not "27:37").
+      expect(body.image_config).toEqual({ aspect_ratio: "9:7" });
+      expect(result.width).toBe(1152);
+      expect(result.height).toBe(896);
+    });
+
+    it("IG-20a: a user entry WITHOUT a ratio is a configuration error, never a guess (fail-closed)", async () => {
+      const { transport, calls } = makeTransport(() => completionsResponse([PNG_DATA_URL]));
+      const backend = openRouterImageGenFactory({
+        endpoint: ENDPOINT,
+        apiKey: API_KEY,
+        userSizes: [{ width: 1152, height: 896 }],
+        fetch: transport,
+      });
+      await expect(
+        backend.generate({ prompt: "p", model: "m", width: 1152, height: 896 }),
+      ).rejects.toBeInstanceOf(OpenRouterImageGenSizeError);
+      expect(calls).toHaveLength(0);
+    });
+
+    it("IG-20a: user entries never WEAKEN the grid — a pair outside table ∪ entries still fails closed", async () => {
+      const { transport, calls } = makeTransport(() => completionsResponse([PNG_DATA_URL]));
+      const backend = openRouterImageGenFactory({
+        endpoint: ENDPOINT,
+        apiKey: API_KEY,
+        userSizes: [{ width: 1152, height: 896, ratio: "9:7" }],
+        fetch: transport,
+      });
+      await expect(backend.generate({ prompt: "p", model: "m", width: 999, height: 999 })).rejects.toBeInstanceOf(
+        OpenRouterImageGenSizeError,
+      );
+      expect(calls).toHaveLength(0);
+    });
+
     it("omits image_config when no complete size is set (vendor default applies)", async () => {
       const { transport, calls } = makeTransport(() => completionsResponse([PNG_DATA_URL]));
       const backend = backendWith(transport);

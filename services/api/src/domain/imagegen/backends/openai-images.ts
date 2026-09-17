@@ -43,6 +43,7 @@
  */
 
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
+import type { ImageGenUserSizeEntry } from "@vibe-tavern/domain";
 
 import type {
   ImageGenAdapterConfig,
@@ -106,19 +107,27 @@ export const OPENAI_IMAGES_SIZES: ReadonlyMap<string, { width: number; height: n
   ["1024x1536", { width: 1024, height: 1536 }],
 ]);
 
-/** Map a complete W×H onto the documented grid. Throws
- *  {@link OpenAiImagesSizeError} for a size that is not documented — the
- *  adapter never sends a near-miss size. */
-function mapSizeToString(width: number, height: number): { size: string; width: number; height: number } {
+/** Map a complete W×H onto the documented grid — the static table first,
+ *  then the profile's user-added entries (IG-20a): a user pair goes on the
+ *  wire VERBATIM as the `size` string (the protocol's size field is
+ *  free-form "WxH"; arbitrary W×H is the vendor-documented gpt-image
+ *  surface — IG-6 — and custom endpoints document their own grids, so the
+ *  ENTRY is the vendor claim, not a guess). Everything else stays the
+ *  fail-closed mapping error (the adapter never sends a near-miss size). */
+function mapSizeToString(
+  width: number,
+  height: number,
+  userSizes: readonly ImageGenUserSizeEntry[],
+): { size: string; width: number; height: number } {
   const key = `${width}x${height}`;
   const entry = OPENAI_IMAGES_SIZES.get(key);
-  if (!entry) {
-    throw new OpenAiImagesSizeError(
-      `OpenAI Images has no documented size for ${key} — ` +
-        `documented sizes: ${[...OPENAI_IMAGES_SIZES.keys()].join(", ")}`,
-    );
-  }
-  return { size: key, ...entry };
+  if (entry) return { size: key, ...entry };
+  const user = userSizes.find((u) => u.width === width && u.height === height);
+  if (user) return { size: key, width, height };
+  throw new OpenAiImagesSizeError(
+    `OpenAI Images has no documented size for ${key} — ` +
+      `documented sizes: ${[...OPENAI_IMAGES_SIZES.keys()].join(", ")}`,
+  );
 }
 
 // ─── MIME sniffing ───────────────────────────────────────────────────────────
@@ -167,6 +176,7 @@ interface OpenAiImagesConfig {
   endpoint: string;
   apiKey: string;
   model: string | undefined;
+  userSizes: readonly ImageGenUserSizeEntry[];
   fetch: typeof fetch;
 }
 
@@ -190,7 +200,7 @@ function parseConfig(config: ImageGenAdapterConfig): OpenAiImagesConfig {
     );
   }
   const model = config.model !== undefined && config.model.trim() !== "" ? config.model : undefined;
-  return { endpoint, apiKey, model, fetch: config.fetch ?? fetch };
+  return { endpoint, apiKey, model, userSizes: config.userSizes ?? [], fetch: config.fetch ?? fetch };
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
@@ -328,7 +338,7 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
       // the two set) cannot map and is treated as unset.
       let gridSize: { size: string; width: number; height: number } | undefined;
       if (request.width !== undefined && request.height !== undefined) {
-        gridSize = mapSizeToString(request.width, request.height);
+        gridSize = mapSizeToString(request.width, request.height, cfg.userSizes);
       }
 
       // `response_format` is DALL-E-only on the card — GPT Image models

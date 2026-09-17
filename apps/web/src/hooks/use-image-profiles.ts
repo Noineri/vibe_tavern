@@ -39,6 +39,7 @@ import type {
   ImageGenModelSettingsOverlayValue,
   ImageGenProfileValue,
   ImageGenSamplerInfoValue,
+  ImageGenUserSizeEntryValue,
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
 import {
@@ -78,6 +79,8 @@ export interface ImageGenProfileForm {
   modelId: string | null;
   defaultParams: ImageGenDefaultParamsValue;
   modeSizePresets: ImageGenModeSizePresetsValue;
+  /** User-added vendor-size entries (IG-20a) — extend the vendor-set grid. */
+  userSizes: ImageGenUserSizeEntryValue[];
   llmAssistEnabled: boolean;
   llmProviderProfileId: string | null;
   llmModelId: string | null;
@@ -245,6 +248,7 @@ export function useImageProfiles(): {
       modelId: record.modelId ?? null,
       defaultParams: { ...record.defaultParams },
       modeSizePresets: { ...record.modeSizePresets },
+      userSizes: record.userSizes !== undefined ? record.userSizes.map((entry) => ({ ...entry })) : [],
       llmAssistEnabled: record.llmAssistEnabled,
       llmProviderProfileId: record.llmProviderProfileId ?? null,
       llmModelId: record.llmModelId ?? null,
@@ -411,6 +415,7 @@ export function useImageProfiles(): {
       modelId: null,
       defaultParams: {},
       modeSizePresets: {},
+      userSizes: [],
       llmAssistEnabled: false,
       llmProviderProfileId: null,
       llmModelId: null,
@@ -445,6 +450,7 @@ export function useImageProfiles(): {
           modelId: null,
           defaultParams: {},
           modeSizePresets: {},
+          userSizes: [],
           capabilities: capabilitySnapshot(nextBackend),
         };
       }
@@ -513,6 +519,7 @@ export function useImageProfiles(): {
           modelId: form.modelId ?? undefined,
           defaultParams: form.defaultParams,
           modeSizePresets: form.modeSizePresets,
+          ...(form.userSizes.length > 0 ? { userSizes: form.userSizes } : {}),
           llmAssistEnabled: form.llmAssistEnabled,
           llmProviderProfileId: form.llmProviderProfileId ?? undefined,
           llmModelId: form.llmModelId ?? undefined,
@@ -528,6 +535,7 @@ export function useImageProfiles(): {
           modelId: form.modelId,
           defaultParams: form.defaultParams,
           modeSizePresets: form.modeSizePresets,
+          userSizes: form.userSizes,
           llmAssistEnabled: form.llmAssistEnabled,
           llmProviderProfileId: form.llmProviderProfileId,
           llmModelId: form.llmModelId,

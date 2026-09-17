@@ -151,6 +151,38 @@ describe('ImageGenStore CRUD', () => {
 		expect(updated?.capabilities).toEqual(openaiImagesCapabilities);
 	});
 
+	test('IG-20a: user size entries persist on create, replace on update, and absent column reads as none', async () => {
+		const { store, db } = await setup();
+		// Absent on create → the field stays undefined (pre-IG-20a rows).
+		const plain = await store.create(baseInput());
+		expect(plain.userSizes).toBeUndefined();
+
+		const entries = [
+			{ width: 1152, height: 896, ratio: '9:7' },
+			{ width: 1216, height: 896 },
+		];
+		const created = await store.create(baseInput({ userSizes: entries }));
+		expect(created.userSizes).toEqual(entries);
+		expect((await store.getById(created.id))?.userSizes).toEqual(entries);
+
+		// PATCH replaces the whole list; an empty list clears the field.
+		const updated = await store.update(created.id, {
+			userSizes: [{ width: 1024, height: 576, ratio: '16:9' }],
+		});
+		expect(updated?.userSizes).toEqual([{ width: 1024, height: 576, ratio: '16:9' }]);
+		const cleared = await store.update(created.id, { userSizes: [] });
+		expect(cleared?.userSizes).toBeUndefined();
+
+		// A malformed column degrades to none (the forward-compat read rule).
+		await store.update(created.id, { userSizes: entries });
+		await db
+			.update(imageGenProfiles)
+			.set({ userSizesJson: '{broken' })
+			.where(eq(imageGenProfiles.id, created.id))
+			.run();
+		expect((await store.getById(created.id))?.userSizes).toBeUndefined();
+	});
+
 	test('listAll orders by sortOrder, then name; delete removes the row', async () => {
 		const { store } = await setup();
 		const a = await store.create(baseInput({ name: 'B-profile', sortOrder: 1 }));
