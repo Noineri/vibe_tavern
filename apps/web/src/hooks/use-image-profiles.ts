@@ -12,9 +12,10 @@
  *   instead of reading i18n + a hardcoded zero-setup backend: the default
  *   profile name and the first preset's backend are IG-11 pane concerns (the
  *   pane owns the preset table and the i18n keys; IG-10 adds no keys).
- * - No auto-key hint machinery: image-gen profiles have no provider
- *   endpoint-matching reuse in v1 (the wire record carries no
- *   autoKeyProviderName).
+ * - No auto-key hint machinery in v0 — SUPERSEDED by IG-21 (2026-09-17):
+ *   the wire record now carries `autoKeyProviderName` and the hook exposes
+ *   `draftAutoKeyProviderName` (server-decorated name wins; drafts fall to
+ *   the client mirror — imagegen-form-helpers.ts, the STT twin).
  * - Capability flags ride the form: the create contract requires the
  *   capability mirror, so `startCreate`/backend-switch snapshot it from the
  *   static `IMAGE_GEN_BACKEND_CAPABILITIES` table (imported from the domain
@@ -28,6 +29,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_BACKENDS, type ImageGenBackendType } from "@vibe-tavern/domain";
+import { matchImageGenAutoKeyProviderName, type ImageGenAutoKeyProviderCandidate } from "../components/settings/provider/imagegen/imagegen-form-helpers.js";
+import { listProviderProfiles } from "../api/provider-api.js";
 import type { LocalConnectionStatus } from "../components/shared/LocalConnectionStatus.js";
 import type {
   CreateImageGenProfileInput,
@@ -76,6 +79,11 @@ export interface ImageGenProfileForm {
   /** Mirror of the record's write-only flag — drives the key field's
    *  "saved" placeholder. */
   hasStoredApiKey: boolean;
+  /** Server-decorated auto-key hint (IG-21): the provider profile name
+   *  whose key the execution seam would take; null while an own key wins.
+   *  SAVED profiles only — drafts resolve through the client mirror
+   *  (draftAutoKeyProviderName below). */
+  autoKeyProviderName: string | null;
   modelId: string | null;
   defaultParams: ImageGenDefaultParamsValue;
   modeSizePresets: ImageGenModeSizePresetsValue;
@@ -126,6 +134,11 @@ export function useImageProfiles(): {
   error: string | null;
   saving: boolean;
   headerMode: ImageGenHeaderMode;
+  /** Auto-key hint for the LIVE form (IG-21, the STT twin): the provider
+   *  profile name whose key the server execution seam would take — the
+   *  server-decorated name for saved profiles, the client mirror for
+   *  drafts; null when nothing matches or an own key wins. */
+  draftAutoKeyProviderName: string | null;
   /** Model catalog cache per saved profile (IG-11's "Fetch models, cached"). */
   modelsByProfile: Record<string, ImageGenModelEntry[]>;
   /** Sampler cache per saved profile (capability-gated consumers, IG-12). */
@@ -216,6 +229,41 @@ export function useImageProfiles(): {
   const [modelOverlay, setModelOverlayState] = useState<ImageGenModelSettingsOverlayValue | null>(null);
   const [overlayDirty, setOverlayDirty] = useState(false);
   const [modelOverlaySetId, setModelOverlaySetIdState] = useState<string | null>(null);
+  // IG-21 auto-key mirror inputs: the keyful-provider list for the hint
+  //  rule (the use-stt-profiles twin — loaded once, hint-only projection,
+  //  no key material ever crosses the wire).
+  const [autoKeyProviders, setAutoKeyProviders] = useState<ImageGenAutoKeyProviderCandidate[]>([]);
+
+  // IG-21 auto-key mirror inputs load (the use-stt-profiles twin): the
+  //  keyful-provider list for the hint rule — loaded once, hint-only
+  //  projection, no key material ever crosses the wire.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const providers = await listProviderProfiles();
+        if (cancelled) return;
+        setAutoKeyProviders(providers.map((p) => ({ endpoint: p.endpoint, hasStoredApiKey: p.hasStoredApiKey, name: p.name })));
+      } catch (cause) {
+        console.debug("[image-gen] auto-key hint: provider list unavailable", cause);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // IG-21: resolve the auto-key hint for the LIVE form. A server-decorated
+  //  name (saved record) wins; drafts fall through to the client-side
+  //  mirror of the server hint rule (matchImageGenAutoKeyProviderName).
+  //  Only the cloud backends qualify (openrouter by vendor host,
+  //  openai-images by exact endpoint); a1111 never matches.
+  const draftAutoKeyProviderName =
+    form?.autoKeyProviderName !== null && form?.autoKeyProviderName !== undefined
+      ? form.autoKeyProviderName
+      : form === null
+        ? null
+        : matchImageGenAutoKeyProviderName(form.backend, form.endpoint, autoKeyProviders);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -245,6 +293,7 @@ export function useImageProfiles(): {
       // starts empty and shows the "saved" placeholder instead.
       apiKey: "",
       hasStoredApiKey: record.hasStoredApiKey,
+      autoKeyProviderName: record.autoKeyProviderName ?? null,
       modelId: record.modelId ?? null,
       defaultParams: { ...record.defaultParams },
       modeSizePresets: { ...record.modeSizePresets },
@@ -412,6 +461,7 @@ export function useImageProfiles(): {
       endpoint: "",
       apiKey: "",
       hasStoredApiKey: false,
+      autoKeyProviderName: null,
       modelId: null,
       defaultParams: {},
       modeSizePresets: {},
@@ -447,6 +497,7 @@ export function useImageProfiles(): {
           endpoint: "",
           apiKey: "",
           hasStoredApiKey: false,
+          autoKeyProviderName: null,
           modelId: null,
           defaultParams: {},
           modeSizePresets: {},
@@ -676,6 +727,7 @@ export function useImageProfiles(): {
     error,
     saving,
     headerMode,
+    draftAutoKeyProviderName,
     modelsByProfile,
     samplersByProfile,
     samplerStatusByProfile,

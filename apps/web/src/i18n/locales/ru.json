@@ -509,6 +509,7 @@
   "image_gen_segment_local": "Локальный сервер",
   "image_gen_field_endpoint": "Адрес сервера",
   "image_gen_key_optional_hint": "Необязательно — введите user:pass, только если сервер запущен с --api-auth",
+  "image_gen_key_from_provider_hint": "Ключ берётся из профиля провайдера «{name}» — введите свой ключ, чтобы переопределить.",
   "image_gen_keyless_note": "Без API-ключа (локальный сервер)",
   "image_gen_field_api_key_show": "Показать API ключ",
   "image_gen_field_api_key_hide": "Скрыть API ключ",

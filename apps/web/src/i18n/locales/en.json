@@ -507,6 +507,7 @@
   "image_gen_segment_local": "Local server",
   "image_gen_field_endpoint": "Endpoint",
   "image_gen_key_optional_hint": "Optional — enter user:pass only if the server was started with --api-auth",
+  "image_gen_key_from_provider_hint": "Key is taken from the \"{name}\" provider profile — type your own key here to override.",
   "image_gen_keyless_note": "No API key (local server)",
   "image_gen_field_api_key_show": "Show API key",
   "image_gen_field_api_key_hide": "Hide API key",

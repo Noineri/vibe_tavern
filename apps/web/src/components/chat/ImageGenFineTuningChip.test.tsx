@@ -49,6 +49,7 @@ function profile(id: string, name: string, capabilities: Caps, modelId?: string)
     backend: "openrouter",
     endpoint: "https://example.test",
     hasStoredApiKey: true,
+    autoKeyProviderName: null,
     modelId,
     defaultParams: {},
     modeSizePresets: {},

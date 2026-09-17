@@ -7,6 +7,8 @@ useDomEnv();
 // Safe pattern — real module first, spread, override only the functions the
 // hook touches (the use-stt-profiles harness this suite forks).
 const realImageGenApi = await import("../api/image-gen-api.js");
+// IG-21: the auto-key hint mirror's input seam — the provider list mock.
+const realProviderApi = await import("../api/provider-api.js");
 
 type ImageGenRecord = import("../api/image-gen-api.js").ImageGenProfileRecord;
 type ImageGenModelEntry = import("../api/image-gen-api.js").ImageGenModelEntry;
@@ -36,6 +38,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     presetId: undefined,
     endpoint: "http://127.0.0.1:7860",
     hasStoredApiKey: false,
+    autoKeyProviderName: null,
     modelId: undefined,
     defaultParams: {},
     modeSizePresets: {},
@@ -123,6 +126,16 @@ const draftModelsMock = mock(
     return [{ id: "draft-model", label: "Draft Model" }];
   },
 );
+// IG-21 auto-key mirror pool: one keyful provider on the OpenRouter vendor
+// host, one keyful on an exact OpenAI endpoint, one keyless on the vendor
+// host (the cascade never takes a keyless provider's "key"). Hint-only
+// projection shape — the use-stt-profiles harness twin (the hook maps the
+// same three fields).
+const providersListMock = mock(async (): Promise<Array<{ endpoint: string; hasStoredApiKey: boolean; name: string }>> => [
+  { endpoint: "https://openrouter.ai/api/v1", hasStoredApiKey: true, name: "OR main" },
+  { endpoint: "https://api.openai.com/v1", hasStoredApiKey: true, name: "OAi main" },
+  { endpoint: "https://openrouter.ai/api/v2", hasStoredApiKey: false, name: "Keyless OR" },
+]);
 
 mock.module("../api/image-gen-api.js", () => ({
   ...realImageGenApi,
@@ -134,6 +147,11 @@ mock.module("../api/image-gen-api.js", () => ({
   listImageGenSamplers: samplersMock,
   listImageGenModelFavorites: favoritesMock,
   draftListImageGenModels: draftModelsMock,
+}));
+
+mock.module("../api/provider-api.js", () => ({
+  ...realProviderApi,
+  listProviderProfiles: providersListMock,
 }));
 
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
@@ -411,6 +429,58 @@ describe("useImageProfiles — models / samplers / draft", () => {
     await hook!.fetchSamplers("missing");
     await waitFor(() => expect(hook?.error).toBe("Image-gen profile not found"));
     expect(hook?.samplerStatusByProfile.missing).toBe("unknown");
+  });
+
+  it("IG-21: draftAutoKeyProviderName mirrors the server cascade (saved name wins; drafts match by rule; keyless providers never match)", async () => {
+    // Saved record decorated by the server — the decorated name WINS even
+    // though the mirror pool would resolve a different provider.
+    store = [
+      makeRecord({
+        id: "p1",
+        name: "Saved OR",
+        backend: "openrouter",
+        endpoint: "https://openrouter.ai/api/v1",
+        autoKeyProviderName: "Decorated by server",
+      }),
+      makeRecord({ id: "p2", name: "Exact OAi", backend: "openai-images", endpoint: "https://api.openai.com/v1" }),
+      makeRecord({ id: "p3", name: "Wrong endpoint", backend: "openai-images", endpoint: "https://images.gate.test/v1" }),
+      makeRecord({ id: "p4", name: "Local", backend: "a1111", endpoint: "http://127.0.0.1:7860" }),
+    ];
+    let hook: any = null;
+    function Probe() {
+      hook = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(4));
+
+    hook!.select("p1");
+    await waitFor(() => expect(hook!.form?.id).toBe("p1"));
+    expect(hook!.draftAutoKeyProviderName).toBe("Decorated by server");
+
+    // Draft twin — openai-images by EXACT endpoint (OAi main), a wrong
+    // endpoint stays null, a1111 never matches.
+    hook!.select("p2");
+    await waitFor(() => expect(hook!.form?.id).toBe("p2"));
+    // p2 is saved but UNdecorated (the server hint is null in this record) —
+    // the client mirror resolves it from the provider pool.
+    expect(hook!.draftAutoKeyProviderName).toBe("OAi main");
+
+    hook!.select("p3");
+    await waitFor(() => expect(hook!.form?.id).toBe("p3"));
+    expect(hook!.draftAutoKeyProviderName).toBeNull();
+
+    hook!.select("p4");
+    await waitFor(() => expect(hook!.form?.id).toBe("p4"));
+    expect(hook!.draftAutoKeyProviderName).toBeNull();
+
+    // A brand-new draft on the vendor host resolves through the mirror too
+    // (openrouter vendor rule: first KEYFUL provider on the host wins — the
+    // keyless same-host row never matches).
+    hook!.startCreate("New card", "openrouter");
+    await waitFor(() => expect(hook!.form?.name).toBe("New card"));
+    hook!.setForm({ endpoint: "https://openrouter.ai/api/v1" });
+    expect(hook!.draftAutoKeyProviderName).toBe("OR main");
   });
 
   it("fetchDraftModels sends the live form config with the typed key inside it", async () => {

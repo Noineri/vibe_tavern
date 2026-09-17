@@ -11,6 +11,7 @@ import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { ImageGenApiKeyField } from "./ImageGenApiKeyField.js";
+import { ConnectionAutoKeyHint } from "../../../shared/connection-auto-key-hint.js";
 import { ConnectionProbeStatus } from "../../../shared/connection-probe-status.js";
 import { type ImageGenProfileForm, type useImageProfiles } from "../../../../hooks/use-image-profiles.js";
 
@@ -222,6 +223,16 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
           <div data-testid="image-gen-key-optional-hint" className="mt-1 font-ui text-[11px] text-t3">
             {t("image_gen_key_optional_hint")}
           </div>
+        )}
+        {/* IG-21 default-on key reuse (the STT SttProviderForm twin): a
+            provider profile whose endpoint auto-matches — typing an own key
+            above overrides it. Mirror of the server cascade
+            (imagegen-form-helpers.ts); a1111 never matches. */}
+        {!form.apiKey && !form.hasStoredApiKey && imageGen.draftAutoKeyProviderName !== null && (
+          <ConnectionAutoKeyHint
+            testId="image-gen-key-source-hint"
+            message={t("image_gen_key_from_provider_hint", { name: imageGen.draftAutoKeyProviderName })}
+          />
         )}
       </div>
 

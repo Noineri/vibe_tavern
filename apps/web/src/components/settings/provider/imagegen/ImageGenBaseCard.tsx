@@ -40,7 +40,10 @@ export function ImageGenBaseCard({ form, onEdit }: ImageGenBaseCardProps) {
   const label = backendLabelFor(form, t("custom"));
   const host = endpointHost(form);
   const keylessByDesign = form.backend === IMAGE_GEN_BACKENDS.A1111;
-  const hasKey = form.hasStoredApiKey || form.apiKey.trim() !== "";
+  // IG-21: an auto-matched key counts as ready (the SttBaseCard twin) —
+  //  the status row names its source; a1111 never matches.
+  const autoKeyName = form.autoKeyProviderName;
+  const hasKey = form.hasStoredApiKey || autoKeyName !== null || form.apiKey.trim() !== "";
 
   return (
     <div className="mb-6" data-testid="image-gen-base-card">
@@ -61,6 +64,11 @@ export function ImageGenBaseCard({ form, onEdit }: ImageGenBaseCardProps) {
               </>
             )}
             <span className="h-1 w-1 rounded-full bg-t4" />
+            {autoKeyName !== null && (
+              <span className="text-t3" data-testid="image-gen-key-source-hint">
+                {t("image_gen_key_from_provider_hint", { name: autoKeyName })}
+              </span>
+            )}
             {hasKey ? (
               <span className="flex items-center gap-1.5 text-success">
                 <Icons.Check /> {t("api_key_saved")}

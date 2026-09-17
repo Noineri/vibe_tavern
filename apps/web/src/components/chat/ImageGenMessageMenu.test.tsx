@@ -33,6 +33,7 @@ function profile(id: string, name: string, caps?: Partial<ProfileRecord["capabil
     backend: "openrouter",
     endpoint: "https://example.test",
     hasStoredApiKey: true,
+    autoKeyProviderName: null,
     defaultParams: {},
     modeSizePresets: {},
     llmAssistEnabled: false,

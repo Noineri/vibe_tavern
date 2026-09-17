@@ -299,6 +299,161 @@ describe("image-gen routes — probe", () => {
   });
 });
 
+describe("image-gen routes — IG-21 auto-key cascade", () => {
+  /** Seed a keyful LLM provider profile (the cascade's match pool). */
+  async function seedProvider(
+    stores: StoreContainer,
+    seed: { name: string; endpoint: string; apiKey: string },
+  ): Promise<void> {
+    await stores.providers.create({
+      name: seed.name,
+      providerPreset: "custom",
+      endpoint: seed.endpoint,
+      apiKey: seed.apiKey,
+    });
+  }
+
+  test("keyless openrouter profile + keyful provider on the vendor host → generation rides the provider key", async () => {
+    const captured: { init?: RequestInit; calls: number } = { calls: 0 };
+    const { app, stores } = await makeApp(openRouterTransport(captured));
+    await seedProvider(stores, { name: "OR main", endpoint: "https://openrouter.ai/api/v1", apiKey: "sk-provider" });
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      endpoint: "https://openrouter.ai/api/v1",
+      modelId: "gpt-image-2",
+      modeSizePresets: { portrait: { width: 1024, height: 1024 } },
+    });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p" }),
+    });
+    expect(res.status).toBe(200);
+    const auth = (captured.init?.headers as Record<string, string> | undefined)?.["Authorization"];
+    expect(auth).toBe("Bearer sk-provider");
+  });
+
+  test("own key wins over the auto-match (the provider key never rides)", async () => {
+    const captured: { init?: RequestInit; calls: number } = { calls: 0 };
+    const { app, stores } = await makeApp(openRouterTransport(captured));
+    await seedProvider(stores, { name: "OR main", endpoint: "https://openrouter.ai/api/v1", apiKey: "sk-provider" });
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      endpoint: "https://openrouter.ai/api/v1",
+      apiKey: "sk-own",
+      modelId: "gpt-image-2",
+      modeSizePresets: { portrait: { width: 1024, height: 1024 } },
+    });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p" }),
+    });
+    expect(res.status).toBe(200);
+    const auth = (captured.init?.headers as Record<string, string> | undefined)?.["Authorization"];
+    expect(auth).toBe("Bearer sk-own");
+  });
+
+  test("keyless profile with no matching provider → today's keyless error (fail-closed)", async () => {
+    const { app, stores } = await makeApp(async () => new Response("unused", { status: 200 }));
+    await seedProvider(stores, { name: "Elsewhere", endpoint: "https://api.other-vendor.test/v1", apiKey: "sk-provider" });
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, { modelId: "gpt-image-2" });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p" }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("`apiKey` is required");
+  });
+
+  test("openai-images: exact endpoint match auto-keys; a different endpoint stays keyless", async () => {
+    const captured: { init?: RequestInit; calls: number } = { calls: 0 };
+    const { app, stores } = await makeApp(async (input, init) => {
+      captured.init = init;
+      const url = String(input);
+      if (url.endsWith("/images/generations")) {
+        return new Response(JSON.stringify({ data: [{ b64_json: PNG_B64(0x51) }] }), { status: 200 });
+      }
+      return new Response(PNG_BYTES(0x51), { status: 200, headers: { "Content-Type": "image/png" } });
+    });
+    await seedProvider(stores, { name: "OAi main", endpoint: "https://api.openai.com/v1", apiKey: "sk-provider" });
+    const chatId = await makeChat(stores);
+    const matched = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.OpenAiImages,
+      endpoint: "https://api.openai.com/v1",
+      modelId: "gpt-image-2",
+      modeSizePresets: { portrait: { width: 1024, height: 1024 } },
+    });
+
+    const ok = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: matched, mode: "portrait", prompt: "p" }),
+    });
+    expect(ok.status).toBe(200);
+    const auth = (captured.init?.headers as Record<string, string> | undefined)?.["Authorization"];
+    expect(auth).toBe("Bearer sk-provider");
+
+    // Same backend, DIFFERENT endpoint — the openai-compat rule is EXACT:
+    // no match, fail closed with the backend's auth config error.
+    const elsewhere = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.OpenAiImages,
+      endpoint: "https://images.other-gateway.test/v1",
+      modelId: "gpt-image-2",
+      modeSizePresets: { portrait: { width: 1024, height: 1024 } },
+    });
+    const denied = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: elsewhere, mode: "portrait", prompt: "p" }),
+    });
+    expect(denied.status).toBe(400);
+    expect(((await denied.json()) as { error: string }).error).toContain("`apiKey` is required");
+  });
+
+  test("wire hint: keyless openrouter profile names the provider; own-key and a1111 stay null", async () => {
+    const { app, stores } = await makeApp();
+    await seedProvider(stores, { name: "OR main", endpoint: "https://openrouter.ai/api/v1", apiKey: "sk-provider" });
+    const keyless = await seedProfile(app, { endpoint: "https://openrouter.ai/api/v1" });
+    const ownKey = await seedProfile(app, { endpoint: "https://openrouter.ai/api/v1", apiKey: "sk-own" });
+    const local = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+
+    const res = await app.request("/api/image-gen/profiles/all");
+    expect(res.status).toBe(200);
+    const list = (await res.json()) as Array<{ id: string; autoKeyProviderName: string | null }>;
+    const byId = new Map(list.map((p) => [p.id, p.autoKeyProviderName]));
+    expect(byId.get(keyless)).toBe("OR main");
+    expect(byId.get(ownKey)).toBeNull();
+    expect(byId.get(local)).toBeNull();
+  });
+
+  test("draft models: a keyless openrouter draft auto-matches the provider key", async () => {
+    const captured: { init?: RequestInit; calls: number } = { calls: 0 };
+    const { app, stores } = await makeApp(async (_input, init) => {
+      captured.init = init;
+      return modelsBody();
+    });
+    await seedProvider(stores, { name: "OR main", endpoint: "https://openrouter.ai/api/v1", apiKey: "sk-provider" });
+
+    const res = await app.request("/api/image-gen/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: IMAGE_GEN_BACKENDS.OpenRouter,
+        config: { endpoint: "https://openrouter.ai/api/v1", model: "gpt-image-2" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const auth = (captured.init?.headers as Record<string, string> | undefined)?.["Authorization"];
+    expect(auth).toBe("Bearer sk-provider");
+  });
+});
+
 describe("image-gen routes — live model discovery", () => {
   test("catalog with enrichment; Authorization from the stored key; unknown profile → 404", async () => {
     let capturedAuth: string | undefined;

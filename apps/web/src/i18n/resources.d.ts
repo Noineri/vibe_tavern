@@ -1182,6 +1182,7 @@ export default interface Resources {
     "image_gen_free_hint": "custom prompt required",
     "image_gen_generating": "Generating…",
     "image_gen_height_label": "Height",
+    "image_gen_key_from_provider_hint": "Key is taken from the \"{name}\" provider profile — type your own key here to override.",
     "image_gen_key_optional_hint": "Optional — enter user:pass only if the server was started with --api-auth",
     "image_gen_keyless_note": "No API key (local server)",
     "image_gen_mode_character": "Character",

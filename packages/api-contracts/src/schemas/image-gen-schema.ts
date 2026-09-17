@@ -134,6 +134,11 @@ export const imageGenProfileSchema = z.object({
   endpoint: z.string().min(1),
   /** True when the typed api_key column holds a non-empty key. */
   hasStoredApiKey: z.boolean(),
+  /** Auto-key hint (IG-21, the TTS/STT `autoKeyProviderName` twin): the
+   *  provider profile name whose key auto-matches at the execution seam —
+   *  UI hint only; the key itself never crosses the boundary. Own key wins
+   *  (null when the profile has one); a1111 is local/keyless (always null). */
+  autoKeyProviderName: z.string().nullable(),
   /** Selected model (level-2 outer setting; may be unset on a fresh card). */
   modelId: z.string().optional(),
   defaultParams: imageGenDefaultParamsSchema,

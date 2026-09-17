@@ -7,11 +7,18 @@
  * projection semantics (the secret lives in the typed `apiKey` column, never
  * in a JSON blob), same write-only tri-state on update.
  *
- * KEY RESOLUTION: image-gen has NO auto-key cascade in v1 (the STT/TTS
- * endpoint+vendor auto-match is documented STT/TTS behavior; the image-gen
- * design carries no equivalent rule) — the profile's OWN typed key is the
- * only source, and a keyless profile passes through to the backend factory
- * which surfaces whatever auth error applies (A1111 is keyless by default).
+ * KEY RESOLUTION (IG-21, owner decision 2026-09-15 — the STT/TTS auto-key
+ * mechanism reused): a profile WITHOUT its own stored key auto-matches at
+ * the execution seam — **openrouter**: the first keyful LLM provider whose
+ * endpoint lives on the OpenRouter vendor host; **openai-images (Custom
+ * cloud)**: exact normalized-endpoint match over keyful LLM providers (the
+ * openai-compat rule). a1111 is local/keyless (out of scope). The profile's
+ * OWN typed key always overrides; a keyless no-match profile passes through
+ * to the backend factory which surfaces whatever auth error applies. The
+ * wire records carry the same hint the STT editor shows ("key will be taken
+ * from profile X") via decorateAutoKey — two mirrors, one rule (the STT
+ * discipline: the client mirror in imagegen-form-helpers.ts must stay in
+ * lockstep with autoMatchImageGenKey below).
  *
  * The three backend adapters self-register via side-effect imports here
  * (protocol-registry pattern, the stt-adapter twin) — importing this module
@@ -144,6 +151,7 @@ function toClientProfile(profile: ImageGenProfile): ImageGenProfileValue {
     backend: profile.backend,
     endpoint: profile.endpoint,
     hasStoredApiKey: typeof profile.apiKey === "string" && profile.apiKey !== "",
+    autoKeyProviderName: null,
     defaultParams: profile.defaultParams,
     modeSizePresets: profile.modeSizePresets,
     ...(profile.userSizes !== undefined && profile.userSizes.length > 0 ? { userSizes: profile.userSizes } : {}),
@@ -213,8 +221,8 @@ async function assertImageGenSetNameAvailable(
 }
 
 /** Adapter config from a stored profile: the typed key is injected
- *  SERVER-SIDE (own-key-only resolution, no auto-match in v1) — the secret
- *  never crosses the API boundary. */
+ *  SERVER-SIDE (own-key resolution) — the secret never crosses the API
+ *  boundary. */
 function configFromProfile(
   profile: ImageGenProfile,
   transport?: typeof fetch,
@@ -229,11 +237,78 @@ function configFromProfile(
   return config;
 }
 
+// ─── IG-21 auto-key cascade (the stt-adapter twin) ──────────────────────
+
+/** Endpoint normalization for auto-matching: scheme-tolerant (a bare host
+ *  gets https://), trailing slashes collapsed, case-insensitive host. Copy
+ *  of the stt-adapter/tts-adapter helper (kept local; not exported from
+ *  there). Client mirror: normalizeImageGenEndpoint in
+ *  apps/web/…/imagegen/imagegen-form-helpers.ts — keep in lockstep. */
+function normalizeEndpoint(raw: string): string {
+  let value = raw.trim();
+  if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
+  return value.replace(/\/+$/, "").toLowerCase();
+}
+
+/** Vendor host for the OpenRouter backend — the auto-key match key: the
+ *  profile's endpoint may carry any OpenRouter path shape, so the match is
+ *  prefix-based on the host (the STT fixed-vendor rule), not exact. */
+const OPENROUTER_API_HOST = "https://openrouter.ai";
+
+/** Auto-match an image-gen profile's key against the LLM provider profiles
+ *  (IG-21, the autoMatchSttKey twin). Deterministic: first keyful provider
+ *  in list (sort) order wins. Rules per backend:
+ *  - openrouter: first keyful provider whose endpoint lives on the OpenRouter
+ *    vendor host (any path under openrouter.ai);
+ *  - openai-images: exact normalized-endpoint match (the openai-compat rule —
+ *    a Custom-cloud row shares the key only with the exact same endpoint);
+ *  - a1111: local/keyless — never matches.
+ *  Own-key configs short-circuit BEFORE this runs (resolveAdapterConfig). */
+async function autoMatchImageGenKey(
+  stores: Pick<StoreContainer, "providers">,
+  backend: ImageGenProfile["backend"],
+  endpoint: string,
+): Promise<{ apiKey: string; matchedName: string } | null> {
+  if (backend !== IMAGE_GEN_BACKENDS.OpenRouter && backend !== IMAGE_GEN_BACKENDS.OpenAiImages) {
+    return null;
+  }
+  const target = normalizeEndpoint(endpoint);
+  if (target === "") return null;
+  const providers = await stores.providers.listAll();
+  for (const provider of providers) {
+    if (!provider.apiKey) continue;
+    const normalized = normalizeEndpoint(provider.endpoint);
+    const matched =
+      backend === IMAGE_GEN_BACKENDS.OpenRouter
+        ? normalized.startsWith(OPENROUTER_API_HOST)
+        : normalized === target;
+    if (matched) return { apiKey: provider.apiKey, matchedName: provider.name };
+  }
+  return null;
+}
+
+/** Resolve the ADAPTER config for a saved profile (the resolveSynthesisConfig
+ *  / resolveTranscriptionConfig twin): own typed key wins, then the IG-21
+ *  auto-match, then the plain config (the backend factory surfaces the auth
+ *  error). The matched key is injected SERVER-SIDE — it never crosses the API
+ *  boundary. */
+async function resolveAdapterConfig(
+  stores: Pick<StoreContainer, "providers">,
+  profile: ImageGenProfile,
+  transport?: typeof fetch,
+): Promise<ImageGenAdapterConfig> {
+  const config = configFromProfile(profile, transport);
+  if (profile.apiKey !== undefined && profile.apiKey !== "") return config;
+  const match = await autoMatchImageGenKey(stores, profile.backend, profile.endpoint);
+  if (match === null) return config;
+  return { ...config, apiKey: match.apiKey };
+}
+
 // ─── Adapter ─────────────────────────────────────────────────────────────────
 
 type ImageGenAdapterStores = Pick<
   StoreContainer,
-  "imageGen" | "imageGenSamplerSets" | "chats" | "messages" | "characterAssets" | "db" | "characters" | "personas"
+  "imageGen" | "imageGenSamplerSets" | "chats" | "messages" | "characterAssets" | "db" | "characters" | "personas" | "providers"
 >;
 
 export class ImageGenAdapter implements ImageGenRuntimeApi {
@@ -251,14 +326,41 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     private readonly assistDeps?: ImageGenAssistDeps,
   ) {}
 
+  /** Auto-key HINT (UI display only, IG-21 — the stt-adapter twin): which
+   *  provider profile's key auto-matches for a keyless profile. The SAME
+   *  rule as autoMatchImageGenKey (first keyful provider in sort order;
+   *  openrouter by vendor host, openai-images by exact endpoint, a1111
+   *  never). Records with a stored key stay null — an own key overrides. */
+  private async decorateAutoKey(records: ImageGenProfileValue[]): Promise<ImageGenProfileValue[]> {
+    if (records.length === 0) return records;
+    const providers = await this.stores.providers.listAll();
+    const keyful = providers.filter((p) => p.apiKey);
+    if (keyful.length === 0) return records;
+    const byEndpoint = new Map(keyful.map((p) => [normalizeEndpoint(p.endpoint), p.name]));
+    const openrouterName = keyful.find((p) =>
+      normalizeEndpoint(p.endpoint).startsWith(OPENROUTER_API_HOST),
+    )?.name;
+    for (const record of records) {
+      if (record.hasStoredApiKey) continue;
+      if (record.backend === IMAGE_GEN_BACKENDS.OpenRouter) {
+        record.autoKeyProviderName = openrouterName ?? null;
+      } else if (record.backend === IMAGE_GEN_BACKENDS.OpenAiImages) {
+        const endpoint = record.endpoint.trim();
+        if (endpoint === "") continue;
+        record.autoKeyProviderName = byEndpoint.get(normalizeEndpoint(endpoint)) ?? null;
+      }
+    }
+    return records;
+  }
+
   // ── Profile CRUD ────────────────────────────────────────────────────────
 
   listImageGenProfiles = async () =>
-    (await this.stores.imageGen.listAll()).map(toClientProfile);
+    await this.decorateAutoKey((await this.stores.imageGen.listAll()).map(toClientProfile));
 
   getImageGenProfile = async (id: string) => {
     const profile = await this.stores.imageGen.getById(id);
-    return profile ? toClientProfile(profile) : null;
+    return profile ? (await this.decorateAutoKey([toClientProfile(profile)]))[0] : null;
   };
 
   createImageGenProfile: ImageGenRuntimeApi["createImageGenProfile"] = async (body) => {
@@ -281,7 +383,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       capabilities: body.capabilities,
       sortOrder: body.sortOrder,
     };
-    return toClientProfile(await this.stores.imageGen.create(input));
+    return (await this.decorateAutoKey([toClientProfile(await this.stores.imageGen.create(input))]))[0];
   };
 
   updateImageGenProfile: ImageGenRuntimeApi["updateImageGenProfile"] = async (id, body) => {
@@ -304,7 +406,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     if (body.capabilities !== undefined) patch.capabilities = body.capabilities;
     if (body.sortOrder !== undefined) patch.sortOrder = body.sortOrder;
     const updated = await this.stores.imageGen.update(id, patch);
-    return updated ? toClientProfile(updated) : null;
+    return updated ? (await this.decorateAutoKey([toClientProfile(updated)]))[0] : null;
   };
 
   deleteImageGenProfile = async (id: string): Promise<void> => {
@@ -316,7 +418,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   probeImageGenProfile = async (id: string, signal?: AbortSignal) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
-    const backend = createImageGenBackend(profile.backend, configFromProfile(profile, this.fetchOverride));
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     // Probe rides the SAME timeout budget as the LLM provider test
     // (TEST_CHAT_TIMEOUT_MS, owner 2026-09-14) — one budget for "is this
     // endpoint alive" across surfaces.
@@ -326,7 +428,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   listImageGenProfileModels = async (id: string, signal?: AbortSignal) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
-    const backend = createImageGenBackend(profile.backend, configFromProfile(profile, this.fetchOverride));
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "model list", (inner) =>
       backend.listModels(inner),
     );
@@ -341,7 +443,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // would throw ConfigError before the interface gate could answer), and a
     // capability question must not depend on live config validity.
     if (!profile.capabilities.supportsSamplers) return null;
-    const backend = createImageGenBackend(profile.backend, configFromProfile(profile, this.fetchOverride));
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     // Interface-driven second gate (the STT `typeof backend.listModels`
     // twin): a backend without the sampler method reports "not supported",
     // not an empty catalog.
@@ -362,7 +464,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     if (profile.backend !== IMAGE_GEN_BACKENDS.A1111) return null;
     // Interface-driven second gate: a backend without the extension-listing
     // method reports "not supported", not an empty list.
-    const backend = createImageGenBackend(profile.backend, configFromProfile(profile, this.fetchOverride));
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     if (typeof backend.listExtensions !== "function") return null;
     const listExtensions = backend.listExtensions.bind(backend);
     return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "extension list", (inner) =>
@@ -391,6 +493,16 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
             }
           }
         }
+      }
+      // Still keyless after the stored-key arm — IG-21 auto-match (the
+      // resolveDraftConfig tail twin): a freshly typed OpenRouter/Custom
+      // endpoint immediately gets the provider key without any linking
+      // step; the backend list mirrors what generate would do. a1111 never
+      // matches (local/keyless).
+      if (typeof config.apiKey !== "string" || config.apiKey === "") {
+        const draftEndpoint = typeof config.endpoint === "string" ? config.endpoint.trim() : "";
+        const match = await autoMatchImageGenKey(this.stores, body.backend, draftEndpoint);
+        if (match !== null) config.apiKey = match.apiKey;
       }
     }
     // The typed config is BUILT from the bag (no cast — the bag is
@@ -532,7 +644,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(signal !== undefined ? { signal } : {}),
     };
 
-    const backend = createImageGenBackend(profile.backend, configFromProfile(profile, this.fetchOverride));
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     // Owner 2026-09-14: LOCAL backends have NO generation timeout (explicit
     // cancel only); CLOUD backends carry the 3-minute budget.
     const result = profile.capabilities.localExecution

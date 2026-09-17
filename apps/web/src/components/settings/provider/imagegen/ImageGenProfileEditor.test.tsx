@@ -35,6 +35,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     presetId: "openrouter",
     endpoint: "https://openrouter.ai/api/v1",
     hasStoredApiKey: false,
+    autoKeyProviderName: null,
     modelId: undefined,
     defaultParams: {},
     modeSizePresets: {},
@@ -71,6 +72,7 @@ function makeForm(overrides: Partial<ImageGenHook["form"]> = {}): NonNullable<Im
     endpoint: "",
     apiKey: "",
     hasStoredApiKey: false,
+    autoKeyProviderName: null,
     modelId: null,
     defaultParams: {},
     modeSizePresets: {},
@@ -93,6 +95,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     error: null,
     saving: false,
     headerMode: "edit",
+    draftAutoKeyProviderName: null,
     modelsByProfile: {},
     samplersByProfile: {},
     samplerStatusByProfile: {},
@@ -151,6 +154,23 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
     await waitFor(() => expect(view.getByTestId("image-gen-provider-form")).toBeTruthy());
     expect(view.queryByTestId("image-gen-protocol-select")).toBeNull();
     expect(view.queryByTestId("image-gen-preset-select")).toBeNull();
+  });
+
+  it("IG-21: a keyless form with an auto-match shows the key-source hint", async () => {
+    const matched = makeImageGen({ draftAutoKeyProviderName: "OR main" });
+    const view = render(<ImageGenProfileEditor imageGen={matched} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-provider-form")).toBeTruthy());
+    expect(view.getByTestId("image-gen-key-source-hint").textContent).toContain("OR main");
+  });
+
+  it("IG-21: a stored own key hides the hint (own key overrides the cascade)", async () => {
+    const ownKey = makeImageGen({
+      draftAutoKeyProviderName: null,
+      form: makeForm({ id: "p1", hasStoredApiKey: true }),
+    });
+    const view = render(<ImageGenProfileEditor imageGen={ownKey} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-provider-form")).toBeTruthy());
+    expect(view.queryByTestId("image-gen-key-source-hint")).toBeNull();
   });
 
   it("CF8: segment switch to Custom pins the backend to openai-images under the hood + drops the preset slug", async () => {
@@ -297,6 +317,7 @@ describe("ImageGenProfileEditor — view mode (saved profile)", () => {
       presetId: "a1111",
       endpoint: "http://127.0.0.1:7860",
       hasStoredApiKey: false,
+    autoKeyProviderName: null,
     });
     const imageGen = makeViewImageGen({
       profiles: [record],
@@ -310,6 +331,28 @@ describe("ImageGenProfileEditor — view mode (saved profile)", () => {
     });
     const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
     await waitFor(() => expect(view.getByTestId("image-gen-base-card-keyless")).toBeTruthy());
+  });
+
+  it("IG-21: an auto-matched keyless card names its source and counts as ready (no no-key warning)", async () => {
+    const record = makeRecord({ backend: IMAGE_GEN_BACKENDS.OpenRouter, hasStoredApiKey: false });
+    const imageGen = makeViewImageGen({
+      profiles: [record],
+      form: makeForm({
+        id: record.id,
+        name: record.name,
+        backend: record.backend,
+        endpoint: record.endpoint,
+        hasStoredApiKey: false,
+        autoKeyProviderName: "OR main",
+      }),
+    });
+    const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-base-card")).toBeTruthy());
+    expect(view.getByTestId("image-gen-key-source-hint").textContent).toContain("OR main");
+    // Auto-matched = ready: the keyless warning must NOT render (the
+    // SttBaseCard twin — an auto-match is not a missing key).
+    expect(view.queryByTestId("image-gen-base-card-keyless")).toBeNull();
+    expect(view.queryByText("no_api_key")).toBeNull();
   });
 
   it("CF4: view mode renders NO connection-actions card (probe lives in the connection form's test card; model refresh lives in the Pane)", async () => {
