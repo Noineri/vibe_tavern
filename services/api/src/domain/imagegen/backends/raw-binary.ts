@@ -521,7 +521,9 @@ export const HF_OPTIONS: RawBinaryImageOptions = {
 
 // Chutes + hf register here; the Pollinations slug's two-tier dispatcher
 // lives in openai-images-family.ts (it owns the unified-gateway row).
-
 registerImageGenBackend(IMAGE_GEN_BACKENDS.Chutes, (config: ImageGenAdapterConfig): ImageGenBackend =>
   makeRawBinaryImageBackend(CHUTES_OPTIONS, config),
+);
+registerImageGenBackend(IMAGE_GEN_BACKENDS.Hf, (config: ImageGenAdapterConfig): ImageGenBackend =>
+  makeRawBinaryImageBackend(HF_OPTIONS, config),
 );

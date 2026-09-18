@@ -541,4 +541,26 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Hf]: {
+    // PE-3 unit 3 — Hugging Face Inference Providers card (doc-verified
+    // 2026-09-07; router 401-unauth re-probed live 2026-09-18): one hf_
+    // token, meta-aggregator routing — POST router.huggingface.co/
+    // hf-inference/models/{id} with {inputs, parameters:{negative_prompt,
+    // width, height, num_inference_steps, guidance_scale, seed}}, raw
+    // image bytes back. scheduler: documented but its VT seam is the
+    // A1111-dialect schedule control and no enum is documented — never
+    // sent (named decision). Picker: public Hub API inference=warm +
+    // pipeline_tag=text-to-image + sort=trendingScore (drift pinned live
+    // 2026-09-18: the card's sort=trending now 400s).
+    supportsNegativePrompt: true,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

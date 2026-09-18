@@ -8,7 +8,7 @@ import { z } from 'zod';
  *  family), the A1111-compatible local dialect, ComfyUI (raw API —
  *  COMFYUI_BACKEND_PLAN), and the PE-1 OpenAI-images-family cloud slugs
  *  (IMAGEGEN_PROVIDER_EXPANSION_PLAN wave PE-1). */
-export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'a1111', 'comfyui', 'togetherai', 'siliconflow', 'nanogpt', 'electronhub', 'pollinations', 'deepinfra', 'recraft', 'zai', 'minimax', 'volcengine', 'dashscope', 'nim', 'chutes']);
+export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'a1111', 'comfyui', 'togetherai', 'siliconflow', 'nanogpt', 'electronhub', 'pollinations', 'deepinfra', 'recraft', 'zai', 'minimax', 'volcengine', 'dashscope', 'nim', 'chutes', 'hf']);
 export type ImageGenBackendValue = z.infer<typeof imageGenBackendSchema>;
 
 /** The six v1 generation-mode recipes (domain `IMAGE_GENERATION_MODES`). */

@@ -295,6 +295,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://chutes.ai",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Hugging Face Inference Providers — one hf_ token routes the whole
+  // meta-aggregator (fal/replicate/novita/…); raw bytes back; live Hub
+  // picker (inference=warm text-to-image).
+  {
+    id: "hf",
+    label: "Hugging Face",
+    backend: IMAGE_GEN_BACKENDS.Hf,
+    baseUrl: "https://router.huggingface.co",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

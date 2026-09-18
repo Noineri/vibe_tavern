@@ -1060,6 +1060,7 @@ export const IMAGE_GEN_BACKENDS = {
   Dashscope: "dashscope",
   Nim: "nim",
   Chutes: "chutes",
+  Hf: "hf",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

@@ -291,3 +291,105 @@ describe("chutes (per-chute raw-PNG hosts)", () => {
     expect(caps.paramRanges).toEqual({});
   });
 });
+
+// ─── Hugging Face Inference Providers (PE-3 unit 3) ─────────────────────────
+
+describe("hf inference router (inputs + parameters, raw bytes)", () => {
+  const make = (transport: typeof fetch) =>
+    createImageGenBackend(IMAGE_GEN_BACKENDS.Hf, {
+      endpoint: "https://router.huggingface.co",
+      apiKey: "hf_token",
+      fetch: transport,
+    });
+
+  it("POSTs inputs + parameters to /hf-inference/models/{id}; scheduler/sampler never sent", async () => {
+    const { transport, calls } = makeTransport(() => binaryResponse(PNG_BYTES, "image/png"));
+    const backend = make(transport);
+    const result = await backend.generate({
+      prompt: "a tavern",
+      model: "black-forest-labs/FLUX.1-dev",
+      negativePrompt: "blurry",
+      width: 1024,
+      height: 768,
+      steps: 28,
+      cfgScale: 3.5,
+      seed: 11,
+      sampler: "DPMSolverMultistepScheduler", // scheduler stays unwired — dropped
+    });
+
+    expect(calls[0].url).toBe(
+      "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev",
+    );
+    const headers = calls[0].init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer hf_token");
+    const body = sentJson(calls[0]);
+    expect(body.inputs).toBe("a tavern");
+    expect(body.parameters).toEqual({
+      negative_prompt: "blurry",
+      width: 1024,
+      height: 768,
+      num_inference_steps: 28,
+      guidance_scale: 3.5,
+      seed: 11,
+    });
+    expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+  });
+
+  it("omits parameters entirely when nothing is set", async () => {
+    const { transport, calls } = makeTransport(() => binaryResponse(PNG_BYTES, "image/png"));
+    await make(transport).generate({ prompt: "p", model: "krea/Krea-2-Turbo" });
+    const body = sentJson(calls[0]);
+    expect(body).toEqual({ inputs: "p" });
+  });
+
+  it("lists models from the public Hub API with the WORKING sort (trendingScore — the card's trending 400s)", async () => {
+    const { transport, calls } = makeTransport(() =>
+      Response.json([{ id: "black-forest-labs/FLUX.1-dev" }, { id: "krea/Krea-2-Turbo" }]),
+    );
+    const models = await make(transport).listModels();
+    expect(models).toEqual([
+      { id: "black-forest-labs/FLUX.1-dev", label: "black-forest-labs/FLUX.1-dev" },
+      { id: "krea/Krea-2-Turbo", label: "krea/Krea-2-Turbo" },
+    ]);
+    expect(calls[0].url).toBe(
+      "https://huggingface.co/api/models?inference=warm&pipeline_tag=text-to-image&sort=trendingScore",
+    );
+  });
+
+  it("probes via invalid-post on the live-pinned router path (401 = rejected, 400 = accepted)", async () => {
+    const rejected = makeTransport(() =>
+      Response.json({ error: "Unauthorized" }, { status: 401 }),
+    );
+    const bad = await make(rejected.transport).probe();
+    expect(bad.ok).toBe(false);
+    expect(bad.status).toBe(401);
+
+    const accepted = makeTransport(
+      () => Response.json({ error: "inputs required" }, { status: 400 }),
+    );
+    const good = await make(accepted.transport).probe();
+    expect(good).toEqual({ ok: true, detail: "credentials accepted — live Hub picker" });
+  });
+
+  it("accepts a pasted per-model router URL (paste tolerance cuts at /hf-inference)", async () => {
+    const { transport, calls } = makeTransport(() => binaryResponse(PNG_BYTES, "image/png"));
+    const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.Hf, {
+      endpoint: "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-Krea-dev",
+      apiKey: "hf_token",
+      fetch: transport,
+    });
+    await backend.generate({ prompt: "p", model: "black-forest-labs/FLUX.1-dev" });
+    expect(calls[0].url).toBe(
+      "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev",
+    );
+  });
+
+  it("pins the hf capability row", () => {
+    const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Hf];
+    expect(caps.supportsNegativePrompt).toBe(true);
+    expect(caps.supportsSamplers).toBe(false);
+    expect(caps.supportsSeed).toBe(true);
+    expect(caps.sizeSupport).toEqual({ kind: "free" });
+    expect(caps.paramRanges).toEqual({});
+  });
+});
