@@ -505,6 +505,33 @@ describe("image-gen routes — samplers (capability-gated)", () => {
     expect(capturedUrl).toBe("http://127.0.0.1:7860/sdapi/v1/samplers");
   });
 
+  test("comfyui profile lists samplers from the KSampler combo (CG-A3)", async () => {
+    let capturedUrl = "";
+    const { app } = await makeApp(async (input) => {
+      capturedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          KSampler: {
+            input: {
+              required: {
+                sampler_name: [["euler", "dpmpp_2m_sde"], {}],
+                scheduler: [["simple", "beta"], {}],
+              },
+            },
+          },
+        }),
+        { status: 200 },
+      );
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:8188" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/samplers`);
+    expect(res.status).toBe(200);
+    const list = (await res.json()) as Array<{ name: string }>;
+    expect(list).toEqual([{ name: "euler" }, { name: "dpmpp_2m_sde" }]);
+    expect(capturedUrl).toBe("http://127.0.0.1:8188/object_info/KSampler");
+  });
+
   test("openrouter profile → 400 sampler listing not supported; unknown profile → 404", async () => {
     const { app } = await makeApp(async () => modelsBody());
     const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.OpenRouter });
@@ -640,6 +667,30 @@ describe("image-gen routes — schedulers (PG-3, dialect-gated)", () => {
       { name: "Karras", label: "Karras" },
     ]);
     expect(capturedUrl).toBe("http://127.0.0.1:7860/sdapi/v1/schedulers");
+  });
+
+  test("comfyui profile lists schedulers from the KSampler combo (CG-A3 — the dialect gate widened to the local dialects)", async () => {
+    const { app } = await makeApp(async () =>
+      new Response(
+        JSON.stringify({
+          KSampler: {
+            input: {
+              required: {
+                sampler_name: [["euler"], {}],
+                scheduler: [["simple", "beta"], {}],
+              },
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:8188" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/schedulers`);
+    expect(res.status).toBe(200);
+    const list = (await res.json()) as Array<{ name: string }>;
+    expect(list).toEqual([{ name: "simple" }, { name: "beta" }]);
   });
 
   test("cloud profile → 400 scheduler listing not supported; unknown profile → 404", async () => {

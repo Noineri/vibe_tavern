@@ -225,12 +225,16 @@ export const imageGenProbeResultSchema = z.object({
 export type ImageGenProbeResultValue = z.infer<typeof imageGenProbeResultSchema>;
 
 /** One live-model-catalog entry — the adapter interface's
- *  `ImageGenModelInfo` verbatim (aggregator enrichment optional). */
+ *  `ImageGenModelInfo` verbatim (aggregator enrichment optional;
+ *  `family`/`template` are the comfyui dialect's model-picker enrichment,
+ *  CG-A3 — other backends omit them). */
 export const imageGenModelInfoSchema = z.object({
   id: z.string(),
   label: z.string(),
   isFree: z.boolean().optional(),
   description: z.string().optional(),
+  family: z.string().optional(),
+  template: z.string().optional(),
 });
 export type ImageGenModelInfoValue = z.infer<typeof imageGenModelInfoSchema>;
 

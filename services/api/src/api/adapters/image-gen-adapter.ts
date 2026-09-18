@@ -460,10 +460,14 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
     // Static dialect gate FIRST (the extensions-arm twin, PG-3): the
-    // schedule-type surface exists ONLY on the A1111 dialect — schedulers
-    // are not a cross-vendor capability, so no capability flag exists for
-    // them; the dialect check answers without live config validity.
-    if (profile.backend !== IMAGE_GEN_BACKENDS.A1111) return null;
+    // schedule-type surface exists on the LOCAL dialects — A1111 (its
+    // /sdapi/v1/schedulers arm) and ComfyUI (the KSampler scheduler combo,
+    // CG-A3) — schedulers are not a cross-vendor capability, so no
+    // capability flag exists for them; the dialect check answers without
+    // live config validity.
+    if (profile.backend !== IMAGE_GEN_BACKENDS.A1111 && profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI) {
+      return null;
+    }
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     // Interface-driven second gate: a backend without the scheduler method
     // reports "not supported", not an empty list.

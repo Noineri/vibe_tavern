@@ -186,6 +186,16 @@ export interface ImageGenModelInfo {
   label: string;
   isFree?: boolean;
   description?: string;
+  /** Model-family label (CG-A3, comfyui dialect): resolved through the
+   *  metadata ladder (embedded safetensors metadata → `.cm-info.json` →
+   *  `.civitai.info`), normalized to a canonical bucket when recognized
+   *  and passed through verbatim otherwise. Absent = unresolved — the
+   *  picker renders its "unknown family" bucket. Other backends omit. */
+  family?: string;
+  /** Workflow template the adapter resolves for this model (CG-A2/A3,
+   *  comfyui dialect): "checkpoint" | "krea2-dit" — which loader folder
+   *  owns the file. Other backends omit. */
+  template?: string;
 }
 
 /** One sampler entry (A1111-compat `GET /sdapi/v1/samplers` shape:

@@ -37,9 +37,28 @@
  *   the `execution_error` pair's `exception_message`.
  * - download: `GET /view?filename=&subfolder=&type=output` → raw image
  *   bytes (SaveImage emits PNG; MIME sniffs as a fallback).
- * - model list: `GET /models/checkpoints` → the recursive filename list
- *   (subfolder entries ride the server's own separator, verbatim — the
- *   round-trip back into `ckpt_name` must be byte-identical).
+ * - model list: `GET /models/checkpoints` + `GET /models/diffusion_models`
+ *   → the UNION the picker serves (CG-A3): checkpoints first, then DiT
+ *   models, each entry carrying its `template` marker. Ids keep the
+ *   server's path VERBATIM (subfolder entries ride the server's own
+ *   separator — the round-trip back into `ckpt_name`/`unet_name` must be
+ *   byte-identical).
+ * - model FAMILY (CG-A3): three metadata stores, first hit wins, every
+ *   store degrading silently (a failed store never fails the list): (1)
+ *   metadata EMBEDDED in the safetensors header via `GET
+ *   /view_metadata/{folder}?filename=` (`ss_base_model_version` /
+ *   `modelspec.architecture` — trainer truth, install-agnostic); (2)
+ *   `.cm-info.json` sidecars (Stability Matrix, top-level `BaseModel`);
+ *   (3) `.civitai.info` sidecars (the civitai download flow, top-level
+ *   `baseModel`). Sidecar paths join against `GET
+ *   /internal/folder_paths` (ComfyUI's own folder map — root lists per
+ *   folder; on a remote host the paths don't exist locally and resolution
+ *   auto-degrades to embedded-only). Raw values normalize through
+ *   `normalizeComfyFamily` (canonical ecosystem buckets; unrecognized
+ *   values pass through verbatim — the honest labeled bucket).
+ * - sampler/scheduler lists (CG-A3): the `KSampler` node's own combo enums
+ *   (`/object_info/KSampler` → `input.required.sampler_name[0]` /
+ *   `scheduler[0]`) — bare strings, no aliases/labels.
  * - node input lists: `GET /object_info/{node}` → `input.required.{field}`
  *   combo values (the accepted filename enums — used for template
  *   detection). Sidecar folder lists: `GET /models/text_encoders` and
@@ -114,6 +133,8 @@ import type {
   ImageGenGenerateResult,
   ImageGenModelInfo,
   ImageGenProbeResult,
+  ImageGenSamplerInfo,
+  ImageGenSchedulerInfo,
 } from "../imagegen-backend.js";
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
@@ -184,6 +205,14 @@ export const COMFY_KREA2_CLIP_TYPE = "krea2";
  *  install's filenames). */
 export const COMFY_KREA2_DEFAULT_ENCODER = "qwen3vl_4b_fp8_scaled";
 export const COMFY_KREA2_DEFAULT_VAE = "qwen_image_vae";
+
+/** The two workflow-template ids the adapter resolves — the marker each
+ *  model-picker entry carries (CG-A3) and the value recorded in the slot
+ *  provenance `params.template` (CG-A2). */
+export const COMFY_MODEL_TEMPLATES = {
+  checkpoint: "checkpoint",
+  krea2Dit: "krea2-dit",
+} as const;
 
 /** Resolved loader inputs of the Krea-2 DiT template. */
 export interface ComfyKrea2Sidecars {
@@ -564,24 +593,11 @@ function weightsBasename(name: string): string {
   return base.replace(/\.(safetensors|ckpt|pt|pth|gguf|bin|sft)$/i, "");
 }
 
-/** Parse the `GET /models/checkpoints` filename list into picker entries:
- *  `id` keeps the server's path VERBATIM (it round-trips into
- *  `ckpt_name` byte-identically); `label` shows the basename without the
- *  weights extension. Non-string entries are skipped. */
-function parseCheckpointFilenames(parsed: unknown): ImageGenModelInfo[] {
-  if (!Array.isArray(parsed)) return [];
-  const out: ImageGenModelInfo[] = [];
-  for (const entry of parsed) {
-    if (typeof entry !== "string" || entry.length === 0) continue;
-    const label = weightsBasename(entry);
-    out.push({ id: entry, label: label.length > 0 ? label : entry });
-  }
-  return out;
-}
-
 /** GET /object_info/{node} → the combo values of a required input — the
  *  accepted filename enum ComfyUI's own queue validation checks against
- *  (template detection's ground truth, live-verified 0.36.0). */
+ *  (template detection's ground truth, live-verified 0.36.0). CG-A3: the
+ *  same walk serves `KSampler.sampler_name` / `KSampler.scheduler` for
+ *  the live sampler/scheduler lists. */
 async function fetchComfyComboValues(
   transport: typeof fetch,
   endpoint: string,
@@ -617,7 +633,9 @@ async function fetchComfyComboValues(
 }
 
 /** GET /models/{folder} → the verbatim filename list (non-array responses
- *  fail closed — a silently-empty list would make every resolution miss). */
+ *  fail closed — a silently-empty list would make every resolution miss).
+ *  CG-A3: serves `checkpoints` and `diffusion_models` for the model union
+ *  in addition to the DiT sidecar folders. */
 async function fetchComfyFolderNames(
   transport: typeof fetch,
   endpoint: string,
@@ -673,6 +691,199 @@ async function resolveKrea2Sidecar(
   throw new ComfyImageGenConfigError(
     `ComfyUI ${options.what} for the Krea-2 template is unresolved: no "${options.canonical}.*" in the ${options.folder} folder (${candidates}) — pick one in the profile's advanced fields`,
   );
+}
+
+// ─── Model family ladder (CG-A3) ─────────────────────────────────────
+
+/** Normalize a raw base-model string from any metadata store into a
+ *  canonical family label — the picker subtitle and (CG-C2/C3) the LoRA
+ *  family-filter match key both sides normalize through, so a model's
+ *  "Krea 2" matches a LoRA's "Krea 2" regardless of which store either
+ *  side read. Recognized ecosystem buckets map to their display names
+ *  (checked lowercase-substring, order matters — krea before qwen, pony
+ *  before the SDXL bucket); modelspec architecture stamps map into the
+ *  same buckets ("stable-diffusion-xl-v1-base" → SDXL — a merge tool's
+ *  spec stamp is architecture-level truth, not ecosystem noise);
+ *  anything unrecognized passes through VERBATIM (an honest labeled
+ *  bucket, never a wrong guess); empty → undefined. */
+export function normalizeComfyFamily(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim();
+  if (trimmed === undefined || trimmed.length === 0) return undefined;
+  const lower = trimmed.toLowerCase();
+  if (lower.includes("krea")) return "Krea 2";
+  if (lower.includes("qwen")) return "Qwen Image";
+  if (lower.includes("pony")) return "Pony";
+  if (lower.includes("illustrious") || lower.includes("noobai")) return "Illustrious";
+  if (lower.includes("flux")) return "Flux";
+  if (
+    lower.includes("sdxl") ||
+    lower.includes("sd_xl") ||
+    lower.includes("sd xl") ||
+    lower.includes("stable-diffusion-xl")
+  ) {
+    return "SDXL";
+  }
+  if (
+    lower.includes("sd15") ||
+    lower.includes("sd 1.5") ||
+    lower.includes("sd1.5") ||
+    lower.includes("v1-5") ||
+    lower.includes("stable-diffusion-v1") ||
+    lower.includes("sd-v1")
+  ) {
+    return "SD 1.5";
+  }
+  return trimmed;
+}
+
+/** Embedded-metadata fields that name a model family, in precedence order:
+ *  `ss_base_model_version` (kohya-training convention, LoRAs and finetunes)
+ *  and `modelspec.architecture` (AI-Toolkit modelspec convention, DiT
+ *  finetunes). The key literally contains a dot. */
+const COMFY_EMBEDDED_FAMILY_FIELDS = ["ss_base_model_version", "modelspec.architecture"] as const;
+
+/** Sidecar stores after the embedded metadata misses, in precedence order
+ *  (CG-A3, live-verified): `.cm-info.json` (Stability Matrix's store —
+ *  top-level `BaseModel`, mirrors civitai plus the user's manual manager
+ *  edits) before `.civitai.info` (the civitai download flow's de-facto
+ *  standard — top-level `baseModel`). The stem rule on disk: the model
+ *  filename minus its weights extension, sitting in the same directory. */
+const COMFY_SIDECAR_STORES = [
+  { suffix: ".cm-info.json", field: "BaseModel" },
+  { suffix: ".civitai.info", field: "baseModel" },
+] as const;
+
+/** GET /view_metadata/{folder}?filename={name} → the metadata dict EMBEDDED
+ *  in the safetensors header (trainer truth — the ladder's primary source).
+ *  ANY failure degrades silently to undefined (the ladder's rule: an
+ *  unreadable store must not fail the model list); the caller's abort is
+ *  the one exception and propagates. */
+async function fetchComfyEmbeddedFamily(
+  transport: typeof fetch,
+  endpoint: string,
+  folder: string,
+  name: string,
+  signal: AbortSignal | undefined,
+): Promise<string | undefined> {
+  let parsed: unknown;
+  try {
+    const response = await fetchOrWrap(
+      transport,
+      `${endpoint}/view_metadata/${encodeURIComponent(folder)}?filename=${encodeURIComponent(name)}`,
+      { method: "GET", headers: { Accept: "application/json" }, signal },
+      "model metadata",
+    );
+    if (!response.ok) return undefined;
+    parsed = await response.json().catch(() => undefined);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    return undefined;
+  }
+  if (!isRecord(parsed)) return undefined;
+  for (const field of COMFY_EMBEDDED_FAMILY_FIELDS) {
+    const raw = parsed[field];
+    if (typeof raw === "string" && raw.trim().length > 0) return raw.trim();
+  }
+  return undefined;
+}
+
+/** GET /internal/folder_paths → the folder-name → root-paths map ComfyUI
+ *  itself resolves (including launcher-shared dirs via
+ *  extra_model_paths.yaml). Officially "frontend use only" — it is a BONUS
+ *  source for the sidecar join, so any failure (404 on hardened remotes,
+ *  transport error, unexpected shape) degrades silently to undefined and
+ *  the ladder stays embedded-only (the plan's remote-host rule). */
+async function fetchComfyFolderRoots(
+  transport: typeof fetch,
+  endpoint: string,
+  signal: AbortSignal | undefined,
+): Promise<Record<string, string[]> | undefined> {
+  let parsed: unknown;
+  try {
+    const response = await fetchOrWrap(
+      transport,
+      `${endpoint}/internal/folder_paths`,
+      { method: "GET", headers: { Accept: "application/json" }, signal },
+      "folder map",
+    );
+    if (!response.ok) return undefined;
+    parsed = await response.json().catch(() => undefined);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    return undefined;
+  }
+  if (!isRecord(parsed)) return undefined;
+  const out: Record<string, string[]> = {};
+  for (const [folder, roots] of Object.entries(parsed)) {
+    if (Array.isArray(roots)) {
+      const clean = roots.filter((root): root is string => typeof root === "string" && root.length > 0);
+      if (clean.length > 0) out[folder] = clean;
+    }
+  }
+  return out;
+}
+
+/** Read one sidecar store's family field off the local disk: the model's
+ *  directory (subfolder part of the id, separators normalized) joined
+ *  against each folder root until the file exists and parses. A miss,
+ *  unreadable file, or wrong shape returns undefined — the ladder
+ *  continues (a remote ComfyUI's roots simply do not exist locally). */
+async function readComfySidecarFamily(
+  roots: readonly string[],
+  name: string,
+  suffix: string,
+  field: string,
+): Promise<string | undefined> {
+  const normalized = name.replace(/\\/g, "/");
+  const slash = normalized.lastIndexOf("/");
+  const file = slash >= 0 ? normalized.slice(slash + 1) : normalized;
+  const stem = file.replace(/\.(safetensors|ckpt|pt|pth|gguf|bin|sft)$/i, "");
+  if (stem.length === 0) return undefined;
+  const relative = `${slash >= 0 ? `${normalized.slice(0, slash)}/` : ""}${stem}${suffix}`;
+  for (const root of roots) {
+    try {
+      const text = await Bun.file(`${root.replace(/[\\/]+$/, "")}/${relative}`).text();
+      const parsed: unknown = JSON.parse(text);
+      if (isRecord(parsed)) {
+        const raw = parsed[field];
+        if (typeof raw === "string" && raw.trim().length > 0) return raw.trim();
+      }
+    } catch {
+      // Missing or unparseable sidecar — the ladder's next root/store.
+      continue;
+    }
+  }
+  return undefined;
+}
+
+/** Resolve one model's family through the full ladder (CG-A3):
+ *  embedded safetensors metadata → `.cm-info.json` → `.civitai.info` →
+ *  undefined ("unknown family" bucket). Every store degrades silently;
+ *  only the caller's abort propagates. `rootsOf` lazily fetches (once per
+ *  listing) the folder-roots map and only when the first sidecar lookup is
+ *  actually needed — a fully-embedded resolution costs no extra call. */
+async function resolveComfyModelFamily(
+  transport: typeof fetch,
+  endpoint: string,
+  options: {
+    folder: string;
+    name: string;
+    signal: AbortSignal | undefined;
+    rootsOf: () => Promise<Record<string, string[]> | undefined>;
+  },
+): Promise<string | undefined> {
+  const embedded = normalizeComfyFamily(
+    await fetchComfyEmbeddedFamily(transport, endpoint, options.folder, options.name, options.signal),
+  );
+  if (embedded !== undefined) return embedded;
+  const roots = (await options.rootsOf())?.[options.folder] ?? [];
+  if (roots.length === 0) return undefined;
+  for (const store of COMFY_SIDECAR_STORES) {
+    const raw = await readComfySidecarFamily(roots, options.name, store.suffix, store.field);
+    const normalized = normalizeComfyFamily(raw);
+    if (normalized !== undefined) return normalized;
+  }
+  return undefined;
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -731,7 +942,7 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       let seed: number;
       if (checkpointNames.includes(model)) {
         ({ graph, seed } = buildComfyCheckpointWorkflow(request, model));
-        template = "checkpoint";
+        template = COMFY_MODEL_TEMPLATES.checkpoint;
       } else {
         const unetNames = await fetchComfyComboValues(
           cfg.fetch,
@@ -760,7 +971,7 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           signal: request.signal,
         });
         ({ graph, seed } = buildComfyKrea2Workflow(request, { unet: model, encoder, vae }));
-        template = "krea2-dit";
+        template = COMFY_MODEL_TEMPLATES.krea2Dit;
       }
 
       const clientId = crypto.randomUUID();
@@ -849,21 +1060,74 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
     },
 
     async listModels(signal?: AbortSignal): Promise<ImageGenModelInfo[]> {
-      const response = await fetchOrWrap(
-        cfg.fetch,
-        `${cfg.endpoint}/models/checkpoints`,
-        { method: "GET", headers: { Accept: "application/json" }, signal },
-        "model list",
-      );
-      if (!response.ok) {
-        const excerpt = await readProviderErrorBody(response);
-        throw new ComfyImageGenError(
-          `ComfyUI model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
-          { status: response.status },
-        );
+      // The model union (CG-A3): checkpoints ∪ diffusion models — the two
+      // folders the two templates load from. `id` keeps the server's path
+      // VERBATIM (round-trips into ckpt_name/unet_name byte-identically,
+      // subfolder separators included); `label` is the basename without the
+      // weights extension; `template` marks which workflow the adapter
+      // resolves; `family` rides the metadata ladder with silent
+      // degradation (an unreadable store never fails the list).
+      const checkpointNames = await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "checkpoints", signal);
+      const unetNames = await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "diffusion_models", signal);
+      // Folder roots for the sidecar join — fetched lazily, ONCE per
+      // listing, and only when the first model actually needs a sidecar.
+      let folderRoots: Record<string, string[]> | undefined;
+      let folderRootsFetched = false;
+      const rootsOf = async (): Promise<Record<string, string[]> | undefined> => {
+        if (!folderRootsFetched) {
+          folderRoots = await fetchComfyFolderRoots(cfg.fetch, cfg.endpoint, signal);
+          folderRootsFetched = true;
+        }
+        return folderRoots;
+      };
+      const entries: ImageGenModelInfo[] = [];
+      const folders: Array<{ folder: string; names: string[]; template: string }> = [
+        { folder: "checkpoints", names: checkpointNames, template: COMFY_MODEL_TEMPLATES.checkpoint },
+        { folder: "diffusion_models", names: unetNames, template: COMFY_MODEL_TEMPLATES.krea2Dit },
+      ];
+      for (const { folder, names, template } of folders) {
+        for (const name of names) {
+          const family = await resolveComfyModelFamily(cfg.fetch, cfg.endpoint, {
+            folder,
+            name,
+            signal,
+            rootsOf,
+          });
+          const label = weightsBasename(name);
+          entries.push({
+            id: name,
+            label: label.length > 0 ? label : name,
+            ...(family !== undefined ? { family } : {}),
+            template,
+          });
+        }
       }
-      const parsed: unknown = await response.json().catch(() => null);
-      return parseCheckpointFilenames(parsed);
+      return entries;
+    },
+
+    async listSamplers(signal?: AbortSignal): Promise<ImageGenSamplerInfo[]> {
+      // The live KSampler sampler union (CG-A3) — the same /object_info
+      // combo walk template detection uses; bare enums, no aliases.
+      const names = await fetchComfyComboValues(
+        cfg.fetch,
+        cfg.endpoint,
+        "KSampler",
+        "sampler_name",
+        signal,
+      );
+      return names.map((name) => ({ name }));
+    },
+
+    async listSchedulers(signal?: AbortSignal): Promise<ImageGenSchedulerInfo[]> {
+      // The live KSampler scheduler union (CG-A3) — bare enums, no labels.
+      const names = await fetchComfyComboValues(
+        cfg.fetch,
+        cfg.endpoint,
+        "KSampler",
+        "scheduler",
+        signal,
+      );
+      return names.map((name) => ({ name }));
     },
 
     async probe(signal?: AbortSignal): Promise<ImageGenProbeResult> {

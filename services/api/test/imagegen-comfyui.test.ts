@@ -8,12 +8,16 @@
  * {[id]: {outputs, status}}, GET /view → bytes.
  */
 
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
 
 import {
   COMFY_HISTORY_POLL_INTERVAL_MS,
   COMFY_KREA2_CLIP_TYPE,
+  COMFY_MODEL_TEMPLATES,
   COMFY_NODE_DEFAULTS,
   ComfyImageGenConfigError,
   ComfyImageGenError,
@@ -21,6 +25,7 @@ import {
   buildComfyCheckpointWorkflow,
   buildComfyKrea2Workflow,
   comfyImageGenFactory,
+  normalizeComfyFamily,
 } from "../src/domain/imagegen/backends/comfyui.js";
 
 const ENDPOINT = "http://127.0.0.1:8188";
@@ -601,36 +606,237 @@ describe("comfyui adapter", () => {
     });
   });
 
-  describe("listModels", () => {
-    it("maps the checkpoint filename list — id verbatim (round-trips into ckpt_name), label basename", async () => {
-      const { transport } = makeTransport(() =>
-        Response.json(["graycolor_v18.safetensors", "illustrious\\xl-mix_v3.safetensors", "merge/soft.safetensors"]),
-      );
-      const backend = backendWith(transport);
-      const models = await backend.listModels();
+  describe("listModels (union, CG-A3)", () => {
+    /** Scratch roots for the sidecar-ladder tests — removed after the
+     *  suite (computed under the system tmpdir, never a literal). */
+    const scratchRoots: string[] = [];
+    afterAll(() => {
+      for (const root of scratchRoots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+    function makeScratchRoot(): string {
+      const root = mkdtempSync(join(tmpdir(), "vt-comfy-family-"));
+      scratchRoots.push(root);
+      return root;
+    }
+
+    /** A listModels transport serving the two folder lists, per-file
+     *  embedded metadata, and the internal folder map (null = degraded,
+     *  a 404 like on a hardened remote). */
+    function modelsTransport(options: {
+      checkpoints?: string[];
+      unets?: string[];
+      embedded?: (name: string) => Record<string, unknown> | undefined;
+      folderPaths?: Record<string, string[]> | null;
+    }) {
+      return makeTransport((url) => {
+        if (url.pathname === "/models/checkpoints") return Response.json(options.checkpoints ?? []);
+        if (url.pathname === "/models/diffusion_models") return Response.json(options.unets ?? []);
+        if (url.pathname.startsWith("/view_metadata/")) {
+          const payload = options.embedded?.(url.searchParams.get("filename") ?? "");
+          return Response.json(payload ?? {});
+        }
+        if (url.pathname === "/internal/folder_paths") {
+          return options.folderPaths === null
+            ? new Response("nope", { status: 404 })
+            : Response.json(options.folderPaths ?? {});
+        }
+        return new Response("not found", { status: 404 });
+      });
+    }
+
+    it("serves the checkpoints ∪ diffusion-models union — ids verbatim, labels basename, template markers", async () => {
+      const { transport } = modelsTransport({
+        checkpoints: ["graycolor_v18.safetensors", "illustrious\\xl-mix_v3.safetensors"],
+        unets: ["museByStableYogi_v35Int8Extended.safetensors"],
+        folderPaths: null,
+      });
+      const models = await backendWith(transport).listModels();
       expect(models).toEqual([
-        { id: "graycolor_v18.safetensors", label: "graycolor_v18" },
-        { id: "illustrious\\xl-mix_v3.safetensors", label: "xl-mix_v3" },
-        { id: "merge/soft.safetensors", label: "soft" },
+        { id: "graycolor_v18.safetensors", label: "graycolor_v18", template: COMFY_MODEL_TEMPLATES.checkpoint },
+        { id: "illustrious\\xl-mix_v3.safetensors", label: "xl-mix_v3", template: COMFY_MODEL_TEMPLATES.checkpoint },
+        {
+          id: "museByStableYogi_v35Int8Extended.safetensors",
+          label: "museByStableYogi_v35Int8Extended",
+          template: COMFY_MODEL_TEMPLATES.krea2Dit,
+        },
       ]);
     });
 
-    it("skips malformed entries and maps upstream failures", async () => {
-      const { transport } = makeTransport(() =>
-        Response.json(["ok.safetensors", 42, "", null]),
-      );
-      const backend = backendWith(transport);
-      expect(await backend.listModels()).toEqual([{ id: "ok.safetensors", label: "ok" }]);
+    it("embedded safetensors metadata is the primary family source (trainer truth beats sidecars)", async () => {
+      const { transport } = modelsTransport({
+        checkpoints: ["a.safetensors"],
+        embedded: (name) =>
+          name === "a.safetensors" ? { ss_base_model_version: "pony_diffusion_v6_xl" } : undefined,
+        // A degraded folder map proves the embedded hit needs no sidecars.
+        folderPaths: null,
+      });
+      const models = await backendWith(transport).listModels();
+      expect(models[0]!.family).toBe("Pony");
+    });
 
-      const failing = makeTransport(() => new Response("nope", { status: 500 }));
+    it("embedded modelspec.architecture resolves too (AI-Toolkit DiT convention)", async () => {
+      const { transport } = modelsTransport({
+        unets: ["muse.safetensors"],
+        embedded: (name) => (name === "muse.safetensors" ? { "modelspec.architecture": "krea2" } : undefined),
+        folderPaths: null,
+      });
+      const models = await backendWith(transport).listModels();
+      expect(models[0]!.family).toBe("Krea 2");
+    });
+
+    it("the .cm-info.json sidecar serves when embedded misses (Stability Matrix store)", async () => {
+      const root = makeScratchRoot();
+      writeFileSync(join(root, "a.cm-info.json"), JSON.stringify({ BaseModel: "Illustrious" }));
+      const { transport } = modelsTransport({
+        checkpoints: ["a.safetensors"],
+        folderPaths: { checkpoints: [root] },
+      });
+      const models = await backendWith(transport).listModels();
+      expect(models[0]!.family).toBe("Illustrious");
+    });
+
+    it("the .civitai.info sidecar is the third store (civitai download flow)", async () => {
+      const root = makeScratchRoot();
+      writeFileSync(join(root, "a.civitai.info"), JSON.stringify({ baseModel: "Flux.1 D" }));
+      const { transport } = modelsTransport({
+        checkpoints: ["a.safetensors"],
+        folderPaths: { checkpoints: [root] },
+      });
+      const models = await backendWith(transport).listModels();
+      expect(models[0]!.family).toBe("Flux");
+    });
+
+    it("subfolder ids join their sidecar inside the subdirectory", async () => {
+      const root = makeScratchRoot();
+      mkdirSync(join(root, "illustrious"));
+      writeFileSync(
+        join(root, "illustrious", "xl-mix_v3.cm-info.json"),
+        JSON.stringify({ BaseModel: "Illustrious" }),
+      );
+      const { transport } = modelsTransport({
+        checkpoints: ["illustrious\\xl-mix_v3.safetensors"],
+        folderPaths: { checkpoints: [root] },
+      });
+      const models = await backendWith(transport).listModels();
+      expect(models[0]!.family).toBe("Illustrious");
+    });
+
+    it("an unrecognized raw family passes through verbatim (honest bucket, never a guess)", async () => {
+      const root = makeScratchRoot();
+      writeFileSync(join(root, "a.cm-info.json"), JSON.stringify({ BaseModel: "Weird New Base" }));
+      const { transport } = modelsTransport({
+        checkpoints: ["a.safetensors"],
+        folderPaths: { checkpoints: [root] },
+      });
+      const models = await backendWith(transport).listModels();
+      expect(models[0]!.family).toBe("Weird New Base");
+    });
+
+    it("every store missing → no family key, list still succeeds", async () => {
+      const { transport } = modelsTransport({
+        checkpoints: ["a.safetensors"],
+        unets: ["m.safetensors"],
+        folderPaths: null,
+      });
+      const models = await backendWith(transport).listModels();
+      expect(models).toHaveLength(2);
+      for (const model of models) {
+        expect("family" in model).toBe(false);
+      }
+    });
+
+    it("skips malformed entries and maps upstream failures of BOTH folder lists", async () => {
+      const { transport } = modelsTransport({
+        checkpoints: ["ok.safetensors", 42, "", null],
+        unets: [],
+        folderPaths: null,
+      });
+      expect(await backendWith(transport).listModels()).toEqual([
+        { id: "ok.safetensors", label: "ok", template: COMFY_MODEL_TEMPLATES.checkpoint },
+      ]);
+
+      const checkpointsDown = makeTransport((url) =>
+        url.pathname === "/models/checkpoints" ? new Response("nope", { status: 500 }) : Response.json([]),
+      );
       let caught: unknown;
       try {
-        await backendWith(failing.transport).listModels();
+        await backendWith(checkpointsDown.transport).listModels();
       } catch (error) {
         caught = error;
       }
       expect(caught instanceof ComfyImageGenError).toBe(true);
       expect((caught as ComfyImageGenError).status).toBe(500);
+
+      const unetsDown = makeTransport((url) =>
+        url.pathname === "/models/diffusion_models" ? new Response("nope", { status: 502 }) : Response.json([]),
+      );
+      let caughtUnets: unknown;
+      try {
+        await backendWith(unetsDown.transport).listModels();
+      } catch (error) {
+        caughtUnets = error;
+      }
+      expect(caughtUnets instanceof ComfyImageGenError).toBe(true);
+      expect((caughtUnets as ComfyImageGenError).status).toBe(502);
+    });
+  });
+
+  describe("normalizeComfyFamily (CG-A3)", () => {
+    it("maps recognized ecosystem buckets and passes unknown values through", () => {
+      expect(normalizeComfyFamily("Pony Diffusion V6 XL")).toBe("Pony");
+      expect(normalizeComfyFamily("pony_diffusion_v6_xl")).toBe("Pony");
+      expect(normalizeComfyFamily("Illustrious")).toBe("Illustrious");
+      expect(normalizeComfyFamily("NoobAI XL v1")).toBe("Illustrious");
+      expect(normalizeComfyFamily("Krea 2")).toBe("Krea 2");
+      expect(normalizeComfyFamily("qwen-image")).toBe("Qwen Image");
+      expect(normalizeComfyFamily("Flux.1 D")).toBe("Flux");
+      expect(normalizeComfyFamily("SDXL 1.0")).toBe("SDXL");
+      expect(normalizeComfyFamily("sd_xl_base")).toBe("SDXL");
+      expect(normalizeComfyFamily("stable-diffusion-xl-v1-base")).toBe("SDXL");
+      expect(normalizeComfyFamily("SD 1.5")).toBe("SD 1.5");
+      expect(normalizeComfyFamily("stable-diffusion-v1-5")).toBe("SD 1.5");
+      expect(normalizeComfyFamily("  Some New Base  ")).toBe("Some New Base");
+      expect(normalizeComfyFamily(undefined)).toBeUndefined();
+      expect(normalizeComfyFamily("   ")).toBeUndefined();
+    });
+  });
+
+  describe("listSamplers & listSchedulers (CG-A3)", () => {
+    it("maps the KSampler combo enums to bare entries", async () => {
+      const { transport } = makeTransport((url) => {
+        if (url.pathname === "/object_info/KSampler") {
+          return Response.json({
+            KSampler: {
+              input: {
+                required: {
+                  sampler_name: [["euler", "dpmpp_2m_sde"], {}],
+                  scheduler: [["simple", "beta"], {}],
+                },
+              },
+            },
+          });
+        }
+        return new Response("not found", { status: 404 });
+      });
+      const backend = backendWith(transport);
+      expect(backend.listSamplers).toBeDefined();
+      expect(await backend.listSamplers!()).toEqual([{ name: "euler" }, { name: "dpmpp_2m_sde" }]);
+      expect(await backend.listSchedulers!()).toEqual([{ name: "simple" }, { name: "beta" }]);
+    });
+
+    it("maps upstream failures with the upstream status", async () => {
+      const { transport } = makeTransport(() => new Response("nope", { status: 503 }));
+      const backend = backendWith(transport);
+      let caught: unknown;
+      try {
+        await backend.listSamplers!();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught instanceof ComfyImageGenError).toBe(true);
+      expect((caught as ComfyImageGenError).status).toBe(503);
     });
   });
 

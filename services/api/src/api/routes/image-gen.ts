@@ -15,7 +15,7 @@
  *   POST   /api/image-gen/profiles/:id/probe
  *   GET    /api/image-gen/profiles/:id/models
  *   GET    /api/image-gen/profiles/:id/samplers        (capability-gated)
- *   GET    /api/image-gen/profiles/:id/schedulers       (dialect-gated, PG-3)
+ *   GET    /api/image-gen/profiles/:id/schedulers       (dialect-gated: A1111 + ComfyUI, PG-3/CG-A3)
  *   GET    /api/image-gen/profiles/:id/progress        (capability-gated, PG-2)
  *   POST   /api/image-gen/profiles/:id/interrupt       (capability-gated, PG-2)
  *   POST   /api/image-gen/draft/models                 (shared fetch-by-endpoint)
