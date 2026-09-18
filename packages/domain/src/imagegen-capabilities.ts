@@ -453,4 +453,32 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Dashscope]: {
+    // PE-2 unit 4 — DashScope/Model Studio card (doc-verified 2026-09-07;
+    // re-verified 2026-09-18 with the live z-image/wan2.7 API references
+    // + the t2i guide re-read, and both paths existence-probed on the
+    // intl non-workspace domain): CHAT-SHAPED bodies (input.messages +
+    // parameters), two transports — SYNC multimodal-generation (qwen-
+    // image-3.0-pro, z-image-turbo) and ASYNC image-generation +
+    // X-DashScope-Async + task poll (wan2.7-image-pro, 3–5 s cadence,
+    // 150 s budget inside the cloud timeout). Size format "W*H"
+    // (ASTERISK — DashScope's own). negative_prompt: qwen-image ONLY
+    // (wan REJECTS it, z-image documents none — dropped there, never
+    // folded into the prompt). seed: z-image t2i ONLY ([0, 2147483647]).
+    // watermark:false for wan (the guide's own example value — the
+    // Volcengine twin named decision). prompt_extend NEVER sent (vendor
+    // per-model defaults stand). Delivery: 24 h OSS URLs, downloaded
+    // server-side. Static trio catalog; invalid-post probe on the sync
+    // path (live 401 without key).
+    supportsNegativePrompt: true,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

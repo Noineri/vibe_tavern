@@ -1057,6 +1057,7 @@ export const IMAGE_GEN_BACKENDS = {
   Zai: "zai",
   MiniMax: "minimax",
   Volcengine: "volcengine",
+  Dashscope: "dashscope",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

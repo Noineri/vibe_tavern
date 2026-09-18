@@ -250,6 +250,18 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Alibaba DashScope intl — the documented non-workspace domain
+  // (existence-probed live); a workspace URL
+  // (https://{WorkspaceId}.{region}.maas.aliyuncs.com/api/v1) pasted over
+  // it works identically. Chat-shaped trio: qwen-image-3.0-pro (sync),
+  // z-image-turbo (sync), wan2.7-image-pro (async + poll).
+  {
+    id: "dashscope",
+    label: "DashScope",
+    backend: IMAGE_GEN_BACKENDS.Dashscope,
+    baseUrl: "https://dashscope-intl.aliyuncs.com/api/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

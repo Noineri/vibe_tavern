@@ -14,6 +14,7 @@ import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern
 
 import { ZAI_IMAGE_SIZES } from "../src/domain/imagegen/backends/openai-images-family.js";
 import { MINIMAX_ASPECT_RATIOS } from "../src/domain/imagegen/backends/minimax.js";
+import { pollDashScopeTask } from "../src/domain/imagegen/backends/dashscope.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 
 // ─── Shared helpers (the PE-1 file's, verbatim discipline) ───────────────────
@@ -364,6 +365,289 @@ describe("volcengine (openai-images family, invalid-post probe)", () => {
       const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.Volcengine, {
         endpoint: VOLCENGINE_ENDPOINT,
         apiKey: "ark-key",
+      });
+      expect(typeof backend.generate).toBe("function");
+      expect(typeof backend.listModels).toBe("function");
+    });
+  });
+});
+
+// ─── DashScope (PE-2 unit 4) ──────────────────────────────
+
+const DASHSCOPE_ENDPOINT = "https://dashscope-intl.aliyuncs.com/api/v1";
+
+describe("dashscope (custom-JSON arm, sync + async)", () => {
+  const make = (transport: typeof fetch) =>
+    familyBackend(IMAGE_GEN_BACKENDS.Dashscope, transport, DASHSCOPE_ENDPOINT, "sk-key");
+
+  /** A choices[] body with one image entry (the shape both the sync
+   *  response and a SUCCEEDED task carry). */
+  function choicesBody(imageUrl: string, usage: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      output: {
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: [{ image: imageUrl, type: "image" }, { text: "echo" }],
+            },
+          },
+        ],
+      },
+      usage,
+      request_id: "req-1",
+    };
+  }
+
+  describe("generate — SYNC (qwen-image / z-image)", () => {
+    it("sends the chat-shaped body with the ASTERISK size format and qwen-only negative_prompt", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json(choicesBody("https://oss.example/a.png", { width: 832, height: 1248 })),
+      );
+      const download = makeTransport(
+        () => new Response(new Uint8Array(PNG_BYTES), { status: 200, headers: { "content-type": "image/png" } }),
+      );
+      let answered = false;
+      const combined: typeof fetch = (url, init) => {
+        if (!answered) {
+          answered = true;
+          return transport(url, init);
+        }
+        return download.transport(url, init);
+      };
+
+      const backend = make(combined);
+      const result = await backend.generate({
+        prompt: "таверна в сумерках",
+        model: "qwen-image-3.0-pro",
+        width: 832,
+        height: 1248,
+        negativePrompt: "blurry",
+        seed: 123,
+      });
+
+      expect(calls[0].url).toBe(`${DASHSCOPE_ENDPOINT}/services/aigc/multimodal-generation/generation`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer sk-key");
+      expect("X-DashScope-Async" in headers).toBe(false);
+      const body = sentJson(calls[0]);
+      expect(body.model).toBe("qwen-image-3.0-pro");
+      expect(body.input).toEqual({
+        messages: [{ role: "user", content: [{ text: "таверна в сумерках" }] }],
+      });
+      // ASTERISK separator — DashScope's own format, not "WxH".
+      expect(body.parameters.size).toBe("832*1248");
+      // qwen-image surface: negative rides; seed (edit-path-only per the
+      // card) does NOT; watermark (not in the qwen t2i example) does not.
+      expect(body.parameters.negative_prompt).toBe("blurry");
+      expect("seed" in body.parameters).toBe(false);
+      expect("watermark" in body.parameters).toBe(false);
+      // prompt_extend never sent — the vendor default stands.
+      expect("prompt_extend" in body.parameters).toBe(false);
+      // The 24 h OSS URL is downloaded server-side; usage.width/height ride.
+      expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+      expect(result.width).toBe(832);
+      expect(result.height).toBe(1248);
+    });
+
+    it("z-image: seed rides, negative does NOT (no surface), asterisk size", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json(choicesBody("https://oss.example/z.png")),
+      );
+      let answered = false;
+      const combined: typeof fetch = (url, init) => {
+        if (!answered) {
+          answered = true;
+          return transport(url, init);
+        }
+        return Promise.resolve(new Response(new Uint8Array(PNG_BYTES), { status: 200 }));
+      };
+      const backend = make(combined);
+      await backend.generate({
+        prompt: "p",
+        model: "z-image-turbo",
+        width: 1024,
+        height: 1024,
+        seed: 777,
+        negativePrompt: "noise",
+      });
+      const body = sentJson(calls[0]);
+      expect(body.parameters.seed).toBe(777);
+      expect("negative_prompt" in body.parameters).toBe(false);
+      expect(body.parameters.size).toBe("1024*1024");
+    });
+  });
+
+  describe("generate — ASYNC (wan2.7)", () => {
+    it("submits with X-DashScope-Async, polls the task, downloads the image, parses usage.size", async () => {
+      const taskBody = {
+        request_id: "r2",
+        output: {
+          task_id: "task-42",
+          task_status: "SUCCEEDED",
+          finished: true,
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                role: "assistant",
+                content: [{ image: "https://oss.example/w.png", type: "image" }],
+              },
+            },
+          ],
+        },
+        usage: { size: "2976*1408", image_count: 1 },
+      };
+      const { transport, calls } = makeTransport(() => Response.json(taskBody));
+      let step = 0;
+      const scripted: typeof fetch = (url, init) => {
+        step += 1;
+        void transport; // record via the transport double below
+        void calls;
+        if (step === 1) {
+          // The async submit — PENDING first (the poll loop runs once).
+          return Promise.resolve(
+            Response.json({ output: { task_id: "task-42", task_status: "PENDING" }, request_id: "r1" }),
+          );
+        }
+        if (step === 2) {
+          return Promise.resolve(Response.json(taskBody));
+        }
+        return Promise.resolve(new Response(new Uint8Array(PNG_BYTES), { status: 200 }));
+      };
+      const recorded: RecordedCall[] = [];
+      const recording: typeof fetch = (url, init) => {
+        recorded.push({ url: String(url), init });
+        return scripted(url, init);
+      };
+
+      const backend = make(recording);
+      const result = await backend.generate({
+        prompt: "p",
+        model: "wan2.7-image-pro",
+        width: 2976,
+        height: 1408,
+        negativePrompt: "unwanted", // wan REJECTS negative_prompt — dropped
+      });
+
+      // Submit hit the ASYNC path with the header.
+      expect(recorded[0].url).toBe(`${DASHSCOPE_ENDPOINT}/services/aigc/image-generation/generation`);
+      const submitHeaders = recorded[0].init?.headers as Record<string, string>;
+      expect(submitHeaders["X-DashScope-Async"]).toBe("enable");
+      const submitBody = sentJson(recorded[0]);
+      expect(submitBody.model).toBe("wan2.7-image-pro");
+      expect(submitBody.parameters.size).toBe("2976*1408");
+      // The guide's own example value — the watermark-off named decision.
+      expect(submitBody.parameters.watermark).toBe(false);
+      // wan REJECTS negative_prompt — the adapter drops it.
+      expect("negative_prompt" in submitBody.parameters).toBe(false);
+      // The poll hit the tasks endpoint.
+      expect(recorded[1].url).toBe(`${DASHSCOPE_ENDPOINT}/tasks/task-42`);
+      // The image downloaded; usage.size "2976*1408" parsed onto the result.
+      expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+      expect(result.width).toBe(2976);
+      expect(result.height).toBe(1408);
+    });
+  });
+
+  describe("pollDashScopeTask (exported seam)", () => {
+    it("polls PENDING→RUNNING→SUCCEEDED with the injected wait (no sleeps)", async () => {
+      const statuses = ["PENDING", "RUNNING", "SUCCEEDED"];
+      const done = {
+        output: { task_id: "t", task_status: "SUCCEEDED", choices: [] },
+        usage: { size: "1024*1024" },
+      };
+      let i = 0;
+      const waits: number[] = [];
+      const fetchDouble: typeof fetch = () => {
+        const status = statuses[i];
+        i += 1;
+        return Promise.resolve(
+          status === "SUCCEEDED"
+            ? Response.json(done)
+            : Response.json({ output: { task_id: "t", task_status: status } }),
+        );
+      };
+      const root = await pollDashScopeTask({
+        endpoint: DASHSCOPE_ENDPOINT,
+        apiKey: "sk-key",
+        taskId: "t",
+        fetch: fetchDouble,
+        wait: (ms) => {
+          waits.push(ms);
+          return Promise.resolve();
+        },
+      });
+      expect(root.output).toEqual(done.output);
+      // Two waits (after PENDING, after RUNNING), guide cadence 3 s.
+      expect(waits).toEqual([3000, 3000]);
+    });
+
+    it("throws on FAILED with the documented output.code/message", async () => {
+      const fetchDouble: typeof fetch = () =>
+        Promise.resolve(
+          Response.json({
+            output: { task_id: "t", task_status: "FAILED", code: "DataInspectionFailed", message: "flagged" },
+          }),
+        );
+      await expect(
+        pollDashScopeTask({
+          endpoint: DASHSCOPE_ENDPOINT,
+          apiKey: "sk-key",
+          taskId: "t",
+          fetch: fetchDouble,
+          wait: () => Promise.resolve(),
+        }),
+      ).rejects.toThrow(/FAILED \(code DataInspectionFailed: flagged\)/);
+    });
+  });
+
+  describe("listModels + probe", () => {
+    it("returns the static trio without any HTTP call", async () => {
+      const { transport, calls } = makeTransport(() => Response.json({}));
+      const backend = make(transport);
+      const models = await backend.listModels();
+      expect(models.map((m) => m.id)).toEqual([
+        "qwen-image-3.0-pro",
+        "wan2.7-image-pro",
+        "z-image-turbo",
+      ]);
+      expect(calls).toHaveLength(0);
+    });
+
+    it("probes via invalid-post on the SYNC endpoint (401 = rejected, 400 = accepted)", async () => {
+      const rejected = makeTransport(
+        () => Response.json({ message: "Unauthorized" }, { status: 401 }),
+      );
+      const bad = await make(rejected.transport).probe();
+      expect(bad.ok).toBe(false);
+      expect(bad.status).toBe(401);
+
+      const accepted = makeTransport(
+        () => Response.json({ code: "InvalidParameter", message: "model required" }, { status: 400 }),
+      );
+      const good = await make(accepted.transport).probe();
+      expect(good).toEqual({ ok: true, detail: "credentials accepted — 3 static models" });
+    });
+  });
+
+  describe("capability row + registry", () => {
+    it("pins the DashScope capability row (negative qwen-only, seed z-image-only, free sizes)", () => {
+      const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Dashscope];
+      expect(caps.supportsNegativePrompt).toBe(true);
+      expect(caps.supportsSamplers).toBe(false);
+      expect(caps.supportsSeed).toBe(true);
+      expect(caps.sizeSupport).toEqual({ kind: "free" });
+      expect(caps.noApiKey).toBe(false);
+      expect(caps.localExecution).toBe(false);
+      expect(caps.paramRanges).toEqual({});
+    });
+
+    it("registers the dashscope slug at import time (creatable via the registry)", () => {
+      const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.Dashscope, {
+        endpoint: DASHSCOPE_ENDPOINT,
+        apiKey: "sk-key",
       });
       expect(typeof backend.generate).toBe("function");
       expect(typeof backend.listModels).toBe("function");
