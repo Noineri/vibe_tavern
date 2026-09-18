@@ -1052,6 +1052,7 @@ export const IMAGE_GEN_BACKENDS = {
   NanoGpt: "nanogpt",
   ElectronHub: "electronhub",
   Pollinations: "pollinations",
+  DeepInfra: "deepinfra",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

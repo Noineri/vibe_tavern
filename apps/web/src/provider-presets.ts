@@ -201,6 +201,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://gen.pollinations.ai/v1",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // DeepInfra — https://api.deepinfra.com/v1; canonical path per the
+  // 2026-09-18 re-verification (/v1/images/generations — the card's
+  // /v1/openai/... prefix is a legacy alias), b64_json delivery.
+  {
+    id: "deepinfra",
+    label: "DeepInfra",
+    backend: IMAGE_GEN_BACKENDS.DeepInfra,
+    baseUrl: "https://api.deepinfra.com/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

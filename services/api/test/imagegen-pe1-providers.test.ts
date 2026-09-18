@@ -578,6 +578,110 @@ describe("pollinations (openai-images family)", () => {
   });
 });
 
+// ─── DeepInfra (PE-1 unit 6) ─────────────────────────────────────────────
+
+const DEEPINFRA_ENDPOINT = "https://api.deepinfra.com/v1";
+
+describe("deepinfra (openai-images family)", () => {
+  const make = (transport: typeof fetch) =>
+    familyBackend(IMAGE_GEN_BACKENDS.DeepInfra, transport, DEEPINFRA_ENDPOINT, "di-key");
+
+  describe("generate", () => {
+    it("hits the CANONICAL path (/v1/images/generations — the 2026-09-18 drift fix) with free-form WxH + b64_json", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+
+      await backend.generate({
+        prompt: "a tavern at dusk",
+        model: "black-forest-labs/FLUX-2-dev",
+        width: 1024,
+        height: 768,
+      });
+
+      // The re-verified canonical path — NOT the card's legacy
+      // /v1/openai/images/generations alias.
+      expect(calls[0].url).toBe(`${DEEPINFRA_ENDPOINT}/images/generations`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer di-key");
+      const body = sentJson(calls[0]);
+      expect(body.model).toBe("black-forest-labs/FLUX-2-dev");
+      expect(body.size).toBe("1024x768");
+      expect(body.response_format).toBe("b64_json");
+    });
+
+    it("omits size when unset (the vendor's 1024x1024 default applies — never ours)", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+      await backend.generate({ prompt: "p", model: "black-forest-labs/FLUX-2-dev" });
+      expect("size" in sentJson(calls[0])).toBe(false);
+    });
+
+    it("never sends negative prompt / steps / seed / quality (no surface or seam)", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+      await backend.generate({
+        prompt: "p",
+        model: "Qwen/Qwen-Image-Max",
+        steps: 28,
+        cfgScale: 4.5,
+        seed: 3,
+        negativePrompt: "text",
+      });
+      const body = sentJson(calls[0]);
+      expect("negative_prompt" in body).toBe(false);
+      expect("steps" in body).toBe(false);
+      expect("guidance_scale" in body).toBe(false);
+      expect("seed" in body).toBe(false);
+      expect("quality" in body).toBe(false);
+    });
+  });
+
+  describe("listModels + probe", () => {
+    it("queries the PUBLIC GET /models (no auth wall) and lists the bare-array catalog UNFILTERED", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json([
+          { id: "black-forest-labs/FLUX-2-dev", description: "FLUX.2 dev" },
+          { id: "Qwen/Qwen-Image-Max" },
+          { id: "deepseek-ai/DeepSeek-V3" }, // LLM row — no discriminator → kept
+        ]),
+      );
+      const backend = make(transport);
+      const models = await backend.listModels();
+      expect(models).toEqual([
+        { id: "black-forest-labs/FLUX-2-dev", label: "black-forest-labs/FLUX-2-dev", description: "FLUX.2 dev" },
+        { id: "Qwen/Qwen-Image-Max", label: "Qwen/Qwen-Image-Max" },
+        { id: "deepseek-ai/DeepSeek-V3", label: "deepseek-ai/DeepSeek-V3" },
+      ]);
+      expect(calls[0].url).toBe(`${DEEPINFRA_ENDPOINT}/models`);
+
+      const probed = await backend.probe();
+      expect(probed).toEqual({ ok: true, detail: "3 models" });
+    });
+  });
+
+  describe("capability row + registry", () => {
+    it("pins the DeepInfra capability row (free sizes, all-off params)", () => {
+      const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.DeepInfra];
+      expect(caps.supportsNegativePrompt).toBe(false);
+      expect(caps.supportsSamplers).toBe(false);
+      expect(caps.supportsSeed).toBe(false);
+      expect(caps.sizeSupport).toEqual({ kind: "free" });
+      expect(caps.noApiKey).toBe(false);
+      expect(caps.localExecution).toBe(false);
+      expect(caps.paramRanges).toEqual({});
+    });
+
+    it("registers the deepinfra slug at import time (creatable via the registry)", () => {
+      const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.DeepInfra, {
+        endpoint: DEEPINFRA_ENDPOINT,
+        apiKey: "di-key",
+      });
+      expect(typeof backend.generate).toBe("function");
+      expect(typeof backend.listModels).toBe("function");
+    });
+  });
+});
+
 // ─── Together AI (PE-1 unit 1) ───────────────────────────────────────────────
 
 const TOGETHER_ENDPOINT = "https://api.together.ai/v1";

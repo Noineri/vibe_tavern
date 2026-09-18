@@ -293,4 +293,28 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.DeepInfra]: {
+    // PE-1 unit 6 — DeepInfra card (doc-verified 2026-09-07) + supervisor
+    // live re-verification 2026-09-18 with TWO logged drift facts: the
+    // canonical path is now /v1/images/generations (the card's
+    // /v1/openai/images/generations is a legacy alias, gone from the
+    // current openapi.json), and response_format now documents url too
+    // ("expires after about a day") — b64_json stays what VT requests
+    // (zero expiry surface). Free-form WxH size (default 1024x1024 is the
+    // vendor's, never ours). quality/style are compatibility-only (no
+    // seam, never sent); no negative_prompt on this surface → off.
+    // GET /v1/models public no-auth — the t2i-vs-edit suffix ideas are
+    // heuristics, not documented discriminators → catalog listed
+    // UNFILTERED.
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

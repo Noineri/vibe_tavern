@@ -221,6 +221,38 @@ const POLLINATIONS_OPTIONS: OpenAiImagesFamilyOptions = {
   probeModelNoun: "image models",
 };
 
+// ─── DeepInfra (PE-1 unit 6) ──────────────────────────────────────────────
+
+/** Card: IMAGE_GEN_CLOUD_PROVIDERS_RESEARCH "DeepInfra" (doc-verified
+ *  2026-09-07) + supervisor live re-verification 2026-09-18 — **DRIFT
+ *  FOUND (2 facts, logged in the research report)**:
+ *  - the canonical generation path in the CURRENT openapi.json is
+ *    `POST /v1/images/generations` — the card's `/v1/openai/images/
+ *    generations` is no longer in the spec (legacy alias); with the
+ *    preset endpoint `https://api.deepinfra.com/v1` the shared transport
+ *    hits the canonical path exactly;
+ *  - `response_format` now documents BOTH b64_json (default) and url —
+ *    b64 stays what VT requests (zero expiry surface; url's "expires
+ *    after about a day" note makes it strictly worse here);
+ *  - `size` is a free-form "WxH" string (default 1024x1024 — the vendor's
+ *    default, never ours; no closed grid documented) → verbatim WxH;
+ *  - `quality`/`style` are compatibility-only params (ignored by DeepInfra)
+ *    and have no contract seam anyway → never sent; no negative_prompt on
+ *    this surface → no wire name;
+ *  - model listing: GET /v1/models public no-auth (bare-array shape), the
+ *    freshest FLUX/Qwen lineup of the cloud group; the card's
+ *    t2i-vs-edit/video suffix ideas are HEURISTICS, not documented
+ *    discriminators → listed UNFILTERED (unfiltered truth beats a guessed
+ *    filter). */
+const DEEPINFRA_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "DeepInfra",
+  size: { kind: "verbatim", param: "size" },
+  responseFormat: { kind: "always", value: "b64_json" },
+  envelope: "openai-data",
+  modelsPath: "models",
+  probeModelNoun: "models",
+};
+
 // ─── Registration (one factory closure per OPTIONS row) ──────────────────────
 
 /** The PE-1 OPTIONS table — one row per family slug. Grows one row per
@@ -233,6 +265,7 @@ const PE1_FAMILY: ReadonlyArray<{ slug: ImageGenBackendType; options: OpenAiImag
   { slug: IMAGE_GEN_BACKENDS.NanoGpt, options: NANOGPT_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.ElectronHub, options: ELECTRONHUB_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.Pollinations, options: POLLINATIONS_OPTIONS },
+  { slug: IMAGE_GEN_BACKENDS.DeepInfra, options: DEEPINFRA_OPTIONS },
 ];
 
 for (const { slug, options } of PE1_FAMILY) {
