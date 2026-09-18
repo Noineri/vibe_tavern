@@ -21,7 +21,7 @@ import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern
 // Importing the family module registers every PE-1 slug (import-time
 // registration — what these tests pin).
 import "../src/domain/imagegen/backends/openai-images-family.js";
-import { SILICONFLOW_IMAGE_SIZES } from "../src/domain/imagegen/backends/openai-images-family.js";
+import { SILICONFLOW_IMAGE_SIZES, ELECTRONHUB_IMAGE_SIZES } from "../src/domain/imagegen/backends/openai-images-family.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 import { OpenAiImagesConfigError, OpenAiImagesError } from "../src/domain/imagegen/backends/openai-images.js";
 import type { ImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
@@ -338,6 +338,122 @@ describe("nanogpt (openai-images family)", () => {
       const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.NanoGpt, {
         endpoint: NANOGPT_ENDPOINT,
         apiKey: "ng-key",
+      });
+      expect(typeof backend.generate).toBe("function");
+      expect(typeof backend.listModels).toBe("function");
+    });
+  });
+});
+
+// ─── ElectronHub (PE-1 unit 4) ─────────────────────────────────────────────
+
+const ELECTRONHUB_ENDPOINT = "https://api.electronhub.ai/v1";
+
+describe("electronhub (openai-images family)", () => {
+  const make = (transport: typeof fetch) =>
+    familyBackend(IMAGE_GEN_BACKENDS.ElectronHub, transport, ELECTRONHUB_ENDPOINT, "ek-key");
+
+  describe("generate", () => {
+    it("sends the documented OpenAI-images body: size from the DALL-E-shaped grid + response_format b64_json", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+
+      await backend.generate({
+        prompt: "a tavern at dusk",
+        model: "stable-diffusion-3.5-large",
+        width: 1792,
+        height: 1024,
+      });
+
+      expect(calls[0].url).toBe(`${ELECTRONHUB_ENDPOINT}/images/generations`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer ek-key");
+      const body = sentJson(calls[0]);
+      expect(body.model).toBe("stable-diffusion-3.5-large");
+      expect(body.size).toBe("1792x1024");
+      // URL lifetime UNVERIFIED on the card → bytes requested.
+      expect(body.response_format).toBe("b64_json");
+    });
+
+    it("fails closed on an off-grid size; user entries ride verbatim (IG-20a)", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+      await expect(
+        backend.generate({ prompt: "p", model: "aamxl", width: 832, height: 1216 }),
+      ).rejects.toThrow(/ElectronHub has no documented size for 832x1216/);
+      expect(calls).toHaveLength(0);
+
+      const user = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const userBackend = createImageGenBackend(IMAGE_GEN_BACKENDS.ElectronHub, {
+        endpoint: ELECTRONHUB_ENDPOINT,
+        apiKey: "ek-key",
+        userSizes: [{ width: 832, height: 1216 }],
+        fetch: user.transport,
+      });
+      await userBackend.generate({ prompt: "p", model: "aamxl", width: 832, height: 1216 });
+      expect(sentJson(user.calls[0]).size).toBe("832x1216");
+    });
+
+    it("never sends negative prompt / steps / seed (no OpenAPI surface)", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+      await backend.generate({
+        prompt: "p",
+        model: "aamxl",
+        steps: 25,
+        cfgScale: 5,
+        seed: 9,
+        negativePrompt: "blurry",
+      });
+      const body = sentJson(calls[0]);
+      expect("negative_prompt" in body).toBe(false);
+      expect("steps" in body).toBe(false);
+      expect("guidance_scale" in body).toBe(false);
+      expect("seed" in body).toBe(false);
+    });
+  });
+
+  describe("listModels + probe", () => {
+    it("queries GET /models with Bearer and lists the catalog UNFILTERED (no documented discriminator)", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({
+          data: [
+            { id: "stable-diffusion-3.5-large" },
+            { id: "aamxl" },
+            { id: "gpt-4o" }, // LLM row — no discriminator documented → kept
+          ],
+        }),
+      );
+      const backend = make(transport);
+      const models = await backend.listModels();
+      expect(models.map((m) => m.id)).toEqual(["stable-diffusion-3.5-large", "aamxl", "gpt-4o"]);
+      expect(calls[0].url).toBe(`${ELECTRONHUB_ENDPOINT}/models`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer ek-key");
+
+      const probed = await backend.probe();
+      expect(probed).toEqual({ ok: true, detail: "3 models" });
+    });
+  });
+
+  describe("capability row + registry", () => {
+    it("pins the ElectronHub capability row (documented five-value size grid)", () => {
+      const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.ElectronHub];
+      expect(caps.supportsNegativePrompt).toBe(false);
+      expect(caps.supportsSamplers).toBe(false);
+      expect(caps.supportsSeed).toBe(false);
+      expect(caps.noApiKey).toBe(false);
+      expect(caps.localExecution).toBe(false);
+      expect(caps.paramRanges).toEqual({});
+      if (caps.sizeSupport.kind !== "vendor-set") throw new Error("expected vendor-set");
+      // Lockstep: the capability grid IS the adapter's documented grid.
+      expect(caps.sizeSupport.sizes).toEqual([...ELECTRONHUB_IMAGE_SIZES.keys()]);
+    });
+
+    it("registers the electronhub slug at import time (creatable via the registry)", () => {
+      const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.ElectronHub, {
+        endpoint: ELECTRONHUB_ENDPOINT,
+        apiKey: "ek-key",
       });
       expect(typeof backend.generate).toBe("function");
       expect(typeof backend.listModels).toBe("function");

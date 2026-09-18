@@ -240,4 +240,32 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.ElectronHub]: {
+    // PE-1 unit 4 — ElectronHub card (doc-verified 2026-09-07 — Fern docs +
+    // inline OpenAPI yaml) + supervisor live re-verification 2026-09-18
+    // (unchanged): OpenAI-images-compat POST /v1/images/generations, Bearer
+    // (`ek-` keys). The documented `size` enum is DALL-E-shaped (5 values)
+    // while the live catalog is SD-family/nano-banana/qwen/z-image —
+    // per-model size behavior UNVERIFIED on the card → the grid publishes
+    // the DOCUMENTED enum; a size off a specific model's real support fails
+    // upstream, never silently here. response_format url-default |
+    // b64_json documented; URL lifetime UNVERIFIED → adapter requests
+    // b64_json (bytes inline). No steps/seed/sampler/negative_prompt
+    // surface on their OpenAPI → all off. GET /v1/models public no-auth —
+    // NO documented discriminator → catalog listed UNFILTERED (LLM rows
+    // included; unfiltered truth beats a guessed filter).
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    sizeSupport: {
+      kind: "vendor-set",
+      sizes: ["256x256", "512x512", "1024x1024", "1792x1024", "1024x1792"],
+    },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

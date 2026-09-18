@@ -181,6 +181,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://nano-gpt.com/api/v1",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // ElectronHub — https://api.electronhub.ai/v1, OpenAI-images-compat
+  // (DALL-E-shaped documented size enum, b64_json requested; community
+  // anime checkpoint catalog per the card + 2026-09-18 re-verification).
+  {
+    id: "electronhub",
+    label: "ElectronHub",
+    backend: IMAGE_GEN_BACKENDS.ElectronHub,
+    baseUrl: "https://api.electronhub.ai/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

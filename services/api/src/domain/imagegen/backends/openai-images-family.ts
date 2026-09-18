@@ -150,6 +150,44 @@ const NANOGPT_OPTIONS: OpenAiImagesFamilyOptions = {
   probeModelNoun: "image models",
 };
 
+// ─── ElectronHub (PE-1 unit 4) ───────────────────────────────────────────────
+
+/** Card: IMAGE_GEN_CLOUD_PROVIDERS_RESEARCH "ElectronHub" (doc-verified
+ *  2026-09-07 — Fern docs + inline OpenAPI yaml) + supervisor live
+ *  re-verification 2026-09-18 (unchanged):
+ *  - POST /v1/images/generations, Bearer (`ek-` keys) — OpenAI-images
+ *    compat: required [model, prompt]; the documented `size` enum is
+ *    DALL-E-shaped (256²…1792×1024) while the live catalog is SD-family +
+ *    nano-banana/qwen/z-image — per-model size behavior is UNVERIFIED on
+ *    the card, so the grid publishes the DOCUMENTED five-value enum (the
+ *    contract their OpenAPI states), userSizes ride verbatim (IG-20a),
+ *    off-grid fails closed;
+ *  - `response_format` documents url (default) | b64_json; URL lifetime
+ *    UNVERIFIED → b64_json requested (bytes inline, house rule regardless);
+ *  - response is the OpenAI `{created, data[]{url|b64_json,
+ *    revised_prompt}}` shape;
+ *  - no steps/guidance/seed/negative_prompt surface on their OpenAPI → no
+ *    wire names;
+ *  - model listing: GET /v1/models — public no-auth, ~594 rows (~125
+ *    image verified live); the card documents NO discriminator → listed
+ *    UNFILTERED (unfiltered truth beats a guessed filter). */
+export const ELECTRONHUB_IMAGE_SIZES: ReadonlyMap<string, { width: number; height: number }> = new Map([
+  ["256x256", { width: 256, height: 256 }],
+  ["512x512", { width: 512, height: 512 }],
+  ["1024x1024", { width: 1024, height: 1024 }],
+  ["1792x1024", { width: 1792, height: 1024 }],
+  ["1024x1792", { width: 1024, height: 1792 }],
+]);
+
+const ELECTRONHUB_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "ElectronHub",
+  size: { kind: "grid", param: "size", sizes: ELECTRONHUB_IMAGE_SIZES },
+  responseFormat: { kind: "always", value: "b64_json" },
+  envelope: "openai-data",
+  modelsPath: "models",
+  probeModelNoun: "models",
+};
+
 // ─── Registration (one factory closure per OPTIONS row) ──────────────────────
 
 /** The PE-1 OPTIONS table — one row per family slug. Grows one row per
@@ -160,6 +198,7 @@ const PE1_FAMILY: ReadonlyArray<{ slug: ImageGenBackendType; options: OpenAiImag
   { slug: IMAGE_GEN_BACKENDS.TogetherAi, options: TOGETHERAI_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.SiliconFlow, options: SILICONFLOW_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.NanoGpt, options: NANOGPT_OPTIONS },
+  { slug: IMAGE_GEN_BACKENDS.ElectronHub, options: ELECTRONHUB_OPTIONS },
 ];
 
 for (const { slug, options } of PE1_FAMILY) {
