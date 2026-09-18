@@ -1587,6 +1587,11 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       triggerTestId="image-gen-field-encoder"
                       searchable={false}
                       className="w-auto max-w-[320px]"
+                      // `defaultOption` makes Auto PICKABLE in the opened
+                      // list (empty-id options are filtered out — the CG-B2
+                      // review caught the pane's Auto as display-only; the
+                      // chip's twin now ships pickable, parity restored).
+                      defaultOption={t("image_gen_sidecar_auto")}
                       options={[
                         { id: "", label: t("image_gen_sidecar_auto") },
                         ...(sidecars?.encoders ?? []).map((name) => ({ id: name, label: name })),
@@ -1607,6 +1612,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       triggerTestId="image-gen-field-vae"
                       searchable={false}
                       className="w-auto max-w-[320px]"
+                      defaultOption={t("image_gen_sidecar_auto")}
                       options={[
                         { id: "", label: t("image_gen_sidecar_auto") },
                         ...(sidecars?.vaes ?? []).map((name) => ({ id: name, label: name })),

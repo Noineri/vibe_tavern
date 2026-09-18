@@ -877,6 +877,13 @@ describe("ImageGenPane — comfyui dialect surfaces (CG-B1)", () => {
     await waitFor(() => expect(setForm).toHaveBeenCalledTimes(2));
     const patch2 = (setForm.mock.calls[1] as unknown[])[0] as { defaultParams: Record<string, unknown> };
     expect(patch2.defaultParams).toEqual({ vaeName: "qwen_image_vae.safetensors" });
+
+    // CG-B2 parity fix: Auto is PICKABLE in the opened list (defaultOption —
+    // empty-id options are filtered out) and picking it CLEARS the field.
+    await pickOption(view, "image-gen-field-encoder", "image_gen_sidecar_auto");
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(3));
+    const patch3 = (setForm.mock.calls[2] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch3.defaultParams).toEqual({ encoderName: undefined });
   });
 
   it("the sidecar cache fills ONCE while a DiT model is selected (options-data fetch, no status signal)", async () => {
