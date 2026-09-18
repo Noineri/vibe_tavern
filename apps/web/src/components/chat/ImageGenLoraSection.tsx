@@ -203,7 +203,11 @@ export function ImageGenLoraSection({ chatId, modelFamily, loras, failed, disabl
                           <button
                             type="button"
                             data-testid="image-gen-ft-lora-triggers"
-                            title={t("image_gen_lora_triggers_label")}
+                            // Full words in the tooltip: the row may truncate the
+                            // chip, but the full value must stay reachable (the
+                            // truncation contract; some loras carry a whole
+                            // prompt template as their trigger).
+                            title={lora.triggerWords.join(", ")}
                             aria-label={`${lora.name}: ${t("image_gen_lora_triggers_label")}`}
                             onClick={() => copyTriggers(lora.triggerWords)}
                             className="max-w-[60%] shrink-0 cursor-pointer truncate rounded border border-border bg-s2 px-1.5 py-0.5 text-left font-mono text-[calc(var(--ui-fs)-4px)] text-t3 transition-colors hover:border-accent/50 hover:text-t1"

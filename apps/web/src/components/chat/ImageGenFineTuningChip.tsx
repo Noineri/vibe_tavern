@@ -239,7 +239,9 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
   }, [effectiveId, supportsLoras]);
 
   if (profiles === null) {
-    return <div className="flex h-16 items-center justify-center px-3 text-xs text-t3">…</div>;
+    return (
+      <div className="flex h-16 items-center justify-center px-3 text-[calc(var(--ui-fs)-2px)] text-t3">…</div>
+    );
   }
 
   const busy = running !== undefined;

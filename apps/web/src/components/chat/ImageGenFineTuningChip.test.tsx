@@ -501,8 +501,12 @@ describe("ImageGenFineTuningChip — LoRA section (CG-C3)", () => {
     await pickOption("image-gen-ft-loras-family", "image_gen_loras_family_all");
     await waitFor(() => expect(rows(view).length).toBe(4));
     const dragonRow = rows(view).find((r) => r.dataset.lora === "dragonPony.safetensors")!;
+    // Truncation contract: the row may clip the chip, but the FULL joined
+    // words stay reachable in the tooltip.
+    const dragonBtn = within(dragonRow).getByTestId("image-gen-ft-lora-triggers");
+    expect(dragonBtn.title).toBe("Dragon, dragon lord");
     await act(async () => {
-      within(dragonRow).getByTestId("image-gen-ft-lora-triggers").click();
+      dragonBtn.click();
     });
     expect(clipboardCalls).toEqual(["Nijireol", "Dragon, dragon lord"]);
   });
