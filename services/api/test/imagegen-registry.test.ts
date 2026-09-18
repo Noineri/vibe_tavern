@@ -182,7 +182,7 @@ describe("imagegen registry", () => {
   describe("listImageGenBackendSlugs", () => {
     it("contains exactly the roster slugs (four v1 + PE-1 family)", () => {
       expect(listImageGenBackendSlugs().sort()).toEqual([...ALL_SLUGS].sort());
-      expect(ALL_SLUGS).toHaveLength(6);
+      expect(ALL_SLUGS).toHaveLength(7);
     });
   });
 

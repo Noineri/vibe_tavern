@@ -172,6 +172,15 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.siliconflow.com/v1",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // NanoGPT — https://nano-gpt.com/api/v1 (same host as the LLM preset;
+  // image-models listing path per the card + 2026-09-18 re-verification).
+  {
+    id: "nanogpt",
+    label: "NanoGPT",
+    backend: IMAGE_GEN_BACKENDS.NanoGpt,
+    baseUrl: "https://nano-gpt.com/api/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

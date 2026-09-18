@@ -124,6 +124,32 @@ const SILICONFLOW_OPTIONS: OpenAiImagesFamilyOptions = {
   probeModelNoun: "models",
 };
 
+// ─── NanoGPT (PE-1 unit 3) ─────────────────────────────────────────────────
+
+/** Card: IMAGE_GEN_CLOUD_PROVIDERS_RESEARCH "NanoGPT" (doc-verified
+ *  2026-09-07 — their own openapi.json) + supervisor live re-verification
+ *  2026-09-18:
+ *  - POST /api/v1/images/generations, Bearer — OpenAI-images shape
+ *    (model/prompt/n/size/response_format); NO documented size grid → a
+ *    complete W×H goes on the wire verbatim as the free-form "WxH" string
+ *    (incomplete/unset omits the field — vendor default);
+ *  - response_format IS documented → b64_json requested (URL lifetime
+ *    unstated; every url entry still downloads server-side — house rule
+ *    regardless);
+ *  - model listing is a DIFFERENT path: GET /api/v1/image-models — public
+ *    no-auth, already image-scoped (no filter); the Bearer key is sent
+ *    anyway (the endpoint accepts it);
+ *  - no negative prompt / steps / seed / sampler surface on the card → no
+ *    wire names. */
+const NANOGPT_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "NanoGPT",
+  size: { kind: "verbatim", param: "size" },
+  responseFormat: { kind: "always", value: "b64_json" },
+  envelope: "openai-data",
+  modelsPath: "image-models",
+  probeModelNoun: "image models",
+};
+
 // ─── Registration (one factory closure per OPTIONS row) ──────────────────────
 
 /** The PE-1 OPTIONS table — one row per family slug. Grows one row per
@@ -133,6 +159,7 @@ const SILICONFLOW_OPTIONS: OpenAiImagesFamilyOptions = {
 const PE1_FAMILY: ReadonlyArray<{ slug: ImageGenBackendType; options: OpenAiImagesFamilyOptions }> = [
   { slug: IMAGE_GEN_BACKENDS.TogetherAi, options: TOGETHERAI_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.SiliconFlow, options: SILICONFLOW_OPTIONS },
+  { slug: IMAGE_GEN_BACKENDS.NanoGpt, options: NANOGPT_OPTIONS },
 ];
 
 for (const { slug, options } of PE1_FAMILY) {

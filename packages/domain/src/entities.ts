@@ -1049,6 +1049,7 @@ export const IMAGE_GEN_BACKENDS = {
   ComfyUI: "comfyui",
   TogetherAi: "togetherai",
   SiliconFlow: "siliconflow",
+  NanoGpt: "nanogpt",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

@@ -217,4 +217,27 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
       cfgScale: { min: 0, max: 20, step: 0.5 },
     },
   },
+  [IMAGE_GEN_BACKENDS.NanoGpt]: {
+    // PE-1 unit 3 — NanoGPT card (doc-verified 2026-09-07; their own
+    // openapi.json) + supervisor live re-verification 2026-09-18:
+    // POST /api/v1/images/generations, Bearer — OpenAI-images shape
+    // (model/prompt/n/size/response_format); NO documented size grid →
+    // free W×H (complete pair sent verbatim as the "WxH" string).
+    // No negative prompt / steps / seed / sampler surface on the card →
+    // all off. Model listing is a DIFFERENT path — GET /api/v1/image-models
+    // (public no-auth; the adapter sends the Bearer key anyway — the
+    // endpoint accepts it), already image-scoped so no filter ships.
+    // Response URL lifetime unstated → b64_json requested + every url
+    // entry downloaded server-side (house rule regardless).
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

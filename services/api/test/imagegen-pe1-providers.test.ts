@@ -237,6 +237,114 @@ describe("siliconflow (openai-images family)", () => {
   });
 });
 
+// ─── NanoGPT (PE-1 unit 3) ─────────────────────────────────────────────────
+
+const NANOGPT_ENDPOINT = "https://nano-gpt.com/api/v1";
+
+describe("nanogpt (openai-images family)", () => {
+  const make = (transport: typeof fetch) =>
+    familyBackend(IMAGE_GEN_BACKENDS.NanoGpt, transport, NANOGPT_ENDPOINT, "ng-key");
+
+  describe("generate", () => {
+    it("sends the OpenAI-images body: size string VERBATIM + response_format b64_json", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+
+      const result = await backend.generate({
+        prompt: "a tavern at dusk",
+        model: "nano-banana-2",
+        width: 1280,
+        height: 720,
+      });
+
+      expect(calls[0].url).toBe(`${NANOGPT_ENDPOINT}/images/generations`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer ng-key");
+      const body = sentJson(calls[0]);
+      expect(body.model).toBe("nano-banana-2");
+      expect(body.prompt).toBe("a tavern at dusk");
+      expect(body.size).toBe("1280x720");
+      // Documented param; URL lifetime unstated → bytes preferred.
+      expect(body.response_format).toBe("b64_json");
+      expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+      expect(result.width).toBe(1280);
+      expect(result.height).toBe(720);
+    });
+
+    it("omits size when no COMPLETE size is set (no documented grid — no fail-closed error)", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+      await backend.generate({ prompt: "p", model: "nano-banana-2", width: 1024 });
+      expect("size" in sentJson(calls[0])).toBe(false);
+    });
+
+    it("never sends negative prompt / steps / seed (no card surface)", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+      await backend.generate({
+        prompt: "p",
+        model: "nano-banana-2",
+        steps: 20,
+        cfgScale: 5,
+        seed: 7,
+        negativePrompt: "blurry",
+      });
+      const body = sentJson(calls[0]);
+      expect("negative_prompt" in body).toBe(false);
+      expect("steps" in body).toBe(false);
+      expect("guidance_scale" in body).toBe(false);
+      expect("seed" in body).toBe(false);
+    });
+  });
+
+  describe("listModels + probe", () => {
+    it("queries the DIFFERENT image-models path (public no-auth) with the Bearer key sent anyway", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({
+          data: [
+            { id: "nano-banana-2", description: "Gemini image" },
+            { id: "seedream-v4.5" },
+          ],
+        }),
+      );
+      const backend = make(transport);
+      const models = await backend.listModels();
+      expect(models).toEqual([
+        { id: "nano-banana-2", label: "nano-banana-2", description: "Gemini image" },
+        { id: "seedream-v4.5", label: "seedream-v4.5" },
+      ]);
+      expect(calls[0].url).toBe(`${NANOGPT_ENDPOINT}/image-models`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer ng-key");
+
+      const probed = await backend.probe();
+      expect(probed).toEqual({ ok: true, detail: "2 image models" });
+    });
+  });
+
+  describe("capability row + registry", () => {
+    it("pins the NanoGPT capability row (all-off flags, free sizes)", () => {
+      const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.NanoGpt];
+      expect(caps.supportsNegativePrompt).toBe(false);
+      expect(caps.supportsSamplers).toBe(false);
+      expect(caps.supportsSeed).toBe(false);
+      expect(caps.sizeSupport).toEqual({ kind: "free" });
+      expect(caps.noApiKey).toBe(false);
+      expect(caps.localExecution).toBe(false);
+      expect(caps.paramRanges).toEqual({});
+    });
+
+    it("registers the nanogpt slug at import time (creatable via the registry)", () => {
+      const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.NanoGpt, {
+        endpoint: NANOGPT_ENDPOINT,
+        apiKey: "ng-key",
+      });
+      expect(typeof backend.generate).toBe("function");
+      expect(typeof backend.listModels).toBe("function");
+    });
+  });
+});
+
 // ─── Together AI (PE-1 unit 1) ───────────────────────────────────────────────
 
 const TOGETHER_ENDPOINT = "https://api.together.ai/v1";
