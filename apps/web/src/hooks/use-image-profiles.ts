@@ -58,10 +58,12 @@ import {
   listImageGenModelFavorites,
   listImageGenSamplers,
   listImageGenSchedulers,
+  listImageGenDitSidecars,
   removeImageGenModelFavorite,
   updateImageGenProfile,
   upsertImageGenModelSettings,
   type CreateImageGenProfileBody,
+  type ImageGenDitSidecars,
   type ImageGenModelEntry,
   type ImageGenProfileRecord,
 } from "../api/image-gen-api.js";
@@ -151,6 +153,11 @@ export function useImageProfiles(): {
    *  options, not a connectivity conclusion — the samplers fetch already
    *  owns that signal). */
   schedulersByProfile: Record<string, ImageGenSchedulerInfoValue[]>;
+  /** DiT sidecar (text encoder + VAE) cache per saved profile (CG-B1,
+   *  comfyui dialect only): options data for the advanced accordion's DiT
+   *  fields — the `schedulersByProfile` rule verbatim (a sidecar fetch
+   *  failure is empty options, never a connectivity conclusion). */
+  sidecarsByProfile: Record<string, ImageGenDitSidecars>;
   /** Local-server connectivity per saved profile, driven by sampler fetches
    *  (IG-CF12a): `checking` while in flight, `online` on success, `offline`
    *  on ANY fetch failure — connectivity is deliberately NOT routed through
@@ -184,6 +191,11 @@ export function useImageProfiles(): {
    *  backend; failures land ONLY in the cache as absent (never in the
    *  shared `error` — see `schedulersByProfile`). */
   fetchSchedulers(id?: string): Promise<ImageGenSchedulerInfoValue[] | null>;
+  /** Fetch + cache DiT sidecar lists for a saved comfyui-dialect profile
+   *  (CG-B1, defaults to the editing one). Null = unknown profile or
+   *  unsupported backend; failures land ONLY in the cache as absent
+   *  (never in the shared `error` — see `sidecarsByProfile`). */
+  fetchSidecars(id?: string): Promise<ImageGenDitSidecars | null>;
   /** Shared fetch-by-endpoint model listing over the TRANSIENT form config
    *  (the STT draft twin): the just-typed endpoint/key ride inside the
    *  draft config; `profileId` lets the server inject the stored key when
@@ -238,6 +250,7 @@ export function useImageProfiles(): {
   const [modelsByProfile, setModelsByProfile] = useState<Record<string, ImageGenModelEntry[]>>({});
   const [samplersByProfile, setSamplersByProfile] = useState<Record<string, ImageGenSamplerInfoValue[]>>({});
   const [schedulersByProfile, setSchedulersByProfile] = useState<Record<string, ImageGenSchedulerInfoValue[]>>({});
+  const [sidecarsByProfile, setSidecarsByProfile] = useState<Record<string, ImageGenDitSidecars>>({});
   const [samplerStatusByProfile, setSamplerStatusByProfile] = useState<Record<string, LocalConnectionStatus>>({});
   const [favorites, setFavorites] = useState<ImageGenModelFavoriteValue[]>([]);
   const [modelOverlay, setModelOverlayState] = useState<ImageGenModelSettingsOverlayValue | null>(null);
@@ -728,6 +741,25 @@ export function useImageProfiles(): {
     [form],
   );
 
+  const fetchSidecars = useCallback(
+    async (id?: string): Promise<ImageGenDitSidecars | null> => {
+      const targetId = id ?? form?.id;
+      if (!targetId) return null;
+      // CG-B1: options data only — the fetchSchedulers rule verbatim (a
+      // failure leaves the cache untouched and draws NO connectivity
+      // conclusion; the samplers fetch owns `samplerStatusByProfile`).
+      try {
+        const sidecars = await listImageGenDitSidecars(targetId);
+        if (sidecars === null) return null;
+        setSidecarsByProfile((prev) => ({ ...prev, [targetId]: sidecars }));
+        return sidecars;
+      } catch {
+        return null;
+      }
+    },
+    [form],
+  );
+
   const fetchDraftModels = useCallback(async (): Promise<ImageGenModelEntry[]> => {
     if (!form) throw new Error("no image-gen form");
     setError(null);
@@ -764,6 +796,7 @@ export function useImageProfiles(): {
     modelsByProfile,
     samplersByProfile,
     schedulersByProfile,
+    sidecarsByProfile,
     samplerStatusByProfile,
     favorites,
     modelOverlay,
@@ -779,6 +812,7 @@ export function useImageProfiles(): {
     fetchSavedModels,
     fetchSamplers,
     fetchSchedulers,
+    fetchSidecars,
     fetchDraftModels,
     starModel,
     unstarModel,

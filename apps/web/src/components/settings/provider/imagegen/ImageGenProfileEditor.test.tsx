@@ -99,6 +99,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     modelsByProfile: {},
     samplersByProfile: {},
     schedulersByProfile: {},
+    sidecarsByProfile: {},
     samplerStatusByProfile: {},
     startEdit: mock(() => {}),
     startCreate: mock(() => {}),
@@ -111,6 +112,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     fetchSavedModels: mock(async () => null),
     fetchSamplers: mock(async () => null),
     fetchSchedulers: mock(async () => null),
+    fetchSidecars: mock(async () => null),
     fetchDraftModels: mock(async () => []),
     favorites: [],
     starModel: mock(async () => {}),
@@ -273,6 +275,22 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
     const view2 = render(<ImageGenProfileEditor imageGen={cloud} />);
     await waitFor(() => expect(view2.getByTestId("image-gen-provider-form")).toBeTruthy());
     expect(view2.queryByTestId("image-gen-key-optional-hint")).toBeNull();
+  });
+
+  it("CG-B1: the API-key field is HIDDEN for the comfyui preset (no auth surface — not optional), endpoint field stays", async () => {
+    const imageGen = makeImageGen({
+      form: makeForm({ presetId: "comfyui", backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:8188" }),
+    });
+    const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-provider-form")).toBeTruthy());
+    expect(view.queryByTestId("image-gen-field-api-key")).toBeNull();
+    expect(view.queryByTestId("image-gen-key-optional-hint")).toBeNull();
+    expect(view.queryByTestId("image-gen-key-source-hint")).toBeNull();
+    // The connection form keeps its real surfaces: endpoint + test card +
+    // the local-server help panel (comfy is a local-segment dialect).
+    expect(view.getByTestId("image-gen-field-endpoint")).toBeTruthy();
+    expect(view.getByTestId("image-gen-test-connection-btn")).toBeTruthy();
+    expect(view.getByTestId("image-gen-local-server-panel")).toBeTruthy();
   });
 
   it("P10 PIN: Test connection probes the catalog via the DRAFT route (unsaved draft, key rides inside)", async () => {

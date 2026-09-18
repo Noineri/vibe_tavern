@@ -238,6 +238,16 @@ export const imageGenModelInfoSchema = z.object({
 });
 export type ImageGenModelInfoValue = z.infer<typeof imageGenModelInfoSchema>;
 
+/** DiT sidecar file lists (CG-B1, comfyui dialect only) — the live
+ *  text-encoder + VAE folder catalogs (`/models/text_encoders`,
+ *  `/models/vae`) feeding the advanced accordion's DiT fields. Other
+ *  dialects have no such surface. */
+export const imageGenDitSidecarsSchema = z.object({
+  encoders: z.array(z.string()),
+  vaes: z.array(z.string()),
+});
+export type ImageGenDitSidecarsValue = z.infer<typeof imageGenDitSidecarsSchema>;
+
 /** One sampler entry — the adapter interface's `ImageGenSamplerInfo`
  *  verbatim (A1111-compat `GET /sdapi/v1/samplers` shape). */
 export const imageGenSamplerInfoSchema = z.object({

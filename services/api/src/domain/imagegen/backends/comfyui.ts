@@ -137,6 +137,7 @@ import type {
   ImageGenGeneratedImage,
   ImageGenGenerateRequest,
   ImageGenGenerateResult,
+  ImageGenDitSidecars,
   ImageGenModelInfo,
   ImageGenProbeResult,
   ImageGenSamplerInfo,
@@ -1141,6 +1142,17 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
         signal,
       );
       return names.map((name) => ({ name }));
+    },
+
+    async listDitSidecars(signal?: AbortSignal): Promise<ImageGenDitSidecars> {
+      // The live DiT sidecar folders (CG-B1) — the same catalogs the
+      // generate path resolves canonical sidecars against; both fetched in
+      // parallel (independent folders, one round-trip each).
+      const [encoders, vaes] = await Promise.all([
+        fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "text_encoders", signal),
+        fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "vae", signal),
+      ]);
+      return { encoders, vaes };
     },
 
     async probe(signal?: AbortSignal): Promise<ImageGenProbeResult> {

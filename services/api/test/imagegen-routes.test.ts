@@ -705,6 +705,38 @@ describe("image-gen routes — schedulers (PG-3, dialect-gated)", () => {
     expect(missing.status).toBe(404);
   });
 
+  test("comfyui profile lists DiT sidecar folders from both live catalogs (CG-B1)", async () => {
+    const urls: string[] = [];
+    const { app } = await makeApp(async (input) => {
+      const url = new URL(String(input));
+      urls.push(url.pathname);
+      if (url.pathname === "/models/text_encoders") return Response.json(["qwen3vl_4b_fp8_scaled.safetensors"]);
+      if (url.pathname === "/models/vae") return Response.json(["qwen_image_vae.safetensors", "sdxl_vae.safetensors"]);
+      return new Response("not found", { status: 404 });
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:8188" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/sidecars`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      encoders: ["qwen3vl_4b_fp8_scaled.safetensors"],
+      vaes: ["qwen_image_vae.safetensors", "sdxl_vae.safetensors"],
+    });
+    expect(urls).toEqual(["/models/text_encoders", "/models/vae"]);
+  });
+
+  test("a1111 profile → 400 DiT sidecar listing not supported; unknown profile → 404 (CG-B1)", async () => {
+    const { app } = await makeApp(async () => modelsBody());
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+
+    const gated = await app.request(`/api/image-gen/profiles/${id}/sidecars`);
+    expect(gated.status).toBe(400);
+    expect(((await gated.json()) as { error: string }).error).toBe("DiT sidecar listing not supported");
+
+    const missing = await app.request("/api/image-gen/profiles/missing/sidecars");
+    expect(missing.status).toBe(404);
+  });
+
   test("generate: the ladder's scheduler rides the txt2img body + the slot provenance; absent → never sent", async () => {
     const bodies: Array<Record<string, unknown>> = [];
     const { app, stores } = await makeApp(async (_input, init) => {

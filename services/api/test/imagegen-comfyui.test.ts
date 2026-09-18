@@ -844,6 +844,51 @@ describe("comfyui adapter", () => {
     });
   });
 
+  describe("listDitSidecars (CG-B1)", () => {
+    it("returns both live folder catalogs (verbatim ids, parallel fetch)", async () => {
+      const { transport, calls } = ditTransport("p1", {
+        encoders: ["qwen3vl_4b_fp8_scaled.safetensors", "folder/t5xxl_fp16.safetensors"],
+        vaes: ["qwen_image_vae.safetensors"],
+      });
+      const sidecars = await backendWith(transport).listDitSidecars!();
+      expect(sidecars).toEqual({
+        encoders: ["qwen3vl_4b_fp8_scaled.safetensors", "folder/t5xxl_fp16.safetensors"],
+        vaes: ["qwen_image_vae.safetensors"],
+      });
+      // Exactly the two folder fetches — no /prompt, no side-effect calls.
+      const paths = calls.map((c) => new URL(c.url).pathname);
+      expect(paths).toEqual(["/models/text_encoders", "/models/vae"]);
+    });
+
+    it("fails closed when a folder list errors (non-array shapes throw)", async () => {
+      const { transport } = makeTransport((url) => {
+        if (url.pathname === "/models/text_encoders") return Response.json({ not: "an array" });
+        if (url.pathname === "/models/vae") return Response.json(["qwen_image_vae.safetensors"]);
+        return new Response("not found", { status: 404 });
+      });
+      let caught: unknown;
+      try {
+        await backendWith(transport).listDitSidecars!();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught instanceof ComfyImageGenError).toBe(true);
+      expect((caught as ComfyImageGenError).message).toContain("unexpected shape");
+    });
+
+    it("carries the upstream status on folder-list HTTP failures", async () => {
+      const { transport } = makeTransport(() => new Response("boom", { status: 500 }));
+      let caught: unknown;
+      try {
+        await backendWith(transport).listDitSidecars!();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught instanceof ComfyImageGenError).toBe(true);
+      expect((caught as ComfyImageGenError).status).toBe(500);
+    });
+  });
+
   describe("probe", () => {
     it("probes /system_stats and reports the ComfyUI version", async () => {
       const { transport, calls } = makeTransport(() =>

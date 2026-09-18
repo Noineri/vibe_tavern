@@ -27,6 +27,7 @@ import type {
   ImageGenProgressInfoValue,
   ImageGenSamplerInfoValue,
   ImageGenSchedulerInfoValue,
+  ImageGenDitSidecarsValue,
   ImageGenSamplerSet,
   ImageGenSamplerSetCreate,
   ImageGenSamplerSetImport,
@@ -172,6 +173,28 @@ export async function listImageGenSchedulers(
   if (!response.ok) throw await rawError("Image-gen scheduler list", response);
   return (await response.json()) as ImageGenSchedulerInfoValue[];
 }
+
+/** DiT sidecar (text encoder + VAE) lists for a saved ComfyUI-dialect
+ *  profile (CG-B1): the live folder catalogs for the advanced accordion's
+ *  DiT fields. Null = unknown profile; a non-comfy backend throws the
+ *  route's 400 ("DiT sidecar listing not supported") — callers gate on
+ *  the profile's backend before calling. */
+export async function listImageGenDitSidecars(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ImageGenDitSidecarsValue | null> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/sidecars`),
+    { signal },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw await rawError("Image-gen DiT sidecar list", response);
+  return (await response.json()) as ImageGenDitSidecarsValue;
+}
+
+/** Re-exported contracts alias — the hook's sidecar cache entry. */
+export type ImageGenDitSidecars = ImageGenDitSidecarsValue;
 
 /** One live progress snapshot for a saved local profile (PG-2): polled by
  *  the chat surface ONLY while our own generate request is in flight

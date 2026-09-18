@@ -103,6 +103,11 @@ export interface ImageGenProviderPreset {
   /** True when the API key is optional at connect time (A1111 keyless
    *  default; `--api-auth` may add basic auth — the field still renders). */
   keyOptional?: boolean;
+  /** True when the backend has NO auth surface at all (comfyui core —
+   *  the adapter fails closed on a non-empty key): the key field is
+   *  HIDDEN, not marked optional (owner decision 2026-09-18 — an
+   *  "optional" label on a field that must stay empty is a lie). */
+  noApiKey?: boolean;
 }
 
 /** The v1 image-gen roster. Rows (doc-verified):
@@ -135,6 +140,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "http://127.0.0.1:7860",
     group: PROVIDER_PRESET_GROUP.local,
     keyOptional: true,
+  },
+  {
+    id: "comfyui",
+    label: "ComfyUI",
+    backend: IMAGE_GEN_BACKENDS.ComfyUI,
+    baseUrl: "http://127.0.0.1:8188",
+    group: PROVIDER_PRESET_GROUP.local,
+    // Core ComfyUI has no auth surface (the adapter fails closed on a
+    // non-empty key) — the key field is HIDDEN for this row, not optional.
+    noApiKey: true,
   },
 ];
 

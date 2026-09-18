@@ -27,8 +27,8 @@ type ImageGenHook = ReturnType<typeof useImageProfiles>;
  *  endpoint chip. Deliberately DROPS the STT port-scan block (image-gen has
  *  no scan route — A1111-family UIs answer the draft-models probe directly)
  *  and the TTS docker probe (this family is not docker-distributed).
- *  Renders only for the A1111 backend (the whole local segment today);
- *  ComfyUI joins as its own guide card + panel when its adapter lands. */
+ *  Renders for the LOCAL dialects (A1111 family + ComfyUI — CG-B1); each
+ *  dialect keeps its own guide card in IMAGE_GEN_SERVER_GUIDES. */
 export function ImageGenLocalServerPanel({
   form,
   updateForm,
@@ -40,14 +40,21 @@ export function ImageGenLocalServerPanel({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [guideId, setGuideId] = useState<string>(IMAGE_GEN_SERVER_GUIDES[0].id);
+  const [guideId, setGuideId] = useState<string>(
+    // The backend's own preset row opens preselected (a comfy profile
+    // opens on the comfy guide — no a1111-first detour through commands
+    // that do not apply to it).
+    form.backend === IMAGE_GEN_BACKENDS.ComfyUI
+      ? (IMAGE_GEN_SERVER_GUIDES.find((g) => g.id === "comfyui")?.id ?? IMAGE_GEN_SERVER_GUIDES[0].id)
+      : IMAGE_GEN_SERVER_GUIDES[0].id,
+  );
   const [os, setOs] = useState<ImageGenOsKind>(() => detectTtsOsKind(navigator.userAgent));
   // Manual per-command done-marks, persisted per guide+OS (the shared
   // tracker the TTS/STT panels use).
   const checklist = useGuideChecklist(guideId, os);
 
-  // The whole block is A1111-family only (the local segment's one dialect).
-  if (form.backend !== IMAGE_GEN_BACKENDS.A1111) return null;
+  // The local segment's dialects (A1111 family + ComfyUI, CG-B1).
+  if (form.backend !== IMAGE_GEN_BACKENDS.A1111 && form.backend !== IMAGE_GEN_BACKENDS.ComfyUI) return null;
 
   // The chip's honest ping (the IG-CF12d rule the STT/TTS twins follow):
   // the draft-models route is the same reachability proof the Test

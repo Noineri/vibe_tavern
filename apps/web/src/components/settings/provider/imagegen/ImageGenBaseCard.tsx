@@ -32,14 +32,16 @@ function endpointHost(form: ImageGenProfileForm): string {
 /** View-mode base card for a saved image-gen profile — the SttBaseCard fork
  *  (IG-11): name + connection line + key status + Edit. No Make-default
  *  action: image-gen profiles have no isDefault (a chat-level concern,
- *  IG-16/17 — the design decision recorded in the plan). The A1111 tier is
- *  keyless by default, so its no-key status is neutral, not a warning. */
+ *  IG-16/17 — the design decision recorded in the plan). The local tiers
+ *  are keyless by design (A1111 optional `--api-auth`; ComfyUI core has no
+ *  auth surface at all), so their no-key status is neutral, not a warning. */
 export function ImageGenBaseCard({ form, onEdit }: ImageGenBaseCardProps) {
   const { t } = useT();
 
   const label = backendLabelFor(form, t("custom"));
   const host = endpointHost(form);
-  const keylessByDesign = form.backend === IMAGE_GEN_BACKENDS.A1111;
+  const keylessByDesign =
+    form.backend === IMAGE_GEN_BACKENDS.A1111 || form.backend === IMAGE_GEN_BACKENDS.ComfyUI;
   // IG-21: an auto-matched key counts as ready (the SttBaseCard twin) —
   //  the status row names its source; a1111 never matches.
   const autoKeyName = form.autoKeyProviderName;

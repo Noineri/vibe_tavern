@@ -16,6 +16,7 @@
  *   GET    /api/image-gen/profiles/:id/models
  *   GET    /api/image-gen/profiles/:id/samplers        (capability-gated)
  *   GET    /api/image-gen/profiles/:id/schedulers       (dialect-gated: A1111 + ComfyUI, PG-3/CG-A3)
+ *   GET    /api/image-gen/profiles/:id/sidecars         (dialect-gated: ComfyUI, CG-B1 — DiT encoder/VAE folders)
  *   GET    /api/image-gen/profiles/:id/progress        (capability-gated, PG-2)
  *   POST   /api/image-gen/profiles/:id/interrupt       (capability-gated, PG-2)
  *   POST   /api/image-gen/draft/models                 (shared fetch-by-endpoint)
@@ -187,6 +188,24 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
           return c.json({ error: "scheduler listing not supported" }, 400);
         }
         return c.json(schedulers);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── DiT sidecars (dialect-gated, CG-B1) ──────────────────────────
+    .get("/api/image-gen/profiles/:id/sidecars", async (c) => {
+      try {
+        const sidecars = await runtime.listImageGenProfileDitSidecars(c.req.param("id"), c.req.raw.signal);
+        if (sidecars === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "DiT sidecar listing not supported" }, 400);
+        }
+        return c.json(sidecars);
       } catch (error) {
         const mapped = backendErrorResponse(error);
         if (mapped) return c.json(mapped.body, mapped.status);

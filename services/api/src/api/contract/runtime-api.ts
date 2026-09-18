@@ -1078,6 +1078,10 @@ export interface ImageGenRuntimeApi {
 	 *  gate (PG-3, the extensions-arm twin): null = unknown profile or
 	 *  unsupported backend (route → 404/400, the samplers ladder). */
 	listImageGenProfileSchedulers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenSchedulerInfoValue[] | null>;
+	/** DiT sidecar (text encoder + VAE) listing for a saved profile —
+	 *  comfyui-dialect gate (CG-B1, the schedulers twin): null = unknown
+	 *  profile or unsupported backend (route → 404/400). */
+	listImageGenProfileDitSidecars: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenDitSidecarsValue | null>;
 	/** Live progress snapshot for a saved profile — capability-gated
 	 *  (supportsLiveProgress, A1111 dialect in v1). Null = unknown profile
 	 *  or unsupported backend (route → 404/400, the samplers ladder). */

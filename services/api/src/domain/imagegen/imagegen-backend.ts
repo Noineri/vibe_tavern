@@ -213,6 +213,13 @@ export interface ImageGenSchedulerInfo {
   label?: string;
 }
 
+/** DiT sidecar file lists (CG-B1, comfyui dialect): the live text-encoder
+ *  and VAE folder catalogs for the advanced accordion's DiT fields. */
+export interface ImageGenDitSidecars {
+  encoders: string[];
+  vaes: string[];
+}
+
 /** Live progress (A1111-compat `GET /sdapi/v1/progress`): `progress` is
  *  0..1; `previewBase64` is the interim preview image when the server
  *  produces one. */
@@ -238,6 +245,10 @@ export interface ImageGenBackend {
    *  the extensions-arm dialect gate, not a capability flag: schedulers are
    *  an A1111-compat surface, not a cross-vendor capability). */
   listSchedulers?(signal?: AbortSignal): Promise<ImageGenSchedulerInfo[]>;
+  /** DiT sidecar listing (comfyui dialect only, CG-B1) — the live
+   *  text-encoder + VAE folder catalogs for the DiT advanced fields
+   *  (the schedulers dialect-gate twin, not a capability flag). */
+  listDitSidecars?(signal?: AbortSignal): Promise<ImageGenDitSidecars>;
   /** Server-extension listing (A1111-compat only in v1) — extension dir
    *  names for feature detection (IG-CF15/PG-4: the ADetailer probe). */
   listExtensions?(signal?: AbortSignal): Promise<string[]>;

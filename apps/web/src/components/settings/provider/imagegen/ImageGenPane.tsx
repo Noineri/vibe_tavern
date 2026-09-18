@@ -69,6 +69,34 @@ interface ModelOption {
   id: string;
   label: string;
   isFree?: boolean;
+  /** Model-family label (comfyui dialect, CG-A3): rendered as a chip in
+   *  the row; absent = unknown family. */
+  family?: string;
+  /** Workflow template marker (comfyui dialect, CG-A2/A3): drives the
+   *  «Detected» readout under the trigger and the DiT sidecar fields. */
+  template?: string;
+}
+
+/** The two comfyui template markers → display labels (CG-B1). A marker
+ *  string outside this map (a future dialect revision) renders verbatim —
+ *  label mapping, not a data list (the live lists rule bans DATA lists,
+ *  not i18n maps over known enum values). */
+const TEMPLATE_LABEL_KEYS: Record<string, Parameters<TFunc>[0]> = {
+  checkpoint: "image_gen_template_checkpoint",
+  "krea2-dit": "image_gen_template_krea2_dit",
+};
+
+/** Krea-2 starting-point values (CG-B1, form-side per CF5 — the backend
+ *  keeps ONE materialization ladder of node-class defaults for both
+ *  templates; these are the values the FORM offers as explicit starting
+ *  values when a DiT model is picked on an untouched param base). */
+const KREA2_FORM_DEFAULTS = { steps: 8, cfgScale: 1, sampler: "euler", scheduler: "simple" } as const;
+
+/** «Detected» label for a template marker — the known map through i18n,
+ *  an unknown marker verbatim (a future dialect revision stays readable). */
+function templateDisplayLabel(template: string, t: TFunc): string {
+  const key = TEMPLATE_LABEL_KEYS[template];
+  return key !== undefined ? t(key) : template;
 }
 
 /** The six v1 modes as a render list (domain order). */
@@ -186,6 +214,14 @@ function ModelPicker({
           {model.isFree && (
             <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4">free</span>
           )}
+          {model.family && (
+            <span
+              data-testid="image-gen-model-family"
+              className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4"
+            >
+              {model.family}
+            </span>
+          )}
         </div>
         {model.label && model.label !== model.id && (
           <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] text-t4">
@@ -264,6 +300,21 @@ function ModelPicker({
             </Popover.Root>
             {!selectedModel && value && (
               <div className="mt-2 font-ui text-[12px] font-medium text-accent">{t("custom_model", { name: value })}</div>
+            )}
+            {/* «Detected: …» readout (CG-B1, the Matrix idiom): which
+                workflow template the adapter auto-detects for the picked
+                model — loader-folder membership, the adapter's ground
+                truth. A selected model without a template marker (cloud
+                dialects, custom slugs) renders nothing. */}
+            {selectedModel?.template && (
+              <div
+                data-testid="image-gen-model-detected"
+                className="mt-2 font-ui text-[12px] font-medium text-accent"
+              >
+                {t("image_gen_detected_template", {
+                  template: templateDisplayLabel(selectedModel.template, t),
+                })}
+              </div>
             )}
           </div>
         </div>
@@ -978,18 +1029,42 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // on its own fetch) renders only when the server has the extension.
   // Guard-style null-safe values — this hook sits above the null guard too.
   const guardIsA1111 = form?.backend === IMAGE_GEN_BACKENDS.A1111;
-  // Scheduler list (PG-3) — the A1111-dialect schedule-type catalog, one-shot
+  // The LOCAL dialect family (A1111 + ComfyUI, CG-B1): the scheduler-list
+  // consumer gate — both dialects expose the schedulers route (PG-3/CG-A3).
+  const guardIsLocalDialect =
+    form?.backend === IMAGE_GEN_BACKENDS.A1111 || form?.backend === IMAGE_GEN_BACKENDS.ComfyUI;
+  // Scheduler list (PG-3) — the dialect-gated schedule-type catalog, one-shot
   // cache fill per profile (the samplers-guard twin, dialect-gated: the
-  // schedulers route exists only on the A1111 family). Failure = empty
+  // schedulers route exists only on the local family). Failure = empty
   // options, no connectivity signal (the samplers fetch owns that).
   useEffect(() => {
-    if (guardProfileId === null || !guardIsA1111) return;
+    if (guardProfileId === null || !guardIsLocalDialect) return;
     if ((imageGen.schedulersByProfile[guardProfileId] ?? []).length === 0) {
       void imageGen.fetchSchedulers(guardProfileId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
     // fill per profile; imageGen actions are stable callbacks.
-  }, [guardProfileId, guardIsA1111]);
+  }, [guardProfileId, guardIsLocalDialect]);
+  // DiT sidecar lists (CG-B1, comfyui dialect): one-shot cache fill when
+  // the SELECTED model resolves the krea2-dit template — the encoder/VAE
+  // fields need them. Options-data only (the fetchSchedulers rule): a
+  // failure = empty options, no connectivity signal. Sits above the null
+  // guard like its siblings (hook-order invariant).
+  const guardModelId = form?.modelId ?? null;
+  const guardModelEntry =
+    guardProfileId !== null && guardModelId !== null
+      ? ((imageGen.modelsByProfile[guardProfileId] ?? []).find((m) => m.id === guardModelId) ?? null)
+      : null;
+  const guardIsDit =
+    form?.backend === IMAGE_GEN_BACKENDS.ComfyUI && guardModelEntry?.template === "krea2-dit";
+  useEffect(() => {
+    if (guardProfileId === null || !guardIsDit) return;
+    if (imageGen.sidecarsByProfile[guardProfileId] === undefined) {
+      void imageGen.fetchSidecars(guardProfileId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
+    // fill per profile; imageGen actions are stable callbacks.
+  }, [guardProfileId, guardIsDit]);
   const [hasAdetailer, setHasAdetailer] = useState(false);
   useEffect(() => {
     if (!guardIsA1111 || guardProfileId === null) {
@@ -1015,14 +1090,17 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const models: ImageGenModelEntry[] = imageGen.modelsByProfile[profileId] ?? [];
   const samplers = imageGen.samplersByProfile[profileId] ?? [];
   const schedulers = imageGen.schedulersByProfile[profileId] ?? [];
-  // IG-CF12a: the A1111-family pane is a LOCAL control surface — the shared
-  // status chip rides above the picker, driven by the sampler fetch signal
-  // (`samplerStatusByProfile`), and an offline server greys out the whole
-  // control panel below the chip (owner ruling 2026-09-16: an unresponsive
-  // server greys out the whole control panel). The chip's re-check button
-  // is the recovery affordance — it stays interactive while the panel is
-  // greyed. Cloud backends (openrouter/openai-images) render no chip.
-  const isLocalBackend = form.backend === IMAGE_GEN_BACKENDS.A1111;
+  const sidecars = imageGen.sidecarsByProfile[profileId];
+  // IG-CF12a: the LOCAL-family pane (A1111 + ComfyUI, CG-B1) is a LOCAL
+  // control surface — the shared status chip rides above the picker,
+  // driven by the sampler fetch signal (`samplerStatusByProfile`), and an
+  // offline server greys out the whole control panel below the chip
+  // (owner ruling 2026-09-16: an unresponsive server greys out the whole
+  // control panel). The chip's re-check button is the recovery
+  // affordance — it stays interactive while the panel is greyed. Cloud
+  // backends (openrouter/openai-images) render no chip.
+  const isLocalBackend =
+    form.backend === IMAGE_GEN_BACKENDS.A1111 || form.backend === IMAGE_GEN_BACKENDS.ComfyUI;
   const localStatus: LocalConnectionStatus = imageGen.samplerStatusByProfile[profileId] ?? "unknown";
   const localOffline = isLocalBackend && localStatus === "offline";
   const caps = form.capabilities;
@@ -1035,6 +1113,11 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const clipSkipRange = paramRanges?.clipSkip ?? IMAGE_GEN_PARAM_RANGES.clipSkip;
   const bound = imageGen.modelOverlay !== null;
   const overlay = imageGen.modelOverlay;
+  // The SELECTED model's cache entry (comfyui dialect enrichment, CG-B1):
+  // the template marker drives the «Detected» readout (picker), the DiT
+  // sidecar fields (advanced), and the Krea-2 starting-point prefill.
+  const selectedModelEntry = models.find((m) => m.id === form.modelId) ?? null;
+  const isDitTemplate = selectedModelEntry?.template === "krea2-dit";
 
   // Effective (routed) params + sizes: the overlay's own values while bound
   // (empty = inherit the base), the profile base otherwise.
@@ -1128,7 +1211,29 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           // The hook's setForm handles the model switch: bind state resets
           // and the NEW model's stored overlay loads (fire-and-forget — the
           // pane never races the async form state).
-          imageGen.setForm({ modelId });
+          //
+          // Krea-2 starting points (CG-B1, CF5 — explicit FORM values, never
+          // hidden server state): picking a DiT model on a profile whose
+          // param base is UNTOUCHED prefills the four krea2 scalars into the
+          // base. The all-four-unset gate is deliberate — a base the user
+          // already tuned for checkpoints keeps its values (a partial merge
+          // of 8/1/euler/simple into a tuned base would be a mess, not a
+          // starting point); the per-model overlay inherits whatever the
+          // base carries.
+          const entry = models.find((m) => m.id === modelId) ?? null;
+          const prefillKrea2 =
+            form.backend === IMAGE_GEN_BACKENDS.ComfyUI &&
+            entry?.template === "krea2-dit" &&
+            form.defaultParams.steps === undefined &&
+            form.defaultParams.cfgScale === undefined &&
+            form.defaultParams.sampler === undefined &&
+            form.defaultParams.scheduler === undefined;
+          imageGen.setForm({
+            modelId,
+            ...(prefillKrea2
+              ? { defaultParams: { ...form.defaultParams, ...KREA2_FORM_DEFAULTS } }
+              : {}),
+          });
         }}
         models={models}
         fetching={false}
@@ -1480,6 +1585,54 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     onChange={(next) => setParam({ scheduler: next === "" ? undefined : next })}
                   />
                 </div>
+              )}
+              {/* DiT sidecar fields (CG-B1, comfyui dialect): text encoder
+                  + VAE for the krea2-dit template — live folder lists, the
+                  SAME bind routing as the sampler (bound → overlay, unbound
+                  → profile defaults). Empty = the adapter's canonical
+                  auto-resolution (qwen3vl_4b_fp8_scaled / qwen_image_vae,
+                  single-entry fold) — CF5's honest Auto, not a hidden
+                  default. */}
+              {isDitTemplate && (
+                <>
+                  <div className="min-w-0">
+                    <label className={lblCls}>{t("image_gen_encoder_label")}</label>
+                    <DropdownSelect
+                      value={params.encoderName ?? ""}
+                      triggerTestId="image-gen-field-encoder"
+                      searchable={false}
+                      className="w-auto max-w-[320px]"
+                      options={[
+                        { id: "", label: t("image_gen_sidecar_auto") },
+                        ...(sidecars?.encoders ?? []).map((name) => ({ id: name, label: name })),
+                        // A stored value outside the live list stays pickable
+                        // (the STT/LLM selector rule — since-removed files
+                        // keep rendering the truth).
+                        ...(params.encoderName !== undefined && !(sidecars?.encoders ?? []).includes(params.encoderName)
+                          ? [{ id: params.encoderName, label: params.encoderName }]
+                          : []),
+                      ]}
+                      onChange={(next) => setParam({ encoderName: next === "" ? undefined : next })}
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <label className={lblCls}>{t("image_gen_vae_label")}</label>
+                    <DropdownSelect
+                      value={params.vaeName ?? ""}
+                      triggerTestId="image-gen-field-vae"
+                      searchable={false}
+                      className="w-auto max-w-[320px]"
+                      options={[
+                        { id: "", label: t("image_gen_sidecar_auto") },
+                        ...(sidecars?.vaes ?? []).map((name) => ({ id: name, label: name })),
+                        ...(params.vaeName !== undefined && !(sidecars?.vaes ?? []).includes(params.vaeName)
+                          ? [{ id: params.vaeName, label: params.vaeName }]
+                          : []),
+                      ]}
+                      onChange={(next) => setParam({ vaeName: next === "" ? undefined : next })}
+                    />
+                  </div>
+                </>
               )}
               <SamplerSliderField
                 label={t("image_gen_steps_label")}

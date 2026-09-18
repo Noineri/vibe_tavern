@@ -88,6 +88,12 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
   const presetId = selectedPreset?.id ?? "";
   const presetEndpoint = selectedPreset?.baseUrl ?? "";
   const keyOptional = selectedPreset?.keyOptional === true;
+  // ComfyUI core has no auth surface (owner decision 2026-09-18): the
+  // adapter fails closed on a non-empty key, so the field — and the
+  // auto-key hint — are HIDDEN for `noApiKey` presets, not rendered
+  // "optional" (a field that must stay empty is not optional). Custom
+  // never hides: its wire dialect (OpenAI-images) always takes a key.
+  const hideKeyField = selectedPreset?.noApiKey === true;
 
   const duplicateNameWarning =
     form.name &&
@@ -211,7 +217,9 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
         />
       </div>
 
-      {/* API key — always rendered (cloud rows require it; A1111 optional). */}
+      {/* API key — rendered for every dialect EXCEPT `noApiKey` presets
+          (cloud rows require it; A1111 optional; ComfyUI hidden — CG-B1). */}
+      {!hideKeyField && (
       <div className="mb-3">
         <label className={lblCls}>{t("api_key_label")}</label>
         <ImageGenApiKeyField
@@ -236,6 +244,7 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
           />
         )}
       </div>
+      )}
 
       {/* Test connection card — the STT P10 shape: probe = draft model
           catalog; works on unsaved drafts. */}

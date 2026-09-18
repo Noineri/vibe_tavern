@@ -478,6 +478,23 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     );
   };
 
+  listImageGenProfileDitSidecars = async (id: string, signal?: AbortSignal) => {
+    const profile = await this.stores.imageGen.getById(id);
+    if (!profile) return null;
+    // Static dialect gate FIRST (the schedulers twin, CG-B1): the DiT
+    // sidecar surface (text-encoder + VAE folders) exists ONLY on the
+    // comfyui dialect — the check answers without live config validity.
+    if (profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI) return null;
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
+    // Interface-driven second gate: a backend without the sidecar method
+    // reports "not supported", not an empty list.
+    if (typeof backend.listDitSidecars !== "function") return null;
+    const listDitSidecars = backend.listDitSidecars.bind(backend);
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "DiT sidecar list", (inner) =>
+      listDitSidecars(inner),
+    );
+  };
+
   listImageGenProfileExtensions = async (id: string, signal?: AbortSignal) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;

@@ -97,6 +97,47 @@ describe("ImageGenLocalServerPanel — segment gating (PG-1)", () => {
   });
 });
 
+describe("ImageGenLocalServerPanel — comfyui guide (CG-B1)", () => {
+  test("renders for the comfy backend with the comfy guide PRESELECTED and the 8188 endpoint", async () => {
+    const updateForm = makeUpdateForm();
+    const view = renderPanel(
+      localForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, presetId: "comfyui", endpoint: "http://127.0.0.1:8188" }),
+      updateForm,
+    );
+    expect(view.queryByTestId("image-gen-local-server-panel")).not.toBeNull();
+    await act(async () => {
+      await userEvent.click(view.getByTestId("image-gen-setup-help-toggle"));
+    });
+    // The comfy card is the preselected guide (no a1111-first detour) and
+    // the a1111 card stays a CHOICE (selected = accent border).
+    const comfyChoice = view.getByTestId("image-gen-help-choice-comfyui");
+    expect(comfyChoice.className).toContain("border-accent");
+    const a1111Choice = view.getByTestId("image-gen-help-choice-a1111");
+    expect(a1111Choice.className).not.toContain("border-accent");
+    expect(view.getByText("ComfyUI")).not.toBeNull();
+
+    // OS is environment-dependent — pin UNIX explicitly (the raw-key i18n
+    // stub), then the PRESELECTED comfy run commands render while the
+    // a1111 launchers never do.
+    await act(async () => {
+      const unixBtn = Array.from(view.getByTestId("image-gen-help-os-toggle").querySelectorAll("button")).find((b) =>
+        b.textContent?.includes("image_gen_local_os_unix"),
+      );
+      expect(unixBtn).toBeTruthy();
+      await userEvent.click(unixBtn!);
+    });
+    expect(view.getByText("python main.py")).not.toBeNull();
+    expect(view.getByText("python main.py --listen")).not.toBeNull();
+    expect(view.queryByText("./webui.sh --api --listen")).toBeNull();
+
+    // The adopt button fills the preset endpoint 8188.
+    await act(async () => {
+      await userEvent.click(view.getByTestId("image-gen-help-use-comfyui"));
+    });
+    expect(updateForm).toHaveBeenCalledWith("endpoint", "http://127.0.0.1:8188");
+  });
+});
+
 describe("ImageGenLocalServerPanel — setup help accordion", () => {
   test("opens on toggle and renders the one guide card + run commands + diagnosis hints", async () => {
     const view = renderPanel(localForm(), makeUpdateForm());

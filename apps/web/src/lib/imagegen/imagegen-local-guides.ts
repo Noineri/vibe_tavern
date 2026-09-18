@@ -27,8 +27,8 @@ export interface ImageGenHelpStep {
  *  - Forge and ReForge — launch.py (Windows rides the same
  *    webui-user.bat COMMANDLINE_ARGS flow).
  *  - SD.Next — webui.py / webui.bat.
- *  ComfyUI gets its own card when its adapter lands (the report's
- *  "cards join later" rule) — it is NOT an /sdapi/v1 dialect. */
+ *  ComfyUI joins as its own card with the comfyui adapter (CG-B1) — it
+ *  is NOT an /sdapi/v1 dialect: its API is always on (no flag), port 8188. */
 export interface ImageGenServerGuide {
   id: string;
   name: string;
@@ -56,6 +56,23 @@ export const IMAGE_GEN_SERVER_GUIDES: ImageGenServerGuide[] = [
         windows: ["set COMMANDLINE_ARGS=--api --listen"],
       },
       noteKey: "image_gen_local_note_windows_args",
+    },
+  },
+  {
+    id: "comfyui",
+    name: "ComfyUI",
+    descriptionKey: "image_gen_local_desc_comfyui",
+    endpoint: "http://127.0.0.1:8188",
+    run: {
+      titleKey: "image_gen_local_step_run_comfyui",
+      commands: {
+        // ComfyUI's HTTP API is ALWAYS enabled — no --api flag exists; the
+        // default port is 8188. --listen only widens reach past localhost
+        // (the launcher .bat files accept the same args).
+        unix: ["python main.py", "python main.py --listen"],
+        windows: ["run_nvidia_gpu.bat", "python main.py --listen"],
+      },
+      noteKey: "image_gen_local_note_comfyui",
     },
   },
 ];

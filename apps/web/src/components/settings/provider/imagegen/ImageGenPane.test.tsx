@@ -220,6 +220,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     modelsByProfile: {},
     samplersByProfile: {},
     schedulersByProfile: {},
+    sidecarsByProfile: {},
     samplerStatusByProfile: {},
     startEdit: mock(() => {}),
     startCreate: mock(() => {}),
@@ -232,6 +233,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     fetchSavedModels: mock(async () => null),
     fetchSamplers: mock(async () => null),
     fetchSchedulers: mock(async () => null),
+    fetchSidecars: mock(async () => null),
     fetchDraftModels: mock(async () => []),
     favorites: [],
     starModel: mock(async () => {}),
@@ -775,6 +777,186 @@ describe("ImageGenPane — per-mode sizes (IG-CF14: accordion + stepper ladder +
       userSizes: Array<{ width: number; height: number; ratio?: string }>;
     };
     expect(deletePatch.userSizes).toEqual([]);
+  });
+});
+
+describe("ImageGenPane — comfyui dialect surfaces (CG-B1)", () => {
+  const COMFY_MODELS: ImageGenModelEntry[] = [
+    { id: "graycolor_v18.safetensors", label: "graycolor_v18", family: "Illustrious", template: "checkpoint" },
+    {
+      id: "raySemiReal_krea2TurboV1Nsfw.safetensors",
+      label: "raySemiReal_krea2TurboV1Nsfw",
+      family: "Krea 2",
+      template: "krea2-dit",
+    },
+  ];
+
+  function comfyImageGen(
+    formOverrides: Partial<NonNullable<ImageGenHook["form"]>> = {},
+    hookOverrides: Partial<ImageGenHook> = {},
+  ): ImageGenHook {
+    return makeImageGen({
+      form: makeForm({
+        backend: IMAGE_GEN_BACKENDS.ComfyUI,
+        presetId: "comfyui",
+        endpoint: "http://127.0.0.1:8188",
+        modelId: "graycolor_v18.safetensors",
+        capabilities: makeCaps({
+          supportsNegativePrompt: true,
+          supportsSamplers: true,
+          supportsSeed: true,
+          sizeSupport: { kind: "free" },
+          localExecution: true,
+        }),
+        ...formOverrides,
+      }),
+      ...hookOverrides,
+    });
+  }
+
+  it("comfy joins the local family: status chip + scheduler surface render; a CHECKPOINT model shows its Detected readout and NO DiT fields", async () => {
+    const view = render(
+      <ImageGenPane imageGen={comfyImageGen({}, { modelsByProfile: { ig1: COMFY_MODELS } })} />,
+    );
+    // The IG-CF12a chip — the local-family gate widened to comfy (CG-B1).
+    await waitFor(() => expect(view.getByTestId("image-gen-local-status")).toBeTruthy());
+    // «Detected: Checkpoint» — the template marker through the i18n mock.
+    expect(view.getByTestId("image-gen-model-detected").textContent).toBe(
+      "image_gen_detected_template:image_gen_template_checkpoint",
+    );
+    await openAdvanced(view);
+    // The scheduler surface is dialect-gated on the LOCAL family — comfy
+    // feeds from the KSampler combo (CG-A3), the same dropdown as a1111.
+    await waitFor(() => expect(view.getByTestId("image-gen-field-scheduler")).toBeTruthy());
+    // The DiT sidecar fields are template-gated: a checkpoint model must
+    // not render them.
+    expect(view.queryByTestId("image-gen-field-encoder")).toBeNull();
+    expect(view.queryByTestId("image-gen-field-vae")).toBeNull();
+  });
+
+  it("a DiT model shows the Krea-2 Detected readout, the family chip in the picker, and encoder/VAE fields fed from the sidecar cache", async () => {
+    const setForm = mock(() => {});
+    const view = render(
+      <ImageGenPane
+        imageGen={comfyImageGen(
+          { modelId: "raySemiReal_krea2TurboV1Nsfw.safetensors" },
+          {
+            modelsByProfile: { ig1: COMFY_MODELS },
+            sidecarsByProfile: {
+              ig1: { encoders: ["qwen3vl_4b_fp8_scaled.safetensors"], vaes: ["qwen_image_vae.safetensors"] },
+            },
+            setForm,
+          },
+        )}
+      />,
+    );
+    expect(view.getByTestId("image-gen-model-detected").textContent).toBe(
+      "image_gen_detected_template:image_gen_template_krea2_dit",
+    );
+    // The picker rows carry the family chip (the "free" chip's shape).
+    await act(async () => {
+      view.getByTestId("image-gen-field-model").click();
+    });
+    await waitFor(() => {
+      const chips = Array.from(document.body.querySelectorAll("[data-testid='image-gen-model-family']"));
+      expect(chips.length).toBe(2);
+      expect((chips[1] as HTMLElement).textContent).toBe("Krea 2");
+      return chips;
+    });
+    await act(async () => {
+      fireEvent.click(document.body);
+    });
+    // The DiT fields: same bind routing as the sampler (bind off → the
+    // profile base layer).
+    await openAdvanced(view);
+    await pickOption(view, "image-gen-field-encoder", "qwen3vl_4b_fp8_scaled.safetensors");
+    await waitFor(() => expect(setForm).toHaveBeenCalled());
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch.defaultParams).toEqual({ encoderName: "qwen3vl_4b_fp8_scaled.safetensors" });
+    await pickOption(view, "image-gen-field-vae", "qwen_image_vae.safetensors");
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(2));
+    const patch2 = (setForm.mock.calls[1] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    expect(patch2.defaultParams).toEqual({ vaeName: "qwen_image_vae.safetensors" });
+  });
+
+  it("the sidecar cache fills ONCE while a DiT model is selected (options-data fetch, no status signal)", async () => {
+    const fetchSidecars = mock(async () => null);
+    const view = render(
+      <ImageGenPane
+        imageGen={comfyImageGen(
+          { modelId: "raySemiReal_krea2TurboV1Nsfw.safetensors" },
+          { modelsByProfile: { ig1: COMFY_MODELS }, fetchSidecars },
+        )}
+      />,
+    );
+    await waitFor(() => expect(fetchSidecars).toHaveBeenCalledWith("ig1"));
+    // A checkpoint selection never fires the sidecar fetch.
+    const fetchSidecars2 = mock(async () => null);
+    render(
+      <ImageGenPane
+        imageGen={comfyImageGen({}, { modelsByProfile: { ig1: COMFY_MODELS }, fetchSidecars: fetchSidecars2 })}
+      />,
+    );
+    await act(async () => {});
+    expect(fetchSidecars2).not.toHaveBeenCalled();
+  });
+
+  it("picking a DiT model on an UNTOUCHED param base prefills the krea2 starting points as EXPLICIT form values (CF5); a tuned base is kept verbatim", async () => {
+    const setForm = mock(() => {});
+    const view = render(
+      <ImageGenPane imageGen={comfyImageGen({ modelId: null }, { modelsByProfile: { ig1: COMFY_MODELS }, setForm })} />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-field-model")).toBeTruthy());
+    // The model rows carry the family chip (extra text) — open the picker,
+    // then click by CONTAINS (the test-344 direct-DOM idiom), not the
+    // exact-text helper.
+    await act(async () => {
+      view.getByTestId("image-gen-field-model").click();
+    });
+    const ditOption = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll("[data-testid='image-gen-model-option']")).find(
+        (n) => n.textContent?.includes("raySemiReal_krea2TurboV1Nsfw"),
+      );
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await act(async () => {
+      ditOption.click();
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
+    expect((setForm.mock.calls[0] as unknown[])[0]).toEqual({
+      modelId: "raySemiReal_krea2TurboV1Nsfw.safetensors",
+      defaultParams: { steps: 8, cfgScale: 1, sampler: "euler", scheduler: "simple" },
+    });
+    cleanup();
+
+    // A base the user already tuned for checkpoints keeps its values — no
+    // partial merge of the krea2 starting points (the all-four-unset gate).
+    const setForm2 = mock(() => {});
+    const view2 = render(
+      <ImageGenPane
+        imageGen={comfyImageGen(
+          { modelId: null, defaultParams: { steps: 30, cfgScale: 7 } },
+          { modelsByProfile: { ig1: COMFY_MODELS }, setForm: setForm2 },
+        )}
+      />,
+    );
+    await waitFor(() => expect(view2.getByTestId("image-gen-field-model")).toBeTruthy());
+    await act(async () => {
+      view2.getByTestId("image-gen-field-model").click();
+    });
+    const ditOption2 = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll("[data-testid='image-gen-model-option']")).find(
+        (n) => n.textContent?.includes("raySemiReal_krea2TurboV1Nsfw"),
+      );
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await act(async () => {
+      ditOption2.click();
+    });
+    await waitFor(() => expect(setForm2).toHaveBeenCalledTimes(1));
+    expect((setForm2.mock.calls[0] as unknown[])[0]).toEqual({ modelId: "raySemiReal_krea2TurboV1Nsfw.safetensors" });
   });
 });
 
