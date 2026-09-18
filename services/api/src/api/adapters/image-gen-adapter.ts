@@ -99,6 +99,7 @@ import "../../domain/imagegen/backends/openai-images.js";
 import "../../domain/imagegen/backends/openai-images-family.js";
 import "../../domain/imagegen/backends/a1111.js";
 import "../../domain/imagegen/backends/comfyui.js";
+import "../../domain/imagegen/backends/minimax.js";
 
 // ─── Route-ladder errors ─────────────────────────────────────────────────────
 

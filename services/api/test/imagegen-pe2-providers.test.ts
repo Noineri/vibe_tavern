@@ -13,6 +13,7 @@ import { describe, expect, it } from "bun:test";
 import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern/domain";
 
 import { ZAI_IMAGE_SIZES } from "../src/domain/imagegen/backends/openai-images-family.js";
+import { MINIMAX_ASPECT_RATIOS } from "../src/domain/imagegen/backends/minimax.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 
 // ─── Shared helpers (the PE-1 file's, verbatim discipline) ───────────────────
@@ -63,6 +64,197 @@ const PNG_BYTES = Buffer.from(
 function b64DataResponse(b64s: string[]): Response {
   return Response.json({ created: 0, data: b64s.map((b64) => ({ b64_json: b64 })) });
 }
+
+// ─── MiniMax image-01 (PE-2 unit 2) ──────────────────────────────
+
+const MINIMAX_ENDPOINT = "https://api.minimax.io";
+
+describe("minimax (custom-JSON arm)", () => {
+  const make = (transport: typeof fetch) =>
+    familyBackend(IMAGE_GEN_BACKENDS.MiniMax, transport, MINIMAX_ENDPOINT, "mm-key");
+
+  /** A scripted two-response double: the generation POST first, then the
+   *  server-side byte download. */
+  function genThenBytes(genResponse: Response, bytes: Buffer = PNG_BYTES): typeof fetch {
+    let answered = false;
+    return (url, init) => {
+      if (!answered) {
+        answered = true;
+        return Promise.resolve(genResponse);
+      }
+      return Promise.resolve(new Response(new Uint8Array(bytes), { status: 200 }));
+    };
+  }
+
+  describe("generate", () => {
+    it("sends the documented body: model default image-01, ratio from the pixel map, response_format base64, seed", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({
+          id: "t1",
+          data: { image_base64s: [PNG_BYTES.toString("base64")] },
+          metadata: { success_count: 1, failed_count: 0 },
+          base_resp: { status_code: 0, status_msg: "success" },
+        }),
+      );
+      const backend = make(transport);
+
+      const result = await backend.generate({
+        prompt: "a tavern at dusk",
+        width: 1344,
+        height: 576, // the 21:9 pixel-map value
+        seed: 424242,
+      });
+
+      expect(calls[0].url).toBe(`${MINIMAX_ENDPOINT}/v1/image_generation`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer mm-key");
+      const body = sentJson(calls[0]);
+      // image-01 is the documented single-value enum — the default.
+      expect(body.model).toBe("image-01");
+      expect(body.prompt).toBe("a tavern at dusk");
+      expect(body.aspect_ratio).toBe("21:9");
+      expect(body.response_format).toBe("base64");
+      expect(body.seed).toBe(424242);
+      // n / prompt_optimizer have no VT seam — never sent.
+      expect("n" in body).toBe(false);
+      expect("prompt_optimizer" in body).toBe(false);
+      // ratio form wins upstream — width/height stay OFF the wire for map hits.
+      expect("width" in body).toBe(false);
+      expect("height" in body).toBe(false);
+      // base64 entries decode in-process.
+      expect(result.images).toHaveLength(1);
+      expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+      expect(result.images[0].mimeType).toBe("image/png");
+    });
+
+    it("maps user-added sizes to width+height and fails closed off-map without an entry", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({ data: { image_base64s: ["x"] }, base_resp: { status_code: 0 } }),
+      );
+      const backend = make(transport);
+      await expect(
+        backend.generate({ prompt: "p", width: 1000, height: 1000 }),
+      ).rejects.toThrow(/MiniMax has no documented size for 1000x1000/);
+      expect(calls).toHaveLength(0);
+
+      // 1536x1024: [512,2048] div 8 — a user entry IS the vendor claim.
+      const user = makeTransport(() =>
+        Response.json({ data: { image_base64s: [PNG_BYTES.toString("base64")] }, base_resp: { status_code: 0 } }),
+      );
+      const userBackend = createImageGenBackend(IMAGE_GEN_BACKENDS.MiniMax, {
+        endpoint: MINIMAX_ENDPOINT,
+        apiKey: "mm-key",
+        userSizes: [{ width: 1536, height: 1024 }],
+        fetch: user.transport,
+      });
+      await userBackend.generate({ prompt: "p", width: 1536, height: 1024 });
+      const body = sentJson(user.calls[0]);
+      expect(body.width).toBe(1536);
+      expect(body.height).toBe(1024);
+      expect("aspect_ratio" in body).toBe(false);
+    });
+
+    it("honors the IN-BAND base_resp failure inside HTTP 200 (the live-probed 1004 login-fail shape)", async () => {
+      const { transport } = makeTransport(() =>
+        Response.json({
+          base_resp: { status_code: 1004, status_msg: "login fail: Please carry the API secret key" },
+        }),
+      );
+      const backend = make(transport);
+      await expect(backend.generate({ prompt: "p" })).rejects.toThrow(
+        /status 1004: login fail/,
+      );
+    });
+
+    it("downloads https entries server-side (url-mode fallback field)", async () => {
+      const { transport, calls } = makeTransport(
+        () =>
+          Response.json({
+            data: { image_urls: ["https://files.minimax.io/img.png"] },
+            base_resp: { status_code: 0 },
+          }),
+      );
+      const backend = make(genThenBytesWrapper());
+      function genThenBytesWrapper(): typeof fetch {
+        let answered = false;
+        return (url, init) => {
+          if (!answered) {
+            answered = true;
+            return transport(url, init);
+          }
+          return Promise.resolve(new Response(new Uint8Array(PNG_BYTES), { status: 200 }));
+        };
+      }
+      void calls;
+      const result = await backend.generate({ prompt: "p" });
+      expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+    });
+  });
+
+  describe("listModels + probe", () => {
+    it("lists the documented OpenAI-compat catalog filtered to the image-* family", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({
+          data: [{ id: "abab-chat" }, { id: "image-01" }, { id: "speech-2.8-hd" }],
+          base_resp: { status_code: 0 },
+        }),
+      );
+      const backend = make(transport);
+      const models = await backend.listModels();
+      expect(models).toEqual([{ id: "image-01", label: "image-01" }]);
+      expect(calls[0].url).toBe(`${MINIMAX_ENDPOINT}/v1/models`);
+
+      const probed = await backend.probe();
+      expect(probed).toEqual({ ok: true, detail: "1 image models" });
+    });
+
+    it("probe honors an in-band auth failure inside HTTP 200", async () => {
+      const { transport } = makeTransport(() =>
+        Response.json({ base_resp: { status_code: 1004, status_msg: "login fail" } }),
+      );
+      const backend = make(transport);
+      const probed = await backend.probe();
+      expect(probed.ok).toBe(false);
+      expect(probed.detail).toContain("1004");
+    });
+  });
+
+  describe("capability row + registry", () => {
+    it("pins the MiniMax capability row (ratio pixel-map grid, seed on)", () => {
+      const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.MiniMax];
+      expect(caps.supportsNegativePrompt).toBe(false);
+      expect(caps.supportsSamplers).toBe(false);
+      expect(caps.supportsSeed).toBe(true);
+      expect(caps.noApiKey).toBe(false);
+      expect(caps.localExecution).toBe(false);
+      expect(caps.paramRanges).toEqual({});
+      if (caps.sizeSupport.kind !== "vendor-set") throw new Error("expected vendor-set");
+      expect(caps.sizeSupport.sizes).toEqual([...MINIMAX_ASPECT_RATIOS.keys()]);
+    });
+
+    it("registers the minimax slug at import time (creatable via the registry)", () => {
+      const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.MiniMax, {
+        endpoint: MINIMAX_ENDPOINT,
+        apiKey: "mm-key",
+      });
+      expect(typeof backend.generate).toBe("function");
+      expect(typeof backend.listModels).toBe("function");
+    });
+
+    it("accepts a pasted full generation URL and a /v1 baseUrl (paste tolerance)", () => {
+      for (const endpoint of [
+        "https://api.minimax.io",
+        "https://api.minimax.io/",
+        "https://api.minimax.io/v1",
+        "https://api.minimax.io/v1/image_generation",
+      ]) {
+        expect(() =>
+          createImageGenBackend(IMAGE_GEN_BACKENDS.MiniMax, { endpoint, apiKey: "k" }),
+        ).not.toThrow();
+      }
+    });
+  });
+});
 
 // ─── Z.AI (PE-2 unit 1) ──────────────────────────────────────────────────
 

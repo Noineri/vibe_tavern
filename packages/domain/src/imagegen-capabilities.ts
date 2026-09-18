@@ -384,4 +384,47 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.MiniMax]: {
+    // PE-2 unit 2 — MiniMax card (doc-verified 2026-09-07 against the
+    // live platform.minimax.io schema; re-verified 2026-09-18 incl. a
+    // full JS-rendered re-read + a no-key live probe): POST
+    // api.minimax.io/v1/image_generation (the TTS profile's own host,
+    // creds overlap), Bearer. image-01 — the documented single-value enum
+    // (and the profile default, the minimax-tts precedent). Sizing:
+    // aspect_ratio enum with a documented pixel map (8 values, published
+    // as the grid); user-added sizes ride width+height [512,2048] div 8
+    // (aspect_ratio wins upstream, so the ratio form is preferred).
+    // response_format base64 requested (url expires 24 h); entries ride
+    // data.image_base64s (base64 mode; call-site-verified) with
+    // image_urls as the fallback field. seed int64 — supported. FAILURES
+    // RIDE base_resp.status_code INSIDE HTTP 200 (live 200+1004 login
+    // fail — the adapter honors the in-band status everywhere). Model
+    // discovery: documented OpenAI-compat GET /v1/models filtered to the
+    // image-* family (the TTS speech-* precedent).
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: {
+      kind: "vendor-set",
+      // Literal mirror of the arm's MINIMAX_ASPECT_RATIOS keys —
+      // lockstep pinned by imagegen-pe2-providers.test.ts (the domain
+      // leaf cannot import the services/api arm table).
+      sizes: [
+        "1024x1024",
+        "1280x720",
+        "1152x864",
+        "1248x832",
+        "832x1248",
+        "864x1152",
+        "720x1280",
+        "1344x576",
+      ],
+    },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

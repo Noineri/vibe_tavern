@@ -1055,6 +1055,7 @@ export const IMAGE_GEN_BACKENDS = {
   DeepInfra: "deepinfra",
   Recraft: "recraft",
   Zai: "zai",
+  MiniMax: "minimax",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

@@ -230,6 +230,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.z.ai/api/paas/v4",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // MiniMax — the TTS profile's own host (api.minimax.io, same
+  // credentials): image-01 on MiniMax's own JSON surface (aspect-ratio
+  // pixel map, base64 delivery, in-band base_resp errors — PE-2 card).
+  {
+    id: "minimax",
+    label: "MiniMax",
+    backend: IMAGE_GEN_BACKENDS.MiniMax,
+    baseUrl: "https://api.minimax.io",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */
