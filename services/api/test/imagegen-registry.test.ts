@@ -184,6 +184,11 @@ describe("imagegen registry", () => {
       expect(listImageGenBackendSlugs().sort()).toEqual([...ALL_SLUGS].sort());
       expect(ALL_SLUGS).toHaveLength(7);
     });
+
+    it("keeps the contracts Zod enum in lockstep with the domain roster (PE-1: the roster now grows by waves — an unsynced schema would reject valid profiles at parse time)", async () => {
+      const { imageGenBackendSchema } = await import("@vibe-tavern/api-contracts");
+      expect([...imageGenBackendSchema.options].sort()).toEqual([...ALL_SLUGS].sort());
+    });
   });
 
   describe("IMAGE_GEN_BACKEND_CAPABILITIES (static map)", () => {
