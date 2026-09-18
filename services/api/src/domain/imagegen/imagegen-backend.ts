@@ -67,6 +67,13 @@ export interface ImageGenGenerateRequest {
   /** Schedule type (PG-3, A1111 dialect) — the sampler's schedule riding
    *  the txt2img payload per request; absent = the server's own default. */
   scheduler?: string;
+  /** Text-encoder sidecar file for the ComfyUI DiT template (CG-A2,
+   *  comfyui dialect only): rides the request when the profile/overlay
+   *  pins it; absent = the adapter's canonical live-folder resolution. */
+  encoderName?: string;
+  /** VAE sidecar file for the ComfyUI DiT template (CG-A2, comfyui
+   *  dialect only). Absent = the adapter's canonical resolution. */
+  vaeName?: string;
   seed?: number;
   clipSkip?: number;
   /** ADetailer face-fix model (IG-CF15/PG-4 v1, A1111-family only):
@@ -153,6 +160,11 @@ export interface ImageGenGenerateResult {
    *  vendors snap requested sizes onto their fixed grid). */
   width?: number;
   height?: number;
+  /** Workflow template the backend resolved for the generation (CG-A2):
+   *  ComfyUI reports "checkpoint" | "krea2-dit" — the slot provenance
+   *  records it (model auto-detect is adapter-side knowledge). Other
+   *  backends omit. */
+  resolvedTemplate?: string;
 }
 
 /** Probe outcome — normalized like STT's: failures are reported as

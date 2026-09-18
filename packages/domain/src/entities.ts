@@ -1136,6 +1136,13 @@ export interface ImageGenDefaultParams {
    *  of the sampler-set payload (the set concept stays the five LS-5
    *  scalars). */
   scheduler?: string;
+  /** Text-encoder file for the ComfyUI DiT template (CG-A2, comfyui
+   *  dialect only): the CLIPLoader sidecar of a bare diffusion model.
+   *  Absent = adapter-side canonical resolution against the live folder. */
+  encoderName?: string;
+  /** VAE file for the ComfyUI DiT template (CG-A2, comfyui dialect only):
+   *  the VAELoader sidecar. Absent = adapter-side canonical resolution. */
+  vaeName?: string;
 }
 
 /** Per-mode width/height preset on the profile. Optional members — an unset
@@ -1236,6 +1243,12 @@ export interface ImageGenModelSettingsOverlay {
   /** Schedule type (PG-3) — the sampler's schedule on the A1111 dialect;
    *  the overlay twin of `ImageGenDefaultParams.scheduler`. */
   scheduler?: string;
+  /** Text-encoder file for the ComfyUI DiT template (CG-A2) — the overlay
+   *  twin of `ImageGenDefaultParams.encoderName`. */
+  encoderName?: string;
+  /** VAE file for the ComfyUI DiT template (CG-A2) — the overlay twin of
+   *  `ImageGenDefaultParams.vaeName`. */
+  vaeName?: string;
   seed?: number;
   clipSkip?: number;
   /** ADetailer face-fix switch (IG-CF15/PG-4 v1, A1111-family only):

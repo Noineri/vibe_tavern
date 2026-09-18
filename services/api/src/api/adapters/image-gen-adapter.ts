@@ -634,6 +634,11 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // the chip's scheduler is an overlay field (the advanced-panel dropdown),
     // no one-shot draft row ships in v1.
     const scheduler = overlay.scheduler ?? defaults.scheduler;
+    // ComfyUI DiT sidecars (CG-A2): the scheduler precedent — overlay over
+    // profile defaults, NO overrides rung (they are wiring concerns of the
+    // model, not one-shot knobs). Other backends ignore the fields.
+    const encoderName = overlay.encoderName ?? defaults.encoderName;
+    const vaeName = overlay.vaeName ?? defaults.vaeName;
     const seed = overrides.seed ?? overlay.seed ?? defaults.seed;
     const clipSkip = overrides.clipSkip ?? overlay.clipSkip ?? defaults.clipSkip;
     // ADetailer (IG-CF15/PG-4 v1): OVERLAY-ONLY — the face-fix flag rides the
@@ -691,6 +696,8 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(cfgScale !== undefined ? { cfgScale } : {}),
       ...(sampler !== undefined ? { sampler } : {}),
       ...(scheduler !== undefined ? { scheduler } : {}),
+      ...(encoderName !== undefined ? { encoderName } : {}),
+      ...(vaeName !== undefined ? { vaeName } : {}),
       ...(seed !== undefined ? { seed } : {}),
       ...(clipSkip !== undefined ? { clipSkip } : {}),
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
@@ -731,6 +738,9 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         ...(cfgScale !== undefined ? { cfgScale } : {}),
         ...(sampler !== undefined ? { sampler } : {}),
         ...(scheduler !== undefined ? { scheduler } : {}),
+        ...(encoderName !== undefined ? { encoderName } : {}),
+        ...(vaeName !== undefined ? { vaeName } : {}),
+        ...(result.resolvedTemplate !== undefined ? { template: result.resolvedTemplate } : {}),
         ...(seed !== undefined ? { seed } : {}),
         ...(clipSkip !== undefined ? { clipSkip } : {}),
       },

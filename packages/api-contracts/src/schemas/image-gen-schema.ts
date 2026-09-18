@@ -85,6 +85,13 @@ export const imageGenDefaultParamsSchema = z.object({
   /** Schedule type (PG-3, A1111 dialect) — the sampler's schedule; empty
    *  = vendor default. */
   scheduler: z.string().optional(),
+  /** Text-encoder file for the ComfyUI DiT template (CG-A2, comfyui
+   *  dialect only): the CLIPLoader sidecar of a bare diffusion model.
+   *  Absent = adapter-side canonical resolution against the live folder. */
+  encoderName: z.string().optional(),
+  /** VAE file for the ComfyUI DiT template (CG-A2, comfyui dialect only):
+   *  the VAELoader sidecar. Absent = adapter-side canonical resolution. */
+  vaeName: z.string().optional(),
 });
 export type ImageGenDefaultParamsValue = z.infer<typeof imageGenDefaultParamsSchema>;
 
@@ -402,6 +409,12 @@ export const imageGenModelSettingsOverlaySchema = z.object({
   /** Schedule type (PG-3, A1111 dialect) — the overlay twin of the
    *  profile-default `scheduler`. */
   scheduler: z.string().optional(),
+  /** Text-encoder file for the ComfyUI DiT template (CG-A2) — the overlay
+   *  twin of the profile-default `encoderName`. */
+  encoderName: z.string().optional(),
+  /** VAE file for the ComfyUI DiT template (CG-A2) — the overlay twin of
+   *  the profile-default `vaeName`. */
+  vaeName: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
   /** ADetailer face-fix switch (IG-CF15/PG-4 v1) — A1111-family only. */

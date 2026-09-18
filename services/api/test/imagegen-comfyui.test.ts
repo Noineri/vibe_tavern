@@ -13,11 +13,13 @@ import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
 
 import {
   COMFY_HISTORY_POLL_INTERVAL_MS,
+  COMFY_KREA2_CLIP_TYPE,
   COMFY_NODE_DEFAULTS,
   ComfyImageGenConfigError,
   ComfyImageGenError,
   ComfyImageGenSizeError,
   buildComfyCheckpointWorkflow,
+  buildComfyKrea2Workflow,
   comfyImageGenFactory,
 } from "../src/domain/imagegen/backends/comfyui.js";
 
@@ -65,16 +67,64 @@ function queuedOk(promptId: string): Response {
   return Response.json({ prompt_id: promptId, number: 1, node_errors: {} });
 }
 
-/** A full happy-path transport: /prompt → /history (pending then done) →
- *  /view (PNG bytes). URL-dispatched so the three calls stay distinct. */
-function happyTransport(promptId: string, pendingPolls = 0) {
+/** A `GET /object_info/{node}` response exposing one required combo input
+ *  with the given accepted values (template detection's ground truth). */
+function objectInfoResponse(nodeName: string, inputName: string, values: string[]): Response {
+  return Response.json({ [nodeName]: { input: { required: { [inputName]: [values, {}] } } } });
+}
+
+/** The checkpoint combo list the happy-path transports serve — every model
+ *  id the tests reference must live here for detection to pass. */
+const HAPPY_CHECKPOINTS = ["graycolor_v18.safetensors", "m.safetensors", "missing.safetensors"];
+
+/** A full happy-path transport: template detection → /prompt → /history
+ *  (pending then done) → /view (PNG bytes). URL-dispatched so the calls
+ *  stay distinct. */
+function happyTransport(promptId: string, pendingPolls = 0, checkpoints: string[] = HAPPY_CHECKPOINTS) {
   let polls = 0;
   return makeTransport((url) => {
+    if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+      return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", checkpoints);
+    }
     if (url.pathname === "/prompt") return queuedOk(promptId);
     if (url.pathname === `/history/${promptId}`) {
       polls += 1;
       return polls <= pendingPolls ? Response.json({}) : historyDone(promptId);
     }
+    if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+    return new Response("not found", { status: 404 });
+  });
+}
+
+/** A DiT happy-path transport: the model misses the checkpoint combo and
+ *  hits the UNET combo; sidecar folders serve configurable lists. */
+function ditTransport(
+  promptId: string,
+  folders: { encoders?: string[]; vaes?: string[]; unets?: string[]; checkpoints?: string[] } = {},
+) {
+  return makeTransport((url) => {
+    if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+      return objectInfoResponse(
+        "CheckpointLoaderSimple",
+        "ckpt_name",
+        folders.checkpoints ?? ["graycolor_v18.safetensors"],
+      );
+    }
+    if (url.pathname === "/object_info/UNETLoader") {
+      return objectInfoResponse(
+        "UNETLoader",
+        "unet_name",
+        folders.unets ?? ["museByStableYogi_v35Int8Extended.safetensors", "kreation.safetensors"],
+      );
+    }
+    if (url.pathname === "/models/text_encoders") {
+      return Response.json(folders.encoders ?? ["qwen3vl_4b_fp8_scaled.safetensors", "t5xxl_fp16.safetensors"]);
+    }
+    if (url.pathname === "/models/vae") {
+      return Response.json(folders.vaes ?? ["qwen_image_vae.safetensors", "sdxl_vae.safetensors"]);
+    }
+    if (url.pathname === "/prompt") return queuedOk(promptId);
+    if (url.pathname === `/history/${promptId}`) return historyDone(promptId);
     if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
     return new Response("not found", { status: 404 });
   });
@@ -188,6 +238,77 @@ describe("comfyui adapter", () => {
     });
   });
 
+  describe("buildComfyKrea2Workflow (pure DiT template, CG-A2)", () => {
+    const SIDECARS = {
+      unet: "museByStableYogi_v35Int8Extended.safetensors",
+      encoder: "qwen3vl_4b_fp8_scaled.safetensors",
+      vae: "qwen_image_vae.safetensors",
+    };
+
+    it("maps the flat request onto the DiT graph with separate loaders wired in", () => {
+      const { graph, seed } = buildComfyKrea2Workflow(
+        {
+          prompt: "a tavern at dusk",
+          negativePrompt: "blurry",
+          width: 832,
+          height: 1216,
+          steps: 8,
+          cfgScale: 1,
+          sampler: "euler",
+          scheduler: "simple",
+          seed: 42,
+        },
+        SIDECARS,
+      );
+      expect(seed).toBe(42);
+      expect(graph["3"]!.inputs.model).toEqual(["11", 0]);
+      expect(graph["11"]).toEqual({
+        class_type: "UNETLoader",
+        inputs: { unet_name: "museByStableYogi_v35Int8Extended.safetensors" },
+      });
+      expect(graph["12"]).toEqual({
+        class_type: "CLIPLoader",
+        inputs: { clip_name: "qwen3vl_4b_fp8_scaled.safetensors", type: "krea2" },
+      });
+      expect(graph["13"]).toEqual({
+        class_type: "VAELoader",
+        inputs: { vae_name: "qwen_image_vae.safetensors" },
+      });
+      // The sampler half keeps the shared ladder: same defaults, same ids.
+      expect(graph["3"]!.inputs.steps).toBe(8);
+      expect(graph["3"]!.inputs.cfg).toBe(1);
+      expect(graph["5"]!.inputs.width).toBe(832);
+      expect(graph["5"]!.inputs.height).toBe(1216);
+      // Encoders read the CLIPLoader output; VAEDecode reads the VAELoader.
+      expect(graph["6"]!.inputs.clip).toEqual(["12", 0]);
+      expect(graph["7"]!.inputs.clip).toEqual(["12", 0]);
+      expect(graph["8"]!.inputs.vae).toEqual(["13", 0]);
+      expect(graph["4"]).toBeUndefined();
+    });
+
+    it("hardcodes CLIPLoader.type=krea2 (the owner's SM lesson: a qwen3vl encoder under type qwen_image is a silently-broken graph)", () => {
+      const { graph } = buildComfyKrea2Workflow({ prompt: "p" }, SIDECARS);
+      expect(graph["12"]!.inputs.type).toBe(COMFY_KREA2_CLIP_TYPE);
+      expect(graph["12"]!.inputs.type).not.toBe("qwen_image");
+    });
+
+    it("wires CLIPSetLastLayer between the CLIPLoader and the encoders when clipSkip is set", () => {
+      const { graph } = buildComfyKrea2Workflow({ prompt: "p", clipSkip: 2 }, SIDECARS);
+      expect(graph["10"]).toEqual({
+        class_type: "CLIPSetLastLayer",
+        inputs: { stop_at_clip_layer: -2, clip: ["12", 0] },
+      });
+      expect(graph["6"]!.inputs.clip).toEqual(["10", 0]);
+      expect(graph["7"]!.inputs.clip).toEqual(["10", 0]);
+    });
+
+    it("fail-closes on non-positive sizes (the shared ladder)", () => {
+      expect(() => buildComfyKrea2Workflow({ prompt: "p", height: -4 }, SIDECARS)).toThrow(
+        ComfyImageGenSizeError,
+      );
+    });
+  });
+
   describe("generate", () => {
     it("queues the graph, polls history to completion, downloads the bytes server-side", async () => {
       const { transport, calls } = happyTransport("pid-1");
@@ -201,27 +322,31 @@ describe("comfyui adapter", () => {
         seed: 42,
       });
 
+      // Template detection: the checkpoint combo is the first wire call.
+      expect(calls[0]!.url).toBe(`${ENDPOINT}/object_info/CheckpointLoaderSimple`);
       // POST /prompt body: the workflow graph + a client id.
-      expect(calls[0]!.url).toBe(`${ENDPOINT}/prompt`);
-      const queued = sentJson(calls[0]!);
+      expect(calls[1]!.url).toBe(`${ENDPOINT}/prompt`);
+      const queued = sentJson(calls[1]!);
       expect(queued.client_id).toMatch(/^[\da-f-]{36}$/);
       const graph = queued.prompt as Record<string, { class_type: string }>;
       expect(graph["4"]!.class_type).toBe("CheckpointLoaderSimple");
       // History poll targets the queued prompt id.
-      expect(calls[1]!.url).toBe(`${ENDPOINT}/history/pid-1`);
+      expect(calls[2]!.url).toBe(`${ENDPOINT}/history/pid-1`);
       // /view carries the row's fields as query params.
-      const view = new URL(calls[2]!.url);
+      const view = new URL(calls[3]!.url);
       expect(view.pathname).toBe("/view");
       expect(view.searchParams.get("filename")).toBe("vt_imagegen_00001_.png");
       expect(view.searchParams.get("subfolder")).toBe("");
       expect(view.searchParams.get("type")).toBe("output");
-      // Result: downloaded bytes + sniffed MIME + resolved seed + W/H echo.
+      // Result: downloaded bytes + sniffed MIME + resolved seed + W/H echo
+      // + the resolved template id (CG-A2 provenance input).
       expect(result.images).toHaveLength(1);
       expect(result.images[0]!.mimeType).toBe("image/png");
       expect(result.images[0]!.data.equals(PNG_BYTES)).toBe(true);
       expect(result.seed).toBe(42);
       expect(result.width).toBe(512);
       expect(result.height).toBe(512);
+      expect(result.resolvedTemplate).toBe("checkpoint");
     });
 
     it("keeps polling until the history entry turns terminal", async () => {
@@ -234,13 +359,16 @@ describe("comfyui adapter", () => {
     }, 5000);
 
     it("surfaces a graph rejection (node_errors) as a caller-class 400 error", async () => {
-      const { transport } = makeTransport(() =>
-        Response.json({
+      const { transport } = makeTransport((url) => {
+        if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+          return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", ["missing.safetensors"]);
+        }
+        return Response.json({
           prompt_id: "pid-3",
           number: 1,
           node_errors: { "4": { errors: [{ type: "value_not_in_list" }] } },
-        }),
-      );
+        });
+      });
       const backend = backendWith(transport);
       let caught: unknown;
       try {
@@ -255,6 +383,9 @@ describe("comfyui adapter", () => {
 
     it("maps an execution_error history entry to its readable reason", async () => {
       const { transport } = makeTransport((url) => {
+        if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+          return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", ["m.safetensors"]);
+        }
         if (url.pathname === "/prompt") return queuedOk("pid-4");
         return Response.json({
           "pid-4": {
@@ -286,6 +417,9 @@ describe("comfyui adapter", () => {
 
     it("fails closed when the prompt completed without SaveImage outputs", async () => {
       const { transport } = makeTransport((url) => {
+        if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+          return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", ["m.safetensors"]);
+        }
         if (url.pathname === "/prompt") return queuedOk("pid-5");
         return Response.json({
           "pid-5": { outputs: {}, status: { status_str: "success", completed: true, messages: [] } },
@@ -304,7 +438,12 @@ describe("comfyui adapter", () => {
     });
 
     it("maps a non-2xx /prompt to the upstream status", async () => {
-      const { transport } = makeTransport(() => new Response("boom", { status: 500 }));
+      const { transport } = makeTransport((url) => {
+        if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+          return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", ["m.safetensors"]);
+        }
+        return new Response("boom", { status: 500 });
+      });
       const backend = backendWith(transport);
       let caught: unknown;
       try {
@@ -319,6 +458,9 @@ describe("comfyui adapter", () => {
     it("rethrows the caller's abort untouched while polling", async () => {
       const controller = new AbortController();
       const { transport } = makeTransport((url) => {
+        if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+          return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", ["m.safetensors"]);
+        }
         if (url.pathname === "/prompt") return queuedOk("pid-7");
         return Response.json({}); // pending forever
       });
@@ -337,7 +479,125 @@ describe("comfyui adapter", () => {
       const { transport, calls } = happyTransport("pid-8");
       const backend = comfyImageGenFactory({ endpoint: `${ENDPOINT}/`, fetch: transport });
       await backend.generate({ prompt: "p", model: "m.safetensors" });
-      expect(calls[0]!.url).toBe(`${ENDPOINT}/prompt`);
+      expect(calls.some((call) => call.url === `${ENDPOINT}/prompt`)).toBe(true);
+    });
+  });
+
+  describe("generate (krea2 DiT path, CG-A2)", () => {
+    const MUSE = "museByStableYogi_v35Int8Extended.safetensors";
+
+    it("auto-detects the DiT model, resolves canonical sidecars, and reports the template", async () => {
+      const { transport, calls } = ditTransport("pid-d1");
+      const backend = backendWith(transport);
+
+      const result = await backend.generate({ prompt: "p", model: MUSE, seed: 7 });
+
+      // Detection order: checkpoint combo (miss) → unet combo (hit) → the
+      // two sidecar folders → queue → poll → download.
+      expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+        "/object_info/CheckpointLoaderSimple",
+        "/object_info/UNETLoader",
+        "/models/text_encoders",
+        "/models/vae",
+        "/prompt",
+        "/history/pid-d1",
+        "/view",
+      ]);
+      const graph = sentJson(calls[4]!).prompt as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+      expect(graph["11"]!.inputs.unet_name).toBe(MUSE);
+      expect(graph["12"]!.inputs.clip_name).toBe("qwen3vl_4b_fp8_scaled.safetensors");
+      expect(graph["12"]!.inputs.type).toBe("krea2");
+      expect(graph["13"]!.inputs.vae_name).toBe("qwen_image_vae.safetensors");
+      expect(result.images).toHaveLength(1);
+      expect(result.seed).toBe(7);
+      expect(result.resolvedTemplate).toBe("krea2-dit");
+    });
+
+    it("short-circuits on a checkpoint hit: one detection call, no sidecar fetches", async () => {
+      const { transport, calls } = happyTransport("pid-d2");
+      const backend = backendWith(transport);
+      const result = await backend.generate({ prompt: "p", model: "graycolor_v18.safetensors" });
+      const paths = calls.map((call) => new URL(call.url).pathname);
+      expect(paths).toEqual([
+        "/object_info/CheckpointLoaderSimple",
+        "/prompt",
+        "/history/pid-d2",
+        "/view",
+      ]);
+      expect(result.resolvedTemplate).toBe("checkpoint");
+    });
+
+    it("fails closed naming the model when it is in neither loader folder", async () => {
+      const { transport, calls } = ditTransport("pid-d3");
+      const backend = backendWith(transport);
+      let caught: unknown;
+      try {
+        await backend.generate({ prompt: "p", model: "ghost.safetensors" });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught instanceof ComfyImageGenConfigError).toBe(true);
+      expect((caught as Error).message).toContain("ghost.safetensors");
+      expect(calls.some((call) => call.url.includes("/prompt"))).toBe(false);
+    });
+
+    it("rides explicit encoder/VAE values verbatim — no folder fetch at all", async () => {
+      const { transport, calls } = ditTransport("pid-d4");
+      const backend = backendWith(transport);
+      const result = await backend.generate({
+        prompt: "p",
+        model: MUSE,
+        encoderName: "my_encoder.sft",
+        vaeName: "my_vae.safetensors",
+      });
+      const graph = sentJson(calls[2]!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+      expect(graph["12"]!.inputs.clip_name).toBe("my_encoder.sft");
+      expect(graph["13"]!.inputs.vae_name).toBe("my_vae.safetensors");
+      expect(result.resolvedTemplate).toBe("krea2-dit");
+      const paths = calls.map((call) => new URL(call.url).pathname);
+      expect(paths.includes("/models/text_encoders")).toBe(false);
+      expect(paths.includes("/models/vae")).toBe(false);
+    });
+
+    it("resolves the canonical sidecar basename across extensions and subfolders", async () => {
+      const { transport, calls } = ditTransport("pid-d5", {
+        encoders: ["t5xxl_fp16.safetensors", "sub/qwen3vl_4b_fp8_scaled.sft"],
+        vaes: ["qwen_image_vae.safetensors"],
+      });
+      const backend = backendWith(transport);
+      await backend.generate({ prompt: "p", model: MUSE });
+      const graph = sentJson(calls[4]!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+      expect(graph["12"]!.inputs.clip_name).toBe("sub/qwen3vl_4b_fp8_scaled.sft");
+      expect(graph["13"]!.inputs.vae_name).toBe("qwen_image_vae.safetensors");
+    });
+
+    it("falls back to a folder's single entry when no canonical match exists", async () => {
+      const { transport, calls } = ditTransport("pid-d6", {
+        encoders: ["only_encoder.safetensors"],
+        vaes: ["only_vae.safetensors"],
+      });
+      const backend = backendWith(transport);
+      await backend.generate({ prompt: "p", model: MUSE });
+      const graph = sentJson(calls[4]!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+      expect(graph["12"]!.inputs.clip_name).toBe("only_encoder.safetensors");
+      expect(graph["13"]!.inputs.vae_name).toBe("only_vae.safetensors");
+    });
+
+    it("fails closed listing the candidates when several non-canonical files exist", async () => {
+      const { transport, calls } = ditTransport("pid-d7", {
+        encoders: ["a_enc.safetensors", "b_enc.safetensors"],
+      });
+      const backend = backendWith(transport);
+      let caught: unknown;
+      try {
+        await backend.generate({ prompt: "p", model: MUSE });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught instanceof ComfyImageGenConfigError).toBe(true);
+      expect((caught as Error).message).toContain("qwen3vl_4b_fp8_scaled");
+      expect((caught as Error).message).toContain("a_enc.safetensors");
+      expect(calls.some((call) => call.url.includes("/prompt"))).toBe(false);
     });
   });
 

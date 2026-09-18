@@ -703,6 +703,13 @@ describe("image-gen routes — schedulers (PG-3, dialect-gated)", () => {
     const { app, stores } = await makeApp(async (input, init) => {
       const url = new URL(String(input));
       seenUrls.push(`${url.pathname}${url.search}`);
+      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+        return new Response(
+          JSON.stringify({
+            CheckpointLoaderSimple: { input: { required: { ckpt_name: [["graycolor_v18.safetensors"]] } } },
+          }),
+        );
+      }
       if (url.pathname === "/prompt") {
         queuedBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
         return new Response(JSON.stringify({ prompt_id: "pid-route", number: 1, node_errors: {} }));
@@ -748,7 +755,7 @@ describe("image-gen routes — schedulers (PG-3, dialect-gated)", () => {
     expect(graph["5"]!.inputs.width).toBe(832);
     expect(graph["5"]!.inputs.height).toBe(1216);
     expect(queuedBodies[0]!.client_id).toMatch(/^[\da-f-]{36}$/);
-    expect(seenUrls[2]).toBe(
+    expect(seenUrls[3]).toBe(
       "/view?filename=vt_imagegen_00001_.png&subfolder=&type=output",
     );
 
@@ -763,11 +770,106 @@ describe("image-gen routes — schedulers (PG-3, dialect-gated)", () => {
     expect(attachments[0]!.imageGen!.model).toBe("graycolor_v18.safetensors");
     expect(attachments[0]!.imageGen!.params.steps).toBe(4);
     expect(attachments[0]!.imageGen!.params.scheduler).toBe("simple");
+    // The resolved template rides the provenance (CG-A2).
+    expect(attachments[0]!.imageGen!.params.template).toBe("checkpoint");
+  });
+
+  test("generate (comfyui DiT): auto-detect routes to the krea2 template, profile sidecars ride the graph + provenance (CG-A2)", async () => {
+    const queuedBodies: Array<Record<string, unknown>> = [];
+    const { app, stores } = await makeApp(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+        return new Response(
+          JSON.stringify({
+            CheckpointLoaderSimple: { input: { required: { ckpt_name: [["graycolor_v18.safetensors"]] } } },
+          }),
+        );
+      }
+      if (url.pathname === "/object_info/UNETLoader") {
+        return new Response(
+          JSON.stringify({
+            UNETLoader: {
+              input: { required: { unet_name: [["museByStableYogi_v35Int8Extended.safetensors"]] } },
+            },
+          }),
+        );
+      }
+      if (url.pathname === "/prompt") {
+        queuedBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ prompt_id: "pid-dit", number: 1, node_errors: {} }));
+      }
+      if (url.pathname === "/history/pid-dit") {
+        return new Response(
+          JSON.stringify({
+            "pid-dit": {
+              outputs: { "9": { images: [{ filename: "vt_imagegen_00002_.png", subfolder: "", type: "output" }] } },
+              status: { status_str: "success", completed: true, messages: [] },
+            },
+          }),
+        );
+      }
+      if (url.pathname === "/view") {
+        return new Response(new Uint8Array(PNG_BYTES(0x64)));
+      }
+      return new Response("unexpected", { status: 404 });
+    });
+    const chatId = await makeChat(stores);
+    const profileId = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.ComfyUI,
+      endpoint: "http://127.0.0.1:8188",
+      modelId: "museByStableYogi_v35Int8Extended.safetensors",
+      defaultParams: {
+        steps: 8,
+        cfgScale: 1,
+        sampler: "euler",
+        scheduler: "simple",
+        encoderName: "qwen3vl_4b_fp8_scaled.safetensors",
+        vaeName: "qwen_image_vae.safetensors",
+      },
+    });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId, mode: "portrait", prompt: "a tavern" }),
+    });
+    expect(res.status).toBe(200);
+
+    // The DiT graph: separate loaders, hardcoded krea2 type, profile sidecars,
+    // and the krea2 starting point as EXPLICIT form values (8/1).
+    const graph = queuedBodies[0]!.prompt as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+    expect(graph["11"]!.class_type).toBe("UNETLoader");
+    expect(graph["11"]!.inputs.unet_name).toBe("museByStableYogi_v35Int8Extended.safetensors");
+    expect(graph["12"]!.inputs).toEqual({
+      clip_name: "qwen3vl_4b_fp8_scaled.safetensors",
+      type: "krea2",
+    });
+    expect(graph["13"]!.inputs.vae_name).toBe("qwen_image_vae.safetensors");
+    expect(graph["3"]!.inputs.steps).toBe(8);
+    expect(graph["3"]!.inputs.cfg).toBe(1);
+
+    // Provenance: template + sidecars recorded for regeneration.
+    const body = (await res.json()) as { messageId: string };
+    const slot = await stores.messages.getMessageById(body.messageId);
+    const attachments = JSON.parse(slot!.attachmentsJson ?? "[]") as Array<{
+      imageGen?: { params: Record<string, unknown> };
+    }>;
+    expect(attachments[0]!.imageGen!.params.template).toBe("krea2-dit");
+    expect(attachments[0]!.imageGen!.params.encoderName).toBe("qwen3vl_4b_fp8_scaled.safetensors");
+    expect(attachments[0]!.imageGen!.params.vaeName).toBe("qwen_image_vae.safetensors");
+    expect(attachments[0]!.imageGen!.params.steps).toBe(8);
   });
 
   test("generate (comfyui): a graph rejection (node_errors) surfaces as 400 with the node ids", async () => {
     const { app, stores } = await makeApp(async (input) => {
       const url = new URL(String(input));
+      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+        return new Response(
+          JSON.stringify({
+            CheckpointLoaderSimple: { input: { required: { ckpt_name: [["missing.safetensors"]] } } },
+          }),
+        );
+      }
       if (url.pathname === "/prompt") {
         return new Response(
           JSON.stringify({

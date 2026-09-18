@@ -89,6 +89,16 @@ export interface ImageGenSlotProvenance {
     /** Schedule type (PG-3, A1111 dialect) — recorded when sent so a
      *  regenerated slot reproduces the same schedule. */
     scheduler?: string;
+    /** Text-encoder file (CG-A2, ComfyUI DiT template) — recorded when
+     *  sent so a regenerated slot reproduces the same sidecar. */
+    encoderName?: string;
+    /** VAE file (CG-A2, ComfyUI DiT template) — recorded when sent. */
+    vaeName?: string;
+    /** Workflow template the backend RESOLVED for the generation (CG-A2,
+     *  ComfyUI: "checkpoint" | "krea2-dit") — the adapter picks it by
+     *  model auto-detect, so it is recorded from the RESULT, not the
+     *  request. Absent on other backends and legacy slots. */
+    template?: string;
     seed?: number;
     clipSkip?: number;
   };
