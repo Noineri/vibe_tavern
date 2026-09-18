@@ -28,6 +28,12 @@ import type { ImageGenAdapterConfig, ImageGenBackend } from "../imagegen-backend
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { makeOpenAiImagesFamilyBackend } from "./openai-images.js";
 import type { OpenAiImagesFamilyOptions } from "./openai-images.js";
+import {
+  makeRawBinaryImageBackend,
+  POLLINATIONS_LEGACY_HOST,
+  POLLINATIONS_LEGACY_OPTIONS,
+} from "./raw-binary.js";
+import { normalizeOpenAiCompatibleBaseUrl } from "../../providers/provider-transport.js";
 
 // ─── Together AI (PE-1 unit 1) ───────────────────────────────────────────────
 
@@ -402,7 +408,6 @@ const PE1_FAMILY: ReadonlyArray<{ slug: ImageGenBackendType; options: OpenAiImag
   { slug: IMAGE_GEN_BACKENDS.SiliconFlow, options: SILICONFLOW_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.NanoGpt, options: NANOGPT_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.ElectronHub, options: ELECTRONHUB_OPTIONS },
-  { slug: IMAGE_GEN_BACKENDS.Pollinations, options: POLLINATIONS_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.DeepInfra, options: DEEPINFRA_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.Recraft, options: RECRAFT_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.Zai, options: ZAI_OPTIONS },
@@ -414,3 +419,24 @@ for (const { slug, options } of PE1_FAMILY) {
     makeOpenAiImagesFamilyBackend(options, config),
   );
 }
+
+// ─── Pollinations: the two-tier slug (PE-3 unit 1) ──────────────────────────
+// The card's verdict is a TWO-tier adapter: the keyed unified gateway above
+// (gen.pollinations.ai, this family's row) + the legacy anonymous GET-binary
+// tier (image.pollinations.ai, the PE-3 raw-binary arm). One slug, two
+// presets — the tier is selected by the profile's baseUrl host (PE-1 log's
+// named decision: the legacy tier completes the family in PE-3).
+registerImageGenBackend(
+  IMAGE_GEN_BACKENDS.Pollinations,
+  (config: ImageGenAdapterConfig): ImageGenBackend => {
+    try {
+      const host = new URL(normalizeOpenAiCompatibleBaseUrl(config.endpoint ?? "")).host;
+      if (host === POLLINATIONS_LEGACY_HOST) {
+        return makeRawBinaryImageBackend(POLLINATIONS_LEGACY_OPTIONS, config);
+      }
+    } catch {
+      // Unparseable endpoint → the unified row surfaces its config error.
+    }
+    return makeOpenAiImagesFamilyBackend(POLLINATIONS_OPTIONS, config);
+  },
+);

@@ -272,6 +272,19 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://ai.api.nvidia.com/v1",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Pollinations legacy tier — the card's TWO-tier verdict, second row:
+  // anonymous GET-binary zero-config surface (image.pollinations.ai,
+  // same slug as the keyed unified row above; the tier is selected by
+  // the baseUrl host). Anonymous generation live-verified 2026-09-18
+  // (post-gateway-launch); key OPTIONAL — a Bearer raises rate limits.
+  {
+    id: "pollinations_free",
+    label: "Pollinations (free)",
+    backend: IMAGE_GEN_BACKENDS.Pollinations,
+    baseUrl: "https://image.pollinations.ai",
+    group: PROVIDER_PRESET_GROUP.cloud,
+    keyOptional: true,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

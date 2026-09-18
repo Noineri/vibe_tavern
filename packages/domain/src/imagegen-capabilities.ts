@@ -281,7 +281,13 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     // sent. No negative/steps/seed/sampler surface → all off. Model
     // listing: GET /v1/models public with a DOCUMENTED `category`
     // discriminator — the one family row that FILTERS to category=image
-    // (live 2026-09-18: 403 models, 59 image).
+    // (live 2026-09-18: 403 models, 59 image). PE-3 unit 1 completed the
+    // TWO-tier family: the legacy anonymous GET-binary tier rides the
+    // SAME slug, dispatched by baseUrl host (image.pollinations.ai) onto
+    // the raw-binary arm — key OPTIONAL (Bearer raises rate limits).
+    // Named decision: the legacy tier's documented `seed` stays unwired
+    // (per-SLUG caps cannot diverge per tier; a seed control that does
+    // nothing on the keyed tier is worse than a missing one).
     supportsNegativePrompt: false,
     supportsSamplers: false,
     supportsSeed: false,
