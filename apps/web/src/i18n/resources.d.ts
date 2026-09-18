@@ -1254,6 +1254,7 @@ export default interface Resources {
     "image_gen_seed_label": "Seed",
     "image_gen_segment_local": "Local server",
     "image_gen_sidecar_auto": "Auto (Krea 2 standard)",
+    "image_gen_sidecars_failed": "Failed to load encoder/VAE lists",
     "image_gen_size_auto": "Auto (server default)",
     "image_gen_size_swap": "Swap width and height",
     "image_gen_sizes_section_title": "Sizes per mode",

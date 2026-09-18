@@ -34,6 +34,7 @@ import { TextInput } from "../shared/text-input.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
+import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -43,13 +44,15 @@ import {
   listImageGenSchedulers,
   listImageGenExtensions,
   listImageGenLoras,
+  listImageGenDitSidecars,
   getImageGenModelSettings,
   upsertImageGenModelSettings,
   type ImageGenModelEntry,
   type ImageGenProfileRecord,
   type ImageGenLora,
+  type ImageGenDitSidecars,
 } from "../../api/image-gen-api.js";
-import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue } from "@vibe-tavern/api-contracts";
+import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue, ImageGenBackendValue } from "@vibe-tavern/api-contracts";
 import {
   IMAGE_GEN_BACKENDS,
   IMAGE_GEN_PARAM_RANGES,
@@ -250,6 +253,10 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
   // generation will actually run (the draft's pick, else the profile's).
   const effectiveModelId = draft.model ?? effective?.modelId;
   const modelFamily = models?.find((m) => m.id === effectiveModelId)?.family;
+  // The PICKED model's own cache entry (comfyui dialect enrichment, CG-B2 —
+  // the pane's selectedModelEntry twin): its `template` marker drives the
+  // «Detected» readout under the picker and the accordion's DiT gate.
+  const selectedModelEntry = models?.find((m) => m.id === draft.model) ?? null;
 
   return (
     <div className="flex flex-col gap-2.5 p-1" data-testid="image-gen-ft-body">
@@ -272,12 +279,33 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
           value={draft.model ?? ""}
           options={[
             { id: "", label: t("image_gen_chip_model_default") },
-            ...(models ?? []).map((m) => ({ id: m.id, label: m.label })),
+            // Family rides the opened list as the option's detail line
+            // (CG-B2, the pane's row-family chip analog); `triggerDetail={
+            // false}` keeps it OUT of the collapsed trigger (an
+            // arbitrary-length family inside a nowrap trigger = the
+            // inline-row gotcha, AGENTS.md).
+            ...(models ?? []).map((m) => ({ id: m.id, label: m.label, detail: m.family })),
           ]}
           onChange={(id) => setFineTuningDraft(chatId, { model: id === "" ? undefined : id })}
           triggerTestId="image-gen-ft-model-select"
           disabled={busy || models === null}
+          triggerDetail={false}
         />
+        {/* «Detected: …» readout (CG-B2, the pane's ModelPicker line twin):
+            which workflow template the adapter auto-detects for the PICKED
+            model — loader-folder membership, the adapter's ground truth. A
+            pick without a template marker (cloud dialects, unknown ids)
+            renders nothing. */}
+        {selectedModelEntry?.template && (
+          <div
+            data-testid="image-gen-ft-model-detected"
+            className="mt-2 font-ui text-[12px] font-medium text-accent"
+          >
+            {t("image_gen_detected_template", {
+              template: templateDisplayLabel(selectedModelEntry.template, t),
+            })}
+          </div>
+        )}
         {modelsFailed && (
           <span className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4">{t("image_gen_chip_models_failed")}</span>
         )}
@@ -288,13 +316,14 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
           the chip acting as the quick pult. Only with a concrete model
           picked; the ADetailer accordion nests INSIDE it when the server
           reports the extension (owner 2026-09-17). */}
-      {effectiveId !== null && draft.model !== undefined && (
+      {effective !== null && draft.model !== undefined && (
         <ImageGenModelSettingsAccordion
-          profileId={effectiveId}
+          profileId={effective.id}
           modelId={draft.model}
           supportsSamplers={supportsSamplers}
           samplers={supportsSamplers ? (samplers ?? []) : []}
-          isA1111={effective?.backend === IMAGE_GEN_BACKENDS.A1111}
+          backend={effective.backend}
+          modelTemplate={selectedModelEntry?.template}
           disabled={busy}
         />
       )}
@@ -385,14 +414,22 @@ function ImageGenModelSettingsAccordion({
   modelId,
   supportsSamplers,
   samplers,
-  isA1111,
+  backend,
+  modelTemplate,
   disabled,
 }: {
   profileId: string;
   modelId: string;
   supportsSamplers: boolean;
   samplers: ImageGenSamplerInfoValue[];
-  isA1111: boolean;
+  /** The profile's backend discriminator (CG-B2) — ONE prop, the pane's
+   *  guard trio derived inside: a1111 (extensions probe → ADetailer), the
+   *  local family a1111+comfyui (scheduler catalog), comfyui (DiT
+   *  sidecars). Booleans would permit stale combos; the enum cannot. */
+  backend: ImageGenBackendValue;
+  /** The picked model's workflow-template marker (comfyui dialect, from the
+   *  chip body's fetched models list) — gates the DiT sidecar rows. */
+  modelTemplate?: string;
   disabled: boolean;
 }) {
   const { t } = useT();
@@ -402,6 +439,18 @@ function ImageGenModelSettingsAccordion({
   const [extensions, setExtensions] = useState<string[] | null>(null);
   const [schedulers, setSchedulers] = useState<ImageGenSchedulerInfoValue[] | null>(null);
   const [saveError, setSaveError] = useState(false);
+  // DiT sidecar lists (CG-B2, comfyui + krea2-dit only): null = not fetched
+  // yet; a settled list/failure survives gate flips (fetched ONCE per
+  // profile while the accordion lives — the pane's one-shot cache fill).
+  const [sidecars, setSidecars] = useState<ImageGenDitSidecars | null>(null);
+  const [sidecarsFailed, setSidecarsFailed] = useState(false);
+
+  const isA1111 = backend === IMAGE_GEN_BACKENDS.A1111;
+  // The LOCAL dialect family (CG-B2 — the pane's guardIsLocalDialect twin):
+  // both dialects serve the schedulers route (PG-3/CG-A3).
+  const isLocalDialect =
+    backend === IMAGE_GEN_BACKENDS.A1111 || backend === IMAGE_GEN_BACKENDS.ComfyUI;
+  const isDit = backend === IMAGE_GEN_BACKENDS.ComfyUI && modelTemplate === "krea2-dit";
 
   // Overlay load — keyed by (profileId, modelId); null until first load.
   useEffect(() => {
@@ -440,11 +489,13 @@ function ImageGenModelSettingsAccordion({
     };
   }, [profileId, isA1111]);
 
-  // Scheduler list (PG-3) — the A1111-dialect schedule-type catalog for the
-  // dropdown next to the sampler; fetched on the accordion's own profile
-  // (the extensions-probe twin — failure = empty options, not an error).
+  // Scheduler list (PG-3/CG-B2) — the schedule-type catalog for the dropdown
+  // next to the sampler, on the LOCAL dialect family (a1111 + comfyui —
+  // the pane's gate; both dialects serve the schedulers route); fetched on
+  // the accordion's own profile (the extensions-probe twin — failure =
+  // empty options, not an error).
   useEffect(() => {
-    if (!isA1111) {
+    if (!isLocalDialect) {
       setSchedulers(null);
       return;
     }
@@ -460,7 +511,31 @@ function ImageGenModelSettingsAccordion({
     return () => {
       cancelled = true;
     };
-  }, [profileId, isA1111]);
+  }, [profileId, isLocalDialect]);
+
+  // DiT sidecar lists (CG-B2): reset on profile switch (the overlay-load
+  // twin), then fill ONCE while the DiT rows are visible — a settled
+  // list/failure is never refetched within the profile (the pane's one-shot
+  // cache-fill rule). Failure = the failed hint, not a crash (the loras
+  // precedent).
+  useEffect(() => {
+    setSidecars(null);
+    setSidecarsFailed(false);
+  }, [profileId]);
+  useEffect(() => {
+    if (!isDit || sidecars !== null || sidecarsFailed) return;
+    let cancelled = false;
+    void listImageGenDitSidecars(profileId)
+      .then((row) => {
+        if (!cancelled) setSidecars(row ?? { encoders: [], vaes: [] });
+      })
+      .catch(() => {
+        if (!cancelled) setSidecarsFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileId, isDit, sidecars, sidecarsFailed]);
 
   const hasAdetailer = extensions !== null && hasAdetailerExtension(extensions);
 
@@ -491,6 +566,8 @@ function ImageGenModelSettingsAccordion({
   const seed = overlay.seed;
   const sampler = overlay.sampler;
   const scheduler = overlay.scheduler;
+  const encoderName = overlay.encoderName;
+  const vaeName = overlay.vaeName;
   const adetailer = overlay.adetailer === true;
   const adetailerModel = overlay.adetailerModel;
 
@@ -525,11 +602,12 @@ function ImageGenModelSettingsAccordion({
             </div>
           )}
 
-          {/* Schedule type (PG-3) — right under the sampler, A1111 dialect
-              only (the schedulers route is dialect-gated). Empty = the
-              server's own default; commits the overlay like every field
-              here (one source of truth with the pane). */}
-          {isA1111 && (
+          {/* Schedule type (PG-3/CG-B2) — right under the sampler, on the
+              LOCAL dialect family (a1111 + comfyui — both serve the
+              schedulers route; cloud dialects have no scheduler surface).
+              Empty = the server's own default; commits the overlay like
+              every field here (one source of truth with the pane). */}
+          {isLocalDialect && (
             <div className="flex flex-col gap-1.5">
               <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_scheduler_label")}</span>
               <DropdownSelect
@@ -543,6 +621,62 @@ function ImageGenModelSettingsAccordion({
                 triggerTestId="image-gen-ft-overlay-scheduler"
               />
             </div>
+          )}
+
+          {/* DiT sidecar fields (CG-B2, comfyui + krea2-dit only — the
+              pane's DiT rows in the popover's vertical-stack idiom; the
+              300px popover makes w-full form-shaped triggers correct here):
+              text encoder + VAE ride the SAME per-model overlay the pane
+              edits. Auto = the adapter's canonical resolution (CF5's honest
+              Auto, not a hidden default — the {id: ""} entry drives the
+              unset trigger, `defaultOption` is the pickable list entry);
+              a stored value outside the live list stays pickable (the
+              since-removed-files rule). */}
+          {isDit && (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_encoder_label")}</span>
+                <DropdownSelect
+                  value={encoderName ?? ""}
+                  defaultOption={t("image_gen_sidecar_auto")}
+                  options={[
+                    { id: "", label: t("image_gen_sidecar_auto") },
+                    ...(sidecars?.encoders ?? []).map((name) => ({ id: name, label: name })),
+                    ...(encoderName !== undefined && !(sidecars?.encoders ?? []).includes(encoderName)
+                      ? [{ id: encoderName, label: encoderName }]
+                      : []),
+                  ]}
+                  onChange={(id) => commit(id === "" ? { encoderName: undefined } : { encoderName: id })}
+                  disabled={disabled}
+                  triggerTestId="image-gen-ft-overlay-encoder"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_vae_label")}</span>
+                <DropdownSelect
+                  value={vaeName ?? ""}
+                  defaultOption={t("image_gen_sidecar_auto")}
+                  options={[
+                    { id: "", label: t("image_gen_sidecar_auto") },
+                    ...(sidecars?.vaes ?? []).map((name) => ({ id: name, label: name })),
+                    ...(vaeName !== undefined && !(sidecars?.vaes ?? []).includes(vaeName)
+                      ? [{ id: vaeName, label: vaeName }]
+                      : []),
+                  ]}
+                  onChange={(id) => commit(id === "" ? { vaeName: undefined } : { vaeName: id })}
+                  disabled={disabled}
+                  triggerTestId="image-gen-ft-overlay-vae"
+                />
+              </div>
+              {sidecarsFailed && (
+                <span
+                  data-testid="image-gen-ft-sidecars-failed"
+                  className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4"
+                >
+                  {t("image_gen_sidecars_failed")}
+                </span>
+              )}
+            </>
           )}
 
           <SliderField

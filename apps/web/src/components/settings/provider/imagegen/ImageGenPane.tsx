@@ -8,6 +8,7 @@ import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
+import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { Toggle } from "../../../shared/Toggle.js";
@@ -77,27 +78,11 @@ interface ModelOption {
   template?: string;
 }
 
-/** The two comfyui template markers → display labels (CG-B1). A marker
- *  string outside this map (a future dialect revision) renders verbatim —
- *  label mapping, not a data list (the live lists rule bans DATA lists,
- *  not i18n maps over known enum values). */
-const TEMPLATE_LABEL_KEYS: Record<string, Parameters<TFunc>[0]> = {
-  checkpoint: "image_gen_template_checkpoint",
-  "krea2-dit": "image_gen_template_krea2_dit",
-};
-
 /** Krea-2 starting-point values (CG-B1, form-side per CF5 — the backend
  *  keeps ONE materialization ladder of node-class defaults for both
  *  templates; these are the values the FORM offers as explicit starting
  *  values when a DiT model is picked on an untouched param base). */
 const KREA2_FORM_DEFAULTS = { steps: 8, cfgScale: 1, sampler: "euler", scheduler: "simple" } as const;
-
-/** «Detected» label for a template marker — the known map through i18n,
- *  an unknown marker verbatim (a future dialect revision stays readable). */
-function templateDisplayLabel(template: string, t: TFunc): string {
-  const key = TEMPLATE_LABEL_KEYS[template];
-  return key !== undefined ? t(key) : template;
-}
 
 /** The six v1 modes as a render list (domain order). */
 const MODES = Object.values(IMAGE_GENERATION_MODES) as ImageGenerationMode[];

@@ -602,6 +602,7 @@
   "image_gen_encoder_label": "Text encoder",
   "image_gen_vae_label": "VAE",
   "image_gen_sidecar_auto": "Auto (Krea 2 standard)",
+  "image_gen_sidecars_failed": "Failed to load encoder/VAE lists",
   "image_gen_detected_template": "Detected: {template}",
   "image_gen_template_checkpoint": "Checkpoint",
   "image_gen_template_krea2_dit": "Krea 2 DiT",

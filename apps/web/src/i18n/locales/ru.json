@@ -606,6 +606,7 @@
   "image_gen_encoder_label": "Текстовый энкодер",
   "image_gen_vae_label": "VAE",
   "image_gen_sidecar_auto": "Авто (стандарт Krea 2)",
+  "image_gen_sidecars_failed": "Не удалось загрузить списки энкодеров и VAE",
   "image_gen_detected_template": "Распознано: {template}",
   "image_gen_template_checkpoint": "Чекпоинт",
   "image_gen_template_krea2_dit": "Krea 2 DiT",

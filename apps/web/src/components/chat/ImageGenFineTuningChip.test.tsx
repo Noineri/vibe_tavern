@@ -72,6 +72,9 @@ let extensionsStore: Record<string, string[]> = {};
 let overlayStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue> = {};
 let lorasStore: Record<string, LoraEntry[]> = {};
 const lorasFailFor = new Set<string>();
+let sidecarsStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenDitSidecarsValue> = {};
+const sidecarsFailFor = new Set<string>();
+const sidecarsCalls: string[] = [];
 const upsertCalls: Array<{
   profileId: string;
   modelId: string;
@@ -89,6 +92,16 @@ mock.module("../../api/image-gen-api.js", () => ({
     lorasFailFor.has(id)
       ? Promise.reject(new Error("lora list boom"))
       : Promise.resolve([...(lorasStore[id] ?? [])]),
+  listImageGenDitSidecars: (id: string) => {
+    sidecarsCalls.push(id);
+    return sidecarsFailFor.has(id)
+      ? Promise.reject(new Error("sidecar list boom"))
+      : Promise.resolve(
+          sidecarsStore[id]
+            ? { encoders: [...sidecarsStore[id].encoders], vaes: [...sidecarsStore[id].vaes] }
+            : null,
+        );
+  },
   getImageGenModelSettings: (id: string, modelId: string) =>
     Promise.resolve(overlayStore[`${id}/${modelId}`] ? { settings: overlayStore[`${id}/${modelId}`] } : null),
   upsertImageGenModelSettings: (
@@ -165,15 +178,38 @@ async function pickOption(triggerId: string, label: string) {
   });
 }
 
+/** Open the chip, pick a concrete model, and open the model-settings
+ *  accordion — returns the popover root to query inside. */
+async function openAccordion(chatId: string, modelLabel = "SDXL Base") {
+  const view = renderChip(<ImageGenFineTuningChip chatId={chatId} />);
+  openChip();
+  await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-model-select")).toBeTruthy());
+  await pickOption("image-gen-ft-model-select", modelLabel);
+  await waitFor(() =>
+    expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
+  );
+  await act(async () => {
+    within(view.baseElement).getByTestId("image-gen-ft-model-settings-header").click();
+  });
+  await waitFor(() =>
+    expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings-body")).toBeTruthy(),
+  );
+  return view;
+}
+
 afterEach(() => {
   cleanup();
   profilesStore = [];
   modelsStore = {};
   samplersStore = {};
+  schedulersStore = {};
   extensionsStore = {};
   overlayStore = {};
   lorasStore = {};
   lorasFailFor.clear();
+  sidecarsStore = {};
+  sidecarsFailFor.clear();
+  sidecarsCalls.length = 0;
   upsertCalls.length = 0;
   mobileOverride = false;
   // The store is a module singleton shared across files in this worker —
@@ -523,25 +559,6 @@ describe("ImageGenFineTuningChip — LoRA section (CG-C3)", () => {
 });
 
 describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", () => {
-  /** Open the chip, pick a concrete model, and open the model-settings
-   *  accordion — returns the popover root to query inside. */
-  async function openAccordion(chatId: string) {
-    const view = renderChip(<ImageGenFineTuningChip chatId={chatId} />);
-    openChip();
-    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-model-select")).toBeTruthy());
-    await pickOption("image-gen-ft-model-select", "SDXL Base");
-    await waitFor(() =>
-      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
-    );
-    await act(async () => {
-      within(view.baseElement).getByTestId("image-gen-ft-model-settings-header").click();
-    });
-    await waitFor(() =>
-      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings-body")).toBeTruthy(),
-    );
-    return view;
-  }
-
   it("renders ONLY when a concrete model is picked — the default-model state has no accordion", async () => {
     profilesStore = [profile("ig1", "Local Forge", fullCaps())];
     modelsStore["ig1"] = [{ id: "sdxl-base", label: "SDXL Base" }];
@@ -581,7 +598,7 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     });
   });
 
-  it("scheduler dropdown (PG-3): A1111 dialect only, right under the sampler, commits the overlay", async () => {
+  it("scheduler dropdown (PG-3/CG-B2): the LOCAL dialect family (a1111 + comfyui), right under the sampler, commits the overlay", async () => {
     profilesStore = [{ ...profile("ig2", "Forge", fullCaps()), backend: "a1111" }];
     modelsStore = { ig2: [{ id: "sdxl-base", label: "SDXL Base" }] };
     schedulersStore = { ig2: [{ name: "karras", label: "Karras" }, { name: "sgm_uniform" }] };
@@ -594,6 +611,21 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     await pickOption("image-gen-ft-overlay-scheduler", "Karras");
     await waitFor(() => expect(upsertCalls.length).toBe(1));
     expect(upsertCalls[0].settings).toEqual({ scheduler: "karras" });
+
+    // ComfyUI dialect (CG-B2): the SAME scheduler surface — the pane's
+    // local-family gate (comfy feeds from the KSampler combo, CG-A3).
+    cleanup();
+    upsertCalls.length = 0;
+    profilesStore = [{ ...profile("cg2", "Comfy local", fullCaps()), backend: "comfyui" }];
+    modelsStore = { cg2: [{ id: "sdxl-base", label: "SDXL Base" }] };
+    schedulersStore = { cg2: [{ name: "simple" }, { name: "karras" }] };
+    const viewComfy = await openAccordion("chat-sch1");
+    await waitFor(() =>
+      expect(within(viewComfy.baseElement).getByTestId("image-gen-ft-overlay-scheduler")).toBeTruthy(),
+    );
+    await pickOption("image-gen-ft-overlay-scheduler", "simple");
+    await waitFor(() => expect(upsertCalls.length).toBe(1));
+    expect(upsertCalls[0].settings).toEqual({ scheduler: "simple" });
 
     // Cloud dialect: no scheduler surface — the control must not render.
     cleanup();
@@ -667,5 +699,163 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     await pickOption("image-gen-ft-adetailer-model", "face_yolov8s.pt");
     await waitFor(() => expect(upsertCalls.length).toBe(2));
     expect(upsertCalls[1].settings).toEqual({ adetailer: true, adetailerModel: "face_yolov8s.pt" });
+  });
+});
+
+describe("ImageGenFineTuningChip — comfyui dialect (CG-B2)", () => {
+  /** A comfy profile with a Krea-2 DiT model, a checkpoint model, and a
+   *  plain (no-marker) model — plus live sidecar lists. */
+  function armDitChat(chatId: string): void {
+    profilesStore = [{ ...profile("cgx", "Comfy local", fullCaps()), backend: "comfyui" }];
+    modelsStore = {
+      cgx: [
+        { id: "ray_dit", label: "Ray DiT", template: "krea2-dit" },
+        { id: "flux_ckpt", label: "Flux Checkpoint", template: "checkpoint" },
+        { id: "plain", label: "Plain Model" },
+      ],
+    };
+    sidecarsStore = {
+      cgx: { encoders: ["qwen3vl_4b_fp8_scaled.safetensors"], vaes: ["qwen_image_vae.safetensors"] },
+    };
+    armChat(chatId);
+  }
+
+  it("«Detected: …» readout renders for a picked template model and is absent otherwise", async () => {
+    armDitChat("chat-dt1");
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-dt1" />);
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-model-select")).toBeTruthy());
+    // No pick yet (the profile's own model is not "picked") → no readout.
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-model-detected")).toBeNull();
+
+    // A DiT marker → the readout appears under the picker (the pane's line twin).
+    await pickOption("image-gen-ft-model-select", "Ray DiT");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-model-detected")).toBeTruthy(),
+    );
+    expect(within(view.baseElement).getByTestId("image-gen-ft-model-detected").textContent).toContain(
+      "image_gen_detected_template",
+    );
+
+    // A checkpoint marker is a template too — both map entries render.
+    await pickOption("image-gen-ft-model-select", "Flux Checkpoint");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-model-detected")).toBeTruthy(),
+    );
+
+    // A model without a template marker (and the unpicked state) → nothing.
+    await pickOption("image-gen-ft-model-select", "Plain Model");
+    await waitFor(() =>
+      expect(within(view.baseElement).queryByTestId("image-gen-ft-model-detected")).toBeNull(),
+    );
+  });
+
+  it("model family rides the OPENED model list as the detail line — never the collapsed trigger", async () => {
+    profilesStore = [{ ...profile("cgf", "Comfy local", fullCaps()), backend: "comfyui" }];
+    modelsStore = {
+      cgf: [
+        { id: "ray_dit", label: "Ray DiT", family: "Krea 2" },
+        { id: "plain", label: "Plain Model" },
+      ],
+    };
+    armChat("chat-fam");
+
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-fam" />);
+    openChip();
+    const trigger = await waitFor(() => {
+      const el = within(view.baseElement).getByTestId("image-gen-ft-model-select");
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // Collapsed trigger before a pick: the default label only — no family.
+    expect(trigger.textContent).not.toContain("Krea 2");
+
+    // The opened list shows the family as the item's detail line (the
+    // cmdk item text is label + detail concatenated — pick via the pair).
+    await pickOption("image-gen-ft-model-select", "Ray DiTKrea 2");
+    // Collapsed trigger after the pick: label only — family stays list-only
+    // (triggerDetail={false}; the inline-row gotcha, AGENTS.md).
+    await waitFor(() => expect(trigger.textContent).toContain("Ray DiT"));
+    expect(trigger.textContent).not.toContain("Krea 2");
+  });
+
+  it("encoder/VAE rows render ONLY for comfyui + krea2-dit — checkpoint and a1111 hide them; the sidecar list is fetched ONCE per profile", async () => {
+    armDitChat("chat-sc1");
+    const view = await openAccordion("chat-sc1", "Ray DiT");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy(),
+    );
+    expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-vae")).toBeTruthy();
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-sidecars-failed")).toBeNull();
+    await waitFor(() => expect(sidecarsCalls).toEqual(["cgx"]));
+
+    // Checkpoint template → the DiT rows disappear…
+    await pickOption("image-gen-ft-model-select", "Flux Checkpoint");
+    await waitFor(() =>
+      expect(within(view.baseElement).queryByTestId("image-gen-ft-overlay-encoder")).toBeNull(),
+    );
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-overlay-vae")).toBeNull();
+
+    // …and flipping back does NOT refetch (once per profile, the pane's rule).
+    await pickOption("image-gen-ft-model-select", "Ray DiT");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy(),
+    );
+    expect(sidecarsCalls).toEqual(["cgx"]);
+
+    // A1111 dialect → never any DiT rows (even for a template-marked model).
+    cleanup();
+    profilesStore = [{ ...profile("iga", "Forge", fullCaps()), backend: "a1111" }];
+    modelsStore = { iga: [{ id: "ray_dit", label: "Ray DiT", template: "krea2-dit" }] };
+    const viewA = await openAccordion("chat-sc1", "Ray DiT");
+    expect(within(viewA.baseElement).queryByTestId("image-gen-ft-overlay-encoder")).toBeNull();
+    expect(within(viewA.baseElement).queryByTestId("image-gen-ft-overlay-vae")).toBeNull();
+  });
+
+  it("picking an encoder/VAE writes the overlay upsert; Auto clears the field; a stored value outside the live list stays pickable", async () => {
+    armDitChat("chat-sc2");
+    const view = await openAccordion("chat-sc2", "Ray DiT");
+    await pickOption("image-gen-ft-overlay-encoder", "qwen3vl_4b_fp8_scaled.safetensors");
+    await waitFor(() => expect(upsertCalls.length).toBe(1));
+    expect(upsertCalls[0]).toEqual({
+      profileId: "cgx",
+      modelId: "ray_dit",
+      settings: { encoderName: "qwen3vl_4b_fp8_scaled.safetensors" },
+    });
+
+    await pickOption("image-gen-ft-overlay-vae", "qwen_image_vae.safetensors");
+    await waitFor(() => expect(upsertCalls.length).toBe(2));
+    // Merged overlay: the encoder survives the VAE write.
+    expect(upsertCalls[1].settings).toEqual({
+      encoderName: "qwen3vl_4b_fp8_scaled.safetensors",
+      vaeName: "qwen_image_vae.safetensors",
+    });
+
+    // Auto clears ONLY the encoder — the merged overlay keeps the VAE.
+    await pickOption("image-gen-ft-overlay-encoder", "image_gen_sidecar_auto");
+    await waitFor(() => expect(upsertCalls.length).toBe(3));
+    expect(upsertCalls[2].settings).toEqual({ vaeName: "qwen_image_vae.safetensors" });
+
+    // A stored value outside the live list keeps its own pickable entry
+    // (the since-removed-files rule — the pane's encoder-field clone).
+    cleanup();
+    upsertCalls.length = 0;
+    overlayStore["cgx/ray_dit"] = { encoderName: "gone_encoder.safetensors" };
+    const view2 = await openAccordion("chat-sc2", "Ray DiT");
+    await pickOption("image-gen-ft-overlay-encoder", "gone_encoder.safetensors");
+    await waitFor(() => expect(upsertCalls.length).toBe(1));
+    expect(upsertCalls[0].settings).toEqual({ encoderName: "gone_encoder.safetensors" });
+  });
+
+  it("a failed sidecar fetch degrades to the failed hint — rows render, no crash (the loras-failed precedent)", async () => {
+    armDitChat("chat-sc3");
+    sidecarsFailFor.add("cgx");
+    const view = await openAccordion("chat-sc3", "Ray DiT");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-sidecars-failed")).toBeTruthy(),
+    );
+    // The rows still render (Auto + any stored value) — a hint, not a teardown.
+    expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy();
+    expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-vae")).toBeTruthy();
   });
 });
