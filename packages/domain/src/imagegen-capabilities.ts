@@ -151,4 +151,29 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsLoras: true,
     paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
+  [IMAGE_GEN_BACKENDS.TogetherAi]: {
+    // PE-1 (IMAGEGEN_PROVIDER_EXPANSION_PLAN) — Together AI card
+    // (doc-verified 2026-09-07) + supervisor live re-verification
+    // 2026-09-18: width/height INTEGER params (multiples of 8), NO closed
+    // size grid documented → free W×H. steps/guidance_scale/seed/n are
+    // documented request params (card defaults 20 / 3.5 — never shipped as
+    // code defaults); negative_prompt is MODEL-DEPENDENT (yes on
+    // FLUX.1-schnell / FLUX.1.1-pro, no on FLUX.2/Kontext) — conservative
+    // TRUE with this caveat: the adapter sends the field only when the
+    // caller provided one; a model that rejects it fails upstream, never
+    // silently. No sampler-name surface (supportsSamplers = the a1111-style
+    // sampler list, not steps/CFG sliders — those ride the ordinary
+    // steps/cfgScale machinery). Card documents no step/CFG numeric limits
+    // → paramRanges empty (global slider defaults).
+    supportsNegativePrompt: true,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

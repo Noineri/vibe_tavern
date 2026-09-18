@@ -151,6 +151,17 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     // non-empty key) — the key field is HIDDEN for this row, not optional.
     noApiKey: true,
   },
+  // PE-1 cloud family (IMAGEGEN_PROVIDER_EXPANSION_PLAN — labels are
+  // literal brand names, the LLM-table precedent): Together AI —
+  // api.together.ai, OpenAI-images transport with width/height int params
+  // (card + 2026-09-18 live re-verification).
+  {
+    id: "togetherai",
+    label: "Together AI",
+    backend: IMAGE_GEN_BACKENDS.TogetherAi,
+    baseUrl: "https://api.together.ai/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

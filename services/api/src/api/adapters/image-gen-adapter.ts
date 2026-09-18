@@ -96,6 +96,7 @@ import type { ImageGenRuntimeApi } from "../contract/runtime-api.js";
 // registry; the route layer reaches every backend through this file.
 import "../../domain/imagegen/backends/openrouter.js";
 import "../../domain/imagegen/backends/openai-images.js";
+import "../../domain/imagegen/backends/openai-images-family.js";
 import "../../domain/imagegen/backends/a1111.js";
 import "../../domain/imagegen/backends/comfyui.js";
 

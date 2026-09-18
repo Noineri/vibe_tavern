@@ -4,10 +4,11 @@ import { z } from 'zod';
 
 /** Backend protocol discriminators for the v1 image-gen roster (domain
  *  `IMAGE_GEN_BACKENDS`): OpenRouter (chat-completions transport), the
- *  OpenAI-images protocol (serves Custom cloud endpoints), the
- *  A1111-compatible local dialect, and ComfyUI (raw API —
- *  COMFYUI_BACKEND_PLAN). */
-export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'a1111', 'comfyui']);
+ *  OpenAI-images protocol (serves Custom cloud endpoints + the PE-1 cloud
+ *  family), the A1111-compatible local dialect, ComfyUI (raw API —
+ *  COMFYUI_BACKEND_PLAN), and the PE-1 OpenAI-images-family cloud slugs
+ *  (IMAGEGEN_PROVIDER_EXPANSION_PLAN wave PE-1). */
+export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'a1111', 'comfyui', 'togetherai']);
 export type ImageGenBackendValue = z.infer<typeof imageGenBackendSchema>;
 
 /** The six v1 generation-mode recipes (domain `IMAGE_GENERATION_MODES`). */

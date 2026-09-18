@@ -1038,13 +1038,16 @@ export interface SttProfile {
 
 /** v1 image-gen adapter protocol roster (owner-locked scope): OpenRouter
  *  (chat-completions transport), the OpenAI-images protocol (serves Custom
- *  cloud endpoints), and the A1111-compatible local dialect (owner's
- *  Forge-Neo). Further providers arrive in later owner-approved batches. */
+ *  cloud endpoints + the PE-1 cloud family, see
+ *  backends/openai-images-family.ts), and the A1111-compatible local
+ *  dialect (owner's Forge-Neo). Further providers arrive in later
+ *  owner-approved batches. */
 export const IMAGE_GEN_BACKENDS = {
   OpenRouter: "openrouter",
   OpenAiImages: "openai-images",
   A1111: "a1111",
   ComfyUI: "comfyui",
+  TogetherAi: "togetherai",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

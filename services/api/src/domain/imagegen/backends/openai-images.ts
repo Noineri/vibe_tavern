@@ -6,8 +6,19 @@
  * `openai` preset baseUrl matches directly) and Custom cloud endpoints that
  * implement the OpenAI-images shape.
  *
+ * FAMILY PARAMETERIZATION (IMAGEGEN_PROVIDER_EXPANSION_PLAN wave PE-1): the
+ * same transport serves every OpenAI-images-shaped cloud provider — the
+ * exported {@link makeOpenAiImagesFamilyBackend} builds a backend from a
+ * per-provider OPTIONS row (size wire mode + documented grid,
+ * `response_format` policy, response-envelope normalization, model-list
+ * path + filter, request-param wire names). The PE-1 cloud rows live in
+ * `openai-images-family.ts`; THIS module keeps the OpenAI-proper options
+ * (`openAiImagesFactory`) plus all the shared machinery. Every wire field
+ * below traces to a research card (doc-verified) or the supervisor's
+ * 2026-09-18 live re-verification deltas.
+ *
  * Doc gate (IMAGE_GEN_CLOUD_PROVIDERS_RESEARCH, OpenAI card, doc-verified
- * 2026-09-07 — the ONLY source for every wire field below):
+ * 2026-09-07 — the source for every OpenAI-proper wire field):
  * - transport: `POST /v1/images/generations` (edits/variations out of v1
  *   scope — capability flags, not implemented);
  * - request: `prompt`, `model` (required — the card documents no default),
@@ -63,7 +74,10 @@ import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
-/** HTTP / transport failure of a generation or model-list request. */
+/** HTTP / transport failure of a generation or model-list request. Shared by
+ *  every backend on the OpenAI-images transport family — the route ladder
+ *  (routes/image-gen.ts backendErrorResponse) maps it by class, so family
+ *  rows reuse it instead of growing per-slug error classes. */
 export class OpenAiImagesError extends Error {
   /** Upstream HTTP status when the failure came from a non-2xx response
    *  (undefined for transport-level failures — DNS, refused, aborts that
@@ -84,7 +98,7 @@ export class OpenAiImagesConfigError extends Error {
   }
 }
 
-/** A requested size that is not on the documented GPT Image grid — the
+/** A requested size that is not on the provider's documented grid — the
  *  fail-closed mapping error (the adapter never sends a guessed size). */
 export class OpenAiImagesSizeError extends Error {
   constructor(message: string) {
@@ -107,6 +121,74 @@ export const OPENAI_IMAGES_SIZES: ReadonlyMap<string, { width: number; height: n
   ["1024x1536", { width: 1024, height: 1536 }],
 ]);
 
+// ─── Family parameterization (PE-1) ──────────────────────────────────────────
+
+/** How a family backend carries the caller's size on the wire:
+ *  - `grid` — a documented closed set; the table first, then the profile's
+ *    IG-20a user entries (a user pair goes on the wire VERBATIM — the entry
+ *    IS the vendor claim), everything else fails closed;
+ *  - `verbatim` — the card documents a free-form size string and NO closed
+ *    grid: a complete W×H goes on the wire as the "WxH" string verbatim,
+ *    an incomplete/unset size omits the field (vendor default);
+ *  - `width-height` — the card's param surface is integer `width`/`height`
+ *    fields (not a size string): a complete W×H rides verbatim as the two
+ *    integers, an incomplete/unset size omits both. */
+export type OpenAiImagesFamilySizeMode =
+  | { kind: "grid"; param: "size" | "image_size"; sizes: ReadonlyMap<string, { width: number; height: number }> }
+  | { kind: "verbatim"; param: "size" }
+  | { kind: "width-height" };
+
+/** `response_format` policy: DALL-E-only (OpenAI proper — GPT Image models
+ *  always return b64_json without the field), always-send a documented
+ *  value (the card enumerates the enum; bytes-preferred where URL lifetime
+ *  is unstated), or never (the provider's endpoint documents no such
+ *  field). */
+export type OpenAiImagesFamilyResponseFormat =
+  | { kind: "dalle-only" }
+  | { kind: "always"; value: string }
+  | { kind: "never" };
+
+/** Which response array carries the images: OpenAI's `data[]` envelope, or
+ *  SiliconFlow's own `images[]` envelope (its card: the path is
+ *  OpenAI-images-style but the response is `{images: [{url}], timings,
+ *  seed}` — normalized here, never upstream). */
+export type OpenAiImagesFamilyEnvelope = "openai-data" | "siliconflow-images";
+
+/** One PE-1 provider's OPTIONS row — the per-card deltas over the shared
+ *  OpenAI-images transport. Every member traces to a research card (or the
+ *  supervisor's live re-verification where the card drifted). */
+export interface OpenAiImagesFamilyOptions {
+  /** Provider display name — prefixes every error/probe message (the
+   *  OpenAI-proper row keeps the historical "OpenAI Images" strings). */
+  readonly label: string;
+  /** Size wire mode (see {@link OpenAiImagesFamilySizeMode}). */
+  readonly size: OpenAiImagesFamilySizeMode;
+  /** `response_format` policy (see {@link OpenAiImagesFamilyResponseFormat}). */
+  readonly responseFormat: OpenAiImagesFamilyResponseFormat;
+  /** Response envelope (see {@link OpenAiImagesFamilyEnvelope}). */
+  readonly envelope: OpenAiImagesFamilyEnvelope;
+  /** Model-list path appended to the endpoint (default "models"; NanoGPT's
+   *  card documents a different image-scoped path). */
+  readonly modelsPath?: string;
+  /** Model-list filter over each catalog entry (default: accept all —
+   *  unfiltered truth beats a guessed filter; a filter ships ONLY where the
+   *  card documents a discriminator or sanctions a heuristic). */
+  readonly modelFilter?: (id: string, entry: Record<string, unknown>) => boolean;
+  /** Wire names for the generate request's optional numeric/param fields —
+   *  an ABSENT name means the field is never put on the wire for this
+   *  provider (no invented params; the value still rides only when the
+   *  caller set one — owner's hardcoded-parameters ban). */
+  readonly stepsWire?: string;
+  readonly guidanceWire?: string;
+  readonly seedWire?: string;
+  /** `negative_prompt` wire name — absent means the adapter NEVER sends the
+   *  field (providers whose current model catalog REJECTS it). */
+  readonly negativePromptWire?: string;
+  /** Probe-detail count noun ("image models" for image-scoped listings;
+   *   "models" where the unfiltered catalog includes non-image models). */
+  readonly probeModelNoun?: string;
+}
+
 /** Map a complete W×H onto the documented grid — the static table first,
  *  then the profile's user-added entries (IG-20a): a user pair goes on the
  *  wire VERBATIM as the `size` string (the protocol's size field is
@@ -115,18 +197,20 @@ export const OPENAI_IMAGES_SIZES: ReadonlyMap<string, { width: number; height: n
  *  ENTRY is the vendor claim, not a guess). Everything else stays the
  *  fail-closed mapping error (the adapter never sends a near-miss size). */
 function mapSizeToString(
+  label: string,
+  sizes: ReadonlyMap<string, { width: number; height: number }>,
   width: number,
   height: number,
   userSizes: readonly ImageGenUserSizeEntry[],
 ): { size: string; width: number; height: number } {
   const key = `${width}x${height}`;
-  const entry = OPENAI_IMAGES_SIZES.get(key);
+  const entry = sizes.get(key);
   if (entry) return { size: key, ...entry };
   const user = userSizes.find((u) => u.width === width && u.height === height);
   if (user) return { size: key, width, height };
   throw new OpenAiImagesSizeError(
-    `OpenAI Images has no documented size for ${key} — ` +
-      `documented sizes: ${[...OPENAI_IMAGES_SIZES.keys()].join(", ")}`,
+    `${label} has no documented size for ${key} — ` +
+      `documented sizes: ${[...sizes.keys()].join(", ")}`,
   );
 }
 
@@ -180,7 +264,7 @@ interface OpenAiImagesConfig {
   fetch: typeof fetch;
 }
 
-function parseConfig(config: ImageGenAdapterConfig): OpenAiImagesConfig {
+function parseConfig(label: string, config: ImageGenAdapterConfig): OpenAiImagesConfig {
   let endpoint = normalizeOpenAiCompatibleBaseUrl(config.endpoint ?? "");
   // A pasted full generation URL (`…/v1/images/generations`) keeps working —
   // the same paste-tolerance the OpenRouter twin applies to
@@ -190,13 +274,13 @@ function parseConfig(config: ImageGenAdapterConfig): OpenAiImagesConfig {
   }
   if (!endpoint) {
     throw new OpenAiImagesConfigError(
-      "OpenAI Images config error: `endpoint` is required",
+      `${label} config error: \`endpoint\` is required`,
     );
   }
   const apiKey = config.apiKey?.trim() ?? "";
   if (!apiKey) {
     throw new OpenAiImagesConfigError(
-      "OpenAI Images config error: `apiKey` is required (the card has no keyless surface)",
+      `${label} config error: \`apiKey\` is required (the card has no keyless surface)`,
     );
   }
   const model = config.model !== undefined && config.model.trim() !== "" ? config.model : undefined;
@@ -210,6 +294,7 @@ function parseConfig(config: ImageGenAdapterConfig): OpenAiImagesConfig {
  *  which is rethrown untouched so cancellation stays distinguishable from
  *  a transport failure (the abort contract of the ai-assistant abort fix). */
 async function fetchOrWrap(
+  label: string,
   transport: typeof fetch,
   url: string,
   init: RequestInit,
@@ -220,7 +305,7 @@ async function fetchOrWrap(
   } catch (cause) {
     if (cause instanceof Error && cause.name === "AbortError") throw cause;
     throw new OpenAiImagesError(
-      `OpenAI Images ${operation} network error: ${
+      `${label} ${operation} network error: ${
         cause instanceof Error ? cause.message : String(cause)
       }`,
       { cause },
@@ -230,74 +315,92 @@ async function fetchOrWrap(
 
 // ─── Response parsing ────────────────────────────────────────────────────────
 
-/** One `data[]` entry after shape validation: decoded base64 bytes, or a
+/** One image entry after shape validation: decoded base64 bytes, or a
  *  URL to download server-side. */
 interface ParsedImageEntry {
   readonly data?: Buffer;
   readonly url?: string;
 }
 
-/** Pull `data[]` out of the documented `{created, data[]}` envelope, then
- *  validate each entry: a `b64_json` string (the GPT Image shape — always
- *  present per the card) or a `url` string (the DALL-E surface). Fails
- *  closed with a typed error on absent/malformed containers. */
-function extractImageData(payload: unknown): ParsedImageEntry[] {
+/** Pull the image array out of the documented envelope (`data[]` OpenAI
+ *  shape, `images[]` SiliconFlow shape), then validate each entry: a
+ *  `b64_json` string (the GPT Image shape — always present per the card)
+ *  or a `url` string (the DALL-E / hosted-URL surface). Fails closed with a
+ *  typed error on absent/malformed containers. The SiliconFlow envelope
+ *  additionally reports the effective `seed` — carried onto the generate
+ *  result (the contract's "seed the backend actually used"). */
+function extractImageEntries(
+  label: string,
+  payload: unknown,
+  envelope: OpenAiImagesFamilyEnvelope,
+): { entries: ParsedImageEntry[]; seed?: number } {
   if (typeof payload !== "object" || payload === null) {
-    throw new OpenAiImagesError("OpenAI Images response is missing a JSON body");
+    throw new OpenAiImagesError(`${label} response is missing a JSON body`);
   }
-  const data = (payload as Record<string, unknown>).data;
+  const record = payload as Record<string, unknown>;
+  const data = envelope === "siliconflow-images" ? record.images : record.data;
   if (!Array.isArray(data) || data.length === 0) {
-    throw new OpenAiImagesError("OpenAI Images response carried no images");
+    throw new OpenAiImagesError(`${label} response carried no images`);
   }
+  const seed =
+    envelope === "siliconflow-images" && typeof record.seed === "number" && Number.isFinite(record.seed)
+      ? record.seed
+      : undefined;
   const entries: ParsedImageEntry[] = [];
   for (const entry of data) {
     if (typeof entry !== "object" || entry === null) {
-      throw new OpenAiImagesError("OpenAI Images response has a malformed data[] entry");
+      throw new OpenAiImagesError(`${label} response has a malformed image entry`);
     }
     const item = entry as Record<string, unknown>;
     if (item.b64_json !== undefined) {
       if (typeof item.b64_json !== "string" || item.b64_json.length === 0) {
-        throw new OpenAiImagesError("OpenAI Images response has a non-string b64_json entry");
+        throw new OpenAiImagesError(`${label} response has a non-string b64_json entry`);
       }
       const decoded = Buffer.from(item.b64_json, "base64");
       if (decoded.length === 0) {
-        throw new OpenAiImagesError("OpenAI Images response has a b64_json entry that decodes to zero bytes");
+        throw new OpenAiImagesError(`${label} response has a b64_json entry that decodes to zero bytes`);
       }
       entries.push({ data: decoded });
       continue;
     }
     if (item.url !== undefined) {
       if (typeof item.url !== "string" || item.url.length === 0) {
-        throw new OpenAiImagesError("OpenAI Images response has a non-string url entry");
+        throw new OpenAiImagesError(`${label} response has a non-string url entry`);
       }
       if (!/^https?:\/\//i.test(item.url) && !item.url.startsWith("data:")) {
         throw new OpenAiImagesError(
-          `OpenAI Images response has an unsupported image URL: ${item.url.slice(0, 60)}`,
+          `${label} response has an unsupported image URL: ${item.url.slice(0, 60)}`,
         );
       }
       entries.push({ url: item.url });
       continue;
     }
     throw new OpenAiImagesError(
-      "OpenAI Images response has a data[] entry with neither b64_json nor url",
+      `${label} response has an image entry with neither b64_json nor url`,
     );
   }
-  return entries;
+  return { entries, seed };
 }
 
-/** Filter the OpenAI-compatible `/models` catalog down to the image
- *  families documented on the card (`gpt-image*`, `dall-e*`). The plain
- *  OpenAI listing carries no display names or pricing — id doubles as
- *  label (OpenAI-images servers may add extras; anything absent stays
- *  absent, nothing is invented). */
-function parseImageModelInfos(parsed: unknown): ImageGenModelInfo[] {
+/** Parse an OpenAI-compatible model catalog into picker entries. Accepts
+ *  the `{data: []}` / `{models: []}` envelopes and a bare top-level array
+ *  (DeepInfra's documented public listing shape). Each entry keeps its
+ *  catalog enrichment (`name` as label, `description`) when present; the
+ *  provider's filter decides membership (absent filter = the card
+ *  documents no discriminator — unfiltered truth beats a guessed filter). */
+function parseModelInfos(
+  parsed: unknown,
+  filter: ((id: string, entry: Record<string, unknown>) => boolean) | undefined,
+): ImageGenModelInfo[] {
   if (typeof parsed !== "object" || parsed === null) return [];
   const record = parsed as Record<string, unknown>;
   const data = Array.isArray(record.data)
     ? record.data
     : Array.isArray(record.models)
       ? record.models
-      : null;
+      : Array.isArray(parsed)
+        ? (parsed as unknown[])
+        : null;
   if (data === null) return [];
   const out: ImageGenModelInfo[] = [];
   for (const entry of data) {
@@ -305,7 +408,7 @@ function parseImageModelInfos(parsed: unknown): ImageGenModelInfo[] {
     const item = entry as Record<string, unknown>;
     const id = item.id;
     if (typeof id !== "string" || id.length === 0) continue;
-    if (!IMAGE_MODEL_PREFIXES.some((prefix) => id.startsWith(prefix))) continue;
+    if (filter !== undefined && !filter(id, item)) continue;
     const info: ImageGenModelInfo = {
       id,
       label: typeof item.name === "string" && item.name.length > 0 ? item.name : id,
@@ -320,43 +423,98 @@ function parseImageModelInfos(parsed: unknown): ImageGenModelInfo[] {
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
-export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBackend => {
-  const cfg = parseConfig(config);
+/** Build a backend from a family OPTIONS row + config — the shared
+ *  OpenAI-images transport parameterized per provider (PE-1). Behavior for
+ *  the OpenAI-proper options row is byte-identical to the historical
+ *  `openAiImagesFactory` (pinned by imagegen-openai-images.test.ts). */
+export function makeOpenAiImagesFamilyBackend(
+  options: OpenAiImagesFamilyOptions,
+  config: ImageGenAdapterConfig,
+): ImageGenBackend {
+  const label = options.label;
+  const cfg = parseConfig(label, config);
+  const modelsPath = options.modelsPath ?? "models";
+  const filter = options.modelFilter;
 
   const backend: ImageGenBackend = {
     async generate(request: ImageGenGenerateRequest): Promise<ImageGenGenerateResult> {
       const model = request.model?.trim() || cfg.model;
       if (!model) {
         throw new OpenAiImagesConfigError(
-          "OpenAI Images config error: `model` is required (the card documents no default model)",
+          `${label} config error: \`model\` is required (the card documents no default model)`,
         );
       }
 
-      // The documented size field: sent only when the caller set a COMPLETE
-      // W×H that maps onto the grid; otherwise the field is omitted and the
-      // vendor default applies (no invented defaults). Partial W×H (one of
-      // the two set) cannot map and is treated as unset.
-      let gridSize: { size: string; width: number; height: number } | undefined;
+      // Size wire resolution per options.size — see the mode doc comment.
+      // A request without a complete W×H omits the field(s) and the vendor
+      // default applies (no invented defaults); a PARTIAL W×H (one of the
+      // two set) cannot map and is treated as unset.
+      let resolved: { width: number; height: number; sizeString?: string } | undefined;
       if (request.width !== undefined && request.height !== undefined) {
-        gridSize = mapSizeToString(request.width, request.height, cfg.userSizes);
+        if (options.size.kind === "grid") {
+          const gridSize = mapSizeToString(label, options.size.sizes, request.width, request.height, cfg.userSizes);
+          resolved = { width: gridSize.width, height: gridSize.height, sizeString: gridSize.size };
+        } else if (options.size.kind === "verbatim") {
+          resolved = { width: request.width, height: request.height, sizeString: `${request.width}x${request.height}` };
+        } else {
+          resolved = { width: request.width, height: request.height };
+        }
       }
 
-      // `response_format` is DALL-E-only on the card — GPT Image models
-      // always return b64_json without it, so it is never sent for them.
-      const isDallE = model.startsWith(DALL_E_MODEL_PREFIX);
+      // `response_format` per policy — DALL-E-only on the OpenAI card (GPT
+      // Image models always return b64_json without it), or a documented
+      // always-value for the family rows that enumerate the field.
+      let responseFormat: string | undefined;
+      if (options.responseFormat.kind === "dalle-only") {
+        responseFormat = model.startsWith(DALL_E_MODEL_PREFIX) ? "b64_json" : undefined;
+      } else if (options.responseFormat.kind === "always") {
+        responseFormat = options.responseFormat.value;
+      }
+
+      const body: Record<string, unknown> = {
+        model,
+        prompt: request.prompt,
+      };
+      if (resolved?.sizeString !== undefined) {
+        const param =
+          options.size.kind === "grid" || options.size.kind === "verbatim" ? options.size.param : "size";
+        body[param] = resolved.sizeString;
+      } else if (resolved !== undefined && options.size.kind === "width-height") {
+        body.width = resolved.width;
+        body.height = resolved.height;
+      }
+      if (responseFormat !== undefined) {
+        body.response_format = responseFormat;
+      }
+      // Optional numeric/param fields ride ONLY when the caller set a value
+      // (owner's hardcoded-parameters ban) AND the provider's card documents
+      // the wire field (absent wire name = never sent — e.g. Recraft's
+      // negative_prompt, which its V4/4.1 catalog REJECTS).
+      if (options.stepsWire !== undefined && request.steps !== undefined) {
+        body[options.stepsWire] = request.steps;
+      }
+      if (options.guidanceWire !== undefined && request.cfgScale !== undefined) {
+        body[options.guidanceWire] = request.cfgScale;
+      }
+      if (options.seedWire !== undefined && request.seed !== undefined) {
+        body[options.seedWire] = request.seed;
+      }
+      if (
+        options.negativePromptWire !== undefined &&
+        request.negativePrompt !== undefined &&
+        request.negativePrompt !== ""
+      ) {
+        body[options.negativePromptWire] = request.negativePrompt;
+      }
 
       const response = await fetchOrWrap(
+        label,
         cfg.fetch,
         `${cfg.endpoint}/images/generations`,
         {
           method: "POST",
           headers: buildHeaders(cfg.apiKey, true),
-          body: JSON.stringify({
-            model,
-            prompt: request.prompt,
-            ...(gridSize !== undefined ? { size: gridSize.size } : {}),
-            ...(isDallE ? { response_format: "b64_json" } : {}),
-          }),
+          body: JSON.stringify(body),
           signal: request.signal,
         },
         "generation",
@@ -365,12 +523,12 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
         throw new OpenAiImagesError(
-          `OpenAI Images generation failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          `${label} generation failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
         );
       }
       const payload: unknown = await response.json().catch(() => null);
-      const entries = extractImageData(payload);
+      const { entries, seed } = extractImageEntries(label, payload, options.envelope);
 
       const images: ImageGenGeneratedImage[] = [];
       for (const entry of entries) {
@@ -383,10 +541,13 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
           });
           continue;
         }
-        // A url entry (DALL-E surface — defensive: reachable when a server
-        // ignores the requested b64_json) downloads server-side through the
-        // seam. Bun's fetch resolves data: URLs natively, same path.
+        // A url entry (the hosted-URL delivery surface) downloads
+        // server-side through the seam — the cloud-URL-expiry rule (adapters
+        // never hand remote URLs upward; vendor URL lifetimes are unstated
+        // or short across the family). Bun's fetch resolves data: URLs
+        // natively, same path.
         const download = await fetchOrWrap(
+          label,
           cfg.fetch,
           entry.url ?? "",
           { method: "GET", signal: request.signal },
@@ -394,7 +555,7 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
         );
         if (!download.ok) {
           throw new OpenAiImagesError(
-            `OpenAI Images image download failed with HTTP ${download.status}`,
+            `${label} image download failed with HTTP ${download.status}`,
             { status: download.status },
           );
         }
@@ -406,18 +567,23 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
       }
 
       const result: ImageGenGenerateResult = { images };
-      if (gridSize !== undefined) {
-        // The grid meaning of the requested size — what was sent on the wire.
-        result.width = gridSize.width;
-        result.height = gridSize.height;
+      if (resolved !== undefined) {
+        // The wire meaning of the requested size — what was sent.
+        result.width = resolved.width;
+        result.height = resolved.height;
+      }
+      if (seed !== undefined) {
+        // SiliconFlow envelope: the effective seed rides the response.
+        result.seed = seed;
       }
       return result;
     },
 
     async listModels(signal?: AbortSignal): Promise<ImageGenModelInfo[]> {
       const response = await fetchOrWrap(
+        label,
         cfg.fetch,
-        `${cfg.endpoint}/models`,
+        `${cfg.endpoint}/${modelsPath}`,
         {
           method: "GET",
           headers: buildHeaders(cfg.apiKey),
@@ -428,17 +594,17 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
       if (!response.ok) {
         const excerpt = await readProviderErrorBody(response);
         throw new OpenAiImagesError(
-          `OpenAI Images model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          `${label} model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
         );
       }
       const parsed: unknown = await response.json().catch(() => null);
-      return parseImageModelInfos(parsed);
+      return parseModelInfos(parsed, filter);
     },
 
     async probe(signal?: AbortSignal): Promise<ImageGenProbeResult> {
       try {
-        const response = await cfg.fetch(`${cfg.endpoint}/models`, {
+        const response = await cfg.fetch(`${cfg.endpoint}/${modelsPath}`, {
           method: "GET",
           headers: buildHeaders(cfg.apiKey),
           signal,
@@ -452,7 +618,7 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
           };
         }
         const parsed: unknown = await response.json().catch(() => null);
-        return { ok: true, detail: `${parseImageModelInfos(parsed).length} image models` };
+        return { ok: true, detail: `${parseModelInfos(parsed, filter).length} ${options.probeModelNoun ?? "image models"}` };
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") throw error;
         return {
@@ -468,7 +634,23 @@ export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBack
   };
 
   return backend;
+}
+
+/** The OpenAI-proper OPTIONS row — the historical openAiImagesFactory
+ *  behavior exactly (GPT Image size grid, DALL-E-gated response_format,
+ *  image-family model filter, OpenAI data[] envelope). */
+const OPENAI_FAMILY_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "OpenAI Images",
+  size: { kind: "grid", param: "size", sizes: OPENAI_IMAGES_SIZES },
+  responseFormat: { kind: "dalle-only" },
+  envelope: "openai-data",
+  modelsPath: "models",
+  modelFilter: (id) => IMAGE_MODEL_PREFIXES.some((prefix) => id.startsWith(prefix)),
+  probeModelNoun: "image models",
 };
+
+export const openAiImagesFactory = (config: ImageGenAdapterConfig): ImageGenBackend =>
+  makeOpenAiImagesFamilyBackend(OPENAI_FAMILY_OPTIONS, config);
 
 // Module-scope registration (protocol-registry pattern, the STT/TTS twins):
 // importing this module makes the 'openai-images' image-gen slug creatable
