@@ -318,6 +318,84 @@ describe("comfyui adapter", () => {
     });
   });
 
+  describe("LoRA chain wire (CG-C2)", () => {
+    it("threads enabled loras as chained LoraLoader nodes between the checkpoint and the sampler half", () => {
+      const { graph } = buildComfyCheckpointWorkflow(
+        {
+          prompt: "a tavern",
+          loras: [
+            { name: "nijireol_krea2_v1.safetensors", strength: 1.2 },
+            { name: "detail_tweaker.safetensors", strength: 0.8 },
+          ],
+        },
+        "graycolor_v18.safetensors",
+      );
+      // Node 20: fed by the checkpoint's own MODEL/CLIP outputs.
+      expect(graph["20"]).toEqual({
+        class_type: "LoraLoader",
+        inputs: {
+          lora_name: "nijireol_krea2_v1.safetensors",
+          strength_model: 1.2,
+          strength_clip: 1.2,
+          model: ["4", 0],
+          clip: ["4", 1],
+        },
+      });
+      // Node 21: chained off node 20's outputs.
+      expect(graph["21"]).toEqual({
+        class_type: "LoraLoader",
+        inputs: {
+          lora_name: "detail_tweaker.safetensors",
+          strength_model: 0.8,
+          strength_clip: 0.8,
+          model: ["20", 0],
+          clip: ["20", 1],
+        },
+      });
+      // The sampler half consumes the CHAIN's tail, never the loader.
+      expect(graph["3"]!.inputs.model).toEqual(["21", 0]);
+      expect(graph["6"]!.inputs.clip).toEqual(["21", 1]);
+      expect(graph["7"]!.inputs.clip).toEqual(["21", 1]);
+      // The VAE never threads through the chain (no VAE input on
+      // LoraLoader) — the checkpoint's bundled third output stays wired.
+      expect(graph["8"]!.inputs.vae).toEqual(["4", 2]);
+    });
+
+    it("threads the DiT template's UNET/CLIP through the chain; CLIPSetLastLayer reads the chain tail", () => {
+      const { graph } = buildComfyKrea2Workflow(
+        {
+          prompt: "a tavern",
+          clipSkip: 2,
+          loras: [{ name: "nijireol_krea2_v1.safetensors", strength: 1.2 }],
+        },
+        { unet: "muse.safetensors", encoder: "qwen3vl_4b_fp8_scaled.safetensors", vae: "qwen_image_vae.safetensors" },
+      );
+      expect(graph["20"]).toEqual({
+        class_type: "LoraLoader",
+        inputs: {
+          lora_name: "nijireol_krea2_v1.safetensors",
+          strength_model: 1.2,
+          strength_clip: 1.2,
+          model: ["11", 0],
+          clip: ["12", 0],
+        },
+      });
+      expect(graph["3"]!.inputs.model).toEqual(["20", 0]);
+      // The layer slice sits BETWEEN the chain and the encoders.
+      expect(graph["10"]!.inputs.clip).toEqual(["20", 1]);
+      expect(graph["6"]!.inputs.clip).toEqual(["10", 0]);
+      expect(graph["7"]!.inputs.clip).toEqual(["10", 0]);
+      expect(graph["8"]!.inputs.vae).toEqual(["13", 0]);
+    });
+
+    it("an empty lora list adds NO nodes — the graph stays the pre-C2 shape", () => {
+      const { graph } = buildComfyCheckpointWorkflow({ prompt: "a tavern", loras: [] }, "graycolor_v18.safetensors");
+      expect(graph["20"]).toBeUndefined();
+      expect(graph["3"]!.inputs.model).toEqual(["4", 0]);
+      expect(graph["6"]!.inputs.clip).toEqual(["4", 1]);
+    });
+  });
+
   describe("generate", () => {
     it("queues the graph, polls history to completion, downloads the bytes server-side", async () => {
       const { transport, calls } = happyTransport("pid-1");
@@ -444,6 +522,66 @@ describe("comfyui adapter", () => {
       const { transport } = happyTransport("pid-6");
       const backend = comfyImageGenFactory({ endpoint: ENDPOINT, fetch: transport });
       await expect(backend.generate({ prompt: "p" })).rejects.toThrow(ComfyImageGenConfigError);
+    });
+
+    it("an enabled lora absent from the live combo fails closed naming it (CG-C2)", async () => {
+      const { transport } = makeTransport((url) => {
+        if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+          return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
+        }
+        if (url.pathname === "/object_info/LoraLoader") {
+          return objectInfoResponse("LoraLoader", "lora_name", ["real_lora.safetensors"]);
+        }
+        return new Response("not found", { status: 404 });
+      });
+      const backend = backendWith(transport);
+      let caught: unknown;
+      try {
+        await backend.generate({
+          prompt: "p",
+          model: "graycolor_v18.safetensors",
+          loras: [{ name: "ghost_lora.safetensors", strength: 1 }],
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(ComfyImageGenConfigError);
+      expect((caught as ComfyImageGenConfigError).message).toContain("ghost_lora.safetensors");
+    });
+
+    it("a valid lora rides the queued graph as a LoraLoader node (CG-C2)", async () => {
+      const { transport, calls } = makeTransport((url) => {
+        if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+          return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
+        }
+        if (url.pathname === "/object_info/LoraLoader") {
+          return objectInfoResponse("LoraLoader", "lora_name", ["nijireol_krea2_v1.safetensors"]);
+        }
+        if (url.pathname === "/prompt") return queuedOk("pid-lora");
+        if (url.pathname === "/history/pid-lora") return historyDone("pid-lora");
+        if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+        return new Response("not found", { status: 404 });
+      });
+      const backend = backendWith(transport);
+      const result = await backend.generate({
+        prompt: "a tavern",
+        model: "graycolor_v18.safetensors",
+        loras: [{ name: "nijireol_krea2_v1.safetensors", strength: 1.2 }],
+      });
+      expect(result.images.length).toBe(1);
+      const queueBody = sentJson(calls.find((c) => new URL(c.url).pathname === "/prompt")!);
+      const graph = queueBody.prompt as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+      expect(graph["20"]).toEqual({
+        class_type: "LoraLoader",
+        inputs: {
+          lora_name: "nijireol_krea2_v1.safetensors",
+          strength_model: 1.2,
+          strength_clip: 1.2,
+          model: ["4", 0],
+          clip: ["4", 1],
+        },
+      });
+      expect(graph["3"]!.inputs.model).toEqual(["20", 0]);
     });
 
     it("maps a non-2xx /prompt to the upstream status", async () => {
@@ -886,6 +1024,102 @@ describe("comfyui adapter", () => {
       }
       expect(caught instanceof ComfyImageGenError).toBe(true);
       expect((caught as ComfyImageGenError).status).toBe(500);
+    });
+  });
+
+  describe("listLoras (family ladder, CG-C2)", () => {
+    /** Scratch roots for the sidecar-ladder cases — removed after the
+     *  suite (computed under the system tmpdir, never a literal). */
+    const scratchRoots: string[] = [];
+    afterAll(() => {
+      for (const root of scratchRoots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+    function makeScratchRoot(): string {
+      const root = mkdtempSync(join(tmpdir(), "vt-comfy-lora-"));
+      scratchRoots.push(root);
+      return root;
+    }
+
+    /** A listLoras transport serving the LoraLoader combo, per-file
+     *  embedded metadata, and the internal folder map (null = degraded,
+     *  a 404 like on a hardened remote). */
+    function lorasTransport(options: {
+      loras?: string[];
+      embedded?: (name: string) => Record<string, unknown> | undefined;
+      folderPaths?: Record<string, string[]> | null;
+    }) {
+      return makeTransport((url) => {
+        if (url.pathname === "/object_info/LoraLoader") {
+          return objectInfoResponse("LoraLoader", "lora_name", options.loras ?? []);
+        }
+        if (url.pathname.startsWith("/view_metadata/")) {
+          const payload = options.embedded?.(url.searchParams.get("filename") ?? "");
+          return Response.json(payload ?? {});
+        }
+        if (url.pathname === "/internal/folder_paths") {
+          return options.folderPaths === null
+            ? new Response("nope", { status: 404 })
+            : Response.json(options.folderPaths ?? {});
+        }
+        return new Response("not found", { status: 404 });
+      });
+    }
+
+    it("serves the LoraLoader combo verbatim with family from the SAME ladder as models", async () => {
+      const { transport } = lorasTransport({
+        loras: ["nijireol_krea2_v1_ep5.safetensors", "arden_il_v2.safetensors"],
+        embedded: (name) =>
+          name === "nijireol_krea2_v1_ep5.safetensors" ? { ss_base_model_version: "krea2" } : undefined,
+        folderPaths: null,
+      });
+      const loras = await backendWith(transport).listLoras!();
+      expect(loras).toEqual([
+        { name: "nijireol_krea2_v1_ep5.safetensors", family: "Krea 2" },
+        { name: "arden_il_v2.safetensors", family: null },
+      ]);  // embedded hit + the honest null bucket, zero sidecar calls
+    });
+
+    it("the .cm-info.json sidecar serves when embedded misses (the owner's manual SM store)", async () => {
+      const root = makeScratchRoot();
+      writeFileSync(join(root, "arden_il_v2.cm-info.json"), JSON.stringify({ BaseModel: "Illustrious" }));
+      const { transport } = lorasTransport({
+        loras: ["arden_il_v2.safetensors"],
+        folderPaths: { loras: [root] },
+      });
+      const loras = await backendWith(transport).listLoras!();
+      expect(loras).toEqual([{ name: "arden_il_v2.safetensors", family: "Illustrious" }]);
+    });
+
+    it("the .civitai.info sidecar is the third store (subfolder ids join inside)", async () => {
+      const root = makeScratchRoot();
+      mkdirSync(join(root, "krea"));
+      writeFileSync(join(root, "krea", "nijireol_v1.civitai.info"), JSON.stringify({ baseModel: "Krea 2" }));
+      const { transport } = lorasTransport({
+        loras: ["krea\\nijireol_v1.safetensors"],
+        folderPaths: { loras: [root] },
+      });
+      const loras = await backendWith(transport).listLoras!();
+      expect(loras).toEqual([{ name: "krea\\nijireol_v1.safetensors", family: "Krea 2" }]);
+    });
+
+    it("a ladder miss lands in the null bucket — never a guessed family", async () => {
+      const { transport } = lorasTransport({ loras: ["stripped_lora.safetensors"], folderPaths: null });
+      const loras = await backendWith(transport).listLoras!();
+      expect(loras).toEqual([{ name: "stripped_lora.safetensors", family: null }]);
+    });
+
+    it("carries the upstream status on combo HTTP failures", async () => {
+      const { transport } = makeTransport(() => new Response("boom", { status: 503 }));
+      let caught: unknown;
+      try {
+        await backendWith(transport).listLoras!();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught instanceof ComfyImageGenError).toBe(true);
+      expect((caught as ComfyImageGenError).status).toBe(503);
     });
   });
 

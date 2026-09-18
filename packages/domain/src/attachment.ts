@@ -99,6 +99,10 @@ export interface ImageGenSlotProvenance {
      *  model auto-detect, so it is recorded from the RESULT, not the
      *  request. Absent on other backends and legacy slots. */
     template?: string;
+    /** Enabled LoRAs of the run (CG-C2, capability-gated backends) —
+     *  name + strength as sent, so a regenerated variant reproduces the
+     *  same stack. Absent when the run carried none. */
+    loras?: Array<{ name: string; strength: number }>;
     seed?: number;
     clipSkip?: number;
   };

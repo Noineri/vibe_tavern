@@ -98,6 +98,12 @@ export interface ImageGenGenerateRequest {
    *  pydantic dicts whose `ad_model` names the face detector; "None" skips).
    *  Other backends ignore the field. */
   adetailerModel?: string;
+  /** Enabled LoRAs of this run (CG-C2, capability-gated backends): each
+   *  entry maps onto the backend's own wire — ComfyUI threads them as
+   *  LoraLoader nodes (one strength feeding strength_model +
+   *  strength_clip); the A1111 dialect appends <lora:name:strength> tags
+   *  to the prompt (FT-A4). Other backends ignore the field. */
+  loras?: Array<{ name: string; strength: number }>;
   /** Cooperative cancellation — adapters forward it to their HTTP calls.
    *  LOCAL backends carry no timeout (owner 2026-09-14: explicit cancel
    *  only); CLOUD backends are wrapped at the adapter layer with
@@ -235,6 +241,13 @@ export interface ImageGenDitSidecars {
   vaes: string[];
 }
 
+/** One LoRA list entry (CG-C2) — `family` NULL = the ladder found nothing
+ *  (the chip's «Неизвестно» bucket), never a guessed family. */
+export interface ImageGenLoraInfo {
+  name: string;
+  family: string | null;
+}
+
 /** Live progress (A1111-compat `GET /sdapi/v1/progress`): `progress` is
  *  0..1; `previewBase64` is the interim preview image when the server
  *  produces one. */
@@ -264,6 +277,10 @@ export interface ImageGenBackend {
    *  text-encoder + VAE folder catalogs for the DiT advanced fields
    *  (the schedulers dialect-gate twin, not a capability flag). */
   listDitSidecars?(signal?: AbortSignal): Promise<ImageGenDitSidecars>;
+  /** LoRA listing (capability-gated: ComfyUI CG-C2, A1111 with FT-A4) —
+   *  names + family (null = the «Неизвестно» bucket) feeding the chip's
+   *  family-filtered picker. */
+  listLoras?(signal?: AbortSignal): Promise<ImageGenLoraInfo[]>;
   /** Server-extension listing (A1111-compat only in v1) — extension dir
    *  names for feature detection (IG-CF15/PG-4: the ADetailer probe). */
   listExtensions?(signal?: AbortSignal): Promise<string[]>;

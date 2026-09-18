@@ -1082,6 +1082,10 @@ export interface ImageGenRuntimeApi {
 	 *  comfyui-dialect gate (CG-B1, the schedulers twin): null = unknown
 	 *  profile or unsupported backend (route → 404/400). */
 	listImageGenProfileDitSidecars: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenDitSidecarsValue | null>;
+	/** LoRA list for a saved profile (dialect-gated: ComfyUI CG-C2, the
+	 *  sidecars twin; A1111 with FT-A4). Null = unknown profile or
+	 *  unsupported backend (route → 404/400, the samplers ladder). */
+	listImageGenProfileLoras: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenLoraInfoValue[] | null>;
 	/** Live progress snapshot for a saved profile — capability-gated
 	 *  (supportsLiveProgress, A1111 dialect in v1). Null = unknown profile
 	 *  or unsupported backend (route → 404/400, the samplers ladder). */

@@ -39,23 +39,29 @@ afterAll(() => {
 
 describe("imagegen registry", () => {
   describe("getImageGenBackendCapabilities", () => {
-    it("returns an object with exactly the 10 flag keys for every slug (9 flags + paramRanges, IG-CF5)", () => {
+    it("returns the base 10 keys for every slug; supportsLoras is the optional 11th (CG-C2)", () => {
       for (const slug of ALL_SLUGS) {
         const caps = getImageGenBackendCapabilities(slug);
-        expect(Object.keys(caps).sort()).toEqual(
-          [
-            "supportsNegativePrompt",
-            "supportsSamplers",
-            "supportsSeed",
-            "sizeSupport",
-            "noApiKey",
-            "supportsLiveProgress",
-            "localExecution",
-            "supportsImg2img",
-            "supportsInpaint",
-            "paramRanges",
-          ].sort(),
-        );
+        const keys = Object.keys(caps);
+        for (const base of [
+          "supportsNegativePrompt",
+          "supportsSamplers",
+          "supportsSeed",
+          "sizeSupport",
+          "noApiKey",
+          "supportsLiveProgress",
+          "localExecution",
+          "supportsImg2img",
+          "supportsInpaint",
+          "paramRanges",
+        ]) {
+          expect(keys).toContain(base);
+        }
+        // The LoRA flag graduates per backend (absent = false) — only the
+        // rows that ship a LoRA surface carry it.
+        if (keys.includes("supportsLoras")) {
+          expect(caps.supportsLoras).toBe(true);
+        }
       }
     });
 
@@ -119,6 +125,7 @@ describe("imagegen registry", () => {
       expect(comfy.supportsSeed).toBe(true);
       expect(comfy.noApiKey).toBe(true);
       expect(comfy.supportsLiveProgress).toBe(true);
+      expect(comfy.supportsLoras).toBe(true);
       expect(comfy.localExecution).toBe(true);
       expect(comfy.sizeSupport).toEqual({ kind: "free" });
 

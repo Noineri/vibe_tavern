@@ -495,6 +495,23 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     );
   };
 
+  listImageGenProfileLoras = async (id: string, signal?: AbortSignal) => {
+    const profile = await this.stores.imageGen.getById(id);
+    if (!profile) return null;
+    // Static dialect gate FIRST (the sidecars twin, CG-C2): today only the
+    // comfyui dialect ships a LoRA list source (FT-A4 brings the A1111
+    // twin) — the check answers without live config validity.
+    if (profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI) return null;
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
+    // Interface-driven second gate: a backend without the lora-listing
+    // method reports "not supported", not an empty list.
+    if (typeof backend.listLoras !== "function") return null;
+    const listLoras = backend.listLoras.bind(backend);
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "lora list", (inner) =>
+      listLoras(inner),
+    );
+  };
+
   listImageGenProfileExtensions = async (id: string, signal?: AbortSignal) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
@@ -671,6 +688,12 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       overlay.adetailer === true
         ? overlay.adetailerModel?.trim() || IMAGE_GEN_ADETAILER_DEFAULT_MODEL
         : undefined;
+    // LoRAs (CG-C2): the chip-draft rung ONLY — no overlay, no profile base
+    // (per-generation by design, the FT plan's draft-level ruling) — and
+    // capability-gated: a profile without supportsLoras never sees the
+    // field (the negativePrompt gate precedent; existing pre-C2 profiles
+    // store no flag → inert until recreated).
+    const loras = profile.capabilities.supportsLoras === true ? overrides.loras : undefined;
 
     // IG-15 assist runner: built when the profile's assist is ENABLED and
     // BOTH picks exist (absent picks = assist inert — bit-identical legacy
@@ -722,6 +745,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(seed !== undefined ? { seed } : {}),
       ...(clipSkip !== undefined ? { clipSkip } : {}),
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
+      ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
       ...(signal !== undefined ? { signal } : {}),
     };
 
@@ -762,6 +786,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         ...(encoderName !== undefined ? { encoderName } : {}),
         ...(vaeName !== undefined ? { vaeName } : {}),
         ...(result.resolvedTemplate !== undefined ? { template: result.resolvedTemplate } : {}),
+        ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
         ...(seed !== undefined ? { seed } : {}),
         ...(clipSkip !== undefined ? { clipSkip } : {}),
       },

@@ -125,11 +125,13 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
   [IMAGE_GEN_BACKENDS.ComfyUI]: {
-    // Raw ComfyUI API (COMFYUI_BACKEND_PLAN CG-A1..A3, C1): flat form mapped
+    // Raw ComfyUI API (COMFYUI_BACKEND_PLAN CG-A1..A3, C1, C2): flat form mapped
     // onto workflow templates — negative prompt, seed resolved client-side
     // and reported back, free W×H integers, live KSampler sampler/scheduler
     // unions (CG-A3). Keyless (core has no auth). WS step-bar progress +
     // POST /interrupt landed with CG-C1 (the a1111 progress-pill twin).
+    // LoRAs landed with CG-C2: listLoras rides the family ladder, generate
+    // threads enabled loras as LoraLoader nodes.
     supportsNegativePrompt: true,
     supportsSamplers: true,
     supportsSeed: true,
@@ -139,6 +141,7 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     localExecution: true,
     supportsImg2img: false,
     supportsInpaint: false,
+    supportsLoras: true,
     paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
 };

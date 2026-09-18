@@ -28,6 +28,7 @@ import type {
   ImageGenSamplerInfoValue,
   ImageGenSchedulerInfoValue,
   ImageGenDitSidecarsValue,
+  ImageGenLoraInfoValue,
   ImageGenSamplerSet,
   ImageGenSamplerSetCreate,
   ImageGenSamplerSetImport,
@@ -195,6 +196,28 @@ export async function listImageGenDitSidecars(
 
 /** Re-exported contracts alias — the hook's sidecar cache entry. */
 export type ImageGenDitSidecars = ImageGenDitSidecarsValue;
+
+/** LoRA list for a saved ComfyUI-dialect profile (CG-C2): names + family
+ *  (null = «Неизвестно»), feeding the fine-tuning chip's family-filtered
+ *  picker (CG-C3). Null = unknown profile; a non-comfy backend throws the
+ *  route's 400 ("LoRA listing not supported") — callers gate on the
+ *  profile's backend before calling. */
+export async function listImageGenLoras(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ImageGenLoraInfoValue[] | null> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/loras`),
+    { signal },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw await rawError("Image-gen lora list", response);
+  return (await response.json()) as ImageGenLoraInfoValue[];
+}
+
+/** Re-exported contracts alias — the chip's lora list entry. */
+export type ImageGenLora = ImageGenLoraInfoValue;
 
 /** One live progress snapshot for a saved local profile (PG-2): polled by
  *  the chat surface ONLY while our own generate request is in flight

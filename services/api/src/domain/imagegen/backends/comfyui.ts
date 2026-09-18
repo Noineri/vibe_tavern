@@ -142,6 +142,7 @@ import type {
   ImageGenModelInfo,
   ImageGenProbeResult,
   ImageGenProgressInfo,
+  ImageGenLoraInfo,
   ImageGenSamplerInfo,
   ImageGenSchedulerInfo,
   ImageGenWebSocketLike,
@@ -199,6 +200,52 @@ export const COMFY_NODE_IDS = {
   clip: "12",
   vae: "13",
 } as const;
+
+/** First LoraLoader node id of the CG-C2 chain — loras append ABOVE the
+ *  base ids (dynamic count, stable per index: 20, 21, …). */
+export const COMFY_LORA_NODE_ID_BASE = 20;
+
+/** One enabled LoRA of a generation request (CG-C2) — the flat chip draft
+ *  mapped onto LoraLoader nodes. `strength` feeds BOTH strength_model and
+ *  strength_clip (single-slider chip, the FT-A5 surface). */
+export interface ComfyLoraChainEntry {
+  name: string;
+  strength: number;
+}
+
+/** Build the LoraLoader chain threaded between the loader half and the
+ *  sampler half (CG-C2): the loader's MODEL/CLIP outputs → lora₀ → … →
+ *  loraₙ → KSampler.model + the text encoders' clip source. Pure; an
+ *  empty list returns the origin refs verbatim with NO nodes (the
+ *  no-lora graph is byte-identical to the pre-C2 template). Node ids run
+ *  from COMFY_LORA_NODE_ID_BASE — part of the wire contract the tests
+ *  pin. The VAE never threads through the chain (LoraLoader has no VAE
+ *  input — the checkpoint's bundled third output / the VAELoader stay
+ *  wired directly). */
+export function buildComfyLoraChain(
+  loras: readonly ComfyLoraChainEntry[],
+  origin: { model: [string, number]; clip: [string, number] },
+): { nodes: ComfyWorkflowGraph; model: [string, number]; clip: [string, number] } {
+  const nodes: ComfyWorkflowGraph = {};
+  let model = origin.model;
+  let clip = origin.clip;
+  for (const [index, lora] of loras.entries()) {
+    const id = String(COMFY_LORA_NODE_ID_BASE + index);
+    nodes[id] = {
+      class_type: "LoraLoader",
+      inputs: {
+        lora_name: lora.name,
+        strength_model: lora.strength,
+        strength_clip: lora.strength,
+        model,
+        clip,
+      },
+    };
+    model = [id, 0];
+    clip = [id, 1];
+  }
+  return { nodes, model, clip };
+}
 
 /** The workflow graph the flat request maps onto: a record of node id →
  *  `{class_type, inputs}` — the exact `prompt` value POSTed to `/prompt`. */
@@ -370,10 +417,15 @@ export function buildComfyCheckpointWorkflow(
   request: ImageGenGenerateRequest,
   resolvedModel: string,
 ): { graph: ComfyWorkflowGraph; seed: number } {
-  const { graph, seed } = buildComfyCommonNodes(request, {
+  // LoRA chain (CG-C2): the checkpoint's MODEL/CLIP outputs thread through
+  // the LoraLoaders before reaching the sampler half; its VAE (third
+  // output) never does.
+  const chain = buildComfyLoraChain(request.loras ?? [], {
     model: [COMFY_NODE_IDS.checkpoint, 0],
     clip: [COMFY_NODE_IDS.checkpoint, 1],
   });
+  const { graph, seed } = buildComfyCommonNodes(request, { model: chain.model, clip: chain.clip });
+  Object.assign(graph, chain.nodes);
   graph[COMFY_NODE_IDS.checkpoint] = {
     class_type: "CheckpointLoaderSimple",
     inputs: { ckpt_name: resolvedModel },
@@ -392,10 +444,14 @@ export function buildComfyKrea2Workflow(
   request: ImageGenGenerateRequest,
   sidecars: ComfyKrea2Sidecars,
 ): { graph: ComfyWorkflowGraph; seed: number } {
-  const { graph, seed } = buildComfyCommonNodes(request, {
+  // LoRA chain (CG-C2): UNETLoader's MODEL and CLIPLoader's CLIP thread
+  // through the LoraLoaders; the VAELoader stays wired directly.
+  const chain = buildComfyLoraChain(request.loras ?? [], {
     model: [COMFY_NODE_IDS.unet, 0],
     clip: [COMFY_NODE_IDS.clip, 0],
   });
+  const { graph, seed } = buildComfyCommonNodes(request, { model: chain.model, clip: chain.clip });
+  Object.assign(graph, chain.nodes);
   graph[COMFY_NODE_IDS.unet] = {
     class_type: "UNETLoader",
     inputs: { unet_name: sidecars.unet, weight_dtype: COMFY_NODE_DEFAULTS.unetWeightDtype },
@@ -1079,6 +1135,27 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           "ComfyUI image generation requires a selected model (the workflow graph names its checkpoint or diffusion model)",
         );
       }
+      // LoRA validation (CG-C2): every enabled lora must exist in the live
+      // LoraLoader combo — the model-list precedent (fail closed naming the
+      // entry, never a queue-time node_errors blob). Skipped entirely when
+      // the run carries no loras (zero extra calls on the common path).
+      const loras = request.loras ?? [];
+      if (loras.length > 0) {
+        const loraNames = await fetchComfyComboValues(
+          cfg.fetch,
+          cfg.endpoint,
+          "LoraLoader",
+          "lora_name",
+          request.signal,
+        );
+        for (const lora of loras) {
+          if (!loraNames.includes(lora.name)) {
+            throw new ComfyImageGenConfigError(
+              `ComfyUI lora "${lora.name}" is not in the loras folder — reselect it from the lora list`,
+            );
+          }
+        }
+      }
       // Template detection (CG-A2): which loader folder owns the model. The
       // checkpoint combo is checked first (sync checkpoints are the common
       // case — one list fetch); a miss falls through to the diffusion-model
@@ -1308,6 +1385,40 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
         fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "vae", signal),
       ]);
       return { encoders, vaes };
+    },
+
+    async listLoras(signal?: AbortSignal): Promise<ImageGenLoraInfo[]> {
+      // The lora list (CG-C2): names from the live LoraLoader combo (what
+      // ComfyUI itself validates at queue time), family through the SAME
+      // three-store ladder as models (folder "loras"), NULL = the ladder
+      // found nothing (the chip's «Неизвестно» bucket — never a guess).
+      const names = await fetchComfyComboValues(
+        cfg.fetch,
+        cfg.endpoint,
+        "LoraLoader",
+        "lora_name",
+        signal,
+      );
+      let folderRoots: Record<string, string[]> | undefined;
+      let folderRootsFetched = false;
+      const rootsOf = async (): Promise<Record<string, string[]> | undefined> => {
+        if (!folderRootsFetched) {
+          folderRoots = await fetchComfyFolderRoots(cfg.fetch, cfg.endpoint, signal);
+          folderRootsFetched = true;
+        }
+        return folderRoots;
+      };
+      const entries: ImageGenLoraInfo[] = [];
+      for (const name of names) {
+        const family = await resolveComfyModelFamily(cfg.fetch, cfg.endpoint, {
+          folder: "loras",
+          name,
+          signal,
+          rootsOf,
+        });
+        entries.push({ name, family: family ?? null });
+      }
+      return entries;
     },
 
     /** Publish the run's WS-fed snapshot (CG-C1). No snapshot (idle

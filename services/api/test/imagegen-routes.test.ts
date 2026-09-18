@@ -622,6 +622,40 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     expect(capturedMethod).toBe("POST");
   });
 
+  test("comfyui loras list serves the LoraLoader combo with family (CG-C2)", async () => {
+    const { app } = await makeApp(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/object_info/LoraLoader") {
+        return Response.json({ LoraLoader: { input: { required: { lora_name: [["nijireol_krea2_v1_ep5.safetensors", "arden_il_v2.safetensors"], {}] } } } });
+      }
+      if (url.pathname.startsWith("/view_metadata/")) {
+        return url.searchParams.get("filename") === "nijireol_krea2_v1_ep5.safetensors"
+          ? Response.json({ ss_base_model_version: "krea2" })
+          : Response.json({});
+      }
+      return new Response("nope", { status: 404 }); // folder map degrades
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:9130" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/loras`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([
+      { name: "nijireol_krea2_v1_ep5.safetensors", family: "Krea 2" },
+      { name: "arden_il_v2.safetensors", family: null },
+    ]);
+  });
+
+  test("a1111 profile → 400 on the loras arm (dialect gate); unknown → 404", async () => {
+    const { app } = await makeApp(async () => modelsBody());
+    const comfyId = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+    const res = await app.request(`/api/image-gen/profiles/${comfyId}/loras`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "LoRA listing not supported" });
+
+    const missing = await app.request(`/api/image-gen/profiles/nope/loras`);
+    expect(missing.status).toBe(404);
+  });
+
   test("cloud profile → 400 not supported; unknown profile → 404 (both routes)", async () => {
     const { app } = await makeApp(async () => modelsBody());
     const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.OpenRouter });

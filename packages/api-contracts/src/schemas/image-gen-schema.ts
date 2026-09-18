@@ -67,6 +67,9 @@ export const imageGenCapabilityFlagsSchema = z.object({
   localExecution: z.boolean(),
   supportsImg2img: z.boolean(),
   supportsInpaint: z.boolean(),
+  /** LoRA selection (CG-C2/FT-A4) — optional: absent = false, graduates
+   *  per backend (ComfyUI now; A1111 with FT-A4). */
+  supportsLoras: z.boolean().optional(),
   paramRanges: imageGenParamRangesSchema.optional(),
 });
 export type ImageGenCapabilityFlagsValue = z.infer<typeof imageGenCapabilityFlagsSchema>;
@@ -248,6 +251,18 @@ export const imageGenDitSidecarsSchema = z.object({
 });
 export type ImageGenDitSidecarsValue = z.infer<typeof imageGenDitSidecarsSchema>;
 
+/** One LoRA list entry (CG-C2, capability-gated backends) — the adapter
+ *  interface's `ImageGenLoraInfo` verbatim. `family` is NULL for the
+ *  «Неизвестно» bucket (family ladder exhausted: no embedded metadata,
+ *  no sidecar) — nullable by design, unlike the model entry's optional
+ *  field, because the chip's family filter needs an explicit unknown
+ *  bucket rather than "field absent". */
+export const imageGenLoraInfoSchema = z.object({
+  name: z.string().min(1),
+  family: z.string().nullable(),
+});
+export type ImageGenLoraInfoValue = z.infer<typeof imageGenLoraInfoSchema>;
+
 /** One sampler entry — the adapter interface's `ImageGenSamplerInfo`
  *  verbatim (A1111-compat `GET /sdapi/v1/samplers` shape). */
 export const imageGenSamplerInfoSchema = z.object({
@@ -311,6 +326,19 @@ export const imageGenGenerateOverridesSchema = z.object({
   sampler: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
+  /** Enabled LoRAs of this run (CG-C2, chip-draft level): name verbatim
+   *  + one strength feeding both strength_model and strength_clip on
+   *  ComfyUI (single-slider chip, FT-A5); the A1111 dialect maps the same
+   *  entries onto <lora:name:strength> prompt tags (FT-A4). Capability-
+   *  gated at the adapter: profiles without supportsLoras never see it. */
+  loras: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        strength: z.number().finite(),
+      }),
+    )
+    .optional(),
 });
 export type ImageGenGenerateOverridesValue = z.infer<typeof imageGenGenerateOverridesSchema>;
 

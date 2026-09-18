@@ -1110,6 +1110,14 @@ export interface ImageGenCapabilityFlags {
   supportsImg2img: boolean;
   /** Reserved for later batches — unused in v1. */
   supportsInpaint: boolean;
+  /** LoRA selection (CG-C2 / FINE_TUNING_CHIP_REBUILD FT-A4): the backend
+   *  owns a LoRA list source and a payload mechanism — ComfyUI
+   *  (LoraLoader nodes) today; the A1111 dialect (<lora:> tags) lands with
+   *  FT-A4; future cloud fine-tune adapters flip it and bring their own
+   *  wire. OPTIONAL by design: absent = false, so the flag can graduate
+   *  per backend without touching every row (owner 2026-09-17:
+   *  capability-gated, never local-hardcoded). */
+  supportsLoras?: boolean;
   /** Per-backend advanced-slider ranges (IG-CF5) — optional by design:
    *  absent or partially empty falls back to the global
    *  `IMAGE_GEN_PARAM_RANGES` defaults (see {@link ImageGenParamRanges}). */
