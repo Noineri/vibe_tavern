@@ -481,4 +481,34 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Nim]: {
+    // PE-2 unit 5 — NVIDIA hosted card (doc-verified 2026-09-07 from the
+    // owner's MHTML saves of the three endpoint pages — the docs hub is
+    // SPA-walled; wall re-confirmed 2026-09-18) + supervisor live probes
+    // of all five per-model paths (401 auth-wall = exists):
+    // ai.api.nvidia.com/v1/genai/{publisher}/{model}. THREE request
+    // schemas: FLUX family (width/height 768–1344 ints, cfg_scale, seed,
+    // steps; NO negative surface — dropped), SDXL (text_prompts
+    // {text,weight} with weight −1 AS the negative prompt — the only
+    // mechanism; width/height FIXED 1024 never sent; cfg_scale; **the
+    // one hosted vendor with a sampler param** — enum DDIM /
+    // K_EULER_ANCESTRAL / K_LMS / K_DPM_2_ANCESTRAL, static listSamplers),
+    // SD3-medium (negative_prompt first-class; aspect_ratio enum — W×H
+    // maps by exact fraction else NEAREST documented ratio, a named
+    // decision; cfg_scale). Shared: seed (≥0), steps 5–100. Response
+    // artifacts[].base64 (official docs + call-site verified; data[].
+    // b64_json mirror parsed as fallback); 202 async NVCF observed on
+    // these endpoints — NOT v1, clear typed error. Static five-model
+    // catalog; invalid-post probe on the flux.1-dev path.
+    supportsNegativePrompt: true,
+    supportsSamplers: true,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

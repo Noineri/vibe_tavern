@@ -262,6 +262,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://dashscope-intl.aliyuncs.com/api/v1",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // NVIDIA hosted catalog — per-model genai paths (ai.api.nvidia.com,
+  // the same key as the LLM nvcat preset family): FLUX trio + SDXL +
+  // SD3-medium, three distinct request schemas (PE-2 card + live probes).
+  {
+    id: "nim",
+    label: "NVIDIA",
+    backend: IMAGE_GEN_BACKENDS.Nim,
+    baseUrl: "https://ai.api.nvidia.com/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

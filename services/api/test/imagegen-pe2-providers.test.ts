@@ -15,6 +15,7 @@ import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern
 import { ZAI_IMAGE_SIZES } from "../src/domain/imagegen/backends/openai-images-family.js";
 import { MINIMAX_ASPECT_RATIOS } from "../src/domain/imagegen/backends/minimax.js";
 import { pollDashScopeTask } from "../src/domain/imagegen/backends/dashscope.js";
+import { mapSd3AspectRatio } from "../src/domain/imagegen/backends/nim.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 
 // ─── Shared helpers (the PE-1 file's, verbatim discipline) ───────────────────
@@ -651,6 +652,218 @@ describe("dashscope (custom-JSON arm, sync + async)", () => {
       });
       expect(typeof backend.generate).toBe("function");
       expect(typeof backend.listModels).toBe("function");
+    });
+  });
+});
+
+// ─── NVIDIA hosted genai (PE-2 unit 5) ─────────────────────
+
+const NIM_ENDPOINT = "https://ai.api.nvidia.com/v1";
+
+describe("nim (per-model custom-JSON arm)", () => {
+  const make = (transport: typeof fetch) =>
+    familyBackend(IMAGE_GEN_BACKENDS.Nim, transport, NIM_ENDPOINT, "nvapi-key");
+
+  function artifactsResponse(): Response {
+    return Response.json({
+      artifacts: [{ base64: PNG_BYTES.toString("base64"), finishReason: "SUCCESS" }],
+      artifactsMetadata: { stylePresets: [] },
+    });
+  }
+
+  describe("generate — FLUX family", () => {
+    it("hits the per-model path with the documented flat schema; negative has NO surface", async () => {
+      const { transport, calls } = makeTransport(() => artifactsResponse());
+      const backend = make(transport);
+
+      await backend.generate({
+        prompt: "a tavern at dusk",
+        model: "black-forest-labs/flux.1-dev",
+        width: 1024,
+        height: 1024,
+        cfgScale: 5,
+        steps: 50,
+        seed: 9,
+        negativePrompt: "blurry", // NO FLUX surface — dropped
+      });
+
+      expect(calls[0].url).toBe(`${NIM_ENDPOINT}/genai/black-forest-labs/flux.1-dev`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer nvapi-key");
+      const body = sentJson(calls[0]);
+      expect(body.prompt).toBe("a tavern at dusk");
+      expect(body.width).toBe(1024);
+      expect(body.height).toBe(1024);
+      expect(body.cfg_scale).toBe(5);
+      expect(body.steps).toBe(50);
+      expect(body.seed).toBe(9);
+      expect("negative_prompt" in body).toBe(false);
+      expect("mode" in body).toBe(false);
+      expect("samples" in body).toBe(false);
+    });
+  });
+
+  describe("generate — SDXL", () => {
+    it("builds text_prompts with weight −1 AS the negative, never sends fixed width/height, rides the sampler", async () => {
+      const { transport, calls } = makeTransport(() => artifactsResponse());
+      const backend = make(transport);
+
+      const result = await backend.generate({
+        prompt: "a tavern",
+        model: "stabilityai/stable-diffusion-xl",
+        width: 832, // FIXED 1024 upstream — ignored, never sent
+        height: 1216,
+        negativePrompt: "watermark",
+        sampler: "K_EULER_ANCESTRAL",
+        steps: 25,
+        cfgScale: 7,
+        seed: 3,
+      });
+
+      expect(calls[0].url).toBe(`${NIM_ENDPOINT}/genai/stabilityai/stable-diffusion-xl`);
+      const body = sentJson(calls[0]);
+      expect(body.text_prompts).toEqual([
+        { text: "a tavern", weight: 1 },
+        { text: "watermark", weight: -1 },
+      ]);
+      expect("width" in body).toBe(false);
+      expect("height" in body).toBe(false);
+      expect("prompt" in body).toBe(false);
+      expect(body.sampler).toBe("K_EULER_ANCESTRAL");
+      expect(body.cfg_scale).toBe(7);
+      expect(body.steps).toBe(25);
+      expect(body.seed).toBe(3);
+      expect("clip_guidance_preset" in body).toBe(false);
+      expect("style_preset" in body).toBe(false);
+      // The documented fixed output size rides the result.
+      expect(result.width).toBe(1024);
+      expect(result.height).toBe(1024);
+    });
+  });
+
+  describe("generate — SD3-medium", () => {
+    it("first-class negative_prompt + aspect_ratio mapped from W×H", async () => {
+      const { transport, calls } = makeTransport(() => artifactsResponse());
+      const backend = make(transport);
+
+      await backend.generate({
+        prompt: "a tavern",
+        model: "stabilityai/stable-diffusion-3-medium",
+        width: 1280,
+        height: 720, // exact 16:9
+        negativePrompt: "text",
+        cfgScale: 5,
+        steps: 50,
+      });
+
+      expect(calls[0].url).toBe(`${NIM_ENDPOINT}/genai/stabilityai/stable-diffusion-3-medium`);
+      const body = sentJson(calls[0]);
+      expect(body.prompt).toBe("a tavern");
+      expect(body.negative_prompt).toBe("text");
+      expect(body.aspect_ratio).toBe("16:9");
+      expect(body.cfg_scale).toBe(5);
+      expect(body.steps).toBe(50);
+      expect("width" in body).toBe(false);
+      expect("height" in body).toBe(false);
+      expect("output_format" in body).toBe(false);
+    });
+
+    it("off-enum ratios map to the NEAREST documented value (the named decision)", async () => {
+      const { transport } = makeTransport(() => artifactsResponse());
+      const backend = make(transport);
+      await backend.generate({
+        prompt: "p",
+        model: "stabilityai/stable-diffusion-3-medium",
+        width: 832,
+        height: 1216, // ≈0.684 — nearest documented is 2:3 (0.667)
+      });
+      // Direct unit pins for the exported mapper.
+      expect(mapSd3AspectRatio(832, 1216)).toBe("2:3");
+      expect(mapSd3AspectRatio(1024, 1024)).toBe("1:1");
+      expect(mapSd3AspectRatio(1344, 576)).toBe("16:9");
+      expect(mapSd3AspectRatio(100, 300)).toBe("9:16");
+    });
+  });
+
+  describe("response handling", () => {
+    it("decodes artifacts[].base64 and falls back to the data[].b64_json mirror", async () => {
+      const mirror = makeTransport(() =>
+        Response.json({ data: [{ b64_json: PNG_BYTES.toString("base64") }] }),
+      );
+      const backend = make(mirror.transport);
+      const result = await backend.generate({ prompt: "p", model: "black-forest-labs/flux.1-dev" });
+      expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+    });
+
+    it("surfaces a 202 async response as a clear typed error (out of v1 scope)", async () => {
+      const { transport } = makeTransport(
+        () => new Response(null, { status: 202, headers: { "NVCF-REQID": "abc" } }),
+      );
+      const backend = make(transport);
+      await expect(
+        backend.generate({ prompt: "p", model: "black-forest-labs/flux.1-dev" }),
+      ).rejects.toThrow(/202 \(async NVCF job\).*not supported/);
+    });
+  });
+
+  describe("listModels / listSamplers / probe", () => {
+    it("returns the five live-verified paths and the SDXL sampler enum statically", async () => {
+      const { transport, calls } = makeTransport(() => Response.json({}));
+      const backend = make(transport);
+      const models = await backend.listModels();
+      expect(models.map((m) => m.id)).toEqual([
+        "black-forest-labs/flux.1-dev",
+        "black-forest-labs/flux.1-schnell",
+        "black-forest-labs/flux.2-klein-4b",
+        "stabilityai/stable-diffusion-xl",
+        "stabilityai/stable-diffusion-3-medium",
+      ]);
+      const samplers = await backend.listSamplers?.();
+      expect(samplers?.map((s) => s.name)).toEqual([
+        "DDIM",
+        "K_EULER_ANCESTRAL",
+        "K_LMS",
+        "K_DPM_2_ANCESTRAL",
+      ]);
+      expect(calls).toHaveLength(0);
+    });
+
+    it("probes via invalid-post on the flux.1-dev path (401 = rejected, 400 = accepted)", async () => {
+      const rejected = makeTransport(
+        () => Response.json({ error: "Unauthorized" }, { status: 401 }),
+      );
+      const bad = await make(rejected.transport).probe();
+      expect(bad.ok).toBe(false);
+      expect(bad.status).toBe(401);
+
+      const accepted = makeTransport(
+        () => Response.json({ detail: "prompt required" }, { status: 422 }),
+      );
+      const good = await make(accepted.transport).probe();
+      expect(good).toEqual({ ok: true, detail: "credentials accepted — 5 static models" });
+    });
+  });
+
+  describe("capability row + registry", () => {
+    it("pins the NVIDIA capability row (negative/samplers/seed on, free sizes)", () => {
+      const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Nim];
+      expect(caps.supportsNegativePrompt).toBe(true);
+      expect(caps.supportsSamplers).toBe(true);
+      expect(caps.supportsSeed).toBe(true);
+      expect(caps.sizeSupport).toEqual({ kind: "free" });
+      expect(caps.noApiKey).toBe(false);
+      expect(caps.localExecution).toBe(false);
+      expect(caps.paramRanges).toEqual({});
+    });
+
+    it("registers the nim slug at import time (creatable via the registry)", () => {
+      const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.Nim, {
+        endpoint: NIM_ENDPOINT,
+        apiKey: "nvapi-key",
+      });
+      expect(typeof backend.generate).toBe("function");
+      expect(typeof backend.listModels).toBe("function");
+      expect(typeof backend.listSamplers).toBe("function");
     });
   });
 });
