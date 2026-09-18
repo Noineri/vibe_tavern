@@ -260,6 +260,12 @@ export type ImageGenDitSidecarsValue = z.infer<typeof imageGenDitSidecarsSchema>
 export const imageGenLoraInfoSchema = z.object({
   name: z.string().min(1),
   family: z.string().nullable(),
+  /** Activation words discovered in the sidecar stores (CG-C3, pulled
+   *  forward into CG-C2 at the owner's direction 2026-09-18: the live
+   * re-test must LEARN the trigger via the backend, not hardcode it).
+   *  Empty = none found. Kept VERBATIM per store — civitai packs
+   *  comma-phrases into single strings; splitting is display-side. */
+  triggerWords: z.array(z.string()),
 });
 export type ImageGenLoraInfoValue = z.infer<typeof imageGenLoraInfoSchema>;
 

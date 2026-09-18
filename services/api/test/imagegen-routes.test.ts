@@ -640,8 +640,8 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     const res = await app.request(`/api/image-gen/profiles/${id}/loras`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual([
-      { name: "nijireol_krea2_v1_ep5.safetensors", family: "Krea 2" },
-      { name: "arden_il_v2.safetensors", family: null },
+      { name: "nijireol_krea2_v1_ep5.safetensors", family: "Krea 2", triggerWords: [] },
+      { name: "arden_il_v2.safetensors", family: null, triggerWords: [] },
     ]);
   });
 

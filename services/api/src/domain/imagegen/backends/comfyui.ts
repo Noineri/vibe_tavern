@@ -1093,6 +1093,72 @@ async function resolveComfyModelFamily(
   return undefined;
 }
 
+/** Trigger-word sidecar stores, in precedence order (CG-C2, live-verified
+ *  on the owner's install 2026-09-18): `.cm-info.json` `TrainedWords`
+ *  (Stability Matrix's mirror — populated on civitai imports, null on
+ *  manual adds) before `.civitai.info` `trainedWords` (the download
+ *  flow's own store). No embedded rung: kohya's `ss_tag_frequency` is a
+ *  frequency heuristic the owner's leading lora doesn't even carry —
+ *  deliberately out (recorded, CG-C3 decision log). */
+const COMFY_LORA_TRIGGER_STORES = [
+  { suffix: ".cm-info.json", field: "TrainedWords" },
+  { suffix: ".civitai.info", field: "trainedWords" },
+] as const;
+
+/** Read one sidecar store's trigger-word array off the local disk — the
+ *  same stem/subfolder join as the family store. A missing field, wrong
+ *  shape, or all-empty strings returns undefined (the ladder continues);
+ *  entries are kept VERBATIM (civitai comma-phrases included). */
+async function readComfySidecarTriggerWords(
+  roots: readonly string[],
+  name: string,
+  suffix: string,
+  field: string,
+): Promise<string[] | undefined> {
+  const normalized = name.replace(/\\/g, "/");
+  const slash = normalized.lastIndexOf("/");
+  const file = slash >= 0 ? normalized.slice(slash + 1) : normalized;
+  const stem = file.replace(/\.(safetensors|ckpt|pt|pth|gguf|bin|sft)$/i, "");
+  if (stem.length === 0) return undefined;
+  const relative = `${slash >= 0 ? `${normalized.slice(0, slash)}/` : ""}${stem}${suffix}`;
+  for (const root of roots) {
+    try {
+      const text = await Bun.file(`${root.replace(/[\\/]+$/, "")}/${relative}`).text();
+      const parsed: unknown = JSON.parse(text);
+      if (isRecord(parsed)) {
+        const raw = parsed[field];
+        if (Array.isArray(raw)) {
+          const words = raw.filter((w): w is string => typeof w === "string" && w.trim().length > 0)
+            .map((w) => w.trim());
+          if (words.length > 0) return words;
+        }
+      }
+    } catch {
+      // Missing or unparseable sidecar — the ladder's next root/store.
+      continue;
+    }
+  }
+  return undefined;
+}
+
+/** Resolve one lora's activation words through the sidecar stores (CG-C2):
+ *  cm-info → civitai.info → [] (none found). Silent per-store degradation;
+ *  only the caller's abort propagates. No transport — the stores are read
+ *  off the local disk through the lazily-fetched folder roots. */
+async function resolveComfyLoraTriggers(options: {
+  name: string;
+  signal: AbortSignal | undefined;
+  rootsOf: () => Promise<Record<string, string[]> | undefined>;
+}): Promise<string[]> {
+  const roots = (await options.rootsOf())?.["loras"] ?? [];
+  if (roots.length === 0) return [];
+  for (const store of COMFY_LORA_TRIGGER_STORES) {
+    const words = await readComfySidecarTriggerWords(roots, options.name, store.suffix, store.field);
+    if (words !== undefined) return words;
+  }
+  return [];
+}
+
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 interface ComfyImageGenConfig {
@@ -1416,7 +1482,14 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           signal,
           rootsOf,
         });
-        entries.push({ name, family: family ?? null });
+        // Activation words (owner-directed pull-forward 2026-09-18): the
+        // sidecar stores only — discovered, never hardcoded.
+        const triggerWords = await resolveComfyLoraTriggers({
+          name,
+          signal,
+          rootsOf,
+        });
+        entries.push({ name, family: family ?? null, triggerWords });
       }
       return entries;
     },

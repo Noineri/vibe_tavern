@@ -242,10 +242,13 @@ export interface ImageGenDitSidecars {
 }
 
 /** One LoRA list entry (CG-C2) — `family` NULL = the ladder found nothing
- *  (the chip's «Неизвестно» bucket), never a guessed family. */
+ *  (the chip's «Неизвестно» bucket), never a guessed family.
+ *  `triggerWords` = the activation words discovered in the sidecar stores
+ *  (empty = none found — the chip shows no trigger line, no noise). */
 export interface ImageGenLoraInfo {
   name: string;
   family: string | null;
+  triggerWords: string[];
 }
 
 /** Live progress (A1111-compat `GET /sdapi/v1/progress`): `progress` is

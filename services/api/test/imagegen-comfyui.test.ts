@@ -1076,8 +1076,8 @@ describe("comfyui adapter", () => {
       });
       const loras = await backendWith(transport).listLoras!();
       expect(loras).toEqual([
-        { name: "nijireol_krea2_v1_ep5.safetensors", family: "Krea 2" },
-        { name: "arden_il_v2.safetensors", family: null },
+        { name: "nijireol_krea2_v1_ep5.safetensors", family: "Krea 2", triggerWords: [] },
+        { name: "arden_il_v2.safetensors", family: null, triggerWords: [] },
       ]);  // embedded hit + the honest null bucket, zero sidecar calls
     });
 
@@ -1089,7 +1089,7 @@ describe("comfyui adapter", () => {
         folderPaths: { loras: [root] },
       });
       const loras = await backendWith(transport).listLoras!();
-      expect(loras).toEqual([{ name: "arden_il_v2.safetensors", family: "Illustrious" }]);
+      expect(loras).toEqual([{ name: "arden_il_v2.safetensors", family: "Illustrious", triggerWords: [] }]);
     });
 
     it("the .civitai.info sidecar is the third store (subfolder ids join inside)", async () => {
@@ -1101,13 +1101,57 @@ describe("comfyui adapter", () => {
         folderPaths: { loras: [root] },
       });
       const loras = await backendWith(transport).listLoras!();
-      expect(loras).toEqual([{ name: "krea\\nijireol_v1.safetensors", family: "Krea 2" }]);
+      expect(loras).toEqual([{ name: "krea\\nijireol_v1.safetensors", family: "Krea 2", triggerWords: [] }]);
     });
 
     it("a ladder miss lands in the null bucket — never a guessed family", async () => {
       const { transport } = lorasTransport({ loras: ["stripped_lora.safetensors"], folderPaths: null });
       const loras = await backendWith(transport).listLoras!();
-      expect(loras).toEqual([{ name: "stripped_lora.safetensors", family: null }]);
+      expect(loras).toEqual([{ name: "stripped_lora.safetensors", family: null, triggerWords: [] }]);
+    });
+
+    it("LEARNS trigger words from the SM store (TrainedWords — the owner-directed pull-forward)", async () => {
+      const root = makeScratchRoot();
+      writeFileSync(
+        join(root, "nijireol_krea2_v1_ep5.cm-info.json"),
+        JSON.stringify({ BaseModel: "Krea 2", TrainedWords: ["Nijireol"] }),
+      );
+      const { transport } = lorasTransport({
+        loras: ["nijireol_krea2_v1_ep5.safetensors"],
+        embedded: () => ({ ss_base_model_version: "krea2" }),
+        folderPaths: { loras: [root] },
+      });
+      const loras = await backendWith(transport).listLoras!();
+      expect(loras).toEqual([
+        { name: "nijireol_krea2_v1_ep5.safetensors", family: "Krea 2", triggerWords: ["Nijireol"] },
+      ]);
+    });
+
+    it("trigger words fall through to the civitai store when SM carries null, comma-phrases kept VERBATIM", async () => {
+      const root = makeScratchRoot();
+      writeFileSync(join(root, "hisoka.cm-info.json"), JSON.stringify({ BaseModel: "Illustrious", TrainedWords: null }));
+      writeFileSync(
+        join(root, "hisoka.civitai.info"),
+        JSON.stringify({ baseModel: "Illustrious", trainedWords: ["hisoka_morow, red hair, yellow eyes"] }),
+      );
+      const { transport } = lorasTransport({
+        loras: ["hisoka.safetensors"],
+        folderPaths: { loras: [root] },
+      });
+      const loras = await backendWith(transport).listLoras!();
+      expect(loras[0]!.triggerWords).toEqual(["hisoka_morow, red hair, yellow eyes"]);
+    });
+
+    it("all-empty TrainedWords arrays degrade to the next store, then to none", async () => {
+      const root = makeScratchRoot();
+      writeFileSync(join(root, "blank.cm-info.json"), JSON.stringify({ BaseModel: "Pony", TrainedWords: ["", "   "] }));
+      writeFileSync(join(root, "blank.civitai.info"), JSON.stringify({ baseModel: "Pony", trainedWords: [] }));
+      const { transport } = lorasTransport({
+        loras: ["blank.safetensors"],
+        folderPaths: { loras: [root] },
+      });
+      const loras = await backendWith(transport).listLoras!();
+      expect(loras[0]).toEqual({ name: "blank.safetensors", family: "Pony", triggerWords: [] });
     });
 
     it("carries the upstream status on combo HTTP failures", async () => {
