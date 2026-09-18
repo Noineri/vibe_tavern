@@ -71,6 +71,12 @@
  *   type) silently produces a broken graph, which is exactly the manual
  *   template fix the owner had to make in her launcher. The adapter's
  *   template must be correct standalone, not a mirror of any local fix.
+ * - UNETLoader.weight_dtype is REQUIRED on ComfyUI 0.36+ (enum [default,
+ *   fp8_e4m3fn, fp8_e4m3fn_fast, fp8_e5m2]) — the DiT graph always sends
+ *   the node-class default "default" (the loader's own dtype policy). A
+ *   graph omitting it is rejected `required_input_missing` (live-caught
+ *   2026-09-18 — mocked transports repeat OUR shape, only a real server
+ *   repeats the node's).
  * - probe: `GET /system_stats` → `{system: {comfyui_version, ...},
  *   devices: [...]}` — the cheapest always-present liveness endpoint.
  * - auth: NONE in core — a non-empty apiKey is a configuration mistake
@@ -239,6 +245,13 @@ export const COMFY_NODE_DEFAULTS = {
   denoise: 1,
   batchSize: 1,
   filenamePrefix: "vt_imagegen",
+  /** UNETLoader.weight_dtype — a REQUIRED input on ComfyUI 0.36+ (live
+   *  2026-09-18: enum [default, fp8_e4m3fn, fp8_e4m3fn_fast, fp8_e5m2]);
+   *  "default" = the loader's own dtype policy (int8 files stay int8,
+   *  bf16 stay bf16 — no forced cast). The DiT graph MUST carry it or the
+   *  server rejects the prompt with `required_input_missing` (the defect
+   *  the owner's live portrait test caught, 2026-09-18). */
+  unetWeightDtype: "default",
 } as const;
 
 /** The SaveImage node's output-rows container (top-level node outputs ride
@@ -381,7 +394,7 @@ export function buildComfyKrea2Workflow(
   });
   graph[COMFY_NODE_IDS.unet] = {
     class_type: "UNETLoader",
-    inputs: { unet_name: sidecars.unet },
+    inputs: { unet_name: sidecars.unet, weight_dtype: COMFY_NODE_DEFAULTS.unetWeightDtype },
   };
   graph[COMFY_NODE_IDS.clip] = {
     class_type: "CLIPLoader",

@@ -269,7 +269,11 @@ describe("comfyui adapter", () => {
       expect(graph["3"]!.inputs.model).toEqual(["11", 0]);
       expect(graph["11"]).toEqual({
         class_type: "UNETLoader",
-        inputs: { unet_name: "museByStableYogi_v35Int8Extended.safetensors" },
+        inputs: {
+          unet_name: "museByStableYogi_v35Int8Extended.safetensors",
+          // REQUIRED on ComfyUI 0.36+ — the live portrait test's catch.
+          weight_dtype: COMFY_NODE_DEFAULTS.unetWeightDtype,
+        },
       });
       expect(graph["12"]).toEqual({
         class_type: "CLIPLoader",
