@@ -268,4 +268,29 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Pollinations]: {
+    // PE-1 unit 5 — Pollinations card (doc-verified 2026-09-07; unified
+    // gateway, gen.pollinations.ai) + supervisor live re-verification
+    // 2026-09-18 (APIDOCS.md re-fetched, /v1/models re-probed): OpenAI-
+    // images-shape POST /v1/images/generations with an API key REQUIRED
+    // for generation (401 without — the anonymous zero-config surface is
+    // the LEGACY GET API, a separate PE-3 unit). `size` is free-form
+    // "WxH" (no closed grid documented) → free sizes. response_format
+    // url|b64_json → adapter requests b64_json (gateway URL lifetime
+    // unstated). quality/resolution/safe/n have no contract seam → never
+    // sent. No negative/steps/seed/sampler surface → all off. Model
+    // listing: GET /v1/models public with a DOCUMENTED `category`
+    // discriminator — the one family row that FILTERS to category=image
+    // (live 2026-09-18: 403 models, 59 image).
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

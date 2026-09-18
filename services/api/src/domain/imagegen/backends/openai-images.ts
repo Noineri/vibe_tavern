@@ -409,10 +409,16 @@ function parseModelInfos(
     const id = item.id;
     if (typeof id !== "string" || id.length === 0) continue;
     if (filter !== undefined && !filter(id, item)) continue;
-    const info: ImageGenModelInfo = {
-      id,
-      label: typeof item.name === "string" && item.name.length > 0 ? item.name : id,
-    };
+    // Label enrichment: the common `name`, or the `title` field the
+    // Pollinations catalog carries (live-verified 2026-09-18: image-model
+    // entries carry title/description, not name).
+    const label =
+      typeof item.name === "string" && item.name.length > 0
+        ? item.name
+        : typeof item.title === "string" && item.title.length > 0
+          ? item.title
+          : id;
+    const info: ImageGenModelInfo = { id, label };
     if (typeof item.description === "string" && item.description.length > 0) {
       info.description = item.description;
     }

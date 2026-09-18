@@ -188,6 +188,39 @@ const ELECTRONHUB_OPTIONS: OpenAiImagesFamilyOptions = {
   probeModelNoun: "models",
 };
 
+// ─── Pollinations unified gateway (PE-1 unit 5) ──────────────────────────────
+
+/** Card: IMAGE_GEN_CLOUD_PROVIDERS_RESEARCH "Pollinations" (doc-verified
+ *  2026-09-07; unified-surface caveat CLOSED via the live openapi.json)
+ *  + supervisor live re-verification 2026-09-18 (APIDOCS.md re-fetched,
+ *  /v1/models re-probed):
+ *  - POST /v1/images/generations on gen.pollinations.ai, Bearer — **an API
+ *    key is REQUIRED for generation** (live probe → 401 "A valid API key is
+ *    required"; anonymous lives on only on the legacy GET surface, which
+ *    is a SEPARATE PE-3 unit, not this row);
+ *  - OpenAI-images shape: `prompt` required, `model`, `size` "WxH"
+ *    free-form (no closed grid documented), `n` max 1 (v1 requests carry
+ *    no count anyway), `response_format` url | b64_json → b64_json
+ *    requested (bytes inline; gateway URL lifetime unstated); `quality` /
+ *    `resolution` / `safe` have NO seam in ImageGenGenerateRequest → never
+ *    sent (no invented contract fields);
+ *  - no negative_prompt / steps / seed / sampler surface on the gateway
+ *    docs → no wire names;
+ *  - model listing: GET /v1/models public — entries carry a `category`
+ *    field (live-verified 2026-09-18: 403 models, 59 category="image"
+ *    among text/image/audio/video/3d) — a DOCUMENTED discriminator, so
+ *    this is the one family row that FILTERS (category === "image");
+ *    entries carry `title`/`description` enrichment (parser reads title). */
+const POLLINATIONS_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "Pollinations",
+  size: { kind: "verbatim", param: "size" },
+  responseFormat: { kind: "always", value: "b64_json" },
+  envelope: "openai-data",
+  modelsPath: "models",
+  modelFilter: (id, entry) => entry.category === "image",
+  probeModelNoun: "image models",
+};
+
 // ─── Registration (one factory closure per OPTIONS row) ──────────────────────
 
 /** The PE-1 OPTIONS table — one row per family slug. Grows one row per
@@ -199,6 +232,7 @@ const PE1_FAMILY: ReadonlyArray<{ slug: ImageGenBackendType; options: OpenAiImag
   { slug: IMAGE_GEN_BACKENDS.SiliconFlow, options: SILICONFLOW_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.NanoGpt, options: NANOGPT_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.ElectronHub, options: ELECTRONHUB_OPTIONS },
+  { slug: IMAGE_GEN_BACKENDS.Pollinations, options: POLLINATIONS_OPTIONS },
 ];
 
 for (const { slug, options } of PE1_FAMILY) {

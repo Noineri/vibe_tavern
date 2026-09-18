@@ -191,6 +191,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.electronhub.ai/v1",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Pollinations unified gateway — https://gen.pollinations.ai/v1 (keyed
+  // OpenAI-images surface; the legacy anonymous GET API is a separate PE-3
+  // unit; image-model listing filtered by the documented category field).
+  {
+    id: "pollinations",
+    label: "Pollinations",
+    backend: IMAGE_GEN_BACKENDS.Pollinations,
+    baseUrl: "https://gen.pollinations.ai/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

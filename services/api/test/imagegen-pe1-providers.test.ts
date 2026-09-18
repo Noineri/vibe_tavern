@@ -461,6 +461,123 @@ describe("electronhub (openai-images family)", () => {
   });
 });
 
+// ─── Pollinations unified gateway (PE-1 unit 5) ───────────────────────────
+
+const POLLINATIONS_ENDPOINT = "https://gen.pollinations.ai/v1";
+
+describe("pollinations (openai-images family)", () => {
+  const make = (transport: typeof fetch) =>
+    familyBackend(IMAGE_GEN_BACKENDS.Pollinations, transport, POLLINATIONS_ENDPOINT, "pk-key");
+
+  describe("generate", () => {
+    it("sends the OpenAI-images body: free-form size string + response_format b64_json", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+
+      await backend.generate({
+        prompt: "a tavern at dusk",
+        model: "seedream5",
+        width: 1280,
+        height: 720,
+      });
+
+      expect(calls[0].url).toBe(`${POLLINATIONS_ENDPOINT}/images/generations`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer pk-key");
+      const body = sentJson(calls[0]);
+      expect(body.model).toBe("seedream5");
+      expect(body.size).toBe("1280x720");
+      expect(body.response_format).toBe("b64_json");
+    });
+
+    it("requires an API key (generation is keyed on the unified gateway)", async () => {
+      expect(() =>
+        createImageGenBackend(IMAGE_GEN_BACKENDS.Pollinations, {
+          endpoint: POLLINATIONS_ENDPOINT,
+          apiKey: "",
+        }),
+      ).toThrow(/apiKey.*required/);
+    });
+
+    it("never sends negative prompt / steps / seed / quality (no contract seam)", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+      await backend.generate({
+        prompt: "p",
+        model: "flux-2-pro",
+        steps: 30,
+        cfgScale: 4,
+        seed: 11,
+        negativePrompt: "watermark",
+      });
+      const body = sentJson(calls[0]);
+      expect("negative_prompt" in body).toBe(false);
+      expect("steps" in body).toBe(false);
+      expect("guidance_scale" in body).toBe(false);
+      expect("seed" in body).toBe(false);
+      expect("quality" in body).toBe(false);
+    });
+  });
+
+  describe("listModels + probe", () => {
+    it("filters the public catalog by the DOCUMENTED category field and reads title as the label", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({
+          data: [
+            {
+              id: "openai/gpt-5.4-nano",
+              category: "text",
+              title: "GPT-5.4 Nano",
+            },
+            {
+              id: "seedream5",
+              category: "image",
+              title: "Seedream 5",
+              description: "ByteDance Seedream via gateway",
+            },
+            { id: "nanobanana-2", category: "image" },
+            { id: "some-audio-model", category: "audio", title: "Audio" },
+          ],
+        }),
+      );
+      const backend = make(transport);
+      const models = await backend.listModels();
+      // The one family row that FILTERS: category is a documented field
+      // (live-verified 2026-09-18), not a guessed id heuristic.
+      expect(models).toEqual([
+        { id: "seedream5", label: "Seedream 5", description: "ByteDance Seedream via gateway" },
+        { id: "nanobanana-2", label: "nanobanana-2" },
+      ]);
+      expect(calls[0].url).toBe(`${POLLINATIONS_ENDPOINT}/models`);
+
+      const probed = await backend.probe();
+      expect(probed).toEqual({ ok: true, detail: "2 image models" });
+    });
+  });
+
+  describe("capability row + registry", () => {
+    it("pins the Pollinations capability row (free sizes, all-off params)", () => {
+      const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Pollinations];
+      expect(caps.supportsNegativePrompt).toBe(false);
+      expect(caps.supportsSamplers).toBe(false);
+      expect(caps.supportsSeed).toBe(false);
+      expect(caps.sizeSupport).toEqual({ kind: "free" });
+      expect(caps.noApiKey).toBe(false);
+      expect(caps.localExecution).toBe(false);
+      expect(caps.paramRanges).toEqual({});
+    });
+
+    it("registers the pollinations slug at import time (creatable via the registry)", () => {
+      const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.Pollinations, {
+        endpoint: POLLINATIONS_ENDPOINT,
+        apiKey: "pk-key",
+      });
+      expect(typeof backend.generate).toBe("function");
+      expect(typeof backend.listModels).toBe("function");
+    });
+  });
+});
+
 // ─── Together AI (PE-1 unit 1) ───────────────────────────────────────────────
 
 const TOGETHER_ENDPOINT = "https://api.together.ai/v1";
