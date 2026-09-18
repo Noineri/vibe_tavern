@@ -343,4 +343,45 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Zai]: {
+    // PE-2 unit 1 — Z.AI card (doc-verified 2026-09-07; re-verified
+    // unchanged 2026-09-18) + supervisor live probes 2026-09-18: POST
+    // api.z.ai/api/paas/v4/images/generations on the zai LLM preset's own
+    // baseUrl (creds overlap — same key). Size = the documented per-model
+    // enums' UNION (glm-image 7 + cogview-4 7; in-range custom pairs via
+    // user sizes, IG-20a). Response is data[0].url ONLY (30-day expiry —
+    // always downloaded server-side); NO response_format param on the
+    // card. quality/user_id have no contract seam → never sent; no
+    // negative/steps/seed/sampler surface. Static model catalog (the
+    // docs index has no image-model list endpoint); creds probe rides the
+    // chat GET /models (live existence-probed: 401, not 404).
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    sizeSupport: {
+      kind: "vendor-set",
+      sizes: [
+        "1280x1280",
+        "1568x1056",
+        "1056x1568",
+        "1472x1088",
+        "1088x1472",
+        "1728x960",
+        "960x1728",
+        "1024x1024",
+        "768x1344",
+        "864x1152",
+        "1344x768",
+        "1152x864",
+        "1440x720",
+        "720x1440",
+      ],
+    },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

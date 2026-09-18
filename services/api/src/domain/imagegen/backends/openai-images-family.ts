@@ -286,6 +286,65 @@ const RECRAFT_OPTIONS: OpenAiImagesFamilyOptions = {
   probeModelNoun: "models",
 };
 
+// ─── Z.AI (PE-2 unit 1) ─────────────────────────────────────────────
+
+/** Card: IMAGE_GEN_CLOUD_PROVIDERS_RESEARCH "Z.AI" (doc-verified
+ *  2026-09-07; re-verified unchanged 2026-09-18) + supervisor live
+ *  existence probes 2026-09-18:
+ *  - `POST https://api.z.ai/api/paas/v4/images/generations` (exactly the
+ *    VT `zai` LLM preset baseUrl + the family path), Bearer — the same
+ *    credentials as the existing `zai`/`zai-coding` LLM presets (creds
+ *    overlap; the ImageGenProviderPreset type has no hint field, so the
+ *    overlap is expressed by the shared baseUrl, nothing else);
+ *  - models `glm-image`, `cogview-4-250304` — the card documents NO
+ *    image-model list endpoint (the docs index lists chat models only,
+ *    UNVERIFIED) → STATIC catalog; the creds probe rides the CHAT
+ *    `GET /models` (live existence-probed 2026-09-18: 401 auth wall, not
+ *    404) — auth check only, the image count comes from the static enum;
+ *  - `size`: per-model documented enums — glm-image 7 values (custom
+ *    1024–2048 divisible-by-32 pairs in range) + cogview-4 7 values
+ *    (custom 512–2048 div-16). The grid publishes the documented UNION
+ *    (the SiliconFlow per-model-union precedent); in-range custom pairs
+ *    ride VERBATIM via the profile's IG-20a user sizes;
+ *  - `quality` (hd|standard) and `user_id` have NO contract seam → never
+ *    sent; no negative/steps/seed/sampler surface → no wire names;
+ *  - response: `data[0].url` ONLY (link expires after 30 days — still
+ *    downloaded server-side per the cloud-URL-expiry rule; the envelope
+ *    normalizer's url path), plus a root `content_filter` array the
+ *    parser ignores (severity levels 0–3 — no VT surface in v1);
+ *  - NO `response_format` param on the card → policy "never". */
+export const ZAI_IMAGE_SIZES: ReadonlyMap<string, { width: number; height: number }> = new Map([
+  // glm-image enum (documented default 1280x1280)
+  ["1280x1280", { width: 1280, height: 1280 }],
+  ["1568x1056", { width: 1568, height: 1056 }],
+  ["1056x1568", { width: 1056, height: 1568 }],
+  ["1472x1088", { width: 1472, height: 1088 }],
+  ["1088x1472", { width: 1088, height: 1472 }],
+  ["1728x960", { width: 1728, height: 960 }],
+  ["960x1728", { width: 960, height: 1728 }],
+  // cogview-4 enum (documented default 1024x1024)
+  ["1024x1024", { width: 1024, height: 1024 }],
+  ["768x1344", { width: 768, height: 1344 }],
+  ["864x1152", { width: 864, height: 1152 }],
+  ["1344x768", { width: 1344, height: 768 }],
+  ["1152x864", { width: 1152, height: 864 }],
+  ["1440x720", { width: 1440, height: 720 }],
+  ["720x1440", { width: 720, height: 1440 }],
+]);
+
+const ZAI_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "Z.AI",
+  size: { kind: "grid", param: "size", sizes: ZAI_IMAGE_SIZES },
+  responseFormat: { kind: "never" },
+  envelope: "openai-data",
+  modelsPath: "models",
+  staticModels: [
+    { id: "glm-image", label: "GLM Image" },
+    { id: "cogview-4-250304", label: "CogView-4" },
+  ],
+  probeModelNoun: "image models",
+};
+
 // ─── Registration (one factory closure per OPTIONS row) ──────────────────────
 
 /** The PE-1 OPTIONS table — one row per family slug. Grows one row per
@@ -300,6 +359,7 @@ const PE1_FAMILY: ReadonlyArray<{ slug: ImageGenBackendType; options: OpenAiImag
   { slug: IMAGE_GEN_BACKENDS.Pollinations, options: POLLINATIONS_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.DeepInfra, options: DEEPINFRA_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.Recraft, options: RECRAFT_OPTIONS },
+  { slug: IMAGE_GEN_BACKENDS.Zai, options: ZAI_OPTIONS },
 ];
 
 for (const { slug, options } of PE1_FAMILY) {

@@ -220,6 +220,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://external.api.recraft.ai/v1",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Z.AI — the zai LLM preset's own base (api.z.ai/api/paas/v4, same
+  // credentials): glm-image / cogview-4 on the OpenAI-images transport,
+  // url-delivery + static model catalog (PE-2 card + 2026-09-18 probes).
+  {
+    id: "zai",
+    label: "Z.AI",
+    backend: IMAGE_GEN_BACKENDS.Zai,
+    baseUrl: "https://api.z.ai/api/paas/v4",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

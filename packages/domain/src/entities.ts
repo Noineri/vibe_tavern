@@ -1054,6 +1054,7 @@ export const IMAGE_GEN_BACKENDS = {
   Pollinations: "pollinations",
   DeepInfra: "deepinfra",
   Recraft: "recraft",
+  Zai: "zai",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

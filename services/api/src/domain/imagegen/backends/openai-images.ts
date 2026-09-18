@@ -184,6 +184,29 @@ export interface OpenAiImagesFamilyOptions {
   /** `negative_prompt` wire name — absent means the adapter NEVER sends the
    *  field (providers whose current model catalog REJECTS it). */
   readonly negativePromptWire?: string;
+  /** Static model catalog (PE-2) — providers whose card documents NO
+   *  image-model list endpoint (Z.AI: chat catalog only; Volcengine Ark:
+   *  none). When present, `listModels` returns these entries WITHOUT any
+   *  HTTP call and the probe stops trusting a catalog count — see
+   *  {@link probe}. The ids are the card's documented model enum, never a
+   *  guessed filter of some other endpoint's catalog. */
+  readonly staticModels?: readonly ImageGenModelInfo[];
+  /** Probe strategy (PE-2). `models-list` (default): GET the models path —
+   *  works wherever a list endpoint exists (Z.AI: the CHAT /models — a
+   *  creds check; the image count comes from `staticModels`).
+   *  `invalid-post`: POST an EMPTY body to the generations path — a body
+   *  with neither model nor prompt can never generate, so 401/403 = bad
+   *  credentials, 404 = wrong endpoint, and any other 4xx (validation)
+   *  means auth PASSED (live-probed pattern: Volcengine returns a clean
+   *  401 AuthenticationError on a missing key). */
+  readonly probe?: { kind: "models-list" } | { kind: "invalid-post" };
+  /** Constant generate-body params the provider documents but VT has no
+   *  user seam for (PE-2) — merged verbatim into every POST body after the
+   *  per-request fields. Carries a named decision in the provider's card
+   *  comment (e.g. Volcengine `watermark: false` — the card flags the
+   *  vendor default TRUE stamps an "AI 生成" mark; VT never ships it
+   *  silently). NEVER a per-request field's home. */
+  readonly constantParams?: Record<string, unknown>;
   /** Probe-detail count noun ("image models" for image-scoped listings;
    *   "models" where the unfiltered catalog includes non-image models). */
   readonly probeModelNoun?: string;
@@ -512,6 +535,12 @@ export function makeOpenAiImagesFamilyBackend(
       ) {
         body[options.negativePromptWire] = request.negativePrompt;
       }
+      // Constant documented params (PE-2) — after the per-request fields so
+      // a constant can never be overridden by request state (they are names
+      // VT has no seam for, by construction).
+      if (options.constantParams !== undefined) {
+        Object.assign(body, options.constantParams);
+      }
 
       const response = await fetchOrWrap(
         label,
@@ -586,6 +615,11 @@ export function makeOpenAiImagesFamilyBackend(
     },
 
     async listModels(signal?: AbortSignal): Promise<ImageGenModelInfo[]> {
+      // Static catalog (PE-2): the card documents no image-model list
+      // endpoint — the documented model enum IS the catalog, no HTTP call.
+      if (options.staticModels !== undefined) {
+        return options.staticModels.map((m) => ({ ...m }));
+      }
       const response = await fetchOrWrap(
         label,
         cfg.fetch,
@@ -609,6 +643,45 @@ export function makeOpenAiImagesFamilyBackend(
     },
 
     async probe(signal?: AbortSignal): Promise<ImageGenProbeResult> {
+      // invalid-post strategy (PE-2): an empty body can never generate —
+      // 401/403 = auth rejected, 404 = wrong endpoint, other 4xx = the
+      // request reached validation, i.e. credentials were accepted.
+      if (options.probe?.kind === "invalid-post") {
+        try {
+          const response = await cfg.fetch(`${cfg.endpoint}/images/generations`, {
+            method: "POST",
+            headers: buildHeaders(cfg.apiKey, true),
+            body: JSON.stringify({}),
+            signal,
+          });
+          if (response.status === 401 || response.status === 403) {
+            const excerpt = await readProviderErrorBody(response);
+            return {
+              ok: false,
+              detail: `${response.status}${excerpt ? `: ${excerpt}` : ""} — credentials rejected`,
+              status: response.status,
+            };
+          }
+          if (response.status === 404) {
+            return { ok: false, detail: "404: generation endpoint not found", status: 404 };
+          }
+          if (response.status >= 500) {
+            const excerpt = await readProviderErrorBody(response);
+            return {
+              ok: false,
+              detail: `${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+              status: response.status,
+            };
+          }
+          return {
+            ok: true,
+            detail: `credentials accepted${options.staticModels !== undefined ? ` — ${options.staticModels.length} static models` : ""}`,
+          };
+        } catch (error) {
+          if (error instanceof Error && error.name === "AbortError") throw error;
+          return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+        }
+      }
       try {
         const response = await cfg.fetch(`${cfg.endpoint}/${modelsPath}`, {
           method: "GET",
@@ -624,7 +697,12 @@ export function makeOpenAiImagesFamilyBackend(
           };
         }
         const parsed: unknown = await response.json().catch(() => null);
-        return { ok: true, detail: `${parseModelInfos(parsed, filter).length} ${options.probeModelNoun ?? "image models"}` };
+        // Static catalog rows count THEIR OWN enum, not the live chat
+        // catalog the creds check happened to hit (Z.AI /models is the
+        // chat list — listing chat ids as image models would be a lie).
+        const count = options.staticModels?.length ?? parseModelInfos(parsed, filter).length;
+        const suffix = options.staticModels !== undefined ? " (static catalog)" : "";
+        return { ok: true, detail: `${count} ${options.probeModelNoun ?? "image models"}${suffix}` };
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") throw error;
         return {
