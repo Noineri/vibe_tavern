@@ -302,7 +302,7 @@ describe("ImageGenMessageMenu — mobile sheet (IG-16)", () => {
 });
 
 describe("ImageGenMessageMenu — chip draft reaches the generate payload (IG-17)", () => {
-  function armWithDraft(chatId: string, draft: { prompt?: string; negative?: string; model?: string; sampler?: string }): void {
+  function armWithDraft(chatId: string, draft: { prompt?: string; negative?: string; model?: string; sampler?: string; loras?: import("../../stores/image-gen-chat-store.js").ImageGenLoraPick[] }): void {
     useImageGenChatStore.getState().setFineTuning(chatId, true);
     useImageGenChatStore.getState().setFineTuningDraft(chatId, draft);
   }
@@ -377,6 +377,55 @@ describe("ImageGenMessageMenu — chip draft reaches the generate payload (IG-17
     expect("prompt" in body).toBe(false);
     expect("overrides" in body).toBe(false);
     settle("chat-off");
+    await act(async () => { await Promise.resolve(); });
+  });
+
+  it("CG-C3: draft loras ride overrides.loras VERBATIM for a supportsLoras profile", async () => {
+    profilesStore = [profile("p1", "Comfy local", { supportsNegativePrompt: true, supportsLoras: true })];
+    armWithDraft("chat-lora1", {
+      prompt: "a castle at dawn",
+      loras: [
+        { name: "nijireol_krea2_v1_ep5.safetensors", strength: 1.2 },
+        { name: "arden_il.safetensors", strength: 0.8 },
+      ],
+    });
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-lora1" messageId="m-1" variant="desktop" />);
+    openPopover(view);
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-portrait"));
+    });
+    expect(generateCalls.length).toBe(1);
+    const [, body] = generateCalls[0];
+    // Order preserved (chain order on ComfyUI), strengths verbatim.
+    expect(body.overrides).toEqual({
+      loras: [
+        { name: "nijireol_krea2_v1_ep5.safetensors", strength: 1.2 },
+        { name: "arden_il.safetensors", strength: 0.8 },
+      ],
+    });
+    settle("chat-lora1");
+    await act(async () => { await Promise.resolve(); });
+  });
+
+  it("CG-C3: a profile without supportsLoras never receives loras (stripped at the fold)", async () => {
+    profilesStore = [profile("p2", "Cloud", { supportsNegativePrompt: true })];
+    armWithDraft("chat-lora2", {
+      prompt: "a castle at dawn",
+      loras: [{ name: "nijireol_krea2_v1_ep5.safetensors", strength: 1.2 }],
+    });
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-lora2" messageId="m-1" variant="desktop" />);
+    openPopover(view);
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-portrait"));
+    });
+    expect(generateCalls.length).toBe(1);
+    const [, body] = generateCalls[0];
+    // Loras stripped → the overrides object is EMPTY → not attached at all
+    // (the fold's own-empty rule); nothing lora-shaped reaches the wire.
+    expect("overrides" in body).toBe(false);
+    settle("chat-lora2");
     await act(async () => { await Promise.resolve(); });
   });
 });

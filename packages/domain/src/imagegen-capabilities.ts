@@ -30,11 +30,18 @@ import type { ImageGenBackendType, ImageGenCapabilityFlags, ImageGenParamRange }
  *  the editor pane and its tests import (no scattered literals): steps
  *  1–150 step 1, CFG 1–30 step 0.5, CLIP-skip 1–12 step 1. Per-backend
  *  overrides (currently all empty — no vendor publishes limits) live on
- *  each row's `paramRanges` and win over these when present. */
-export const IMAGE_GEN_PARAM_RANGES: Record<"steps" | "cfgScale" | "clipSkip", ImageGenParamRange> = {
+ *  each row's `paramRanges` and win over these when present. LoRA strength
+ *  (CG-C3): 0–2 step 0.05 — the FT-A5 single-slider range (0 mutes, 1 the
+ *  trained weight, 2 exaggeration) feeding both strength_model and
+ *  strength_clip on ComfyUI. */
+export const IMAGE_GEN_PARAM_RANGES: Record<
+  "steps" | "cfgScale" | "clipSkip" | "loraStrength",
+  ImageGenParamRange
+> = {
   steps: { min: 1, max: 150, step: 1 },
   cfgScale: { min: 1, max: 30, step: 0.5 },
   clipSkip: { min: 1, max: 12, step: 1 },
+  loraStrength: { min: 0, max: 2, step: 0.05 },
 };
 
 /** ADetailer face-model presets (IG-CF15/PG-4 v1) — the extension's own

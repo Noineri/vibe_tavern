@@ -50,6 +50,16 @@ export interface ImageGenRunMeta {
   liveProgress: boolean;
 }
 
+/** One enabled LoRA in the chip's draft (CG-C3) — the web-side twin of
+ *  the generate contract's `overrides.loras` entries: name verbatim + ONE
+ *  strength (FT-A5 single slider — feeds both strength_model and
+ *  strength_clip on ComfyUI; `<lora:name:strength>` tags on A1111/FT-A4).
+ *  Structurally the contract entry, so the fold assigns it as-is. */
+export interface ImageGenLoraPick {
+  name: string;
+  strength: number;
+}
+
 /** The IG-17 chip's per-chat draft — every field optional/empty-able; empty
  *  means "not sent" (the generate contract's fallback semantics). The
  *  profile pick is NOT here: it lives in `activeProfileIdByChat` (IG-16),
@@ -67,6 +77,10 @@ export interface ImageGenFineTuningDraft {
   model?: string;
   /** Per-chat sampler pick → overrides.sampler. undefined = server default. */
   sampler?: string;
+  /** Enabled LoRAs (CG-C3) → overrides.loras at the fold — capability-gated
+   *  (supportsLoras). undefined/empty = none sent. Entry ORDER = chain
+   *  order on ComfyUI (LoraLoader nodes chain in list sequence). */
+  loras?: ImageGenLoraPick[];
 }
 
 /** A pristine draft (shared empty instance — never mutated; setters copy). */
@@ -99,6 +113,13 @@ interface ImageGenChatActions {
   /** Patch the chat's fine-tuning draft (creates it from EMPTY on first
    *  touch). */
   setFineTuningDraft(chatId: string, patch: Partial<ImageGenFineTuningDraft>): void;
+  /** Toggle one lora in the chat's draft (CG-C3): enable appends
+   *  `{name, strength: 1}` at the chain's END; disable removes the entry
+   *  (an emptied array stays `[]` — the fold sends nothing for it). */
+  setFineTuningLoraEnabled(chatId: string, name: string, enabled: boolean): void;
+  /** Update one enabled lora's strength in place (no-op when the lora is
+   *  not enabled — the slider only renders for enabled rows). */
+  setFineTuningLoraStrength(chatId: string, name: string, strength: number): void;
   /** Reset the chat's draft to pristine (the chip's Clear). */
   clearFineTuningDraft(chatId: string): void;
 }
@@ -195,6 +216,39 @@ export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
         [chatId]: { ...(s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT), ...patch },
       },
     }));
+  },
+
+  setFineTuningLoraEnabled: (chatId, name, enabled) => {
+    set((s) => {
+      const current = s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT;
+      const picks = current.loras ?? [];
+      const next = enabled
+        ? [...picks, { name, strength: 1 }]
+        : picks.filter((p) => p.name !== name);
+      return {
+        fineTuningDraftByChat: {
+          ...s.fineTuningDraftByChat,
+          [chatId]: { ...current, loras: next },
+        },
+      };
+    });
+  },
+
+  setFineTuningLoraStrength: (chatId, name, strength) => {
+    set((s) => {
+      const current = s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT;
+      const picks = current.loras ?? [];
+      if (!picks.some((p) => p.name === name)) return {};
+      return {
+        fineTuningDraftByChat: {
+          ...s.fineTuningDraftByChat,
+          [chatId]: {
+            ...current,
+            loras: picks.map((p) => (p.name === name ? { ...p, strength } : p)),
+          },
+        },
+      };
+    });
   },
 
   clearFineTuningDraft: (chatId) => {

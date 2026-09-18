@@ -42,10 +42,12 @@ import {
   listImageGenSamplers,
   listImageGenSchedulers,
   listImageGenExtensions,
+  listImageGenLoras,
   getImageGenModelSettings,
   upsertImageGenModelSettings,
   type ImageGenModelEntry,
   type ImageGenProfileRecord,
+  type ImageGenLora,
 } from "../../api/image-gen-api.js";
 import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue } from "@vibe-tavern/api-contracts";
 import {
@@ -56,6 +58,7 @@ import {
   hasAdetailerExtension,
 } from "@vibe-tavern/domain";
 import { EMPTY_IMAGE_GEN_DRAFT, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
+import { ImageGenLoraSection } from "./ImageGenLoraSection.js";
 
 export interface ImageGenFineTuningChipProps {
   chatId: string;
@@ -139,6 +142,8 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
   const [models, setModels] = useState<ImageGenModelEntry[] | null>(null);
   const [modelsFailed, setModelsFailed] = useState(false);
   const [samplers, setSamplers] = useState<ImageGenSamplerInfoValue[] | null>(null);
+  const [loras, setLoras] = useState<ImageGenLora[] | null>(null);
+  const [lorasFailed, setLorasFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +164,7 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
   const caps = effective?.capabilities ?? null;
   const supportsSamplers = caps?.supportsSamplers ?? false;
   const supportsNegative = caps?.supportsNegativePrompt ?? false;
+  const supportsLoras = caps?.supportsLoras ?? false;
 
   // Model catalog for the effective profile (re-fetched on profile switch).
   useEffect(() => {
@@ -205,11 +211,43 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
     };
   }, [effectiveId, supportsSamplers]);
 
+  // LoRA list (CG-C3) — the samplers-twin gate: capability first (the
+  // route 400s on non-comfy dialects), fetch on profile switch, failure =
+  // the failed hint (not a crash — the MediaMenu precedent).
+  useEffect(() => {
+    if (effectiveId === null || !supportsLoras) {
+      setLoras(null);
+      setLorasFailed(false);
+      return;
+    }
+    let cancelled = false;
+    setLoras(null);
+    setLorasFailed(false);
+    void listImageGenLoras(effectiveId)
+      .then((list) => {
+        if (!cancelled) setLoras(list ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoras([]);
+          setLorasFailed(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveId, supportsLoras]);
+
   if (profiles === null) {
     return <div className="flex h-16 items-center justify-center px-3 text-xs text-t3">…</div>;
   }
 
   const busy = running !== undefined;
+
+  // The LoRA section's auto-preselect anchor: the family of the model this
+  // generation will actually run (the draft's pick, else the profile's).
+  const effectiveModelId = draft.model ?? effective?.modelId;
+  const modelFamily = models?.find((m) => m.id === effectiveModelId)?.family;
 
   return (
     <div className="flex flex-col gap-2.5 p-1" data-testid="image-gen-ft-body">
@@ -273,6 +311,18 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
             disabled={busy || samplers === null}
           />
         </div>
+      )}
+
+      {/* LoRAs (CG-C3): family-filtered picker, per-lora enable + strength,
+          activation words click-to-copy — NEVER auto-inserted. */}
+      {supportsLoras && (
+        <ImageGenLoraSection
+          chatId={chatId}
+          modelFamily={modelFamily}
+          loras={loras}
+          failed={lorasFailed}
+          disabled={busy}
+        />
       )}
 
       <div className="my-0.5 h-px bg-border opacity-40" />

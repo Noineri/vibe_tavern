@@ -1,4 +1,4 @@
-import { describe, expect, it, mock, afterEach } from "bun:test";
+import { describe, expect, it, mock, afterEach, afterAll, beforeEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 
@@ -24,11 +24,14 @@ type SamplerEntry = import("@vibe-tavern/api-contracts").ImageGenSamplerInfoValu
 
 type Caps = ProfileRecord["capabilities"];
 
+type LoraEntry = import("@vibe-tavern/api-contracts").ImageGenLoraInfoValue;
+
 function fullCaps(): Caps {
   return {
     supportsNegativePrompt: true,
     supportsSamplers: true,
     supportsSeed: true,
+    supportsLoras: true,
     sizeSupport: { kind: "free" },
     noApiKey: false,
     supportsLiveProgress: false,
@@ -39,7 +42,7 @@ function fullCaps(): Caps {
 }
 
 function noCaps(): Caps {
-  return { ...fullCaps(), supportsNegativePrompt: false, supportsSamplers: false, supportsSeed: false };
+  return { ...fullCaps(), supportsNegativePrompt: false, supportsSamplers: false, supportsSeed: false, supportsLoras: false };
 }
 
 function profile(id: string, name: string, capabilities: Caps, modelId?: string): ProfileRecord {
@@ -67,6 +70,8 @@ let samplersStore: Record<string, SamplerEntry[]> = {};
 let schedulersStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenSchedulerInfoValue[]> = {};
 let extensionsStore: Record<string, string[]> = {};
 let overlayStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue> = {};
+let lorasStore: Record<string, LoraEntry[]> = {};
+const lorasFailFor = new Set<string>();
 const upsertCalls: Array<{
   profileId: string;
   modelId: string;
@@ -80,6 +85,10 @@ mock.module("../../api/image-gen-api.js", () => ({
   listImageGenSamplers: (id: string) => Promise.resolve([...(samplersStore[id] ?? [])]),
   listImageGenSchedulers: (id: string) => Promise.resolve([...(schedulersStore[id] ?? [])]),
   listImageGenExtensions: (id: string) => Promise.resolve([...(extensionsStore[id] ?? [])]),
+  listImageGenLoras: (id: string) =>
+    lorasFailFor.has(id)
+      ? Promise.reject(new Error("lora list boom"))
+      : Promise.resolve([...(lorasStore[id] ?? [])]),
   getImageGenModelSettings: (id: string, modelId: string) =>
     Promise.resolve(overlayStore[`${id}/${modelId}`] ? { settings: overlayStore[`${id}/${modelId}`] } : null),
   upsertImageGenModelSettings: (
@@ -163,6 +172,8 @@ afterEach(() => {
   samplersStore = {};
   extensionsStore = {};
   overlayStore = {};
+  lorasStore = {};
+  lorasFailFor.clear();
   upsertCalls.length = 0;
   mobileOverride = false;
   // The store is a module singleton shared across files in this worker —
@@ -173,6 +184,30 @@ afterEach(() => {
     activeProfileIdByChat: {},
     runningByChat: {},
   });
+  clipboardCalls.length = 0;
+});
+
+// Clipboard seam for the CG-C3 trigger-copy test (R3: patch between tests,
+// restore the captured original in afterAll — navigator is global).
+const clipboardCalls: string[] = [];
+const realClipboard: Clipboard | undefined = navigator.clipboard;
+beforeEach(() => {
+  Object.defineProperty(navigator, "clipboard", {
+    value: {
+      writeText: (text: string) => {
+        clipboardCalls.push(text);
+        return Promise.resolve();
+      },
+    },
+    configurable: true,
+  });
+});
+afterAll(() => {
+  if (realClipboard === undefined) {
+    delete (navigator as { clipboard?: Clipboard }).clipboard;
+  } else {
+    Object.defineProperty(navigator, "clipboard", { value: realClipboard, configurable: true });
+  }
 });
 
 describe("ImageGenFineTuningChip — the IG-16 gate + pill canon (IG-17, CF1)", () => {
@@ -310,6 +345,176 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
       expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-persist"]).toBeUndefined(),
     );
     expect((within(second.baseElement).getByTestId("image-gen-ft-prompt") as HTMLTextAreaElement).value).toBe("");
+  });
+});
+
+describe("ImageGenFineTuningChip — LoRA section (CG-C3)", () => {
+  function comfyProfile(chatId: string): void {
+    profilesStore = [{ ...profile("cg1", "Comfy local", fullCaps(), "krea2ray"), backend: "comfyui" }];
+    act(() => armChat(chatId));
+  }
+
+  function seedLoras(): void {
+    lorasStore = {
+      cg1: [
+        { name: "nijireol_krea2_v1_ep5.safetensors", family: "Krea 2", triggerWords: ["Nijireol"] },
+        { name: "kreaDraw_v2.safetensors", family: "Krea 2", triggerWords: [] },
+        { name: "arden_il.safetensors", family: null, triggerWords: [] },
+        { name: "dragonPony.safetensors", family: "SDXL", triggerWords: ["Dragon", "dragon lord"] },
+      ],
+    };
+  }
+
+  async function openSection(chatId: string) {
+    const view = renderChip(<ImageGenFineTuningChip chatId={chatId} />);
+    openChip();
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-loras-header")).toBeTruthy(),
+    );
+    await act(async () => {
+      within(view.baseElement).getByTestId("image-gen-ft-loras-header").click();
+    });
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-loras-body")).toBeTruthy(),
+    );
+    return view;
+  }
+
+  function rows(view: ReturnType<typeof renderChip>): HTMLElement[] {
+    return within(view.baseElement).getAllByTestId("image-gen-ft-lora-row");
+  }
+
+  it("renders ONLY for a supportsLoras profile — false hides, absent (= false) hides too", async () => {
+    comfyProfile("chat-lr0");
+    seedLoras();
+    let view = await openSection("chat-lr0");
+    expect(within(view.baseElement).getByTestId("image-gen-ft-loras")).toBeTruthy();
+    cleanup();
+
+    profilesStore = [{ ...profile("cg2", "Cloud", noCaps()), backend: "openrouter" }];
+    act(() => armChat("chat-lr0"));
+    view = renderChip(<ImageGenFineTuningChip chatId="chat-lr0" />);
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-loras")).toBeNull();
+    cleanup();
+
+    // Absent key = false (optional flag semantics — the registry grades it).
+    const caps = fullCaps();
+    delete caps.supportsLoras;
+    profilesStore = [{ ...profile("cg3", "Snapshot", caps), backend: "comfyui" }];
+    view = renderChip(<ImageGenFineTuningChip chatId="chat-lr0" />);
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-loras")).toBeNull();
+  });
+
+  it("family filter AUTO-PRESELECTS the effective model's family; «Неизвестно» and search narrow", async () => {
+    comfyProfile("chat-lr1");
+    seedLoras();
+    modelsStore = {
+      cg1: [
+        { id: "krea2ray", label: "Ray Krea", family: "Krea 2" },
+        { id: "pony", label: "Pony", family: "Pony" },
+      ],
+    };
+
+    const view = await openSection("chat-lr1");
+    // The profile's model is krea2ray → family "Krea 2" auto-preselected:
+    // only the two Krea loras render (dragonPony is SDXL, arden unknown).
+    await waitFor(() => expect(rows(view).length).toBe(2));
+    expect(rows(view).map((r) => r.dataset.lora)).toEqual([
+      "nijireol_krea2_v1_ep5.safetensors",
+      "kreaDraw_v2.safetensors",
+    ]);
+
+    // «Неизвестно» — the null-family bucket only.
+    await pickOption("image-gen-ft-loras-family", "image_gen_loras_family_unknown");
+    await waitFor(() => expect(rows(view).length).toBe(1));
+    expect(rows(view)[0]!.dataset.lora).toBe("arden_il.safetensors");
+
+    // Back to all + search narrows by name substring.
+    await pickOption("image-gen-ft-loras-family", "image_gen_loras_family_all");
+    await waitFor(() => expect(rows(view).length).toBe(4));
+    await act(async () => {
+      fireEvent.change(within(view.baseElement).getByTestId("image-gen-ft-loras-search"), {
+        target: { value: "nij" },
+      });
+    });
+    await waitFor(() => expect(rows(view).length).toBe(1));
+    expect(rows(view)[0]!.dataset.lora).toBe("nijireol_krea2_v1_ep5.safetensors");
+  });
+
+  it("enable → strength → disable write the draft; a lora without triggers shows NO trigger button", async () => {
+    comfyProfile("chat-lr2");
+    seedLoras();
+    modelsStore = { cg1: [{ id: "krea2ray", label: "Ray Krea", family: "Krea 2" }] };
+
+    const view = await openSection("chat-lr2");
+    await waitFor(() => expect(rows(view).length).toBe(2));
+    const nijiRow = rows(view).find((r) => r.dataset.lora === "nijireol_krea2_v1_ep5.safetensors")!;
+    // No-trigger lora renders no button at all.
+    expect(within(nijiRow.parentElement as HTMLElement).getAllByTestId("image-gen-ft-lora-row").length).toBe(2);
+    const kreaRow = rows(view).find((r) => r.dataset.lora === "kreaDraw_v2.safetensors")!;
+    expect(kreaRow.querySelector('[data-testid="image-gen-ft-lora-triggers"]')).toBeNull();
+
+    const toggle = within(nijiRow).getByRole("switch", { name: "nijireol_krea2_v1_ep5.safetensors" });
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-lr2"]?.loras).toEqual([
+      { name: "nijireol_krea2_v1_ep5.safetensors", strength: 1 },
+    ]);
+
+    // Enabled → the strength slider appears IN the row; 1.2 writes in place.
+    const slider = within(nijiRow).getByRole("slider");
+    await act(async () => {
+      fireEvent.change(slider, { target: { value: "1.2" } });
+    });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-lr2"]?.loras).toEqual([
+      { name: "nijireol_krea2_v1_ep5.safetensors", strength: 1.2 },
+    ]);
+
+    // Disable removes the entry (emptied chain stays []).
+    await act(async () => {
+      fireEvent.click(within(nijiRow).getByRole("switch", { name: "nijireol_krea2_v1_ep5.safetensors" }));
+    });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-lr2"]?.loras).toEqual([]);
+  });
+
+  it("trigger click COPIES the joined words and NEVER touches the prompt (no auto-insert)", async () => {
+    comfyProfile("chat-lr3");
+    seedLoras();
+    modelsStore = { cg1: [{ id: "krea2ray", label: "Ray Krea", family: "Krea 2" }] };
+
+    const view = await openSection("chat-lr3");
+    await waitFor(() => expect(rows(view).length).toBe(2));
+    const nijiRow = rows(view).find((r) => r.dataset.lora === "nijireol_krea2_v1_ep5.safetensors")!;
+    await act(async () => {
+      within(nijiRow).getByTestId("image-gen-ft-lora-triggers").click();
+    });
+    expect(clipboardCalls).toEqual(["Nijireol"]);
+    // The owner's no-auto-insert ruling: the prompt stays untouched.
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-lr3"]?.prompt ?? "").toBe("");
+
+    // Multi-word join: the SDXL dragon lora (family filter → all first).
+    await pickOption("image-gen-ft-loras-family", "image_gen_loras_family_all");
+    await waitFor(() => expect(rows(view).length).toBe(4));
+    const dragonRow = rows(view).find((r) => r.dataset.lora === "dragonPony.safetensors")!;
+    await act(async () => {
+      within(dragonRow).getByTestId("image-gen-ft-lora-triggers").click();
+    });
+    expect(clipboardCalls).toEqual(["Nijireol", "Dragon, dragon lord"]);
+  });
+
+  it("a failed lora fetch shows the failed hint, not a crash", async () => {
+    comfyProfile("chat-lr4");
+    lorasFailFor.add("cg1");
+    const view = await openSection("chat-lr4");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-loras-failed")).toBeTruthy(),
+    );
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-loras-list")).toBeNull();
   });
 });
 

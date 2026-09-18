@@ -230,6 +230,12 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
       }
       if (draft.model !== undefined && draft.model !== "") overrides.model = draft.model;
       if (draft.sampler !== undefined && draft.sampler !== "") overrides.sampler = draft.sampler;
+      // CG-C3: enabled loras ride the run — capability-gated exactly like
+      // the negative (a profile without supportsLoras never sees them).
+      // Entry order = ComfyUI chain order; strength verbatim from the chip.
+      if (draft.loras !== undefined && draft.loras.length > 0 && effective.capabilities.supportsLoras === true) {
+        overrides.loras = draft.loras;
+      }
       if (Object.keys(overrides).length > 0) input.overrides = overrides;
     }
     void runGeneration(chatId, input, {

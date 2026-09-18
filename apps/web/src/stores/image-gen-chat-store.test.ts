@@ -202,6 +202,46 @@ describe("image-gen chat store — fine-tuning draft (IG-17)", () => {
     expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l"]?.negative).toBe("blur");
   });
 
+  // ── CG-C3: lora picks in the draft ─────────────────────────────
+
+  it("CG-C3: enable appends {name, strength: 1} in order; disable removes; emptied stays []", () => {
+    const s = useImageGenChatStore.getState();
+    s.setFineTuningLoraEnabled("chat-l1", "niji.safetensors", true);
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l1"]?.loras).toEqual([
+      { name: "niji.safetensors", strength: 1 },
+    ]);
+    s.setFineTuningLoraEnabled("chat-l1", "arden.safetensors", true);
+    // Entry order = chain order — the second enable docks at the END.
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l1"]?.loras).toEqual([
+      { name: "niji.safetensors", strength: 1 },
+      { name: "arden.safetensors", strength: 1 },
+    ]);
+    s.setFineTuningLoraEnabled("chat-l1", "niji.safetensors", false);
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l1"]?.loras).toEqual([
+      { name: "arden.safetensors", strength: 1 },
+    ]);
+    s.setFineTuningLoraEnabled("chat-l1", "arden.safetensors", false);
+    // An emptied chain stays an EMPTY ARRAY (the fold sends nothing for []).
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l1"]?.loras).toEqual([]);
+  });
+
+  it("CG-C3: strength updates one enabled entry in place; unknown names are a no-op", () => {
+    const s = useImageGenChatStore.getState();
+    s.setFineTuningLoraEnabled("chat-l2", "a.safetensors", true);
+    s.setFineTuningLoraEnabled("chat-l2", "b.safetensors", true);
+    s.setFineTuningLoraStrength("chat-l2", "a.safetensors", 1.2);
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l2"]?.loras).toEqual([
+      { name: "a.safetensors", strength: 1.2 },
+      { name: "b.safetensors", strength: 1 },
+    ]);
+    // Not enabled → the write is dropped (the slider only renders enabled).
+    s.setFineTuningLoraStrength("chat-l2", "ghost.safetensors", 2);
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l2"]?.loras).toEqual([
+      { name: "a.safetensors", strength: 1.2 },
+      { name: "b.safetensors", strength: 1 },
+    ]);
+  });
+
   // ── PG-2: run metadata + server-side interrupt ─────────────────────
 
   it("PG-2: the run state carries the profileId and the start-time liveProgress snapshot", async () => {
