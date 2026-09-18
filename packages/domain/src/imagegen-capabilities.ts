@@ -176,4 +176,45 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.SiliconFlow]: {
+    // PE-1 unit 2 — SiliconFlow card (doc-verified 2026-09-07) + supervisor
+    // live re-verification 2026-09-18: the path is OpenAI-images-style but
+    // the request/response are SiliconFlow's own — size rides the
+    // `image_size` string param with PER-MODEL enum grids; the capability
+    // grid publishes the documented UNION (18 values, per-model subsets
+    // vary — a size off a specific model's enum fails upstream, never
+    // silently here); userSizes ride verbatim per IG-20a.
+    // num_inference_steps (1–50 or 1–100 per model → union slider 1–100),
+    // guidance_scale (Qwen; 0–20), seed (0–9999999999), negative_prompt
+    // (Qwen / Z-Image / Ultra only — conservative-true with this caveat:
+    // sent only when the caller provided one). Response is the
+    // `{images: [{url}], timings, seed}` envelope (NOT OpenAI's data[]) —
+    // normalized in the adapter; URL valid 1 hour → server-side download
+    // (house rule). `cfg` (Qwen text-in-image) and batch_size have no
+    // seam in ImageGenGenerateRequest → never sent (no invented fields).
+    supportsNegativePrompt: true,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: {
+      kind: "vendor-set",
+      sizes: [
+        "512x512", "512x1024", "576x1024", "720x1280", "720x1440",
+        "768x512", "768x1024", "928x1664", "960x1280",
+        "1024x576", "1024x768", "1024x1024",
+        "1056x1584", "1140x1472", "1328x1328", "1472x1140",
+        "1584x1056", "1664x928",
+      ],
+    },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {
+      // Card: num_inference_steps 1–50 (FLUX) or 1–100 (per model) — union.
+      steps: { min: 1, max: 100, step: 1 },
+      // Card: guidance_scale 0–20 (Qwen family).
+      cfgScale: { min: 0, max: 20, step: 0.5 },
+    },
+  },
 };

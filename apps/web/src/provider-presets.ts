@@ -162,6 +162,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.together.ai/v1",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // SiliconFlow — https://api.siliconflow.com/v1, OpenAI-images-style path
+  // with SiliconFlow's own request/response schema (image_size param,
+  // images[].url envelope per the card + 2026-09-18 re-verification).
+  {
+    id: "siliconflow",
+    label: "SiliconFlow",
+    backend: IMAGE_GEN_BACKENDS.SiliconFlow,
+    baseUrl: "https://api.siliconflow.com/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

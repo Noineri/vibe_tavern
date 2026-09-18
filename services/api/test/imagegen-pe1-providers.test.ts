@@ -21,6 +21,7 @@ import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern
 // Importing the family module registers every PE-1 slug (import-time
 // registration — what these tests pin).
 import "../src/domain/imagegen/backends/openai-images-family.js";
+import { SILICONFLOW_IMAGE_SIZES } from "../src/domain/imagegen/backends/openai-images-family.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 import { OpenAiImagesConfigError, OpenAiImagesError } from "../src/domain/imagegen/backends/openai-images.js";
 import type { ImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
@@ -74,6 +75,167 @@ function sentJson(call: RecordedCall): Record<string, unknown> {
 function familyBackend(slug: string, transport: typeof fetch, endpoint: string, apiKey = "key"): ImageGenBackend {
   return createImageGenBackend(slug, { endpoint, apiKey, fetch: transport });
 }
+
+// ─── SiliconFlow (PE-1 unit 2) ────────────────────────────────────────────────
+
+const SILICONFLOW_ENDPOINT = "https://api.siliconflow.com/v1";
+
+describe("siliconflow (openai-images family)", () => {
+  const make = (transport: typeof fetch) =>
+    familyBackend(IMAGE_GEN_BACKENDS.SiliconFlow, transport, SILICONFLOW_ENDPOINT, "sf-key");
+
+  describe("generate", () => {
+    it("sends the card's own schema: image_size string param, NEVER response_format", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({ images: [{ url: "https://sc.provider/img.png" }], timings: {}, seed: 7 }),
+      );
+      const backend = make(transport);
+
+      await backend.generate({
+        prompt: "a tavern at dusk",
+        model: "black-forest-labs/FLUX.2-pro",
+        width: 1024,
+        height: 1024,
+      });
+
+      expect(calls[0].url).toBe(`${SILICONFLOW_ENDPOINT}/images/generations`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer sf-key");
+      const body = sentJson(calls[0]);
+      expect(body.model).toBe("black-forest-labs/FLUX.2-pro");
+      expect(body.image_size).toBe("1024x1024");
+      expect("size" in body).toBe(false);
+      // `response_format` is not documented for this endpoint — never sent.
+      expect("response_format" in body).toBe(false);
+    });
+
+    it("maps steps/cfgScale/seed/negativePrompt onto the card's wire names only when set", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({ images: [{ url: "https://sc.provider/img.png" }], seed: 1 }),
+      );
+      const backend = make(transport);
+      await backend.generate({
+        prompt: "p",
+        model: "Qwen/Qwen-Image",
+        width: 1328,
+        height: 1328,
+        steps: 30,
+        cfgScale: 4,
+        seed: 9999999999,
+        negativePrompt: "watermark",
+      });
+      const body = sentJson(calls[0]);
+      expect(body.num_inference_steps).toBe(30);
+      expect(body.guidance_scale).toBe(4);
+      expect(body.seed).toBe(9999999999);
+      expect(body.negative_prompt).toBe("watermark");
+
+      const bare = makeTransport(() =>
+        Response.json({ images: [{ url: "https://sc.provider/img.png" }], seed: 1 }),
+      );
+      await make(bare.transport).generate({ prompt: "p", model: "Qwen/Qwen-Image" });
+      const bareBody = sentJson(bare.calls[0]);
+      for (const key of ["num_inference_steps", "guidance_scale", "seed", "negative_prompt"]) {
+        expect(key in bareBody).toBe(false);
+      }
+    });
+
+    it("fails closed on an off-grid size; user entries ride verbatim (IG-20a)", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({ images: [{ url: "https://sc.provider/img.png" }] }),
+      );
+      const backend = make(transport);
+      await expect(
+        backend.generate({ prompt: "p", model: "Qwen/Qwen-Image", width: 999, height: 999 }),
+      ).rejects.toThrow(/SiliconFlow has no documented size for 999x999/);
+      expect(calls).toHaveLength(0);
+
+      const user = makeTransport(() =>
+        Response.json({ images: [{ url: "https://sc.provider/img.png" }] }),
+      );
+      const userBackend = createImageGenBackend(IMAGE_GEN_BACKENDS.SiliconFlow, {
+        endpoint: SILICONFLOW_ENDPOINT,
+        apiKey: "sf-key",
+        userSizes: [{ width: 1664, height: 1664 }],
+        fetch: user.transport,
+      });
+      await userBackend.generate({ prompt: "p", model: "Qwen/Qwen-Image", width: 1664, height: 1664 });
+      expect(sentJson(user.calls[0]).image_size).toBe("1664x1664");
+    });
+
+    it("normalizes the images[].url envelope and reports the effective seed (URL is 1h-limited → server-side download)", async () => {
+      const imageUrl = "https://sc.provider/img.png";
+      const { transport, calls } = makeTransport((url) =>
+        url.href === imageUrl
+          ? new Response(PNG_BYTES, { headers: { "content-type": "image/png" } })
+          : Response.json({ images: [{ url: imageUrl }], timings: { inference: 1.5 }, seed: 1234567 }),
+      );
+      const backend = make(transport);
+      const result = await backend.generate({ prompt: "p", model: "Tongyi-MAI/Z-Image-Turbo" });
+      // Two seam calls: the generations POST, then the server-side download.
+      expect(calls.map((call) => call.url)).toEqual([
+        `${SILICONFLOW_ENDPOINT}/images/generations`,
+        imageUrl,
+      ]);
+      expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+      expect(result.images[0].mimeType).toBe("image/png");
+      // The envelope's effective seed rides onto the result.
+      expect(result.seed).toBe(1234567);
+    });
+
+    it("rejects a response without the images[] array", async () => {
+      const { transport } = makeTransport(() => Response.json({ data: [{ b64_json: "x" }] }));
+      const backend = make(transport);
+      await expect(backend.generate({ prompt: "p", model: "Qwen/Qwen-Image" })).rejects.toBeInstanceOf(
+        OpenAiImagesError,
+      );
+    });
+  });
+
+  describe("listModels + probe", () => {
+    it("queries GET /models with Bearer and lists the catalog UNFILTERED; probe counts the same", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({ data: [{ id: "Qwen/Qwen-Image" }, { id: "deepseek-ai/DeepSeek-V3" }] }),
+      );
+      const backend = make(transport);
+      const models = await backend.listModels();
+      expect(models.map((m) => m.id)).toEqual(["Qwen/Qwen-Image", "deepseek-ai/DeepSeek-V3"]);
+      expect(calls[0].url).toBe(`${SILICONFLOW_ENDPOINT}/models`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer sf-key");
+
+      const probed = await backend.probe();
+      expect(probed).toEqual({ ok: true, detail: "2 models" });
+    });
+  });
+
+  describe("capability row + registry", () => {
+    it("pins the SiliconFlow capability row (vendor-set union grid + card param ranges)", () => {
+      const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.SiliconFlow];
+      expect(caps.supportsNegativePrompt).toBe(true); // Qwen/Z-Image/Ultra only — caveat in the row comment
+      expect(caps.supportsSamplers).toBe(false);
+      expect(caps.supportsSeed).toBe(true);
+      expect(caps.noApiKey).toBe(false);
+      expect(caps.localExecution).toBe(false);
+      expect(caps.paramRanges).toEqual({
+        steps: { min: 1, max: 100, step: 1 },
+        cfgScale: { min: 0, max: 20, step: 0.5 },
+      });
+      if (caps.sizeSupport.kind !== "vendor-set") throw new Error("expected vendor-set");
+      // Lockstep: the capability grid IS the adapter's documented union grid.
+      expect(caps.sizeSupport.sizes).toEqual([...SILICONFLOW_IMAGE_SIZES.keys()]);
+    });
+
+    it("registers the siliconflow slug at import time (creatable via the registry)", () => {
+      const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.SiliconFlow, {
+        endpoint: SILICONFLOW_ENDPOINT,
+        apiKey: "sf-key",
+      });
+      expect(typeof backend.generate).toBe("function");
+      expect(typeof backend.listModels).toBe("function");
+    });
+  });
+});
 
 // ─── Together AI (PE-1 unit 1) ───────────────────────────────────────────────
 

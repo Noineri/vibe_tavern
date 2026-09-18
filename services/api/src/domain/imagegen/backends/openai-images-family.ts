@@ -66,6 +66,64 @@ const TOGETHERAI_OPTIONS: OpenAiImagesFamilyOptions = {
   probeModelNoun: "models",
 };
 
+// ─── SiliconFlow (PE-1 unit 2) ────────────────────────────────────────────────
+
+/** Card: IMAGE_GEN_CLOUD_PROVIDERS_RESEARCH "SiliconFlow" (doc-verified
+ *  2026-09-07) + supervisor live re-verification 2026-09-18:
+ *  - POST /v1/images/generations, Bearer — path OpenAI-images-style but the
+ *    schema is SiliconFlow's own: size rides `image_size` with PER-MODEL
+ *    string enums; this table publishes the documented UNION (per-model
+ *    subsets vary — the capability grid and this table stay in lockstep,
+ *    pinned by the test); userSizes ride verbatim (IG-20a);
+ *  - `response_format` is NOT documented for this endpoint → never sent;
+ *  - response is `{images: [{url}], timings, seed}` — NOT OpenAI's data[]
+ *    envelope (normalized via the envelope option); the URL is valid
+ *    1 hour → downloaded server-side immediately (house rule); the
+ *    response-level `seed` (the effective seed) rides onto the result;
+ *  - num_inference_steps (1–50/1–100 per model), guidance_scale (Qwen
+ *    0–20), seed (0–9999999999), negative_prompt (Qwen / Z-Image / Ultra
+ *    only — sent only when the caller provided one) map from the
+ *    request's steps/cfgScale/seed/negativePrompt;
+ *  - `cfg` (Qwen text-in-image), batch_size, output_format and friends
+ *    have NO seam in ImageGenGenerateRequest → never sent (no invented
+ *    contract fields);
+ *  - model listing: GET /v1/models (Bearer) — the card documents no
+ *    image discriminator on the API ("Image" tags live in their console)
+ *    → listed UNFILTERED. */
+export const SILICONFLOW_IMAGE_SIZES: ReadonlyMap<string, { width: number; height: number }> = new Map([
+  ["512x512", { width: 512, height: 512 }],
+  ["512x1024", { width: 512, height: 1024 }],
+  ["576x1024", { width: 576, height: 1024 }],
+  ["720x1280", { width: 720, height: 1280 }],
+  ["720x1440", { width: 720, height: 1440 }],
+  ["768x512", { width: 768, height: 512 }],
+  ["768x1024", { width: 768, height: 1024 }],
+  ["928x1664", { width: 928, height: 1664 }],
+  ["960x1280", { width: 960, height: 1280 }],
+  ["1024x576", { width: 1024, height: 576 }],
+  ["1024x768", { width: 1024, height: 768 }],
+  ["1024x1024", { width: 1024, height: 1024 }],
+  ["1056x1584", { width: 1056, height: 1584 }],
+  ["1140x1472", { width: 1140, height: 1472 }],
+  ["1328x1328", { width: 1328, height: 1328 }],
+  ["1472x1140", { width: 1472, height: 1140 }],
+  ["1584x1056", { width: 1584, height: 1056 }],
+  ["1664x928", { width: 1664, height: 928 }],
+]);
+
+const SILICONFLOW_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "SiliconFlow",
+  size: { kind: "grid", param: "image_size", sizes: SILICONFLOW_IMAGE_SIZES },
+  responseFormat: { kind: "never" },
+  envelope: "siliconflow-images",
+  modelsPath: "models",
+  stepsWire: "num_inference_steps",
+  guidanceWire: "guidance_scale",
+  seedWire: "seed",
+  negativePromptWire: "negative_prompt",
+  probeModelNoun: "models",
+};
+
 // ─── Registration (one factory closure per OPTIONS row) ──────────────────────
 
 /** The PE-1 OPTIONS table — one row per family slug. Grows one row per
@@ -74,6 +132,7 @@ const TOGETHERAI_OPTIONS: OpenAiImagesFamilyOptions = {
  *  IMAGE_GEN_BACKENDS and carries a capability row in the domain table. */
 const PE1_FAMILY: ReadonlyArray<{ slug: ImageGenBackendType; options: OpenAiImagesFamilyOptions }> = [
   { slug: IMAGE_GEN_BACKENDS.TogetherAi, options: TOGETHERAI_OPTIONS },
+  { slug: IMAGE_GEN_BACKENDS.SiliconFlow, options: SILICONFLOW_OPTIONS },
 ];
 
 for (const { slug, options } of PE1_FAMILY) {
