@@ -25,9 +25,38 @@
  *   on the keyed tier is worse than a missing one. `nologo`/`enhance`/
  *   `private`/`safe`/`referrer` have no VT contract seam → never sent
  *   (the free-tier watermark stands unless registered upstream).
- * - **Chutes** (PE-3 unit 2) and **Hugging Face Inference Providers**
- *   (PE-3 unit 3) ride the same arm in their own units — see the
- *   CHUTES_OPTIONS / HF_OPTIONS blocks added by those commits.
+ * - **Chutes** (PE-3 unit 2) — per-chute dedicated hosts, `POST
+ *   https://{slug}.chutes.ai/generate`, flat JSON, **raw `image/png`
+ *   bytes back**. Schema pinned from the per-chute llms.txt guide
+ *   (live 2026-09-18): `prompt` (required), `width`/`height` (default
+ *   1024), `num_inference_steps` (default 9 — distilled model, "stay
+ *   near"), `guidance_scale` (default 0), `seed`, `shift` (3),
+ *   `max_sequence_length` (512). `shift`/`max_sequence_length` have no
+ *   VT seam → never sent. NO negative field on the verified chute
+ *   (z-image-turbo, guidance 0) — negative is dropped; per-chute extras
+ *   on OTHER chutes (imageclassic SDXL family) are not documented on
+ *   their generate endpoints → never invented. No key → live 401.
+ *   Model listing: the four card-catalogued image chutes, static —
+ *   image chutes are NOT in `llm.chutes.ai/v1/models` (LLM catalog
+ *   only), and the marketplace page is HTML; the model id IS the host
+ *   slug, so free-text model covers new community chutes.
+ * - **Hugging Face Inference Providers** (PE-3 unit 3) — `POST
+ *   https://router.huggingface.co/hf-inference/models/{model_id}`,
+ *   body `{inputs, parameters: {negative_prompt, num_inference_steps,
+ *   guidance_scale, width, height, scheduler, seed}}`, **raw image
+ *   bytes** back. Router live-probed 401 unauth (2026-09-18, the card's
+ *   exact probe model). Model picker = the public Hub API
+ *   `GET https://huggingface.co/api/models?inference=warm&
+ *   pipeline_tag=text-to-image&sort=trendingScore` — **drift pinned
+ *   live 2026-09-18: the card's `sort=trending` now 400s ("Invalid sort
+ *   parameter"), `trendingScore` is the working value**. `scheduler`
+ *   (free-form class names) stays UNWIRED — its VT seam is the A1111
+ *   dialect's schedule control, not a cloud surface, and no enum is
+ *   documented (named decision, mirroring the pollinations seed call).
+ *
+ * Async responses (202) are real on none of these three but are guarded
+ * anyway: only HTTP 200 is treated as a byte payload; 202 is a typed
+ * "async not supported" error.
  */
 
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
@@ -303,8 +332,196 @@ export const POLLINATIONS_LEGACY_OPTIONS: RawBinaryImageOptions = {
   },
 };
 
+// ─── Chutes (PE-3 unit 2) ────────────────────────────────────────────────────
+
+/** The four card-catalogued image chutes — static (image chutes are not
+ *  in the LLM catalog; the marketplace page is HTML). The model id IS
+ *  the host slug, so free-text model covers new community chutes. */
+const CHUTES_STATIC_MODELS: readonly ImageGenModelInfo[] = [
+  { id: "vonkaiser-z-image-turbo", label: "Z-Image Turbo" },
+  { id: "vonkaiser-qwen-image-2512", label: "Qwen Image 2512" },
+  { id: "vonkaiser-qwen-image-edit-2511", label: "Qwen Image Edit 2511" },
+  { id: "vonkaiser-imageclassic", label: "ImageClassic (FLUX + SDXL)" },
+];
+
+/** The chute used for the invalid-post creds probe (schema live-verified
+ *  via its per-chute llms.txt guide, 401 without key). */
+const CHUTES_PROBE_SLUG = "vonkaiser-z-image-turbo";
+
+function chutesSlug(request: ImageGenGenerateRequest): string {
+  const model = request.model?.trim() || "";
+  if (!model) {
+    throw new RawBinaryImageConfigError(
+      "Chutes config error: `model` is required — it IS the chute host (e.g. " +
+        CHUTES_PROBE_SLUG +
+        ")",
+    );
+  }
+  return model;
+}
+
+export const CHUTES_OPTIONS: RawBinaryImageOptions = {
+  label: "Chutes",
+  buildRequest(request) {
+    const slug = chutesSlug(request);
+    const body: Record<string, unknown> = { prompt: request.prompt };
+    if (request.width !== undefined) body.width = request.width;
+    if (request.height !== undefined) body.height = request.height;
+    if (request.steps !== undefined) body.num_inference_steps = request.steps;
+    if (request.cfgScale !== undefined) body.guidance_scale = request.cfgScale;
+    if (request.seed !== undefined) body.seed = request.seed;
+    // No negative field on the verified chute — dropped (never folded).
+    // shift / max_sequence_length: no VT seam — never sent.
+    return { method: "POST", url: `https://${slug}.chutes.ai/generate`, body };
+  },
+  async listModels() {
+    return CHUTES_STATIC_MODELS.map((m) => ({ ...m }));
+  },
+  async probe(ctx, signal) {
+    // invalid-post creds discrimination: {} without a required prompt —
+    // 401/403 = rejected, other 4xx = validation reached (auth passed).
+    try {
+      const response = await ctx.fetch(`https://${CHUTES_PROBE_SLUG}.chutes.ai/generate`, {
+        method: "POST",
+        headers: buildHeaders(ctx.apiKey, true),
+        body: JSON.stringify({}),
+        signal,
+      });
+      if (response.status === 401 || response.status === 403) {
+        const excerpt = await readProviderErrorBody(response);
+        return {
+          ok: false,
+          detail: `${response.status}${excerpt ? `: ${excerpt}` : ""} — credentials rejected`,
+          status: response.status,
+        };
+      }
+      if (response.status >= 500) {
+        const excerpt = await readProviderErrorBody(response);
+        return {
+          ok: false,
+          detail: `${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          status: response.status,
+        };
+      }
+      return { ok: true, detail: "credentials accepted — 4 static chutes (model = chute host)" };
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+    }
+  },
+};
+
+// ─── Hugging Face Inference Providers (PE-3 unit 3) ─────────────────────────
+
+/** Fixed hub host for the public model picker (the router endpoint is
+ *  generation-only). `sort=trendingScore` — the card's `trending` now
+ *  400s (drift pinned live 2026-09-18). */
+const HF_HUB_MODELS_URL =
+  "https://huggingface.co/api/models?inference=warm&pipeline_tag=text-to-image&sort=trendingScore";
+
+/** The card's probe model — router path existence-pinned live (401
+ *  unauth, 2026-09-07 + 2026-09-18). */
+const HF_PROBE_MODEL = "black-forest-labs/FLUX.1-Krea-dev";
+
+function hfRouterBase(ctx: RawBinaryContext): string {
+  let base = normalizeOpenAiCompatibleBaseUrl(ctx.endpoint);
+  // Paste tolerance: a full per-model router URL keeps working.
+  const marker = base.indexOf("/hf-inference");
+  if (marker !== -1) {
+    base = base.slice(0, marker);
+  }
+  if (!base) {
+    throw new RawBinaryImageConfigError("Hugging Face config error: `endpoint` is required");
+  }
+  return base;
+}
+
+export const HF_OPTIONS: RawBinaryImageOptions = {
+  label: "Hugging Face",
+  buildRequest(request, ctx) {
+    const model = request.model?.trim() || "";
+    if (!model) {
+      throw new RawBinaryImageConfigError(
+        "Hugging Face config error: `model` is required (a Hub model id, e.g. " +
+          HF_PROBE_MODEL +
+          ")",
+      );
+    }
+    const body: Record<string, unknown> = { inputs: request.prompt };
+    const parameters: Record<string, unknown> = {};
+    if (request.negativePrompt !== undefined && request.negativePrompt !== "") {
+      parameters.negative_prompt = request.negativePrompt;
+    }
+    if (request.width !== undefined) parameters.width = request.width;
+    if (request.height !== undefined) parameters.height = request.height;
+    if (request.steps !== undefined) parameters.num_inference_steps = request.steps;
+    if (request.cfgScale !== undefined) parameters.guidance_scale = request.cfgScale;
+    if (request.seed !== undefined) parameters.seed = request.seed;
+    // scheduler: documented but no VT cloud seam (A1111-dialect-only
+    // control) and no documented enum — never sent (named decision).
+    if (Object.keys(parameters).length > 0) {
+      body.parameters = parameters;
+    }
+    return { method: "POST", url: `${hfRouterBase(ctx)}/hf-inference/models/${model}`, body };
+  },
+  async listModels(ctx) {
+    const response = await ctx.fetch(HF_HUB_MODELS_URL, {
+      headers: ctx.apiKey ? { Authorization: `Bearer ${ctx.apiKey}` } : {},
+    });
+    if (!response.ok) {
+      throw new RawBinaryImageError(
+        `Hugging Face model listing failed with HTTP ${response.status}`,
+        { status: response.status },
+      );
+    }
+    const payload: unknown = await response.json();
+    if (!Array.isArray(payload)) {
+      throw new RawBinaryImageError("Hugging Face model listing: expected a JSON array");
+    }
+    return payload.flatMap((entry): ImageGenModelInfo[] => {
+      if (typeof entry !== "object" || entry === null) return [];
+      const id = (entry as Record<string, unknown>).id;
+      return typeof id === "string" && id.length > 0 ? [{ id, label: id }] : [];
+    });
+  },
+  async probe(ctx, signal) {
+    // invalid-post creds discrimination on the live-pinned router path.
+    try {
+      const response = await ctx.fetch(`${hfRouterBase(ctx)}/hf-inference/models/${HF_PROBE_MODEL}`, {
+        method: "POST",
+        headers: buildHeaders(ctx.apiKey, true),
+        body: JSON.stringify({}),
+        signal,
+      });
+      if (response.status === 401 || response.status === 403) {
+        const excerpt = await readProviderErrorBody(response);
+        return {
+          ok: false,
+          detail: `${response.status}${excerpt ? `: ${excerpt}` : ""} — credentials rejected`,
+          status: response.status,
+        };
+      }
+      if (response.status >= 500) {
+        const excerpt = await readProviderErrorBody(response);
+        return {
+          ok: false,
+          detail: `${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          status: response.status,
+        };
+      }
+      return { ok: true, detail: "credentials accepted — live Hub picker" };
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+    }
+  },
+};
+
 // ─── Registration ────────────────────────────────────────────────────────────
 
-// The Pollinations slug's two-tier dispatcher lives in
-// openai-images-family.ts (it owns the unified-gateway row); later PE-3
-// units register their riders here.
+// Chutes + hf register here; the Pollinations slug's two-tier dispatcher
+// lives in openai-images-family.ts (it owns the unified-gateway row).
+
+registerImageGenBackend(IMAGE_GEN_BACKENDS.Chutes, (config: ImageGenAdapterConfig): ImageGenBackend =>
+  makeRawBinaryImageBackend(CHUTES_OPTIONS, config),
+);

@@ -285,6 +285,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     group: PROVIDER_PRESET_GROUP.cloud,
     keyOptional: true,
   },
+  // Chutes — per-chute hosts (the model id IS the host slug:
+  // https://{model}.chutes.ai/generate, flat JSON, raw PNG back); the
+  // same cpk_ key as the LLM preset.
+  {
+    id: "chutes",
+    label: "Chutes",
+    backend: IMAGE_GEN_BACKENDS.Chutes,
+    baseUrl: "https://chutes.ai",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

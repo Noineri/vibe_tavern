@@ -1059,6 +1059,7 @@ export const IMAGE_GEN_BACKENDS = {
   Volcengine: "volcengine",
   Dashscope: "dashscope",
   Nim: "nim",
+  Chutes: "chutes",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

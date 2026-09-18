@@ -517,4 +517,28 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Chutes]: {
+    // PE-3 unit 2 — Chutes card (doc-verified 2026-09-07; llms.txt index
+    // + per-chute guide re-verified live 2026-09-18) + supervisor probes
+    // (POST without key → 401 live). Per-chute dedicated hosts: the model
+    // id IS the host slug (https://{slug}.chutes.ai/generate), flat JSON,
+    // raw image/png bytes back. Schema from the z-image-turbo guide
+    // (prompt, width/height, num_inference_steps def 9 "stay near",
+    // guidance_scale def 0, seed; shift/max_sequence_length have no VT
+    // seam). NO negative field on the verified chute — off (per-chute
+    // extras on other chutes are undocumented on their generate
+    // endpoints — never invented). Static four-chute catalog (image
+    // chutes are NOT in llm.chutes.ai/v1/models); free-text model covers
+    // new community chutes.
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

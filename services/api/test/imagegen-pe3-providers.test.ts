@@ -203,3 +203,91 @@ describe("pollinations legacy tier (raw-binary GET, zero-config)", () => {
     expect(body.model).toBe("nanobanana-2");
   });
 });
+
+// ─── Chutes (PE-3 unit 2) ────────────────────────────────────────────────────
+
+describe("chutes (per-chute raw-PNG hosts)", () => {
+  const make = (transport: typeof fetch) =>
+    createImageGenBackend(IMAGE_GEN_BACKENDS.Chutes, {
+      endpoint: "https://chutes.ai",
+      apiKey: "cpk-key",
+      fetch: transport,
+    });
+
+  it("POSTs flat JSON to https://{model}.chutes.ai/generate — steps/cfg mapped, negative dropped, no shift/max_sequence_length", async () => {
+    const { transport, calls } = makeTransport(() => binaryResponse(PNG_BYTES, "image/png"));
+    const backend = make(transport);
+    const result = await backend.generate({
+      prompt: "a tavern",
+      model: "vonkaiser-z-image-turbo",
+      width: 832,
+      height: 1248,
+      steps: 9,
+      cfgScale: 0,
+      seed: 7,
+      negativePrompt: "watermark", // NO field on the verified chute — dropped
+    });
+
+    expect(calls[0].url).toBe("https://vonkaiser-z-image-turbo.chutes.ai/generate");
+    expect(calls[0].init?.method).toBe("POST");
+    const headers = calls[0].init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer cpk-key");
+    const body = sentJson(calls[0]);
+    expect(body).toEqual({
+      prompt: "a tavern",
+      width: 832,
+      height: 1248,
+      num_inference_steps: 9,
+      guidance_scale: 0,
+      seed: 7,
+    });
+    expect(result.images[0].data.equals(PNG_BYTES)).toBe(true);
+    expect(result.images[0].mimeType).toBe("image/png");
+  });
+
+  it("throws a config error without a model (the model IS the host)", async () => {
+    const { transport } = makeTransport(() => binaryResponse(PNG_BYTES, "image/png"));
+    const backend = make(transport);
+    await expect(backend.generate({ prompt: "p" })).rejects.toThrow(/`model` is required/);
+  });
+
+  it("serves the static four-chute catalog with no HTTP call", async () => {
+    const { transport, calls } = makeTransport(() => Response.json({}));
+    const models = await make(transport).listModels();
+    expect(models.map((m) => m.id)).toEqual([
+      "vonkaiser-z-image-turbo",
+      "vonkaiser-qwen-image-2512",
+      "vonkaiser-qwen-image-edit-2511",
+      "vonkaiser-imageclassic",
+    ]);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("probes via invalid-post on the z-image-turbo host (401 = rejected, 422 = accepted)", async () => {
+    const rejected = makeTransport(
+      () => Response.json({ detail: "Unauthorized" }, { status: 401 }),
+    );
+    const bad = await make(rejected.transport).probe();
+    expect(bad.ok).toBe(false);
+    expect(bad.status).toBe(401);
+
+    const accepted = makeTransport(
+      () => Response.json({ detail: "prompt required" }, { status: 422 }),
+    );
+    const good = await make(accepted.transport).probe();
+    expect(good).toEqual({
+      ok: true,
+      detail: "credentials accepted — 4 static chutes (model = chute host)",
+    });
+  });
+
+  it("pins the chutes capability row", () => {
+    const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Chutes];
+    expect(caps.supportsNegativePrompt).toBe(false);
+    expect(caps.supportsSamplers).toBe(false);
+    expect(caps.supportsSeed).toBe(true);
+    expect(caps.sizeSupport).toEqual({ kind: "free" });
+    expect(caps.noApiKey).toBe(false);
+    expect(caps.paramRanges).toEqual({});
+  });
+});
