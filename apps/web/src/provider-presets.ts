@@ -211,6 +211,15 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.deepinfra.com/v1",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Recraft — external.api.recraft.ai/v1 (OpenAI-images client compat;
+  // V4/4.1 model family, never negative_prompt; random_seed wire name).
+  {
+    id: "recraft",
+    label: "Recraft",
+    backend: IMAGE_GEN_BACKENDS.Recraft,
+    baseUrl: "https://external.api.recraft.ai/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

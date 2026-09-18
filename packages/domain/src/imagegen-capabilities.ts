@@ -317,4 +317,30 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Recraft]: {
+    // PE-1 unit 7 — Recraft card (doc-verified 2026-09-07, endpoints.md in
+    // full) + supervisor live re-verification 2026-09-18 (unchanged):
+    // OpenAI-images-CLIENT-compatible POST on external.api.recraft.ai/v1
+    // (their examples drive the OpenAI SDK verbatim). `size` WxH free-form
+    // (auto-selected when omitted); response_format b64_json requested
+    // (url lifetime unstated). **negative_prompt is V2/V3-ONLY — the V4/4.1
+    // family (default recraftv4_1 and everything current) REJECTS it →
+    // supportsNegativePrompt FALSE and the adapter never wires the field**
+    // (a V2/V3 escape hatch is not worth a footgun on the default family).
+    // `random_seed` IS documented (not `seed`) → supportsSeed true, sent
+    // only when the caller set one. style/styles/text_layout/controls have
+    // no contract seam → never sent. GET /v1/models is undocumented on the
+    // endpoints page but live (existence probe 2026-09-18: 401, not 404)
+    // → listed UNFILTERED with tolerant parsing.
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

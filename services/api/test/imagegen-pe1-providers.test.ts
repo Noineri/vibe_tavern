@@ -682,6 +682,97 @@ describe("deepinfra (openai-images family)", () => {
   });
 });
 
+// ─── Recraft (PE-1 unit 7) ─────────────────────────────────────────────
+
+const RECRAFT_ENDPOINT = "https://external.api.recraft.ai/v1";
+
+describe("recraft (openai-images family)", () => {
+  const make = (transport: typeof fetch) =>
+    familyBackend(IMAGE_GEN_BACKENDS.Recraft, transport, RECRAFT_ENDPOINT, "rc-key");
+
+  describe("generate", () => {
+    it("sends the client-compatible body: free-form WxH, b64_json, and NEVER negative_prompt", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+
+      await backend.generate({
+        prompt: "a tavern at dusk",
+        model: "recraftv4_1",
+        width: 1365,
+        height: 1024,
+        seed: 77,
+        negativePrompt: "watermark", // set by the caller — V4/4.1 REJECTS the field → never sent
+      });
+
+      expect(calls[0].url).toBe(`${RECRAFT_ENDPOINT}/images/generations`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer rc-key");
+      const body = sentJson(calls[0]);
+      expect(body.model).toBe("recraftv4_1");
+      expect(body.size).toBe("1365x1024");
+      expect(body.response_format).toBe("b64_json");
+      // The documented V2/V3-only field: absent wire name — NEVER on the wire
+      // regardless of what the caller set (V4/4.1 rejects it).
+      expect("negative_prompt" in body).toBe(false);
+      // Recraft's documented wire name for the seed.
+      expect(body.random_seed).toBe(77);
+      expect("seed" in body).toBe(false);
+    });
+
+    it("never sends steps/guidance (no surface) and omits seed when unset", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+      await backend.generate({ prompt: "p", model: "recraftv4_1", steps: 30, cfgScale: 5 });
+      const body = sentJson(calls[0]);
+      expect("steps" in body).toBe(false);
+      expect("guidance_scale" in body).toBe(false);
+      expect("random_seed" in body).toBe(false);
+      // Style family fields have no contract seam — never invented.
+      expect("style" in body).toBe(false);
+      expect("style_id" in body).toBe(false);
+    });
+  });
+
+  describe("listModels + probe", () => {
+    it("queries the LIVE-but-undocumented GET /models (existence-probed 2026-09-18) UNFILTERED", async () => {
+      const { transport, calls } = makeTransport(() =>
+        Response.json({ data: [{ id: "recraftv4_1" }, { id: "recraftv3" }] }),
+      );
+      const backend = make(transport);
+      const models = await backend.listModels();
+      expect(models.map((m) => m.id)).toEqual(["recraftv4_1", "recraftv3"]);
+      expect(calls[0].url).toBe(`${RECRAFT_ENDPOINT}/models`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer rc-key");
+
+      const probed = await backend.probe();
+      expect(probed).toEqual({ ok: true, detail: "2 models" });
+    });
+  });
+
+  describe("capability row + registry", () => {
+    it("pins the Recraft capability row (seed on, negative OFF — V4/4.1 rejects it)", () => {
+      const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Recraft];
+      expect(caps.supportsNegativePrompt).toBe(false);
+      expect(caps.supportsSamplers).toBe(false);
+      expect(caps.supportsSeed).toBe(true);
+      expect(caps.sizeSupport).toEqual({ kind: "free" });
+      expect(caps.noApiKey).toBe(false);
+      expect(caps.localExecution).toBe(false);
+      expect(caps.paramRanges).toEqual({});
+    });
+
+    it("registers the recraft slug at import time (creatable via the registry)", () => {
+      const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.Recraft, {
+        endpoint: RECRAFT_ENDPOINT,
+        apiKey: "rc-key",
+      });
+      expect(typeof backend.generate).toBe("function");
+      expect(typeof backend.listModels).toBe("function");
+    });
+  });
+});
+
 // ─── Together AI (PE-1 unit 1) ───────────────────────────────────────────────
 
 const TOGETHER_ENDPOINT = "https://api.together.ai/v1";

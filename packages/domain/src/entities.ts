@@ -1053,6 +1053,7 @@ export const IMAGE_GEN_BACKENDS = {
   ElectronHub: "electronhub",
   Pollinations: "pollinations",
   DeepInfra: "deepinfra",
+  Recraft: "recraft",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

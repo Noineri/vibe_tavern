@@ -253,6 +253,39 @@ const DEEPINFRA_OPTIONS: OpenAiImagesFamilyOptions = {
   probeModelNoun: "models",
 };
 
+// ─── Recraft (PE-1 unit 7) ──────────────────────────────────────────────
+
+/** Card: IMAGE_GEN_CLOUD_PROVIDERS_RESEARCH "Recraft" (doc-verified
+ *  2026-09-07 — endpoints.md read in full) + supervisor live
+ *  re-verification 2026-09-18 (unchanged):
+ *  - base `https://external.api.recraft.ai/v1`, Bearer — OpenAI-images
+ *    CLIENT compatible (their examples use the OpenAI SDK verbatim);
+ *  - `size` is `WxH` (or `w:h`) free-form, auto-selected when omitted —
+ *    the supported-values Appendix was never fetched → verbatim WxH;
+ *  - `response_format` url (default) | b64_json; URL lifetime unstated on
+ *    the endpoints page → b64_json requested (bytes inline);
+ *  - **`negative_prompt` is V2/V3-ONLY — the V4/4.1 family (the default
+ *    `recraftv4_1` and everything current) REJECTS it** → no wire name:
+ *    the adapter NEVER sends the field for any model (capability row
+ *    false; a V2/V3 escape hatch is not worth a footgun);
+ *  - `random_seed` IS documented (not `seed`) → seedWire; sent only when
+ *    the caller set one;
+ *  - `style`/`style_id`/`style_match`/`style_references`/`text_layout`/
+ *    `controls` have NO seam in ImageGenGenerateRequest → never sent (no
+ *    invented contract fields);
+ *  - model listing: GET /v1/models is NOT on the endpoints page but IS
+ *    live (existence probe 2026-09-18 → 401 auth-missing, not 404); no
+ *    documented response shape → listed UNFILTERED, tolerant parsing. */
+const RECRAFT_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "Recraft",
+  size: { kind: "verbatim", param: "size" },
+  responseFormat: { kind: "always", value: "b64_json" },
+  envelope: "openai-data",
+  modelsPath: "models",
+  seedWire: "random_seed",
+  probeModelNoun: "models",
+};
+
 // ─── Registration (one factory closure per OPTIONS row) ──────────────────────
 
 /** The PE-1 OPTIONS table — one row per family slug. Grows one row per
@@ -266,6 +299,7 @@ const PE1_FAMILY: ReadonlyArray<{ slug: ImageGenBackendType; options: OpenAiImag
   { slug: IMAGE_GEN_BACKENDS.ElectronHub, options: ELECTRONHUB_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.Pollinations, options: POLLINATIONS_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.DeepInfra, options: DEEPINFRA_OPTIONS },
+  { slug: IMAGE_GEN_BACKENDS.Recraft, options: RECRAFT_OPTIONS },
 ];
 
 for (const { slug, options } of PE1_FAMILY) {
