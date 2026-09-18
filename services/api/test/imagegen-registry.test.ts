@@ -110,15 +110,15 @@ describe("imagegen registry", () => {
       expect(a1111.supportsLiveProgress).toBe(true);
       expect(a1111.sizeSupport).toEqual({ kind: "free" });
 
-      // ComfyUI (CG-A1..A3): flat-form local dialect — negative prompt,
-      // seed, and the live KSampler sampler union (CG-A3) surface now;
-      // WS live progress (CG-C1) flips its flag on with its unit.
+      // ComfyUI (CG-A1..A3, C1): flat-form local dialect — negative prompt,
+      // seed, the live KSampler sampler union (CG-A3), and the WS step-bar +
+      // interrupt (CG-C1) all surface.
       const comfy = getImageGenBackendCapabilities(IMAGE_GEN_BACKENDS.ComfyUI);
       expect(comfy.supportsNegativePrompt).toBe(true);
       expect(comfy.supportsSamplers).toBe(true);
       expect(comfy.supportsSeed).toBe(true);
       expect(comfy.noApiKey).toBe(true);
-      expect(comfy.supportsLiveProgress).toBe(false);
+      expect(comfy.supportsLiveProgress).toBe(true);
       expect(comfy.localExecution).toBe(true);
       expect(comfy.sizeSupport).toEqual({ kind: "free" });
 

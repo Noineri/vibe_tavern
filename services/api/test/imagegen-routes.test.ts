@@ -588,6 +588,40 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     expect(capturedMethod).toBe("POST");
   });
 
+  test("comfyui progress serves the run snapshot endpoint (idle = honest zero; CG-C1)", async () => {
+    let capturedUrl = "";
+    const { app } = await makeApp(async (input) => {
+      capturedUrl = String(input);
+      return modelsBody();
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:9120" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/progress`);
+    expect(res.status).toBe(200);
+    // No run ever touched this endpoint in-process → the honest idle zero
+    // (the WS registry miss), NOT a 400: comfy is a live-progress dialect
+    // now (the capability flip of CG-C1).
+    expect(await res.json()).toEqual({ progress: 0 });
+    // The snapshot read hits no HTTP surface — the fetch double stays idle.
+    expect(capturedUrl).toBe("");
+  });
+
+  test("comfyui interrupt POSTs /interrupt and returns 204 (CG-C1)", async () => {
+    let capturedUrl = "";
+    let capturedMethod = "";
+    const { app } = await makeApp(async (input, init) => {
+      capturedUrl = String(input);
+      capturedMethod = init?.method ?? "GET";
+      return new Response(null, { status: 200 });
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:9121" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/interrupt`, { method: "POST" });
+    expect(res.status).toBe(204);
+    expect(capturedUrl).toBe("http://127.0.0.1:9121/interrupt");
+    expect(capturedMethod).toBe("POST");
+  });
+
   test("cloud profile → 400 not supported; unknown profile → 404 (both routes)", async () => {
     const { app } = await makeApp(async () => modelsBody());
     const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.OpenRouter });

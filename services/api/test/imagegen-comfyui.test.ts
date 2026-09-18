@@ -932,6 +932,235 @@ describe("comfyui adapter", () => {
   });
 });
 
+describe("comfyui ws progress + interrupt (CG-C1)", () => {
+  /** A fake run-scoped socket — records closes, lets the test push server
+   *  frames (text JSON / raw / binary) at deterministic points of the run
+   *  (from inside the transport handlers). Satisfies the
+   *  ImageGenWebSocketLike seam without a DOM. */
+  function makeFakeWs() {
+    let onMessage: ((event: { data: unknown }) => void) | null = null;
+    let onClose: ((event: unknown) => void) | null = null;
+    let onError: ((event: unknown) => void) | null = null;
+    const socket = {
+      get onmessage() {
+        return onMessage;
+      },
+      set onmessage(listener: ((event: { data: unknown }) => void) | null) {
+        onMessage = listener;
+      },
+      get onclose() {
+        return onClose;
+      },
+      set onclose(listener: ((event: unknown) => void) | null) {
+        onClose = listener;
+      },
+      get onerror() {
+        return onError;
+      },
+      set onerror(listener: ((event: unknown) => void) | null) {
+        onError = listener;
+      },
+      close() {
+        closes.push(1);
+      },
+    };
+    const closes: number[] = [];
+    return {
+      socket,
+      closes,
+      pushText(payload: unknown) {
+        if (onMessage !== null) onMessage({ data: JSON.stringify(payload) });
+      },
+      pushRaw(raw: string) {
+        if (onMessage !== null) onMessage({ data: raw });
+      },
+      pushBinary() {
+        if (onMessage !== null) onMessage({ data: new ArrayBuffer(8) });
+      },
+    };
+  }
+
+  /** Unique endpoint per test: the run-snapshot registry is module-level
+   *  and keyed by endpoint — distinct ports keep the tests isolated. */
+  const WS_EP = (port: number) => `http://127.0.0.1:${port}`;
+
+  it("generate opens the ws listener with the queue's clientId, maps step events to the poll snapshot, and closes the socket at run end", async () => {
+    const PID = "ws-pid-1";
+    const fake = makeFakeWs();
+    const wsUrls: string[] = [];
+    let backend: ReturnType<typeof comfyImageGenFactory> | undefined;
+    let midRun: { progress: number; state?: string } | null = null;
+    let polls = 0;
+    const { transport, calls } = makeTransport(async (url) => {
+      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+        return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
+      }
+      if (url.pathname === "/prompt") return queuedOk(PID);
+      if (url.pathname === `/history/${PID}`) {
+        polls += 1;
+        if (polls === 1) {
+          fake.pushText({ type: "progress", data: { value: 2, max: 8, prompt_id: PID, node: "3" } });
+          midRun = await backend!.progress();
+          fake.pushText({ type: "progress", data: { value: 7, max: 8, prompt_id: PID, node: "3" } });
+          return Response.json({});
+        }
+        fake.pushText({ type: "executing", data: { node: null, prompt_id: PID } });
+        return historyDone(PID);
+      }
+      if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+      return new Response("not found", { status: 404 });
+    });
+    backend = comfyImageGenFactory({
+      endpoint: WS_EP(9101),
+      fetch: transport,
+      openWebSocket: (url) => {
+        wsUrls.push(url);
+        return fake.socket;
+      },
+    });
+
+    const result = await backend.generate({ prompt: "a tavern", model: "graycolor_v18.safetensors" });
+    expect(result.images.length).toBe(1);
+    // The socket opened exactly once, BEFORE the queue POST, on the ws
+    // scheme, with the SAME client id the /prompt payload carries.
+    expect(wsUrls.length).toBe(1);
+    const queueCall = calls.find((c) => new URL(c.url).pathname === "/prompt");
+    expect(queueCall).toBeTruthy();
+    const queueBody = sentJson(queueCall!);
+    expect(typeof queueBody.client_id).toBe("string");
+    expect(wsUrls[0]).toBe(`ws://127.0.0.1:9101/ws?clientId=${queueBody.client_id}`);
+    // Mid-run poll: 2/8 mapped to the 0..1 fraction + the step state.
+    expect(midRun).toEqual({ progress: 0.25, state: "step 2/8" });
+    // After the run: the terminal event (executing node=null) → 100%.
+    expect(await backend.progress()).toEqual({ progress: 1 });
+    // The listener closed with the run (the finally arm).
+    expect(fake.closes.length).toBe(1);
+  });
+
+  it("events that arrive BEFORE the queue response (pre-bind) are buffered and replayed once the prompt id is known", async () => {
+    const PID = "ws-pid-2";
+    const fake = makeFakeWs();
+    let backend: ReturnType<typeof comfyImageGenFactory> | undefined;
+    let replayed: { progress: number; state?: string } | null = null;
+    let polls = 0;
+    const { transport } = makeTransport(async (url) => {
+      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+        return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
+      }
+      if (url.pathname === "/prompt") {
+        // Pushed while the queue POST is still being served — the prompt id
+        // is NOT bound yet, so this frame must land in the buffer.
+        fake.pushText({ type: "progress", data: { value: 3, max: 8, prompt_id: PID, node: "3" } });
+        return queuedOk(PID);
+      }
+      if (url.pathname === `/history/${PID}`) {
+        polls += 1;
+        if (polls === 1) {
+          replayed = await backend!.progress();
+          return Response.json({});
+        }
+        return historyDone(PID);
+      }
+      if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+      return new Response("not found", { status: 404 });
+    });
+    backend = comfyImageGenFactory({
+      endpoint: WS_EP(9102),
+      fetch: transport,
+      openWebSocket: () => fake.socket,
+    });
+
+    await backend.generate({ prompt: "a tavern", model: "graycolor_v18.safetensors" });
+    expect(replayed).toEqual({ progress: 0.375, state: "step 3/8" });
+  });
+
+  it("cross-prompt events, binary preview frames, and malformed text frames are all ignored", async () => {
+    const PID = "ws-pid-3";
+    const fake = makeFakeWs();
+    let polls = 0;
+    const { transport } = makeTransport(async (url) => {
+      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+        return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
+      }
+      if (url.pathname === "/prompt") return queuedOk(PID);
+      if (url.pathname === `/history/${PID}`) {
+        polls += 1;
+        if (polls === 1) {
+          // Another client's prompt — ComfyUI broadcasts to every socket.
+          fake.pushText({ type: "progress", data: { value: 99, max: 100, prompt_id: "someone-else" } });
+          // The live latent preview binary frame (ignored in v1).
+          fake.pushBinary();
+          // A malformed text frame.
+          fake.pushRaw("{not json");
+          fake.pushText({ type: "progress", data: { value: 4, max: 8, prompt_id: PID, node: "3" } });
+          return Response.json({});
+        }
+        return historyDone(PID);
+      }
+      if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+      return new Response("not found", { status: 404 });
+    });
+    const backend = comfyImageGenFactory({
+      endpoint: WS_EP(9103),
+      fetch: transport,
+      openWebSocket: () => fake.socket,
+    });
+
+    await backend.generate({ prompt: "a tavern", model: "graycolor_v18.safetensors" });
+    // Only OUR 4/8 event landed (0.5); the noise never threw and never
+    // wrote a snapshot.
+    expect(await backend.progress()).toEqual({ progress: 1 });
+  });
+
+  it("an unopenable socket degrades SILENTLY — the generation still completes", async () => {
+    const PID = "ws-pid-4";
+    const { transport } = happyTransport(PID);
+    const backend = comfyImageGenFactory({
+      endpoint: WS_EP(9104),
+      fetch: transport,
+      openWebSocket: () => {
+        throw new Error("connect ECONNREFUSED");
+      },
+    });
+
+    const result = await backend.generate({ prompt: "a tavern", model: "graycolor_v18.safetensors" });
+    expect(result.images.length).toBe(1);
+    // History completion stamped the bar's 100% anyway.
+    expect(await backend.progress()).toEqual({ progress: 1 });
+  });
+
+  it("progress() on an idle endpoint reports an honest zero (never a fake cloud bar)", async () => {
+    const backend = comfyImageGenFactory({ endpoint: WS_EP(9105), fetch: happyTransport("unused").transport });
+    expect(await backend.progress()).toEqual({ progress: 0 });
+  });
+
+  it("interrupt POSTs /interrupt and maps a failure to the upstream status", async () => {
+    const { transport, calls } = makeTransport((url) => {
+      if (url.pathname === "/interrupt") return new Response(null, { status: 200 });
+      return new Response("not found", { status: 404 });
+    });
+    const backend = comfyImageGenFactory({ endpoint: WS_EP(9106), fetch: transport });
+    await backend.interrupt();
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.url).toBe(`${WS_EP(9106)}/interrupt`);
+    expect(calls[0]!.init?.method).toBe("POST");
+
+    const { transport: failing } = makeTransport((url) => {
+      if (url.pathname === "/interrupt") return new Response("boom", { status: 500 });
+      return new Response("not found", { status: 404 });
+    });
+    const failingBackend = comfyImageGenFactory({ endpoint: WS_EP(9107), fetch: failing });
+    let caught: unknown;
+    try {
+      await failingBackend.interrupt();
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ComfyImageGenError);
+    expect((caught as ComfyImageGenError).status).toBe(500);
+  });
+});
+
 describe("comfyui registry registration", () => {
   it("registers under the roster slug (import side effect)", async () => {
     // Importing the adapter module registers the factory — create through

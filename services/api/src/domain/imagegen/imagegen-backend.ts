@@ -41,6 +41,21 @@ export interface ImageGenAdapterConfig {
    *  layer can hand adapters the proxy-aware provider fetch — the same
    *  seam the LLM providers use. */
   fetch?: typeof fetch;
+  /** WebSocket opener seam (CG-C1, comfyui) — the live-progress listener's
+   *  socket. Defaults to the global WebSocket; tests inject a double through
+   *  this field (the fetch seam's twin, tier T1). */
+  openWebSocket?: (url: string) => ImageGenWebSocketLike;
+}
+
+/** Minimal WebSocket surface a backend's live-progress listener needs
+ *  (CG-C1) — deliberately narrow: the global WebSocket satisfies it, so
+ *  tests inject doubles without a DOM. Property-handler style, not
+ *  addEventListener overloads, so a fake is five lines. */
+export interface ImageGenWebSocketLike {
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onclose: ((event: unknown) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  close(code?: number, reason?: string): void;
 }
 
 /** One generation request — a union over the v1 protocols' parameter
@@ -255,12 +270,13 @@ export interface ImageGenBackend {
   /** Generate one image request per the v1 mode recipe. Downloads bytes
    *  server-side before resolving. */
   generate(request: ImageGenGenerateRequest): Promise<ImageGenGenerateResult>;
-  /** Local live progress polling (A1111-compat only in v1). */
+  /** Local live progress polling (A1111 REST; comfyui reads the WS-fed
+   *  run snapshot — CG-C1). */
   progress?(signal?: AbortSignal): Promise<ImageGenProgressInfo>;
   /** Ask the local instance to cancel its current job (A1111-compat
-   *  `POST /sdapi/v1/interrupt`; A1111 dialect only in v1). Resolves on
-   *  acceptance — completion is observed through the progress endpoint /
-   *  the aborted request. */
+   *  `POST /sdapi/v1/interrupt`; comfyui `POST /interrupt` — CG-C1).
+   *  Resolves on acceptance — completion is observed through the progress
+   *  endpoint / the aborted request. */
   interrupt?(signal?: AbortSignal): Promise<void>;
   /** Release any held resources. Idempotent-safe. */
   dispose(): Promise<void>;

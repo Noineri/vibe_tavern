@@ -120,8 +120,9 @@
  *   (ComfyUI counts from the end; the node is OMITTED when clipSkip is
  *   unset — no silent layer-slicing).
  * - v1 ignores (no VT field maps yet): denoise stays the node default 1
- *   (txt2img), batch_size 1, `preview_method` and the WS progress surface
- *   (CG-C1).
+ *   (txt2img), batch_size 1, `preview_method`, and the WS preview BINARY
+ *   frames (live latent thumbs = the documented fast-follow; the step
+ *   events themselves are mapped, CG-C1).
  * - krea2 FORM DEFAULTS stay FORM-side (CF5, owner decision): a bare API
  *   request with unset steps/cfg gets the NODE-CLASS defaults (20/8/…)
  *   for BOTH templates — the Krea-2 family's sane starting point
@@ -140,8 +141,10 @@ import type {
   ImageGenDitSidecars,
   ImageGenModelInfo,
   ImageGenProbeResult,
+  ImageGenProgressInfo,
   ImageGenSamplerInfo,
   ImageGenSchedulerInfo,
+  ImageGenWebSocketLike,
 } from "../imagegen-backend.js";
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
@@ -595,6 +598,140 @@ async function waitForPromptCompletion(
   }
 }
 
+// ─── WS live progress (CG-C1) ────────────────────────────────────────────────
+
+/** One run's live-progress snapshot — what `progress()` publishes. */
+interface ComfyRunSnapshot {
+  promptId: string;
+  progress: number;
+  state?: string;
+}
+
+/** Run snapshots keyed by ENDPOINT, module-level on purpose: every adapter
+ *  method call runs on a FRESH backend instance, so the run's generate()
+ *  must leave its state where the next poll's instance can read it (the
+ *  a1111 twin gets the same for free from the server's own global
+ *  /sdapi/v1/progress). One entry per endpoint, overwritten per run: a
+ *  local ComfyUI executes one prompt at a time on the GPU and VT drives one
+ *  generation at a time (the PG-2 poll-only-while-our-run contract). */
+const comfyRunSnapshots = new Map<string, ComfyRunSnapshot>();
+
+/** Handle to a run's WS listener. */
+interface ComfyProgressListener {
+  /** Bind the queue response's prompt id and replay buffered events — the
+   *  socket opens BEFORE the prompt is queued, so early events can arrive
+   *  pre-bind. */
+  bindPromptId(promptId: string): void;
+  /** Stop listening and close the socket (idempotent). */
+  close(): void;
+}
+
+/** The default socket opener — the global WebSocket (Bun's does NOT read
+ *  env proxies, so a localhost socket is always direct; correct here).
+ *  Cast: the global satisfies the seam structurally, but its overloaded
+ *  close() and `this`-typed handlers don't line up with the narrow
+ *  interface for the checker — one documented boundary cast. */
+const defaultOpenWebSocket = (url: string): ImageGenWebSocketLike =>
+  new WebSocket(url) as unknown as ImageGenWebSocketLike;
+
+/** http(s) endpoint → ws(s) socket URL with the run's client id. */
+function comfyWsUrl(endpoint: string, clientId: string): string {
+  const wsBase = endpoint.replace(/^http/, "ws");
+  return `${wsBase}/ws?clientId=${encodeURIComponent(clientId)}`;
+}
+
+/** Open the run's WS listener. Best-effort by design (the A3 family-ladder
+ *  degradation precedent): a socket that fails to open NEVER fails the
+ *  generation — the run simply publishes no progress. */
+function openComfyProgressListener(
+  endpoint: string,
+  clientId: string,
+  openWebSocket: (url: string) => ImageGenWebSocketLike,
+): ComfyProgressListener {
+  let promptId: string | undefined;
+  const buffer: string[] = [];
+  let dead = false;
+
+  const applyEvent = (payload: unknown): void => {
+    if (dead || !isRecord(payload)) return;
+    const data = payload.data;
+    const dataRecord = isRecord(data) ? data : undefined;
+    // ComfyUI broadcasts execution events to EVERY connected socket — only
+    // this run's prompt_id counts (the cross-prompt filter).
+    if (promptId === undefined || dataRecord === undefined || dataRecord.prompt_id !== promptId) return;
+    if (payload.type === "progress") {
+      const value = typeof dataRecord.value === "number" && Number.isFinite(dataRecord.value) ? dataRecord.value : 0;
+      const max = typeof dataRecord.max === "number" && dataRecord.max > 0 ? dataRecord.max : 0;
+      if (max > 0) {
+        const fraction = Math.min(Math.max(value / max, 0), 1);
+        comfyRunSnapshots.set(endpoint, { promptId, progress: fraction, state: `step ${value}/${max}` });
+      }
+      return;
+    }
+    // `executing` with node === null and `execution_success` both mean the
+    // prompt finished executing — the bar's 100%. (execution_error is left
+    // alone: the failure surfaces through generate()'s own history
+    // classification; the snapshot is informational.)
+    if ((payload.type === "executing" && dataRecord.node === null) || payload.type === "execution_success") {
+      comfyRunSnapshots.set(endpoint, { promptId, progress: 1 });
+    }
+  };
+
+  const ingest = (raw: string): void => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return; // a malformed frame never breaks the run's progress feed
+    }
+    applyEvent(parsed);
+  };
+
+  let socket: ImageGenWebSocketLike;
+  try {
+    socket = openWebSocket(comfyWsUrl(endpoint, clientId));
+  } catch {
+    // Unopenable socket → a dead listener; the run degrades silently.
+    return { bindPromptId() {}, close() {} };
+  }
+  socket.onmessage = (event) => {
+    // Binary frames are live latent previews — ignored in v1 (documented
+    // fast-follow; the step events are TEXT frames).
+    if (dead || typeof event.data !== "string") return;
+    if (promptId === undefined) {
+      buffer.push(event.data);
+      return;
+    }
+    ingest(event.data);
+  };
+  socket.onclose = () => {
+    dead = true;
+  };
+  socket.onerror = () => {
+    dead = true;
+  };
+
+  return {
+    bindPromptId(id: string): void {
+      if (dead || promptId !== undefined) return;
+      promptId = id;
+      for (const raw of buffer.splice(0)) ingest(raw);
+    },
+    close(): void {
+      if (dead) return;
+      dead = true;
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.onerror = null;
+      try {
+        socket.close();
+      } catch {
+        // The socket is already gone — nothing to release.
+      }
+    },
+  };
+}
+
 /** `unknown` → record guard for the defensive /object_info walks. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -906,6 +1043,7 @@ interface ComfyImageGenConfig {
   endpoint: string;
   model: string | undefined;
   fetch: typeof fetch;
+  openWebSocket: (url: string) => ImageGenWebSocketLike;
 }
 
 function parseConfig(config: ImageGenAdapterConfig): ComfyImageGenConfig {
@@ -924,6 +1062,7 @@ function parseConfig(config: ImageGenAdapterConfig): ComfyImageGenConfig {
     endpoint,
     model: setOrUndefined(config.model),
     fetch: config.fetch ?? fetch,
+    openWebSocket: config.openWebSocket ?? defaultOpenWebSocket,
   };
 }
 
@@ -989,54 +1128,70 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       }
 
       const clientId = crypto.randomUUID();
-      const queuedResponse = await fetchOrWrap(
-        cfg.fetch,
-        `${cfg.endpoint}/prompt`,
-        {
-          method: "POST",
-          headers: { Accept: "application/json", "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: graph, client_id: clientId }),
-          signal: request.signal,
-        },
-        "generation queue",
-      );
-      if (!queuedResponse.ok) {
-        const excerpt = await readProviderErrorBody(queuedResponse);
-        throw new ComfyImageGenError(
-          `ComfyUI prompt queue failed with HTTP ${queuedResponse.status}${excerpt ? `: ${excerpt}` : ""}`,
-          { status: queuedResponse.status },
+      // The WS live-progress listener (CG-C1): opened BEFORE the prompt is
+      // queued so no early event is missed, held through execution, closed
+      // at run end. Best-effort — its failure never fails the run.
+      const listener = openComfyProgressListener(cfg.endpoint, clientId, cfg.openWebSocket);
+      let promptId: string;
+      let outputImages: ComfyHistoryOutputImage[];
+      try {
+        const queuedResponse = await fetchOrWrap(
+          cfg.fetch,
+          `${cfg.endpoint}/prompt`,
+          {
+            method: "POST",
+            headers: { Accept: "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: graph, client_id: clientId }),
+            signal: request.signal,
+          },
+          "generation queue",
         );
-      }
-      const queued: unknown = await queuedResponse.json().catch(() => null);
-      const queuedRecord = typeof queued === "object" && queued !== null ? queued as Record<string, unknown> : {};
-      const promptId = queuedRecord.prompt_id;
-      if (typeof promptId !== "string" || promptId.length === 0) {
-        throw new ComfyImageGenError("ComfyUI prompt queue response carried no prompt_id");
-      }
-      // A non-empty node_errors = the server rejected the graph (unknown
-      // checkpoint name, wrong input types) — caller-class, mapped to the
-      // 400 rung of the route ladder.
-      const nodeErrors = queuedRecord.node_errors;
-      if (typeof nodeErrors === "object" && nodeErrors !== null && Object.keys(nodeErrors).length > 0) {
-        const details: string[] = [];
-        for (const [nodeId, error] of Object.entries(nodeErrors as Record<string, unknown>)) {
-          if (typeof error === "object" && error !== null) {
-            const detail = error as Record<string, unknown>;
-            const message = typeof detail.errors === "object" && Array.isArray(detail.errors)
-              ? detail.errors.length
-              : undefined;
-            details.push(`node ${nodeId}${message !== undefined ? ` (${message} errors)` : ""}`);
-          } else {
-            details.push(`node ${nodeId}`);
-          }
+        if (!queuedResponse.ok) {
+          const excerpt = await readProviderErrorBody(queuedResponse);
+          throw new ComfyImageGenError(
+            `ComfyUI prompt queue failed with HTTP ${queuedResponse.status}${excerpt ? `: ${excerpt}` : ""}`,
+            { status: queuedResponse.status },
+          );
         }
-        throw new ComfyImageGenError(
-          `ComfyUI rejected the workflow graph${details.length > 0 ? `: ${details.join(", ")}` : ""}`,
-          { status: 400 },
-        );
-      }
+        const queued: unknown = await queuedResponse.json().catch(() => null);
+        const queuedRecord = typeof queued === "object" && queued !== null ? queued as Record<string, unknown> : {};
+        const queuedPromptId = queuedRecord.prompt_id;
+        if (typeof queuedPromptId !== "string" || queuedPromptId.length === 0) {
+          throw new ComfyImageGenError("ComfyUI prompt queue response carried no prompt_id");
+        }
+        promptId = queuedPromptId;
+        // A non-empty node_errors = the server rejected the graph (unknown
+        // checkpoint name, wrong input types) — caller-class, mapped to the
+        // 400 rung of the route ladder.
+        const nodeErrors = queuedRecord.node_errors;
+        if (typeof nodeErrors === "object" && nodeErrors !== null && Object.keys(nodeErrors).length > 0) {
+          const details: string[] = [];
+          for (const [nodeId, error] of Object.entries(nodeErrors as Record<string, unknown>)) {
+            if (typeof error === "object" && error !== null) {
+              const detail = error as Record<string, unknown>;
+              const message = typeof detail.errors === "object" && Array.isArray(detail.errors)
+                ? detail.errors.length
+                : undefined;
+              details.push(`node ${nodeId}${message !== undefined ? ` (${message} errors)` : ""}`);
+            } else {
+              details.push(`node ${nodeId}`);
+            }
+          }
+          throw new ComfyImageGenError(
+            `ComfyUI rejected the workflow graph${details.length > 0 ? `: ${details.join(", ")}` : ""}`,
+            { status: 400 },
+          );
+        }
 
-      const outputImages = await waitForPromptCompletion(cfg.fetch, cfg.endpoint, promptId, request.signal);
+        listener.bindPromptId(promptId);
+        outputImages = await waitForPromptCompletion(cfg.fetch, cfg.endpoint, promptId, request.signal);
+      } finally {
+        listener.close();
+      }
+      // History completion is the authoritative terminal signal — stamp the
+      // bar's 100% even when the socket's own terminal event lagged or the
+      // socket died mid-run (the poll ends with the run either way).
+      comfyRunSnapshots.set(cfg.endpoint, { promptId, progress: 1 });
 
       const images: ImageGenGeneratedImage[] = [];
       for (const row of outputImages) {
@@ -1155,6 +1310,36 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       return { encoders, vaes };
     },
 
+    /** Publish the run's WS-fed snapshot (CG-C1). No snapshot (idle
+     *  server, socket never opened) = an honest 0 — the poll only runs
+     *  while a VT generation is in flight, so 0 reads as "no steps
+     *  observed yet", never a fake cloud bar. */
+    async progress(): Promise<ImageGenProgressInfo> {
+      const snapshot = comfyRunSnapshots.get(cfg.endpoint);
+      if (snapshot === undefined) return { progress: 0 };
+      return snapshot.state === undefined
+        ? { progress: snapshot.progress }
+        : { progress: snapshot.progress, state: snapshot.state };
+    },
+
+    /** Cancel the instance's current job — POST /interrupt, the a1111
+     *  twin (instance-global on a single-user local server). */
+    async interrupt(signal?: AbortSignal): Promise<void> {
+      const response = await fetchOrWrap(
+        cfg.fetch,
+        `${cfg.endpoint}/interrupt`,
+        { method: "POST", headers: { Accept: "application/json" }, signal },
+        "interrupt",
+      );
+      if (!response.ok) {
+        const excerpt = await readProviderErrorBody(response);
+        throw new ComfyImageGenError(
+          `ComfyUI interrupt failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          { status: response.status },
+        );
+      }
+    },
+
     async probe(signal?: AbortSignal): Promise<ImageGenProbeResult> {
       try {
         const response = await cfg.fetch(`${cfg.endpoint}/system_stats`, {
@@ -1190,8 +1375,10 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
     },
 
     async dispose(): Promise<void> {
-      // Stateless — nothing to release. (The WS progress listener of CG-C1
-      // will become the first held resource.)
+      // Stateless: the WS progress listener is scoped to a single
+      // generate() run and closed in its finally — nothing outlives a run
+      // (the registry entry it wrote is a plain map slot, GC'd on
+      // overwrite by the next run).
     },
   };
 
