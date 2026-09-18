@@ -240,6 +240,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.minimax.io",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Volcengine Ark — Seedream family on the Ark API (a SEPARATE key from
+  // the volcengine TTS service): one endpoint, model field selects;
+  // watermark off by named decision; b64_json delivery (PE-2 card).
+  {
+    id: "volcengine",
+    label: "Volcengine Ark",
+    backend: IMAGE_GEN_BACKENDS.Volcengine,
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

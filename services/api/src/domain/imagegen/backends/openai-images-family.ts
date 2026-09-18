@@ -345,6 +345,52 @@ const ZAI_OPTIONS: OpenAiImagesFamilyOptions = {
   probeModelNoun: "image models",
 };
 
+// ─── Volcengine Ark / Doubao Seedream (PE-2 unit 3) ─────────────────────
+
+/** Card: IMAGE_GEN_CLOUD_PROVIDERS_RESEARCH "Volcengine Ark" (doc-
+ *  verified 2026-09-07 — the 104KB t2i page read in full via r.jina.ai;
+ *  re-fetched 2026-09-18, model roster and params unchanged) + supervisor
+ *  live no-key probe 2026-09-18 (POST /api/v3/images/generations → clean
+ *  401 AuthenticationError — the invalid-post probe's discrimination
+ *  basis):
+ *  - `POST https://ark.cn-beijing.volces.com/api/v3/images/generations`
+ *    (the preset endpoint + the family path — exact match), Bearer Ark
+ *    API key (a SEPARATE key from the TTS volcengine speech service);
+ *  - one endpoint for all Seedream models (`model` selects). Static
+ *    catalog: only `doubao-seedream-5-0-pro-260628` carries a documented
+ *    full id on this page (5.0 lite / 4.5 / 4.0 exist but their ids are
+ *    NOT on it) — no invented ids; the model field stays free-text for
+ *    the rest;
+ *  - **5.0 pro additionally accepts RU + 13 languages** (the card's
+ *    differentiator for RU-locale users);
+ *  - `size`: explicit `WxH` pixels (per-model total-pixel ranges, AR
+ *    [1/16,16] — vendor-validated) or tier tokens (1K/2K/…) — the
+ *    explicit form is what VT sends (verbatim); tier tokens and the
+ *    AR-in-prompt quirk have no v1 seam;
+ *  - `response_format` url (default, valid 24 h) | b64_json → b64_json
+ *    requested (bytes inline, zero expiry surface); response
+ *    data[]{url|b64_json,size,output_format,z_index} — the openai-data
+ *    envelope handles both entry kinds;
+ *  - **NAMED DECISION (watermark)**: `watermark` defaults TRUE upstream
+ *    (stamps an "AI 生成" mark bottom-right); VT sends `watermark: false`
+ *    on every request via constantParams — a self-hosted local-first app
+ *    does not ship watermarked art silently. The card flagged the
+ *    off-switch as an owner decision; flipping to the vendor default is a
+ *    one-line change here;
+ *  - no negative/seed/sampler/steps/cfg surface (prompt-driven model) →
+ *    no wire names. sequential_image_generation / stream / tools /
+ *    optimize_prompt_options / image refs / layer_decomposition have no
+ *    v1 seam → never sent. */
+const VOLCENGINE_OPTIONS: OpenAiImagesFamilyOptions = {
+  label: "Volcengine Ark",
+  size: { kind: "verbatim", param: "size" },
+  responseFormat: { kind: "always", value: "b64_json" },
+  envelope: "openai-data",
+  staticModels: [{ id: "doubao-seedream-5-0-pro-260628", label: "Seedream 5.0 Pro" }],
+  constantParams: { watermark: false },
+  probe: { kind: "invalid-post" },
+};
+
 // ─── Registration (one factory closure per OPTIONS row) ──────────────────────
 
 /** The PE-1 OPTIONS table — one row per family slug. Grows one row per
@@ -360,6 +406,7 @@ const PE1_FAMILY: ReadonlyArray<{ slug: ImageGenBackendType; options: OpenAiImag
   { slug: IMAGE_GEN_BACKENDS.DeepInfra, options: DEEPINFRA_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.Recraft, options: RECRAFT_OPTIONS },
   { slug: IMAGE_GEN_BACKENDS.Zai, options: ZAI_OPTIONS },
+  { slug: IMAGE_GEN_BACKENDS.Volcengine, options: VOLCENGINE_OPTIONS },
 ];
 
 for (const { slug, options } of PE1_FAMILY) {

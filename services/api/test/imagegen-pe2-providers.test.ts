@@ -61,8 +61,8 @@ const PNG_BYTES = Buffer.from(
 );
 
 /** An OpenAI-images data[] response carrying b64_json entries. */
-function b64DataResponse(b64s: string[]): Response {
-  return Response.json({ created: 0, data: b64s.map((b64) => ({ b64_json: b64 })) });
+function b64DataResponse(images: Buffer[]): Response {
+  return Response.json({ created: 0, data: images.map((bytes) => ({ b64_json: bytes.toString("base64") })) });
 }
 
 // ─── MiniMax image-01 (PE-2 unit 2) ──────────────────────────────
@@ -252,6 +252,121 @@ describe("minimax (custom-JSON arm)", () => {
           createImageGenBackend(IMAGE_GEN_BACKENDS.MiniMax, { endpoint, apiKey: "k" }),
         ).not.toThrow();
       }
+    });
+  });
+});
+
+// ─── Volcengine Ark / Seedream (PE-2 unit 3) ─────────────────────
+
+const VOLCENGINE_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3";
+
+describe("volcengine (openai-images family, invalid-post probe)", () => {
+  const make = (transport: typeof fetch) =>
+    familyBackend(IMAGE_GEN_BACKENDS.Volcengine, transport, VOLCENGINE_ENDPOINT, "ark-key");
+
+  describe("generate", () => {
+    it("sends verbatim WxH size, b64_json, and the watermark:false named decision", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+
+      await backend.generate({
+        prompt: "таверна в сумерках", // 5.0 pro accepts RU (the card's differentiator)
+        model: "doubao-seedream-5-0-pro-260628",
+        width: 2048,
+        height: 2048,
+      });
+
+      expect(calls[0].url).toBe(`${VOLCENGINE_ENDPOINT}/images/generations`);
+      const headers = calls[0].init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer ark-key");
+      const body = sentJson(calls[0]);
+      expect(body.model).toBe("doubao-seedream-5-0-pro-260628");
+      expect(body.size).toBe("2048x2048");
+      expect(body.response_format).toBe("b64_json");
+      // NAMED DECISION: the vendor default stamps "AI 生成" — VT opts out.
+      expect(body.watermark).toBe(false);
+      // No negative/seed/steps/sampler surface → never invented.
+      expect("negative_prompt" in body).toBe(false);
+      expect("seed" in body).toBe(false);
+      expect("steps" in body).toBe(false);
+      // No v1 seams: sequential/stream/tools/optimize never sent.
+      expect("sequential_image_generation" in body).toBe(false);
+      expect("stream" in body).toBe(false);
+      expect("optimize_prompt_options" in body).toBe(false);
+    });
+
+    it("omits size when unset (vendor default; tier tokens have no v1 seam)", async () => {
+      const { transport, calls } = makeTransport(() => b64DataResponse([PNG_BYTES]));
+      const backend = make(transport);
+      await backend.generate({ prompt: "p", model: "doubao-seedream-5-0-pro-260628" });
+      expect("size" in sentJson(calls[0])).toBe(false);
+    });
+  });
+
+  describe("listModels + probe", () => {
+    it("returns the static documented-id catalog without any HTTP call", async () => {
+      const { transport, calls } = makeTransport(() => Response.json({}));
+      const backend = make(transport);
+      const models = await backend.listModels();
+      // Only the one FULL documented id — lite/4.5/4.0 ids are not on the
+      // page, and the adapter never invents them.
+      expect(models).toEqual([
+        { id: "doubao-seedream-5-0-pro-260628", label: "Seedream 5.0 Pro" },
+      ]);
+      expect(calls).toHaveLength(0);
+    });
+
+    it("probes via invalid-post: a validation 4xx means credentials were ACCEPTED", async () => {
+      const { transport, calls } = makeTransport(
+        () =>
+          Response.json(
+            { error: { code: "InvalidParameter", message: "prompt is required" } },
+            { status: 400 },
+          ),
+      );
+      const backend = make(transport);
+      const probed = await backend.probe();
+      expect(probed).toEqual({ ok: true, detail: "credentials accepted — 1 static models" });
+      // The empty-body POST can never generate (no model, no prompt).
+      expect(calls[0].url).toBe(`${VOLCENGINE_ENDPOINT}/images/generations`);
+      expect(sentJson(calls[0])).toEqual({});
+    });
+
+    it("probe fails on 401 (the live-probed AuthenticationError shape)", async () => {
+      const { transport } = makeTransport(
+        () =>
+          Response.json(
+            { error: { code: "AuthenticationError", message: "the API key is missing or invalid" } },
+            { status: 401 },
+          ),
+      );
+      const backend = make(transport);
+      const probed = await backend.probe();
+      expect(probed.ok).toBe(false);
+      expect(probed.status).toBe(401);
+      expect(probed.detail).toContain("credentials rejected");
+    });
+  });
+
+  describe("capability row + registry", () => {
+    it("pins the Volcengine capability row (free sizes, all-off params)", () => {
+      const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Volcengine];
+      expect(caps.supportsNegativePrompt).toBe(false);
+      expect(caps.supportsSamplers).toBe(false);
+      expect(caps.supportsSeed).toBe(false);
+      expect(caps.sizeSupport).toEqual({ kind: "free" });
+      expect(caps.noApiKey).toBe(false);
+      expect(caps.localExecution).toBe(false);
+      expect(caps.paramRanges).toEqual({});
+    });
+
+    it("registers the volcengine slug at import time (creatable via the registry)", () => {
+      const backend = createImageGenBackend(IMAGE_GEN_BACKENDS.Volcengine, {
+        endpoint: VOLCENGINE_ENDPOINT,
+        apiKey: "ark-key",
+      });
+      expect(typeof backend.generate).toBe("function");
+      expect(typeof backend.listModels).toBe("function");
     });
   });
 });

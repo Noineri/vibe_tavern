@@ -427,4 +427,30 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Volcengine]: {
+    // PE-2 unit 3 — Volcengine Ark card (doc-verified 2026-09-07, the
+    // 104KB t2i page in full; re-fetched 2026-09-18 unchanged) + live
+    // no-key probe (clean 401 AuthenticationError): POST
+    // ark.cn-beijing.volces.com/api/v3/images/generations, Bearer Ark key
+    // (SEPARATE from the TTS volcengine speech key). One endpoint, model
+    // field selects; static catalog = the one documented full id
+    // (doubao-seedream-5-0-pro-260628 — 5.0 pro, the RU-prompt-capable
+    // flagship); lite/4.5/4.0 ids not on the page → model field stays
+    // free-text. size = explicit WxH (vendor-validated ranges), free.
+    // response_format b64_json requested (url expires 24 h).
+    // NAMED DECISION: watermark:false sent ALWAYS (vendor default true
+    // stamps "AI 生成"; VT never ships watermarked art silently — flip is
+    // one line in the family options). No negative/seed/sampler/steps
+    // surface (prompt-driven). Probe = invalid-post creds discrimination.
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };
