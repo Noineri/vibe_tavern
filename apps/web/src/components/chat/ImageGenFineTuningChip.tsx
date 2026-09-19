@@ -60,7 +60,7 @@ import {
   IMAGE_GEN_ADETAILER_DEFAULT_MODEL,
   hasAdetailerExtension,
 } from "@vibe-tavern/domain";
-import { EMPTY_IMAGE_GEN_DRAFT, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
+import { EMPTY_IMAGE_GEN_DRAFT, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { ImageGenLoraSection } from "./ImageGenLoraSection.js";
 
 export interface ImageGenFineTuningChipProps {
@@ -135,6 +135,7 @@ export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) 
 function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
   const { t } = useT();
   const activeProfileId = useImageGenChatStore((s) => s.activeProfileIdByChat[chatId]);
+  const globalActiveId = useImageGenChatStore((s) => s.activeImageGenProfileId);
   const draft = useImageGenChatStore((s) => s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT);
   const setActiveProfile = useImageGenChatStore((s) => s.setActiveProfile);
   const setFineTuningDraft = useImageGenChatStore((s) => s.setFineTuningDraft);
@@ -162,7 +163,9 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
     };
   }, []);
 
-  const effective = profiles?.find((p) => p.id === activeProfileId) ?? profiles?.[0] ?? null;
+  // MR-5: the fallback chain — chat pick → global active → first row
+  //  (the chip is the per-chat OVERRIDE layer; no pick = inherit global).
+  const effective = resolveEffectiveImageGenProfile(profiles, activeProfileId, globalActiveId);
   const effectiveId = effective?.id ?? null;
   const caps = effective?.capabilities ?? null;
   const supportsSamplers = caps?.supportsSamplers ?? false;

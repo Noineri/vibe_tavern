@@ -37,7 +37,7 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { useT } from "../../i18n/context.js";
 import { listAllImageGenProfiles, type ImageGenProfileRecord } from "../../api/image-gen-api.js";
-import { EMPTY_IMAGE_GEN_DRAFT, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
+import { EMPTY_IMAGE_GEN_DRAFT, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import type { GenerateImageGenInput, ImageGenGenerateOverridesValue } from "@vibe-tavern/api-contracts";
@@ -191,6 +191,7 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
   // The chat's profile choice (read-only here — the chip's editor owns the
   // pick; this menu only CONSUMES it for the generate payload).
   const activeProfileId = useImageGenChatStore((s) => s.activeProfileIdByChat[chatId]);
+  const globalActiveId = useImageGenChatStore((s) => s.activeImageGenProfileId);
   const setFineTuning = useImageGenChatStore((s) => s.setFineTuning);
   const runGeneration = useImageGenChatStore((s) => s.runGeneration);
   const draft = useImageGenChatStore((s) => s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT);
@@ -214,9 +215,10 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
     };
   }, []);
 
-  // The chat's profile choice — undefined falls back to the first profile
-  // (IG-2: "active" is a chat-level concern; no server default pointer).
-  const effective = profiles?.find((p) => p.id === activeProfileId) ?? profiles?.[0] ?? null;
+  // MR-5: the fallback chain — chat pick → global active → first row
+  //  (the silent "first profile" default is dead; the chip's pick stays the
+  //  per-chat override, the global card's pointer is the default).
+  const effective = resolveEffectiveImageGenProfile(profiles, activeProfileId, globalActiveId);
 
   const startMode = (mode: ImageGenerationMode): void => {
     if (running !== undefined || effective === null) return;

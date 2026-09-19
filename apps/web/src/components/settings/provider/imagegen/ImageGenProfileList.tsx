@@ -1,6 +1,7 @@
 import { useT } from "../../../../i18n/context.js";
 import { useMasterDetail, MasterDetailMobileDrillDown } from "../../../shared/MasterDetailModal.js";
 import { IMAGE_GEN_PROVIDER_PRESETS } from "../../../../provider-presets.js";
+import { useImageGenChatStore } from "../../../../stores/image-gen-chat-store.js";
 import type { ImageGenProfileRecord } from "../../../../api/image-gen-api.js";
 import { cn } from "../../../../lib/cn.js";
 
@@ -21,10 +22,15 @@ function rowSubLabel(backend: string, presetId: string | null): string {
 function ImageGenProfileRow({
   profile,
   isEditing,
+  isActive,
   onSelectProfile,
 }: {
   profile: ImageGenProfileRecord;
   isEditing: boolean;
+  /** MR-5: the global active pointer's SECONDARY marker — the list-row ★
+   *  (the ProviderProfileList twin; the primary control is the view
+   *  card's «Активен» button). */
+  isActive: boolean;
   onSelectProfile: (id: string) => void;
 }) {
   return (
@@ -40,7 +46,7 @@ function ImageGenProfileRow({
       <div className="flex w-full items-center gap-3">
         <div className={cn("h-2 w-2 shrink-0 rounded-full", isEditing ? "bg-accent" : "bg-t4")} />
         <div className="min-w-0 flex-1 py-2">
-          <div className="truncate text-[13px] font-medium">{profile.name}</div>
+          <div className="truncate text-[13px] font-medium">{isActive ? "★ " : ""}{profile.name}</div>
           <div className={cn("mt-0.5 text-[11px]", isEditing ? "text-accent-t" : "text-t4")}>
             {rowSubLabel(profile.backend, profile.presetId ?? null)}
           </div>
@@ -59,6 +65,7 @@ function ImageGenProfileRow({
 export function ImageGenProfileList({ profiles, editingId, onSelectProfile, onAddProfile }: ImageGenProfileListProps) {
   const { t } = useT();
   const { openDetail } = useMasterDetail();
+  const activeImageGenProfileId = useImageGenChatStore((s) => s.activeImageGenProfileId);
 
   return (
     <div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
@@ -68,7 +75,13 @@ export function ImageGenProfileList({ profiles, editingId, onSelectProfile, onAd
 
       <div className="flex-1 overflow-y-auto">
         {profiles.map((p) => (
-          <ImageGenProfileRow key={p.id} profile={p} isEditing={editingId === p.id} onSelectProfile={onSelectProfile} />
+          <ImageGenProfileRow
+            key={p.id}
+            profile={p}
+            isEditing={editingId === p.id}
+            isActive={activeImageGenProfileId === p.id}
+            onSelectProfile={onSelectProfile}
+          />
         ))}
       </div>
 

@@ -1,6 +1,7 @@
 import { ImageGenProviderForm } from "./ImageGenProviderForm.js";
 import { ImageGenBaseCard } from "./ImageGenBaseCard.js";
 import { ImageGenPane } from "./ImageGenPane.js";
+import { useImageGenChatStore } from "../../../../stores/image-gen-chat-store.js";
 import type { ImageGenProfileForm, useImageProfiles } from "../../../../hooks/use-image-profiles.js";
 
 type ImageGenHook = ReturnType<typeof useImageProfiles>;
@@ -20,6 +21,10 @@ export function ImageGenProfileEditor({ imageGen }: { imageGen: ImageGenHook }) 
   const savedProfile =
     imageGen.editingId !== null ? (imageGen.profiles.find((p) => p.id === imageGen.editingId) ?? null) : null;
   const isView = imageGen.headerMode === "view" && savedProfile !== null;
+  // MR-5: the global active pointer + its setter (the card's activate
+  //  button) — subscribed here so the card alone re-renders on flip.
+  const activeImageGenProfileId = useImageGenChatStore((s) => s.activeImageGenProfileId);
+  const setActiveImageGenProfile = useImageGenChatStore((s) => s.setActiveImageGenProfile);
 
   if (!imageGen.form) return null;
 
@@ -44,7 +49,12 @@ export function ImageGenProfileEditor({ imageGen }: { imageGen: ImageGenHook }) 
         />
       ) : savedProfile !== null ? (
         <>
-          <ImageGenBaseCard form={form} onEdit={imageGen.startEdit} />
+          <ImageGenBaseCard
+            form={form}
+            isActive={activeImageGenProfileId === savedProfile.id}
+            onEdit={imageGen.startEdit}
+            onActivate={() => setActiveImageGenProfile(savedProfile.id)}
+          />
 
           {/* Second level (IG-12): picker + favorites + per-mode sizes +
               bind-routed params — view mode only (edit mode keeps the

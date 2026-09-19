@@ -7,7 +7,13 @@ import type { ImageGenProfileForm } from "../../../../hooks/use-image-profiles.j
 interface ImageGenBaseCardProps {
   /** Current form (clean, collapsed state — label/status derivation). */
   form: ImageGenProfileForm;
+  /** MR-5: true when this profile IS the global active (the «Активен»
+   *  button's disabled state; the ProviderViewHeader fork contract). */
+  isActive: boolean;
   onEdit: () => void;
+  /** MR-5: make this profile the global active (the «Сделать активным»
+   *  button — generation routes here when no chat-level pick exists). */
+  onActivate: () => void;
 }
 
 /** View-mode connection label: a preset-backed profile shows the preset row
@@ -30,12 +36,16 @@ function endpointHost(form: ImageGenProfileForm): string {
 }
 
 /** View-mode base card for a saved image-gen profile — the SttBaseCard fork
- *  (IG-11): name + connection line + key status + Edit. No Make-default
- *  action: image-gen profiles have no isDefault (a chat-level concern,
- *  IG-16/17 — the design decision recorded in the plan). The local tiers
- *  are keyless by design (A1111 optional `--api-auth`; ComfyUI core has no
- *  auth surface at all), so their no-key status is neutral, not a warning. */
-export function ImageGenBaseCard({ form, onEdit }: ImageGenBaseCardProps) {
+ *  (IG-11) grown into the ProviderViewHeader shape (MR-5, owner 2026-09-18:
+ *  «нужно включать конкретный профиль бекенда как активный…» — the card
+ *  carries the global activate button, the same i18n keys, the same chrome):
+ *  name + connection line + key status + Edit link on the left, the
+ *  «Активен»/«Сделать активным» button on the right (column-stacked on
+ *  mobile, the ProviderViewHeader responsive shape verbatim). The local
+ *  tiers are keyless by design (A1111 optional `--api-auth`; ComfyUI core
+ *  has no auth surface at all), so their no-key status is neutral, not a
+ *  warning. */
+export function ImageGenBaseCard({ form, isActive, onEdit, onActivate }: ImageGenBaseCardProps) {
   const { t } = useT();
 
   const label = backendLabelFor(form, t("custom"));
@@ -49,7 +59,7 @@ export function ImageGenBaseCard({ form, onEdit }: ImageGenBaseCardProps) {
 
   return (
     <div className="mb-6" data-testid="image-gen-base-card">
-      <div className="rounded-lg border border-border2 bg-s2 p-3 sm:p-4">
+      <div className="flex flex-col items-stretch gap-3 rounded-lg border border-border2 bg-s2 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
         <div className="min-w-0">
           <div className="mb-1 truncate font-ui text-[16px] font-semibold text-t1" data-testid="image-gen-base-card-name">
             {form.name}
@@ -85,18 +95,28 @@ export function ImageGenBaseCard({ form, onEdit }: ImageGenBaseCardProps) {
               </span>
             )}
           </div>
-        </div>
-        {/* Action row: Edit only (no default-profile action — see header). */}
-        <div className="mt-3 flex items-center" data-testid="image-gen-base-card-actions">
           <button
             type="button"
             onClick={onEdit}
             data-testid="image-gen-base-card-edit-btn"
-            className="flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent"
+            className="mt-3 flex items-center gap-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:text-accent"
           >
             <Icons.Edit /> {t("edit_settings_btn")}
           </button>
         </div>
+        {/* MR-5: the global activate button — the ProviderViewHeader fork
+            verbatim (same classes, same keys, disabled on the active
+            profile). Content-sized on sm+ (w-auto); full-width stacked row
+            on mobile. */}
+        <button
+          type="button"
+          onClick={onActivate}
+          data-testid="image-gen-base-card-activate-btn"
+          className="min-h-11 w-full rounded-md border border-accent bg-accent-dim px-4 font-ui text-[13px] font-medium text-accent-t transition-colors hover:bg-accent hover:text-on-accent disabled:cursor-not-allowed disabled:opacity-50 sm:h-[34px] sm:min-h-0 sm:w-auto"
+          disabled={isActive}
+        >
+          {isActive ? t("provider_active") : t("make_active")}
+        </button>
       </div>
     </div>
   );

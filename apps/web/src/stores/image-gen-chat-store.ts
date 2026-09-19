@@ -86,11 +86,35 @@ export interface ImageGenFineTuningDraft {
 /** A pristine draft (shared empty instance — never mutated; setters copy). */
 export const EMPTY_IMAGE_GEN_DRAFT: ImageGenFineTuningDraft = { prompt: "", negative: "" };
 
+/** MR-5: the EFFECTIVE image-gen profile record for a chat — the fallback
+ *  chain «chat pick → global active → first row» (the ProviderModal
+ *  `activeProviderProfileId ?? providerProfiles[0]?.id` twin, with the
+ *  per-chat chip pick as the override layer on top). Pure: both callers
+ *  (chip + message menu) and tests share the ONE chain. */
+export function resolveEffectiveImageGenProfile<T extends { id: string }>(
+  profiles: T[] | null | undefined,
+  chatPick: string | null | undefined,
+  globalActive: string | null,
+): T | null {
+  const list = profiles ?? [];
+  const byPick = chatPick != null ? list.find((p) => p.id === chatPick) : undefined;
+  if (byPick !== undefined) return byPick;
+  const byGlobal = globalActive !== null ? list.find((p) => p.id === globalActive) : undefined;
+  if (byGlobal !== undefined) return byGlobal;
+  return list[0] ?? null;
+}
+
 interface ImageGenChatState {
   /** Per-chat "Fine tuning" toggle (default off — the IG-16 gate). */
   fineTuningByChat: Record<string, boolean>;
-  /** Per-chat image-gen profile choice (undefined = first profile). */
+  /** Per-chat image-gen profile choice — the OVERRIDE on top of the global
+   *  active (undefined = inherit the global). */
   activeProfileIdByChat: Record<string, string | undefined>;
+  /** MR-5: the GLOBAL active image-gen profile (the owner's "who receives
+   *  the next generation" answer when no chat-level pick exists — the
+   *  text providers' activeProviderProfileId twin, set from the profile
+   *  view card's «Сделать активным»). Null until the first activation. */
+  activeImageGenProfileId: string | null;
   /** ChatId → in-flight run; undefined = idle. */
   runningByChat: Record<string, ImageGenRunState | undefined>;
   /** IG-17 chip drafts, per chat; undefined = pristine (EMPTY_IMAGE_GEN_DRAFT). */
@@ -100,6 +124,9 @@ interface ImageGenChatState {
 interface ImageGenChatActions {
   setFineTuning(chatId: string, on: boolean): void;
   setActiveProfile(chatId: string, profileId: string | undefined): void;
+  /** MR-5: set the GLOBAL active image-gen profile (the view card's
+   *  activate button). */
+  setActiveImageGenProfile(profileId: string): void;
   /** Fire ONE generation (guarded one-per-chat); resolves when the run
    *  settles. User-aborts are silent; failures toast the normalized server
    *  message; success refreshes the chat through fetchChatAction. `meta`
@@ -136,6 +163,7 @@ function isAbortError(error: unknown): boolean {
 export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
   fineTuningByChat: {},
   activeProfileIdByChat: {},
+  activeImageGenProfileId: null,
   runningByChat: {},
   fineTuningDraftByChat: {},
 
@@ -145,6 +173,10 @@ export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
 
   setActiveProfile: (chatId, profileId) => {
     set((s) => ({ activeProfileIdByChat: { ...s.activeProfileIdByChat, [chatId]: profileId } }));
+  },
+
+  setActiveImageGenProfile: (profileId) => {
+    set({ activeImageGenProfileId: profileId });
   },
 
   runGeneration: async (chatId, input, meta) => {

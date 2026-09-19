@@ -78,7 +78,7 @@ mock.module("sonner", () => ({
 
 const pendingByChat = new Map<string, ReturnType<typeof parkedGenerate>>();
 
-const { useImageGenChatStore } = await import("./image-gen-chat-store.js");
+const { useImageGenChatStore, resolveEffectiveImageGenProfile } = await import("./image-gen-chat-store.js");
 
 function input(mode: string, anchorMessageId = "m1"): GenerateImageGenInput {
   return { profileId: "p1", mode: mode as GenerateImageGenInput["mode"], anchorMessageId };
@@ -167,6 +167,34 @@ describe("image-gen chat store (IG-16)", () => {
     expect(useImageGenChatStore.getState().fineTuningByChat["chat-h"]).toBeUndefined();
     expect(useImageGenChatStore.getState().activeProfileIdByChat["chat-g"]).toBe("p2");
     expect(useImageGenChatStore.getState().activeProfileIdByChat["chat-h"]).toBeUndefined();
+  });
+});
+
+describe("image-gen chat store — MR-5 global active profile", () => {
+  afterEach(() => {
+    useImageGenChatStore.setState({ activeImageGenProfileId: null, activeProfileIdByChat: {} });
+  });
+
+  it("setActiveImageGenProfile flips the global pointer", () => {
+    expect(useImageGenChatStore.getState().activeImageGenProfileId).toBeNull();
+    useImageGenChatStore.getState().setActiveImageGenProfile("p9");
+    expect(useImageGenChatStore.getState().activeImageGenProfileId).toBe("p9");
+  });
+
+  it("resolveEffectiveImageGenProfile: chat pick wins → global active → first row → null", () => {
+    const rows = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    // Chat pick overrides everything.
+    expect(resolveEffectiveImageGenProfile(rows, "b", "c")?.id).toBe("b");
+    // No chat pick → the global active.
+    expect(resolveEffectiveImageGenProfile(rows, undefined, "c")?.id).toBe("c");
+    // Neither → the first row (the last resort, never silent "just a");
+    expect(resolveEffectiveImageGenProfile(rows, undefined, null)?.id).toBe("a");
+    // A dangling pointer (deleted profile) degrades to the first row.
+    expect(resolveEffectiveImageGenProfile(rows, undefined, "gone")?.id).toBe("a");
+    expect(resolveEffectiveImageGenProfile(rows, "gone", "c")?.id).toBe("c");
+    // Empty roster → null.
+    expect(resolveEffectiveImageGenProfile([], undefined, null)).toBeNull();
+    expect(resolveEffectiveImageGenProfile(null, "x", "y")).toBeNull();
   });
 });
 
