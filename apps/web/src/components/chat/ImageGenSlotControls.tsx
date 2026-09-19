@@ -70,8 +70,13 @@ export function ImageGenSlotControls({
    *  mirror (a mirror saved before the backend gained the capability
    *  would gate the run off forever); a failed lookup fails closed (the
    *  waiting chip) but still starts the run — a dead list endpoint must
-   *  never block generation. */
-  const regenerate = () => {
+   *  never block generation.
+   *
+   *  MR-10: `verbatimPrompt` (the repeat-with-this-prompt arm) rides the
+   *  input's `prompt` — the IG-14 caller-prompt contract: on non-free
+   *  modes it goes to the wire VERBATIM and the LLM assist never fires;
+   *  on free mode it is the required payload the free template wraps. */
+  const regenerate = (verbatimPrompt?: string) => {
     if (!chatId || !messageId || running) return;
     void (async () => {
       let liveProgress = false;
@@ -90,11 +95,19 @@ export function ImageGenSlotControls({
           mode: firstProvenance.mode,
           anchorMessageId: messageId,
           targetMessageId: messageId,
+          ...(verbatimPrompt !== undefined ? { prompt: verbatimPrompt } : {}),
         },
         { liveProgress },
       );
     })();
   };
+
+  /** MR-10: the slot's current prompt — the same field the MR-9 accordion
+   *  editor reads/writes (imageGen.prompt provenance), so «повторить с этим
+   *  промптом» repeats exactly what the user last saw (and possibly just
+   *  edited). Absent/blank (legacy pre-CF6 slots) hides the arm — nothing
+   *  to repeat; the AI-rewrite regen stays available. */
+  const currentPrompt = firstProvenance.prompt?.trim() || "";
 
   const promote = async (att: Attachment) => {
     if (!characterId || !att.id || promotingIds.has(att.id)) return;
@@ -188,10 +201,24 @@ export function ImageGenSlotControls({
             data-testid="image-gen-slot-regenerate"
             aria-label={t("image_gen_slot_regenerate")}
             disabled={running}
-            onClick={regenerate}
+            onClick={() => regenerate()}
             className={cn(slotButtonCls, "text-t3 hover:text-t1")}
           >
             <Icons.regen />
+          </button>
+        </CustomTooltip>
+      )}
+      {chatId && messageId && currentPrompt !== "" && (
+        <CustomTooltip content={t("image_gen_slot_regenerate_same_prompt")}>
+          <button
+            type="button"
+            data-testid="image-gen-slot-regenerate-same-prompt"
+            aria-label={t("image_gen_slot_regenerate_same_prompt")}
+            disabled={running}
+            onClick={() => regenerate(currentPrompt)}
+            className={cn(slotButtonCls, "text-t3 hover:text-t1")}
+          >
+            <Icons.copy />
           </button>
         </CustomTooltip>
       )}

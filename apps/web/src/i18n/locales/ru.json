@@ -3206,5 +3206,6 @@
   "image_gen_slot_include_in_prompt": "Включать в промпт",
   "image_gen_slot_exclude_from_prompt": "Не включать в промпт",
   "image_gen_slot_include_failed": "Не удалось изменить включение в промпт",
-  "image_gen_slot_regenerate": "Перегенерировать (новый вариант для свайпа)"
+  "image_gen_slot_regenerate": "Перегенерировать (новый вариант для свайпа)",
+  "image_gen_slot_regenerate_same_prompt": "Повторить с этим же промптом (новый вариант для свайпа)"
 }

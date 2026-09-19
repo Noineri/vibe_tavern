@@ -38,7 +38,7 @@ const describeCalls: Array<[string, string, string]> = [];
 const includeCalls: Array<[string, string, string, boolean]> = [];
 const runGenerationCalls: Array<[
   string,
-  { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string },
+  { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string; prompt?: string },
   ImageGenRunMeta | undefined,
 ]> = [];
 const toastSuccess: string[] = [];
@@ -56,7 +56,7 @@ const realChatStore = await import("../../stores/image-gen-chat-store.js");
 realChatStore.useImageGenChatStore.setState({
   runGeneration: (
     chatId: string,
-    input: { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string },
+    input: { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string; prompt?: string },
     meta?: ImageGenRunMeta,
   ) => {
     runGenerationCalls.push([chatId, input, meta]);
@@ -243,6 +243,41 @@ describe("ImageGenSlotControls — regenerate-as-variant (IG-18a)", () => {
     });
     const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
     const btn = await view.findByTestId("image-gen-slot-regenerate");
+    expect(btn.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(btn);
+    expect(runGenerationCalls).toHaveLength(0);
+  });
+
+  it("MR-10: the repeat arm fires with the slot's current prompt VERBATIM (the IG-14 caller-prompt contract — assist never fires server-side)", async () => {
+    profilesList = [profileRecord("p1", IMAGE_GEN_BACKENDS.ComfyUI)];
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p1", params: {}, prompt: "  the edited knight portrait  " } });
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate-same-prompt"));
+    await waitFor(() =>
+      expect(runGenerationCalls).toEqual([
+        [
+          "chat-1",
+          { profileId: "p1", mode: "portrait", anchorMessageId: "m1", targetMessageId: "m1", prompt: "the edited knight portrait" },
+          { liveProgress: true },
+        ],
+      ]),
+    );
+  });
+
+  it("MR-10: the repeat arm stays hidden for legacy slots without a stamped prompt (nothing to repeat)", async () => {
+    profilesList = [profileRecord("p1", IMAGE_GEN_BACKENDS.ComfyUI)];
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    await view.findByTestId("image-gen-slot-regenerate");
+    expect(view.queryByTestId("image-gen-slot-regenerate-same-prompt")).toBeNull();
+  });
+
+  it("MR-10: the repeat arm obeys the same one-per-chat guard (disabled while running)", async () => {
+    realChatStore.useImageGenChatStore.setState({
+      runningByChat: { "chat-1": { mode: "portrait", anchorMessageId: "m1", profileId: "p1", liveProgress: false } },
+    });
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p1", params: {}, prompt: "a prompt" } });
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    const btn = await view.findByTestId("image-gen-slot-regenerate-same-prompt");
     expect(btn.hasAttribute("disabled")).toBe(true);
     fireEvent.click(btn);
     expect(runGenerationCalls).toHaveLength(0);
