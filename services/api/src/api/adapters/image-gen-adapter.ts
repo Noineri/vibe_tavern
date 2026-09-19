@@ -103,6 +103,7 @@ import "../../domain/imagegen/backends/minimax.js";
 import "../../domain/imagegen/backends/dashscope.js";
 import "../../domain/imagegen/backends/nim.js";
 import "../../domain/imagegen/backends/google.js";
+import "../../domain/imagegen/backends/stability.js";
 import "../../domain/imagegen/backends/raw-binary.js";
 
 // ─── Route-ladder errors ─────────────────────────────────────────────────────

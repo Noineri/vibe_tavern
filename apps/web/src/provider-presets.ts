@@ -314,6 +314,15 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://generativelanguage.googleapis.com",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Stability AI — v2beta Stable Image services (ultra/core/sd3.5),
+  // multipart bodies, raw image bytes back.
+  {
+    id: "stability",
+    label: "Stability AI",
+    backend: IMAGE_GEN_BACKENDS.Stability,
+    baseUrl: "https://api.stability.ai",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

@@ -587,4 +587,28 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Stability]: {
+    // PE-4 unit 2 — Stability AI card (doc-verified 2026-09-07 from an
+    // owner MHTML; re-verified live 2026-09-18 — the JS wall is gone, full
+    // API reference scraped): v2beta multipart generate services
+    // ultra/core/sd3, Bearer + accept image/* → RAW bytes. Negative on
+    // all three, seed, 9-value aspect enum (nearest mapping), cfg_scale
+    // sd3-only. style_preset/output_format/steps/sampler: no VT seam or
+    // no surface — never sent. Soft drift pinned: sd3.5-flash documented
+    // in the model description, absent from the schema enum. Static
+    // 6-entry catalog (no public v2beta listing; v1 engines = legacy
+    // SDXL family). api.stability.ai TLS-unreachable from the dev
+    // machine — probe discrimination pinned from documented codes
+    // (401/403 rejected, other 4xx accepted, 5xx fail).
+    supportsNegativePrompt: true,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };
