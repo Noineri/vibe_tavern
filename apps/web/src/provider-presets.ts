@@ -332,6 +332,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.ideogram.ai",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Cloudflare Workers AI — the account id rides the URL path: replace
+  // <ACCOUNT_ID> with your dashboard account id (Workers AI → Use REST
+  // API). 10k Neurons/day free allocation.
+  {
+    id: "cloudflare",
+    label: "Cloudflare Workers AI",
+    backend: IMAGE_GEN_BACKENDS.Cloudflare,
+    baseUrl: "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

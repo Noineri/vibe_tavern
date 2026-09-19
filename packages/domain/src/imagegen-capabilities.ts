@@ -636,4 +636,30 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Cloudflare]: {
+    // PE-4 unit 4 — Cloudflare Workers AI card (doc-verified 2026-09-07;
+    // re-verified live 2026-09-18: model pages as .md + per-model
+    // schema-input.json + live endpoint probes — the card's
+    // "params JS-collapsed" caveat CLOSED): POST /client/v4/accounts/
+    // {ACCOUNT_ID}/ai/run/{model}, Bearer, JSON body, response wrapper
+    // {result, success, errors} with result.image = base64. Per-family
+    // surfaces (schema-pinned): schnell {prompt 1–2048, steps ≤8 def 4,
+    // seed}; SDXL family {negative_prompt, width/height 256–2048,
+    // num_steps ≤20 def 20, guidance def 7.5, seed}; flux-2 family
+    // UNDOCUMENTED (page renders an empty multipart{}) — prompt only,
+    // nothing invented (named decision). Per-model divergence: the
+    // ideogram/stability precedent. Free tier 10k Neurons/day. Account
+    // id in the URL — wrong id = 404 code 7003 (distinct from 401 code
+    // 10000 bad token, live-pinned).
+    supportsNegativePrompt: true,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

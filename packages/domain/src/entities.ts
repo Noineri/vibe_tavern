@@ -1064,6 +1064,7 @@ export const IMAGE_GEN_BACKENDS = {
   Google: "google",
   Stability: "stability",
   Ideogram: "ideogram",
+  Cloudflare: "cloudflare",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

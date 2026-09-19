@@ -15,6 +15,7 @@ import {
   IDEOGRAM_V4_RESOLUTIONS,
   mapIdeogramResolution,
 } from "../src/domain/imagegen/backends/ideogram.js";
+import "../src/domain/imagegen/backends/cloudflare.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 // Import-time side-effect registrations are the production wiring.
 import "../src/domain/imagegen/backends/google.js";
@@ -524,6 +525,133 @@ describe("ideogram native arm (Api-Key multipart, ephemeral signed url)", () => 
       await make(t.transport, endpoint).generate({ prompt: "p" });
       expect(t.calls[0]?.url).toBe("https://api.ideogram.ai/v1/ideogram-v4/generate");
     }
+  });
+});
+
+// ─── cloudflare (account-scoped run API, base64 in a wrapper) ───────────────
+
+describe("cloudflare native arm (account-scoped run URL, result.image base64)", () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const BASE = "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai";
+
+  function make(transport: typeof fetch, endpoint = BASE) {
+    return createImageGenBackend(IMAGE_GEN_BACKENDS.Cloudflare, {
+      endpoint,
+      apiKey: "cf-token",
+      fetch: transport,
+    });
+  }
+
+  function okPayload(): unknown {
+    return { result: { image: PNG.toString("base64") }, success: true, errors: [], messages: [] };
+  }
+
+  it("POSTs JSON to …/ai/run/{model} with Bearer; per-family wires (schnell steps/seed, sdxl full surface, flux-2 prompt only)", async () => {
+    const schnell = makeTransport(() => jsonResponse(okPayload()));
+    await make(schnell.transport).generate({ prompt: "p", steps: 4, seed: 3 });
+    expect(schnell.calls[0]?.url).toBe(`${BASE}/run/@cf/black-forest-labs/flux-1-schnell`);
+    expect(JSON.parse(schnell.calls[0]?.init?.body as string)).toEqual({ prompt: "p", steps: 4, seed: 3 });
+
+    const sdxl = makeTransport(() => jsonResponse(okPayload()));
+    await make(sdxl.transport).generate({
+      prompt: "p", model: "@cf/stabilityai/stable-diffusion-xl-lightning",
+      negativePrompt: "no", width: 768, height: 1024, steps: 20, cfgScale: 7.5, seed: 1,
+    });
+    expect(JSON.parse(sdxl.calls[0]?.init?.body as string)).toEqual({
+      prompt: "p", negative_prompt: "no", width: 768, height: 1024, num_steps: 20, guidance: 7.5, seed: 1,
+    });
+
+    const flux2 = makeTransport(() => jsonResponse(okPayload()));
+    await make(flux2.transport).generate({
+      prompt: "p", model: "@cf/black-forest-labs/flux-2-dev", negativePrompt: "no", steps: 8, seed: 2, width: 512, height: 512,
+    });
+    expect(JSON.parse(flux2.calls[0]?.init?.body as string)).toEqual({ prompt: "p" }); // undocumented — nothing invented
+
+    const headers = schnell.calls[0]?.init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer cf-token");
+  });
+
+  it("decodes result.image base64 and sniffs the MIME; accepts the bare binding shape as a fallback", async () => {
+    const t = makeTransport(() => jsonResponse(okPayload()));
+    const r = await make(t.transport).generate({ prompt: "p" });
+    expect(r.images[0]?.data.equals(PNG)).toBe(true);
+    expect(r.images[0]?.mimeType).toBe("image/png");
+    const bare = makeTransport(() => jsonResponse({ image: PNG.toString("base64") }));
+    const r2 = await make(bare.transport).generate({ prompt: "p" });
+    expect(r2.images[0]?.data.equals(PNG)).toBe(true);
+  });
+
+  it("surfaces success:false errors[] as the failure detail; non-2xx as typed errors with status", async () => {
+    const failed = makeTransport(() =>
+      jsonResponse({ result: null, success: false, errors: [{ code: 7003, message: "Could not route to /client/v4/…" }], messages: [] }),
+    );
+    await expect(make(failed.transport).generate({ prompt: "p" })).rejects.toThrow("Could not route");
+    const unauthorized = makeTransport(() =>
+      jsonResponse({ result: null, success: false, errors: [{ code: 10000, message: "Authentication error" }], messages: [] }, 401),
+    );
+    const error = await make(unauthorized.transport).generate({ prompt: "p" }).catch((e: unknown) => e);
+    expect((error as { status?: number }).status).toBe(401);
+    expect((error as InstanceType<typeof Error>).name).toBe("CloudflareImageError");
+  });
+
+  it("config: placeholder account id and a non-accounts endpoint are named config errors; paste tolerance cuts at /ai/run/", async () => {
+    const t = makeTransport(() => jsonResponse(okPayload()));
+    const runUrl = `${BASE}/run/@cf/black-forest-labs/flux-2-klein-4b`;
+    await make(t.transport, runUrl).generate({ prompt: "p" });
+    expect(t.calls[0]?.url).toBe(`${BASE}/run/@cf/black-forest-labs/flux-1-schnell`); // model from the request, base normalized
+    expect(() => make(t.transport, "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai")).toThrow(
+      "replace <ACCOUNT_ID>",
+    );
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Cloudflare, {
+        endpoint: "https://example.com",
+        apiKey: "k",
+        fetch: t.transport,
+      }),
+    ).toThrow("accounts");
+  });
+
+  it("lists the static six-model catalog (no HTTP call)", async () => {
+    const t = makeTransport(() => jsonResponse({}));
+    const models = await make(t.transport).listModels();
+    expect(t.calls).toHaveLength(0);
+    expect(models).toHaveLength(6);
+    expect(models[0]?.id).toBe("@cf/black-forest-labs/flux-1-schnell");
+  });
+
+  it("probes (live-pinned): 401 = token rejected, 404 code 7003 = wrong ACCOUNT ID, 400 = accepted, 500 = fail", async () => {
+    const auth = makeTransport(() =>
+      jsonResponse({ result: null, success: false, errors: [{ code: 10000, message: "Authentication error" }], messages: [] }, 401),
+    );
+    const rejected = await make(auth.transport).probe();
+    expect(rejected.ok).toBe(false);
+    expect(rejected.detail).toContain("token rejected");
+
+    const routing = makeTransport(() =>
+      jsonResponse({ result: null, success: false, errors: [{ code: 7003, message: "Could not route … perhaps your object identifier is invalid?" }], messages: [] }, 404),
+    );
+    const wrongId = await make(routing.transport).probe();
+    expect(wrongId.ok).toBe(false);
+    expect(wrongId.detail).toContain("ACCOUNT ID");
+
+    const validation = makeTransport(() => jsonResponse({}, 400));
+    const accepted = await make(validation.transport).probe();
+    expect(accepted.ok).toBe(true);
+    expect(accepted.detail).toContain("validation reached");
+
+    const serverError = makeTransport(() => jsonResponse({}, 500));
+    expect((await make(serverError.transport).probe()).ok).toBe(false);
+  });
+});
+
+describe("cloudflare capability lockstep", () => {
+  it("negative + seed (SDXL family surface), no samplers, cloud, keyed", () => {
+    const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Cloudflare];
+    expect(caps.supportsNegativePrompt).toBe(true);
+    expect(caps.supportsSamplers).toBe(false);
+    expect(caps.supportsSeed).toBe(true);
+    expect(caps.localExecution).toBe(false);
+    expect(caps.sizeSupport.kind).toBe("free");
   });
 });
 
