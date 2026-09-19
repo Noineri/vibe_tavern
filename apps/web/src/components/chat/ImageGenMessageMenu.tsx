@@ -38,6 +38,7 @@ import { getModalPortal } from "../shared/modal-helpers.js";
 import { useT } from "../../i18n/context.js";
 import { listAllImageGenProfiles, type ImageGenProfileRecord } from "../../api/image-gen-api.js";
 import { EMPTY_IMAGE_GEN_DRAFT, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import type { GenerateImageGenInput, ImageGenGenerateOverridesValue } from "@vibe-tavern/api-contracts";
 
@@ -58,6 +59,12 @@ export function ImageGenMessageMenu({ chatId, messageId, variant, disabled = fal
   const running = useImageGenChatStore((s) => s.runningByChat[chatId]);
   const abortGeneration = useImageGenChatStore((s) => s.abortGeneration);
   const [open, setOpen] = useState(false);
+
+  // The menu is an RP surface (owner 2026-09-18): co-author chats never
+  // offer image generation — no trigger and no Stop morph (no entry point
+  // exists there, so nothing can be in flight for the chat either).
+  const isCoauthorChat = useSnapshotStore((s) => s.activeChat?.mode === "coauthor");
+  if (isCoauthorChat) return null;
 
   // ── Stop morph: every message's trigger for this chat is the Stop while
   //    a generation is in flight (they all abort the same shared run).

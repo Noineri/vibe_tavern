@@ -98,7 +98,7 @@ mock.module("sonner", () => ({
 
 const { ImageGenMessageMenu } = await import("./ImageGenMessageMenu.js");
 const { useImageGenChatStore } = await import("../../stores/image-gen-chat-store.js");
-const { useModalStore } = await import("../../stores/modal-store.js");
+const { useSnapshotStore } = await import("../../stores/snapshot-store.js");const { useModalStore } = await import("../../stores/modal-store.js");
 const { TooltipProvider } = await import("../shared/Tooltip.js");
 const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { within } = await import("@testing-library/react");
@@ -150,6 +150,34 @@ afterEach(() => {
     fineTuningDraftByChat: {},
     activeProfileIdByChat: {},
     runningByChat: {},
+  });
+  // Same singleton discipline for the snapshot store: the coauthor-gate test
+  // sets activeChat — leave it null for the next test/file.
+  useSnapshotStore.setState({ activeChat: null });
+});
+
+describe("ImageGenMessageMenu — co-author gate (RP-only surface)", () => {
+  /** The chat-actions seed pattern: minimal activeChat double via ingest
+   *  (as unknown as AppSnapshot — the established cast for wire doubles). */
+  function seedActiveChat(mode: "rp" | "coauthor"): void {
+    useSnapshotStore.getState().ingestSnapshot({
+      activeChat: { id: "chat-1", characterId: "char-1", mode },
+    } as unknown as import("../../api/types.js").AppSnapshot);
+  }
+
+  it("renders nothing when the active chat is a co-author chat (owner 2026-09-18: the button is for RP)", () => {
+    seedActiveChat("coauthor");
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-1" messageId="m-1" variant="desktop" />);
+    expect(view.container.querySelectorAll('[data-testid="image-gen-message-trigger"]').length).toBe(0);
+    expect(view.container.querySelectorAll('[data-testid="image-gen-message-stop"]').length).toBe(0);
+    cleanup();
+  });
+
+  it("renders the trigger in an RP chat (the gate targets co-author only)", () => {
+    seedActiveChat("rp");
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-1" messageId="m-1" variant="desktop" />);
+    expect(view.container.querySelectorAll('[data-testid="image-gen-message-trigger"]').length).toBe(1);
+    cleanup();
   });
 });
 
