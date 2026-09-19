@@ -109,6 +109,7 @@ import "../../domain/imagegen/backends/cloudflare.js";
 import "../../domain/imagegen/backends/aihorde.js";
 import "../../domain/imagegen/backends/bfl.js";
 import "../../domain/imagegen/backends/fal.js";
+import "../../domain/imagegen/backends/replicate.js";
 import "../../domain/imagegen/backends/raw-binary.js";
 
 // ─── Route-ladder errors ─────────────────────────────────────────────────────

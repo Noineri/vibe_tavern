@@ -721,6 +721,38 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Replicate]: {
+    // PE-5 unit 3 — Replicate card (doc-verified 2026-09-07; re-verified
+    // live 2026-09-18: full HTTP reference re-read + no-key ladder
+    // probed + the default model's openapi_schema extracted from its
+    // PUBLIC page). Official-models async: POST /v1/models/{owner}/
+    // {model}/predictions ({input}) → poll urls.get (starting/
+    // processing → succeeded/canceled/failed) → output = URI array.
+    // **DRIFT: the card's "public list" GET /v1/models now 401s
+    // anonymous** — collections too; listing rides the profile key on
+    // GET /v1/collections/text-to-image. **The card's URL/retention
+    // trap**: delivery URLs REQUIRE the Bearer key to fetch and are
+    // removed after an hour (output → null) — auth-gated download,
+    // immediately. Size: the default roster's schema control is the
+    // 11-value aspect_ratio enum (live-extracted) — free-kind caps with
+    // W×H→ratio exact-else-nearest mapping (the google precedent; no
+    // invented pixel grids). Negative: absent from the default schema —
+    // flag off (SDXL-family divergence = v1 exclusion, named
+    // decision). No version pinning (latest; named decision), no
+    // `Prefer: wait` sync mode (plain async poll). Best-effort POST
+    // urls.cancel on every failure path out. Default model
+    // black-forest-labs/flux-schnell (their docs' canonical example).
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
   [IMAGE_GEN_BACKENDS.Bfl]: {
     // PE-5 unit 1 — Black Forest Labs card (doc-verified 2026-09-07;
     // re-verified live 2026-09-18: full openapi.json re-pulled — model

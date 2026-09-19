@@ -366,6 +366,13 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://queue.fal.run",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  {
+    id: "replicate",
+    label: "Replicate",
+    backend: IMAGE_GEN_BACKENDS.Replicate,
+    baseUrl: "https://api.replicate.com",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

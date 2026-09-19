@@ -14,6 +14,14 @@ import { pollBflTask, BflImageConfigError, BflImageError, BFL_DEFAULT_MODEL } fr
 import "../src/domain/imagegen/backends/bfl.js";
 import { pollFalRequest, FalImageConfigError, FalImageError, FAL_DEFAULT_MODEL } from "../src/domain/imagegen/backends/fal.js";
 import "../src/domain/imagegen/backends/fal.js";
+import {
+  pollReplicatePrediction,
+  mapReplicateAspectRatio,
+  ReplicateImageConfigError,
+  ReplicateImageError,
+  REPLICATE_DEFAULT_MODEL,
+} from "../src/domain/imagegen/backends/replicate.js";
+import "../src/domain/imagegen/backends/replicate.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 
 // ─── Shared helpers (the PE-1..PE-4 files' verbatim discipline) ──────────────
@@ -591,6 +599,240 @@ describe("pollFalRequest (exported seam)", () => {
     const { recording } = scriptFal({ statuses: [{ status: "IN_QUEUE" }] });
     await expect(
       pollFalRequest({ statusUrl: FAL_STATUS_URL, apiKey: "k", fetch: recording, wait: () => Promise.resolve() }),
+    ).rejects.toThrow(/did not complete within 150s/);
+  });
+});
+
+// ─── replicate (official-models async, Bearer, auth-gated download) ─────────
+
+const REP_ENDPOINT = "https://api.replicate.com";
+const REP_GET_URL = "https://api.replicate.com/v1/predictions/pred-1";
+const REP_CANCEL_URL = "https://api.replicate.com/v1/predictions/pred-1/cancel";
+const REP_IMAGE_URL = "https://replicate.delivery/xyz/result.png";
+
+function makeRep(transport: typeof fetch, endpoint = REP_ENDPOINT) {
+  return createImageGenBackend(IMAGE_GEN_BACKENDS.Replicate, {
+    endpoint,
+    apiKey: "r8_key",
+    fetch: transport,
+  });
+}
+
+function repSubmit(): unknown {
+  return {
+    id: "pred-1",
+    status: "starting",
+    urls: { get: REP_GET_URL, cancel: REP_CANCEL_URL },
+  };
+}
+
+/** Scripted replicate flow: submit → (polls) → download. */
+function scriptRep(options?: { polls?: unknown[]; output?: unknown }): {
+  recording: typeof fetch;
+  calls: RecordedCall[];
+} {
+  const polls = options?.polls ?? [{ id: "pred-1", status: "succeeded", output: [REP_IMAGE_URL] }];
+  const calls: RecordedCall[] = [];
+  let pollIndex = 0;
+  const recording: typeof fetch = (url, init) => {
+    calls.push({ url: String(url), init });
+    const u = String(url);
+    if (u === REP_GET_URL) {
+      const payload = polls[Math.min(pollIndex, polls.length - 1)];
+      pollIndex += 1;
+      return Promise.resolve(Response.json(payload));
+    }
+    if (u === REP_IMAGE_URL) {
+      return Promise.resolve(
+        new Response(new Uint8Array(PNG_BYTES), {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        }),
+      );
+    }
+    if (u === REP_CANCEL_URL) return Promise.resolve(new Response(null, { status: 201 }));
+    return Promise.resolve(Response.json(repSubmit()));
+  };
+  return { recording, calls };
+}
+
+describe("replicate official-models arm (Bearer, {input}, auth-gated download)", () => {
+  it("POSTs {input:{prompt,aspect_ratio,seed}} to /v1/models/{owner}/{model}/predictions, polls urls.get, downloads WITH the Bearer key", async () => {
+    const { recording, calls } = scriptRep();
+    const result = await makeRep(recording).generate({
+      prompt: "a lantern",
+      width: 1920,
+      height: 1080,
+      seed: 5,
+    });
+
+    // Submit — official-models path, {input} envelope, Bearer auth.
+    expect(calls[0].url).toBe(`${REP_ENDPOINT}/v1/models/${REPLICATE_DEFAULT_MODEL}/predictions`);
+    const submitHeaders = calls[0].init?.headers as Record<string, string>;
+    expect(submitHeaders.Authorization).toBe("Bearer r8_key");
+    const body = sentJson(calls[0]);
+    expect(body.input).toEqual({ prompt: "a lantern", aspect_ratio: "16:9", seed: 5 });
+    expect("negative_prompt" in body.input).toBe(false);
+    expect("num_outputs" in body.input).toBe(false);
+    expect("megapixels" in body.input).toBe(false);
+    expect("disable_safety_checker" in body.input).toBe(false);
+
+    // Poll the returned urls.get; download WITH the key (the card's trap).
+    expect(calls[1].url).toBe(REP_GET_URL);
+    expect(calls[2].url).toBe(REP_IMAGE_URL);
+    const downloadHeaders = calls[2].init?.headers as Record<string, string>;
+    expect(downloadHeaders.Authorization).toBe("Bearer r8_key");
+
+    expect(result.images[0]?.data.equals(PNG_BYTES)).toBe(true);
+  });
+
+  it("maps W×H onto the ratio grid exact-else-nearest (1024x1024 exact; 1000x3000 nearest 9:21; unset stays unset)", () => {
+    expect(mapReplicateAspectRatio(1024, 1024)).toBe("1:1");
+    expect(mapReplicateAspectRatio(1920, 1080)).toBe("16:9");
+    expect(mapReplicateAspectRatio(1000, 3000)).toBe("9:21");
+    expect(mapReplicateAspectRatio(999, 1001)).toBe("1:1");
+    expect(mapReplicateAspectRatio(undefined, 512)).toBeUndefined();
+    expect(mapReplicateAspectRatio(512, undefined)).toBeUndefined();
+  });
+
+  it("a prompt-only request sends EXACTLY {input:{prompt}} (params-unset discipline)", async () => {
+    const { recording, calls } = scriptRep();
+    await makeRep(recording).generate({ prompt: "p" });
+    expect(sentJson(calls[0])).toEqual({ input: { prompt: "p" } });
+  });
+
+  it("accepts a bare-string output (single-output models) as well as the URI array", async () => {
+    const { recording, calls } = scriptRep({
+      polls: [{ id: "pred-1", status: "succeeded", output: REP_IMAGE_URL }],
+    });
+    const result = await makeRep(recording).generate({ prompt: "p" });
+    expect(result.images[0]?.data.equals(PNG_BYTES)).toBe(true);
+  });
+
+  it("null output (the 1-hour removal) is a typed error naming the trap", async () => {
+    const { recording } = scriptRep({ polls: [{ id: "pred-1", status: "succeeded", output: null }] });
+    await expect(makeRep(recording).generate({ prompt: "p" })).rejects.toThrow(/no output URL/);
+  });
+
+  it("cancels via POST urls.cancel on a poll failure and carries the vendor error field", async () => {
+    const calls: RecordedCall[] = [];
+    const recording: typeof fetch = (url, init) => {
+      calls.push({ url: String(url), init });
+      const u = String(url);
+      if (u === REP_GET_URL) {
+        return Promise.resolve(Response.json({ id: "pred-1", status: "failed", error: "OOM on GPU" }));
+      }
+      if (u === REP_CANCEL_URL) return Promise.resolve(new Response(null, { status: 201 }));
+      return Promise.resolve(Response.json(repSubmit()));
+    };
+    await expect(makeRep(recording).generate({ prompt: "p" })).rejects.toThrow(/failed: OOM on GPU/);
+    expect(calls.some((c) => c.url === REP_CANCEL_URL && c.init?.method === "POST")).toBe(true);
+  });
+
+  it("listModels rides the AUTHED t2i collection (the 2026-09-18 public-list drift)", async () => {
+    const calls: RecordedCall[] = [];
+    const recording: typeof fetch = (url, init) => {
+      calls.push({ url: String(url), init });
+      return Promise.resolve(
+        Response.json({
+          name: "Text to image",
+          slug: "text-to-image",
+          models: [
+            { owner: "black-forest-labs", name: "flux-schnell", description: "fast" },
+            { owner: "stability-ai", name: "sdxl", description: "sdxl" },
+          ],
+        }),
+      );
+    };
+    const models = await makeRep(recording).listModels();
+    expect(calls[0].url).toBe(`${REP_ENDPOINT}/v1/collections/text-to-image`);
+    const headers = calls[0].init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer r8_key");
+    expect(models).toEqual([
+      { id: "black-forest-labs/flux-schnell", label: "flux-schnell" },
+      { id: "stability-ai/sdxl", label: "sdxl" },
+    ]);
+  });
+
+  it("pins the capabilities row (no negative, seed, free size + ratio mapping, cloud)", () => {
+    const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Replicate];
+    expect(caps.supportsNegativePrompt).toBe(false);
+    expect(caps.supportsSeed).toBe(true);
+    expect(caps.supportsSamplers).toBe(false);
+    expect(caps.sizeSupport).toEqual({ kind: "free" });
+    expect(caps.noApiKey).toBe(false);
+    expect(caps.localExecution).toBe(false);
+  });
+
+  it("config errors are synchronous (no endpoint / no key)", () => {
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Replicate, {
+        endpoint: "",
+        apiKey: "k",
+        fetch: () => Promise.resolve(new Response("{}")),
+      }),
+    ).toThrow(ReplicateImageConfigError);
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Replicate, {
+        endpoint: REP_ENDPOINT,
+        apiKey: "",
+        fetch: () => Promise.resolve(new Response("{}")),
+      }),
+    ).toThrow(ReplicateImageConfigError);
+  });
+
+  it("probe: both live 401 shapes → credentials rejected; validation 4xx → accepted", async () => {
+    for (const detail of [
+      "You did not pass an authentication token",
+      "Invalid or expired API token.",
+    ]) {
+      const { transport } = makeTransport(() =>
+        Response.json({ title: "Unauthenticated", detail }, { status: 401 }),
+      );
+      const probe = await makeRep(transport).probe();
+      expect(probe.ok).toBe(false);
+      expect(probe.detail).toContain("credentials rejected");
+    }
+    const { transport: ok } = makeTransport(() =>
+      Response.json({ detail: "Input is invalid" }, { status: 422 }),
+    );
+    const okProbe = await makeRep(ok).probe();
+    expect(okProbe.ok).toBe(true);
+  });
+});
+
+describe("pollReplicatePrediction (exported seam)", () => {
+  it("keeps polling starting/processing with 1s→5s back-off, resolves on succeeded", async () => {
+    const waits: number[] = [];
+    const polls = [
+      { status: "starting" },
+      { status: "processing" },
+      { status: "succeeded", output: [REP_IMAGE_URL] },
+    ];
+    const { recording } = scriptRep({ polls });
+    await pollReplicatePrediction({
+      getUrl: REP_GET_URL,
+      apiKey: "k",
+      fetch: recording,
+      wait: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+    expect(waits).toEqual([1_000, 1_000]);
+  });
+
+  it("treats canceled as terminal with its own message", async () => {
+    const { recording } = scriptRep({ polls: [{ status: "canceled" }] });
+    await expect(
+      pollReplicatePrediction({ getUrl: REP_GET_URL, apiKey: "k", fetch: recording, wait: () => Promise.resolve() }),
+    ).rejects.toThrow(/canceled/);
+  });
+
+  it("gives up after the 150s budget", async () => {
+    const { recording } = scriptRep({ polls: [{ status: "processing" }] });
+    await expect(
+      pollReplicatePrediction({ getUrl: REP_GET_URL, apiKey: "k", fetch: recording, wait: () => Promise.resolve() }),
     ).rejects.toThrow(/did not complete within 150s/);
   });
 });
