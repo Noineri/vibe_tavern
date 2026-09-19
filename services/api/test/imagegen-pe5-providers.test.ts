@@ -12,6 +12,8 @@ import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern
 import { pollBflTask, BflImageConfigError, BflImageError, BFL_DEFAULT_MODEL } from "../src/domain/imagegen/backends/bfl.js";
 // Import-time side-effect registration is the production wiring.
 import "../src/domain/imagegen/backends/bfl.js";
+import { pollFalRequest, FalImageConfigError, FalImageError, FAL_DEFAULT_MODEL } from "../src/domain/imagegen/backends/fal.js";
+import "../src/domain/imagegen/backends/fal.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 
 // ─── Shared helpers (the PE-1..PE-4 files' verbatim discipline) ──────────────
@@ -324,5 +326,271 @@ describe("probe — invalid-post creds discrimination", () => {
     const probe = await make(transport).probe();
     expect(probe.ok).toBe(false);
     expect(probe.detail).toContain("not found");
+  });
+});
+
+// ─── fal (queue transport, Authorization: Key) ───────────────────────────────
+
+const FAL_ENDPOINT = "https://queue.fal.run";
+const FAL_STATUS_URL = "https://queue.fal.run/fal-ai/flux-2-pro/requests/req-1/status";
+const FAL_RESPONSE_URL = "https://queue.fal.run/fal-ai/flux-2-pro/requests/req-1/response";
+const FAL_CANCEL_URL = "https://queue.fal.run/fal-ai/flux-2-pro/requests/req-1/cancel";
+const FAL_IMAGE_URL = "https://v3.fal.media/files/abc/result.png";
+
+function makeFal(transport: typeof fetch, endpoint = FAL_ENDPOINT) {
+  return createImageGenBackend(IMAGE_GEN_BACKENDS.Fal, {
+    endpoint,
+    apiKey: "fal-key",
+    fetch: transport,
+  });
+}
+
+function falSubmit(): unknown {
+  return {
+    request_id: "req-1",
+    status_url: FAL_STATUS_URL,
+    response_url: FAL_RESPONSE_URL,
+    cancel_url: FAL_CANCEL_URL,
+    queue_position: 3,
+  };
+}
+
+function falReady(): unknown {
+  return {
+    status: "COMPLETED",
+    response_url: FAL_RESPONSE_URL,
+  };
+}
+
+function falResult(): unknown {
+  return {
+    images: [{ url: FAL_IMAGE_URL, width: 1024, height: 768, content_type: "image/png" }],
+    seed: 9,
+  };
+}
+
+/** Scripted fal flow: submit → (polls) → response → download. */
+function scriptFal(options?: { statuses?: unknown[]; result?: unknown }): {
+  recording: typeof fetch;
+  calls: RecordedCall[];
+} {
+  const statuses = options?.statuses ?? [falReady()];
+  const result = options?.result ?? falResult();
+  const calls: RecordedCall[] = [];
+  let statusIndex = 0;
+  const recording: typeof fetch = (url, init) => {
+    calls.push({ url: String(url), init });
+    const u = String(url);
+    if (u === FAL_STATUS_URL) {
+      const payload = statuses[Math.min(statusIndex, statuses.length - 1)];
+      statusIndex += 1;
+      return Promise.resolve(Response.json(payload));
+    }
+    if (u === FAL_RESPONSE_URL) return Promise.resolve(Response.json(result));
+    if (u === FAL_IMAGE_URL) {
+      return Promise.resolve(
+        new Response(new Uint8Array(PNG_BYTES), {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        }),
+      );
+    }
+    if (u === FAL_CANCEL_URL) return Promise.resolve(new Response(null, { status: 204 }));
+    return Promise.resolve(Response.json(falSubmit()));
+  };
+  return { recording, calls };
+}
+
+describe("fal queue arm (Authorization: Key, status→response→CDN download)", () => {
+  it("submits {prompt,image_size,seed} with Key auth + X-Fal-Store-IO:0, polls status, fetches response, downloads the CDN image keyless, reports actual size", async () => {
+    const { recording, calls } = scriptFal();
+    const result = await makeFal(recording).generate({
+      prompt: "a fox in the snow",
+      width: 1024,
+      height: 768,
+      seed: 9,
+    });
+
+    // Submit — Key auth format + privacy opt-out.
+    expect(calls[0].url).toBe(`${FAL_ENDPOINT}/${FAL_DEFAULT_MODEL}`);
+    const submitHeaders = calls[0].init?.headers as Record<string, string>;
+    expect(submitHeaders.Authorization).toBe("Key fal-key");
+    expect(submitHeaders["X-Fal-Store-IO"]).toBe("0");
+    const body = sentJson(calls[0]);
+    expect(body.prompt).toBe("a fox in the snow");
+    expect(body.image_size).toEqual({ width: 1024, height: 768 });
+    expect(body.seed).toBe(9);
+    expect("negative_prompt" in body).toBe(false);
+    expect("num_images" in body).toBe(false);
+    expect("enable_safety_checker" in body).toBe(false);
+    expect("output_format" in body).toBe(false);
+
+    // Status poll carries the same auth; response fetch too.
+    expect(calls[1].url).toBe(FAL_STATUS_URL);
+    expect(calls[2].url).toBe(FAL_RESPONSE_URL);
+    const pollHeaders = calls[1].init?.headers as Record<string, string>;
+    expect(pollHeaders.Authorization).toBe("Key fal-key");
+
+    // Download — the signed CDN URL, no auth header.
+    expect(calls[3].url).toBe(FAL_IMAGE_URL);
+    const downloadHeaders = calls[3].init?.headers as Record<string, string> | undefined;
+    expect(downloadHeaders?.Authorization).toBeUndefined();
+
+    expect(result.images[0]?.data.equals(PNG_BYTES)).toBe(true);
+    expect(result.width).toBe(1024);
+    expect(result.height).toBe(768);
+  });
+
+  it("sends EXACTLY {prompt} on a prompt-only request (params-unset discipline)", async () => {
+    const { recording, calls } = scriptFal();
+    await makeFal(recording).generate({ prompt: "p" });
+    expect(sentJson(calls[0])).toEqual({ prompt: "p" });
+  });
+
+  it("per-request model override rides the path (endpoint ids carry slashes)", async () => {
+    const { recording, calls } = scriptFal();
+    await makeFal(recording).generate({ prompt: "p", model: "fal-ai/nano-banana-2" });
+    expect(calls[0].url).toBe(`${FAL_ENDPOINT}/fal-ai/nano-banana-2`);
+  });
+
+  it("surfaces the safety-checker trap as a typed error and CANCELS the request on the way out", async () => {
+    const { recording, calls } = scriptFal({
+      result: { images: [{ url: FAL_IMAGE_URL }], has_nsfw_concepts: [["nsfw"]] },
+    });
+    await expect(makeFal(recording).generate({ prompt: "p" })).rejects.toThrow(/safety checker/);
+    // The cancel endpoint fired (best-effort, 204 double).
+    expect(calls.some((c) => c.url === FAL_CANCEL_URL && c.init?.method === "DELETE")).toBe(true);
+  });
+
+  it("cancels on a status-poll failure too (aihorde precedent — frees the queue slot)", async () => {
+    const calls: RecordedCall[] = [];
+    const recording: typeof fetch = (url, init) => {
+      calls.push({ url: String(url), init });
+      const u = String(url);
+      if (u === FAL_STATUS_URL) {
+        return Promise.resolve(Response.json({ detail: "boom" }, { status: 500 }));
+      }
+      if (u === FAL_CANCEL_URL) return Promise.resolve(new Response(null, { status: 204 }));
+      return Promise.resolve(Response.json(falSubmit()));
+    };
+    await expect(makeFal(recording).generate({ prompt: "p" })).rejects.toThrow(/status poll failed/);
+    expect(calls.some((c) => c.url === FAL_CANCEL_URL && c.init?.method === "DELETE")).toBe(true);
+  });
+
+  it("requires status_url + response_url in the submit response", async () => {
+    const { transport } = makeTransport(() => Response.json({ request_id: "x" }));
+    await expect(makeFal(transport).generate({ prompt: "p" })).rejects.toBeInstanceOf(FalImageError);
+  });
+
+  it("pins the capabilities row (no negative, seed, free size, cloud)", () => {
+    const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Fal];
+    expect(caps.supportsNegativePrompt).toBe(false);
+    expect(caps.supportsSeed).toBe(true);
+    expect(caps.supportsSamplers).toBe(false);
+    expect(caps.sizeSupport).toEqual({ kind: "free" });
+    expect(caps.noApiKey).toBe(false);
+    expect(caps.localExecution).toBe(false);
+  });
+
+  it("listModels walks the live catalog cursor pages (anonymous) and maps endpoint_id→id, display_name→label", async () => {
+    const calls: RecordedCall[] = [];
+    const recording: typeof fetch = (url, init) => {
+      calls.push({ url: String(url), init });
+      const u = new URL(String(url));
+      const cursor = u.searchParams.get("cursor");
+      if (cursor === null) {
+        return Promise.resolve(
+          Response.json({
+            models: [
+              { endpoint_id: "fal-ai/flux-2-pro", metadata: { display_name: "FLUX 2 Pro" } },
+            ],
+            next_cursor: "page-2",
+            has_more: true,
+          }),
+        );
+      }
+      return Promise.resolve(
+        Response.json({
+          models: [{ endpoint_id: "fal-ai/z-image/turbo", metadata: {} }],
+          has_more: false,
+        }),
+      );
+    };
+    const models = await makeFal(recording).listModels();
+    expect(models).toEqual([
+      { id: "fal-ai/flux-2-pro", label: "FLUX 2 Pro" },
+      { id: "fal-ai/z-image/turbo", label: "fal-ai/z-image/turbo" },
+    ]);
+    expect(calls).toHaveLength(2);
+    const second = new URL(calls[1].url);
+    expect(second.searchParams.get("cursor")).toBe("page-2");
+    expect(second.searchParams.get("category")).toBe("text-to-image");
+  });
+
+  it("config errors are synchronous (no endpoint / no key)", () => {
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Fal, {
+        endpoint: "",
+        apiKey: "k",
+        fetch: () => Promise.resolve(new Response("{}")),
+      }),
+    ).toThrow(FalImageConfigError);
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Fal, {
+        endpoint: FAL_ENDPOINT,
+        apiKey: "",
+        fetch: () => Promise.resolve(new Response("{}")),
+      }),
+    ).toThrow(FalImageConfigError);
+  });
+
+  it("probe: 401 Cannot access application → credentials rejected; validation 4xx → accepted", async () => {
+    const { transport } = makeTransport(() =>
+      Response.json(
+        { detail: "Cannot access application \"fal-ai/flux-2-pro\". Authentication is required to access this application." },
+        { status: 401 },
+      ),
+    );
+    const probe = await makeFal(transport).probe();
+    expect(probe.ok).toBe(false);
+    expect(probe.detail).toContain("credentials rejected");
+
+    const { transport: ok } = makeTransport(() =>
+      Response.json({ detail: [{ loc: ["body", "prompt"], msg: "Field required" }] }, { status: 422 }),
+    );
+    const okProbe = await makeFal(ok).probe();
+    expect(okProbe.ok).toBe(true);
+  });
+});
+
+describe("pollFalRequest (exported seam)", () => {
+  it("keeps polling IN_QUEUE/IN_PROGRESS with 1s→5s back-off, resolves on COMPLETED", async () => {
+    const statuses = [{ status: "IN_QUEUE", queue_position: 2 }, { status: "IN_PROGRESS" }, falReady()];
+    const waits: number[] = [];
+    const { recording } = scriptFal({ statuses });
+    await pollFalRequest({
+      statusUrl: FAL_STATUS_URL,
+      apiKey: "k",
+      fetch: recording,
+      wait: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+    expect(waits).toEqual([1_000, 1_000]);
+  });
+
+  it("fails closed on an unrecognized status", async () => {
+    const { recording } = scriptFal({ statuses: [{ status: "WEIRD" }] });
+    await expect(
+      pollFalRequest({ statusUrl: FAL_STATUS_URL, apiKey: "k", fetch: recording, wait: () => Promise.resolve() }),
+    ).rejects.toThrow(/WEIRD/);
+  });
+
+  it("gives up after the 150s budget", async () => {
+    const { recording } = scriptFal({ statuses: [{ status: "IN_QUEUE" }] });
+    await expect(
+      pollFalRequest({ statusUrl: FAL_STATUS_URL, apiKey: "k", fetch: recording, wait: () => Promise.resolve() }),
+    ).rejects.toThrow(/did not complete within 150s/);
   });
 });

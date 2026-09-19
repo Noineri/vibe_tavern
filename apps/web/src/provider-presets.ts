@@ -359,6 +359,13 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.bfl.ai",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  {
+    id: "fal",
+    label: "fal.ai",
+    backend: IMAGE_GEN_BACKENDS.Fal,
+    baseUrl: "https://queue.fal.run",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

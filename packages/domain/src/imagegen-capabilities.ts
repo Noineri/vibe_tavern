@@ -688,6 +688,39 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Fal]: {
+    // PE-5 unit 2 — fal.ai card (doc-verified 2026-09-07; re-verified
+    // live 2026-09-18: queue.md + model-arguments.md re-fetched, the live
+    // catalog walked — 221 text-to-image endpoints over 3 cursor pages,
+    // anonymous; no-key ladder probed — zero drift). QUEUE transport:
+    // POST queue.fal.run/{endpoint_id} → {status_url, response_url,
+    // cancel_url} → poll IN_QUEUE/IN_PROGRESS → COMPLETED → response
+    // {images[{url,width,height}], has_nsfw_concepts}. Auth
+    // `Authorization: Key …` (their own format). Privacy: X-Fal-Store-IO:
+    // 0 every request (30-day request storage opt-out — the google
+    // store:false / horde shared:false precedent). Safety-checker trap:
+    // flagged images come back as black replacements with non-empty
+    // has_nsfw_concepts — surfaced as a typed error, never shown
+    // silently. Negative: the fal-hosted FLUX family (VT's default
+    // roster) documents none — flag off, wire never carries it
+    // (SDXL-family per-model divergence = v1 exclusion, named
+    // decision). image_size rides the generic {width,height} object
+    // form; aspect_ratio belongs to other models (nano-banana) and is
+    // silently ignored by image_size models — never sent. Signed
+    // v3.fal.media CDN URLs downloaded keyless server-side. Best-effort
+    // DELETE cancel on every failure path out (the aihorde precedent).
+    // Default model fal-ai/flux-2-pro (the bfl default-model precedent).
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
   [IMAGE_GEN_BACKENDS.Bfl]: {
     // PE-5 unit 1 — Black Forest Labs card (doc-verified 2026-09-07;
     // re-verified live 2026-09-18: full openapi.json re-pulled — model
