@@ -611,4 +611,29 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Ideogram]: {
+    // PE-4 unit 3 — Ideogram card (doc-verified 2026-09-07; re-verified
+    // live 2026-09-18: llms.txt + generate-v4/v3 pages + the OpenAPI 3.1
+    // spec): multipart + Api-Key header (NOT Bearer), sync generation,
+    // ephemeral signed url → server-side download. v3 = full classic
+    // surface (negative_prompt, seed 0–2147483647, 69-value resolution
+    // grid); v4 = typography-first (text_prompt + 38-value 2K grid — the
+    // grid was MISSING from the .md render, spec-pinned). Named decision
+    // (per-model divergence, the stability cfg_scale precedent):
+    // negative/seed ride ONLY v3 — v4's request schema documents neither;
+    // the caps keep them as v3's real surface, the v4 wire drops them
+    // (test-pinned). aspect_ratio superseded by the resolution grid —
+    // never sent. Errors = RFC 7807 problem-details (live-probed: 401 no
+    // token / 400 prompt-required / 415 urlencoded rejected).
+    supportsNegativePrompt: true,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

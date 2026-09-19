@@ -10,6 +10,11 @@ import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern
 
 import { mapGoogleAspectRatio, mapGoogleImageSize } from "../src/domain/imagegen/backends/google.js";
 import { mapStabilityAspectRatio } from "../src/domain/imagegen/backends/stability.js";
+import {
+  IDEOGRAM_V3_RESOLUTIONS,
+  IDEOGRAM_V4_RESOLUTIONS,
+  mapIdeogramResolution,
+} from "../src/domain/imagegen/backends/ideogram.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 // Import-time side-effect registrations are the production wiring.
 import "../src/domain/imagegen/backends/google.js";
@@ -398,6 +403,147 @@ describe("stability native arm (v2beta multipart, raw bytes)", () => {
     const t = makeTransport(() => binaryResponse(PNG));
     await make(t.transport, "https://api.stability.ai/v2beta/stable-image/generate/core").generate({ prompt: "p", model: "core" });
     expect(t.calls[0]?.url).toBe("https://api.stability.ai/v2beta/stable-image/generate/core");
+  });
+});
+
+// ─── ideogram (multipart + Api-Key, ephemeral URL download) ────────────────
+
+describe("ideogram native arm (Api-Key multipart, ephemeral signed url)", () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+
+  function make(transport: typeof fetch, endpoint = "https://api.ideogram.ai") {
+    return createImageGenBackend(IMAGE_GEN_BACKENDS.Ideogram, {
+      endpoint,
+      apiKey: "idg-key",
+      fetch: transport,
+    });
+  }
+
+  function generatePayload(url = "https://ideogram.ai/api/images/ephemeral/x.png?sig=1"): unknown {
+    return {
+      created: "2026-09-18T00:00:00Z",
+      data: [{ prompt: "p", resolution: "1024x1024", is_image_safe: true, seed: 77, url }],
+    };
+  }
+
+  function formOf(call: { init?: RequestInit }): FormData {
+    const body = call.init?.body;
+    if (!(body instanceof FormData)) throw new Error("expected a FormData body");
+    return body;
+  }
+
+  it("routes v4 (default) to text_prompt on the v4 grid and v3 to prompt+negative+seed on the 69-grid", async () => {
+    const v4 = makeTransport((url) =>
+      url.includes("/generate") ? jsonResponse(generatePayload()) : new Response(new Uint8Array(PNG)),
+    );
+    await make(v4.transport).generate({ prompt: "hello world", width: 2048, height: 2048 });
+    expect(v4.calls[0]?.url).toBe("https://api.ideogram.ai/v1/ideogram-v4/generate");
+    const v4Form = formOf(v4.calls[0]);
+    expect(v4Form.get("text_prompt")).toBe("hello world");
+    expect(v4Form.get("resolution")).toBe("2048x2048");
+    expect(v4Form.get("prompt")).toBeNull();
+
+    const v3 = makeTransport((url) =>
+      url.includes("/generate") ? jsonResponse(generatePayload()) : new Response(new Uint8Array(PNG)),
+    );
+    await make(v3.transport).generate({
+      prompt: "p", model: "v3", negativePrompt: "text artifacts", seed: 5, width: 1024, height: 576,
+    });
+    expect(v3.calls[0]?.url).toBe("https://api.ideogram.ai/v1/ideogram-v3/generate");
+    const v3Form = formOf(v3.calls[0]);
+    expect(v3Form.get("prompt")).toBe("p");
+    expect(v3Form.get("negative_prompt")).toBe("text artifacts");
+    expect(v3Form.get("seed")).toBe("5");
+    expect(v3Form.get("resolution")).toBe("1152x704"); // 1024x576 is NOT in the v3 grid — nearest is 1152x704
+  });
+
+  it("drops negative/seed on v4 (per-model divergence, named decision) and never sends aspect_ratio/magic/style knobs", async () => {
+    const t = makeTransport((url) =>
+      url.includes("/generate") ? jsonResponse(generatePayload()) : new Response(new Uint8Array(PNG)),
+    );
+    await make(t.transport).generate({ prompt: "p", negativePrompt: "no", seed: 9, sampler: "euler", steps: 20 });
+    const form = formOf(t.calls[0]);
+    expect(form.get("negative_prompt")).toBeNull();
+    expect(form.get("seed")).toBeNull();
+    expect(form.get("aspect_ratio")).toBeNull();
+    expect(form.get("rendering_speed")).toBeNull();
+    expect(form.get("magic_prompt")).toBeNull();
+    expect(form.get("style_type")).toBeNull();
+    const headers = t.calls[0]?.init?.headers as Record<string, string>;
+    expect(headers["Api-Key"]).toBe("idg-key");
+    expect(headers.Authorization).toBeUndefined();
+  });
+
+  it("downloads the ephemeral signed URL server-side (GET without auth) and returns seed + resolution", async () => {
+    const t = makeTransport((url) =>
+      url.includes("/generate") ? jsonResponse(generatePayload("https://cdn.example/x.png?exp=1")) : new Response(new Uint8Array(PNG), { headers: { "Content-Type": "image/png" } }),
+    );
+    const result = await make(t.transport).generate({ prompt: "p" });
+    expect(t.calls).toHaveLength(2);
+    expect(t.calls[1]?.url).toBe("https://cdn.example/x.png?exp=1");
+    expect(result.images[0]?.data.equals(PNG)).toBe(true);
+    expect(result.seed).toBe(77);
+    expect(result.width).toBe(1024);
+    expect(result.height).toBe(1024);
+  });
+
+  it("surfaces is_image_safe false / empty url as a typed safety error; non-2xx with RFC7807 detail", async () => {
+    const unsafe = makeTransport(() =>
+      jsonResponse({ data: [{ is_image_safe: false, url: "", seed: 1, resolution: "1024x1024" }] }),
+    );
+    await expect(make(unsafe.transport).generate({ prompt: "p" })).rejects.toThrow("safety check");
+    const rejected = makeTransport(() =>
+      jsonResponse({ type: "about:blank", title: "Unauthorized", detail: "No authorization token provided", status: 401 }, 401),
+    );
+    const error = await make(rejected.transport).generate({ prompt: "p" }).catch((e: unknown) => e);
+    expect((error as InstanceType<typeof Error>).name).toBe("IdeogramImageError");
+    expect((error as { status?: number }).status).toBe(401);
+    expect((error as InstanceType<typeof Error>).message).toContain("No authorization token");
+  });
+
+  it("probes with an empty JSON body on v3 (live-pinned): 401 rejected, 400 prompt-required accepted, 422 accepted", async () => {
+    const unauthorized = makeTransport(() =>
+      jsonResponse({ type: "about:blank", title: "Unauthorized", detail: "No authorization token provided", status: 401 }, 401),
+    );
+    expect((await make(unauthorized.transport).probe()).ok).toBe(false);
+    const validation = makeTransport(() =>
+      jsonResponse({ type: "about:blank", title: "Bad Request", detail: "'prompt' is a required property", status: 400 }, 400),
+    );
+    const accepted = await make(validation.transport).probe();
+    expect(accepted.ok).toBe(true);
+    expect(accepted.detail).toContain("validation reached");
+    const safety = makeTransport(() => jsonResponse({ error: "safety" }, 422));
+    expect((await make(safety.transport).probe()).ok).toBe(true);
+  });
+
+  it("paste tolerance: full generate URL and /v1 base normalize to the bare host", async () => {
+    for (const endpoint of ["https://api.ideogram.ai/v1/ideogram-v4/generate", "https://api.ideogram.ai/v1"]) {
+      const t = makeTransport((url) =>
+        url.includes("/generate") ? jsonResponse(generatePayload()) : new Response(new Uint8Array(PNG)),
+      );
+      await make(t.transport, endpoint).generate({ prompt: "p" });
+      expect(t.calls[0]?.url).toBe("https://api.ideogram.ai/v1/ideogram-v4/generate");
+    }
+  });
+});
+
+describe("ideogram mapping seams", () => {
+  it("mapIdeogramResolution: exact matches and nearest grid entries", () => {
+    expect(mapIdeogramResolution(IDEOGRAM_V3_RESOLUTIONS, 1024, 1024)).toBe("1024x1024");
+    expect(mapIdeogramResolution(IDEOGRAM_V3_RESOLUTIONS, 1024, 576)).toBe("1152x704"); // 16:9 as the grid sees it
+    expect(mapIdeogramResolution(IDEOGRAM_V4_RESOLUTIONS, 2048, 2048)).toBe("2048x2048");
+    expect(mapIdeogramResolution(IDEOGRAM_V4_RESOLUTIONS, 2000, 2000)).toBe("1984x2016");
+    expect(IDEOGRAM_V3_RESOLUTIONS).toHaveLength(69);
+    expect(IDEOGRAM_V4_RESOLUTIONS).toHaveLength(38);
+  });
+
+  it("capability lockstep: negative + seed (v3 surface), no samplers, cloud, keyed", () => {
+    const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Ideogram];
+    expect(caps.supportsNegativePrompt).toBe(true);
+    expect(caps.supportsSamplers).toBe(false);
+    expect(caps.supportsSeed).toBe(true);
+    expect(caps.localExecution).toBe(false);
+    expect(caps.sizeSupport.kind).toBe("free");
   });
 });
 

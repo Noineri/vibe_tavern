@@ -1063,6 +1063,7 @@ export const IMAGE_GEN_BACKENDS = {
   Hf: "hf",
   Google: "google",
   Stability: "stability",
+  Ideogram: "ideogram",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

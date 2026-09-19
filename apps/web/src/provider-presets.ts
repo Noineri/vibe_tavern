@@ -323,6 +323,15 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.stability.ai",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Ideogram — typography-first native vendor; multipart + Api-Key
+  // header; ephemeral signed URLs downloaded server-side.
+  {
+    id: "ideogram",
+    label: "Ideogram",
+    backend: IMAGE_GEN_BACKENDS.Ideogram,
+    baseUrl: "https://api.ideogram.ai",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */
