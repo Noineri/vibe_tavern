@@ -721,6 +721,36 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Novita]: {
+    // PE-5 unit 6 — Novita AI card (doc-verified 2026-09-07; re-verified
+    // live 2026-09-18: the qwen-image-txt2img reference page scraped in
+    // full + the task-result .md with the FULL status enum + no-key
+    // probes on both endpoints — zero drift). The THIN arm: exactly one
+    // documented t2i model (Qwen-Image). POST /v3/async/qwen-image-
+    // txt2img (Bearer) with {prompt, size "W*H" STAR separator,
+    // 256–1536/dim} → {task_id} → poll GET /v3/async/task-result →
+    // TASK_STATUS_QUEUED/PROCESSING → SUCCEED/FAILED (task.reason
+    // carried). images[]{image_url, image_url_ttl "0", image_type,
+    // nsfw_detection_result} — downloaded immediately keyless
+    // (cloudfront; TTL semantics undocumented). NSFW surfacing: non-empty
+    // extra.has_nsfw_contents or non-null nsfw_detection_result → typed
+    // error (the fal precedent). NO seed/negative/steps/sampler/n on the
+    // surface — capabilities off. Static single-model catalog (no list
+    // endpoint); model field = passthrough for future same-pattern
+    // models. No cancel endpoint (dashscope/luma precedent). Live
+    // no-key ladder: 403 {code:403, reason:INVALID_API_KEY, message:
+    // "invalid api-key"} on both endpoints.
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
   [IMAGE_GEN_BACKENDS.Luma]: {
     // PE-5 unit 5 — Luma Agents API card (doc-verified 2026-09-07;
     // re-verified live 2026-09-18: the image-generation guide fetched in

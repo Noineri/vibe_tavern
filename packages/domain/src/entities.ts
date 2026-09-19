@@ -1071,6 +1071,7 @@ export const IMAGE_GEN_BACKENDS = {
   Replicate: "replicate",
   Leonardo: "leonardo",
   Luma: "luma",
+  Novita: "novita",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

@@ -387,6 +387,13 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://agents.lumalabs.ai",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  {
+    id: "novita",
+    label: "Novita AI (Qwen-Image)",
+    backend: IMAGE_GEN_BACKENDS.Novita,
+    baseUrl: "https://api.novita.ai",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

@@ -182,7 +182,7 @@ describe("imagegen registry", () => {
   describe("listImageGenBackendSlugs", () => {
     it("contains exactly the roster slugs (four v1 + PE-1 family)", () => {
       expect(listImageGenBackendSlugs().sort()).toEqual([...ALL_SLUGS].sort());
-      expect(ALL_SLUGS).toHaveLength(28);
+      expect(ALL_SLUGS).toHaveLength(29);
     });
 
     it("keeps the contracts Zod enum in lockstep with the domain roster (PE-1: the roster now grows by waves — an unsynced schema would reject valid profiles at parse time)", async () => {

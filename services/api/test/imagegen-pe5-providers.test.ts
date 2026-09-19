@@ -36,6 +36,12 @@ import {
   LumaImageError,
 } from "../src/domain/imagegen/backends/luma.js";
 import "../src/domain/imagegen/backends/luma.js";
+import {
+  pollNovitaTask,
+  NovitaImageConfigError,
+  NovitaImageError,
+} from "../src/domain/imagegen/backends/novita.js";
+import "../src/domain/imagegen/backends/novita.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 
 // ─── Shared helpers (the PE-1..PE-4 files' verbatim discipline) ──────────────
@@ -1187,5 +1193,193 @@ describe("pollLumaGeneration (exported seam)", () => {
     await expect(
       pollLumaGeneration({ getUrl: LUMA_GET_URL, apiKey: "k", fetch: stuck, wait: () => Promise.resolve() }),
     ).rejects.toThrow(/did not complete within 150s/);
+  });
+});
+
+// ─── novita (thin arm: one Qwen-Image model, async task) ────────────────────
+
+const NOV_ENDPOINT = "https://api.novita.ai";
+const NOV_POLL_URL = `${NOV_ENDPOINT}/v3/async/task-result?task_id=task-1`;
+const NOV_IMAGE_URL = "https://d2p7pge43lyniu.cloudfront.net/output/img.jpeg";
+
+function makeNov(transport: typeof fetch, endpoint = NOV_ENDPOINT) {
+  return createImageGenBackend(IMAGE_GEN_BACKENDS.Novita, {
+    endpoint,
+    apiKey: "nov-key",
+    fetch: transport,
+  });
+}
+
+function novSucceed(): unknown {
+  return {
+    extra: { has_nsfw_contents: [] },
+    task: { task_id: "task-1", task_type: "QWEN_IMAGE_TEXT_TO_IMAGE", status: "TASK_STATUS_SUCCEED", reason: "", eta: 0, progress_percent: 0 },
+    images: [
+      { image_url: NOV_IMAGE_URL, image_url_ttl: "0", image_type: "jpeg", nsfw_detection_result: null },
+    ],
+    videos: [],
+    audios: [],
+  };
+}
+
+function scriptNov(options?: { polls?: unknown[] }): {
+  recording: typeof fetch;
+  calls: RecordedCall[];
+} {
+  const polls = options?.polls ?? [novSucceed()];
+  const calls: RecordedCall[] = [];
+  let pollIndex = 0;
+  const recording: typeof fetch = (url, init) => {
+    calls.push({ url: String(url), init });
+    const u = String(url);
+    if (u === NOV_POLL_URL) {
+      const payload = polls[Math.min(pollIndex, polls.length - 1)];
+      pollIndex += 1;
+      return Promise.resolve(Response.json(payload));
+    }
+    if (u === NOV_IMAGE_URL) {
+      return Promise.resolve(
+        new Response(new Uint8Array(PNG_BYTES), {
+          status: 200,
+          headers: { "Content-Type": "image/jpeg" },
+        }),
+      );
+    }
+    return Promise.resolve(Response.json({ task_id: "task-1" }));
+  };
+  return { recording, calls };
+}
+
+describe("novita thin arm (Bearer, {task_id} poll, immediate keyless download)", () => {
+  it("submits {prompt, size STAR} to /v3/async/qwen-image-txt2img, polls, downloads immediately keyless", async () => {
+    const { recording, calls } = scriptNov();
+    const result = await makeNov(recording).generate({
+      prompt: "a poster",
+      width: 1024,
+      height: 768,
+    });
+    expect(calls[0].url).toBe(`${NOV_ENDPOINT}/v3/async/qwen-image-txt2img`);
+    const headers = calls[0].init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer nov-key");
+    expect(sentJson(calls[0])).toEqual({ prompt: "a poster", size: "1024*768" });
+    expect(calls[1].url).toBe(NOV_POLL_URL);
+    expect(calls[2].url).toBe(NOV_IMAGE_URL);
+    const downloadHeaders = calls[2].init?.headers as Record<string, string> | undefined;
+    expect(downloadHeaders?.Authorization).toBeUndefined();
+    expect(result.images[0]?.data.equals(PNG_BYTES)).toBe(true);
+    expect(result.images[0]?.mimeType).toBe("image/jpeg");
+  });
+
+  it("a prompt-only request sends EXACTLY {prompt} (the thin surface)", async () => {
+    const { recording, calls } = scriptNov();
+    await makeNov(recording).generate({ prompt: "p" });
+    expect(sentJson(calls[0])).toEqual({ prompt: "p" });
+  });
+
+  it("surfaces NSFW flags from EITHER channel as typed errors (fal precedent)", async () => {
+    const { recording } = scriptNov({
+      polls: [{ ...novSucceed(), extra: { has_nsfw_contents: [{ label: "NSFW" }] } }],
+    });
+    await expect(makeNov(recording).generate({ prompt: "p" })).rejects.toThrow(/has_nsfw_contents/);
+    const { recording: perImage } = scriptNov({
+      polls: [{
+        extra: { has_nsfw_contents: [] },
+        task: { task_id: "task-1", status: "TASK_STATUS_SUCCEED", reason: "" },
+        images: [{ image_url: NOV_IMAGE_URL, image_url_ttl: "0", image_type: "jpeg", nsfw_detection_result: { label: "NSFW" } }],
+      }],
+    });
+    await expect(makeNov(perImage).generate({ prompt: "p" })).rejects.toThrow(/nsfw_detection_result/);
+  });
+
+  it("carries task.reason from a FAILED task", async () => {
+    const { recording } = scriptNov({
+      polls: [{
+        extra: {},
+        task: { task_id: "task-1", status: "TASK_STATUS_FAILED", reason: "content filtered" },
+        images: [],
+      }],
+    });
+    await expect(makeNov(recording).generate({ prompt: "p" })).rejects.toThrow(/TASK_STATUS_FAILED: content filtered/);
+  });
+
+  it("static single-model catalog; pins the caps row (seed-less thin surface)", async () => {
+    const models = await makeNov(() => Promise.resolve(new Response("{}"))).listModels();
+    expect(models).toEqual([{ id: "qwen-image-txt2img", label: "Qwen-Image" }]);
+    const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Novita];
+    expect(caps.supportsSeed).toBe(false);
+    expect(caps.supportsNegativePrompt).toBe(false);
+    expect(caps.supportsSamplers).toBe(false);
+    expect(caps.sizeSupport).toEqual({ kind: "free" });
+    expect(caps.noApiKey).toBe(false);
+  });
+
+  it("config errors are synchronous (no endpoint / no key)", () => {
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Novita, {
+        endpoint: "",
+        apiKey: "k",
+        fetch: () => Promise.resolve(new Response("{}")),
+      }),
+    ).toThrow(NovitaImageConfigError);
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Novita, {
+        endpoint: NOV_ENDPOINT,
+        apiKey: "",
+        fetch: () => Promise.resolve(new Response("{}")),
+      }),
+    ).toThrow(NovitaImageConfigError);
+  });
+
+  it("probe: the live 403 INVALID_API_KEY shape → credentials rejected; validation 4xx → accepted", async () => {
+    const { transport } = makeTransport(() =>
+      jsonResponse({ code: 403, reason: "INVALID_API_KEY", message: "invalid api-key", metadata: {} }, 403),
+    );
+    const probe = await makeNov(transport).probe();
+    expect(probe.ok).toBe(false);
+    expect(probe.detail).toContain("credentials rejected");
+    const { transport: ok } = makeTransport(() =>
+      jsonResponse({ code: 1001, message: "prompt is required" }, 400),
+    );
+    const okProbe = await makeNov(ok).probe();
+    expect(okProbe.ok).toBe(true);
+  });
+});
+
+describe("pollNovitaTask (exported seam)", () => {
+  it("keeps polling QUEUED/PROCESSING with 1s→5s back-off, resolves on SUCCEED", async () => {
+    const waits: number[] = [];
+    const { recording } = scriptNov({
+      polls: [
+        { extra: {}, task: { status: "TASK_STATUS_QUEUED", reason: "" }, images: [] },
+        { extra: {}, task: { status: "TASK_STATUS_PROCESSING", reason: "" }, images: [] },
+        novSucceed(),
+      ],
+    });
+    await pollNovitaTask({
+      endpoint: NOV_ENDPOINT,
+      apiKey: "k",
+      taskId: "task-1",
+      fetch: recording,
+      wait: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+    expect(waits).toEqual([1_000, 1_000]);
+  });
+
+  it("gives up after the 150s budget; fails closed on unknown statuses", async () => {
+    const { recording } = scriptNov({
+      polls: [{ extra: {}, task: { status: "TASK_STATUS_QUEUED", reason: "" }, images: [] }],
+    });
+    await expect(
+      pollNovitaTask({ endpoint: NOV_ENDPOINT, apiKey: "k", taskId: "task-1", fetch: recording, wait: () => Promise.resolve() }),
+    ).rejects.toThrow(/did not complete within 150s/);
+    const { recording: weird } = scriptNov({
+      polls: [{ extra: {}, task: { status: "TASK_STATUS_WEIRD" }, images: [] }],
+    });
+    await expect(
+      pollNovitaTask({ endpoint: NOV_ENDPOINT, apiKey: "k", taskId: "task-1", fetch: weird, wait: () => Promise.resolve() }),
+    ).rejects.toThrow(/TASK_STATUS_WEIRD/);
   });
 });
