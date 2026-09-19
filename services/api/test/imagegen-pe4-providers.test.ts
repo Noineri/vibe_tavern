@@ -16,6 +16,8 @@ import {
   mapIdeogramResolution,
 } from "../src/domain/imagegen/backends/ideogram.js";
 import "../src/domain/imagegen/backends/cloudflare.js";
+import { pollHordeGeneration, snapHordeDimension } from "../src/domain/imagegen/backends/aihorde.js";
+import "../src/domain/imagegen/backends/aihorde.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 // Import-time side-effect registrations are the production wiring.
 import "../src/domain/imagegen/backends/google.js";
@@ -641,6 +643,175 @@ describe("cloudflare native arm (account-scoped run URL, result.image base64)", 
 
     const serverError = makeTransport(() => jsonResponse({}, 500));
     expect((await make(serverError.transport).probe()).ok).toBe(false);
+  });
+});
+
+// ─── aihorde (crowdsourced async, anonymous-first) ───────────────────────────
+
+describe("aihorde native arm (async submit→poll→status, anonymous tier)", () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const BASE = "https://stablehorde.net/api";
+
+  function make(transport: typeof fetch, options?: { apiKey?: string; model?: string }) {
+    return createImageGenBackend(IMAGE_GEN_BACKENDS.Aihorde, {
+      endpoint: BASE,
+      ...(options?.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+      ...(options?.model !== undefined ? { model: options.model } : {}),
+      fetch: transport,
+    });
+  }
+
+  /** A scripted full happy-path transport: submit → check(done immediately —
+   *   the wait cadence is covered by the pollHordeGeneration seam test) →
+   *   status → download. */
+  function happyPath(img: string): ReturnType<typeof makeTransport> {
+    return makeTransport((url) => {
+      if (url.endsWith("/v2/generate/async")) {
+        return jsonResponse({ id: "req-1", kudos: 10 });
+      }
+      if (url.includes("/v2/generate/check/")) {
+        return jsonResponse({ done: true, is_possible: true, faulted: false, wait_time: 0 });
+      }
+      if (url.includes("/v2/generate/status/")) {
+        return jsonResponse({
+          generations: [{ img, seed: "424242", censored: false }],
+          shared: false,
+        });
+      }
+      return new Response(new Uint8Array(PNG));
+    });
+  }
+
+  it("submits the ### negative convention, r2:true, shared:false, snapped 64-multiple dims, string seed, sampler+scheduler, models[]", async () => {
+    const t = happyPath(PNG.toString("base64"));
+    const r = await make(t.transport, { model: "Deliberate" }).generate({
+      prompt: "a cat", negativePrompt: "blurry", width: 500, height: 740,
+      steps: 30, cfgScale: 7, seed: 42, sampler: "k_euler_a", scheduler: "karras",
+    });
+    const submit = JSON.parse(t.calls[0]?.init?.body as string) as Record<string, unknown>;
+    expect(submit.prompt).toBe("a cat ### blurry");
+    expect(submit.r2).toBe(true);
+    expect(submit.shared).toBe(false);
+    expect(submit.models).toEqual(["Deliberate"]);
+    const params = submit.params as Record<string, unknown>;
+    expect(params.width).toBe(512); // snapped to the 64 grid
+    expect(params.height).toBe(768);
+    expect(params.seed).toBe("42"); // string wire
+    expect(params.sampler_name).toBe("k_euler_a");
+    expect(params.scheduler).toBe("karras");
+    expect(r.seed).toBe(424242);
+    expect(r.images[0]?.data.equals(PNG)).toBe(true);
+  });
+
+  it("sends the anonymous key by default and the registered key when set; Client-Agent always present", async () => {
+    const anon = happyPath(PNG.toString("base64"));
+    await make(anon.transport).generate({ prompt: "p" });
+    expect((anon.calls[0]?.init?.headers as Record<string, string>).apikey).toBe("0000000000");
+    expect(((anon.calls[0]?.init?.headers as Record<string, string>)["Client-Agent"] ?? "").length).toBeGreaterThan(0);
+    const registered = happyPath(PNG.toString("base64"));
+    await make(registered.transport, { apiKey: "real-key" }).generate({ prompt: "p" });
+    expect((registered.calls[0]?.init?.headers as Record<string, string>).apikey).toBe("real-key");
+  });
+
+  it("downloads the r2 URL server-side; decodes inline base64", async () => {
+    const url = happyPath("https://r2.example/gen.webp?sig=1");
+    await make(url.transport).generate({ prompt: "p" });
+    expect(url.calls.some((c) => c.url === "https://r2.example/gen.webp?sig=1" && c.init?.method === "GET")).toBe(true);
+    const inline = happyPath(PNG.toString("base64"));
+    const r = await make(inline.transport).generate({ prompt: "p" });
+    expect(r.images[0]?.mimeType).toBe("image/png");
+  });
+
+  it("surfaces censored generations and faulted/impossible polls as typed errors, cancelling on the way out", async () => {
+    const censored = makeTransport((url) => {
+      if (url.endsWith("/v2/generate/async")) return jsonResponse({ id: "req-2" });
+      if (url.includes("/v2/generate/check/")) return jsonResponse({ done: true, is_possible: true, faulted: false });
+      return jsonResponse({ generations: [{ img: "", seed: "1", censored: true }] });
+    });
+    await expect(make(censored.transport).generate({ prompt: "p" })).rejects.toThrow("censored");
+
+    let cancelled = false;
+    const impossible = makeTransport((url) => {
+      if (url.endsWith("/v2/generate/async")) return jsonResponse({ id: "req-3" });
+      if (url.includes("/v2/generate/check/")) {
+        return jsonResponse({ done: false, is_possible: false, faulted: false });
+      }
+      if (url.includes("/v2/generate/status/req-3") && url !== BASE) {
+        cancelled = true;
+        return jsonResponse({ id: "req-3" });
+      }
+      return jsonResponse({});
+    });
+    await expect(make(impossible.transport).generate({ prompt: "p" })).rejects.toThrow("cannot serve");
+    expect(cancelled).toBe(true); // best-effort DELETE fired
+  });
+
+  it("lists live models from /v2/status/models?type=image and the 41-value static sampler catalog", async () => {
+    const t = makeTransport(() =>
+      jsonResponse([
+        { name: "Deliberate", count: 4, eta: 10, jobs: 0, queued: 0, performance: "x", type: "image" },
+        { name: "WAI-ANI-NSFW-PONYXL", count: 7, eta: 20, jobs: 1, queued: 1, performance: "y", type: "image" },
+      ]),
+    );
+    const models = await make(t.transport).listModels();
+    expect(t.calls[0]?.url).toBe(`${BASE}/v2/status/models?type=image`);
+    expect(models).toEqual([
+      { id: "Deliberate", label: "Deliberate" },
+      { id: "WAI-ANI-NSFW-PONYXL", label: "WAI-ANI-NSFW-PONYXL" },
+    ]);
+    const samplers = await make(t.transport).listSamplers();
+    expect(samplers).toHaveLength(41);
+    expect(samplers.map((s) => s.name)).toContain("k_euler_a");
+    expect(new Set(samplers.map((s) => s.name)).size).toBe(41); // no dups
+  });
+
+  it("probes with dry_run (live-pinned): anonymous 200 kudos = ok, 401 invalid key = rejected, 429 = ok-with-note", async () => {
+    const ok = makeTransport(() => jsonResponse({ kudos: 10 }));
+    const okResult = await make(ok.transport).probe();
+    expect(okResult.ok).toBe(true);
+    expect(okResult.detail).toContain("anonymous tier");
+    const unauthorized = makeTransport(() =>
+      jsonResponse({ message: "No user matching sent API Key.", rc: "InvalidAPIKey" }, 401),
+    );
+    const rejected = await make(unauthorized.transport, { apiKey: "bad-key" }).probe();
+    expect(rejected.ok).toBe(false);
+    expect(rejected.detail).toContain("API key rejected");
+    const throttled = makeTransport(() => jsonResponse({}, 429));
+    const rateLimited = await make(throttled.transport).probe();
+    expect(rateLimited.ok).toBe(true);
+  });
+
+  it("pollHordeGeneration seam: 3s→doubling→15s cadence via the injected wait (no real sleeps)", async () => {
+    const waits: number[] = [];
+    let checks = 0;
+    const t = makeTransport(() => {
+      checks += 1;
+      return jsonResponse({ done: checks >= 5, is_possible: true, faulted: false });
+    });
+    await pollHordeGeneration(t.transport, BASE, "req-x", undefined, {
+      wait: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+    expect(checks).toBe(5);
+    expect(waits).toEqual([3000, 6000, 12000, 15000]); // doubling, capped at 15s
+  });
+
+  it("snapHordeDimension pins the documented 64-multiple grid clamp", () => {
+    expect(snapHordeDimension(500)).toBe(512);
+    expect(snapHordeDimension(63)).toBe(64);
+    expect(snapHordeDimension(5000)).toBe(3072);
+    expect(snapHordeDimension(768)).toBe(768);
+  });
+
+  it("capability lockstep: the richest cloud surface — negative + samplers + seed, keyless", () => {
+    const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Aihorde];
+    expect(caps.supportsNegativePrompt).toBe(true);
+    expect(caps.supportsSamplers).toBe(true);
+    expect(caps.supportsSeed).toBe(true);
+    expect(caps.noApiKey).toBe(true);
+    expect(caps.sizeSupport.kind).toBe("free");
   });
 });
 

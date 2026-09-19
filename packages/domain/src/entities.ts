@@ -1065,6 +1065,7 @@ export const IMAGE_GEN_BACKENDS = {
   Stability: "stability",
   Ideogram: "ideogram",
   Cloudflare: "cloudflare",
+  Aihorde: "aihorde",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

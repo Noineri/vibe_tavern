@@ -662,4 +662,30 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Aihorde]: {
+    // PE-4 unit 5 — AI Horde card (doc-verified 2026-09-07; re-verified
+    // live 2026-09-18: swagger re-pulled + resolved through allOf chains,
+    // heartbeat v5.1.11, models endpoint live, dry-run probe). Crowdsourced
+    // free cluster: submit /v2/generate/async → poll check/{id} →
+    // status/{id}; r2:true (URL delivery, server-side download),
+    // shared:false pinned (LAION privacy). Anonymous key 0000000000 is a
+    // first-class tier — keyless. The RICHEST SD surface of the cloud
+    // roster: steps 1–500, cfg 0–100, 64-multiple dimensions,
+    // seed-as-string, 41-value sampler enum (**drift: the card said 43 —
+    // 41 live**), 11-value scheduler enum — the A1111-dialect scheduler
+    // seam's first cloud landing. Negative rides the horde ` ### `
+    // convention (guides-documented, swagger-silent). UX caveat surfaced
+    // to the owner: crowdsourced queues can exceed the 3-min cloud
+    // timeout (anonymous queues run minutes).
+    supportsNegativePrompt: true,
+    supportsSamplers: true,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: true,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

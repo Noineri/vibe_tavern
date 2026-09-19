@@ -342,6 +342,16 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // AI Horde — crowdsourced free cluster; the key is OPTIONAL (anonymous
+  // tier) — register at stablehorde.net only for priority.
+  {
+    id: "aihorde",
+    label: "AI Horde (free)",
+    backend: IMAGE_GEN_BACKENDS.Aihorde,
+    baseUrl: "https://stablehorde.net/api",
+    group: PROVIDER_PRESET_GROUP.cloud,
+    keyOptional: true,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

@@ -106,6 +106,7 @@ import "../../domain/imagegen/backends/google.js";
 import "../../domain/imagegen/backends/stability.js";
 import "../../domain/imagegen/backends/ideogram.js";
 import "../../domain/imagegen/backends/cloudflare.js";
+import "../../domain/imagegen/backends/aihorde.js";
 import "../../domain/imagegen/backends/raw-binary.js";
 
 // ─── Route-ladder errors ─────────────────────────────────────────────────────
