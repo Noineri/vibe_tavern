@@ -108,7 +108,10 @@ beforeEach(() => {
 
 describe("committed assistant completion refresh", () => {
   test("starts the scoped refresh after a non-streaming send snapshot is ingested", async () => {
-    const snapshot = { messages: [{ id: "msg_1" }] } as unknown as AppSnapshot;
+    // `variants` is required on the wire (AppMessage derives from the RPC
+    // type); the ingest path reads it (IG-CF10 shadow stamp) — the double
+    // must carry a minimal array to honor the contract.
+    const snapshot = { messages: [{ id: "msg_1", variants: [] }] } as unknown as AppSnapshot;
     sendChatMessageMock.mockResolvedValueOnce(snapshot);
 
     await sendChatMessageAction(chatId("chat-1"), "Hello");
@@ -124,16 +127,18 @@ describe("committed assistant completion refresh", () => {
     const snapshot = {
       activeChat: { id: chatId("chat-1"), characterId: characterId("char-1"), mode: "coauthor" },
       messages: [
-        { id: "user_1", role: "user", content: "edit examples" },
+        { id: "user_1", role: "user", content: "edit examples", variants: [] },
         {
           id: "assistant_call",
           role: "assistant",
           content: "",
+          variants: [],
           toolCalls: [{ id: "call_1", name: "edit_examples", args: editArgs }],
         },
         {
           id: "tool_1",
           role: "tool",
+          variants: [],
           toolCallId: "call_1",
           content: JSON.stringify({
             target: "profile",
@@ -141,7 +146,7 @@ describe("committed assistant completion refresh", () => {
             summary: "Updated examples",
           }),
         },
-        { id: "assistant_final", role: "assistant", content: "Done" },
+        { id: "assistant_final", role: "assistant", content: "Done", variants: [] },
       ],
     } as unknown as AppSnapshot;
     sendChatMessageMock.mockResolvedValueOnce(snapshot);
@@ -167,7 +172,7 @@ describe("committed assistant completion refresh", () => {
   });
 
   test("starts the scoped refresh after a non-streaming generate-reply snapshot is ingested", async () => {
-    const snapshot = { messages: [{ id: "msg_2" }] } as unknown as AppSnapshot;
+    const snapshot = { messages: [{ id: "msg_2", variants: [] }] } as unknown as AppSnapshot;
     generateReplyMock.mockResolvedValueOnce(snapshot);
 
     await generateReplyAction(chatId("chat-1"));

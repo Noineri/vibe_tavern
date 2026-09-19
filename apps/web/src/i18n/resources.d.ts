@@ -1271,7 +1271,7 @@ export default interface Resources {
     "image_gen_template_checkpoint": "Checkpoint",
     "image_gen_template_krea2_dit": "Krea 2 DiT",
     "image_gen_user_size_add": "Add",
-    "image_gen_user_size_delete": "Remove size {{size}}",
+    "image_gen_user_size_delete": "Remove size {size}",
     "image_gen_user_size_duplicate": "This size is already in the list",
     "image_gen_user_size_height": "Custom size height",
     "image_gen_user_size_ratio": "Aspect ratio (as published by the vendor, e.g. 5:4)",

@@ -1158,7 +1158,7 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     });
   });
 
-  test("images tab stays lazy until switched, then renders the 7 mode fields without accordions", async () => {
+  test("images tab stays lazy until switched, then renders the 8 mode fields without accordions", async () => {
     const def = makeServiceProfile();
     const p2 = { ...makeServiceProfile(), id: "p2", name: "ImgProf", isDefault: false };
     listServiceProfilesMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
@@ -1186,13 +1186,15 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     await act(async () => { fireEvent.click(within(view.baseElement).getByText("ImgProf")); });
     await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
     await waitFor(() => {
-      // Single-family surface: no family section headers, exactly the 7 image
-      // mode fields as textareas, and no non-image field labels.
+      // Single-family surface: no family section headers, exactly the 8 image
+      // mode fields as textareas (IG-13's 7 + IG-15's image_assist pre-pass
+      // instruction), and no non-image field labels.
       expect(view.baseElement.textContent).not.toContain("promptManager.servicePrompts.family.");
       expect(view.baseElement.textContent).toContain("promptManager.servicePrompts.field.image_portrait");
+      expect(view.baseElement.textContent).toContain("promptManager.servicePrompts.field.image_assist");
       expect(view.baseElement.textContent).not.toContain("promptManager.servicePrompts.field.summary");
       const tas = view.baseElement.querySelectorAll("textarea");
-      expect(tas.length).toBe(7);
+      expect(tas.length).toBe(8);
     });
   });
 
@@ -1220,7 +1222,7 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     await waitFor(() => expect(within(view.baseElement).getByText("ImgProf")).toBeTruthy());
     await act(async () => { fireEvent.click(within(view.baseElement).getByText("ImgProf")); });
     await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
-    await waitFor(() => expect(view.baseElement.querySelectorAll("textarea").length).toBe(7));
+    await waitFor(() => expect(view.baseElement.querySelectorAll("textarea").length).toBe(8));
     const ta = view.baseElement.querySelector("textarea") as HTMLTextAreaElement;
     await act(async () => { fireEvent.change(ta, { target: { value: "edited" } }); });
     // Closing with a dirty images draft must open the discard guard.

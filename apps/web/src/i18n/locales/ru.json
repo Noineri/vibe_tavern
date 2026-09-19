@@ -547,7 +547,7 @@
   "image_gen_user_sizes_title": "Размеры вне таблицы вендора",
   "image_gen_user_sizes_hint": "Если вендор сообщил размер, которого ещё нет в списке: добавьте его здесь, и он появится в дропдаунах всех режимов, пока встроенная таблица не догонит.",
   "image_gen_user_size_add": "Добавить",
-  "image_gen_user_size_delete": "Удалить размер {{size}}",
+  "image_gen_user_size_delete": "Удалить размер {size}",
   "image_gen_user_size_width": "Ширина своего размера",
   "image_gen_user_size_height": "Высота своего размера",
   "image_gen_user_size_ratio": "Соотношение сторон (как опубликовал вендор, напр. 5:4)",
