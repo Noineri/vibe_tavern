@@ -688,4 +688,38 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Bfl]: {
+    // PE-5 unit 1 — Black Forest Labs card (doc-verified 2026-09-07;
+    // re-verified live 2026-09-18: full openapi.json re-pulled — model
+    // inventory, Flux2Inputs, AsyncResponse, StatusResponse enum, plus
+    // the flux2 image-editing guide's poll/download examples — zero
+    // drift). Per-model endpoints POST /v1/{model}, auth header `x-key`,
+    // async task pattern: submit → {id, polling_url, cost?, input_mp?,
+    // output_mp?} → GET polling_url (WITH x-key, their own poll
+    // examples) → StatusResponse. Live-pinned status enum: Task not
+    // found | Pending | Reasoning | Generating | Request Moderated |
+    // Content Moderated | Ready | Error — the two Moderated states are
+    // TERMINAL with their own messages (live probe ladder: no key → 403
+    // Not authenticated; junk/64-hex key → 422 {detail: Invalid API key
+    // format}; wrong model path → 404 — routing precedes auth). Ready →
+    // result.sample = signed URL, downloaded server-side WITHOUT the
+    // key (the signed-URL rule, aihorde/dashscope precedent). NO
+    // negative prompt on FLUX (their own guide title: "working without
+    // negative prompts" — exclusions go positive); no steps/guidance/
+    // sampler surface on FLUX.2. seed + free width/height (min 64,
+    // default 0 = server-chosen) ride; disable_pup/output_format/
+    // safety_tolerance/webhook stay unsent (vendor defaults — the
+    // params-unset discipline). Default model flux-2-pro (the pinned GA
+    // flagship of their own examples; google default-model precedent).
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

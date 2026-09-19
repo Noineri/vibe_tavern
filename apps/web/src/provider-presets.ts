@@ -352,6 +352,13 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     group: PROVIDER_PRESET_GROUP.cloud,
     keyOptional: true,
   },
+  {
+    id: "bfl",
+    label: "Black Forest Labs (FLUX)",
+    backend: IMAGE_GEN_BACKENDS.Bfl,
+    baseUrl: "https://api.bfl.ai",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */
