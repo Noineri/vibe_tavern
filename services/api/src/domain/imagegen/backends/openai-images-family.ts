@@ -399,6 +399,13 @@ const VOLCENGINE_OPTIONS: OpenAiImagesFamilyOptions = {
 
 // ─── Registration (one factory closure per OPTIONS row) ──────────────────────
 
+/** Named NanoGPT factory — exported for the route-test registry dance
+ *  (imagegen-routes.test.ts resets the process-global registry in
+ *  beforeEach and re-registers the factories it exercises; the
+ *  openRouterImageGenFactory / a1111Factory twin). */
+export const nanoGptImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBackend =>
+  makeOpenAiImagesFamilyBackend(NANOGPT_OPTIONS, config);
+
 /** The PE-1 OPTIONS table — one row per family slug. Grows one row per
  *  wave unit (togetherai → siliconflow → nanogpt → electronhub →
  *  pollinations → deepinfra → recraft); every row's slug exists in

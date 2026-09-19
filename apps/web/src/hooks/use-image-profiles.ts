@@ -286,8 +286,9 @@ export function useImageProfiles(): {
   // IG-21: resolve the auto-key hint for the LIVE form. A server-decorated
   //  name (saved record) wins; drafts fall through to the client-side
   //  mirror of the server hint rule (matchImageGenAutoKeyProviderName).
-  //  Only the cloud backends qualify (openrouter by vendor host,
-  //  openai-images by exact endpoint); a1111 never matches.
+  //  OpenRouter matches by vendor host; every other endpoint-driven cloud
+  //  backend by exact endpoint (the MR-3 generalization); a1111/comfyui
+  //  never match.
   const draftAutoKeyProviderName =
     form?.autoKeyProviderName !== null && form?.autoKeyProviderName !== undefined
       ? form.autoKeyProviderName

@@ -8,10 +8,12 @@
  * in a JSON blob), same write-only tri-state on update.
  *
  * KEY RESOLUTION (IG-21, owner decision 2026-09-15 — the STT/TTS auto-key
- * mechanism reused): a profile WITHOUT its own stored key auto-matches at
- * the execution seam — **openrouter**: the first keyful LLM provider whose
- * endpoint lives on the OpenRouter vendor host; **openai-images (Custom
- * cloud)**: exact normalized-endpoint match over keyful LLM providers (the
+ * mechanism reused; MR-3 generalized 2026-09-18): a profile WITHOUT its own
+ * stored key auto-matches at the execution seam — **openrouter**: the first
+ * keyful LLM provider whose endpoint lives on the OpenRouter vendor host;
+ * **every other endpoint-driven cloud backend** (the whole PE roster —
+ * nanogpt, electronhub, …): exact normalized-endpoint match over keyful
+ * LLM providers (the
  * openai-compat rule). a1111 is local/keyless (out of scope). The profile's
  * OWN typed key always overrides; a keyless no-match profile passes through
  * to the backend factory which surfaces whatever auth error applies. The
@@ -274,20 +276,24 @@ function normalizeEndpoint(raw: string): string {
 const OPENROUTER_API_HOST = "https://openrouter.ai";
 
 /** Auto-match an image-gen profile's key against the LLM provider profiles
- *  (IG-21, the autoMatchSttKey twin). Deterministic: first keyful provider
+ *  (IG-21, the autoMatchSttKey twin; MR-3 generalized the exact-endpoint arm
+ *  to the whole cloud roster — a NanoGPT draft with a NanoGPT provider
+ *  profile is the owner's own case). Deterministic: first keyful provider
  *  in list (sort) order wins. Rules per backend:
  *  - openrouter: first keyful provider whose endpoint lives on the OpenRouter
  *    vendor host (any path under openrouter.ai);
- *  - openai-images: exact normalized-endpoint match (the openai-compat rule —
- *    a Custom-cloud row shares the key only with the exact same endpoint);
- *  - a1111: local/keyless — never matches.
+ *  - every other endpoint-driven cloud backend: exact normalized-endpoint
+ *    match (the openai-compat rule generalized — the image-gen roster has no
+ *    fixed-host vendor arm, so the endpoint IS the vendor; a saved key
+ *    serves only the endpoint it was saved with);
+ *  - a1111 / comfyui: local/keyless — never match.
  *  Own-key configs short-circuit BEFORE this runs (resolveAdapterConfig). */
 async function autoMatchImageGenKey(
   stores: Pick<StoreContainer, "providers">,
   backend: ImageGenProfile["backend"],
   endpoint: string,
 ): Promise<{ apiKey: string; matchedName: string } | null> {
-  if (backend !== IMAGE_GEN_BACKENDS.OpenRouter && backend !== IMAGE_GEN_BACKENDS.OpenAiImages) {
+  if (backend === IMAGE_GEN_BACKENDS.A1111 || backend === IMAGE_GEN_BACKENDS.ComfyUI) {
     return null;
   }
   const target = normalizeEndpoint(endpoint);

@@ -38,6 +38,7 @@ import { openRouterImageGenFactory } from "../src/domain/imagegen/backends/openr
 import { openAiImagesFactory } from "../src/domain/imagegen/backends/openai-images.js";
 import { a1111Factory } from "../src/domain/imagegen/backends/a1111.js";
 import { comfyImageGenFactory } from "../src/domain/imagegen/backends/comfyui.js";
+import { nanoGptImageGenFactory } from "../src/domain/imagegen/backends/openai-images-family.js";
 import {
   IMAGE_GEN_BACKEND_CAPABILITIES,
   __resetImageGenRegistryForTests,
@@ -65,6 +66,9 @@ beforeEach(() => {
   registerImageGenBackend(IMAGE_GEN_BACKENDS.OpenAiImages, openAiImagesFactory);
   registerImageGenBackend(IMAGE_GEN_BACKENDS.A1111, a1111Factory);
   registerImageGenBackend(IMAGE_GEN_BACKENDS.ComfyUI, comfyImageGenFactory);
+  // MR-3: the nanogpt family backend rides the route ladder in the IG-21
+  // suite (the owner's own draft case) — same re-registration rule.
+  registerImageGenBackend(IMAGE_GEN_BACKENDS.NanoGpt, nanoGptImageGenFactory);
 });
 
 /** Distinct PNG-signatured bytes so disk round-trips are verifiable. */
@@ -459,6 +463,42 @@ describe("image-gen routes — IG-21 auto-key cascade", () => {
     expect(res.status).toBe(200);
     const auth = (captured.init?.headers as Record<string, string> | undefined)?.["Authorization"];
     expect(auth).toBe("Bearer sk-provider");
+  });
+
+  test("MR-3: a keyless nanogpt draft auto-matches the provider key by exact endpoint; mismatch stays keyless", async () => {
+    // The owner's own case: NanoGPT is a DEDICATED backend (not openrouter/
+    // openai-images) — before MR-3 the matcher gated on those two slugs only
+    // and every other cloud backend failed closed with "apiKey is required".
+    const captured: { init?: RequestInit; calls: number } = { calls: 0 };
+    const { app, stores } = await makeApp(async (_input, init) => {
+      captured.init = init;
+      return modelsBody();
+    });
+    await seedProvider(stores, { name: "Nano main", endpoint: "https://nano-gpt.com/api/v1", apiKey: "sk-provider" });
+
+    const ok = await app.request("/api/image-gen/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: IMAGE_GEN_BACKENDS.NanoGpt,
+        config: { endpoint: "https://nano-gpt.com/api/v1" },
+      }),
+    });
+    expect(ok.status).toBe(200);
+    const auth = (captured.init?.headers as Record<string, string> | undefined)?.["Authorization"];
+    expect(auth).toBe("Bearer sk-provider");
+
+    // Different endpoint — the exact-match guard holds (fail closed).
+    const denied = await app.request("/api/image-gen/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: IMAGE_GEN_BACKENDS.NanoGpt,
+        config: { endpoint: "https://other-gateway.test/v1" },
+      }),
+    });
+    expect(denied.status).toBe(400);
+    expect(((await denied.json()) as { error: string }).error).toContain("`apiKey` is required");
   });
 });
 

@@ -6,10 +6,12 @@
  *
  * The STT discipline — two mirrors, one rule: this pure function must stay
  * in lockstep with the server matcher. Rule order (owner decision
- * 2026-09-15): a keyless image-gen profile auto-matches the FIRST keyful
- * LLM provider in list order — openrouter by VENDOR HOST (any path under
- * openrouter.ai), openai-images by EXACT normalized endpoint (the
- * openai-compat rule). a1111 is local/keyless and never matches.
+ * 2026-09-15; MR-3 generalized the exact-endpoint arm 2026-09-18): a keyless
+ * image-gen profile auto-matches the FIRST keyful LLM provider in list
+ * order — openrouter by VENDOR HOST (any path under openrouter.ai), every
+ * other endpoint-driven cloud backend by EXACT normalized endpoint (the
+ * openai-compat rule generalized). a1111/comfyui are local/keyless and
+ * never match.
  */
 
 import { IMAGE_GEN_BACKENDS, type ImageGenBackendType } from "@vibe-tavern/domain";
@@ -40,8 +42,10 @@ const IMAGEGEN_OPENROUTER_API_HOST = "https://openrouter.ai";
  *  image-gen-adapter.ts — deliberately NOT the runtime cascade):
  *  - openrouter: the FIRST keyful provider whose endpoint lives on the
  *    vendor host wins (the STT fixed-vendor rule);
- *  - openai-images: exact normalized-endpoint match over keyful providers;
- *  - a1111 (and anything else): null — local/keyless, never matches.
+ *  - every other endpoint-driven cloud backend: exact normalized-endpoint
+ *    match over keyful providers (the MR-3 generalization — the server
+ *    matcher's rule verbatim);
+ *  - a1111 / comfyui (local, keyless): null — never matches.
  *  Pure: the hook feeds wire lists, the editor feeds the live draft form.
  *  The active-flag never participates — the server rule ignores it too. */
 export function matchImageGenAutoKeyProviderName(
@@ -49,7 +53,7 @@ export function matchImageGenAutoKeyProviderName(
   endpoint: string,
   providers: ImageGenAutoKeyProviderCandidate[],
 ): string | null {
-  if (backend !== IMAGE_GEN_BACKENDS.OpenRouter && backend !== IMAGE_GEN_BACKENDS.OpenAiImages) {
+  if (backend === IMAGE_GEN_BACKENDS.A1111 || backend === IMAGE_GEN_BACKENDS.ComfyUI) {
     return null;
   }
   const keyful = providers.filter((p) => p.hasStoredApiKey);

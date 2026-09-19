@@ -138,6 +138,7 @@ const draftModelsMock = mock(
 const providersListMock = mock(async (): Promise<Array<{ endpoint: string; hasStoredApiKey: boolean; name: string }>> => [
   { endpoint: "https://openrouter.ai/api/v1", hasStoredApiKey: true, name: "OR main" },
   { endpoint: "https://api.openai.com/v1", hasStoredApiKey: true, name: "OAi main" },
+  { endpoint: "https://nano-gpt.com/api/v1", hasStoredApiKey: true, name: "Nano main" },
   { endpoint: "https://openrouter.ai/api/v2", hasStoredApiKey: false, name: "Keyless OR" },
 ]);
 
@@ -161,7 +162,7 @@ mock.module("../api/provider-api.js", () => ({
 
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
 const { useImageProfiles, toImageGenBackend } = await import("./use-image-profiles.js");
-const { IMAGE_GEN_BACKEND_CAPABILITIES } = await import("@vibe-tavern/domain");
+const { IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_BACKENDS } = await import("@vibe-tavern/domain");
 
 afterEach(async () => {
   await act(async () => {});
@@ -520,6 +521,35 @@ describe("useImageProfiles — models / samplers / draft", () => {
     await waitFor(() => expect(hook!.form?.name).toBe("New card"));
     hook!.setForm({ endpoint: "https://openrouter.ai/api/v1" });
     expect(hook!.draftAutoKeyProviderName).toBe("OR main");
+  });
+
+  it("MR-3: a keyless nanogpt draft auto-matches the provider key by exact endpoint (mirror)", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "openrouter", endpoint: "https://openrouter.ai/api/v1" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+
+    // The owner's own case: a NanoGPT draft (dedicated backend, NOT
+    // openai-compat-backends-only anymore) with the provider profile's
+    // exact endpoint → the hint names that provider.
+    hook!.startCreate("Draft", IMAGE_GEN_BACKENDS.NanoGpt);
+    await waitFor(() => expect(hook?.form?.backend).toBe("nanogpt"));
+    act(() => hook!.setForm({ endpoint: "https://nano-gpt.com/api/v1" }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBe("Nano main"));
+
+    // Same backend, a different endpoint — the exact-match guard holds.
+    act(() => hook!.setForm({ endpoint: "https://other-gateway.test/v1" }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBeNull());
+
+    // Local keyless backends never match, even on an exact endpoint.
+    hook!.startCreate("Local", IMAGE_GEN_BACKENDS.A1111);
+    await waitFor(() => expect(hook?.form?.backend).toBe("a1111"));
+    act(() => hook!.setForm({ endpoint: "https://nano-gpt.com/api/v1" }));
+    await waitFor(() => expect(hook?.draftAutoKeyProviderName).toBeNull());
   });
 
   it("fetchDraftModels sends the live form config with the typed key inside it", async () => {
