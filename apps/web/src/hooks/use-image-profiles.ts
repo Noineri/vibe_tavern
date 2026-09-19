@@ -200,7 +200,10 @@ export function useImageProfiles(): {
    *  (the STT draft twin): the just-typed endpoint/key ride inside the
    *  draft config; `profileId` lets the server inject the stored key when
    *  the form's own is empty and the endpoint matches. Returns the entries
-   *  (transient — never cached); failures land in `error` and rethrow. */
+   *  (transient — never cached); failures RETHROW to the caller (the
+   *  form's Test badge is the only surface — MR-2: the shared `error` is
+   *  never touched, so a failed draft can never paint «profiles failed to
+   *  load» over the list). */
   fetchDraftModels(): Promise<ImageGenModelEntry[]>;
   /** Persisted star-bookmarks for the editing profile (IG-12b). */
   favorites: ImageGenModelFavoriteValue[];
@@ -762,25 +765,22 @@ export function useImageProfiles(): {
 
   const fetchDraftModels = useCallback(async (): Promise<ImageGenModelEntry[]> => {
     if (!form) throw new Error("no image-gen form");
-    setError(null);
-    try {
-      return await draftListImageGenModels({
-        backend: form.backend,
-        // The just-typed key rides inside the draft config (the STT draft
-        // rule — a strict shape would strip the secret before the factory
-        // sees it); profileId enables stored-key resolution when the form's
-        // own key is empty and the endpoint matches.
-        config: {
-          endpoint: form.endpoint.trim(),
-          ...(form.apiKey.trim() !== "" ? { apiKey: form.apiKey.trim() } : {}),
-        },
-        profileId: form.id ?? undefined,
-      });
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      setError(message);
-      throw cause;
-    }
+    // MR-2 (the IG-CF12a doctrine, draft arm): the shared `error` is never
+    //  touched — neither cleared nor set. A failed Test connection is the
+    //  FORM's badge only (handleTest catches); the section banner stays
+    //  reserved for real profile-list load failures.
+    return await draftListImageGenModels({
+      backend: form.backend,
+      // The just-typed key rides inside the draft config (the STT draft
+      // rule — a strict shape would strip the secret before the factory
+      // sees it); profileId enables stored-key resolution when the form's
+      // own key is empty and the endpoint matches.
+      config: {
+        endpoint: form.endpoint.trim(),
+        ...(form.apiKey.trim() !== "" ? { apiKey: form.apiKey.trim() } : {}),
+      },
+      profileId: form.id ?? undefined,
+    });
   }, [form]);
 
   return {

@@ -554,7 +554,9 @@ describe("useImageProfiles — models / samplers / draft", () => {
     expect(savedBody.config).toEqual({ endpoint: "https://openrouter.ai/api/v1" });
     expect(savedBody.profileId).toBe("p1");
 
-    // Failures surface in error AND rethrow (the pane toasts its own copy).
+    // MR-2: failures RETHROW to the form (its Test badge is the only
+    // surface) and never touch the shared `error` — a failed draft must not
+    // paint «profiles failed to load» over the list.
     act(() => hook!.setForm({ endpoint: "https://boom.example" }));
     await waitFor(() => expect(hook?.form?.endpoint).toBe("https://boom.example"));
     let threw = false;
@@ -564,7 +566,7 @@ describe("useImageProfiles — models / samplers / draft", () => {
       threw = true;
     }
     expect(threw).toBe(true);
-    await waitFor(() => expect(hook?.error).toContain("draft boom"));
+    expect(hook?.error).toBeNull();
   });
 });
 
