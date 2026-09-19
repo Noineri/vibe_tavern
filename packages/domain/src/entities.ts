@@ -1061,6 +1061,7 @@ export const IMAGE_GEN_BACKENDS = {
   Nim: "nim",
   Chutes: "chutes",
   Hf: "hf",
+  Google: "google",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

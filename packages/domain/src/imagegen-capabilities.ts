@@ -563,4 +563,28 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Google]: {
+    // PE-4 unit 1 — Google Gemini (Nano Banana) card (doc-verified
+    // 2026-09-07; re-verified live 2026-09-18, page updated 2026-09-17):
+    // the Interactions API is the primary surface — POST /v1beta/
+    // interactions, x-goog-api-key, image inline base64 in steps[].
+    // response_format {aspect_ratio (10-value set), image_size 1K/2K/4K}.
+    // No negative/seed/steps/cfg/sampler surface. **Imagen DRIFT: shut
+    // down on the Gemini API (2026-09-17 doc update) — the card's
+    // imagen :predict tier is dead; Interactions-only arm.** Named
+    // decisions: store:false always (no vendor-side retention of one-shot
+    // prompts); the 512px image_size tier (3.1-Flash-only) never sent —
+    // the size seam cannot diverge per model; image-model discovery =
+    // GET /v1beta/models filtered by the -image suffix.
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

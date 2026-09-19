@@ -305,6 +305,15 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://router.huggingface.co",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  // Google Gemini (Nano Banana) — Interactions API; the same AI Studio
+  // key as the google LLM preset; image inline base64 (no URL expiry).
+  {
+    id: "google",
+    label: "Google Gemini",
+    backend: IMAGE_GEN_BACKENDS.Google,
+    baseUrl: "https://generativelanguage.googleapis.com",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */
