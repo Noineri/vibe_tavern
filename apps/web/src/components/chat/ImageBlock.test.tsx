@@ -3,8 +3,9 @@
  * Pins the gallery-pattern budget the plan locks: fixed image height from the
  * gallery's OWN constants (imported, never re-declared), tile width derived
  * from the image's aspect ratio, panorama cap, object-cover + cursor-zoom-in,
- * click → the shared FloatingImageViewer, and the caption line (italic t3,
- * clamped, full text one click away). Also pins AttachmentGrid's slot routing
+ * click → the shared FloatingImageViewer, and the prompt accordion (MR-8:
+ * collapsed row = label + chevron, no text; click opens the full pre-wrap
+ * text). Also pins AttachmentGrid's slot routing
  * parity: imageGen attachments render the ImageBlock; ordinary uploads keep
  * the plain lightbox.
  */
@@ -153,27 +154,38 @@ describe("ImageBlock — viewer seam", () => {
   });
 });
 
-describe("ImageBlock — prompt caption", () => {
-  it("renders the caption clamped (gallery idiom); click expands to the full text, click again collapses", () => {
+describe("ImageBlock — prompt accordion (MR-8)", () => {
+  it("collapsed: the row shows the Prompt label + chevron ONLY — no prompt text at rest", () => {
     const prompt = "First line of the assembled prompt\nand a second line that would never fit one line";
     const view = render(<ImageBlock images={[{ src: "/api/assets/a1", alt: "gen", caption: prompt }]} />);
     const caption = view.getByTestId("image-block-caption");
-    expect(caption.textContent).toContain("First line of the assembled prompt");
     expect(caption.getAttribute("aria-expanded")).toBe("false");
-    const text = caption.querySelector("span")!;
-    expect(text.className).toContain("line-clamp-1");
-    expect(text.className).not.toContain("whitespace-pre-wrap");
+    // The label row (useT is mocked identity → the key IS the label here).
+    expect(caption.textContent).toContain("image_block_prompt_row");
+    // The wall is gone: NO prompt text renders anywhere at rest.
+    expect(caption.textContent).not.toContain("First line of the assembled prompt");
+    expect(view.container.textContent).not.toContain("First line of the assembled prompt");
+    expect(view.queryByTestId("image-block-caption-text")).toBeNull();
+  });
+
+  it("click opens the full text (pre-wrap, nothing truncated); click again collapses and unmounts it", async () => {
+    const prompt = "First line of the assembled prompt\nand a second line that would never fit one line";
+    const view = render(<ImageBlock images={[{ src: "/api/assets/a2", alt: "gen", caption: prompt }]} />);
+    const caption = view.getByTestId("image-block-caption");
 
     fireEvent.click(caption);
     expect(caption.getAttribute("aria-expanded")).toBe("true");
-    const expanded = caption.querySelector("span")!;
-    expect(expanded.className).toContain("whitespace-pre-wrap");
-    expect(expanded.className).not.toContain("line-clamp-1");
+    const text = view.getByTestId("image-block-caption-text");
+    expect(text.className).toContain("whitespace-pre-wrap");
     // The FULL text is reachable — newlines render, nothing truncated.
-    expect(expanded.textContent).toBe(prompt);
+    expect(text.textContent).toBe(prompt);
 
     fireEvent.click(caption);
     expect(caption.getAttribute("aria-expanded")).toBe("false");
+    // Collapsed again — the exit animation (AnimatePresence) runs first; the
+    // resolved state (text unmounted) is what we pin (RTL waitFor idiom).
+    const { waitFor } = await import("@testing-library/react");
+    await waitFor(() => expect(view.queryByTestId("image-block-caption-text")).toBeNull());
   });
 
   it("no caption node without a caption (legacy slots carry no prompt)", () => {
@@ -185,9 +197,12 @@ describe("ImageBlock — prompt caption", () => {
 describe("AttachmentGrid — slot routing parity", () => {
   it("imageGen attachments render the ImageBlock row; ordinary images keep the plain lightbox", () => {
     const view = render(<AttachmentGrid attachments={[slotAtt(), plainAtt()]} messageId="m1" />);
-    // One justified image: the slot's, with its prompt caption.
+    // One justified image: the slot's; its prompt sits behind the MR-8
+    // accordion — one click reveals it.
     expect(view.container.querySelectorAll('[data-testid="image-block-img"]').length).toBe(1);
-    expect(view.getByTestId("image-block-caption").textContent).toContain("A painted portrait");
+    const captionRow = view.getByTestId("image-block-caption");
+    fireEvent.click(captionRow);
+    expect(view.getByTestId("image-block-caption-text").textContent).toContain("A painted portrait");
 
     // The ordinary upload still opens the plain lightbox, not the floating viewer.
     const plainImg = view.container.querySelector('img[src*="asset-plain"]');

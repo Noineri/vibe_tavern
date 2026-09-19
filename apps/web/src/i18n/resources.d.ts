@@ -1151,6 +1151,7 @@ export default interface Resources {
     "group_weight_hint": "Higher weight = higher chance of being picked. Default 100.",
     "hide_rail": "Hide sidebar",
     "ignore_budget_hint": "If enabled, this entry is always included even when the lorebook token budget is exceeded.",
+    "image_block_prompt_row": "Prompt",
     "image_gen_action_tooltip": "Generate an image from this message",
     "image_gen_adetailer": "Face fix (ADetailer)",
     "image_gen_adetailer_model": "Face detection model",

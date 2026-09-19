@@ -16,15 +16,19 @@
  * against open-time twitch. Click opens the shared FloatingImageViewer
  * (zoom/pan).
  *
- * Optional caption line under the image — the gallery caption idiom (italic
- * t3, clamped), with the full text one click away: the caption toggles
- * between the clamped line and the full multi-line text. The image-gen slot
- * renders its generation prompt (provenance.prompt) there.
+ * Optional prompt accordion under the image (MR-8, owner spec 2026-09-18):
+ * at rest a compact collapsed row — chevron + «Prompt» label, NO prompt
+ * text — one click opens the full multi-line text (pre-wrap, italic t3).
+ * The app-wide accordion idiom (ExperienceEditor technical details):
+ * rotating Ic.caret + AnimatedDisclosure. The image-gen slot renders its
+ * generation prompt (provenance.prompt) there.
  */
 
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
+import { Ic } from "../shared/icons.js";
+import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
 import { FloatingImageViewer } from "../build/editors/GalleryViewer.js";
 
 export interface ImageBlockImage {
@@ -126,18 +130,35 @@ function ImageBlockTile({ image, onOpen }: { image: ImageBlockImage; onOpen: () 
       </div>
 
       {caption !== undefined && (
-        <button
-          type="button"
-          data-testid="image-block-caption"
-          aria-label={t("image_gen_slot_prompt")}
-          aria-expanded={expanded}
-          onClick={() => setExpanded((v) => !v)}
-          className="w-full cursor-pointer px-2 py-1 text-left font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3 transition-colors hover:text-t1"
-        >
-          <span className={cn("block break-words", expanded ? "whitespace-pre-wrap" : "line-clamp-1")}>
-            {caption}
-          </span>
-        </button>
+        <>
+          {/* Collapsed row: chevron + label ONLY (MR-8 — the prompt text is
+              never a wall under the image at rest). Canon accordion idiom
+              (ExperienceEditor technical details): rotating Ic.caret. */}
+          <button
+            type="button"
+            data-testid="image-block-caption"
+            aria-label={t("image_gen_slot_prompt")}
+            aria-expanded={expanded}
+            onClick={() => setExpanded((v) => !v)}
+            className="flex w-full cursor-pointer items-center gap-1.5 px-2 py-1.5 text-left font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.06em] text-t3 transition-colors hover:text-t1"
+          >
+            <span
+              className="inline-block text-t3 transition-transform"
+              style={{ transform: expanded ? "rotate(90deg)" : "none" }}
+            >
+              {Ic.caret("r")}
+            </span>
+            <span>{t("image_block_prompt_row")}</span>
+          </button>
+          <AnimatedDisclosure open={expanded} className="px-2 pb-2">
+            <span
+              data-testid="image-block-caption-text"
+              className="block break-words whitespace-pre-wrap font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3"
+            >
+              {caption}
+            </span>
+          </AnimatedDisclosure>
+        </>
       )}
     </div>
   );

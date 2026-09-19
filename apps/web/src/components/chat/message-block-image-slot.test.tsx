@@ -20,7 +20,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
-const { render, cleanup } = await import("@testing-library/react");
+const { render, cleanup, fireEvent } = await import("@testing-library/react");
 
 const NOOP = () => {};
 const STABLE_CONTROLLER = {
@@ -216,9 +216,13 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
 
     const view = render(<MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast prevRole={null} />);
 
-    // The image is the content (justified row) with its generation prompt.
+    // The image is the content (justified row); its generation prompt sits
+    // behind the MR-8 accordion — collapsed at rest, one click reveals it.
     expect(view.getAllByTestId("image-block-img").length).toBe(1);
-    expect(view.getByTestId("image-block-caption").textContent).toContain("A painted portrait");
+    const captionRow = view.getByTestId("image-block-caption");
+    expect(captionRow.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(captionRow);
+    expect(view.getByTestId("image-block-caption-text").textContent).toContain("A painted portrait");
 
     // Text actions are GONE — copy/edit/branch/text-regen never render.
     for (const label of ["copy", "edit", "branch", "regen", "continue_tooltip"]) {
