@@ -3155,6 +3155,8 @@
   "stt_local_wire_needs_whisper_cpp": "This server speaks the whisper.cpp protocol — use the whisper.cpp preset in the Local group.",
   "stt_local_wire_needs_compat": "This server is OpenAI-compatible — use the generic local-server preset in the Local group.",
   "image_block_prompt_row": "Prompt",
+  "image_block_prompt_edit": "Edit",
+  "image_block_prompt_save_failed": "Failed to save the prompt",
   "image_gen_slot_prompt": "Generation prompt",
   "image_gen_slot_promote": "Add to character gallery",
   "image_gen_slot_promoted": "Added to the character gallery",

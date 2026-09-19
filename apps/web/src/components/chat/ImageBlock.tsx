@@ -30,12 +30,19 @@ import { useT } from "../../i18n/context.js";
 import { Ic } from "../shared/icons.js";
 import { AnimatedDisclosure } from "../shared/AnimatedDisclosure.js";
 import { FloatingImageViewer } from "../build/editors/GalleryViewer.js";
+import { AutoTextarea } from "../shared/auto-textarea.js";
 
 export interface ImageBlockImage {
   src: string;
   alt: string;
-  /** One-line caption under the image (clamped; click expands to full text). */
+  /** Generation prompt shown under the image inside the MR-8 accordion. */
   caption?: string;
+  /** MR-9: when present, the expanded accordion offers an inline prompt
+   *  editor. The callback persists the new text (chat-api → prompt-write
+   *  route) and resolves true on success — false keeps the editor open.
+   *  Absent on surfaces with no persistence behind them (markdown inline
+   *  images): they render the accordion read-only. */
+  onEditPrompt?: (next: string) => Promise<boolean>;
 }
 
 export interface ImageBlockProps {
@@ -76,6 +83,28 @@ function ImageBlockTile({ image, onOpen }: { image: ImageBlockImage; onOpen: () 
   const imgRef = useRef<HTMLImageElement>(null);
   const caption = image.caption?.trim();
   const [expanded, setExpanded] = useState(false);
+  // MR-9: inline prompt editor INSIDE the accordion (owner 2026-09-18:
+  // «да, в аккордеоне» — no popover). Draft seeds from the current prompt;
+  // Save persists via onEditPrompt and exits edit mode on success only.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    setDraft(caption ?? "");
+    setEditing(true);
+  };
+
+  const savePrompt = async () => {
+    if (!image.onEditPrompt || saving) return;
+    setSaving(true);
+    try {
+      const ok = await image.onEditPrompt(draft);
+      if (ok) setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Orientation bucket (MR-7, owner spec 2026-09-18): the ratio is seeded
   // from the module-level aspectCache, refined synchronously before paint
@@ -151,12 +180,63 @@ function ImageBlockTile({ image, onOpen }: { image: ImageBlockImage; onOpen: () 
             <span>{t("image_block_prompt_row")}</span>
           </button>
           <AnimatedDisclosure open={expanded} className="px-2 pb-2">
-            <span
-              data-testid="image-block-caption-text"
-              className="block break-words whitespace-pre-wrap font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3"
-            >
-              {caption}
-            </span>
+            {editing ? (
+              <div data-testid="image-block-prompt-editor" className="flex flex-col gap-1.5">
+                {/* The canon auto-growing field (FS-8b: className extends the
+                    baked base); mono is NOT used — this is prose, not code. */}
+                <AutoTextarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  minRows={3}
+                  maxRows={12}
+                  disabled={saving}
+                  autoFocus
+                />
+                {/* Canon compact pair (destructive-confirm shape): cancel =
+                    quiet bordered, confirm = accent; Save disabled while
+                    saving or on an empty draft (the server rejects empty). */}
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    data-testid="image-block-prompt-cancel"
+                    className="h-8 cursor-pointer rounded-md border border-border bg-transparent px-3.5 font-ui text-[12.5px] text-t3 transition-colors duration-150 hover:text-t1"
+                    disabled={saving}
+                    onClick={() => setEditing(false)}
+                  >
+                    {t("cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="image-block-prompt-save"
+                    className="h-8 cursor-pointer rounded-md border-0 bg-accent px-[18px] font-ui text-[12.5px] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:opacity-50"
+                    disabled={saving || draft.trim() === ""}
+                    onClick={() => void savePrompt()}
+                  >
+                    {saving ? t("saving") : t("save")}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                <span
+                  data-testid="image-block-caption-text"
+                  className="block break-words whitespace-pre-wrap font-ui text-[calc(var(--ui-fs)-3px)] italic text-t3"
+                >
+                  {caption}
+                </span>
+                {image.onEditPrompt !== undefined && (
+                  <button
+                    type="button"
+                    data-testid="image-block-prompt-edit"
+                    className="flex self-start h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t2 transition-all hover:bg-s2 hover:text-t1"
+                    onClick={startEdit}
+                  >
+                    <Ic.edit />
+                    {t("image_block_prompt_edit")}
+                  </button>
+                )}
+              </div>
+            )}
           </AnimatedDisclosure>
         </>
       )}

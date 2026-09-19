@@ -382,6 +382,24 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return { ok: true };
 	};
 
+	/** MR-9: rewrite the generation prompt on a generated-image slot (the
+	 *  accordion editor's save, owner 2026-09-18). Slots only; the new text
+	 *  must be non-empty — the CF9 include gate reads `description ??
+	 *  provenance.prompt` and the assembly's description backfill depends on
+	 *  it. MR-4: variant-row slots resolve exactly like message-row ones. */
+	updateAttachmentPrompt = async (chatId: string, messageId: string, attachmentId: string, prompt: string) => {
+		const att = await this.sessionRuntime.chatApp.findAttachment(messageId, attachmentId);
+		if (!att) throw notFound("Attachment not found.");
+		if (att.imageGen === undefined) {
+			throw validation("Only generated image slots have an editable prompt.");
+		}
+		if (!prompt.trim()) {
+			throw validation("The generation prompt cannot be empty.");
+		}
+		await this.sessionRuntime.chatApp.updateSingleAttachmentPrompt(messageId, attachmentId, prompt);
+		return { ok: true };
+	};
+
 	/**
 	 * Force re-describe a single attachment via the configured vision model,
 	 * ignoring any existing (possibly hand-edited) description. Uses the SAME

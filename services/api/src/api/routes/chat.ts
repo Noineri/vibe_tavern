@@ -265,6 +265,15 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         body.includeInPrompt === true,
       ));
     })
+    .patch("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/prompt", async (c) => {
+      const body = await c.req.json<{ prompt: string }>().catch(() => ({ prompt: "" }));
+      return c.json(await runtime.updateAttachmentPrompt(
+        c.req.param("chatId"),
+        c.req.param("messageId"),
+        c.req.param("attachmentId"),
+        body.prompt ?? "",
+      ));
+    })
     .delete("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId", async (c) => {
       return c.json(await runtime.deleteAttachment(
         c.req.param("chatId"),

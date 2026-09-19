@@ -299,6 +299,31 @@ export async function updateAttachmentIncludeInPrompt(
   return response.json();
 }
 
+/** MR-9: rewrite the generation prompt on a generated-image slot
+ *  attachment (the accordion editor's save; server validates: slots only,
+ *  non-empty). Returns the route's { ok: true } envelope. */
+export async function updateAttachmentPrompt(
+  chatId: string,
+  messageId: string,
+  attachmentId: string,
+  prompt: string,
+): Promise<{ ok: boolean }> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/chats/${chatId}/messages/${messageId}/attachments/${attachmentId}/prompt`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    },
+  );
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Failed to update prompt: ${response.status}`);
+  }
+  return response.json();
+}
+
 export async function deleteAttachment(
   chatId: string,
   messageId: string,

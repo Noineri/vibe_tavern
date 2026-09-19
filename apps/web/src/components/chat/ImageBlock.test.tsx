@@ -41,6 +41,19 @@ mock.module("../build/editors/GalleryViewer.js", () => ({
   ),
 }));
 
+const realChatApi = await import("../../api/chat-api.js");
+// MR-9 wiring seam: AttachmentGrid's prompt SAVER persists through the
+// prompt-write API client — here we pin the call (the ...real spread keeps
+// every other export live for co-located files in this worker).
+const promptSaveCalls: Array<{ messageId: string; attachmentId: string; prompt: string }> = [];
+mock.module("../../api/chat-api.js", () => ({
+  ...realChatApi,
+  updateAttachmentPrompt: async (_chatId: string, messageId: string, attachmentId: string, prompt: string) => {
+    promptSaveCalls.push({ messageId, attachmentId, prompt });
+    return { ok: true };
+  },
+}));
+
 const { ImageBlock } = await import("./ImageBlock.js");
 const { AttachmentGrid } = await import("./AttachmentGrid.js");
 const { fireEvent, render, cleanup } = await import("@testing-library/react");
@@ -225,5 +238,98 @@ describe("AttachmentGrid — slot routing parity", () => {
     );
     expect(view.container.querySelectorAll('[data-testid="image-block"]').length).toBe(1);
     expect(view.container.querySelectorAll('[data-testid="image-block-img"]').length).toBe(2);
+  });
+
+  it("MR-9 wiring: saving through the accordion calls the prompt-write API with the slot's ids", async () => {
+    promptSaveCalls.length = 0;
+    const view = render(<AttachmentGrid attachments={[slotAtt()]} messageId="m1" />);
+    fireEvent.click(view.getByTestId("image-block-caption"));
+    fireEvent.click(view.getByTestId("image-block-prompt-edit"));
+    const textarea = view.getByTestId("image-block-prompt-editor").querySelector("textarea")!;
+    fireEvent.change(textarea, { target: { value: "rewritten via the grid" } });
+    fireEvent.click(view.getByTestId("image-block-prompt-save"));
+    const { waitFor } = await import("@testing-library/react");
+    await waitFor(() => expect(promptSaveCalls).toHaveLength(1));
+    expect(promptSaveCalls[0]).toEqual({ messageId: "m1", attachmentId: "att-1", prompt: "rewritten via the grid" });
+  });
+});
+
+describe("ImageBlock — prompt editing (MR-9)", () => {
+  it("the edit action renders only when a saver is wired — read-only surfaces keep the plain accordion", () => {
+    const readonly = render(<ImageBlock images={[{ src: "/api/assets/ro1", alt: "inline", caption: "markdown prompt" }]} />);
+    fireEvent.click(readonly.getByTestId("image-block-caption"));
+    expect(readonly.getByTestId("image-block-caption-text").textContent).toContain("markdown prompt");
+    expect(readonly.queryByTestId("image-block-prompt-edit")).toBeNull();
+    // RTL queries bind to document.body — unmount before the second render so
+    // the testids stay unique (one block live at a time).
+    readonly.unmount();
+
+    const editable = render(<ImageBlock images={[{ src: "/api/assets/ed1", alt: "gen", caption: "old", onEditPrompt: async () => true }]} />);
+    fireEvent.click(editable.getByTestId("image-block-caption"));
+    expect(editable.getByTestId("image-block-prompt-edit")).toBeTruthy();
+  });
+
+  it("edit opens the prefilled editor; Save persists via the saver and exits to view mode on success", async () => {
+    const savedCalls: string[] = [];
+    const view = render(
+      <ImageBlock images={[{ src: "/api/assets/ed2", alt: "gen", caption: "old text", onEditPrompt: async (next) => { savedCalls.push(next); return true; } }]} />,
+    );
+    fireEvent.click(view.getByTestId("image-block-caption"));
+    fireEvent.click(view.getByTestId("image-block-prompt-edit"));
+    const editor = view.getByTestId("image-block-prompt-editor");
+    const editorTextarea = editor.querySelector("textarea") as HTMLTextAreaElement;
+    expect(editorTextarea.value).toBe("old text");
+
+    fireEvent.change(editorTextarea, { target: { value: "new text" } });
+    fireEvent.click(view.getByTestId("image-block-prompt-save"));
+    const { waitFor } = await import("@testing-library/react");
+    await waitFor(() => expect(view.queryByTestId("image-block-prompt-editor")).toBeNull());
+    expect(savedCalls).toEqual(["new text"]);
+    // Back to the view branch (the caption prop — the parent swaps it for the
+    // persisted text on its re-render).
+    expect(view.getByTestId("image-block-caption-text").textContent).toBe("old text");
+  });
+
+  it("failed save (saver resolves false) keeps the editor open with the draft", async () => {
+    const view = render(
+      <ImageBlock images={[{ src: "/api/assets/ed3", alt: "gen", caption: "old", onEditPrompt: async () => false }]} />,
+    );
+    fireEvent.click(view.getByTestId("image-block-caption"));
+    fireEvent.click(view.getByTestId("image-block-prompt-edit"));
+    const textarea = view.getByTestId("image-block-prompt-editor").querySelector("textarea")!;
+    fireEvent.change(textarea, { target: { value: "doomed edit" } });
+    fireEvent.click(view.getByTestId("image-block-prompt-save"));
+    const { waitFor } = await import("@testing-library/react");
+    await waitFor(() => expect(textarea.value).toBe("doomed edit"));
+    // Still editing — the failure keeps the draft for a retry.
+    expect(view.getByTestId("image-block-prompt-editor")).toBeTruthy();
+  });
+
+  it("Cancel discards the draft — the saver is never called", () => {
+    let called = false;
+    const view = render(
+      <ImageBlock images={[{ src: "/api/assets/ed4", alt: "gen", caption: "old", onEditPrompt: async () => { called = true; return true; } }]} />,
+    );
+    fireEvent.click(view.getByTestId("image-block-caption"));
+    fireEvent.click(view.getByTestId("image-block-prompt-edit"));
+    const textarea = view.getByTestId("image-block-prompt-editor").querySelector("textarea")!;
+    fireEvent.change(textarea, { target: { value: "discarded" } });
+    fireEvent.click(view.getByTestId("image-block-prompt-cancel"));
+    expect(view.queryByTestId("image-block-prompt-editor")).toBeNull();
+    expect(called).toBe(false);
+    expect(view.getByTestId("image-block-caption-text").textContent).toBe("old");
+  });
+
+  it("Save stays disabled while the draft is empty (the server rejects empty prompts)", () => {
+    const view = render(
+      <ImageBlock images={[{ src: "/api/assets/ed5", alt: "gen", caption: "old", onEditPrompt: async () => true }]} />,
+    );
+    fireEvent.click(view.getByTestId("image-block-caption"));
+    fireEvent.click(view.getByTestId("image-block-prompt-edit"));
+    const textarea = view.getByTestId("image-block-prompt-editor").querySelector("textarea")!;
+    fireEvent.change(textarea, { target: { value: "   " } });
+    expect(view.getByTestId("image-block-prompt-save").getAttribute("disabled")).toBe("");
+    fireEvent.change(textarea, { target: { value: "filled" } });
+    expect(view.getByTestId("image-block-prompt-save").getAttribute("disabled")).toBeNull();
   });
 });

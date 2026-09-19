@@ -172,6 +172,7 @@ export interface ChatRuntimeApi {
 	deleteMessage: (chatId: string, messageId: string) => Promise<MessageResponse>;
 	updateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: boolean }>;
 	updateAttachmentIncludeInPrompt: (chatId: string, messageId: string, attachmentId: string, includeInPrompt: boolean) => Promise<{ ok: boolean }>;
+	updateAttachmentPrompt: (chatId: string, messageId: string, attachmentId: string, prompt: string) => Promise<{ ok: boolean }>;
 	deleteAttachment: (chatId: string, messageId: string, attachmentId: string) => Promise<{ ok: boolean }>;
 	regenerateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string) => Promise<{ description: string }>;
 

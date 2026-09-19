@@ -75,6 +75,7 @@ function VoiceBubble({ att }: { att: Attachment }) {
 }
 
 export function AttachmentGrid({ attachments, messageId }: { attachments?: Attachment[]; messageId?: string }) {
+  const { t } = useT();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   if (!attachments || attachments.length === 0) return null;
@@ -84,12 +85,37 @@ export function AttachmentGrid({ attachments, messageId }: { attachments?: Attac
   // h-24 attachment-preview grid — the slot's image is the message's CONTENT,
   // not an attachment-to-text. All imageGen attachments share ONE justified
   // row (the gallery mechanism); ordinary attachments keep the grid below.
+  // MR-9: each slot carries its prompt SAVER — the accordion editor persists
+  // through the prompt-write route (variant-aware on the server) with an
+  // optimistic canonical-data update, the Lightbox-description pattern.
+  const editPromptFor = (att: Attachment): ((next: string) => Promise<boolean>) => {
+    return async (next: string) => {
+      if (!messageId || !att.id) return false;
+      try {
+        const { updateAttachmentPrompt } = await import("../../api/chat-api.js");
+        await updateAttachmentPrompt("_", messageId, att.id, next);
+      } catch (err) {
+        console.error("Failed to update generation prompt:", err);
+        toast.error(t("image_block_prompt_save_failed"));
+        return false;
+      }
+      const nextAttachments = attachments.map((a) =>
+        a.id === att.id && a.imageGen !== undefined
+          ? { ...a, imageGen: { ...a.imageGen, prompt: next } }
+          : a,
+      );
+      useSnapshotStore.getState().updateMessage(messageId, { attachments: nextAttachments });
+      return true;
+    };
+  };
+
   const slotImages: ImageBlockImage[] = attachments
     .filter((att) => att.imageGen !== undefined)
     .map((att) => ({
       src: `${getGatewayBaseUrl()}/api/assets/${att.assetId}`,
       alt: att.name || "Generated image",
       ...(att.imageGen?.prompt ? { caption: att.imageGen.prompt } : {}),
+      ...(messageId && att.id ? { onEditPrompt: editPromptFor(att) } : {}),
     }));
 
   return (

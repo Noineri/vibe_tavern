@@ -276,6 +276,24 @@ export class ChatApplicationService {
   }
 
   /**
+   * Rewrite a generated-image slot's generation prompt (MR-9, owner
+   * 2026-09-18: «чтобы можно было его переписывать» — the accordion editor's
+   * save). The prompt is the CF6-stamped provenance field the caption shows
+   * and the CF9 include gate reads (`description ?? provenance.prompt`).
+   * MR-4: variant-aware — the write lands on the row that owns the
+   * attachment; plain attachments in the same set are untouched.
+   */
+  async updateSingleAttachmentPrompt(messageId: string, attachmentId: string, prompt: string): Promise<void> {
+    const owner = await this.resolveAttachmentOwner(messageId, attachmentId);
+    if (!owner) return;
+    const updated = owner.attachments.map((att, index) => {
+      if (index !== owner.index || att.imageGen === undefined) return att;
+      return { ...att, imageGen: { ...att.imageGen, prompt } };
+    });
+    await this.persistAttachmentSet(messageId, { ...owner, attachments: updated });
+  }
+
+  /**
    * Remove a single attachment from a message by its id. Persists the remaining
    * attachments (or null when none are left so the column stays empty) and
    * returns the removed attachment so the caller can clean up its stored asset
