@@ -1,15 +1,20 @@
 /**
- * ImageBlock — the chat's shared justified image row (IMAGE_GENERATION_PLAN
- * IG-CF6; owner-named 2026-09-15: "this will then be the image block"). One
+ * ImageBlock — the chat's shared image row (IMAGE_GENERATION_PLAN IG-CF6;
+ * owner-named 2026-09-15: "this will then be the image block"). One
  * primitive for BOTH image kinds in chat: image-gen slot attachments (via
  * AttachmentGrid) and inline markdown images (CF7).
  *
- * Display pattern = the media-gallery tile (GalleryGrid), reusing the
- * gallery's OWN budget by import — fixed image HEIGHT (350 desktop / 220
- * mobile), tile WIDTH derived from each image's aspect ratio (portrait
- * narrow, landscape wide), panorama cap, object-cover overflow,
- * cursor-zoom-in, aspect-ratio cache against open-time twitch. Click opens
- * the shared FloatingImageViewer (zoom/pan).
+ * Display pattern = orientation-driven message sizing (MR-7, owner spec
+ * 2026-09-18 — replaces the v1 justified-gallery budget): landscape (w>h)
+ * stretches to the FULL message-container width; portrait and square take
+ * HALF (two half tiles share a row through the flex-wrap gap). Heights are
+ * ratio-true — the img carries CSS aspect-ratio, so nothing crops — and a
+ * tall image's height never exceeds ~70% of the viewport: the width is
+ * min(bucket, 70vh × ratio), i.e. the tile SHRINKS instead of growing
+ * past the cap. object-cover stays for subpixel equivalence (cover ≡
+ * contain when the box is ratio-true), cursor-zoom-in, aspect-ratio cache
+ * against open-time twitch. Click opens the shared FloatingImageViewer
+ * (zoom/pan).
  *
  * Optional caption line under the image — the gallery caption idiom (italic
  * t3, clamped), with the full text one click away: the caption toggles
@@ -17,15 +22,9 @@
  * renders its generation prompt (provenance.prompt) there.
  */
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { cn } from "../../lib/cn.js";
-import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
-import {
-  justifiedTileHeight,
-  justifiedTileWidth,
-  MAX_TILE_WIDTH_RATIO,
-} from "../build/editors/GalleryGrid.js";
 import { FloatingImageViewer } from "../build/editors/GalleryViewer.js";
 
 export interface ImageBlockImage {
@@ -47,8 +46,6 @@ export interface ImageBlockProps {
 const aspectCache = new Map<string, number>();
 
 export function ImageBlock({ images, className }: ImageBlockProps) {
-  const isMobile = useIsMobile();
-  const tileHeight = justifiedTileHeight(isMobile);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const openImage = openIndex !== null ? images[openIndex] : undefined;
 
@@ -56,12 +53,7 @@ export function ImageBlock({ images, className }: ImageBlockProps) {
     <>
       <div data-testid="image-block" className={cn("flex flex-wrap gap-3 select-none", className)}>
         {images.map((image, idx) => (
-          <ImageBlockTile
-            key={`${image.src}-${idx}`}
-            image={image}
-            tileHeight={tileHeight}
-            onOpen={() => setOpenIndex(idx)}
-          />
+          <ImageBlockTile key={`${image.src}-${idx}`} image={image} onOpen={() => setOpenIndex(idx)} />
         ))}
       </div>
       {openImage && (
@@ -75,27 +67,20 @@ export function ImageBlock({ images, className }: ImageBlockProps) {
   );
 }
 
-function ImageBlockTile({
-  image,
-  tileHeight,
-  onOpen,
-}: {
-  image: ImageBlockImage;
-  tileHeight: number;
-  onOpen: () => void;
-}) {
+function ImageBlockTile({ image, onOpen }: { image: ImageBlockImage; onOpen: () => void }) {
   const { t } = useT();
   const imgRef = useRef<HTMLImageElement>(null);
   const caption = image.caption?.trim();
   const [expanded, setExpanded] = useState(false);
 
-  // Orientation-aware width (justified layout): the tile width is derived
-  // from the fixed image height × aspect ratio. The ratio is seeded from the
-  // module-level aspectCache, refined synchronously before paint when the
-  // browser already has the bitmap decoded, and confirmed on load. Until
-  // known we reserve a square footprint (GalleryGrid's behavior).
+  // Orientation bucket (MR-7, owner spec 2026-09-18): the ratio is seeded
+  // from the module-level aspectCache, refined synchronously before paint
+  // when the browser already has the bitmap decoded, and confirmed on load.
+  // Until known we reserve a square footprint at the portrait bucket width.
+  // The bucket classes (styles.css @layer components) carry the width
+  // formula incl. the 70vh cap; the per-tile ratio rides --tile-ratio.
   const [ratio, setRatio] = useState<number | null>(() => aspectCache.get(image.src) ?? null);
-  const tileWidth = justifiedTileWidth(ratio, tileHeight);
+  const bucketCls = ratio !== null && ratio > 1 ? "image-tile-landscape" : "image-tile-portrait";
 
   useLayoutEffect(() => {
     const img = imgRef.current;
@@ -108,20 +93,24 @@ function ImageBlockTile({
 
   return (
     <div
-      className="group relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-border/50 bg-s3/30 transition-all hover:border-accent hover:shadow-md"
-      style={{ width: `calc(${tileWidth}px * ${MAX_TILE_WIDTH_RATIO} + 8%)`, maxWidth: "100%" }}
+      className={cn(
+        "group relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-border/50 bg-s3/30 transition-all hover:border-accent hover:shadow-md",
+        bucketCls,
+      )}
+      style={{ "--tile-ratio": `${ratio ?? 1}` } as CSSProperties}
     >
-      {/* Image area — fixed height; width follows the tile (aspect-derived). */}
-      <div className="relative w-full" style={{ height: tileHeight }}>
+      {/* Image area — ratio-true: the img's CSS aspect-ratio drives the
+          height, so the bucket width maps to the image's own proportions. */}
+      <div className="relative w-full">
         <img
           ref={imgRef}
           src={image.src}
           alt={image.alt}
           data-testid="image-block-img"
-          // object-cover: the tile width is derived from the image's own
-          // aspect ratio, so cover == contain for the common case; only
-          // ultra-wide panoramas (capped width) crop slightly.
-          className="h-full w-full cursor-zoom-in object-cover"
+          // object-cover: the box is ratio-true (width × aspect-ratio), so
+          // cover ≡ contain — cover stays only for subpixel safety.
+          className="w-full cursor-zoom-in object-cover"
+          style={{ aspectRatio: `${ratio ?? 1}` }}
           loading="lazy"
           draggable={false}
           onClick={onOpen}

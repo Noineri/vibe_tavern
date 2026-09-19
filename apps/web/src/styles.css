@@ -135,6 +135,19 @@
 @layer components {
   /* Required padding for the shared build-field class; utility classes may still override it. */
   .field-input-pad { padding: 6px 10px; }
+
+  /* ImageBlock orientation buckets (MR-7, owner spec 2026-09-18): landscape
+     stretches to the full message-container width; portrait and square take
+     half (two tiles share a row through the row's 12px gap). The height is
+     ratio-true (the img carries CSS aspect-ratio), and a tall image's height
+     never exceeds ~70% of the viewport — the WIDTH is the min of the bucket
+     and 70vh × ratio, so the tile shrinks instead of growing past the cap.
+     The per-tile ratio rides the `--tile-ratio` custom property (defaults to
+     a square 1 until the bitmap decodes). Lives here — not as an inline
+     style — because nested min() belongs in authored CSS, and the DOM style
+     attribute must stay parseable by every consumer. */
+  .image-tile-landscape { width: min(100%, calc(70vh * var(--tile-ratio, 1))); max-width: 100%; }
+  .image-tile-portrait { width: min(calc(50% - 6px), calc(70vh * var(--tile-ratio, 1))); max-width: 100%; }
 }
 
 /* ── Image outline — neutral 1px separator that adapts to theme lightness ──

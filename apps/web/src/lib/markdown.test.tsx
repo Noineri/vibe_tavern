@@ -32,7 +32,6 @@ mock.module("../components/build/editors/GalleryViewer.js", () => ({
   ),
 }));
 
-const { justifiedTileHeight } = await import("../components/build/editors/GalleryGrid.js");
 
 let Markdown: typeof import("./markdown.js").Markdown;
 
@@ -136,14 +135,17 @@ describe("Markdown — inline images via ImageBlock", () => {
     expect(viewer.getAttribute("data-alt")).toBe("pic alt");
   });
 
-  it("gives the inline image the fixed justified tile height", () => {
+  it("inline images ride the orientation buckets (MR-7): no fixed-height budget, ratio-true placeholder until load", () => {
     const view = render(<Markdown text="![tall](https://example.com/tall.png)" />);
     const img = view.getByTestId("image-block-img");
-    // The image area (the img's parent) carries the gallery's fixed height
-    // budget — imported from the gallery's own module, never re-declared.
-    // happy-dom's default viewport is desktop-wide, so the desktop budget.
-    const area = img.parentElement;
-    expect(area?.getAttribute("style")).toContain(`height: ${justifiedTileHeight(false)}px`);
+    const tile = img.closest("div.flex.shrink-0")!;
+    // Same primitive as the image-gen slots: the portrait bucket class +
+    // the per-tile ratio custom property (square 1 until decode); the
+    // height comes from the img's aspect-ratio, never a fixed budget.
+    expect(tile.className).toContain("image-tile-portrait");
+    expect(tile.getAttribute("style")).toContain("--tile-ratio: 1");
+    expect(img.parentElement!.getAttribute("style")).toBeNull();
+    expect(img.getAttribute("style")).toContain("aspect-ratio: 1");
   });
 
   it("keeps surrounding text around a mid-sentence inline image", () => {

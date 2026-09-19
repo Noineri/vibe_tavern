@@ -43,11 +43,6 @@ mock.module("../build/editors/GalleryViewer.js", () => ({
 const { ImageBlock } = await import("./ImageBlock.js");
 const { AttachmentGrid } = await import("./AttachmentGrid.js");
 const { fireEvent, render, cleanup } = await import("@testing-library/react");
-const {
-  GALLERY_TILE_HEIGHT_DESKTOP,
-  MAX_TILE_WIDTH_RATIO,
-  justifiedTileWidth,
-} = await import("../build/editors/GalleryGrid.js");
 
 import type { Attachment } from "@vibe-tavern/domain";
 
@@ -92,33 +87,56 @@ afterEach(() => {
   cleanup();
 });
 
-describe("ImageBlock — justified gallery budget", () => {
-  it("fixed image height comes from the gallery's own constants (350 desktop)", () => {
-    const view = render(<ImageBlock images={[{ src: "/api/assets/a1", alt: "gen" }]} />);
+describe("ImageBlock — orientation-driven message sizing (MR-7)", () => {
+  it("landscape gets the full-width bucket class; the img is ratio-true (CSS aspect-ratio, no fixed height)", () => {
+    const view = render(<ImageBlock images={[{ src: "/api/assets/landscape", alt: "gen" }]} />);
+    loadWithSize(view.container, 1344, 768); // 16:9 = 1.75 exact
+    const tile = view.getByTestId("image-block-img").closest("div.flex.shrink-0")!;
+    // The width formula (min(bucket, 70vh × ratio)) lives in the stylesheet
+    // bucket class — nested min() is authored CSS, not an inline style
+    // (inline min() is unparseable for DOM consumers like happy-dom).
+    expect(tile.className).toContain("image-tile-landscape");
+    expect(tile.getAttribute("style")).toContain("--tile-ratio: 1.75");
     const img = view.getByTestId("image-block-img");
-    // The image area carries the fixed height budget; the img fills it.
+    expect(img.getAttribute("style")).toContain("aspect-ratio");
+    // No fixed-height budget anywhere — the ratio drives the height.
     const area = img.parentElement!;
-    expect(area.getAttribute("style")).toContain(`height: ${GALLERY_TILE_HEIGHT_DESKTOP}px`);
+    expect(area.getAttribute("style")).toBeNull();
     expect(img.className).toContain("object-cover");
     expect(img.className).toContain("cursor-zoom-in");
   });
 
-  it("tile width derives from the image's aspect ratio (landscape wide, portrait narrow)", () => {
-    const view = render(<ImageBlock images={[{ src: "/api/assets/landscape", alt: "gen" }]} />);
-    loadWithSize(view.container, 1344, 768); // 16:9 landscape
+  it("portrait gets the half-width bucket class (two tiles share a row through the flex gap)", () => {
+    const view = render(<ImageBlock images={[{ src: "/api/assets/portrait", alt: "gen" }]} />);
+    loadWithSize(view.container, 1024, 1280); // 4:5 = 0.8 exact
     const tile = view.getByTestId("image-block-img").closest("div.flex.shrink-0")!;
-    const expected = justifiedTileWidth(1344 / 768, GALLERY_TILE_HEIGHT_DESKTOP);
-    expect(tile.getAttribute("style")).toContain(`width: calc(${expected}px * ${MAX_TILE_WIDTH_RATIO} + 8%)`);
+    expect(tile.className).toContain("image-tile-portrait");
+    expect(tile.getAttribute("style")).toContain("--tile-ratio: 0.8");
   });
 
-  it("panorama cap: an ultra-wide image's tile width never exceeds 3 × the tile height", () => {
-    const view = render(<ImageBlock images={[{ src: "/api/assets/pano", alt: "gen" }]} />);
-    loadWithSize(view.container, 2450, 350); // 7:1 panorama
+  it("square follows the portrait bucket (owner-confirmed MR-7 spec)", () => {
+    const view = render(<ImageBlock images={[{ src: "/api/assets/square", alt: "gen" }]} />);
+    loadWithSize(view.container, 1024, 1024); // ratio 1 exact
     const tile = view.getByTestId("image-block-img").closest("div.flex.shrink-0")!;
-    const expected = justifiedTileWidth(7, GALLERY_TILE_HEIGHT_DESKTOP);
-    // The raw aspect width (2450) is capped at 350 × 3 = 1050.
-    expect(expected).toBe(GALLERY_TILE_HEIGHT_DESKTOP * 3);
-    expect(tile.getAttribute("style")).toContain(`width: calc(${expected}px * ${MAX_TILE_WIDTH_RATIO} + 8%)`);
+    expect(tile.className).toContain("image-tile-portrait");
+    expect(tile.className).not.toContain("image-tile-landscape");
+    expect(tile.getAttribute("style")).toContain("--tile-ratio: 1");
+  });
+
+  it("an ultra-tall image keeps the portrait bucket — the 70vh cap binds inside the class (width shrinks, never crops)", () => {
+    const view = render(<ImageBlock images={[{ src: "/api/assets/tall", alt: "gen" }]} />);
+    loadWithSize(view.container, 490, 2450); // 1:5 = 0.2 exact — the cap arm wins
+    const tile = view.getByTestId("image-block-img").closest("div.flex.shrink-0")!;
+    expect(tile.className).toContain("image-tile-portrait");
+    expect(tile.getAttribute("style")).toContain("--tile-ratio: 0.2");
+  });
+
+  it("unknown ratio reserves the portrait bucket with a square footprint (ratio 1) until load", () => {
+    const view = render(<ImageBlock images={[{ src: "/api/assets/unknown-ratio", alt: "gen" }]} />);
+    const tile = view.getByTestId("image-block-img").closest("div.flex.shrink-0")!;
+    expect(tile.className).toContain("image-tile-portrait");
+    expect(tile.getAttribute("style")).toContain("--tile-ratio: 1");
+    expect(view.getByTestId("image-block-img").getAttribute("style")).toContain("aspect-ratio: 1");
   });
 });
 
