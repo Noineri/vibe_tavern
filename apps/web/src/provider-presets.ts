@@ -373,6 +373,13 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.replicate.com",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  {
+    id: "leonardo",
+    label: "Leonardo.Ai",
+    backend: IMAGE_GEN_BACKENDS.Leonardo,
+    baseUrl: "https://cloud.leonardo.ai/api/rest",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

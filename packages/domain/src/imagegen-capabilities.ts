@@ -721,6 +721,41 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Leonardo]: {
+    // PE-5 unit 4 — Leonardo.Ai card (doc-verified 2026-09-07; re-verified
+    // live 2026-09-18: llms.txt + the flux-schnell guide + the v2
+    // reference pages re-scraped (firecrawl — JS wall) + no-key probes
+    // on all three endpoints). SYNC arm: POST /v2/generationssync (the
+    // documented response surface). **The card's UNVERIFIED item
+    // closed by probe**: the v2 poll GET /v2/generations/{id} EXISTS
+    // (401 wall) but its response schema is still undocumented → the
+    // async+poll path stays UNWIRED in v1 (never guess a wire shape);
+    // non-sync models surface the vendor's own error. base64:true +
+    // ephemeral:true always (inline delivery; nothing persisted to the
+    // user's Leonardo library; `public` moot — the store:false
+    // precedent). quantity:1 always (vendor default 4 would burn API
+    // credits — the constant-param class). width/height 32–2048 in
+    // 8-multiples, VT snaps (aihorde 64-snap precedent). seed
+    // 0–2147483637. NO negative/steps/sampler anywhere in v2 — flag
+    // off. blockedCount > 0 → typed error (the plan row's demand:
+    // safety blocking surfaced, never silently missing images).
+    // Static image-only catalog from the live reference enum (37
+    // models; video/audio/tools excluded — the BFL-paths precedent;
+    // GET /v2/models is authed with its shape JS-collapsed — not
+    // guessed). Default flux-schnell (the guide's canonical example).
+    // Live no-key ladder: 401 {error: "Authentication hook unauthorized
+    // this request", code: "access-denied"} on all three endpoints.
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
   [IMAGE_GEN_BACKENDS.Replicate]: {
     // PE-5 unit 3 — Replicate card (doc-verified 2026-09-07; re-verified
     // live 2026-09-18: full HTTP reference re-read + no-key ladder

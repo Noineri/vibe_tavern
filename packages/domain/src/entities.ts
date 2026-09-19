@@ -1069,6 +1069,7 @@ export const IMAGE_GEN_BACKENDS = {
   Bfl: "bfl",
   Fal: "fal",
   Replicate: "replicate",
+  Leonardo: "leonardo",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 

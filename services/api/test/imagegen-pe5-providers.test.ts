@@ -22,6 +22,13 @@ import {
   REPLICATE_DEFAULT_MODEL,
 } from "../src/domain/imagegen/backends/replicate.js";
 import "../src/domain/imagegen/backends/replicate.js";
+import {
+  snapLeonardoDimension,
+  LeonardoImageConfigError,
+  LeonardoImageError,
+  LEONARDO_DEFAULT_MODEL,
+} from "../src/domain/imagegen/backends/leonardo.js";
+import "../src/domain/imagegen/backends/leonardo.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 
 // ─── Shared helpers (the PE-1..PE-4 files' verbatim discipline) ──────────────
@@ -49,6 +56,13 @@ function sentJson(call: RecordedCall): Record<string, unknown> {
   const body = call.init?.body;
   if (typeof body !== "string") throw new Error("expected a JSON string body");
   return JSON.parse(body) as Record<string, unknown>;
+}
+
+function jsonResponse(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 /** Minimal PNG bytes (magic prefix is what the sniffer needs). */
@@ -834,5 +848,163 @@ describe("pollReplicatePrediction (exported seam)", () => {
     await expect(
       pollReplicatePrediction({ getUrl: REP_GET_URL, apiKey: "k", fetch: recording, wait: () => Promise.resolve() }),
     ).rejects.toThrow(/did not complete within 150s/);
+  });
+});
+
+// ─── leonardo (v2 SYNC, Bearer, base64 inline) ───────────────────────────────
+
+const LEO_ENDPOINT = "https://cloud.leonardo.ai/api/rest";
+
+function makeLeo(transport: typeof fetch, endpoint = LEO_ENDPOINT) {
+  return createImageGenBackend(IMAGE_GEN_BACKENDS.Leonardo, {
+    endpoint,
+    apiKey: "leo-key",
+    fetch: transport,
+  });
+}
+
+function leoResult(): unknown {
+  return {
+    id: "gen-1",
+    cost: 0.03,
+    blockedCount: 0,
+    results: [
+      {
+        contentType: "image/png",
+        dataB64: PNG_BYTES.toString("base64"),
+        width: 1024,
+        height: 768,
+      },
+    ],
+  };
+}
+
+describe("leonardo v2 sync arm (Bearer, ephemeral+base64, blockedCount)", () => {
+  it("POSTs {model, parameters{prompt,quantity:1,width,height,seed}, ephemeral:true, base64:true} and reads dataB64 inline", async () => {
+    const { transport, calls } = makeTransport(() => jsonResponse(leoResult()));
+    const result = await makeLeo(transport).generate({
+      prompt: "an old tavern sign",
+      width: 1022,
+      height: 766,
+      seed: 3,
+    });
+    expect(calls).toHaveLength(1); // inline delivery — no download hop
+    expect(calls[0].url).toBe(`${LEO_ENDPOINT}/v2/generationssync`);
+    const headers = calls[0].init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer leo-key");
+    const body = sentJson(calls[0]);
+    expect(body.model).toBe(LEONARDO_DEFAULT_MODEL);
+    expect(body.ephemeral).toBe(true);
+    expect(body.base64).toBe(true);
+    expect(body.parameters).toEqual({ prompt: "an old tavern sign", quantity: 1, width: 1024, height: 768, seed: 3 });
+    expect("negative_prompt" in body.parameters).toBe(false);
+    expect("prompt_enhance" in body.parameters).toBe(false);
+    expect("style_ids" in body.parameters).toBe(false);
+    expect(body.public).toBeUndefined(); // moot under ephemeral — never sent
+    expect(result.images[0]?.data.equals(PNG_BYTES)).toBe(true);
+    expect(result.width).toBe(1024);
+    expect(result.height).toBe(768);
+  });
+
+  it("snaps dimensions to the 8-multiple grid and bounds 32–2048", () => {
+    expect(snapLeonardoDimension(1022)).toBe(1024);
+    expect(snapLeonardoDimension(766)).toBe(768);
+    expect(snapLeonardoDimension(8)).toBe(32); // below the documented 32 min → clamped up
+    expect(snapLeonardoDimension(4)).toBe(32);
+    expect(snapLeonardoDimension(0)).toBe(32);
+    expect(snapLeonardoDimension(9999)).toBe(2048);
+  });
+
+  it("surfaces blockedCount as a typed error (the plan row's demand)", async () => {
+    const { transport } = makeTransport(() =>
+      jsonResponse({ id: "gen-1", cost: 0, blockedCount: 1, results: [] }),
+    );
+    await expect(makeLeo(transport).generate({ prompt: "p" })).rejects.toThrow(/blockedCount/);
+  });
+
+  it("a url-only result (b64 not honored) downloads the 30-min presigned URL keyless", async () => {
+    const { transport, calls } = makeTransport((url) => {
+      if (String(url).endsWith("/v2/generationssync")) {
+        return jsonResponse({
+          id: "gen-1",
+          blockedCount: 0,
+          results: [{ url: "https://cdn.leonardo.ai/presigned.png", width: 512, height: 512 }],
+        });
+      }
+      return new Response(new Uint8Array(PNG_BYTES), {
+        status: 200,
+        headers: { "Content-Type": "image/png" },
+      });
+    });
+    const result = await makeLeo(transport).generate({ prompt: "p" });
+    expect(calls).toHaveLength(2);
+    expect(calls[1].url).toBe("https://cdn.leonardo.ai/presigned.png");
+    const headers = calls[1].init?.headers as Record<string, string> | undefined;
+    expect(headers?.Authorization).toBeUndefined();
+    expect(result.images[0]?.data.equals(PNG_BYTES)).toBe(true);
+  });
+
+  it("a result entry with neither dataB64 nor url is a typed error", async () => {
+    const { transport } = makeTransport(() =>
+      jsonResponse({ id: "gen-1", blockedCount: 0, results: [{}] }),
+    );
+    await expect(makeLeo(transport).generate({ prompt: "p" })).rejects.toBeInstanceOf(LeonardoImageError);
+  });
+
+  it("per-request model override + a prompt-only request sends EXACTLY the minimal parameters", async () => {
+    const { transport, calls } = makeTransport(() => jsonResponse(leoResult()));
+    await makeLeo(transport).generate({ prompt: "p", model: "anime-xl" });
+    const body = sentJson(calls[0]);
+    expect(body.model).toBe("anime-xl");
+    expect(body.parameters).toEqual({ prompt: "p", quantity: 1 });
+  });
+
+  it("listModels serves the static image-only catalog (37, video/audio/tools excluded)", async () => {
+    const models = await makeLeo(() => Promise.resolve(new Response("{}"))).listModels();
+    expect(models).toHaveLength(37);
+    expect(models.map((m) => m.id)).toContain("anime-xl");
+    expect(models.some((m) => /kling|veo|seedance|music|dialogue|remove-bg|upscaler/.test(m.id))).toBe(false);
+  });
+
+  it("pins the capabilities row (no negative/steps/sampler, seed, free size, cloud)", () => {
+    const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Leonardo];
+    expect(caps.supportsNegativePrompt).toBe(false);
+    expect(caps.supportsSamplers).toBe(false);
+    expect(caps.supportsSeed).toBe(true);
+    expect(caps.sizeSupport).toEqual({ kind: "free" });
+    expect(caps.noApiKey).toBe(false);
+    expect(caps.localExecution).toBe(false);
+  });
+
+  it("config errors are synchronous (no endpoint / no key)", () => {
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Leonardo, {
+        endpoint: "",
+        apiKey: "k",
+        fetch: () => Promise.resolve(new Response("{}")),
+      }),
+    ).toThrow(LeonardoImageConfigError);
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Leonardo, {
+        endpoint: LEO_ENDPOINT,
+        apiKey: "",
+        fetch: () => Promise.resolve(new Response("{}")),
+      }),
+    ).toThrow(LeonardoImageConfigError);
+  });
+
+  it("probe: the live 401 access-denied shape → credentials rejected; validation 4xx → accepted", async () => {
+    const { transport } = makeTransport(() =>
+      jsonResponse({ error: "Authentication hook unauthorized this request", path: "$", code: "access-denied" }, 401),
+    );
+    const probe = await makeLeo(transport).probe();
+    expect(probe.ok).toBe(false);
+    expect(probe.detail).toContain("credentials rejected");
+
+    const { transport: ok } = makeTransport(() =>
+      jsonResponse({ errors: [{ detail: "`model` is required" }] }, 422),
+    );
+    const okProbe = await makeLeo(ok).probe();
+    expect(okProbe.ok).toBe(true);
   });
 });
