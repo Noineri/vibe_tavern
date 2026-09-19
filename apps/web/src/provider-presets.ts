@@ -97,8 +97,10 @@ export interface ImageGenProviderPreset {
   /** Prefilled base URL (user-editable after apply — local ports move). */
   baseUrl: string;
   /** Level-1 segment taxonomy (the LLM-tab group field; the picker derives
-   *  its segments from the groups present here — v1 has no `native` rows,
-   *  so no Native segment renders). */
+   *  its segments from the groups present here — MR-6: the four-segment
+   *  split is live — native = vendors of their own models, cloud =
+   *  aggregator gateways with the free tiers kept INSIDE, local, and the
+   *  derived Custom). */
   group: ProviderPresetGroup;
   /** True when the API key is optional at connect time (A1111 keyless
    *  default; `--api-auth` may add basic auth — the field still renders). */
@@ -131,7 +133,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "OpenAI",
     backend: IMAGE_GEN_BACKENDS.OpenAiImages,
     baseUrl: "https://api.openai.com/v1",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   {
     id: "a1111",
@@ -218,7 +220,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Recraft",
     backend: IMAGE_GEN_BACKENDS.Recraft,
     baseUrl: "https://external.api.recraft.ai/v1",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // Z.AI — the zai LLM preset's own base (api.z.ai/api/paas/v4, same
   // credentials): glm-image / cogview-4 on the OpenAI-images transport,
@@ -228,7 +230,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Z.AI",
     backend: IMAGE_GEN_BACKENDS.Zai,
     baseUrl: "https://api.z.ai/api/paas/v4",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // MiniMax — the TTS profile's own host (api.minimax.io, same
   // credentials): image-01 on MiniMax's own JSON surface (aspect-ratio
@@ -238,7 +240,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "MiniMax",
     backend: IMAGE_GEN_BACKENDS.MiniMax,
     baseUrl: "https://api.minimax.io",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // Volcengine Ark — Seedream family on the Ark API (a SEPARATE key from
   // the volcengine TTS service): one endpoint, model field selects;
@@ -248,7 +250,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Volcengine Ark",
     backend: IMAGE_GEN_BACKENDS.Volcengine,
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // Alibaba DashScope intl — the documented non-workspace domain
   // (existence-probed live); a workspace URL
@@ -260,7 +262,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "DashScope",
     backend: IMAGE_GEN_BACKENDS.Dashscope,
     baseUrl: "https://dashscope-intl.aliyuncs.com/api/v1",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // NVIDIA hosted catalog — per-model genai paths (ai.api.nvidia.com,
   // the same key as the LLM nvcat preset family): FLUX trio + SDXL +
@@ -312,7 +314,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Google Gemini",
     backend: IMAGE_GEN_BACKENDS.Google,
     baseUrl: "https://generativelanguage.googleapis.com",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // Stability AI — v2beta Stable Image services (ultra/core/sd3.5),
   // multipart bodies, raw image bytes back.
@@ -321,7 +323,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Stability AI",
     backend: IMAGE_GEN_BACKENDS.Stability,
     baseUrl: "https://api.stability.ai",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // Ideogram — typography-first native vendor; multipart + Api-Key
   // header; ephemeral signed URLs downloaded server-side.
@@ -330,7 +332,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Ideogram",
     backend: IMAGE_GEN_BACKENDS.Ideogram,
     baseUrl: "https://api.ideogram.ai",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // Cloudflare Workers AI — the account id rides the URL path: replace
   // <ACCOUNT_ID> with your dashboard account id (Workers AI → Use REST
@@ -357,7 +359,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Black Forest Labs (FLUX)",
     backend: IMAGE_GEN_BACKENDS.Bfl,
     baseUrl: "https://api.bfl.ai",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   {
     id: "fal",
@@ -378,14 +380,14 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Leonardo.Ai",
     backend: IMAGE_GEN_BACKENDS.Leonardo,
     baseUrl: "https://cloud.leonardo.ai/api/rest",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   {
     id: "luma",
     label: "Luma (uni-1)",
     backend: IMAGE_GEN_BACKENDS.Luma,
     baseUrl: "https://agents.lumalabs.ai",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   {
     id: "novita",

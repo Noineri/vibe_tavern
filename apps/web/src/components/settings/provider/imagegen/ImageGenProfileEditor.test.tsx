@@ -197,6 +197,26 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
     expect(view.queryByTestId("image-gen-local-server-panel")).toBeNull();
   });
 
+  it("MR-6: a native-vendor preset lands in the Native segment (google row)", async () => {
+    const imageGen = makeImageGen({
+      form: makeForm({ presetId: "google", backend: IMAGE_GEN_BACKENDS.Google, endpoint: "https://generativelanguage.googleapis.com/v1beta" }),
+    });
+    const view = render(<ImageGenProfileEditor imageGen={imageGen} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-segment-select")).toBeTruthy());
+    // The cmdk trigger shows the i18n label for the native segment; opening
+    // the list offers all four segments.
+    await act(async () => {
+      view.getByTestId("image-gen-segment-select").click();
+    });
+    const labels = await waitFor(() => {
+      const items = Array.from(document.body.querySelectorAll("[cmdk-item]")).map((n) => n.textContent?.trim());
+      expect(items.length).toBeGreaterThan(0);
+      return items;
+    });
+    expect(labels).toContain("image_gen_segment_native");
+    expect(labels).toContain("Cloud");
+  });
+
   it("CF8: segment switch to Custom pins the backend to openai-images under the hood + drops the preset slug", async () => {
     const setForm = mock(() => {});
     const imageGen = makeImageGen({

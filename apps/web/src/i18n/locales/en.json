@@ -504,6 +504,7 @@
   "providers_category_image": "Image Generation",
   "image_gen_section_title": "Image Generation",
   "image_gen_section_placeholder": "Image generation profiles will appear here",
+  "image_gen_segment_native": "Native",
   "image_gen_segment_local": "Local server",
   "image_gen_field_endpoint": "Endpoint",
   "image_gen_key_optional_hint": "Optional — enter user:pass only if the server was started with --api-auth",

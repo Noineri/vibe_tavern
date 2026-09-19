@@ -21,11 +21,11 @@ type ImageGenHook = ReturnType<typeof useImageProfiles>;
 /** Level-1 segment: the group of the stored preset, or Custom when no preset
  *  row backs the profile. Derived (never stored) — the profile's source of
  *  truth is `presetId`; switching segments applies rows that rewrite it. */
-export type ImageGenProviderSegment = "cloud" | "local" | "custom";
+export type ImageGenProviderSegment = "cloud" | "native" | "local" | "custom";
 
 function segmentOf(form: ImageGenProfileForm): ImageGenProviderSegment {
   const preset = form.presetId !== null ? getImageGenProviderPreset(form.presetId) : undefined;
-  if (preset && (preset.group === "cloud" || preset.group === "local")) return preset.group;
+  if (preset && (preset.group === "cloud" || preset.group === "native" || preset.group === "local")) return preset.group;
   return "custom";
 }
 
@@ -44,12 +44,12 @@ interface ImageGenProviderFormProps {
  *  here — it is the level-2 surface (IG-12).
  *
  *  Deviations from the STT twin, each forced by the image-gen v1 scope:
- *  - Segments derive from the roster's groups + Custom — Cloud / Local /
- *    Custom. The design's four-segment taxonomy includes Native, but the
- *    locked v1 roster (plan scope: OpenRouter + Custom cloud + A1111
- *    local) has NO native rows, so the segment does not render (a segment
- *    whose dropdown has zero rows is dead chrome; native joins when a
- *    native adapter lands).
+ *  - Segments derive from the roster's groups + Custom — Cloud (aggregator
+ *    gateways; free tiers stay INSIDE with their «(free)» labels — owner
+ *    2026-09-18) / Native (vendors of their own models — MR-6 regrouped the
+ *    PE roster rows out of cloud; the v1 "no native rows" note is obsolete)
+ *    / Local / Custom. A segment whose dropdown has zero rows would be
+ *    dead chrome — every group carries rows.
  *  - No endpoint→preset auto-detection: the profile STORES `presetId` (a
  *    wire field STT never had — STT detects by endpoint because its
  *    profile has no preset column). Explicit slug, no guessing.
@@ -73,6 +73,7 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
   const segment = segmentOf(form);
   const segmentOptions: Array<{ value: ImageGenProviderSegment; label: string }> = [
     { value: "cloud", label: "Cloud" },
+    { value: "native", label: t("image_gen_segment_native") },
     { value: "local", label: t("image_gen_segment_local") },
     { value: "custom", label: t("custom") },
   ];
@@ -80,7 +81,7 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
   // Rows of the active group; Custom carries none (bare endpoint + key —
   // IG-CF8, no pickers of any kind).
   const groupPresets =
-    segment === "cloud" || segment === "local"
+    segment === "cloud" || segment === "native" || segment === "local"
       ? IMAGE_GEN_PROVIDER_PRESETS.filter((p) => p.group === segment)
       : [];
 
@@ -114,9 +115,10 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
   function handleSegmentChange(next: string) {
     const seg = next as ImageGenProviderSegment;
     if (seg === segment) return;
-    if (seg === "cloud" || seg === "local") {
+    if (seg === "cloud" || seg === "native" || seg === "local") {
       // Each group segment applies its first roster row (cloud → OpenRouter,
-      // local → A1111-compatible — roster order, never hardcoded ids).
+      // native → OpenAI, local → A1111-compatible — roster order, never
+      // hardcoded ids).
       const first = IMAGE_GEN_PROVIDER_PRESETS.find((p) => p.group === seg);
       if (first) applyPreset(first.id);
       return;

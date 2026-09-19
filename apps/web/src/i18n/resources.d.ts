@@ -1253,6 +1253,7 @@ export default interface Resources {
     "image_gen_section_title": "Image Generation",
     "image_gen_seed_label": "Seed",
     "image_gen_segment_local": "Local server",
+    "image_gen_segment_native": "Native",
     "image_gen_sidecar_auto": "Auto (Krea 2 standard)",
     "image_gen_sidecars_failed": "Failed to load encoder/VAE lists",
     "image_gen_size_auto": "Auto (server default)",
