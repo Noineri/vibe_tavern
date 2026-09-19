@@ -232,8 +232,13 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
       return items;
     });
     expect(presetLabels).toContain("Google Gemini");
-    expect(presetLabels).toContain("OpenAI");
+    expect(presetLabels).toContain("OpenRouter");
     expect(presetLabels).toContain("Black Forest Labs (FLUX)");
+    // The dialect-family rows ride cloud now (OpenAI is the family's
+    // reference row — the LLM-tab twin), so they must NOT appear in the
+    // native picker.
+    expect(presetLabels).not.toContain("OpenAI");
+    expect(presetLabels).not.toContain("Together AI");
   });
 
   it("CF8: segment switch to Custom pins the backend to openai-images under the hood + drops the preset slug", async () => {
@@ -295,9 +300,12 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
       (option as HTMLElement).click();
     });
     const calls = (setForm.mock.calls as unknown[][]).map((c) => c[0] as Record<string, unknown>);
-    expect(calls.some((patch) => patch["backend"] === IMAGE_GEN_BACKENDS.OpenRouter)).toBe(true);
-    expect(calls.some((patch) => patch["presetId"] === "openrouter")).toBe(true);
-    expect(calls.some((patch) => patch["endpoint"] === "https://openrouter.ai/api/v1")).toBe(true);
+    // First cloud roster row after the protocol-canon regroup: OpenAI — the
+    // family's reference dialect row (openrouter moved to native, owner
+    // 2026-09-18).
+    expect(calls.some((patch) => patch["backend"] === IMAGE_GEN_BACKENDS.OpenAiImages)).toBe(true);
+    expect(calls.some((patch) => patch["presetId"] === "openai")).toBe(true);
+    expect(calls.some((patch) => patch["endpoint"] === "https://api.openai.com/v1")).toBe(true);
   });
 
   it("key-optional hint renders for the A1111 preset, not for cloud rows", async () => {

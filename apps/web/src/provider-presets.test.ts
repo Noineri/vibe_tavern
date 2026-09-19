@@ -21,14 +21,20 @@ describe("provider preset transport classifications", () => {
   });
 });
 
-describe("image-gen preset segments (MR-6 — the four-segment split)", () => {
-  test("native = the twelve vendors of their own models; aggregators (incl. free) stay cloud; local stays local", () => {
+describe("image-gen preset segments (MR-6 — the four-segment split; boundary = the app-wide protocol canon, owner 2026-09-18)", () => {
+  test("native = the sixteen own-wire rows (dedicated adapters); cloud = the OpenAI-images dialect family incl. the OpenAI reference row; free stays inside cloud; local unchanged", () => {
     const nativeIds = IMAGE_GEN_PROVIDER_PRESETS.filter((p) => p.group === "native").map((p) => p.id).sort();
     expect(nativeIds).toEqual(
-      ["bfl", "dashscope", "google", "ideogram", "leonardo", "luma", "minimax", "openai", "recraft", "stability", "volcengine", "zai"].sort(),
+      ["bfl", "chutes", "cloudflare", "dashscope", "fal", "google", "hf", "ideogram", "leonardo", "luma", "minimax", "nim", "novita", "openrouter", "replicate", "stability"].sort(),
     );
+    // The OpenAI-images dialect family rides cloud — including the OpenAI
+    // reference row (the LLM-tab twin: the LLM openai row sits in cloud) and
+    // the PE-1 family members recraft/zai/volcengine.
+    for (const dialectId of ["openai", "togetherai", "siliconflow", "nanogpt", "electronhub", "deepinfra", "recraft", "zai", "volcengine"]) {
+      expect(IMAGE_GEN_PROVIDER_PRESETS.find((p) => p.id === dialectId)!.group).toBe("cloud");
+    }
     // Free tiers stay INSIDE the cloud segment with their labels (owner
-    // 2026-09-18: «оставляем внутри») — no separate free segment.
+    // 2026-09-18) — no separate free segment.
     for (const freeId of ["pollinations_free", "aihorde"]) {
       const row = IMAGE_GEN_PROVIDER_PRESETS.find((p) => p.id === freeId);
       expect(row).toBeDefined();

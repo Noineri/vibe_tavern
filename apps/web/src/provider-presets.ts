@@ -97,10 +97,14 @@ export interface ImageGenProviderPreset {
   /** Prefilled base URL (user-editable after apply — local ports move). */
   baseUrl: string;
   /** Level-1 segment taxonomy (the LLM-tab group field; the picker derives
-   *  its segments from the groups present here — MR-6: the four-segment
-   *  split is live — native = vendors of their own models, cloud =
-   *  aggregator gateways with the free tiers kept INSIDE, local, and the
-   *  derived Custom). */
+   *  its segments from the groups present here). The boundary follows the
+   * app-wide canon (owner 2026-09-18: the LLM tab is the base taxonomy
+   * — STT/TTS follow it, the image tab must too): native = rows speaking
+   * their OWN wire (dedicated adapters — OpenRouter's chat-modalities,
+   * fal, Replicate, Google, BFL…); cloud = the OpenAI-images dialect
+   * family (incl. the OpenAI reference row — the LLM-tab twin) with the
+   * free community tiers kept INSIDE (owner ruling); local; derived
+   * Custom). */
   group: ProviderPresetGroup;
   /** True when the API key is optional at connect time (A1111 keyless
    *  default; `--api-auth` may add basic auth — the field still renders). */
@@ -126,14 +130,14 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "OpenRouter",
     backend: IMAGE_GEN_BACKENDS.OpenRouter,
     baseUrl: "https://openrouter.ai/api/v1",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   {
     id: "openai",
     label: "OpenAI",
     backend: IMAGE_GEN_BACKENDS.OpenAiImages,
     baseUrl: "https://api.openai.com/v1",
-    group: PROVIDER_PRESET_GROUP.native,
+    group: PROVIDER_PRESET_GROUP.cloud,
   },
   {
     id: "a1111",
@@ -220,7 +224,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Recraft",
     backend: IMAGE_GEN_BACKENDS.Recraft,
     baseUrl: "https://external.api.recraft.ai/v1",
-    group: PROVIDER_PRESET_GROUP.native,
+    group: PROVIDER_PRESET_GROUP.cloud,
   },
   // Z.AI — the zai LLM preset's own base (api.z.ai/api/paas/v4, same
   // credentials): glm-image / cogview-4 on the OpenAI-images transport,
@@ -230,7 +234,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Z.AI",
     backend: IMAGE_GEN_BACKENDS.Zai,
     baseUrl: "https://api.z.ai/api/paas/v4",
-    group: PROVIDER_PRESET_GROUP.native,
+    group: PROVIDER_PRESET_GROUP.cloud,
   },
   // MiniMax — the TTS profile's own host (api.minimax.io, same
   // credentials): image-01 on MiniMax's own JSON surface (aspect-ratio
@@ -250,7 +254,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Volcengine Ark",
     backend: IMAGE_GEN_BACKENDS.Volcengine,
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
-    group: PROVIDER_PRESET_GROUP.native,
+    group: PROVIDER_PRESET_GROUP.cloud,
   },
   // Alibaba DashScope intl — the documented non-workspace domain
   // (existence-probed live); a workspace URL
@@ -272,7 +276,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "NVIDIA",
     backend: IMAGE_GEN_BACKENDS.Nim,
     baseUrl: "https://ai.api.nvidia.com/v1",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // Pollinations legacy tier — the card's TWO-tier verdict, second row:
   // anonymous GET-binary zero-config surface (image.pollinations.ai,
@@ -295,7 +299,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Chutes",
     backend: IMAGE_GEN_BACKENDS.Chutes,
     baseUrl: "https://chutes.ai",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // Hugging Face Inference Providers — one hf_ token routes the whole
   // meta-aggregator (fal/replicate/novita/…); raw bytes back; live Hub
@@ -305,7 +309,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Hugging Face",
     backend: IMAGE_GEN_BACKENDS.Hf,
     baseUrl: "https://router.huggingface.co",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // Google Gemini (Nano Banana) — Interactions API; the same AI Studio
   // key as the google LLM preset; image inline base64 (no URL expiry).
@@ -342,7 +346,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Cloudflare Workers AI",
     backend: IMAGE_GEN_BACKENDS.Cloudflare,
     baseUrl: "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   // AI Horde — crowdsourced free cluster; the key is OPTIONAL (anonymous
   // tier) — register at stablehorde.net only for priority.
@@ -366,14 +370,14 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "fal.ai",
     backend: IMAGE_GEN_BACKENDS.Fal,
     baseUrl: "https://queue.fal.run",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   {
     id: "replicate",
     label: "Replicate",
     backend: IMAGE_GEN_BACKENDS.Replicate,
     baseUrl: "https://api.replicate.com",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
   {
     id: "leonardo",
@@ -394,7 +398,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Novita AI (Qwen-Image)",
     backend: IMAGE_GEN_BACKENDS.Novita,
     baseUrl: "https://api.novita.ai",
-    group: PROVIDER_PRESET_GROUP.cloud,
+    group: PROVIDER_PRESET_GROUP.native,
   },
 ];
 

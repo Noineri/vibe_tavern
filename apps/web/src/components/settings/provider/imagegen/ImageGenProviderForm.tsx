@@ -44,12 +44,15 @@ interface ImageGenProviderFormProps {
  *  here — it is the level-2 surface (IG-12).
  *
  *  Deviations from the STT twin, each forced by the image-gen v1 scope:
- *  - Segments derive from the roster's groups + Custom — Cloud (aggregator
- *    gateways; free tiers stay INSIDE with their «(free)» labels — owner
- *    2026-09-18) / Native (vendors of their own models — MR-6 regrouped the
- *    PE roster rows out of cloud; the v1 "no native rows" note is obsolete)
- *    / Local / Custom. A segment whose dropdown has zero rows would be
- *    dead chrome — every group carries rows.
+ *  - Segments derive from the roster's groups + Custom — Cloud (the
+ *    OpenAI-images dialect family, incl. the OpenAI reference row — the
+ *    LLM-tab twin; free community tiers stay INSIDE with their «(free)»
+ *    labels — owner 2026-09-18) / Native (rows speaking their OWN wire —
+ *    dedicated adapters: OpenRouter's chat-modalities transport, fal,
+ *    Replicate, Google, BFL…; the boundary follows the app-wide canon,
+ *    owner 2026-09-18: the LLM/STT/TTS tabs are the base taxonomy, the
+ *    image tab follows it) / Local / Custom. A segment whose dropdown
+ *    has zero rows would be dead chrome — every group carries rows.
  *  - No endpoint→preset auto-detection: the profile STORES `presetId` (a
  *    wire field STT never had — STT detects by endpoint because its
  *    profile has no preset column). Explicit slug, no guessing.
@@ -116,9 +119,9 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
     const seg = next as ImageGenProviderSegment;
     if (seg === segment) return;
     if (seg === "cloud" || seg === "native" || seg === "local") {
-      // Each group segment applies its first roster row (cloud → OpenRouter,
-      // native → OpenAI, local → A1111-compatible — roster order, never
-      // hardcoded ids).
+      // Each group segment applies its first roster row (cloud → the first
+      // dialect row, native → the first own-wire row, local → A1111-
+      // compatible — roster order, never hardcoded ids).
       const first = IMAGE_GEN_PROVIDER_PRESETS.find((p) => p.group === seg);
       if (first) applyPreset(first.id);
       return;
