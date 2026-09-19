@@ -721,6 +721,37 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Luma]: {
+    // PE-5 unit 5 — Luma Agents API card (doc-verified 2026-09-07;
+    // re-verified live 2026-09-18: the image-generation guide fetched in
+    // full from its .md twin + no-key probes on both endpoints + the
+    // sitemap for endpoint inventory). POST agents.lumalabs.ai/v1/
+    // generations (Bearer) → poll GET /v1/generations/{id} (queued/
+    // processing → completed/failed with failure_reason/code) → output[]
+    // presigned URLs downloaded keyless server-side. Documented defaults
+    // model uni-1 / type image / style auto — VT sends ONLY overrides
+    // (params-unset). aspect_ratio = the 9-value grid, W×H maps
+    // exact-else-nearest (the replicate precedent). **The manga
+    // portrait-only trap** (manga permits only 2:3/9:16/1:2/1:3;
+    // landscape/square → HTTP 422): VT never sends `style` in v1, so the
+    // trap cannot fire on our wire — documented for the day a style
+    // seam appears. **No seed/steps/negative on the surface — the
+    // wave's first seed-less arm** (capability off, wire clean). No
+    // cancel endpoint exists (sitemap-verified: create/get only). No
+    // list endpoint — static duo {uni-1, uni-1-max}. Live no-key
+    // ladder: 401 {detail: "Missing or invalid API key"} both
+    // endpoints.
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
   [IMAGE_GEN_BACKENDS.Leonardo]: {
     // PE-5 unit 4 — Leonardo.Ai card (doc-verified 2026-09-07; re-verified
     // live 2026-09-18: llms.txt + the flux-schnell guide + the v2

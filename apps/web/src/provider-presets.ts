@@ -380,6 +380,13 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://cloud.leonardo.ai/api/rest",
     group: PROVIDER_PRESET_GROUP.cloud,
   },
+  {
+    id: "luma",
+    label: "Luma (uni-1)",
+    backend: IMAGE_GEN_BACKENDS.Luma,
+    baseUrl: "https://agents.lumalabs.ai",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */

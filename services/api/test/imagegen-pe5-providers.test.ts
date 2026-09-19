@@ -29,6 +29,13 @@ import {
   LEONARDO_DEFAULT_MODEL,
 } from "../src/domain/imagegen/backends/leonardo.js";
 import "../src/domain/imagegen/backends/leonardo.js";
+import {
+  pollLumaGeneration,
+  mapLumaAspectRatio,
+  LumaImageConfigError,
+  LumaImageError,
+} from "../src/domain/imagegen/backends/luma.js";
+import "../src/domain/imagegen/backends/luma.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 
 // ─── Shared helpers (the PE-1..PE-4 files' verbatim discipline) ──────────────
@@ -1006,5 +1013,179 @@ describe("leonardo v2 sync arm (Bearer, ephemeral+base64, blockedCount)", () => 
     );
     const okProbe = await makeLeo(ok).probe();
     expect(okProbe.ok).toBe(true);
+  });
+});
+
+// ─── luma (Agents API uni-1, async poll, presigned output) ──────────────────
+
+const LUMA_ENDPOINT = "https://agents.lumalabs.ai";
+const LUMA_GET_URL = `${LUMA_ENDPOINT}/v1/generations/gen-1`;
+const LUMA_IMAGE_URL = "https://storage.example.com/generations/gen-1/output.png?X-Amz-Expires=3600";
+
+function makeLuma(transport: typeof fetch, endpoint = LUMA_ENDPOINT) {
+  return createImageGenBackend(IMAGE_GEN_BACKENDS.Luma, {
+    endpoint,
+    apiKey: "luma-key",
+    fetch: transport,
+  });
+}
+
+function lumaCompleted(): unknown {
+  return {
+    id: "gen-1",
+    state: "completed",
+    output: [{ type: "image", url: LUMA_IMAGE_URL }],
+    failure_reason: null,
+    failure_code: null,
+  };
+}
+
+function scriptLuma(options?: { states?: unknown[] }): {
+  recording: typeof fetch;
+  calls: RecordedCall[];
+} {
+  const states = options?.states ?? [lumaCompleted()];
+  const calls: RecordedCall[] = [];
+  let stateIndex = 0;
+  const recording: typeof fetch = (url, init) => {
+    calls.push({ url: String(url), init });
+    const u = String(url);
+    if (u === LUMA_GET_URL) {
+      const payload = states[Math.min(stateIndex, states.length - 1)];
+      stateIndex += 1;
+      return Promise.resolve(Response.json(payload));
+    }
+    if (u === LUMA_IMAGE_URL) {
+      return Promise.resolve(
+        new Response(new Uint8Array(PNG_BYTES), {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        }),
+      );
+    }
+    return Promise.resolve(Response.json({ id: "gen-1", state: "queued", output: [], failure_reason: null, failure_code: null }));
+  };
+  return { recording, calls };
+}
+
+describe("luma agents arm (Bearer, uni-1, queued→completed→presigned)", () => {
+  it("submits {prompt, aspect_ratio} (uni-1 default unsent), polls, downloads the presigned URL keyless", async () => {
+    const { recording, calls } = scriptLuma();
+    const result = await makeLuma(recording).generate({
+      prompt: "a paper lantern",
+      width: 1920,
+      height: 1080,
+    });
+    expect(calls[0].url).toBe(`${LUMA_ENDPOINT}/v1/generations`);
+    const headers = calls[0].init?.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer luma-key");
+    const body = sentJson(calls[0]);
+    expect(body).toEqual({ prompt: "a paper lantern", aspect_ratio: "16:9" });
+    expect("model" in body).toBe(false); // documented default stands unsent
+    expect("seed" in body).toBe(false);
+    expect("type" in body).toBe(false);
+    expect("style" in body).toBe(false);
+    expect(calls[1].url).toBe(LUMA_GET_URL);
+    expect(calls[2].url).toBe(LUMA_IMAGE_URL);
+    const downloadHeaders = calls[2].init?.headers as Record<string, string> | undefined;
+    expect(downloadHeaders?.Authorization).toBeUndefined();
+    expect(result.images[0]?.data.equals(PNG_BYTES)).toBe(true);
+  });
+
+  it("maps W×H onto the 9-ratio grid exact-else-nearest; model override rides", async () => {
+    expect(mapLumaAspectRatio(1, 1)).toBe("1:1");
+    expect(mapLumaAspectRatio(3072, 1024)).toBe("3:1");
+    expect(mapLumaAspectRatio(1000, 2000)).toBe("1:2");
+    expect(mapLumaAspectRatio(1600, 900)).toBe("16:9");
+    expect(mapLumaAspectRatio(1001, 1000)).toBe("1:1");
+    expect(mapLumaAspectRatio(undefined, 768)).toBeUndefined();
+    const { recording, calls } = scriptLuma();
+    await makeLuma(recording).generate({ prompt: "p", model: "uni-1-max" });
+    expect(sentJson(calls[0]).model).toBe("uni-1-max");
+  });
+
+  it("carries failure_reason/code from a failed generation", async () => {
+    const { recording } = scriptLuma({
+      states: [{ id: "gen-1", state: "failed", output: [], failure_reason: "content policy", failure_code: "POLICY" }],
+    });
+    await expect(makeLuma(recording).generate({ prompt: "p" })).rejects.toThrow(/POLICY — content policy/);
+  });
+
+  it("empty output on completed is a typed error; static duo served without HTTP", async () => {
+    const { recording } = scriptLuma({ states: [{ id: "gen-1", state: "completed", output: [] }] });
+    await expect(makeLuma(recording).generate({ prompt: "p" })).rejects.toBeInstanceOf(LumaImageError);
+    const models = await makeLuma(recording).listModels();
+    expect(models.map((m) => m.id)).toEqual(["uni-1", "uni-1-max"]);
+  });
+
+  it("pins the capabilities row — the wave's first seed-less arm", () => {
+    const caps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.Luma];
+    expect(caps.supportsSeed).toBe(false);
+    expect(caps.supportsNegativePrompt).toBe(false);
+    expect(caps.supportsSamplers).toBe(false);
+    expect(caps.sizeSupport).toEqual({ kind: "free" });
+    expect(caps.noApiKey).toBe(false);
+    expect(caps.localExecution).toBe(false);
+  });
+
+  it("config errors are synchronous (no endpoint / no key)", () => {
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Luma, {
+        endpoint: "",
+        apiKey: "k",
+        fetch: () => Promise.resolve(new Response("{}")),
+      }),
+    ).toThrow(LumaImageConfigError);
+    expect(() =>
+      createImageGenBackend(IMAGE_GEN_BACKENDS.Luma, {
+        endpoint: LUMA_ENDPOINT,
+        apiKey: "",
+        fetch: () => Promise.resolve(new Response("{}")),
+      }),
+    ).toThrow(LumaImageConfigError);
+  });
+
+  it("probe: the live 401 shape → credentials rejected; validation 4xx → accepted", async () => {
+    const { transport } = makeTransport(() =>
+      jsonResponse({ detail: "Missing or invalid API key" }, 401),
+    );
+    const probe = await makeLuma(transport).probe();
+    expect(probe.ok).toBe(false);
+    expect(probe.detail).toContain("credentials rejected");
+    const { transport: ok } = makeTransport(() =>
+      jsonResponse({ detail: [{ loc: ["body", "prompt"], msg: "Field required" }] }, 422),
+    );
+    const okProbe = await makeLuma(ok).probe();
+    expect(okProbe.ok).toBe(true);
+  });
+});
+
+describe("pollLumaGeneration (exported seam)", () => {
+  it("keeps polling queued/processing with 1s→5s back-off, resolves on completed", async () => {
+    const waits: number[] = [];
+    const { recording } = scriptLuma({
+      states: [{ id: "gen-1", state: "queued", output: [] }, { id: "gen-1", state: "processing", output: [] }, lumaCompleted()],
+    });
+    await pollLumaGeneration({
+      getUrl: LUMA_GET_URL,
+      apiKey: "k",
+      fetch: recording,
+      wait: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+    expect(waits).toEqual([1_000, 1_000]);
+  });
+
+  it("fails closed on an unrecognized state and gives up after the 150s budget", async () => {
+    const { recording } = scriptLuma({ states: [{ id: "gen-1", state: "WEIRD", output: [] }] });
+    await expect(
+      pollLumaGeneration({ getUrl: LUMA_GET_URL, apiKey: "k", fetch: recording, wait: () => Promise.resolve() }),
+    ).rejects.toThrow(/WEIRD/);
+    const { recording: stuck } = scriptLuma({ states: [{ id: "gen-1", state: "queued", output: [] }] });
+    await expect(
+      pollLumaGeneration({ getUrl: LUMA_GET_URL, apiKey: "k", fetch: stuck, wait: () => Promise.resolve() }),
+    ).rejects.toThrow(/did not complete within 150s/);
   });
 });
