@@ -127,6 +127,9 @@ interface ProfileSeed {
   llmAssistEnabled?: boolean;
   llmProviderProfileId?: string;
   llmModelId?: string;
+  /** Capability override — used to seed a STALE stored mirror (the
+   *  static-table gate regression pin, 2026-09-18). */
+  capabilities?: (typeof IMAGE_GEN_BACKEND_CAPABILITIES)[keyof typeof IMAGE_GEN_BACKEND_CAPABILITIES];
 }
 
 /** Create a profile through the route (exercises the create schema too). */
@@ -147,8 +150,11 @@ async function seedProfile(app: ReturnType<typeof createImageGenRoutes>, seed: P
       ...(seed.llmProviderProfileId !== undefined ? { llmProviderProfileId: seed.llmProviderProfileId } : {}),
       ...(seed.llmModelId !== undefined ? { llmModelId: seed.llmModelId } : {}),
       // The registry's static snapshot — exactly what the Providers editor
-      // persists (the create schema requires the flags object).
-      capabilities: IMAGE_GEN_BACKEND_CAPABILITIES[(seed.backend ?? IMAGE_GEN_BACKENDS.OpenRouter) as keyof typeof IMAGE_GEN_BACKEND_CAPABILITIES],
+      // persists (the create schema requires the flags object); an explicit
+      // seed override replaces it (stale-mirror pins).
+      capabilities:
+        seed.capabilities ??
+        IMAGE_GEN_BACKEND_CAPABILITIES[(seed.backend ?? IMAGE_GEN_BACKENDS.OpenRouter) as keyof typeof IMAGE_GEN_BACKEND_CAPABILITIES],
     }),
   });
   expect(res.status).toBe(201);
@@ -620,6 +626,29 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     expect(res.status).toBe(204);
     expect(capturedUrl).toBe("http://127.0.0.1:9121/interrupt");
     expect(capturedMethod).toBe("POST");
+  });
+
+  test("stale stored mirror never gates the dialect — progress + interrupt read the static table (2026-09-18)", async () => {
+    // Regression pin: a profile saved BEFORE its backend gained
+    // supportsLiveProgress carries a stale-false stored mirror; the routes
+    // must read the registry's CURRENT truth by backend, not the mirror
+    // (owner report: swipe-regenerated runs lost the progress row).
+    const { app } = await makeApp(async () =>
+      new Response(JSON.stringify({ progress: 0.42, eta_relative: 1.5, state: "sampling…" }), { status: 200 }),
+    );
+    const staticCaps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.A1111];
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      endpoint: "http://127.0.0.1:7860",
+      capabilities: { ...staticCaps, supportsLiveProgress: false },
+    });
+
+    const progress = await app.request(`/api/image-gen/profiles/${id}/progress`);
+    expect(progress.status).toBe(200);
+    expect(await progress.json()).toEqual({ progress: 0.42, etaRelative: 1.5, state: "sampling…" });
+
+    const interrupt = await app.request(`/api/image-gen/profiles/${id}/interrupt`, { method: "POST" });
+    expect(interrupt.status).toBe(204);
   });
 
   test("comfyui loras list serves the LoraLoader combo with family (CG-C2)", async () => {

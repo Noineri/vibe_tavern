@@ -28,7 +28,7 @@
 
 import { useEffect, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { IMAGE_GENERATION_MODES, type ImageGenerationMode } from "@vibe-tavern/domain";
+import { IMAGE_GENERATION_MODES, IMAGE_GEN_BACKEND_CAPABILITIES, type ImageGenerationMode } from "@vibe-tavern/domain";
 
 import { Icons } from "../shared/icons.js";
 import { Toggle } from "../shared/Toggle.js";
@@ -248,7 +248,11 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
     void runGeneration(chatId, input, {
       // PG-2: the START-time capability snapshot rides the run — Stop then
       // interrupts the local server-side job, the progress row polls it.
-      liveProgress: effective.capabilities.supportsLiveProgress,
+      // Derived from the STATIC table by the profile's backend — the saved
+      // record's capability mirror is a save-time snapshot and can predate
+      // the backend gaining live progress (the IG swipe-progress incident,
+      // 2026-09-18); the registry's current truth is the only source.
+      liveProgress: IMAGE_GEN_BACKEND_CAPABILITIES[effective.backend].supportsLiveProgress,
     });
     onDone();
   };

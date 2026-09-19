@@ -36,18 +36,30 @@ const realSonner = await import("sonner");
 const promoteCalls: Array<[string, string]> = [];
 const describeCalls: Array<[string, string, string]> = [];
 const includeCalls: Array<[string, string, string, boolean]> = [];
-const runGenerationCalls: Array<[string, { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string }]> = [];
+const runGenerationCalls: Array<[
+  string,
+  { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string },
+  ImageGenRunMeta | undefined,
+]> = [];
 const toastSuccess: string[] = [];
 const toastError: string[] = [];
 let describeShouldFail: Error | null = null;
 let promoteShouldFail: Error | null = null;
+/** Click-time profile lookup seam (the PG-2 meta fix): controllable list +
+ *  failure switch — the component derives liveProgress from it. */
+let profilesList: ImageGenProfileRecord[] = [];
+let profilesShouldFail: Error | null = null;
 
 const realChatStore = await import("../../stores/image-gen-chat-store.js");
 // Spy the REAL store's runGeneration (the component reads runningByChat via
 // the selector and fires runGeneration via getState — both hit this store).
 realChatStore.useImageGenChatStore.setState({
-  runGeneration: (chatId: string, input: { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string }) => {
-    runGenerationCalls.push([chatId, input]);
+  runGeneration: (
+    chatId: string,
+    input: { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string },
+    meta?: ImageGenRunMeta,
+  ) => {
+    runGenerationCalls.push([chatId, input, meta]);
     return Promise.resolve();
   },
 });
@@ -57,6 +69,10 @@ mock.module("../../stores/image-gen-chat-store.js", () => ({
 
 mock.module("../../api/image-gen-api.js", () => ({
   ...realImageGenApi,
+  listAllImageGenProfiles: () => {
+    if (profilesShouldFail) return Promise.reject(profilesShouldFail);
+    return Promise.resolve([...profilesList]);
+  },
   promoteImageGenAttachmentToGallery: (assetId: string, characterId: string) => {
     if (promoteShouldFail) return Promise.reject(promoteShouldFail);
     promoteCalls.push([assetId, characterId]);
@@ -108,7 +124,29 @@ const realDom = await import("react-dom");
 mock.module("react-dom", () => ({ ...realDom }));
 const { flushSync } = await import("react-dom");
 
-import type { Attachment } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, type Attachment, type ImageGenBackendType } from "@vibe-tavern/domain";
+import type { ImageGenProfileRecord } from "../../api/image-gen-api.js";
+import type { ImageGenRunMeta } from "../../stores/image-gen-chat-store.js";
+
+/** Typed minimal record for the click-time lookup seam — only id/backend
+ *  matter to the component; the rest satisfies the wire type. */
+function profileRecord(id: string, backend: ImageGenBackendType): ImageGenProfileRecord {
+  return {
+    id,
+    name: `Profile ${id}`,
+    backend,
+    endpoint: "http://127.0.0.1:8188",
+    hasStoredApiKey: false,
+    autoKeyProviderName: null,
+    defaultParams: {},
+    modeSizePresets: {},
+    llmAssistEnabled: false,
+    capabilities: { ...IMAGE_GEN_BACKEND_CAPABILITIES[backend] },
+    sortOrder: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
 
 function slotAtt(overrides?: Partial<Attachment>): Attachment {
   return {
@@ -142,6 +180,8 @@ afterEach(() => {
   describeCalls.length = 0;
   includeCalls.length = 0;
   runGenerationCalls.length = 0;
+  profilesList = [];
+  profilesShouldFail = null;
   toastSuccess.length = 0;
   toastError.length = 0;
   describeShouldFail = null;
@@ -150,13 +190,45 @@ afterEach(() => {
 });
 
 describe("ImageGenSlotControls — regenerate-as-variant (IG-18a)", () => {
-  it("fires runGeneration with the slot's provenance + targetMessageId (variant target = the slot itself)", async () => {
+  it("fires runGeneration with the provenance + targetMessageId + the PG-2 live-progress meta", async () => {
+    profilesList = [profileRecord("p1", IMAGE_GEN_BACKENDS.ComfyUI)];
     const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
-    const btn = await view.findByTestId("image-gen-slot-regenerate");
-    fireEvent.click(btn);
-    expect(runGenerationCalls).toEqual([
-      ["chat-1", { profileId: "p1", mode: "portrait", anchorMessageId: "m1", targetMessageId: "m1" }],
-    ]);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() =>
+      expect(runGenerationCalls).toEqual([
+        ["chat-1", { profileId: "p1", mode: "portrait", anchorMessageId: "m1", targetMessageId: "m1" }, { liveProgress: true }],
+      ]),
+    );
+  });
+
+  it("static-table truth beats the stored mirror: a pre-capability mirror still polls (2026-09-18 pin)", async () => {
+    // A profile saved BEFORE its backend gained supportsLiveProgress
+    // carries a stale-false mirror; the run meta must derive from the
+    // registry's CURRENT truth (otherwise swipe runs silently lose the
+    // progress row AND server-side Stop forever).
+    const stale = profileRecord("p1", IMAGE_GEN_BACKENDS.ComfyUI);
+    stale.capabilities = { ...stale.capabilities, supportsLiveProgress: false };
+    profilesList = [stale];
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => expect(runGenerationCalls[0]?.[2]).toEqual({ liveProgress: true }));
+  });
+
+  it("cloud backend rides liveProgress false (the plain waiting chip)", async () => {
+    profilesList = [profileRecord("p1", IMAGE_GEN_BACKENDS.OpenRouter)];
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => expect(runGenerationCalls[0]?.[2]).toEqual({ liveProgress: false }));
+  });
+
+  it("profile list failure fails closed but never blocks the run", async () => {
+    profilesShouldFail = new Error("list endpoint down");
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => {
+      expect(runGenerationCalls).toHaveLength(1);
+      expect(runGenerationCalls[0]?.[2]).toEqual({ liveProgress: false });
+    });
   });
 
   it("without a chatId the button is not rendered (tests mount row-less)", async () => {

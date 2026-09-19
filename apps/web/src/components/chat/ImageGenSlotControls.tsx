@@ -13,7 +13,7 @@
  */
 
 import { useState } from "react";
-import type { Attachment } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKEND_CAPABILITIES, type Attachment } from "@vibe-tavern/domain";
 import { toast } from "sonner";
 
 import { useT } from "../../i18n/context.js";
@@ -22,7 +22,7 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
-import { promoteImageGenAttachmentToGallery } from "../../api/image-gen-api.js";
+import { listAllImageGenProfiles, promoteImageGenAttachmentToGallery } from "../../api/image-gen-api.js";
 import { regenerateAttachmentDescription, updateAttachmentIncludeInPrompt } from "../../api/chat-api.js";
 
 export interface ImageGenSlotControlsProps {
@@ -61,15 +61,39 @@ export function ImageGenSlotControls({
   /** IG-18a: regenerate this slot — mode/profile defaults come from the
    *  slot's own provenance (the generation that produced it); the result
    *  lands as a swipe VARIANT of this slot (targetMessageId), and the
-   *  one-per-chat guard disables the button while any generation runs. */
+   *  one-per-chat guard disables the button while any generation runs.
+   *  PG-2 twin of the menu path: the START-time capability snapshot rides
+   *  the run so Stop interrupts the local server-side job and the progress
+   *  row polls it — without it a swipe-regenerated run showed only the
+   *  waiting chip (owner report 2026-09-18). The flag derives from the
+   *  STATIC table by the profile's backend, never the stored record
+   *  mirror (a mirror saved before the backend gained the capability
+   *  would gate the run off forever); a failed lookup fails closed (the
+   *  waiting chip) but still starts the run — a dead list endpoint must
+   *  never block generation. */
   const regenerate = () => {
     if (!chatId || !messageId || running) return;
-    void useImageGenChatStore.getState().runGeneration(chatId, {
-      profileId: firstProvenance.profileId,
-      mode: firstProvenance.mode,
-      anchorMessageId: messageId,
-      targetMessageId: messageId,
-    });
+    void (async () => {
+      let liveProgress = false;
+      try {
+        const profile = (await listAllImageGenProfiles()).find((p) => p.id === firstProvenance.profileId);
+        liveProgress =
+          profile !== undefined && IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsLiveProgress;
+      } catch {
+        // Fail-closed on purpose (see above): the run starts, the progress
+        // row stays on the plain waiting chip.
+      }
+      void useImageGenChatStore.getState().runGeneration(
+        chatId,
+        {
+          profileId: firstProvenance.profileId,
+          mode: firstProvenance.mode,
+          anchorMessageId: messageId,
+          targetMessageId: messageId,
+        },
+        { liveProgress },
+      );
+    })();
   };
 
   const promote = async (att: Attachment) => {

@@ -67,7 +67,7 @@ import type {
   UpdateImageGenProfileData,
 } from "@vibe-tavern/db";
 import type { Attachment, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance } from "@vibe-tavern/domain";
-import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
+import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import {
@@ -551,8 +551,13 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     if (!profile) return null;
     // Static capability gate FIRST (the samplers capability-gate twin): a
     // live-progress question must not depend on live config validity, and
-    // cloud dialects have no progress surface at all.
-    if (!profile.capabilities.supportsLiveProgress) return null;
+    // cloud dialects have no progress surface at all. Read from the STATIC
+    // table by backend, never the stored record mirror — the mirror is a
+    // save-time snapshot and goes stale the moment a backend gains the
+    // capability after the profile was saved (owner report 2026-09-18: a
+    // swipe-regenerated run showed no progress because the gate read a
+    // pre-CG-C1 mirror; the registry's current truth is the only source).
+    if (!IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsLiveProgress) return null;
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     // Interface-driven second gate: a backend without the progress method
     // reports "not supported", not an error.
@@ -565,8 +570,9 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
     // The same two-gate discipline as progress (the interrupt surface is
-    // the same A1111 dialect).
-    if (!profile.capabilities.supportsLiveProgress) return null;
+    // the same A1111 dialect), and the same static-table rule: the stored
+    // mirror may predate the capability (see getImageGenProfileProgress).
+    if (!IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsLiveProgress) return null;
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     if (typeof backend.interrupt !== "function") return null;
     const interrupt = backend.interrupt.bind(backend);
