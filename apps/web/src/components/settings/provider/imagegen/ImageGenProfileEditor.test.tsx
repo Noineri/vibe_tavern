@@ -197,7 +197,7 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
     expect(view.queryByTestId("image-gen-local-server-panel")).toBeNull();
   });
 
-  it("MR-6: a native-vendor preset lands in the Native segment (google row)", async () => {
+  it("MR-6: a native-vendor preset lands in the Native segment AND renders the native preset picker (google row)", async () => {
     const imageGen = makeImageGen({
       form: makeForm({ presetId: "google", backend: IMAGE_GEN_BACKENDS.Google, endpoint: "https://generativelanguage.googleapis.com/v1beta" }),
     });
@@ -215,6 +215,25 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
     });
     expect(labels).toContain("image_gen_segment_native");
     expect(labels).toContain("Cloud");
+    // The preset picker row (Row 2) must render for native too — the MR-6
+    // follow-up defect: the row was gated cloud/local only, so the native
+    // segment showed no provider list at all (owner 2026-09-18). Pin the
+    // picker's presence + a spot-check of its native roster rows.
+    await act(async () => {
+      document.body.querySelector("[cmdk-item]")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-preset-select")).toBeTruthy());
+    await act(async () => {
+      view.getByTestId("image-gen-preset-select").click();
+    });
+    const presetLabels = await waitFor(() => {
+      const items = Array.from(document.body.querySelectorAll("[cmdk-item]")).map((n) => n.textContent?.trim());
+      expect(items.length).toBeGreaterThan(0);
+      return items;
+    });
+    expect(presetLabels).toContain("Google Gemini");
+    expect(presetLabels).toContain("OpenAI");
+    expect(presetLabels).toContain("Black Forest Labs (FLUX)");
   });
 
   it("CF8: segment switch to Custom pins the backend to openai-images under the hood + drops the preset slug", async () => {

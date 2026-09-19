@@ -183,10 +183,10 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
         </div>
       </div>
 
-      {/* Row 2 (cloud/local only): named preset rows + read-only preset
-          endpoint. Custom renders NOTHING here — bare endpoint + key
-          below (IG-CF8, the SttProviderForm custom arm). */}
-      {(segment === "cloud" || segment === "local") && (
+      {/* Row 2 (group segments — cloud/native/local): named preset rows +
+          read-only preset endpoint. Custom renders NOTHING here — bare
+          endpoint + key below (IG-CF8, the SttProviderForm custom arm). */}
+      {(segment === "cloud" || segment === "native" || segment === "local") && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="mb-3">
             <label className={lblCls}>{t("api_format_label")}</label>
