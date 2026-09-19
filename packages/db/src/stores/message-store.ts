@@ -567,6 +567,19 @@ export class MessageStore {
       .run();
   }
 
+  /** MR-4 (IG-18a write-path gap): persist an attachment-set edit onto a
+   *  VARIANT row — the updateMessageAttachments twin for regenerate-as-
+   *  variant slot attachments (include-in-prompt / description / remove
+   *  all route through here). The variants table has no updatedAt column
+   *  (immutable-by-id discipline, same as scene_tracker_json). */
+  async updateVariantAttachments(variantId: string, attachmentsJson: string | null): Promise<void> {
+    await this.db
+      .update(messageVariants)
+      .set({ attachmentsJson })
+      .where(eq(messageVariants.id, variantId))
+      .run();
+  }
+
   async editMessage(id: string, content: string, expectedVariantId?: string): Promise<Message> {
     const now = this.clock.now();
 

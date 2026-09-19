@@ -367,10 +367,10 @@ export class ChatAdapter implements ChatRuntimeApi {
 	 * uploads keep their always-included semantics.
 	 */
 	updateAttachmentIncludeInPrompt = async (chatId: string, messageId: string, attachmentId: string, includeInPrompt: boolean) => {
-		const message = await this.stores.messages.getMessageById(messageId);
-		if (!message?.attachmentsJson) throw validation("Message has no attachments.");
-		const attachments = parseStoredAttachments(message.attachmentsJson);
-		const att = attachments?.find((a) => a.id === attachmentId);
+		// MR-4: the merged-set lookup (message row + variant rows — the DTO
+		// merge's write-path twin) replaces the message-row-only read; a
+		// swiped-to regenerate slot validates like the original one.
+		const att = await this.sessionRuntime.chatApp.findAttachment(messageId, attachmentId);
 		if (!att) throw notFound("Attachment not found.");
 		if (att.imageGen === undefined) {
 			throw validation("Only generated image slots have an include-in-prompt toggle.");
@@ -390,10 +390,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 	 * button so the auto-describe cache (skip-if-described) stays non-destructive.
 	 */
 	regenerateAttachmentDescription = async (chatId: string, messageId: string, attachmentId: string): Promise<{ description: string }> => {
-		const message = await this.stores.messages.getMessageById(messageId);
-		if (!message?.attachmentsJson) throw validation("Message has no attachments.");
-		const attachments = parseStoredAttachments(message.attachmentsJson);
-		const att = attachments?.find((a) => a.id === attachmentId);
+		// MR-4: the same merged-set lookup — variant-row attachments describe
+		// exactly like message-row ones.
+		const att = await this.sessionRuntime.chatApp.findAttachment(messageId, attachmentId);
 		if (!att) throw notFound("Attachment not found.");
 		if (att.type !== "image" && att.type !== "video") {
 			throw validation("Only image or video attachments can be described.");

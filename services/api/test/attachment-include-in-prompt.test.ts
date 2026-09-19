@@ -108,6 +108,34 @@ async function storedAttachments(stores: StoreContainer, messageId: string): Pro
 	return parseStoredAttachments(message?.attachmentsJson) ?? [];
 }
 
+/** Seed a regenerate-as-variant row (IG-18a) carrying its own attachment
+ *  set; return the variant id. Signature-true call — the store's addVariant
+ *  takes the attachments as its LAST positional parameter. */
+async function seedVariant(stores: StoreContainer, messageId: string, attachments: Attachment[]): Promise<string> {
+	const variant = await stores.messages.addVariant(
+		messageId,
+		"",
+		undefined,
+		undefined,
+		undefined,
+		undefined,
+		undefined,
+		undefined,
+		undefined,
+		undefined,
+		undefined,
+		JSON.stringify(attachments),
+	);
+	return variant.id;
+}
+
+/** Re-read a variant row's stored attachments. */
+async function storedVariantAttachments(stores: StoreContainer, messageId: string, variantId: string): Promise<Attachment[]> {
+	const variants = await stores.messages.getVariants(messageId);
+	const variant = variants.find((v) => v.id === variantId);
+	return parseStoredAttachments(variant?.attachmentsJson) ?? [];
+}
+
 describe("Attachment include-in-prompt (IG-18): ChatAdapter.updateAttachmentIncludeInPrompt", () => {
 	test("full ladder: undescribed slot rejected, described slot persists, disable persists", async () => {
 		const { stores, assetService, chat } = await setup();
@@ -168,11 +196,97 @@ describe("Attachment include-in-prompt (IG-18): ChatAdapter.updateAttachmentIncl
 		await expect(chat.updateAttachmentIncludeInPrompt("_", messageId, "nope", true)).rejects.toThrow(/Attachment not found/);
 	});
 
-	test("message without attachments → validation error", async () => {
+	test("message without attachments → not-found for any id", async () => {
 		const { stores, chat } = await setup();
 		const { chatId, branchId } = await makeChat(stores);
 		const messageId = await seedMessage(stores, chatId, branchId, []);
 
 		await expect(chat.updateAttachmentIncludeInPrompt("_", messageId, "x", true)).rejects.toThrow(/Attachment not found/);
+	});
+
+	describe("MR-4: variant-row attachments (regenerate-as-variant)", () => {
+		test("full ladder on a VARIANT attachment: describe gate, include persists to the variant row, message row untouched", async () => {
+			const { stores, assetService, chat } = await setup();
+			const { chatId, branchId } = await makeChat(stores);
+			// The original slot on the MESSAGE row (legacy shape)…
+			const original = await makeSlotAttachment(assetService, BYTES_A, 1, { description: "original" });
+			const messageId = await seedMessage(stores, chatId, branchId, [original]);
+			// …and the swiped-to regeneration on a VARIANT row (IG-18a).
+			const variantSlot = await makeSlotAttachment(assetService, BYTES_B, 2);
+			const variantId = await seedVariant(stores, messageId, [variantSlot]);
+
+			// 1) undescribed variant slot → the same validation gate fires.
+			await expect(chat.updateAttachmentIncludeInPrompt("_", messageId, variantSlot.id, true)).rejects.toThrow(/Describe the image/);
+
+			// 2) describe via the domain write path, then include → persists on
+			//    the VARIANT row; the message row's original set is untouched.
+			await stores.messages.updateVariantAttachments(
+				variantId,
+				JSON.stringify([{ ...variantSlot, description: "A regenerated portrait." }]),
+			);
+			await expect(chat.updateAttachmentIncludeInPrompt("_", messageId, variantSlot.id, true)).resolves.toEqual({ ok: true });
+			expect((await storedVariantAttachments(stores, messageId, variantId))[0]?.includeInPrompt).toBe(true);
+			expect((await storedAttachments(stores, messageId))[0]?.id).toBe(original.id);
+			expect((await storedAttachments(stores, messageId))[0]?.includeInPrompt).toBeUndefined();
+
+			// 3) disable → explicit false on the variant row.
+			await expect(chat.updateAttachmentIncludeInPrompt("_", messageId, variantSlot.id, false)).resolves.toEqual({ ok: true });
+			expect((await storedVariantAttachments(stores, messageId, variantId))[0]?.includeInPrompt).toBe(false);
+		});
+
+		test("prompt-stamped variant slot (IG-CF9 on variants): the generation prompt satisfies the gate", async () => {
+			const { stores, assetService, chat } = await setup();
+			const { chatId, branchId } = await makeChat(stores);
+			const original = await makeSlotAttachment(assetService, BYTES_A, 1, { description: "original" });
+			const messageId = await seedMessage(stores, chatId, branchId, [original]);
+			const variantSlot = await makeSlotAttachment(assetService, BYTES_B, 3, {
+				imageGen: { mode: "portrait", profileId: "prof1", params: {}, prompt: "a knight in the rain" },
+			});
+			const variantId = await seedVariant(stores, messageId, [variantSlot]);
+
+			await expect(chat.updateAttachmentIncludeInPrompt("_", messageId, variantSlot.id, true)).resolves.toEqual({ ok: true });
+			expect((await storedVariantAttachments(stores, messageId, variantId))[0]?.includeInPrompt).toBe(true);
+		});
+
+		test("description update lands on the owning variant row", async () => {
+			const { stores, assetService, chatApp } = await setup();
+			const { chatId, branchId } = await makeChat(stores);
+			const original = await makeSlotAttachment(assetService, BYTES_A, 1, { description: "original" });
+			const messageId = await seedMessage(stores, chatId, branchId, [original]);
+			const variantSlot = await makeSlotAttachment(assetService, BYTES_B, 4);
+			const variantId = await seedVariant(stores, messageId, [variantSlot]);
+
+			await chatApp.updateSingleAttachmentDescription(messageId, variantSlot.id, "Described on the variant.");
+			expect((await storedVariantAttachments(stores, messageId, variantId))[0]?.description).toBe("Described on the variant.");
+			expect((await storedAttachments(stores, messageId))[0]?.description).toBe("original");
+		});
+
+		test("removeAttachment on a variant row: removed + the row empties; message row untouched", async () => {
+			const { stores, assetService, chatApp } = await setup();
+			const { chatId, branchId } = await makeChat(stores);
+			const original = await makeSlotAttachment(assetService, BYTES_A, 1, { description: "original" });
+			const messageId = await seedMessage(stores, chatId, branchId, [original]);
+			const variantSlot = await makeSlotAttachment(assetService, BYTES_B, 5);
+			const variantId = await seedVariant(stores, messageId, [variantSlot]);
+
+			const removed = await chatApp.removeAttachment(messageId, variantSlot.id);
+			expect(removed?.id).toBe(variantSlot.id);
+			expect(await storedVariantAttachments(stores, messageId, variantId)).toEqual([]);
+			expect((await storedAttachments(stores, messageId))[0]?.id).toBe(original.id);
+
+			// Idempotent second removal → null.
+			expect(await chatApp.removeAttachment(messageId, variantSlot.id)).toBeNull();
+		});
+
+		test("unknown id on a variant-carrying message → not-found (the merged lookup is not a false positive)", async () => {
+			const { stores, assetService, chat } = await setup();
+			const { chatId, branchId } = await makeChat(stores);
+			const original = await makeSlotAttachment(assetService, BYTES_A, 1, { description: "original" });
+			const messageId = await seedMessage(stores, chatId, branchId, [original]);
+			const variantSlot = await makeSlotAttachment(assetService, BYTES_B, 6, { description: "v" });
+			await seedVariant(stores, messageId, [variantSlot]);
+
+			await expect(chat.updateAttachmentIncludeInPrompt("_", messageId, "nope", true)).rejects.toThrow(/Attachment not found/);
+		});
 	});
 });
