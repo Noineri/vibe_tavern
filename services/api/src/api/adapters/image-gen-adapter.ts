@@ -84,6 +84,7 @@ import type {
 import { IMAGE_GENERATION_CLOUD_TIMEOUT_MS, withImageGenTimeoutMs } from "../../domain/imagegen/imagegen-backend.js";
 import { TEST_CHAT_TIMEOUT_MS } from "../../domain/providers/provider-transport.js";
 import { createImageGenBackend } from "../../domain/imagegen/imagegen-registry.js";
+import { clearImageGenRunPhase, getImageGenRunPhase, setImageGenRunPhase } from "../../domain/imagegen/run-phase.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
 import {
@@ -555,6 +556,10 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   getImageGenProfileProgress: ImageGenRuntimeApi["getImageGenProfileProgress"] = async (id, signal) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
+    // MR-11: an ACTIVE run carries its phase on every poll response —
+    // cloud dialects included (prompt/starting only, the honest chip
+    // timeline; they never report steps).
+    const phase = getImageGenRunPhase(id);
     // Static capability gate FIRST (the samplers capability-gate twin): a
     // live-progress question must not depend on live config validity, and
     // cloud dialects have no progress surface at all. Read from the STATIC
@@ -563,13 +568,18 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // capability after the profile was saved (owner report 2026-09-18: a
     // swipe-regenerated run showed no progress because the gate read a
     // pre-CG-C1 mirror; the registry's current truth is the only source).
-    if (!IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsLiveProgress) return null;
+    if (!IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsLiveProgress) {
+      return phase === undefined ? null : { phase };
+    }
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     // Interface-driven second gate: a backend without the progress method
     // reports "not supported", not an error.
-    if (typeof backend.progress !== "function") return null;
+    if (typeof backend.progress !== "function") {
+      return phase === undefined ? null : { phase };
+    }
     const progress = backend.progress.bind(backend);
-    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "progress", (inner) => progress(inner));
+    const snapshot = await withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "progress", (inner) => progress(inner));
+    return phase === undefined ? snapshot : { ...snapshot, phase };
   };
 
   interruptImageGenProfile: ImageGenRuntimeApi["interruptImageGenProfile"] = async (id, signal) => {
@@ -636,15 +646,31 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
 
   // ── Generate (image message slot) ───────────────────────────────────────
 
-  generateImageGen: ImageGenRuntimeApi["generateImageGen"] = async (
+  generateImageGen: ImageGenRuntimeApi["generateImageGen"] = async (chatId, body, signal) => {
+    // MR-11: the phase registry must never leak a stale phase past the
+    // run's exit — every exit path (success, validation throw, abort,
+    // backend error) funnels through this finally. The phase itself is set
+    // inside the core once the profile resolves.
+    try {
+      return await this.generateImageGenCore(chatId, body, signal);
+    } finally {
+      clearImageGenRunPhase(body.profileId);
+    }
+  };
+
+  private async generateImageGenCore(
     chatId: string,
     body: GenerateImageGenInput,
     signal?: AbortSignal,
-  ) => {
+  ): Promise<ImageGenGenerateResponseValue> {
     const chat = await this.stores.chats.getById(chatId);
     if (!chat) throw new ImageGenNotFoundError(`Chat ${chatId} not found`);
     const profile = await this.stores.imageGen.getById(body.profileId);
     if (!profile) throw new ImageGenNotFoundError(`Image-gen profile ${body.profileId} not found`);
+    // MR-11: the chip's honest timeline starts here — "starting" covers
+    // the whole pre-submit span (validation, mode assembly, assist); the
+    // assist wrapper below flips it to "prompt" while the LLM writes.
+    setImageGenRunPhase(profile.id, "starting");
 
     // The anchor message is provenance (the design's slot contract); it must
     // exist and belong to this chat — anything else is a client inconsistency.
@@ -736,6 +762,19 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         throw new ImageGenValidationError("LLM assist is enabled but the assistant seam is unavailable");
       }
       assist = this.makeAssistRunner(this.assistDeps, assistProfileId, assistModelId, signal);
+      // MR-11: the assist wrapper announces the prompt phase at the exact
+      // moment the LLM call actually fires (lazy resolution — exempt runs
+      // never enter "prompt") and hands the timeline back to "starting"
+      // when the text is ready.
+      const innerAssist = assist;
+      assist = async (system, user) => {
+        setImageGenRunPhase(profile.id, "prompt");
+        try {
+          return await innerAssist(system, user);
+        } finally {
+          setImageGenRunPhase(profile.id, "starting");
+        }
+      };
     }
 
     // IG-14 mode assembly: the prompt the design's generation flow builds —
@@ -774,6 +813,10 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(clipSkip !== undefined ? { clipSkip } : {}),
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
       ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
+      // MR-11: the backend announces the moment its progress surface
+      // reflects THIS run's job — the phase flips to "steps" exactly there
+      // (no percent before real steps; no inherited stale snapshot).
+      onJobStarted: () => setImageGenRunPhase(profile.id, "steps"),
       ...(signal !== undefined ? { signal } : {}),
     };
 

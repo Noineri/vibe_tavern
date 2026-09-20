@@ -1352,6 +1352,88 @@ describe("comfyui ws progress + interrupt (CG-C1)", () => {
     expect(replayed).toEqual({ progress: 0.375, state: "step 3/8" });
   });
 
+  it("MR-11: onJobStarted fires exactly once — at the FIRST step event attributed to this run (buffered replay included)", async () => {
+    const PID = "ws-pid-4";
+    const fake = makeFakeWs();
+    let polls = 0;
+    let announced = 0;
+    const { transport } = makeTransport(async (url) => {
+      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+        return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
+      }
+      if (url.pathname === "/prompt") return queuedOk(PID);
+      if (url.pathname === `/history/${PID}`) {
+        polls += 1;
+        if (polls === 1) {
+          // No step event yet — the job-start signal must NOT have fired.
+          expect(announced).toBe(0);
+          fake.pushText({ type: "progress", data: { value: 1, max: 8, prompt_id: PID, node: "3" } });
+          expect(announced).toBe(1);
+          // Further steps never re-announce (the chip flips once).
+          fake.pushText({ type: "progress", data: { value: 5, max: 8, prompt_id: PID, node: "3" } });
+          fake.pushText({ type: "progress", data: { value: 7, max: 8, prompt_id: PID, node: "3" } });
+          expect(announced).toBe(1);
+          return Response.json({});
+        }
+        return historyDone(PID);
+      }
+      if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+      return new Response("not found", { status: 404 });
+    });
+    const backend = comfyImageGenFactory({
+      endpoint: WS_EP(9104),
+      fetch: transport,
+      openWebSocket: () => fake.socket,
+    });
+
+    await backend.generate({
+      prompt: "a tavern",
+      model: "graycolor_v18.safetensors",
+      onJobStarted: () => {
+        announced += 1;
+      },
+    });
+    expect(announced).toBe(1);
+  });
+
+  it("MR-11: a fresh run resets the endpoint's stale terminal snapshot at bind — the queue/load span reads an honest zero, never the previous run's 100%", async () => {
+    const PID = "ws-pid-5";
+    const fake = makeFakeWs();
+    const transportCalls: string[] = [];
+    let historyServed = false;
+    let midSecondRun: { progress?: number; state?: string } | null = null;
+    let backend: ReturnType<typeof comfyImageGenFactory> | undefined;
+    const transport = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const url = new URL(typeof input === "string" ? input : input.url ?? String(input));
+      transportCalls.push(url.pathname);
+      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+        return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
+      }
+      if (url.pathname === "/prompt") return queuedOk(PID);
+      if (url.pathname === `/history/${PID}`) {
+        if (!historyServed) {
+          historyServed = true;
+          return historyDone(PID);
+        }
+        // Second run: parked here — read the poll mid-flight.
+        midSecondRun = await backend!.progress();
+        return historyDone(PID);
+      }
+      if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+      return new Response("not found", { status: 404 });
+    };
+    backend = comfyImageGenFactory({ endpoint: WS_EP(9115), fetch: transport, openWebSocket: () => fake.socket });
+
+    // Run one completes — the registry is left holding its terminal 100%.
+    await backend.generate({ prompt: "a tavern", model: "graycolor_v18.safetensors" });
+    expect(await backend.progress()).toEqual({ progress: 1 });
+    // Run two (same endpoint): the queue POST + bind reset the stale entry
+    // to an honest zero while the run waits in queue/load — the chip's
+    // "starting" span never inherits the previous run's percent.
+    await backend.generate({ prompt: "a second tavern", model: "graycolor_v18.safetensors" });
+    expect(midSecondRun).toEqual({ progress: 0 });
+  });
+
   it("cross-prompt events, binary preview frames, and malformed text frames are all ignored", async () => {
     const PID = "ws-pid-3";
     const fake = makeFakeWs();

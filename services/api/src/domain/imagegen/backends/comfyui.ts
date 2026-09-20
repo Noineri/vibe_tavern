@@ -703,10 +703,15 @@ function openComfyProgressListener(
   endpoint: string,
   clientId: string,
   openWebSocket: (url: string) => ImageGenWebSocketLike,
+  onJobStarted?: () => void,
 ): ComfyProgressListener {
   let promptId: string | undefined;
   const buffer: string[] = [];
   let dead = false;
+  // MR-11: the first step event attributed to THIS run's prompt_id flips
+  // the phase registry to "steps" — exactly once, no matter how many
+  // buffered events replay at bind time.
+  let jobAnnounced = false;
 
   const applyEvent = (payload: unknown): void => {
     if (dead || !isRecord(payload)) return;
@@ -721,6 +726,10 @@ function openComfyProgressListener(
       if (max > 0) {
         const fraction = Math.min(Math.max(value / max, 0), 1);
         comfyRunSnapshots.set(endpoint, { promptId, progress: fraction, state: `step ${value}/${max}` });
+        if (!jobAnnounced) {
+          jobAnnounced = true;
+          onJobStarted?.();
+        }
       }
       return;
     }
@@ -1274,7 +1283,7 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       // The WS live-progress listener (CG-C1): opened BEFORE the prompt is
       // queued so no early event is missed, held through execution, closed
       // at run end. Best-effort — its failure never fails the run.
-      const listener = openComfyProgressListener(cfg.endpoint, clientId, cfg.openWebSocket);
+      const listener = openComfyProgressListener(cfg.endpoint, clientId, cfg.openWebSocket, request.onJobStarted);
       let promptId: string;
       let outputImages: ComfyHistoryOutputImage[];
       try {
@@ -1326,6 +1335,11 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           );
         }
 
+        // MR-11: a fresh run must not inherit the previous run's terminal
+        // 100% — the reset lands BEFORE the bind replays buffered events, so
+        // pre-queue frames still win (the queue/model-load span otherwise
+        // reads "starting", never a stale percent).
+        comfyRunSnapshots.set(cfg.endpoint, { promptId, progress: 0 });
         listener.bindPromptId(promptId);
         outputImages = await waitForPromptCompletion(cfg.fetch, cfg.endpoint, promptId, request.signal);
       } finally {

@@ -109,6 +109,12 @@ export interface ImageGenGenerateRequest {
    *  only); CLOUD backends are wrapped at the adapter layer with
    *  IMAGE_GENERATION_CLOUD_TIMEOUT_MS. */
   signal?: AbortSignal;
+  /** MR-11 run-phase signal: the backend announces that its progress
+   *  surface now reflects THIS run's job — the a1111 dialect fires it at
+   *  its synchronous submit POST, ComfyUI at the first WS step event
+   *  attributed to the queued prompt_id. Adapters that report no progress
+   *  never call it (the phase stays "starting" until the run ends). */
+  onJobStarted?: () => void;
 }
 
 /** Cloud generation timeout budget (owner-approved 2026-09-14: 3 minutes).
@@ -254,8 +260,21 @@ export interface ImageGenLoraInfo {
 /** Live progress (A1111-compat `GET /sdapi/v1/progress`): `progress` is
  *  0..1; `previewBase64` is the interim preview image when the server
  *  produces one. */
+/** MR-11 run phases — the honest chip timeline. "prompt" = the LLM
+ *  assist is writing the prompt; "starting" = the run is between prompt
+ *  and the backend's first real step signal (queue, model load, warmup);
+ *  "steps" = the backend reports progress for THIS run's job. */
+export type ImageGenJobPhase = "prompt" | "starting" | "steps";
+
 export interface ImageGenProgressInfo {
-  progress: number;
+  /** 0..1 when the backend reports live steps; ABSENT on phase-only
+   *  responses (cloud dialects mid-run — no steps surface exists there,
+   *  MR-11). */
+  progress?: number;
+  /** MR-11: the run's phase when a VT generation is in flight (absent
+   *  outside a run — the poll response then carries the legacy
+   *  progress-only shape). */
+  phase?: ImageGenJobPhase;
   etaRelative?: number;
   state?: string;
   previewBase64?: string;

@@ -288,10 +288,15 @@ export type ImageGenSchedulerInfoValue = z.infer<typeof imageGenSchedulerInfoSch
 
 /** Live progress snapshot (A1111-compat `GET /sdapi/v1/progress`) — the
  *  adapter interface's `ImageGenProgressInfo` verbatim: `progress` is
- *  0..1; `previewBase64` is the interim preview when the server produces
- *  one (needs `show_progress_every_n_steps`). */
+ *  0..1, ABSENT on phase-only responses (cloud dialects mid-run — no
+ *  steps surface exists there); `phase` (MR-11) rides every poll while a
+ *  VT generation is in flight — "prompt" (LLM assist writing),
+ *  "starting" (queue/model load/warmup), "steps" (the backend reports
+ *  progress for this run's job); `previewBase64` is the interim preview
+ *  when the server produces one (needs `show_progress_every_n_steps`). */
 export const imageGenProgressInfoSchema = z.object({
-  progress: z.number().min(0).max(1),
+  progress: z.number().min(0).max(1).optional(),
+  phase: z.enum(["prompt", "starting", "steps"]).optional(),
   etaRelative: z.number().optional(),
   state: z.string().optional(),
   previewBase64: z.string().optional(),

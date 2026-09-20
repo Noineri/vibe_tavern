@@ -54,7 +54,7 @@ describe("ImageGenProgressRow (PG-2)", () => {
     expect(view.queryByTestId("image-gen-progress-row")).toBeNull();
   });
 
-  it("cloud run: the plain Generating pulse, no bar, no polling", () => {
+  it("cloud run past the prompt phase: the plain Generating pulse, no bar", () => {
     setRunning(false);
     const view = render(<ImageGenProgressRow chatId="chat-1" />);
     const row = view.getByTestId("image-gen-progress-row");
@@ -73,11 +73,53 @@ describe("ImageGenProgressRow (PG-2)", () => {
     expect(view.getByTestId("image-gen-progress-preview").getAttribute("src")).toContain("cHJldg==");
   });
 
-  it("live run before the first snapshot: a 0% bar with no ETA", async () => {
+  it("live run before the first snapshot: the Starting label, never a fake 0% bar (MR-11)", async () => {
     setRunning(true);
     served = null;
     const view = render(<ImageGenProgressRow chatId="chat-1" />);
-    await waitFor(() => expect(view.getByTestId("image-gen-progress-line").textContent).toBe("0%"));
-    expect(view.queryByTestId("image-gen-progress-preview")).toBeNull();
+    await waitFor(() => expect(view.getByTestId("image-gen-progress-phase").textContent).toContain("image_gen_phase_starting"));
+    expect(view.queryByTestId("image-gen-progress-bar")).toBeNull();
+    expect(view.queryByTestId("image-gen-progress-line")).toBeNull();
+  });
+});
+
+describe("ImageGenProgressRow — MR-11 phase timeline", () => {
+  it("prompt phase: the Writing-prompt label wins on a live run — no bar while the LLM composes", async () => {
+    setRunning(true);
+    served = { phase: "prompt" };
+    const view = render(<ImageGenProgressRow chatId="chat-1" />);
+    await waitFor(() =>
+      expect(view.getByTestId("image-gen-progress-phase").textContent).toContain("image_gen_phase_prompt"),
+    );
+    expect(view.queryByTestId("image-gen-progress-bar")).toBeNull();
+  });
+
+  it("prompt phase on a CLOUD run: the same Writing-prompt label (cloud runs poll their phase too)", async () => {
+    setRunning(false);
+    served = { phase: "prompt" };
+    const view = render(<ImageGenProgressRow chatId="chat-1" />);
+    await waitFor(() =>
+      expect(view.getByTestId("image-gen-progress-phase").textContent).toContain("image_gen_phase_prompt"),
+    );
+  });
+
+  it("starting phase: the Starting label, no bar — the queue/model-load span never shows an inherited percent", async () => {
+    setRunning(true);
+    served = { phase: "starting", progress: 1 };
+    const view = render(<ImageGenProgressRow chatId="chat-1" />);
+    await waitFor(() =>
+      expect(view.getByTestId("image-gen-progress-phase").textContent).toContain("image_gen_phase_starting"),
+    );
+    expect(view.queryByTestId("image-gen-progress-bar")).toBeNull();
+    // Even a stale-looking progress: 1 payload must not leak into a bar.
+    expect(view.queryByTestId("image-gen-progress-line")).toBeNull();
+  });
+
+  it("steps phase: the bar + percent line render from the snapshot fields", async () => {
+    setRunning(true);
+    served = { phase: "steps", progress: 0.25, etaRelative: 12.4 };
+    const view = render(<ImageGenProgressRow chatId="chat-1" />);
+    await waitFor(() => expect(view.getByTestId("image-gen-progress-line").textContent).toBe("25% · ~12s"));
+    expect(view.getByTestId("image-gen-progress-bar").getAttribute("style")).toContain("25%");
   });
 });

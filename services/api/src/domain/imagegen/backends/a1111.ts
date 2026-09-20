@@ -429,6 +429,12 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
         };
       }
 
+      // MR-11: from the submit POST onward, the instance-global progress
+      // endpoint reflects THIS run's job (A1111 executes the txt2img POST
+      // synchronously) — the phase flips to "steps" exactly here, so the
+      // chip never shows the previous job's terminal percent during the
+      // pre-submit span.
+      request.onJobStarted?.();
       const response = await fetchOrWrap(
         cfg.fetch,
         `${cfg.endpoint}/txt2img`,

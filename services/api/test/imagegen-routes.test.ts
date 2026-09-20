@@ -2725,3 +2725,267 @@ describe("image-gen routes — regenerate-as-variant (IG-18a)", () => {
     expect(res.status).toBe(400);
   });
 });
+
+
+describe("image-gen routes — run phases (MR-11 honest chip timeline)", () => {
+  /** Full StoredProviderProfileRecord — the module-scope twin of the IG-15
+   *  fixture (that one is describe-local; this block needs its own). */
+  function makePhaseLlmProfile(): StoredProviderProfileRecord {
+    return {
+      id: "llm1",
+      name: "Writer LLM",
+      providerPreset: "openaiCompat",
+      coauthorTransport: "chat_completions",
+      generationMode: "chat",
+      endpoint: "http://localhost:9000/v1",
+      apiKey: "sk-llm",
+      defaultModel: "writer-default",
+      contextBudget: null,
+      pinContextBudget: false,
+      tokenPadding: 0,
+      bindPerModel: false,
+      modelFreeOnly: false,
+      modelGroupByOwner: false,
+      maxTokens: 2048,
+      temperature: 1,
+      topP: 1,
+      topK: 0,
+      minP: 0,
+      topA: 0,
+      typicalP: 1,
+      tfsZ: 1,
+      adaptiveTarget: -1,
+      adaptiveDecay: 0,
+      dynatempRange: 0,
+      dynatempExponent: 1,
+      topNSigma: 0,
+      smoothingFactor: 0,
+      repeatLastN: 0,
+      mirostat: 0,
+      mirostatTau: 5,
+      mirostatEta: 0.1,
+      dryMultiplier: 0,
+      dryBase: 1.75,
+      dryAllowedLength: 2,
+      drySequenceBreakers: [],
+      dryPenaltyLastN: 0,
+      bannedStrings: [],
+      xtcThreshold: 0.1,
+      xtcProbability: 0,
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+      repetitionPenalty: 1,
+      stopSequences: [],
+      logitBias: [],
+      seed: null,
+      reasoningEffort: "auto",
+      showReasoning: false,
+      streamResponse: true,
+      customSamplers: false,
+      proxyMode: "inherit",
+      proxyId: null,
+      isActive: false,
+      visionModel: null,
+      samplerSetId: null,
+      generationFormat: null,
+      createdAt: "0",
+      updatedAt: "0",
+    };
+  }
+  /** A gated transport: `dispatch` serves a call immediately; everything
+   *  else parks until the test releases it by path. `waitFor` parks the
+   *  TEST until the executor reaches a path (small bounded sleep-poll —
+   *  the parked promise is the synchronization, the sleep only observes). */
+  function makeGatedTransport(dispatch: (url: URL) => Response | Promise<Response> | undefined) {
+    const pending: Array<{ path: string; respond: (response: Response) => void }> = [];
+    const seen: string[] = [];
+    const transport = async (input: FetchArgs[0], _init?: FetchArgs[1]): Promise<Response> => {
+      const url = new URL(typeof input === "string" ? input : String(input));
+      seen.push(url.pathname);
+      const direct = await dispatch(url);
+      if (direct !== undefined) return direct;
+      return new Promise<Response>((resolve) => {
+        pending.push({ path: url.pathname, respond: resolve });
+      });
+    };
+    return {
+      transport,
+      waitFor: async (path: string) => {
+        for (let i = 0; i < 400 && !seen.includes(path); i += 1) {
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        if (!seen.includes(path)) throw new Error(`transport never saw ${path}`);
+      },
+      release: (path: string, response: Response) => {
+        const call = pending.find((c) => c.path === path);
+        if (call === undefined) throw new Error(`no parked call at ${path}`);
+        call.respond(response);
+      },
+    };
+  }
+
+  /** Assist deps whose LLM call parks until released — the "prompt" phase
+   *  observed deterministically mid-run. */
+  function makeGatedAssist(): { deps: ImageGenAssistDeps; release: () => void; calls: number[] } {
+    let releaseLlm!: () => void;
+    const gate = new Promise<void>((r) => {
+      releaseLlm = r;
+    });
+    const calls: number[] = [];
+    const deps: ImageGenAssistDeps = {
+      providerProfiles: {
+        getProviderProfile: async () => makePhaseLlmProfile(),
+        getProviderModelSettings: async () => null,
+      },
+      execute: async () => {
+        calls.push(1);
+        await gate;
+        return {
+          text: "a refined tavern portrait",
+          providerResponse: { mode: "nonstream" as const, steps: [] },
+        };
+      },
+    };
+    return { deps, release: releaseLlm, calls };
+  }
+
+  const pollProgress = (app: ReturnType<typeof createImageGenRoutes>, id: string) =>
+    app.request(`/api/image-gen/profiles/${id}/progress`);
+
+  test("comfy assist run narrates prompt → starting → (no steps without WS) → cleared, with no inherited percent", async () => {
+    const EP = "http://127.0.0.1:9201";
+    const gate = makeGatedTransport((url) => {
+      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+        return Response.json({
+          CheckpointLoaderSimple: { input: { required: { ckpt_name: [["graycolor_v18.safetensors"], {}] } } },
+        });
+      }
+      if (url.pathname === "/history/mr11-pid") {
+        return Response.json({
+          "mr11-pid": {
+            outputs: { "9": { images: [{ filename: "vt_imagegen_00001_.png", subfolder: "", type: "output" }] } },
+            status: { status_str: "success", completed: true, messages: [] },
+          },
+        });
+      }
+      if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+      return undefined;
+    });
+    const assist = makeGatedAssist();
+    const { app, stores } = await makeApp(gate.transport, assist.deps);
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.ComfyUI,
+      endpoint: EP,
+      modelId: "graycolor_v18.safetensors",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+
+    const run = app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+
+    // Phase 1 — the LLM is composing (parked): "prompt", honest zero progress.
+    for (let i = 0; i < 400 && assist.calls.length === 0; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(assist.calls.length).toBe(1);
+    let res = await pollProgress(app, id);
+    expect(await res.json()).toEqual({ progress: 0, phase: "prompt" });
+
+    // Phase 2 — prompt ready, the queue POST parks: "starting" (the run's
+    // span before any real step; the WS never delivers events here).
+    assist.release();
+    await gate.waitFor("/prompt");
+    res = await pollProgress(app, id);
+    expect(await res.json()).toEqual({ progress: 0, phase: "starting" });
+
+    // Release the queue → history completes → the run settles and the
+    // phase is CLEARED (the next run never inherits a phase).
+    gate.release("/prompt", Response.json({ prompt_id: "mr11-pid", number: 1, node_errors: {} }));
+    expect((await run).status).toBe(200);
+    res = await pollProgress(app, id);
+    expect(await res.json()).toEqual({ progress: 1 });
+  });
+
+  test("a1111 flips to steps at the submit POST — the parked txt2img span already reports this run's job", async () => {
+    const gate = makeGatedTransport((url) => {
+      if (url.pathname === "/sdapi/v1/progress") {
+        return Response.json({ progress: 0.3, eta_relative: 4.2 });
+      }
+      return undefined;
+    });
+    const { app, stores } = await makeApp(gate.transport);
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+
+    const run = app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+
+    await gate.waitFor("/sdapi/v1/txt2img");
+    // The submit announced the job (MR-11 fires before the parked POST) —
+    // the instance-global progress now reads as THIS run.
+    let res = await pollProgress(app, id);
+    expect(await res.json()).toEqual({ progress: 0.3, phase: "steps", etaRelative: 4.2 });
+
+    gate.release("/sdapi/v1/txt2img", Response.json({ images: [PNG_B64(0x55)] }));
+    expect((await run).status).toBe(200);
+    res = await pollProgress(app, id);
+    expect(await res.json()).toEqual({ progress: 0.3, etaRelative: 4.2 });
+  });
+
+  test("cloud run surfaces phase-only payloads — no progress field ever, 400 once idle again", async () => {
+    const gate = makeGatedTransport((url) =>
+      // The OR adapter downloads image bytes through the injected fetch
+      // seam — a data: URL resolves natively, never parks in the gate.
+      url.protocol === "data:" ? fetch(url.href) : undefined,
+    );
+    const assist = makeGatedAssist();
+    const { app, stores } = await makeApp(gate.transport, assist.deps);
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+
+    const run = app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+
+    for (let i = 0; i < 400 && assist.calls.length === 0; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(assist.calls.length).toBe(1);
+    let res = await pollProgress(app, id);
+    // Cloud dialects carry NO steps surface: the phase rides alone.
+    expect(await res.json()).toEqual({ phase: "prompt" });
+
+    assist.release();
+    await gate.waitFor("/v1/chat/completions");
+    res = await pollProgress(app, id);
+    expect(await res.json()).toEqual({ phase: "starting" });
+
+    gate.release(
+      "/v1/chat/completions",
+      Response.json({
+        choices: [{ message: { role: "assistant", images: [{ image_url: { url: `data:image/png;base64,${PNG_B64(0x66)}` } }] } }],
+      }),
+    );
+    expect((await run).status).toBe(200);
+    res = await pollProgress(app, id);
+    expect(res.status).toBe(400);
+  });
+});
+

@@ -1239,6 +1239,8 @@ export default interface Resources {
     "image_gen_overlay_inherit_hint": "Empty fields inherit the profile base settings.",
     "image_gen_overlay_save_failed": "Failed to save the model overlay",
     "image_gen_params_section_title": "Generation parameters",
+    "image_gen_phase_prompt": "Writing prompt…",
+    "image_gen_phase_starting": "Starting…",
     "image_gen_preset_landscape": "Landscape {ratio} · {size}",
     "image_gen_preset_portrait": "Portrait {ratio} · {size}",
     "image_gen_preset_square": "Square {ratio} · {size}",
