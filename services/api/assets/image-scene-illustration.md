@@ -1,3 +1,3 @@
-An illustrative moment from the current scene: capture the emotional beat of what is happening right now — the key characters, their interaction, and the immediate surroundings — composed like a book illustration for this exact moment. Stay faithful to the described appearances and the situation; do not invent new plot elements.
+Illustrate one visually decisive still frame from the current moment, not a summary of the message. Convert named characters into specific visual subject descriptions; do not use their names. Preserve the exact visible subject count, appearance, clothing, pose, expression, gaze, action, physical interaction, and relative placement. Translate emotion into visible facial or body cues and omit dialogue, thoughts, motives, backstory, roles, metaphor, and narrative commentary. Establish shot distance, camera angle, focal subject, foreground, midground, and background before adding scene details. End with the visible environment and lighting. Do not invent people, props, actions, or plot elements.
 
-Scene moment: {{lastChatMessage}}
+Current moment: {{lastChatMessage}}

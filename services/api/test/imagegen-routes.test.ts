@@ -1533,10 +1533,14 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     const scene = await makeScene(promptCapturingTransport(sent));
     const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
 
+    // Assembly pins: each mode's resolved evidence fragment reaches the
+    // wire and no macro survives unresolved. Prompt WORDING is content, not
+    // plumbing — it is deliberately not pinned (names, phrasing, and family
+    // variants evolve without breaking these contracts).
     const expectances: Record<string, string[]> = {
-      portrait: [CHAR_NAME, CHAR_DESC],
-      character: [CHAR_NAME, CHAR_DESC],
-      "user-persona": [PERSONA_NAME, PERSONA_DESC],
+      portrait: [CHAR_DESC],
+      character: [CHAR_DESC],
+      "user-persona": [PERSONA_DESC],
       "scene-background": [LAST_MSG],
       "scene-illustration": [LAST_MSG],
       free: ["raw caller direction"],
@@ -2473,7 +2477,9 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     const res = await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
     expect(res.status).toBe(200);
     expect(assist.calls).toHaveLength(0);
-    expect(scene.sent[0]).toContain("Seraphine");
+    // Assembly pin: the built template reached the wire (the description
+    // resolved). Wording is not pinned.
+    expect(scene.sent[0]).toContain("silver-haired tavern keeper");
   });
 
   test("toggle on + picks set: the quiet call writes the prompt; residual macros in its output still resolve", async () => {
@@ -2498,12 +2504,13 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     expect(call.model).toBe("writer-model");
     // System = the image_assist built-in instruction; user = digest + RAW
     // template (placeholders intact — the model resolves them against the
-    // digest).
+    // digest). Any live placeholder proves the raw-ride; WHICH macro the
+    // template uses is content, not plumbing.
     expect(call.system).toContain("image-generation model");
     expect(call.user).toContain("Seraphine");
     expect(call.user).toContain("silver-haired tavern keeper");
     expect(call.user).toContain("The tavern door creaks open.");
-    expect(call.user).toContain("{{char}}");
+    expect(call.user).toContain("{{description}}");
     // The refinement is the wire prompt, with its residual macro resolved.
     expect(scene.sent[0]).toContain("A windswept portrait of Seraphine, rain on silver hair.");
     expect(scene.sent[0]).not.toContain("{{");

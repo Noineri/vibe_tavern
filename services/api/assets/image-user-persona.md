@@ -1,3 +1,3 @@
-Depiction of the user's persona, {{user}}. Render the persona's appearance, build, clothing, and demeanor as described in the persona description, as a full-body or three-quarter view. Plain or minimally detailed background; the persona is the single subject.
+Full-body or three-quarter single-subject illustration of the persona described below. Extract only visible identity: age bracket, species, build, skin, face, eyes, hair, distinguishing marks, clothing, footwear, accessories, expression, gaze, posture, and carried items. Do not render the persona’s name, personality, biography, thoughts, relationships, scent, or other non-visible information. Keep anatomy and clothing faithful, with a natural pose and a plain or minimally detailed background. The persona is the only subject; do not add text, symbols, or unmentioned props.
 
 Persona description: {{persona}}
