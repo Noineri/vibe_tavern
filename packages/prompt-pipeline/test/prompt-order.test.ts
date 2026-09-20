@@ -595,7 +595,12 @@ describe("Prompt pipeline: chatDynamicPrompt layer (Wave 6)", () => {
   });
 
   it("appears in finalPayload messages in the in_prompt block", () => {
-    const result = assemblePrompt(baseCtx);
+    // Advanced mode (merge toggle off) keeps the layer as its own payload entry;
+    // in simple mode the system-role preamble layers squash into one survivor.
+    const result = assemblePrompt({
+      ...baseCtx,
+      preset: { ...baseCtx.preset, advancedMode: true, promptOrder: [] },
+    });
     const messages = result.finalPayload.messages as Array<{ role: string; content: string; layerId?: string }>;
     const cdpMsg = messages.find((m) => m.layerId === "chat_dynamic_prompt");
     expect(cdpMsg).toBeDefined();
@@ -628,7 +633,12 @@ describe("Prompt pipeline: chatDynamicPrompt layer (Wave 6)", () => {
   });
 
   it("does not duplicate chatDynamicPrompt in finalPayload", () => {
-    const result = assemblePrompt(baseCtx);
+    // Advanced mode keeps standalone layerId entries countable; the simple-mode
+    // squash cannot introduce duplicates (it only joins adjacent survivors).
+    const result = assemblePrompt({
+      ...baseCtx,
+      preset: { ...baseCtx.preset, advancedMode: true, promptOrder: [] },
+    });
     const messages = result.finalPayload.messages as Array<{ layerId?: string }>;
     const matches = messages.filter((m) => m.layerId === "chat_dynamic_prompt");
     expect(matches.length).toBe(1);

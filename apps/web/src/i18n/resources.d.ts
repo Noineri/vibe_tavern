@@ -1664,6 +1664,7 @@ export default interface Resources {
     "preset_set_failed": "Failed to set prompt preset.",
     "preset_simple_mode": "Simple mode",
     "preset_simple_mode_hint": "Edit standard preset fields",
+    "preset_simple_mode_merge_note": "Adjacent messages with the same role are merged automatically.",
     "preset_simple_mode_short": "Simple",
     "presets": "Presets",
     "prevent_recursion_hint": "Once activated, this entry will not trigger any other entries through its content.",

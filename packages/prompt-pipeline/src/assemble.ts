@@ -1299,7 +1299,13 @@ function finalizeAssembly(
     })),
     ...historyMessages,
   ];
-  const finalMessages = context.preset?.mergeConsecutiveRoles
+  // Simple mode merges same-role messages unconditionally: strict chat templates
+  // (e.g. the Qwen3.5-family Jinja shipped with recent llama.cpp GGUFs) reject any
+  // system message beyond the first, and per-layer system messages 400 there
+  // (issue #44). Advanced mode keeps the explicit per-preset toggle.
+  const isAdvancedMode = context.preset?.advancedMode === true;
+  const shouldMergeRoles = isAdvancedMode ? context.preset?.mergeConsecutiveRoles === true : true;
+  const finalMessages = shouldMergeRoles
     ? mergeConsecutiveRoleMessages(messages)
     : messages;
 

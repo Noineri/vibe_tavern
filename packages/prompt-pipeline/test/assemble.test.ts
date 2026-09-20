@@ -95,6 +95,10 @@ describe("assemblePrompt", () => {
       const result = assemblePrompt(baseContext({
         preset: {
           id: "preset_1",
+          // Advanced mode keeps the note as its own payload entry; in simple
+          // mode a user-role note at depth merges into the adjacent user history
+          // message (same-role squash), so the standalone layerId lookup would miss it.
+          advancedMode: true,
           authorsNote: "Respond strictly in English.",
           authorsNoteDepth: 1,
           authorsNotePosition: "in_chat",
@@ -333,6 +337,9 @@ describe("assemblePrompt", () => {
         preset: {
           id: "preset_1",
           text: "Global system instructions.",
+          // Advanced mode (merge toggle off) keeps each lore entry as its own
+          // payload message so per-entry ordering is observable in layerIds.
+          advancedMode: true,
           promptOrder: [
             { identifier: "main", order: 0, enabled: true },
             { identifier: "worldInfoAfter", order: 10, enabled: true },
@@ -835,18 +842,48 @@ describe("assemblePrompt", () => {
     });
 
     describe("mergeConsecutiveRoles", () => {
-      function mergeResult(recentMessages: Array<Record<string, unknown>>, enabled = true) {
+      function mergeResult(recentMessages: Array<Record<string, unknown>>, opts: { enabled?: boolean; advanced?: boolean } = {}) {
         return assemblePrompt(baseContext({
-          preset: { id: "preset_merge", text: "", mergeConsecutiveRoles: enabled },
+          preset: {
+            id: "preset_merge",
+            text: "",
+            advancedMode: opts.advanced ?? true,
+            mergeConsecutiveRoles: opts.enabled ?? true,
+          },
           chat: { recentMessages },
         })).finalPayload.messages;
       }
 
-      it("preserves consecutive messages when the flag is off", () => {
+      it("simple mode merges same-role messages even when the flag is off (issue #44)", () => {
         const messages = mergeResult([
           { id: "m1", role: "user", content: "First" },
           { id: "m2", role: "user", content: "Second" },
-        ], false).filter((message) => message.role === "user");
+        ], { enabled: false, advanced: false }).filter((message) => message.role === "user");
+        expect(messages).toHaveLength(1);
+        expect(messages[0]).toMatchObject({
+          role: "user",
+          content: "First\n\nSecond",
+          messageId: "m1",
+          mergedFrom: [{ messageId: "m2" }],
+        });
+      });
+
+      it("simple mode squashes the system preamble into a single leading system message", () => {
+        // The exact wire shape the Qwen3.5 llama.cpp template rejects when the
+        // main prompt and the character layer ride as two system messages.
+        const messages = mergeResult([], { enabled: false, advanced: false });
+        const systemMessages = messages.filter((message) => message.role === "system");
+        expect(systemMessages.length).toBeLessThanOrEqual(1);
+        if (systemMessages.length === 1) {
+          expect(messages[0].role).toBe("system");
+        }
+      });
+
+      it("advanced mode preserves consecutive messages when the flag is off", () => {
+        const messages = mergeResult([
+          { id: "m1", role: "user", content: "First" },
+          { id: "m2", role: "user", content: "Second" },
+        ], { enabled: false }).filter((message) => message.role === "user");
         expect(messages.map((message) => message.content)).toEqual(["First", "Second"]);
       });
 
@@ -1005,8 +1042,9 @@ describe("assemblePrompt", () => {
       };
     }
 
-    const chatExpected = {
-      layers: [characterSystem, persona, characterBase, recentHistory, { id: "tool_instructions", text: "Tool instruction.", position: "in_prompt" }],
+    const chatExpectedLayers = [characterSystem, persona, characterBase, recentHistory, { id: "tool_instructions", text: "Tool instruction.", position: "in_prompt" }];
+    const chatExpectedUnmerged = {
+      layers: chatExpectedLayers,
       messages: [
         { role: "system", content: "Character system.", layerId: "character_system_prompt" },
         { role: "system", content: "User persona (Alex, they/them): Journalist.", layerId: "persona" },
@@ -1015,13 +1053,28 @@ describe("assemblePrompt", () => {
         ...historyMessages,
       ],
     };
+    // Simple mode now merges same-role preamble messages unconditionally (issue #44:
+    // strict chat templates reject a second system message); advanced mode keeps
+    // the explicit per-preset toggle (off here).
+    const chatExpectedMerged = {
+      layers: chatExpectedLayers,
+      messages: [
+        {
+          role: "system",
+          content: "Character system.\n\nUser persona (Alex, they/them): Journalist.\n\nCharacter: Nora\nDetective.\n\nTool instruction.",
+          layerId: "character_system_prompt",
+          mergedFrom: [{ layerId: "persona" }, { layerId: "character_base" }, { layerId: "tool_instructions" }],
+        },
+        ...historyMessages,
+      ],
+    };
 
     it("pins the complete chat assembly under both simple and canvas resolvers", () => {
-      expect(projectAssembly(assemblePrompt(registryContext()))).toEqual(chatExpected);
+      expect(projectAssembly(assemblePrompt(registryContext()))).toEqual(chatExpectedMerged);
       expect(projectAssembly(assemblePrompt({
         ...registryContext(),
         preset: { ...registryContext().preset, advancedMode: true, promptOrder: [] },
-      }))).toEqual(chatExpected);
+      }))).toEqual(chatExpectedUnmerged);
     });
 
     it("pins the summary assembly", () => {
@@ -1034,10 +1087,12 @@ describe("assemblePrompt", () => {
           { id: "prompt_preset_summary", text: "Summarize the case.", position: "in_prompt" },
         ],
         messages: [
-          { role: "system", content: "Character system.", layerId: "character_system_prompt" },
-          { role: "system", content: "User persona (Alex, they/them): Journalist.", layerId: "persona" },
-          { role: "system", content: "Character: Nora\nDetective.", layerId: "character_base" },
-          { role: "system", content: "Summarize the case.", layerId: "prompt_preset_summary" },
+          {
+            role: "system",
+            content: "Character system.\n\nUser persona (Alex, they/them): Journalist.\n\nCharacter: Nora\nDetective.\n\nSummarize the case.",
+            layerId: "character_system_prompt",
+            mergedFrom: [{ layerId: "persona" }, { layerId: "character_base" }, { layerId: "prompt_preset_summary" }],
+          },
           ...historyMessages,
         ],
       });
