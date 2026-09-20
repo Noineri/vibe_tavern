@@ -1365,6 +1365,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                 <div className="mt-0.5 font-ui text-[11px] text-t4">
                   {advancedMode ? t("preset_advanced_mode_hint") : t("preset_simple_mode_hint")}
                 </div>
+                {!advancedMode && (
+                  <div className="mt-0.5 font-ui text-[11px] text-t4">{t("preset_simple_mode_merge_note")}</div>
+                )}
               </div>
               <div className={cn("inline-flex shrink-0 gap-0 rounded-md border border-border bg-s3 p-0.5", isMobile && "self-start")} role="radiogroup" aria-label={t("preset_editor_mode")}>
                 <button

@@ -1057,6 +1057,7 @@
   "preset_editor_mode": "Prompt editor mode",
   "preset_simple_mode": "Simple mode",
   "preset_simple_mode_short": "Simple",
+  "preset_simple_mode_merge_note": "Adjacent messages with the same role are merged automatically.",
   "preset_simple_mode_hint": "Edit standard preset fields",
   "preset_advanced_mode": "Advanced mode",
   "preset_advanced_mode_short": "Advanced",

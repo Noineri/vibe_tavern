@@ -273,6 +273,30 @@ describe("PromptManagerModal — character save boundary", () => {
     });
   });
 
+  test("shows the automatic same-role merge note in simple mode and hides it in advanced mode", async () => {
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    const simplePreset: PromptPresetDto = { ...advancedPreset(), advancedMode: false };
+    const view = render(
+      <PromptManagerModal
+        presets={[simplePreset]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(within(view.baseElement).getByText("preset_simple_mode_merge_note")).toBeTruthy();
+    });
+
+    fireEvent.click(within(view.baseElement).getByRole("radio", { name: "preset_advanced_mode_short" }));
+    expect(within(view.baseElement).queryByText("preset_simple_mode_merge_note")).toBeNull();
+  });
+
   test("loads active-chat lore summaries into the expandable anchor card", async () => {
     loadPromptCanvasLoreEntries.mockResolvedValueOnce([{
       id: "entry-1",
