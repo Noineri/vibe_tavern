@@ -13,12 +13,19 @@
  * shows roll internals); profile/model/samplers live in the editor body.
  *
  * The editor holds the design's chip contents (design lines 30/160):
- * profile + model pick, sampler (only when the profile's capabilities
- * `supportsSamplers`), positive prompt, negative prompt (only when
+ * profile + model pick, the model-settings accordion (FT-A1: the ONLY
+ * sampler surface — the one-shot draft sampler row is gone, owner
+ * 2026-09-17: «тонкая настройка существует именно для того, чтобы выбрать
+ * все, что нужно»), LoRAs, positive prompt, negative prompt (only when
  * `supportsNegativePrompt` — the IG-13 gate). Everything edits the per-chat
  * draft in the image-gen chat store; the message popover folds the draft
  * into the NEXT generation's payload (positive → verbatim `prompt`, picks +
  * negative → `overrides`).
+ *
+ * The popover width is adaptive (FT-A1): clamp(300px, 40vw, 560px) with the
+ * available-space cap — floor 300, grows with the window, cap 560
+ * (owner-approved 2026-09-17). Mobile renders the same body in a
+ * BottomSheet (unchanged).
  */
 
 import { useEffect, useState } from "react";
@@ -107,7 +114,7 @@ export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) 
             side="top"
             align="center"
             sideOffset={4}
-            className="glass-blur z-[220] flex max-h-[70vh] w-[300px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border2 bg-glass-bg p-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+            className="glass-blur z-[220] flex max-h-[70vh] w-[clamp(300px,40vw,560px)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border2 bg-glass-bg p-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
             {body}
           </Popover.Content>
@@ -329,22 +336,6 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
           modelTemplate={selectedModelEntry?.template}
           disabled={busy}
         />
-      )}
-
-      {supportsSamplers && (
-        <div className="flex flex-col gap-1.5 px-1.5" data-testid="image-gen-ft-sampler-row">
-          <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_sampler_label")}</span>
-          <DropdownSelect
-            value={draft.sampler ?? ""}
-            options={[
-              { id: "", label: t("image_gen_sampler_auto") },
-              ...(samplers ?? []).map((s) => ({ id: s.name, label: s.name })),
-            ]}
-            onChange={(id) => setFineTuningDraft(chatId, { sampler: id === "" ? undefined : id })}
-            triggerTestId="image-gen-ft-sampler-select"
-            disabled={busy || samplers === null}
-          />
-        </div>
       )}
 
       {/* LoRAs (CG-C3): family-filtered picker, per-lora enable + strength,
@@ -627,8 +618,8 @@ function ImageGenModelSettingsAccordion({
           )}
 
           {/* DiT sidecar fields (CG-B2, comfyui + krea2-dit only — the
-              pane's DiT rows in the popover's vertical-stack idiom; the
-              300px popover makes w-full form-shaped triggers correct here):
+              pane's DiT rows in the popover's vertical-stack idiom (the
+              popover's w-full form-shaped triggers are correct here):
               text encoder + VAE ride the SAME per-model overlay the pane
               edits. Auto = the adapter's canonical resolution (CF5's honest
               Auto, not a hidden default — the {id: ""} entry drives the

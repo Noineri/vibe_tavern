@@ -223,12 +223,13 @@ describe("image-gen chat store — fine-tuning draft (IG-17)", () => {
       prompt: "a castle at dawn",
       negative: "",
     });
-    // A second patch keeps the earlier fields (partial-update semantics).
-    useImageGenChatStore.getState().setFineTuningDraft("chat-i", { sampler: "Euler a" });
+    // A second patch keeps the earlier fields (partial-update semantics;
+    // FT-A1: the draft's sampler field is gone — model rides instead).
+    useImageGenChatStore.getState().setFineTuningDraft("chat-i", { model: "pony-v6" });
     expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-i"]).toEqual({
       prompt: "a castle at dawn",
       negative: "",
-      sampler: "Euler a",
+      model: "pony-v6",
     });
   });
 

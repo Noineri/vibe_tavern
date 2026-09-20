@@ -331,7 +331,7 @@ describe("ImageGenMessageMenu — mobile sheet (IG-16)", () => {
 });
 
 describe("ImageGenMessageMenu — chip draft reaches the generate payload (IG-17)", () => {
-  function armWithDraft(chatId: string, draft: { prompt?: string; negative?: string; model?: string; sampler?: string; loras?: import("../../stores/image-gen-chat-store.js").ImageGenLoraPick[] }): void {
+  function armWithDraft(chatId: string, draft: { prompt?: string; negative?: string; model?: string; loras?: import("../../stores/image-gen-chat-store.js").ImageGenLoraPick[] }): void {
     useImageGenChatStore.getState().setFineTuning(chatId, true);
     useImageGenChatStore.getState().setFineTuningDraft(chatId, draft);
   }
@@ -340,9 +340,9 @@ describe("ImageGenMessageMenu — chip draft reaches the generate payload (IG-17
     pendingByChat.get(chatId)!.resolve();
   }
 
-  it("fine tuning on + full caps profile: prompt verbatim, negative/model/sampler as overrides", async () => {
+  it("fine tuning on + full caps profile: prompt verbatim, negative/model as overrides (FT-A1: no draft sampler)", async () => {
     profilesStore = [profile("p1", "A1111 local", { supportsNegativePrompt: true, supportsSamplers: true })];
-    armWithDraft("chat-ft", { prompt: "  a castle at dawn  ", negative: "blurry", model: "pony-v6", sampler: "Euler a" });
+    armWithDraft("chat-ft", { prompt: "  a castle at dawn  ", negative: "blurry", model: "pony-v6" });
     const view = renderMenu(<ImageGenMessageMenu chatId="chat-ft" messageId="m-1" variant="desktop" />);
     openPopover(view);
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
@@ -353,12 +353,12 @@ describe("ImageGenMessageMenu — chip draft reaches the generate payload (IG-17
     const [, body] = generateCalls[0];
     // The IG-14 verbatim contract: the trimmed chip text, never re-templated.
     expect(body.prompt).toBe("a castle at dawn");
-    expect(body.overrides).toEqual({ negativePrompt: "blurry", model: "pony-v6", sampler: "Euler a" });
+    expect(body.overrides).toEqual({ negativePrompt: "blurry", model: "pony-v6" });
     settle("chat-ft");
     await act(async () => { await Promise.resolve(); });
   });
 
-  it("capability gates: no-caps profile never receives a negative (and the sampler pick is a UI impossibility); model still rides", async () => {
+  it("capability gates: a no-caps profile never receives a negative; model still rides", async () => {
     profilesStore = [profile("p1", "OpenRouter main")];
     armWithDraft("chat-gated", { prompt: "x", negative: "should-not-send", model: "flux-1" });
     const view = renderMenu(<ImageGenMessageMenu chatId="chat-gated" messageId="m-1" variant="desktop" />);

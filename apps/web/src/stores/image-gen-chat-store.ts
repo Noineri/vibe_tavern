@@ -75,8 +75,6 @@ export interface ImageGenFineTuningDraft {
   /** Per-chat model pick → overrides.model. undefined = the profile's
    *  selected model. */
   model?: string;
-  /** Per-chat sampler pick → overrides.sampler. undefined = server default. */
-  sampler?: string;
   /** Enabled LoRAs (CG-C3) → overrides.loras at the fold — capability-gated
    *  (supportsLoras). undefined/empty = none sent. Entry ORDER = chain
    *  order on ComfyUI (LoraLoader nodes chain in list sequence). */

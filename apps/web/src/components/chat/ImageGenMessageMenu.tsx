@@ -238,7 +238,9 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
         overrides.negativePrompt = negative;
       }
       if (draft.model !== undefined && draft.model !== "") overrides.model = draft.model;
-      if (draft.sampler !== undefined && draft.sampler !== "") overrides.sampler = draft.sampler;
+      // FT-A1: the one-shot draft sampler pick is GONE — the model-settings
+      // accordion (same overlay as the providers pane) is the only sampler
+      // surface; overrides.sampler no longer has a draft-side source.
       // CG-C3: enabled loras ride the run — capability-gated exactly like
       // the negative (a profile without supportsLoras never sees them).
       // Entry order = ComfyUI chain order; strength verbatim from the chip.

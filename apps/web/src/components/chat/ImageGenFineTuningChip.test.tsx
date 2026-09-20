@@ -311,7 +311,7 @@ describe("ImageGenFineTuningChip — the IG-16 gate + pill canon (IG-17, CF1)", 
 });
 
 describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
-  it("profile/model/sampler/prompt render; negative + sampler rows are capability-gated OFF for a no-caps profile", async () => {
+  it("profile/model/prompt render; the negative row is capability-gated OFF for a no-caps profile", async () => {
     profilesStore = [profile("p1", "OpenRouter main", noCaps(), "flux-1")];
     modelsStore = { p1: [{ id: "flux-1", label: "Flux 1" }, { id: "sdxl", label: "SDXL" }] };
     const view = renderChip(<ImageGenFineTuningChip chatId="chat-body" />);
@@ -322,21 +322,23 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
     expect(within(view.baseElement).getByTestId("image-gen-ft-profile-select")).toBeTruthy();
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-model-select")).toBeTruthy());
     expect(within(view.baseElement).getByTestId("image-gen-ft-prompt")).toBeTruthy();
-    // No-caps profile: the gated rows never render.
+    // No-caps profile: the gated row never renders.
     expect(within(view.baseElement).queryByTestId("image-gen-ft-negative-row")).toBeNull();
+    // FT-A1: the one-shot sampler row is gone everywhere (the model-settings
+    // accordion is the only sampler surface).
     expect(within(view.baseElement).queryByTestId("image-gen-ft-sampler-row")).toBeNull();
   });
 
-  it("a caps profile renders the negative + sampler rows; edits write the per-chat draft", async () => {
+  it("a caps profile renders the negative row; edits write the per-chat draft (FT-A1: no one-shot sampler row)", async () => {
     profilesStore = [profile("p1", "A1111 local", fullCaps(), "sdxl-base")];
     modelsStore = { p1: [{ id: "sdxl-base", label: "SDXL Base" }, { id: "pony-v6", label: "Pony V6" }] };
-    samplersStore = { p1: [{ name: "Euler a" }, { name: "DPM++ 2M" }] };
     const view = renderChip(<ImageGenFineTuningChip chatId="chat-edit" />);
     act(() => armChat("chat-edit"));
     await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
     openChip();
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-negative-row")).toBeTruthy());
-    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-sampler-row")).toBeTruthy());
+    // FT-A1 pin: even a full-samplers profile renders NO one-shot row.
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-sampler-row")).toBeNull();
 
     fireEvent.change(within(view.baseElement).getByTestId("image-gen-ft-prompt"), {
       target: { value: "a castle at dawn" },
@@ -345,14 +347,12 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
       target: { value: "blurry, lowres" },
     });
     await pickOption("image-gen-ft-model-select", "Pony V6");
-    await pickOption("image-gen-ft-sampler-select", "Euler a");
 
     const draft = useImageGenChatStore.getState().fineTuningDraftByChat["chat-edit"];
     expect(draft).toEqual({
       prompt: "a castle at dawn",
       negative: "blurry, lowres",
       model: "pony-v6",
-      sampler: "Euler a",
     });
   });
 
