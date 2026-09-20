@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause } from 'lucide-react';
+import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -26,6 +26,11 @@ export const Ic = {
   grip: (props?: { className?: string }) => <Grip size={18} strokeWidth={2.25} {...props} />,
   branch:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><path d="M4 6v4"/><path d="M12 6v2.5A1.5 1.5 0 0 1 10.5 10H4"/></svg>,
   regen:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M13.5 8A5.5 5.5 0 1 1 10 3H13.5"/><polyline points="10,3 13.5,3 13.5,6.5"/></svg>,
+  // Media-player "repeat the same thing again" loop (two arrowheads, rounded
+  // rectangle) — deliberately distinct from `regen`'s single circular arrow:
+  // MR-10's repeat-with-this-prompt arm sits BESIDE the AI regen in the slot
+  // controls row and must read apart at a glance (owner 2026-09-18).
+  repeat: (props?: { className?: string }) => <Repeat size={13} strokeWidth={2} {...props} />,
   caret:(d:string)=><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.9" style={{transform:d==='l'?'rotate(180deg)':d==='d'?'rotate(90deg)':d==='u'?'rotate(270deg)':undefined}}><polyline points="6 3 11 8 6 13"/></svg>,
   // Lucide `Settings` — a real cog gear. Was a hand-drawn circle + 8 rays
   // that read as a phone-brightness sun (v1.2.1 mobile defect D7: users

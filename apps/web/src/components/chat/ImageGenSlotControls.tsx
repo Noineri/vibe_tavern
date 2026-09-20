@@ -218,7 +218,7 @@ export function ImageGenSlotControls({
             onClick={() => regenerate(currentPrompt)}
             className={cn(slotButtonCls, "text-t3 hover:text-t1")}
           >
-            <Icons.copy />
+            <Icons.repeat />
           </button>
         </CustomTooltip>
       )}
