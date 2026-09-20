@@ -242,7 +242,7 @@ export interface ImageGenDitSidecars {
 }
 
 /** One LoRA list entry (CG-C2) — `family` NULL = the ladder found nothing
- *  (the chip's «Неизвестно» bucket), never a guessed family.
+ *  (the chip's unknown-family bucket), never a guessed family.
  *  `triggerWords` = the activation words discovered in the sidecar stores
  *  (empty = none found — the chip shows no trigger line, no noise). */
 export interface ImageGenLoraInfo {
@@ -281,7 +281,7 @@ export interface ImageGenBackend {
    *  (the schedulers dialect-gate twin, not a capability flag). */
   listDitSidecars?(signal?: AbortSignal): Promise<ImageGenDitSidecars>;
   /** LoRA listing (capability-gated: ComfyUI CG-C2, A1111 with FT-A4) —
-   *  names + family (null = the «Неизвестно» bucket) feeding the chip's
+   *  names + family (null = the unknown-family bucket) feeding the chip's
    *  family-filtered picker. */
   listLoras?(signal?: AbortSignal): Promise<ImageGenLoraInfo[]>;
   /** Server-extension listing (A1111-compat only in v1) — extension dir

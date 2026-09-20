@@ -277,7 +277,7 @@ export class ChatApplicationService {
 
   /**
    * Rewrite a generated-image slot's generation prompt (MR-9, owner
-   * 2026-09-18: «чтобы можно было его переписывать» — the accordion editor's
+   * ruling 2026-09-18, verbatim in the plan repo — the accordion editor's
    * save). The prompt is the CF6-stamped provenance field the caption shows
    * and the CF9 include gate reads (`description ?? provenance.prompt`).
    * MR-4: variant-aware — the write lands on the row that owns the

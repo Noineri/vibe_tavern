@@ -83,9 +83,10 @@ function ImageBlockTile({ image, onOpen }: { image: ImageBlockImage; onOpen: () 
   const imgRef = useRef<HTMLImageElement>(null);
   const caption = image.caption?.trim();
   const [expanded, setExpanded] = useState(false);
-  // MR-9: inline prompt editor INSIDE the accordion (owner 2026-09-18:
-  // «да, в аккордеоне» — no popover). Draft seeds from the current prompt;
-  // Save persists via onEditPrompt and exits edit mode on success only.
+  // MR-9: inline prompt editor INSIDE the accordion (owner ruling
+  // 2026-09-18, verbatim in the plan repo — no popover). Draft seeds from
+  // the current prompt; Save persists via onEditPrompt and exits edit mode
+  // on success only.
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);

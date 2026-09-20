@@ -103,10 +103,10 @@ export function ImageGenSlotControls({
   };
 
   /** MR-10: the slot's current prompt — the same field the MR-9 accordion
-   *  editor reads/writes (imageGen.prompt provenance), so «повторить с этим
-   *  промптом» repeats exactly what the user last saw (and possibly just
-   *  edited). Absent/blank (legacy pre-CF6 slots) hides the arm — nothing
-   *  to repeat; the AI-rewrite regen stays available. */
+   *  editor reads/writes (imageGen.prompt provenance), so the repeat arm
+   *  re-sends exactly what the user last saw (and possibly just edited).
+   *  Absent/blank (legacy pre-CF6 slots) hides the arm — nothing to
+   *  repeat; the AI-rewrite regen stays available. */
   const currentPrompt = firstProvenance.prompt?.trim() || "";
 
   const promote = async (att: Attachment) => {

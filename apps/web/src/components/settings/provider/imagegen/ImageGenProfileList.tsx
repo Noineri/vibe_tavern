@@ -29,7 +29,7 @@ function ImageGenProfileRow({
   isEditing: boolean;
   /** MR-5: the global active pointer's SECONDARY marker — the list-row ★
    *  (the ProviderProfileList twin; the primary control is the view
-   *  card's «Активен» button). */
+   *  card's active marker). */
   isActive: boolean;
   onSelectProfile: (id: string) => void;
 }) {

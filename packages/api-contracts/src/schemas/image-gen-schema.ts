@@ -254,7 +254,7 @@ export type ImageGenDitSidecarsValue = z.infer<typeof imageGenDitSidecarsSchema>
 
 /** One LoRA list entry (CG-C2, capability-gated backends) — the adapter
  *  interface's `ImageGenLoraInfo` verbatim. `family` is NULL for the
- *  «Неизвестно» bucket (family ladder exhausted: no embedded metadata,
+ *  unknown-family bucket (family ladder exhausted: no embedded metadata,
  *  no sidecar) — nullable by design, unlike the model entry's optional
  *  field, because the chip's family filter needs an explicit unknown
  *  bucket rather than "field absent". */

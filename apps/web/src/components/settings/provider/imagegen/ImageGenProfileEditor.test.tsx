@@ -465,19 +465,19 @@ describe("ImageGenProfileEditor — view mode (saved profile)", () => {
     expect(startEdit).toHaveBeenCalledTimes(1);
   });
 
-  it("MR-5: «Сделать активным» flips the global pointer; the card goes disabled «Активен» (ProviderViewHeader fork)", async () => {
+  it("MR-5: the make-active button flips the global pointer; the card goes disabled active (ProviderViewHeader fork)", async () => {
     const { useImageGenChatStore } = await import("../../../../stores/image-gen-chat-store.js");
     useImageGenChatStore.setState({ activeImageGenProfileId: null });
     const view = render(<ImageGenProfileEditor imageGen={makeViewImageGen()} />);
     await waitFor(() => expect(view.getByTestId("image-gen-base-card-activate-btn")).toBeTruthy());
 
-    // Inactive → «Сделать активным», enabled.
+    // Inactive → make-active label, enabled.
     const btn = view.getByTestId("image-gen-base-card-activate-btn") as HTMLButtonElement;
     expect(btn.textContent).toBe("make_active");
     expect(btn.disabled).toBe(false);
 
     // Click → the GLOBAL pointer flips to this profile; the button morphs
-    // into the disabled «Активен».
+    // into the disabled active marker.
     fireEvent.click(btn);
     expect(useImageGenChatStore.getState().activeImageGenProfileId).toBe("ig1");
     await waitFor(() => {
@@ -488,7 +488,7 @@ describe("ImageGenProfileEditor — view mode (saved profile)", () => {
     useImageGenChatStore.setState({ activeImageGenProfileId: null });
   });
 
-  it("MR-5: a profile that IS the global active renders the disabled «Активен» from the start", async () => {
+  it("MR-5: a profile that IS the global active renders the disabled active marker from the start", async () => {
     const { useImageGenChatStore } = await import("../../../../stores/image-gen-chat-store.js");
     useImageGenChatStore.setState({ activeImageGenProfileId: "ig1" });
     const view = render(<ImageGenProfileEditor imageGen={makeViewImageGen()} />);

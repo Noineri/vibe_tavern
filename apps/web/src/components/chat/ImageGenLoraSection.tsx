@@ -8,7 +8,7 @@
  *
  * Family filter: AUTO-PRESELECTS the effective model's family (resolved
  * from the models list the chip already fetched) while untouched; a manual
- * switch pins the choice, and the null-family «Неизвестно» bucket rides
+ * switch pins the choice, and the null-family unknown bucket rides
  * the same dropdown. A search field narrows by name (79 loras on the
  * owner's install — the list scrolls in its own capped well).
  *

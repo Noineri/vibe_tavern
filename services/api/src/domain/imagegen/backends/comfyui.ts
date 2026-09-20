@@ -1457,7 +1457,7 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       // The lora list (CG-C2): names from the live LoraLoader combo (what
       // ComfyUI itself validates at queue time), family through the SAME
       // three-store ladder as models (folder "loras"), NULL = the ladder
-      // found nothing (the chip's «Неизвестно» bucket — never a guess).
+      // found nothing (the chip's unknown-family bucket — never a guess).
       const names = await fetchComfyComboValues(
         cfg.fetch,
         cfg.endpoint,

@@ -7,12 +7,12 @@ import type { ImageGenProfileForm } from "../../../../hooks/use-image-profiles.j
 interface ImageGenBaseCardProps {
   /** Current form (clean, collapsed state — label/status derivation). */
   form: ImageGenProfileForm;
-  /** MR-5: true when this profile IS the global active (the «Активен»
-   *  button's disabled state; the ProviderViewHeader fork contract). */
+  /** MR-5: true when this profile IS the global active (the active marker's
+   *  disabled state; the ProviderViewHeader fork contract). */
   isActive: boolean;
   onEdit: () => void;
-  /** MR-5: make this profile the global active (the «Сделать активным»
-   *  button — generation routes here when no chat-level pick exists). */
+  /** MR-5: make this profile the global active (the make-active button —
+   *  generation routes here when no chat-level pick exists). */
   onActivate: () => void;
 }
 
@@ -36,11 +36,11 @@ function endpointHost(form: ImageGenProfileForm): string {
 }
 
 /** View-mode base card for a saved image-gen profile — the SttBaseCard fork
- *  (IG-11) grown into the ProviderViewHeader shape (MR-5, owner 2026-09-18:
- *  «нужно включать конкретный профиль бекенда как активный…» — the card
- *  carries the global activate button, the same i18n keys, the same chrome):
+ *  (IG-11) grown into the ProviderViewHeader shape (MR-5, owner ruling
+ *  2026-09-18, verbatim in the plan repo — the card carries the global
+ *  activate button, the same i18n keys, the same chrome):
  *  name + connection line + key status + Edit link on the left, the
- *  «Активен»/«Сделать активным» button on the right (column-stacked on
+ *  active-marker / make-active button pair on the right (column-stacked on
  *  mobile, the ProviderViewHeader responsive shape verbatim). The local
  *  tiers are keyless by design (A1111 optional `--api-auth`; ComfyUI core
  *  has no auth surface at all), so their no-key status is neutral, not a

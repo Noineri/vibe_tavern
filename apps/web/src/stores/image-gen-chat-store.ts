@@ -113,7 +113,7 @@ interface ImageGenChatState {
   /** MR-5: the GLOBAL active image-gen profile (the owner's "who receives
    *  the next generation" answer when no chat-level pick exists — the
    *  text providers' activeProviderProfileId twin, set from the profile
-   *  view card's «Сделать активным»). Null until the first activation. */
+   *  view card's make-active button). Null until the first activation. */
   activeImageGenProfileId: string | null;
   /** ChatId → in-flight run; undefined = idle. */
   runningByChat: Record<string, ImageGenRunState | undefined>;

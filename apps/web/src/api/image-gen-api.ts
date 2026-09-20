@@ -198,7 +198,7 @@ export async function listImageGenDitSidecars(
 export type ImageGenDitSidecars = ImageGenDitSidecarsValue;
 
 /** LoRA list for a saved ComfyUI-dialect profile (CG-C2): names + family
- *  (null = «Неизвестно»), feeding the fine-tuning chip's family-filtered
+ *  (null = the unknown-family bucket), feeding the fine-tuning chip's family-filtered
  *  picker (CG-C3). Null = unknown profile; a non-comfy backend throws the
  *  route's 400 ("LoRA listing not supported") — callers gate on the
  *  profile's backend before calling. */
