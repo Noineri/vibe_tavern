@@ -73,12 +73,22 @@ echo Starting server...
 echo Press Ctrl+C to stop.
 echo.
 
-rem The server itself kills any stale process on its port before binding
-rem (server-runtime ensurePortAvailable, netstat-based, auto-kill) — the old
-rem PowerShell pre-check here was broken ($pid is a read-only automatic
-rem variable: the assignment threw, printed the powershell PID as the port
-rem owner and offered to kill the wrong process) and only duplicated the
-rem server's own handling with extra prompts and PowerShell startup time.
+rem If the port is busy, offer to kill the stale holder instead of falling
+rem silently — the deliberate restart UX (owner 2026-09-19: «батник не
+rem падал молча, а предлагал убить старый. оно работало»). Repaired, not
+rem removed: the original assigned to $pid — a READ-ONLY automatic
+rem PowerShell variable — so the assignment threw VariableNotWritable and
+rem both the reported and the offered-to-kill PID were powershell.exe
+rem itself, never the zombie; $ownerPid is writable and carries the real
+rem OwningProcess.
+powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue; if ($conn) { $ownerPid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port %VIBE_TAVERN_PORT% is already in use by PID' $ownerPid; exit 10 } else { exit 0 }"
+if %ERRORLEVEL%==10 (
+    powershell.exe -NoProfile -Command "$ownerPid = (Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $ownerPid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $ownerPid -Force; Start-Sleep -Milliseconds 500; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
+    if errorlevel 1 (
+        pause
+        exit /b 1
+    )
+)
 
 rem ── Create log directory ──
 if not exist "logs" mkdir logs
