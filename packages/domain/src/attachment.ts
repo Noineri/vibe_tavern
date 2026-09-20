@@ -79,6 +79,13 @@ export interface ImageGenSlotProvenance {
    *  generated before CF6 — free-form JSON inside attachmentsJson, no
    *  migration. */
   prompt?: string;
+  /** C-A (owner 2026-09-19: «чтобы неакцентно писать там модель-автора
+   *  (если с ии-помощью)»): the assist LLM model that AUTHORED the prompt —
+   *  stamped only when the IG-15 assist actually fired for the run (lazy:
+   *  free-mode and verbatim chip-edit runs never stamp it). Absent = the
+   *  prompt is template/user text (or a legacy pre-C-A slot). Rendered as a
+   *  quiet suffix on the MR-8 accordion header. */
+  promptBy?: string;
   /** Effective generation params sent with the request. */
   params: {
     width?: number;

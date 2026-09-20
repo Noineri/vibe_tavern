@@ -115,6 +115,7 @@ export function AttachmentGrid({ attachments, messageId }: { attachments?: Attac
       src: `${getGatewayBaseUrl()}/api/assets/${att.assetId}`,
       alt: att.name || "Generated image",
       ...(att.imageGen?.prompt ? { caption: att.imageGen.prompt } : {}),
+      ...(att.imageGen?.promptBy ? { captionAuthor: att.imageGen.promptBy } : {}),
       ...(messageId && att.id ? { onEditPrompt: editPromptFor(att) } : {}),
     }));
 

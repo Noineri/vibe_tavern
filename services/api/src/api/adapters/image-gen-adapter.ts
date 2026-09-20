@@ -757,6 +757,10 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     let assist: ImageGenAssistRunner | undefined;
     const assistProfileId = profile.llmProviderProfileId ?? "";
     const assistModelId = profile.llmModelId ?? "";
+    // C-A: flips true at the exact moment the assist call fires (lazy — a
+    // free/verbatim run never touches it), so the provenance can stamp the
+    // author model on assist-written prompts only.
+    let assistFired = false;
     if (profile.llmAssistEnabled && assistProfileId !== "" && assistModelId !== "") {
       if (this.assistDeps === undefined) {
         throw new ImageGenValidationError("LLM assist is enabled but the assistant seam is unavailable");
@@ -765,9 +769,13 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       // MR-11: the assist wrapper announces the prompt phase at the exact
       // moment the LLM call actually fires (lazy resolution — exempt runs
       // never enter "prompt") and hands the timeline back to "starting"
-      // when the text is ready.
+      // when the text is ready. C-A: the same moment is the ONLY reliable
+      // "the LLM authored this prompt" signal — the wrapper records it so
+      // the provenance can stamp the author model (free/verbatim runs stay
+      // un-stamped; lazy resolution means the flag cannot be set upfront).
       const innerAssist = assist;
       assist = async (system, user) => {
+        assistFired = true;
         setImageGenRunPhase(profile.id, "prompt");
         try {
           return await innerAssist(system, user);
@@ -847,6 +855,10 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       profileId: profile.id,
       ...(model !== undefined && model !== "" ? { model } : {}),
       prompt: prompts.prompt,
+      // C-A: the author note rides only runs where the LLM assist actually
+      // wrote the prompt (assistFired); verbatim chip edits and free-mode
+      // caller text never carry it.
+      ...(assistFired ? { promptBy: assistModelId } : {}),
       params: {
         ...(width !== undefined ? { width } : {}),
         ...(height !== undefined ? { height } : {}),

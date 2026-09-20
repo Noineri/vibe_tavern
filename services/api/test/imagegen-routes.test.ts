@@ -2987,5 +2987,62 @@ describe("image-gen routes — run phases (MR-11 honest chip timeline)", () => {
     res = await pollProgress(app, id);
     expect(res.status).toBe(400);
   });
+
+  test("C-A: the assist-authored run stamps promptBy (the author model); the verbatim chip-edit run never does", async () => {
+    // One scene, both dialects: (1) a caller prompt on a non-free mode — the
+    // IG-14 verbatim contract, assist exempt by design → no author stamp;
+    // (2) no caller prompt with assist enabled → the LLM writes it and the
+    // slot remembers WHICH model authored it (the accordion's quiet note).
+    const assist = makeGatedAssist();
+    const { app, stores } = await makeApp(
+      async (input) => {
+        const url = new URL(typeof input === "string" ? input : String(input));
+        if (url.pathname === "/v1/chat/completions") {
+          return Response.json({
+            choices: [{ message: { role: "assistant", images: [{ image_url: { url: `data:image/png;base64,${PNG_B64(0x77)}` } }] } }],
+          });
+        }
+        if (url.protocol === "data:") return fetch(url.href);
+        throw new Error(`unexpected ${url.href}`);
+      },
+      assist.deps,
+    );
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const run = (prompt?: string) =>
+      app.request(`/api/chats/${chatId}/image-gen/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: id, mode: "portrait", ...(prompt !== undefined ? { prompt } : {}) }),
+      });
+    const readSlot = async (messageId: string) =>
+      JSON.parse((await stores.messages.getMessageById(messageId))!.attachmentsJson ?? "[]") as Array<{
+        imageGen?: { prompt?: string; promptBy?: string };
+      }>;
+
+    // Verbatim: the caller's text goes to the wire untouched, assist never
+    // fires — promptBy stays absent (the note is an AI-authorship signal,
+    // not a generation marker).
+    let res = await run("verbatim keep");
+    expect(res.status).toBe(200);
+    let attachments = await readSlot(((await res.json()) as { messageId: string }).messageId);
+    expect(attachments[0]!.imageGen?.prompt).toBe("verbatim keep");
+    expect(attachments[0]!.imageGen?.promptBy).toBeUndefined();
+
+    // Assist: the LLM authored it — the slot stamps the author model.
+    expect(assist.calls.length).toBe(0);
+    assist.release();
+    res = await run();
+    expect(res.status).toBe(200);
+    expect(assist.calls.length).toBe(1);
+    attachments = await readSlot(((await res.json()) as { messageId: string }).messageId);
+    expect(attachments[0]!.imageGen?.promptBy).toBe("writer-model");
+  });
 });
 

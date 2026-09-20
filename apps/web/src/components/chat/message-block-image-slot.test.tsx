@@ -235,13 +235,46 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
     expect(view.getByTestId("image-gen-slot-regenerate")).toBeTruthy();
     expect(view.getByTestId("image-gen-slot-promote")).toBeTruthy();
     expect(view.getByTestId("image-gen-slot-include")).toBeTruthy();
+    // C-B: the mode label now lives in the slot's OWN meta line at the
+    // text message's metadata position — ABOVE the action row (owner
+    // 2026-09-19: «вынести мету… выше кнопок, как у текстового сообщения»)
+    // — together with the generation model when the slot stamped one.
+    const meta = view.getByTestId("image-gen-slot-meta");
     expect(view.getByTestId("image-gen-slot-mode").textContent).toBe("image_gen_mode_portrait");
+    expect(view.queryByTestId("image-gen-slot-model")).toBeNull(); // fixture stamps no model
+    const metaChrome = meta.className;
+    expect(metaChrome).toContain("text-t3/50"); // the text metadata bar's quiet chrome
+    expect(meta.compareDocumentPosition(view.getByTestId("image-gen-slot-regenerate")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     // Delete stays so a slot can be removed.
     expect(view.getByTestId("image-slot-delete")).toBeTruthy();
 
     // The avatar/name header stays (the character's name renders).
     expect(view.container.textContent).toContain("Char c1");
+  });
+
+  test("C-B meta line: a model-bearing provenance renders the generation model beside the mode", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(
+      seed([
+        makeSlotMessage("m2", [
+          slotAttachment({
+            imageGen: {
+              mode: "scene-illustration",
+              profileId: "p1",
+              model: "graycolor_v18.safetensors",
+              params: {},
+              prompt: "x",
+            },
+          }),
+        ]),
+      ]),
+    );
+    chatStore.useChatStore.getState().setActiveChatId(CHAT);
+
+    const view = render(<MessageBlock messageId="m2" index={0} isFirstAssistant={false} isLast prevRole={null} />);
+    expect(view.getByTestId("image-gen-slot-mode").textContent).toBe("image_gen_mode_scene-illustration");
+    expect(view.getByTestId("image-gen-slot-model").textContent).toBe("graycolor_v18.safetensors");
   });
 
   test("pure slot with swipe variants: the variant carousel stays intact (1/2 counter)", async () => {

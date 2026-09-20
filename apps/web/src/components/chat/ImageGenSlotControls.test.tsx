@@ -233,7 +233,7 @@ describe("ImageGenSlotControls — regenerate-as-variant (IG-18a)", () => {
 
   it("without a chatId the button is not rendered (tests mount row-less)", async () => {
     const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" />);
-    await view.findByTestId("image-gen-slot-mode");
+    await view.findByTestId("image-gen-slot-include");
     expect(view.queryByTestId("image-gen-slot-regenerate")).toBeNull();
   });
 
@@ -393,12 +393,14 @@ describe("ImageGenSlotControls — include-in-prompt toggle (IG-18 slice D)", ()
 });
 
 describe("ImageGenSlotControls — desktop/mobile shape (IG-CF6)", () => {
-  it("desktop renders the provenance mode label; mobile omits it (row-width budget, AD-022)", async () => {
+  it("buttons-only on both surfaces — the mode label lives in the slot meta line above the row (C-B), never in it", async () => {
     // NOTE: two live renders in one test — this RTL setup binds the returned
     // queries to document.body (NOT the per-render container), so negatives
     // and positives here query through `container` explicitly.
     const desktop = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
-    expect(desktop.container.querySelector('[data-testid="image-gen-slot-mode"]')?.textContent).toBe("image_gen_mode_portrait");
+    // C-B: the provenance mode label moved to MessageBlock's meta line —
+    // the controls row (desktop AND mobile) renders no text label anymore.
+    expect(desktop.container.querySelector('[data-testid="image-gen-slot-mode"]')).toBeNull();
 
     const mobile = renderControls(
       <ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" mobile />,

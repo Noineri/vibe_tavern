@@ -504,6 +504,13 @@ select option{padding:2px 6px}
 
 /* ── Responsive ── */
 @media(max-width:768px){
+  /* C-C (owner 2026-09-19): portrait/square tiles go FULL-WIDTH on phones.
+     The desktop half-width pairing exists to save vertical space — a trade
+     that makes no sense on a narrow screen (the owner: no point economizing
+     height there; the screen is narrow, not short). The 70vh cap stays for
+     extreme ratios. This unlayered block beats the @layer components bucket
+     rule by cascade rules (same specificity, unlayered wins). */
+  .image-tile-portrait{width:min(100%,calc(70vh * var(--tile-ratio,1)))}
   .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:200;transform:translateX(-100%);transition:transform .2s ease}
   .sidebar.mobile-open{transform:translateX(0)}
   .mobile-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199}

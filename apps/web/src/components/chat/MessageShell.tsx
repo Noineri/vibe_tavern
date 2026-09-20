@@ -146,10 +146,16 @@ export interface MessageShellProps {
    *  Delete), and the metadata bar (timestamp + token count) is suppressed:
    *  the slot's content is the image, not text. */
   imageSlot?: boolean;
-  /** IG-CF6: the slot's own controls (mode label + regenerate-as-variant /
+  /** IG-CF6: the slot's own controls (regenerate-as-variant /
    *  promote-to-gallery / include-in-prompt) rendered in place of the text
    *  actions, desktop + mobile. */
   slotControls?: ReactNode;
+  /** C-B (owner 2026-09-19): the slot's quiet meta line — mode display name
+   *  + generation model — rendered at the text message's metadata-bar
+   *  position, ABOVE both action rows (desktop and mobile alike: the line
+   *  is full-width and wraps, so the old mobile no-room constraint of the
+   *  in-row label does not apply). */
+  slotMeta?: ReactNode;
 }
 
 const msgWrap = "relative group py-2.5";
@@ -189,6 +195,7 @@ export function MessageShell(props: MessageShellProps) {
     narrating = false,
     imageSlot = false,
     slotControls,
+    slotMeta,
   } = props;
 
   const { t, tDynamic } = useT();
@@ -416,9 +423,21 @@ export function MessageShell(props: MessageShellProps) {
           {/* ── Metadata ── */}
           {/* IG-CF6: no token meta on a pure image slot — the metadata bar's
               token count + model badges are text-message provenance for a
-              message whose content is the image. */}
-          {!isEditing && !isGenerating && !imageSlot && (
-            <MessageMetadata metaCtx={metaCtx} />
+              message whose content is the image. C-B (owner 2026-09-19:
+              «вынести мету… выше кнопок, как у текстового сообщения»): the
+              slot instead carries its OWN quiet meta line — mode display
+              name + generation model — at the exact position the text
+              message's metadata bar occupies, above both action rows. */}
+          {!isEditing && !isGenerating && (
+            imageSlot ? (
+              slotMeta && (
+                <div data-testid="image-gen-slot-meta" className="mt-1 flex flex-wrap items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
+                  {slotMeta}
+                </div>
+              )
+            ) : (
+              <MessageMetadata metaCtx={metaCtx} />
+            )
           )}
 
           {/* ── Desktop Actions ── */}

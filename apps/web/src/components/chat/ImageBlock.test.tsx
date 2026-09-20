@@ -152,6 +152,27 @@ describe("ImageBlock — orientation-driven message sizing (MR-7)", () => {
     expect(tile.getAttribute("style")).toContain("--tile-ratio: 1");
     expect(view.getByTestId("image-block-img").getAttribute("style")).toContain("aspect-ratio: 1");
   });
+
+  // C-C (owner 2026-09-19): the desktop half-width pairing is a
+  // vertical-space trade that makes no sense on a phone — portrait/square
+  // tiles go full-width under the app's 768px mobile breakpoint (the same
+  // MQ as the sidebar/useIsMobile canon), keeping the 70vh cap for extreme
+  // ratios. The change is authored CSS inside a media query — no DOM
+  // observable changes at class-selection level — so the pin is the RULE
+  // ITSELF in the stylesheet (regression = the rule vanishing or drifting
+  // off the breakpoint).
+  it("C-C: the portrait bucket goes full-width inside the 768px mobile media block", async () => {
+    const css = await Bun.file(`${import.meta.dir}/../../styles.css`).text();
+    const blockIdx = css.indexOf("@media(max-width:768px)");
+    expect(blockIdx).toBeGreaterThanOrEqual(0);
+    // The rule rides INSIDE the mobile block (not merely somewhere in the
+    // file) and overrides the desktop half-width formula with the capped
+    // full-width one — the exact authored text.
+    const responsive = css.slice(blockIdx, css.indexOf("}", css.indexOf(".mobile-backdrop", blockIdx)) + 1);
+    expect(responsive).toContain(
+      ".image-tile-portrait{width:min(100%,calc(70vh * var(--tile-ratio,1)))}",
+    );
+  });
 });
 
 describe("ImageBlock — viewer seam", () => {
@@ -204,6 +225,40 @@ describe("ImageBlock — prompt accordion (MR-8)", () => {
   it("no caption node without a caption (legacy slots carry no prompt)", () => {
     const view = render(<ImageBlock images={[{ src: "/api/assets/a1", alt: "gen" }]} />);
     expect(view.queryByTestId("image-block-caption")).toBeNull();
+  });
+
+  // C-A (owner 2026-09-19: «неакцентно писать там модель-автора (если с
+  // ии-помощью)»): an assist-authored prompt rides the collapsed header as
+  // a quiet suffix — non-uppercase, normal weight, t4 — and NEVER renders
+  // for template/user-authored prompts (the note is an AI-authorship
+  // signal, not a generation marker).
+  it("captionAuthor: the author model rides the collapsed header as a quiet suffix; absent for template/user prompts", () => {
+    const withAuthor = render(
+      <ImageBlock images={[{ src: "/api/assets/a3", alt: "gen", caption: "written by the llm", captionAuthor: "gemini-writer" }]} />,
+    );
+    const author = withAuthor.getByTestId("image-block-caption-author");
+    expect(author.textContent).toContain("gemini-writer");
+    // The quiet dialect: the header row is font-semibold uppercase t3 — the
+    // suffix must NOT inherit any of that.
+    expect(author.className).toContain("text-t4");
+    expect(author.className).toContain("font-normal");
+    expect(author.className).toContain("normal-case");
+    // Model ids are user data in an identification context — the full value
+    // stays reachable on the tooltip.
+    expect(author.getAttribute("title")).toBe("gemini-writer");
+    // The header keeps its label + the prompt text stays hidden at rest.
+    const caption = withAuthor.getByTestId("image-block-caption");
+    expect(caption.textContent).toContain("image_block_prompt_row");
+    expect(caption.textContent).not.toContain("written by the llm");
+
+    // Body-scoped queries: the first mount must be gone before the second
+    // render's absence assertion is meaningful (its container would still
+    // hold the author node).
+    withAuthor.unmount();
+    const withoutAuthor = render(
+      <ImageBlock images={[{ src: "/api/assets/a4", alt: "gen", caption: "template text" }]} />,
+    );
+    expect(withoutAuthor.queryByTestId("image-block-caption-author")).toBeNull();
   });
 });
 

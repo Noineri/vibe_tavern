@@ -7,9 +7,10 @@
  *
  * The logic is the IG-18/IG-18a tile's, relocated: the tile became the shared
  * ImageBlock (image + prompt caption) and the controls moved into the
- * MessageShell action rows, where the swipe carousel and delete live. The
- * mode label is desktop-only — the mobile action row is a 44px-icon grid
- * with no room for a text label (RU runs 20–30% longer than EN, AD-022).
+ * MessageShell action rows, where the swipe carousel and delete live. C-B
+ * (owner 2026-09-19): the provenance mode label MOVED OUT of this row into
+ * the slot's own meta line above the actions (MessageBlock/MessageShell) —
+ * the controls are buttons-only now, desktop and mobile alike.
  */
 
 import { useState } from "react";
@@ -189,11 +190,6 @@ export function ImageGenSlotControls({
 
   return (
     <>
-      {!mobile && (
-        <span data-testid="image-gen-slot-mode" className="mr-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
-          {t(`image_gen_mode_${firstProvenance.mode}`)}
-        </span>
-      )}
       {chatId && messageId && (
         <CustomTooltip content={t("image_gen_slot_regenerate")}>
           <button

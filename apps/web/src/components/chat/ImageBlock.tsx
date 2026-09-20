@@ -37,6 +37,10 @@ export interface ImageBlockImage {
   alt: string;
   /** Generation prompt shown under the image inside the MR-8 accordion. */
   caption?: string;
+  /** C-A (owner 2026-09-19): the assist LLM model that authored the prompt
+   *  — a quiet suffix on the collapsed accordion header («ПРОМПТ · model»),
+   *  rendered only when the prompt was AI-assisted. */
+  captionAuthor?: string;
   /** MR-9: when present, the expanded accordion offers an inline prompt
    *  editor. The callback persists the new text (chat-api → prompt-write
    *  route) and resolves true on success — false keeps the editor open.
@@ -179,6 +183,19 @@ function ImageBlockTile({ image, onOpen }: { image: ImageBlockImage; onOpen: () 
               {Ic.caret("r")}
             </span>
             <span>{t("image_block_prompt_row")}</span>
+            {/* C-A: the author model rides the collapsed header as a quiet,
+             *  non-uppercase suffix (owner: «неакцентно»). It is USER data
+             *  (a stored model id) in an identification context — truncates
+             *  with the full value on the title tooltip. */}
+            {image.captionAuthor && (
+              <span
+                data-testid="image-block-caption-author"
+                className="min-w-0 truncate font-normal normal-case tracking-normal text-t4"
+                title={image.captionAuthor}
+              >
+                · {image.captionAuthor}
+              </span>
+            )}
           </button>
           <AnimatedDisclosure open={expanded} className="px-2 pb-2">
             {editing ? (

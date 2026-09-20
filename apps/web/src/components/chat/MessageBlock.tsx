@@ -611,6 +611,22 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       mobileVariantControls={mobileVariantControls}
       narrating={narrationHook.narrating}
       imageSlot={isPureImageSlot}
+      slotMeta={
+        isPureImageSlot && slotAttachments[0]?.imageGen !== undefined ? (
+          <>
+            {/* C-B: the mode's display name («Иллюстрация сцены», «Портрет»…)
+             * + the generation model — the same quiet chrome as the text
+             * message's metadata bar. The testid rides the mode span (the
+             * label's old home was the controls row). Model ids are user
+             * data: `break-all` is the overflow contract for extreme ids
+             * (the line wraps, never truncates mid-token). */}
+            <span data-testid="image-gen-slot-mode">{t(`image_gen_mode_${slotAttachments[0].imageGen.mode}`)}</span>
+            {slotAttachments[0].imageGen.model && (
+              <span data-testid="image-gen-slot-model" className="break-all">{slotAttachments[0].imageGen.model}</span>
+            )}
+          </>
+        ) : undefined
+      }
       slotControls={
         isPureImageSlot ? (
           <ImageGenSlotControls
