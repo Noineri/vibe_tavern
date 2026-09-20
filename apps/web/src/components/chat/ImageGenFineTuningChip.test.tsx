@@ -385,6 +385,104 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
   });
 });
 
+describe("ImageGenFineTuningChip — target + resolution (FT-A2)", () => {
+  it("target selector lists the six registry modes with Free as the display default; switching preselects the profile's per-mode preset", async () => {
+    profilesStore = [
+      {
+        ...profile("p1", "A1111 local", fullCaps(), "sdxl-base"),
+        modeSizePresets: { portrait: { width: 832, height: 1216 } },
+      },
+    ];
+    modelsStore = { p1: [{ id: "sdxl-base", label: "SDXL Base" }] };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-t2a" />);
+    act(() => armChat("chat-t2a"));
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-target-select")).toBeTruthy());
+    // Display default = Free; nothing committed to the draft yet.
+    expect(within(view.baseElement).getByTestId("image-gen-ft-target-select").textContent).toContain("image_gen_mode_free");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-t2a"]).toBeUndefined();
+
+    // The six registry modes ride the opened list (the message popover's
+    // list — no new names).
+    await pickOption("image-gen-ft-target-select", "image_gen_mode_portrait");
+    const draft = useImageGenChatStore.getState().fineTuningDraftByChat["chat-t2a"];
+    expect(draft?.target).toBe("portrait");
+    // The mode's profile preset preselected (changeable — the dropdown is
+    // free to overwrite it below).
+    expect(draft?.width).toBe(832);
+    expect(draft?.height).toBe(1216);
+  });
+
+  it("resolution: a bucket pick writes W/H, Auto clears, Custom reveals the steppers", async () => {
+    profilesStore = [profile("p1", "A1111 local", fullCaps(), "sdxl-base")];
+    modelsStore = { p1: [{ id: "sdxl-base", label: "SDXL Base" }] };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-t2b" />);
+    act(() => armChat("chat-t2b"));
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-resolution-select")).toBeTruthy());
+    // Custom steppers hidden while a bucket is not custom.
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-custom-size")).toBeNull();
+
+    // Square bucket (unique label under the key-mock t) — the 1:1 pair.
+    await pickOption("image-gen-ft-resolution-select", "image_gen_preset_square");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-t2b"]).toEqual({
+      prompt: "",
+      negative: "",
+      width: 1024,
+      height: 1024,
+    });
+
+    // Custom reveals the W/H steppers — and STAYS custom even though the
+    // seeded pair equals the square bucket (the explicit-mode pin).
+    await pickOption("image-gen-ft-resolution-select", "image_gen_size_custom");
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-custom-size")).toBeTruthy());
+    expect((within(view.baseElement).getByTestId("image-gen-ft-width").querySelector("input") as HTMLInputElement).value).toBe("1024");
+
+    // A stepper click commits the new width to the draft (the PLUS button —
+    // minus renders first in the DOM).
+    const steppers = within(view.baseElement).getByTestId("image-gen-ft-width").querySelectorAll("button");
+    fireEvent.click(steppers[steppers.length - 1]!);
+    await waitFor(() =>
+      expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-t2b"]?.width).toBe(1088),
+    );
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-t2b"]?.customSize).toBe(true);
+
+    // Auto clears the pair entirely (server-side mode preset resolves).
+    await pickOption("image-gen-ft-resolution-select", "image_gen_size_auto");
+    const draft = useImageGenChatStore.getState().fineTuningDraftByChat["chat-t2b"];
+    expect(draft?.width).toBeUndefined();
+    expect(draft?.height).toBeUndefined();
+    expect(draft?.customSize).toBeUndefined();
+  });
+
+  it("vendor-set profile: the announced grid ∪ user sizes, NO Custom entry", async () => {
+    profilesStore = [
+      {
+        ...profile("p1", "Cloud vendor", { ...fullCaps(), sizeSupport: { kind: "vendor-set", sizes: ["1024x1024", "768x1344"] } }, "flux-1"),
+        userSizes: [{ width: 512, height: 512 }],
+      },
+    ];
+    modelsStore = { p1: [{ id: "flux-1", label: "Flux 1" }] };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-t2c" />);
+    act(() => armChat("chat-t2c"));
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-resolution-select")).toBeTruthy());
+
+    await pickOption("image-gen-ft-resolution-select", "512×512");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-t2c"]).toEqual({
+      prompt: "",
+      negative: "",
+      width: 512,
+      height: 512,
+    });
+    // The custom stepper pair never renders for vendor-set dialects.
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-custom-size")).toBeNull();
+  });
+});
+
 describe("ImageGenFineTuningChip — LoRA section (CG-C3)", () => {
   function comfyProfile(chatId: string): void {
     profilesStore = [{ ...profile("cg1", "Comfy local", fullCaps(), "krea2ray"), backend: "comfyui" }];

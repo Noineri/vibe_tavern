@@ -238,6 +238,10 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
         overrides.negativePrompt = negative;
       }
       if (draft.model !== undefined && draft.model !== "") overrides.model = draft.model;
+      // FT-A2: the chip's resolution pick rides the run — partial pairs
+      // are legal (the contract falls back per side).
+      if (draft.width !== undefined) overrides.width = draft.width;
+      if (draft.height !== undefined) overrides.height = draft.height;
       // FT-A1: the one-shot draft sampler pick is GONE — the model-settings
       // accordion (same overlay as the providers pane) is the only sampler
       // surface; overrides.sampler no longer has a draft-side source.

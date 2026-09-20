@@ -38,12 +38,13 @@ import { AutoTextarea } from "../shared/auto-textarea.js";
 import { SliderField } from "../shared/SliderField.js";
 import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
+import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { useT } from "../../i18n/context.js";
+import { useT, type TFunc } from "../../i18n/context.js";
 import {
   listAllImageGenProfiles,
   listImageGenModels,
@@ -62,10 +63,17 @@ import {
 import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue, ImageGenBackendValue } from "@vibe-tavern/api-contracts";
 import {
   IMAGE_GEN_BACKENDS,
+  IMAGE_GENERATION_MODES,
   IMAGE_GEN_PARAM_RANGES,
   IMAGE_GEN_ADETAILER_FACE_MODELS,
   IMAGE_GEN_ADETAILER_DEFAULT_MODEL,
+  IMAGE_SIZE_DEFAULT,
+  IMAGE_SIZE_MAX_PX,
+  IMAGE_SIZE_MIN_PX,
+  IMAGE_SIZE_PRESETS,
   hasAdetailerExtension,
+  type ImageGenerationMode,
+  type ImageSizeOrientation,
 } from "@vibe-tavern/domain";
 import { EMPTY_IMAGE_GEN_DRAFT, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { ImageGenLoraSection } from "./ImageGenLoraSection.js";
@@ -73,6 +81,19 @@ import { ImageGenLoraSection } from "./ImageGenLoraSection.js";
 export interface ImageGenFineTuningChipProps {
   chatId: string;
 }
+
+/** Purpose-word per preset orientation (IG-CF14, the pane's twin label
+ *  map): "Square 1:1 · 1024×1024" — purpose + ratio + concrete resolution,
+ *  never a bare ratio. */
+const PRESET_LABEL_KEYS: Record<ImageSizeOrientation, Parameters<TFunc>[0]> = {
+  square: "image_gen_preset_square",
+  portrait: "image_gen_preset_portrait",
+  landscape: "image_gen_preset_landscape",
+};
+
+/** The six registry modes in order (FT-A2 — the message popover's list,
+ *  no new names). */
+const MODES: ImageGenerationMode[] = Object.values(IMAGE_GENERATION_MODES);
 
 export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) {
   const { t } = useT();
@@ -140,7 +161,7 @@ export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) 
 // ─── Shared editor body (desktop popover + mobile sheet) ────────────────────
 
 function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   const activeProfileId = useImageGenChatStore((s) => s.activeProfileIdByChat[chatId]);
   const globalActiveId = useImageGenChatStore((s) => s.activeImageGenProfileId);
   const draft = useImageGenChatStore((s) => s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT);
@@ -268,6 +289,49 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
   // «Detected» readout under the picker and the accordion's DiT gate.
   const selectedModelEntry = models?.find((m) => m.id === draft.model) ?? null;
 
+  // ── Resolution option set (FT-A2) ────────────────────────────────
+  // Vendor-set backends: the announced grid ∪ the profile's user-added
+  // entries (IG-20a), the CF14 duality — no Custom there. Free backends:
+  // the CF14 buckets + Custom (two steppers revealed when picked).
+  const sizeSupport = caps?.sizeSupport ?? { kind: "free" as const };
+  const isVendorSet = sizeSupport.kind === "vendor-set";
+  const vendorSizeIds = isVendorSet
+    ? [
+        ...sizeSupport.sizes,
+        ...(effective?.userSizes ?? []).map((e) => `${e.width}x${e.height}`),
+      ].filter((id, index, all) => all.indexOf(id) === index)
+    : [];
+  // "" = Auto (unset); "custom" = the free-dialect stepper pair; a "WxH"
+  // key = a listed bucket/size. A stored pair matching NO list entry: free
+  // dialect → "custom" (the steppers show the truth); vendor dialect → its
+  // own raw entry below (the pane's since-removed-files rule — the trigger
+  // never lies about what is set).
+  const resolutionValue = (() => {
+    if (draft.customSize === true) return "custom";
+    if (draft.width === undefined && draft.height === undefined) return "";
+    const key = `${draft.width ?? ""}x${draft.height ?? ""}`;
+    const listed = isVendorSet ? vendorSizeIds : IMAGE_SIZE_PRESETS.map((p) => `${p.width}x${p.height}`);
+    if (listed.includes(key)) return key;
+    return isVendorSet ? key : "custom";
+  })();
+  const resolutionOptions = isVendorSet
+    ? [
+        ...vendorSizeIds.map((id) => ({ id, label: id.replace("x", "×") })),
+        ...(resolutionValue !== "" && !vendorSizeIds.includes(resolutionValue)
+          ? [{ id: resolutionValue, label: resolutionValue.replace("x", "×") }]
+          : []),
+      ]
+    : [
+        ...IMAGE_SIZE_PRESETS.map((p) => ({
+          id: `${p.width}x${p.height}`,
+          label: t(PRESET_LABEL_KEYS[p.orientation], {
+            ratio: p.ratio,
+            size: `${p.width}×${p.height}`,
+          }),
+        })),
+        { id: "custom", label: t("image_gen_size_custom") },
+      ];
+  const isCustomResolution = !isVendorSet && resolutionValue === "custom";
   return (
     <div className="flex flex-col gap-2.5 p-1" data-testid="image-gen-ft-body">
       {/* Profile + model (the design's "provider + model selector"). The
@@ -318,6 +382,92 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
         )}
         {modelsFailed && (
           <span className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4">{t("image_gen_chip_models_failed")}</span>
+        )}
+      </div>
+
+      {/* Generation target (FT-A2) — the same six modes as the message
+          popover (registry order); the chip's Generate button fires this
+          mode (FT-A3) and switching re-preselects the resolution from the
+          profile's per-mode preset (changeable — owner 2026-09-17). Display
+          default Free: the cockpit's canonical «your prompt verbatim» use. */}
+      <div className="flex flex-col gap-1.5 px-1.5">
+        <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_target_label")}</span>
+        <DropdownSelect
+          value={draft.target ?? IMAGE_GENERATION_MODES.Free}
+          options={MODES.map((mode) => ({ id: mode, label: tDynamic(`image_gen_mode_${mode}`) }))}
+          onChange={(id) => {
+            const mode = id as ImageGenerationMode;
+            const preset = effective?.modeSizePresets?.[mode];
+            setFineTuningDraft(chatId, {
+              target: mode,
+              width: preset?.width,
+              height: preset?.height,
+            });
+          }}
+          triggerTestId="image-gen-ft-target-select"
+          disabled={busy}
+        />
+      </div>
+
+      {/* Resolution (FT-A2): free backends get the CF14 buckets + Custom
+          (two steppers); vendor-set backends get their announced grid +
+          user-added entries (the CF14 duality, plan Wave-A item 8 — no
+          Custom there). Auto = unset → the profile's per-mode preset
+          resolves server-side. */}
+      <div className="flex flex-col gap-1.5 px-1.5" data-testid="image-gen-ft-resolution-row">
+        <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_resolution_label")}</span>
+        <DropdownSelect
+          value={resolutionValue}
+          triggerTestId="image-gen-ft-resolution-select"
+          disabled={busy}
+          defaultOption={t("image_gen_size_auto")}
+          options={resolutionOptions}
+          onChange={(id) => {
+            if (id === "") {
+              setFineTuningDraft(chatId, { customSize: undefined, width: undefined, height: undefined });
+              return;
+            }
+            if (id === "custom") {
+              setFineTuningDraft(chatId, {
+                customSize: true,
+                width: draft.width ?? IMAGE_SIZE_DEFAULT.width,
+                height: draft.height ?? IMAGE_SIZE_DEFAULT.height,
+              });
+              return;
+            }
+            const [width, height] = id.split("x").map(Number);
+            setFineTuningDraft(chatId, { customSize: undefined, width, height });
+          }}
+        />
+        {isCustomResolution && (
+          <div className="flex gap-1.5" data-testid="image-gen-ft-custom-size">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_width_label")}</span>
+              <div data-testid="image-gen-ft-width">
+                <NumberInput
+                  value={draft.width ?? IMAGE_SIZE_DEFAULT.width}
+                  min={IMAGE_SIZE_MIN_PX}
+                  max={IMAGE_SIZE_MAX_PX}
+                  step={64}
+                  onChange={(v) => setFineTuningDraft(chatId, { width: v })}
+                  disabled={busy}
+                />
+              </div>
+            </div>
+            <div className="flex flex-1 flex-col gap-1.5">
+              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_height_label")}</span>
+              <div data-testid="image-gen-ft-height">
+                <NumberInput
+                  value={draft.height ?? IMAGE_SIZE_DEFAULT.height}
+                  min={IMAGE_SIZE_MIN_PX}
+                  max={IMAGE_SIZE_MAX_PX}
+                  step={64}
+                  onChange={(v) => setFineTuningDraft(chatId, { height: v })}
+                  disabled={busy}
+                />
+              </div>
+            </div>
+          </div>
         )}
       </div>
 

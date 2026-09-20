@@ -331,7 +331,7 @@ describe("ImageGenMessageMenu — mobile sheet (IG-16)", () => {
 });
 
 describe("ImageGenMessageMenu — chip draft reaches the generate payload (IG-17)", () => {
-  function armWithDraft(chatId: string, draft: { prompt?: string; negative?: string; model?: string; loras?: import("../../stores/image-gen-chat-store.js").ImageGenLoraPick[] }): void {
+  function armWithDraft(chatId: string, draft: { prompt?: string; negative?: string; model?: string; width?: number; height?: number; loras?: import("../../stores/image-gen-chat-store.js").ImageGenLoraPick[] }): void {
     useImageGenChatStore.getState().setFineTuning(chatId, true);
     useImageGenChatStore.getState().setFineTuningDraft(chatId, draft);
   }
@@ -342,7 +342,7 @@ describe("ImageGenMessageMenu — chip draft reaches the generate payload (IG-17
 
   it("fine tuning on + full caps profile: prompt verbatim, negative/model as overrides (FT-A1: no draft sampler)", async () => {
     profilesStore = [profile("p1", "A1111 local", { supportsNegativePrompt: true, supportsSamplers: true })];
-    armWithDraft("chat-ft", { prompt: "  a castle at dawn  ", negative: "blurry", model: "pony-v6" });
+    armWithDraft("chat-ft", { prompt: "  a castle at dawn  ", negative: "blurry", model: "pony-v6", width: 832, height: 1216 });
     const view = renderMenu(<ImageGenMessageMenu chatId="chat-ft" messageId="m-1" variant="desktop" />);
     openPopover(view);
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
@@ -353,7 +353,7 @@ describe("ImageGenMessageMenu — chip draft reaches the generate payload (IG-17
     const [, body] = generateCalls[0];
     // The IG-14 verbatim contract: the trimmed chip text, never re-templated.
     expect(body.prompt).toBe("a castle at dawn");
-    expect(body.overrides).toEqual({ negativePrompt: "blurry", model: "pony-v6" });
+    expect(body.overrides).toEqual({ negativePrompt: "blurry", model: "pony-v6", width: 832, height: 1216 });
     settle("chat-ft");
     await act(async () => { await Promise.resolve(); });
   });

@@ -24,7 +24,7 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 
-import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { brandId, type ChatId, type ImageGenerationMode } from "@vibe-tavern/domain";
 import { generateImageGen, interruptImageGenProfile } from "../api/image-gen-api.js";
 import { fetchChatAction } from "./api-actions/chat-actions.js";
 import type { GenerateImageGenInput } from "@vibe-tavern/api-contracts";
@@ -75,6 +75,21 @@ export interface ImageGenFineTuningDraft {
   /** Per-chat model pick → overrides.model. undefined = the profile's
    *  selected model. */
   model?: string;
+  /** Generation target (FT-A2) — the mode the chip's Generate button fires
+   *  (FT-A3) and the resolution-preselect anchor. undefined = the cockpit's
+   *  Free display default (committed on first change; six registry modes,
+   *  no new names). */
+  target?: ImageGenerationMode;
+  /** Picked resolution (FT-A2) → overrides.width/height — a CF14 bucket or
+   *  a custom pair. Both undefined = Auto (the profile's per-mode size
+   *  preset resolves server-side). */
+  width?: number;
+  height?: number;
+  /** UI-only (FT-A2): the Custom size mode is EXPLICIT — a custom pair that
+   *  happens to equal a bucket must stay in stepper mode, not snap back to
+   *  the bucket entry. Cleared by any bucket/Auto pick; never rides the
+   *  wire. */
+  customSize?: boolean;
   /** Enabled LoRAs (CG-C3) → overrides.loras at the fold — capability-gated
    *  (supportsLoras). undefined/empty = none sent. Entry ORDER = chain
    *  order on ComfyUI (LoraLoader nodes chain in list sequence). */
