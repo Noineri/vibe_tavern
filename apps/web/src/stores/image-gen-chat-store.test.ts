@@ -181,7 +181,7 @@ describe("image-gen chat store — MR-5 global active profile", () => {
     expect(useImageGenChatStore.getState().activeImageGenProfileId).toBe("p9");
   });
 
-  it("resolveEffectiveImageGenProfile: chat pick wins → global active → first row → null", () => {
+  it("resolveEffectiveImageGenProfile: chat pick wins → global active → server default → first row → null", () => {
     const rows = [{ id: "a" }, { id: "b" }, { id: "c" }];
     // Chat pick overrides everything.
     expect(resolveEffectiveImageGenProfile(rows, "b", "c")?.id).toBe("b");
@@ -195,6 +195,23 @@ describe("image-gen chat store — MR-5 global active profile", () => {
     // Empty roster → null.
     expect(resolveEffectiveImageGenProfile([], undefined, null)).toBeNull();
     expect(resolveEffectiveImageGenProfile(null, "x", "y")).toBeNull();
+  });
+
+  it("resolveEffectiveImageGenProfile MR-12: the server-persisted isDefault row is the hydration arm", () => {
+    // After a reload the session pointer is null — the isDefault row (the
+    // server flag that survived the restart) answers "who is active".
+    const rows = [{ id: "a", isDefault: true }, { id: "b" }, { id: "c" }];
+    expect(resolveEffectiveImageGenProfile(rows, undefined, null)?.id).toBe("a");
+    // A session pointer still outranks the server flag (the in-session
+    // pick wins until reload) — and so does the chat pick.
+    expect(resolveEffectiveImageGenProfile(rows, undefined, "b")?.id).toBe("b");
+    expect(resolveEffectiveImageGenProfile(rows, "c", null)?.id).toBe("c");
+    // A dangling session pointer degrades to the server default, not the
+    // first row (the flag is the surviving truth).
+    expect(resolveEffectiveImageGenProfile(rows, undefined, "gone")?.id).toBe("a");
+    // No flag anywhere → the first row stays the dead-battery fallback
+    // (the owner's pre-MR-12 cloud row — the exact reported reset).
+    expect(resolveEffectiveImageGenProfile([{ id: "a" }, { id: "b" }], undefined, null)?.id).toBe("a");
   });
 });
 

@@ -91,6 +91,15 @@ export async function deleteImageGenProfile(id: string): Promise<void> {
   if (!response.ok) throw await unwrapError(response);
 }
 
+/** MR-12 (the STT `setSttDefault` twin): move the GLOBAL active-profile
+ *  pointer server-side — survives restarts/reloads (owner report
+ *  2026-09-19). Returns the updated record. */
+export async function setImageGenDefault(id: string): Promise<ImageGenProfileRecord> {
+  const response = await client.api["image-gen"].profiles[":id"].default.$put({ param: { id } });
+  if (response.status === 404) throw await unwrapError(response);
+  return unwrapRpc(response);
+}
+
 // ─── Probe / models / samplers / draft (raw fetch, signal-aware) ─────────────
 
 /** Excerpt length for a failed picker/probe response body included in the

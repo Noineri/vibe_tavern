@@ -12,6 +12,7 @@
  *   POST   /api/image-gen/profiles
  *   PATCH  /api/image-gen/profiles/:id
  *   DELETE /api/image-gen/profiles/:id
+ *   PUT    /api/image-gen/profiles/:id/default       (global active pointer, MR-12)
  *   POST   /api/image-gen/profiles/:id/probe
  *   GET    /api/image-gen/profiles/:id/models
  *   GET    /api/image-gen/profiles/:id/samplers        (capability-gated)
@@ -120,6 +121,12 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
     .delete("/api/image-gen/profiles/:id", async (c) => {
       await runtime.deleteImageGenProfile(c.req.param("id"));
       return c.json({ ok: true });
+    })
+    // ── Global active pointer (MR-12, the STT PUT-default twin) ────────
+    .put("/api/image-gen/profiles/:id/default", async (c) => {
+      const updated = await runtime.setImageGenDefault(c.req.param("id"));
+      if (!updated) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(updated);
     })
     // ── Probe (probe-only validation — no test-generate, owner) ──────────
     .post("/api/image-gen/profiles/:id/probe", async (c) => {

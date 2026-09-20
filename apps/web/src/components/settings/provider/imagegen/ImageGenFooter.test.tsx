@@ -91,6 +91,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     remove: mock(async () => {}),
     cancelEdit: mock(() => {}),
     reload: mock(async () => {}),
+    activateProfile: mock(async () => {}),
     fetchSavedModels: mock(async () => null),
     fetchSamplers: mock(async () => null),
     fetchSchedulers: mock(async () => null),

@@ -142,6 +142,7 @@ function profileRecord(id: string, backend: ImageGenBackendType): ImageGenProfil
     modeSizePresets: {},
     llmAssistEnabled: false,
     capabilities: { ...IMAGE_GEN_BACKEND_CAPABILITIES[backend] },
+    isDefault: false,
     sortOrder: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -186,7 +187,7 @@ afterEach(() => {
   toastError.length = 0;
   describeShouldFail = null;
   promoteShouldFail = null;
-  realChatStore.useImageGenChatStore.setState({ runningByChat: {} });
+  realChatStore.useImageGenChatStore.setState({ runningByChat: {}, activeImageGenProfileId: null, activeProfileIdByChat: {} });
 });
 
 describe("ImageGenSlotControls — regenerate-as-variant (IG-18a)", () => {
@@ -281,6 +282,61 @@ describe("ImageGenSlotControls — regenerate-as-variant (IG-18a)", () => {
     expect(btn.hasAttribute("disabled")).toBe(true);
     fireEvent.click(btn);
     expect(runGenerationCalls).toHaveLength(0);
+  });
+
+  // MR-12 (owner ruling 2026-09-19): regeneration rides the SAME resolved
+  //  active chain as every other start — chat pick → global active → server
+  //  default → birth profile. The exact reported case: after a restart the
+  //  session pointer is null, the comfy row carries the server flag, and a
+  //  slot born on the cloud profile must regenerate on Comfy.
+  it("MR-12: server isDefault redirects regen off the birth profile (mode/prompt stay provenance)", async () => {
+    profilesList = [
+      profileRecord("p-cloud", IMAGE_GEN_BACKENDS.OpenRouter),
+      profileRecord("p-comfy", IMAGE_GEN_BACKENDS.ComfyUI),
+    ];
+    profilesList[1].isDefault = true;
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p-cloud", params: {} } });
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() =>
+      expect(runGenerationCalls).toEqual([
+        ["chat-1", { profileId: "p-comfy", mode: "portrait", anchorMessageId: "m1", targetMessageId: "m1" }, { liveProgress: true }],
+      ]),
+    );
+  });
+
+  it("MR-12: a session global pointer outranks the server flag; a chat pick outranks both", async () => {
+    profilesList = [
+      profileRecord("p-cloud", IMAGE_GEN_BACKENDS.OpenRouter),
+      profileRecord("p-comfy", IMAGE_GEN_BACKENDS.ComfyUI),
+      profileRecord("p-forge", IMAGE_GEN_BACKENDS.A1111),
+    ];
+    profilesList[1].isDefault = true;
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p-cloud", params: {} } });
+
+    // Global session pointer wins over the flag.
+    realChatStore.useImageGenChatStore.setState({ activeImageGenProfileId: "p-forge" });
+    let view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => expect(runGenerationCalls[0]?.[1].profileId).toBe("p-forge"));
+    view.unmount();
+
+    // The per-chat pick outranks the global pointer.
+    runGenerationCalls.length = 0;
+    realChatStore.useImageGenChatStore.setState({ activeProfileIdByChat: { "chat-1": "p-comfy" } });
+    view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => expect(runGenerationCalls[0]?.[1].profileId).toBe("p-comfy"));
+    view.unmount();
+
+    // A dangling global pointer degrades to the server default (not the
+    // birth profile): the flag is the surviving truth.
+    runGenerationCalls.length = 0;
+    realChatStore.useImageGenChatStore.setState({ activeImageGenProfileId: "gone", activeProfileIdByChat: {} });
+    view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => expect(runGenerationCalls[0]?.[1].profileId).toBe("p-comfy"));
+    view.unmount();
   });
 });
 

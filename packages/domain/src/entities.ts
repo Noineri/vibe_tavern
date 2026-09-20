@@ -1242,6 +1242,13 @@ export interface ImageGenProfile {
   llmModelId?: string;
   /** Capability snapshot mirrored from the adapter at save time. */
   capabilities: ImageGenCapabilityFlags;
+  /** MR-12 (the TTS/STT `isDefault` twin, owner report 2026-09-19): the
+   *  GLOBAL active-profile pointer persisted server-side — at most one row,
+   *  store-maintained. Deviation from the twins, named: the wire's create/
+   *  PATCH paths canNOT flip it (no UI producer exists); the ONLY mutation
+   *  path is the store's `setDefault` behind the dedicated route — so the
+   *  exclusivity invariant cannot be raced through the CRUD surface. */
+  isDefault: boolean;
   /** Stable list ordering in the editor. */
   sortOrder: number;
   createdAt: Timestamp;

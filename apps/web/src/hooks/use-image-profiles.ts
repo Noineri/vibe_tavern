@@ -31,6 +31,7 @@ import { useCallback, useEffect, useState } from "react";
 import { IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_BACKENDS, type ImageGenBackendType } from "@vibe-tavern/domain";
 import { matchImageGenAutoKeyProviderName, type ImageGenAutoKeyProviderCandidate } from "../components/settings/provider/imagegen/imagegen-form-helpers.js";
 import { listProviderProfiles } from "../api/provider-api.js";
+import { useImageGenChatStore } from "../stores/image-gen-chat-store.js";
 import type { LocalConnectionStatus } from "../components/shared/LocalConnectionStatus.js";
 import type {
   CreateImageGenProfileInput,
@@ -51,6 +52,7 @@ import {
   createImageGenProfile,
   deleteImageGenModelSettings,
   deleteImageGenProfile,
+  setImageGenDefault,
   draftListImageGenModels,
   getImageGenModelSettings,
   listAllImageGenProfiles,
@@ -176,6 +178,11 @@ export function useImageProfiles(): {
   remove(): Promise<void>;
   cancelEdit(): void;
   reload(): Promise<void>;
+  /** MR-12 (the STT `setDefault` twin): make `id` the GLOBAL active
+   *  profile — persists server-side (the dedicated default route), so the
+   *  pointer survives restarts/reloads; the session pointer flips only on
+   *  success. Failures land in the shared `error`. */
+  activateProfile(id: string): Promise<void>;
   /** Fetch + cache the model catalog for a saved profile (defaults to the
    *  editing one). Null = unknown profile; upstream failures throw and are
    *  recorded in `error`. */
@@ -306,6 +313,21 @@ export function useImageProfiles(): {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  // MR-12: persist-first (the STT `setDefault` twin) — no optimistic flip:
+  // the pointer moves when the server accepted it, and the list reload
+  // brings the `isDefault` flag back for the star rows + resolver.
+  const activateProfile = useCallback(async (id: string) => {
+    setError(null);
+    try {
+      await setImageGenDefault(id);
+      useImageGenChatStore.getState().setActiveImageGenProfile(id);
+      const list = await listAllImageGenProfiles();
+      setProfiles(list);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
     }
   }, []);
 
@@ -810,6 +832,7 @@ export function useImageProfiles(): {
     remove,
     cancelEdit,
     reload,
+    activateProfile,
     fetchSavedModels,
     fetchSamplers,
     fetchSchedulers,

@@ -223,6 +223,46 @@ describe("image-gen routes — profile CRUD", () => {
     expect(((await delRes.json()) as { ok: boolean }).ok).toBe(true);
   });
 
+  // MR-12: the GLOBAL active-profile pointer — the STT PUT-default twin.
+  //  Survives restarts (the owner report: a VT server restart silently reset
+  //  the active profile to the cloud row because MR-5's pointer was
+  //  client-memory only).
+  test("PUT :id/default moves the exclusive isDefault flag; PATCH cannot flip it; unknown id → 404", async () => {
+    const { app } = await makeApp();
+    const cloud = await seedProfile(app);
+    const comfy = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.ComfyUI,
+      endpoint: "http://127.0.0.1:8188",
+    });
+
+    // Born non-default (the named deviation: create has no isDefault
+    // producer — activation is the explicit PUT only).
+    let all = (await (await app.request("/api/image-gen/profiles/all")).json()) as Array<{ id: string; isDefault: boolean }>;
+    expect(all.every((p) => !p.isDefault)).toBe(true);
+
+    const putRes = await app.request(`/api/image-gen/profiles/${comfy}/default`, { method: "PUT" });
+    expect(putRes.status).toBe(200);
+    expect(((await putRes.json()) as { isDefault: boolean }).isDefault).toBe(true);
+
+    all = (await (await app.request("/api/image-gen/profiles/all")).json()) as Array<{ id: string; isDefault: boolean }>;
+    expect(all.find((p) => p.id === comfy)?.isDefault).toBe(true);
+    expect(all.find((p) => p.id === cloud)?.isDefault).toBe(false);
+
+    // The CRUD surface cannot race the exclusivity invariant: PATCH bodies
+    // carrying isDefault are stripped by the schema (single mutation path).
+    const patchRes = await app.request(`/api/image-gen/profiles/${cloud}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isDefault: true, name: "renamed" }),
+    });
+    expect(patchRes.status).toBe(200);
+    all = (await (await app.request("/api/image-gen/profiles/all")).json()) as Array<{ id: string; isDefault: boolean }>;
+    expect(all.find((p) => p.id === cloud)?.isDefault).toBe(false);
+
+    const missingRes = await app.request("/api/image-gen/profiles/missing/default", { method: "PUT" });
+    expect(missingRes.status).toBe(404);
+  });
+
   test("IG-20a: user size entries ride the CRUD round-trip (create carries, PATCH replaces, PATCH [] clears)", async () => {
     const { app } = await makeApp();
     const id = await seedProfile(app, {

@@ -178,6 +178,7 @@ function toClientProfile(profile: ImageGenProfile): ImageGenProfileValue {
     ...(profile.userSizes !== undefined && profile.userSizes.length > 0 ? { userSizes: profile.userSizes } : {}),
     llmAssistEnabled: profile.llmAssistEnabled,
     capabilities: profile.capabilities,
+    isDefault: profile.isDefault,
     sortOrder: profile.sortOrder,
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
@@ -407,6 +408,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       llmModelId: body.llmModelId,
       capabilities: body.capabilities,
       sortOrder: body.sortOrder,
+      isDefault: false,
     };
     return (await this.decorateAutoKey([toClientProfile(await this.stores.imageGen.create(input))]))[0];
   };
@@ -436,6 +438,13 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
 
   deleteImageGenProfile = async (id: string): Promise<void> => {
     await this.stores.imageGen.delete(id);
+  };
+
+  /** MR-12 (the STT `setSttDefault` twin): moves the global pointer —
+   *  the store's `setDefault` transaction keeps the at-most-one invariant. */
+  setImageGenDefault = async (id: string) => {
+    const updated = await this.stores.imageGen.setDefault(id);
+    return updated ? (await this.decorateAutoKey([toClientProfile(updated)]))[0] : null;
   };
 
   // ── Probe / models / samplers ───────────────────────────────────────────

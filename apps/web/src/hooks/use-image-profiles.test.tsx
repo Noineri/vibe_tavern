@@ -46,6 +46,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     llmProviderProfileId: undefined,
     llmModelId: undefined,
     capabilities: makeCaps(),
+    isDefault: false,
     sortOrder: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -60,6 +61,11 @@ let failUpdate = false;
 let failMessage = "save boom";
 
 const listAllMock = mock(async () => [...store]);
+// MR-12: the dedicated default route seam — activation persists server-side.
+const setDefaultMock = mock(async (id: string) => {
+  store = store.map((p) => ({ ...p, isDefault: p.id === id }));
+  return store.find((p) => p.id === id)!;
+});
 const createMock = mock(
   async (body: {
     name: string;
@@ -145,6 +151,7 @@ const providersListMock = mock(async (): Promise<Array<{ endpoint: string; hasSt
 mock.module("../api/image-gen-api.js", () => ({
   ...realImageGenApi,
   listAllImageGenProfiles: listAllMock,
+  setImageGenDefault: setDefaultMock,
   createImageGenProfile: createMock,
   updateImageGenProfile: updateMock,
   deleteImageGenProfile: deleteMock,
@@ -170,6 +177,7 @@ afterEach(async () => {
   store = [];
   failUpdate = false;
   listAllMock.mockClear();
+  setDefaultMock.mockClear();
   createMock.mockClear();
   updateMock.mockClear();
   deleteMock.mockClear();
@@ -597,6 +605,45 @@ describe("useImageProfiles — models / samplers / draft", () => {
     }
     expect(threw).toBe(true);
     expect(hook?.error).toBeNull();
+  });
+});
+
+describe("useImageProfiles — activateProfile (MR-12)", () => {
+  it("persists server-first, flips the session pointer on success, reloads the flag", async () => {
+    store = [makeRecord({ id: "p1", name: "Cloud" }), makeRecord({ id: "p2", name: "Comfy" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(2));
+
+    await hook!.activateProfile("p2");
+    expect(setDefaultMock).toHaveBeenCalledTimes(1);
+    expect(setDefaultMock).toHaveBeenCalledWith("p2");
+    // The reloaded list carries the moved flag (the ★ rows + resolver source).
+    await waitFor(() => expect(hook!.profiles.find((p: ImageGenRecord) => p.id === "p2")?.isDefault).toBe(true));
+    expect(hook?.profiles.find((p: ImageGenRecord) => p.id === "p1")?.isDefault).toBe(false);
+    expect(hook?.error).toBeNull();
+  });
+
+  it("a failed PUT lands in the shared error surface and flips no pointer", async () => {
+    store = [makeRecord({ id: "p1" })];
+    setDefaultMock.mockImplementationOnce(async () => {
+      throw new Error("route down");
+    });
+    let hook: any = null;
+    function Probe() {
+      hook = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+
+    await hook!.activateProfile("p1");
+    await waitFor(() => expect(hook?.error).toBe("route down"));
+    expect(hook!.profiles.find((p: ImageGenRecord) => p.id === "p1")?.isDefault).toBe(false);
   });
 });
 

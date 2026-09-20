@@ -66,6 +66,11 @@ export function ImageGenProfileList({ profiles, editingId, onSelectProfile, onAd
   const { t } = useT();
   const { openDetail } = useMasterDetail();
   const activeImageGenProfileId = useImageGenChatStore((s) => s.activeImageGenProfileId);
+  // MR-12: the row star follows the EFFECTIVE global choice — session
+  //  pointer, else the server-persisted `isDefault` row (survives
+  //  restarts/reloads; after one the session pointer is null).
+  const effectiveActiveId =
+    activeImageGenProfileId ?? profiles.find((p) => p.isDefault)?.id ?? null;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
@@ -79,7 +84,7 @@ export function ImageGenProfileList({ profiles, editingId, onSelectProfile, onAd
             key={p.id}
             profile={p}
             isEditing={editingId === p.id}
-            isActive={activeImageGenProfileId === p.id}
+            isActive={effectiveActiveId === p.id}
             onSelectProfile={onSelectProfile}
           />
         ))}

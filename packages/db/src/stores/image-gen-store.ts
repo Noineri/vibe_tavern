@@ -173,10 +173,10 @@ function isImageGenTargetType(v: string): v is ImageGenTargetType {
 
 /**
  * Store for named image-gen profiles (IMAGE_GENERATION_PLAN IG-2). Plain CRUD
- * + the character-scoped link junction (TTS voice-map shape): NO default
- * pointer (unlike TTS/STT there is no generation-pipeline fallback — the
- * active profile is a chat-level consumer concern) and NO active-set resolver
- * here.
+ * + the character-scoped link junction (TTS voice-map shape) + the GLOBAL
+ * active-profile pointer (MR-12, the TTS/STT `isDefault` twin: `isDefault`
+ * on at most one row, moved ONLY by `setDefault` — the wire's create/PATCH
+ * paths cannot flip it, so the exclusivity invariant is single-path).
  *
  * Key hygiene mirrors the STT store: apiKey is a typed-column tri-state on
  * update (`undefined` = keep, `""` = clear, non-empty = set), and a backend
@@ -303,6 +303,21 @@ export class ImageGenStore {
     await this.db.delete(imageGenProfiles).where(eq(imageGenProfiles.id, id)).run();
   }
 
+  /** MR-12: move the GLOBAL active-profile pointer onto `id` (the TTS/STT
+   *  `setDefault` twin — one transaction: clear every row's flag, set the
+   *  target's). Returns null when id is unknown (route → 404). Deleting the
+   *  default profile leaves zero flagged rows — the client resolver then
+   *  falls to the first list row (the documented fallback). */
+  async setDefault(id: string): Promise<ImageGenProfile | null> {
+    const existing = await this.db.select({ id: imageGenProfiles.id }).from(imageGenProfiles).where(eq(imageGenProfiles.id, id)).get();
+    if (!existing) return null;
+    this.db.transaction((tx) => {
+      tx.update(imageGenProfiles).set({ isDefault: 0 }).run();
+      tx.update(imageGenProfiles).set({ isDefault: 1 }).where(eq(imageGenProfiles.id, id)).run();
+    });
+    return this.getById(id);
+  }
+
   // ─── Link management (character bindings; mirrors TtsStore link methods) ──
 
   /**
@@ -414,6 +429,7 @@ export class ImageGenStore {
       ...(userSizes.length > 0 ? { userSizes } : {}),
       llmAssistEnabled: row.llmAssistEnabled,
       capabilities: parseCapabilities(row.capabilitiesJson),
+      isDefault: row.isDefault === 1,
       sortOrder: row.sortOrder,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

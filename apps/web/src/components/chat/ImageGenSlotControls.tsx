@@ -18,11 +18,11 @@ import { IMAGE_GEN_BACKEND_CAPABILITIES, type Attachment } from "@vibe-tavern/do
 import { toast } from "sonner";
 
 import { useT } from "../../i18n/context.js";
-import { useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
+import { resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { listAllImageGenProfiles, promoteImageGenAttachmentToGallery } from "../../api/image-gen-api.js";
 import { regenerateAttachmentDescription, updateAttachmentIncludeInPrompt } from "../../api/chat-api.js";
 
@@ -59,8 +59,13 @@ export function ImageGenSlotControls({
   const firstProvenance = attachments[0]?.imageGen;
   if (!firstProvenance) return null;
 
-  /** IG-18a: regenerate this slot — mode/profile defaults come from the
-   *  slot's own provenance (the generation that produced it); the result
+  /** IG-18a: regenerate this slot — mode/prompt defaults come from the
+   *  slot's own provenance (the generation that produced it), but the
+   *  PROFILE rides the SAME resolved active chain as every other
+   *  generation start (MR-12, owner ruling 2026-09-19: switching the
+   *  active profile must redirect regeneration): chat pick → global
+   *  active → server default → the birth profile as the dead-battery
+   *  fallback (a transient list failure never blocks the run). The result
    *  lands as a swipe VARIANT of this slot (targetMessageId), and the
    *  one-per-chat guard disables the button while any generation runs.
    *  PG-2 twin of the menu path: the START-time capability snapshot rides
@@ -81,18 +86,26 @@ export function ImageGenSlotControls({
     if (!chatId || !messageId || running) return;
     void (async () => {
       let liveProgress = false;
+      let targetProfileId = firstProvenance.profileId;
       try {
-        const profile = (await listAllImageGenProfiles()).find((p) => p.id === firstProvenance.profileId);
+        const s = useImageGenChatStore.getState();
+        const list = await listAllImageGenProfiles();
+        const effective = resolveEffectiveImageGenProfile(
+          list,
+          s.activeProfileIdByChat[chatId],
+          s.activeImageGenProfileId,
+        );
+        if (effective !== null) targetProfileId = effective.id;
         liveProgress =
-          profile !== undefined && IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsLiveProgress;
+          effective !== null && IMAGE_GEN_BACKEND_CAPABILITIES[effective.backend].supportsLiveProgress;
       } catch {
-        // Fail-closed on purpose (see above): the run starts, the progress
-        // row stays on the plain waiting chip.
+        // Fail-open on purpose (see above): the run starts on the birth
+        // profile, the progress row stays on the plain waiting chip.
       }
       void useImageGenChatStore.getState().runGeneration(
         chatId,
         {
-          profileId: firstProvenance.profileId,
+          profileId: targetProfileId,
           mode: firstProvenance.mode,
           anchorMessageId: messageId,
           targetMessageId: messageId,

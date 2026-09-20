@@ -56,6 +56,7 @@ function baseInput(overrides: Partial<CreateImageGenProfileData> = {}): CreateIm
 		modeSizePresets: { portrait: { width: 832, height: 1216 } },
 		llmAssistEnabled: false,
 		capabilities: a1111Capabilities,
+		isDefault: false,
 		sortOrder: 0,
 		...overrides,
 	};
@@ -363,6 +364,51 @@ describe('ImageGenStore links (character bindings)', () => {
 			await store.upsertModelSettings(profile.id, 'sd_xl', dirty);
 			const row = await store.getModelSettings(profile.id, 'sd_xl');
 			expect(row?.settings).toEqual({ steps: 30 });
+		});
+	});
+
+	describe('setDefault (MR-12 — the TTS/STT isDefault twin)', () => {
+		test('moves the exclusive flag between profiles transactionally', async () => {
+			const { store } = await setup();
+			const a = await store.create(baseInput());
+			const b = await store.create(baseInput());
+			expect((await store.getById(a.id))?.isDefault).toBe(false);
+			const first = await store.setDefault(a.id);
+			expect(first?.isDefault).toBe(true);
+			let rows = await store.listAll();
+			expect(rows.filter((r) => r.isDefault).map((r) => r.id)).toEqual([a.id]);
+			const second = await store.setDefault(b.id);
+			expect(second?.isDefault).toBe(true);
+			rows = await store.listAll();
+			// Exclusivity survived the move: exactly one flagged row — the target.
+			expect(rows.filter((r) => r.isDefault).map((r) => r.id)).toEqual([b.id]);
+		});
+
+		test('unknown id returns null (route → 404)', async () => {
+			const { store } = await setup();
+			expect(await store.setDefault('missing')).toBeNull();
+		});
+
+		test('create/update never flip the flag — setDefault is the single mutation path', async () => {
+			const { store } = await setup();
+			const a = await store.create(baseInput());
+			await store.create(baseInput({ isDefault: true }));
+			// Create-time isDefault is ignored (born non-default; the named
+			// deviation from the TTS/STT twins — the wire has no producer).
+			expect((await store.listAll()).every((r) => !r.isDefault)).toBe(true);
+			// PATCH with isDefault is a no-op for the flag.
+			await store.update(a.id, { isDefault: true, name: 'renamed' });
+			const after = await store.getById(a.id);
+			expect(after?.isDefault).toBe(false);
+			expect(after?.name).toBe('renamed');
+		});
+
+		test('deleting the default row leaves zero flagged rows (client falls to first-list)', async () => {
+			const { store } = await setup();
+			const a = await store.create(baseInput());
+			await store.setDefault(a.id);
+			await store.delete(a.id);
+			expect((await store.listAll()).filter((r) => r.isDefault)).toEqual([]);
 		});
 	});
 });

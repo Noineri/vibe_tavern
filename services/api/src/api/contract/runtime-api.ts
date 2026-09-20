@@ -1064,6 +1064,9 @@ export interface ImageGenRuntimeApi {
 	createImageGenProfile: (body: import("@vibe-tavern/api-contracts").CreateImageGenProfileInput) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue>;
 	updateImageGenProfile: (id: string, body: import("@vibe-tavern/api-contracts").UpdateImageGenProfileInput) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue | null>;
 	deleteImageGenProfile: (id: string) => Promise<void>;
+	/** MR-12: move the GLOBAL active-profile pointer (the TTS/STT
+	 *  `setDefault` twin). Null = unknown profile (route → 404). */
+	setImageGenDefault: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue | null>;
 	/** Probe a saved profile's endpoint/credential. Null = unknown profile
 	 *  (route → 404); failures arrive as `{ok:false}` data, never thrown. */
 	probeImageGenProfile: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenProbeResultValue | null>;

@@ -58,6 +58,7 @@ function profile(id: string, name: string, capabilities: Caps, modelId?: string)
     modeSizePresets: {},
     llmAssistEnabled: false,
     capabilities,
+    isDefault: false,
     sortOrder: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",

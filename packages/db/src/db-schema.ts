@@ -1748,10 +1748,14 @@ export const imageGenProfiles = sqliteTable('image_gen_profiles', {
   llmProviderProfileId: text('llm_provider_profile_id'),
   llmModelId: text('llm_model_id'),
   capabilitiesJson: text('capabilities_json').notNull().default('{}'),
+  // MR-12: the GLOBAL active-profile pointer (the tts/stt `isDefault`
+  // twin; at most one row, store-maintained via `setDefault`).
+  isDefault: integer('is_default').notNull().default(0),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
+  defaultIdx: index('idx_image_gen_profiles_default').on(table.isDefault),
   backendIdx: index('idx_image_gen_profiles_backend').on(table.backend),
 }));
 

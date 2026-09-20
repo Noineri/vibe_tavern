@@ -87,11 +87,16 @@ export interface ImageGenFineTuningDraft {
 export const EMPTY_IMAGE_GEN_DRAFT: ImageGenFineTuningDraft = { prompt: "", negative: "" };
 
 /** MR-5: the EFFECTIVE image-gen profile record for a chat — the fallback
- *  chain «chat pick → global active → first row» (the ProviderModal
- *  `activeProviderProfileId ?? providerProfiles[0]?.id` twin, with the
- *  per-chat chip pick as the override layer on top). Pure: both callers
- *  (chip + message menu) and tests share the ONE chain. */
-export function resolveEffectiveImageGenProfile<T extends { id: string }>(
+ *  chain «chat pick → global active → server default → first row» (the
+ *  ProviderModal `activeProviderProfileId ?? providerProfiles[0]?.id` twin,
+ *  with the per-chat chip pick as the override layer on top). Pure: both
+ *  callers (chip + message menu) and tests share the ONE chain.
+ *  MR-12: the third arm — the list's `isDefault` row (the server-persisted
+ *  pointer, the TTS/STT twin). It is the chain's HYDRATION: after a reload
+ *  the session pointer is null and the server flag alone answers "who is
+ *  active"; `first row` stays the dead-battery fallback (no profile ever
+ *  activated). Optional in T so pre-MR-12 test rows keep compiling. */
+export function resolveEffectiveImageGenProfile<T extends { id: string; isDefault?: boolean }>(
   profiles: T[] | null | undefined,
   chatPick: string | null | undefined,
   globalActive: string | null,
@@ -101,6 +106,8 @@ export function resolveEffectiveImageGenProfile<T extends { id: string }>(
   if (byPick !== undefined) return byPick;
   const byGlobal = globalActive !== null ? list.find((p) => p.id === globalActive) : undefined;
   if (byGlobal !== undefined) return byGlobal;
+  const byDefault = list.find((p) => p.isDefault === true);
+  if (byDefault !== undefined) return byDefault;
   return list[0] ?? null;
 }
 
@@ -124,8 +131,10 @@ interface ImageGenChatState {
 interface ImageGenChatActions {
   setFineTuning(chatId: string, on: boolean): void;
   setActiveProfile(chatId: string, profileId: string | undefined): void;
-  /** MR-5: set the GLOBAL active image-gen profile (the view card's
-   *  activate button). */
+  /** MR-5/MR-12: set the GLOBAL active image-gen profile — the SESSION
+   *  flip only. The persisting path is the pane hook's `activateProfile`
+   *  (server PUT → reload → this flip); keeping the raw setter lets the
+   *  hook flip without re-implementing the store write. */
   setActiveImageGenProfile(profileId: string): void;
   /** Fire ONE generation (guarded one-per-chat); resolves when the run
    *  settles. User-aborts are silent; failures toast the normalized server

@@ -164,6 +164,10 @@ export const imageGenProfileSchema = z.object({
   llmProviderProfileId: z.string().optional(),
   llmModelId: z.string().optional(),
   capabilities: imageGenCapabilityFlagsSchema,
+  /** MR-12 (the TTS/STT `isDefault` twin): the GLOBAL active-profile
+   *  pointer — at most one row. Read-only on this surface: create/PATCH
+   *  never accept it (the dedicated default route is the only writer). */
+  isDefault: z.boolean(),
   sortOrder: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),

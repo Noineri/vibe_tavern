@@ -24,7 +24,15 @@ export function ImageGenProfileEditor({ imageGen }: { imageGen: ImageGenHook }) 
   // MR-5: the global active pointer + its setter (the card's activate
   //  button) — subscribed here so the card alone re-renders on flip.
   const activeImageGenProfileId = useImageGenChatStore((s) => s.activeImageGenProfileId);
-  const setActiveImageGenProfile = useImageGenChatStore((s) => s.setActiveImageGenProfile);
+  // MR-12: the star follows the EFFECTIVE global choice — session pointer,
+  // else the server-persisted `isDefault` row (after a reload the session
+  // pointer is null; the list flag is the surviving truth).
+  const effectiveActiveId =
+    activeImageGenProfileId ?? imageGen.profiles.find((p) => p.isDefault)?.id ?? null;
+  // MR-12: the persisting path — the pane hook's activateProfile (server
+  //  PUT first, session flip only on success; failures land in the pane's
+  //  shared error surface).
+  const activateProfile = imageGen.activateProfile;
 
   if (!imageGen.form) return null;
 
@@ -51,9 +59,12 @@ export function ImageGenProfileEditor({ imageGen }: { imageGen: ImageGenHook }) 
         <>
           <ImageGenBaseCard
             form={form}
-            isActive={activeImageGenProfileId === savedProfile.id}
+            isActive={effectiveActiveId === savedProfile.id}
+
             onEdit={imageGen.startEdit}
-            onActivate={() => setActiveImageGenProfile(savedProfile.id)}
+            onActivate={() => {
+              void activateProfile(savedProfile.id);
+            }}
           />
 
           {/* Second level (IG-12): picker + favorites + per-mode sizes +
