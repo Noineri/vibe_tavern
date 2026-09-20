@@ -154,6 +154,7 @@ Generic over `T extends string` — values keep their literal union type through
 | `disabled` | `boolean?` | Disables interaction |
 | `compact` | `boolean?` | Smaller size for tight spaces (11px text, less padding) |
 | `dense` | `boolean?` | Even shorter on mobile than `compact` (28px vs 36px touch height), identical desktop sizing — narrowly scoped for in-card controls like the canvas role selector |
+| `ariaLabel` | `string?` | Accessible name for the radiogroup — for controls whose meaning lives outside their segment labels (e.g. a mode switch); most call sites are self-describing |
 | `className` | `string?` | Additional classes |
 
 All options visible at once — one click to select; `role="radiogroup"` + `aria-checked`. Active segment: `bg-s2` + accent text + shadow on `bg-s3` track.

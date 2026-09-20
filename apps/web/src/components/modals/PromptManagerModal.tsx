@@ -13,6 +13,7 @@ import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.
 import { serializeStPreset, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { SERVICE_PROMPT_FIELD_FAMILIES } from "@vibe-tavern/domain";
 import { ServicePromptsPane } from "../settings/prompt/ServicePromptsPane.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
@@ -1357,44 +1358,27 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             ) : null
           ) : (
           <>
-            <div className={cn("mt-4 flex shrink-0 gap-3", isMobile ? "flex-col px-2" : "mx-5 flex-row items-center justify-between")}>
-              <div>
-                <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
-                  {advancedMode ? t("preset_advanced_mode") : t("preset_simple_mode")}
-                </div>
-                <div className="mt-0.5 font-ui text-[11px] text-t4">
-                  {advancedMode ? t("preset_advanced_mode_hint") : t("preset_simple_mode_hint")}
-                </div>
-                {!advancedMode && (
-                  <div className="mt-0.5 font-ui text-[11px] text-t4">{t("preset_simple_mode_merge_note")}</div>
-                )}
-              </div>
-              <div className={cn("inline-flex shrink-0 gap-0 rounded-md border border-border bg-s3 p-0.5", isMobile && "self-start")} role="radiogroup" aria-label={t("preset_editor_mode")}>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={!advancedMode}
-                  className={cn(
-                    "cursor-pointer select-none rounded-[5px] px-2.5 py-1 font-ui text-[11px] transition-all duration-150",
-                    !advancedMode ? "bg-s2 font-medium text-accent shadow-sm" : "text-t2 hover:text-t1",
-                  )}
-                  onClick={() => { if (advancedMode) updateDraft("advancedMode", false); }}
-                >
-                  {t("preset_simple_mode_short")}
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={advancedMode}
-                  className={cn(
-                    "cursor-pointer select-none rounded-[5px] px-2.5 py-1 font-ui text-[11px] transition-all duration-150",
-                    advancedMode ? "bg-s2 font-medium text-accent shadow-sm" : "text-t2 hover:text-t1",
-                  )}
-                  onClick={() => { if (!advancedMode) updateDraft("advancedMode", true); }}
-                >
-                  {t("preset_advanced_mode_short")}
-                </button>
-              </div>
+            {/* The accordion-era header block (mode title + hint lines +
+                merge note — the shell of the old expandable accordion, kept
+                alive by the 2026-06-02 segmented swap) is GONE by owner
+                ruling 2026-09-19: the title duplicated the control's state,
+                the advanced hint duplicated the canvas's own header, and the
+                merge note described behavior the pane itself makes obvious.
+                What remains is the canon SegmentedControl alone, right-
+                aligned on desktop, full-width touch target on mobile. */}
+            <div className={cn("mt-4 flex shrink-0", isMobile ? "px-2" : "mx-5 justify-end")}>
+              <SegmentedControl
+                value={advancedMode ? "advanced" : "simple"}
+                options={[
+                  { value: "simple", label: t("preset_simple_mode_short") },
+                  { value: "advanced", label: t("preset_advanced_mode_short") },
+                ]}
+                onChange={(next) => {
+                  if ((next === "advanced") !== advancedMode) updateDraft("advancedMode", next === "advanced");
+                }}
+                ariaLabel={t("preset_editor_mode")}
+                mobileFill
+              />
             </div>
 
             {advancedMode && (

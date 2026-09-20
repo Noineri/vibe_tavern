@@ -28,6 +28,11 @@ interface SegmentedControlProps<T extends string = string> {
   onChange: (value: T) => void;
   className?: string;
   disabled?: boolean;
+  /** Accessible name for the radiogroup (aria-label on the Radix Root).
+   *  Optional — most call sites are self-describing through their segment
+   *  labels; a control whose meaning lives outside its segments (e.g. a mode
+   *  switch) should name the group. */
+  ariaLabel?: string;
   /** Render as a more compact variant for tight spaces */
   compact?: boolean;
   /** Even shorter on mobile than `compact` (28px vs 36px touch height), with
@@ -85,6 +90,7 @@ export function SegmentedControl<T extends string = string>({
   onChange,
   className,
   disabled,
+  ariaLabel,
   compact,
   dense,
   fill,
@@ -118,6 +124,7 @@ export function SegmentedControl<T extends string = string>({
       // string-land (keeps callers cast-free — see MasterDetailModal tabs).
       onValueChange={(next) => onChange(next as T)}
       disabled={disabled}
+      aria-label={ariaLabel}
       asChild
     >
       <div

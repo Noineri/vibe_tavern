@@ -273,7 +273,7 @@ describe("PromptManagerModal — character save boundary", () => {
     });
   });
 
-  test("shows the automatic same-role merge note in simple mode and hides it in advanced mode", async () => {
+  test("the accordion-era header block is gone; the canon SegmentedControl alone carries the mode", async () => {
     useModalStore.setState({ isPromptManagerOpen: true });
 
     const simplePreset: PromptPresetDto = { ...advancedPreset(), advancedMode: false };
@@ -288,13 +288,43 @@ describe("PromptManagerModal — character save boundary", () => {
         onReorder={mock(async () => true)}
       />,
     );
+    const q = within(view.baseElement);
 
+    // Owner 2026-09-19: the mode TITLE duplicated the control's selected
+    // segment, the advanced HINT duplicated the canvas's own header, and the
+    // simple-mode MERGE NOTE described assembly behavior implicitly — the
+    // whole accordion shell is deleted; the segmented control is the only
+    // mode surface. (The switch itself still works: Radix radios.)
     await waitFor(() => {
-      expect(within(view.baseElement).getByText("preset_simple_mode_merge_note")).toBeTruthy();
+      expect(q.getByRole("radio", { name: "preset_simple_mode_short" })).toBeTruthy();
     });
+    for (const legacy of [
+      "preset_simple_mode",
+      "preset_advanced_mode",
+      "preset_simple_mode_hint",
+      "preset_advanced_mode_hint",
+      "preset_simple_mode_merge_note",
+      "prompt_section_chat",
+    ]) {
+      expect(q.queryByText(legacy), `legacy header text "${legacy}"`).toBeNull();
+    }
 
-    fireEvent.click(within(view.baseElement).getByRole("radio", { name: "preset_advanced_mode_short" }));
-    expect(within(view.baseElement).queryByText("preset_simple_mode_merge_note")).toBeNull();
+    // Simple: chat fields render, canvas does not.
+    expect(q.getByText("system_prompt")).toBeTruthy();
+    expect(q.queryByTestId("prompt-canvas-header")).toBeNull();
+
+    // Switch to advanced: the canvas (with its OWN header hint — the single
+    // explanation surface now) appears and the control reflects the mode.
+    // (The simple fields' disappearance is PromptFields' own pinned contract
+    // — "renders nothing when hideChatPrompts is set" — not re-pinned here;
+    // canvas cards legitimately reuse field labels like system_prompt.)
+    fireEvent.click(q.getByRole("radio", { name: "preset_advanced_mode_short" }));
+    await waitFor(() => {
+      expect(q.getByTestId("prompt-canvas-header")).toBeTruthy();
+      expect(q.getByText("preset_prompt_order_canvas_hint")).toBeTruthy();
+    });
+    expect(q.getByRole("radio", { name: "preset_advanced_mode_short" }).getAttribute("aria-checked")).toBe("true");
+    expect(q.getByRole("radio", { name: "preset_simple_mode_short" }).getAttribute("aria-checked")).toBe("false");
   });
 
   test("loads active-chat lore summaries into the expandable anchor card", async () => {

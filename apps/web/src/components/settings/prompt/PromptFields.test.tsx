@@ -109,10 +109,13 @@ function ControlledPromptFields(props: ReturnType<typeof baseProps>) {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 describe("PromptFields — chat prompt fields", () => {
-  it("renders the chat section fields from the draft", () => {
+  it("renders the chat section fields from the draft (the legacy lone section header is gone — owner 2026-09-19)", () => {
     const view = render(<PromptFields {...baseProps()} />);
     const q = within(view.baseElement);
-    expect(q.getByText("prompt_section_chat")).toBeTruthy();
+    // The "Chat prompts" header existed only to split this section from the
+    // service prompts, which moved to their own tab (SP-8/SP-9) — with the
+    // sibling gone the header was removed; the fields start directly.
+    expect(q.queryByText("prompt_section_chat")).toBeNull();
     expect((q.getAllByRole("textbox") as HTMLTextAreaElement[]).some((t) => t.value === "sys")).toBe(true);
     expect((q.getAllByRole("textbox") as HTMLTextAreaElement[]).some((t) => t.value === "jb")).toBe(true);
     expect(q.getByText("authors_note_label")).toBeTruthy();
