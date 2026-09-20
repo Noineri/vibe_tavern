@@ -2447,7 +2447,7 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
    *  `sent` array the tests read the final wire prompt from. */
   async function makeAssistScene(
     assist: AssistFixture,
-  ): Promise<{ app: ReturnType<typeof createImageGenRoutes>; chatId: string; sent: string[] }> {
+  ): Promise<{ app: ReturnType<typeof createImageGenRoutes>; stores: StoreContainer; chatId: string; sent: string[] }> {
     const sent: string[] = [];
     const base = await makeApp(promptCapturingTransport(sent), assist.deps);
     const char = await base.stores.characters.create({ name: "Seraphine", description: "silver-haired tavern keeper" });
@@ -2460,7 +2460,7 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
       authorType: "user",
       content: "The tavern door creaks open.",
     });
-    return { app: base.app, chatId: chat.id, sent };
+    return { app: base.app, stores: base.stores, chatId: chat.id, sent };
   }
 
   const generate = (app: ReturnType<typeof createImageGenRoutes>, chatId: string, body: Record<string, unknown>) =>
@@ -2514,6 +2514,55 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     // The refinement is the wire prompt, with its residual macro resolved.
     expect(scene.sent[0]).toContain("A windswept portrait of Seraphine, rain on silver hair.");
     expect(scene.sent[0]).not.toContain("{{");
+  });
+
+  test("MR-13 anchored message: the button's message is the depicted moment, not the branch tail", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    assist.setExecuteBehavior({ text: "A windswept portrait, rain on silver hair." });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    // A later message makes the branch tail DIFFERENT from the tavern
+    // message the anchor will point at — the tail is what the pre-MR-13
+    // behavior templated against regardless of where the user clicked.
+    const TAIL = "The fire crackles loudly; the stranger lowers his hood.";
+    const chat = await scene.stores.chats.getById(scene.chatId);
+    expect(chat).not.toBeNull();
+    const branchMessages = await scene.stores.messages.getMessages(chat!.activeBranchId as string);
+    const anchorId = branchMessages.find((m) => m.content.includes("tavern door"))!.id;
+    await scene.stores.messages.addMessage({
+      chatId: scene.chatId,
+      branchId: chat!.activeBranchId as string,
+      role: "user",
+      authorType: "user",
+      content: TAIL,
+    });
+
+    // Anchored, assist on: the quiet call's digest depicts the ANCHORED
+    // message and the tail never reaches the LLM.
+    const anchored = await generate(scene.app, scene.chatId, { profileId: id, mode: "scene-illustration", anchorMessageId: anchorId });
+    expect(anchored.status).toBe(200);
+    expect(assist.calls).toHaveLength(1);
+    expect(assist.calls[0]!.user).toContain("Message to depict: The tavern door creaks open.");
+    expect(assist.calls[0]!.user).not.toContain(TAIL);
+
+    // Anchored, assist off (second profile, no assist fields): the built
+    // wire prompt carries the anchored moment, not the tail.
+    const plainId = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "or-model" });
+    const anchoredPlain = await generate(scene.app, scene.chatId, { profileId: plainId, mode: "scene-illustration", anchorMessageId: anchorId });
+    expect(anchoredPlain.status).toBe(200);
+    expect(scene.sent[1]).toContain("The tavern door creaks open.");
+    expect(scene.sent[1]).not.toContain(TAIL);
+
+    // No anchor: legacy tail behavior preserved.
+    const tailRun = await generate(scene.app, scene.chatId, { profileId: plainId, mode: "scene-illustration" });
+    expect(tailRun.status).toBe(200);
+    expect(scene.sent[2]).toContain(TAIL);
   });
 
   test("toggle on but picks unset: assist inert — bit-identical legacy behavior, zero calls", async () => {

@@ -55,11 +55,17 @@ export class ImageGenModeValidationError extends Error {
 }
 
 /** The chat facts the templates substitute against — the pieces the adapter
- *  already resolved for its own chat lookup. */
+ *  already resolved for its own chat lookup. `anchorMessageId` (MR-13):
+ *  the message the user opened the generation menu on — when present it
+ *  REPLACES the branch tail as the "current moment" both for
+ *  `{{lastChatMessage}}` and the assist digest (the button lives on every
+ *  character message, so the depicted moment is the anchored one, not the
+ *  latest). Absent → tail behavior (unchanged for legacy callers). */
 export interface ImageGenModeChat {
   characterId: string;
   personaId: string | null;
   activeBranchId: string;
+  anchorMessageId?: string;
 }
 
 /** IG-15 quiet pre-pass seam: run ONE non-streaming LLM completion with the
@@ -113,7 +119,7 @@ export async function buildImageGenPrompts(
   const [character, persona, lastMessage] = await Promise.all([
     stores.characters.getById(chat.characterId),
     resolvePersona(stores, chat.personaId),
-    resolveLastMessage(stores, chat.activeBranchId),
+    resolveContextMessage(stores, chat.activeBranchId, chat.anchorMessageId),
   ]);
 
   // Light context — exactly the template surfaces (the regex-hook-service
@@ -191,13 +197,27 @@ async function resolvePersona(
   return stores.personas.getById(all.find((p) => p.defaultForNewChats)?.id ?? all[0]?.id ?? "");
 }
 
-/** {{lastChatMessage}}: the last NON-EMPTY message on the active branch, any
- *  role. Empty-content rows are skipped — image slots themselves carry empty
- *  content (the slot renders from its attachment), so a scene mode fired
- *  right after a generation must not template against an empty string. */
-async function resolveLastMessage(stores: ModeStores, branchId: string): Promise<string | null> {
+/** {{lastChatMessage}} (MR-13): the depicted message — the ANCHORED one when
+ *  the request carries an anchor (the generation button sits on each
+ *  character message, so "this moment" is the message the user clicked),
+ * otherwise the last NON-EMPTY message on the active branch. The walk skips
+ * empty-content rows from the anchor (or tail) backward — image slots
+ * themselves carry empty content (the slot renders from its attachment),
+ * so a scene mode anchored on (or after) a slot must not template against an
+ * empty string. An anchor not found on the active branch falls back to the
+ * tail walk (defensive; the adapter validates chat membership). */
+async function resolveContextMessage(
+  stores: ModeStores,
+  branchId: string,
+  anchorMessageId: string | undefined,
+): Promise<string | null> {
   const messages = await stores.messages.getMessages(branchId);
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
+  let startIndex = messages.length - 1;
+  if (anchorMessageId !== undefined) {
+    const anchorIndex = messages.findIndex((m) => m.id === anchorMessageId);
+    if (anchorIndex >= 0) startIndex = anchorIndex;
+  }
+  for (let i = startIndex; i >= 0; i -= 1) {
     const message = messages[i]!;
     if (message.content.trim() !== "") return message.content;
   }
@@ -225,7 +245,7 @@ function contextDigest(character: ModeCharacter, persona: ModePersona, lastMessa
     lines.push(`User persona — ${persona.name}`);
     if (persona.description.trim() !== "") lines.push(`Description: ${persona.description}`);
   }
-  if (lastMessage !== null) lines.push(`Last chat message: ${lastMessage}`);
+  if (lastMessage !== null) lines.push(`Message to depict: ${lastMessage}`);
   return lines.join("\n");
 }
 

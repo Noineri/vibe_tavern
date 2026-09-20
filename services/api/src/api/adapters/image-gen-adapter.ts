@@ -802,7 +802,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // when present (trimmed-empty = the user cleared it — send nothing).
     let prompts: { prompt: string; negativePrompt: string };
     try {
-      prompts = await buildImageGenPrompts(this.stores, chat, body.mode, body.prompt, assist);
+      prompts = await buildImageGenPrompts(this.stores, { ...chat, anchorMessageId: body.anchorMessageId }, body.mode, body.prompt, assist);
     } catch (error) {
       if (error instanceof ImageGenModeValidationError) {
         throw new ImageGenValidationError(error.message);
