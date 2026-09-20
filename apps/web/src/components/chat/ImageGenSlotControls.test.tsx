@@ -312,10 +312,28 @@ describe("ImageGenSlotControls — include-in-prompt toggle (IG-18 slice D)", ()
     const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
     const btn = view.getByTestId("image-gen-slot-include");
     expect(btn.getAttribute("aria-pressed")).toBe("false");
+    // OFF rest state (owner ruling 2026-09-19): quiet chrome + SLASHED eye icon
+    expect(btn.className).toContain("text-t3");
+    expect(btn.querySelector("svg line")).not.toBeNull();
 
     fireEvent.click(btn);
     await waitFor(() => expect(includeCalls).toEqual([["_", "m1", "att-1", true]]));
     expect(describeCalls.length).toBe(0);
+    // ON pressed state: accent chip + open eye (no slash). The component is
+    // props-driven — in the app the parent re-renders it from the flipped
+    // store, so mirror that with rerender on the stored attachment.
+    const storedAtt = useSnapshotStore.getState().messagesById["m1"]?.attachments?.[0];
+    view.rerender(
+      <TooltipProvider>
+        <ImageGenSlotControls attachments={[storedAtt ?? att]} messageId="m1" characterId="char1" />
+      </TooltipProvider>,
+    );
+    const btnOn = view.getByTestId("image-gen-slot-include");
+    expect(btnOn.getAttribute("aria-pressed")).toBe("true");
+    expect(btnOn.className).toContain("bg-accent/10");
+    expect(btnOn.className).toContain("text-accent-t");
+    expect(btnOn.className).not.toContain("hover:bg-s3");
+    expect(btnOn.querySelector("svg line")).toBeNull();
     const stored = useSnapshotStore.getState().messagesById["m1"];
     flushSync(() => {});
     expect(stored?.attachments?.[0]?.includeInPrompt).toBe(true);

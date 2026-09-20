@@ -246,6 +246,9 @@ export function ImageGenSlotControls({
                   : "image_gen_slot_include_in_prompt",
               )}
             >
+              {/* ON = pressed chip + open eye, OFF = quiet chrome + slashed eye
+                  (owner ruling 2026-09-19; the pressed look branches the FULL
+                  chrome so it never stacks on the base hover:bg-s3 — CF13). */}
               <button
                 type="button"
                 data-testid="image-gen-slot-include"
@@ -258,11 +261,20 @@ export function ImageGenSlotControls({
                 disabled={describingIds.has(att.id)}
                 onClick={() => void setIncluded(att, att.includeInPrompt !== true)}
                 className={cn(
-                  slotButtonCls,
-                  att.includeInPrompt === true ? "text-accent" : "text-t3 hover:text-t1",
+                  "flex cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-40",
+                  mobile ? "h-11 w-11 active:bg-s2 [&_svg]:h-5 [&_svg]:w-5" : "h-6 w-6 [&_svg]:h-3.5 [&_svg]:w-3.5",
+                  att.includeInPrompt === true
+                    ? "bg-accent/10 text-accent-t hover:bg-accent/20"
+                    : "text-t3 hover:bg-s3 hover:text-t1",
                 )}
               >
-                {describingIds.has(att.id) ? <span aria-hidden>…</span> : <Icons.eye />}
+                {describingIds.has(att.id) ? (
+                  <span aria-hidden>…</span>
+                ) : att.includeInPrompt === true ? (
+                  <Icons.eye />
+                ) : (
+                  <Icons.eyeOff />
+                )}
               </button>
             </CustomTooltip>
           </span>
