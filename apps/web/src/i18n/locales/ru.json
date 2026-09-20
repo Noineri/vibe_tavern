@@ -934,6 +934,7 @@
   "preset_editor_mode": "Режим редактора промпта",
   "preset_simple_mode": "Простой режим",
   "preset_simple_mode_short": "Простой",
+  "preset_simple_mode_merge_note": "Соседние сообщения одной роли объединяются автоматически.",
   "preset_simple_mode_hint": "Редактировать стандартные поля пресета",
   "preset_advanced_mode": "Расширенный режим",
   "preset_advanced_mode_short": "Расширенный",
