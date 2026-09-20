@@ -554,26 +554,15 @@ async function ensurePortAvailable(options: {
 
 		console.error(`${options.tag} Occupied by PID ${oldPid}.`);
 
-		if (!process.stdin?.isTTY) {
-			console.log(`${options.tag} Non-interactive mode — killing PID ${oldPid}...`);
-			await killProcessAndWaitForPort(oldPid, options);
-			return;
-		}
-
-		console.log(`${options.tag} Kill PID ${oldPid}? [Y/n]`);
-		const input = await new Promise<string>((resolveInput) => {
-			process.stdin.resume();
-			process.stdin.once("data", (data: Buffer) => {
-				process.stdin.pause();
-				resolveInput(data.toString().trim());
-			});
-		});
-		if (input === "" || input.toLowerCase() === "y") {
-			await killProcessAndWaitForPort(oldPid, options);
-		} else {
-			console.error(`${options.tag} Cancelled. Exiting.`);
-			process.exit(1);
-		}
+		// Auto-kill without asking (owner 2026-09-19): the port is ours by design
+		// and the occupant is a stale previous instance (on Windows a console-close
+		// can zombie the server; prod-server now also listens for SIGHUP, the signal
+		// a closing console delivers — but a stale instance from before that fix
+		// still needs this path). An interactive Y/n on every restart was pure
+		// friction and prompted twice (bat pre-check + here). Same path for TTY and
+		// non-interactive callers.
+		console.log(`${options.tag} Killing stale PID ${oldPid}...`);
+		await killProcessAndWaitForPort(oldPid, options);
 	}
 }
 

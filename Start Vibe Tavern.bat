@@ -73,14 +73,12 @@ echo Starting server...
 echo Press Ctrl+C to stop.
 echo.
 
-powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue; if ($conn) { $pid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port %VIBE_TAVERN_PORT% is already in use by PID' $pid; exit 10 } else { exit 0 }"
-if %ERRORLEVEL%==10 (
-    powershell.exe -NoProfile -Command "$pid = (Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $pid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $pid -Force; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
-    if errorlevel 1 (
-        pause
-        exit /b 1
-    )
-)
+rem The server itself kills any stale process on its port before binding
+rem (server-runtime ensurePortAvailable, netstat-based, auto-kill) — the old
+rem PowerShell pre-check here was broken ($pid is a read-only automatic
+rem variable: the assignment threw, printed the powershell PID as the port
+rem owner and offered to kill the wrong process) and only duplicated the
+rem server's own handling with extra prompts and PowerShell startup time.
 
 rem ── Create log directory ──
 if not exist "logs" mkdir logs
