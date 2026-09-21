@@ -79,8 +79,9 @@ export interface ImageGenSlotProvenance {
    *  generated before CF6 — free-form JSON inside attachmentsJson, no
    *  migration. */
   prompt?: string;
-  /** C-A (owner 2026-09-19: «чтобы неакцентно писать там модель-автора
-   *  (если с ии-помощью)»): the assist LLM model that AUTHORED the prompt —
+  /** C-A (owner 2026-09-19, ruling recorded in the plan repo): the assist
+   *  LLM model that AUTHORED the prompt — a deliberately unaccented note
+   *  (the authoring model is stated plainly, without emphasis) —
    *  stamped only when the IG-15 assist actually fired for the run (lazy:
    *  free-mode and verbatim chip-edit runs never stamp it). Absent = the
    *  prompt is template/user text (or a legacy pre-C-A slot). Rendered as a
