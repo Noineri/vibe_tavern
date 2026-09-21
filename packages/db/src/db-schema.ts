@@ -1835,3 +1835,25 @@ export const imageGenSamplerSets = sqliteTable('image_gen_sampler_sets', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
+
+// ─── imagePromptVariants ─────────────────────────────────────────────────────
+// User-customized image prompt variants (IPT Wave 1 — IMAGE_PROMPT_TEMPLATES
+// plan): OVERRIDES-ONLY storage. One row per (rowKey, family) the user has
+// actually customized — the canon text lives in the authored assets
+// (services/api/assets/image-*), and ABSENCE of a row means "use canon"
+// (reset deletes the row; there is no tombstone). No profile machinery:
+// the family pin/detection columns live on the image-gen profile (Wave 2),
+// not here. `rowKey` is a generation-mode slug, or the literal "negative"
+// for the shared negative row; `family` is a domain IMAGE_PROMPT_FAMILIES id.
+export const imagePromptVariants = sqliteTable('image_prompt_variants', {
+  id: text('id').primaryKey(),
+  rowKey: text('row_key').notNull(),
+  family: text('family').notNull(),
+  /** The user's own template/body text (upsert replaces it in full). */
+  body: text('body').notNull(),
+  /** The user's own quality-layer text when customized; null = canon. */
+  qualityText: text('quality_text'),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  rowKeyFamilyUnique: uniqueIndex('idx_image_prompt_variants_unique').on(table.rowKey, table.family),
+}));
