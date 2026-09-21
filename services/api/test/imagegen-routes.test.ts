@@ -3402,3 +3402,165 @@ describe("image-gen routes — run phases (MR-11 honest chip timeline)", () => {
   });
 });
 
+
+
+describe("image-gen routes — prompt templates + families (IPT-3)", () => {
+  // The variant store's API surface (global, no profile scoping): the pane
+  // read model (canon tier-resolved server-side), the full-row upsert with
+  // the quality column read-modify-writen at the boundary, reset-to-canon,
+  // and the registry read model. Canon texts are pinned against the ACTUAL
+  // authored assets (loadPromptAsset) — the same source of truth generation
+  // resolves from, so pane preview === wire behavior.
+
+  const get = async (app: ReturnType<typeof createImageGenRoutes>, path: string) => app.request(path);
+
+  test("GET prompt-templates: every (rowKey × family) cell, canon tiered server-side", async () => {
+    const base = await makeApp();
+    const res = await get(base.app, "/api/image-gen/prompt-templates");
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as {
+      cells: Array<{ rowKey: string; family: string; canonText: string; canonSource: string; customText: string | null; qualityText: string | null; isCustomized: boolean }>;
+      qualityCanon: Record<string, string>;
+      assist: { core: string; addenda: Record<string, string> };
+    };
+
+    // 8 modes + the negative row, × 9 families.
+    expect(payload.cells).toHaveLength(81);
+
+    const cell = (rowKey: string, family: string) =>
+      payload.cells.find((c) => c.rowKey === rowKey && c.family === family)!;
+
+    // Authored variant → family-canon with the family's own asset.
+    expect(cell("portrait", "pony").canonSource).toBe("family-canon");
+    expect(cell("portrait", "pony").canonText).toBe(await loadPromptAsset("image-portrait.pony.md"));
+    // Prose base → family-canon for its own asset too.
+    expect(cell("portrait", "prose").canonSource).toBe("family-canon");
+    expect(cell("portrait", "prose").canonText).toBe(await loadPromptAsset("image-portrait.md"));
+    // A non-authoring family inherits the prose canon — labeled honestly.
+    expect(cell("portrait", "krea2").canonSource).toBe("prose-canon");
+    expect(cell("portrait", "krea2").canonText).toBe(await loadPromptAsset("image-portrait.md"));
+    // The negative row: qwen owns its own, krea2 inherits prose.
+    expect(cell("negative", "qwen").canonSource).toBe("family-canon");
+    expect(cell("negative", "qwen").canonText).toBe(await loadPromptAsset("image-negative.qwen.md"));
+    expect(cell("negative", "krea2").canonSource).toBe("prose-canon");
+    // Free mode is family-neutral: every family cell shows the prose wrapper.
+    expect(cell("free", "pony").canonSource).toBe("prose-canon");
+    expect(cell("free", "pony").canonText).toBe(await loadPromptAsset("image-free.md"));
+
+    // Clean store: no custom rows anywhere.
+    expect(payload.cells.every((c) => c.isCustomized === false && c.customText === null && c.qualityText === null)).toBe(true);
+
+    // Quality canon: AUTHORING families only (5), text from the assets.
+    expect(Object.keys(payload.qualityCanon).sort()).toEqual(["anima", "illustrious", "noobai", "pony", "sdxl-realism"]);
+    expect(payload.qualityCanon["pony"]).toBe((await loadPromptAsset("image-quality.pony.md")).trim());
+
+    // Assist: the shared core + one addendum per non-prose family (8).
+    expect(payload.assist.core).toBe((await loadPromptAsset("image-assist.md")).trim());
+    expect(Object.keys(payload.assist.addenda).sort()).toEqual(
+      ["anima", "hybrid", "illustrious", "krea2", "noobai", "pony", "qwen", "sdxl-realism"],
+    );
+    expect(payload.assist.addenda["pony"]).toBe((await loadPromptAsset("image-assist.pony.md")).trim());
+  });
+
+  test("PUT writes the custom row; quality column preserves/clears per the boundary contract; DELETE resets", async () => {
+    const base = await makeApp();
+
+    // PUT without qualityText → the template override lands, quality null.
+    let res = await base.app.request("/api/image-gen/prompt-templates/portrait/pony", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "CUSTOM-PONY {{char}}" }),
+    });
+    expect(res.status).toBe(200);
+    let cell = (await res.json()) as { canonSource: string; customText: string | null; qualityText: string | null; isCustomized: boolean };
+    expect(cell).toMatchObject({
+      canonSource: "family-canon",
+      customText: "CUSTOM-PONY {{char}}",
+      qualityText: null,
+      isCustomized: true,
+    });
+
+    // The catalog reflects the row.
+    const list = (await (await get(base.app, "/api/image-gen/prompt-templates")).json()) as {
+      cells: Array<{ rowKey: string; family: string; customText: string | null }>;
+    };
+    expect(list.cells.find((c) => c.rowKey === "portrait" && c.family === "pony")!.customText).toBe("CUSTOM-PONY {{char}}");
+
+    // Quality write: absent preserves, string sets, null/blank clears.
+    res = await base.app.request("/api/image-gen/prompt-templates/portrait/pony", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "CUSTOM-PONY-2", qualityText: "MY-QUALITY" }),
+    });
+    expect(((await res.json()) as { qualityText: string | null }).qualityText).toBe("MY-QUALITY");
+    res = await base.app.request("/api/image-gen/prompt-templates/portrait/pony", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "CUSTOM-PONY-3" }),
+    });
+    expect(((await res.json()) as { qualityText: string | null }).qualityText).toBe("MY-QUALITY");
+    res = await base.app.request("/api/image-gen/prompt-templates/portrait/pony", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "CUSTOM-PONY-4", qualityText: "  " }),
+    });
+    expect(((await res.json()) as { qualityText: string | null }).qualityText).toBeNull();
+
+    // DELETE = reset to canon (the fresh cell), idempotent on an absent row.
+    res = await base.app.request("/api/image-gen/prompt-templates/portrait/pony", { method: "DELETE" });
+    expect(res.status).toBe(200);
+    cell = (await res.json()) as typeof cell;
+    expect(cell.isCustomized).toBe(false);
+    expect(cell.customText).toBeNull();
+    expect(cell.canonText).toBe(await loadPromptAsset("image-portrait.pony.md"));
+    res = await base.app.request("/api/image-gen/prompt-templates/portrait/pony", { method: "DELETE" });
+    expect(res.status).toBe(200);
+  });
+
+  test("semantic + schema guards: free-neutrality, quality authorship, empty body, unknown slugs", async () => {
+    const base = await makeApp();
+    const put = (path: string, body: unknown) =>
+      base.app.request(path, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    // (free, non-prose) is unreachable by generation — refused, no dead rows.
+    let res = await put("/api/image-gen/prompt-templates/free/pony", { body: "x" });
+    expect(res.status).toBe(400);
+    // (free, prose) is the legitimate customization surface.
+    res = await put("/api/image-gen/prompt-templates/free/prose", { body: "wrapper copy" });
+    expect(res.status).toBe(200);
+
+    // qualityText on a family that authors no quality layer → 400.
+    res = await put("/api/image-gen/prompt-templates/portrait/prose", { body: "x", qualityText: "q" });
+    expect(res.status).toBe(400);
+    // Blank body is a reset (DELETE), never a blank override.
+    res = await put("/api/image-gen/prompt-templates/portrait/pony", { body: "" });
+    expect(res.status).toBe(400);
+    // Unknown slugs (rowKey / family) rejected at the param validator.
+    res = await put("/api/image-gen/prompt-templates/hologram/pony", { body: "x" });
+    expect(res.status).toBe(400);
+    res = await put("/api/image-gen/prompt-templates/portrait/vox", { body: "x" });
+    expect(res.status).toBe(400);
+    res = await base.app.request("/api/image-gen/prompt-templates/portrait/vox", { method: "DELETE" });
+    expect(res.status).toBe(400);
+  });
+
+  test("GET prompt-families: the registry read model in registry order", async () => {
+    const base = await makeApp();
+    const res = await get(base.app, "/api/image-gen/prompt-families");
+    expect(res.status).toBe(200);
+    const { families } = (await res.json()) as { families: Array<{ id: string; grammar: string; ownTemplates: boolean; ownNegative: boolean; ownQuality: boolean; hasAssistAddendum: boolean }> };
+    expect(families.map((f) => f.id)).toEqual([
+      "prose", "pony", "illustrious", "noobai", "anima", "krea2", "qwen", "sdxl-realism", "hybrid",
+    ]);
+    const byId = Object.fromEntries(families.map((f) => [f.id, f]));
+    expect(byId["prose"]).toMatchObject({ grammar: "prose", ownTemplates: true, ownNegative: true, ownQuality: false, hasAssistAddendum: false });
+    expect(byId["pony"]).toMatchObject({ grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: true, hasAssistAddendum: true });
+    expect(byId["krea2"]).toMatchObject({ grammar: "prose", ownTemplates: false, ownNegative: false, ownQuality: false, hasAssistAddendum: true });
+    expect(byId["qwen"]).toMatchObject({ ownNegative: true, ownQuality: false, hasAssistAddendum: true });
+    expect(byId["sdxl-realism"]).toMatchObject({ ownTemplates: false, ownNegative: true, ownQuality: true });
+  });
+});

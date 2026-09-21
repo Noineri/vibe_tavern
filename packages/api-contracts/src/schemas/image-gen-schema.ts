@@ -628,3 +628,94 @@ export const importImageGenSamplerSetSchema = z.object({
   raw: z.unknown(),
 });
 export type ImageGenSamplerSetImport = z.infer<typeof importImageGenSamplerSetSchema>;
+
+// ─── IPT-3 (IMAGE_PROMPT_TEMPLATES_PLAN): templates pane + families registry ──
+
+/** The row-key axis of the templates surface: a generation mode OR the
+ *  shared negative row (mirrors the db-level ImagePromptVariantKey — the
+ *  assist core stays a canon asset, quality rides its own column on the
+ *  (mode, family) row). */
+export const imagePromptTemplateRowKeySchema = z.enum([
+  'scene-background',
+  'portrait',
+  'character',
+  'user-persona',
+  'scene-illustration',
+  'free',
+  'selfie',
+  'avatar',
+  'negative',
+]);
+export type ImagePromptTemplateRowKeyValue = z.infer<typeof imagePromptTemplateRowKeySchema>;
+
+/** Which canon owns a non-customized cell — the variant resolver's source
+ *  label minus "custom" (cells carry customText + isCustomized
+ *  separately). */
+export const imagePromptCanonSourceSchema = z.enum(['family-canon', 'prose-canon']);
+export type ImagePromptCanonSourceValue = z.infer<typeof imagePromptCanonSourceSchema>;
+
+/** One (rowKey × family) cell of the templates pane. `canonText` is the
+ *  canon that applies when NOT customized — tier-resolved SERVER-side (the
+ *  family's own asset, else the prose fallback); the pane never
+ *  re-implements the fallback rule. `canonSource` tells which tier won
+ *  ("prose-canon" on a non-prose family = the family inherits prose — and
+ *  for the family-neutral free row, under any family). */
+export const imagePromptTemplateCellSchema = z.object({
+  rowKey: imagePromptTemplateRowKeySchema,
+  family: imagePromptFamilySchema,
+  canonText: z.string(),
+  canonSource: imagePromptCanonSourceSchema,
+  customText: z.string().nullable(),
+  qualityText: z.string().nullable(),
+  isCustomized: z.boolean(),
+});
+export type ImagePromptTemplateCellValue = z.infer<typeof imagePromptTemplateCellSchema>;
+
+/** GET /api/image-gen/prompt-templates response. Keys of `qualityCanon` /
+ *  `assist.addenda` are family ids of AUTHORING families only (ownQuality /
+ *  has-assist-addendum — no universal fallback for either). */
+export const imagePromptTemplatesSchema = z.object({
+  cells: z.array(imagePromptTemplateCellSchema),
+  qualityCanon: z.record(z.string(), z.string()),
+  assist: z.object({
+    core: z.string(),
+    addenda: z.record(z.string(), z.string()),
+  }),
+});
+export type ImagePromptTemplatesValue = z.infer<typeof imagePromptTemplatesSchema>;
+
+/** PUT /api/image-gen/prompt-templates/:rowKey/:family body. The store's
+ *  upsert is a FULL-ROW replace; this boundary read-modify-writes the
+ *  quality column: `qualityText` absent = preserve the stored value, null =
+ *  clear back to canon, a string = replace (400 when the family authors no
+ *  quality layer). `body` min 1 — an emptied template editor is a DELETE
+ *  (reset), never a blank override. */
+export const upsertImagePromptTemplateSchema = z.object({
+  body: z.string().min(1),
+  qualityText: z.string().nullable().optional(),
+});
+export type UpsertImagePromptTemplateInput = z.infer<typeof upsertImagePromptTemplateSchema>;
+
+/** PUT/DELETE path params of the template routes. */
+export const imagePromptTemplateTargetSchema = z.object({
+  rowKey: imagePromptTemplateRowKeySchema,
+  family: imagePromptFamilySchema,
+});
+
+/** One registry family for the pane's dropdowns (grammar, what it authors
+ *  itself vs inherits from prose, whether the assist addendum exists). */
+export const imagePromptFamilyInfoSchema = z.object({
+  id: imagePromptFamilySchema,
+  grammar: z.enum(['prose', 'tags', 'hybrid']),
+  ownTemplates: z.boolean(),
+  ownNegative: z.boolean(),
+  ownQuality: z.boolean(),
+  hasAssistAddendum: z.boolean(),
+});
+export type ImagePromptFamilyInfoValue = z.infer<typeof imagePromptFamilyInfoSchema>;
+
+/** GET /api/image-gen/prompt-families response (registry order). */
+export const imagePromptFamiliesSchema = z.object({
+  families: z.array(imagePromptFamilyInfoSchema),
+});
+export type ImagePromptFamiliesValue = z.infer<typeof imagePromptFamiliesSchema>;

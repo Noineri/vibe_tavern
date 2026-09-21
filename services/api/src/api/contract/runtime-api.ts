@@ -1154,6 +1154,32 @@ export interface ImageGenRuntimeApi {
 	 *  profile (route → 404). */
 	deleteImageGenModelSettings: (id: string, modelId: string) => Promise<void | null>;
 
+	// ── Image prompt templates + families (IPT-3 — a GLOBAL surface, no
+	//    profile scoping; the variant store's API boundary) ──
+	/** The templates-pane read model: every (rowKey × family) cell (canon
+	 *  tier-resolved server-side, custom text, quality column), the
+	 *  per-family canon quality blocks, the assist core + addenda. */
+	listPromptTemplates: () => Promise<import("@vibe-tavern/api-contracts").ImagePromptTemplatesValue>;
+	/** Full-row upsert with the quality column read-modify-writen here
+	 *  (absent = preserve). Throws ImageGenValidationError (route → 400)
+	 *  for a (free, non-prose) target — the free wrapper is family-neutral,
+	 *  such a row would be unreachable by generation — and for qualityText
+	 *  on a family that authors no quality layer. Returns the fresh cell. */
+	upsertPromptTemplate: (
+		rowKey: import("@vibe-tavern/api-contracts").ImagePromptTemplateRowKeyValue,
+		family: import("@vibe-tavern/api-contracts").ImagePromptFamilyValue,
+		body: import("@vibe-tavern/api-contracts").UpsertImagePromptTemplateInput,
+	) => Promise<import("@vibe-tavern/api-contracts").ImagePromptTemplateCellValue>;
+	/** Reset to canon (overrides-only store: a DELETE; idempotent — an
+	 *  absent row resets to the canon cell). Returns the fresh cell. */
+	resetPromptTemplate: (
+		rowKey: import("@vibe-tavern/api-contracts").ImagePromptTemplateRowKeyValue,
+		family: import("@vibe-tavern/api-contracts").ImagePromptFamilyValue,
+	) => Promise<import("@vibe-tavern/api-contracts").ImagePromptTemplateCellValue>;
+	/** The families registry read model (grammar + authoring flags +
+	 *  addendum availability — the pane's dropdown data source). */
+	listPromptFamilies: () => Promise<import("@vibe-tavern/api-contracts").ImagePromptFamiliesValue>;
+
 	// ── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin;
 	//    a GLOBAL library, no profile scoping) ──
 	listImageGenSamplerSets: () => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerSetList>;

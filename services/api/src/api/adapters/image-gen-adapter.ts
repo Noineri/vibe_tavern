@@ -54,22 +54,29 @@ import type {
   ImageGenProbeResultValue,
   ImageGenProfileValue,
   ImageGenSamplerInfoValue,
-  ImageGenSchedulerInfoValue,
   ImageGenSamplerSet,
   ImageGenSamplerSetCreate,
   ImageGenSamplerSetImport,
   ImageGenSamplerSetList,
   ImageGenSamplerSetUpdate,
+  ImageGenSchedulerInfoValue,
+  ImagePromptFamiliesValue,
+  ImagePromptFamilyValue,
+  ImagePromptTemplateCellValue,
+  ImagePromptTemplateRowKeyValue,
+  ImagePromptTemplatesValue,
   UpdateImageGenProfileInput,
+  UpsertImagePromptTemplateInput,
 } from "@vibe-tavern/api-contracts";
 import { imageGenSamplerSetPayloadSchema } from "@vibe-tavern/api-contracts";
+import { ImagePromptVariantStore } from "@vibe-tavern/db";
 import type {
   CreateImageGenProfileData,
   StoreContainer,
   UpdateImageGenProfileData,
 } from "@vibe-tavern/db";
 import type { Attachment, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance } from "@vibe-tavern/domain";
-import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern/domain";
+import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, IMAGE_PROMPT_FAMILIES } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import {
@@ -78,6 +85,7 @@ import {
   type ImageGenAssistRunner,
 } from "../../domain/chat/imagegen-modes.js";
 import { resolveImageGenPromptFamily } from "../../domain/imagegen/prompt-family-resolution.js";
+import { buildPromptTemplateCatalog, promptFamiliesReadModel, readPromptVariantCell } from "../../domain/imagegen/prompt-template-catalog.js";
 import type {
   ImageGenAdapterConfig,
   ImageGenGenerateRequest,
@@ -1186,6 +1194,55 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     }
     const created = await this.stores.imageGenSamplerSets.create({ name: input.name, payload: vt.data });
     return { set: imageGenSamplerSetRowToWire(created), notes: [] };
+  };
+
+  // ── Image prompt templates + families (IPT-3 — the variant store's API
+  //    boundary; global, no profile scoping) ──
+
+  listPromptTemplates = async (): Promise<ImagePromptTemplatesValue> => {
+    return buildPromptTemplateCatalog(this.stores.db);
+  };
+
+  upsertPromptTemplate = async (
+    rowKey: ImagePromptTemplateRowKeyValue,
+    family: ImagePromptFamilyValue,
+    input: UpsertImagePromptTemplateInput,
+  ): Promise<ImagePromptTemplateCellValue> => {
+    // Free mode is family-neutral end to end (the prose wrapper over raw
+    // user text) — a (free, non-prose) row would be unreachable by
+    // generation; refuse to write dead data.
+    if (rowKey === IMAGE_GENERATION_MODES.Free && family !== IMAGE_PROMPT_DEFAULT_FAMILY) {
+      throw validation(
+        `Free mode is family-neutral: customize its shared prose template instead of the '${family}' variant.`,
+      );
+    }
+    if (input.qualityText !== undefined && input.qualityText !== null && !IMAGE_PROMPT_FAMILIES[family].ownQuality) {
+      throw validation(`The '${family}' family has no quality layer; quality text cannot be set for it.`);
+    }
+    // Read-modify-write at this boundary (the store upsert is full-row):
+    // absent qualityText preserves the stored column; a trimmed-empty
+    // string is a clear (back to canon), like the profile PATCH null-clear
+    // convention.
+    const current = await new ImagePromptVariantStore(this.stores.db).get(rowKey, family);
+    const qualityIn = input.qualityText;
+    const nextQuality =
+      qualityIn === undefined
+        ? current?.qualityText ?? null
+        : qualityIn === null || qualityIn.trim() === "" ? null : qualityIn;
+    await new ImagePromptVariantStore(this.stores.db).upsert({ rowKey, family, body: input.body, qualityText: nextQuality });
+    return readPromptVariantCell(this.stores.db, rowKey, family);
+  };
+
+  resetPromptTemplate = async (
+    rowKey: ImagePromptTemplateRowKeyValue,
+    family: ImagePromptFamilyValue,
+  ): Promise<ImagePromptTemplateCellValue> => {
+    await new ImagePromptVariantStore(this.stores.db).reset(rowKey, family);
+    return readPromptVariantCell(this.stores.db, rowKey, family);
+  };
+
+  listPromptFamilies = async (): Promise<ImagePromptFamiliesValue> => {
+    return { families: promptFamiliesReadModel() };
   };
 }
 

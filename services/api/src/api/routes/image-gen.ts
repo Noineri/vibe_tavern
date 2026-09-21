@@ -32,6 +32,10 @@
  *   GET    /api/image-gen/profiles/:id/model-settings/:modelId
  *   PUT    /api/image-gen/profiles/:id/model-settings/:modelId
  *   DELETE /api/image-gen/profiles/:id/model-settings/:modelId
+ *   GET    /api/image-gen/prompt-templates               (IPT-3 — pane read model)
+ *   PUT    /api/image-gen/prompt-templates/:rowKey/:family (IPT-3 — custom row upsert)
+ *   DELETE /api/image-gen/prompt-templates/:rowKey/:family (IPT-3 — reset to canon)
+ *   GET    /api/image-gen/prompt-families               (IPT-3 — registry read model)
  */
 
 import { Hono } from "hono";
@@ -415,6 +419,41 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
       const removed = await runtime.deleteImageGenModelSettings(c.req.param("id"), c.req.param("modelId"));
       if (removed === null) return c.json({ error: "Image-gen profile not found" }, 404);
       return c.json({ ok: true });
+    })
+    // ── Image prompt templates + families (IPT-3 — the variant store's
+    //    API surface; global, no profile scoping; zod params reject unknown
+    //    rowKey/family slugs as 400, the adapter's semantic guards — free
+    //    family-neutrality, quality-layer authorship — throw
+    //    ImageGenValidationError → 400) ──
+    .get("/api/image-gen/prompt-templates", async (c) => {
+      return c.json(await runtime.listPromptTemplates());
+    })
+    .put(
+      "/api/image-gen/prompt-templates/:rowKey/:family",
+      zValidator("param", schemas.imagePromptTemplateTargetSchema),
+      zValidator("json", schemas.upsertImagePromptTemplateSchema),
+      async (c) => {
+        const { rowKey, family } = c.req.valid("param");
+        try {
+          return c.json(await runtime.upsertPromptTemplate(rowKey, family, c.req.valid("json")));
+        } catch (error) {
+          if (error instanceof ImageGenValidationError) {
+            return c.json({ error: error.message }, 400);
+          }
+          throw error;
+        }
+      },
+    )
+    .delete(
+      "/api/image-gen/prompt-templates/:rowKey/:family",
+      zValidator("param", schemas.imagePromptTemplateTargetSchema),
+      async (c) => {
+        const { rowKey, family } = c.req.valid("param");
+        return c.json(await runtime.resetPromptTemplate(rowKey, family));
+      },
+    )
+    .get("/api/image-gen/prompt-families", async (c) => {
+      return c.json(await runtime.listPromptFamilies());
     })
     // ── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin;
     //    a GLOBAL library, no profile scoping) ──
