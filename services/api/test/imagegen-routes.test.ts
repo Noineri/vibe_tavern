@@ -26,6 +26,7 @@ import { join } from "node:path";
 
 import { createStoreContainer, ImagePromptVariantStore, type StoreContainer } from "@vibe-tavern/db";
 import { domainErrorToJson, httpStatusForDomainError, isDomainError } from "../src/shared/errors.js";
+import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 import { IMAGE_GEN_BACKENDS, parseStoredAttachments, type ChatId } from "@vibe-tavern/domain";
 
 import { AssetService } from "../src/domain/asset/asset-service.js";
@@ -1741,6 +1742,93 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     expect(sent[0]).toBe(`MARKER-${CHAR_NAME}-OVERRIDE`);
   });
 
+  // IPT-2_assembly: the profile's family resolution drives the variant
+  // chain. Manual pin / fresh auto / stale auto — stale = the detection ran
+  // against a different model than the one actually generating.
+  test("IPT-2: a pinned family reaches the variant chain; a stale detection does not", async () => {
+    const sent: string[] = [];
+    const scene = await makeScene(promptCapturingTransport(sent));
+    const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+
+    await new ImagePromptVariantStore(scene.stores.db).upsert({
+      rowKey: "portrait",
+      family: "pony",
+      body: "MARKER-PONY-BODY",
+    });
+
+    // Stale auto (detected for another model) → prose canon, not the pony row.
+    await scene.stores.imageGen.update(id, {
+      familyDetected: "pony",
+      familyDetectedForModel: "some-other-checkpoint",
+    });
+    await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+    expect(sent[0]).not.toBe("MARKER-PONY-BODY");
+
+    // Fresh auto (same model as generating) → the pony row rides the wire.
+    await scene.stores.imageGen.update(id, { familyDetectedForModel: "gpt-image-2" });
+    await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+    expect(sent[1]).toBe("MARKER-PONY-BODY");
+
+    // Manual pin is authoritative — even over a fresh detection of another family.
+    await new ImagePromptVariantStore(scene.stores.db).upsert({
+      rowKey: "portrait",
+      family: "qwen",
+      body: "MARKER-QWEN-BODY",
+    });
+    await scene.stores.imageGen.update(id, { familyOverride: "qwen" });
+    await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+    expect(sent[2]).toBe("MARKER-QWEN-BODY");
+  });
+
+  // IPT-2 quality layer: joins ONLY on the explicit toggle, only for a
+  // quality-authoring family, as its own trailing line group.
+  test("IPT-2: the quality block rides the wire only when toggled on; prose has none", async () => {
+    const sent: string[] = [];
+    const scene = await makeScene(promptCapturingTransport(sent));
+    const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+    await scene.stores.imageGen.update(id, { familyOverride: "pony" });
+
+    const qualityCanon = await loadPromptAsset("image-quality.pony.md");
+
+    // Default OFF → the wire carries the template only.
+    await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+    expect(sent[0]).not.toContain(qualityCanon.trim());
+
+    // ON → the block appends as its own trailing line group.
+    await scene.stores.imageGen.update(id, { qualityLayerEnabled: true });
+    await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+    expect(sent[1].endsWith(`\n\n${qualityCanon.trim()}`)).toBe(true);
+
+    // A prose family authors no quality layer — the toggle is inert there.
+    await scene.stores.imageGen.update(id, { familyOverride: "prose" });
+    await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait" }),
+    });
+    expect(sent[2]).not.toContain(qualityCanon.trim());
+  });
+
   test("free mode without a caller prompt → 400 (the raw prompt IS the payload)", async () => {
     const scene = await makeScene(async () => {
       throw new TypeError("must not be called");
@@ -2622,6 +2710,36 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     // Assembly pin: the built template reached the wire (the description
     // resolved). Wording is not pinned.
     expect(scene.sent[0]).toContain("silver-haired tavern keeper");
+  });
+
+  // IPT-2_assembly: the assist system prompt is the extraction core plus
+  // the RESOLVED family's dialect addendum — unpinned profiles get the core
+  // alone (byte-identical to the interim image_assist resolution).
+  test("IPT-2: assist system = core + the family addendum; unpinned = core alone", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+
+    const core = await loadPromptAsset("image-assist.md");
+    const ponyAddendum = await loadPromptAsset("image-assist.pony.md");
+
+    // Unpinned → the core alone, byte-identical to the interim behavior.
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(assist.calls).toHaveLength(1);
+    expect(assist.calls[0]!.system).toBe(core.trim());
+
+    // Pinned pony → core + "\n\n" + the pony addendum (macro-resolved —
+    // the composed instruction rides the same resolve pass as before).
+    await scene.stores.imageGen.update(id, { familyOverride: "pony" });
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(assist.calls).toHaveLength(2);
+    expect(assist.calls[1]!.system).toBe(`${core.trim()}\n\n${ponyAddendum.trim()}`);
   });
 
   test("toggle on + picks set: the quiet call writes the prompt; residual macros in its output still resolve", async () => {

@@ -3,9 +3,15 @@
  *
  * IG-14 mode assembly (IMAGE_GENERATION_PLAN): the six generation-mode
  * recipes' prompt building. Design-locked flow: mode → Images-tab template
- * (service-prompt resolver: active-profile override → built-in asset) →
- * MacroEngine substitution over the chat context → the image-gen backend's
+ * (the (row × family) variant resolver: custom row → family canon → prose
+ * canon, IPT Waves 1–2) → MacroEngine substitution over the chat context → the image-gen backend's
  * `generate` (the adapter feeds the result; this module owns ONLY the text).
+ *
+ * IPT Wave 2 assembly: the adapter resolves the profile's prompt family
+ * (manual pin → fresh auto → prose, `prompt-family-resolution.ts`) and
+ * passes it in — templates, the negative row, and the assist addendum all
+ * ride it. The quality layer joins ONLY on the profile's explicit toggle,
+ * as its own trailing line group (never interleaved into scene text).
  *
  * Context per mode (design doc):
  *   portrait / character     → character card fields ({{char}}, {{description}})
@@ -25,19 +31,66 @@
  * automatically.
  */
 
-import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, type ImageGenerationMode, type ServicePromptFieldKey } from "@vibe-tavern/domain";
-import type { StoreContainer } from "@vibe-tavern/db";
+import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, imagePromptCanonFamily, type ImageGenerationMode, type ImagePromptFamilyId } from "@vibe-tavern/domain";
+import { ImagePromptVariantStore } from "@vibe-tavern/db";
+import type { AppDb, StoreContainer } from "@vibe-tavern/db";
 import { buildPromptVariableContext, createFullMacroEngine } from "@vibe-tavern/prompt-pipeline";
-import { resolveServicePrompt } from "../service-prompts/service-prompt-resolver.js";
 import { resolveImagePromptVariant } from "../imagegen/prompt-variant-resolver.js";
+import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 
-/** The quiet pre-pass instruction (IG-15) — the images family's LLM-assist
- *  system prompt. The LAST image_* service-prompt consumer: template and
- *  negative rows moved to the (row × family) variant resolver (IPT Wave
- *  1.3 — the images family's service-prompt rows are unread legacy from
- *  here on; the pane swap and field retirement land at Waves 4/6). The
- *  assist addendum composition (core + image-assist.{family}.md) is Wave 2. */
-export const IMAGE_GEN_ASSIST_FIELD: ServicePromptFieldKey = "image_assist";
+/** IPT Wave 2: the family-driven assembly knobs the adapter passes in
+ *  (both default to the pre-IPT behavior — unpinned profiles stay
+ *  byte-identical to the interim baseline). */
+export interface ImageGenModePromptOptions {
+  /** The resolved prompt family (manual pin → fresh auto → prose). Free
+   *  mode stays family-neutral inside the resolver regardless. */
+  promptFamily?: ImagePromptFamilyId;
+  /** The profile-level quality-layer toggle — the tag-dialect quality
+   *  block joins the SERVER-built prompt only when explicitly on. */
+  qualityLayerEnabled?: boolean;
+}
+
+/** The IG-15 assist system prompt: the extraction core plus the resolved
+ *  family's dialect addendum (`image-assist.{family}.md`; prose IS the base
+ *  dialect and has no addendum). Unpinned profiles get the core alone —
+ *  byte-identical to the interim service-prompt resolution. The images
+ *  family's service-prompt rows are unread legacy from here on (IPT Waves
+ *  1–2; pane swap Wave 4, field retirement Wave 6). */
+export async function composeAssistInstruction(family: ImagePromptFamilyId): Promise<string> {
+  const core = await loadPromptAsset("image-assist.md");
+  if (family === IMAGE_PROMPT_DEFAULT_FAMILY) return core;
+  const addendum = await loadPromptAsset(`image-assist.${family}.md`);
+  // Both parts trimmed: asset files carry trailing newlines, and the mode
+  // module's end-trim would otherwise leave a triple break between them.
+  return `${core.trim()}\n\n${addendum.trim()}`;
+}
+
+/** IPT Wave 2 quality layer: the family's canon block
+ *  (`image-quality.{family}.md`) or the user's custom quality text (the
+ *  (mode × family) variant row's qualityText), ONLY when the profile
+ *  toggled the layer on AND the family authors one (prose checkpoints
+ *  have no quality layer — no universal fallback). Returns "" = no block. */
+async function resolveQualityBlock(
+  db: AppDb,
+  mode: ImageGenerationMode,
+  family: ImagePromptFamilyId,
+  enabled: boolean,
+): Promise<string> {
+  if (!enabled) return "";
+  const canonFamily = imagePromptCanonFamily(family, "quality", mode);
+  if (canonFamily === undefined) return "";
+  const custom = await new ImagePromptVariantStore(db).get(mode, family);
+  if (custom?.qualityText !== null && custom?.qualityText !== undefined && custom.qualityText.trim() !== "") {
+    return custom.qualityText.trim();
+  }
+  return (await loadPromptAsset(`image-quality.${canonFamily}.md`)).trim();
+}
+
+/** Appends the quality block as its own trailing line group (the plan's
+ *  never-interleaved rule). */
+function withQualityBlock(prompt: string, block: string): string {
+  return block === "" ? prompt : `${prompt}\n\n${block}`;
+}
 
 /** A well-formed generation request the mode module cannot satisfy (route →
  *  400 via the adapter's ImageGenValidationError mapping). */
@@ -103,6 +156,7 @@ export async function buildImageGenPrompts(
   mode: ImageGenerationMode,
   callerPrompt: string | undefined,
   assist?: ImageGenAssistRunner,
+  options?: ImageGenModePromptOptions,
 ): Promise<BuiltImageGenPrompts> {
   if (mode === IMAGE_GENERATION_MODES.Free && (callerPrompt === undefined || callerPrompt === "")) {
     // The design's free recipe is "custom size + raw prompt" — the raw
@@ -141,13 +195,17 @@ export async function buildImageGenPrompts(
   const engine = createFullMacroEngine();
   const resolve = (text: string): string => engine.resolve(text, context);
 
-  // IPT Wave 1.3: template + negative resolve through the variant chain
-  // (custom row → family canon → prose canon). The family is the universal
-  // default until Wave 2 wires the profile's family columns (manual pin /
-  // fresh detection) above this seam — for prose/no-custom this is
-  // byte-identical to the interim service-prompt resolution.
-  const { text: template } = await resolveImagePromptVariant(stores.db, { rowKey: mode, family: IMAGE_PROMPT_DEFAULT_FAMILY });
-  const { text: negative } = await resolveImagePromptVariant(stores.db, { rowKey: "negative", family: IMAGE_PROMPT_DEFAULT_FAMILY });
+  // IPT Waves 1–2: template + negative resolve through the variant chain
+  // (custom row → family canon → prose canon) under the ADAPTER-RESOLVED
+  // family (manual pin → fresh auto → prose). Unpinned profiles resolve
+  // prose — byte-identical to the interim service-prompt resolution.
+  const family = options?.promptFamily ?? IMAGE_PROMPT_DEFAULT_FAMILY;
+  const { text: template } = await resolveImagePromptVariant(stores.db, { rowKey: mode, family });
+  const { text: negative } = await resolveImagePromptVariant(stores.db, { rowKey: "negative", family });
+  // IPT Wave 2 quality layer — pre-resolved so every server-build return
+  // below appends the same trailing block; verbatim/free paths never
+  // append (finished user text is not a template surface).
+  const qualityBlock = await resolveQualityBlock(stores.db, mode, family, options?.qualityLayerEnabled === true);
 
   if (mode === IMAGE_GENERATION_MODES.Free) {
     // The free template is a WRAPPER ("Depict exactly what the accompanying
@@ -166,21 +224,21 @@ export async function buildImageGenPrompts(
   }
 
   // The server-side scene build — the assist path. The quiet call receives
-  // the instruction (the images family's image_assist template, macro-
-  // resolved like every other family member) + the scene digest + the RAW
+  // the instruction (the extraction core + the family's dialect addendum,
+  // macro-resolved like every other template) + the scene digest + the RAW
   // mode template (placeholders intact — the model resolves them against the
   // digest); its output IS the image prompt body, and the macro pass then
   // resolves any placeholder the model left in place.
   if (assist !== undefined) {
-    const { text: instruction } = await resolveServicePrompt(stores.db, IMAGE_GEN_ASSIST_FIELD);
+    const instruction = await composeAssistInstruction(family);
     const refined = (await assist(resolve(instruction).trim(), buildAssistUserPayload(template, contextDigest(character, persona, lastMessage)))).trim();
     if (refined === "") {
       throw new ImageGenModeValidationError("LLM assist returned an empty prompt");
     }
-    return { prompt: resolve(refined).trim(), negativePrompt: resolve(negative).trim() };
+    return { prompt: withQualityBlock(resolve(refined).trim(), qualityBlock), negativePrompt: resolve(negative).trim() };
   }
 
-  return { prompt: resolve(template).trim(), negativePrompt: resolve(negative).trim() };
+  return { prompt: withQualityBlock(resolve(template).trim(), qualityBlock), negativePrompt: resolve(negative).trim() };
 }
 
 /** The persona the RP prompt itself would show (the prompt-assembly-service

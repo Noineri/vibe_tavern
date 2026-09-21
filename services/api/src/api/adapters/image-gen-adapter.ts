@@ -77,6 +77,7 @@ import {
   ImageGenModeValidationError,
   type ImageGenAssistRunner,
 } from "../../domain/chat/imagegen-modes.js";
+import { resolveImageGenPromptFamily } from "../../domain/imagegen/prompt-family-resolution.js";
 import type {
   ImageGenAdapterConfig,
   ImageGenGenerateRequest,
@@ -834,6 +835,12 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       };
     }
 
+    // IPT-2 assembly: the family the prompt templates speak — manual pin,
+    // else a FRESH auto detection (freshness vs the model ACTUALLY
+    // generating: the chip's model override outranks the saved pick), else
+    // the universal prose default. Unpinned profiles stay byte-identical.
+    const { family: promptFamily } = resolveImageGenPromptFamily(profile, model);
+
     // IG-14 mode assembly: the prompt the design's generation flow builds —
     // Images-tab template + chat-context macros (free mode wraps the caller
     // text; a caller prompt on non-free modes is the chip's verbatim edit).
@@ -842,7 +849,14 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // when present (trimmed-empty = the user cleared it — send nothing).
     let prompts: { prompt: string; negativePrompt: string };
     try {
-      prompts = await buildImageGenPrompts(this.stores, { ...chat, anchorMessageId: body.anchorMessageId }, body.mode, body.prompt, assist);
+      prompts = await buildImageGenPrompts(
+        this.stores,
+        { ...chat, anchorMessageId: body.anchorMessageId },
+        body.mode,
+        body.prompt,
+        assist,
+        { promptFamily, qualityLayerEnabled: profile.qualityLayerEnabled },
+      );
     } catch (error) {
       if (error instanceof ImageGenModeValidationError) {
         throw new ImageGenValidationError(error.message);
