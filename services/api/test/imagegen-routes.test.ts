@@ -754,15 +754,124 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     ]);
   });
 
-  test("a1111 profile → 400 on the loras arm (dialect gate); unknown → 404", async () => {
-    const { app } = await makeApp(async () => modelsBody());
-    const comfyId = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
-    const res = await app.request(`/api/image-gen/profiles/${comfyId}/loras`);
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "LoRA listing not supported" });
+  test("a1111 loras list serves the builtin-extension entries with embedded-metadata family (FT-A4); unknown → 404", async () => {
+    const { app } = await makeApp(async () =>
+      Response.json([
+        { name: "nijireol_krea2_v1_ep5", alias: "nijireol_krea2_v1_ep5", path: "N:\\loras\\nijireol_krea2_v1_ep5.safetensors", metadata: { "ss_base_model_version": "krea2" } },
+        { name: "arden_il_v2", alias: "", path: "N:\\loras\\arden_il_v2.safetensors", metadata: null },
+      ]),
+    );
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/loras`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([
+      { name: "nijireol_krea2_v1_ep5", family: "Krea 2", triggerWords: [] },
+      { name: "arden_il_v2", family: null, triggerWords: [] },
+    ]);
 
     const missing = await app.request(`/api/image-gen/profiles/nope/loras`);
     expect(missing.status).toBe(404);
+  });
+
+  test("comfyui profile → 400 on the upscalers arm (dialect gate); unknown → 404", async () => {
+    const { app } = await makeApp(async () => modelsBody());
+    const comfyId = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:9130" });
+    const res = await app.request(`/api/image-gen/profiles/${comfyId}/upscalers`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Upscaler listing not supported" });
+
+    const missing = await app.request(`/api/image-gen/profiles/nope/upscalers`);
+    expect(missing.status).toBe(404);
+  });
+
+  test("a1111 upscalers list serves the hr_upscaler vocabulary (FT-A4)", async () => {
+    const { app } = await makeApp(async () =>
+      Response.json([
+        { name: "None", model_name: "", model_path: null, model_url: null, scale: 1 },
+        { name: "Latent", model_name: "", model_path: null, model_url: null, scale: 2 },
+        { name: "4x-UltraSharp", model_name: "4x-UltraSharp", model_path: "N:\\models\\4x-UltraSharp.pth", model_url: null, scale: 4 },
+      ]),
+    );
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/upscalers`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([{ name: "None" }, { name: "Latent" }, { name: "4x-UltraSharp" }]);
+  });
+
+  test("a1111 fold: loras + hires ride the txt2img wire capability-gated (FT-A4)", async () => {
+    const capturedBody: Record<string, unknown>[] = [];
+    const { app, stores } = await makeApp(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/sdapi/v1/txt2img") {
+        capturedBody.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ images: [PNG_B64(0x61)] }), { status: 200 });
+      }
+      return new Response("unused", { status: 200 });
+    });
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: id,
+        mode: "portrait",
+        prompt: "a tavern at dusk",
+        overrides: {
+          loras: [{ name: "nijireol_krea2_v1_ep5", strength: 0.7 }],
+          hires: { upscaler: "4x-UltraSharp", steps: 12, scale: 1.5, denoisingStrength: 0.4 },
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedBody.length).toBe(1);
+    expect(capturedBody[0]!.prompt).toBe("a tavern at dusk, <lora:nijireol_krea2_v1_ep5:0.7>");
+    expect(capturedBody[0]!.enable_hr).toBe(true);
+    expect(capturedBody[0]!.hr_upscaler).toBe("4x-UltraSharp");
+    expect(capturedBody[0]!.hr_second_pass_steps).toBe(12);
+    expect(capturedBody[0]!.hr_scale).toBe(1.5);
+    expect(capturedBody[0]!.denoising_strength).toBe(0.4);
+  });
+
+  test("a1111 fold: a pre-FT-A4 capability snapshot strips loras + hires from the wire (the CG-C2 gate twin)", async () => {
+    const capturedBody: Record<string, unknown>[] = [];
+    const { app, stores } = await makeApp(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/sdapi/v1/txt2img") {
+        capturedBody.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ images: [PNG_B64(0x62)] }), { status: 200 });
+      }
+      return new Response("unused", { status: 200 });
+    });
+    const chatId = await makeChat(stores);
+    const staticCaps = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.A1111];
+    const { supportsLoras: _staleLoras, supportsHiresFix: _staleHires, ...staleCaps } = staticCaps;
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      endpoint: "http://127.0.0.1:7860",
+      capabilities: staleCaps,
+    });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: id,
+        mode: "portrait",
+        prompt: "a tavern at dusk",
+        overrides: {
+          loras: [{ name: "nijireol_krea2_v1_ep5", strength: 0.7 }],
+          hires: { upscaler: "4x-UltraSharp" },
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedBody.length).toBe(1);
+    expect(capturedBody[0]!.prompt).toBe("a tavern at dusk");
+    expect("enable_hr" in capturedBody[0]!).toBe(false);
   });
 
   test("cloud profile → 400 not supported; unknown profile → 404 (both routes)", async () => {

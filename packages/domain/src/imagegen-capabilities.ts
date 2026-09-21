@@ -120,6 +120,10 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     // /sdapi/v1/txt2img: full param surface — negative prompt, samplers
     // (GET /samplers), seed (reported back), free W×H integers, live
     // GET /progress. Keyless by default (--api-auth optional).
+    // FT-A4: LoRAs ride the dialect's own list (GET /sdapi/v1/loras — the
+    // builtin Lora extension) + <lora:name:strength> prompt tags; hires
+    // rides enable_hr + the processing class's own knobs (upscaler list
+    // GET /sdapi/v1/upscalers — a dialect surface, not a flag).
     supportsNegativePrompt: true,
     supportsSamplers: true,
     supportsSeed: true,
@@ -129,6 +133,8 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     localExecution: true,
     supportsImg2img: false,
     supportsInpaint: false,
+    supportsLoras: true,
+    supportsHiresFix: true,
     paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
   [IMAGE_GEN_BACKENDS.ComfyUI]: {

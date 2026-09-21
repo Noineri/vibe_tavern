@@ -18,7 +18,8 @@
  *   GET    /api/image-gen/profiles/:id/samplers        (capability-gated)
  *   GET    /api/image-gen/profiles/:id/schedulers       (dialect-gated: A1111 + ComfyUI, PG-3/CG-A3)
  *   GET    /api/image-gen/profiles/:id/sidecars         (dialect-gated: ComfyUI, CG-B1 — DiT encoder/VAE folders)
- *   GET    /api/image-gen/profiles/:id/loras            (dialect-gated: ComfyUI, CG-C2 — family-resolved lora list)
+ *   GET    /api/image-gen/profiles/:id/loras            (dialect-gated: ComfyUI CG-C2 / A1111 FT-A4 — family-resolved lora list)
+ *   GET    /api/image-gen/profiles/:id/upscalers         (dialect-gated: A1111 FT-A4 — the hr_upscaler vocabulary)
  *   GET    /api/image-gen/profiles/:id/progress        (capability-gated, PG-2)
  *   POST   /api/image-gen/profiles/:id/interrupt       (capability-gated, PG-2)
  *   POST   /api/image-gen/draft/models                 (shared fetch-by-endpoint)
@@ -232,6 +233,24 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
           return c.json({ error: "LoRA listing not supported" }, 400);
         }
         return c.json(loras);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Upscalers (dialect-gated, FT-A4) ───────────────────────────
+    .get("/api/image-gen/profiles/:id/upscalers", async (c) => {
+      try {
+        const upscalers = await runtime.listImageGenProfileUpscalers(c.req.param("id"), c.req.raw.signal);
+        if (upscalers === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "Upscaler listing not supported" }, 400);
+        }
+        return c.json(upscalers);
       } catch (error) {
         const mapped = backendErrorResponse(error);
         if (mapped) return c.json(mapped.body, mapped.status);

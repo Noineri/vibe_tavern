@@ -530,10 +530,16 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   listImageGenProfileLoras = async (id: string, signal?: AbortSignal) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
-    // Static dialect gate FIRST (the sidecars twin, CG-C2): today only the
-    // comfyui dialect ships a LoRA list source (FT-A4 brings the A1111
-    // twin) — the check answers without live config validity.
-    if (profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI) return null;
+    // Static dialect gate FIRST (the sidecars twin, CG-C2/FT-A4): the two
+    // dialects that ship a LoRA list source — ComfyUI (LoraLoader combo,
+    // CG-C2) and A1111 (GET /sdapi/v1/loras, FT-A4) — the check answers
+    // without live config validity.
+    if (
+      profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI &&
+      profile.backend !== IMAGE_GEN_BACKENDS.A1111
+    ) {
+      return null;
+    }
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     // Interface-driven second gate: a backend without the lora-listing
     // method reports "not supported", not an empty list.
@@ -541,6 +547,23 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const listLoras = backend.listLoras.bind(backend);
     return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "lora list", (inner) =>
       listLoras(inner),
+    );
+  };
+
+  listImageGenProfileUpscalers = async (id: string, signal?: AbortSignal) => {
+    const profile = await this.stores.imageGen.getById(id);
+    if (!profile) return null;
+    // Static dialect gate FIRST (the schedulers twin, FT-A4): the upscaler
+    // surface exists ONLY on the A1111 dialect (GET /sdapi/v1/upscalers) —
+    // the check answers without live config validity.
+    if (profile.backend !== IMAGE_GEN_BACKENDS.A1111) return null;
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
+    // Interface-driven second gate: a backend without the upscaler-listing
+    // method reports "not supported", not an empty list.
+    if (typeof backend.listUpscalers !== "function") return null;
+    const listUpscalers = backend.listUpscalers.bind(backend);
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "upscaler list", (inner) =>
+      listUpscalers(inner),
     );
   };
 
@@ -757,6 +780,12 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // field (the negativePrompt gate precedent; existing pre-C2 profiles
     // store no flag → inert until recreated).
     const loras = profile.capabilities.supportsLoras === true ? overrides.loras : undefined;
+    // Hires-fix (FT-A4): the chip-draft rung ONLY — no overlay, no profile
+    // base (per-generation by design, the LoRA ruling's twin) — and
+    // capability-gated: a profile without supportsHiresFix never sees the
+    // field (pre-FT-A4 profile snapshots store no flag → inert until
+    // re-saved).
+    const hires = profile.capabilities.supportsHiresFix === true ? overrides.hires : undefined;
 
     // IG-15 assist runner: built when the profile's assist is ENABLED and
     // BOTH picks exist (absent picks = assist inert — bit-identical legacy
@@ -830,6 +859,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(clipSkip !== undefined ? { clipSkip } : {}),
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
       ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
+      ...(hires !== undefined ? { hires } : {}),
       // MR-11: the backend announces the moment its progress surface
       // reflects THIS run's job — the phase flips to "steps" exactly there
       // (no percent before real steps; no inherited stale snapshot).
@@ -879,6 +909,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         ...(vaeName !== undefined ? { vaeName } : {}),
         ...(result.resolvedTemplate !== undefined ? { template: result.resolvedTemplate } : {}),
         ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
+        ...(hires !== undefined ? { hires } : {}),
         ...(seed !== undefined ? { seed } : {}),
         ...(clipSkip !== undefined ? { clipSkip } : {}),
       },

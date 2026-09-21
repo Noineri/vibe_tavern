@@ -909,54 +909,14 @@ async function resolveKrea2Sidecar(
   );
 }
 
-// ─── Model family ladder (CG-A3) ─────────────────────────────────────
+// ─── Model family ladder (CG-A3) ────────────────────────────────────
 
-/** Normalize a raw base-model string from any metadata store into a
- *  canonical family label — the picker subtitle and (CG-C2/C3) the LoRA
- *  family-filter match key both sides normalize through, so a model's
- *  "Krea 2" matches a LoRA's "Krea 2" regardless of which store either
- *  side read. Recognized ecosystem buckets map to their display names
- *  (checked lowercase-substring, order matters — krea before qwen, pony
- *  before the SDXL bucket); modelspec architecture stamps map into the
- *  same buckets ("stable-diffusion-xl-v1-base" → SDXL — a merge tool's
- *  spec stamp is architecture-level truth, not ecosystem noise);
- *  anything unrecognized passes through VERBATIM (an honest labeled
- *  bucket, never a wrong guess); empty → undefined. */
-export function normalizeComfyFamily(raw: string | undefined): string | undefined {
-  const trimmed = raw?.trim();
-  if (trimmed === undefined || trimmed.length === 0) return undefined;
-  const lower = trimmed.toLowerCase();
-  if (lower.includes("krea")) return "Krea 2";
-  if (lower.includes("qwen")) return "Qwen Image";
-  if (lower.includes("pony")) return "Pony";
-  if (lower.includes("illustrious") || lower.includes("noobai")) return "Illustrious";
-  if (lower.includes("flux")) return "Flux";
-  if (
-    lower.includes("sdxl") ||
-    lower.includes("sd_xl") ||
-    lower.includes("sd xl") ||
-    lower.includes("stable-diffusion-xl")
-  ) {
-    return "SDXL";
-  }
-  if (
-    lower.includes("sd15") ||
-    lower.includes("sd 1.5") ||
-    lower.includes("sd1.5") ||
-    lower.includes("v1-5") ||
-    lower.includes("stable-diffusion-v1") ||
-    lower.includes("sd-v1")
-  ) {
-    return "SD 1.5";
-  }
-  return trimmed;
-}
-
-/** Embedded-metadata fields that name a model family, in precedence order:
- *  `ss_base_model_version` (kohya-training convention, LoRAs and finetunes)
- *  and `modelspec.architecture` (AI-Toolkit modelspec convention, DiT
- *  finetunes). The key literally contains a dot. */
-const COMFY_EMBEDDED_FAMILY_FIELDS = ["ss_base_model_version", "modelspec.architecture"] as const;
+// Shared with the A1111 dialect since FT-A4: the family buckets and the
+// embedded-metadata field precedence are ecosystem facts — one definition
+// in model-family.ts keeps cross-dialect filter keys identical. The
+// legacy export name stays for the pinned test surface.
+export { normalizeModelFamily as normalizeComfyFamily } from "../model-family.js";
+import { readEmbeddedFamilyValue, normalizeModelFamily } from "../model-family.js";
 
 /** Sidecar stores after the embedded metadata misses, in precedence order
  *  (CG-A3, live-verified): `.cm-info.json` (Stability Matrix's store —
@@ -996,11 +956,7 @@ async function fetchComfyEmbeddedFamily(
     return undefined;
   }
   if (!isRecord(parsed)) return undefined;
-  for (const field of COMFY_EMBEDDED_FAMILY_FIELDS) {
-    const raw = parsed[field];
-    if (typeof raw === "string" && raw.trim().length > 0) return raw.trim();
-  }
-  return undefined;
+  return readEmbeddedFamilyValue(parsed);
 }
 
 /** GET /internal/folder_paths → the folder-name → root-paths map ComfyUI
@@ -1088,7 +1044,7 @@ async function resolveComfyModelFamily(
     rootsOf: () => Promise<Record<string, string[]> | undefined>;
   },
 ): Promise<string | undefined> {
-  const embedded = normalizeComfyFamily(
+  const embedded = normalizeModelFamily(
     await fetchComfyEmbeddedFamily(transport, endpoint, options.folder, options.name, options.signal),
   );
   if (embedded !== undefined) return embedded;
@@ -1096,7 +1052,7 @@ async function resolveComfyModelFamily(
   if (roots.length === 0) return undefined;
   for (const store of COMFY_SIDECAR_STORES) {
     const raw = await readComfySidecarFamily(roots, options.name, store.suffix, store.field);
-    const normalized = normalizeComfyFamily(raw);
+    const normalized = normalizeModelFamily(raw);
     if (normalized !== undefined) return normalized;
   }
   return undefined;

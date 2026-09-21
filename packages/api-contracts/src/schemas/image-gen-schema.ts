@@ -71,6 +71,9 @@ export const imageGenCapabilityFlagsSchema = z.object({
   /** LoRA selection (CG-C2/FT-A4) — optional: absent = false, graduates
    *  per backend (ComfyUI now; A1111 with FT-A4). */
   supportsLoras: z.boolean().optional(),
+  /** Hires-fix second pass (FT-A4) — the supportsLoras twin: absent =
+   *  false, A1111 dialect today. */
+  supportsHiresFix: z.boolean().optional(),
   paramRanges: imageGenParamRangesSchema.optional(),
 });
 export type ImageGenCapabilityFlagsValue = z.infer<typeof imageGenCapabilityFlagsSchema>;
@@ -274,6 +277,15 @@ export const imageGenLoraInfoSchema = z.object({
 });
 export type ImageGenLoraInfoValue = z.infer<typeof imageGenLoraInfoSchema>;
 
+/** One upscaler list entry (FT-A4, a1111 dialect) — the adapter
+ *  interface's `ImageGenUpscalerInfo` verbatim: the `hr_upscaler`
+ *  vocabulary from `GET /sdapi/v1/upscalers`, the hires-fix block's
+ *  dropdown source. */
+export const imageGenUpscalerInfoSchema = z.object({
+  name: z.string().min(1),
+});
+export type ImageGenUpscalerInfoValue = z.infer<typeof imageGenUpscalerInfoSchema>;
+
 /** One sampler entry — the adapter interface's `ImageGenSamplerInfo`
  *  verbatim (A1111-compat `GET /sdapi/v1/samplers` shape). */
 export const imageGenSamplerInfoSchema = z.object({
@@ -354,6 +366,20 @@ export const imageGenGenerateOverridesSchema = z.object({
         strength: z.number().finite(),
       }),
     )
+    .optional(),
+  /** Hires-fix second pass (FT-A4, capability-gated backends): PRESENCE
+   *  = enabled — the a1111 dialect sends enable_hr plus the set knobs
+   *  (`hr_upscaler` / `hr_second_pass_steps` / `hr_scale` /
+   *  `denoising_strength`; unset knobs stay unset so server defaults
+   *  fill). The chip-draft rung ONLY, like loras. */
+  hires: z
+    .object({
+      upscaler: z.string().min(1).optional(),
+      /** 0 = the dialect's own "inherit first-pass steps" value. */
+      steps: z.number().int().min(0).optional(),
+      scale: z.number().finite().positive().optional(),
+      denoisingStrength: z.number().finite().min(0).max(1).optional(),
+    })
     .optional(),
 });
 export type ImageGenGenerateOverridesValue = z.infer<typeof imageGenGenerateOverridesSchema>;

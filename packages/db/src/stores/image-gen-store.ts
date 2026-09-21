@@ -127,6 +127,12 @@ function parseCapabilities(raw: string): ImageGenCapabilityFlags {
   if (typeof parsed.localExecution === 'boolean') flags.localExecution = parsed.localExecution;
   if (typeof parsed.supportsImg2img === 'boolean') flags.supportsImg2img = parsed.supportsImg2img;
   if (typeof parsed.supportsInpaint === 'boolean') flags.supportsInpaint = parsed.supportsInpaint;
+  // Optional graduation flags (CG-C2/FT-A4): absent = false (DEGRADED
+  // default) — but a STORED true must survive the round-trip, else the
+  // generate-fold capability gate silently strips loras/hires from every
+  // saved profile (caught by the FT-A4 route pin 2026-09-21).
+  if (parsed.supportsLoras === true) flags.supportsLoras = true;
+  if (parsed.supportsHiresFix === true) flags.supportsHiresFix = true;
   if (
     typeof sizeSupport === 'object' &&
     sizeSupport !== null &&

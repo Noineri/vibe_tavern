@@ -104,6 +104,18 @@ export interface ImageGenGenerateRequest {
    *  strength_clip); the A1111 dialect appends <lora:name:strength> tags
    *  to the prompt (FT-A4). Other backends ignore the field. */
   loras?: Array<{ name: string; strength: number }>;
+  /** Hires-fix second pass (FT-A4, capability-gated backends): PRESENCE =
+   *  enabled — the a1111 dialect sends `enable_hr: true` plus the knobs
+   *  the object carries (`hr_upscaler` / `hr_second_pass_steps` /
+   *  `hr_scale` / `denoising_strength` — the processing class's own
+   *  fields; unset knobs stay unset so server defaults fill). Other
+   *  backends ignore the field. */
+  hires?: {
+    upscaler?: string;
+    steps?: number;
+    scale?: number;
+    denoisingStrength?: number;
+  };
   /** Cooperative cancellation — adapters forward it to their HTTP calls.
    *  LOCAL backends carry no timeout (owner 2026-09-14: explicit cancel
    *  only); CLOUD backends are wrapped at the adapter layer with
@@ -257,6 +269,13 @@ export interface ImageGenLoraInfo {
   triggerWords: string[];
 }
 
+/** One upscaler list entry (FT-A4, a1111 dialect): the `hr_upscaler`
+ *  vocabulary from `GET /sdapi/v1/upscalers` — bare names ("Latent",
+ *  "4x-UltraSharp", …), the hires-fix block's dropdown source. */
+export interface ImageGenUpscalerInfo {
+  name: string;
+}
+
 /** Live progress (A1111-compat `GET /sdapi/v1/progress`): `progress` is
  *  0..1; `previewBase64` is the interim preview image when the server
  *  produces one. */
@@ -303,6 +322,10 @@ export interface ImageGenBackend {
    *  names + family (null = the unknown-family bucket) feeding the chip's
    *  family-filtered picker. */
   listLoras?(signal?: AbortSignal): Promise<ImageGenLoraInfo[]>;
+  /** Upscaler listing (a1111 dialect only in v1, FT-A4 — the schedulers
+   *  dialect-gate twin, not a capability flag): the `hr_upscaler`
+   *  vocabulary for the hires-fix block's dropdown. */
+  listUpscalers?(signal?: AbortSignal): Promise<ImageGenUpscalerInfo[]>;
   /** Server-extension listing (A1111-compat only in v1) — extension dir
    *  names for feature detection (IG-CF15/PG-4: the ADetailer probe). */
   listExtensions?(signal?: AbortSignal): Promise<string[]>;

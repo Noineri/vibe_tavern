@@ -25,6 +25,30 @@
  * - samplers: `GET /sdapi/v1/samplers` → `{name, aliases, options}`;
  *   schedulers: `GET /sdapi/v1/schedulers` → `{name, label, aliases,
  *   options}` (PG-3 — the schedule-type picker's live list).
+ * - loras (FT-A4): `GET /sdapi/v1/loras` → `[{name, alias, path,
+ *   metadata}]` — registered NOT by api.py but by the BUILT-IN Lora
+ *   extension (`extensions-builtin/Lora/scripts/lora_script.py` →
+ *   `create_lora_json`), so every A1111-family instance serves it
+ *   (source-verified incl. Forge and Forge-Neo). `name` is the
+ *   `<lora:name:…>` tag vocabulary; `metadata` is the embedded
+ *   safetensors metadata dict — family rides the SAME two keys the
+ *   ComfyUI ladder's embedded store reads (`ss_base_model_version` /
+ *   `modelspec.architecture`) via the shared model-family module. No
+ *   trigger-word store exists on this endpoint (sidecars are
+ *   filesystem-local to the server) → `triggerWords: []`.
+ * - upscalers (FT-A4): `GET /sdapi/v1/upscalers` → `[{name, model_name,
+ *   model_path, model_url, scale}]` — `name` is the `hr_upscaler`
+ *   vocabulary (source-verified in A1111 and Forge/Neo api.py —
+ *   `get_upscalers` is identical across the family).
+ * - hires-fix (FT-A4): the txt2img processing class's own fields —
+ *   `enable_hr: bool`, `hr_upscaler: str`, `hr_scale: float`,
+ *   `hr_second_pass_steps: int`, `denoising_strength: float`
+ *   (source-verified in modules/processing.py of A1111 and the Neo
+ *   branch). Presence of the request's `hires` object sends `enable_hr:
+ *   true` + ONLY the set knobs (the server-defaults rule); loras ride
+ *   `<lora:name:strength>` TAGS appended to the positive prompt (the
+ *   builtin extension's own parse: `<lora:([^:]+):` with the weight as
+ *   float; tags stack, order kept).
  * - progress: `GET /sdapi/v1/progress` → `{progress: 0..1, eta_relative,
  *   state, current_image (b64 preview, needs show_progress_every_n_steps),
  *   textinfo}` — exposed as a single-fetch snapshot; the route layer owns
@@ -89,13 +113,16 @@ import type {
   ImageGenGeneratedImage,
   ImageGenGenerateRequest,
   ImageGenGenerateResult,
+  ImageGenLoraInfo,
   ImageGenModelInfo,
   ImageGenProbeResult,
   ImageGenProgressInfo,
   ImageGenSamplerInfo,
   ImageGenSchedulerInfo,
+  ImageGenUpscalerInfo,
 } from "../imagegen-backend.js";
 import { registerImageGenBackend } from "../imagegen-registry.js";
+import { normalizeModelFamily, readEmbeddedFamilyValue } from "../model-family.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
@@ -314,6 +341,48 @@ function parseSchedulerInfos(parsed: unknown): ImageGenSchedulerInfo[] {
   return out;
 }
 
+/** Parse the `GET /sdapi/v1/loras` list (FT-A4) — a top-level array of
+ *  `{name, alias, path, metadata}` records (the builtin Lora extension's
+ *  create_lora_json). `name` is the `<lora:>` tag vocabulary; family rides
+ *  the embedded metadata's two family keys through the SHARED normalizer
+ *  (a model's "Krea 2" matches a LoRA's "Krea 2" cross-dialect); NULL =
+ *  the metadata carried nothing (the chip's unknown-family bucket). No
+ *  trigger-word store exists on this endpoint → []. Entries without a
+ *  usable name are skipped (the malformed-entry discipline). */
+function parseLoraInfos(parsed: unknown): ImageGenLoraInfo[] {
+  if (!Array.isArray(parsed)) return [];
+  const out: ImageGenLoraInfo[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const item = entry as Record<string, unknown>;
+    const name = item.name;
+    if (typeof name !== "string" || name.length === 0) continue;
+    out.push({
+      name,
+      family: normalizeModelFamily(readEmbeddedFamilyValue(item.metadata)) ?? null,
+      triggerWords: [],
+    });
+  }
+  return out;
+}
+
+/** Parse the `GET /sdapi/v1/upscalers` list (FT-A4) — a top-level array of
+ *  `{name, model_name, model_path, model_url, scale}` records; `name` is
+ *  the `hr_upscaler` vocabulary. Entries without a usable name are
+ *  skipped (the malformed-entry discipline). */
+function parseUpscalerInfos(parsed: unknown): ImageGenUpscalerInfo[] {
+  if (!Array.isArray(parsed)) return [];
+  const out: ImageGenUpscalerInfo[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const item = entry as Record<string, unknown>;
+    const name = item.name;
+    if (typeof name !== "string" || name.length === 0) continue;
+    out.push({ name });
+  }
+  return out;
+}
+
 /** Parse the `GET /sdapi/v1/extensions` list — a top-level array of
  *  `{name, dirname, enabled, builtin}` records; `name` is the extension's
  *  directory identifier (the ADetailer probe's `adetailer`). Entries
@@ -393,8 +462,16 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
     async generate(request: ImageGenGenerateRequest): Promise<ImageGenGenerateResult> {
       // Card rule: EVERY field optional, server defaults fill the rest —
       // the body carries prompt + ONLY the overrides the request sets.
+      // LoRAs (FT-A4): the dialect's tag mechanism — `<lora:name:strength>`
+      // appended to the POSITIVE prompt (comma-separated, order kept),
+      // never the negative (the builtin extension parses tags from the
+      // positive only). Strength rides as the plain number (1 → "1").
+      const prompt =
+        request.loras !== undefined && request.loras.length > 0
+          ? `${request.prompt}, ${request.loras.map((lora) => `<lora:${lora.name}:${lora.strength}>`).join(", ")}`
+          : request.prompt;
       const body: Record<string, unknown> = {
-        prompt: request.prompt,
+        prompt,
         // The card's API-only extra: "send_images (bool, VT keeps true)".
         send_images: true,
       };
@@ -427,6 +504,20 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
         body.alwayson_scripts = {
           ADetailer: { args: [true, { ad_model: adetailerModel }] },
         };
+      }
+      // Hires-fix (FT-A4): PRESENCE = enabled — enable_hr plus ONLY the
+      // knobs the request carries (the server-defaults rule; A1111's own
+      // defaults: hr_upscaler from settings, hr_scale 2.0,
+      // hr_second_pass_steps 0 = inherit first pass, denoise 0.75).
+      if (request.hires !== undefined) {
+        body.enable_hr = true;
+        const hrUpscaler = setOrUndefined(request.hires.upscaler);
+        if (hrUpscaler !== undefined) body.hr_upscaler = hrUpscaler;
+        if (request.hires.steps !== undefined) body.hr_second_pass_steps = request.hires.steps;
+        if (request.hires.scale !== undefined) body.hr_scale = request.hires.scale;
+        if (request.hires.denoisingStrength !== undefined) {
+          body.denoising_strength = request.hires.denoisingStrength;
+        }
       }
 
       // MR-11: from the submit POST onward, the instance-global progress
@@ -540,6 +631,50 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       }
       const parsed: unknown = await response.json().catch(() => null);
       return parseSchedulerInfos(parsed);
+    },
+
+    async listLoras(signal?: AbortSignal): Promise<ImageGenLoraInfo[]> {
+      const response = await fetchOrWrap(
+        cfg.fetch,
+        `${cfg.endpoint}/loras`,
+        {
+          method: "GET",
+          headers: buildSdApiHeaders(cfg.apiKey, false),
+          signal,
+        },
+        "lora list",
+      );
+      if (!response.ok) {
+        const excerpt = await readProviderErrorBody(response);
+        throw new A1111ImageGenError(
+          `A1111 lora list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          { status: response.status },
+        );
+      }
+      const parsed: unknown = await response.json().catch(() => null);
+      return parseLoraInfos(parsed);
+    },
+
+    async listUpscalers(signal?: AbortSignal): Promise<ImageGenUpscalerInfo[]> {
+      const response = await fetchOrWrap(
+        cfg.fetch,
+        `${cfg.endpoint}/upscalers`,
+        {
+          method: "GET",
+          headers: buildSdApiHeaders(cfg.apiKey, false),
+          signal,
+        },
+        "upscaler list",
+      );
+      if (!response.ok) {
+        const excerpt = await readProviderErrorBody(response);
+        throw new A1111ImageGenError(
+          `A1111 upscaler list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          { status: response.status },
+        );
+      }
+      const parsed: unknown = await response.json().catch(() => null);
+      return parseUpscalerInfos(parsed);
     },
 
     async listExtensions(signal?: AbortSignal): Promise<string[]> {
