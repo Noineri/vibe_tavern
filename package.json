@@ -35,6 +35,7 @@
     "prod": "bun run build && bun --no-env-file services/api/src/server/prod-server.ts",
     "typecheck": "bun scripts/type-gate.ts && bunx tsc -p scripts/tsconfig.json && bun run --filter '*' typecheck",
     "test": "bun --no-orphans scripts/test.ts",
+    "test:file": "bun scripts/test-file.ts",
     "test:verbose": "bun test scripts && bun run --filter '*' test",
     "i18n:types": "bun run --cwd apps/web i18next-cli types",
     "i18n:check": "bun run --cwd apps/web i18next-cli extract --ci && bun run --cwd apps/web i18next-cli status",
