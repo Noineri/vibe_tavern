@@ -1,5 +1,3 @@
-import type { ImageGenerationMode } from "./entities.js";
-
 /** Free-size image dimension vocabulary (IG-CF14): the stepper ladder
  *  constant, sanity bounds, the display default, and the preset table the
  *  per-mode dropdown offers. Pure data, no I/O — the pane renders it; the
@@ -14,7 +12,13 @@ import type { ImageGenerationMode } from "./entities.js";
  *  Preset labels are built as "purpose + ratio + concrete resolution" —
  *  NEVER a bare ratio (owner: never write a raw ratio without showing the
  *  resolution): the ratio string is approximate community shorthand (the
- *  canonical SDXL buckets), the exact pixels beside it are the truth. */
+ *  canonical SDXL buckets), the exact pixels beside it are the truth.
+ *
+ *  IPT (IMAGE_PROMPT_TEMPLATES_PLAN Wave 0; owner rulings 2026-09-20/21,
+ *  recorded in the plan's execution log): NO per-mode size anchors —
+ *  selfie and avatar behave like every other mode: size explicitly
+ *  settable per mode over `modeSizePresets` (this shared preset/stepper
+ *  surface), unset = backend default. Nothing purpose-baked. */
 export const IMAGE_SIZE_STEP_PX = 128;
 export const IMAGE_SIZE_MIN_PX = 64;
 export const IMAGE_SIZE_MAX_PX = 4096;
@@ -38,17 +42,3 @@ export const IMAGE_SIZE_PRESETS = [
 ] as const;
 
 export type ImageSizeOrientation = (typeof IMAGE_SIZE_PRESETS)[number]["orientation"];
-
-/** Canon size anchors for the IPT modes (IMAGE_PROMPT_TEMPLATES_PLAN
- *  Wave 0): selfie 832×1216 (2:3 phone-frame vertical), avatar 1024×1024
- *  (1:1 crop). The preset LABEL composes at render time following the
- *  "purpose + ratio + pixels" rule — the purpose segment is the mode's own
- *  localized name, so this constant carries only the geometry + ratio
- *  shorthand. These are labeled default entries the per-mode size dropdown
- *  offers — NOT silent wire values (the no-silent-defaults rule: an unset
- *  mode still sends no size; the user pins explicitly). Surfaced in the
- *  profile editor's per-mode dropdown at IPT Wave 5. */
-export const IMAGE_GEN_MODE_SIZE_CANON = {
-  selfie: { width: 832, height: 1216, ratio: "2:3" },
-  avatar: { width: 1024, height: 1024, ratio: "1:1" },
-} as const satisfies Partial<Record<ImageGenerationMode, { width: number; height: number; ratio: string }>>;
