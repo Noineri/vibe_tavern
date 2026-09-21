@@ -41,6 +41,8 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     defaultParams: {},
     modeSizePresets: {},
     llmAssistEnabled: false,
+    familySource: "none",
+    qualityLayerEnabled: false,
     llmProviderProfileId: undefined,
     llmModelId: undefined,
     capabilities: {

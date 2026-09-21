@@ -25,6 +25,28 @@ export const imageGenerationModeSchema = z.enum([
 ]);
 export type ImageGenerationModeValue = z.infer<typeof imageGenerationModeSchema>;
 
+/** IPT-2 (IMAGE_PROMPT_TEMPLATES_PLAN): the checkpoint-family axis — the
+ *  domain `IMAGE_PROMPT_FAMILIES` registry keys (prompt dialects: prose /
+ *  tag families / the assist-only hybrid). Enum is hardcoded here per the
+ *  house contracts style; the domain registry stays the source of truth. */
+export const imagePromptFamilySchema = z.enum([
+  'prose',
+  'pony',
+  'illustrious',
+  'noobai',
+  'anima',
+  'krea2',
+  'qwen',
+  'sdxl-realism',
+  'hybrid',
+]);
+export type ImagePromptFamilyValue = z.infer<typeof imagePromptFamilySchema>;
+
+/** IPT-2: how a profile's family currently resolves — the derived
+ *  `familySource` read-model field (domain `IMAGE_GEN_FAMILY_SOURCES`). */
+export const imageGenFamilySourceSchema = z.enum(['none', 'auto', 'manual']);
+export type ImageGenFamilySourceValue = z.infer<typeof imageGenFamilySourceSchema>;
+
 // ─── Capability mirror ────────────────────────────────────────────────────────
 
 /** How a backend constrains output sizes: a closed vendor-set (`"WxH"`
@@ -169,6 +191,19 @@ export const imageGenProfileSchema = z.object({
   llmAssistEnabled: z.boolean(),
   llmProviderProfileId: z.string().optional(),
   llmModelId: z.string().optional(),
+  /** IPT-2: the manual family pin — authoritative when present; absent =
+   *  the auto path (freshness of `familyDetected` is judged against the
+   *  current modelId by the consumer, not baked into this record). */
+  familyOverride: imagePromptFamilySchema.optional(),
+  /** IPT-2: the last auto-detection result; absent = never detected. */
+  familyDetected: imagePromptFamilySchema.optional(),
+  /** IPT-2: the model id the detection ran against (stale marker). */
+  familyDetectedForModel: z.string().optional(),
+  /** IPT-2: DERIVED read-model field (override → manual, detected → auto,
+   *  neither → none) — never a stored column, so it cannot drift. */
+  familySource: imageGenFamilySourceSchema,
+  /** IPT-2: the quality layer joins the prompt ONLY when explicitly on. */
+  qualityLayerEnabled: z.boolean(),
   capabilities: imageGenCapabilityFlagsSchema,
   /** MR-12 (the TTS/STT `isDefault` twin): the GLOBAL active-profile
    *  pointer — at most one row. Read-only on this surface: create/PATCH
@@ -201,6 +236,10 @@ export const createImageGenProfileSchema = z.object({
   llmAssistEnabled: z.boolean().optional().default(false),
   llmProviderProfileId: z.string().optional(),
   llmModelId: z.string().optional(),
+  /** IPT-2: quality-layer toggle (default off). Family columns are
+   *  deliberately ABSENT from create: a fresh profile starts unpinned;
+   *  the Wave 3 family route is the only family writer. */
+  qualityLayerEnabled: z.boolean().optional().default(false),
   capabilities: imageGenCapabilityFlagsSchema,
   sortOrder: z.number().optional().default(0),
 });
@@ -222,6 +261,7 @@ export const updateImageGenProfileSchema = z.object({
   llmAssistEnabled: z.boolean().optional(),
   llmProviderProfileId: z.string().nullable().optional(),
   llmModelId: z.string().nullable().optional(),
+  qualityLayerEnabled: z.boolean().optional(),
   capabilities: imageGenCapabilityFlagsSchema.optional(),
   sortOrder: z.number().optional(),
 });

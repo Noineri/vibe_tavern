@@ -29,6 +29,8 @@ import type {
   TtsProfileId,
 } from "./ids.js";
 
+import type { ImagePromptFamilyId } from "./image-prompt-families.js";
+
 import type {
   CardFormat,
   LoreScopeType,
@@ -1256,6 +1258,24 @@ export interface ImageGenProfile {
   llmAssistEnabled: boolean;
   llmProviderProfileId?: string;
   llmModelId?: string;
+  /** IPT-2 (IMAGE_PROMPT_TEMPLATES_PLAN): the manually pinned prompt
+   *  family — authoritative when set; absent = the auto path applies. */
+  familyOverride?: ImagePromptFamilyId;
+  /** IPT-2: the last auto-detection result; absent = never detected.
+   *  Freshness is judged by the consumer against `familyDetectedForModel`
+   *  (a model swap marks a stale detection unusable — the assembly falls
+   *  back to prose). */
+  familyDetected?: ImagePromptFamilyId;
+  /** IPT-2: the model id the detection ran against (stale marker for
+   *  `familyDetected`). */
+  familyDetectedForModel?: string;
+  /** IPT-2: how the family currently resolves — DERIVED at read
+   *  (override → manual, detected → auto, neither → none), never stored:
+   *  a stored value would silently go stale on model swaps. */
+  familySource: ImageGenFamilySource;
+  /** IPT-2: profile-level quality-layer toggle — the tag-dialect quality
+   *  block joins the prompt ONLY when explicitly on (default false). */
+  qualityLayerEnabled: boolean;
   /** Capability snapshot mirrored from the adapter at save time. */
   capabilities: ImageGenCapabilityFlags;
   /** MR-12 (the TTS/STT `isDefault` twin, owner report 2026-09-19): the
@@ -1279,6 +1299,21 @@ export const IMAGE_GEN_TARGET_TYPE = {
   Character: "character",
 } as const;
 export type ImageGenTargetType = (typeof IMAGE_GEN_TARGET_TYPE)[keyof typeof IMAGE_GEN_TARGET_TYPE];
+
+/** IPT-2: how a profile's prompt family currently resolves. The value is
+ *  derived from the profile's family columns at read time (see
+ *  `ImageGenProfile.familySource`) — it is never a stored field. */
+export const IMAGE_GEN_FAMILY_SOURCES = {
+  /** Nothing pinned and nothing detected: the profile resolves to the
+   *  universal default family (prose). */
+  None: "none",
+  /** An auto-detection result is present (its freshness vs the current
+   *  modelId is judged separately via familyDetectedForModel). */
+  Auto: "auto",
+  /** A manual pin is present — authoritative. */
+  Manual: "manual",
+} as const;
+export type ImageGenFamilySource = (typeof IMAGE_GEN_FAMILY_SOURCES)[keyof typeof IMAGE_GEN_FAMILY_SOURCES];
 
 /** Character-scoped image-gen profile binding (`image_gen_links` junction —
  *  the TTS voice-map pattern). */

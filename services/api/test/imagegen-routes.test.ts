@@ -223,6 +223,42 @@ describe("image-gen routes — profile CRUD", () => {
     expect(((await delRes.json()) as { ok: boolean }).ok).toBe(true);
   });
 
+  // IPT-2: the family/quality surface rides the CRUD record — familySource
+  // + qualityLayerEnabled on every read; the quality toggle PATCHes; the
+  // family columns are NOT writable through PATCH (the Wave 3 family route
+  // is the only family writer — unknown keys strip to no-ops, like isDefault).
+  test("IPT-2: familySource/qualityLayerEnabled on reads; quality PATCH round-trips; family fields ignored on PATCH", async () => {
+    const { app } = await makeApp();
+    const id = await seedProfile(app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+    const created = (await (await app.request(`/api/image-gen/profiles/${id}`)).json()) as {
+      familySource: string;
+      qualityLayerEnabled: boolean;
+    };
+    expect(created.familySource).toBe("none");
+    expect(created.qualityLayerEnabled).toBe(false);
+
+    const patched = await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ qualityLayerEnabled: true, familyOverride: "pony" }),
+    });
+    expect(patched.status).toBe(200);
+    const body = (await patched.json()) as {
+      qualityLayerEnabled: boolean;
+      familySource: string;
+      familyOverride?: string;
+    };
+    expect(body.qualityLayerEnabled).toBe(true);
+    // The smuggled family key strips — the profile stays unpinned.
+    expect(body.familySource).toBe("none");
+    expect(body.familyOverride).toBeUndefined();
+
+    const reloaded = await app.request(`/api/image-gen/profiles/${id}`);
+    const record = (await reloaded.json()) as { qualityLayerEnabled: boolean; familySource: string };
+    expect(record.qualityLayerEnabled).toBe(true);
+    expect(record.familySource).toBe("none");
+  });
+
   // MR-12: the GLOBAL active-profile pointer — the STT PUT-default twin.
   //  Survives restarts (the owner report: a VT server restart silently reset
   //  the active profile to the cloud row because MR-5's pointer was

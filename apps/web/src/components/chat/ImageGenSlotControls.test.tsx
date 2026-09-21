@@ -141,6 +141,8 @@ function profileRecord(id: string, backend: ImageGenBackendType): ImageGenProfil
     defaultParams: {},
     modeSizePresets: {},
     llmAssistEnabled: false,
+    familySource: "none",
+    qualityLayerEnabled: false,
     capabilities: { ...IMAGE_GEN_BACKEND_CAPABILITIES[backend] },
     isDefault: false,
     sortOrder: 0,

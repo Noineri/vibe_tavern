@@ -5,6 +5,7 @@ import type {
   ImageGenBackendType,
   ImageGenCapabilityFlags,
   ImageGenDefaultParams,
+  ImageGenFamilySource,
   ImageGenModeSizePreset,
   ImageGenModeSizePresets,
   ImageGenModelFavorite,
@@ -21,23 +22,38 @@ import type {
 import type { AppDb } from '../db-connection.js';
 import { imageGenLinks, imageGenModelFavorites, imageGenModelSettings, imageGenProfiles } from '../db-schema.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import { IMAGE_PROMPT_FAMILY_IDS, type ImagePromptFamilyId } from '@vibe-tavern/domain';
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
-/** Creation input — the full domain shape minus store-generated columns. */
-export type CreateImageGenProfileData = Omit<ImageGenProfile, 'id' | 'createdAt' | 'updatedAt'>;
+/** Creation input — the full domain shape minus store-generated columns.
+ *  IPT-2: family columns are EXCLUDED — a fresh profile starts unpinned
+ *  (the Wave 3 family route is the only family writer), and familySource
+ *  is a derived read-model field computed in mapRow, like the timestamps. */
+export type CreateImageGenProfileData = Omit<
+  ImageGenProfile,
+  'id' | 'createdAt' | 'updatedAt' | 'familySource' | 'familyOverride' | 'familyDetected' | 'familyDetectedForModel'
+>;
 
 /** Update patch — every field optional except immutable identity/timestamps.
- *  The four optional-pointer fields additionally accept `null` (the
+ *  The optional-pointer fields additionally accept `null` (the
  *  wire's nullable-clear convention, IG-3: `presetId: null` clears the
- *  pointer; the store body already maps `?? null` onto the column). */
+ *  pointer; the store body already maps `?? null` onto the column).
+ *  familySource is excluded (derived at read); the three family state
+ *  fields ride the null-clear convention for the Wave 3 family route. */
 export type UpdateImageGenProfileData = Partial<
-  Omit<ImageGenProfile, 'id' | 'createdAt' | 'presetId' | 'modelId' | 'llmProviderProfileId' | 'llmModelId'>
+  Omit<
+    ImageGenProfile,
+    'id' | 'createdAt' | 'familySource' | 'presetId' | 'modelId' | 'llmProviderProfileId' | 'llmModelId'
+  >
 > & {
   presetId?: string | null;
   modelId?: string | null;
   llmProviderProfileId?: string | null;
   llmModelId?: string | null;
+  familyOverride?: ImageGenProfile['familyOverride'] | null;
+  familyDetected?: ImageGenProfile['familyDetected'] | null;
+  familyDetectedForModel?: ImageGenProfile['familyDetectedForModel'] | null;
 };
 
 // ─── JSON round-trip helpers (imported-data hygiene) ──────────────────────────
@@ -175,6 +191,29 @@ function isImageGenTargetType(v: string): v is ImageGenTargetType {
   return (Object.values(IMAGE_GEN_TARGET_TYPE) as string[]).includes(v);
 }
 
+/** IPT-2: stored family slugs degrade to absent on unknown values (the
+ *  rows-survive rule — a hand-edited/imported row with a future family id
+ *  reads as "unpinned", never crashes; the Wave 3 writer surface validates
+ *  at the zod edge). */
+function toFamilyIdOrUndefined(v: string | null): ImagePromptFamilyId | undefined {
+  return v !== null && (IMAGE_PROMPT_FAMILY_IDS as readonly string[]).includes(v)
+    ? (v as ImagePromptFamilyId)
+    : undefined;
+}
+
+/** IPT-2: the derived `family_source` — computed from the columns it
+ *  summarizes so it can never drift (a manual pin outranks a detection;
+ *  freshness vs the current modelId is the assembly's concern, not this
+ *  read's). */
+function deriveFamilySource(
+  familyOverride: ImagePromptFamilyId | undefined,
+  familyDetected: ImagePromptFamilyId | undefined,
+): ImageGenFamilySource {
+  if (familyOverride !== undefined) return 'manual';
+  if (familyDetected !== undefined) return 'auto';
+  return 'none';
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 /**
@@ -242,6 +281,10 @@ export class ImageGenStore {
           llmAssistEnabled: input.llmAssistEnabled,
           llmProviderProfileId: input.llmProviderProfileId ?? null,
           llmModelId: input.llmModelId ?? null,
+          familyOverride: null,
+          familyDetected: null,
+          familyDetectedForModel: null,
+          qualityLayerEnabled: input.qualityLayerEnabled,
           capabilitiesJson: JSON.stringify(input.capabilities),
           sortOrder: input.sortOrder,
           createdAt: now,
@@ -278,6 +321,13 @@ export class ImageGenStore {
     if (patch.llmAssistEnabled !== undefined) values.llmAssistEnabled = patch.llmAssistEnabled;
     if (patch.llmProviderProfileId !== undefined) values.llmProviderProfileId = patch.llmProviderProfileId ?? null;
     if (patch.llmModelId !== undefined) values.llmModelId = patch.llmModelId ?? null;
+    // IPT-2 family columns: null-clear convention (the presetId twin) — the
+    // Wave 3 family route owns these writes; the PATCH surface never sends
+    // them (absent from updateImageGenProfileSchema).
+    if (patch.familyOverride !== undefined) values.familyOverride = patch.familyOverride ?? null;
+    if (patch.familyDetected !== undefined) values.familyDetected = patch.familyDetected ?? null;
+    if (patch.familyDetectedForModel !== undefined) values.familyDetectedForModel = patch.familyDetectedForModel ?? null;
+    if (patch.qualityLayerEnabled !== undefined) values.qualityLayerEnabled = patch.qualityLayerEnabled;
     if (patch.capabilities !== undefined) values.capabilitiesJson = JSON.stringify(patch.capabilities);
     if (patch.sortOrder !== undefined) values.sortOrder = patch.sortOrder;
 
@@ -422,6 +472,10 @@ export class ImageGenStore {
   private mapRow(row: typeof imageGenProfiles.$inferSelect): ImageGenProfile {
     // Parsed once — the spread below only reuses it.
     const userSizes = parseUserSizes(row.userSizesJson);
+    // IPT-2 family read model: unknown slugs degrade to absent (the
+    // rows-survive rule), the source derives from what survived.
+    const familyOverride = toFamilyIdOrUndefined(row.familyOverride);
+    const familyDetected = toFamilyIdOrUndefined(row.familyDetected);
     const profile: ImageGenProfile = {
       id: brandId<ImageGenProfileId>(row.id),
       name: row.name,
@@ -434,6 +488,10 @@ export class ImageGenStore {
       modeSizePresets: parseModeSizePresets(row.modeSizePresetsJson),
       ...(userSizes.length > 0 ? { userSizes } : {}),
       llmAssistEnabled: row.llmAssistEnabled,
+      qualityLayerEnabled: row.qualityLayerEnabled,
+      ...(familyOverride !== undefined ? { familyOverride } : {}),
+      ...(familyDetected !== undefined ? { familyDetected } : {}),
+      familySource: deriveFamilySource(familyOverride, familyDetected),
       capabilities: parseCapabilities(row.capabilitiesJson),
       isDefault: row.isDefault === 1,
       sortOrder: row.sortOrder,
@@ -444,6 +502,7 @@ export class ImageGenStore {
     if (row.modelId) profile.modelId = row.modelId;
     if (row.llmProviderProfileId) profile.llmProviderProfileId = row.llmProviderProfileId;
     if (row.llmModelId) profile.llmModelId = row.llmModelId;
+    if (row.familyDetectedForModel) profile.familyDetectedForModel = row.familyDetectedForModel;
     // Write-only secret: surfaced only when a key is actually stored (the
     // wire layer reports `hasStoredApiKey` instead; the value never leaves
     // the store).

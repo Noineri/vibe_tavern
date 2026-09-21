@@ -174,6 +174,8 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     modeSizePresets: {},
     userSizes: [],
     llmAssistEnabled: false,
+    familySource: "none",
+    qualityLayerEnabled: false,
     llmProviderProfileId: undefined,
     llmModelId: undefined,
     capabilities: makeCaps(),

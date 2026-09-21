@@ -37,6 +37,8 @@ function profile(id: string, name: string, caps?: Partial<ProfileRecord["capabil
     defaultParams: {},
     modeSizePresets: {},
     llmAssistEnabled: false,
+    familySource: "none",
+    qualityLayerEnabled: false,
     capabilities: {
       supportsNegativePrompt: false,
       supportsSamplers: false,

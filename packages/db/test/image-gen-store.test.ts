@@ -55,6 +55,7 @@ function baseInput(overrides: Partial<CreateImageGenProfileData> = {}): CreateIm
 		defaultParams: { steps: undefined, cfgScale: undefined, sampler: undefined },
 		modeSizePresets: { portrait: { width: 832, height: 1216 } },
 		llmAssistEnabled: false,
+		qualityLayerEnabled: false,
 		capabilities: a1111Capabilities,
 		isDefault: false,
 		sortOrder: 0,
@@ -236,6 +237,81 @@ describe('ImageGenStore CRUD', () => {
 			.run();
 		const loaded = await store.getById(created.id);
 		expect(loaded?.backend).toBe(IMAGE_GEN_BACKENDS.OpenRouter);
+	});
+});
+
+describe('ImageGenStore family + quality fields (IPT-2)', () => {
+	test('create defaults: unpinned family (source none), quality layer off', async () => {
+		const { store } = await setup();
+		const created = await store.create(baseInput());
+		expect(created.familySource).toBe('none');
+		expect(created.familyOverride).toBeUndefined();
+		expect(created.familyDetected).toBeUndefined();
+		expect(created.familyDetectedForModel).toBeUndefined();
+		expect(created.qualityLayerEnabled).toBe(false);
+	});
+
+	test('familyOverride pin: source manual; null-clear restores the prior state', async () => {
+		const { store } = await setup();
+		const created = await store.create(baseInput());
+
+		const pinned = await store.update(created.id, { familyOverride: 'pony' });
+		expect(pinned?.familyOverride).toBe('pony');
+		expect(pinned?.familySource).toBe('manual');
+
+		const cleared = await store.update(created.id, { familyOverride: null });
+		expect(cleared?.familyOverride).toBeUndefined();
+		expect(cleared?.familySource).toBe('none');
+	});
+
+	test('detection write: source auto; a pin outranks it; clearing the pin falls back to auto', async () => {
+		const { store } = await setup();
+		const created = await store.create(baseInput());
+
+		const detected = await store.update(created.id, {
+			familyDetected: 'illustrious',
+			familyDetectedForModel: 'noobaiXVpred10Version.safetensors',
+		});
+		expect(detected?.familyDetected).toBe('illustrious');
+		expect(detected?.familyDetectedForModel).toBe('noobaiXVpred10Version.safetensors');
+		expect(detected?.familySource).toBe('auto');
+
+		const pinned = await store.update(created.id, { familyOverride: 'krea2' });
+		expect(pinned?.familySource).toBe('manual');
+		expect(pinned?.familyDetected).toBe('illustrious'); // detection survives under the pin
+
+		const cleared = await store.update(created.id, { familyOverride: null });
+		expect(cleared?.familySource).toBe('auto'); // falls back, not to none
+
+		const wiped = await store.update(created.id, { familyDetected: null, familyDetectedForModel: null });
+		expect(wiped?.familyDetected).toBeUndefined();
+		expect(wiped?.familyDetectedForModel).toBeUndefined();
+		expect(wiped?.familySource).toBe('none');
+	});
+
+	test('qualityLayerEnabled round-trips through update', async () => {
+		const { store } = await setup();
+		const created = await store.create(baseInput());
+		const on = await store.update(created.id, { qualityLayerEnabled: true });
+		expect(on?.qualityLayerEnabled).toBe(true);
+		const off = await store.update(created.id, { qualityLayerEnabled: false });
+		expect(off?.qualityLayerEnabled).toBe(false);
+	});
+
+	test('unknown family slug degrades to absent (rows-survive read); source derives from survivors', async () => {
+		const { store, db } = await setup();
+		const created = await store.create(baseInput());
+		// A hand-edited/imported row carrying a future family id: override
+		// unreadable, but the valid detection below still reads.
+		await db
+			.update(imageGenProfiles)
+			.set({ familyOverride: 'steampony', familyDetected: 'qwen' })
+			.where(eq(imageGenProfiles.id, created.id))
+			.run();
+		const loaded = await store.getById(created.id);
+		expect(loaded?.familyOverride).toBeUndefined();
+		expect(loaded?.familyDetected).toBe('qwen');
+		expect(loaded?.familySource).toBe('auto');
 	});
 });
 

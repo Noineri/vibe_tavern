@@ -177,6 +177,8 @@ function toClientProfile(profile: ImageGenProfile): ImageGenProfileValue {
     modeSizePresets: profile.modeSizePresets,
     ...(profile.userSizes !== undefined && profile.userSizes.length > 0 ? { userSizes: profile.userSizes } : {}),
     llmAssistEnabled: profile.llmAssistEnabled,
+    qualityLayerEnabled: profile.qualityLayerEnabled,
+    familySource: profile.familySource,
     capabilities: profile.capabilities,
     isDefault: profile.isDefault,
     sortOrder: profile.sortOrder,
@@ -187,6 +189,11 @@ function toClientProfile(profile: ImageGenProfile): ImageGenProfileValue {
   if (profile.modelId !== undefined) record.modelId = profile.modelId;
   if (profile.llmProviderProfileId !== undefined) record.llmProviderProfileId = profile.llmProviderProfileId;
   if (profile.llmModelId !== undefined) record.llmModelId = profile.llmModelId;
+  // IPT-2 family read model: the three state fields surface when present;
+  // familySource always does (the derived provenance label).
+  if (profile.familyOverride !== undefined) record.familyOverride = profile.familyOverride;
+  if (profile.familyDetected !== undefined) record.familyDetected = profile.familyDetected;
+  if (profile.familyDetectedForModel !== undefined) record.familyDetectedForModel = profile.familyDetectedForModel;
   return record;
 }
 
@@ -406,6 +413,9 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       llmAssistEnabled: body.llmAssistEnabled,
       llmProviderProfileId: body.llmProviderProfileId,
       llmModelId: body.llmModelId,
+      // IPT-2: a fresh profile starts unpinned (no family columns from
+      // create — the Wave 3 family route is the only family writer).
+      qualityLayerEnabled: body.qualityLayerEnabled,
       capabilities: body.capabilities,
       sortOrder: body.sortOrder,
       isDefault: false,
@@ -430,6 +440,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     if (body.llmAssistEnabled !== undefined) patch.llmAssistEnabled = body.llmAssistEnabled;
     if (body.llmProviderProfileId !== undefined) patch.llmProviderProfileId = body.llmProviderProfileId;
     if (body.llmModelId !== undefined) patch.llmModelId = body.llmModelId;
+    if (body.qualityLayerEnabled !== undefined) patch.qualityLayerEnabled = body.qualityLayerEnabled;
     if (body.capabilities !== undefined) patch.capabilities = body.capabilities;
     if (body.sortOrder !== undefined) patch.sortOrder = body.sortOrder;
     const updated = await this.stores.imageGen.update(id, patch);

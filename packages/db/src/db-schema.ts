@@ -1747,6 +1747,19 @@ export const imageGenProfiles = sqliteTable('image_gen_profiles', {
   llmAssistEnabled: integer('llm_assist_enabled', { mode: 'boolean' }).notNull().default(false),
   llmProviderProfileId: text('llm_provider_profile_id'),
   llmModelId: text('llm_model_id'),
+  // IPT-2 (IMAGE_PROMPT_TEMPLATES_PLAN): the profile's prompt-family
+  // state. family_override = the manual pin (authoritative when set);
+  // family_detected + family_detected_for_model = the last auto-detection
+  // and the model it ran against (a current-model mismatch marks it stale
+  // — freshness is judged by the consumer, never the row itself). The
+  // derived read-model field familySource is NOT a column: it is computed
+  // at read (override → manual, detected → auto, neither → none) so it
+  // cannot drift from the columns it summarizes.
+  familyOverride: text('family_override'),
+  familyDetected: text('family_detected'),
+  familyDetectedForModel: text('family_detected_for_model'),
+  // IPT-2: the quality layer joins the prompt ONLY when explicitly on.
+  qualityLayerEnabled: integer('quality_layer_enabled', { mode: 'boolean' }).notNull().default(false),
   capabilitiesJson: text('capabilities_json').notNull().default('{}'),
   // MR-12: the GLOBAL active-profile pointer (the tts/stt `isDefault`
   // twin; at most one row, store-maintained via `setDefault`).
