@@ -24,7 +24,7 @@ import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStoreContainer, ServicePromptProfileStore, UiSettingsStore, type StoreContainer } from "@vibe-tavern/db";
+import { createStoreContainer, ImagePromptVariantStore, type StoreContainer } from "@vibe-tavern/db";
 import { domainErrorToJson, httpStatusForDomainError, isDomainError } from "../src/shared/errors.js";
 import { IMAGE_GEN_BACKENDS, parseStoredAttachments, type ChatId } from "@vibe-tavern/domain";
 
@@ -1680,19 +1680,20 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     expect(sent[5]).not.toBe("raw caller direction");
   });
 
-  test("active-profile override beats the built-in template; macros still substitute inside it", async () => {
+  test("custom variant row beats the built-in canon; macros still substitute inside it", async () => {
     const sent: string[] = [];
     const scene = await makeScene(promptCapturingTransport(sent));
     const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
 
-    // An images-family override carrying a marker macro — resolves through
-    // the SAME active-profile path the other families ride.
-    const profileStore = new ServicePromptProfileStore(scene.stores.db);
-    const profileRow = await profileStore.createServicePromptProfile({
-      name: "image overrides",
-      overrides: { image_portrait: "MARKER-{{char}}-OVERRIDE" },
+    // An images-family custom row carrying a marker macro — resolves through
+    // the (row × family) variant chain (IPT-1_resolver; the service-prompt
+    // profile path is retired legacy for images — overrides live in the
+    // variant store now, profile-independent).
+    await new ImagePromptVariantStore(scene.stores.db).upsert({
+      rowKey: "portrait",
+      family: "prose",
+      body: "MARKER-{{char}}-OVERRIDE",
     });
-    await new UiSettingsStore(scene.stores.db).update({ activeServicePromptProfileId: profileRow.id });
 
     const res = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
       method: "POST",
@@ -1702,9 +1703,6 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     expect(res.status).toBe(200);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toBe(`MARKER-${CHAR_NAME}-OVERRIDE`);
-
-    // Reset the pointer so later suites in this process start clean.
-    await new UiSettingsStore(scene.stores.db).update({ activeServicePromptProfileId: null });
   });
 
   test("free mode without a caller prompt → 400 (the raw prompt IS the payload)", async () => {
@@ -1832,12 +1830,13 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     const scene = await makeScene(promptCapturingTransport(sent));
     const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
 
-    const profileStore = new ServicePromptProfileStore(scene.stores.db);
-    const profileRow = await profileStore.createServicePromptProfile({
-      name: "separation override",
-      overrides: { image_portrait: "MARKER-{{description}}-OVERRIDE" },
+    // IPT-1_resolver: the marker rides the variant-store custom row (the
+    // retired seam was the service-prompt profile override).
+    await new ImagePromptVariantStore(scene.stores.db).upsert({
+      rowKey: "portrait",
+      family: "prose",
+      body: "MARKER-{{description}}-OVERRIDE",
     });
-    await new UiSettingsStore(scene.stores.db).update({ activeServicePromptProfileId: profileRow.id });
 
     // Generate the image slot INTO the chat (the feature is fully engaged).
     const genRes = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
@@ -1895,8 +1894,6 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     expect(serialized).toContain(LAST_MSG); // sanity: the RP prompt DID assemble the chat
     expect(serialized).not.toContain("MARKER"); // the image prompt stayed out
     expect(serialized).not.toContain("OVERRIDE");
-
-    await new UiSettingsStore(scene.stores.db).update({ activeServicePromptProfileId: null });
   });
 
   test("slot prompt visibility (IG-18): excluded from the RP assembly by default, included on the per-image opt-in", async () => {

@@ -25,31 +25,18 @@
  * automatically.
  */
 
-import { IMAGE_GENERATION_MODES, type ImageGenerationMode, type ServicePromptFieldKey } from "@vibe-tavern/domain";
+import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, type ImageGenerationMode, type ServicePromptFieldKey } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { buildPromptVariableContext, createFullMacroEngine } from "@vibe-tavern/prompt-pipeline";
 import { resolveServicePrompt } from "../service-prompts/service-prompt-resolver.js";
-
-/** Mode → Images-tab template field (the IG-13 `images` family). Selfie
- *  and avatar ride the SAME service-prompt path until IPT Wave 1 switches
- *  resolution to the (mode × family) variant resolver (IPT Wave 0 bridge). */
-export const IMAGE_GEN_MODE_TEMPLATE_FIELD: Record<ImageGenerationMode, ServicePromptFieldKey> = {
-  [IMAGE_GENERATION_MODES.SceneBackground]: "image_scene_background",
-  [IMAGE_GENERATION_MODES.Portrait]: "image_portrait",
-  [IMAGE_GENERATION_MODES.Selfie]: "image_selfie",
-  [IMAGE_GENERATION_MODES.Character]: "image_character",
-  [IMAGE_GENERATION_MODES.Avatar]: "image_avatar",
-  [IMAGE_GENERATION_MODES.UserPersona]: "image_user_persona",
-  [IMAGE_GENERATION_MODES.SceneIllustration]: "image_scene_illustration",
-  [IMAGE_GENERATION_MODES.Free]: "image_free",
-};
-
-/** The shared negative default (surfaced only for negative-capable
- *  providers — the consumption gate lives in the generate adapter). */
-export const IMAGE_GEN_NEGATIVE_FIELD: ServicePromptFieldKey = "image_negative";
+import { resolveImagePromptVariant } from "../imagegen/prompt-variant-resolver.js";
 
 /** The quiet pre-pass instruction (IG-15) — the images family's LLM-assist
- *  system prompt. */
+ *  system prompt. The LAST image_* service-prompt consumer: template and
+ *  negative rows moved to the (row × family) variant resolver (IPT Wave
+ *  1.3 — the images family's service-prompt rows are unread legacy from
+ *  here on; the pane swap and field retirement land at Waves 4/6). The
+ *  assist addendum composition (core + image-assist.{family}.md) is Wave 2. */
 export const IMAGE_GEN_ASSIST_FIELD: ServicePromptFieldKey = "image_assist";
 
 /** A well-formed generation request the mode module cannot satisfy (route →
@@ -154,8 +141,13 @@ export async function buildImageGenPrompts(
   const engine = createFullMacroEngine();
   const resolve = (text: string): string => engine.resolve(text, context);
 
-  const { text: template } = await resolveServicePrompt(stores.db, IMAGE_GEN_MODE_TEMPLATE_FIELD[mode]);
-  const { text: negative } = await resolveServicePrompt(stores.db, IMAGE_GEN_NEGATIVE_FIELD);
+  // IPT Wave 1.3: template + negative resolve through the variant chain
+  // (custom row → family canon → prose canon). The family is the universal
+  // default until Wave 2 wires the profile's family columns (manual pin /
+  // fresh detection) above this seam — for prose/no-custom this is
+  // byte-identical to the interim service-prompt resolution.
+  const { text: template } = await resolveImagePromptVariant(stores.db, { rowKey: mode, family: IMAGE_PROMPT_DEFAULT_FAMILY });
+  const { text: negative } = await resolveImagePromptVariant(stores.db, { rowKey: "negative", family: IMAGE_PROMPT_DEFAULT_FAMILY });
 
   if (mode === IMAGE_GENERATION_MODES.Free) {
     // The free template is a WRAPPER ("Depict exactly what the accompanying
