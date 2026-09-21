@@ -35,6 +35,7 @@ function fullCaps(): Caps {
     supportsSamplers: true,
     supportsSeed: true,
     supportsLoras: true,
+    supportsHiresFix: true,
     sizeSupport: { kind: "free" },
     noApiKey: false,
     supportsLiveProgress: false,
@@ -45,7 +46,14 @@ function fullCaps(): Caps {
 }
 
 function noCaps(): Caps {
-  return { ...fullCaps(), supportsNegativePrompt: false, supportsSamplers: false, supportsSeed: false, supportsLoras: false };
+  return {
+    ...fullCaps(),
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: false,
+    supportsLoras: false,
+    supportsHiresFix: false,
+  };
 }
 
 function profile(id: string, name: string, capabilities: Caps, modelId?: string): ProfileRecord {
@@ -76,6 +84,8 @@ let extensionsStore: Record<string, string[]> = {};
 let overlayStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue> = {};
 let lorasStore: Record<string, LoraEntry[]> = {};
 const lorasFailFor = new Set<string>();
+let upscalersStore: Record<string, import("../../api/image-gen-api.js").ImageGenUpscaler[]> = {};
+const upscalersFailFor = new Set<string>();
 let sidecarsStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenDitSidecarsValue> = {};
 const sidecarsFailFor = new Set<string>();
 const sidecarsCalls: string[] = [];
@@ -103,6 +113,10 @@ mock.module("../../api/image-gen-api.js", () => ({
     lorasFailFor.has(id)
       ? Promise.reject(new Error("lora list boom"))
       : Promise.resolve([...(lorasStore[id] ?? [])]),
+  listImageGenUpscalers: (id: string) =>
+    upscalersFailFor.has(id)
+      ? Promise.reject(new Error("upscaler list boom"))
+      : Promise.resolve([...(upscalersStore[id] ?? [])]),
   listImageGenDitSidecars: (id: string) => {
     sidecarsCalls.push(id);
     return sidecarsFailFor.has(id)
@@ -218,6 +232,8 @@ afterEach(() => {
   overlayStore = {};
   lorasStore = {};
   lorasFailFor.clear();
+  upscalersStore = {};
+  upscalersFailFor.clear();
   sidecarsStore = {};
   sidecarsFailFor.clear();
   sidecarsCalls.length = 0;
@@ -556,6 +572,15 @@ describe("ImageGenFineTuningChip — Generate button (FT-A3)", () => {
     // verbatim (the backend stamps the <lora:…> tags from this payload).
     useImageGenChatStore.getState().setFineTuningLoraEnabled(chatA, "nijireol_krea2_v1_ep5", true);
     useImageGenChatStore.getState().setFineTuningLoraStrength(chatA, "nijireol_krea2_v1_ep5", 0.7);
+    // FT-A6: the hires block rides capability-gated — enabled + only the
+    // SET knobs (denoise unset here: absent in the payload, the FT-A4
+    // server-defaults rule).
+    useImageGenChatStore.getState().setFineTuningHires(chatA, {
+      enabled: true,
+      upscaler: "Latent",
+      steps: 18,
+      scale: 1.5,
+    });
     const view = renderChip(<ImageGenFineTuningChip chatId={chatA} />);
     await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
     openChip();
@@ -579,6 +604,7 @@ describe("ImageGenFineTuningChip — Generate button (FT-A3)", () => {
       width: 832,
       height: 1216,
       loras: [{ name: "nijireol_krea2_v1_ep5", strength: 0.7 }],
+      hires: { upscaler: "Latent", steps: 18, scale: 1.5 },
     });
     // The editor closes after firing (the chip's own onDone twin).
     await waitFor(() => expect(within(view.baseElement).queryByTestId("image-gen-ft-body")).toBeNull());
@@ -792,6 +818,184 @@ describe("ImageGenFineTuningChip — LoRA section (CG-C3)", () => {
   });
 });
 
+describe("ImageGenFineTuningChip — hires-fix block (FT-A6)", () => {
+  function forgeProfile(chatId: string): void {
+    profilesStore = [{ ...profile("a1", "Forge local", fullCaps()), backend: "a1111" }];
+    act(() => armChat(chatId));
+  }
+
+  function seedUpscalers(): void {
+    upscalersStore = { a1: [{ name: "Latent" }, { name: "4x-UltraSharp" }, { name: "R-ESRGAN 4x+" }] };
+  }
+
+  it("renders ONLY for a supportsHiresFix profile — false hides, absent (= false) hides too", async () => {
+    forgeProfile("chat-hr0");
+    let view = renderChip(<ImageGenFineTuningChip chatId="chat-hr0" />);
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-hires")).toBeTruthy());
+    cleanup();
+
+    profilesStore = [{ ...profile("a2", "No hires", { ...fullCaps(), supportsHiresFix: false }), backend: "a1111" }];
+    view = renderChip(<ImageGenFineTuningChip chatId="chat-hr0" />);
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-hires")).toBeNull();
+    cleanup();
+
+    // Absent key = false (optional flag semantics — the supportsLoras twin).
+    const caps = fullCaps();
+    delete caps.supportsHiresFix;
+    profilesStore = [{ ...profile("a3", "Snapshot", caps), backend: "a1111" }];
+    view = renderChip(<ImageGenFineTuningChip chatId="chat-hr0" />);
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-hires")).toBeNull();
+  });
+
+  it("collapsed when off; the toggle reveals the knobs; the four SEPARATE knobs write the draft and persist through toggle-off", async () => {
+    forgeProfile("chat-hr1");
+    seedUpscalers();
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-hr1" />);
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-hires")).toBeTruthy());
+    // Collapsed when off (the plan's acceptance line).
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-hires-body")).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(within(view.baseElement).getByRole("switch", { name: "image_gen_hires_label" }));
+    });
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-hires-body")).toBeTruthy(),
+    );
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-hr1"]?.hires).toEqual({
+      enabled: true,
+    });
+
+    // Upscaler pick writes the draft (Auto = the {id:""} entry → unset).
+    await pickOption("image-gen-ft-hires-upscaler", "4x-UltraSharp");
+    await waitFor(() =>
+      expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-hr1"]?.hires).toEqual({
+        enabled: true,
+        upscaler: "4x-UltraSharp",
+      }),
+    );
+    // The three sliders commit on interaction (display anchors are server
+    // defaults — untouched knobs stay unset).
+    await act(async () => {
+      fireEvent.change(within(view.baseElement).getByTestId("image-gen-ft-hires-steps"), {
+        target: { value: "18" },
+      });
+    });
+    await act(async () => {
+      fireEvent.change(within(view.baseElement).getByTestId("image-gen-ft-hires-scale"), {
+        target: { value: "1.5" },
+      });
+    });
+    await act(async () => {
+      fireEvent.change(within(view.baseElement).getByTestId("image-gen-ft-hires-denoise"), {
+        target: { value: "0.6" },
+      });
+    });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-hr1"]?.hires).toEqual({
+      enabled: true,
+      upscaler: "4x-UltraSharp",
+      steps: 18,
+      scale: 1.5,
+      denoisingStrength: 0.6,
+    });
+
+    // Toggle off: collapsed again, but the knobs PERSIST in the draft
+    // (draft-level like every chip field — nothing is thrown away).
+    await act(async () => {
+      fireEvent.click(within(view.baseElement).getByRole("switch", { name: "image_gen_hires_label" }));
+    });
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-hires-body")).toBeNull();
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-hr1"]?.hires).toEqual({
+      enabled: false,
+      upscaler: "4x-UltraSharp",
+      steps: 18,
+      scale: 1.5,
+      denoisingStrength: 0.6,
+    });
+  });
+
+  it("wire fields per FT-A4: enabled + no knobs fires plain enable_hr ({}); a no-caps profile strips the block", async () => {
+    forgeProfile("chat-hr2");
+    useImageGenChatStore.getState().setFineTuningDraft("chat-hr2", { prompt: "a keep on a cliff" });
+    useImageGenChatStore.getState().setFineTuningHires("chat-hr2", { enabled: true });
+    let view = renderChip(<ImageGenFineTuningChip chatId="chat-hr2" />);
+    await waitFor(() =>
+      expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1),
+    );
+    openChip();
+    const fire1 = await waitFor(() => {
+      const el = within(view.baseElement).getByTestId("image-gen-ft-generate");
+      expect((el as HTMLButtonElement).disabled).toBe(false);
+      return el as HTMLButtonElement;
+    });
+    await act(async () => {
+      fireEvent.click(fire1);
+    });
+    expect(generateCalls.length).toBe(1);
+    // Presence alone = plain enable_hr — every unset knob stays unset so
+    // server defaults fill (the FT-A4 presence rule).
+    expect(generateCalls[0]![1].overrides).toEqual({ hires: {} });
+    cleanup();
+
+    // A profile without the flag never sees the block on the wire (the
+    // capability gate at the fold — the loras strip twin). The phase-1 run
+    // is PARKED forever by the mock (R5) — the store's controllers map
+    // still holds chat-hr2, so a second fire NEEDS a different chatId (the
+    // FT-A3 module-map mechanism), and the running map is reset to keep
+    // the button enabled.
+    profilesStore = [{ ...profile("a4", "Cloud", noCaps()), backend: "openrouter" }];
+    useImageGenChatStore.setState({ runningByChat: {} });
+    act(() => armChat("chat-hr2b"));
+    useImageGenChatStore.getState().setFineTuningDraft("chat-hr2b", { prompt: "a keep on a cliff" });
+    useImageGenChatStore.getState().setFineTuningHires("chat-hr2b", {
+      enabled: true,
+      steps: 18,
+      denoisingStrength: 0.6,
+    });
+    view = renderChip(<ImageGenFineTuningChip chatId="chat-hr2b" />);
+    await waitFor(() =>
+      expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1),
+    );
+    openChip();
+    const fire2 = await waitFor(() => {
+      const el = within(view.baseElement).getByTestId("image-gen-ft-generate");
+      expect((el as HTMLButtonElement).disabled).toBe(false);
+      return el as HTMLButtonElement;
+    });
+    await act(async () => {
+      fireEvent.click(fire2);
+    });
+    expect(generateCalls.length).toBe(2);
+    // No overrides key at all — the block never rides for an unsupported profile.
+    expect(generateCalls[1]![1].overrides).toBeUndefined();
+  });
+
+  it("a failed upscaler fetch degrades to the failed hint beside the Auto dropdown — no crash", async () => {
+    forgeProfile("chat-hr3");
+    upscalersFailFor.add("a1");
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-hr3" />);
+    openChip();
+    const toggle = await waitFor(() =>
+      within(view.baseElement).getByRole("switch", { name: "image_gen_hires_label" }),
+    );
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-hires-failed")).toBeTruthy(),
+    );
+    // The knob rows still render (the loras-failed precedent).
+    expect(within(view.baseElement).getByTestId("image-gen-ft-hires-steps")).toBeTruthy();
+    expect(within(view.baseElement).getByTestId("image-gen-ft-hires-scale")).toBeTruthy();
+    expect(within(view.baseElement).getByTestId("image-gen-ft-hires-denoise")).toBeTruthy();
+  });
+});
+
 describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", () => {
   it("renders ONLY when a concrete model is picked — the default-model state has no accordion", async () => {
     profilesStore = [profile("ig1", "Local Forge", fullCaps())];
@@ -922,7 +1126,10 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     await waitFor(() =>
       expect(within(view.baseElement).getByTestId("image-gen-ft-adetailer-body")).toBeTruthy(),
     );
-    const toggle = within(view.baseElement).getByRole("switch");
+    const adBody = within(view.baseElement).getByTestId("image-gen-ft-adetailer-body");
+    // Scoped: the chip body now carries its own hires switch (FT-A6) — the
+    // ADetailer boundary is its OWN body, not the whole popover.
+    const toggle = within(adBody as HTMLElement).getByRole("switch");
     await act(async () => {
       fireEvent.click(toggle);
     });

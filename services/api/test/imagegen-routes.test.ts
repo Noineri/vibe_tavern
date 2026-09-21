@@ -757,8 +757,8 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
   test("a1111 loras list serves the builtin-extension entries with embedded-metadata family (FT-A4); unknown → 404", async () => {
     const { app } = await makeApp(async () =>
       Response.json([
-        { name: "nijireol_krea2_v1_ep5", alias: "nijireol_krea2_v1_ep5", path: "N:\\loras\\nijireol_krea2_v1_ep5.safetensors", metadata: { "ss_base_model_version": "krea2" } },
-        { name: "arden_il_v2", alias: "", path: "N:\\loras\\arden_il_v2.safetensors", metadata: null },
+        { name: "nijireol_krea2_v1_ep5", alias: "nijireol_krea2_v1_ep5", path: "loras/nijireol_krea2_v1_ep5.safetensors", metadata: { "ss_base_model_version": "krea2" } },
+        { name: "arden_il_v2", alias: "", path: "loras/arden_il_v2.safetensors", metadata: null },
       ]),
     );
     const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
@@ -790,7 +790,7 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
       Response.json([
         { name: "None", model_name: "", model_path: null, model_url: null, scale: 1 },
         { name: "Latent", model_name: "", model_path: null, model_url: null, scale: 2 },
-        { name: "4x-UltraSharp", model_name: "4x-UltraSharp", model_path: "N:\\models\\4x-UltraSharp.pth", model_url: null, scale: 4 },
+        { name: "4x-UltraSharp", model_name: "4x-UltraSharp", model_path: "models/4x-UltraSharp.pth", model_url: null, scale: 4 },
       ]),
     );
     const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });

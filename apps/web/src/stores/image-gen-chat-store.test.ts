@@ -288,6 +288,43 @@ describe("image-gen chat store — fine-tuning draft (IG-17)", () => {
     ]);
   });
 
+  // ── FT-A6: the hires block in the draft ───────────────────────
+
+  it("FT-A6: the hires patch merges into the block; toggle-off KEEPS the knobs; undefined clears back to unset", () => {
+    const s = useImageGenChatStore.getState();
+    // From pristine: the toggle creates the block.
+    s.setFineTuningHires("chat-h1", { enabled: true });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-h1"]?.hires).toEqual({
+      enabled: true,
+    });
+    // Knob patches merge — only the touched knob lands.
+    s.setFineTuningHires("chat-h1", { upscaler: "4x-UltraSharp" });
+    s.setFineTuningHires("chat-h1", { steps: 18 });
+    s.setFineTuningHires("chat-h1", { denoisingStrength: 0.6 });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-h1"]?.hires).toEqual({
+      enabled: true,
+      upscaler: "4x-UltraSharp",
+      steps: 18,
+      denoisingStrength: 0.6,
+    });
+    // Toggle-off collapses but PRESERVES the knobs (draft-level persistence).
+    s.setFineTuningHires("chat-h1", { enabled: false });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-h1"]?.hires).toEqual({
+      enabled: false,
+      upscaler: "4x-UltraSharp",
+      steps: 18,
+      denoisingStrength: 0.6,
+    });
+    // An undefined patch value clears the knob back to unset (the wire's
+    // «only SET knobs ride» semantics).
+    s.setFineTuningHires("chat-h1", { upscaler: undefined });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-h1"]?.hires).toEqual({
+      enabled: false,
+      steps: 18,
+      denoisingStrength: 0.6,
+    });
+  });
+
   // ── PG-2: run metadata + server-side interrupt ─────────────────────
 
   it("PG-2: the run state carries the profileId and the start-time liveProgress snapshot", async () => {

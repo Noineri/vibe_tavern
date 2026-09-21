@@ -49,6 +49,7 @@ import {
   listAllImageGenProfiles,
   listImageGenModels,
   listImageGenSamplers,
+  listImageGenUpscalers,
   listImageGenSchedulers,
   listImageGenExtensions,
   listImageGenLoras,
@@ -58,6 +59,7 @@ import {
   type ImageGenModelEntry,
   type ImageGenProfileRecord,
   type ImageGenLora,
+  type ImageGenUpscaler,
   type ImageGenDitSidecars,
 } from "../../api/image-gen-api.js";
 import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue, ImageGenBackendValue } from "@vibe-tavern/api-contracts";
@@ -65,6 +67,7 @@ import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MO
 import { EMPTY_IMAGE_GEN_DRAFT, buildDraftGenerateInput, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useOrderedMessages } from "../../stores/snapshot-store.js";
 import { ImageGenLoraSection } from "./ImageGenLoraSection.js";
+import { ImageGenHiresSection } from "./ImageGenHiresSection.js";
 
 export interface ImageGenFineTuningChipProps {
   chatId: string;
@@ -172,6 +175,8 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   const [samplers, setSamplers] = useState<ImageGenSamplerInfoValue[] | null>(null);
   const [loras, setLoras] = useState<ImageGenLora[] | null>(null);
   const [lorasFailed, setLorasFailed] = useState(false);
+  const [upscalers, setUpscalers] = useState<ImageGenUpscaler[] | null>(null);
+  const [upscalersFailed, setUpscalersFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,6 +200,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   const supportsSamplers = caps?.supportsSamplers ?? false;
   const supportsNegative = caps?.supportsNegativePrompt ?? false;
   const supportsLoras = caps?.supportsLoras ?? false;
+  const supportsHiresFix = caps?.supportsHiresFix ?? false;
 
   // Model catalog for the effective profile (re-fetched on profile switch).
   useEffect(() => {
@@ -267,6 +273,34 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
       cancelled = true;
     };
   }, [effectiveId, supportsLoras]);
+
+  // Upscaler list (FT-A6) — the loras-twin gate: capability first (the
+  //  route 400s off the A1111 dialect), fetch on profile switch, failure =
+  //  the failed hint beside the dropdown (not a crash — the knob rows
+  //  stay usable; the MediaMenu precedent).
+  useEffect(() => {
+    if (effectiveId === null || !supportsHiresFix) {
+      setUpscalers(null);
+      setUpscalersFailed(false);
+      return;
+    }
+    let cancelled = false;
+    setUpscalers(null);
+    setUpscalersFailed(false);
+    void listImageGenUpscalers(effectiveId)
+      .then((list) => {
+        if (!cancelled) setUpscalers(list ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUpscalers([]);
+          setUpscalersFailed(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveId, supportsHiresFix]);
 
   if (profiles === null) {
     return (
@@ -520,6 +554,17 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
           modelFamily={modelFamily}
           loras={loras}
           failed={lorasFailed}
+          disabled={busy}
+        />
+      )}
+
+      {/* Hires fix (FT-A6): toggle + the four separate knobs, the A1111
+          second pass — capability-gated like the loras section above. */}
+      {supportsHiresFix && (
+        <ImageGenHiresSection
+          chatId={chatId}
+          upscalers={upscalers}
+          failed={upscalersFailed}
           disabled={busy}
         />
       )}

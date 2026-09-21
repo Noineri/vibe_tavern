@@ -167,28 +167,28 @@ describe("a1111 adapter — loras + hires (FT-A4)", () => {
           {
             name: "nijireol_krea2_v1_ep5",
             alias: "nijireol_krea2_v1_ep5",
-            path: "N:\\loras\\nijireol_krea2_v1_ep5.safetensors",
+            path: "loras/nijireol_krea2_v1_ep5.safetensors",
             metadata: { "ss_base_model_version": "krea2" },
           },
           {
             name: "dragonPony",
             alias: "",
-            path: "N:\\loras\\dragonPony.safetensors",
+            path: "loras/dragonPony.safetensors",
             metadata: { "modelspec.architecture": "stable-diffusion-xl-v1-base" },
           },
           {
             name: "plain_lora",
             alias: "plain_lora",
-            path: "N:\\loras\\plain_lora.safetensors",
+            path: "loras/plain_lora.safetensors",
             metadata: {},
           },
           {
             name: "null_meta_lora",
             alias: "null_meta_lora",
-            path: "N:\\loras\\null_meta_lora.safetensors",
+            path: "loras/null_meta_lora.safetensors",
             metadata: null,
           },
-          { alias: "nameless", path: "N:\\loras\\nameless.safetensors" },
+          { alias: "nameless", path: "loras/nameless.safetensors" },
           "garbage-entry",
         ]),
       );
@@ -223,7 +223,7 @@ describe("a1111 adapter — loras + hires (FT-A4)", () => {
           {
             name: "4x-UltraSharp",
             model_name: "4x-UltraSharp",
-            model_path: "N:\\models\\ESRGAN\\4x-UltraSharp.pth",
+            model_path: "models/ESRGAN/4x-UltraSharp.pth",
             model_url: null,
             scale: 4,
           },

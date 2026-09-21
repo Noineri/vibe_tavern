@@ -35,13 +35,21 @@ import type { ImageGenBackendType, ImageGenCapabilityFlags, ImageGenParamRange }
  *  trained weight, 2 exaggeration) feeding both strength_model and
  *  strength_clip on ComfyUI. */
 export const IMAGE_GEN_PARAM_RANGES: Record<
-  "steps" | "cfgScale" | "clipSkip" | "loraStrength",
+  "steps" | "cfgScale" | "clipSkip" | "loraStrength" | "hiresSteps" | "hiresScale" | "hiresDenoise",
   ImageGenParamRange
 > = {
   steps: { min: 1, max: 150, step: 1 },
   cfgScale: { min: 1, max: 30, step: 0.5 },
   clipSkip: { min: 1, max: 12, step: 1 },
   loraStrength: { min: 0, max: 2, step: 0.05 },
+  /** Hires-fix second pass (FT-A6, A1111 `hr_*`): steps 0 = the dialect's
+   *  own «inherit the first pass» (0 is a legal SENT value, so min 0);
+   *  scale = the hr_scale multiplier around the server default 2.0;
+   *  denoise = denoising_strength 0–1 (server default 0.75, the display
+   *  anchor — never forced on the wire). */
+  hiresSteps: { min: 0, max: 150, step: 1 },
+  hiresScale: { min: 1, max: 4, step: 0.05 },
+  hiresDenoise: { min: 0, max: 1, step: 0.05 },
 };
 
 /** ADetailer face-model presets (IG-CF15/PG-4 v1) — the extension's own

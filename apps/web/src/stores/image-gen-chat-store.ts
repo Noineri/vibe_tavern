@@ -94,6 +94,23 @@ export interface ImageGenFineTuningDraft {
    *  (supportsLoras). undefined/empty = none sent. Entry ORDER = chain
    *  order on ComfyUI (LoraLoader nodes chain in list sequence). */
   loras?: ImageGenLoraPick[];
+  /** Hires-fix pick (FT-A6) → overrides.hires at the fold — capability-gated
+   *  (supportsHiresFix). `enabled` is the chip's toggle (off = collapsed,
+   *  nothing sent); the four SEPARATE knobs (owner 2026-09-17: «отдельные
+   *  ручки нужны») ride only when SET — unset knobs stay unset so server
+   *  defaults fill (enabled + no knobs = plain enable_hr, the FT-A4
+   *  presence rule). */
+  hires?: ImageGenHiresDraft;
+}
+
+/** The draft's hires block (FT-A6) — `enabled` + the four optional knobs. */
+export interface ImageGenHiresDraft {
+  enabled: boolean;
+  upscaler?: string;
+  /** 0 = the dialect's «inherit the first pass» (a legal SENT value). */
+  steps?: number;
+  scale?: number;
+  denoisingStrength?: number;
 }
 
 /** A pristine draft (shared empty instance — never mutated; setters copy). */
@@ -103,7 +120,7 @@ export const EMPTY_IMAGE_GEN_DRAFT: ImageGenFineTuningDraft = { prompt: "", nega
  *  and test rows alike). */
 export interface DraftFoldProfile {
   id: string;
-  capabilities: { supportsNegativePrompt: boolean; supportsLoras?: boolean };
+  capabilities: { supportsNegativePrompt: boolean; supportsLoras?: boolean; supportsHiresFix?: boolean };
 }
 
 /** THE draft→generate fold (FT-A3): ONE implementation shared by the message
@@ -142,6 +159,18 @@ export function buildDraftGenerateInput(args: {
   // = ComfyUI chain order; strength verbatim from the chip.
   if (draft.loras !== undefined && draft.loras.length > 0 && args.effective.capabilities.supportsLoras === true) {
     overrides.loras = draft.loras;
+  }
+  // FT-A6: the hires block rides capability-gated — enabled + only the SET
+  //  knobs ({} = plain enable_hr, the FT-A4 presence rule; unset knobs stay
+  //  unset so server defaults fill).
+  if (draft.hires?.enabled === true && args.effective.capabilities.supportsHiresFix === true) {
+    const hires: NonNullable<ImageGenGenerateOverridesValue["hires"]> = {};
+    const block = draft.hires;
+    if (block.upscaler !== undefined && block.upscaler !== "") hires.upscaler = block.upscaler;
+    if (block.steps !== undefined) hires.steps = block.steps;
+    if (block.scale !== undefined) hires.scale = block.scale;
+    if (block.denoisingStrength !== undefined) hires.denoisingStrength = block.denoisingStrength;
+    overrides.hires = hires;
   }
   if (Object.keys(overrides).length > 0) input.overrides = overrides;
   return input;
@@ -217,6 +246,11 @@ interface ImageGenChatActions {
   /** Update one enabled lora's strength in place (no-op when the lora is
    *  not enabled — the slider only renders for enabled rows). */
   setFineTuningLoraStrength(chatId: string, name: string, strength: number): void;
+  /** Patch the chat's hires block (FT-A6) — ONE merge point for the toggle
+   *  and the four knobs (undefined in the patch clears the knob back to
+   *  unset; the block persists through toggle-off, draft-level like every
+   *  other chip field). */
+  setFineTuningHires(chatId: string, patch: Partial<ImageGenHiresDraft>): void;
   /** Reset the chat's draft to pristine (the chip's Clear). */
   clearFineTuningDraft(chatId: string): void;
 }
@@ -348,6 +382,22 @@ export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
             ...current,
             loras: picks.map((p) => (p.name === name ? { ...p, strength } : p)),
           },
+        },
+      };
+    });
+  },
+
+  setFineTuningHires: (chatId, patch) => {
+    set((s) => {
+      const current = s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT;
+      const block = current.hires ?? { enabled: false };
+      // A patch value of undefined clears the knob back to unset (server
+      //  default) — for the fold an undefined-valued key IS an absent one.
+      const merged: ImageGenHiresDraft = { ...block, ...patch };
+      return {
+        fineTuningDraftByChat: {
+          ...s.fineTuningDraftByChat,
+          [chatId]: { ...current, hires: merged },
         },
       };
     });
