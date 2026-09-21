@@ -552,6 +552,10 @@ describe("ImageGenFineTuningChip — Generate button (FT-A3)", () => {
       width: 832,
       height: 1216,
     });
+    // FT-A5: enabled loras ride the SAME fold — draft chain order, strength
+    // verbatim (the backend stamps the <lora:…> tags from this payload).
+    useImageGenChatStore.getState().setFineTuningLoraEnabled(chatA, "nijireol_krea2_v1_ep5", true);
+    useImageGenChatStore.getState().setFineTuningLoraStrength(chatA, "nijireol_krea2_v1_ep5", 0.7);
     const view = renderChip(<ImageGenFineTuningChip chatId={chatA} />);
     await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
     openChip();
@@ -567,11 +571,15 @@ describe("ImageGenFineTuningChip — Generate button (FT-A3)", () => {
     const [calledChat, input] = generateCalls[0]!;
     expect(calledChat).toBe(chatA);
     // Default target = free; prompt verbatim (IG-14); anchor = the TAIL
-    // message; the FT-A2 resolution rides the overrides.
+    // message; the FT-A2 resolution + the FT-A5 lora chain ride the overrides.
     expect(input.mode).toBe("free");
     expect(input.prompt).toBe("a castle at dawn");
     expect(input.anchorMessageId).toBe("ft3_m2");
-    expect(input.overrides).toEqual({ width: 832, height: 1216 });
+    expect(input.overrides).toEqual({
+      width: 832,
+      height: 1216,
+      loras: [{ name: "nijireol_krea2_v1_ep5", strength: 0.7 }],
+    });
     // The editor closes after firing (the chip's own onDone twin).
     await waitFor(() => expect(within(view.baseElement).queryByTestId("image-gen-ft-body")).toBeNull());
   });
