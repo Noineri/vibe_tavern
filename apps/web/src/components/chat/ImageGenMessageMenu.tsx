@@ -37,7 +37,7 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { useT } from "../../i18n/context.js";
 import { listAllImageGenProfiles, type ImageGenProfileRecord } from "../../api/image-gen-api.js";
-import { EMPTY_IMAGE_GEN_DRAFT, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
+import { EMPTY_IMAGE_GEN_DRAFT, buildDraftGenerateInput, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import type { GenerateImageGenInput, ImageGenGenerateOverridesValue } from "@vibe-tavern/api-contracts";
@@ -222,37 +222,22 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
 
   const startMode = (mode: ImageGenerationMode): void => {
     if (running !== undefined || effective === null) return;
-    const input: GenerateImageGenInput = { profileId: effective.id, mode, anchorMessageId: messageId };
-    // IG-17: while Fine tuning is on the chip's draft rides the request —
-    // the positive prompt VERBATIM (the IG-14 contract: a present prompt is
-    // never re-templated server-side), the picks + negative as overrides.
-    // Empty trimmed strings are not sent (the contract's fallback
-    // semantics); the negative additionally gates on the profile's
-    // capability (IG-13) so an unsupported backend never receives one.
-    if (fineTuning) {
-      const prompt = draft.prompt.trim();
-      if (prompt !== "") input.prompt = prompt;
-      const overrides: ImageGenGenerateOverridesValue = {};
-      const negative = draft.negative.trim();
-      if (negative !== "" && effective.capabilities.supportsNegativePrompt) {
-        overrides.negativePrompt = negative;
-      }
-      if (draft.model !== undefined && draft.model !== "") overrides.model = draft.model;
-      // FT-A2: the chip's resolution pick rides the run — partial pairs
-      // are legal (the contract falls back per side).
-      if (draft.width !== undefined) overrides.width = draft.width;
-      if (draft.height !== undefined) overrides.height = draft.height;
-      // FT-A1: the one-shot draft sampler pick is GONE — the model-settings
-      // accordion (same overlay as the providers pane) is the only sampler
-      // surface; overrides.sampler no longer has a draft-side source.
-      // CG-C3: enabled loras ride the run — capability-gated exactly like
-      // the negative (a profile without supportsLoras never sees them).
-      // Entry order = ComfyUI chain order; strength verbatim from the chip.
-      if (draft.loras !== undefined && draft.loras.length > 0 && effective.capabilities.supportsLoras === true) {
-        overrides.loras = draft.loras;
-      }
-      if (Object.keys(overrides).length > 0) input.overrides = overrides;
-    }
+    // FT-A3: the draft→generate fold is ONE shared implementation (the
+    // store's buildDraftGenerateInput) — this menu (mode = the clicked row)
+    // and the chip's Generate button (mode = the draft target, tail
+    // anchor) fold identically: prompt VERBATIM when non-empty (IG-14),
+    // picks as overrides with empty-means-not-sent semantics and the
+    // IG-13/CG-C3 capability gates (negative, loras). The one-shot sampler
+    // pick is GONE (FT-A1) — the model-settings overlay is the only
+    // sampler source.
+    const input = buildDraftGenerateInput({
+      draft,
+      effective,
+      mode,
+      anchorMessageId: messageId,
+      foldDraft: fineTuning,
+    });
+    if (input === null) return;
     void runGeneration(chatId, input, {
       // PG-2: the START-time capability snapshot rides the run — Stop then
       // interrupts the local server-side job, the progress row polls it.

@@ -574,6 +574,7 @@
   "image_gen_chip_target_label": "Режим",
   "image_gen_chip_resolution_label": "Разрешение",
   "image_gen_size_custom": "Своё",
+  "image_gen_chip_generate": "Сгенерировать",
   "image_gen_chip_model_default": "По умолчанию из профиля",
   "image_gen_chip_models_failed": "Не удалось загрузить модели",
   "image_gen_chip_prompt_label": "Позитивный промпт",

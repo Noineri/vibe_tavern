@@ -572,6 +572,7 @@
   "image_gen_chip_target_label": "Mode",
   "image_gen_chip_resolution_label": "Resolution",
   "image_gen_size_custom": "Custom",
+  "image_gen_chip_generate": "Generate",
   "image_gen_chip_model_default": "Profile default",
   "image_gen_chip_models_failed": "Failed to load models",
   "image_gen_chip_prompt_label": "Positive prompt",

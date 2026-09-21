@@ -27,7 +27,7 @@ import { toast } from "sonner";
 import { brandId, type ChatId, type ImageGenerationMode } from "@vibe-tavern/domain";
 import { generateImageGen, interruptImageGenProfile } from "../api/image-gen-api.js";
 import { fetchChatAction } from "./api-actions/chat-actions.js";
-import type { GenerateImageGenInput } from "@vibe-tavern/api-contracts";
+import type { GenerateImageGenInput, ImageGenGenerateOverridesValue } from "@vibe-tavern/api-contracts";
 
 /** What the UI needs about a running generation (renderable projection —
  *  the AbortController stays in the module map below). `profileId` powers
@@ -98,6 +98,54 @@ export interface ImageGenFineTuningDraft {
 
 /** A pristine draft (shared empty instance — never mutated; setters copy). */
 export const EMPTY_IMAGE_GEN_DRAFT: ImageGenFineTuningDraft = { prompt: "", negative: "" };
+
+/** The profile shape the draft fold needs (satisfied by ImageGenProfileRecord
+ *  and test rows alike). */
+export interface DraftFoldProfile {
+  id: string;
+  capabilities: { supportsNegativePrompt: boolean; supportsLoras?: boolean };
+}
+
+/** THE draft→generate fold (FT-A3): ONE implementation shared by the message
+ *  menu (mode = the clicked row) and the chip's Generate button (mode = the
+ *  draft target, tail message anchor). Positive prompt VERBATIM when
+ *  non-empty (the IG-14 contract — never re-templated server-side); the
+ *  picks as overrides with the same empty-means-not-sent semantics and the
+ *  IG-13/CG-C3 capability gates (negative, loras). Returns null when no
+ *  effective profile exists (the caller's early-return twin). */
+export function buildDraftGenerateInput(args: {
+  readonly draft: ImageGenFineTuningDraft;
+  readonly effective: DraftFoldProfile | null;
+  readonly mode: ImageGenerationMode;
+  readonly anchorMessageId?: string;
+  readonly foldDraft: boolean;
+}): GenerateImageGenInput | null {
+  if (args.effective === null) return null;
+  const input: GenerateImageGenInput = { profileId: args.effective.id, mode: args.mode };
+  if (args.anchorMessageId !== undefined) input.anchorMessageId = args.anchorMessageId;
+  if (!args.foldDraft) return input;
+  const { draft } = args;
+  const prompt = draft.prompt.trim();
+  if (prompt !== "") input.prompt = prompt;
+  const overrides: ImageGenGenerateOverridesValue = {};
+  const negative = draft.negative.trim();
+  if (negative !== "" && args.effective.capabilities.supportsNegativePrompt) {
+    overrides.negativePrompt = negative;
+  }
+  if (draft.model !== undefined && draft.model !== "") overrides.model = draft.model;
+  // FT-A2: the resolution pick rides the run — partial pairs are legal (the
+  // contract falls back per side).
+  if (draft.width !== undefined) overrides.width = draft.width;
+  if (draft.height !== undefined) overrides.height = draft.height;
+  // CG-C3: enabled loras ride the run — capability-gated exactly like the
+  // negative (a profile without supportsLoras never sees them). Entry order
+  // = ComfyUI chain order; strength verbatim from the chip.
+  if (draft.loras !== undefined && draft.loras.length > 0 && args.effective.capabilities.supportsLoras === true) {
+    overrides.loras = draft.loras;
+  }
+  if (Object.keys(overrides).length > 0) input.overrides = overrides;
+  return input;
+}
 
 /** MR-5: the EFFECTIVE image-gen profile record for a chat — the fallback
  *  chain «chat pick → global active → server default → first row» (the

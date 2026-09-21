@@ -1,6 +1,9 @@
 import { describe, expect, it, mock, afterEach, afterAll, beforeEach } from "bun:test";
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
+import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import type { AppMessage } from "../../api/types.js";
 
 useDomEnv();
 
@@ -76,6 +79,7 @@ const lorasFailFor = new Set<string>();
 let sidecarsStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenDitSidecarsValue> = {};
 const sidecarsFailFor = new Set<string>();
 const sidecarsCalls: string[] = [];
+const generateCalls: Array<[string, import("@vibe-tavern/api-contracts").GenerateImageGenInput]> = [];
 const upsertCalls: Array<{
   profileId: string;
   modelId: string;
@@ -84,6 +88,12 @@ const upsertCalls: Array<{
 
 mock.module("../../api/image-gen-api.js", () => ({
   ...realImageGenApi,
+  // FT-A3: the generate call is PARKED (never settles) so the chip's fire
+  // path is observable without the downstream chat refresh ever running.
+  generateImageGen: (chatId: string, input: import("@vibe-tavern/api-contracts").GenerateImageGenInput) => {
+    generateCalls.push([chatId, input]);
+    return new Promise<void>(() => {});
+  },
   listAllImageGenProfiles: () => Promise.resolve([...profilesStore]),
   listImageGenModels: (id: string) => Promise.resolve([...(modelsStore[id] ?? [])]),
   listImageGenSamplers: (id: string) => Promise.resolve([...(samplersStore[id] ?? [])]),
@@ -213,6 +223,7 @@ afterEach(() => {
   sidecarsCalls.length = 0;
   upsertCalls.length = 0;
   mobileOverride = false;
+  generateCalls.length = 0;
   // The store is a module singleton shared across files in this worker —
   // leave every map pristine.
   useImageGenChatStore.setState({
@@ -480,6 +491,122 @@ describe("ImageGenFineTuningChip — target + resolution (FT-A2)", () => {
     });
     // The custom stepper pair never renders for vendor-set dialects.
     expect(within(view.baseElement).queryByTestId("image-gen-ft-custom-size")).toBeNull();
+  });
+});
+
+describe("ImageGenFineTuningChip — Generate button (FT-A3)", () => {
+  // Two messages in the REAL snapshot store (the tail = m2) — captured
+  // before, restored in afterAll (the store is a module singleton across
+  // files in this worker).
+  const snapshotBefore = useSnapshotStore.getState();
+  // Distinct chat ids per test: the parked generate promise keeps the
+  // runGeneration guard armed for THAT chat (controllers map is module-level).
+  const chatA = "chat-ft3a";
+  const chatB = "chat-ft3b";
+  const createdAt = "2026-09-19T00:00:00.000Z";
+  function message(id: string, position: number): AppMessage {
+    const messageId = brandId<MessageId>(id);
+    return {
+      chatId: brandId<ChatId>(chatA),
+      branchId: brandId<ChatBranchId>("branch_ft3"),
+      modelId: null,
+      sceneTracker: null,
+      state: "complete",
+      createdAt,
+      updatedAt: createdAt,
+      id: messageId,
+      role: "assistant",
+      authorType: "assistant",
+      position,
+      content: `message ${id}`,
+      variants: [
+        {
+          id: brandId<MessageVariantId>(`${id}_v1`),
+          messageId,
+          variantIndex: 0,
+          content: `message ${id}`,
+          isSelected: true,
+          finishReason: null,
+          createdAt,
+        },
+      ],
+      selectedVariantIndex: 0,
+    };
+  }
+  beforeEach(() => {
+    useSnapshotStore.setState({
+      messageOrder: ["ft3_m1", "ft3_m2"],
+      messagesById: { ft3_m1: message("ft3_m1", 0), ft3_m2: message("ft3_m2", 1) },
+    });
+  });
+  afterAll(() => {
+    useSnapshotStore.setState(snapshotBefore);
+  });
+
+  it("fires the shared fold: target mode, tail anchor, prompt verbatim, size overrides — and closes the editor", async () => {
+    profilesStore = [profile("p1", "A1111 local", fullCaps(), "sdxl-base")];
+    modelsStore = { p1: [{ id: "sdxl-base", label: "SDXL Base" }] };
+    act(() => armChat(chatA));
+    useImageGenChatStore.getState().setFineTuningDraft(chatA, {
+      prompt: "  a castle at dawn  ",
+      width: 832,
+      height: 1216,
+    });
+    const view = renderChip(<ImageGenFineTuningChip chatId={chatA} />);
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
+    openChip();
+    const button = await waitFor(() => {
+      const el = within(view.baseElement).getByTestId("image-gen-ft-generate");
+      expect((el as HTMLButtonElement).disabled).toBe(false);
+      return el as HTMLButtonElement;
+    });
+    act(() => {
+      fireEvent.click(button);
+    });
+    expect(generateCalls.length).toBe(1);
+    const [calledChat, input] = generateCalls[0]!;
+    expect(calledChat).toBe(chatA);
+    // Default target = free; prompt verbatim (IG-14); anchor = the TAIL
+    // message; the FT-A2 resolution rides the overrides.
+    expect(input.mode).toBe("free");
+    expect(input.prompt).toBe("a castle at dawn");
+    expect(input.anchorMessageId).toBe("ft3_m2");
+    expect(input.overrides).toEqual({ width: 832, height: 1216 });
+    // The editor closes after firing (the chip's own onDone twin).
+    await waitFor(() => expect(within(view.baseElement).queryByTestId("image-gen-ft-body")).toBeNull());
+  });
+
+  it("a committed target rides the call; free without a chip prompt disables the button (IG-17 gate)", async () => {
+    profilesStore = [profile("p1", "A1111 local", fullCaps(), "sdxl-base")];
+    modelsStore = { p1: [{ id: "sdxl-base", label: "SDXL Base" }] };
+    act(() => armChat(chatB));
+    // Portrait target, NO prompt — non-free modes generate without one.
+    useImageGenChatStore.getState().setFineTuningDraft(chatB, { target: "portrait" });
+    const view = renderChip(<ImageGenFineTuningChip chatId={chatB} />);
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
+    openChip();
+    const button = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-generate") as HTMLButtonElement);
+    expect(button.disabled).toBe(false);
+    act(() => {
+      fireEvent.click(button);
+    });
+    expect(generateCalls.length).toBe(1);
+    expect(generateCalls[0]![1].mode).toBe("portrait");
+    expect(generateCalls[0]![1].prompt).toBeUndefined();
+
+    // Now free + empty prompt: the button is disabled and clicking does
+    // nothing. Firing CLOSED the editor (FT-A3's onGenerateFired) — reopen.
+    act(() => {
+      useImageGenChatStore.getState().setFineTuningDraft(chatB, { target: "free" });
+    });
+    openChip();
+    await waitFor(() =>
+      expect((within(view.baseElement).getByTestId("image-gen-ft-generate") as HTMLButtonElement).disabled).toBe(true),
+    );
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-ft-generate"));
+    });
+    expect(generateCalls.length).toBe(1);
   });
 });
 

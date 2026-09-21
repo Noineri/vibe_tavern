@@ -61,21 +61,9 @@ import {
   type ImageGenDitSidecars,
 } from "../../api/image-gen-api.js";
 import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue, ImageGenBackendValue } from "@vibe-tavern/api-contracts";
-import {
-  IMAGE_GEN_BACKENDS,
-  IMAGE_GENERATION_MODES,
-  IMAGE_GEN_PARAM_RANGES,
-  IMAGE_GEN_ADETAILER_FACE_MODELS,
-  IMAGE_GEN_ADETAILER_DEFAULT_MODEL,
-  IMAGE_SIZE_DEFAULT,
-  IMAGE_SIZE_MAX_PX,
-  IMAGE_SIZE_MIN_PX,
-  IMAGE_SIZE_PRESETS,
-  hasAdetailerExtension,
-  type ImageGenerationMode,
-  type ImageSizeOrientation,
-} from "@vibe-tavern/domain";
-import { EMPTY_IMAGE_GEN_DRAFT, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, hasAdetailerExtension, type ImageGenerationMode, type ImageSizeOrientation } from "@vibe-tavern/domain";
+import { EMPTY_IMAGE_GEN_DRAFT, buildDraftGenerateInput, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
+import { useOrderedMessages } from "../../stores/snapshot-store.js";
 import { ImageGenLoraSection } from "./ImageGenLoraSection.js";
 
 export interface ImageGenFineTuningChipProps {
@@ -106,7 +94,12 @@ export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) 
 
   const hasPrompt = (draft?.prompt.trim() ?? "") !== "";
 
-  const body = <ImageGenFineTuningBody chatId={chatId} />;
+  const body = (
+    <ImageGenFineTuningBody
+      chatId={chatId}
+      onGenerateFired={() => setOpen(false)}
+    />
+  );
 
   // The DicePanel structure verbatim: ONE popover (Root + Trigger own the
   // click → open on BOTH platforms), its Popover content desktop-only, and a
@@ -160,7 +153,7 @@ export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) 
 
 // ─── Shared editor body (desktop popover + mobile sheet) ────────────────────
 
-function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
+function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; onGenerateFired?: () => void }) {
   const { t, tDynamic } = useT();
   const activeProfileId = useImageGenChatStore((s) => s.activeProfileIdByChat[chatId]);
   const globalActiveId = useImageGenChatStore((s) => s.activeImageGenProfileId);
@@ -168,7 +161,10 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
   const setActiveProfile = useImageGenChatStore((s) => s.setActiveProfile);
   const setFineTuningDraft = useImageGenChatStore((s) => s.setFineTuningDraft);
   const clearFineTuningDraft = useImageGenChatStore((s) => s.clearFineTuningDraft);
+  const runGeneration = useImageGenChatStore((s) => s.runGeneration);
   const running = useImageGenChatStore((s) => s.runningByChat[chatId]);
+  // The tail anchor (FT-A3) — read BEFORE any early return (hooks order).
+  const orderedMessages = useOrderedMessages();
 
   const [profiles, setProfiles] = useState<ImageGenProfileRecord[] | null>(null);
   const [models, setModels] = useState<ImageGenModelEntry[] | null>(null);
@@ -279,6 +275,34 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
   }
 
   const busy = running !== undefined;
+
+  // ── The Generate action (FT-A3) ───────────────────────────────
+  // Anchor = the chat's TAIL message (the cockpit sits above the input —
+  // "generate the latest moment", the message-popover twin with the last
+  // message as its anchor). The target mode comes from FT-A2's selector
+  // (Free display default); free still REQUIRES the chip prompt (the
+  // menu's free-row gate, IG-17).
+  const tailAnchor = orderedMessages.length > 0 ? orderedMessages[orderedMessages.length - 1]!.id : undefined;
+  const targetMode = draft.target ?? IMAGE_GENERATION_MODES.Free;
+  const freeBlocked = targetMode === IMAGE_GENERATION_MODES.Free && draft.prompt.trim() === "";
+  const generateDisabled = busy || freeBlocked;
+  function fireGenerate(): void {
+    if (generateDisabled || effective === null) return;
+    const input = buildDraftGenerateInput({
+      draft,
+      effective,
+      mode: targetMode,
+      anchorMessageId: tailAnchor,
+      foldDraft: true,
+    });
+    if (input === null) return;
+    void runGeneration(chatId, input, {
+      // PG-2 twin: the START-time capability snapshot from the static
+      // registry table (the saved mirror can predate the backend).
+      liveProgress: IMAGE_GEN_BACKEND_CAPABILITIES[effective.backend].supportsLiveProgress,
+    });
+    onGenerateFired?.();
+  }
 
   // The LoRA section's auto-preselect anchor: the family of the model this
   // generation will actually run (the draft's pick, else the profile's).
@@ -530,7 +554,12 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
         </div>
       )}
 
-      <div className="flex justify-end px-1.5">
+      {/* Footer (FT-A3): Clear + the immediate «Сгенерировать» — fires the
+          shared draft fold on the current chat (mode = the target selector,
+          anchor = the tail message) and closes the editor; the image lands
+          as a chat slot message exactly like the message-popover path. Free
+          target still requires the chip prompt (IG-17 gate). */}
+      <div className="flex items-center justify-end gap-1.5 px-1.5">
         <button
           type="button"
           data-testid="image-gen-ft-clear"
@@ -538,6 +567,22 @@ function ImageGenFineTuningBody({ chatId }: { chatId: string }) {
           onClick={() => clearFineTuningDraft(chatId)}
         >
           {t("image_gen_chip_clear")}
+        </button>
+        <button
+          type="button"
+          data-testid="image-gen-ft-generate"
+          aria-disabled={generateDisabled}
+          disabled={generateDisabled}
+          title={freeBlocked ? t("image_gen_free_hint") : undefined}
+          onClick={fireGenerate}
+          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:cursor-default disabled:opacity-50"
+        >
+          {busy ? (
+            <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
+          ) : (
+            <Icons.sparkles />
+          )}
+          {t("image_gen_chip_generate")}
         </button>
       </div>
     </div>
