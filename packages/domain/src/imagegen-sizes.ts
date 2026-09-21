@@ -1,3 +1,5 @@
+import type { ImageGenerationMode } from "./entities.js";
+
 /** Free-size image dimension vocabulary (IG-CF14): the stepper ladder
  *  constant, sanity bounds, the display default, and the preset table the
  *  per-mode dropdown offers. Pure data, no I/O — the pane renders it; the
@@ -36,3 +38,17 @@ export const IMAGE_SIZE_PRESETS = [
 ] as const;
 
 export type ImageSizeOrientation = (typeof IMAGE_SIZE_PRESETS)[number]["orientation"];
+
+/** Canon size anchors for the IPT modes (IMAGE_PROMPT_TEMPLATES_PLAN
+ *  Wave 0): selfie 832×1216 (2:3 phone-frame vertical), avatar 1024×1024
+ *  (1:1 crop). The preset LABEL composes at render time following the
+ *  "purpose + ratio + pixels" rule — the purpose segment is the mode's own
+ *  localized name, so this constant carries only the geometry + ratio
+ *  shorthand. These are labeled default entries the per-mode size dropdown
+ *  offers — NOT silent wire values (the no-silent-defaults rule: an unset
+ *  mode still sends no size; the user pins explicitly). Surfaced in the
+ *  profile editor's per-mode dropdown at IPT Wave 5. */
+export const IMAGE_GEN_MODE_SIZE_CANON = {
+  selfie: { width: 832, height: 1216, ratio: "2:3" },
+  avatar: { width: 1024, height: 1024, ratio: "1:1" },
+} as const satisfies Partial<Record<ImageGenerationMode, { width: number; height: number; ratio: string }>>;

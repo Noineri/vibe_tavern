@@ -1075,9 +1075,17 @@ export const IMAGE_GEN_BACKENDS = {
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 
-/** The v1 generation-mode recipes (design taxonomy adapted from ST's):
- *  each mode binds a Prompt-Manager Images-tab template + a per-mode size
- *  preset. Modes are recipes only — no special delivery mechanism. */
+/** The generation-mode recipes (design taxonomy adapted from ST's): each
+ *  mode binds an Images-tab template + a per-mode size preset. Modes are
+ *  recipes only — no special delivery mechanism.
+ *
+ *  IPT (IMAGE_PROMPT_TEMPLATES_PLAN Wave 0): Selfie and Avatar joined as
+ *  COMPLEMENTS, never replacements (owner 2026-09-19) — the six v1 modes
+ *  keep their identities and the RU button vocabulary maps onto them:
+ *  «Лицо»=portrait, «дословно»=free, «сценарий»=scene-illustration
+ *  (anchored on the greeting, MR-13). The two new modes append here;
+ *  their menu complement positions (selfie after portrait, avatar after
+ *  character) are the FRONTEND list order, wired at IPT Wave 5. */
 export const IMAGE_GENERATION_MODES = {
   SceneBackground: "scene-background",
   Portrait: "portrait",
@@ -1085,6 +1093,8 @@ export const IMAGE_GENERATION_MODES = {
   UserPersona: "user-persona",
   SceneIllustration: "scene-illustration",
   Free: "free",
+  Selfie: "selfie",
+  Avatar: "avatar",
 } as const;
 export type ImageGenerationMode = (typeof IMAGE_GENERATION_MODES)[keyof typeof IMAGE_GENERATION_MODES];
 

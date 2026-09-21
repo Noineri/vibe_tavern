@@ -96,6 +96,8 @@ const MODE_LABEL_KEYS: Record<ImageGenerationMode, Parameters<TFunc>[0]> = {
   [IMAGE_GENERATION_MODES.UserPersona]: "image_gen_mode_user-persona",
   [IMAGE_GENERATION_MODES.SceneIllustration]: "image_gen_mode_scene-illustration",
   [IMAGE_GENERATION_MODES.Free]: "image_gen_mode_free",
+  [IMAGE_GENERATION_MODES.Selfie]: "image_gen_mode_selfie",
+  [IMAGE_GENERATION_MODES.Avatar]: "image_gen_mode_avatar",
 };
 
 /** Purpose-word per preset orientation (IG-CF14): "Square 1:1 · 1024×1024" —

@@ -1,0 +1,99 @@
+import { describe, expect, test } from "bun:test";
+import {
+  IMAGE_PROMPT_DEFAULT_FAMILY,
+  IMAGE_PROMPT_FAMILIES,
+  IMAGE_PROMPT_FAMILY_IDS,
+  IMAGE_GENERATION_MODES,
+  imagePromptCanonFamily,
+} from "../src/index.js";
+
+/** IPT Wave 0 — the checkpoint-family registry + the variant-resolution
+ *  rule (pure data boundary: registry shape, membership, and the
+ *  custom-tier-independent canon owner matrix). */
+describe("image-prompt-families registry", () => {
+  test("membership mirrors the authored canon (nine families)", () => {
+    expect([...IMAGE_PROMPT_FAMILY_IDS]).toEqual([
+      "prose",
+      "pony",
+      "illustrious",
+      "noobai",
+      "anima",
+      "krea2",
+      "qwen",
+      "sdxl-realism",
+      "hybrid",
+    ]);
+    expect(IMAGE_PROMPT_DEFAULT_FAMILY).toBe("prose");
+  });
+
+  test("grammars: tag families tags, prose-lineage prose, hybrid hybrid", () => {
+    for (const id of ["pony", "illustrious", "noobai", "anima"] as const) {
+      expect(IMAGE_PROMPT_FAMILIES[id].grammar).toBe("tags");
+    }
+    for (const id of ["prose", "krea2", "qwen", "sdxl-realism"] as const) {
+      expect(IMAGE_PROMPT_FAMILIES[id].grammar).toBe("prose");
+    }
+    expect(IMAGE_PROMPT_FAMILIES.hybrid.grammar).toBe("hybrid");
+  });
+
+  test("canon footprint matches the authored asset set", () => {
+    // Tag families author everything they can.
+    for (const id of ["pony", "illustrious", "noobai", "anima"] as const) {
+      const family = IMAGE_PROMPT_FAMILIES[id];
+      expect(family.ownTemplates).toBeTrue();
+      expect(family.ownNegative).toBeTrue();
+      expect(family.ownQuality).toBeTrue();
+    }
+    // Prose authors templates + the shared negative, but no quality layer.
+    expect(IMAGE_PROMPT_FAMILIES.prose.ownTemplates).toBeTrue();
+    expect(IMAGE_PROMPT_FAMILIES.prose.ownNegative).toBeTrue();
+    expect(IMAGE_PROMPT_FAMILIES.prose.ownQuality).toBeFalse();
+    // krea2: assist-only (dead negatives on Turbo — inherits prose).
+    expect(IMAGE_PROMPT_FAMILIES.krea2).toMatchObject({ ownTemplates: false, ownNegative: false, ownQuality: false });
+    // qwen: prose templates + the 500-char negative, no quality layer.
+    expect(IMAGE_PROMPT_FAMILIES.qwen).toMatchObject({ ownTemplates: false, ownNegative: true, ownQuality: false });
+    // sdxl-realism: prose templates + own negative + quality layer.
+    expect(IMAGE_PROMPT_FAMILIES["sdxl-realism"]).toMatchObject({ ownTemplates: false, ownNegative: true, ownQuality: true });
+    // hybrid: assist-only.
+    expect(IMAGE_PROMPT_FAMILIES.hybrid).toMatchObject({ ownTemplates: false, ownNegative: false, ownQuality: false });
+  });
+});
+
+describe("imagePromptCanonFamily — the variant-resolution rule", () => {
+  test("authoring families own their mode templates", () => {
+    expect(imagePromptCanonFamily("pony", "mode", IMAGE_GENERATION_MODES.Portrait)).toBe("pony");
+    expect(imagePromptCanonFamily("prose", "mode", IMAGE_GENERATION_MODES.Portrait)).toBe("prose");
+  });
+
+  test("non-authoring families inherit the prose canon — documented, not silent", () => {
+    expect(imagePromptCanonFamily("krea2", "mode", IMAGE_GENERATION_MODES.Portrait)).toBe("prose");
+    expect(imagePromptCanonFamily("qwen", "mode", IMAGE_GENERATION_MODES.Selfie)).toBe("prose");
+    expect(imagePromptCanonFamily("hybrid", "mode", IMAGE_GENERATION_MODES.Avatar)).toBe("prose");
+  });
+
+  test("negative: qwen owns its own, krea2/hybrid fall back to prose", () => {
+    expect(imagePromptCanonFamily("qwen", "negative")).toBe("qwen");
+    expect(imagePromptCanonFamily("krea2", "negative")).toBe("prose");
+    expect(imagePromptCanonFamily("hybrid", "negative")).toBe("prose");
+  });
+
+  test("assist: every family owns its addendum", () => {
+    for (const id of IMAGE_PROMPT_FAMILY_IDS) {
+      expect(imagePromptCanonFamily(id, "assist")).toBe(id);
+    }
+  });
+
+  test("quality has NO universal fallback — undefined off the authoring set", () => {
+    expect(imagePromptCanonFamily("pony", "quality")).toBe("pony");
+    expect(imagePromptCanonFamily("sdxl-realism", "quality")).toBe("sdxl-realism");
+    expect(imagePromptCanonFamily("prose", "quality")).toBeUndefined();
+    expect(imagePromptCanonFamily("krea2", "quality")).toBeUndefined();
+    expect(imagePromptCanonFamily("qwen", "quality")).toBeUndefined();
+    expect(imagePromptCanonFamily("hybrid", "quality")).toBeUndefined();
+  });
+
+  test("free mode is family-neutral — always prose", () => {
+    expect(imagePromptCanonFamily("pony", "mode", IMAGE_GENERATION_MODES.Free)).toBe("prose");
+    expect(imagePromptCanonFamily("krea2", "mode", IMAGE_GENERATION_MODES.Free)).toBe("prose");
+  });
+});

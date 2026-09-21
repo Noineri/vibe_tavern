@@ -9,6 +9,9 @@
  *
  * Context per mode (design doc):
  *   portrait / character     → character card fields ({{char}}, {{description}})
+ *   selfie / avatar          → character card fields too (IPT Wave 0 — the
+ *                             templates pick what they need; no per-mode
+ *                             branch exists in the builder)
  *   user-persona             → the chat's persona ({{user}}, {{persona}})
  *   scene-background / scene-illustration → the last chat message
  *   free                     → the caller-provided raw prompt (required)
@@ -27,11 +30,15 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import { buildPromptVariableContext, createFullMacroEngine } from "@vibe-tavern/prompt-pipeline";
 import { resolveServicePrompt } from "../service-prompts/service-prompt-resolver.js";
 
-/** Mode → Images-tab template field (the IG-13 `images` family). */
+/** Mode → Images-tab template field (the IG-13 `images` family). Selfie
+ *  and avatar ride the SAME service-prompt path until IPT Wave 1 switches
+ *  resolution to the (mode × family) variant resolver (IPT Wave 0 bridge). */
 export const IMAGE_GEN_MODE_TEMPLATE_FIELD: Record<ImageGenerationMode, ServicePromptFieldKey> = {
   [IMAGE_GENERATION_MODES.SceneBackground]: "image_scene_background",
   [IMAGE_GENERATION_MODES.Portrait]: "image_portrait",
+  [IMAGE_GENERATION_MODES.Selfie]: "image_selfie",
   [IMAGE_GENERATION_MODES.Character]: "image_character",
+  [IMAGE_GENERATION_MODES.Avatar]: "image_avatar",
   [IMAGE_GENERATION_MODES.UserPersona]: "image_user_persona",
   [IMAGE_GENERATION_MODES.SceneIllustration]: "image_scene_illustration",
   [IMAGE_GENERATION_MODES.Free]: "image_free",

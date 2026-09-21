@@ -38,16 +38,20 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   copilot_user_flow: "experience-copilot/user-flow.md",
   interactive_rules: "interactive-rules.md",
   interactive_visual: "interactive-visual.md",
-  // images (8) — per-mode base templates + the shared negative default
-  // (IG-13) + the LLM-assist quiet pre-pass instruction (IG-15). Plain
-  // prompt prose, no markdown headers: unlike the LLM system prompts
-  // above, the mode files are prompt PAYLOADS for image models — a header
-  // line would be sent verbatim and waste prompt budget; the negative
-  // default is a bare tag list for the same reason. image_assist is an LLM
-  // system instruction but keeps the same convention (short prose).
+  // images (10) — per-mode base templates (six v1 modes + IPT selfie/avatar
+  // Wave 0) + the shared negative default (IG-13) + the LLM-assist quiet
+  // pre-pass instruction (IG-15). Plain prompt prose, no markdown headers:
+  // unlike the LLM system prompts above, the mode files are prompt PAYLOADS
+  // for image models — a header line would be sent verbatim and waste
+  // prompt budget; the negative default is a bare tag list for the same
+  // reason. image_assist is an LLM system instruction but keeps the same
+  // convention (short prose). Interim home: IPT Wave 1 switches template
+  // resolution to the (mode × family) variant resolver.
   image_scene_background: "image-scene-background.md",
   image_portrait: "image-portrait.md",
+  image_selfie: "image-selfie.md",
   image_character: "image-character.md",
+  image_avatar: "image-avatar.md",
   image_user_persona: "image-user-persona.md",
   image_scene_illustration: "image-scene-illustration.md",
   image_free: "image-free.md",

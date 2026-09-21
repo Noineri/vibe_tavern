@@ -11,7 +11,8 @@ import { z } from 'zod';
 export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'a1111', 'comfyui', 'togetherai', 'siliconflow', 'nanogpt', 'electronhub', 'pollinations', 'deepinfra', 'recraft', 'zai', 'minimax', 'volcengine', 'dashscope', 'nim', 'chutes', 'hf', 'google', 'stability', 'ideogram', 'cloudflare', 'aihorde', 'bfl', 'fal', 'replicate', 'leonardo', 'luma', 'novita']);
 export type ImageGenBackendValue = z.infer<typeof imageGenBackendSchema>;
 
-/** The six v1 generation-mode recipes (domain `IMAGE_GENERATION_MODES`). */
+/** The generation-mode recipes (domain `IMAGE_GENERATION_MODES`): the six
+ *  v1 modes + IPT Wave 0 selfie/avatar (complements, never replacements). */
 export const imageGenerationModeSchema = z.enum([
   'scene-background',
   'portrait',
@@ -19,6 +20,8 @@ export const imageGenerationModeSchema = z.enum([
   'user-persona',
   'scene-illustration',
   'free',
+  'selfie',
+  'avatar',
 ]);
 export type ImageGenerationModeValue = z.infer<typeof imageGenerationModeSchema>;
 
