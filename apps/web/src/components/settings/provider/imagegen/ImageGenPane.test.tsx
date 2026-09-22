@@ -117,7 +117,9 @@ const listFamiliesApi = mock(async (): Promise<{ families: ImagePromptFamilyInfo
   if (familiesFail) throw new Error("registry unavailable");
   return { families: REGISTRY_FAMILIES.map((family) => ({ ...family })) };
 });
+let pendingFamilyWrite: Promise<void> | null = null;
 const setFamilyApi = mock(async (id: string, family: ImagePromptFamily | null): Promise<ImageGenRecord> => {
+  await pendingFamilyWrite;
   const idx = apiStore.findIndex((p) => p.id === id);
   if (idx === -1) throw new Error("not found");
   const updated = {
@@ -383,6 +385,7 @@ afterEach(async () => {
   }
   extensionsValue = [];
   familiesFail = false;
+  pendingFamilyWrite = null;
   detectOutcome = { ok: false, error: "no authoritative source answered", tried: [] };
   pendingDetect = null;
 });
@@ -590,6 +593,9 @@ describe("ImageGenPane — local connection status (IG-CF12a)", () => {
     // the `:disabled` pseudo nor IDL propagation) — in real browsers the
     // native `disabled` additionally blocks keyboard focus/activation; the
     // grey + pointer-events-none classes are the observable pins here.
+    // Settle the always-mounted family registry effect before this fast test
+    // completes so its asynchronous state update stays inside React's act.
+    await act(async () => {});
   });
 
   it("online: no disabled attribute, no grey, panel fully interactive", async () => {
@@ -604,6 +610,9 @@ describe("ImageGenPane — local connection status (IG-CF12a)", () => {
     expect(controls.hasAttribute("disabled")).toBe(false);
     expect(controls.className).not.toContain("opacity-50");
     expect(controls.className).not.toContain("pointer-events-none");
+    // See the offline case: this test also exits before the family registry
+    // promise otherwise has a chance to commit its state under act.
+    await act(async () => {});
   });
 
   it("the chip's re-check button refetches samplers for THIS profile (the recovery affordance while greyed)", async () => {
@@ -1873,6 +1882,34 @@ describe("ImageGenPane — prompt family row (IPT-5)", () => {
     );
   });
 
+  it("hides a response-only source while a manual pin is authoritative", async () => {
+    const record = makeRecord({ modelId: "checkpoint-a" });
+    apiStore = [record];
+    detectOutcome = { ok: true, family: "illustrious", sourceLabel: "sidecar" };
+    const view = render(<FamilyReloadHarness record={record} onReload={async () => {}} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-family-detect")).toBeTruthy());
+
+    await act(async () => {
+      view.getByTestId("image-gen-family-detect").click();
+    });
+    await waitFor(() =>
+      expect(view.getByTestId("image-gen-family-status").textContent).toContain(
+        "image_gen_family_source_note:image_gen_family_source_sidecar",
+      ),
+    );
+
+    await pickOptionContaining(view, "image-gen-family-select", "imagePromptTemplates.family.pony");
+    await waitFor(() => expect(apiStore[0]?.familyOverride).toBe("pony"));
+    expect(view.getByTestId("image-gen-family-status").textContent).toContain("image_gen_family_manual_note");
+    expect(view.getByTestId("image-gen-family-status").textContent).not.toContain("image_gen_family_source_note");
+
+    await pickOption(view, "image-gen-family-select", "image_gen_family_automatic");
+    await waitFor(() => expect(apiStore[0]?.familyOverride).toBeUndefined());
+    expect(view.getByTestId("image-gen-family-status").textContent).toContain(
+      "image_gen_family_source_note:image_gen_family_source_sidecar",
+    );
+  });
+
   it("keeps saved family state on failed detection and renders the error plus every ordered attempt", async () => {
     const record = makeRecord({
       modelId: "checkpoint-a",
@@ -1934,7 +1971,12 @@ describe("ImageGenPane — prompt family row (IPT-5)", () => {
     const record = makeRecord({ modelId: "checkpoint-a" });
     const draftView = render(familyNode(familyHook(record, "checkpoint-b")));
     await waitFor(() => expect(draftView.getByTestId("image-gen-family-detect-disabled")).toBeTruthy());
-    expect(draftView.getByTestId("image-gen-family-detect-disabled").textContent).toContain("image_gen_family_detect");
+    const draftDetect = draftView.getByTestId("image-gen-family-detect-disabled");
+    expect(draftDetect.textContent).toContain("image_gen_family_detect");
+    await act(async () => {
+      fireEvent.pointerMove(draftDetect, { pointerType: "mouse" });
+    });
+    await waitFor(() => expect(document.body.textContent).toContain("image_gen_family_detect_save_first"));
     expect(draftView.queryByTestId("image-gen-family-detect")).toBeNull();
     cleanup();
 
@@ -1968,6 +2010,61 @@ describe("ImageGenPane — prompt family row (IPT-5)", () => {
     expect(view.queryByTestId("image-gen-family-detected")).toBeNull();
     expect(view.getByTestId("image-gen-family-status").textContent).toContain("image_gen_family_not_detected");
     expect(view.getByTestId("image-gen-family-status").textContent).not.toContain("image_gen_family_source_note");
+  });
+
+  it("rejects an A to B to A detection response after the target changes", async () => {
+    const record = makeRecord({ modelId: "checkpoint-a" });
+    apiStore = [record];
+    let resolveDetect: ((result: FamilyDetectResult) => void) | null = null;
+    pendingDetect = new Promise<FamilyDetectResult>((resolve) => {
+      resolveDetect = resolve;
+    });
+    const controller: { setTarget: ((nextRecord: ImageGenRecord, nextModel: string) => void) | null } = { setTarget: null };
+    const view = render(<FamilyIdentityHarness controller={controller} record={record} />);
+    await act(async () => {
+      view.getByTestId("image-gen-family-detect").click();
+    });
+    await waitFor(() => expect(detectFamilyApi).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      controller.setTarget!(record, "checkpoint-b");
+    });
+    await act(async () => {
+      controller.setTarget!(record, "checkpoint-a");
+    });
+    await act(async () => {
+      resolveDetect!({ ok: true, family: "pony", sourceLabel: "sidecar" });
+    });
+    await act(async () => {});
+
+    expect(view.queryByTestId("image-gen-family-detected")).toBeNull();
+    expect(view.getByTestId("image-gen-family-status").textContent).toContain("image_gen_family_not_detected");
+    expect(view.getByTestId("image-gen-family-status").textContent).not.toContain("image_gen_family_source_note");
+  });
+
+  it("disables auto-detection while a manual family write is pending", async () => {
+    const record = makeRecord({ modelId: "checkpoint-a" });
+    apiStore = [record];
+    let resolveWrite: (() => void) | null = null;
+    pendingFamilyWrite = new Promise<void>((resolve) => {
+      resolveWrite = resolve;
+    });
+    const view = render(familyNode(familyHook(record)));
+    await waitFor(() => expect(listFamiliesApi).toHaveBeenCalledTimes(1));
+
+    await pickOptionContaining(view, "image-gen-family-select", "imagePromptTemplates.family.pony");
+    await waitFor(() => expect(setFamilyApi).toHaveBeenCalledTimes(1));
+    const detect = view.getByTestId("image-gen-family-detect") as HTMLButtonElement;
+    expect(detect.disabled).toBe(true);
+    await act(async () => {
+      detect.click();
+    });
+    expect(detectFamilyApi).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveWrite!();
+    });
+    await waitFor(() => expect(detect.disabled).toBe(false));
   });
 
   it("keeps authored status and failure copy wrapping without truncation classes", async () => {

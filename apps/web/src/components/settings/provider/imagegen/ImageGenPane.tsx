@@ -410,6 +410,11 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
     tried: ImageGenFamilyDetectionAttemptValue[];
   } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Every family write/detect claims a new operation token. Identity checks
+  // still bind a detection to its profile and model, while this token also
+  // rejects an A → B → A continuation whose value identity happens to match
+  // again after the intervening target change.
+  const familyOperationRef = useRef(0);
 
   const form = imageGen.form;
   const profileId = form?.id ?? null;
@@ -425,7 +430,17 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
   // model parameter, so a response for saved model A must never surface after
   // the pane starts showing draft model B.
   const identityRef = useRef<FamilyRequestIdentity>({ profileId: null, model: null, persistedModel: null });
-  identityRef.current = { profileId, model: modelShown, persistedModel };
+  const currentIdentity: FamilyRequestIdentity = { profileId, model: modelShown, persistedModel };
+  // Invalidate an active operation during render, rather than waiting for the
+  // reset effect: a synchronous A → B → A change must not revive A's old
+  // response simply because its value identity matches again.
+  if (!sameFamilyRequestIdentity(identityRef.current, currentIdentity)) {
+    familyOperationRef.current += 1;
+    identityRef.current = currentIdentity;
+  }
+
+  const isCurrentFamilyOperation = (operation: number, identity: FamilyRequestIdentity): boolean =>
+    familyOperationRef.current === operation && sameFamilyRequestIdentity(identityRef.current, identity);
 
   // Registry list: one fetch per mount (the ModelSamplerSetRow load rule —
   // static server data, no per-profile scoping).
@@ -468,6 +483,7 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
   // detection as current; a manual pin is authoritative and never stale.
   const detectedFresh = detected !== null && modelShown !== null && detectedForModel === modelShown;
   const sessionSource =
+    pin === null &&
     detectSession !== null &&
     detectedFresh &&
     detectSession.profileId === profileId &&
@@ -480,44 +496,47 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
   if (record === null) return null;
 
   const handleSelectFamily = async (next: string) => {
-    if (profileId === null || pinning) return;
+    if (profileId === null || pinning || detecting) return;
     // "" is the explicit automatic (unpinned) choice; a re-select of the
     // current state is a no-op skip, not a redundant write.
     const chosen = families?.find((family) => family.id === next) ?? null;
     if ((chosen?.id ?? null) === (record.familyOverride ?? null)) return;
+    const requestIdentity: FamilyRequestIdentity = { profileId, model: modelShown, persistedModel };
+    const operation = ++familyOperationRef.current;
     setPinning(true);
     setWriteFailure(null);
     try {
       await setImageGenProfileFamily(profileId, chosen?.id ?? null);
-      if (identityRef.current.profileId !== profileId) return;
+      if (!isCurrentFamilyOperation(operation, requestIdentity)) return;
       // Persist first, then refresh the list (the activateProfile rule) —
       // the record's family fields stay the rendering truth.
       await imageGen.reload();
     } catch (cause) {
-      if (identityRef.current.profileId === profileId) {
+      if (isCurrentFamilyOperation(operation, requestIdentity)) {
         setWriteFailure({ profileId, message: cause instanceof Error ? cause.message : String(cause) });
       }
     } finally {
-      if (identityRef.current.profileId === profileId) setPinning(false);
+      if (isCurrentFamilyOperation(operation, requestIdentity)) setPinning(false);
     }
   };
 
   const handleDetect = async () => {
-    if (profileId === null || modelShown === null || detecting || detectBlocked) return;
+    if (profileId === null || modelShown === null || pinning || detecting || detectBlocked) return;
     const requestIdentity: FamilyRequestIdentity = { profileId, model: modelShown, persistedModel };
+    const operation = ++familyOperationRef.current;
     setDetecting(true);
     setDetectFailure(null);
     const controller = new AbortController();
     abortRef.current = controller;
     try {
       const result = await detectImageGenProfileFamily(profileId, controller.signal);
-      if (!sameFamilyRequestIdentity(identityRef.current, requestIdentity)) return;
+      if (!isCurrentFamilyOperation(operation, requestIdentity)) return;
       if (result.ok) {
         // The server persisted familyDetected + its exact model anchor on
         // success. Refresh first so the record remains rendering truth, then
         // retain the exact response source only for this matching session.
         await imageGen.reload();
-        if (!sameFamilyRequestIdentity(identityRef.current, requestIdentity)) return;
+        if (!isCurrentFamilyOperation(operation, requestIdentity)) return;
         setDetectSession({
           profileId,
           model: modelShown,
@@ -531,11 +550,11 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
         setDetectFailure({ profileId, error: result.error, tried: result.tried });
       }
     } catch (cause) {
-      if (sameFamilyRequestIdentity(identityRef.current, requestIdentity)) {
+      if (isCurrentFamilyOperation(operation, requestIdentity)) {
         setDetectFailure({ profileId, error: cause instanceof Error ? cause.message : String(cause), tried: [] });
       }
     } finally {
-      if (sameFamilyRequestIdentity(identityRef.current, requestIdentity)) setDetecting(false);
+      if (isCurrentFamilyOperation(operation, requestIdentity)) setDetecting(false);
     }
   };
 
@@ -575,7 +594,7 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
             type="button"
             data-testid="image-gen-family-detect"
             onClick={() => void handleDetect()}
-            disabled={detecting}
+            disabled={pinning || detecting}
             className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
           >
             {detecting ? (
