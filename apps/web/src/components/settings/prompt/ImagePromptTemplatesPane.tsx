@@ -6,6 +6,7 @@ import type {
   ImagePromptTemplateCellValue,
   ImagePromptTemplateRowKeyValue,
   ImagePromptTemplatesValue,
+  UpsertImagePromptTemplateInput,
 } from "@vibe-tavern/api-contracts";
 import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY } from "@vibe-tavern/domain";
 import { toast } from "sonner";
@@ -23,6 +24,7 @@ import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { MasterDetailFooter } from "../../shared/MasterDetailModal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
+import { Toggle } from "../../shared/Toggle.js";
 
 export interface ImagePromptTemplatesPaneSlots {
   master: ReactNode;
@@ -37,7 +39,7 @@ export interface ImagePromptTemplatesPaneApi {
   upsert: (
     rowKey: ImagePromptTemplateRowKeyValue,
     family: ImagePromptFamilyValue,
-    body: { body: string },
+    body: UpsertImagePromptTemplateInput,
   ) => Promise<ImagePromptTemplateCellValue>;
   reset: (
     rowKey: ImagePromptTemplateRowKeyValue,
@@ -55,7 +57,12 @@ const defaultApi: ImagePromptTemplatesPaneApi = {
 type SelectedRow = { kind: "template"; rowKey: ImagePromptTemplateRowKeyValue } | { kind: "assist" };
 export type ImagePromptTemplatesPaneRowId = ImagePromptTemplateRowKeyValue | "assist";
 type EditorSelection = { row: SelectedRow; family: ImagePromptFamilyValue };
-type Draft = { cellKey: string; text: string };
+type Draft = {
+  cellKey: string;
+  text: string;
+  qualityEnabled: boolean;
+  qualityText: string;
+};
 
 function rowLabelKey(rowKey: ImagePromptTemplateRowKeyValue): string {
   return rowKey === "negative" ? "imagePromptTemplates.negative" : `image_gen_mode_${rowKey}`;
@@ -153,8 +160,24 @@ export function ImagePromptTemplatesPane({
 
   const selectedCellKey = selectedCell ? cellKey(selectedCell) : null;
   const savedText = selectedCell ? cellText(selectedCell) : "";
+  const selectedFamilyInfo = selectedFamily ? families.find((family) => family.id === selectedFamily) : undefined;
+  const qualityCanon = selectedFamily ? templates?.qualityCanon[selectedFamily] : undefined;
+  const hasQualityLayer = selectedCell !== null
+    && selectedCell.rowKey !== "negative"
+    && selectedFamilyInfo?.ownQuality === true
+    && qualityCanon !== undefined;
+  const savedQualityEnabled = selectedCell !== null && selectedCell.qualityText !== null;
+  const savedQualityText = selectedCell?.qualityText ?? qualityCanon ?? "";
   const draftText = draft?.cellKey === selectedCellKey ? draft.text : savedText;
-  const dirty = selectedCell !== null && draft?.cellKey === selectedCellKey && draft.text !== savedText;
+  const qualityEnabled = draft?.cellKey === selectedCellKey ? draft.qualityEnabled : savedQualityEnabled;
+  const draftQualityText = draft?.cellKey === selectedCellKey ? draft.qualityText : savedQualityText;
+  const qualityDirty = selectedCell !== null
+    && draft?.cellKey === selectedCellKey
+    && (draft.qualityEnabled !== savedQualityEnabled
+      || (draft.qualityEnabled && draft.qualityText !== savedQualityText));
+  const dirty = selectedCell !== null
+    && draft?.cellKey === selectedCellKey
+    && (draft.text !== savedText || qualityDirty);
 
   useEffect(() => {
     onDirtyChange?.(active && dirty);
@@ -164,7 +187,7 @@ export function ImagePromptTemplatesPane({
     setTemplates((current) => current
       ? { ...current, cells: current.cells.map((cell) => cell.rowKey === updated.rowKey && cell.family === updated.family ? updated : cell) }
       : current);
-    setDraft({ cellKey: cellKey(updated), text: cellText(updated) });
+    setDraft(null);
   }, []);
 
   const applySelection = useCallback((next: EditorSelection) => {
@@ -194,16 +217,21 @@ export function ImagePromptTemplatesPane({
     if (saving || !selectedCell || !selectedFamily || !dirty) return;
     setSaving(true);
     try {
-      const updated = draftText.trim()
-        ? await api.upsert(selectedCell.rowKey, selectedFamily, { body: draftText })
-        : await api.reset(selectedCell.rowKey, selectedFamily);
+      const bodyReturnsToCanon = draftText.trim() === "" || draftText === selectedCell.canonText;
+      const effectiveQualityText = qualityEnabled && draftQualityText.trim() !== "" ? draftQualityText : null;
+      const updated = effectiveQualityText === null && bodyReturnsToCanon
+        ? await api.reset(selectedCell.rowKey, selectedFamily)
+        : await api.upsert(selectedCell.rowKey, selectedFamily, {
+          body: draftText.trim() || selectedCell.canonText,
+          ...(qualityDirty ? { qualityText: effectiveQualityText } : {}),
+        });
       replaceCell(updated);
     } catch {
       toast.error(t("imagePromptTemplates.saveFailed"));
     } finally {
       setSaving(false);
     }
-  }, [api, dirty, draftText, replaceCell, saving, selectedCell, selectedFamily, t]);
+  }, [api, dirty, draftQualityText, draftText, qualityDirty, qualityEnabled, replaceCell, saving, selectedCell, selectedFamily, t]);
 
   const handleReset = useCallback(async () => {
     if (saving || !selectedCell || !selectedFamily) return;
@@ -325,12 +353,61 @@ export function ImagePromptTemplatesPane({
           <AutoTextarea
             mono
             value={draftText}
-            onChange={(event) => selectedCellKey && setDraft({ cellKey: selectedCellKey, text: event.target.value })}
+            onChange={(event) => selectedCellKey && setDraft({
+              cellKey: selectedCellKey,
+              text: event.target.value,
+              qualityEnabled,
+              qualityText: draftQualityText,
+            })}
             disabled={saving}
             minRows={10}
             maxRows={24}
             aria-label={t("imagePromptTemplates.editorLabel")}
           />
+          {hasQualityLayer && (
+            <section className="flex flex-col gap-3 rounded-md border border-border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className={cn(lblCls, "!mb-0")}>{t("imagePromptTemplates.qualityLayer")}</div>
+                  <div className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">{t("imagePromptTemplates.qualityLayerHint")}</div>
+                </div>
+                <Toggle
+                  checked={qualityEnabled}
+                  onChange={(next) => selectedCellKey && setDraft({
+                    cellKey: selectedCellKey,
+                    text: draftText,
+                    qualityEnabled: next,
+                    qualityText: draftQualityText,
+                  })}
+                  disabled={saving}
+                  aria-label={t("imagePromptTemplates.customQualityToggle")}
+                />
+              </div>
+              <div>
+                <div className={lblCls}>{t("imagePromptTemplates.qualityCanon")}</div>
+                <div data-testid="image-prompt-template-quality-canon" className={cn(codeQuoteCls, "max-h-40 overflow-auto")}>{qualityCanon}</div>
+              </div>
+              {qualityEnabled && (
+                <div>
+                  <div className={lblCls}>{t("imagePromptTemplates.customQuality")}</div>
+                  <AutoTextarea
+                    mono
+                    value={draftQualityText}
+                    onChange={(event) => selectedCellKey && setDraft({
+                      cellKey: selectedCellKey,
+                      text: draftText,
+                      qualityEnabled,
+                      qualityText: event.target.value,
+                    })}
+                    disabled={saving}
+                    minRows={3}
+                    maxRows={10}
+                    aria-label={t("imagePromptTemplates.customQualityEditorLabel")}
+                  />
+                </div>
+              )}
+            </section>
+          )}
         </>
       )}
       {loadState === "ready" && selectedRow?.kind === "assist" && templates && (

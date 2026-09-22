@@ -16,6 +16,7 @@ import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } fr
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { SERVICE_PROMPT_FIELD_FAMILIES } from "@vibe-tavern/domain";
 import { ServicePromptsPane } from "../settings/prompt/ServicePromptsPane.js";
+import { ImagePromptTemplatesPane } from "../settings/prompt/ImagePromptTemplatesPane.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import {
   loadPromptCanvasLoreEntries,
@@ -366,8 +367,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   // first Regex-tab activation.
   const [activeTab, setActiveTab] = useState<PromptManagerTab>("presets");
   const [serviceDirty, setServiceDirty] = useState(false);
-  // IG-13: the Images tab is a second ServicePromptsPane surface scoped to
-  // the `images` family — same engine, same profiles, its own dirty guard.
   const [imagesDirty, setImagesDirty] = useState(false);
   const [regexPresets, setRegexPresets] = useState<RegexPresetRecord[]>([]);
   const [regexLoadState, setRegexLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -1202,13 +1201,14 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         onClose={handleClose}
       >
         {(slots) => (
-          <ServicePromptsPane
+          <ImagePromptTemplatesPane
             active={activeTab === "images"}
-            families={[SERVICE_PROMPT_FIELD_FAMILIES.images]}
-            renderRowDrillDown={(id, selectRow) => (
+            renderRowDrillDown={(_rowId, selectRow) => (
               <MasterDetailMobileDrillDown onSelect={selectRow} className="py-1" />
             )}
-            onDirtyChange={setImagesDirty}
+            onDirtyChange={(nextDirty) => {
+              if (nextDirty || activeTab === "images") setImagesDirty(nextDirty);
+            }}
             onClose={handleClose}
           >
             {(imageSlots) => (
@@ -1471,7 +1471,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         }
               />
             )}
-          </ServicePromptsPane>
+          </ImagePromptTemplatesPane>
         )}
       </ServicePromptsPane>
     </>

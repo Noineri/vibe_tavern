@@ -16,7 +16,12 @@ import type { ReactNode } from "react";
 import React from "react";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { SERVICE_PROMPT_FIELD_KEYS, type ServicePromptFieldKey } from "@vibe-tavern/domain";
-import type { ServicePromptProfile } from "@vibe-tavern/api-contracts";
+import type {
+  ImagePromptFamilyInfoValue,
+  ImagePromptTemplateRowKeyValue,
+  ImagePromptTemplatesValue,
+  ServicePromptProfile,
+} from "@vibe-tavern/api-contracts";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
 import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
 import type { DraftData } from "./PromptManagerModal.js";
@@ -62,6 +67,9 @@ const setRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<Retur
 const realServiceApi = await import("../../api/service-prompt-api.js");
 const listServiceProfilesMock = mock(realServiceApi.listServicePromptProfiles);
 const getServiceDetailMock = mock(realServiceApi.getServicePromptProfileDetail);
+const realImageGenApi = await import("../../api/image-gen-api.js");
+const listImagePromptTemplatesMock = mock(realImageGenApi.listImagePromptTemplates);
+const listImagePromptFamiliesMock = mock(realImageGenApi.listImagePromptFamilies);
 const realDownload = await import("../../lib/download.js");
 const downloadTextFileMock = mock(realDownload.downloadTextFile);
 
@@ -113,6 +121,11 @@ mock.module("../../api/service-prompt-api.js", () => {
     getServicePromptProfileDetail: getServiceDetailMock,
   };
 });
+mock.module("../../api/image-gen-api.js", () => ({
+  ...realImageGenApi,
+  listImagePromptTemplates: listImagePromptTemplatesMock,
+  listImagePromptFamilies: listImagePromptFamiliesMock,
+}));
 mock.module("../../lib/download.js", () => ({
   ...realDownload,
   downloadTextFile: downloadTextFileMock,
@@ -159,9 +172,46 @@ afterEach(async () => {
   setRegexProfileLinksMock.mockResolvedValue([]);
   listServiceProfilesMock.mockReset();
   getServiceDetailMock.mockReset();
+  listImagePromptTemplatesMock.mockReset();
+  listImagePromptTemplatesMock.mockResolvedValue(makeImagePromptTemplates());
+  listImagePromptFamiliesMock.mockReset();
+  listImagePromptFamiliesMock.mockResolvedValue({ families: imagePromptFamilies });
   downloadTextFileMock.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
+
+const imagePromptFamilies: ImagePromptFamilyInfoValue[] = [
+  { id: "prose", grammar: "prose", ownTemplates: true, ownNegative: true, ownQuality: false, hasAssistAddendum: false },
+  { id: "pony", grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: true, hasAssistAddendum: true },
+];
+
+const imagePromptRows: ImagePromptTemplateRowKeyValue[] = [
+  "scene-background",
+  "portrait",
+  "character",
+  "user-persona",
+  "scene-illustration",
+  "free",
+  "selfie",
+  "avatar",
+  "negative",
+];
+
+function makeImagePromptTemplates(): ImagePromptTemplatesValue {
+  return {
+    cells: imagePromptRows.flatMap((rowKey) => imagePromptFamilies.map((family) => ({
+      rowKey,
+      family: family.id,
+      canonText: `canon ${rowKey} ${family.id}`,
+      canonSource: family.id === "prose" ? "family-canon" as const : "prose-canon" as const,
+      customText: null,
+      qualityText: null,
+      isCustomized: false,
+    }))),
+    qualityCanon: { pony: "canon quality pony" },
+    assist: { core: "assist core", addenda: { pony: "pony addendum" } },
+  };
+}
 
 function baseDraft(): DraftData {
   return {
@@ -1212,14 +1262,9 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     });
   });
 
-  test("images tab stays lazy until switched, then renders the 10 image fields without accordions", async () => {
-    const def = makeServiceProfile();
-    const p2 = { ...makeServiceProfile(), id: "p2", name: "ImgProf", isDefault: false };
-    listServiceProfilesMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
-    getServiceDetailMock.mockImplementation(async (id: string) => {
-      if (id === "default") return { profile: def, resolved: makeResolved() };
-      return { profile: p2, resolved: makeResolved() };
-    });
+  test("images tab stays lazy until switched, then renders template rows without service-profile chrome", async () => {
+    listImagePromptTemplatesMock.mockResolvedValue(makeImagePromptTemplates());
+    listImagePromptFamiliesMock.mockResolvedValue({ families: imagePromptFamilies });
     useModalStore.setState({ isPromptManagerOpen: true });
     const view = render(
       <PromptManagerModal
@@ -1232,36 +1277,21 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
         onReorder={mock(async () => true)}
       />,
     );
-    // Presets tab: the images pane (inactive) fetches nothing.
+
+    expect(listImagePromptTemplatesMock).not.toHaveBeenCalled();
     expect(listServiceProfilesMock).not.toHaveBeenCalled();
     fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabelImages"));
-    await waitFor(() => expect(listServiceProfilesMock).toHaveBeenCalled());
-    await waitFor(() => expect(within(view.baseElement).getByText("ImgProf")).toBeTruthy());
-    await act(async () => { fireEvent.click(within(view.baseElement).getByText("ImgProf")); });
-    await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
-    await waitFor(() => {
-      // Single-family surface: no family section headers, exactly the 10 image
-      // fields as textareas (IG-13's six v1 modes + IPT Wave 0 selfie/avatar
-      // + the shared negative + IG-15's image_assist pre-pass instruction),
-      // and no non-image field labels.
-      expect(view.baseElement.textContent).not.toContain("promptManager.servicePrompts.family.");
-      expect(view.baseElement.textContent).toContain("promptManager.servicePrompts.field.image_portrait");
-      expect(view.baseElement.textContent).toContain("promptManager.servicePrompts.field.image_selfie");
-      expect(view.baseElement.textContent).toContain("promptManager.servicePrompts.field.image_assist");
-      expect(view.baseElement.textContent).not.toContain("promptManager.servicePrompts.field.summary");
-      const tas = view.baseElement.querySelectorAll("textarea");
-      expect(tas.length).toBe(10);
-    });
+    await waitFor(() => expect(listImagePromptTemplatesMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-prompt-template-row-assist")).toBeTruthy());
+    expect(listServiceProfilesMock).not.toHaveBeenCalled();
+    expect(view.baseElement.querySelectorAll("[data-testid^='image-prompt-template-row-']").length).toBe(10);
+    expect(view.baseElement.querySelector("[data-testid^='service-row-']")).toBeNull();
+    expect(within(view.baseElement).getAllByText("drill").length).toBe(10);
   });
 
-  test("images tab dirty guard: editing a template marks the modal dirty (close confirm)", async () => {
-    const def = makeServiceProfile();
-    const p2 = { ...makeServiceProfile(), id: "p2", name: "ImgProf", isDefault: false };
-    listServiceProfilesMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
-    getServiceDetailMock.mockImplementation(async (id: string) => {
-      if (id === "default") return { profile: def, resolved: makeResolved() };
-      return { profile: p2, resolved: makeResolved() };
-    });
+  test("images tab quality draft participates in the modal close guard", async () => {
+    listImagePromptTemplatesMock.mockResolvedValue(makeImagePromptTemplates());
+    listImagePromptFamiliesMock.mockResolvedValue({ families: imagePromptFamilies });
     useModalStore.setState({ isPromptManagerOpen: true });
     const view = render(
       <PromptManagerModal
@@ -1274,19 +1304,21 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
         onReorder={mock(async () => true)}
       />,
     );
-    fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabelImages"));
-    await waitFor(() => expect(within(view.baseElement).getByText("ImgProf")).toBeTruthy());
-    await act(async () => { fireEvent.click(within(view.baseElement).getByText("ImgProf")); });
-    await waitFor(() => expect(getServiceDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
-    await waitFor(() => expect(view.baseElement.querySelectorAll("textarea").length).toBe(10));
-    const ta = view.baseElement.querySelector("textarea") as HTMLTextAreaElement;
-    await act(async () => { fireEvent.change(ta, { target: { value: "edited" } }); });
-    // Closing with a dirty images draft must open the discard guard.
-    // The pane footer's Close button (labeled "close") routes through
-    // handleClose — the images dirty guard must intercept it.
-    const closeBtn = within(view.baseElement).getAllByText("close")[0];
-    await act(async () => { fireEvent.click(closeBtn); });
-    await waitFor(() => expect(within(view.baseElement).getByText("unsaved_changes_title")).toBeTruthy());
+    const q = within(view.baseElement);
+    fireEvent.click(q.getByText("promptManager.servicePrompts.tabLabelImages"));
+    await waitFor(() => expect(q.getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
+    const portraitRow = q.getByTestId("image-prompt-template-row-portrait");
+    fireEvent.click(portraitRow.querySelector("button")!);
+    fireEvent.click(q.getByTestId("image-prompt-template-family-portrait"));
+    await waitFor(() => expect(q.getAllByText("imagePromptTemplates.family.pony").length).toBeGreaterThan(0));
+    fireEvent.click(q.getAllByText("imagePromptTemplates.family.pony").at(-1)!);
+    fireEvent.click(await waitFor(() => q.getByRole("switch", { name: "imagePromptTemplates.customQualityToggle" })));
+    fireEvent.click(q.getByText("promptManager.tabPresets"));
+    await waitFor(() => expect(q.queryByTestId("image-prompt-template-row-portrait")).toBeNull());
+
+    const closeBtn = q.getAllByText("close")[0]!;
+    fireEvent.click(closeBtn);
+    await waitFor(() => expect(q.getByText("unsaved_changes_title")).toBeTruthy());
   });
 });
 
