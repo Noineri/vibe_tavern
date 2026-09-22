@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { toast } from "sonner";
@@ -430,14 +430,16 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
   // model parameter, so a response for saved model A must never surface after
   // the pane starts showing draft model B.
   const identityRef = useRef<FamilyRequestIdentity>({ profileId: null, model: null, persistedModel: null });
-  const currentIdentity: FamilyRequestIdentity = { profileId, model: modelShown, persistedModel };
-  // Invalidate an active operation during render, rather than waiting for the
-  // reset effect: a synchronous A → B → A change must not revive A's old
-  // response simply because its value identity matches again.
-  if (!sameFamilyRequestIdentity(identityRef.current, currentIdentity)) {
-    familyOperationRef.current += 1;
-    identityRef.current = currentIdentity;
-  }
+  // Commit-phase invalidation makes the operation token reflect only targets
+  // that reached the screen. A synchronous committed A → B → A move still
+  // advances it twice, while an abandoned render cannot strand an operation.
+  useLayoutEffect(() => {
+    const committedIdentity: FamilyRequestIdentity = { profileId, model: modelShown, persistedModel };
+    if (!sameFamilyRequestIdentity(identityRef.current, committedIdentity)) {
+      familyOperationRef.current += 1;
+      identityRef.current = committedIdentity;
+    }
+  }, [profileId, modelShown, persistedModel]);
 
   const isCurrentFamilyOperation = (operation: number, identity: FamilyRequestIdentity): boolean =>
     familyOperationRef.current === operation && sameFamilyRequestIdentity(identityRef.current, identity);
@@ -470,7 +472,7 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
     return () => {
       abortRef.current?.abort();
     };
-  }, [profileId, modelShown]);
+  }, [profileId, modelShown, persistedModel]);
 
   // IPT-5: the ladder inspects the saved model. The full save-first hint is
   // required when no model is displayed or the displayed model is still a
