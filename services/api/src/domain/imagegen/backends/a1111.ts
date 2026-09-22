@@ -860,30 +860,34 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       // exclusively through its own SHA256→Civitai lookup — preset names
       // and prefix arrays come from filename-matching machinery VT
       // deliberately ignores (the no-filename-heuristics rule).
+      //
+      // Failure honesty: non-2xx responses (404 = extension absent) and
+      // transport errors THROW the typed error so the detection ladder
+      // records the real reason at this source; ONLY a 200 response with
+      // an empty base_model resolves to the empty result (the extension's
+      // filename-preset machinery answering "no Civitai resolution").
       const serverRoot = cfg.endpoint.slice(0, -"/sdapi/v1".length);
-      let parsed: unknown;
-      try {
-        const response = await fetchOrWrap(
-          cfg.fetch,
-          `${serverRoot}/physton_prompt/detect_model_preset?filepath=${encodeURIComponent(filepath)}`,
-          {
-            method: "GET",
-            headers: buildSdApiHeaders(cfg.apiKey, false),
-            signal,
-          },
-          "model preset detection",
+      const response = await fetchOrWrap(
+        cfg.fetch,
+        `${serverRoot}/physton_prompt/detect_model_preset?filepath=${encodeURIComponent(filepath)}`,
+        {
+          method: "GET",
+          headers: buildSdApiHeaders(cfg.apiKey, false),
+          signal,
+        },
+        "model preset detection",
+      );
+      if (!response.ok) {
+        const excerpt = await readProviderErrorBody(response);
+        throw new A1111ImageGenError(
+          `A1111 model preset detection failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          { status: response.status },
         );
-        if (!response.ok) {
-          // 404 (extension absent) and any other failure are equally a
-          // miss for this source — honest data, never a thrown error.
-          return {};
-        }
-        parsed = await response.json().catch(() => null);
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") throw error;
-        return {};
       }
-      if (typeof parsed !== "object" || parsed === null) return {};
+      const parsed: unknown = await response.json().catch(() => null);
+      if (typeof parsed !== "object" || parsed === null) {
+        throw new A1111ImageGenError("A1111 model preset detection response was not a JSON object");
+      }
       const baseModel = (parsed as Record<string, unknown>).base_model;
       if (typeof baseModel !== "string" || baseModel.trim().length === 0) return {};
       return { baseModel: baseModel.trim() };

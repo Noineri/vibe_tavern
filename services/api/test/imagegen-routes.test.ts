@@ -3762,15 +3762,36 @@ describe("image-gen routes — profile family API (IPT-3)", () => {
     expect(unmodeledBody.error.kind).toBe("Validation");
     expect(unmodeledBody.error.message).toContain("selected model");
 
-    // A keyless cloud profile cannot even construct its backend — the
-    // models-route config ladder (400, never a 5xx).
+    // A keyless cloud dialect exposes neither detection surface, so
+    // detection does not construct its generation backend or demand its
+    // credentials. It returns the full structural-miss ladder as data.
     const keyless = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.OpenRouter, endpoint: "http://localhost:8000/v1", modelId: "vendor/model" });
-    const configError = await app.request(`/api/image-gen/profiles/${keyless}/detect-family`, { method: "POST" });
-    expect(configError.status).toBe(400);
+    const keylessDetection = await app.request(`/api/image-gen/profiles/${keyless}/detect-family`, { method: "POST" });
+    expect(keylessDetection.status).toBe(200);
+    expect(await keylessDetection.json()).toEqual({
+      ok: false,
+      error: "No authoritative source identified this model's family — set it manually in the profile.",
+      tried: [
+        {
+          source: "backend-metadata",
+          reason: "this backend dialect exposes no native model-metadata surface",
+        },
+        {
+          source: "sidecar",
+          reason: "no authoritative model path was exposed to join sidecars against",
+        },
+        {
+          source: "civitai-by-hash",
+          reason: "no model hash available from an authoritative source",
+        },
+        {
+          source: "extension-preset",
+          reason: "this backend dialect has no model-preset extension surface",
+        },
+      ],
+    });
 
-    // A keyed cloud dialect constructs fine but exposes neither detection
-    // surface: the probe-style contract answers ok:false with the
-    // structural misses — never a 5xx.
+    // A keyed cloud dialect has the same no-source result.
     const cloudId = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.OpenRouter, endpoint: "http://localhost:8000/v1", apiKey: "sk-test", modelId: "vendor/model" });
     const cloud = await app.request(`/api/image-gen/profiles/${cloudId}/detect-family`, { method: "POST" });
     expect(cloud.status).toBe(200);

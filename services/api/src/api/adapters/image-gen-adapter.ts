@@ -86,7 +86,7 @@ import {
   type ImageGenAssistRunner,
 } from "../../domain/chat/imagegen-modes.js";
 import { resolveImageGenPromptFamily } from "../../domain/imagegen/prompt-family-resolution.js";
-import { defaultReadSidecarFile, detectImageGenFamily } from "../../domain/imagegen/family-detection.js";
+import { defaultReadSidecarFile, detectImageGenFamily, type FamilyDetectionBackend } from "../../domain/imagegen/family-detection.js";
 import { getProviderFetchFactory } from "../../domain/providers/provider-fetch-factory.js";
 import { buildPromptTemplateCatalog, promptFamiliesReadModel, readPromptVariantCell } from "../../domain/imagegen/prompt-template-catalog.js";
 import type {
@@ -95,7 +95,7 @@ import type {
 } from "../../domain/imagegen/imagegen-backend.js";
 import { IMAGE_GENERATION_CLOUD_TIMEOUT_MS, withImageGenTimeoutMs } from "../../domain/imagegen/imagegen-backend.js";
 import { TEST_CHAT_TIMEOUT_MS } from "../../domain/providers/provider-transport.js";
-import { createImageGenBackend } from "../../domain/imagegen/imagegen-registry.js";
+import { createImageGenBackend, IMAGE_GEN_FAMILY_DETECTION_BACKENDS } from "../../domain/imagegen/imagegen-registry.js";
 import { clearImageGenRunPhase, getImageGenRunPhase, setImageGenRunPhase } from "../../domain/imagegen/run-phase.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
@@ -1271,10 +1271,18 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     if (model === undefined || model === "") {
       throw validation("Image-gen family detection needs a selected model — pick one in the profile first");
     }
-    const backend = createImageGenBackend(
-      profile.backend,
-      await resolveAdapterConfig(this.stores, profile, this.fetchOverride),
-    );
+    // Capability-safe seam (IPT-3 review): construct the backend ONLY for
+    // dialects that implement the detection surface — a profile on any
+    // other dialect gets the honest all-structural-misses ladder without
+    // paying that dialect's config validation (generation credentials are
+    // irrelevant to detection; a keyless cloud profile must not 400 here).
+    // The empty object satisfies the ladder's optional-method slice.
+    const backend: FamilyDetectionBackend = IMAGE_GEN_FAMILY_DETECTION_BACKENDS.has(profile.backend)
+      ? createImageGenBackend(
+          profile.backend,
+          await resolveAdapterConfig(this.stores, profile, this.fetchOverride),
+        )
+      : {};
     const result = await detectImageGenFamily({
       backend,
       model,

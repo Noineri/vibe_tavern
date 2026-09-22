@@ -1001,6 +1001,87 @@ async function fetchComfyFolderRoots(
   return out;
 }
 
+/** IPT-3 detection twin of fetchComfyEmbeddedFamily: a 404 IS the honest
+ *  no-label answer (the installed core's /view_metadata 404s when the
+ *  safetensors header carries no `__metadata__` — server.py returns 404
+ *  by design there), so it resolves undefined; every OTHER failure
+ *  (non-404 status, transport, unparseable 200 body) THROWS the typed
+ *  error so the ladder records the real reason at source (a). The
+ *  listing twin keeps its silent degradation — both behaviors are
+ *  intentional, one per consumer. */
+async function fetchComfyEmbeddedFamilyForDetection(
+  transport: typeof fetch,
+  endpoint: string,
+  folder: string,
+  name: string,
+  signal: AbortSignal | undefined,
+): Promise<string | undefined> {
+  const response = await fetchOrWrap(
+    transport,
+    `${endpoint}/view_metadata/${encodeURIComponent(folder)}?filename=${encodeURIComponent(name)}`,
+    { method: "GET", headers: { Accept: "application/json" }, signal },
+    "model metadata",
+  );
+  if (response.status === 404) return undefined;
+  if (!response.ok) {
+    const excerpt = await readProviderErrorBody(response);
+    throw new ComfyImageGenError(
+      `ComfyUI model metadata failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+      { status: response.status },
+    );
+  }
+  const parsed: unknown = await response.json().catch(() => null);
+  if (!isRecord(parsed)) {
+    throw new ComfyImageGenError("ComfyUI /view_metadata response was not a JSON object");
+  }
+  return readEmbeddedFamilyValue(parsed);
+}
+
+/** IPT-3 detection twin of fetchComfyFolderRoots: a 404 is the structural
+ *  no-anchor answer (hardened remotes legitimately expose no folder map —
+ *  roots stay absent); every other failure returns its REASON so the
+ *  reader records it on `sidecarError` and source (b) tells the real
+ *  story instead of the structural "no path exposed" text. */
+async function fetchComfyFolderRootsForDetection(
+  transport: typeof fetch,
+  endpoint: string,
+  signal: AbortSignal | undefined,
+): Promise<{ roots?: Record<string, string[]>; error?: string }> {
+  let parsed: unknown;
+  try {
+    const response = await fetchOrWrap(
+      transport,
+      `${endpoint}/internal/folder_paths`,
+      { method: "GET", headers: { Accept: "application/json" }, signal },
+      "folder map",
+    );
+    if (response.status === 404) return {};
+    if (!response.ok) {
+      const excerpt = await readProviderErrorBody(response);
+      return {
+        error: `ComfyUI folder map failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+      };
+    }
+    parsed = await response.json().catch(() => null);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    return {
+      error: `ComfyUI folder map fetch failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  if (!isRecord(parsed)) {
+    return { error: "ComfyUI /internal/folder_paths response was not a JSON object" };
+  }
+  const out: Record<string, string[]> = {};
+  for (const [folder, roots] of Object.entries(parsed)) {
+    if (Array.isArray(roots)) {
+      const clean = roots.filter((root): root is string => typeof root === "string" && root.length > 0);
+      if (clean.length > 0) out[folder] = clean;
+    }
+  }
+  return { roots: out };
+}
+
 /** Read one sidecar store's family field off the local disk: the model's
  *  directory (subfolder part of the id, separators normalized) joined
  *  against each folder root until the file exists and parses. A miss,
@@ -1481,6 +1562,14 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       // backend's own /view_metadata surface (authoritative trainer
       // truth). Core ComfyUI exposes NO hash — the Civitai source's
       // anchor stays absent on this dialect (an honest miss).
+      //
+      // Failure honesty (IPT-3 review): the DETECTION twins below THROW
+      // or carry reasons — the listing helpers' silent degradation stays
+      // for the picker/list paths it was built for. /view_metadata 404 IS
+      // the honest no-label answer (the installed core 404s when the
+      // header carries no __metadata__); /internal/folder_paths 404 is
+      // the structural no-anchor answer (hardened remotes); anything
+      // else records the real reason at the source it failed.
       const checkpointNames = await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "checkpoints", signal);
       const folder = checkpointNames.includes(model)
         ? "checkpoints"
@@ -1493,23 +1582,43 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
         );
       }
       const metadata: ImageGenModelDetectionMetadata = {};
-      const embedded = await fetchComfyEmbeddedFamily(
-        cfg.fetch,
-        cfg.endpoint,
-        folder,
-        model,
-        signal,
-      );
-      if (embedded !== undefined) metadata.baseModel = embedded;
+      // Embedded read: a non-abort failure is CARRIED (metadataError),
+      // not thrown — the folder-map anchor below stays obtainable for
+      // source (b) even when /view_metadata itself errored, and the
+      // rethrow-at-the-end pattern would discard it (the ladder drops
+      // metadata on a reader throw).
+      let embeddedError: Error | undefined;
+      try {
+        const embedded = await fetchComfyEmbeddedFamilyForDetection(
+          cfg.fetch,
+          cfg.endpoint,
+          folder,
+          model,
+          signal,
+        );
+        if (embedded !== undefined) metadata.baseModel = embedded;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        embeddedError = error instanceof Error ? error : new Error(String(error));
+      }
       // Sidecar join anchor: the folder roots the backend itself reports
       // via /internal/folder_paths (officially frontend-only — a bonus
-      // source; any failure degrades to no anchor, never an error). Fetched
-      // EAGERLY: an embedded label that maps is the common short-circuit,
-      // but an embedded miss OR an unmappable embedded label (e.g. a bare
-      // SDXL architecture stamp) must still let the sidecar source run —
-      // the ladder's correctness beats saving one localhost round-trip.
-      const roots = (await fetchComfyFolderRoots(cfg.fetch, cfg.endpoint, signal))?.[folder] ?? [];
-      if (roots.length > 0) metadata.sidecar = { roots, relativeName: model };
+      // source). Fetched EAGERLY: an embedded label that maps is the
+      // common short-circuit, but an embedded miss OR an unmappable
+      // embedded label (e.g. a bare SDXL architecture stamp) must still
+      // let the sidecar source run — the ladder's correctness beats
+      // saving one localhost round-trip. A failed map fetch records its
+      // reason on sidecarError so source (b) tells the real story.
+      const folderMap = await fetchComfyFolderRootsForDetection(cfg.fetch, cfg.endpoint, signal);
+      if (folderMap.error !== undefined) {
+        metadata.sidecarError = folderMap.error;
+      } else {
+        const roots = folderMap.roots?.[folder] ?? [];
+        if (roots.length > 0) metadata.sidecar = { roots, relativeName: model };
+      }
+      if (embeddedError !== undefined) {
+        metadata.metadataError = `backend metadata read failed: ${embeddedError.message}`;
+      }
       return metadata;
     },
 

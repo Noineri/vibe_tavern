@@ -25,6 +25,8 @@ import {
   type FamilyDetectionResult,
 } from "../src/domain/imagegen/family-detection.js";
 import type { ImageGenModelDetectionMetadata } from "../src/domain/imagegen/imagegen-backend.js";
+import { a1111Factory } from "../src/domain/imagegen/backends/a1111.js";
+import { comfyImageGenFactory } from "../src/domain/imagegen/backends/comfyui.js";
 
 /** A fetch double over an in-memory URL router (path prefix → JSON body or
  *  status). Unmatched URLs 404 — an honest miss, never a throw. */
@@ -39,6 +41,21 @@ function civitaiStub(routes: Record<string, unknown>): typeof fetch {
     }
     return new Response("nope", { status: 404 });
   };
+}
+
+/** Every Civitai request this transport saw (path + headers) — the
+ *  User-Agent pin below reads these. */
+function civitaiRecorder(): { fetch: typeof fetch; seen: Array<{ path: string; userAgent?: string; accept?: string }> } {
+  const seen: Array<{ path: string; userAgent?: string; accept?: string }> = [];
+  const transport: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const headers = ((init?.headers ?? {}) as Record<string, string>);
+    if (url.origin === "https://civitai.com") {
+      seen.push({ path: url.pathname, userAgent: headers["User-Agent"], accept: headers.Accept });
+    }
+    return new Response("nope", { status: 404 });
+  };
+  return { fetch: transport, seen };
 }
 
 /** The minimal backend surface detectImageGenFamily reads (tier T1 — a
@@ -271,6 +288,41 @@ describe("family detection — source (c): Civitai public by-hash", () => {
       expect(offline.tried[2]?.reason).toBe("Civitai by-hash lookup failed: connect ECONNREFUSED");
     }
   });
+
+  test("EVERY Civitai GET carries the source-proven browser User-Agent (Cloudflare 1010 guard)", async () => {
+    // The SDXL flow exercises BOTH requests (by-hash + the model tag
+    // corpus follow-up); the recorder pins each one's headers.
+    const recorder = civitaiRecorder();
+    const civitai: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      const headers = ((init?.headers ?? {}) as Record<string, string>);
+      if (url.origin === "https://civitai.com") {
+        recorder.seen.push({ path: url.pathname, userAgent: headers["User-Agent"], accept: headers.Accept });
+      }
+      if (url.pathname.startsWith("/api/v1/model-versions/by-hash/")) {
+        return Response.json({ baseModel: "SDXL 1.0", modelId: 77 });
+      }
+      if (url.pathname === "/api/v1/models/77") {
+        return Response.json({ tags: ["photorealistic"] });
+      }
+      return new Response("nope", { status: 404 });
+    };
+    const result = await run({ sha256: "g".repeat(64) }, makeDeps({}, civitai));
+    expect(result).toEqual({
+      ok: true,
+      family: "sdxl-realism",
+      sourceLabel: FAMILY_DETECTION_SOURCES.CivitaiByHash,
+      baseModel: "SDXL 1.0",
+    });
+    expect(recorder.seen.map((call) => call.path)).toEqual([
+      `/api/v1/model-versions/by-hash/${"g".repeat(64)}`,
+      "/api/v1/models/77",
+    ]);
+    for (const call of recorder.seen) {
+      expect(call.userAgent).toMatch(/^Mozilla\/5\.0 \(Windows NT 10\.0;/);
+      expect(call.accept).toBe("application/json");
+    }
+  });
 });
 
 describe("family detection — source (d): the extension preset", () => {
@@ -318,6 +370,137 @@ describe("family detection — source (d): the extension preset", () => {
       expect(result.tried[3]).toEqual({
         source: "extension-preset",
         reason: "no authoritative model file path to hand the extension",
+      });
+    }
+  });
+});
+
+describe("family detection — ambiguous labels never resolve (the no-guess rule)", () => {
+  test("a backend-metadata label naming NoobAI+Illustrious is an honest miss, never a pick", async () => {
+    const result = await run({ baseModel: "NoobAI Illustrious" }, makeDeps());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.tried[0]).toEqual({
+        source: "backend-metadata",
+        reason:
+          "base model 'NoobAI Illustrious' matches multiple families (noobai, illustrious) — set the family manually",
+      });
+    }
+  });
+
+  test("a sidecar label naming Pony+Anima is an honest miss too", async () => {
+    const result = await run(
+      { sidecar: { roots: ["/ckpt"], relativeName: "model.safetensors" } },
+      makeDeps({ "/ckpt/model.civitai.info": JSON.stringify({ baseModel: "Pony Anima" }) }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.tried[1]?.reason).toContain("matches multiple families (anima, pony)");
+    }
+  });
+});
+
+describe("family detection — real backend readers (failure honesty)", () => {
+  // The a1111/comfy factories through their fetch seam (tier T1) — these
+  // pin that the DETECTION readers surface real failure reasons into the
+  // ladder's tried[] instead of collapsing them to empty misses. Listing
+  // behavior (the silent-degradation helpers) is untouched and pinned by
+  // the imagegen-a1111/imagegen-comfy suites.
+
+  test("a1111 extension probe: non-2xx throws the typed reason and the ladder records it at source (d)", async () => {
+    const backend = a1111Factory({
+      endpoint: "http://127.0.0.1:7860",
+      fetch: async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname.endsWith("/sd-models")) {
+          return Response.json([
+            { title: "m", model_name: "m", hash: "aaa", sha256: "", filename: "X:/ckpt/m.safetensors", config: "" },
+          ]);
+        }
+        return new Response("boom", { status: 500 });
+      },
+    });
+    const result = await detectImageGenFamily({ backend, model: "m", deps: makeDeps() });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.tried[3]).toEqual({
+        source: "extension-preset",
+        reason: "extension preset detection failed: A1111 model preset detection failed with HTTP 500: boom",
+      });
+    }
+  });
+
+  test("a1111 extension probe: transport error throws (wrapped); 200+empty base_model stays the empty result", async () => {
+    const offline = a1111Factory({
+      endpoint: "http://127.0.0.1:7860",
+      fetch: async () => {
+        throw new Error("connect ECONNREFUSED");
+      },
+    });
+    await expect(offline.readModelPresetFromExtension!("X:/ckpt/m.safetensors")).rejects.toThrow(
+      "network error",
+    );
+    const empty = a1111Factory({
+      endpoint: "http://127.0.0.1:7860",
+      fetch: async () => Response.json({ source: "preset", base_model: "" }),
+    });
+    await expect(empty.readModelPresetFromExtension!("X:/ckpt/m.safetensors")).resolves.toEqual({});
+  });
+
+  test("comfy reader: a failed folder map records its HTTP reason at source (b), not the structural text", async () => {
+    const backend = comfyImageGenFactory({
+      endpoint: "http://127.0.0.1:8188",
+      fetch: async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/models/checkpoints") return Response.json(["m.safetensors"]);
+        if (url.pathname === "/models/diffusion_models") return Response.json([]);
+        if (url.pathname === "/view_metadata/checkpoints") return new Response("nope", { status: 404 });
+        if (url.pathname === "/internal/folder_paths") return new Response("err", { status: 500 });
+        return new Response("nope", { status: 404 });
+      },
+    });
+    const result = await detectImageGenFamily({ backend, model: "m.safetensors", deps: makeDeps() });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // view_metadata 404 = the honest no-label miss (the installed core
+      // 404s when the header carries no __metadata__).
+      expect(result.tried[0]).toEqual({
+        source: "backend-metadata",
+        reason: "the backend's metadata surface carried no base-model label",
+      });
+      expect(result.tried[1]).toEqual({
+        source: "sidecar",
+        reason: "ComfyUI folder map failed with HTTP 500: err",
+      });
+    }
+  });
+
+  test("comfy reader: an embedded-metadata failure is carried at source (a) while the folder-map anchor survives for (b)", async () => {
+    const backend = comfyImageGenFactory({
+      endpoint: "http://127.0.0.1:8188",
+      fetch: async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/models/checkpoints") return Response.json(["m.safetensors"]);
+        if (url.pathname === "/models/diffusion_models") return Response.json([]);
+        if (url.pathname === "/view_metadata/checkpoints") return new Response("err", { status: 500 });
+        if (url.pathname === "/internal/folder_paths") {
+          return Response.json({ checkpoints: ["R:/ckpt"] });
+        }
+        return new Response("nope", { status: 404 });
+      },
+    });
+    const result = await detectImageGenFamily({ backend, model: "m.safetensors", deps: makeDeps() });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.tried[0]).toEqual({
+        source: "backend-metadata",
+        reason: "backend metadata read failed: ComfyUI model metadata failed with HTTP 500: err",
+      });
+      // The anchor survived: (b) attempted the real sidecar paths (the
+      // read miss, not the structural no-path text).
+      expect(result.tried[1]).toEqual({
+        source: "sidecar",
+        reason: "no readable .cm-info.json / .civitai.info sidecar next to the model",
       });
     }
   });

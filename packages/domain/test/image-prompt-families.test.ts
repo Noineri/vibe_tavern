@@ -146,6 +146,27 @@ describe("matchImagePromptBaseModel — base-model → family mapping", () => {
     expect(matchImagePromptBaseModel("Chroma")).toEqual({ kind: "unmapped", label: "Chroma" });
     expect(matchImagePromptBaseModel("")).toEqual({ kind: "unmapped", label: "" });
   });
+
+  test("a label naming several DISTINCT families is ambiguous — never a precedence pick", () => {
+    expect(matchImagePromptBaseModel("NoobAI Illustrious")).toEqual({
+      kind: "ambiguous",
+      label: "NoobAI Illustrious",
+      families: ["noobai", "illustrious"],
+    });
+    expect(matchImagePromptBaseModel("Pony Anima")).toEqual({
+      kind: "ambiguous",
+      label: "Pony Anima",
+      families: ["anima", "pony"],
+    });
+    // Separator/run dialects collapse to the same words.
+    expect(matchImagePromptBaseModel("illustrious_x_noobai_merge").kind).toBe("ambiguous");
+  });
+
+  test("several keywords of the SAME family are still that one family", () => {
+    expect(matchImagePromptBaseModel("Flux Seedream")).toEqual({ kind: "family", family: "prose" });
+    expect(matchImagePromptBaseModel("gpt-image Z-Image")).toEqual({ kind: "family", family: "prose" });
+    expect(matchImagePromptBaseModel("Krea2 Krea")).toEqual({ kind: "family", family: "krea2" });
+  });
 });
 
 describe("disambiguateSdxlFamily — the author-tag-corpus rule", () => {

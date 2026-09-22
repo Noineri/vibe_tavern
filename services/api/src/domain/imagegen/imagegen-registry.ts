@@ -47,6 +47,21 @@ export type { ImageGenBackendType, ImageGenCapabilityFlags } from "@vibe-tavern/
 // factory lookup).
 export { IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern/domain";
 
+/**
+ * IPT-3: backend slugs whose dialect implements the family-detection
+ * surface (`readModelDetectionMetadata` — and, for the A1111 family,
+ * `readModelPresetFromExtension`). The image-gen adapter checks this
+ * BEFORE constructing a backend, so a profile on any other dialect gets
+ * the honest all-structural-misses ladder WITHOUT paying that dialect's
+ * config validation (a keyless cloud profile has no detection surface to
+ * lose — generation credentials are irrelevant to detection). Keep in
+ * lockstep with the readModelDetectionMetadata implementations.
+ */
+export const IMAGE_GEN_FAMILY_DETECTION_BACKENDS: ReadonlySet<ImageGenBackendType> = new Set([
+  IMAGE_GEN_BACKENDS.A1111,
+  IMAGE_GEN_BACKENDS.ComfyUI,
+]);
+
 // ---------------------------------------------------------------------------
 // Capability lookup (data lives in the domain leaf — see the re-export above)
 // ---------------------------------------------------------------------------

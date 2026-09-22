@@ -99,9 +99,11 @@ export const IMAGE_PROMPT_DEFAULT_FAMILY: ImagePromptFamilyId = "prose";
  * metadata, never a filename heuristic. Matching is word-based on the
  * normalized label (lowercase, separator runs collapsed to spaces), so
  * "Animagine" never matches the `anima` rule and "Flux.1 D" matches
- * `flux`; rule order is part of the contract (first rule wins, noobai
- * before illustrious, the concrete families before the prose group, the
- * SDXL class last because plain SDXL needs the tag corpus below).
+ * `flux`; a label matching several DISTINCT registry families is the
+ *  `ambiguous` outcome (a declared merge such as "NoobAI Illustrious" —
+ *  never a precedence pick), while several keywords of the SAME family
+ *  remain that one family. The SDXL class is checked only when no family
+ *  rule matched, because plain SDXL needs the tag corpus below.
  *
  * SDXL-class labels are deliberately NOT mapped here: SDXL 1.0 may become
  * sdxl-realism only when the author-declared tag corpus unambiguously
@@ -116,14 +118,15 @@ function normalizeBaseModelLabel(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-/** Word-based keyword rules, in precedence order. `keywords` match whole
- *  words of the normalized label (multi-word entries match word runs). */
+/** Word-based keyword rules. `keywords` match whole words of the
+ *  normalized label (multi-word entries match word runs). Rule ORDER is
+ *  not a precedence mechanism — every rule is evaluated and a label
+ *  matching several DISTINCT families is the ambiguous outcome (the
+ *  no-guess rule), never a first-match pick. */
 const IMAGE_PROMPT_BASE_MODEL_RULES: ReadonlyArray<{
   family: ImagePromptFamilyId;
   keywords: readonly string[];
 }> = [
-  // noobai before illustrious: a label naming both is a merge — the more
-  // specific tag dialect wins deterministically (documented, not guessed).
   { family: "noobai", keywords: ["noobai"] },
   { family: "illustrious", keywords: ["illustrious"] },
   { family: "anima", keywords: ["anima"] },
@@ -144,10 +147,14 @@ const IMAGE_PROMPT_SDXL_KEYWORDS: readonly string[] = [
   "stable diffusion xl",
 ];
 
-/** The outcome of mapping one raw base-model label. */
+/** The outcome of mapping one raw base-model label. `ambiguous` = the
+ *  label matches several DISTINCT registry families (a declared merge —
+ *  e.g. "NoobAI Illustrious"); several keywords of the SAME family are
+ *  still that one family. */
 export type ImagePromptBaseModelMatch =
   | { kind: "family"; family: ImagePromptFamilyId }
   | { kind: "sdxl"; label: string }
+  | { kind: "ambiguous"; label: string; families: readonly ImagePromptFamilyId[] }
   | { kind: "unmapped"; label: string };
 
 /** Does the normalized label contain the keyword as a whole word (or a
@@ -159,16 +166,25 @@ function labelHasKeyword(normalized: string, keyword: string): boolean {
 }
 
 /** Map a raw authoritative base-model label onto the family registry.
- *  Unmapped labels (e.g. "SD 1.5" — no registry family exists for them)
- *  return `unmapped` carrying the label: detection surfaces it in the
- *  honest miss, the user pins manually. */
+ *  A label matching several DISTINCT families returns `ambiguous`
+ *  carrying them — an honest miss, the user pins manually (the no-guess
+ *  rule; no precedence between families). Unmapped labels (e.g. "SD 1.5"
+ *  — no registry family exists for them) return `unmapped` carrying the
+ *  label the same way. */
 export function matchImagePromptBaseModel(rawBaseModel: string): ImagePromptBaseModelMatch {
   const normalized = normalizeBaseModelLabel(rawBaseModel);
   if (normalized.length === 0) return { kind: "unmapped", label: rawBaseModel };
+  const matched = new Set<ImagePromptFamilyId>();
   for (const rule of IMAGE_PROMPT_BASE_MODEL_RULES) {
     if (rule.keywords.some((keyword) => labelHasKeyword(normalized, keyword))) {
-      return { kind: "family", family: rule.family };
+      matched.add(rule.family);
     }
+  }
+  if (matched.size === 1) {
+    return { kind: "family", family: [...matched][0]! };
+  }
+  if (matched.size > 1) {
+    return { kind: "ambiguous", label: rawBaseModel, families: [...matched] };
   }
   if (IMAGE_PROMPT_SDXL_KEYWORDS.some((keyword) => labelHasKeyword(normalized, keyword))) {
     return { kind: "sdxl", label: rawBaseModel };

@@ -298,12 +298,26 @@ export interface ImageGenModelDetectionMetadata {
   /** Raw base-model label the backend's own metadata carried (ComfyUI's
    *  embedded `__metadata__` via /view_metadata), when present. */
   baseModel?: string;
+  /** WHY the backend's own metadata read failed while the anchors below
+   *  remained obtainable (e.g. ComfyUI's /view_metadata errored but the
+   * folder map still answered) — recorded verbatim as source (a)'s miss
+   * reason so tried[] tells the real story while the later sources keep
+   * their anchors. Takes precedence over `baseModel`; a reader whose
+   * failure makes EVERY anchor unavailable throws instead (the detection
+   * ladder catches throws the same way). */
+  metadataError?: string;
   /** sha256 hash from an authoritative backend surface (A1111 sd-models)
    *  — feeds the Civitai by-hash source. */
   sha256?: string;
   /** Sidecar join anchor, present only when an authoritative response
    *  exposed a readable location for the model file. */
   sidecar?: ImageGenSidecarAnchor;
+  /** WHY the sidecar anchor is absent when a fetch FAILED to obtain it
+   *  (e.g. the ComfyUI folder map errored) — recorded verbatim as that
+   *  source's miss reason so tried[] tells the real story instead of the
+   *  structural "no path exposed" text. Absent when the backend simply
+   *  exposes no path (the structural case). */
+  sidecarError?: string;
   /** The model's own file path as exposed verbatim by the backend
    *  (A1111 sd-models `filename`) — the Prompt All-in-One extension
    *  probe's `filepath` parameter. */
@@ -374,10 +388,13 @@ export interface ImageGenBackend {
    *  extension's model-preset detection for one model file (A1111-family
    *  dialect — the extension is verified on the owner's Forge install).
    *  Returns the extension's Civitai-resolved `base_model` when the
-   *  response carries a non-empty one; every other outcome (extension
-   *  absent, preset matched by filename machinery, empty result) returns
-   *  an empty object — preset names and prefix arrays are deliberately
-   *  ignored (the no-filename-heuristics rule). */
+   *  response carries a non-empty one; a 200 response with an empty
+   *  base_model (the extension's filename-preset machinery answering "no
+   *  Civitai resolution") returns an empty object — preset names and
+   *  prefix arrays are deliberately ignored (the no-filename-heuristics
+   *  rule). Non-2xx responses (404 = extension absent) and transport
+   *  failures THROW the dialect's typed error so the ladder records the
+   *  real reason. */
   readModelPresetFromExtension?(filepath: string, signal?: AbortSignal): Promise<{ baseModel?: string }>;
   /** Generate one image request per the v1 mode recipe. Downloads bytes
    *  server-side before resolving. */

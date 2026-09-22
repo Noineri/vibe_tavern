@@ -109,6 +109,17 @@ export function defaultReadSidecarFile(path: string): Promise<string | undefined
 /** The public Civitai API root (source c). */
 const CIVITAI_API_BASE = "https://civitai.com/api/v1";
 
+/** Civitai request headers — the source-proven browser-style User-Agent
+ *  the installed Prompt All-in-One extension sends on its own Civitai
+ *  lookups (`_civitai_headers`, sd-civitai-browser-neo's pattern):
+ *  Civitai's Cloudflare answers anonymous API hits without a browser UA
+ *  with error 1010. A literal browser token, no app version baked in. */
+const CIVITAI_HEADERS: Readonly<Record<string, string>> = {
+  Accept: "application/json",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+};
+
 /** Sidecar stores in precedence order — the ComfyUI backend's live-verified
  *  CG-A3 ladder precedence: Stability Matrix's `.cm-info.json` (top-level
  *  `BaseModel`) before the civitai download flow's `.civitai.info`
@@ -135,6 +146,11 @@ function mapLabel(baseModel: string): LabelOutcome {
     return { hit: { family: match.family, baseModel } };
   }
   if (match.kind === "sdxl") return { sdxl: baseModel };
+  if (match.kind === "ambiguous") {
+    return {
+      miss: `base model '${baseModel}' matches multiple families (${match.families.join(", ")}) — set the family manually`,
+    };
+  }
   return { miss: `base model '${baseModel}' has no registry family mapping — set the family manually` };
 }
 
@@ -201,7 +217,12 @@ export async function detectImageGenFamily(options: {
   const tried: FamilyDetectionAttempt[] = [];
 
   // ── Source (a): backend-native metadata ──────────────────────────────
-  let anchors: { sha256?: string; sidecar?: ImageGenSidecarAnchor; modelFilePath?: string } = {};
+  let anchors: {
+    sha256?: string;
+    sidecar?: ImageGenSidecarAnchor;
+    sidecarError?: string;
+    modelFilePath?: string;
+  } = {};
   if (backend.readModelDetectionMetadata === undefined) {
     tried.push({
       source: FAMILY_DETECTION_SOURCES.BackendMetadata,
@@ -220,18 +241,25 @@ export async function detectImageGenFamily(options: {
     }
     if (metadata !== undefined) {
       anchors = metadata;
-      const label = usableLabel(metadata.baseModel ?? "");
-      if (label !== undefined) {
-        const outcome = mapLabel(label);
-        if ("hit" in outcome) {
-          return { ok: true, family: outcome.hit.family, sourceLabel: FAMILY_DETECTION_SOURCES.BackendMetadata, baseModel: outcome.hit.baseModel };
-        }
-        tried.push({ source: FAMILY_DETECTION_SOURCES.BackendMetadata, reason: labelMissReason(outcome) });
+      if (metadata.metadataError !== undefined) {
+        // A carried backend-metadata failure (the reader's anchors stayed
+        // obtainable) — record the real reason; the ladder continues on
+        // the anchors below instead of dropping them with a throw.
+        tried.push({ source: FAMILY_DETECTION_SOURCES.BackendMetadata, reason: metadata.metadataError });
       } else {
-        tried.push({
-          source: FAMILY_DETECTION_SOURCES.BackendMetadata,
-          reason: "the backend's metadata surface carried no base-model label",
-        });
+        const label = usableLabel(metadata.baseModel ?? "");
+        if (label !== undefined) {
+          const outcome = mapLabel(label);
+          if ("hit" in outcome) {
+            return { ok: true, family: outcome.hit.family, sourceLabel: FAMILY_DETECTION_SOURCES.BackendMetadata, baseModel: outcome.hit.baseModel };
+          }
+          tried.push({ source: FAMILY_DETECTION_SOURCES.BackendMetadata, reason: labelMissReason(outcome) });
+        } else {
+          tried.push({
+            source: FAMILY_DETECTION_SOURCES.BackendMetadata,
+            reason: "the backend's metadata surface carried no base-model label",
+          });
+        }
       }
     }
   }
@@ -240,7 +268,7 @@ export async function detectImageGenFamily(options: {
   if (anchors.sidecar === undefined) {
     tried.push({
       source: FAMILY_DETECTION_SOURCES.Sidecar,
-      reason: "no authoritative model path was exposed to join sidecars against",
+      reason: anchors.sidecarError ?? "no authoritative model path was exposed to join sidecars against",
     });
   } else {
     const candidates = sidecarCandidates(anchors.sidecar);
@@ -360,7 +388,7 @@ async function tryCivitaiByHash(
   try {
     const response = await deps.civitaiFetch(`${CIVITAI_API_BASE}/model-versions/by-hash/${sha256}`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: CIVITAI_HEADERS,
       signal,
     });
     if (!response.ok) {
@@ -413,7 +441,7 @@ async function fetchCivitaiModelTags(
   try {
     const response = await deps.civitaiFetch(`${CIVITAI_API_BASE}/models/${modelId}`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: CIVITAI_HEADERS,
       signal,
     });
     if (!response.ok) {
