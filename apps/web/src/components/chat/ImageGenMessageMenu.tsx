@@ -7,7 +7,9 @@
  * precedent — ActionSheet is items-only and cannot carry the Toggle row).
  * Both surfaces render the same body: the per-chat "Fine tuning" toggle
  * (shared across every message of the chat — plain zustand state, not
- * canonical data) and the six generation-mode recipes. The profile pick is
+ * canonical data) and the eight generation-mode recipes in one FLAT list
+ * (IPT Wave 5: selfie right after portrait, avatar right after character —
+ * complement positions, never a grouped taxonomy). The profile pick is
  * NOT here — the design keeps provider+model in the Fine-tuning chip's
  * editor (design line 30: the popover is modes + toggle; the chip holds
  * provider+model); the menu reads the chat's active profile from the store
@@ -42,8 +44,21 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import type { GenerateImageGenInput, ImageGenGenerateOverridesValue } from "@vibe-tavern/api-contracts";
 
-/** The v1 mode order the popover lists (registry order, no new names). */
-const MODES: ImageGenerationMode[] = Object.values(IMAGE_GENERATION_MODES);
+/** The flat menu order (IPT Wave 5): the v1 registry order with the two
+ *  Wave-0 complements at their owner-ruled positions — selfie right after
+ *  portrait, avatar right after character. The domain registry appends the
+ *  new modes at its tail (registry order is mode IDENTITY, not menu
+ *  taxonomy); this list is the presentation order both variants render. */
+const MODES: ImageGenerationMode[] = [
+  IMAGE_GENERATION_MODES.SceneBackground,
+  IMAGE_GENERATION_MODES.Portrait,
+  IMAGE_GENERATION_MODES.Selfie,
+  IMAGE_GENERATION_MODES.Character,
+  IMAGE_GENERATION_MODES.Avatar,
+  IMAGE_GENERATION_MODES.UserPersona,
+  IMAGE_GENERATION_MODES.SceneIllustration,
+  IMAGE_GENERATION_MODES.Free,
+];
 
 export interface ImageGenMessageMenuProps {
   chatId: string;

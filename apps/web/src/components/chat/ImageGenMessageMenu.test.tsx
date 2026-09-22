@@ -103,6 +103,8 @@ const { ImageGenMessageMenu } = await import("./ImageGenMessageMenu.js");
 const { useImageGenChatStore } = await import("../../stores/image-gen-chat-store.js");
 const { useSnapshotStore } = await import("../../stores/snapshot-store.js");const { useModalStore } = await import("../../stores/modal-store.js");
 const { TooltipProvider } = await import("../shared/Tooltip.js");
+const { getTopmostOverlayPortal } = await import("../shared/modal-helpers.js");
+const { IMAGE_GENERATION_MODES } = await import("@vibe-tavern/domain");
 const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { within } = await import("@testing-library/react");
 
@@ -138,6 +140,26 @@ function closePopover(view: ReturnType<typeof render>): void {
     fireEvent.pointerDown(trigger);
     fireEvent.click(trigger);
   });
+}
+
+/** The IPT Wave-5 flat menu order: the v1 registry order with the two Wave-0
+ *  complements at their owner-ruled positions — selfie after portrait, avatar
+ *  after character (complement positions, no grouping). */
+const MENU_ORDER = [
+  "scene-background",
+  "portrait",
+  "selfie",
+  "character",
+  "avatar",
+  "user-persona",
+  "scene-illustration",
+  "free",
+] as const;
+
+/** Every mode row the menu renders, in DOM order — the flat-list seam the
+ *  Wave-5 order contract pins (count + order + one flat list). */
+function orderedModeRows(root: ParentNode): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>('[data-testid^="image-gen-mode-"]')];
 }
 
 afterEach(() => {
@@ -185,21 +207,35 @@ describe("ImageGenMessageMenu — co-author gate (RP-only surface)", () => {
 });
 
 describe("ImageGenMessageMenu — desktop popover (IG-16)", () => {
-  it("opens from the message action and lists all six modes with registry labels; free is disabled with its hint", async () => {
+  it("opens from the message action and lists all eight modes flat in the Wave-5 order; free is disabled with its hint", async () => {
     const view = renderMenu(<ImageGenMessageMenu chatId="chat-1" messageId="m-1" variant="desktop" />);
     openPopover(view);
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
-    const modes = [
-      "scene-background",
-      "portrait",
-      "character",
-      "user-persona",
-      "scene-illustration",
-      "free",
-    ];
-    for (const mode of modes) {
+    const rows = orderedModeRows(view.baseElement);
+    // Exactly the eight modes, in the owner-ruled flat order: selfie after
+    // portrait, avatar after character (IPT Wave 5) — no extra row, none
+    // missing, nothing interleaved.
+    expect(rows.map((row) => row.getAttribute("data-testid"))).toEqual(
+      MENU_ORDER.map((mode) => `image-gen-mode-${mode}`),
+    );
+    // Drift guard: the pinned menu order is a permutation of the live domain
+    // registry — a future registry mode must be PLACED in this menu, not
+    // silently dropped by a stale hardcoded list.
+    expect([...MENU_ORDER].sort()).toEqual([...Object.values(IMAGE_GENERATION_MODES)].sort());
+    // Flat list, no grouping or section headers: every mode row is a direct
+    // child of ONE list container (owner 2026-09-19: the menu stays flat).
+    expect(new Set(rows.map((row) => row.parentElement)).size).toBe(1);
+    // Labels come from the i18n registry keys — never hardcoded copy.
+    for (const mode of MENU_ORDER) {
       const row = within(view.baseElement).getByTestId(`image-gen-mode-${mode}`) as HTMLButtonElement;
       expect(row.textContent).toContain(`image_gen_mode_${mode}`);
+    }
+    // Authored labels wrap, never truncate (RU runs 20-30% longer — AD-022):
+    // rows are fluid full-width buttons carrying no truncation utilities, so
+    // no fixed-width geometry is imposed on the menu items.
+    for (const row of rows) {
+      expect(row.className).toContain("w-full");
+      expect(row.className).not.toMatch(/truncate|text-ellipsis|whitespace-nowrap|overflow-hidden/);
     }
     const free = within(view.baseElement).getByTestId("image-gen-mode-free") as HTMLButtonElement;
     expect(free.disabled).toBe(true);
@@ -228,6 +264,40 @@ describe("ImageGenMessageMenu — desktop popover (IG-16)", () => {
     expect(signal).toBeDefined();
     // Settle the parked run so later suites see an idle store.
     pendingByChat.get("chat-2")!.resolve();
+    await act(async () => { await Promise.resolve(); });
+  });
+
+  it("selfie routes through the same generate seam with its exact slug + the anchor message", async () => {
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-selfie" messageId="m-selfie-anchor" variant="desktop" />);
+    openPopover(view);
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-selfie")).toBeTruthy());
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-selfie"));
+    });
+    expect(generateCalls.length).toBe(1);
+    const [chatId, body] = generateCalls[0];
+    expect(chatId).toBe("chat-selfie");
+    expect(body.mode).toBe("selfie");
+    expect(body.anchorMessageId).toBe("m-selfie-anchor");
+    expect(body.profileId).toBe("p1");
+    pendingByChat.get("chat-selfie")!.resolve();
+    await act(async () => { await Promise.resolve(); });
+  });
+
+  it("avatar routes through the same generate seam with its exact slug + the anchor message", async () => {
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-avatar" messageId="m-avatar-anchor" variant="desktop" />);
+    openPopover(view);
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-avatar")).toBeTruthy());
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-avatar"));
+    });
+    expect(generateCalls.length).toBe(1);
+    const [chatId, body] = generateCalls[0];
+    expect(chatId).toBe("chat-avatar");
+    expect(body.mode).toBe("avatar");
+    expect(body.anchorMessageId).toBe("m-avatar-anchor");
+    expect(body.profileId).toBe("p1");
+    pendingByChat.get("chat-avatar")!.resolve();
     await act(async () => { await Promise.resolve(); });
   });
 
@@ -329,6 +399,47 @@ describe("ImageGenMessageMenu — mobile sheet (IG-16)", () => {
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
     expect(within(view.baseElement).getByRole("switch", { name: "image_gen_fine_tuning" })).toBeTruthy();
     expect(within(view.baseElement).getByText("image_gen_section_title")).toBeTruthy();
+    // The sheet renders the SAME flat Wave-5 roster as the desktop popover —
+    // same eight ordered rows, one list, no truncation geometry.
+    const rows = orderedModeRows(view.baseElement);
+    expect(rows.map((row) => row.getAttribute("data-testid"))).toEqual(
+      MENU_ORDER.map((mode) => `image-gen-mode-${mode}`),
+    );
+    expect(new Set(rows.map((row) => row.parentElement)).size).toBe(1);
+    for (const row of rows) {
+      expect(row.className).toContain("w-full");
+      expect(row.className).not.toMatch(/truncate|text-ellipsis|whitespace-nowrap|overflow-hidden/);
+    }
+  });
+
+  it("mobile selection fires the generate seam with the anchor and dismisses the sheet; the menu reopens cleanly", async () => {
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-mob2" messageId="m-mob-anchor" variant="mobile" />);
+    act(() => {
+      fireEvent.click(q(view, "image-gen-message-trigger"));
+    });
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-selfie")).toBeTruthy());
+    // While open, the sheet is the live overlay (its own portal node is
+    // registered — the BottomSheet D2 seam).
+    expect(getTopmostOverlayPortal()).not.toBeNull();
+    act(() => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-selfie"));
+    });
+    expect(generateCalls.length).toBe(1);
+    const [chatId, body] = generateCalls[0];
+    expect(chatId).toBe("chat-mob2");
+    expect(body.mode).toBe("selfie");
+    expect(body.anchorMessageId).toBe("m-mob-anchor");
+    // Dismissal: the sheet closed on selection — its overlay portal
+    // unregistered (the close seam BottomSheet.test pins).
+    expect(getTopmostOverlayPortal()).toBeNull();
+    // The in-flight run morphs the mobile trigger into Stop; settle it, and
+    // the menu reopens with the mode body again (no stuck session).
+    pendingByChat.get("chat-mob2")!.resolve();
+    await waitFor(() => expect(q(view, "image-gen-message-trigger")).toBeTruthy());
+    act(() => {
+      fireEvent.click(q(view, "image-gen-message-trigger"));
+    });
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
   });
 });
 
