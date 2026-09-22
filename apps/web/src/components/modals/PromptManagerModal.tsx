@@ -14,7 +14,6 @@ import { serializeStPreset, parseStandaloneRegexJson, serializeStandaloneRegexJs
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
-import { SERVICE_PROMPT_FIELD_FAMILIES } from "@vibe-tavern/domain";
 import { ServicePromptsPane } from "../settings/prompt/ServicePromptsPane.js";
 import { ImagePromptTemplatesPane } from "../settings/prompt/ImagePromptTemplatesPane.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
@@ -1188,12 +1187,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
 
       <ServicePromptsPane
         active={activeTab === "service"}
-        families={[
-          SERVICE_PROMPT_FIELD_FAMILIES.assistant,
-          SERVICE_PROMPT_FIELD_FAMILIES.summary,
-          SERVICE_PROMPT_FIELD_FAMILIES.insights,
-          SERVICE_PROMPT_FIELD_FAMILIES.bases,
-        ]}
         renderRowDrillDown={(id, selectRow) => (
           <MasterDetailMobileDrillDown onSelect={selectRow} className="py-1" />
         )}

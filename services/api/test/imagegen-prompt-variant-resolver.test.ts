@@ -2,13 +2,14 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import { createDb } from "@vibe-tavern/db";
 import { ImagePromptVariantStore } from "@vibe-tavern/db";
 import { resolveImagePromptVariant } from "../src/domain/imagegen/prompt-variant-resolver.js";
-import { resolveServicePrompt } from "../src/domain/service-prompts/service-prompt-resolver.js";
+import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 
-// IPT-1_resolver — the variant chain that replaces the interim service-prompt
+// IPT-1_resolver — the variant chain that replaced the interim service-prompt
 // bridge for image template/negative rows. Pins:
 // (1) BYTE-PARITY: prose family, no custom row → the resolver's text is
-//     byte-identical to the previous interim resolution (resolveServicePrompt
-//     default tier, same asset, same loader) for a mode row AND the negative;
+//     byte-identical to the authored asset file (same loader the retired
+//     interim resolution used; the service-prompt seam itself is gone since
+//     IPT-6) for a mode row AND the negative;
 // (2) custom row wins (the overrides-only tier the Wave 3 API edits);
 // (3) family canon serves the authored family variant (differs from prose —
 //     no content coupling beyond that: the canon text itself is under owner
@@ -29,15 +30,15 @@ beforeEach(async () => {
 });
 
 describe("resolveImagePromptVariant (IPT-1)", () => {
-  test("prose no-custom is byte-identical to the interim service-prompt resolution", async () => {
+  test("prose no-custom is byte-identical to the authored asset file", async () => {
     const modeRow = await resolveImagePromptVariant(db, { rowKey: "portrait", family: "prose" });
-    const interim = await resolveServicePrompt(db, "image_portrait");
-    expect(modeRow.text).toBe(interim.text);
+    const asset = await loadPromptAsset("image-portrait.md");
+    expect(modeRow.text).toBe(asset);
     expect(modeRow.source).toBe("family-canon");
 
     const negativeRow = await resolveImagePromptVariant(db, { rowKey: "negative", family: "prose" });
-    const interimNegative = await resolveServicePrompt(db, "image_negative");
-    expect(negativeRow.text).toBe(interimNegative.text);
+    const negativeAsset = await loadPromptAsset("image-negative.md");
+    expect(negativeRow.text).toBe(negativeAsset);
   });
 
   test("a custom variant row wins over canon", async () => {
