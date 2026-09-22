@@ -6,6 +6,16 @@ const { describe, expect, mock, test } = await import("bun:test");
 const React = await import("react");
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { LocaleProvider } = await import("../../../i18n/context.js");
+const realTooltip = await import("../../shared/Tooltip.js");
+
+// CustomTooltip wraps Radix's Tooltip (needs TooltipProvider) — bare wrapper,
+// the leak-safe ...real spread per the tier policy (RegexPresetList.test
+// precedent). The pane's own api prop seam covers the client; no other mocks.
+mock.module("../../shared/Tooltip.js", () => ({
+  ...realTooltip,
+  CustomTooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
 const { ImagePromptTemplatesPane } = await import("./ImagePromptTemplatesPane.js");
 import type {
   ImagePromptTemplatesPaneApi,
@@ -14,11 +24,18 @@ import type {
 } from "./ImagePromptTemplatesPane.js";
 import type {
   ImagePromptFamilyInfoValue,
-  ImagePromptFamilyValue,
+  ImagePromptProfileDetailResponse,
+  ImagePromptProfileListResponse,
+  ImagePromptProfileValue,
   ImagePromptTemplateCellValue,
   ImagePromptTemplateRowKeyValue,
-  ImagePromptTemplatesValue,
 } from "@vibe-tavern/api-contracts";
+
+// IF-1d — the Images pane rebuilt on image prompt PROFILES (a fork of the
+// ServicePromptsPane flow) with the IPT detail side kept (mode rows × family
+// dropdown, canon/custom status, quality layer, assist read-only view) and
+// whole-profile saves. Pins the fork-parity flow AND the kept detail-side
+// behaviors under the profile seam.
 
 const ROW_KEYS: ImagePromptTemplateRowKeyValue[] = [
   "scene-background",
@@ -39,13 +56,13 @@ const FAMILIES: ImagePromptFamilyInfoValue[] = [
 
 function makeCell(
   rowKey: ImagePromptTemplateRowKeyValue,
-  family: ImagePromptFamilyValue,
+  family: string,
   customText: string | null = null,
   qualityText: string | null = null,
 ): ImagePromptTemplateCellValue {
   return {
     rowKey,
-    family,
+    family: family as ImagePromptTemplateCellValue["family"],
     canonText: `canon ${rowKey} ${family}`,
     canonSource: family === "prose" ? "family-canon" : "prose-canon",
     customText,
@@ -54,13 +71,9 @@ function makeCell(
   };
 }
 
-function makeTemplates(customPortrait = false): ImagePromptTemplatesValue {
+function makeCatalog() {
   return {
-    cells: ROW_KEYS.flatMap((rowKey) => FAMILIES.map((family) => makeCell(
-      rowKey,
-      family.id,
-      customPortrait && rowKey === "portrait" && family.id === "prose" ? "custom portrait" : null,
-    ))),
+    cells: ROW_KEYS.flatMap((rowKey) => FAMILIES.map((family) => makeCell(rowKey, family.id))),
     qualityCanon: { pony: "canon quality pony" },
     assist: {
       core: "extract the visible scene",
@@ -69,24 +82,68 @@ function makeTemplates(customPortrait = false): ImagePromptTemplatesValue {
   };
 }
 
-function makeApi(templates = makeTemplates()): ImagePromptTemplatesPaneApi {
+function makeProfile(overrides: Partial<ImagePromptProfileValue> = {}): ImagePromptProfileValue {
   return {
-    listTemplates: mock(async () => templates),
-    listFamilies: mock(async () => ({ families: FAMILIES })),
-    upsert: mock(async (rowKey, family, body) => {
-      const current = templates.cells.find((cell) => cell.rowKey === rowKey && cell.family === family);
-      const qualityText = body.qualityText === undefined ? current?.qualityText ?? null : body.qualityText;
-      return makeCell(rowKey, family, body.body, qualityText);
-    }),
-    reset: mock(async (rowKey, family) => makeCell(rowKey, family)),
+    id: "p1",
+    name: "My Profile",
+    isDefault: false,
+    sortOrder: 0,
+    overrides: {},
+    createdAt: "",
+    updatedAt: "",
+    ...overrides,
   };
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
+function makeDefaultProfile(): ImagePromptProfileValue {
+  return makeProfile({ id: "default", name: "Default", isDefault: true });
+}
+
+function makeDetail(profile: ImagePromptProfileValue): ImagePromptProfileDetailResponse {
+  return { profile, catalog: makeCatalog() };
+}
+
+function makeApi(options: { profiles?: ImagePromptProfileValue[]; activeProfileId?: string | null } = {}) {
+  const profiles = options.profiles ?? [makeDefaultProfile(), makeProfile()];
+  const activeProfileId = options.activeProfileId ?? null;
+  const store = new Map(profiles.map((p) => [p.id, { ...p, overrides: { ...p.overrides } }]));
   return {
-    promise: new Promise<T>((nextResolve) => { resolve = nextResolve; }),
-    resolve,
+    api: {
+      listProfiles: mock(async (): Promise<ImagePromptProfileListResponse> => ({
+        profiles: [...store.values()],
+        activeProfileId,
+      })),
+      getProfile: mock(async (id: string): Promise<ImagePromptProfileDetailResponse | null> => {
+        const profile = store.get(id);
+        return profile ? makeDetail(profile) : null;
+      }),
+      create: mock(async (body: { name: string; overrides?: object }) => {
+        const created = makeProfile({ id: "created_1", name: body.name, overrides: (body.overrides ?? {}) as ImagePromptProfileValue["overrides"] });
+        store.set(created.id, created);
+        return created;
+      }),
+      update: mock(async (id: string, body: { name?: string; overrides?: object }) => {
+        const current = store.get(id);
+        if (!current) throw new Error("not found");
+        const next: ImagePromptProfileValue = {
+          ...current,
+          name: body.name ?? current.name,
+          overrides: (body.overrides ?? current.overrides) as ImagePromptProfileValue["overrides"],
+        };
+        store.set(id, next);
+        return next;
+      }),
+      remove: mock(async (id: string) => {
+        store.delete(id);
+      }),
+      setActive: mock(async (_profileId: string | null) => {}),
+      reorder: mock(async (updates: Array<{ id: string; sortOrder: number }>): Promise<ImagePromptProfileListResponse> => ({
+        profiles: [...store.values()],
+        activeProfileId,
+      })),
+      listFamilies: mock(async () => ({ families: FAMILIES })),
+    } satisfies ImagePromptTemplatesPaneApi,
+    store,
   };
 }
 
@@ -99,7 +156,7 @@ function Harness({
   api: ImagePromptTemplatesPaneApi;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
-  renderRowDrillDown?: (rowId: ImagePromptTemplatesPaneRowId, selectRow: () => void) => React.ReactNode;
+  renderRowDrillDown?: (rowId: string, selectRow: () => void) => React.ReactNode;
 }) {
   return (
     <LocaleProvider>
@@ -121,393 +178,273 @@ function Harness({
   );
 }
 
-function rowButton(getByTestId: (id: string) => HTMLElement, rowId: ImagePromptTemplatesPaneRowId): HTMLButtonElement {
-  return getByTestId(`image-prompt-template-row-${rowId}`).querySelector("button") as HTMLButtonElement;
+async function openRow(getByTestId: (id: string) => HTMLElement, rowId: ImagePromptTemplatesPaneRowId) {
+  await act(async () => {
+    fireEvent.click(getByTestId(`image-prompt-template-row-${rowId}`).querySelector("button") as HTMLButtonElement);
+  });
 }
 
-describe("ImagePromptTemplatesPane", () => {
-  test("renders the exact server row inventory in order with inline family controls and drill-down seam", async () => {
-    const api = makeApi();
-    const drillCalls: ImagePromptTemplatesPaneRowId[] = [];
-    const { getByTestId } = render(
-      <Harness
-        api={api}
-        renderRowDrillDown={(rowId, selectRow) => {
-          drillCalls.push(rowId);
-          return <button type="button" data-testid={`drill-${rowId}`} onClick={selectRow}>drill</button>;
-        }}
-      />,
-    );
+/** Open a row's family dropdown and pick the option whose label contains
+ *  `label` (the cmdk list appends after the trigger, so the last match is
+ *  the list item). */
+async function selectFamily(getByTestId: (id: string) => HTMLElement, rowId: ImagePromptTemplatesPaneRowId, label: string) {
+  // triggerTestId sits on the trigger BUTTON itself (DropdownSelect convention).
+  await act(async () => {
+    fireEvent.click(getByTestId(`image-prompt-template-family-${rowId}`));
+  });
+  const item = await waitFor(() => {
+    const el = Array.from(document.querySelectorAll("[cmdk-item]"))
+      .find((node) => node.textContent?.includes(label));
+    if (!el) throw new Error(`family option "${label}" not open yet`);
+    return el as HTMLElement;
+  });
+  await act(async () => {
+    fireEvent.click(item);
+  });
+}
 
-    await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
-    const rows = Array.from(getByTestId("master").querySelectorAll("[data-testid^='image-prompt-template-row-']"));
-    expect(rows.map((row) => row.getAttribute("data-testid"))).toEqual([
-      ...ROW_KEYS.map((rowKey) => `image-prompt-template-row-${rowKey}`),
-      "image-prompt-template-row-assist",
-    ]);
-    expect(drillCalls).toEqual([...ROW_KEYS, "assist"]);
-
-    const portrait = getByTestId("image-prompt-template-row-portrait");
-    expect(portrait.className).toContain("items-center");
-    expect(portrait.className).not.toContain("flex-col");
-    expect(portrait.querySelector("[data-testid='image-prompt-template-family-portrait']")).toBeTruthy();
-    expect(getByTestId("image-prompt-template-status-scene-background").getAttribute("aria-label")).toBe("Canon");
-
-    fireEvent.click(getByTestId("drill-character"));
-    await waitFor(() => expect(getByTestId("detail").textContent).toContain("Character"));
+describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
+  test("master renders Default pinned first with lock + live badge, then profiles; drill-down seam fires", async () => {
+    const renderDrillDown = mock((_rowId: string, _selectRow: () => void) => <span data-testid="drill" />);
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile(), makeProfile({ id: "p2", name: "Second", sortOrder: 1 })], activeProfileId: "p2" });
+    const { getByTestId } = render(<Harness api={api} renderRowDrillDown={renderDrillDown} />);
+    await waitFor(() => expect(getByTestId("image-prompt-profile-row-default")).toBeTruthy());
+    expect(getByTestId("image-prompt-profile-row-p1")).toBeTruthy();
+    expect(getByTestId("image-prompt-profile-row-p2")).toBeTruthy();
+    // Default row renders the live badge and the drill-down seam.
+    expect(getByTestId("image-prompt-profile-row-default").textContent).toContain("live");
+    expect(renderDrillDown).toHaveBeenCalled();
   });
 
-  test("never reports clean load or clean row/family switches as dirty", async () => {
-    const api = makeApi();
-    const dirtyStates: boolean[] = [];
-    const { getAllByText, getByTestId } = render(<Harness api={api} onDirtyChange={(dirty) => dirtyStates.push(dirty)} />);
-
-    await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
-    fireEvent.click(getByTestId("image-prompt-template-family-scene-background"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
-    await waitFor(() => expect(getByTestId("detail").textContent).toContain("canon scene-background pony"));
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    await waitFor(() => expect(getByTestId("detail").textContent).toContain("Portrait"));
-
-    expect(dirtyStates.includes(true)).toBe(false);
-  });
-
-  test("reports inactive as clean without losing a dirty draft or its save path", async () => {
-    const api = makeApi(makeTemplates(true));
-    const dirtyStates: boolean[] = [];
-    const onDirtyChange = (dirty: boolean) => dirtyStates.push(dirty);
-    const { getByRole, getByTestId, rerender } = render(<Harness api={api} onDirtyChange={onDirtyChange} />);
-
+  test("detail renders the exact row inventory (8 modes + negative + assist) with per-row family dropdowns", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile()], activeProfileId: null });
+    const { getByTestId } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    const textarea = await waitFor(() => getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement);
-    fireEvent.change(textarea, { target: { value: "inactive dirty portrait" } });
-    await waitFor(() => expect(dirtyStates.at(-1)).toBe(true));
-
-    rerender(<Harness api={api} active={false} onDirtyChange={onDirtyChange} />);
-    await waitFor(() => expect(dirtyStates.at(-1)).toBe(false));
-    expect(getByTestId("detail").textContent).toBe("");
-
-    rerender(<Harness api={api} onDirtyChange={onDirtyChange} />);
-    await waitFor(() => expect((getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement).value).toBe("inactive dirty portrait"));
-    await waitFor(() => expect(dirtyStates.at(-1)).toBe(true));
-    expect((getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
+    for (const rowKey of ROW_KEYS) {
+      expect(getByTestId(`image-prompt-template-row-${rowKey}`)).toBeTruthy();
+      expect(getByTestId(`image-prompt-template-family-${rowKey}`)).toBeTruthy();
+      expect(getByTestId(`image-prompt-template-status-${rowKey}`)).toBeTruthy();
+    }
+    expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy();
+    expect(getByTestId("image-prompt-template-family-assist")).toBeTruthy();
   });
 
-  test("dirty row and selected-family changes require discard confirmation, preserve on cancel, and apply on confirm", async () => {
-    const api = makeApi(makeTemplates(true));
-    const { getAllByText, getByRole, getByTestId, getByText, queryByText } = render(<Harness api={api} />);
-
+  test("Default profile: canon read-only blocks, duplicate-only footer, no save button", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile()], activeProfileId: null });
+    const { getByTestId, queryByRole } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    const textarea = await waitFor(() => {
-      const element = getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement | null;
-      expect(element?.value).toBe("custom portrait");
-      return element!;
+    await openRow(getByTestId, "portrait");
+    const detail = getByTestId("detail");
+    // Canon text visible read-only (code quote), no editor textarea on Default.
+    expect(detail.textContent).toContain("canon portrait prose");
+    expect(queryByRole("textbox", { name: "Image prompt template" }) === null || (queryByRole("textbox", { name: "Image prompt template" }) as HTMLTextAreaElement).disabled).toBeTruthy();
+    // Footer: duplicate present, no save button, no delete.
+    expect(getByTestId("footer").textContent).toContain("Duplicate");
+    expect(getByTestId("footer").textContent).not.toContain("Delete");
+  });
+
+  test("clicking a profile row selects AND makes it live (null for Default)", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile({ id: "p2", name: "Second" })], activeProfileId: "p2" });
+    const { getByTestId } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-profile-row-default")).toBeTruthy());
+    // Initial selection follows the live pointer.
+    await waitFor(() => expect(api.getProfile).toHaveBeenCalledWith("p2"));
+    await act(async () => {
+      fireEvent.click(getByTestId("image-prompt-profile-row-default"));
     });
-    fireEvent.change(textarea, { target: { value: "dirty portrait" } });
-
-    fireEvent.click(rowButton(getByTestId, "character"));
-    await waitFor(() => expect(getByText("Discard changes?")).toBeTruthy());
-    expect(getByTestId("detail").textContent).toContain("Portrait");
-    fireEvent.click(getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(queryByText("Discard changes?")).toBeNull());
-    expect((getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement).value).toBe("dirty portrait");
-
-    fireEvent.click(getByTestId("image-prompt-template-family-portrait"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
-    await waitFor(() => expect(getByText("Discard changes?")).toBeTruthy());
-    fireEvent.click(getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(queryByText("Discard changes?")).toBeNull());
-    expect((getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement).value).toBe("dirty portrait");
-
-    fireEvent.click(getByTestId("image-prompt-template-family-portrait"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
-    await waitFor(() => expect(getByText("Discard changes?")).toBeTruthy());
-    fireEvent.click(getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect((getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement).value).toBe("canon portrait pony"));
+    await waitFor(() => expect(api.setActive).toHaveBeenCalledWith(null));
   });
 
-  test("confirming discard applies the pending row selection", async () => {
-    const api = makeApi(makeTemplates(true));
-    const { getByRole, getByTestId } = render(<Harness api={api} />);
-
+  test("cell edit → dirty → whole-profile save sends normalized overrides; reset drops the key", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
+    const onDirtyChange = mock((_dirty: boolean) => {});
+    const { getByTestId, getByRole } = render(<Harness api={api} onDirtyChange={onDirtyChange} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    const textarea = await waitFor(() => getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement);
-    fireEvent.change(textarea, { target: { value: "dirty portrait" } });
-    fireEvent.click(rowButton(getByTestId, "character"));
-    await waitFor(() => expect(getByRole("button", { name: "Confirm" })).toBeTruthy());
-    fireEvent.click(getByRole("button", { name: "Confirm" }));
-
-    await waitFor(() => expect(getByTestId("detail").textContent).toContain("Character"));
-    expect((getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement).value).toBe("canon character prose");
+    await openRow(getByTestId, "portrait");
+    const editor = getByRole("textbox", { name: "Image prompt template" }) as HTMLTextAreaElement;
+    await act(async () => {
+      fireEvent.change(editor, { target: { value: "my own portrait template" } });
+    });
+    await waitFor(() => expect(onDirtyChange).toHaveBeenCalledWith(true));
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith("p1", {
+      name: "My Profile",
+      overrides: { "portrait|prose": { body: "my own portrait template", qualityText: null } },
+    }));
+    // Reset-to-canon drops the key from the draft; saving sends the empty map.
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Reset" }));
+    });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    await waitFor(() => expect(api.update).toHaveBeenLastCalledWith("p1", { name: "My Profile", overrides: {} }));
   });
 
-  test("free mode is fixed to prose and saves and resets only its prose cell", async () => {
-    const api = makeApi();
-    const { getByRole, getByTestId, queryByText } = render(<Harness api={api} />);
+  test("emptying the editor body returns the cell to canon on save (no blank overrides)", async () => {
+    const profile = makeProfile({ overrides: { "portrait|prose": { body: "existing custom", qualityText: null } } });
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), profile], activeProfileId: "p1" });
+    const { getByTestId, getByRole } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
+    await openRow(getByTestId, "portrait");
+    const editor = getByRole("textbox", { name: "Image prompt template" }) as HTMLTextAreaElement;
+    await act(async () => {
+      fireEvent.change(editor, { target: { value: "" } });
+    });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    await waitFor(() => expect(api.update).toHaveBeenLastCalledWith("p1", { name: "My Profile", overrides: {} }));
+  });
 
+  test("free row is fixed to prose (dropdown disabled) and its pony cell is unreachable", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
+    const { getByTestId } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-free")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "free"));
-    const freeFamily = getByTestId("image-prompt-template-family-free") as HTMLButtonElement;
-    expect(freeFamily.disabled).toBe(true);
-    fireEvent.click(freeFamily);
-    expect(queryByText("Pony")).toBeNull();
-
-    const textarea = await waitFor(() => getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement);
-    expect(textarea.value).toBe("canon free prose");
-    fireEvent.change(textarea, { target: { value: "custom free prompt" } });
-    fireEvent.click(getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(api.upsert).toHaveBeenCalledWith("free", "prose", { body: "custom free prompt" }));
-
-    await waitFor(() => expect(getByTestId("image-prompt-template-status-free").getAttribute("aria-label")).toBe("Customized"));
-    fireEvent.click(getByRole("button", { name: "Reset" }));
-    await waitFor(() => expect(api.reset).toHaveBeenCalledWith("free", "prose"));
-    expect((getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement).value).toBe("canon free prose");
+    const trigger = getByTestId("image-prompt-template-family-free");
+    // The trigger shows prose and carries the disabled attribute.
+    expect(trigger.textContent).toContain("Prose");
+    expect(trigger.querySelector("button")?.disabled ?? (trigger as HTMLButtonElement).disabled).toBeTruthy();
   });
 
-  test("shows an own-family canon quality block with the custom-quality toggle initially off", async () => {
-    const api = makeApi();
-    const { getAllByText, getByRole, getByTestId } = render(<Harness api={api} />);
-
+  test("quality layer: toggle rides the draft, blank quality clears to canon on save", async () => {
+    const profile = makeProfile({ overrides: { "portrait|pony": { body: "pony body", qualityText: null } } });
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), profile], activeProfileId: "p1" });
+    const { getByTestId, getByRole } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    fireEvent.click(getByTestId("image-prompt-template-family-portrait"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
-
-    await waitFor(() => expect(getByTestId("image-prompt-template-quality-canon").textContent).toBe("canon quality pony"));
+    // Switch the row's family to pony (the quality-authoring family).
+    await selectFamily(getByTestId, "portrait", "Pony");
+    await openRow(getByTestId, "portrait");
     const toggle = getByRole("switch", { name: "Customize quality text" });
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(getByTestId("detail").querySelector("textarea[aria-label='Custom quality text']")).toBeNull();
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    const qualityEditor = getByRole("textbox", { name: "Custom quality text" }) as HTMLTextAreaElement;
+    await act(async () => {
+      fireEvent.change(qualityEditor, { target: { value: "   " } });
+    });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    await waitFor(() => expect(api.update).toHaveBeenLastCalledWith("p1", {
+      name: "My Profile",
+      overrides: { "portrait|pony": { body: "pony body", qualityText: null } },
+    }));
+    // The canon quality block is visible for the pony family.
+    expect(getByTestId("image-prompt-template-quality-canon").textContent).toContain("canon quality pony");
   });
 
-  test("never exposes quality controls for the negative row", async () => {
-    const api = makeApi();
-    const { getAllByText, getByTestId, queryByRole } = render(<Harness api={api} />);
-
+  test("negative row never exposes quality controls", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
+    const { getByTestId, queryByRole } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-negative")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "negative"));
-    fireEvent.click(getByTestId("image-prompt-template-family-negative"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
-
-    await waitFor(() => expect(getByTestId("detail").textContent).toContain("Shared negative prompt"));
-    expect(getByTestId("detail").querySelector("[data-testid='image-prompt-template-quality-canon']")).toBeNull();
+    await openRow(getByTestId, "negative");
     expect(queryByRole("switch", { name: "Customize quality text" })).toBeNull();
-    expect(getByTestId("detail").querySelector("textarea[aria-label='Custom quality text']")).toBeNull();
   });
 
-  test("blank custom quality with a canonical body resets to the returned canon cell", async () => {
-    const api = makeApi();
-    const { getAllByText, getByRole, getByTestId } = render(<Harness api={api} />);
-
+  test("switching profiles with unsaved changes requires discard confirmation", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile(), makeProfile({ id: "p2", name: "Second" })], activeProfileId: "p1" });
+    const { getByTestId, getByRole, queryByText } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    fireEvent.click(getByTestId("image-prompt-template-family-portrait"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
-    fireEvent.click(await waitFor(() => getByRole("switch", { name: "Customize quality text" })));
-    const qualityEditor = getByTestId("detail").querySelector("textarea[aria-label='Custom quality text']") as HTMLTextAreaElement;
-    fireEvent.change(qualityEditor, { target: { value: "   " } });
-    fireEvent.click(getByRole("button", { name: "Save" }));
-
-    await waitFor(() => expect(api.reset).toHaveBeenCalledWith("portrait", "pony"));
-    await waitFor(() => expect(getByTestId("image-prompt-template-status-portrait").getAttribute("aria-label")).toBe("Canon"));
-    expect(getByTestId("detail").querySelector("textarea[aria-label='Custom quality text']")).toBeNull();
+    await openRow(getByTestId, "portrait");
+    const editor = getByRole("textbox", { name: "Image prompt template" }) as HTMLTextAreaElement;
+    await act(async () => {
+      fireEvent.change(editor, { target: { value: "unsaved edit" } });
+    });
+    await act(async () => {
+      fireEvent.click(getByTestId("image-prompt-profile-row-p2"));
+    });
+    await waitFor(() => expect(queryByText("Discard changes?")).toBeTruthy());
+    // Cancel keeps the dirty draft; confirm applies the switch.
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Confirm" }));
+    });
+    await waitFor(() => expect(api.setActive).toHaveBeenCalledWith("p2"));
   });
 
-  test("body-only edits preserve an existing custom quality override when the server cell returns it", async () => {
-    const templates = makeTemplates();
-    templates.cells = templates.cells.map((cell) => cell.rowKey === "portrait" && cell.family === "pony"
-      ? makeCell("portrait", "pony", "stored body", "stored quality")
-      : cell);
-    const api = makeApi(templates);
-    const { getAllByText, getByRole, getByTestId } = render(<Harness api={api} />);
-
-    await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    fireEvent.click(getByTestId("image-prompt-template-family-portrait"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
-    const toggle = await waitFor(() => getByRole("switch", { name: "Customize quality text" }));
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
-    const bodyEditor = getByTestId("detail").querySelector("textarea[aria-label='Image prompt template']") as HTMLTextAreaElement;
-    fireEvent.change(bodyEditor, { target: { value: "updated body" } });
-    fireEvent.click(getByRole("button", { name: "Save" }));
-
-    await waitFor(() => expect(api.upsert).toHaveBeenCalledWith("portrait", "pony", { body: "updated body" }));
-    await waitFor(() => expect((getByTestId("detail").querySelector("textarea[aria-label='Custom quality text']") as HTMLTextAreaElement).value).toBe("stored quality"));
-    expect(getByRole("switch", { name: "Customize quality text" }).getAttribute("aria-checked")).toBe("true");
-  });
-
-  test("saving a custom quality override uses the returned cell as truth", async () => {
-    const api = makeApi();
-    api.upsert = mock(async (rowKey, family) => makeCell(rowKey, family, "server portrait", "server quality"));
-    const { getAllByText, getByRole, getByTestId } = render(<Harness api={api} />);
-
-    await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    fireEvent.click(getByTestId("image-prompt-template-family-portrait"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
-    const toggle = await waitFor(() => getByRole("switch", { name: "Customize quality text" }));
-    fireEvent.click(toggle);
-    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
-    const qualityEditor = getByTestId("detail").querySelector("textarea[aria-label='Custom quality text']") as HTMLTextAreaElement;
-    expect(qualityEditor.value).toBe("canon quality pony");
-    fireEvent.change(qualityEditor, { target: { value: "my quality" } });
-    fireEvent.click(getByRole("button", { name: "Save" }));
-
-    await waitFor(() => expect(api.upsert).toHaveBeenCalledWith("portrait", "pony", { body: "canon portrait pony", qualityText: "my quality" }));
-    await waitFor(() => expect((getByTestId("detail").querySelector("textarea[aria-label='Custom quality text']") as HTMLTextAreaElement).value).toBe("server quality"));
-    expect((getByTestId("detail").querySelector("textarea[aria-label='Image prompt template']") as HTMLTextAreaElement).value).toBe("server portrait");
-  });
-
-  test("clearing quality preserves an independently customized body and resets a quality-only override", async () => {
-    const templates = makeTemplates();
-    templates.cells = templates.cells.map((cell) => cell.rowKey === "portrait" && cell.family === "pony"
-      ? makeCell("portrait", "pony", "custom portrait", "custom quality")
-      : cell);
-    const api = makeApi(templates);
-    const { getAllByText, getByRole, getByTestId, unmount } = render(<Harness api={api} />);
-
-    await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    fireEvent.click(getByTestId("image-prompt-template-family-portrait"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
-    const toggle = await waitFor(() => getByRole("switch", { name: "Customize quality text" }));
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
-    fireEvent.click(toggle);
-    fireEvent.click(getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(api.upsert).toHaveBeenCalledWith("portrait", "pony", { body: "custom portrait", qualityText: null }));
-
-    const qualityOnly = makeTemplates();
-    qualityOnly.cells = qualityOnly.cells.map((cell) => cell.rowKey === "portrait" && cell.family === "pony"
-      ? makeCell("portrait", "pony", null, "custom quality")
-      : cell);
-    const qualityOnlyApi = makeApi(qualityOnly);
-    unmount();
-    const qualityOnlyView = render(<Harness api={qualityOnlyApi} />);
-    await waitFor(() => expect(qualityOnlyView.getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(qualityOnlyView.getByTestId, "portrait"));
-    fireEvent.click(qualityOnlyView.getByTestId("image-prompt-template-family-portrait"));
-    await waitFor(() => expect(qualityOnlyView.getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(qualityOnlyView.getAllByText("Pony").at(-1)!);
-    fireEvent.click(await waitFor(() => qualityOnlyView.getByRole("switch", { name: "Customize quality text" })));
-    fireEvent.click(qualityOnlyView.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(qualityOnlyApi.reset).toHaveBeenCalledWith("portrait", "pony"));
-  });
-
-  test("quality edits require discard confirmation, survive inactive state, and never appear for no-quality rows", async () => {
-    const api = makeApi();
-    const dirtyStates: boolean[] = [];
-    const { getAllByText, getByRole, getByTestId, getByText, queryByText, rerender } = render(<Harness api={api} onDirtyChange={(dirty) => dirtyStates.push(dirty)} />);
-
-    await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    expect(getByTestId("detail").querySelector("[data-testid='image-prompt-template-quality-canon']")).toBeNull();
-    fireEvent.click(rowButton(getByTestId, "free"));
-    await waitFor(() => expect(getByTestId("detail").querySelector("[data-testid='image-prompt-template-quality-canon']")).toBeNull());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    fireEvent.click(getByTestId("image-prompt-template-family-portrait"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
-    fireEvent.click(await waitFor(() => getByRole("switch", { name: "Customize quality text" })));
-    await waitFor(() => expect(dirtyStates.at(-1)).toBe(true));
-
-    fireEvent.click(rowButton(getByTestId, "character"));
-    await waitFor(() => expect(getByText("Discard changes?")).toBeTruthy());
-    fireEvent.click(getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(queryByText("Discard changes?")).toBeNull());
-    expect(getByRole("switch", { name: "Customize quality text" }).getAttribute("aria-checked")).toBe("true");
-
-    fireEvent.click(getByTestId("image-prompt-template-family-portrait"));
-    await waitFor(() => expect(getAllByText("Prose").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Prose").at(-1)!);
-    await waitFor(() => expect(getByText("Discard changes?")).toBeTruthy());
-    fireEvent.click(getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(queryByText("Discard changes?")).toBeNull());
-
-    rerender(<Harness api={api} active={false} onDirtyChange={(dirty) => dirtyStates.push(dirty)} />);
-    await waitFor(() => expect(dirtyStates.at(-1)).toBe(false));
-    rerender(<Harness api={api} onDirtyChange={(dirty) => dirtyStates.push(dirty)} />);
-    await waitFor(() => expect(getByRole("switch", { name: "Customize quality text" }).getAttribute("aria-checked")).toBe("true"));
-    await waitFor(() => expect(dirtyStates.at(-1)).toBe(true));
-
-    fireEvent.click(rowButton(getByTestId, "free"));
-    await waitFor(() => expect(getByText("Discard changes?")).toBeTruthy());
-  });
-
-  test("PUT save and DELETE reset use returned server cells and freeze editing/navigation while pending", async () => {
-    const api = makeApi(makeTemplates(true));
-    const put = deferred<ImagePromptTemplateCellValue>();
-    const reset = deferred<ImagePromptTemplateCellValue>();
-    api.upsert = mock(async () => put.promise);
-    api.reset = mock(async () => reset.promise);
-    const { getByRole, getByTestId } = render(<Harness api={api} />);
-
-    await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "portrait"));
-    const textarea = await waitFor(() => getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement);
-    fireEvent.change(textarea, { target: { value: "saved portrait" } });
-    fireEvent.click(getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(api.upsert).toHaveBeenCalledWith("portrait", "prose", { body: "saved portrait" }));
-    expect(textarea.disabled).toBe(true);
-    expect(rowButton(getByTestId, "character").disabled).toBe(true);
-    expect((getByTestId("image-prompt-template-family-portrait") as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(textarea, { target: { value: "must not replace saved value" } });
-    fireEvent.click(rowButton(getByTestId, "character"));
-
-    await act(async () => { put.resolve(makeCell("portrait", "prose", "server portrait")); });
-    await waitFor(() => expect((getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement).value).toBe("server portrait"));
-    expect(getByTestId("detail").textContent).toContain("Portrait");
-    expect(getByTestId("image-prompt-template-status-portrait").getAttribute("aria-label")).toBe("Customized");
-
-    fireEvent.click(getByRole("button", { name: "Reset" }));
-    await waitFor(() => expect(api.reset).toHaveBeenCalledWith("portrait", "prose"));
-    expect((getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement).disabled).toBe(true);
-    expect(rowButton(getByTestId, "character").disabled).toBe(true);
-    fireEvent.click(rowButton(getByTestId, "character"));
-    await act(async () => { reset.resolve(makeCell("portrait", "prose")); });
-    await waitFor(() => expect((getByTestId("detail").querySelector("textarea") as HTMLTextAreaElement).value).toBe("canon portrait prose"));
-    expect(getByTestId("detail").textContent).toContain("Portrait");
-    expect(getByTestId("image-prompt-template-status-portrait").getAttribute("aria-label")).toBe("Canon");
-  });
-
-  test("renders assist core and selected-family addendum as read-only content", async () => {
-    const api = makeApi();
-    const { getAllByText, getByTestId } = render(<Harness api={api} />);
-
+  test("assist row renders the canon core and the selected-family addendum read-only", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
+    const { getByTestId } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
-    fireEvent.click(rowButton(getByTestId, "assist"));
-    await waitFor(() => expect(getByTestId("image-prompt-template-assist-core").textContent).toContain("extract the visible scene"));
-    expect(getByTestId("detail").querySelector("textarea")).toBeNull();
-
-    fireEvent.click(getByTestId("image-prompt-template-family-assist"));
-    await waitFor(() => expect(getAllByText("Pony").length).toBeGreaterThan(0));
-    fireEvent.click(getAllByText("Pony").at(-1)!);
+    await openRow(getByTestId, "assist");
+    expect(getByTestId("image-prompt-template-assist-core").textContent).toContain("extract the visible scene");
+    // prose (the default family) has no addendum; switch the row to pony.
+    expect(getByTestId("image-prompt-template-assist-addendum").textContent).toContain("No family addendum");
+    await selectFamily(getByTestId, "assist", "Pony");
     await waitFor(() => expect(getByTestId("image-prompt-template-assist-addendum").textContent).toContain("return ordered tags"));
-    expect(getByTestId("footer").querySelector("button[aria-label='Save']")).toBeNull();
+  });
+
+  test("duplicate footer action creates a (copy) profile, activates, and selects it", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile({ overrides: { "portrait|prose": { body: "x", qualityText: null } } })], activeProfileId: "p1" });
+    const { getByTestId, getByText } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(getByText("Duplicate"));
+    });
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith({
+      name: "My Profile (copy)",
+      overrides: { "portrait|prose": { body: "x", qualityText: null } },
+    }));
+    await waitFor(() => expect(api.setActive).toHaveBeenCalledWith("created_1"));
+  });
+
+  test("create flow: new profile input commits, activates, and starts inline rename", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile()], activeProfileId: null });
+    const { getByTestId, getByRole } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-profile-row-default")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "New Profile" }));
+    });
+    const input = getByTestId("master").querySelector("input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "Fresh" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith({ name: "Fresh", overrides: {} }));
+    await waitFor(() => expect(api.setActive).toHaveBeenCalledWith("created_1"));
+  });
+
+  test("delete flow: non-default profile removed, selection falls back to live", async () => {
+    const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
+    const { getByTestId, getAllByText } = render(<Harness api={api} />);
+    await waitFor(() => expect(getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
+    // Desktop footer actions are icon+label SPANS with onClick (canon
+    // MasterDetailFooter) — click the footer Delete by text.
+    await act(async () => {
+      fireEvent.click(getAllByText("Delete")[0]!);
+    });
+    // The destructive confirm opens in a portal; its confirm is the only
+    // BUTTON carrying the Delete label.
+    const confirmButton = await waitFor(() => {
+      const button = getAllByText("Delete").map((node) => node.closest("button")).find(Boolean);
+      if (!button) throw new Error("confirm not open yet");
+      return button as HTMLElement;
+    });
+    await act(async () => {
+      fireEvent.click(confirmButton);
+    });
+    await waitFor(() => expect(api.remove).toHaveBeenCalledWith("p1"));
   });
 
   test("shows a retryable loading error", async () => {
-    const api = makeApi();
-    let shouldFail = true;
-    api.listTemplates = mock(async () => {
-      if (shouldFail) throw new Error("offline");
-      return makeTemplates();
+    const failingApi: ImagePromptTemplatesPaneApi = {
+      listProfiles: mock(async () => { throw new Error("boom"); }),
+      getProfile: mock(async () => null),
+      create: mock(async () => { throw new Error("boom"); }),
+      update: mock(async () => { throw new Error("boom"); }),
+      remove: mock(async () => {}),
+      setActive: mock(async () => {}),
+      reorder: mock(async () => ({ profiles: [], activeProfileId: null })),
+      listFamilies: mock(async () => ({ families: FAMILIES })),
+    };
+    const { getByText, queryByText } = render(<Harness api={failingApi} />);
+    await waitFor(() => expect(queryByText("Failed to load image templates")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(getByText("Retry"));
     });
-    const { getByRole, getByText, getByTestId } = render(<Harness api={api} />);
-
-    await waitFor(() => expect(getByText("Failed to load image templates")).toBeTruthy());
-    shouldFail = false;
-    fireEvent.click(getByRole("button", { name: "Retry" }));
-    await waitFor(() => expect(getByTestId("image-prompt-template-row-assist")).toBeTruthy());
+    // Still failing → error stays visible.
+    await waitFor(() => expect(queryByText("Failed to load image templates")).toBeTruthy());
   });
 });

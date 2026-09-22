@@ -126,6 +126,14 @@ mock.module("../../api/image-gen-api.js", () => ({
   listImagePromptTemplates: listImagePromptTemplatesMock,
   listImagePromptFamilies: listImagePromptFamiliesMock,
 }));
+const realImageProfileApi = await import("../../api/image-prompt-profile-api.js");
+const listImagePromptProfilesMock = mock(realImageProfileApi.listImagePromptProfiles);
+const getImagePromptProfileDetailMock = mock(realImageProfileApi.getImagePromptProfileDetail);
+mock.module("../../api/image-prompt-profile-api.js", () => ({
+  ...realImageProfileApi,
+  listImagePromptProfiles: listImagePromptProfilesMock,
+  getImagePromptProfileDetail: getImagePromptProfileDetailMock,
+}));
 mock.module("../../lib/download.js", () => ({
   ...realDownload,
   downloadTextFile: downloadTextFileMock,
@@ -176,6 +184,10 @@ afterEach(async () => {
   listImagePromptTemplatesMock.mockResolvedValue(makeImagePromptTemplates());
   listImagePromptFamiliesMock.mockReset();
   listImagePromptFamiliesMock.mockResolvedValue({ families: imagePromptFamilies });
+  listImagePromptProfilesMock.mockReset();
+  listImagePromptProfilesMock.mockResolvedValue(makeImagePromptProfileList());
+  getImagePromptProfileDetailMock.mockReset();
+  getImagePromptProfileDetailMock.mockImplementation(async (id: string) => makeImagePromptProfileDetail(id));
   downloadTextFileMock.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
@@ -210,6 +222,27 @@ function makeImagePromptTemplates(): ImagePromptTemplatesValue {
     }))),
     qualityCanon: { pony: "canon quality pony" },
     assist: { core: "assist core", addenda: { pony: "pony addendum" } },
+  };
+}
+
+/** IF-1d: the images tab loads through the image prompt PROFILE api — a
+ *  read-only Default plus one live non-default profile (the editor surface). */
+function makeImagePromptProfileList() {
+  return {
+    profiles: [
+      { id: "default", name: "Default", isDefault: true, sortOrder: 0, overrides: {}, createdAt: "", updatedAt: "" },
+      { id: "ipp1", name: "My Profile", isDefault: false, sortOrder: 1, overrides: {}, createdAt: "", updatedAt: "" },
+    ],
+    activeProfileId: "ipp1",
+  };
+}
+
+function makeImagePromptProfileDetail(id: string) {
+  const templates = makeImagePromptTemplates();
+  const isDefault = id === "default";
+  return {
+    profile: { id, name: isDefault ? "Default" : "My Profile", isDefault, sortOrder: isDefault ? 0 : 1, overrides: {}, createdAt: "", updatedAt: "" },
+    catalog: templates,
   };
 }
 
@@ -1278,15 +1311,17 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
       />,
     );
 
-    expect(listImagePromptTemplatesMock).not.toHaveBeenCalled();
+    expect(listImagePromptProfilesMock).not.toHaveBeenCalled();
     expect(listServiceProfilesMock).not.toHaveBeenCalled();
     fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabelImages"));
-    await waitFor(() => expect(listImagePromptTemplatesMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(listImagePromptProfilesMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-prompt-template-row-assist")).toBeTruthy());
     expect(listServiceProfilesMock).not.toHaveBeenCalled();
     expect(view.baseElement.querySelectorAll("[data-testid^='image-prompt-template-row-']").length).toBe(10);
     expect(view.baseElement.querySelector("[data-testid^='service-row-']")).toBeNull();
-    expect(within(view.baseElement).getAllByText("drill").length).toBe(10);
+    // The drill-down seam now fires per PROFILE row (the master list) — two
+    // profiles here, two drill nodes.
+    expect(within(view.baseElement).getAllByText("drill").length).toBe(2);
   });
 
   test("images tab quality draft participates in the modal close guard", async () => {
