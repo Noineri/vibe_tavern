@@ -719,3 +719,51 @@ export const imagePromptFamiliesSchema = z.object({
   families: z.array(imagePromptFamilyInfoSchema),
 });
 export type ImagePromptFamiliesValue = z.infer<typeof imagePromptFamiliesSchema>;
+
+// ─── IPT-3: profile family set/clear + authoritative detection ─────────────
+
+/** PUT /api/image-gen/profiles/:id/family body — the manual pin, or null
+ *  to clear it back to the auto path. This route is the ONLY
+ *  family-override writer (create stays unpinned; PATCH family keys strip
+ *  to no-ops — route-pinned since IPT-2). */
+export const setImageGenProfileFamilySchema = z.object({
+  family: imagePromptFamilySchema.nullable(),
+});
+export type SetImageGenProfileFamilyInput = z.infer<typeof setImageGenProfileFamilySchema>;
+
+/** The ordered detection ladder's source ids (IPT-3) — also the success
+ *  response's sourceLabel. */
+export const imageGenFamilyDetectionSourceSchema = z.enum([
+  'backend-metadata',
+  'sidecar',
+  'civitai-by-hash',
+  'extension-preset',
+]);
+export type ImageGenFamilyDetectionSourceValue = z.infer<typeof imageGenFamilyDetectionSourceSchema>;
+
+/** One tried-and-missed source of the honest failure, in ladder order. */
+export const imageGenFamilyDetectionAttemptSchema = z.object({
+  source: imageGenFamilyDetectionSourceSchema,
+  reason: z.string(),
+});
+export type ImageGenFamilyDetectionAttemptValue = z.infer<typeof imageGenFamilyDetectionAttemptSchema>;
+
+/** POST /api/image-gen/profiles/:id/detect-family response — probe-style:
+ *  a no-answer is DATA (ok:false + the ordered tried[] ladder with every
+ *  miss/error recorded), never a thrown error; detection never guesses.
+ *  `baseModel` is the raw authoritative label that decided (UI
+ *  provenance). */
+export const imageGenFamilyDetectionResultSchema = z.discriminatedUnion('ok', [
+  z.object({
+    ok: z.literal(true),
+    family: imagePromptFamilySchema,
+    sourceLabel: imageGenFamilyDetectionSourceSchema,
+    baseModel: z.string().optional(),
+  }),
+  z.object({
+    ok: z.literal(false),
+    error: z.string(),
+    tried: z.array(imageGenFamilyDetectionAttemptSchema),
+  }),
+]);
+export type ImageGenFamilyDetectionResultValue = z.infer<typeof imageGenFamilyDetectionResultSchema>;

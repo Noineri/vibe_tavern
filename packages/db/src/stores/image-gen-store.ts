@@ -40,11 +40,23 @@ export type CreateImageGenProfileData = Omit<
  *  wire's nullable-clear convention, IG-3: `presetId: null` clears the
  *  pointer; the store body already maps `?? null` onto the column).
  *  familySource is excluded (derived at read); the three family state
- *  fields ride the null-clear convention for the Wave 3 family route. */
+ *  fields ride the null-clear convention for the Wave 3 family route
+ *  (omitted from the Partial branch so THIS block is their sole
+ *  declaration — the Partial branch would re-declare them without
+ *  `| null` and swallow the clear convention at the type level). */
 export type UpdateImageGenProfileData = Partial<
   Omit<
     ImageGenProfile,
-    'id' | 'createdAt' | 'familySource' | 'presetId' | 'modelId' | 'llmProviderProfileId' | 'llmModelId'
+    | 'id'
+    | 'createdAt'
+    | 'familySource'
+    | 'presetId'
+    | 'modelId'
+    | 'llmProviderProfileId'
+    | 'llmModelId'
+    | 'familyOverride'
+    | 'familyDetected'
+    | 'familyDetectedForModel'
   >
 > & {
   presetId?: string | null;

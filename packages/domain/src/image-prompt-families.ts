@@ -91,6 +91,103 @@ export const IMAGE_PROMPT_FAMILY_IDS = Object.keys(IMAGE_PROMPT_FAMILIES) as rea
 export const IMAGE_PROMPT_DEFAULT_FAMILY: ImagePromptFamilyId = "prose";
 
 /**
+ * IPT Wave 3: the authoritative base-model → family mapping. Detection
+ * sources read a RAW base-model label (a sidecar's `BaseModel`/
+ * `baseModel`, ComfyUI's embedded safetensors header, Civitai's by-hash
+ * `baseModel`, or the Prompt All-in-One extension's Civitai-resolved
+ * `base_model`) and map it through this table — the label is AUTHOR
+ * metadata, never a filename heuristic. Matching is word-based on the
+ * normalized label (lowercase, separator runs collapsed to spaces), so
+ * "Animagine" never matches the `anima` rule and "Flux.1 D" matches
+ * `flux`; rule order is part of the contract (first rule wins, noobai
+ * before illustrious, the concrete families before the prose group, the
+ * SDXL class last because plain SDXL needs the tag corpus below).
+ *
+ * SDXL-class labels are deliberately NOT mapped here: SDXL 1.0 may become
+ * sdxl-realism only when the author-declared tag corpus unambiguously
+ * says realism/photorealistic — plain or anime-tagged SDXL merges stay an
+ * honest ambiguity (the user pins once). `disambiguateSdxl` encodes that
+ * rule; detection treats its undefined as a miss, never a guess.
+ */
+
+/** Normalize a raw base-model label for matching: lowercase, every run of
+ *  non-alphanumeric characters collapsed to one space, trimmed. */
+function normalizeBaseModelLabel(raw: string): string {
+  return raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** Word-based keyword rules, in precedence order. `keywords` match whole
+ *  words of the normalized label (multi-word entries match word runs). */
+const IMAGE_PROMPT_BASE_MODEL_RULES: ReadonlyArray<{
+  family: ImagePromptFamilyId;
+  keywords: readonly string[];
+}> = [
+  // noobai before illustrious: a label naming both is a merge — the more
+  // specific tag dialect wins deterministically (documented, not guessed).
+  { family: "noobai", keywords: ["noobai"] },
+  { family: "illustrious", keywords: ["illustrious"] },
+  { family: "anima", keywords: ["anima"] },
+  { family: "pony", keywords: ["pony"] },
+  { family: "qwen", keywords: ["qwen"] },
+  { family: "krea2", keywords: ["krea", "krea2"] },
+  // Vendor prose bases (the prose family's own registry description lists
+  // FLUX, gpt-image, Seedream, Z-Image — recognizable without clones).
+  { family: "prose", keywords: ["flux", "seedream", "gpt image", "z image", "zimage"] },
+];
+
+/** SDXL-class words/runs: an architecture-level SDXL label needs the tag
+ *  corpus — "SDXL 1.0", "sd_xl_base", "stable-diffusion-xl-v1-base" all
+ *  land here (the modelspec stamp is architecture truth, not lineage). */
+const IMAGE_PROMPT_SDXL_KEYWORDS: readonly string[] = [
+  "sdxl",
+  "sd xl",
+  "stable diffusion xl",
+];
+
+/** The outcome of mapping one raw base-model label. */
+export type ImagePromptBaseModelMatch =
+  | { kind: "family"; family: ImagePromptFamilyId }
+  | { kind: "sdxl"; label: string }
+  | { kind: "unmapped"; label: string };
+
+/** Does the normalized label contain the keyword as a whole word (or a
+ *  whole run of words)? "animagine xl" must not match "anima";
+ * "flux 1 d" must match "flux"; "sd xl base" must match "sd xl". */
+function labelHasKeyword(normalized: string, keyword: string): boolean {
+  const pattern = new RegExp(`(?:^| )${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$| )`);
+  return pattern.test(normalized);
+}
+
+/** Map a raw authoritative base-model label onto the family registry.
+ *  Unmapped labels (e.g. "SD 1.5" — no registry family exists for them)
+ *  return `unmapped` carrying the label: detection surfaces it in the
+ *  honest miss, the user pins manually. */
+export function matchImagePromptBaseModel(rawBaseModel: string): ImagePromptBaseModelMatch {
+  const normalized = normalizeBaseModelLabel(rawBaseModel);
+  if (normalized.length === 0) return { kind: "unmapped", label: rawBaseModel };
+  for (const rule of IMAGE_PROMPT_BASE_MODEL_RULES) {
+    if (rule.keywords.some((keyword) => labelHasKeyword(normalized, keyword))) {
+      return { kind: "family", family: rule.family };
+    }
+  }
+  if (IMAGE_PROMPT_SDXL_KEYWORDS.some((keyword) => labelHasKeyword(normalized, keyword))) {
+    return { kind: "sdxl", label: rawBaseModel };
+  }
+  return { kind: "unmapped", label: rawBaseModel };
+}
+
+/** The SDXL disambiguation rule: an author-declared tag corpus clearly
+ *  says realism ONLY when a realism/photoreal tag is present AND no anime
+ *  tag is — an anime+realism mix stays honestly ambiguous (undefined, the
+ *  caller's miss). Word-boundary matching keeps "surrealism" from firing
+ *  the realism signal. */
+export function disambiguateSdxlFamily(tags: readonly string[]): ImagePromptFamilyId | undefined {
+  const realism = tags.some((tag) => /\brealism\b|\bphotoreal/.test(tag.toLowerCase()));
+  const anime = tags.some((tag) => /\banime\b/.test(tag.toLowerCase()));
+  return realism && !anime ? "sdxl-realism" : undefined;
+}
+
+/**
  * The variant-resolution rule, encoded in the domain rather than left
  * implicit (IPT Wave 0.5): for a (family, kind[, mode]) the CANON OWNER is
  * the family itself when it authors that row, else prose (the universal

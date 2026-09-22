@@ -45,6 +45,7 @@ import type {
   DraftImageGenModelsInput,
   FavoriteImageGenModelInput,
   GenerateImageGenInput,
+  ImageGenFamilyDetectionResultValue,
   ImageGenGenerateResponseValue,
   ImageGenGalleryPromoteResponseValue,
   ImageGenModelFavoriteValue,
@@ -76,7 +77,7 @@ import type {
   UpdateImageGenProfileData,
 } from "@vibe-tavern/db";
 import type { Attachment, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance } from "@vibe-tavern/domain";
-import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, IMAGE_PROMPT_FAMILIES } from "@vibe-tavern/domain";
+import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, IMAGE_PROMPT_FAMILIES, PROXY_MODE } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import {
@@ -85,6 +86,8 @@ import {
   type ImageGenAssistRunner,
 } from "../../domain/chat/imagegen-modes.js";
 import { resolveImageGenPromptFamily } from "../../domain/imagegen/prompt-family-resolution.js";
+import { defaultReadSidecarFile, detectImageGenFamily } from "../../domain/imagegen/family-detection.js";
+import { getProviderFetchFactory } from "../../domain/providers/provider-fetch-factory.js";
 import { buildPromptTemplateCatalog, promptFamiliesReadModel, readPromptVariantCell } from "../../domain/imagegen/prompt-template-catalog.js";
 import type {
   ImageGenAdapterConfig,
@@ -1244,6 +1247,65 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   listPromptFamilies = async (): Promise<ImagePromptFamiliesValue> => {
     return { families: promptFamiliesReadModel() };
   };
+
+  // ── Profile family (IPT-3 — the override writer + the detection ladder) ──
+
+  setImageGenProfileFamily = async (
+    id: string,
+    family: ImagePromptFamilyValue | null,
+  ): Promise<ImageGenProfileValue | null> => {
+    // The Wave 3 family route is the ONLY family-override writer — the
+    // store's null-clear convention rides the update patch (IPT-2); the
+    // stored detection survives a pin and re-anchors after a clear.
+    const updated = await this.stores.imageGen.update(id, { familyOverride: family });
+    return updated ? (await this.decorateAutoKey([toClientProfile(updated)]))[0] : null;
+  };
+
+  detectImageGenProfileFamily = async (
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ImageGenFamilyDetectionResultValue | null> => {
+    const profile = await this.stores.imageGen.getById(id);
+    if (!profile) return null;
+    const model = profile.modelId;
+    if (model === undefined || model === "") {
+      throw validation("Image-gen family detection needs a selected model — pick one in the profile first");
+    }
+    const backend = createImageGenBackend(
+      profile.backend,
+      await resolveAdapterConfig(this.stores, profile, this.fetchOverride),
+    );
+    const result = await detectImageGenFamily({
+      backend,
+      model,
+      signal,
+      deps: {
+        civitaiFetch: await this.resolvePublicApiFetch(),
+        readSidecarFile: defaultReadSidecarFile,
+      },
+    });
+    if (result.ok) {
+      // Persist the detection with its model anchor — freshness is judged
+      // against the live modelId by the generation-time resolver (IPT-2).
+      await this.stores.imageGen.update(id, {
+        familyDetected: result.family,
+        familyDetectedForModel: model,
+      });
+    }
+    return result;
+  };
+
+  /** The outbound public-API transport (source c — Civitai): the injected
+   *  seam wins when present (tests — deterministic, no live network);
+   *  production resolves the app's global-default proxy policy through
+   *  the provider fetch factory (inherit), never a bare direct fetch that
+   *  would bypass a configured proxy — the kokoro-mirror twin. */
+  private async resolvePublicApiFetch(): Promise<typeof fetch> {
+    if (this.fetchOverride !== undefined) return this.fetchOverride;
+    const factory = getProviderFetchFactory();
+    const resolved = await factory.resolveFetch({ proxyMode: PROXY_MODE.inherit, proxyId: null });
+    return resolved ?? fetch;
+  }
 }
 
 /** Minimal executor prompt for the IG-15 quiet call: a system+user pair in

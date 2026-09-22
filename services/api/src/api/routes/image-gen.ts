@@ -36,6 +36,8 @@
  *   PUT    /api/image-gen/prompt-templates/:rowKey/:family (IPT-3 — custom row upsert)
  *   DELETE /api/image-gen/prompt-templates/:rowKey/:family (IPT-3 — reset to canon)
  *   GET    /api/image-gen/prompt-families               (IPT-3 — registry read model)
+ *   PUT    /api/image-gen/profiles/:id/family           (IPT-3 — the manual pin set/clear)
+ *   POST   /api/image-gen/profiles/:id/detect-family    (IPT-3 — authoritative detection ladder)
  */
 
 import { Hono } from "hono";
@@ -454,6 +456,33 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
     )
     .get("/api/image-gen/prompt-families", async (c) => {
       return c.json(await runtime.listPromptFamilies());
+    })
+    // ── Profile family (IPT-3 — the family-override writer + the detection
+    //    ladder; familySource stays a derived read-model field, create
+    //    stays unpinned, and this pair is the sole family writer) ──
+    .put("/api/image-gen/profiles/:id/family", zValidator("json", schemas.setImageGenProfileFamilySchema), async (c) => {
+      const updated = await runtime.setImageGenProfileFamily(c.req.param("id"), c.req.valid("json").family);
+      if (!updated) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(updated);
+    })
+    .post("/api/image-gen/profiles/:id/detect-family", async (c) => {
+      // Probe-style contract: a detection no-answer is DATA (ok:false + the
+      // ordered tried[] ladder), backend failures degrade into tried[]
+      // reasons inside the adapter — this route maps only the request-level
+      // ladder (unknown profile → 404, no-model/config problems → 400 via
+      // the shared backend-error mapping, the models-route twin).
+      try {
+        const result = await runtime.detectImageGenProfileFamily(c.req.param("id"), c.req.raw.signal);
+        if (result === null) return c.json({ error: "Image-gen profile not found" }, 404);
+        return c.json(result);
+      } catch (error) {
+        if (error instanceof ImageGenNotFoundError) {
+          return c.json({ error: error.message }, 404);
+        }
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
     })
     // ── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin;
     //    a GLOBAL library, no profile scoping) ──

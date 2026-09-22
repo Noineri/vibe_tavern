@@ -4,7 +4,9 @@ import {
   IMAGE_PROMPT_FAMILIES,
   IMAGE_PROMPT_FAMILY_IDS,
   IMAGE_GENERATION_MODES,
+  disambiguateSdxlFamily,
   imagePromptCanonFamily,
+  matchImagePromptBaseModel,
 } from "../src/index.js";
 
 /** IPT Wave 0 — the checkpoint-family registry + the variant-resolution
@@ -95,5 +97,72 @@ describe("imagePromptCanonFamily — the variant-resolution rule", () => {
   test("free mode is family-neutral — always prose", () => {
     expect(imagePromptCanonFamily("pony", "mode", IMAGE_GENERATION_MODES.Free)).toBe("prose");
     expect(imagePromptCanonFamily("krea2", "mode", IMAGE_GENERATION_MODES.Free)).toBe("prose");
+  });
+});
+
+/** IPT Wave 3 — the authoritative base-model → family mapping (word-based,
+ *  first rule wins; the SDXL class needs the tag corpus, unmapped labels
+ *  stay honest misses). */
+describe("matchImagePromptBaseModel — base-model → family mapping", () => {
+  test("the plan's direct mappings hit across label dialects", () => {
+    // Civitai baseModel vocabulary.
+    expect(matchImagePromptBaseModel("Pony")).toEqual({ kind: "family", family: "pony" });
+    expect(matchImagePromptBaseModel("Illustrious")).toEqual({ kind: "family", family: "illustrious" });
+    expect(matchImagePromptBaseModel("NoobAI")).toEqual({ kind: "family", family: "noobai" });
+    expect(matchImagePromptBaseModel("Anima")).toEqual({ kind: "family", family: "anima" });
+    expect(matchImagePromptBaseModel("Qwen-Image")).toEqual({ kind: "family", family: "qwen" });
+    expect(matchImagePromptBaseModel("Flux.1 D")).toEqual({ kind: "family", family: "prose" });
+    // Sidecar BaseModel / embedded-header dialects (separators + suffixes).
+    expect(matchImagePromptBaseModel("Pony V6")).toEqual({ kind: "family", family: "pony" });
+    expect(matchImagePromptBaseModel("NoobAI-XL VPred 0.6")).toEqual({ kind: "family", family: "noobai" });
+    expect(matchImagePromptBaseModel("illustrious-xl")).toEqual({ kind: "family", family: "illustrious" });
+    expect(matchImagePromptBaseModel("Krea 2")).toEqual({ kind: "family", family: "krea2" });
+    expect(matchImagePromptBaseModel("Krea2")).toEqual({ kind: "family", family: "krea2" });
+    // The prose group's vendor bases (registry description vocabulary).
+    expect(matchImagePromptBaseModel("Seedream")).toEqual({ kind: "family", family: "prose" });
+    expect(matchImagePromptBaseModel("gpt-image")).toEqual({ kind: "family", family: "prose" });
+    expect(matchImagePromptBaseModel("Z-Image")).toEqual({ kind: "family", family: "prose" });
+    expect(matchImagePromptBaseModel("ZImage")).toEqual({ kind: "family", family: "prose" });
+  });
+
+  test("word boundaries: a model NAME never leaks into the base label match", () => {
+    // "Animagine" is a model name, not the Anima base — must NOT match.
+    expect(matchImagePromptBaseModel("Animagine XL")).toEqual({ kind: "unmapped", label: "Animagine XL" });
+    // "surrealism" is not the realism signal at mapping level either.
+    expect(matchImagePromptBaseModel("Surrealism")).toEqual({ kind: "unmapped", label: "Surrealism" });
+  });
+
+  test("SDXL-class labels demand the tag corpus — never a direct family", () => {
+    expect(matchImagePromptBaseModel("SDXL 1.0")).toEqual({ kind: "sdxl", label: "SDXL 1.0" });
+    expect(matchImagePromptBaseModel("sd_xl_base")).toEqual({ kind: "sdxl", label: "sd_xl_base" });
+    expect(matchImagePromptBaseModel("stable-diffusion-xl-v1-base")).toEqual({
+      kind: "sdxl",
+      label: "stable-diffusion-xl-v1-base",
+    });
+  });
+
+  test("labels with no registry family stay unmapped (honest, user pins)", () => {
+    expect(matchImagePromptBaseModel("SD 1.5")).toEqual({ kind: "unmapped", label: "SD 1.5" });
+    expect(matchImagePromptBaseModel("Chroma")).toEqual({ kind: "unmapped", label: "Chroma" });
+    expect(matchImagePromptBaseModel("")).toEqual({ kind: "unmapped", label: "" });
+  });
+});
+
+describe("disambiguateSdxlFamily — the author-tag-corpus rule", () => {
+  test("realism/photoreal corpus → sdxl-realism", () => {
+    expect(disambiguateSdxlFamily(["photorealistic", "portrait photography"]))
+      .toBe("sdxl-realism");
+    expect(disambiguateSdxlFamily(["realism", "woman", "photography"]))
+      .toBe("sdxl-realism");
+  });
+
+  test("plain/anime/mixed corpora stay honestly ambiguous", () => {
+    expect(disambiguateSdxlFamily(["anime", "style", "woman"])).toBeUndefined();
+    expect(disambiguateSdxlFamily(["anime", "realism"])).toBeUndefined();
+    expect(disambiguateSdxlFamily([])).toBeUndefined();
+  });
+
+  test("surrealism is not realism (word boundary)", () => {
+    expect(disambiguateSdxlFamily(["surrealism"])).toBeUndefined();
   });
 });

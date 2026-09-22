@@ -276,6 +276,40 @@ export interface ImageGenUpscalerInfo {
   name: string;
 }
 
+/** Sidecar join anchor for family detection (IPT-3, source b): where the
+ *  model file lives, as exposed by an authoritative backend response.
+ *  `relativeName` is the model's file reference inside `roots` (the A1111
+ *  bare filename; the ComfyUI subfolder-qualified id) — the stem rule
+ *  strips its weights extension before appending a sidecar suffix. */
+export interface ImageGenSidecarAnchor {
+  roots: readonly string[];
+  relativeName: string;
+}
+
+/** Raw authoritative metadata for ONE model (IPT-3 family detection,
+ *  source a plus the anchors the later sources need). Every field is
+ *  optional — a surface that carries none of them is an honest miss.
+ *  Derived EXCLUSIVELY from what the backend's own responses expose:
+ *  A1111/Forge sd-models (sha256 + filename — no base-model field on
+ *  that surface), ComfyUI's embedded safetensors header via
+ *  /view_metadata plus /internal/folder_paths roots. Never a filename
+ *  inference — the fields are read verbatim off the backend response. */
+export interface ImageGenModelDetectionMetadata {
+  /** Raw base-model label the backend's own metadata carried (ComfyUI's
+   *  embedded `__metadata__` via /view_metadata), when present. */
+  baseModel?: string;
+  /** sha256 hash from an authoritative backend surface (A1111 sd-models)
+   *  — feeds the Civitai by-hash source. */
+  sha256?: string;
+  /** Sidecar join anchor, present only when an authoritative response
+   *  exposed a readable location for the model file. */
+  sidecar?: ImageGenSidecarAnchor;
+  /** The model's own file path as exposed verbatim by the backend
+   *  (A1111 sd-models `filename`) — the Prompt All-in-One extension
+   *  probe's `filepath` parameter. */
+  modelFilePath?: string;
+}
+
 /** Live progress (A1111-compat `GET /sdapi/v1/progress`): `progress` is
  *  0..1; `previewBase64` is the interim preview image when the server
  *  produces one. */
@@ -329,6 +363,22 @@ export interface ImageGenBackend {
   /** Server-extension listing (A1111-compat only in v1) — extension dir
    *  names for feature detection (IG-CF15/PG-4: the ADetailer probe). */
   listExtensions?(signal?: AbortSignal): Promise<string[]>;
+  /** IPT-3 family detection, source (a): raw authoritative metadata for
+   *  ONE model — plus the sha256/path anchors the later sources need.
+   *  Dialect-gated (A1111 sd-models entry; ComfyUI embedded header +
+   *  folder roots); other backends omit. Failures THROW the dialect's
+   *  typed errors (the detection ladder catches non-abort errors into
+   *  its honest tried[] — the caller's abort propagates untouched). */
+  readModelDetectionMetadata?(model: string, signal?: AbortSignal): Promise<ImageGenModelDetectionMetadata>;
+  /** IPT-3 family detection, source (d): the Prompt All-in-One
+   *  extension's model-preset detection for one model file (A1111-family
+   *  dialect — the extension is verified on the owner's Forge install).
+   *  Returns the extension's Civitai-resolved `base_model` when the
+   *  response carries a non-empty one; every other outcome (extension
+   *  absent, preset matched by filename machinery, empty result) returns
+   *  an empty object — preset names and prefix arrays are deliberately
+   *  ignored (the no-filename-heuristics rule). */
+  readModelPresetFromExtension?(filepath: string, signal?: AbortSignal): Promise<{ baseModel?: string }>;
   /** Generate one image request per the v1 mode recipe. Downloads bytes
    *  server-side before resolving. */
   generate(request: ImageGenGenerateRequest): Promise<ImageGenGenerateResult>;

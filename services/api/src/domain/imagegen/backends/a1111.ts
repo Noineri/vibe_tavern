@@ -55,6 +55,13 @@
  *   any repetition (NO polling interval constant in code).
  * - interrupt: `POST /sdapi/v1/interrupt` → empty 200 — cancels the
  *   instance's CURRENT job (global-per-instance, no job id in v1).
+ * - family detection (IPT-3): the same `GET /sdapi/v1/sd-models` entry
+ *   supplies the anchors (`sha256` for the Civitai by-hash source,
+ *   `filename` for the sidecar join / extension probe — no base-model
+ *   field exists on that surface); `GET
+ *   {server-root}/physton_prompt/detect_model_preset?filepath=` (the
+ *   Prompt All-in-One extension, verified on the owner's Forge install)
+ *   answers with the extension's Civitai-resolved `base_model` only.
  * - auth: keyless by default on localhost; `--api-auth "user:pass"` puts
  *   HTTP Basic on the API routes — the optional apiKey carries the
  *   "user:pass" string and becomes an `Authorization: Basic` header.
@@ -114,6 +121,7 @@ import type {
   ImageGenGenerateRequest,
   ImageGenGenerateResult,
   ImageGenLoraInfo,
+  ImageGenModelDetectionMetadata,
   ImageGenModelInfo,
   ImageGenProbeResult,
   ImageGenProgressInfo,
@@ -297,6 +305,30 @@ function parseCheckpointInfos(parsed: unknown): ImageGenModelInfo[] {
     out.push(info);
   }
   return out;
+}
+
+/** Parse `GET /sdapi/v1/sd-models` for family detection (IPT-3): the
+ *  entry whose `model_name` matches the current model id, carrying the
+ *  authoritative anchors — `sha256` (feeds the Civitai by-hash source)
+ *  and `filename` (the sidecar join / extension-probe file path). This
+ *  surface carries NO base-model label — an honest structural miss for
+ *  source (a) on this dialect. Undefined = the model is not in the list
+ *  (the caller's fail-closed reselect message). */
+function findDetectionCheckpointEntry(
+  parsed: unknown,
+  model: string,
+): { sha256?: string; filename?: string } | undefined {
+  if (!Array.isArray(parsed)) return undefined;
+  for (const entry of parsed) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const item = entry as Record<string, unknown>;
+    if (item.model_name !== model) continue;
+    return {
+      ...(typeof item.sha256 === "string" && item.sha256.length > 0 ? { sha256: item.sha256 } : {}),
+      ...(typeof item.filename === "string" && item.filename.length > 0 ? { filename: item.filename } : {}),
+    };
+  }
+  return undefined;
 }
 
 /** Parse the `GET /sdapi/v1/samplers` list — a top-level array of
@@ -765,6 +797,96 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           detail: error instanceof Error ? error.message : String(error),
         };
       }
+    },
+
+    async readModelDetectionMetadata(
+      model: string,
+      signal?: AbortSignal,
+    ): Promise<ImageGenModelDetectionMetadata> {
+      // IPT-3 source (a) anchors, straight off the sd-models response —
+      // the surface carries no base-model field, so this dialect's
+      // metadata source misses honestly and the ladder continues with
+      // the sha256/filename anchors below.
+      const response = await fetchOrWrap(
+        cfg.fetch,
+        `${cfg.endpoint}/sd-models`,
+        {
+          method: "GET",
+          headers: buildSdApiHeaders(cfg.apiKey, false),
+          signal,
+        },
+        "model list",
+      );
+      if (!response.ok) {
+        const excerpt = await readProviderErrorBody(response);
+        throw new A1111ImageGenError(
+          `A1111 model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          { status: response.status },
+        );
+      }
+      const parsed: unknown = await response.json().catch(() => null);
+      const entry = findDetectionCheckpointEntry(parsed, model);
+      if (entry === undefined) {
+        throw new A1111ImageGenConfigError(
+          `A1111 model list does not contain "${model}" — reselect it from the model list`,
+        );
+      }
+      const metadata: ImageGenModelDetectionMetadata = {};
+      if (entry.sha256 !== undefined) metadata.sha256 = entry.sha256;
+      const filename = entry.filename;
+      // A usable path needs a directory component — a bare filename names
+      // no readable location (remote servers, stripped forks), and the
+      // ladder must not invent one.
+      if (filename !== undefined && /[/\\]/.test(filename)) {
+        metadata.modelFilePath = filename;
+        const slash = Math.max(filename.lastIndexOf("/"), filename.lastIndexOf("\\"));
+        metadata.sidecar = {
+          roots: [filename.slice(0, slash)],
+          relativeName: filename.slice(slash + 1),
+        };
+      }
+      return metadata;
+    },
+
+    async readModelPresetFromExtension(
+      filepath: string,
+      signal?: AbortSignal,
+    ): Promise<{ baseModel?: string }> {
+      // IPT-3 source (d): GET {server-root}/physton_prompt/detect_model_preset
+      // ?filepath={path} — the Prompt All-in-One extension's route. The
+      // extension lives at the server root, NOT under /sdapi/v1, so the
+      // dialect root is the normalized endpoint minus its suffix. Only a
+      // non-empty base_model is accepted: the extension populates it
+      // exclusively through its own SHA256→Civitai lookup — preset names
+      // and prefix arrays come from filename-matching machinery VT
+      // deliberately ignores (the no-filename-heuristics rule).
+      const serverRoot = cfg.endpoint.slice(0, -"/sdapi/v1".length);
+      let parsed: unknown;
+      try {
+        const response = await fetchOrWrap(
+          cfg.fetch,
+          `${serverRoot}/physton_prompt/detect_model_preset?filepath=${encodeURIComponent(filepath)}`,
+          {
+            method: "GET",
+            headers: buildSdApiHeaders(cfg.apiKey, false),
+            signal,
+          },
+          "model preset detection",
+        );
+        if (!response.ok) {
+          // 404 (extension absent) and any other failure are equally a
+          // miss for this source — honest data, never a thrown error.
+          return {};
+        }
+        parsed = await response.json().catch(() => null);
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        return {};
+      }
+      if (typeof parsed !== "object" || parsed === null) return {};
+      const baseModel = (parsed as Record<string, unknown>).base_model;
+      if (typeof baseModel !== "string" || baseModel.trim().length === 0) return {};
+      return { baseModel: baseModel.trim() };
     },
 
     async dispose(): Promise<void> {

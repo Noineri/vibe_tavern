@@ -56,6 +56,11 @@
  *   auto-degrades to embedded-only). Raw values normalize through
  *   `normalizeComfyFamily` (canonical ecosystem buckets; unrecognized
  *   values pass through verbatim — the honest labeled bucket).
+ *   IPT-3 reuses the SAME stores for family detection: `readModelDetectionMetadata`
+ *   surfaces the RAW embedded label for one model (mapping happens
+ *   detection-side — no picker bucket collapse) plus the folder-roots
+ *   sidecar anchor; core ComfyUI exposes NO hash, so the Civitai by-hash
+ *   source stays structurally unavailable on this dialect.
  * - sampler/scheduler lists (CG-A3): the `KSampler` node's own combo enums
  *   (`/object_info/KSampler` → `input.required.sampler_name[0]` /
  *   `scheduler[0]`) — bare strings, no aliases/labels.
@@ -139,6 +144,7 @@ import type {
   ImageGenGenerateRequest,
   ImageGenGenerateResult,
   ImageGenDitSidecars,
+  ImageGenModelDetectionMetadata,
   ImageGenModelInfo,
   ImageGenProbeResult,
   ImageGenProgressInfo,
@@ -1462,6 +1468,49 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
         entries.push({ name, family: family ?? null, triggerWords });
       }
       return entries;
+    },
+
+    async readModelDetectionMetadata(
+      model: string,
+      signal?: AbortSignal,
+    ): Promise<ImageGenModelDetectionMetadata> {
+      // IPT-3 source (a): locate the model's folder (the listModels union
+      // walk for ONE model — /models/checkpoints before
+      // /models/diffusion_models, the common sync-checkpoint case first),
+      // then read the embedded safetensors `__metadata__` through the
+      // backend's own /view_metadata surface (authoritative trainer
+      // truth). Core ComfyUI exposes NO hash — the Civitai source's
+      // anchor stays absent on this dialect (an honest miss).
+      const checkpointNames = await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "checkpoints", signal);
+      const folder = checkpointNames.includes(model)
+        ? "checkpoints"
+        : (await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "diffusion_models", signal)).includes(model)
+          ? "diffusion_models"
+          : undefined;
+      if (folder === undefined) {
+        throw new ComfyImageGenConfigError(
+          `ComfyUI model "${model}" is in neither the checkpoints nor the diffusion-models folder — reselect it from the model list`,
+        );
+      }
+      const metadata: ImageGenModelDetectionMetadata = {};
+      const embedded = await fetchComfyEmbeddedFamily(
+        cfg.fetch,
+        cfg.endpoint,
+        folder,
+        model,
+        signal,
+      );
+      if (embedded !== undefined) metadata.baseModel = embedded;
+      // Sidecar join anchor: the folder roots the backend itself reports
+      // via /internal/folder_paths (officially frontend-only — a bonus
+      // source; any failure degrades to no anchor, never an error). Fetched
+      // EAGERLY: an embedded label that maps is the common short-circuit,
+      // but an embedded miss OR an unmappable embedded label (e.g. a bare
+      // SDXL architecture stamp) must still let the sidecar source run —
+      // the ladder's correctness beats saving one localhost round-trip.
+      const roots = (await fetchComfyFolderRoots(cfg.fetch, cfg.endpoint, signal))?.[folder] ?? [];
+      if (roots.length > 0) metadata.sidecar = { roots, relativeName: model };
+      return metadata;
     },
 
     /** Publish the run's WS-fed snapshot (CG-C1). No snapshot (idle

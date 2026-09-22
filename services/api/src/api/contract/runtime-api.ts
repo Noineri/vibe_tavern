@@ -1180,6 +1180,32 @@ export interface ImageGenRuntimeApi {
 	 *  addendum availability — the pane's dropdown data source). */
 	listPromptFamilies: () => Promise<import("@vibe-tavern/api-contracts").ImagePromptFamiliesValue>;
 
+	// ── Profile family (IPT-3 — the family-override writer + the
+	//    authoritative detection ladder) ──
+	/** Set (a family id) or clear (null) the profile's manual family pin —
+	 *  the ONLY family-override writer (create stays unpinned; PATCH
+	 *  family keys strip). Clearing resumes the auto path; the stored
+	 *  detection (if any) survives the pin and re-anchors after a clear.
+	 *  Returns the updated wire profile; null = unknown profile (route →
+	 *  404). */
+	setImageGenProfileFamily: (
+		id: string,
+		family: import("@vibe-tavern/api-contracts").ImagePromptFamilyValue | null,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue | null>;
+	/** Run authoritative family detection against the profile's CURRENT
+	 *  model; on success persists familyDetected + familyDetectedForModel
+	 *  (the exact model id the detection ran against) and returns the
+	 *  typed family + sourceLabel. A no-answer is DATA (ok:false + the
+	 *  ordered tried[] ladder) — never a thrown error, never a guess;
+	 *  backend transport failures degrade into tried[] reasons (the
+	 *  probe's failures-as-data contract). Throws a validation
+	 *  DomainError when the profile has no selected model. Null = unknown
+	 *  profile (route → 404). */
+	detectImageGenProfileFamily: (
+		id: string,
+		signal?: AbortSignal,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenFamilyDetectionResultValue | null>;
+
 	// ── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin;
 	//    a GLOBAL library, no profile scoping) ──
 	listImageGenSamplerSets: () => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerSetList>;

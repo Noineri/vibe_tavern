@@ -20,6 +20,10 @@
  */
 
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+// hygiene:allow-abs-path-inputs — the IPT-3 family-API suite stubs sd-models/
+// extension responses that quote absolute server-side model paths (drive-letter
+// forms); they are RESPONSE DATA piped through the transport stub, never files
+// this test reads from disk.
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -3562,5 +3566,221 @@ describe("image-gen routes — prompt templates + families (IPT-3)", () => {
     expect(byId["krea2"]).toMatchObject({ grammar: "prose", ownTemplates: false, ownNegative: false, ownQuality: false, hasAssistAddendum: true });
     expect(byId["qwen"]).toMatchObject({ ownNegative: true, ownQuality: false, hasAssistAddendum: true });
     expect(byId["sdxl-realism"]).toMatchObject({ ownTemplates: false, ownNegative: true, ownQuality: true });
+  });
+});
+
+describe("image-gen routes — profile family API (IPT-3)", () => {
+  // The family-override writer + the authoritative detection ladder. The
+  // ONLY double is the transport (the adapter's fetchOverride seam — it now
+  // also carries the Civitai source's transport, the resolvePublicApiFetch
+  // rule); the sidecar source misses honestly through the real Bun.file
+  // seam (the stub's fictional model paths exist on no test machine).
+
+  const put = async (
+    app: ReturnType<typeof createImageGenRoutes>,
+    path: string,
+    body: unknown,
+  ) =>
+    app.request(path, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  test("PUT family: pin sets familyOverride (familySource manual); null clears back to auto", async () => {
+    const { app, stores } = await makeApp();
+    const modelId = "snowpony_v10.safetensors";
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860", modelId });
+    // A stored detection (as a successful detect would leave it) survives
+    // the pin and re-anchors after the clear (IPT-2 store semantics).
+    await stores.imageGen.update(id, { familyDetected: "illustrious", familyDetectedForModel: modelId });
+
+    const pinned = await put(app, `/api/image-gen/profiles/${id}/family`, { family: "pony" });
+    expect(pinned.status).toBe(200);
+    const pinnedBody = (await pinned.json()) as { familyOverride?: string; familyDetected?: string; familySource: string };
+    expect(pinnedBody.familyOverride).toBe("pony");
+    expect(pinnedBody.familySource).toBe("manual");
+    expect(pinnedBody.familyDetected).toBe("illustrious");
+
+    const cleared = await put(app, `/api/image-gen/profiles/${id}/family`, { family: null });
+    expect(cleared.status).toBe(200);
+    const clearedBody = (await cleared.json()) as { familyOverride?: string; familyDetected?: string; familySource: string };
+    expect(clearedBody.familyOverride).toBeUndefined();
+    expect(clearedBody.familySource).toBe("auto");
+    expect(clearedBody.familyDetected).toBe("illustrious");
+
+    // Unknown slug dies at the zod body validator; unknown profile → 404.
+    const badSlug = await put(app, `/api/image-gen/profiles/${id}/family`, { family: "vox" });
+    expect(badSlug.status).toBe(400);
+    const missing = await put(app, "/api/image-gen/profiles/nope/family", { family: "pony" });
+    expect(missing.status).toBe(404);
+  });
+
+  test("POST detect-family: sd-models sha256 → Civitai by-hash hit persists the family with its model anchor", async () => {
+    const sha = "a".repeat(64);
+    const { app } = await makeApp(async (input) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://civitai.com") {
+        expect(url.pathname).toBe(`/api/v1/model-versions/by-hash/${sha}`);
+        return Response.json({ baseModel: "Pony", modelId: 42 });
+      }
+      if (url.pathname.endsWith("/sd-models")) {
+        return Response.json([
+          {
+            title: "SnowPony v10 [pony]",
+            model_name: "snowpony_v10",
+            hash: "9ab37c1",
+            sha256: sha,
+            filename: "X:/models/Stable-diffusion/snowpony_v10.safetensors",
+            config: "",
+          },
+        ]);
+      }
+      return new Response("nope", { status: 404 });
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860", modelId: "snowpony_v10" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/detect-family`, { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      family: "pony",
+      sourceLabel: "civitai-by-hash",
+      baseModel: "Pony",
+    });
+
+    // Persisted with the exact current-model anchor.
+    const profile = (await (await app.request(`/api/image-gen/profiles/${id}`)).json()) as {
+      familyDetected?: string;
+      familyDetectedForModel?: string;
+      familySource: string;
+    };
+    expect(profile.familyDetected).toBe("pony");
+    expect(profile.familyDetectedForModel).toBe("snowpony_v10");
+    expect(profile.familySource).toBe("auto");
+  });
+
+  test("POST detect-family: comfyui embedded metadata answers at source (a)", async () => {
+    const { app } = await makeApp(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/models/checkpoints") {
+        return Response.json(["animaXL_v10.safetensors"]);
+      }
+      if (url.pathname === "/models/diffusion_models") {
+        return Response.json([]);
+      }
+      if (url.pathname === "/view_metadata/checkpoints") {
+        return Response.json({ "ss_base_model_version": "Anima" });
+      }
+      return new Response("nope", { status: 404 }); // folder map degrades
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:8188", modelId: "animaXL_v10.safetensors" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/detect-family`, { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      family: "anima",
+      sourceLabel: "backend-metadata",
+      baseModel: "Anima",
+    });
+  });
+
+  test("POST detect-family: the extension preset answers after sd-models/sidecar/civitai miss", async () => {
+    const extensionCalls: string[] = [];
+    const { app } = await makeApp(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/sd-models")) {
+        // Filename only, no sha256: (c) misses structurally, (d) gets the
+        // path; the fictional directory has no local sidecar for (b).
+        return Response.json([
+          { title: "noob", model_name: "noobXVpred", hash: "aaa", sha256: "", filename: "Q:/ckpt/noobXVpred.safetensors", config: "" },
+        ]);
+      }
+      if (url.pathname === "/physton_prompt/detect_model_preset") {
+        extensionCalls.push(`${url.searchParams.get("filepath")}`);
+        return Response.json({
+          source: "civitai",
+          base_model: "NoobAI",
+          preset_name: "",
+          positive_prefix: [],
+          negative_prefix: [],
+          positive_embeddings: [],
+          negative_embeddings: [],
+          auto_insert: false,
+          checkpoint_path: "Q:/ckpt/noobXVpred.safetensors",
+        });
+      }
+      return new Response("nope", { status: 404 });
+    });
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860", modelId: "noobXVpred" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/detect-family`, { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      family: "noobai",
+      sourceLabel: "extension-preset",
+      baseModel: "NoobAI",
+    });
+    expect(extensionCalls).toEqual(["Q:/ckpt/noobXVpred.safetensors"]);
+  });
+
+  test("POST detect-family: every source missing → the honest failure with the ordered tried ladder", async () => {
+    const { app } = await makeApp(async () => new Response("nope", { status: 404 }));
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860", modelId: "ghost" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/detect-family`, { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string; tried: Array<{ source: string; reason: string }> };
+    expect(body.ok).toBe(false);
+    expect(body.tried.map((t) => t.source)).toEqual([
+      "backend-metadata",
+      "sidecar",
+      "civitai-by-hash",
+      "extension-preset",
+    ]);
+    // The sd-models 404 is recorded at source (a), not thrown into a 5xx.
+    expect(body.tried[0]?.reason).toContain("HTTP 404");
+
+    // Nothing persisted on a miss.
+    const profile = (await (await app.request(`/api/image-gen/profiles/${id}`)).json()) as { familySource: string; familyDetected?: string };
+    expect(profile.familySource).toBe("none");
+    expect(profile.familyDetected).toBeUndefined();
+  });
+
+  test("POST detect-family: unknown profile → 404; no selected model → 400; cloud backend → honest no-source failure", async () => {
+    const { app } = await makeApp(async () => new Response("nope", { status: 404 }));
+
+    const missing = await app.request("/api/image-gen/profiles/nope/detect-family", { method: "POST" });
+    expect(missing.status).toBe(404);
+
+    const noModel = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+    const unmodeled = await app.request(`/api/image-gen/profiles/${noModel}/detect-family`, { method: "POST" });
+    expect(unmodeled.status).toBe(400);
+    const unmodeledBody = (await unmodeled.json()) as { error: { kind: string; message: string } };
+    expect(unmodeledBody.error.kind).toBe("Validation");
+    expect(unmodeledBody.error.message).toContain("selected model");
+
+    // A keyless cloud profile cannot even construct its backend — the
+    // models-route config ladder (400, never a 5xx).
+    const keyless = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.OpenRouter, endpoint: "http://localhost:8000/v1", modelId: "vendor/model" });
+    const configError = await app.request(`/api/image-gen/profiles/${keyless}/detect-family`, { method: "POST" });
+    expect(configError.status).toBe(400);
+
+    // A keyed cloud dialect constructs fine but exposes neither detection
+    // surface: the probe-style contract answers ok:false with the
+    // structural misses — never a 5xx.
+    const cloudId = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.OpenRouter, endpoint: "http://localhost:8000/v1", apiKey: "sk-test", modelId: "vendor/model" });
+    const cloud = await app.request(`/api/image-gen/profiles/${cloudId}/detect-family`, { method: "POST" });
+    expect(cloud.status).toBe(200);
+    const cloudBody = (await cloud.json()) as { ok: boolean; tried: Array<{ source: string }> };
+    expect(cloudBody.ok).toBe(false);
+    expect(cloudBody.tried.map((t) => t.source)).toEqual([
+      "backend-metadata",
+      "sidecar",
+      "civitai-by-hash",
+      "extension-preset",
+    ]);
   });
 });
