@@ -985,6 +985,32 @@ export interface ServicePromptRuntimeApi {
   reorderServicePromptProfiles: (updates: Array<{ id: string; sortOrder: number }>) => Promise<ServicePromptProfileListResponse>;
 }
 
+/** Image prompt profile CRUD (IF-1b — IMAGEGEN_FOLLOWUP_REPORT): a fork of
+ *  the service-prompt profile surface with the field axis swapped to
+ *  (rowKey|family) cells and the detail response carrying the
+ *  profile-scoped template catalog (tier-resolved cells + canon quality +
+ *  assist). Same default-guard semantics (read-only "default"). */
+export interface ImagePromptProfileRuntimeApi {
+  listImagePromptProfiles: () => Promise<import("@vibe-tavern/api-contracts").ImagePromptProfileListResponse>;
+  getImagePromptProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImagePromptProfileDetailResponse | null>;
+  createImagePromptProfile: (
+    body: import("@vibe-tavern/api-contracts").CreateImagePromptProfileRequest,
+  ) => Promise<import("@vibe-tavern/api-contracts").ImagePromptProfileValue>;
+  updateImagePromptProfile: (
+    id: string,
+    body: import("@vibe-tavern/api-contracts").UpdateImagePromptProfileRequest,
+  ) => Promise<
+    | { status: "ok"; profile: import("@vibe-tavern/api-contracts").ImagePromptProfileValue }
+    | { status: "not-found" }
+    | { status: "forbidden" }
+  >;
+  deleteImagePromptProfile: (id: string) => Promise<{ status: "ok" } | { status: "not-found" } | { status: "forbidden" }>;
+  setActiveImagePromptProfile: (profileId: string | null) => Promise<{ status: "ok" } | { status: "not-found" }>;
+  reorderImagePromptProfiles: (
+    updates: Array<{ id: string; sortOrder: number }>,
+  ) => Promise<import("@vibe-tavern/api-contracts").ImagePromptProfileListResponse>;
+}
+
 /** Copilot profile CRUD (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). The
  *  built-in "Experience Authoring" seed (id "builtin") is READ-ONLY — update /
  *  delete reject it with a 400. */
@@ -1228,6 +1254,7 @@ export interface ImageGenRuntimeApi {
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	servicePrompts: ServicePromptRuntimeApi;
+	imagePromptProfiles: ImagePromptProfileRuntimeApi;
 	chat: ChatRuntimeApi;
 	character: CharacterRuntimeApi & CharacterAssetRuntimeApi;
 	persona: PersonaRuntimeApi;

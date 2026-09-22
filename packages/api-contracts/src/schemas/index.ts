@@ -411,6 +411,31 @@ export type {
 } from "./service-prompt-schema.js";
 
 export {
+  imagePromptCellKeySchema,
+  imagePromptCellOverrideSchema,
+  imagePromptProfileOverridesSchema,
+  imagePromptProfileSchema,
+  createImagePromptProfileRequestSchema,
+  updateImagePromptProfileRequestSchema,
+  imagePromptProfileListResponseSchema,
+  imagePromptProfileDetailResponseSchema,
+  setActiveImagePromptProfileRequestSchema,
+  reorderImagePromptProfilesSchema,
+} from "./image-prompt-profile-schema.js";
+export type {
+  ImagePromptCellKeyValue,
+  ImagePromptCellOverrideValue,
+  ImagePromptProfileOverridesValue,
+  ImagePromptProfileValue,
+  CreateImagePromptProfileRequest,
+  UpdateImagePromptProfileRequest,
+  ImagePromptProfileListResponse,
+  ImagePromptProfileDetailResponse,
+  SetActiveImagePromptProfileRequest,
+  ReorderImagePromptProfilesRequest,
+} from "./image-prompt-profile-schema.js";
+
+export {
   regexAssistArchetypeSchema,
   regexAssistRuleDraftSchema,
   regexAssistRequestSchema,

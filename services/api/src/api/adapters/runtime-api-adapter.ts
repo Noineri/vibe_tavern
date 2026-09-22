@@ -35,6 +35,7 @@ import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
 import { SamplerSetAdapter } from "./sampler-set-adapter.js";
 import { FormatTemplateAdapter } from "./format-template-adapter.js";
 import { ServicePromptAdapter } from "./service-prompt-adapter.js";
+import { ImagePromptProfileAdapter } from "./image-prompt-profile-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
@@ -58,6 +59,7 @@ import type { ExperienceContextService } from "../../domain/interactive/experien
 export class RuntimeApiAdapter implements RuntimeApi {
 	readonly bootstrap: RuntimeApi["bootstrap"];
 	readonly servicePrompts: ServicePromptAdapter;
+	readonly imagePromptProfiles: ImagePromptProfileAdapter;
 	readonly chat: ChatAdapter;
 	readonly character: CharacterAdapter;
 	readonly persona: PersonaAdapter;
@@ -128,6 +130,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.lorebook = new LorebookAdapter(stores);
 		this.script = new ScriptAdapter(stores);
 		this.servicePrompts = new ServicePromptAdapter(stores);
+		this.imagePromptProfiles = new ImagePromptProfileAdapter(stores);
 		this.regex = new RegexAdapter(stores);
 		// TPE-18c: the narration library writes into the character's EXISTING
 		// assets folder — same folder resolver the AssetService uses, so

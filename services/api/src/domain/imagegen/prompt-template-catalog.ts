@@ -6,6 +6,8 @@ import {
   IMAGE_PROMPT_FAMILIES,
   IMAGE_PROMPT_FAMILY_IDS,
   imagePromptCanonFamily,
+  type ImagePromptCellKey,
+  type ImagePromptCellOverride,
   type ImagePromptFamilyId,
   type ImagePromptGrammar,
   type ImageGenerationMode,
@@ -99,9 +101,45 @@ export async function readPromptVariantCell(
   family: ImagePromptFamilyId,
   memo?: Map<string, string>,
 ): Promise<ImagePromptTemplateCell> {
-  const memoMap = memo ?? new Map<string, string>();
-  const canon = await canonFor(rowKey, family, memoMap);
   const custom = await new ImagePromptVariantStore(db).get(rowKey, family);
+  return cellFromParts(
+    rowKey,
+    family,
+    await canonFor(rowKey, family, memo ?? new Map()),
+    custom ? { body: custom.body, qualityText: custom.qualityText } : null,
+  );
+}
+
+/** The profile-scoped twin (IF-1b): the custom tier comes from a
+ *  profile's overrides map instead of the global variant table. The same
+ *  shape feeds the profile detail response AND (IF-1c) generation, which
+ *  passes the ACTIVE profile's overrides. */
+export type ImagePromptProfileOverridesMap = Partial<Record<ImagePromptCellKey, ImagePromptCellOverride>>;
+
+export function readProfilePromptVariantCell(
+  rowKey: ImagePromptVariantKey,
+  family: ImagePromptFamilyId,
+  overrides: ImagePromptProfileOverridesMap,
+  memo: Map<string, string>,
+): Promise<ImagePromptTemplateCell> {
+  return canonFor(rowKey, family, memo).then((canon) => {
+    const key = `${rowKey}|${family}` as const;
+    const custom = overrides[key];
+    return cellFromParts(
+      rowKey,
+      family,
+      canon,
+      custom ? { body: custom.body, qualityText: custom.qualityText ?? null } : null,
+    );
+  });
+}
+
+function cellFromParts(
+  rowKey: ImagePromptVariantKey,
+  family: ImagePromptFamilyId,
+  canon: { text: string; source: ImagePromptCanonSource },
+  custom: { body: string; qualityText: string | null } | null,
+): ImagePromptTemplateCell {
   return {
     rowKey,
     family,
@@ -123,7 +161,30 @@ export async function buildPromptTemplateCatalog(db: AppDb): Promise<PromptTempl
       cells.push(await readPromptVariantCell(db, rowKey, family, memo));
     }
   }
+  return finishCatalog(cells);
+}
 
+/** The profile-scoped catalog (IF-1b): identical shape, with every cell's
+ *  custom tier sourced from the given profile overrides. A profile with no
+ *  overrides yields the all-canon catalog (the Default profile view). */
+export async function buildProfileTemplateCatalog(
+  overrides: ImagePromptProfileOverridesMap,
+): Promise<PromptTemplateCatalog> {
+  const memo = new Map<string, string>();
+  const cells: ImagePromptTemplateCell[] = [];
+  for (const rowKey of IMAGE_PROMPT_CATALOG_ROW_KEYS) {
+    for (const family of IMAGE_PROMPT_FAMILY_IDS) {
+      cells.push(await readProfilePromptVariantCell(rowKey, family, overrides, memo));
+    }
+  }
+  return finishCatalog(cells);
+}
+
+/** Shared tail of both catalog builders: the canon quality blocks + the
+ *  assist core and addenda (override-independent). */
+async function finishCatalog(
+  cells: ImagePromptTemplateCell[],
+): Promise<PromptTemplateCatalog> {
   const qualityCanon: PromptTemplateCatalog["qualityCanon"] = {};
   const assistAddenda: PromptTemplateCatalog["assist"]["addenda"] = {};
   for (const family of IMAGE_PROMPT_FAMILY_IDS) {
