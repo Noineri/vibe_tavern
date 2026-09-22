@@ -530,7 +530,7 @@ Use for entity names/labels in sidebars and lists where truncation is expected b
 
 State is shared via context: `useMasterDetail()` returns `{ isMobile, isDetailOpen, openDetail, closeDetail }`. Call it inside a `MasterDetailModal` to drive the mobile transition (e.g. showing a back button when `isDetailOpen`).
 
-Consumers: `ProviderModal` (provider profiles), `PromptManagerModal` (prompt presets / regex presets / service prompt profiles / image prompt template profiles — one master-detail per tab; image templates live in `ImagePromptTemplatesPane`, not in the service-prompt profiles), `PersonaModal` (personas), `ContextMemoryModal`, coauthor module/skill modals. Canonical structure: header/title/subtitle/dirty-dot/headerActions + master list (scrollable rows with `border-l-2` + active dot, dashed "+ New" docked at the list bottom — never in headerActions) + stable footer with `border-t`.
+Consumers: `ProviderModal` (provider profiles), `PromptManagerModal` (prompt presets / regex presets / service prompt profiles / image prompt profiles — one master-detail per tab; image prompt profiles live in `ImagePromptTemplatesPane`, a fork of the service-prompt profile flow whose detail side is mode rows × family dropdowns, kept SEPARATE from service-prompt profiles and LLM presets), `PersonaModal` (personas), `ContextMemoryModal`, coauthor module/skill modals. Canonical structure: header/title/subtitle/dirty-dot/headerActions + master list (scrollable rows with `border-l-2` + active dot, dashed "+ New" docked at the list bottom — never in headerActions) + stable footer with `border-t`.
 
 ---
 

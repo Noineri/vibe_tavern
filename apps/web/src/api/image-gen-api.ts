@@ -33,10 +33,6 @@ import type {
   ImagePromptFamiliesValue,
   ImagePromptFamilyValue,
   ImageGenFamilyDetectionResultValue,
-  ImagePromptTemplateCellValue,
-  ImagePromptTemplateRowKeyValue,
-  ImagePromptTemplatesValue,
-  UpsertImagePromptTemplateInput,
   ImageGenSamplerSet,
   ImageGenSamplerSetCreate,
   ImageGenSamplerSetImport,
@@ -60,40 +56,13 @@ export type ImageGenProfileRecord = ImageGenProfileValue;
 export type ImageGenModelEntry = ImageGenModelInfoValue;
 
 /** IPT-4 pane contracts: the server resolves canon inheritance before these
- * reach the browser, so callers render cells verbatim instead of duplicating
- * family fallback logic. */
-export type ImagePromptTemplatesRecord = ImagePromptTemplatesValue;
+ *  reach the browser, so callers render cells verbatim instead of duplicating
+ *  family fallback logic. The per-cell template client (GET/PUT/DELETE) was
+ *  RETIRED by IF-1e — templates are profile-scoped (image-prompt-profile-api). */
 export type ImagePromptFamiliesRecord = ImagePromptFamiliesValue;
-
-export async function listImagePromptTemplates(): Promise<ImagePromptTemplatesRecord> {
-  const response = await client.api["image-gen"]["prompt-templates"].$get();
-  return unwrapRpc(response);
-}
 
 export async function listImagePromptFamilies(): Promise<ImagePromptFamiliesRecord> {
   const response = await client.api["image-gen"]["prompt-families"].$get();
-  return unwrapRpc(response);
-}
-
-export async function upsertImagePromptTemplate(
-  rowKey: ImagePromptTemplateRowKeyValue,
-  family: ImagePromptFamilyValue,
-  body: UpsertImagePromptTemplateInput,
-): Promise<ImagePromptTemplateCellValue> {
-  const response = await client.api["image-gen"]["prompt-templates"][":rowKey"][":family"].$put({
-    param: { rowKey, family },
-    json: body,
-  });
-  return unwrapRpc(response);
-}
-
-export async function resetImagePromptTemplate(
-  rowKey: ImagePromptTemplateRowKeyValue,
-  family: ImagePromptFamilyValue,
-): Promise<ImagePromptTemplateCellValue> {
-  const response = await client.api["image-gen"]["prompt-templates"][":rowKey"][":family"].$delete({
-    param: { rowKey, family },
-  });
   return unwrapRpc(response);
 }
 

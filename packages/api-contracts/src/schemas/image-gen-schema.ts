@@ -1,4 +1,6 @@
-import { z } from 'zod';
+/** The per-cell template routes were RETIRED (IF-1e): templates live in
+ * image prompt profiles now — the cell + families schemas below serve the
+ * profile-scoped catalog and the registry dropdown. */import { z } from 'zod';
 
 // ─── Closed vocabularies ──────────────────────────────────────────────────────
 
@@ -671,36 +673,10 @@ export const imagePromptTemplateCellSchema = z.object({
 });
 export type ImagePromptTemplateCellValue = z.infer<typeof imagePromptTemplateCellSchema>;
 
-/** GET /api/image-gen/prompt-templates response. Keys of `qualityCanon` /
- *  `assist.addenda` are family ids of AUTHORING families only (ownQuality /
- *  has-assist-addendum — no universal fallback for either). */
-export const imagePromptTemplatesSchema = z.object({
-  cells: z.array(imagePromptTemplateCellSchema),
-  qualityCanon: z.record(z.string(), z.string()),
-  assist: z.object({
-    core: z.string(),
-    addenda: z.record(z.string(), z.string()),
-  }),
-});
-export type ImagePromptTemplatesValue = z.infer<typeof imagePromptTemplatesSchema>;
-
-/** PUT /api/image-gen/prompt-templates/:rowKey/:family body. The store's
- *  upsert is a FULL-ROW replace; this boundary read-modify-writes the
- *  quality column: `qualityText` absent = preserve the stored value, null =
- *  clear back to canon, a string = replace (400 when the family authors no
- *  quality layer). `body` min 1 — an emptied template editor is a DELETE
- *  (reset), never a blank override. */
-export const upsertImagePromptTemplateSchema = z.object({
-  body: z.string().min(1),
-  qualityText: z.string().nullable().optional(),
-});
-export type UpsertImagePromptTemplateInput = z.infer<typeof upsertImagePromptTemplateSchema>;
-
-/** PUT/DELETE path params of the template routes. */
-export const imagePromptTemplateTargetSchema = z.object({
-  rowKey: imagePromptTemplateRowKeySchema,
-  family: imagePromptFamilySchema,
-});
+/** The per-cell template routes were RETIRED (IF-1e — IMAGEGEN_FOLLOWUP):
+ *  templates live in image prompt profiles now. The cell schema above
+ *  serves the profile-scoped catalog; the quality-clear convention
+ *  (blank → canon) moved to the profile save boundary. */
 
 /** One registry family for the pane's dropdowns (grammar, what it authors
  *  itself vs inherits from prose, whether the assist addendum exists). */

@@ -19,7 +19,7 @@ import { SERVICE_PROMPT_FIELD_KEYS, type ServicePromptFieldKey } from "@vibe-tav
 import type {
   ImagePromptFamilyInfoValue,
   ImagePromptTemplateRowKeyValue,
-  ImagePromptTemplatesValue,
+  ImagePromptProfileDetailResponse,
   ServicePromptProfile,
 } from "@vibe-tavern/api-contracts";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
@@ -68,7 +68,7 @@ const realServiceApi = await import("../../api/service-prompt-api.js");
 const listServiceProfilesMock = mock(realServiceApi.listServicePromptProfiles);
 const getServiceDetailMock = mock(realServiceApi.getServicePromptProfileDetail);
 const realImageGenApi = await import("../../api/image-gen-api.js");
-const listImagePromptTemplatesMock = mock(realImageGenApi.listImagePromptTemplates);
+const listImagePromptTemplatesMock = mock(async () => makeImagePromptTemplates());
 const listImagePromptFamiliesMock = mock(realImageGenApi.listImagePromptFamilies);
 const realDownload = await import("../../lib/download.js");
 const downloadTextFileMock = mock(realDownload.downloadTextFile);
@@ -209,7 +209,7 @@ const imagePromptRows: ImagePromptTemplateRowKeyValue[] = [
   "negative",
 ];
 
-function makeImagePromptTemplates(): ImagePromptTemplatesValue {
+function makeImagePromptTemplates(): ImagePromptProfileDetailResponse["catalog"] {
   return {
     cells: imagePromptRows.flatMap((rowKey) => imagePromptFamilies.map((family) => ({
       rowKey,

@@ -3,6 +3,7 @@ import { createDb, ImagePromptVariantStore } from "@vibe-tavern/db";
 import type { StoreClock, StoreIdGenerator } from "@vibe-tavern/db";
 import { createImagePromptProfileRoutes } from "../src/api/routes/image-prompt-profiles.js";
 import { ImagePromptProfileAdapter } from "../src/api/adapters/image-prompt-profile-adapter.js";
+import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 
 const fixedClock: StoreClock = { now: () => "2026-09-22T00:00:00.000Z" };
 let counter = 0;
@@ -181,6 +182,70 @@ describe("IF-1b image prompt profile routes (real adapter + in-memory DB)", () =
       body: JSON.stringify({ name: "X" }),
     });
     expect(missing.status).toBe(404);
+  });
+
+  test("Default detail catalog: every (rowKey × family) cell, canon tiered server-side (the retired global GET matrix)", async () => {
+    const { app } = await setupAdapter();
+    await app.request("/api/image-gen/prompt-profiles");
+    const res = await app.request("/api/image-gen/prompt-profiles/default");
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as {
+      catalog: {
+        cells: Array<{ rowKey: string; family: string; canonText: string; canonSource: string; customText: string | null; qualityText: string | null; isCustomized: boolean }>;
+        qualityCanon: Record<string, string>;
+        assist: { core: string; addenda: Record<string, string> };
+      };
+    };
+    // 8 modes + the negative row, × 9 families — the Default carries no
+    // overrides, so this is the pure canon matrix.
+    expect(payload.catalog.cells).toHaveLength(81);
+    const cell = (rowKey: string, family: string) => payload.catalog.cells.find((c) => c.rowKey === rowKey && c.family === family)!;
+    // Authored variant → family-canon with the family's own asset.
+    expect(cell("portrait", "pony").canonSource).toBe("family-canon");
+    expect(cell("portrait", "pony").canonText).toBe(await loadPromptAsset("image-portrait.pony.md"));
+    // Prose base → family-canon for its own asset too.
+    expect(cell("portrait", "prose").canonSource).toBe("family-canon");
+    expect(cell("portrait", "prose").canonText).toBe(await loadPromptAsset("image-portrait.md"));
+    // A non-authoring family inherits the prose canon — labeled honestly.
+    expect(cell("portrait", "krea2").canonSource).toBe("prose-canon");
+    expect(cell("portrait", "krea2").canonText).toBe(await loadPromptAsset("image-portrait.md"));
+    // The negative row: qwen owns its own, krea2 inherits prose.
+    expect(cell("negative", "qwen").canonSource).toBe("family-canon");
+    expect(cell("negative", "qwen").canonText).toBe(await loadPromptAsset("image-negative.qwen.md"));
+    expect(cell("negative", "krea2").canonSource).toBe("prose-canon");
+    // Free mode is family-neutral: every family cell shows the prose wrapper.
+    expect(cell("free", "pony").canonSource).toBe("prose-canon");
+    expect(cell("free", "pony").canonText).toBe(await loadPromptAsset("image-free.md"));
+    // Clean profile: no custom cells anywhere.
+    expect(payload.catalog.cells.every((c) => c.isCustomized === false && c.customText === null && c.qualityText === null)).toBe(true);
+    // Quality canon: AUTHORING families only, text from the assets.
+    expect(Object.keys(payload.catalog.qualityCanon).sort()).toEqual(["anima", "illustrious", "noobai", "pony", "sdxl-realism"]);
+    expect(payload.catalog.qualityCanon["pony"]).toBe((await loadPromptAsset("image-quality.pony.md")).trim());
+    // Assist: the shared core + one addendum per non-prose family.
+    expect(payload.catalog.assist.core).toBe((await loadPromptAsset("image-assist.md")).trim());
+    expect(Object.keys(payload.catalog.assist.addenda).sort()).toEqual(
+      ["anima", "hybrid", "illustrious", "krea2", "noobai", "pony", "qwen", "sdxl-realism"],
+    );
+    expect(payload.catalog.assist.addenda["pony"]).toBe((await loadPromptAsset("image-assist.pony.md")).trim());
+  });
+
+  test("schema guards: unknown cell key and blank body are rejected (the retired PUT guards' contract heirs)", async () => {
+    const { app } = await setupAdapter();
+    const profile = await createProfile(app, "Guards");
+
+    const unknownKey = await app.request(`/api/image-gen/prompt-profiles/${profile.id}`, {
+      method: "PATCH",
+      ...jsonInit(),
+      body: JSON.stringify({ overrides: { "hologram|pony": { body: "x" } } }),
+    });
+    expect(unknownKey.status).toBe(400);
+
+    const blankBody = await app.request(`/api/image-gen/prompt-profiles/${profile.id}`, {
+      method: "PATCH",
+      ...jsonInit(),
+      body: JSON.stringify({ overrides: { "portrait|pony": { body: "" } } }),
+    });
+    expect(blankBody.status).toBe(400);
   });
 
   test("DELETE removes a profile and clears the active pointer when it pointed there", async () => {

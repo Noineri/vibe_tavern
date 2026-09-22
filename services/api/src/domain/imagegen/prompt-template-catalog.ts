@@ -93,26 +93,30 @@ async function canonFor(
   return { text, source: canonFamily === family ? "family-canon" : "prose-canon" };
 }
 
-/** One cell: canon tier + the user's custom row (body + quality column). */
-export async function readPromptVariantCell(
-  db: AppDb,
+/** One cell: canon tier + the given custom override (body + quality).
+ *  The global-store reader was RETIRED with the per-cell routes (IF-1e);
+ *  the profile-scoped twin below is the only cell reader. */
+export function cellFromParts(
   rowKey: ImagePromptVariantKey,
   family: ImagePromptFamilyId,
-  memo?: Map<string, string>,
-): Promise<ImagePromptTemplateCell> {
-  const custom = await new ImagePromptVariantStore(db).get(rowKey, family);
-  return cellFromParts(
+  canon: { text: string; source: ImagePromptCanonSource },
+  custom: { body: string; qualityText: string | null } | null,
+): ImagePromptTemplateCell {
+  return {
     rowKey,
     family,
-    await canonFor(rowKey, family, memo ?? new Map()),
-    custom ? { body: custom.body, qualityText: custom.qualityText } : null,
-  );
+    canonText: canon.text,
+    canonSource: canon.source,
+    customText: custom?.body ?? null,
+    qualityText: custom?.qualityText ?? null,
+    isCustomized: custom !== null,
+  };
 }
 
-/** The profile-scoped twin (IF-1b): the custom tier comes from a
- *  profile's overrides map instead of the global variant table. The same
- *  shape feeds the profile detail response AND (IF-1c) generation, which
- *  passes the ACTIVE profile's overrides. */
+/** The profile-scoped cell reader (IF-1b): the custom tier comes from a
+ *  profile's overrides map. The same shape feeds the profile detail
+ *  response AND (IF-1c) generation, which passes the ACTIVE profile's
+ *  overrides. */
 export type ImagePromptProfileOverridesMap = ImagePromptOverridesMap;
 
 export function readProfilePromptVariantCell(
@@ -133,39 +137,11 @@ export function readProfilePromptVariantCell(
   });
 }
 
-function cellFromParts(
-  rowKey: ImagePromptVariantKey,
-  family: ImagePromptFamilyId,
-  canon: { text: string; source: ImagePromptCanonSource },
-  custom: { body: string; qualityText: string | null } | null,
-): ImagePromptTemplateCell {
-  return {
-    rowKey,
-    family,
-    canonText: canon.text,
-    canonSource: canon.source,
-    customText: custom?.body ?? null,
-    qualityText: custom?.qualityText ?? null,
-    isCustomized: custom !== null,
-  };
-}
-
-/** The full pane payload: every (rowKey × family) cell + canon quality
- *  blocks + the assist core and addenda. */
-export async function buildPromptTemplateCatalog(db: AppDb): Promise<PromptTemplateCatalog> {
-  const memo = new Map<string, string>();
-  const cells: ImagePromptTemplateCell[] = [];
-  for (const rowKey of IMAGE_PROMPT_CATALOG_ROW_KEYS) {
-    for (const family of IMAGE_PROMPT_FAMILY_IDS) {
-      cells.push(await readPromptVariantCell(db, rowKey, family, memo));
-    }
-  }
-  return finishCatalog(cells);
-}
-
-/** The profile-scoped catalog (IF-1b): identical shape, with every cell's
- *  custom tier sourced from the given profile overrides. A profile with no
- *  overrides yields the all-canon catalog (the Default profile view). */
+/** The profile-scoped catalog (IF-1b): every (rowKey × family) cell with
+ *  its custom tier sourced from the given profile overrides. A profile
+ *  with no overrides yields the all-canon catalog (the Default profile
+ *  view — and the tier-matrix read model the old global GET served). The
+ *  global-store builder was RETIRED with the per-cell routes (IF-1e). */
 export async function buildProfileTemplateCatalog(
   overrides: ImagePromptProfileOverridesMap,
 ): Promise<PromptTemplateCatalog> {
