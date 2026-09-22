@@ -94,6 +94,65 @@ const listSamplerSetsApi = mock(async (): Promise<ImageGenSamplerSet[]> => [
 let extensionsValue: string[] = [];
 const listExtensionsApi = mock(async (): Promise<string[]> => [...extensionsValue]);
 
+// IPT-5: the family row's API seam — registry list, manual pin, detection
+// probe — mocked with the `...real` spread (leak-safe; only the three
+// functions the family row consumes are overridden).
+type ImagePromptFamilyInfo = import("@vibe-tavern/api-contracts").ImagePromptFamilyInfoValue;
+type ImagePromptFamily = import("@vibe-tavern/api-contracts").ImagePromptFamilyValue;
+type FamilyDetectResult = import("@vibe-tavern/api-contracts").ImageGenFamilyDetectionResultValue;
+
+const REGISTRY_FAMILIES: ImagePromptFamilyInfo[] = [
+  { id: "prose", grammar: "prose", ownTemplates: true, ownNegative: true, ownQuality: false, hasAssistAddendum: false },
+  { id: "pony", grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: true, hasAssistAddendum: true },
+  { id: "illustrious", grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: true, hasAssistAddendum: true },
+  { id: "noobai", grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: true, hasAssistAddendum: true },
+  { id: "anima", grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: true, hasAssistAddendum: true },
+  { id: "krea2", grammar: "prose", ownTemplates: false, ownNegative: true, ownQuality: false, hasAssistAddendum: true },
+  { id: "qwen", grammar: "prose", ownTemplates: false, ownNegative: true, ownQuality: false, hasAssistAddendum: true },
+  { id: "sdxl-realism", grammar: "prose", ownTemplates: false, ownNegative: true, ownQuality: true, hasAssistAddendum: false },
+  { id: "hybrid", grammar: "hybrid", ownTemplates: true, ownNegative: true, ownQuality: true, hasAssistAddendum: true },
+];
+let familiesFail = false;
+const listFamiliesApi = mock(async (): Promise<{ families: ImagePromptFamilyInfo[] }> => {
+  if (familiesFail) throw new Error("registry unavailable");
+  return { families: REGISTRY_FAMILIES.map((family) => ({ ...family })) };
+});
+const setFamilyApi = mock(async (id: string, family: ImagePromptFamily | null): Promise<ImageGenRecord> => {
+  const idx = apiStore.findIndex((p) => p.id === id);
+  if (idx === -1) throw new Error("not found");
+  const updated = {
+    ...apiStore[idx],
+    familyOverride: family ?? undefined,
+    familySource: family !== null ? "manual" : apiStore[idx].familyDetected !== undefined ? "auto" : "none",
+  } as ImageGenRecord;
+  apiStore[idx] = updated;
+  return updated;
+});
+
+/** Server-side success persistence mirror: a success stores familyDetected
+ *  anchored to the record's PERSISTED model; every no-answer leaves the
+ *  stored state untouched (the route contract). */
+function applyDetectOutcome(id: string, outcome: FamilyDetectResult): FamilyDetectResult {
+  if (outcome.ok) {
+    const idx = apiStore.findIndex((p) => p.id === id);
+    if (idx !== -1) {
+      const rec = apiStore[idx];
+      apiStore[idx] = {
+        ...rec,
+        familyDetected: outcome.family,
+        familyDetectedForModel: rec.modelId,
+        familySource: rec.familyOverride !== undefined ? "manual" : "auto",
+      } as ImageGenRecord;
+    }
+  }
+  return outcome;
+}
+let detectOutcome: FamilyDetectResult = { ok: false, error: "no authoritative source answered", tried: [] };
+let pendingDetect: Promise<FamilyDetectResult> | null = null;
+const detectFamilyApi = mock(async (id: string): Promise<FamilyDetectResult> =>
+  applyDetectOutcome(id, await (pendingDetect ?? Promise.resolve(detectOutcome))),
+);
+
 mock.module("../../../../api/image-gen-api.js", () => ({
   ...realImageGenApi,
   listAllImageGenProfiles: listAllApi,
@@ -107,6 +166,9 @@ mock.module("../../../../api/image-gen-api.js", () => ({
   listImageGenSamplers: listSamplersApi,
   listImageGenSamplerSets: listSamplerSetsApi,
   listImageGenExtensions: listExtensionsApi,
+  listImagePromptFamilies: listFamiliesApi,
+  setImageGenProfileFamily: setFamilyApi,
+  detectImageGenProfileFamily: detectFamilyApi,
 }));
 
 // IG-15: the LLM-assist pickers fetch the LLM provider list + model catalog
@@ -279,6 +341,20 @@ async function pickOption(view: { getByTestId: (id: string) => HTMLElement }, tr
   await findAndClickOption(label);
 }
 
+async function pickOptionContaining(view: { getByTestId: (id: string) => HTMLElement }, triggerId: string, text: string) {
+  await act(async () => {
+    view.getByTestId(triggerId).click();
+  });
+  const option = await waitFor(() => {
+    const el = Array.from(document.body.querySelectorAll("[cmdk-item]")).find((node) => node.textContent?.includes(text));
+    expect(el).toBeTruthy();
+    return el!;
+  });
+  await act(async () => {
+    (option as HTMLElement).click();
+  });
+}
+
 afterEach(async () => {
   await act(async () => {});
   cleanup();
@@ -299,10 +375,16 @@ afterEach(async () => {
     fetchLlmModelsApi,
     listSamplerSetsApi,
     listExtensionsApi,
+    listFamiliesApi,
+    setFamilyApi,
+    detectFamilyApi,
   ]) {
     m.mockClear();
   }
   extensionsValue = [];
+  familiesFail = false;
+  detectOutcome = { ok: false, error: "no authoritative source answered", tried: [] };
+  pendingDetect = null;
 });
 
 // IG-CF13: the slider cell is NumberInput inside a testid wrapper. Typing
@@ -1676,5 +1758,239 @@ describe("ImageGenPane — LLM assist (IG-15)", () => {
     expect(patch.llmProviderProfileId).toBe("llm-p1");
     expect(patch.llmModelId).toBe("w-2");
     expect(hookRef.current!.error).toBeNull();
+  });
+});
+
+describe("ImageGenPane — prompt family row (IPT-5)", () => {
+  function familyHook(record: ImageGenRecord, modelId: string | null = record.modelId ?? null): ImageGenHook {
+    return makeImageGen({
+      profiles: [record],
+      form: makeForm({ id: record.id, modelId }),
+    });
+  }
+
+  function familyNode(imageGen: ImageGenHook) {
+    return (
+      <TooltipProvider delayDuration={200}>
+        <ImageGenPane imageGen={imageGen} />
+      </TooltipProvider>
+    );
+  }
+
+  function FamilyReloadHarness({ record, onReload }: { record: ImageGenRecord; onReload: () => Promise<void> }) {
+    const [profiles, setProfiles] = React.useState<ImageGenRecord[]>([record]);
+    const imageGen = familyHook(profiles[0]!);
+    imageGen.reload = async () => {
+      await onReload();
+      setProfiles([...apiStore]);
+    };
+    return <ImageGenPane imageGen={imageGen} />;
+  }
+
+  function FamilyIdentityHarness({
+    controller,
+    record,
+  }: {
+    controller: { setTarget: ((nextRecord: ImageGenRecord, nextModel: string) => void) | null };
+    record: ImageGenRecord;
+  }) {
+    const [target, setTarget] = React.useState({ record, model: record.modelId ?? "" });
+    controller.setTarget = (nextRecord, nextModel) => setTarget({ record: nextRecord, model: nextModel });
+    return <ImageGenPane imageGen={familyHook(target.record, target.model)} />;
+  }
+
+  it("renders directly under ModelPicker for persisted cloud and local profiles; create mode remains outside this pane", async () => {
+    const cloud = makeRecord({ modelId: "cloud-model" });
+    const cloudView = render(<ImageGenPane imageGen={familyHook(cloud)} />);
+    await waitFor(() => expect(cloudView.getByTestId("image-gen-family-row")).toBeTruthy());
+    const cloudModel = cloudView.getByTestId("image-gen-field-model");
+    const cloudRow = cloudView.getByTestId("image-gen-family-row");
+    expect(cloudModel.compareDocumentPosition(cloudRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    cleanup();
+
+    const local = makeRecord({
+      backend: "a1111",
+      presetId: "a1111",
+      endpoint: "http://127.0.0.1:7860",
+      modelId: "local-model",
+      capabilities: makeCaps({ supportsSamplers: true, sizeSupport: { kind: "free" } }),
+    });
+    const localView = render(
+      <ImageGenPane
+        imageGen={familyHook(local, "local-model")}
+      />,
+    );
+    await waitFor(() => expect(localView.getByTestId("image-gen-family-row")).toBeTruthy());
+    expect(localView.getByTestId("image-gen-field-model").compareDocumentPosition(localView.getByTestId("image-gen-family-row"))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+
+    cleanup();
+    const createView = render(<ImageGenPane imageGen={makeImageGen({ form: makeForm({ id: null }) })} />);
+    expect(createView.queryByTestId("image-gen-family-row")).toBeNull();
+  });
+
+  it("lists server registry families and persists an exact manual pin and automatic clear", async () => {
+    const record = makeRecord({ modelId: "checkpoint-a" });
+    apiStore = [record];
+    const reload = mock(async () => {});
+    const imageGen = familyHook(record);
+    imageGen.reload = reload;
+    const view = render(familyNode(imageGen));
+    await waitFor(() => expect(listFamiliesApi).toHaveBeenCalledTimes(1));
+
+    await pickOptionContaining(view, "image-gen-family-select", "imagePromptTemplates.family.pony");
+    await waitFor(() => expect(setFamilyApi).toHaveBeenCalledTimes(1));
+    expect((setFamilyApi.mock.calls[0] as unknown[])).toEqual(["ig1", "pony"]);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(apiStore[0]?.familyOverride).toBe("pony");
+
+    view.rerender(familyNode(familyHook(apiStore[0]!)));
+    await pickOption(view, "image-gen-family-select", "image_gen_family_automatic");
+    await waitFor(() => expect(setFamilyApi).toHaveBeenCalledTimes(2));
+    expect((setFamilyApi.mock.calls[1] as unknown[])).toEqual(["ig1", null]);
+    expect(apiStore[0]?.familyOverride).toBeUndefined();
+  });
+
+  it("refreshes successful detection for the matching saved model and shows the exact response source", async () => {
+    const record = makeRecord({ modelId: "checkpoint-a" });
+    apiStore = [record];
+    detectOutcome = { ok: true, family: "illustrious", sourceLabel: "sidecar" };
+    const reload = mock(async () => {});
+    const view = render(<FamilyReloadHarness record={record} onReload={reload} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-family-detect")).toBeTruthy());
+
+    await act(async () => {
+      view.getByTestId("image-gen-family-detect").click();
+    });
+    await waitFor(() => expect(apiStore[0]?.familyDetected).toBe("illustrious"));
+    expect(apiStore[0]?.familyDetectedForModel).toBe("checkpoint-a");
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => expect(view.getByTestId("image-gen-family-detected").textContent).toContain("imagePromptTemplates.family.illustrious"));
+    expect(view.getByTestId("image-gen-family-status").textContent).toContain(
+      "image_gen_family_source_note:image_gen_family_source_sidecar",
+    );
+  });
+
+  it("keeps saved family state on failed detection and renders the error plus every ordered attempt", async () => {
+    const record = makeRecord({
+      modelId: "checkpoint-a",
+      familyDetected: "pony",
+      familyDetectedForModel: "checkpoint-a",
+      familySource: "auto",
+    });
+    apiStore = [record];
+    detectOutcome = {
+      ok: false,
+      error: "No authoritative metadata answered.",
+      tried: [
+        { source: "backend-metadata", reason: "Model API did not include metadata." },
+        { source: "sidecar", reason: "No sidecar was found." },
+        { source: "civitai-by-hash", reason: "No model hash was available." },
+      ],
+    };
+    const view = render(familyNode(familyHook(record)));
+    await act(async () => {
+      view.getByTestId("image-gen-family-detect").click();
+    });
+    const error = await waitFor(() => view.getByTestId("image-gen-family-error"));
+    expect(error.textContent).toContain("No authoritative metadata answered.");
+    const tried = Array.from(error.querySelectorAll("[data-testid='image-gen-family-tried-item']"));
+    expect(tried.map((item) => item.textContent)).toEqual([
+      "image_gen_family_source_backend-metadata: Model API did not include metadata.",
+      "image_gen_family_source_sidecar: No sidecar was found.",
+      "image_gen_family_source_civitai-by-hash: No model hash was available.",
+    ]);
+    expect(apiStore[0]?.familyDetected).toBe("pony");
+    expect(view.getByTestId("image-gen-family-detected")).toBeTruthy();
+  });
+
+  it("marks an automatic detection stale after a draft model edit while a manual pin stays authoritative", async () => {
+    const automatic = makeRecord({
+      modelId: "checkpoint-a",
+      familyDetected: "pony",
+      familyDetectedForModel: "checkpoint-a",
+      familySource: "auto",
+    });
+    const staleView = render(familyNode(familyHook(automatic, "checkpoint-b")));
+    await waitFor(() => expect(staleView.getByTestId("image-gen-family-stale")).toBeTruthy());
+    expect(staleView.getByTestId("image-gen-family-stale").textContent).toContain("checkpoint-a");
+    cleanup();
+
+    const pinned = makeRecord({
+      modelId: "checkpoint-a",
+      familyOverride: "pony",
+      familyDetected: "illustrious",
+      familyDetectedForModel: "checkpoint-a",
+      familySource: "manual",
+    });
+    const pinnedView = render(familyNode(familyHook(pinned, "checkpoint-b")));
+    await waitFor(() => expect(pinnedView.getByTestId("image-gen-family-status").textContent).toContain("image_gen_family_manual_note"));
+    expect(pinnedView.queryByTestId("image-gen-family-stale")).toBeNull();
+  });
+
+  it("disables detection with the full save-first hint for an absent or unsaved displayed model", async () => {
+    const record = makeRecord({ modelId: "checkpoint-a" });
+    const draftView = render(familyNode(familyHook(record, "checkpoint-b")));
+    await waitFor(() => expect(draftView.getByTestId("image-gen-family-detect-disabled")).toBeTruthy());
+    expect(draftView.getByTestId("image-gen-family-detect-disabled").textContent).toContain("image_gen_family_detect");
+    expect(draftView.queryByTestId("image-gen-family-detect")).toBeNull();
+    cleanup();
+
+    const absentView = render(familyNode(familyHook(record, null)));
+    await waitFor(() => expect(absentView.getByTestId("image-gen-family-detect-disabled")).toBeTruthy());
+    expect(absentView.queryByTestId("image-gen-family-detect")).toBeNull();
+  });
+
+  it("does not let an older profile or model detection response clobber the current row", async () => {
+    const record = makeRecord({ modelId: "checkpoint-a" });
+    apiStore = [record];
+    let resolveDetect: ((result: FamilyDetectResult) => void) | null = null;
+    pendingDetect = new Promise<FamilyDetectResult>((resolve) => {
+      resolveDetect = resolve;
+    });
+    const controller: { setTarget: ((nextRecord: ImageGenRecord, nextModel: string) => void) | null } = { setTarget: null };
+    const view = render(<FamilyIdentityHarness controller={controller} record={record} />);
+    await act(async () => {
+      view.getByTestId("image-gen-family-detect").click();
+    });
+    await waitFor(() => expect(detectFamilyApi).toHaveBeenCalledTimes(1));
+
+    const changedProfile = makeRecord({ id: "ig2", modelId: "checkpoint-b" });
+    await act(async () => {
+      controller.setTarget!(changedProfile, "checkpoint-b");
+    });
+    await act(async () => {
+      resolveDetect!({ ok: true, family: "pony", sourceLabel: "sidecar" });
+    });
+    await act(async () => {});
+    expect(view.queryByTestId("image-gen-family-detected")).toBeNull();
+    expect(view.getByTestId("image-gen-family-status").textContent).toContain("image_gen_family_not_detected");
+    expect(view.getByTestId("image-gen-family-status").textContent).not.toContain("image_gen_family_source_note");
+  });
+
+  it("keeps authored status and failure copy wrapping without truncation classes", async () => {
+    const record = makeRecord({ modelId: "checkpoint-a" });
+    apiStore = [record];
+    detectOutcome = {
+      ok: false,
+      error: "A deliberately long authoritative failure reason must remain readable in full on narrow layouts.",
+      tried: [{ source: "extension-preset", reason: "The extension returned a deliberately long diagnostic reason." }],
+    };
+    const view = render(familyNode(familyHook(record)));
+    await act(async () => {
+      view.getByTestId("image-gen-family-detect").click();
+    });
+    const error = await waitFor(() => view.getByTestId("image-gen-family-error"));
+    const status = view.getByTestId("image-gen-family-status");
+    expect(error.className).toContain("leading-[1.5]");
+    expect(error.innerHTML).toContain("break-words");
+    expect(error.innerHTML).not.toContain("text-ellipsis");
+    expect(error.innerHTML).not.toContain("whitespace-nowrap");
+    expect(error.innerHTML).not.toContain("overflow-hidden");
+    expect(status.innerHTML).not.toContain("text-ellipsis");
+    expect(status.innerHTML).not.toContain("whitespace-nowrap");
+    expect(status.innerHTML).not.toContain("overflow-hidden");
   });
 });

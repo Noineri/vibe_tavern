@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useT, type TFunc } from "../../../../i18n/context.js";
 import { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, hasAdetailerExtension, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
-import { CustomTooltip } from "../../../shared/Tooltip.js";
+import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
@@ -17,14 +17,23 @@ import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-mod
 import { getModalPortal } from "../../../shared/modal-helpers.js";
 import { LocalConnectionStatusChip, type LocalConnectionStatus } from "../../../shared/LocalConnectionStatus.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
-import type { ImageGenSamplerSet } from "@vibe-tavern/api-contracts";
+import type {
+  ImageGenFamilyDetectionAttemptValue,
+  ImageGenFamilyDetectionSourceValue,
+  ImageGenSamplerSet,
+  ImagePromptFamilyInfoValue,
+  ImagePromptFamilyValue,
+} from "@vibe-tavern/api-contracts";
 import type { ImageGenModelEntry } from "../../../../api/image-gen-api.js";
 import {
   createImageGenSamplerSet,
   deleteImageGenSamplerSet,
+  detectImageGenProfileFamily,
   importImageGenSamplerSet,
   listImageGenExtensions,
   listImageGenSamplerSets,
+  listImagePromptFamilies,
+  setImageGenProfileFamily,
   updateImageGenSamplerSet,
 } from "../../../../api/image-gen-api.js";
 import { fetchProviderProfileModels, listProviderProfiles } from "../../../../api/provider-api.js";
@@ -339,6 +348,337 @@ function ModelPicker({
           {!isMobile && <> {t("refresh_models")}</>}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── Image prompt family (IPT-5 — the profile's checkpoint-family row,
+//     always visible in the params block directly under the model setting) ──
+
+/** Registry family label/detail keys — the IPT-4 pane's family dropdown
+ *  keys reused verbatim (one home for the display names). */
+function familyLabelKey(family: ImagePromptFamilyValue): string {
+  return `imagePromptTemplates.family.${family}`;
+}
+
+function familyDetailKey(family: ImagePromptFamilyValue): string {
+  return `imagePromptTemplates.familyDetail.${family}`;
+}
+
+/** i18n key per ordered detection-ladder source — the success sourceLabel
+ *  and the tried[] failure reasons share this vocabulary. */
+const FAMILY_SOURCE_LABEL_KEYS: Record<ImageGenFamilyDetectionSourceValue, Parameters<TFunc>[0]> = {
+  "backend-metadata": "image_gen_family_source_backend-metadata",
+  sidecar: "image_gen_family_source_sidecar",
+  "civitai-by-hash": "image_gen_family_source_civitai-by-hash",
+  "extension-preset": "image_gen_family_source_extension-preset",
+};
+
+/** The current detect response's authoritative source, kept only while the
+ *  record still carries that exact detection (family + model anchor). After
+ *  a reload the profile DTO proves no source and none is fabricated (IPT-5
+ *  supervisor ruling — the response's sourceLabel is authoritative for that
+ *  response alone). */
+interface FamilyDetectSession {
+  profileId: string;
+  model: string;
+  family: ImagePromptFamilyValue;
+  sourceLabel: ImageGenFamilyDetectionSourceValue;
+}
+
+interface FamilyRequestIdentity {
+  profileId: string | null;
+  model: string | null;
+  persistedModel: string | null;
+}
+
+function sameFamilyRequestIdentity(a: FamilyRequestIdentity, b: FamilyRequestIdentity): boolean {
+  return a.profileId === b.profileId && a.model === b.model && a.persistedModel === b.persistedModel;
+}
+
+function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
+  const { t, tDynamic } = useT();
+  const [families, setFamilies] = useState<ImagePromptFamilyInfoValue[] | null>(null);
+  const [familiesFailed, setFamiliesFailed] = useState(false);
+  const [pinning, setPinning] = useState(false);
+  const [writeFailure, setWriteFailure] = useState<{ profileId: string; message: string } | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [detectSession, setDetectSession] = useState<FamilyDetectSession | null>(null);
+  const [detectFailure, setDetectFailure] = useState<{
+    profileId: string;
+    error: string;
+    tried: ImageGenFamilyDetectionAttemptValue[];
+  } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const form = imageGen.form;
+  const profileId = form?.id ?? null;
+  // Server truth for the family state: the RECORD list, never the form —
+  // family writes ride the dedicated family route only (the Wave-2
+  // contract), so the form carries no family fields to read.
+  const record = profileId !== null ? (imageGen.profiles.find((p) => p.id === profileId) ?? null) : null;
+
+  const modelShown = form?.modelId ?? null;
+  const persistedModel = record?.modelId ?? null;
+  // Identity guard (the editor operation pattern): async continuations
+  // compare against the live profile AND model identity. The endpoint has no
+  // model parameter, so a response for saved model A must never surface after
+  // the pane starts showing draft model B.
+  const identityRef = useRef<FamilyRequestIdentity>({ profileId: null, model: null, persistedModel: null });
+  identityRef.current = { profileId, model: modelShown, persistedModel };
+
+  // Registry list: one fetch per mount (the ModelSamplerSetRow load rule —
+  // static server data, no per-profile scoping).
+  useEffect(() => {
+    let cancelled = false;
+    listImagePromptFamilies()
+      .then((response) => {
+        if (!cancelled) setFamilies(response.families);
+      })
+      .catch(() => {
+        if (!cancelled) setFamiliesFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A profile or displayed-model move resets the session-scoped detect UI and
+  // aborts an in-flight ladder run. Its response belongs to the prior target.
+  useEffect(() => {
+    setDetectSession(null);
+    setDetectFailure(null);
+    setWriteFailure(null);
+    setDetecting(false);
+    setPinning(false);
+    abortRef.current?.abort();
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [profileId, modelShown]);
+
+  // IPT-5: the ladder inspects the saved model. The full save-first hint is
+  // required when no model is displayed or the displayed model is still a
+  // draft, so the UI never presents a model-A result beside model B.
+  const detectBlocked = modelShown === null || modelShown !== persistedModel;
+  const pin = record?.familyOverride ?? null;
+  const detected = record?.familyDetected ?? null;
+  const detectedForModel = record?.familyDetectedForModel ?? null;
+  // Freshness is model-anchored: only the exact model shown renders a
+  // detection as current; a manual pin is authoritative and never stale.
+  const detectedFresh = detected !== null && modelShown !== null && detectedForModel === modelShown;
+  const sessionSource =
+    detectSession !== null &&
+    detectedFresh &&
+    detectSession.profileId === profileId &&
+    detectSession.family === detected &&
+    detectSession.model === modelShown &&
+    detectSession.model === detectedForModel
+      ? detectSession.sourceLabel
+      : null;
+
+  if (record === null) return null;
+
+  const handleSelectFamily = async (next: string) => {
+    if (profileId === null || pinning) return;
+    // "" is the explicit automatic (unpinned) choice; a re-select of the
+    // current state is a no-op skip, not a redundant write.
+    const chosen = families?.find((family) => family.id === next) ?? null;
+    if ((chosen?.id ?? null) === (record.familyOverride ?? null)) return;
+    setPinning(true);
+    setWriteFailure(null);
+    try {
+      await setImageGenProfileFamily(profileId, chosen?.id ?? null);
+      if (identityRef.current.profileId !== profileId) return;
+      // Persist first, then refresh the list (the activateProfile rule) —
+      // the record's family fields stay the rendering truth.
+      await imageGen.reload();
+    } catch (cause) {
+      if (identityRef.current.profileId === profileId) {
+        setWriteFailure({ profileId, message: cause instanceof Error ? cause.message : String(cause) });
+      }
+    } finally {
+      if (identityRef.current.profileId === profileId) setPinning(false);
+    }
+  };
+
+  const handleDetect = async () => {
+    if (profileId === null || modelShown === null || detecting || detectBlocked) return;
+    const requestIdentity: FamilyRequestIdentity = { profileId, model: modelShown, persistedModel };
+    setDetecting(true);
+    setDetectFailure(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const result = await detectImageGenProfileFamily(profileId, controller.signal);
+      if (!sameFamilyRequestIdentity(identityRef.current, requestIdentity)) return;
+      if (result.ok) {
+        // The server persisted familyDetected + its exact model anchor on
+        // success. Refresh first so the record remains rendering truth, then
+        // retain the exact response source only for this matching session.
+        await imageGen.reload();
+        if (!sameFamilyRequestIdentity(identityRef.current, requestIdentity)) return;
+        setDetectSession({
+          profileId,
+          model: modelShown,
+          family: result.family,
+          sourceLabel: result.sourceLabel,
+        });
+      } else {
+        // Honest no-answer: the server persisted nothing, so the saved state
+        // stays untouched — the error and EVERY ordered tried[] reason
+        // render inline (no toast-only failure, no swallowed detail).
+        setDetectFailure({ profileId, error: result.error, tried: result.tried });
+      }
+    } catch (cause) {
+      if (sameFamilyRequestIdentity(identityRef.current, requestIdentity)) {
+        setDetectFailure({ profileId, error: cause instanceof Error ? cause.message : String(cause), tried: [] });
+      }
+    } finally {
+      if (sameFamilyRequestIdentity(identityRef.current, requestIdentity)) setDetecting(false);
+    }
+  };
+
+  return (
+    <div className="my-4" data-testid="image-gen-family-row">
+      <div className="mb-3 border-b border-border2 pb-2 font-ui text-[calc(var(--ui-fs))] font-semibold text-t1">
+        {t("image_gen_family_title")}
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-[220px] flex-1">
+          <label className={lblCls}>{t("image_gen_family_label")}</label>
+          <DropdownSelect
+            value={pin ?? ""}
+            options={[
+              { id: "", label: t("image_gen_family_automatic") },
+              ...(families ?? []).map((family) => ({
+                id: family.id,
+                label: tDynamic(familyLabelKey(family.id)),
+                detail: tDynamic(familyDetailKey(family.id)),
+              })),
+              // A stored pin outside the live registry keeps its own option
+              // so the trigger shows the truth (the STT/LLM selector rule).
+              ...(pin !== null && !(families ?? []).some((family) => family.id === pin)
+                ? [{ id: pin, label: pin }]
+                : []),
+            ]}
+            defaultOption={t("image_gen_family_automatic")}
+            searchable={false}
+            disabled={pinning || detecting}
+            onChange={(next) => void handleSelectFamily(next)}
+            triggerTestId="image-gen-family-select"
+            triggerDetail={false}
+          />
+        </div>
+        {!detectBlocked ? (
+          <button
+            type="button"
+            data-testid="image-gen-family-detect"
+            onClick={() => void handleDetect()}
+            disabled={detecting}
+            className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
+          >
+            {detecting ? (
+              <span className="ml-[3px] inline-flex items-center gap-[3px] align-middle">
+                <span className="h-1 w-1 animate-genp rounded-full bg-accent" />
+                <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.18s]" />
+                <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.36s]" />
+            </span>
+            ) : (
+              <Icons.brain />
+            )}
+            {t("image_gen_family_detect")}
+          </button>
+        ) : (
+          <TooltipProvider delayDuration={200}>
+            <CustomTooltip content={t("image_gen_family_detect_save_first")}>
+              <span
+                data-testid="image-gen-family-detect-disabled"
+                className="flex h-7 shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t4"
+              >
+                <Icons.brain />
+                {t("image_gen_family_detect")}
+              </span>
+            </CustomTooltip>
+          </TooltipProvider>
+        )}
+      </div>
+      <div className="mt-2 flex flex-col gap-1" data-testid="image-gen-family-status">
+        {pin !== null ? (
+          <span className="font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t3">
+            {t("image_gen_family_manual_note")}
+          </span>
+        ) : detected !== null ? (
+          detectedFresh ? (
+            <span
+              data-testid="image-gen-family-detected"
+              className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium leading-[1.5] text-accent"
+            >
+              {t("image_gen_family_detected", { family: tDynamic(familyLabelKey(detected)) })}
+            </span>
+          ) : (
+            <span
+              data-testid="image-gen-family-stale"
+              className="font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-warning"
+            >
+              {t("image_gen_family_stale", {
+                family: tDynamic(familyLabelKey(detected)),
+                model: detectedForModel ?? "",
+              })}
+            </span>
+          )
+        ) : (
+          <span className="font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t3">
+            {t("image_gen_family_not_detected")}
+          </span>
+        )}
+        {sessionSource !== null && (
+          <span className="font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t3">
+            {t("image_gen_family_source_note", {
+              source: tDynamic(FAMILY_SOURCE_LABEL_KEYS[sessionSource]),
+            })}
+          </span>
+        )}
+      </div>
+      {detectFailure !== null && detectFailure.profileId === profileId && (
+        <div
+          data-testid="image-gen-family-error"
+          className="mt-2 rounded-md bg-danger/10 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-danger"
+        >
+          <div className="break-words">
+            {t("image_gen_family_detect_failed")}
+            {detectFailure.error !== "" ? `: ${detectFailure.error}` : ""}
+          </div>
+          {detectFailure.tried.length > 0 && (
+            <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-4">
+              {detectFailure.tried.map((attempt, index) => (
+                <li key={`${attempt.source}-${index}`} data-testid="image-gen-family-tried-item" className="break-words">
+                  {tDynamic(FAMILY_SOURCE_LABEL_KEYS[attempt.source])}: {attempt.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {writeFailure !== null && writeFailure.profileId === profileId && (
+        <div
+          data-testid="image-gen-family-write-error"
+          className="mt-2 rounded-md bg-danger/10 px-3 py-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-danger"
+        >
+          <span className="break-words">
+            {t("image_gen_family_write_failed")}
+            {writeFailure.message !== "" ? `: ${writeFailure.message}` : ""}
+          </span>
+        </div>
+      )}
+      {familiesFailed && (
+        <div
+          data-testid="image-gen-family-registry-error"
+          className="mt-2 break-words font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-danger"
+        >
+          {t("image_gen_family_registry_failed")}
+        </div>
+      )}
     </div>
   );
 }
@@ -1230,6 +1570,13 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
         }
         onRefresh={() => void imageGen.fetchSavedModels(profileId)}
       />
+
+      {/* ── Image prompt family (IPT-5): ALWAYS visible under the model
+          setting — dropdown (registry families + the explicit automatic
+          choice) + Auto-detect + honest inline status/error. Server is the
+          authority: the record's family fields render, the family route is
+          the only writer, detection never guesses. */}
+      <ImagePromptFamilyRow imageGen={imageGen} />
 
       {/* ── Sizes per mode (profile base or the bound model's override),
           IG-CF14: collapsed accordion + compact table rows. The old grid

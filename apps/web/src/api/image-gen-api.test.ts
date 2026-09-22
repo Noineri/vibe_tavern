@@ -33,7 +33,7 @@ afterAll(() => {
 });
 
 describe("image prompt-template API client", () => {
-  test("uses typed RPC routes for catalog, family registry, PUT, and DELETE", async () => {
+  test("uses typed profile-family routes and raw detection transport alongside the template catalog", async () => {
     const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
     globalThis.fetch = mockFetch(async (input, init) => {
       requests.push({ url: String(input), init });
@@ -56,14 +56,22 @@ describe("image prompt-template API client", () => {
     await imageGenApi.listImagePromptFamilies();
     await imageGenApi.upsertImagePromptTemplate("portrait", "prose", { body: "custom" });
     await imageGenApi.resetImagePromptTemplate("portrait", "prose");
+    await imageGenApi.setImageGenProfileFamily("profile id", "pony");
+    await imageGenApi.setImageGenProfileFamily("profile id", null);
+    await imageGenApi.detectImageGenProfileFamily("profile id");
 
     expect(requests.map((request) => request.url)).toEqual([
       expect.stringContaining("/api/image-gen/prompt-templates"),
       expect.stringContaining("/api/image-gen/prompt-families"),
       expect.stringContaining("/api/image-gen/prompt-templates/portrait/prose"),
       expect.stringContaining("/api/image-gen/prompt-templates/portrait/prose"),
+      expect.stringContaining("/api/image-gen/profiles/profile id/family"),
+      expect.stringContaining("/api/image-gen/profiles/profile id/family"),
+      expect.stringContaining("/api/image-gen/profiles/profile%20id/detect-family"),
     ]);
-    expect(requests.map((request) => request.init?.method ?? "GET")).toEqual(["GET", "GET", "PUT", "DELETE"]);
+    expect(requests.map((request) => request.init?.method ?? "GET")).toEqual(["GET", "GET", "PUT", "DELETE", "PUT", "PUT", "POST"]);
     expect(requests[2]?.init?.body).toBe(JSON.stringify({ body: "custom" }));
+    expect(requests[4]?.init?.body).toBe(JSON.stringify({ family: "pony" }));
+    expect(requests[5]?.init?.body).toBe(JSON.stringify({ family: null }));
   });
 });

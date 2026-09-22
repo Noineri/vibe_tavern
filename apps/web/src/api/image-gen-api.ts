@@ -32,6 +32,7 @@ import type {
   ImageGenUpscalerInfoValue,
   ImagePromptFamiliesValue,
   ImagePromptFamilyValue,
+  ImageGenFamilyDetectionResultValue,
   ImagePromptTemplateCellValue,
   ImagePromptTemplateRowKeyValue,
   ImagePromptTemplatesValue,
@@ -143,6 +144,41 @@ export async function setImageGenDefault(id: string): Promise<ImageGenProfileRec
   const response = await client.api["image-gen"].profiles[":id"].default.$put({ param: { id } });
   if (response.status === 404) throw await unwrapError(response);
   return unwrapRpc(response);
+}
+
+// ─── Profile family (IPT-5 — manual pin + the detection probe) ───────────────
+
+/** Manual family pin, or null to clear it back to the auto path (IPT-3).
+ * This route is the ONLY family-override writer; returns the updated
+ * record so callers can refresh their server-state view. */
+export async function setImageGenProfileFamily(
+  id: string,
+  family: ImagePromptFamilyValue | null,
+): Promise<ImageGenProfileRecord> {
+  const response = await client.api["image-gen"].profiles[":id"].family.$put({
+    param: { id },
+    json: { family },
+  });
+  if (response.status === 404) throw await unwrapError(response);
+  return unwrapRpc(response);
+}
+
+/** Run the authoritative detection ladder for a saved profile (IPT-3) —
+ * probe-family raw fetch so an abort signal rides the request (the route
+ * forwards it into the server-side ladder). A no-answer is DATA
+ * (ok:false + the ordered tried[] ladder), never a thrown error;
+ * transport/route failures (unknown profile, no model) throw. */
+export async function detectImageGenProfileFamily(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ImageGenFamilyDetectionResultValue> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/detect-family`),
+    { method: "POST", signal },
+  );
+  if (!response.ok) throw await rawError("Image-gen family detection", response);
+  return (await response.json()) as ImageGenFamilyDetectionResultValue;
 }
 
 // ─── Probe / models / samplers / draft (raw fetch, signal-aware) ─────────────
