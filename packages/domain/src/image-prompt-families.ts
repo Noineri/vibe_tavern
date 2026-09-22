@@ -103,6 +103,12 @@ export interface ImagePromptCellOverride {
   qualityText?: string | null;
 }
 
+/** A profile's full overrides map: cell key → override. Absent key = that
+ *  cell resolves to canon (the overrides-only contract, no blank-value
+ *  convention). Shared by the DB store, the profile API, and the
+ *  generation resolver (IF-1). */
+export type ImagePromptOverridesMap = Partial<Record<ImagePromptCellKey, ImagePromptCellOverride>>;
+
 /** Compose a cell key from its axes (the inverse of parse below). */
 export function makeImagePromptCellKey(
   rowKey: ImagePromptVariantRowKey,

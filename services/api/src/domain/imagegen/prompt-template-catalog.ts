@@ -6,10 +6,9 @@ import {
   IMAGE_PROMPT_FAMILIES,
   IMAGE_PROMPT_FAMILY_IDS,
   imagePromptCanonFamily,
-  type ImagePromptCellKey,
-  type ImagePromptCellOverride,
   type ImagePromptFamilyId,
   type ImagePromptGrammar,
+  type ImagePromptOverridesMap,
   type ImageGenerationMode,
 } from "@vibe-tavern/domain";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
@@ -114,7 +113,7 @@ export async function readPromptVariantCell(
  *  profile's overrides map instead of the global variant table. The same
  *  shape feeds the profile detail response AND (IF-1c) generation, which
  *  passes the ACTIVE profile's overrides. */
-export type ImagePromptProfileOverridesMap = Partial<Record<ImagePromptCellKey, ImagePromptCellOverride>>;
+export type ImagePromptProfileOverridesMap = ImagePromptOverridesMap;
 
 export function readProfilePromptVariantCell(
   rowKey: ImagePromptVariantKey,

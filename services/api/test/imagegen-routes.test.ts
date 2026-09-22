@@ -28,7 +28,7 @@ import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createStoreContainer, ImagePromptVariantStore, type StoreContainer } from "@vibe-tavern/db";
+import { createStoreContainer, type ImagePromptOverridesInput, type StoreContainer } from "@vibe-tavern/db";
 import { domainErrorToJson, httpStatusForDomainError, isDomainError } from "../src/shared/errors.js";
 import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 import { IMAGE_GEN_BACKENDS, parseStoredAttachments, type ChatId } from "@vibe-tavern/domain";
@@ -1649,6 +1649,16 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
   const PERSONA_DESC = "wandering bard in a patched travelling cloak";
   const LAST_MSG = "The tavern door creaks open and cold rain follows a stranger inside.";
 
+  /** IF-1c: generation reads the ACTIVE image prompt profile's overrides
+   *  (the global variant table is retired for the generation path). Cells
+   *  save as a WHOLE profile (the pane's save shape) and the profile is
+   *  activated — the same flow the UI drives. */
+  async function activateImageOverrides(scene: SceneFixture, cells: ImagePromptOverridesInput) {
+    const profile = await scene.stores.imagePromptProfiles.createImagePromptProfile({ name: "Route-test overrides", overrides: cells });
+    await scene.stores.uiSettings.update({ activeImagePromptProfileId: profile.id });
+    return profile;
+  }
+
   interface SceneFixture {
     app: ReturnType<typeof createImageGenRoutes>;
     stores: StoreContainer;
@@ -1726,15 +1736,10 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     const scene = await makeScene(promptCapturingTransport(sent));
     const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
 
-    // An images-family custom row carrying a marker macro — resolves through
-    // the (row × family) variant chain (IPT-1_resolver; the service-prompt
-    // profile path is retired legacy for images — overrides live in the
-    // variant store now, profile-independent).
-    await new ImagePromptVariantStore(scene.stores.db).upsert({
-      rowKey: "portrait",
-      family: "prose",
-      body: "MARKER-{{char}}-OVERRIDE",
-    });
+    // An image-prompt PROFILE cell carrying a marker macro — resolves
+    // through the (row × family) chain from the ACTIVE profile (IF-1c;
+    // the pre-IF-1 global variant table is retired for generation).
+    await activateImageOverrides(scene, { "portrait|prose": { body: "MARKER-{{char}}-OVERRIDE" } });
 
     const res = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
       method: "POST",
@@ -1754,11 +1759,7 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     const scene = await makeScene(promptCapturingTransport(sent));
     const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
 
-    await new ImagePromptVariantStore(scene.stores.db).upsert({
-      rowKey: "portrait",
-      family: "pony",
-      body: "MARKER-PONY-BODY",
-    });
+    const overridesProfile = await activateImageOverrides(scene, { "portrait|pony": { body: "MARKER-PONY-BODY" } });
 
     // Stale auto (detected for another model) → prose canon, not the pony row.
     await scene.stores.imageGen.update(id, {
@@ -1782,10 +1783,8 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     expect(sent[1]).toBe("MARKER-PONY-BODY");
 
     // Manual pin is authoritative — even over a fresh detection of another family.
-    await new ImagePromptVariantStore(scene.stores.db).upsert({
-      rowKey: "portrait",
-      family: "qwen",
-      body: "MARKER-QWEN-BODY",
+    await scene.stores.imagePromptProfiles.updateImagePromptProfile(overridesProfile.id, {
+      overrides: { "portrait|pony": { body: "MARKER-PONY-BODY" }, "portrait|qwen": { body: "MARKER-QWEN-BODY" } },
     });
     await scene.stores.imageGen.update(id, { familyOverride: "qwen" });
     await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
@@ -1958,13 +1957,9 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     const scene = await makeScene(promptCapturingTransport(sent));
     const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
 
-    // IPT-1_resolver: the marker rides the variant-store custom row (the
-    // retired seam was the service-prompt profile override).
-    await new ImagePromptVariantStore(scene.stores.db).upsert({
-      rowKey: "portrait",
-      family: "prose",
-      body: "MARKER-{{description}}-OVERRIDE",
-    });
+    // IF-1c: the marker rides the ACTIVE image prompt profile's override
+    // cell (the retired seam was the global variant table).
+    await activateImageOverrides(scene, { "portrait|prose": { body: "MARKER-{{description}}-OVERRIDE" } });
 
     // Generate the image slot INTO the chat (the feature is fully engaged).
     const genRes = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {

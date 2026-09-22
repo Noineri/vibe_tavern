@@ -31,11 +31,10 @@
  * automatically.
  */
 
-import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, imagePromptCanonFamily, type ImageGenerationMode, type ImagePromptFamilyId } from "@vibe-tavern/domain";
-import { ImagePromptVariantStore } from "@vibe-tavern/db";
-import type { AppDb, StoreContainer } from "@vibe-tavern/db";
+import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, imagePromptCanonFamily, type ImageGenerationMode, type ImagePromptFamilyId, type ImagePromptOverridesMap } from "@vibe-tavern/domain";
+import type { StoreContainer } from "@vibe-tavern/db";
 import { buildPromptVariableContext, createFullMacroEngine } from "@vibe-tavern/prompt-pipeline";
-import { resolveImagePromptVariant } from "../imagegen/prompt-variant-resolver.js";
+import { resolveActiveImagePromptOverrides, resolveImagePromptVariant } from "../imagegen/prompt-variant-resolver.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 
 /** IPT Wave 2: the family-driven assembly knobs the adapter passes in
@@ -65,23 +64,23 @@ export async function composeAssistInstruction(family: ImagePromptFamilyId): Pro
   return `${core.trim()}\n\n${addendum.trim()}`;
 }
 
-/** IPT Wave 2 quality layer: the family's canon block
- *  (`image-quality.{family}.md`) or the user's custom quality text (the
- *  (mode × family) variant row's qualityText), ONLY when the profile
+/** IF-1c quality layer: the family's canon block
+ *  (`image-quality.{family}.md`) or the ACTIVE profile's custom quality
+ *  text (the (mode × family) cell's qualityText), ONLY when the profile
  *  toggled the layer on AND the family authors one (prose checkpoints
  *  have no quality layer — no universal fallback). Returns "" = no block. */
 async function resolveQualityBlock(
-  db: AppDb,
   mode: ImageGenerationMode,
   family: ImagePromptFamilyId,
   enabled: boolean,
+  overrides: ImagePromptOverridesMap,
 ): Promise<string> {
   if (!enabled) return "";
   const canonFamily = imagePromptCanonFamily(family, "quality", mode);
   if (canonFamily === undefined) return "";
-  const custom = await new ImagePromptVariantStore(db).get(mode, family);
-  if (custom?.qualityText !== null && custom?.qualityText !== undefined && custom.qualityText.trim() !== "") {
-    return custom.qualityText.trim();
+  const customQuality = overrides[`${mode}|${family}`]?.qualityText;
+  if (customQuality !== null && customQuality !== undefined && customQuality.trim() !== "") {
+    return customQuality.trim();
   }
   return (await loadPromptAsset(`image-quality.${canonFamily}.md`)).trim();
 }
@@ -200,12 +199,18 @@ export async function buildImageGenPrompts(
   // family (manual pin → fresh auto → prose). Unpinned profiles resolve
   // prose — byte-identical to the interim service-prompt resolution.
   const family = options?.promptFamily ?? IMAGE_PROMPT_DEFAULT_FAMILY;
-  const { text: template } = await resolveImagePromptVariant(stores.db, { rowKey: mode, family });
-  const { text: negative } = await resolveImagePromptVariant(stores.db, { rowKey: "negative", family });
+  // IF-1c: the custom tier of EVERY row (template / negative / quality)
+  // comes from the ACTIVE image prompt profile, resolved once per build.
+  // No pointer / dangling pointer / the read-only Default → the empty map,
+  // which is pure canon — byte-identical to the pre-IF-1 chain for an
+  // install that never customized anything.
+  const overrides = await resolveActiveImagePromptOverrides(stores.db);
+  const { text: template } = await resolveImagePromptVariant({ rowKey: mode, family }, overrides);
+  const { text: negative } = await resolveImagePromptVariant({ rowKey: "negative", family }, overrides);
   // IPT Wave 2 quality layer — pre-resolved so every server-build return
   // below appends the same trailing block; verbatim/free paths never
   // append (finished user text is not a template surface).
-  const qualityBlock = await resolveQualityBlock(stores.db, mode, family, options?.qualityLayerEnabled === true);
+  const qualityBlock = await resolveQualityBlock(mode, family, options?.qualityLayerEnabled === true, overrides);
 
   if (mode === IMAGE_GENERATION_MODES.Free) {
     // The free template is a WRAPPER ("Depict exactly what the accompanying

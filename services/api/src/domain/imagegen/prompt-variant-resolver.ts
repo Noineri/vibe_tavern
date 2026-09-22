@@ -1,11 +1,12 @@
 import type { AppDb } from "@vibe-tavern/db";
-import { ImagePromptVariantStore } from "@vibe-tavern/db";
+import { ImagePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
 import type { ImagePromptVariantKey } from "@vibe-tavern/db";
 import {
   IMAGE_GENERATION_MODES,
   IMAGE_PROMPT_DEFAULT_FAMILY,
   imagePromptCanonFamily,
   type ImagePromptFamilyId,
+  type ImagePromptOverridesMap,
 } from "@vibe-tavern/domain";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 
@@ -26,38 +27,50 @@ export interface ImagePromptVariantLookup {
 }
 
 /**
- * The full image-prompt variant resolution chain (IPT Wave 1.3 — replaces the
- * interim service-prompt bridge for template/negative rows; the images
- * service-prompt family becomes unread legacy here):
+ * The full image-prompt variant resolution chain (IPT Wave 1.3, reworked
+ * IF-1c — IMAGEGEN_FOLLOWUP_REPORT):
  *
- * 1. CUSTOM tier — the user's own row in `image_prompt_variants` for the
- *    (rowKey, family) pair. Free mode is family-neutral end to end: its
+ * 1. PROFILE tier — the ACTIVE image prompt profile's override cell for the
+ *    (rowKey, family) pair (`resolveActiveImagePromptOverrides` reads the
+ *    pointer; a dangling pointer or the read-only Default profile resolves
+ *    an empty map = pure canon). Free mode is family-neutral end to end: its
  *    wrapper always resolves prose, so BOTH tiers see prose for it (a
- *    (free, non-prose) row is unreachable by design).
+ *    (free, non-prose) cell is unreachable by design — the profile API
+ *    refuses to write one).
  * 2. FAMILY-CANON tier — `imagePromptCanonFamily` decides whether the family
  *    authors the row itself; the asset is `image-{mode}.{family}.md`
  *    (or `image-negative.{family}.md`).
  * 3. PROSE-CANON tier — the universal fallback asset `image-{mode}.md`
- *    (or `image-negative.md`). For the prose family with no custom row this
- *    is byte-identical to the previous interim resolution (same asset, same
- *    loader) — the routes' pinned behavior.
+ *    (or `image-negative.md`).
+ *
+ * The custom tier's source moved from the global `image_prompt_variants`
+ * table (IPT Wave 1, retired for generation) to profile overrides; the
+ * one-time startup migration snapshots pre-existing global rows into an
+ * active "Imported" profile, so an upgrading install generates
+ * byte-identical prompts across the switch.
  *
  * The macro pass happens at the CALL SITE (imagegen-modes), not here — the
  * resolver returns raw text, like resolveServicePrompt's contract.
- *
- * Wave 2 wires the real family (manual pin / fresh detection) above this
- * seam; until then the mode build calls this with the universal default
- * (prose), which keeps the interim behavior byte-identical.
  */
+export async function resolveActiveImagePromptOverrides(db: AppDb): Promise<ImagePromptOverridesMap> {
+  const settings = await new UiSettingsStore(db).get();
+  const profileId = settings.activeImagePromptProfileId;
+  if (profileId === null) return {};
+  const profile = await new ImagePromptProfileStore(db).getImagePromptProfile(profileId);
+  // Dangling pointer or the read-only Default → the empty map (pure canon).
+  if (!profile || profile.isDefault) return {};
+  return profile.overrides;
+}
+
 export async function resolveImagePromptVariant(
-  db: AppDb,
   lookup: ImagePromptVariantLookup,
+  overrides: ImagePromptOverridesMap,
 ): Promise<ResolvedImagePromptVariant> {
   const { rowKey } = lookup;
   // Family-neutral free wrapper: both tiers resolve prose regardless of family.
   const family = rowKey === IMAGE_GENERATION_MODES.Free ? IMAGE_PROMPT_DEFAULT_FAMILY : lookup.family;
 
-  const custom = await new ImagePromptVariantStore(db).get(rowKey, family);
+  const custom = overrides[`${rowKey}|${family}`];
   if (custom) {
     return { text: custom.body, source: "custom" };
   }
