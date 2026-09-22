@@ -82,6 +82,59 @@ export const IMAGE_PROMPT_FAMILIES = {
 
 export type ImagePromptFamilyId = keyof typeof IMAGE_PROMPT_FAMILIES;
 
+/** The row-key axis of the image variant space: a generation-mode slug,
+ *  or the literal `"negative"` for the shared negative row (the quality
+ *  layer rides the mode-row column; the assist core is canon-only). */
+export type ImagePromptVariantRowKey = ImageGenerationMode | "negative";
+
+/** Profile overrides are keyed per cell: `"<rowKey>|<family>"` (IF-1a —
+ *  image prompt profiles fork the service-prompt profile machinery, with
+ *  the flat field-key axis replaced by the (row × family) cell axis). */
+export type ImagePromptCellKey = `${ImagePromptVariantRowKey}|${ImagePromptFamilyId}`;
+
+/** The separator joining rowKey and family inside an {@link ImagePromptCellKey}.
+ *  Neither axis may contain it (mode slugs and family ids are word tokens). */
+export const IMAGE_PROMPT_CELL_KEY_SEPARATOR = "|";
+
+/** One cell's override payload: the user's template body plus, when
+ *  customized, their own quality-layer text (absent = the family canon). */
+export interface ImagePromptCellOverride {
+  body: string;
+  qualityText?: string | null;
+}
+
+/** Compose a cell key from its axes (the inverse of parse below). */
+export function makeImagePromptCellKey(
+  rowKey: ImagePromptVariantRowKey,
+  family: ImagePromptFamilyId,
+): ImagePromptCellKey {
+  return `${rowKey}${IMAGE_PROMPT_CELL_KEY_SEPARATOR}${family}`;
+}
+
+/** Split a raw string into a validated (rowKey, family) pair; null when the
+ *  key is not a `<rowKey>|<family>` composition of registry members (used to
+ *  drop unknown keys at store boundaries — unknown keys never resolve canon
+ *  and must not persist). */
+export function parseImagePromptCellKey(key: string): { rowKey: ImagePromptVariantRowKey; family: ImagePromptFamilyId } | null {
+  const sep = IMAGE_PROMPT_CELL_KEY_SEPARATOR;
+  const at = key.lastIndexOf(sep);
+  if (at <= 0 || at !== key.indexOf(sep)) return null;
+  const rowKey = key.slice(0, at);
+  const family = key.slice(at + 1);
+  const isRowKey = rowKey === "negative" || Object.values(IMAGE_GENERATION_MODES).includes(rowKey as ImageGenerationMode);
+  const isFamily = (IMAGE_PROMPT_FAMILY_IDS as readonly string[]).includes(family);
+  return isRowKey && isFamily ? { rowKey: rowKey as ImagePromptVariantRowKey, family: family as ImagePromptFamilyId } : null;
+}
+
+/** Runtime shape guard for one cell's override payload (store boundary). */
+export function isImagePromptCellOverride(value: unknown): value is ImagePromptCellOverride {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (typeof record.body !== "string") return false;
+  const quality = record.qualityText;
+  return quality === undefined || quality === null || typeof quality === "string";
+}
+
 /** Ordered id list for dropdowns / registry read models (IPT Waves 3–5). */
 export const IMAGE_PROMPT_FAMILY_IDS = Object.keys(IMAGE_PROMPT_FAMILIES) as readonly ImagePromptFamilyId[];
 

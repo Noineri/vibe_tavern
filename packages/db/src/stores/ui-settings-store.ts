@@ -45,6 +45,11 @@ export interface UiSettings {
   copilotProviderId: string | null;
   copilotModelName: string | null;
   activeServicePromptProfileId: string | null;
+  /** Image prompt profiles (IF-1a) — same semantics as the service prompt
+   *  pointer above, separate collection. Null/dangling → Default ("default"). */
+  activeImagePromptProfileId: string | null;
+  /** One-time global-variant → image-profile migration marker (IF-1a). */
+  imagePromptVariantsMigrated: boolean;
   /** One-time preset→profile migration marker (SP-7) — see db-schema comment. */
   servicePromptPresetMigrated: boolean;
   /** STT scenario pointers (STT_PLAN ST-1): dictation + voice-message
@@ -81,6 +86,8 @@ export interface UiSettingsUpdate {
   copilotProviderId?: string | null;
   copilotModelName?: string | null;
   activeServicePromptProfileId?: string | null;
+  activeImagePromptProfileId?: string | null;
+  imagePromptVariantsMigrated?: boolean;
   servicePromptPresetMigrated?: boolean;
   activeDictationProfileId?: string | null;
   activeVoiceMessageProfileId?: string | null;
@@ -113,6 +120,8 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   copilotProviderId: null,
   copilotModelName: null,
   activeServicePromptProfileId: null,
+  activeImagePromptProfileId: null,
+  imagePromptVariantsMigrated: false,
   servicePromptPresetMigrated: false,
   activeDictationProfileId: null,
   activeVoiceMessageProfileId: null,
@@ -176,6 +185,8 @@ export class UiSettingsStore {
       copilotProviderId: partial.copilotProviderId ?? UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: partial.copilotModelName ?? UI_SETTINGS_DEFAULTS.copilotModelName,
       activeServicePromptProfileId: partial.activeServicePromptProfileId ?? UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
+      activeImagePromptProfileId: partial.activeImagePromptProfileId ?? UI_SETTINGS_DEFAULTS.activeImagePromptProfileId,
+      imagePromptVariantsMigrated: partial.imagePromptVariantsMigrated ?? UI_SETTINGS_DEFAULTS.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: partial.servicePromptPresetMigrated ?? UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
       activeDictationProfileId: partial.activeDictationProfileId ?? UI_SETTINGS_DEFAULTS.activeDictationProfileId,
       activeVoiceMessageProfileId: partial.activeVoiceMessageProfileId ?? UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
@@ -215,6 +226,8 @@ export class UiSettingsStore {
       copilotProviderId: UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: UI_SETTINGS_DEFAULTS.copilotModelName,
       activeServicePromptProfileId: UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
+      activeImagePromptProfileId: UI_SETTINGS_DEFAULTS.activeImagePromptProfileId,
+      imagePromptVariantsMigrated: UI_SETTINGS_DEFAULTS.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
       activeDictationProfileId: UI_SETTINGS_DEFAULTS.activeDictationProfileId,
       activeVoiceMessageProfileId: UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
@@ -252,6 +265,8 @@ export class UiSettingsStore {
       copilotProviderId: row.copilotProviderId ?? null,
       copilotModelName: row.copilotModelName ?? null,
       activeServicePromptProfileId: row.activeServicePromptProfileId ?? null,
+      activeImagePromptProfileId: row.activeImagePromptProfileId ?? null,
+      imagePromptVariantsMigrated: row.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: row.servicePromptPresetMigrated,
       activeDictationProfileId: row.activeDictationProfileId ?? null,
       activeVoiceMessageProfileId: row.activeVoiceMessageProfileId ?? null,

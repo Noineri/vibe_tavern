@@ -69,6 +69,8 @@ export function wireUiSettings(): UiSettingsRecord {
 		copilotProviderId: null,
 		copilotModelName: null,
 		activeServicePromptProfileId: null,
+		activeImagePromptProfileId: null,
+		imagePromptVariantsMigrated: false,
 		servicePromptPresetMigrated: false,
 		activeDictationProfileId: null,
 		activeVoiceMessageProfileId: null,

@@ -46,6 +46,7 @@ import { ExperienceTimerScheduler } from "../domain/interactive/experience-timer
 import { generateStructuredActionChoice } from "../domain/interactive/experience-model-effect-structured.js";
 import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
 import { migratePresetServicePrompts } from "../domain/service-prompts/preset-to-profile-migration.js";
+import { migrateGlobalImagePromptVariants } from "../domain/imagegen/global-variant-to-profile-migration.js";
 import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
@@ -141,6 +142,14 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		if (spMigration.skippedInvalidJson.length > 0) {
 			console.warn(`${tag} Service-prompt migration: skipped invalid aiAssistantPrompts JSON in: [${spMigration.skippedInvalidJson.join(", ")}].`);
 		}
+	}
+
+	// IF-1a: one-time snapshot of the global image-prompt variant rows into an
+	// "Imported" image prompt profile, made active (non-destructive; the old
+	// table is untouched). Marker-guarded — a single settings read afterwards.
+	const igMigration = await migrateGlobalImagePromptVariants(stores);
+	if (igMigration.ran && igMigration.createdProfileId) {
+		console.log(`${tag} Image-prompt migration: ${igMigration.cellCount} cell(s) carried into profile "Imported" (now active).`);
 	}
 
 	// Built-in experiences (BE-4): ensure app-owned interactive experiences

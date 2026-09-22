@@ -1174,6 +1174,15 @@ export const uiSettings = sqliteTable('ui_settings', {
   // → Default profile (id "default") is used. No DB-level FK — mirrors
   // coauthor/copilot bindings.
   activeServicePromptProfileId: text('active_service_prompt_profile_id'),
+  // Image prompt profiles (IF-1a) — same pointer semantics as the service
+  // prompt profile pointer above, for the separately-living image prompt
+  // profile collection. Null/dangling → Default (id "default").
+  activeImagePromptProfileId: text('active_image_prompt_profile_id'),
+  // One-time marker (IF-1a): the global-variant → image-profile migration
+  // has completed (existing image_prompt_variants rows were snapshotted into
+  // an "Imported" profile and it was made active — nothing is lost). False on
+  // fresh and pre-IF-1a installs; written once by the startup hook, never reset.
+  imagePromptVariantsMigrated: integer('image_prompt_variants_migrated', { mode: 'boolean' }).notNull().default(false),
   // One-time marker (SP-7): the preset→profile service-prompt migration has
   // completed. False on fresh installs (migration runs, finds nothing, flips
   // to true) and on pre-SP-7 upgrades (migration snapshots preset overrides
@@ -1870,3 +1879,24 @@ export const imagePromptVariants = sqliteTable('image_prompt_variants', {
 }, (table) => ({
   rowKeyFamilyUnique: uniqueIndex('idx_image_prompt_variants_unique').on(table.rowKey, table.family),
 }));
+
+// ─── imagePromptProfiles ─────────────────────────────────────────────────────
+//
+// Independently living image prompt profiles (IF-1a — the IPT-1 rework of
+// IMAGEGEN_FOLLOWUP_REPORT): a deliberate FORK of the service-prompt profile
+// machinery (same columns, same store semantics — default row id "default"
+// self-healed by ImagePromptProfileStore.ensureDefault(), read-only default,
+// sortOrder for drag-reorder), kept as a SEPARATE collection from
+// service_prompt_profiles and LLM presets (owner ruling: «просто отдельные»).
+// Overrides persist as JSON keyed by cell: "<rowKey>|<family>" →
+// { body, qualityText? } (rowKey = generation-mode slug | "negative").
+// Canon text still lives in authored assets; an absent cell = canon.
+export const imagePromptProfiles = sqliteTable('image_prompt_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  isDefault: integer('is_default').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
+  overrides: text('overrides').notNull().default('{}'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});

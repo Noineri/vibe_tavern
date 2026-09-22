@@ -99,6 +99,14 @@ export type { ImageGenSamplerSetRow, CreateImageGenSamplerSetData, UpdateImageGe
 
 export { ImagePromptVariantStore } from './image-prompt-variant-store.js';
 export type { ImagePromptVariantKey, ImagePromptVariantRow, ImagePromptVariantUpsertData } from './image-prompt-variant-store.js';
+
+export { ImagePromptProfileStore } from './image-prompt-profile-store.js';
+export type {
+  ImagePromptProfile,
+  CreateImagePromptProfileData,
+  UpdateImagePromptProfileData,
+  ImagePromptOverridesInput,
+} from './image-prompt-profile-store.js';
 export type {
   SamplerSetRow,
   SamplerSetPayload,

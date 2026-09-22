@@ -29,6 +29,8 @@ export type ScriptId = Brand<"ScriptId">;
 export type RegexPresetId = Brand<"RegexPresetId">;
 export type RegexProfileId = Brand<"RegexProfileId">;
 export type ServicePromptProfileId = Brand<"ServicePromptProfileId">;
+// Image prompt profiles (IF-1a — fork of the service-prompt profile flow).
+export type ImagePromptProfileId = Brand<"ImagePromptProfileId">;
 export type DiceRollId = Brand<"DiceRollId">;
 export type DicePendingLaneId = Brand<"DicePendingLaneId">;
 // TTS voice profiles (TTS_PLAN TS-1).

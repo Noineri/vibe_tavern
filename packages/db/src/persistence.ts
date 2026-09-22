@@ -1,7 +1,7 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
-import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, RegexStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, CopilotProfileStore, SamplerSetStore, ImageGenSamplerSetStore, ImagePromptVariantStore, FormatTemplateStore, DiceRollStore, ExperienceStore, ExperienceResourceStore, ExperienceCopilotStore, QuotaStore, TtsStore, SttStore, ImageGenStore } from './stores/index.js';
+import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, RegexStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, CopilotProfileStore, SamplerSetStore, ImageGenSamplerSetStore, ImagePromptVariantStore, ImagePromptProfileStore, FormatTemplateStore, DiceRollStore, ExperienceStore, ExperienceResourceStore, ExperienceCopilotStore, QuotaStore, TtsStore, SttStore, ImageGenStore } from './stores/index.js';
 
 export interface StoreContainer {
   db: AppDb;
@@ -30,6 +30,7 @@ export interface StoreContainer {
   samplerSets: SamplerSetStore;
   imageGenSamplerSets: ImageGenSamplerSetStore;
   imagePromptVariants: ImagePromptVariantStore;
+  imagePromptProfiles: ImagePromptProfileStore;
   formatTemplates: FormatTemplateStore;
   diceRolls: DiceRollStore;
   experiences: ExperienceStore;
@@ -95,6 +96,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     samplerSets: new SamplerSetStore(db),
     imageGenSamplerSets: new ImageGenSamplerSetStore(db),
     imagePromptVariants: new ImagePromptVariantStore(db),
+    imagePromptProfiles: new ImagePromptProfileStore(db),
     formatTemplates: new FormatTemplateStore(db),
     diceRolls: new DiceRollStore(db),
     experiences: new ExperienceStore(db),
