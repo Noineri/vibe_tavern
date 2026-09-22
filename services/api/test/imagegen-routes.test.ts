@@ -2769,8 +2769,10 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     // System = the image_assist built-in instruction; user = digest + RAW
     // template (placeholders intact — the model resolves them against the
     // digest). Any live placeholder proves the raw-ride; WHICH macro the
-    // template uses is content, not plumbing.
-    expect(call.system).toContain("image-generation model");
+    // template uses is content, not plumbing. The system-pin is an identity
+    // marker of the current assist asset (its final-line output contract),
+    // not a content contract.
+    expect(call.system).toContain("Output only the finished image prompt");
     expect(call.user).toContain("Seraphine");
     expect(call.user).toContain("silver-haired tavern keeper");
     expect(call.user).toContain("The tavern door creaks open.");
