@@ -368,6 +368,21 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
     for (const arrows of textStates) expect(arrows).toEqual([true, true]);
   });
 
+  test("IF-4b follow-up: a NON-LAST slot still offers its variant carousel (the isLast lock is text-only)", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    const variants = [
+      { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true },
+      { variantIndex: 1, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false },
+    ];
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([makeSlotMessage("m1", [slotAttachment()], variants)]));
+    chatStore.useChatStore.getState().setActiveChatId(CHAT);
+
+    const view = render(<MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast={false} prevRole={null} />);
+    // Non-last: the carousel still renders (slots switch from any position —
+    // consecutive slots each carry their own variant set).
+    expect(view.getByText("1/2")).toBeTruthy();
+  });
+
   test("text message control: text actions + token meta DO render (the gate is slot-shaped, not global)", async () => {
     const { MessageBlock, snapshotStore, chatStore } = await loadModules();
     snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("m1", "The tavern is warm tonight.")]));

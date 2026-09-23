@@ -280,19 +280,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     !pendingUserMessageContent &&
     isLastAssistant;
 
-  const canBranch = !isGreeting && !isCoauthorMode;
-  const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
-  // LS-4a: same last-message gate as regenerate (owner: Continue lives on the
-  // LAST AI reply) + the shared prefill capability gate. Coauthor chats are
-  // excluded alongside the other row actions.
-  const canContinue = canRegenerate && canContinueByCapability;
-  const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
-  const canSwitchVariant = isLast && !isCoauthorMode;
-  const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
-  // TPE-14: the inverse gate — "prepare for narration" is offered on
-  // greetings only (the editor opens directly in annotate mode).
-  const canAiAnnotate = isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
-
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
   // Read the actual variant text directly.
@@ -321,6 +308,20 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     !(renderContent ?? "").trim() &&
     slotAttachments.length > 0 &&
     slotAttachments.every((a) => a.imageGen !== undefined);
+
+  const canBranch = !isGreeting && !isCoauthorMode;
+  const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
+  // LS-4a: same last-message gate as regenerate (owner: Continue lives on the
+  // LAST AI reply) + the shared prefill capability gate. Coauthor chats are
+  // excluded alongside the other row actions.
+  const canContinue = canRegenerate && canContinueByCapability;
+  const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
+  const canSwitchVariant = (isLast || isPureImageSlot) && !isCoauthorMode;
+  const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
+  // TPE-14: the inverse gate — "prepare for narration" is offered on
+  // greetings only (the editor opens directly in annotate mode).
+  const canAiAnnotate = isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
+
   // TPE-1 (AN-1): narration prefers the selected variant's TTS annotation —
   // it's the content plus inserted expressive tags, authored FOR narration,
   // so it's used verbatim (the tag-preservation wrapper downstream keeps the

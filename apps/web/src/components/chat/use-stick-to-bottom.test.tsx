@@ -39,10 +39,11 @@ globalThis.ResizeObserver = ControlledResizeObserver;
 
 let useStickToBottom: typeof import("./use-stick-to-bottom.js").useStickToBottom;
 let render: typeof import("@testing-library/react").render;
+let act: typeof import("@testing-library/react").act;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 
 beforeAll(async () => {
-  ({ render, fireEvent } = await import("@testing-library/react"));
+  ({ render, fireEvent, act } = await import("@testing-library/react"));
   ({ useStickToBottom } = await import("./use-stick-to-bottom.js"));
 });
 
@@ -57,10 +58,11 @@ afterAll(() => {
 interface HarnessProps {
   metrics: ScrollMetrics;
   resetKey: string;
+  suppressFollow?: boolean;
 }
 
-function Harness({ metrics, resetKey }: HarnessProps) {
-  const { scrollerRef, stableTailRef, pinned, scrollToBottom } = useStickToBottom(resetKey);
+function Harness({ metrics, resetKey, suppressFollow = false }: HarnessProps) {
+  const { scrollerRef, stableTailRef, pinned, scrollToBottom } = useStickToBottom(resetKey, suppressFollow);
   const attachScroller = useCallback((node: HTMLDivElement | null) => {
     if (node) {
       Object.defineProperties(node, {
@@ -181,5 +183,31 @@ describe("useStickToBottom", () => {
     fireEvent.scroll(scroller);
     expect(metrics.scrollTop).toBe(250);
     expect(getByTestId("pinned").textContent).toBe("false");
+  });
+
+  it("IF-4b follow-up: suppressFollow leaves a pinned reader in place and drops the pin when the bottom leaves reach", () => {
+    const metrics: ScrollMetrics = { scrollTop: 0, scrollHeight: 1000, clientHeight: 400 };
+    const { getByTestId, getByText, rerender } = render(
+      <Harness metrics={metrics} resetKey="chat-1:branch-1" suppressFollow />,
+    );
+    expect(metrics.scrollTop).toBe(600);
+    expect(getByTestId("pinned").textContent).toBe("true");
+
+    // Suppressed growth: the position must NOT follow the new bottom. The
+    // notify fires the reconcile outside React's act scope — wrap it so the
+    // pin state settles before the read.
+    metrics.scrollHeight = 1200;
+    act(() => { observerFor("stable-tail").notify(); });
+    expect(metrics.scrollTop).toBe(600);
+    // The bottom is now 800 — out of reach → the pin drops (the "to the
+    // end" button surfaces instead of a yank).
+    expect(getByTestId("pinned").textContent).toBe("false");
+
+    // Unsuspended: the next growth follows the bottom again once re-pinned.
+    rerender(<Harness metrics={metrics} resetKey="chat-1:branch-1" />);
+    fireEvent.click(getByText("bottom"));
+    metrics.scrollHeight = 1400;
+    act(() => { observerFor("stable-tail").notify(); });
+    expect(metrics.scrollTop).toBe(1000);
   });
 });
