@@ -236,7 +236,7 @@ export async function buildImageGenPrompts(
   // resolves any placeholder the model left in place.
   if (assist !== undefined) {
     const instruction = await composeAssistInstruction(family);
-    const refined = (await assist(resolve(instruction).trim(), buildAssistUserPayload(template, contextDigest(character, persona, lastMessage)))).trim();
+    const refined = (await assist(resolve(instruction).trim(), buildAssistUserPayload(template, contextDigest(mode, character, persona, lastMessage)))).trim();
     if (refined === "") {
       throw new ImageGenModeValidationError("LLM assist returned an empty prompt");
     }
@@ -291,23 +291,57 @@ async function resolveContextMessage(
 type ModeCharacter = Awaited<ReturnType<ModeStores["characters"]["getById"]>>;
 type ModePersona = Awaited<ReturnType<ModeStores["personas"]["getById"]>>;
 
-/** The scene facts for the assist call, human-readable — the same sources the
- *  macro context substitutes from (card + persona + last message), rendered
- *  as labeled lines so the LLM can resolve the template's placeholders
- *  against them. Absent pieces simply drop out; nothing is truncated. */
-function contextDigest(character: ModeCharacter, persona: ModePersona, lastMessage: string | null): string {
+/** The scene facts for the assist call, human-readable — rendered as
+ *  labeled lines so the LLM can resolve the template's placeholders against
+ *  them. Absent pieces simply drop out; nothing is truncated.
+ *
+ *  IF-2 (IMAGEGEN_FOLLOWUP_REPORT) — per-mode context isolation. The digest
+ *  is SCOPED by the mode's subject, so the assist model never invents facts
+ *  the mode cannot depict:
+ *   - portrait / character / avatar — appearance only (description);
+ *   - selfie — appearance + the depicted moment;
+ *   - scene-background — the PLACE, not the people: no character block, no
+ *     persona, the message stays (it carries the setting);
+ *   - scene-illustration — both appearances + the moment (the scene shows
+ *     everyone in frame);
+ *   - user-persona — the persona alone (the mode's subject);
+ *   - free — unchanged: the full digest (the raw-prompt mode keeps every
+ *     fact the user's own text may reference).
+ *  personality/scenario ride ONLY the free digest (owner 2026-09-22: the
+ *  moment modes lose defaultScenario; appearance modes never had it). */
+interface DigestPolicy {
+  character: "none" | "appearance" | "full";
+  persona: boolean;
+  moment: boolean;
+}
+
+const DIGEST_POLICIES: Record<ImageGenerationMode, DigestPolicy> = {
+  [IMAGE_GENERATION_MODES.SceneBackground]: { character: "none", persona: false, moment: true },
+  [IMAGE_GENERATION_MODES.Portrait]: { character: "appearance", persona: false, moment: false },
+  [IMAGE_GENERATION_MODES.Character]: { character: "appearance", persona: false, moment: false },
+  [IMAGE_GENERATION_MODES.UserPersona]: { character: "none", persona: true, moment: false },
+  [IMAGE_GENERATION_MODES.SceneIllustration]: { character: "appearance", persona: true, moment: true },
+  [IMAGE_GENERATION_MODES.Free]: { character: "full", persona: true, moment: true },
+  [IMAGE_GENERATION_MODES.Selfie]: { character: "appearance", persona: false, moment: true },
+  [IMAGE_GENERATION_MODES.Avatar]: { character: "appearance", persona: false, moment: false },
+};
+
+function contextDigest(mode: ImageGenerationMode, character: ModeCharacter, persona: ModePersona, lastMessage: string | null): string {
+  const policy = DIGEST_POLICIES[mode];
   const lines: string[] = [];
-  if (character) {
+  if (character && policy.character !== "none") {
     lines.push(`Character — ${character.name}`);
     if (character.description != null && character.description.trim() !== "") lines.push(`Description: ${character.description}`);
-    if (character.personalitySummary != null && character.personalitySummary.trim() !== "") lines.push(`Personality: ${character.personalitySummary}`);
-    if (character.defaultScenario != null && character.defaultScenario.trim() !== "") lines.push(`Scenario: ${character.defaultScenario}`);
+    if (policy.character === "full") {
+      if (character.personalitySummary != null && character.personalitySummary.trim() !== "") lines.push(`Personality: ${character.personalitySummary}`);
+      if (character.defaultScenario != null && character.defaultScenario.trim() !== "") lines.push(`Scenario: ${character.defaultScenario}`);
+    }
   }
-  if (persona) {
+  if (persona && policy.persona) {
     lines.push(`User persona — ${persona.name}`);
     if (persona.description.trim() !== "") lines.push(`Description: ${persona.description}`);
   }
-  if (lastMessage !== null) lines.push(`Message to depict: ${lastMessage}`);
+  if (policy.moment && lastMessage !== null) lines.push(`Message to depict: ${lastMessage}`);
   return lines.join("\n");
 }
 

@@ -2768,13 +2768,96 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     // marker of the current assist asset (its final-line output contract),
     // not a content contract.
     expect(call.system).toContain("Output only the finished image prompt");
+    // IF-2 mode isolation: the portrait digest is APPEARANCE-ONLY — the
+    // description rides, the depicted message and the persona do not.
     expect(call.user).toContain("Seraphine");
     expect(call.user).toContain("silver-haired tavern keeper");
-    expect(call.user).toContain("The tavern door creaks open.");
+    expect(call.user).not.toContain("The tavern door creaks open.");
+    expect(call.user).not.toContain("User persona — Alex");
     expect(call.user).toContain("{{description}}");
     // The refinement is the wire prompt, with its residual macro resolved.
     expect(scene.sent[0]).toContain("A windswept portrait of Seraphine, rain on silver hair.");
     expect(scene.sent[0]).not.toContain("{{");
+  });
+
+  test("IF-2: per-mode assist context isolation matrix", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    assist.setExecuteBehavior({ text: "resolved" });
+    const sent: string[] = [];
+    const base = await makeApp(promptCapturingTransport(sent), assist.deps);
+    // A FULL card (appearance + personality + scenario) + a described persona
+    // + one message — every digest line is distinguishable per mode.
+    const char = await base.stores.characters.create({
+      name: "Seraphine",
+      description: "silver-haired tavern keeper",
+      personalitySummary: "warm and guarded",
+      defaultScenario: "a storm pins the travelers at the tavern",
+    });
+    const persona = await base.stores.personas.create({ name: "Alex", description: "wandering bard" });
+    const chat = await base.stores.chats.createChat({ characterId: char.id, personaId: persona.id, title: "matrix", promptPresetId: null });
+    await base.stores.messages.addMessage({
+      chatId: chat.id,
+      branchId: chat.activeBranchId as string,
+      role: "user",
+      authorType: "user",
+      content: "The tavern door creaks open.",
+    });
+    const id = await seedProfile(base.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+
+    const cases: Array<{
+      mode: string;
+      appearance?: boolean;
+      personaBlock?: boolean;
+      message?: boolean;
+      personality?: boolean;
+      scenario?: boolean;
+    }> = [
+      { mode: "portrait", appearance: true },
+      { mode: "character", appearance: true },
+      { mode: "avatar", appearance: true },
+      { mode: "selfie", appearance: true, message: true },
+      { mode: "scene-background", message: true },
+      { mode: "user-persona", personaBlock: true },
+      { mode: "scene-illustration", appearance: true, personaBlock: true, message: true },
+      { mode: "free", appearance: true, personaBlock: true, message: true, personality: true, scenario: true },
+    ];
+
+    for (const expectation of cases) {
+      const callsBefore = assist.calls.length;
+      const res = await generate(base.app, chat.id, {
+        profileId: id,
+        mode: expectation.mode,
+        ...(expectation.mode === "free" ? { prompt: "a quiet corner of the tavern" } : {}),
+      });
+      expect(res.status).toBe(200);
+      // FREE never reaches the assist path (the raw prompt is finished
+      // text, not a scene to build) — pin that no quiet call fires for it.
+      if (expectation.mode === "free") {
+        expect(assist.calls.length).toBe(callsBefore);
+        continue;
+      }
+      const digest = assist.calls[callsBefore]!.user;
+      const want = (flag: boolean | undefined, needle: string) => {
+        if (flag) expect(digest).toContain(needle);
+        else expect(digest).not.toContain(needle);
+      };
+      want(expectation.appearance, "silver-haired tavern keeper");
+      want(expectation.personaBlock, "User persona — Alex");
+      want(expectation.message, "The tavern door creaks open.");
+      want(expectation.personality, "warm and guarded");
+      want(expectation.scenario, "a storm pins the travelers");
+      // scene-background and user-persona drop the whole character block —
+      // not even the name rides.
+      if (expectation.mode === "scene-background" || expectation.mode === "user-persona") {
+        expect(digest).not.toContain("Character — Seraphine");
+      }
+    }
   });
 
   test("MR-13 anchored message: the button's message is the depicted moment, not the branch tail", async () => {
