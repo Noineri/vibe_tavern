@@ -20,7 +20,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
-const { render, cleanup, fireEvent } = await import("@testing-library/react");
+const { render, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
 
 const NOOP = () => {};
 const STABLE_CONTROLLER = {
@@ -289,6 +289,83 @@ describe("MessageBlock — pure image slot (IG-CF6)", () => {
     const view = render(<MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast prevRole={null} />);
     // VariantControls' counter renders inside the slot action row.
     expect(view.getByText("1/2")).toBeTruthy();
+  });
+
+  test("IF-4a: the slot image row rides the variant-slide wrapper and swaps assets with the variant (IG-CF10 optimistic set)", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    const first = slotAttachment();
+    const second = slotAttachment({ id: "att-2", assetId: "asset-2", name: "imagegen-asset-2" });
+    const variants = [
+      { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true, attachmentsJson: JSON.stringify([first]) },
+      { variantIndex: 1, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false, attachmentsJson: JSON.stringify([second]) },
+    ];
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([makeSlotMessage("m1", [first], variants)]));
+    chatStore.useChatStore.getState().setActiveChatId(CHAT);
+
+    const view = render(<MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast prevRole={null} />);
+    const img = view.getByTestId("image-block-img") as HTMLImageElement;
+    expect(img.getAttribute("src")).toContain("asset-1");
+    // The text body's slide idiom wrapper (relative overflow-hidden clipping
+    // box) owns the slot row on the assistant path (framer-motion is mocked
+    // to a plain div in this harness — the wrapper is the wiring pin).
+    expect(img.closest(".overflow-hidden")).toBeTruthy();
+
+    // The swipe: store-driven variant select swaps the optimistic
+    // attachments set (IG-CF10) — the row re-renders with the other asset.
+    // R10: park on the SWAPPED state (waitFor re-queries until the src
+    // flips), never on the first frame that still shows the old asset.
+    snapshotStore.useSnapshotStore.getState().selectVariant("m1", 1, 1);
+    await waitFor(() => {
+      const swapped = view.getByTestId("image-block-img") as HTMLImageElement;
+      expect(swapped.getAttribute("src")).toContain("asset-2");
+    });
+  });
+
+  test("IF-4b: slot arrows stay live while the message is busy (swipeWhileBusy path); text arrows keep the busy lock", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    const slotVariants = [
+      { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true },
+      { variantIndex: 1, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false },
+    ];
+    const textVariants = [
+      { variantIndex: 0, content: "First take.", reasoning: null, reasoningDurationMs: null, isSelected: true },
+      { variantIndex: 1, content: "Second take.", reasoning: null, reasoningDurationMs: null, isSelected: false },
+    ];
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([
+      makeSlotMessage("m-slot", [slotAttachment()], slotVariants),
+      { ...makeAssistantMessage("m-text", "Hello there."), variants: textVariants, selectedVariantIndex: 0 } as unknown as AppMessage,
+    ]));
+    chatStore.useChatStore.getState().setActiveChatId(CHAT);
+    // A busy message = an in-flight action holds its id (isBusy in MessageBlock).
+    chatStore.useChatStore.setState({ messageActionId: "m-slot" });
+
+    // Slot: arrows enabled while busy. The counter text sits in its OWN
+    // inner span — the arrow pair lives on the VariantControls root span one
+    // level up. The action row may mount the controls in more than one
+    // responsive instance — every ARMED instance must show the same state.
+    const armedArrowStates = (view: ReturnType<typeof render>): boolean[][] =>
+      view.getAllByText("1/2")
+        .map((counter) => {
+          const root = counter.closest("span")!.parentElement!;
+          return [...root.querySelectorAll("button")].map((button) => button.disabled);
+        })
+        .filter((arrows) => arrows.length === 2);
+    const slotView = render(<MessageBlock messageId="m-slot" index={0} isFirstAssistant={false} isLast prevRole={null} />);
+    const slotStates = armedArrowStates(slotView);
+    expect(slotStates.length).toBeGreaterThan(0);
+    // Selected variant 0: prev is POSITIONALLY off, but next is live while
+    // busy — the ungate. (Before IF-4b every state here was [true, true].)
+    for (const arrows of slotStates) expect(arrows).toEqual([true, false]);
+
+    chatStore.useChatStore.setState({ messageActionId: "m-text" });
+    // dom-env renders into a SHARED container within a test — unmount the
+    // slot view BEFORE querying the text view, or the slot's live-arrow row
+    // pollutes the text assertions.
+    slotView.unmount();
+    const textView = render(<MessageBlock messageId="m-text" index={1} isFirstAssistant={false} isLast prevRole={null} />);
+    const textStates = armedArrowStates(textView);
+    expect(textStates.length).toBeGreaterThan(0);
+    for (const arrows of textStates) expect(arrows).toEqual([true, true]);
   });
 
   test("text message control: text actions + token meta DO render (the gate is slot-shaped, not global)", async () => {

@@ -375,6 +375,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       controlsRef={variantControlsRef}
       hidden={!!variantControlsOverlay}
       isBusy={isBusy}
+      swipeWhileBusy={isPureImageSlot}
       messageId={msg.id}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
@@ -388,6 +389,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     <VariantControls
       mobile
       isBusy={isBusy}
+      swipeWhileBusy={isPureImageSlot}
       messageId={msg.id}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
@@ -482,7 +484,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           </AnimatePresence>
         </div>
       )}
-      <AttachmentGrid attachments={msg.attachments} messageId={msg.id} />
+      <AttachmentGrid attachments={msg.attachments} messageId={msg.id} variantIndex={selectedVariantIndex} />
       {isGenerating && <GenerationDots label={t("generating_response")} />}
     </div>
   );
