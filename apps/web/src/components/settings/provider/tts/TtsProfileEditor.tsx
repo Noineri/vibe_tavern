@@ -15,9 +15,10 @@ import { GLUE_GAP_SECONDS, GlueVoiceSamplesError, glueDecoder, glueVoiceSamples 
 import { useTtsPreview } from "./use-tts-preview.js";
 import { TtsBindingFields } from "./TtsBindingFields.js";
 import { configString, formDraftConfig, updateConfigField } from "./tts-form-helpers.js";
-import { backendForVariant, ttsPresetIdOf, ttsUiSpecFor, ttsUiVariantOf, type TtsTuningFieldSpec, type TtsUiVariant } from "./tts-backend-ui.js";
+import { backendForVariant, ttsPresetIdOf, ttsProviderSegmentOf, ttsUiSpecFor, ttsUiVariantOf, type TtsTuningFieldSpec, type TtsUiVariant } from "./tts-backend-ui.js";
 import { TtsProviderForm } from "./TtsProviderForm.js";
 import { TtsBaseCard } from "./TtsBaseCard.js";
+import { TtsLocalConnectionChip } from "./TtsLocalConnectionChip.js";
 import { TtsModelPicker } from "./TtsModelPicker.js";
 import { TTS_PRESETS } from "../../../../lib/tts/tts-presets.js";
 import { KOKORO_VOICES, kokoroVoiceLabel } from "../../../../lib/tts/kokoro-voices.js";
@@ -615,24 +616,33 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
     tts.editingId !== null ? (tts.profiles.find((p) => p.id === tts.editingId) ?? null) : null;
   const isView = tts.headerMode === "view" && savedProfile !== null;
   const isEdit = tts.headerMode === "edit";
+  // LLM parity (owner 2026-09-22): the local-connection chip renders
+  // OUTSIDE the provider card — between the card and the level-2 sections in
+  // view mode, right below the form in edit mode — for the LOCAL segment's
+  // openai-compatible server variant only.
+  const isLocalServerBackend =
+    form !== undefined && ttsProviderSegmentOf(form.backend, form.config) === "local" && form.backend === TTS_BACKEND.OpenAiCompatible;
 
   return (
     <div data-testid="tts-profile-editor" className="flex flex-col gap-4">
       {isEdit ? (
-        <TtsProviderForm
-          form={form}
-          editingId={form.id}
-          ttsProfiles={tts.profiles}
-          updateForm={handleUpdateForm}
-          applyPreset={handleApplyPreset}
-          testOk={null}
-          testing={false}
-          testingChat={false}
-          chatResult={null}
-          onTest={() => {}}
-          onTestChat={() => {}}
-          tts={tts}
-        />
+        <>
+          <TtsProviderForm
+            form={form}
+            editingId={form.id}
+            ttsProfiles={tts.profiles}
+            updateForm={handleUpdateForm}
+            applyPreset={handleApplyPreset}
+            testOk={null}
+            testing={false}
+            testingChat={false}
+            chatResult={null}
+            onTest={() => {}}
+            onTestChat={() => {}}
+            tts={tts}
+          />
+          {isLocalServerBackend && <TtsLocalConnectionChip form={form} />}
+        </>
       ) : savedProfile !== null ? (
         <>
           <TtsBaseCard
@@ -641,6 +651,7 @@ export function TtsProfileEditor({ tts }: { tts: TtsHook }) {
             onEdit={tts.startEdit}
             onSetDefault={() => void tts.setDefault(savedProfile.id)}
           />
+          {isLocalServerBackend && <TtsLocalConnectionChip form={form} />}
           {/* View mode (LLM headerMode mechanism): compact card on top,
               config sections always visible below — the MODEL picker sits
               first (owner rule: voices are model-dependent, so the model

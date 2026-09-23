@@ -656,9 +656,13 @@ describe('SttProfileEditor — whisper.cpp own-wire local backend (SPE-9)', () =
     const stt = whisperCppStt('view');
     const view = render(React.createElement(SttProfileEditor, { stt: stt as never }));
     await waitFor(() => expect(view.getByTestId('stt-whispercpp-server-model-hint')).toBeTruthy());
-    // No model picker and no fetch — the model is bound at server start.
+    // No model picker — the model is bound at server start. The ONE
+    // draft-models call is the OUTSIDE-card connection chip's honest ping
+    // (IG-CF12e; whisper.cpp rides the SPE-7 backend-probe fallback), not a
+    // picker fetch — the chip itself is present below the base card.
     expect(view.queryByTestId('stt-field-model')).toBeNull();
-    expect(listSttDraftModelsMock).not.toHaveBeenCalled();
+    expect(view.getByTestId('stt-local-status')).toBeTruthy();
+    expect(listSttDraftModelsMock).toHaveBeenCalledTimes(1);
     // The server accepts a per-request `language` multipart field — the
     // hint stays.
     expect(view.getByTestId('stt-field-language')).toBeTruthy();

@@ -234,12 +234,17 @@ function ModelPicker({
       <div className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1">
         {t("model_label")}
       </div>
-      <div className="flex items-end gap-3">
-        <div className="min-w-0 flex-1">
-          <label className="mb-[6px] block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3">
-            {t("selected_model_label")}
-          </label>
-          <div className="relative">
+      <div className="min-w-0 flex-1">
+        <label className="mb-[6px] block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3">
+          {t("selected_model_label")}
+        </label>
+        {/* The refresh button rides the DROPDOWN's row (not a sibling of the
+            whole field column): the custom/detected hints render below the
+            row, so their appearance can no longer drop the button to a
+            different height (owner 2026-09-22; same fix in the LLM/STT/TTS
+            model pickers). */}
+        <div className="flex items-end gap-3">
+          <div className="relative min-w-0 flex-1">
             <Popover.Root open={open} onOpenChange={setOpen}>
               <Popover.Trigger asChild>
                 <button
@@ -294,59 +299,59 @@ function ModelPicker({
                 </Popover.Content>
               </Popover.Portal>
             </Popover.Root>
-            {!selectedModel && value && (
-              <div className="mt-2 font-ui text-[12px] font-medium text-accent">{t("custom_model", { name: value })}</div>
-            )}
-            {/* «Detected: …» readout (CG-B1, the Matrix idiom): which
-                workflow template the adapter auto-detects for the picked
-                model — loader-folder membership, the adapter's ground
-                truth. A selected model without a template marker (cloud
-                dialects, custom slugs) renders nothing. */}
-            {selectedModel?.template && (
-              <div
-                data-testid="image-gen-model-detected"
-                className="mt-2 font-ui text-[12px] font-medium text-accent"
-              >
-                {t("image_gen_detected_template", {
-                  template: templateDisplayLabel(selectedModel.template, t),
-                })}
-              </div>
-            )}
           </div>
+          {/** IG-16 clone rule: the refresh button is the ProviderModelSelector
+           *  picker-row canon VERBATIM (the `provider-models-refresh` shape —
+           *  Icons.Regen, py-[6px] matching the trigger, mobile icon-only 34px,
+           *  genp dots while fetching). The first cut had cloned the wrong
+           *  sibling (the local-status chip's mini button, line 109) — caught by
+           *  the owner 2026-09-16. */}
+          <button
+            type="button"
+            data-testid="image-gen-models-refresh"
+            onClick={() => onRefresh()}
+            disabled={fetching}
+            className={cn(
+              "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
+              // Mobile stays the icon-only 34px shape but must match the closed
+              // dropdown's height: 2px borders + 2×6px py + 13px×1.5 line box
+              // (Tailwind preflight html line-height) = 33.5px. The row is
+              // items-end, so a shorter button would leave the row top edges
+              // misaligned (MOBILE_UI_DEFECTS_REPORT step 5).
+              isMobile ? "flex w-[34px] min-h-[33.5px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2",
+            )}
+            title={t("refresh_models")}
+          >
+            {fetching ? (
+              <span className="ml-[3px] inline-flex items-center gap-[3px] align-middle">
+                <span className="h-1 w-1 animate-genp rounded-full bg-accent" />
+                <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.18s]" />
+                <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.36s]" />
+              </span>
+            ) : (
+              <Icons.Regen />
+            )}
+            {!isMobile && <> {t("refresh_models")}</>}
+          </button>
         </div>
-        {/** IG-16 clone rule: the refresh button is the ProviderModelSelector
-         *  picker-row canon VERBATIM (the `provider-models-refresh` shape —
-         *  Icons.Regen, py-[6px] matching the trigger, mobile icon-only 34px,
-         *  genp dots while fetching). The first cut had cloned the wrong
-         *  sibling (the local-status chip's mini button, line 109) — caught by
-         *  the owner 2026-09-16. */}
-        <button
-          type="button"
-          data-testid="image-gen-models-refresh"
-          onClick={() => onRefresh()}
-          disabled={fetching}
-          className={cn(
-            "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
-            // Mobile stays the icon-only 34px shape but must match the closed
-            // dropdown's height: 2px borders + 2×6px py + 13px×1.5 line box
-            // (Tailwind preflight html line-height) = 33.5px. The row is
-            // items-end, so a shorter button would leave the row top edges
-            // misaligned (MOBILE_UI_DEFECTS_REPORT step 5).
-            isMobile ? "flex w-[34px] min-h-[33.5px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2",
-          )}
-          title={t("refresh_models")}
-        >
-          {fetching ? (
-            <span className="ml-[3px] inline-flex items-center gap-[3px] align-middle">
-              <span className="h-1 w-1 animate-genp rounded-full bg-accent" />
-              <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.18s]" />
-              <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.36s]" />
-            </span>
-          ) : (
-            <Icons.Regen />
-          )}
-          {!isMobile && <> {t("refresh_models")}</>}
-        </button>
+        {!selectedModel && value && (
+          <div className="mt-2 font-ui text-[12px] font-medium text-accent">{t("custom_model", { name: value })}</div>
+        )}
+        {/* «Detected: …» readout (CG-B1, the Matrix idiom): which
+            workflow template the adapter auto-detects for the picked
+            model — loader-folder membership, the adapter's ground
+            truth. A selected model without a template marker (cloud
+            dialects, custom slugs) renders nothing. */}
+        {selectedModel?.template && (
+          <div
+            data-testid="image-gen-model-detected"
+            className="mt-2 font-ui text-[12px] font-medium text-accent"
+          >
+            {t("image_gen_detected_template", {
+              template: templateDisplayLabel(selectedModel.template, t),
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

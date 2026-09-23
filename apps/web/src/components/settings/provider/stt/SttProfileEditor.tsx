@@ -5,7 +5,8 @@ import { listSttDraftModels, type SttModelListEntry } from "../../../../api/stt-
 import { SttProviderForm } from "./SttProviderForm.js";
 import { SttRecognitionSection } from "./SttRecognitionSection.js";
 import { SttBaseCard } from "./SttBaseCard.js";
-import { configString, formDraftConfig, updateConfigField } from "./stt-form-helpers.js";
+import { SttLocalConnectionChip } from "./SttLocalConnectionChip.js";
+import { configString, formDraftConfig, sttProviderSegmentOf, updateConfigField } from "./stt-form-helpers.js";
 import type { SttProfileForm, useSttProfiles } from "./use-stt-profiles.js";
 
 type SttHook = ReturnType<typeof useSttProfiles>;
@@ -112,6 +113,13 @@ export function SttProfileEditor({ stt }: { stt: SttHook }) {
 
   const form = stt.form;
   const isEdit = stt.headerMode === "edit";
+  // LLM parity (owner 2026-09-22): the local-connection chip renders
+  // OUTSIDE the provider card — between the card and the level-2 sections
+  // in view mode, right below the form in edit mode — for LOCAL-segment
+  // server backends only (cloud compat rows talk to fixed endpoints).
+  const isLocalServerBackend =
+    sttProviderSegmentOf(form.backend, form.config) === "local" &&
+    (form.backend === STT_BACKENDS.OpenAiCompat || form.backend === STT_BACKENDS.WhisperCpp);
 
   function handleUpdateForm<K extends keyof SttProfileForm>(k: K, v: SttProfileForm[K]): void {
     // Generic computed-key object can't be proven assignable — scoped cast.
@@ -125,13 +133,16 @@ export function SttProfileEditor({ stt }: { stt: SttHook }) {
   return (
     <div data-testid="stt-profile-editor" className="flex flex-col gap-4">
       {isEdit ? (
-        <SttProviderForm
-          form={form}
-          editingId={form.id}
-          sttProfiles={stt.profiles}
-          updateForm={handleUpdateForm}
-          stt={stt}
-        />
+        <>
+          <SttProviderForm
+            form={form}
+            editingId={form.id}
+            sttProfiles={stt.profiles}
+            updateForm={handleUpdateForm}
+            stt={stt}
+          />
+          {isLocalServerBackend && <SttLocalConnectionChip form={form} />}
+        </>
       ) : savedProfile !== null ? (
         <>
           <SttBaseCard
@@ -140,6 +151,7 @@ export function SttProfileEditor({ stt }: { stt: SttHook }) {
             onEdit={stt.startEdit}
             onSetDefault={() => void stt.setDefault(savedProfile.id)}
           />
+          {isLocalServerBackend && <SttLocalConnectionChip form={form} />}
           {/* View mode: the LEVEL-2 recognition settings below the base card
               (P8 governing rule) — model, language, emotion. */}
           <SttRecognitionSection

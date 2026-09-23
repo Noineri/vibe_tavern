@@ -804,11 +804,14 @@ export function ImagePromptTemplatesPane({
     return (
       <section key={rowId} data-testid={`image-prompt-template-row-${rowId}`} className="flex flex-col rounded-md border border-border">
         <div className="flex min-w-0 items-center gap-1.5 px-3 py-2.5">
+          {/* The toggle bleeds over the wrapper's padding (-ml/-my restores the
+              same text position via pl/py), so the ENTIRE row surface — not a
+              narrow content-height band — is the disclosure's hit area. */}
           <button
             type="button"
             onClick={() => toggleRow(rowId)}
             disabled={saving}
-            className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+            className="-ml-3 -my-2.5 flex min-w-0 flex-1 items-center gap-1.5 py-2.5 pl-3 text-left"
           >
             <span className={cn("min-w-0 flex-shrink font-ui text-[calc(var(--ui-fs)-2px)] font-medium", isCustomized ? "text-accent-t" : "text-t2")}>{label}</span>
             {isTemplate && (

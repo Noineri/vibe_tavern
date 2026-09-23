@@ -32,7 +32,10 @@ const repoRoot = join(import.meta.dir, "..");
  */
 export const BUDGETS = {
 	/** `as never` casts in test files (TS-7b class; blanket rewrite wontfix). */
-	asNever: 1243,
+	// 1244 (2026-09-22): +1 — one justified hostile-input cast in the
+	// image-prompt-profile store boundary test (IF-1a: bogus payload cast IN
+	// to prove the store filters it). Deliberate growth, not cleanup debt.
+	asNever: 1244,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	screen: 205,
 	/** `innerHTML = ""` surgeries (TtsProfileEditor legacy block). */

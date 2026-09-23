@@ -113,26 +113,6 @@ mock.module("../../../../i18n/context.js", () => ({
   }),
 }));
 
-// Docker probe (D8): deterministic states per test — default mirrors the
-// honest "not found" shape so no test ever depends on a real fetch.
-let dockerStatusNext: { available: boolean; version: string | null } | Error = { available: false, version: null };
-// IG-CF12d: the chip's honest ping — deterministic per test (default: an
-// empty successful catalog).
-let listModelsNext: unknown[] | Error = [];
-const listModelsMock = mock(async () => {
-  if (listModelsNext instanceof Error) throw listModelsNext;
-  return listModelsNext;
-});
-const realTtsApi = await import("../../../../api/tts-api.js");
-mock.module("../../../../api/tts-api.js", () => ({
-  ...realTtsApi,
-  fetchLocalDockerStatus: async () => {
-    if (dockerStatusNext instanceof Error) throw dockerStatusNext;
-    return dockerStatusNext;
-  },
-  listTtsDraftModels: listModelsMock,
-}));
-
 const { TtsLocalServerPanel } = await import("./TtsLocalServerPanel.js");
 
 async function openHelp(view: { getByTestId: (id: string) => ReturnType<ReturnType<typeof render>["getByTestId"]> }) {
@@ -147,9 +127,6 @@ beforeEach(() => {
   clipboardResult = { ok: true };
   (ttsHookBase.form as unknown as { config: Record<string, unknown> }).config = {};
   ttsHookBase.form.backend = TTS_BACKEND.OpenAiCompatible;
-  dockerStatusNext = { available: false, version: null };
-  listModelsNext = [];
-  listModelsMock.mockClear();
   cleanup();
 });
 
@@ -158,92 +135,23 @@ afterEach(() => {
   cleanup();
 });
 
-describe("TtsLocalServerPanel", () => {
-  test("local status chip (IG-CF12d): ping ONLINE when the endpoint answers; docker version rides the detail line", async () => {
-    dockerStatusNext = { available: true, version: "27.3.1" };
-    (ttsHookBase.form as unknown as { config: Record<string, unknown> }).config = { endpoint: "http://127.0.0.1:8880/v1" };
+describe("TtsLocalServerPanel — the status chip moved out (IG-CF12e)", () => {
+  test("the panel no longer renders the chip — it lives outside the card now", async () => {
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
-    // Mount probes (ping + docker) settle on later microtasks — drain
-    // inside act before reading state (CI flake race, run-3 lesson).
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    expect(listModelsMock).toHaveBeenCalledTimes(1);
-    const status = view.getByTestId("tts-docker-status");
-    expect(status.className).toContain("border-success/30");
-    // The docker line (WITH version — owner: «вернуть стоит») lives in the
-    // chip's detail slot; the i18n mock renders `key:version`.
-    expect(status.textContent).toContain("tts_docker_status_ok:27.3.1");
-    expect(status.textContent).toContain("http://127.0.0.1:8880/v1");
-    // The chip now carries the ping re-check button (docker itself stays
-    // D8 one-shot — the button re-pings the ENDPOINT, not docker).
-    expect(status.querySelector("button")).toBeTruthy();
+    expect(view.queryByTestId("tts-docker-status")).toBeNull();
     cleanup();
   });
 
-  test("local status chip (IG-CF12d): ping OFFLINE when the endpoint is dead — docker green must NOT paint the chip green", async () => {
-    dockerStatusNext = { available: true, version: "27.3.1" };
-    listModelsNext = new Error("TTS draft model list failed: 502");
-    (ttsHookBase.form as unknown as { config: Record<string, unknown> }).config = { endpoint: "http://127.0.0.1:8880/v1" };
-    const tts = makeTtsHook({});
-    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    const status = view.getByTestId("tts-docker-status");
-    expect(status.className).toContain("border-danger/30");
-    // The antipattern fix: docker installed + server down = red chip.
-    expect(status.textContent).toContain("tts_docker_status_ok:27.3.1");
-    cleanup();
-  });
-
-  test("local status chip (IG-CF12d): empty endpoint → UNKNOWN and no ping fires", async () => {
-    const tts = makeTtsHook({});
-    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    expect(listModelsMock).not.toHaveBeenCalled();
-    const status = view.getByTestId("tts-docker-status");
-    expect(status.className).toContain("border-border2");
-    expect(view.getByTestId("tts-discover-btn")).toBeTruthy();
-    cleanup();
-  });
-
-  test("local status chip (IG-CF12d): the re-check button re-pings the endpoint; docker transport failure keeps its own detail", async () => {
-    dockerStatusNext = new Error("route unreachable");
-    (ttsHookBase.form as unknown as { config: Record<string, unknown> }).config = { endpoint: "http://127.0.0.1:8880/v1" };
-    const tts = makeTtsHook({});
-    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    expect(listModelsMock).toHaveBeenCalledTimes(1);
-    const status = view.getByTestId("tts-docker-status");
-    // Docker route down → its detail says unknown; the PING stays honest.
-    expect(status.textContent).toContain("tts_docker_status_unknown");
-    await act(async () => {
-      status.querySelector("button")!.click();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    expect(listModelsMock).toHaveBeenCalledTimes(2);
-    cleanup();
-    dockerStatusNext = { available: false, version: null };
-  });
   test("renders null for non-openai backend (kokoro)", async () => {
     const tts = makeTtsHook({ form: { ...ttsHookBase.form, backend: TTS_BACKEND.Kokoro } });
     const panelProps = { tts, form: tts.form };
     const { container } = render(React.createElement(TtsLocalServerPanel, panelProps));
     expect(container.innerHTML).toBe("");
-    // The panel renders null but useDockerStatus still mounts its probe;
-    // without a settle drain its microtask setState lands on the mounted
-    // component outside act once the sync body ends (act warning).
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
   });
+});
 
+describe("TtsLocalServerPanel", () => {
   test("setup help accordion: closed by default, reference steps hidden", async () => {
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
@@ -413,7 +321,8 @@ describe("TtsLocalServerPanel", () => {
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
     expect(view.queryByTestId("tts-help-step-choose")).toBeNull();
     expect(view.getByTestId("tts-discover-btn")).toBeTruthy();
-    expect(view.getByTestId("tts-docker-status")).toBeTruthy();
+    // IG-CF12e: the chip moved out of the panel (TtsLocalConnectionChip).
+    expect(view.queryByTestId("tts-docker-status")).toBeNull();
     cleanup();
   });
 

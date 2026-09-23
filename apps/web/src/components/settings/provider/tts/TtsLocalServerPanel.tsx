@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";
-import { listTtsDraftModels } from "../../../../api/tts-api.js";
 import { copyText } from "../../../../lib/clipboard.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls, codeQuoteCls } from "../../../../lib/field-tokens.js";
 import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
 import { Icons } from "../../../shared/icons.js";
-import { LocalConnectionStatusChip, type LocalConnectionStatus } from "../../../shared/LocalConnectionStatus.js";
 import {
   TTS_SERVER_SETUP_GUIDES,
   detectTtsOsKind,
@@ -19,9 +17,8 @@ import type { TtsHelpStep, TtsOsKind } from "../../../../lib/tts/quickstarts.js"
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { useGuideChecklist } from "../../../../hooks/use-guide-checklist.js";
 import { GuideCommandRow } from "../GuideCommandRow.js";
-import { useDockerStatus } from "./use-docker-status.js";
 import { useTtsDiscovery } from "./use-tts-discovery.js";
-import { configString, formDraftConfig, updateConfigField } from "./tts-form-helpers.js";
+import { configString, updateConfigField } from "./tts-form-helpers.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
@@ -34,7 +31,6 @@ function kindLabel(kind: string): string {
 export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm">; form: NonNullable<TtsHook["form"]> }) {
   const { t, tDynamic } = useT();
   const discovery = useTtsDiscovery();
-  const docker = useDockerStatus();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -54,32 +50,12 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
 
   const currentEndpoint = configString(form.config, "endpoint");
 
-  // IG-CF12d (owner: the ping must be honest — the green state must mean
-  // the SERVER answers, not merely that docker exists). The honest signal is
-  // the draft-models route — the same call the Test-connection button makes
-  // (the model list IS the reachability proof, STT's SPE-7 wording): one
-  // mount probe + the chip's re-check button. Deliberately NOT keyed on the
-  // form (no per-keystroke pings — D8's no-polling spirit); an empty
-  // endpoint draws no conclusion (unknown).
-  const [pingStatus, setPingStatus] = useState<LocalConnectionStatus>("unknown");
-  const pingServer = useCallback(async () => {
-    if (configString(form.config, "endpoint").trim() === "") {
-      setPingStatus("unknown");
-      return;
-    }
-    setPingStatus("checking");
-    try {
-      await listTtsDraftModels({ backend: form.backend, config: formDraftConfig(form), profileId: form.id ?? undefined });
-      setPingStatus("online");
-    } catch {
-      setPingStatus("offline");
-    }
-  }, [form]);
-  useEffect(() => {
-    void pingServer();
-    // Mount-only one-shot: the re-check button re-fires with the CURRENT
-    // form; edits do not auto-re-ping.
-  }, []);
+  // IG-CF12c/12e (owner 2026-09-22): the local-connection chip (with its
+  // honest endpoint ping + the docker detail line) MOVED OUT of the card —
+  // it now renders in TtsProfileEditor between the card and the level-2
+  // sections (TtsLocalConnectionChip), in both header modes. The panel
+  // keeps only what belongs to first-connection setup: the quickstart
+  // preset cards + the setup-help accordion.
 
   const worstCode = discovery.notFoundCodes !== null ? worstDiagnostic(discovery.notFoundCodes) : null;
   const diagKey = worstCode !== null ? diagnosticI18nKey(worstCode) : null;
@@ -101,31 +77,6 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
 
   return (
     <div data-testid="tts-local-server-panel" className="flex flex-col gap-4">
-      {/* Canonical local-connection chip (IG-CF12c/12d). Status = the honest
-          endpoint ping above; the docker probe (D8, one-shot on mount, no
-          retries) moved into the chip's detail line — owner 2026-09-16:
-          "worth restoring" (the version text survives there; docker on Windows
-          is genuinely hard to install, so the non-docker hint stays useful).
-          The cards below always show the non-docker variant too, so neither
-          docker state is a dead end. */}
-      <LocalConnectionStatusChip
-        testId="tts-docker-status"
-        status={pingStatus}
-        endpoint={currentEndpoint}
-        onRefresh={() => void pingServer()}
-        refreshing={pingStatus === "checking"}
-        refreshLabel={t("test_connection")}
-        detail={
-          docker.error !== null
-            ? t("tts_docker_status_unknown")
-            : docker.status === null
-              ? t("tts_docker_status_probing")
-              : docker.status.available
-                ? t("tts_docker_status_ok", { version: docker.status.version ?? "" })
-                : t("tts_docker_status_missing")
-        }
-      />
-
       {/* Setup help accordion — disclosure block forked verbatim from
           ProviderSamplerPanel.tsx (advOpen + caret rotate-90 chrome). */}
       <div className="overflow-hidden rounded-lg border border-border2" data-testid="tts-setup-help-accordion">
