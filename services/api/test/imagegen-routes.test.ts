@@ -2820,7 +2820,7 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     }> = [
       { mode: "portrait", appearance: true },
       { mode: "character", appearance: true },
-      { mode: "avatar", appearance: true },
+      { mode: "avatar", appearance: true, message: true },
       { mode: "selfie", appearance: true, message: true },
       { mode: "scene-background", message: true },
       { mode: "user-persona", personaBlock: true },

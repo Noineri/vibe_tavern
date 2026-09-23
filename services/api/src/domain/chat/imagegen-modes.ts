@@ -15,9 +15,12 @@
  *
  * Context per mode (design doc):
  *   portrait / character     → character card fields ({{char}}, {{description}})
- *   selfie / avatar          → character card fields too (IPT Wave 0 — the
+ *   selfie                    → character card fields too (IPT Wave 0 — the
  *                             templates pick what they need; no per-mode
  *                             branch exists in the builder)
+ *   avatar (Reaction, IF-3)   → card fields + the anchored moment (the
+ *                             reaction depicts the character AT the
+ *                             message; {{lastChatMessage}} rides the canon)
  *   user-persona             → the chat's persona ({{user}}, {{persona}})
  *   scene-background / scene-illustration → the last chat message
  *   free                     → the caller-provided raw prompt (required)
@@ -298,8 +301,10 @@ type ModePersona = Awaited<ReturnType<ModeStores["personas"]["getById"]>>;
  *  IF-2 (IMAGEGEN_FOLLOWUP_REPORT) — per-mode context isolation. The digest
  *  is SCOPED by the mode's subject, so the assist model never invents facts
  *  the mode cannot depict:
- *   - portrait / character / avatar — appearance only (description);
+ *   - portrait / character — appearance only (description);
  *   - selfie — appearance + the depicted moment;
+ *   - avatar (Reaction, IF-3) — appearance + the depicted moment (the
+ *     reaction is read off the anchored message, like selfie);
  *   - scene-background — the PLACE, not the people: no character block, no
  *     persona, the message stays (it carries the setting);
  *   - scene-illustration — both appearances + the moment (the scene shows
@@ -323,7 +328,7 @@ const DIGEST_POLICIES: Record<ImageGenerationMode, DigestPolicy> = {
   [IMAGE_GENERATION_MODES.SceneIllustration]: { character: "appearance", persona: true, moment: true },
   [IMAGE_GENERATION_MODES.Free]: { character: "full", persona: true, moment: true },
   [IMAGE_GENERATION_MODES.Selfie]: { character: "appearance", persona: false, moment: true },
-  [IMAGE_GENERATION_MODES.Avatar]: { character: "appearance", persona: false, moment: false },
+  [IMAGE_GENERATION_MODES.Avatar]: { character: "appearance", persona: false, moment: true },
 };
 
 function contextDigest(mode: ImageGenerationMode, character: ModeCharacter, persona: ModePersona, lastMessage: string | null): string {

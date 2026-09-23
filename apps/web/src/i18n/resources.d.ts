@@ -1303,7 +1303,7 @@ export default interface Resources {
     "image_gen_loras_label": "LoRA",
     "image_gen_loras_none": "No LoRAs match",
     "image_gen_loras_search_placeholder": "Search LoRA…",
-    "image_gen_mode_avatar": "Avatar",
+    "image_gen_mode_avatar": "Reaction",
     "image_gen_mode_character": "Character",
     "image_gen_mode_free": "Free",
     "image_gen_mode_portrait": "Portrait",

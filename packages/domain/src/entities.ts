@@ -1088,7 +1088,13 @@ export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE
  *  scene-illustration (anchored on the greeting, MR-13; the RU labels
  *  live in i18n, not here). The two new modes append here;
  *  their menu complement positions (selfie after portrait, avatar after
- *  character) are the FRONTEND list order, wired at IPT Wave 5. */
+ *  character) are the FRONTEND list order, wired at IPT Wave 5.
+ *
+ *  IF-3 (IMAGEGEN_FOLLOWUP_REPORT): the avatar slot is now the REACTION
+ *  mode (RU label «Реакция» rides i18n) — a close-up emotional reaction
+ *  at the anchored moment. The `avatar` SLUG deliberately stays: it is
+ *  persisted in `modeSizePresets` and stored attachments, and a slug
+ *  rename would orphan that data for zero user value. */
 export const IMAGE_GENERATION_MODES = {
   SceneBackground: "scene-background",
   Portrait: "portrait",
