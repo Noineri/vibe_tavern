@@ -1302,3 +1302,64 @@ describe("ImageGenFineTuningChip — comfyui dialect (CG-B2)", () => {
     expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-vae")).toBeTruthy();
   });
 });
+
+describe("ImageGenFineTuningChip — IF-5 two-column body", () => {
+  it("advanced content present: the body root is the container and the grid contract arms — base column holds the prompt pair, advanced column holds the tuning blocks, the footer spans both", async () => {
+    profilesStore = [profile("if5a", "A1111 local", fullCaps(), "sdxl-base")];
+    modelsStore = { if5a: [{ id: "sdxl-base", label: "SDXL Base" }] };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-if5a" />);
+    act(() => armChat("chat-if5a"));
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
+
+    // Pick a concrete model → the settings accordion renders → the
+    // advanced column has its flagship block (hasAdvanced is true even
+    // before the pick via supportsLoras, but the accordion needs the pick).
+    await pickOption("image-gen-ft-model-select", "SDXL Base");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
+    );
+
+    // The body root is the Tailwind container (one root, both surfaces —
+    // desktop popover AND mobile sheet switch together).
+    const body = within(view.baseElement).getByTestId("image-gen-ft-body");
+    expect(body.className).toContain("@container");
+
+    // The grid wrapper: two columns at a comfortable container width.
+    // happy-dom computes no container-query layout — the pin is the class
+    // contract the component owns; the geometry budget is paper-verified
+    // (IF-5 execution note, 2026-09-24).
+    const grid = body.firstElementChild as HTMLElement;
+    expect(grid.className).toContain("@min-[480px]:grid");
+    expect(grid.className).toContain("@min-[480px]:grid-cols-2");
+
+    // Grouping: base column first (prompt pair inside), advanced column
+    // second (accordion inside), footer last with the col-span (inert in
+    // single-column flex — no dead half-column without advanced content).
+    const advanced = within(view.baseElement).getByTestId("image-gen-ft-advanced-col");
+    const base = grid.firstElementChild as HTMLElement;
+    expect(base).not.toBe(advanced);
+    expect(base.contains(within(view.baseElement).getByTestId("image-gen-ft-prompt"))).toBe(true);
+    expect(advanced.contains(within(view.baseElement).getByTestId("image-gen-ft-model-settings"))).toBe(
+      true,
+    );
+    const footerRow = within(view.baseElement).getByTestId("image-gen-ft-generate").closest("div");
+    expect(footerRow?.className).toContain("@min-[480px]:col-span-2");
+  });
+
+  it("no advanced content (cloud no-caps profile, nothing picked): the single column stays — no grid classes, no empty half column", async () => {
+    profilesStore = [profile("if5b", "OpenRouter main", noCaps())];
+    modelsStore = { if5b: [{ id: "flux-1", label: "Flux 1" }] };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-if5b" />);
+    act(() => armChat("chat-if5b"));
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-model-select")).toBeTruthy());
+
+    const body = within(view.baseElement).getByTestId("image-gen-ft-body");
+    expect(body.className).toContain("@container");
+    const grid = body.firstElementChild as HTMLElement;
+    expect(grid.className).not.toContain("@min-[480px]:grid");
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-advanced-col")).toBeNull();
+  });
+});

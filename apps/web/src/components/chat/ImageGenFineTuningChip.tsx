@@ -26,6 +26,14 @@
  * available-space cap — floor 300, grows with the window, cap 560
  * (owner-approved 2026-09-17). Mobile renders the same body in a
  * BottomSheet (unchanged).
+ *
+ * IF-5 (2026-09-24): the body USES that width — with advanced blocks
+ * present it becomes a two-column grid at >=480px of container width
+ * (base flow + prompt pair left, per-run tuning right; footer spans both).
+ * The body root is the Tailwind `@container`, so the desktop popover and
+ * the mobile BottomSheet switch together; a narrow container stays the
+ * single column. Cloud dialects with no advanced content never get the
+ * grid — no dead half-column.
  */
 
 import { useEffect, useState } from "react";
@@ -390,245 +398,280 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
         { id: "custom", label: t("image_gen_size_custom") },
       ];
   const isCustomResolution = !isVendorSet && resolutionValue === "custom";
+  // IF-5 (2026-09-24): with advanced blocks present (a picked local model →
+  // the settings accordion, LoRAs, hires fix) the body is a two-column
+  // grid at a comfortable container width — Tailwind 4 container queries,
+  // the body root itself being the container, so the desktop popover AND
+  // the mobile BottomSheet switch from one place ("narrow screen = single
+  // column", owner ruling recorded in report item IF-5). Left column =
+  // the base flow (profile → model → target → resolution) + the prompt
+  // pair; right = the per-run tuning blocks; the footer spans both
+  // columns. Without advanced content the single column stays — no dead
+  // half-column for cloud dialects.
+  const hasAdvanced =
+    (effective !== null && draft.model !== undefined) || supportsLoras || supportsHiresFix;
+
   return (
-    <div className="flex flex-col gap-2.5 p-1" data-testid="image-gen-ft-body">
-      {/* Profile + model (the design's "provider + model selector"). The
-          profile pick shares the IG-16 popover's store map. */}
-      <div className="flex flex-col gap-1.5 px-1.5">
-        <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_profile_label")}</span>
-        <DropdownSelect
-          value={effective?.id ?? ""}
-          options={profiles.map((p) => ({ id: p.id, label: p.name }))}
-          onChange={(id) => setActiveProfile(chatId, id)}
-          triggerTestId="image-gen-ft-profile-select"
-          disabled={busy}
-        />
-      </div>
-
-      <div className="flex flex-col gap-1.5 px-1.5">
-        <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_model_label")}</span>
-        <DropdownSelect
-          value={draft.model ?? ""}
-          options={[
-            { id: "", label: t("image_gen_chip_model_default") },
-            // Family rides the opened list as the option's detail line
-            // (CG-B2, the pane's row-family chip analog); `triggerDetail={
-            // false}` keeps it OUT of the collapsed trigger (an
-            // arbitrary-length family inside a nowrap trigger = the
-            // inline-row gotcha, AGENTS.md).
-            ...(models ?? []).map((m) => ({ id: m.id, label: m.label, detail: m.family })),
-          ]}
-          onChange={(id) => setFineTuningDraft(chatId, { model: id === "" ? undefined : id })}
-          triggerTestId="image-gen-ft-model-select"
-          disabled={busy || models === null}
-          triggerDetail={false}
-        />
-        {/* «Detected: …» readout (CG-B2, the pane's ModelPicker line twin):
-            which workflow template the adapter auto-detects for the PICKED
-            model — loader-folder membership, the adapter's ground truth. A
-            pick without a template marker (cloud dialects, unknown ids)
-            renders nothing. */}
-        {selectedModelEntry?.template && (
-          <div
-            data-testid="image-gen-ft-model-detected"
-            className="mt-2 font-ui text-[12px] font-medium text-accent"
-          >
-            {t("image_gen_detected_template", {
-              template: templateDisplayLabel(selectedModelEntry.template, t),
-            })}
+    <div className="@container flex flex-col gap-2.5 p-1" data-testid="image-gen-ft-body">
+      <div
+        className={cn(
+          "flex flex-col gap-2.5",
+          hasAdvanced &&
+            "@min-[480px]:grid @min-[480px]:grid-cols-2 @min-[480px]:items-start @min-[480px]:gap-2.5",
+        )}
+      >
+        {/* ── Base column (left): what this generation is — the base flow
+            fields, then the prompt pair. */}
+        <div className="flex min-w-0 flex-col gap-2.5">
+          {/* Profile + model (the design's "provider + model selector"). The
+              profile pick shares the IG-16 popover's store map. */}
+          <div className="flex flex-col gap-1.5 px-1.5">
+            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_profile_label")}</span>
+            <DropdownSelect
+              value={effective?.id ?? ""}
+              options={profiles.map((p) => ({ id: p.id, label: p.name }))}
+              onChange={(id) => setActiveProfile(chatId, id)}
+              triggerTestId="image-gen-ft-profile-select"
+              disabled={busy}
+            />
           </div>
-        )}
-        {modelsFailed && (
-          <span className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4">{t("image_gen_chip_models_failed")}</span>
-        )}
-      </div>
 
-      {/* Generation target (FT-A2) — the same six modes as the message
-          popover (registry order); the chip's Generate button fires this
-          mode (FT-A3) and switching re-preselects the resolution from the
-          profile's per-mode preset (changeable — owner 2026-09-17). Display
-          default Free: the cockpit's canonical «your prompt verbatim» use. */}
-      <div className="flex flex-col gap-1.5 px-1.5">
-        <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_target_label")}</span>
-        <DropdownSelect
-          value={draft.target ?? IMAGE_GENERATION_MODES.Free}
-          options={MODES.map((mode) => ({ id: mode, label: tDynamic(`image_gen_mode_${mode}`) }))}
-          onChange={(id) => {
-            const mode = id as ImageGenerationMode;
-            const preset = effective?.modeSizePresets?.[mode];
-            setFineTuningDraft(chatId, {
-              target: mode,
-              width: preset?.width,
-              height: preset?.height,
-            });
-          }}
-          triggerTestId="image-gen-ft-target-select"
-          disabled={busy}
-        />
-      </div>
-
-      {/* Resolution (FT-A2): free backends get the CF14 buckets + Custom
-          (two steppers); vendor-set backends get their announced grid +
-          user-added entries (the CF14 duality, plan Wave-A item 8 — no
-          Custom there). Auto = unset → the profile's per-mode preset
-          resolves server-side. */}
-      <div className="flex flex-col gap-1.5 px-1.5" data-testid="image-gen-ft-resolution-row">
-        <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_resolution_label")}</span>
-        <DropdownSelect
-          value={resolutionValue}
-          triggerTestId="image-gen-ft-resolution-select"
-          disabled={busy}
-          defaultOption={t("image_gen_size_auto")}
-          options={resolutionOptions}
-          onChange={(id) => {
-            if (id === "") {
-              setFineTuningDraft(chatId, { customSize: undefined, width: undefined, height: undefined });
-              return;
-            }
-            if (id === "custom") {
-              setFineTuningDraft(chatId, {
-                customSize: true,
-                width: draft.width ?? IMAGE_SIZE_DEFAULT.width,
-                height: draft.height ?? IMAGE_SIZE_DEFAULT.height,
-              });
-              return;
-            }
-            const [width, height] = id.split("x").map(Number);
-            setFineTuningDraft(chatId, { customSize: undefined, width, height });
-          }}
-        />
-        {isCustomResolution && (
-          <div className="flex gap-1.5" data-testid="image-gen-ft-custom-size">
-            <div className="flex flex-1 flex-col gap-1.5">
-              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_width_label")}</span>
-              <div data-testid="image-gen-ft-width">
-                <NumberInput
-                  value={draft.width ?? IMAGE_SIZE_DEFAULT.width}
-                  min={IMAGE_SIZE_MIN_PX}
-                  max={IMAGE_SIZE_MAX_PX}
-                  step={64}
-                  onChange={(v) => setFineTuningDraft(chatId, { width: v })}
-                  disabled={busy}
-                />
+          <div className="flex flex-col gap-1.5 px-1.5">
+            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_model_label")}</span>
+            <DropdownSelect
+              value={draft.model ?? ""}
+              options={[
+                { id: "", label: t("image_gen_chip_model_default") },
+                // Family rides the opened list as the option's detail line
+                // (CG-B2, the pane's row-family chip analog); `triggerDetail={
+                // false}` keeps it OUT of the collapsed trigger (an
+                // arbitrary-length family inside a nowrap trigger = the
+                // inline-row gotcha, AGENTS.md).
+                ...(models ?? []).map((m) => ({ id: m.id, label: m.label, detail: m.family })),
+              ]}
+              onChange={(id) => setFineTuningDraft(chatId, { model: id === "" ? undefined : id })}
+              triggerTestId="image-gen-ft-model-select"
+              disabled={busy || models === null}
+              triggerDetail={false}
+            />
+            {/* «Detected: …» readout (CG-B2, the pane's ModelPicker line twin):
+                which workflow template the adapter auto-detects for the PICKED
+                model — loader-folder membership, the adapter's ground truth. A
+                pick without a template marker (cloud dialects, unknown ids)
+                renders nothing. */}
+            {selectedModelEntry?.template && (
+              <div
+                data-testid="image-gen-ft-model-detected"
+                className="mt-2 font-ui text-[12px] font-medium text-accent"
+              >
+                {t("image_gen_detected_template", {
+                  template: templateDisplayLabel(selectedModelEntry.template, t),
+                })}
               </div>
-            </div>
-            <div className="flex flex-1 flex-col gap-1.5">
-              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_height_label")}</span>
-              <div data-testid="image-gen-ft-height">
-                <NumberInput
-                  value={draft.height ?? IMAGE_SIZE_DEFAULT.height}
-                  min={IMAGE_SIZE_MIN_PX}
-                  max={IMAGE_SIZE_MAX_PX}
-                  step={64}
-                  onChange={(v) => setFineTuningDraft(chatId, { height: v })}
-                  disabled={busy}
-                />
-              </div>
-            </div>
+            )}
+            {modelsFailed && (
+              <span className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4">{t("image_gen_chip_models_failed")}</span>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* The loaded model's own settings (IG-CF15 15d): edits the per-model
-          overlay directly — one source of truth with the providers pane,
-          the chip acting as the quick pult. Only with a concrete model
-          picked; the ADetailer accordion nests INSIDE it when the server
-          reports the extension (owner 2026-09-17). */}
-      {effective !== null && draft.model !== undefined && (
-        <ImageGenModelSettingsAccordion
-          profileId={effective.id}
-          modelId={draft.model}
-          supportsSamplers={supportsSamplers}
-          samplers={supportsSamplers ? (samplers ?? []) : []}
-          backend={effective.backend}
-          modelTemplate={selectedModelEntry?.template}
-          disabled={busy}
-        />
-      )}
+          {/* Generation target (FT-A2) — the same six modes as the message
+              popover (registry order); the chip's Generate button fires this
+              mode (FT-A3) and switching re-preselects the resolution from
+              the profile's per-mode preset (changeable — owner 2026-09-17).
+              Display default Free: the cockpit's canonical «your prompt
+              verbatim» use. */}
+          <div className="flex flex-col gap-1.5 px-1.5">
+            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_target_label")}</span>
+            <DropdownSelect
+              value={draft.target ?? IMAGE_GENERATION_MODES.Free}
+              options={MODES.map((mode) => ({ id: mode, label: tDynamic(`image_gen_mode_${mode}`) }))}
+              onChange={(id) => {
+                const mode = id as ImageGenerationMode;
+                const preset = effective?.modeSizePresets?.[mode];
+                setFineTuningDraft(chatId, {
+                  target: mode,
+                  width: preset?.width,
+                  height: preset?.height,
+                });
+              }}
+              triggerTestId="image-gen-ft-target-select"
+              disabled={busy}
+            />
+          </div>
 
-      {/* LoRAs (CG-C3): family-filtered picker, per-lora enable + strength,
-          activation words click-to-copy — NEVER auto-inserted. */}
-      {supportsLoras && (
-        <ImageGenLoraSection
-          chatId={chatId}
-          modelFamily={modelFamily}
-          loras={loras}
-          failed={lorasFailed}
-          disabled={busy}
-        />
-      )}
+          {/* Resolution (FT-A2): free backends get the CF14 buckets + Custom
+              (two steppers); vendor-set backends get their announced grid +
+              user-added entries (the CF14 duality, plan Wave-A item 8 — no
+              Custom there). Auto = unset → the profile's per-mode preset
+              resolves server-side. */}
+          <div className="flex flex-col gap-1.5 px-1.5" data-testid="image-gen-ft-resolution-row">
+            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_resolution_label")}</span>
+            <DropdownSelect
+              value={resolutionValue}
+              triggerTestId="image-gen-ft-resolution-select"
+              disabled={busy}
+              defaultOption={t("image_gen_size_auto")}
+              options={resolutionOptions}
+              onChange={(id) => {
+                if (id === "") {
+                  setFineTuningDraft(chatId, { customSize: undefined, width: undefined, height: undefined });
+                  return;
+                }
+                if (id === "custom") {
+                  setFineTuningDraft(chatId, {
+                    customSize: true,
+                    width: draft.width ?? IMAGE_SIZE_DEFAULT.width,
+                    height: draft.height ?? IMAGE_SIZE_DEFAULT.height,
+                  });
+                  return;
+                }
+                const [width, height] = id.split("x").map(Number);
+                setFineTuningDraft(chatId, { customSize: undefined, width, height });
+              }}
+            />
+            {isCustomResolution && (
+              <div className="flex gap-1.5" data-testid="image-gen-ft-custom-size">
+                <div className="flex flex-1 flex-col gap-1.5">
+                  <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_width_label")}</span>
+                  <div data-testid="image-gen-ft-width">
+                    <NumberInput
+                      value={draft.width ?? IMAGE_SIZE_DEFAULT.width}
+                      min={IMAGE_SIZE_MIN_PX}
+                      max={IMAGE_SIZE_MAX_PX}
+                      step={64}
+                      onChange={(v) => setFineTuningDraft(chatId, { width: v })}
+                      disabled={busy}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-1 flex-col gap-1.5">
+                  <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_height_label")}</span>
+                  <div data-testid="image-gen-ft-height">
+                    <NumberInput
+                      value={draft.height ?? IMAGE_SIZE_DEFAULT.height}
+                      min={IMAGE_SIZE_MIN_PX}
+                      max={IMAGE_SIZE_MAX_PX}
+                      step={64}
+                      onChange={(v) => setFineTuningDraft(chatId, { height: v })}
+                      disabled={busy}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
-      {/* Hires fix (FT-A6): toggle + the four separate knobs, the A1111
-          second pass — capability-gated like the loras section above. */}
-      {supportsHiresFix && (
-        <ImageGenHiresSection
-          chatId={chatId}
-          upscalers={upscalers}
-          failed={upscalersFailed}
-          disabled={busy}
-        />
-      )}
+          <div className="my-0.5 h-px bg-border opacity-40" />
 
-      <div className="my-0.5 h-px bg-border opacity-40" />
+          <div className="flex flex-col gap-1.5 px-1.5">
+            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_prompt_label")}</span>
+            <AutoTextarea
+              value={draft.prompt}
+              onChange={(e) => setFineTuningDraft(chatId, { prompt: e.target.value })}
+              placeholder={t("image_gen_chip_prompt_placeholder")}
+              minRows={2}
+              maxRows={6}
+              data-testid="image-gen-ft-prompt"
+              aria-label={t("image_gen_chip_prompt_label")}
+            />
+          </div>
 
-      <div className="flex flex-col gap-1.5 px-1.5">
-        <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_prompt_label")}</span>
-        <AutoTextarea
-          value={draft.prompt}
-          onChange={(e) => setFineTuningDraft(chatId, { prompt: e.target.value })}
-          placeholder={t("image_gen_chip_prompt_placeholder")}
-          minRows={2}
-          maxRows={6}
-          data-testid="image-gen-ft-prompt"
-          aria-label={t("image_gen_chip_prompt_label")}
-        />
-      </div>
-
-      {supportsNegative && (
-        <div className="flex flex-col gap-1.5 px-1.5" data-testid="image-gen-ft-negative-row">
-          <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_negative_label")}</span>
-          <AutoTextarea
-            value={draft.negative}
-            onChange={(e) => setFineTuningDraft(chatId, { negative: e.target.value })}
-            placeholder={t("image_gen_chip_negative_placeholder")}
-            minRows={2}
-            maxRows={4}
-            data-testid="image-gen-ft-negative"
-            aria-label={t("image_gen_chip_negative_label")}
-          />
-        </div>
-      )}
-
-      {/* Footer (FT-A3): Clear + the immediate «Сгенерировать» — fires the
-          shared draft fold on the current chat (mode = the target selector,
-          anchor = the tail message) and closes the editor; the image lands
-          as a chat slot message exactly like the message-popover path. Free
-          target still requires the chip prompt (IG-17 gate). */}
-      <div className="flex items-center justify-end gap-1.5 px-1.5">
-        <button
-          type="button"
-          data-testid="image-gen-ft-clear"
-          className="cursor-pointer rounded-md px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2 hover:text-t1"
-          onClick={() => clearFineTuningDraft(chatId)}
-        >
-          {t("image_gen_chip_clear")}
-        </button>
-        <button
-          type="button"
-          data-testid="image-gen-ft-generate"
-          aria-disabled={generateDisabled}
-          disabled={generateDisabled}
-          title={freeBlocked ? t("image_gen_free_hint") : undefined}
-          onClick={fireGenerate}
-          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:cursor-default disabled:opacity-50"
-        >
-          {busy ? (
-            <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
-          ) : (
-            <Icons.sparkles />
+          {supportsNegative && (
+            <div className="flex flex-col gap-1.5 px-1.5" data-testid="image-gen-ft-negative-row">
+              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_negative_label")}</span>
+              <AutoTextarea
+                value={draft.negative}
+                onChange={(e) => setFineTuningDraft(chatId, { negative: e.target.value })}
+                placeholder={t("image_gen_chip_negative_placeholder")}
+                minRows={2}
+                maxRows={4}
+                data-testid="image-gen-ft-negative"
+                aria-label={t("image_gen_chip_negative_label")}
+              />
+            </div>
           )}
-          {t("image_gen_chip_generate")}
-        </button>
+        </div>
+
+        {/* ── Advanced column (right): the per-run tuning blocks, registry
+            order; rendered only when at least one exists (the grid lives
+            only with content — IF-5's no-dead-half rule). */}
+        {hasAdvanced && (
+          <div className="flex min-w-0 flex-col gap-2.5" data-testid="image-gen-ft-advanced-col">
+            {/* The loaded model's own settings (IG-CF15 15d): edits the per-model
+                overlay directly — one source of truth with the providers pane,
+                the chip acting as the quick pult. Only with a concrete model
+                picked; the ADetailer accordion nests INSIDE it when the server
+                reports the extension (owner 2026-09-17). */}
+            {effective !== null && draft.model !== undefined && (
+              <ImageGenModelSettingsAccordion
+                profileId={effective.id}
+                modelId={draft.model}
+                supportsSamplers={supportsSamplers}
+                samplers={supportsSamplers ? (samplers ?? []) : []}
+                backend={effective.backend}
+                modelTemplate={selectedModelEntry?.template}
+                disabled={busy}
+              />
+            )}
+
+            {/* LoRAs (CG-C3): family-filtered picker, per-lora enable + strength,
+                activation words click-to-copy — NEVER auto-inserted. */}
+            {supportsLoras && (
+              <ImageGenLoraSection
+                chatId={chatId}
+                modelFamily={modelFamily}
+                loras={loras}
+                failed={lorasFailed}
+                disabled={busy}
+              />
+            )}
+
+            {/* Hires fix (FT-A6): toggle + the four separate knobs, the A1111
+                second pass — capability-gated like the loras section above. */}
+            {supportsHiresFix && (
+              <ImageGenHiresSection
+                chatId={chatId}
+                upscalers={upscalers}
+                failed={upscalersFailed}
+                disabled={busy}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Footer (FT-A3): Clear + the immediate «Сгенерировать» — fires the
+            shared draft fold on the current chat (mode = the target selector,
+            anchor = the tail message) and closes the editor; the image lands
+            as a chat slot message exactly like the message-popover path. Free
+            target still requires the chip prompt (IG-17 gate). The footer
+            spans BOTH columns in the IF-5 grid (`col-span-2` is inert in the
+            single-column flex). */}
+        <div className="flex items-center justify-end gap-1.5 px-1.5 @min-[480px]:col-span-2">
+          <button
+            type="button"
+            data-testid="image-gen-ft-clear"
+            className="cursor-pointer rounded-md px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2 hover:text-t1"
+            onClick={() => clearFineTuningDraft(chatId)}
+          >
+            {t("image_gen_chip_clear")}
+          </button>
+          <button
+            type="button"
+            data-testid="image-gen-ft-generate"
+            aria-disabled={generateDisabled}
+            disabled={generateDisabled}
+            title={freeBlocked ? t("image_gen_free_hint") : undefined}
+            onClick={fireGenerate}
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:cursor-default disabled:opacity-50"
+          >
+            {busy ? (
+              <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
+            ) : (
+              <Icons.sparkles />
+            )}
+            {t("image_gen_chip_generate")}
+          </button>
+        </div>
       </div>
     </div>
   );
