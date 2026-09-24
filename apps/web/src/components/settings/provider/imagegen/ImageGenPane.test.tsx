@@ -93,6 +93,12 @@ const listSamplerSetsApi = mock(async (): Promise<ImageGenSamplerSet[]> => [
 ]);
 let extensionsValue: string[] = [];
 const listExtensionsApi = mock(async (): Promise<string[]> => [...extensionsValue]);
+let faceDetectorsValue: string[] | null = null;
+const faceDetectorCalls: string[] = [];
+const listFaceDetectorsApi = mock(async (id: string): Promise<string[]> => {
+  faceDetectorCalls.push(id);
+  return [...(faceDetectorsValue ?? [])];
+});
 
 // IPT-5: the family row's API seam — registry list, manual pin, detection
 // probe — mocked with the `...real` spread (leak-safe; only the three
@@ -168,6 +174,7 @@ mock.module("../../../../api/image-gen-api.js", () => ({
   listImageGenSamplers: listSamplersApi,
   listImageGenSamplerSets: listSamplerSetsApi,
   listImageGenExtensions: listExtensionsApi,
+  listImageGenFaceDetectors: listFaceDetectorsApi,
   listImagePromptFamilies: listFamiliesApi,
   setImageGenProfileFamily: setFamilyApi,
   detectImageGenProfileFamily: detectFamilyApi,
@@ -384,6 +391,8 @@ afterEach(async () => {
     m.mockClear();
   }
   extensionsValue = [];
+  faceDetectorsValue = null;
+  faceDetectorCalls.length = 0;
   familiesFail = false;
   pendingFamilyWrite = null;
   detectOutcome = { ok: false, error: "no authoritative source answered", tried: [] };
@@ -1475,6 +1484,99 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     );
     await openAdvanced(view);
     expect(view.queryByTestId("image-gen-adetailer-row")).toBeNull();
+  });
+
+  it("comfy + discovered chain (IF-6): the row lights up, the picker serves the LIVE detectors, and the extensions probe is never called", async () => {
+    faceDetectorsValue = ["bbox/face_yolov8m.pt", "bbox/face_yolov8n.pt"];
+    const setModelOverlay = mock((_patch: Partial<import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue>) => {});
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, modelId: "m-alpha", endpoint: "http://127.0.0.1:8188" }),
+          modelOverlay: {},
+          setModelOverlay,
+        })}
+      />,
+    );
+    await openAdvanced(view);
+    const row = await waitFor(() => {
+      const el = view.getByTestId("image-gen-adetailer-row");
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(view.queryByTestId("image-gen-adetailer-missing")).toBeNull();
+    expect(faceDetectorCalls).toEqual(["ig1"]);
+
+    const toggle = within(row).getByRole("switch");
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(setModelOverlay.mock.calls[0]?.[0]).toEqual({ adetailer: true });
+
+    // The face-model picker reveal (the a1111 twin's shape): a fresh view
+    // with the overlay already enabled serves the DISCOVERED chain — a
+    // live-only entry is pickable (the static presets would not carry it).
+    // Unmount the first pane first: two live panes break testid queries.
+    await act(async () => {
+      view.unmount();
+    });
+    const enabled = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, modelId: "m-alpha", endpoint: "http://127.0.0.1:8188" }),
+          modelOverlay: { adetailer: true },
+          setModelOverlay,
+        })}
+      />,
+    );
+    await openAdvanced(enabled);
+    await pickOption(enabled, "image-gen-adetailer-model", "bbox/face_yolov8n.pt");
+    expect((setModelOverlay.mock.calls.at(-1) as unknown[])[0]).toEqual({ adetailerModel: "bbox/face_yolov8n.pt" });
+  });
+
+  it("comfy + ANSWERED empty chain (IF-6): the row renders disabled with the Impact Pack hint — honest-unavailable, not hidden", async () => {
+    faceDetectorsValue = [];
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, modelId: "m-alpha", endpoint: "http://127.0.0.1:8188" }),
+          modelOverlay: {},
+        })}
+      />,
+    );
+    await openAdvanced(view);
+    const row = await waitFor(() => {
+      const el = view.getByTestId("image-gen-adetailer-row");
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(view.getByTestId("image-gen-adetailer-missing").textContent).toContain("image_gen_adetailer_missing_hint");
+    // Honest-unavailable: the toggle RENDERS but is disabled — the row
+    // stays discoverable, the hint explains why.
+    const disabledToggle = within(row).getByRole("switch");
+    expect(disabledToggle.getAttribute("disabled")).not.toBeNull();
+  });
+
+  it("comfy + FAILED probe (IF-6): the row hides entirely — the failed-extensions-probe precedent", async () => {
+    // The mock answers a value; the pane path under test is the catch
+    // branch, so reject through a one-shot override of the same seam.
+    faceDetectorsValue = ["bbox/face_yolov8m.pt"];
+    listFaceDetectorsApi.mockImplementationOnce(() => Promise.reject(new Error("probe boom")));
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, modelId: "m-alpha", endpoint: "http://127.0.0.1:8188" }),
+          modelOverlay: {},
+        })}
+      />,
+    );
+    await openAdvanced(view);
+    // Give the rejected probe a tick to settle before the absence pin.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(view.queryByTestId("image-gen-adetailer-row")).toBeNull();
+    expect(view.queryByTestId("image-gen-adetailer-missing")).toBeNull();
   });
 });
 

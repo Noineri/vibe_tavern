@@ -163,6 +163,11 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsImg2img: false,
     supportsInpaint: false,
     supportsLoras: true,
+    // IF-6/FT-A4 (2026-09-24): hires rides the injected second-pass subgraph
+    // (LatentUpscaleBy / UpscaleModelLoader chain + second KSampler with
+    // lowered denoise). Existing profiles pick the flag up through the
+    // serve-time static overlay (the graduation-flag staleness rule).
+    supportsHiresFix: true,
     paramRanges: {}, // IG-CF5: empty = global defaults (no vendor publishes limits yet)
   },
   [IMAGE_GEN_BACKENDS.TogetherAi]: {

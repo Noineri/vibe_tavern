@@ -133,6 +133,33 @@
  *   for BOTH templates — the Krea-2 family's sane starting point
  *   (steps 8, cfg 1, euler/simple) ships as EXPLICIT form values in
  *   CG-B1, never as a hidden server-side second default ladder.
+ *
+ * Second passes (IF-6 live gate — verified 2026-09-24 on ComfyUI 0.37.0,
+ * read-only probes against the owner's install, the PG-5 evidence
+ * standard; her install is a verification probe, never a product
+ * assumption — files discovered, never hardcoded):
+ * - MISSING NODE = `GET /object_info/{node}` answers 200 with `{}` — node
+ *   presence is the response carrying the node-class key, never 404.
+ * - PER-NODE COMBO TRUNCATION: large combos come back as the literal
+ *   string "COMBO" (observed: UpscaleModelLoader.model_name truncated
+ *   while a 4-entry detector combo and LoraLoader's full list pass) —
+ *   list sources prefer the /models/{folder} route where a verbatim
+ *   filename list is needed (upscale_models), with the combo as the
+ *   primary source only where the queue validates against the combo
+ *   itself (detectors), falling back to /models/ultralytics with
+ *   backslash→slash normalization when truncation/absence empties it.
+ * - HIRES (FT-A4 comfy): no single API flag — the pass is a conditional
+ *   subgraph injected after the template build (LatentUpscaleBy for the
+ *   unset/Auto upscaler; UpscaleModelLoader → ImageUpscaleWithModel →
+ *   VAEEncode for a named upscale model), then a second KSampler with
+ *   lowered denoise and the first pass's resolved sampler knobs.
+ * - FACE DETAILING (IF-6): the ADetailer equivalent is the Impact Pack's
+ *   self-contained FaceDetailer node + UltralyticsDetectorProvider — the
+ *   chain is DISCOVERED (node presence + face bbox combo), never assumed.
+ *   FaceDetailer carries EVERY required input explicitly (the API graph
+ *   cannot rely on server-side default filling — the weight_dtype
+ *   lesson), values = the node's own declared defaults except the knobs
+ *   VT owns (detector model, inherited sampler/steps/cfg/seed).
  */
 
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
@@ -152,6 +179,7 @@ import type {
   ImageGenSamplerInfo,
   ImageGenSchedulerInfo,
   ImageGenWebSocketLike,
+  ImageGenUpscalerInfo,
 } from "../imagegen-backend.js";
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
@@ -205,6 +233,14 @@ export const COMFY_NODE_IDS = {
   unet: "11",
   clip: "12",
   vae: "13",
+  hiresLatentUpscale: "30",
+  hiresUpscaleModel: "31",
+  hiresImageUpscale: "32",
+  hiresVaeEncode: "33",
+  hiresKSampler: "34",
+  hiresVaeDecode: "35",
+  faceDetector: "40",
+  faceDetailer: "41",
 } as const;
 
 /** First LoraLoader node id of the CG-C2 chain — loras append ABOVE the
@@ -353,11 +389,15 @@ function resolveComfySeed(seed: number | undefined): number {
 function buildComfyCommonNodes(
   request: ImageGenGenerateRequest,
   refs: { model: [string, number]; clip: [string, number] },
-): { graph: ComfyWorkflowGraph; seed: number } {
+): { graph: ComfyWorkflowGraph; resolved: ComfySamplerResolved } {
   const seed = resolveComfySeed(request.seed);
   const width = request.width !== undefined ? requirePositiveInt("width", request.width) : undefined;
   const height = request.height !== undefined ? requirePositiveInt("height", request.height) : undefined;
   const clipSkip = request.clipSkip;
+  const steps = request.steps ?? COMFY_NODE_DEFAULTS.steps;
+  const cfg = request.cfgScale ?? COMFY_NODE_DEFAULTS.cfg;
+  const samplerName = setOrUndefined(request.sampler) ?? COMFY_NODE_DEFAULTS.samplerName;
+  const scheduler = setOrUndefined(request.scheduler) ?? COMFY_NODE_DEFAULTS.scheduler;
 
   // The clip source of the two text encoders: the loader output directly,
   // or through CLIPSetLastLayer when the request slices layers.
@@ -371,8 +411,8 @@ function buildComfyCommonNodes(
         seed,
         steps: request.steps ?? COMFY_NODE_DEFAULTS.steps,
         cfg: request.cfgScale ?? COMFY_NODE_DEFAULTS.cfg,
-        sampler_name: setOrUndefined(request.sampler) ?? COMFY_NODE_DEFAULTS.samplerName,
-        scheduler: setOrUndefined(request.scheduler) ?? COMFY_NODE_DEFAULTS.scheduler,
+        sampler_name: samplerName,
+        scheduler: scheduler,
         denoise: COMFY_NODE_DEFAULTS.denoise,
         model: refs.model,
         positive: [COMFY_NODE_IDS.positive, 0],
@@ -413,16 +453,44 @@ function buildComfyCommonNodes(
       inputs: { stop_at_clip_layer: -clipSkip, clip: refs.clip },
     };
   }
-  return { graph, seed };
+  return { graph, resolved: { seed, steps, cfg, samplerName, scheduler, clipSource } };
+}
+
+/** The first-pass resolved values the second-pass subgraphs inherit —
+ *  what `buildComfyCommonNodes` resolved plus the loader-half refs the
+ *  template wrapper owns (the post-LoRA-chain model, the post-clipSkip
+ *  clip, the template's VAE). The seed is the SAME resolved value the
+ *  first KSampler carries: a deterministic chain (ComfyUI has no
+ *  A1111-style second-seed concept wired in v1). */
+export interface ComfySecondPassCtx {
+  model: [string, number];
+  clip: [string, number];
+  vae: [string, number];
+  seed: number;
+  steps: number;
+  cfg: number;
+  samplerName: string;
+  scheduler: string;
+}
+
+/** The first-pass resolved params (sampler half) — buildComfyCommonNodes's
+ *  return shape. */
+interface ComfySamplerResolved {
+  seed: number;
+  steps: number;
+  cfg: number;
+  samplerName: string;
+  scheduler: string;
+  clipSource: [string, number];
 }
 
 /** Build the CHECKPOINT-template workflow graph from the flat request +
  *  the resolved profile model. Pure — exported for the wire tests. The
- *  second return value is the seed actually placed in the graph. */
+ *  second return value is the second-pass ctx (seed included). */
 export function buildComfyCheckpointWorkflow(
   request: ImageGenGenerateRequest,
   resolvedModel: string,
-): { graph: ComfyWorkflowGraph; seed: number } {
+): { graph: ComfyWorkflowGraph; seed: number; ctx: ComfySecondPassCtx } {
   // LoRA chain (CG-C2): the checkpoint's MODEL/CLIP outputs thread through
   // the LoraLoaders before reaching the sampler half; its VAE (third
   // output) never does.
@@ -430,7 +498,7 @@ export function buildComfyCheckpointWorkflow(
     model: [COMFY_NODE_IDS.checkpoint, 0],
     clip: [COMFY_NODE_IDS.checkpoint, 1],
   });
-  const { graph, seed } = buildComfyCommonNodes(request, { model: chain.model, clip: chain.clip });
+  const { graph, resolved } = buildComfyCommonNodes(request, { model: chain.model, clip: chain.clip });
   Object.assign(graph, chain.nodes);
   graph[COMFY_NODE_IDS.checkpoint] = {
     class_type: "CheckpointLoaderSimple",
@@ -438,25 +506,38 @@ export function buildComfyCheckpointWorkflow(
   };
   // The checkpoint's own third output is its bundled VAE.
   graph[COMFY_NODE_IDS.vaeDecode]!.inputs.vae = [COMFY_NODE_IDS.checkpoint, 2];
-  return { graph, seed };
+  return {
+    graph,
+    seed: resolved.seed,
+    ctx: {
+      model: chain.model,
+      clip: resolved.clipSource,
+      vae: [COMFY_NODE_IDS.checkpoint, 2],
+      seed: resolved.seed,
+      steps: resolved.steps,
+      cfg: resolved.cfg,
+      samplerName: resolved.samplerName,
+      scheduler: resolved.scheduler,
+    },
+  };
 }
 
 /** Build the KREA-2 DiT-template workflow graph (CG-A2): a bare diffusion
  *  model loads through UNETLoader, and the text encoder + VAE come from
  *  SEPARATE loaders (a DiT file bundles neither). `CLIPLoader.type` is the
  *  hardcoded "krea2" — see COMFY_KREA2_CLIP_TYPE. Pure — exported for the
- *  wire tests. */
+ *  wire tests. The second return value is the second-pass ctx. */
 export function buildComfyKrea2Workflow(
   request: ImageGenGenerateRequest,
   sidecars: ComfyKrea2Sidecars,
-): { graph: ComfyWorkflowGraph; seed: number } {
+): { graph: ComfyWorkflowGraph; seed: number; ctx: ComfySecondPassCtx } {
   // LoRA chain (CG-C2): UNETLoader's MODEL and CLIPLoader's CLIP thread
   // through the LoraLoaders; the VAELoader stays wired directly.
   const chain = buildComfyLoraChain(request.loras ?? [], {
     model: [COMFY_NODE_IDS.unet, 0],
     clip: [COMFY_NODE_IDS.clip, 0],
   });
-  const { graph, seed } = buildComfyCommonNodes(request, { model: chain.model, clip: chain.clip });
+  const { graph, resolved } = buildComfyCommonNodes(request, { model: chain.model, clip: chain.clip });
   Object.assign(graph, chain.nodes);
   graph[COMFY_NODE_IDS.unet] = {
     class_type: "UNETLoader",
@@ -471,7 +552,252 @@ export function buildComfyKrea2Workflow(
     inputs: { vae_name: sidecars.vae },
   };
   graph[COMFY_NODE_IDS.vaeDecode]!.inputs.vae = [COMFY_NODE_IDS.vae, 0];
-  return { graph, seed };
+  return {
+    graph,
+    seed: resolved.seed,
+    ctx: {
+      model: chain.model,
+      clip: resolved.clipSource,
+      vae: [COMFY_NODE_IDS.vae, 0],
+      seed: resolved.seed,
+      steps: resolved.steps,
+      cfg: resolved.cfg,
+      samplerName: resolved.samplerName,
+      scheduler: resolved.scheduler,
+    },
+  };
+}
+
+// ─── Second passes: hires fix + face detailing (IF-6, FT-A4 comfy) ────
+
+/** Hires-fix defaults for unset knobs (FT-A6 anchors, A1111 parity):
+ *  scale 2.0 = the hr_scale display anchor; denoise 0.75 = the A1111
+ *  server's own default; latent upscale method "nearest-exact" = the
+ *  node's first combo entry (the classic hires latent default). */
+export const COMFY_HIRES_DEFAULTS = {
+  scale: 2.0,
+  denoise: 0.75,
+  latentMethod: "nearest-exact",
+} as const;
+
+/** FaceDetailer's node-declared defaults (live-verified 0.37.0 — the
+ *  Impact Pack node's own INPUT_TYPES values, the COMFY_NODE_DEFAULTS
+ *  class: the API graph must carry every required input explicitly, so
+ *  the node's declared defaults are materialized client-side). denoise
+ *  0.5 is the node's own low-denoise inpaint default — the ADetailer
+ *  behavior twin. */
+export const COMFY_FACE_DETAILER_DEFAULTS = {
+  denoise: 0.5,
+  guideSize: 512,
+  guideSizeFor: true,
+  maxSize: 1024,
+  feather: 5,
+  noiseMask: true,
+  forceInpaint: true,
+  bboxThreshold: 0.5,
+  bboxDilation: 10,
+  bboxCropFactor: 3.0,
+  samDetectionHint: "mask-area",
+  samDilation: 0,
+  samThreshold: 0.93,
+  samBboxExpansion: 0,
+  samMaskHintThreshold: 0.7,
+  samMaskHintUseNegative: "False",
+  dropSize: 10,
+  cycle: 1,
+} as const;
+
+/** Inject the hires-fix second pass (FT-A4, comfy dialect) into a built
+ *  template graph and rewire SaveImage to the second decode. The upscaler
+ *  maps by name: unset (the chip's Auto) → the LATENT path
+ *  (LatentUpscaleBy on the first sampler's latent — no model file needed,
+ *  the A1111 "Latent" upscaler analog); a real name → the model path
+ *  (UpscaleModelLoader → ImageUpscaleWithModel → VAEEncode). Steps inherit
+ *  the first pass when unset or 0 (A1111 hr_second_pass_steps=0
+ *  semantics); sampler/scheduler/cfg/seed are the first pass's own
+ *  resolved values — a deterministic chain. Mutates the passed graph;
+ *  returns the final image ref (the second VAEDecode output). Pure. */
+export function applyComfyHiresPass(
+  graph: ComfyWorkflowGraph,
+  request: ImageGenGenerateRequest,
+  ctx: ComfySecondPassCtx,
+): { finalImage: [string, number] } {
+  const hires = request.hires;
+  if (hires === undefined) throw new Error("applyComfyHiresPass called without a hires object");
+  const upscaler = setOrUndefined(hires.upscaler);
+  const scale = hires.scale ?? COMFY_HIRES_DEFAULTS.scale;
+  const denoise = hires.denoisingStrength ?? COMFY_HIRES_DEFAULTS.denoise;
+  const steps = (hires.steps ?? 0) > 0 ? hires.steps! : ctx.steps;
+  let secondLatent: [string, number];
+  if (upscaler === undefined) {
+    graph[COMFY_NODE_IDS.hiresLatentUpscale] = {
+      class_type: "LatentUpscaleBy",
+      inputs: {
+        samples: [COMFY_NODE_IDS.kSampler, 0],
+        upscale_method: COMFY_HIRES_DEFAULTS.latentMethod,
+        scale_by: scale,
+      },
+    };
+    secondLatent = [COMFY_NODE_IDS.hiresLatentUpscale, 0];
+  } else {
+    graph[COMFY_NODE_IDS.hiresUpscaleModel] = {
+      class_type: "UpscaleModelLoader",
+      inputs: { model_name: upscaler },
+    };
+    graph[COMFY_NODE_IDS.hiresImageUpscale] = {
+      class_type: "ImageUpscaleWithModel",
+      inputs: {
+        upscale_model: [COMFY_NODE_IDS.hiresUpscaleModel, 0],
+        image: [COMFY_NODE_IDS.vaeDecode, 0],
+      },
+    };
+    graph[COMFY_NODE_IDS.hiresVaeEncode] = {
+      class_type: "VAEEncode",
+      inputs: { pixels: [COMFY_NODE_IDS.hiresImageUpscale, 0], vae: ctx.vae },
+    };
+    secondLatent = [COMFY_NODE_IDS.hiresVaeEncode, 0];
+  }
+  graph[COMFY_NODE_IDS.hiresKSampler] = {
+    class_type: "KSampler",
+    inputs: {
+      seed: ctx.seed,
+      steps,
+      cfg: ctx.cfg,
+      sampler_name: ctx.samplerName,
+      scheduler: ctx.scheduler,
+      denoise,
+      model: ctx.model,
+      positive: [COMFY_NODE_IDS.positive, 0],
+      negative: [COMFY_NODE_IDS.negative, 0],
+      latent_image: secondLatent,
+    },
+  };
+  graph[COMFY_NODE_IDS.hiresVaeDecode] = {
+    class_type: "VAEDecode",
+    inputs: { samples: [COMFY_NODE_IDS.hiresKSampler, 0], vae: ctx.vae },
+  };
+  graph[COMFY_NODE_IDS.saveImage]!.inputs.images = [COMFY_NODE_IDS.hiresVaeDecode, 0];
+  return { finalImage: [COMFY_NODE_IDS.hiresVaeDecode, 0] };
+}
+
+/** Inject the face-detailing second pass (IF-6, comfy dialect — the
+ *  ADetailer equivalent): UltralyticsDetectorProvider loads the discovered
+ *  face bbox model, FaceDetailer (the Impact Pack's self-contained pass:
+ *  detect → crop → upscale → low-denoise inpaint → paste) takes the final
+ *  image from the base/hires pass and every loader-half ref. All required
+ *  inputs ride explicitly (the node's own declared defaults materialized —
+ *  the weight_dtype lesson); sampler knobs inherit the first pass's
+ *  resolved values; denoise is the node's 0.5. Mutates the passed graph
+ *  and rewires SaveImage to FaceDetailer's image output. Pure. */
+export function applyComfyFaceDetailerPass(
+  graph: ComfyWorkflowGraph,
+  request: ImageGenGenerateRequest,
+  ctx: ComfySecondPassCtx & { finalImage: [string, number]; detector: string },
+): void {
+  const d = COMFY_FACE_DETAILER_DEFAULTS;
+  graph[COMFY_NODE_IDS.faceDetector] = {
+    class_type: "UltralyticsDetectorProvider",
+    inputs: { model_name: ctx.detector },
+  };
+  graph[COMFY_NODE_IDS.faceDetailer] = {
+    class_type: "FaceDetailer",
+    inputs: {
+      image: ctx.finalImage,
+      model: ctx.model,
+      clip: ctx.clip,
+      vae: ctx.vae,
+      positive: [COMFY_NODE_IDS.positive, 0],
+      negative: [COMFY_NODE_IDS.negative, 0],
+      bbox_detector: [COMFY_NODE_IDS.faceDetector, 0],
+      wildcard: "",
+      seed: ctx.seed,
+      steps: ctx.steps,
+      cfg: ctx.cfg,
+      sampler_name: ctx.samplerName,
+      scheduler: ctx.scheduler,
+      denoise: d.denoise,
+      guide_size: d.guideSize,
+      guide_size_for: d.guideSizeFor,
+      max_size: d.maxSize,
+      feather: d.feather,
+      noise_mask: d.noiseMask,
+      force_inpaint: d.forceInpaint,
+      bbox_threshold: d.bboxThreshold,
+      bbox_dilation: d.bboxDilation,
+      bbox_crop_factor: d.bboxCropFactor,
+      sam_detection_hint: d.samDetectionHint,
+      sam_dilation: d.samDilation,
+      sam_threshold: d.samThreshold,
+      sam_bbox_expansion: d.samBboxExpansion,
+      sam_mask_hint_threshold: d.samMaskHintThreshold,
+      sam_mask_hint_use_negative: d.samMaskHintUseNegative,
+      drop_size: d.dropSize,
+      cycle: d.cycle,
+    },
+  };
+  graph[COMFY_NODE_IDS.saveImage]!.inputs.images = [COMFY_NODE_IDS.faceDetailer, 0];
+}
+
+/** GET /object_info/{node} presence probe — a MISSING node answers 200
+ *  with `{}` (live-verified 0.37.0), so presence = the response object
+ *  carries the node-class key. A non-OK response reads as absent on this
+ *  cheap probe: a genuinely broken server fails at queue time with its
+ *  own error, and a capability question must not crash on it. Transport
+ *  failures still throw the typed error (server unreachable). */
+async function comfyNodeClassExists(
+  transport: typeof fetch,
+  endpoint: string,
+  nodeClass: string,
+  signal: AbortSignal | undefined,
+): Promise<boolean> {
+  const response = await fetchOrWrap(
+    transport,
+    `${endpoint}/object_info/${encodeURIComponent(nodeClass)}`,
+    { method: "GET", headers: { Accept: "application/json" }, signal },
+    "node presence probe",
+  );
+  if (!response.ok) return false;
+  const parsed: unknown = await response.json().catch(() => null);
+  return isRecord(parsed) && parsed[nodeClass] !== undefined;
+}
+
+/** A face bbox detector entry: under the `bbox/` prefix with "face" in
+ *  the basename (the ultralytics ecosystem's own face-detector naming —
+ *  the same vocabulary the A1111 ADetailer presets ride; hand/person
+ *  entries are a different tool, the ADetailer face-only scope twin). */
+function isComfyFaceBboxDetector(name: string): boolean {
+  const normalized = name.replace(/\\/g, "/");
+  if (!normalized.startsWith("bbox/")) return false;
+  const base = normalized.split("/").pop() ?? "";
+  return base.toLowerCase().includes("face");
+}
+
+/** The available face bbox detectors (IF-6 chain discovery): the
+ *  UltralyticsDetectorProvider combo (small lists come through whole —
+ *  live 4-entry verification) with a /models/ultralytics fallback whose
+ *  Windows separators normalize to the combo's forward-slash form when
+ *  0.37+ combo truncation ("COMBO") or an absent node empties the first
+ *  source. Face-filtered to the detector vocabulary the picker serves. */
+async function fetchComfyFaceDetectors(
+  transport: typeof fetch,
+  endpoint: string,
+  signal: AbortSignal | undefined,
+): Promise<string[]> {
+  let names: string[] = [];
+  try {
+    names = await fetchComfyComboValues(transport, endpoint, "UltralyticsDetectorProvider", "model_name", signal);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    // Node absent (the {} shape) or the combo truncated — the folder
+    // fallback below is the second source, never a silent empty.
+    names = [];
+  }
+  if (names.length === 0) {
+    names = (await fetchComfyFolderNames(transport, endpoint, "ultralytics", signal)).map((name) =>
+      name.replace(/\\/g, "/"),
+    );
+  }
+  return names.filter(isComfyFaceBboxDetector);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1287,9 +1613,9 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       );
       let template: "checkpoint" | "krea2-dit";
       let graph: ComfyWorkflowGraph;
-      let seed: number;
+      let secondPassCtx: ComfySecondPassCtx;
       if (checkpointNames.includes(model)) {
-        ({ graph, seed } = buildComfyCheckpointWorkflow(request, model));
+        ({ graph, ctx: secondPassCtx } = buildComfyCheckpointWorkflow(request, model));
         template = COMFY_MODEL_TEMPLATES.checkpoint;
       } else {
         const unetNames = await fetchComfyComboValues(
@@ -1318,8 +1644,55 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           what: "VAE",
           signal: request.signal,
         });
-        ({ graph, seed } = buildComfyKrea2Workflow(request, { unet: model, encoder, vae }));
+        ({ graph, ctx: secondPassCtx } = buildComfyKrea2Workflow(request, { unet: model, encoder, vae }));
         template = COMFY_MODEL_TEMPLATES.krea2Dit;
+      }
+
+      // Hires second pass (FT-A4 flat field, comfy dialect): a NAMED
+      // upscaler is validated against the live upscale_models folder (the
+      // lora fail-closed precedent — reselect, never a queue-time blob);
+      // unset (the chip's Auto) takes the latent path with no extra call.
+      let finalImage: [string, number] = [COMFY_NODE_IDS.vaeDecode, 0];
+      if (request.hires !== undefined) {
+        const upscaler = setOrUndefined(request.hires.upscaler);
+        if (upscaler !== undefined) {
+          const upscalerNames = await fetchComfyFolderNames(
+            cfg.fetch,
+            cfg.endpoint,
+            "upscale_models",
+            request.signal,
+          );
+          if (!upscalerNames.includes(upscaler)) {
+            throw new ComfyImageGenConfigError(
+              `ComfyUI upscaler "${upscaler}" is not in the upscale_models folder — reselect it from the hires upscaler list`,
+            );
+          }
+        }
+        finalImage = applyComfyHiresPass(graph, request, secondPassCtx).finalImage;
+      }
+      // Face detailing (IF-6, comfy dialect — the ADetailer equivalent):
+      // presence of the field = enabled. The Impact Pack FaceDetailer node
+      // must exist (honest config error naming the pack, never a queue-time
+      // blob) and the detector must be in the discovered face list (the
+      // lora fail-closed precedent).
+      const faceDetector = setOrUndefined(request.adetailerModel);
+      if (faceDetector !== undefined) {
+        if (!(await comfyNodeClassExists(cfg.fetch, cfg.endpoint, "FaceDetailer", request.signal))) {
+          throw new ComfyImageGenConfigError(
+            "ComfyUI face detailing requires the Impact Pack — the FaceDetailer node was not found on the server",
+          );
+        }
+        const detectors = await fetchComfyFaceDetectors(cfg.fetch, cfg.endpoint, request.signal);
+        if (!detectors.includes(faceDetector)) {
+          const candidates =
+            detectors.length === 0
+              ? "no face bbox models were found in the ultralytics folder"
+              : `available: ${detectors.slice(0, 5).join(", ")}${detectors.length > 5 ? ", …" : ""}`;
+          throw new ComfyImageGenConfigError(
+            `ComfyUI face detector "${faceDetector}" is not in the discovered list (${candidates}) — reselect it from the face-model list`,
+          );
+        }
+        applyComfyFaceDetailerPass(graph, request, { ...secondPassCtx, finalImage, detector: faceDetector });
       }
 
       const clientId = crypto.randomUUID();
@@ -1422,7 +1795,7 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       // Wire meaning of what was sent (the a1111 twin): W/H echo
       // independently; the seed is the graph's own resolved value; the
       // resolved template id rides for the slot provenance (CG-A2).
-      const result: ImageGenGenerateResult = { images, seed, resolvedTemplate: template };
+      const result: ImageGenGenerateResult = { images, seed: secondPassCtx.seed, resolvedTemplate: template };
       if (request.width !== undefined) result.width = request.width;
       if (request.height !== undefined) result.height = request.height;
       return result;
@@ -1508,6 +1881,24 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
         fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "vae", signal),
       ]);
       return { encoders, vaes };
+    },
+
+    async listUpscalers(signal?: AbortSignal): Promise<ImageGenUpscalerInfo[]> {
+      // The hires-upscaler vocabulary (FT-A4, comfy dialect): the live
+      // upscale_models folder (the /models route — the per-node combo is
+      // combo-truncated on 0.37+, the checkpoints-list precedent's source).
+      // The chip's Auto ("") is the LATENT path — adapter-side, no entry.
+      const names = await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "upscale_models", signal);
+      return names.map((name) => ({ name }));
+    },
+
+    async listFaceDetectors(signal?: AbortSignal): Promise<string[]> {
+      // The IF-6 chain probe: BOTH links must hold — the Impact Pack's
+      // FaceDetailer node exists AND the ultralytics folder/combo carries
+      // at least one face bbox model. Either miss = [] (the honest
+      // unavailable signal the picker gates on).
+      if (!(await comfyNodeClassExists(cfg.fetch, cfg.endpoint, "FaceDetailer", signal))) return [];
+      return fetchComfyFaceDetectors(cfg.fetch, cfg.endpoint, signal);
     },
 
     async listLoras(signal?: AbortSignal): Promise<ImageGenLoraInfo[]> {

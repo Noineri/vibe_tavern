@@ -1205,6 +1205,7 @@ export default interface Resources {
     "image_block_prompt_save_failed": "Failed to save the prompt",
     "image_gen_action_tooltip": "Generate an image from this message",
     "image_gen_adetailer": "Face fix (ADetailer)",
+    "image_gen_adetailer_missing_hint": "Impact Pack with a face bbox model not found on the server — install ComfyUI-Impact-Pack and a face detector (e.g. face_yolov8m) to enable face detailing",
     "image_gen_adetailer_model": "Face detection model",
     "image_gen_advanced": "Advanced",
     "image_gen_assist_hint": "When on, the chosen AI model writes the image prompt from the scene before each generation.",

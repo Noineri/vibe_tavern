@@ -377,6 +377,13 @@ export interface ImageGenBackend {
   /** Server-extension listing (A1111-compat only in v1) — extension dir
    *  names for feature detection (IG-CF15/PG-4: the ADetailer probe). */
   listExtensions?(signal?: AbortSignal): Promise<string[]>;
+  /** Face-detector model listing (comfyui dialect only, IF-6): the
+   *  DISCOVERED face bbox models (ultralytics combo/folder, face-filtered)
+   *  — non-empty = the Impact Pack chain is present and the ADetailer-
+   *  equivalent toggle may light up; empty = honestly unavailable. The
+   *  A1111 twin keeps its static preset list (the extension validates
+   *  server-side) — one code path per dialect. */
+  listFaceDetectors?(signal?: AbortSignal): Promise<string[]>;
   /** IPT-3 family detection, source (a): raw authoritative metadata for
    *  ONE model — plus the sha256/path anchors the later sources need.
    *  Dialect-gated (A1111 sd-models entry; ComfyUI embedded header +

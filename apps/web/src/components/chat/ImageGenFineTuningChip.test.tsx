@@ -83,6 +83,9 @@ let modelsStore: Record<string, ModelEntry[]> = {};
 let samplersStore: Record<string, SamplerEntry[]> = {};
 let schedulersStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenSchedulerInfoValue[]> = {};
 let extensionsStore: Record<string, string[]> = {};
+let faceDetectorsStore: Record<string, string[]> = {};
+const faceDetectorsFailFor = new Set<string>();
+const faceDetectorCalls: string[] = [];
 let overlayStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue> = {};
 let lorasStore: Record<string, LoraEntry[]> = {};
 const lorasFailFor = new Set<string>();
@@ -111,6 +114,12 @@ mock.module("../../api/image-gen-api.js", () => ({
   listImageGenSamplers: (id: string) => Promise.resolve([...(samplersStore[id] ?? [])]),
   listImageGenSchedulers: (id: string) => Promise.resolve([...(schedulersStore[id] ?? [])]),
   listImageGenExtensions: (id: string) => Promise.resolve([...(extensionsStore[id] ?? [])]),
+  listImageGenFaceDetectors: (id: string) => {
+    faceDetectorCalls.push(id);
+    return faceDetectorsFailFor.has(id)
+      ? Promise.reject(new Error("detector probe boom"))
+      : Promise.resolve([...(faceDetectorsStore[id] ?? [])]);
+  },
   listImageGenLoras: (id: string) =>
     lorasFailFor.has(id)
       ? Promise.reject(new Error("lora list boom"))
@@ -231,6 +240,9 @@ afterEach(() => {
   samplersStore = {};
   schedulersStore = {};
   extensionsStore = {};
+  faceDetectorsStore = {};
+  faceDetectorsFailFor.clear();
+  faceDetectorCalls.length = 0;
   overlayStore = {};
   lorasStore = {};
   lorasFailFor.clear();
@@ -1300,6 +1312,76 @@ describe("ImageGenFineTuningChip — comfyui dialect (CG-B2)", () => {
     // The rows still render (Auto + any stored value) — a hint, not a teardown.
     expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy();
     expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-vae")).toBeTruthy();
+  });
+});
+
+describe("ImageGenFineTuningChip — comfyui ADetailer (IF-6)", () => {
+  /** A comfy profile + models + the fine-tuning toggle — the CG-B2 arm
+   *  twin, checkpoint-template model so no sidecar rows render. */
+  function armComfyChat(chatId: string, detectors: string[]): void {
+    profilesStore = [{ ...profile("cfa", "Comfy local", fullCaps()), backend: "comfyui" }];
+    modelsStore = { cfa: [{ id: "flux_ckpt", label: "Flux Checkpoint", template: "checkpoint" }] };
+    faceDetectorsStore = { cfa: detectors };
+    armChat(chatId);
+  }
+
+  it("a discovered chain lights the ADetailer block with the LIVE model picker (the a1111 preset twin); a1111 never touches the probe", async () => {
+    armComfyChat("chat-if6a", ["bbox/face_yolov8m.pt", "bbox/face_yolov8n.pt"]);
+    const view = await openAccordion("chat-if6a", "Flux Checkpoint");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-adetailer")).toBeTruthy(),
+    );
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer-missing")).toBeNull();
+
+    // Open the nested block, enable the toggle, and pin the LIVE picker
+    // vocabulary: a comfy-only entry is pickable (the a1111 static presets
+    // would not carry it — one code path per dialect); picking writes the
+    // merged overlay exactly like the a1111 twin.
+    await act(async () => {
+      within(view.baseElement).getByTestId("image-gen-ft-adetailer-header").click();
+    });
+    const adBody = await waitFor(() => {
+      const el = within(view.baseElement).getByTestId("image-gen-ft-adetailer-body");
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await act(async () => {
+      fireEvent.click(within(adBody).getByRole("switch"));
+    });
+    await waitFor(() => expect(upsertCalls.length).toBe(1));
+    expect(upsertCalls[0]!.settings).toEqual({ adetailer: true });
+
+    await pickOption("image-gen-ft-adetailer-model", "bbox/face_yolov8n.pt");
+    await waitFor(() => expect(upsertCalls.length).toBe(2));
+    expect(upsertCalls[1]!.settings).toEqual({ adetailer: true, adetailerModel: "bbox/face_yolov8n.pt" });
+
+    // The probe runs ONLY for comfy dialects — the a1111 path (extensions
+    // probe) never calls the face-detectors endpoint (dialect separation).
+    expect(faceDetectorCalls).toEqual(["cfa"]);
+  });
+
+  it("an ANSWERED empty chain renders the disabled label + install hint (the plan's honest-unavailable ruling)", async () => {
+    armComfyChat("chat-if6b", []);
+    const view = await openAccordion("chat-if6b", "Flux Checkpoint");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-adetailer-missing")).toBeTruthy(),
+    );
+    expect(within(view.baseElement).getByTestId("image-gen-ft-adetailer").textContent).toContain(
+      "image_gen_adetailer_missing_hint",
+    );
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer-header")).toBeNull();
+  });
+
+  it("a FAILED probe hides the block entirely (the extensions precedent)", async () => {
+    armComfyChat("chat-if6c", ["bbox/face_yolov8m.pt"]);
+    faceDetectorsFailFor.add("cfa");
+    const view = await openAccordion("chat-if6c", "Flux Checkpoint");
+    // Give the rejected probe a tick to settle before the absence pin.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer")).toBeNull();
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer-missing")).toBeNull();
   });
 });
 

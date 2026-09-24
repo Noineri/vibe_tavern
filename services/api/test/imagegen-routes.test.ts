@@ -815,12 +815,18 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     expect(missing.status).toBe(404);
   });
 
-  test("comfyui profile → 400 on the upscalers arm (dialect gate); unknown → 404", async () => {
-    const { app } = await makeApp(async () => modelsBody());
+  test("comfyui profile serves the upscalers arm (IF-6 dialect graduation — the live upscale_models folder); unknown → 404", async () => {
+    const { app } = await makeApp(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/models/upscale_models") {
+        return Response.json(["4x-UltraSharp.pth", "ESRGAN_4x.pth"]);
+      }
+      return new Response("unused", { status: 200 });
+    });
     const comfyId = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:9130" });
     const res = await app.request(`/api/image-gen/profiles/${comfyId}/upscalers`);
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "Upscaler listing not supported" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([{ name: "4x-UltraSharp.pth" }, { name: "ESRGAN_4x.pth" }]);
 
     const missing = await app.request(`/api/image-gen/profiles/nope/upscalers`);
     expect(missing.status).toBe(404);
@@ -877,7 +883,7 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     expect(capturedBody[0]!.denoising_strength).toBe(0.4);
   });
 
-  test("a1111 fold: a pre-FT-A4 capability snapshot strips loras + hires from the wire (the CG-C2 gate twin)", async () => {
+  test("a1111 fold (IF-6 static-gate fix): a pre-FT-A4 STALE capability snapshot no longer strips loras + hires — the CURRENT static table gates (the 2026-09-18 progress-gate incident class)", async () => {
     const capturedBody: Record<string, unknown>[] = [];
     const { app, stores } = await makeApp(async (input, init) => {
       const url = new URL(String(input));
@@ -905,14 +911,108 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
         prompt: "a tavern at dusk",
         overrides: {
           loras: [{ name: "nijireol_krea2_v1_ep5", strength: 0.7 }],
-          hires: { upscaler: "4x-UltraSharp" },
+          hires: { upscaler: "4x-UltraSharp", steps: 12, scale: 1.5, denoisingStrength: 0.4 },
         },
       }),
     });
     expect(res.status).toBe(200);
     expect(capturedBody.length).toBe(1);
-    expect(capturedBody[0]!.prompt).toBe("a tavern at dusk");
-    expect("enable_hr" in capturedBody[0]!).toBe(false);
+    // The stored mirror is stale-absent, the static table graduated — the
+    // fold must NOT strip (a silently-dropped chain is exactly the
+    // missing-progress incident class, fixed IF-6 2026-09-24).
+    expect(capturedBody[0]!.prompt).toBe("a tavern at dusk, <lora:nijireol_krea2_v1_ep5:0.7>");
+    expect(capturedBody[0]!.enable_hr).toBe(true);
+    expect(capturedBody[0]!.hr_upscaler).toBe("4x-UltraSharp");
+  });
+
+  test("a1111 fold: a backend the static table never graduated strips loras + hires even when a stored mirror lies true (static wins BOTH ways)", async () => {
+    const captured: { init?: RequestInit; calls: number } = { calls: 0 };
+    const { app, stores } = await makeApp(openRouterTransport(captured));
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      modelId: "gpt-image-2",
+      apiKey: "sk-test",
+      modeSizePresets: { portrait: { width: 1024, height: 1024 } },
+      capabilities: {
+        ...IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.OpenRouter],
+        supportsLoras: true,
+        supportsHiresFix: true,
+      },
+    });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: id,
+        mode: "portrait",
+        prompt: "a tavern at dusk",
+        overrides: {
+          loras: [{ name: "some_lora", strength: 0.7 }],
+          hires: { upscaler: "4x-UltraSharp" },
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    // OpenRouter wire is chat-shaped (messages, not prompt): the strip pins
+    // are the absence of the lora entry / hires machinery in the serialized
+    // body — the static table never graduated this backend, mirror or not.
+    const serialized = String(captured.init?.body);
+    expect(serialized).not.toContain("some_lora");
+    expect(serialized).not.toContain("enable_hr");
+  });
+
+  test("profile reads overlay the CURRENT static graduation flags onto a stale stored snapshot (IF-6 — a comfy profile saved before the hires graduation serves the flag)", async () => {
+    const { app } = await makeApp(async () => modelsBody());
+    const staleCaps = { ...IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.ComfyUI] };
+    delete (staleCaps as { supportsHiresFix?: boolean }).supportsHiresFix;
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.ComfyUI,
+      endpoint: "http://127.0.0.1:8188",
+      capabilities: staleCaps,
+    });
+    const res = await app.request(`/api/image-gen/profiles/${id}`);
+    expect(res.status).toBe(200);
+    const row = (await res.json()) as { capabilities: { supportsHiresFix?: boolean; supportsLoras?: boolean } };
+    expect(row.capabilities.supportsHiresFix).toBe(true);
+    expect(row.capabilities.supportsLoras).toBe(true);
+  });
+
+  test("face-detectors route (IF-6): comfy serves the discovered chain; a1111 is dialect-gated 400; unknown profile 404", async () => {
+    const { app, stores } = await makeApp(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/object_info/FaceDetailer") {
+        return Response.json({ FaceDetailer: { input: { required: {} } } });
+      }
+      if (url.pathname === "/object_info/UltralyticsDetectorProvider") {
+        return Response.json({
+          UltralyticsDetectorProvider: {
+            input: { required: { model_name: [["bbox/face_yolov8m.pt", "bbox/hand_yolov8s.pt"], {}] } },
+          },
+        });
+      }
+      return new Response("unused", { status: 200 });
+    });
+    const comfyId = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.ComfyUI,
+      endpoint: "http://127.0.0.1:8188",
+    });
+    const ok = await app.request(`/api/image-gen/profiles/${comfyId}/face-detectors`);
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual(["bbox/face_yolov8m.pt"]);
+
+    const a1111Id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      endpoint: "http://127.0.0.1:7860",
+    });
+    const gated = await app.request(`/api/image-gen/profiles/${a1111Id}/face-detectors`);
+    expect(gated.status).toBe(400);
+    expect(((await gated.json()) as { error: string }).error).toBe("face detector listing not supported");
+
+    const missing = await app.request("/api/image-gen/profiles/missing/face-detectors");
+    expect(missing.status).toBe(404);
+    // Silences the unused-var lint shape of stores in this test's scope.
+    void stores;
   });
 
   test("cloud profile → 400 not supported; unknown profile → 404 (both routes)", async () => {

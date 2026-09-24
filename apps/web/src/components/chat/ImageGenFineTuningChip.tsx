@@ -60,6 +60,7 @@ import {
   listImageGenUpscalers,
   listImageGenSchedulers,
   listImageGenExtensions,
+  listImageGenFaceDetectors,
   listImageGenLoras,
   listImageGenDitSidecars,
   getImageGenModelSettings,
@@ -714,6 +715,9 @@ function ImageGenModelSettingsAccordion({
   const [adOpen, setAdOpen] = useState(false);
   const [overlay, setOverlay] = useState<ImageGenModelSettingsOverlayValue | null>(null);
   const [extensions, setExtensions] = useState<string[] | null>(null);
+  // IF-6 (comfy dialect): null = probe pending or failed (block hidden);
+  // a settled array (possibly empty) = the probe answered.
+  const [faceDetectors, setFaceDetectors] = useState<string[] | null>(null);
   const [schedulers, setSchedulers] = useState<ImageGenSchedulerInfoValue[] | null>(null);
   const [saveError, setSaveError] = useState(false);
   // DiT sidecar lists (CG-B2, comfyui + krea2-dit only): null = not fetched
@@ -723,6 +727,7 @@ function ImageGenModelSettingsAccordion({
   const [sidecarsFailed, setSidecarsFailed] = useState(false);
 
   const isA1111 = backend === IMAGE_GEN_BACKENDS.A1111;
+  const isComfy = backend === IMAGE_GEN_BACKENDS.ComfyUI;
   // The LOCAL dialect family (CG-B2 — the pane's guardIsLocalDialect twin):
   // both dialects serve the schedulers route (PG-3/CG-A3).
   const isLocalDialect =
@@ -765,6 +770,31 @@ function ImageGenModelSettingsAccordion({
       cancelled = true;
     };
   }, [profileId, isA1111]);
+
+  // Face-detector chain probe (IF-6) — ComfyUI dialect only: the Impact
+  // Pack chain (FaceDetailer node + face bbox models) discovered live. A
+  // FAILED probe hides the block (the extensions precedent); an ANSWERED
+  // probe with an empty list renders it disabled + hint (the plan's honest
+  // unavailable ruling — the extension probe has no such twin because
+  // absence there is just absence).
+  useEffect(() => {
+    if (!isComfy) {
+      setFaceDetectors(null);
+      return;
+    }
+    let cancelled = false;
+    setFaceDetectors(null);
+    void listImageGenFaceDetectors(profileId)
+      .then((detectors) => {
+        if (!cancelled) setFaceDetectors(detectors ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setFaceDetectors(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileId, isComfy]);
 
   // Scheduler list (PG-3/CG-B2) — the schedule-type catalog for the dropdown
   // next to the sampler, on the LOCAL dialect family (a1111 + comfyui —
@@ -814,7 +844,24 @@ function ImageGenModelSettingsAccordion({
     };
   }, [profileId, isDit, sidecars, sidecarsFailed]);
 
-  const hasAdetailer = extensions !== null && hasAdetailerExtension(extensions);
+  const hasAdetailer =
+    isA1111
+      ? extensions !== null && hasAdetailerExtension(extensions)
+      : faceDetectors !== null && faceDetectors.length > 0;
+  // IF-6 (comfy dialect): the probe ANSWERED but the Impact Pack chain is
+  // absent — the block renders as a disabled label + the install hint
+  // (the plan's "honestly unavailable" ruling), never silently missing.
+  const adetailerUnavailable =
+    !isA1111 && faceDetectors !== null && faceDetectors.length === 0;
+  // The picker vocabulary (IF-6): the A1111 twin keeps its static preset
+  // list (the extension validates server-side); comfy rides the DISCOVERED
+  // face bbox models — one code path per dialect, same overlay fields.
+  const adetailerOptions = isA1111
+    ? IMAGE_GEN_ADETAILER_FACE_MODELS.map((m) => ({ id: m, label: m }))
+    : (faceDetectors ?? []).map((m) => ({ id: m, label: m }));
+  const adetailerFallback = isA1111
+    ? IMAGE_GEN_ADETAILER_DEFAULT_MODEL
+    : (faceDetectors ?? [])[0] ?? "";
 
   /** Merge a patch into the overlay and persist it (the overlay row is the
    *  whole truth — every edit writes the full merged settings; an undefined
@@ -1008,8 +1055,22 @@ function ImageGenModelSettingsAccordion({
 
           {/* ADetailer — NESTED inside the samplers accordion (owner
               2026-09-17); the whole block is hidden unless the server
-              reports the extension. */}
-          {hasAdetailer && (
+              reports the chain (A1111: the extension probe; comfy: the
+              discovered face bbox models, IF-6). A comfy probe that ANSWERED
+              empty renders the disabled label + install hint instead. */}
+          {adetailerUnavailable ? (
+            <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-adetailer">
+              <div className="flex w-full items-center justify-between rounded-md border border-border bg-s3 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3">
+                <span>{t("image_gen_adetailer")}</span>
+              </div>
+              <span
+                className="font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t3"
+                data-testid="image-gen-ft-adetailer-missing"
+              >
+                {t("image_gen_adetailer_missing_hint")}
+              </span>
+            </div>
+          ) : hasAdetailer && (
             <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-adetailer">
               <button
                 type="button"
@@ -1036,8 +1097,8 @@ function ImageGenModelSettingsAccordion({
                     <div className="flex flex-col gap-1.5">
                       <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_adetailer_model")}</span>
                       <DropdownSelect
-                        value={adetailerModel ?? IMAGE_GEN_ADETAILER_DEFAULT_MODEL}
-                        options={IMAGE_GEN_ADETAILER_FACE_MODELS.map((m) => ({ id: m, label: m }))}
+                        value={adetailerModel ?? adetailerFallback}
+                        options={adetailerOptions}
                         onChange={(id) => commit({ adetailerModel: id })}
                         disabled={disabled}
                         triggerTestId="image-gen-ft-adetailer-model"

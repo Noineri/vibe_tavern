@@ -31,6 +31,7 @@ import {
   detectImageGenProfileFamily,
   importImageGenSamplerSet,
   listImageGenExtensions,
+  listImageGenFaceDetectors,
   listImageGenSamplerSets,
   listImagePromptFamilies,
   setImageGenProfileFamily,
@@ -1437,6 +1438,34 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
       cancelled = true;
     };
   }, [guardIsA1111, guardProfileId]);
+  // Face-detector chain probe (IF-6) — the ComfyUI dialect's ADetailer
+  // availability twin of the extensions probe above: null = pending/failed
+  // (row hidden, the failed-probe precedent); an ANSWERED empty list = the
+  // Impact Pack chain absent (row renders disabled + hint, the plan's
+  // honest-unavailable ruling); non-empty = the toggle lights up and the
+  // picker serves the DISCOVERED models.
+  const guardIsComfy = form?.backend === IMAGE_GEN_BACKENDS.ComfyUI;
+  const [faceDetectors, setFaceDetectors] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!guardIsComfy || guardProfileId === null) {
+      setFaceDetectors(null);
+      return;
+    }
+    let cancelled = false;
+    setFaceDetectors(null);
+    void listImageGenFaceDetectors(guardProfileId)
+      .then((detectors) => {
+        if (!cancelled) setFaceDetectors(detectors ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setFaceDetectors(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [guardIsComfy, guardProfileId]);
+  const adetailerReady = guardIsComfy ? (faceDetectors?.length ?? 0) > 0 : hasAdetailer;
+  const adetailerMissing = guardIsComfy && faceDetectors !== null && faceDetectors.length === 0;
 
   if (form === null || form.id === null) return null;
   const profileId = form.id;
@@ -2031,30 +2060,53 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                 cellTestId="image-gen-field-clip-skip"
               />
               {/* ADetailer (IG-CF15 15d / PG-4 v1): the pane's twin of the
-                  chip's nested accordion — same overlay fields, extensions-
-                  gated; one source of truth, two surfaces. Overlay-only (the
-                  profile base carries no face-fix flag in v1). */}
-              {bound && hasAdetailer && (
+                  chip's nested accordion — same overlay fields,
+                  chain-gated (A1111: the extensions probe; comfy: the
+                  discovered face bbox models, IF-6); one source of truth,
+                  two surfaces. Overlay-only (the profile base carries no
+                  face-fix flag in v1). A comfy probe that ANSWERED empty
+                  renders the row disabled + the install hint. */}
+              {bound && (adetailerReady || adetailerMissing) && (
                 <div
                   className="col-span-full flex flex-col gap-2 rounded-md border border-border bg-s2/50 p-2.5"
                   data-testid="image-gen-adetailer-row"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
+                    <span
+                      className={cn(
+                        "font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
+                        adetailerMissing ? "text-t3" : "text-t1",
+                      )}
+                    >
                       {t("image_gen_adetailer")}
                     </span>
                     <Toggle
                       checked={overlay?.adetailer === true}
                       onChange={(checked) => imageGen.setModelOverlay({ adetailer: checked })}
+                      disabled={adetailerMissing}
                       aria-label={t("image_gen_adetailer")}
                     />
                   </div>
-                  {overlay?.adetailer === true && (
+                  {adetailerMissing ? (
+                    <span
+                      className="font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t3"
+                      data-testid="image-gen-adetailer-missing"
+                    >
+                      {t("image_gen_adetailer_missing_hint")}
+                    </span>
+                  ) : overlay?.adetailer === true && (
                     <div className="flex flex-col gap-1.5">
                       <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t("image_gen_adetailer_model")}</span>
                       <DropdownSelect
-                        value={overlay?.adetailerModel ?? IMAGE_GEN_ADETAILER_DEFAULT_MODEL}
-                        options={IMAGE_GEN_ADETAILER_FACE_MODELS.map((m) => ({ id: m, label: m }))}
+                        value={
+                          overlay?.adetailerModel ??
+                          (guardIsComfy ? faceDetectors?.[0] ?? "" : IMAGE_GEN_ADETAILER_DEFAULT_MODEL)
+                        }
+                        options={
+                          guardIsComfy
+                            ? (faceDetectors ?? []).map((m) => ({ id: m, label: m }))
+                            : IMAGE_GEN_ADETAILER_FACE_MODELS.map((m) => ({ id: m, label: m }))
+                        }
                         onChange={(id) => imageGen.setModelOverlay({ adetailerModel: id })}
                         triggerTestId="image-gen-adetailer-model"
                       />

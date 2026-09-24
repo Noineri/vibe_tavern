@@ -22,6 +22,8 @@ import {
   ComfyImageGenConfigError,
   ComfyImageGenError,
   ComfyImageGenSizeError,
+  applyComfyFaceDetailerPass,
+  applyComfyHiresPass,
   buildComfyCheckpointWorkflow,
   buildComfyKrea2Workflow,
   comfyImageGenFactory,
@@ -1531,5 +1533,262 @@ describe("comfyui registry registration", () => {
       fetch: (() => new Response()) as unknown as typeof fetch,
     });
     expect(typeof backend.generate).toBe("function");
+  });
+});
+
+describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
+  // The wire facts below trace to the 0.37.0 live probes (2026-09-24):
+  // missing node = 200 with {}; per-node combos may arrive truncated to the
+  // literal "COMBO" string; FaceDetailer declares ~30 required inputs whose
+  // defaults the API graph must carry explicitly.
+
+  /** Extract the queued workflow graph off the recorded /prompt POST. */
+  function queuedGraph(calls: RecordedCall[]): Record<string, { class_type: string; inputs: Record<string, unknown> }> {
+    const posted = calls.filter((call) => call.url.endsWith("/prompt"));
+    expect(posted.length).toBe(1);
+    const body = JSON.parse(String(posted[0]!.init?.body)) as {
+      prompt: Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+    };
+    return body.prompt;
+  }
+
+  /** A second-pass-capable happy transport: the happy path plus optional
+   *  upscale models, FaceDetailer presence, and detector sources. */
+  function secondPassTransport(
+    promptId: string,
+    options: {
+      upscaleModels?: string[];
+      faceDetailerNode?: boolean;
+      detectorCombo?: string[] | "COMBO";
+      detectorFolder?: string[];
+    } = {},
+  ) {
+    return makeTransport((url) => {
+      if (url.pathname === "/object_info/CheckpointLoaderSimple") {
+        return objectInfoResponse("CheckpointLoaderSimple", "ckpt_name", HAPPY_CHECKPOINTS);
+      }
+      if (url.pathname === "/models/upscale_models") {
+        return Response.json(options.upscaleModels ?? ["4x-UltraSharp.pth", "ESRGAN_4x.pth"]);
+      }
+      if (url.pathname === "/object_info/FaceDetailer") {
+        return Response.json(options.faceDetailerNode === false ? {} : { FaceDetailer: { input: { required: {} } } });
+      }
+      if (url.pathname === "/object_info/UltralyticsDetectorProvider") {
+        if (options.detectorCombo === "COMBO") {
+          return Response.json({
+            UltralyticsDetectorProvider: { input: { required: { model_name: ["COMBO", {}] } } },
+          });
+        }
+        return objectInfoResponse(
+          "UltralyticsDetectorProvider",
+          "model_name",
+          options.detectorCombo ?? ["bbox/face_yolov8m.pt", "bbox/hand_yolov8s.pt", "segm/person_yolov8m-seg.pt"],
+        );
+      }
+      if (url.pathname === "/models/ultralytics") {
+        return Response.json(options.detectorFolder ?? []);
+      }
+      if (url.pathname === "/prompt") return queuedOk(promptId);
+      if (url.pathname === `/history/${promptId}`) return historyDone(promptId);
+      if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES));
+      return new Response("not found", { status: 404 });
+    });
+  }
+
+  it("hire pass (pure): the unset upscaler rides the LATENT path — LatentUpscaleBy → second KSampler → second decode, SaveImage rewired", () => {
+    const { graph, ctx } = buildComfyCheckpointWorkflow(
+      { prompt: "a tavern", model: "graycolor_v18.safetensors", steps: 24, cfgScale: 5, sampler: "dpmpp_2m", scheduler: "karras", seed: 777 },
+      "graycolor_v18.safetensors",
+    );
+    const { finalImage } = applyComfyHiresPass(
+      graph,
+      { prompt: "a tavern", hires: { steps: 12, scale: 1.5, denoisingStrength: 0.4 } },
+      ctx,
+    );
+    expect(graph["30"]!.class_type).toBe("LatentUpscaleBy");
+    expect(graph["30"]!.inputs).toEqual({ samples: ["3", 0], upscale_method: "nearest-exact", scale_by: 1.5 });
+    expect(graph["31"]).toBeUndefined();
+    expect(graph["34"]!.class_type).toBe("KSampler");
+    expect(graph["34"]!.inputs).toMatchObject({
+      seed: 777,
+      steps: 12,
+      cfg: 5,
+      sampler_name: "dpmpp_2m",
+      scheduler: "karras",
+      denoise: 0.4,
+      latent_image: ["30", 0],
+      positive: ["6", 0],
+      negative: ["7", 0],
+    });
+    expect(graph["35"]!.inputs).toEqual({ samples: ["34", 0], vae: ["4", 2] });
+    expect(graph["9"]!.inputs.images).toEqual(["35", 0]);
+    expect(finalImage).toEqual(["35", 0]);
+  });
+
+  it("hire pass (pure): unset steps INHERIT the first pass (A1111 hr steps=0 semantics) and defaults materialize 2.0/0.75", () => {
+    const { graph, ctx } = buildComfyCheckpointWorkflow(
+      { prompt: "a tavern", model: "graycolor_v18.safetensors", steps: 24 },
+      "graycolor_v18.safetensors",
+    );
+    applyComfyHiresPass(graph, { prompt: "a tavern", hires: {} }, ctx);
+    expect(graph["34"]!.inputs).toMatchObject({ steps: 24, denoise: 0.75 });
+    expect(graph["30"]!.inputs.scale_by).toBe(2.0);
+  });
+
+  it("hire pass (pure): a NAMED upscaler rides the model path — UpscaleModelLoader → ImageUpscaleWithModel → VAEEncode", () => {
+    const { graph, ctx } = buildComfyCheckpointWorkflow(
+      { prompt: "a tavern", model: "graycolor_v18.safetensors" },
+      "graycolor_v18.safetensors",
+    );
+    applyComfyHiresPass(graph, { prompt: "a tavern", hires: { upscaler: "4x-UltraSharp.pth" } }, ctx);
+    expect(graph["30"]).toBeUndefined();
+    expect(graph["31"]!.inputs).toEqual({ model_name: "4x-UltraSharp.pth" });
+    expect(graph["32"]!.inputs).toEqual({ upscale_model: ["31", 0], image: ["8", 0] });
+    expect(graph["33"]!.inputs).toEqual({ pixels: ["32", 0], vae: ["4", 2] });
+    expect(graph["34"]!.inputs.latent_image).toEqual(["33", 0]);
+    expect(graph["9"]!.inputs.images).toEqual(["35", 0]);
+  });
+
+  it("face detailer (pure): the Impact Pack chain rewrites SaveImage and carries every required input explicitly", () => {
+    const { graph, ctx } = buildComfyCheckpointWorkflow(
+      { prompt: "a tavern", model: "graycolor_v18.safetensors", steps: 30 },
+      "graycolor_v18.safetensors",
+    );
+    applyComfyFaceDetailerPass(
+      graph,
+      { prompt: "a tavern" },
+      { ...ctx, finalImage: ["8", 0], detector: "bbox/face_yolov8m.pt" },
+    );
+    expect(graph["40"]!.inputs).toEqual({ model_name: "bbox/face_yolov8m.pt" });
+    expect(graph["41"]!.class_type).toBe("FaceDetailer");
+    expect(graph["41"]!.inputs).toMatchObject({
+      image: ["8", 0],
+      model: ["4", 0],
+      clip: ["4", 1],
+      vae: ["4", 2],
+      positive: ["6", 0],
+      negative: ["7", 0],
+      bbox_detector: ["40", 0],
+      wildcard: "",
+      seed: ctx.seed,
+      steps: 30,
+      denoise: 0.5,
+      guide_size: 512,
+      guide_size_for: true,
+      max_size: 1024,
+      sam_detection_hint: "mask-area",
+      drop_size: 10,
+      cycle: 1,
+    });
+    expect(graph["9"]!.inputs.images).toEqual(["41", 0]);
+  });
+
+  it("face detailer (pure): chains AFTER hires — its image is the second decode", () => {
+    const { graph, ctx } = buildComfyCheckpointWorkflow(
+      { prompt: "a tavern", model: "graycolor_v18.safetensors" },
+      "graycolor_v18.safetensors",
+    );
+    const { finalImage } = applyComfyHiresPass(graph, { prompt: "a tavern", hires: {} }, ctx);
+    applyComfyFaceDetailerPass(
+      graph,
+      { prompt: "a tavern" },
+      { ...ctx, finalImage, detector: "bbox/face_yolov8m.pt" },
+    );
+    expect(graph["41"]!.inputs.image).toEqual(["35", 0]);
+    expect(graph["9"]!.inputs.images).toEqual(["41", 0]);
+  });
+
+  it("generate: hires rides the queued graph; a NAMED upscaler is validated against the live folder (fail closed, no queue POST)", async () => {
+    const valid = secondPassTransport("p-ok");
+    const ok = backendWith(valid.transport);
+    await ok.generate({
+      prompt: "a tavern",
+      model: "graycolor_v18.safetensors",
+      hires: { upscaler: "4x-UltraSharp.pth" },
+    });
+    const graph = queuedGraph(valid.calls);
+    expect(graph["31"]!.inputs.model_name).toBe("4x-UltraSharp.pth");
+    expect(graph["9"]!.inputs.images).toEqual(["35", 0]);
+
+    const invalid = secondPassTransport("p-bad");
+    const bad = backendWith(invalid.transport);
+    await expect(
+      bad.generate({
+        prompt: "a tavern",
+        model: "graycolor_v18.safetensors",
+        hires: { upscaler: "not_a_model.pth" },
+      }),
+    ).rejects.toThrow(ComfyImageGenConfigError);
+    expect(invalid.calls.filter((call) => call.url.endsWith("/prompt")).length).toBe(0);
+  });
+
+  it("generate: face detailing validates the chain — absent FaceDetailer node and unknown detector fail closed with named errors", async () => {
+    const absent = secondPassTransport("p-no-node", { faceDetailerNode: false });
+    await expect(
+      backendWith(absent.transport).generate({
+        prompt: "a tavern",
+        model: "graycolor_v18.safetensors",
+        adetailerModel: "bbox/face_yolov8m.pt",
+      }),
+    ).rejects.toThrow("Impact Pack");
+    expect(absent.calls.filter((call) => call.url.endsWith("/prompt")).length).toBe(0);
+
+    const unknown = secondPassTransport("p-unknown");
+    await expect(
+      backendWith(unknown.transport).generate({
+        prompt: "a tavern",
+        model: "graycolor_v18.safetensors",
+        adetailerModel: "bbox/ghost.pt",
+      }),
+    ).rejects.toThrow("face detector");
+    expect(unknown.calls.filter((call) => call.url.endsWith("/prompt")).length).toBe(0);
+
+    const ok = secondPassTransport("p-ok");
+    await backendWith(ok.transport).generate({
+      prompt: "a tavern",
+      model: "graycolor_v18.safetensors",
+      adetailerModel: "bbox/face_yolov8m.pt",
+      hires: { scale: 1.5 },
+    });
+    const graph = queuedGraph(ok.calls);
+    expect(graph["41"]!.inputs.image).toEqual(["35", 0]);
+    expect(graph["9"]!.inputs.images).toEqual(["41", 0]);
+  });
+
+  it("generate: without second passes the base graph stays byte-identical — no hires/detailer nodes on the wire", async () => {
+    const transport = secondPassTransport("p-plain");
+    await backendWith(transport.transport).generate({ prompt: "a tavern", model: "graycolor_v18.safetensors" });
+    const graph = queuedGraph(transport.calls);
+    for (const id of ["30", "31", "32", "33", "34", "35", "40", "41"]) {
+      expect(graph[id]).toBeUndefined();
+    }
+    expect(graph["9"]!.inputs.images).toEqual(["8", 0]);
+    // Zero second-pass probes on the off path (the lora-list precedent).
+    expect(
+      transport.calls.some((call) => /upscale_models|FaceDetailer|ultralytics/.test(call.url)),
+    ).toBe(false);
+  });
+
+  it("listUpscalers: the live upscale_models folder verbatim", async () => {
+    const transport = secondPassTransport("p-u");
+    const list = await backendWith(transport.transport).listUpscalers?.();
+    expect(list).toEqual([{ name: "4x-UltraSharp.pth" }, { name: "ESRGAN_4x.pth" }]);
+  });
+
+  it("listFaceDetectors: the face bbox combo, face-filtered; absent chain = []; a truncated combo falls back to the folder (separator-normalized)", async () => {
+    const full = secondPassTransport("p-d1");
+    expect(await backendWith(full.transport).listFaceDetectors?.()).toEqual(["bbox/face_yolov8m.pt"]);
+
+    const absent = secondPassTransport("p-d2", { faceDetailerNode: false });
+    expect(await backendWith(absent.transport).listFaceDetectors?.()).toEqual([]);
+
+    const truncated = secondPassTransport("p-d3", {
+      detectorCombo: "COMBO",
+      detectorFolder: ["bbox\\face_yolov8m.pt", "bbox\\hand_yolov8s.pt", "segm\\person_yolov8m-seg.pt"],
+    });
+    expect(await backendWith(truncated.transport).listFaceDetectors?.()).toEqual(["bbox/face_yolov8m.pt"]);
+
+    const noFaces = secondPassTransport("p-d4", { detectorCombo: ["bbox/hand_yolov8s.pt"] });
+    expect(await backendWith(noFaces.transport).listFaceDetectors?.()).toEqual([]);
   });
 });

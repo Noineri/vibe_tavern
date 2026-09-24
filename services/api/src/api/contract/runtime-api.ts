@@ -1117,6 +1117,11 @@ export interface ImageGenRuntimeApi {
 	 *  unsupported backend (route → 404/400, the samplers ladder). */
 	listImageGenProfileLoras: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenLoraInfoValue[] | null>;
 	listImageGenProfileUpscalers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenUpscalerInfoValue[] | null>;
+	/** Face-detector model list for a saved profile (comfyui-dialect gate,
+	 *  IF-6 — the Impact Pack chain probe): null = unknown profile or
+	 *  unsupported backend (route → 404/400); an EMPTY array = the dialect
+	 *  is right but the chain is absent (the honest unavailable signal). */
+	listImageGenProfileFaceDetectors: (id: string, signal?: AbortSignal) => Promise<string[] | null>;
 	/** Live progress snapshot for a saved profile — capability-gated
 	 *  (supportsLiveProgress, A1111 dialect in v1). Null = unknown profile
 	 *  or unsupported backend (route → 404/400, the samplers ladder). */

@@ -648,6 +648,7 @@
 	"image_gen_model_settings": "Model sampler settings",
 	"image_gen_adetailer": "Face fix (ADetailer)",
 	"image_gen_adetailer_model": "Face detection model",
+	"image_gen_adetailer_missing_hint": "Impact Pack with a face bbox model not found on the server — install ComfyUI-Impact-Pack and a face detector (e.g. face_yolov8m) to enable face detailing",
 	"image_gen_overlay_save_failed": "Failed to save the model overlay",
 	"image_gen_assist_title": "LLM-assisted prompt writing",
 	"image_gen_assist_hint": "When on, the chosen AI model writes the image prompt from the scene before each generation.",

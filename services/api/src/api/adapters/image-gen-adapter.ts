@@ -74,7 +74,7 @@ import type {
   StoreContainer,
   UpdateImageGenProfileData,
 } from "@vibe-tavern/db";
-import type { Attachment, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance } from "@vibe-tavern/domain";
+import type { Attachment, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance, ImageGenBackendType, ImageGenCapabilityFlags } from "@vibe-tavern/domain";
 import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, IMAGE_PROMPT_FAMILIES, PROXY_MODE } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
@@ -172,6 +172,22 @@ export interface ImageGenAssistDeps {
 
 // ─── Wire projections ────────────────────────────────────────────────────────
 
+/** Overlay the current static-table graduation flags onto a stored
+ *  capability snapshot — the flags that land on a backend AFTER profiles
+ *  were saved (CG-C2 loras, FT-A4 hires, IF-6 comfy hires). Static wins
+ *  BOTH ways: a stale-absent mirror gains the flag, a stale-present mirror
+ *  on a backend that never had it cannot keep it either. */
+function overlayGraduationFlags(
+  backend: ImageGenBackendType,
+  stored: ImageGenCapabilityFlags,
+): ImageGenCapabilityFlags {
+  const flags = { ...stored };
+  const staticFlags = IMAGE_GEN_BACKEND_CAPABILITIES[backend];
+  flags.supportsLoras = staticFlags.supportsLoras === true;
+  flags.supportsHiresFix = staticFlags.supportsHiresFix === true;
+  return flags;
+}
+
 /** IG-1 key rule (the TE2-16/ST-1 projection): the secret lives in the typed
  *  `apiKey` column and is reported as `hasStoredApiKey` — it never crosses
  *  the boundary on a read; every JSON blob was strip-on-write in the store. */
@@ -189,7 +205,14 @@ function toClientProfile(profile: ImageGenProfile): ImageGenProfileValue {
     llmAssistEnabled: profile.llmAssistEnabled,
     qualityLayerEnabled: profile.qualityLayerEnabled,
     familySource: profile.familySource,
-    capabilities: profile.capabilities,
+    // IF-6 (2026-09-24): the GRADUATION flags (supportsLoras / supportsHiresFix)
+    // are overlaid from the CURRENT static table by backend — the stored
+    // snapshot is a save-time cache that goes stale the moment a backend
+    // graduates (the progress-gate staleness incident, 2026-09-18: a
+    // post-graduation mirror hid a live feature from the owner). The
+    // editor keeps snapshotting on save (the create contract is
+    // unchanged); reads never serve a stale graduation flag again.
+    capabilities: overlayGraduationFlags(profile.backend, profile.capabilities),
     isDefault: profile.isDefault,
     sortOrder: profile.sortOrder,
     createdAt: profile.createdAt,
@@ -575,9 +598,15 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
     // Static dialect gate FIRST (the schedulers twin, FT-A4): the upscaler
-    // surface exists ONLY on the A1111 dialect (GET /sdapi/v1/upscalers) —
-    // the check answers without live config validity.
-    if (profile.backend !== IMAGE_GEN_BACKENDS.A1111) return null;
+    // surface exists on the LOCAL dialects — A1111 (GET /sdapi/v1/upscalers)
+    // and ComfyUI (GET /models/upscale_models, IF-6) — the check answers
+    // without live config validity.
+    if (
+      profile.backend !== IMAGE_GEN_BACKENDS.A1111 &&
+      profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI
+    ) {
+      return null;
+    }
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     // Interface-driven second gate: a backend without the upscaler-listing
     // method reports "not supported", not an empty list.
@@ -585,6 +614,23 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const listUpscalers = backend.listUpscalers.bind(backend);
     return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "upscaler list", (inner) =>
       listUpscalers(inner),
+    );
+  };
+
+  listImageGenProfileFaceDetectors = async (id: string, signal?: AbortSignal) => {
+    const profile = await this.stores.imageGen.getById(id);
+    if (!profile) return null;
+    // Static dialect gate FIRST (the extensions twin): the face-detector
+    // chain probe is COMFYUI-only (IF-6 — the A1111 twin rides its static
+    // preset list off the extensions probe; one code path per dialect).
+    if (profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI) return null;
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
+    // Interface-driven second gate: a backend without the method reports
+    // "not supported", not an empty list.
+    if (typeof backend.listFaceDetectors !== "function") return null;
+    const listFaceDetectors = backend.listFaceDetectors.bind(backend);
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "face detector list", (inner) =>
+      listFaceDetectors(inner),
     );
   };
 
@@ -797,16 +843,21 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         : undefined;
     // LoRAs (CG-C2): the chip-draft rung ONLY — no overlay, no profile base
     // (per-generation by design, the FT plan's draft-level ruling) — and
-    // capability-gated: a profile without supportsLoras never sees the
-    // field (the negativePrompt gate precedent; existing pre-C2 profiles
-    // store no flag → inert until recreated).
-    const loras = profile.capabilities.supportsLoras === true ? overrides.loras : undefined;
+    // capability-gated off the CURRENT static table by backend (IF-6: the
+    // progress-gate rule — the stored mirror is a save-time snapshot that
+    // goes stale the moment a backend graduates; a pre-graduation profile
+    // must not silently drop the lora chain a re-saved twin would send).
+    const supportsLoras = IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsLoras === true;
+    const loras = supportsLoras ? overrides.loras : undefined;
     // Hires-fix (FT-A4): the chip-draft rung ONLY — no overlay, no profile
-    // base (per-generation by design, the LoRA ruling's twin) — and
-    // capability-gated: a profile without supportsHiresFix never sees the
-    // field (pre-FT-A4 profile snapshots store no flag → inert until
-    // re-saved).
-    const hires = profile.capabilities.supportsHiresFix === true ? overrides.hires : undefined;
+    // base (per-generation by design, the LoRA ruling's twin) — and gated
+    // off the same CURRENT static table (the IF-6 staleness fix: comfy
+    // profiles saved before 2026-09-24 carry no supportsHiresFix mirror,
+    // yet the dialect now ships the second-pass subgraph).
+    const hires =
+      IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsHiresFix === true
+        ? overrides.hires
+        : undefined;
 
     // IG-15 assist runner: built when the profile's assist is ENABLED and
     // BOTH picks exist (absent picks = assist inert — bit-identical legacy

@@ -216,6 +216,26 @@ export async function listImageGenExtensions(
   return (await response.json()) as string[];
 }
 
+/** Face-detector model list for a saved ComfyUI-dialect profile (IF-6 —
+ *  the Impact Pack chain probe): the DISCOVERED face bbox models feeding
+ *  the ADetailer-equivalent toggle + picker. Null = unknown profile; a
+ *  non-comfy backend throws the route's 400 — callers gate on the
+ *  profile's backend before calling. An EMPTY array = the dialect is
+ *  right but the chain is absent (the honest unavailable signal). */
+export async function listImageGenFaceDetectors(
+  id: string,
+  signal?: AbortSignal,
+): Promise<string[] | null> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/face-detectors`),
+    { signal },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw await rawError("Image-gen face detector list", response);
+  return (await response.json()) as string[];
+}
+
 /** Scheduler (schedule type) list for a saved A1111-dialect profile
  *  (PG-3): the live `GET /sdapi/v1/schedulers` catalog for the advanced
  *  panel's dropdown — fetched at form time, never hardcoded. Null =
