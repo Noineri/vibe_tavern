@@ -96,8 +96,10 @@ export interface ImageGenFineTuningDraft {
   loras?: ImageGenLoraPick[];
   /** Hires-fix pick (FT-A6) → overrides.hires at the fold — capability-gated
    *  (supportsHiresFix). `enabled` is the chip's toggle (off = collapsed,
-   *  nothing sent); the four SEPARATE knobs (owner 2026-09-17: «отдельные
-   *  ручки нужны») ride only when SET — unset knobs stay unset so server
+   *  nothing sent); the four SEPARATE knobs (owner ruling 2026-09-17:
+   *  separate hires knobs, not one merged toggle — see
+   *  plans/FINE_TUNING_CHIP_REBUILD_PLAN.md) ride only when SET — unset
+   *  knobs stay unset so server
    *  defaults fill (enabled + no knobs = plain enable_hr, the FT-A4
    *  presence rule). */
   hires?: ImageGenHiresDraft;

@@ -2314,7 +2314,8 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   (both bind arms: bound → overlay.hires, unbound →
                   defaultParams.hires), so a stock set's configured-but-
                   disabled block has a place where the user flips it on
-                  (owner: «пусть пользователь включает»). Gated off the
+                  (owner ruling 2026-09-22: the user opts in — see
+                  reports/IMAGEGEN_FOLLOWUP_REPORT.md). Gated off the
                   STATIC capability table — the adapter's own gate (the
                   mirror can be stale, the IF-6 lesson). */}
               {supportsHiresPane && (

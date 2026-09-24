@@ -38,7 +38,7 @@ export interface ImageBlockImage {
   /** Generation prompt shown under the image inside the MR-8 accordion. */
   caption?: string;
   /** C-A (owner 2026-09-19): the assist LLM model that authored the prompt
-   *  — a quiet suffix on the collapsed accordion header («ПРОМПТ · model»),
+   *  — a quiet suffix on the collapsed accordion header (prompt label · model),
    *  rendered only when the prompt was AI-assisted. */
   captionAuthor?: string;
   /** MR-9: when present, the expanded accordion offers an inline prompt
@@ -184,7 +184,9 @@ function ImageBlockTile({ image, onOpen }: { image: ImageBlockImage; onOpen: () 
             </span>
             <span>{t("image_block_prompt_row")}</span>
             {/* C-A: the author model rides the collapsed header as a quiet,
-             *  non-uppercase suffix (owner: «неакцентно»). It is USER data
+             *  non-uppercase suffix (owner ruling 2026-09-19: quiet,
+             *  unaccented — see reports/IMAGEGEN_MAINTENANCE_REPORT.md).
+             *  It is USER data
              *  (a stored model id) in an identification context — truncates
              *  with the full value on the title tooltip. */}
             {image.captionAuthor && (

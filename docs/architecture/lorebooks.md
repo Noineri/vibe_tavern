@@ -312,7 +312,7 @@ lore that must always ship (e.g. core character traits).
 
 Full audit: `vibe_tavern_plan/archive/lorebook-st-parity-audit.md`. Summary:
 
-### Matches 1-в-1 (ST behaviour preserved)
+### Matches 1-to-1 (ST behaviour preserved)
 - Scan depth (mechanic; default differs)
 - Recursive scanning, `excludeRecursion`, `preventRecursion`
 - Activation states (constant / conditional / disabled)

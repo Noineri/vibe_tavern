@@ -423,8 +423,10 @@ export function MessageShell(props: MessageShellProps) {
           {/* ── Metadata ── */}
           {/* IG-CF6: no token meta on a pure image slot — the metadata bar's
               token count + model badges are text-message provenance for a
-              message whose content is the image. C-B (owner 2026-09-19:
-              «вынести мету… выше кнопок, как у текстового сообщения»): the
+              message whose content is the image. C-B (owner ruling
+              2026-09-19: hoist the meta line above the action rows,
+              mirroring the text message — see
+              reports/IMAGEGEN_MAINTENANCE_REPORT.md): the
               slot instead carries its OWN quiet meta line — mode display
               name + generation model — at the exact position the text
               message's metadata bar occupies, above both action rows. */}

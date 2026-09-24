@@ -74,8 +74,10 @@ echo Press Ctrl+C to stop.
 echo.
 
 rem If the port is busy, offer to kill the stale holder instead of falling
-rem silently — the deliberate restart UX (owner 2026-09-19: «батник не
-rem падал молча, а предлагал убить старый. оно работало»). Repaired, not
+rem silently — the deliberate restart UX (owner ruling 2026-09-19: the
+rem launcher must offer to kill the stale holder instead of dying
+rem silently, as it always did — see IMAGEGEN_MAINTENANCE_REPORT).
+rem Repaired, not
 rem removed: the original assigned to $pid — a READ-ONLY automatic
 rem PowerShell variable — so the assignment threw VariableNotWritable and
 rem both the reported and the offered-to-kill PID were powershell.exe

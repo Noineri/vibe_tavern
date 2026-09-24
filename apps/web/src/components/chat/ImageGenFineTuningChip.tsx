@@ -14,10 +14,10 @@
  *
  * The editor holds the design's chip contents (design lines 30/160):
  * profile + model pick, the model-settings accordion (FT-A1: the ONLY
- * sampler surface — the one-shot draft sampler row is gone, owner
- * 2026-09-17: «тонкая настройка существует именно для того, чтобы выбрать
- * все, что нужно»), LoRAs, positive prompt, negative prompt (only when
- * `supportsNegativePrompt` — the IG-13 gate). Everything edits the per-chat
+ * sampler surface — the one-shot draft sampler row is gone; owner ruling
+ * 2026-09-17: the fine-tuning editor is THE place to pick everything, see
+ * plans/FINE_TUNING_CHIP_REBUILD_PLAN.md), LoRAs, positive prompt, negative
+ * prompt (only when `supportsNegativePrompt` — the IG-13 gate). Everything edits the per-chat
  * draft in the image-gen chat store; the message popover folds the draft
  * into the NEXT generation's payload (positive → verbatim `prompt`, picks +
  * negative → `overrides`).
@@ -640,7 +640,8 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
           </div>
         )}
 
-        {/* Footer (FT-A3): Clear + the immediate «Сгенерировать» — fires the
+        {/* Footer (FT-A3): Clear + the immediate Generate button (i18n key
+            image_gen_chip_generate) — fires the
             shared draft fold on the current chat (mode = the target selector,
             anchor = the tail message) and closes the editor; the image lands
             as a chat slot message exactly like the message-popover path. Free

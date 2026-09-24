@@ -1,7 +1,9 @@
 /**
  * Spot-test wrapper — `bun run test:file -- <test-file> [extra bun-test args]`.
  *
- * WHY THIS EXISTS (owner 2026-09-21: «тесты засирают диск C»): the official
+ * WHY THIS EXISTS (owner ruling 2026-09-21: per-file test runs were
+ * littering the C: drive — see plans/FINE_TUNING_CHIP_REBUILD_PLAN.md): the
+ * official
  * runner (`scripts/test.ts`) redirects TEMP/TMP/TMPDIR into a per-suite
  * disposable root and sweeps it at the end, but the skill-mandated per-file
  * verification runs (`bun test <file>`) bypass all of that — every SQLite

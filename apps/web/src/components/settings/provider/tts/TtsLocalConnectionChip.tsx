@@ -10,8 +10,9 @@ import type { useTtsProfiles } from "./use-tts-profiles.js";
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 
 /** The TTS local-connection chip, rendered OUTSIDE the provider card (owner
- *  2026-09-22: «он у ттс и стт внутри карточки провайдера отображается, при
- *  первом подключении. а должен снаружи» — LLM parity: the chip sits between
+ *  ruling 2026-09-22: not inside the card and not only at first connection
+ *  — LLM parity; verbatim quote in
+ *  reports/LEGACY_CYRILLIC_CLEANUP_REPORT.md ledger): the chip sits between
  *  the card and the level-2 sections in BOTH header modes, so a SAVED local
  *  profile shows its server state too, not just the first-connection form).
  *
@@ -19,7 +20,7 @@ type TtsHook = ReturnType<typeof useTtsProfiles>;
  *  the SERVER answers, not merely that docker exists): the draft-models
  *  route — the same call the Test-connection button makes (the model list IS
  *  the reachability proof). One mount probe + the re-check button; an empty
- *  endpoint draws no conclusion. The button is labeled «Обновить модели»
+ *  endpoint draws no conclusion. The button is labeled with refresh_models,
  *  like the LLM chip (the models route IS the probe on both sides). The
  *  docker probe (D8, one-shot on mount, no retries) rides the detail line.
  *  The caller owns the local-segment/backend gating — the chip itself is

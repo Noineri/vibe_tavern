@@ -617,7 +617,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       slotMeta={
         isPureImageSlot && slotAttachments[0]?.imageGen !== undefined ? (
           <>
-            {/* C-B: the mode's display name («Иллюстрация сцены», «Портрет»…)
+            {/* C-B: the mode's display name (t(`image_gen_mode_${mode}`))
              * + the generation model — the same quiet chrome as the text
              * message's metadata bar. The testid rides the mode span (the
              * label's old home was the controls row). Model ids are user

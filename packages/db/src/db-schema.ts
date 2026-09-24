@@ -1896,7 +1896,8 @@ export const imagePromptVariants = sqliteTable('image_prompt_variants', {
 // machinery (same columns, same store semantics — default row id "default"
 // self-healed by ImagePromptProfileStore.ensureDefault(), read-only default,
 // sortOrder for drag-reorder), kept as a SEPARATE collection from
-// service_prompt_profiles and LLM presets (owner ruling: «просто отдельные»).
+// service_prompt_profiles and LLM presets (owner ruling 2026-09: kept as
+// separate collections — see reports/IMAGEGEN_FOLLOWUP_REPORT.md).
 // Overrides persist as JSON keyed by cell: "<rowKey>|<family>" →
 // { body, qualityText? } (rowKey = generation-mode slug | "negative").
 // Canon text still lives in authored assets; an absent cell = canon.

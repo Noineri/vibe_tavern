@@ -1,7 +1,9 @@
 /**
  * The fine-tuning chip's hires-fix block (FT-A6): a toggle revealing the
- * A1111 second pass's four SEPARATE knobs (owner 2026-09-17: «отдельные
- * ручки нужны») — upscaler dropdown + steps + scale + denoise.
+ * A1111 second pass's four SEPARATE knobs (owner ruling 2026-09-17:
+ * separate hires knobs, not one merged toggle — see
+ * plans/FINE_TUNING_CHIP_REBUILD_PLAN.md) — upscaler dropdown + steps +
+ * scale + denoise.
  *
  * Contract mirrors the chip's established idioms:
  * - the toggle row is the ADetailer twin (`justify-between` + shared

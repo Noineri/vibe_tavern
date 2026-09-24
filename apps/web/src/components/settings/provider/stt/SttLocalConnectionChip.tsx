@@ -7,8 +7,9 @@ import { configString, formDraftConfig } from "./stt-form-helpers.js";
 import type { SttProfileForm } from "./use-stt-profiles.js";
 
 /** The STT local-connection chip, rendered OUTSIDE the provider card (owner
- *  2026-09-22: «он у ттс и стт внутри карточки провайдера отображается, при
- *  первом подключении. а должен снаружи» — LLM parity: the chip sits between
+ *  ruling 2026-09-22: not inside the card and not only at first connection
+ *  — LLM parity; verbatim quote in
+ *  reports/LEGACY_CYRILLIC_CLEANUP_REPORT.md ledger): the chip sits between
  *  the card and the level-2 sections in BOTH header modes, so a SAVED local
  *  profile shows its server state too, not just the first-connection form).
  *
@@ -17,9 +18,9 @@ import type { SttProfileForm } from "./use-stt-profiles.js";
  *  lists its model catalog; whisper.cpp has no catalog, and the route falls
  *  back to the backend probe (SPE-7: green on a healthy server, red on a
  *  dead one). One mount probe + the re-check button; an empty endpoint
- *  draws no conclusion. The button is labeled «Обновить модели» like the
- *  LLM chip (the models route IS the probe on both sides). The caller owns
- *  the local-segment/backend gating — the chip itself is unconditional. */
+ *  draws no conclusion. The button is labeled with refresh_models, like
+ *  the LLM chip (the models route IS the probe on both sides). The caller
+ *  owns the local-segment/backend gating — the chip itself is unconditional. */
 export function SttLocalConnectionChip({ form }: { form: SttProfileForm }) {
   const { t } = useT();
   const [pingStatus, setPingStatus] = useState<LocalConnectionStatus>("unknown");

@@ -50,7 +50,8 @@ import { CSS } from "@dnd-kit/utilities";
  * create/rename/duplicate/delete/reorder, click = select + make live,
  * whole-profile save with a discard guard) with the field model swapped to
  * the IPT detail side: each mode row carries its own family `DropdownSelect`
- * (decision-6: «промпт для генерации сцены [Пони >]») and opens the
+ * (decision-6: a per-mode family dropdown, e.g. scene generation → Pony —
+ * see reports/IMAGE_PROMPT_TEMPLATES_RESEARCH.md) and opens the
  * template editor + quality layer inside an AnimatedDisclosure. The assist
  * row stays a read-only canon view (core + per-family addendum).
  */

@@ -374,12 +374,14 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
    shared SliderField (settings keep it untouched). Rail = theme surface
    token var(--s3) — the same pair the fetch mini-bar already uses
    (s3 rail / accent fill) — so every theme stays coherent; never a
-   hardcoded translucent white (owner: «полупрозрачный не везде впишется
-   в темы»). Fill = accent with a hard stop exactly at the value via the
+   hardcoded translucent white (owner ruling: translucent white does not
+   fit every theme — verbatim quote in
+   reports/LEGACY_CYRILLIC_CLEANUP_REPORT.md ledger). Fill = accent with a
+   hard stop exactly at the value via the
    --p custom property (set inline per render; Firefox paints the fill via
    ::-moz-range-progress instead). Density: volume 4px rail / 12px thumb,
    seek (--seek) 3px / 10px. Thumb = solid accent dot + 1px theme-token
-   outline (owner: «лучше с обводкой»). */
+   outline (owner ruling: prefer an outline — same ledger). */
 .playlist-slider{-webkit-appearance:none;appearance:none;background:transparent;height:28px;margin:0;cursor:grab}
 @media (pointer:coarse){.playlist-slider{height:44px}}
 .playlist-slider::-webkit-slider-runnable-track{height:4px;border-radius:9999px;background:linear-gradient(to right,var(--accent) 0 var(--p,50%),var(--s3) var(--p,50%) 100%)}

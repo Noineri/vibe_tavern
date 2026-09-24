@@ -1,18 +1,20 @@
 import type { ImageGenSamplerSetPayload } from "./entities.js";
 
 /**
- * Built-in stock sampler sets (IF-7b, owner-provided matrix 2026-09-22).
+ * Built-in stock sampler sets (IF-7b, owner-provided matrix 2026-09-22;
+ * owner rulings for this file — see reports/IMAGEGEN_FOLLOWUP_REPORT.md).
  *
- * Seeded once as ORDINARY editable rows (owner: «как редактируемые» —
- * rename/delete allowed; the re-seed guard makes deletes stick). The fixed
+ * Seeded once as ORDINARY editable rows (owner ruling: editable like any
+ * user row — rename/delete allowed; the re-seed guard makes deletes
+ * stick). The fixed
  * ids exist for two mechanical reasons only: per-row seed idempotency
  * (crash between rows → the next boot completes the missing ones) and the
  * pane's auto-preselect resolver (find a stock row deterministically even
  * after a rename).
  *
- * Payload values carry NO size (owner: «размер пусть пользователь выставляет
- * как ему надо» — the IG-CF14 payload boundary) and NO auto-enabled hires
- * (owner: «пусть пользователь включает» — the block ships configured but
+ * Payload values carry NO size (owner ruling: size is the user's call at
+ * generation time — the IG-CF14 payload boundary) and NO auto-enabled
+ * hires (owner ruling: the user opts in — the block ships configured but
  * disabled; Diffusion strictly wants it configured because diffusion
  * checkpoints do poorly from scratch, owner 2026-09-22).
  *
@@ -58,7 +60,7 @@ export function imageGenStockSamplerSets(): Array<{
     {
       id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.anima,
       name: "Anima",
-      // Euler SDE (owner: «да, ер сде»), 1024×1536-class checkpoint lore:
+      // Euler SDE (owner-confirmed), 1024×1536-class checkpoint lore:
       // steps 25–35 → 30, CFG 4–6 → 5; hires CONFIGURED, opt-in only, hard
       // scale cap 1.5 (checkpoint creator's "do NOT go over 1.5x").
       payload: {
