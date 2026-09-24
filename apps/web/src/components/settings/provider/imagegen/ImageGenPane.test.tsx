@@ -1082,6 +1082,38 @@ describe("ImageGenPane — comfyui dialect surfaces (CG-B1)", () => {
     await waitFor(() => expect(setForm2).toHaveBeenCalledTimes(1));
     expect((setForm2.mock.calls[0] as unknown[])[0]).toEqual({ modelId: "raySemiReal_krea2TurboV1Nsfw.safetensors" });
   });
+
+  it("IF-8b: a krea2-dit template WITHOUT Krea-2 family truth (a bare Anima DiT) prefills NOTHING — the folder marker is not Krea-2 truth", async () => {
+    // The owner's live case: homosimileAnima lives in diffusion_models (the
+    // krea2-dit template marker) but is its own family — krea2 starting
+    // points (8 steps / CFG 1) are garbage for it; its own stock set rides
+    // detect-preselect instead (IF-7b).
+    const animaDiT: ImageGenModelEntry[] = [
+      { id: "homosimileAnima_v20.safetensors", label: "homosimileAnima_v20", family: "Anima", template: "krea2-dit" },
+    ];
+    const setForm = mock(() => {});
+    const view = render(
+      <ImageGenPane imageGen={comfyImageGen({ modelId: null }, { modelsByProfile: { ig1: animaDiT }, setForm })} />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-field-model")).toBeTruthy());
+    await act(async () => {
+      view.getByTestId("image-gen-field-model").click();
+    });
+    const ditOption = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll("[data-testid='image-gen-model-option']")).find(
+        (n) => n.textContent?.includes("homosimileAnima_v20"),
+      );
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await act(async () => {
+      ditOption.click();
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
+    // modelId only — the krea2 prefill stays OFF without family truth, and
+    // no defaultParams key rides the patch at all.
+    expect((setForm.mock.calls[0] as unknown[])[0]).toEqual({ modelId: "homosimileAnima_v20.safetensors" });
+  });
 });
 
 describe("ImageGenPane — params: sampler gating + bind routing + advanced", () => {
@@ -2219,6 +2251,8 @@ describe("ImageGenPane — prompt family row (IPT-5)", () => {
     const reload = mock(async () => {});
     const view = render(<FamilyReloadHarness record={record} onReload={reload} />);
     await waitFor(() => expect(view.getByTestId("image-gen-family-detect")).toBeTruthy());
+    // The blocked hint is a save-first state — a SAVED model never shows it.
+    expect(view.queryByTestId("image-gen-family-detect-blocked-hint")).toBeNull();
 
     await act(async () => {
       view.getByTestId("image-gen-family-detect").click();
@@ -2324,6 +2358,11 @@ describe("ImageGenPane — prompt family row (IPT-5)", () => {
     await waitFor(() => expect(draftView.getByTestId("image-gen-family-detect-disabled")).toBeTruthy());
     const draftDetect = draftView.getByTestId("image-gen-family-detect-disabled");
     expect(draftDetect.textContent).toContain("image_gen_family_detect");
+    // IF-8a: the save-first hint rides the row INLINE (hover-only tooltips
+    // are a trap — touch has no hover; the blocked button read as "dead").
+    expect(draftView.getByTestId("image-gen-family-detect-blocked-hint").textContent).toContain(
+      "image_gen_family_detect_save_first",
+    );
     await act(async () => {
       fireEvent.pointerMove(draftDetect, { pointerType: "mouse" });
     });
@@ -2334,6 +2373,9 @@ describe("ImageGenPane — prompt family row (IPT-5)", () => {
     const absentView = render(familyNode(familyHook(record, null)));
     await waitFor(() => expect(absentView.getByTestId("image-gen-family-detect-disabled")).toBeTruthy());
     expect(absentView.queryByTestId("image-gen-family-detect")).toBeNull();
+    expect(absentView.getByTestId("image-gen-family-detect-blocked-hint").textContent).toContain(
+      "image_gen_family_detect_save_first",
+    );
   });
 
   it("does not let an older profile or model detection response clobber the current row", async () => {

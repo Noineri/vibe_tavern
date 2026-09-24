@@ -641,7 +641,7 @@
 	"image_gen_family_write_failed": "Failed to save the family",
 	"image_gen_family_registry_failed": "Failed to load the family registry.",
 	"image_gen_template_checkpoint": "Checkpoint",
-	"image_gen_template_krea2_dit": "Krea 2 DiT",
+	"image_gen_template_krea2_dit": "DiT",
 	"image_gen_sampler_auto": "Auto (server default)",
 	"image_gen_advanced": "Advanced",
 	"image_gen_steps_label": "Steps",

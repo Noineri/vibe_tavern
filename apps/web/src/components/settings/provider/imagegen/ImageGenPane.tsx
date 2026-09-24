@@ -611,6 +611,12 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
       <div className="mb-3 border-b border-border2 pb-2 font-ui text-[calc(var(--ui-fs))] font-semibold text-t1">
         {t("image_gen_family_title")}
       </div>
+      {/* items-end pairs the two controls by their BOTTOM edge; the button
+          adopts the dropdown's field height (2px borders + 2×6px py + 13px
+          line box = 33.5px — the refresh-button row-pairing canon,
+          MOBILE_UI_DEFECTS step 5) instead of the compact h-7 — a shorter
+          sibling in a field row is the IF-8a height mismatch (owner report
+          2026-09-22). */}
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-[220px] flex-1">
           <label className={lblCls}>{t("image_gen_family_label")}</label>
@@ -643,7 +649,7 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
             data-testid="image-gen-family-detect"
             onClick={() => void handleDetect()}
             disabled={pinning || detecting}
-            className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
+            className="flex min-h-[33.5px] shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-[6px] font-ui text-[13px] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50"
           >
             {detecting ? (
               <span className="ml-[3px] inline-flex items-center gap-[3px] align-middle">
@@ -661,7 +667,7 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
             <CustomTooltip content={t("image_gen_family_detect_save_first")}>
               <span
                 data-testid="image-gen-family-detect-disabled"
-                className="flex h-7 shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t4"
+                className="flex min-h-[33.5px] shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-[6px] font-ui text-[13px] font-medium text-t4"
               >
                 <Icons.brain />
                 {t("image_gen_family_detect")}
@@ -671,6 +677,18 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
         )}
       </div>
       <div className="mt-2 flex flex-col gap-1" data-testid="image-gen-family-status">
+        {/* IF-8a: the save-first hint rides the row INLINE — a hover-only
+            tooltip is a trap (touch has no hover; the owner read the blocked
+            button as "dead on everything"). The hint IS the button's
+            visible state explanation while detection is model-save-gated. */}
+        {detectBlocked && (
+          <span
+            data-testid="image-gen-family-detect-blocked-hint"
+            className="font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-warning"
+          >
+            {t("image_gen_family_detect_save_first")}
+          </span>
+        )}
         {pin !== null ? (
           <span className="font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-t3">
             {t("image_gen_family_manual_note")}
@@ -1829,15 +1847,20 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           // Krea-2 starting points (CG-B1, CF5 — explicit FORM values, never
           // hidden server state): picking a DiT model on a profile whose
           // param base is UNTOUCHED prefills the four krea2 scalars into the
-          // base. The all-four-unset gate is deliberate — a base the user
-          // already tuned for checkpoints keeps its values (a partial merge
-          // of 8/1/euler/simple into a tuned base would be a mess, not a
-          // starting point); the per-model overlay inherits whatever the
-          // base carries.
+          // base. IF-8b: the loader-folder template marker is NOT Krea-2
+          // truth — every bare DiT (Anima, Qwen-Image, FLUX) lives in
+          // diffusion_models and paints krea2-dit. The prefill keys off the
+          // listing ladder's FAMILY label instead (owner ruling 2026-09-22,
+          // IMAGEGEN_FOLLOWUP_REPORT IF-8b); a non-Krea DiT takes its own
+          // family's stock set via detect-preselect, never krea2 defaults.
+          // The all-four-unset gate is deliberate — a base the user already
+          // tuned for checkpoints keeps its values; the overlay inherits
+          // whatever the base carries.
           const entry = models.find((m) => m.id === modelId) ?? null;
           const prefillKrea2 =
             form.backend === IMAGE_GEN_BACKENDS.ComfyUI &&
             entry?.template === "krea2-dit" &&
+            entry?.family === "Krea 2" &&
             form.defaultParams.steps === undefined &&
             form.defaultParams.cfgScale === undefined &&
             form.defaultParams.sampler === undefined &&
