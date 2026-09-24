@@ -158,9 +158,9 @@ The one loading string that *is* localized — `loading_app` — lives in `apps/
 
 A few components branch on the active locale for **linguistic or content** reasons that i18n keys can't express:
 
-- `components/build/BuildMode.tsx` — Russian plural forms for "token/токен/токена/токенов" (1 токен, 2 токена, 5 токенов). English has a simple singular/plural; Russian has three forms governed by final-digit rules. **Legacy:** this predates the i18next-native CLDR plural mechanism — new count-bearing strings should use `t(key, { count })` with `_one`/`_few`/`_many`/`_other` suffix keys (see Validation above) instead of a hand-rolled `locale === "ru"` ladder. Migrating this branch is a separate cleanup.
 - `components/build/editors/LorebookEditor.tsx` — a `locale === "ru"` branch for locale-specific UI behavior.
 - `toLocaleString(locale)` — number/date formatting driven by the locale string, which works for any registered id automatically.
+- Count-bearing strings need NO per-locale branch — the REFERENCE implementation is the `token_count` plural family (`BuildMode.tsx` `formatTokenCount`): `t("token_count", { count })` with `_one`/`_few`/`_many`/`_other` suffix keys, plus the bare base key carrying the "other" value in BOTH locales (the i18n:types union keys off the base). The number itself is grouped separately via `toLocaleString(locale)`, so the key values hold the bare word. (The former hand-rolled `locale === "ru"` ladder in `BuildMode.tsx` was migrated to this mechanism — do not reintroduce per-locale plural ladders.)
 
 These are **legitimate per-locale logic, not registration sites.** They do not need editing when you add a language *unless your new language has the same kind of need* (e.g. Polish and Czech share Russian's three-form plural rule; Arabic has six). If it does, add a parallel branch — but prefer a general rule over `locale === "x"` ladders where possible (e.g. a plural-form table keyed by locale scales better than nested `if`s). Number/date formatting via `toLocaleString` already scales for free.
 
