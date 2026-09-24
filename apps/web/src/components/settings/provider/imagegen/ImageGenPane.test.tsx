@@ -91,6 +91,13 @@ const listSamplerSetsApi = mock(async (): Promise<ImageGenSamplerSet[]> => [
     updatedAt: "2026-09-17T00:00:00.000Z",
   },
 ]);
+// IF-7b: the pane's hires section fetches the upscaler vocabulary through
+// the same api seam the chip uses — overridden here so no test ever issues
+// a real network call.
+const listUpscalersApi = mock(async (): Promise<Array<{ name: string }>> => [
+  { name: "R-ESRGAN 4x+ Anime6B" },
+  { name: "4x-UltraSharp" },
+]);
 let extensionsValue: string[] = [];
 const listExtensionsApi = mock(async (): Promise<string[]> => [...extensionsValue]);
 let faceDetectorsValue: string[] | null = null;
@@ -173,6 +180,7 @@ mock.module("../../../../api/image-gen-api.js", () => ({
   removeImageGenModelFavorite: removeFavoriteApi,
   listImageGenSamplers: listSamplersApi,
   listImageGenSamplerSets: listSamplerSetsApi,
+  listImageGenUpscalers: listUpscalersApi,
   listImageGenExtensions: listExtensionsApi,
   listImageGenFaceDetectors: listFaceDetectorsApi,
   listImagePromptFamilies: listFamiliesApi,
@@ -297,6 +305,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     samplersByProfile: {},
     schedulersByProfile: {},
     sidecarsByProfile: {},
+    vaeByProfile: {},
     samplerStatusByProfile: {},
     startEdit: mock(() => {}),
     startCreate: mock(() => {}),
@@ -311,6 +320,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     fetchSamplers: mock(async () => null),
     fetchSchedulers: mock(async () => null),
     fetchSidecars: mock(async () => null),
+    fetchVae: mock(async () => null),
     fetchDraftModels: mock(async () => []),
     favorites: [],
     starModel: mock(async () => {}),
@@ -1428,6 +1438,125 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
     expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual({ steps: 30, cfgScale: 5, sampler: "Euler a", clipSkip: 1 });
     // The overlay arm stays untouched while unbound (arm separation).
     expect(setModelSamplerSetBinding).not.toHaveBeenCalled();
+  });
+
+  it("IF-7b: a set carrying scheduler + vae + a hires block applies the WHOLE payload to the base (the grown projection)", async () => {
+    const applyBaseSamplerSet = mock(
+      (_setId: string | null, _payload?: Record<string, unknown>) => {},
+    );
+    const grown = {
+      id: "set-grown",
+      name: "Anima",
+      sortOrder: 1,
+      payload: {
+        sampler: "euler_sde",
+        scheduler: "simple",
+        steps: 30,
+        cfgScale: 5,
+        vae: "qwen_image_vae.safetensors",
+        hires: { enabled: false, upscaler: "R-ESRGAN 4x+ Anime6B", scale: 1.5, denoisingStrength: 0.35 },
+      },
+      createdAt: "2026-09-25T00:00:00.000Z",
+      updatedAt: "2026-09-25T00:00:00.000Z",
+    } as ImageGenSamplerSet;
+    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [grown]);
+    const view = render(<ImageGenPane imageGen={makeImageGen({ applyBaseSamplerSet })} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
+    await pickOption(view, "image-gen-model-set-trigger", "Anima");
+    await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
+    expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual(grown.payload);
+    restoreSets();
+  });
+});
+
+describe("ImageGenPane — VAE field + hires section (IF-7b)", () => {
+  it("a1111 unbound: the VAE dropdown lists the live vocabulary and a pick writes defaultParams.vae; the DiT twin never renders on a1111", async () => {
+    const setForm = mock(() => {});
+    const imageGen = makeImageGen({
+      form: makeForm({
+        backend: IMAGE_GEN_BACKENDS.A1111,
+        endpoint: "http://127.0.0.1:7860",
+        capabilities: makeCaps({ supportsSamplers: true, sizeSupport: { kind: "free" } }),
+      }),
+      setForm,
+      vaeByProfile: { ig1: ["sdxl_vae.safetensors", "vae-ft-mse.safetensors"] },
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await openAdvanced(view);
+    expect(view.getByTestId("image-gen-field-vae-swap")).toBeTruthy();
+    // The DiT sidecar twin (vaeName) must NOT render for a1111.
+    expect(view.queryByTestId("image-gen-field-vae")).toBeNull();
+
+    await pickOption(view, "image-gen-field-vae-swap", "sdxl_vae.safetensors");
+    const lastForm = (setForm.mock.calls[setForm.mock.calls.length - 1] as unknown[])[0] as {
+      defaultParams: { vae?: string };
+    };
+    expect(lastForm.defaultParams.vae).toBe("sdxl_vae.safetensors");
+  });
+
+  it("a1111: the hires section renders OFF with no knobs (a configured block stays inert); an ENABLED block reveals the knob body; the toggle merges, never wipes", async () => {
+    const setForm = mock(() => {});
+    const localForm = (hires: { enabled: boolean; upscaler?: string; scale?: number; denoisingStrength?: number }) =>
+      makeForm({
+        backend: IMAGE_GEN_BACKENDS.A1111,
+        endpoint: "http://127.0.0.1:7860",
+        capabilities: makeCaps({ supportsSamplers: true, sizeSupport: { kind: "free" } }),
+        defaultParams: { steps: 30, cfgScale: 5, sampler: "euler_sde", hires },
+      });
+    const imageGen = makeImageGen({
+      // The stock Anima shape: configured but DISABLED.
+      form: localForm({ enabled: false, upscaler: "R-ESRGAN 4x+ Anime6B", scale: 1.5, denoisingStrength: 0.35 }),
+      setForm,
+    });
+    const view = render(<ImageGenPane imageGen={imageGen} />);
+    await openAdvanced(view);
+    const row = view.getByTestId("image-gen-hires-row");
+    expect(row).toBeTruthy();
+    // OFF: the knob body stays hidden — the configured block is inert until
+    // the user opts in (the owner's «пусть пользователь включает»).
+    expect(view.queryByTestId("image-gen-hires-body")).toBeNull();
+
+    // The toggle write MERGES over the configured block (enabled flips,
+    // knobs stay — never a wipe).
+    const toggle = within(row).getByRole("switch");
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    const lastForm = (setForm.mock.calls[setForm.mock.calls.length - 1] as unknown[])[0] as {
+      defaultParams: { hires?: { enabled: boolean; upscaler?: string; scale?: number; denoisingStrength?: number } };
+    };
+    expect(lastForm.defaultParams.hires).toEqual({
+      enabled: true,
+      upscaler: "R-ESRGAN 4x+ Anime6B",
+      scale: 1.5,
+      denoisingStrength: 0.35,
+    });
+    cleanup();
+
+    // An ENABLED block (the state the toggle write produces) reveals the
+    // knob body — the seeded-state reveal twin of the ADetailer pattern.
+    const view2 = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: localForm({ enabled: true, upscaler: "R-ESRGAN 4x+ Anime6B", scale: 1.5, denoisingStrength: 0.35 }),
+          setForm,
+        })}
+      />,
+    );
+    await openAdvanced(view2);
+    const body = view2.getByTestId("image-gen-hires-body");
+    expect(body).toBeTruthy();
+    expect(view2.getByTestId("image-gen-hires-upscaler")).toBeTruthy();
+    // The knob sliders anchor at the block's own values (the chip's own
+    // change-event idiom — the range input IS the testid element).
+    expect((view2.getByTestId("image-gen-hires-scale") as HTMLInputElement).value).toBe("1.5");
+  });
+
+  it("cloud backend: neither the VAE field nor the hires section renders (dialect gates)", async () => {
+    const view = render(<ImageGenPane imageGen={makeImageGen()} />);
+    await openAdvanced(view);
+    expect(view.queryByTestId("image-gen-field-vae-swap")).toBeNull();
+    expect(view.queryByTestId("image-gen-hires-row")).toBeNull();
   });
 });
 

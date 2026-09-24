@@ -3,7 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { toast } from "sonner";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, hasAdetailerExtension, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, hasAdetailerExtension, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
@@ -11,6 +11,7 @@ import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
+import { SliderField } from "../../../shared/SliderField.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
@@ -24,7 +25,7 @@ import type {
   ImagePromptFamilyInfoValue,
   ImagePromptFamilyValue,
 } from "@vibe-tavern/api-contracts";
-import type { ImageGenModelEntry } from "../../../../api/image-gen-api.js";
+import type { ImageGenModelEntry, ImageGenUpscaler } from "../../../../api/image-gen-api.js";
 import {
   createImageGenSamplerSet,
   deleteImageGenSamplerSet,
@@ -33,6 +34,7 @@ import {
   listImageGenExtensions,
   listImageGenFaceDetectors,
   listImageGenSamplerSets,
+  listImageGenUpscalers,
   listImagePromptFamilies,
   setImageGenProfileFamily,
   updateImageGenSamplerSet,
@@ -528,6 +530,34 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
     }
   };
 
+  /** IF-7b auto-preselect: the DETECTED family's stock set rides the
+   *  CURRENT arm — but ONLY when that arm carries no set pointer (the D20
+   * rule: an explicit user pick always survives; preselect never
+   * overwrites). Best-effort options data: a failed list call or a deleted
+   * stock row leaves the arm untouched. */
+  const preselectStockSamplerSet = async (family: string, model: string, baseModel?: string) => {
+    const stockId = stockSamplerSetIdForFamily(
+      family,
+      `${model}${baseModel !== undefined ? ` ${baseModel}` : ""}`,
+    );
+    if (stockId === null) return;
+    const boundArm = imageGen.modelOverlay !== null;
+    const pointed = boundArm
+      ? imageGen.modelOverlaySetId
+      : (imageGen.form?.defaultParamsSetId ?? null);
+    if (pointed !== null) return;
+    try {
+      const stock = (await listImageGenSamplerSets()).find((set) => set.id === stockId) ?? null;
+      if (stock === null) return; // the user deleted the stock row — deletes stick
+      if (boundArm) imageGen.setModelSamplerSetBinding(stock.id, stock.payload);
+      else imageGen.applyBaseSamplerSet(stock.id, stock.payload);
+    } catch {
+      // The fetchSidecars rule: options data never draws connectivity
+      // conclusions — the detection result above stays the truth.
+      return;
+    }
+  };
+
   const handleDetect = async () => {
     if (profileId === null || modelShown === null || pinning || detecting || detectBlocked) return;
     const requestIdentity: FamilyRequestIdentity = { profileId, model: modelShown, persistedModel };
@@ -551,6 +581,9 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
           family: result.family,
           sourceLabel: result.sourceLabel,
         });
+        // IF-7b: the detected family's stock set preselects onto the current
+        // arm (pointer-less arms only — the D20 rule).
+        void preselectStockSamplerSet(result.family, modelShown, result.baseModel);
       } else {
         // Honest no-answer: the server persisted nothing, so the saved state
         // stays untouched — the error and EVERY ordered tried[] reason
@@ -955,16 +988,75 @@ function LlmAssistSection({
 //     touches applied values — the pointer clears. Edits ride the SAME
 //     form-dirty Save as every other overlay edit (one Save button). ───────
 
-/** The set payload projection of an overlay: the five scalar params ONLY
- *  (modeSizePresets is the model layer's own surface, IG-CF14). */
-function setPayloadOf(overlay: Record<string, unknown>): { steps?: number; cfgScale?: number; sampler?: string; seed?: number; clipSkip?: number } {
-  const payload: { steps?: number; cfgScale?: number; sampler?: string; seed?: number; clipSkip?: number } = {};
+/** Display anchors for UNSET hires knobs — the chip's own twin
+ *  (ImageGenHiresSection): an untouched slider shows what will actually
+ *  run (the FT-A2 «Auto» honesty rule). */
+const HIRES_DISPLAY_DEFAULTS = {
+  steps: 0,
+  scale: 2,
+  denoisingStrength: 0.75,
+} as const;
+
+/** Structural read of a stored hires block off a loose record (either
+ *  arm's params arrive as Record<string, unknown> here) — the setPayloadOf
+ *  twin of the zod boundary: wrong-shaped values drop out, never crash. */
+function readHiresBlockOf(
+  source: Record<string, unknown>,
+): ImageGenSamplerSet["payload"]["hires"] {
+  const raw = source.hires;
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const block = raw as Record<string, unknown>;
+  if (typeof block.enabled !== "boolean") return undefined;
+  const clean: NonNullable<ImageGenSamplerSet["payload"]["hires"]> = { enabled: block.enabled };
+  if (typeof block.upscaler === "string" && block.upscaler !== "") clean.upscaler = block.upscaler;
+  if (typeof block.steps === "number") clean.steps = block.steps;
+  if (typeof block.scale === "number") clean.scale = block.scale;
+  if (typeof block.denoisingStrength === "number") clean.denoisingStrength = block.denoisingStrength;
+  return clean;
+}
+
+/** The set payload projection of an arm's params (IF-7b: beyond the five
+ *  LS-5 scalars — scheduler, the swappable-slot VAE, and the hires block
+ *  join; modeSizePresets stays the model layer's own surface, IG-CF14). */
+function setPayloadOf(overlay: Record<string, unknown>): ImageGenSamplerSet["payload"] {
+  const payload: ImageGenSamplerSet["payload"] = {};
   if (typeof overlay.steps === "number") payload.steps = overlay.steps;
   if (typeof overlay.cfgScale === "number") payload.cfgScale = overlay.cfgScale;
   if (typeof overlay.sampler === "string") payload.sampler = overlay.sampler;
   if (typeof overlay.seed === "number") payload.seed = overlay.seed;
   if (typeof overlay.clipSkip === "number") payload.clipSkip = overlay.clipSkip;
+  if (typeof overlay.scheduler === "string") payload.scheduler = overlay.scheduler;
+  if (typeof overlay.vae === "string" && overlay.vae !== "") payload.vae = overlay.vae;
+  const hires = readHiresBlockOf(overlay);
+  if (hires !== undefined) payload.hires = hires;
   return payload;
+}
+
+/** Stock-set auto-preselect resolver (IF-7b): the DETECTED family → its
+ *  stock set, keyed by the owner's matrix. Krea 2 splits Turbo/RAW by the
+ *  variant text (turbo wins when both appear — finetune names like
+ *  "Krea2TurboRaw" are Turbo-family). Null = no stock set for the family
+ *  (prose/qwen/hybrid). The DIFFUSION class covers the SDXL tag families
+ *  + sdxl-realism — diffusion checkpoints all take the generic set. */
+function stockSamplerSetIdForFamily(family: string, variantText: string): string | null {
+  const variant = variantText.toLowerCase();
+  switch (family) {
+    case "krea2":
+      return variant.includes("turbo")
+        ? IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Turbo
+        : variant.includes("raw")
+          ? IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Raw
+          : IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Turbo;
+    case "anima":
+      return IMAGE_GEN_STOCK_SAMPLER_SET_IDS.anima;
+    case "pony":
+    case "illustrious":
+    case "noobai":
+    case "sdxl-realism":
+      return IMAGE_GEN_STOCK_SAMPLER_SET_IDS.diffusion;
+    default:
+      return null;
+  }
 }
 
 function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
@@ -1438,6 +1530,43 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
     // fill per profile; imageGen actions are stable callbacks.
   }, [guardProfileId, guardIsDit]);
+  // VAE list (IF-7b): the swappable-VAE vocabulary for the advanced
+  // accordion's VAE field — one-shot cache fill per LOCAL profile (A1111
+  // + ComfyUI; the field renders for every non-DiT local target).
+  // Options-data only (the fetchSidecars rule verbatim).
+  useEffect(() => {
+    if (guardProfileId === null || !guardIsLocalDialect) return;
+    if (imageGen.vaeByProfile[guardProfileId] === undefined) {
+      void imageGen.fetchVae(guardProfileId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot cache
+    // fill per profile; imageGen actions are stable callbacks.
+  }, [guardProfileId, guardIsLocalDialect]);
+  // Hires upscaler vocabulary (IF-7b, the pane's hires section): fetched
+  // when a hires-capable profile opens the advanced accordion — the chip's
+  // own fetch twin. Options-data only; [] on failure (Auto stays pickable).
+  const [paneUpscalers, setPaneUpscalers] = useState<ImageGenUpscaler[] | null>(null);
+  const guardSupportsHires =
+    form?.backend !== undefined &&
+    IMAGE_GEN_BACKEND_CAPABILITIES[form.backend].supportsHiresFix === true;
+  useEffect(() => {
+    if (guardProfileId === null || !guardSupportsHires) {
+      return;
+    }
+    let cancelled = false;
+    void listImageGenUpscalers(guardProfileId)
+      .then((list) => {
+        if (!cancelled) setPaneUpscalers(list ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setPaneUpscalers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot
+    // vocabulary fill per profile; listImageGenUpscalers is a stable import.
+  }, [guardProfileId, guardSupportsHires]);
   const [hasAdetailer, setHasAdetailer] = useState(false);
   useEffect(() => {
     if (!guardIsA1111 || guardProfileId === null) {
@@ -1529,6 +1658,20 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     if (bound) imageGen.setModelOverlay(patch);
     else imageGen.setForm({ defaultParams: { ...form.defaultParams, ...patch } });
   };
+  // IF-7b: the hires block write — a MERGE into the current block so the
+  // toggle-off keeps the configured knobs (the stock sets' configured-but-
+  // disabled pattern) and a knob edit never wipes its siblings.
+  const setHiresParam = (patch: Partial<NonNullable<typeof params.hires>>) => {
+    const current = params.hires ?? { enabled: false };
+    setParam({ hires: { ...current, ...patch } });
+  };
+  // The narrowed block for the JSX below — a const local narrows where the
+  // `params` union's property chain cannot.
+  const paneHires = params.hires ?? null;
+  // IF-7b: the pane's hires-section gate — the STATIC capability table
+  // (the adapter's own gate; the profile's mirrored capabilities can be a
+  // stale snapshot, the IF-6 lesson).
+  const supportsHiresPane = IMAGE_GEN_BACKEND_CAPABILITIES[form.backend].supportsHiresFix === true;
   const setModeSize = (mode: string, next: { width?: number; height?: number } | undefined) => {
     const nextSizes = { ...sizes };
     if (next === undefined || (next.width === undefined && next.height === undefined)) {
@@ -2051,6 +2194,36 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   </div>
                 </>
               )}
+              {/* Swappable-VAE field (IF-7b): the SET/profile-carried VAE
+                  override for dialects with a SWAPPABLE slot — A1111
+                  (override_settings.sd_vae) and the Comfy checkpoint
+                  template (VAELoader swap). DiT targets keep their
+                  family-fixed sidecar above (the field never renders for
+                  them). Same bind routing as every param (bound → overlay,
+                  unbound → profile defaults). */}
+              {isLocalBackend && !isDitTemplate && (
+                <div className="min-w-0">
+                  <label className={lblCls}>{t("image_gen_vae_label")}</label>
+                  <DropdownSelect
+                    value={params.vae ?? ""}
+                    triggerTestId="image-gen-field-vae-swap"
+                    searchable={false}
+                    className="w-auto max-w-[320px]"
+                    defaultOption={t("image_gen_sampler_auto")}
+                    options={[
+                      { id: "", label: t("image_gen_sampler_auto") },
+                      ...(imageGen.vaeByProfile[profileId] ?? []).map((name) => ({ id: name, label: name })),
+                      // A stored value outside the live list stays pickable
+                      // (the STT/LLM selector rule — the since-removed-file
+                      // truth the DiT fields render).
+                      ...(params.vae !== undefined && !(imageGen.vaeByProfile[profileId] ?? []).includes(params.vae)
+                        ? [{ id: params.vae, label: params.vae }]
+                        : []),
+                    ]}
+                    onChange={(next) => setParam({ vae: next === "" ? undefined : next })}
+                  />
+                </div>
+              )}
               <SamplerSliderField
                 label={t("image_gen_steps_label")}
                 value={params.steps}
@@ -2131,6 +2304,85 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                         }
                         onChange={(id) => imageGen.setModelOverlay({ adetailerModel: id })}
                         triggerTestId="image-gen-adetailer-model"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Hires-fix section (IF-7b): the pane's twin of the chip's
+                  ImageGenHiresSection — the PROFILE-level home of the block
+                  (both bind arms: bound → overlay.hires, unbound →
+                  defaultParams.hires), so a stock set's configured-but-
+                  disabled block has a place where the user flips it on
+                  (owner: «пусть пользователь включает»). Gated off the
+                  STATIC capability table — the adapter's own gate (the
+                  mirror can be stale, the IF-6 lesson). */}
+              {supportsHiresPane && (
+                <div
+                  className="col-span-full flex flex-col gap-2 rounded-md border border-border bg-s2/50 p-2.5"
+                  data-testid="image-gen-hires-row"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
+                      {t("image_gen_hires_label")}
+                    </span>
+                    <Toggle
+                      checked={paneHires?.enabled === true}
+                      onChange={(checked) => setHiresParam({ enabled: checked })}
+                      aria-label={t("image_gen_hires_label")}
+                    />
+                  </div>
+                  {paneHires?.enabled === true && (
+                    <div className="flex flex-col gap-2" data-testid="image-gen-hires-body">
+                      <div className="flex flex-col gap-1.5">
+                        <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>
+                          {t("image_gen_hires_upscaler_label")}
+                        </span>
+                        <DropdownSelect
+                          value={paneHires.upscaler ?? ""}
+                          defaultOption={t("image_gen_hires_upscaler_auto")}
+                          options={[
+                            { id: "", label: t("image_gen_hires_upscaler_auto") },
+                            ...(paneUpscalers ?? []).map((u) => ({ id: u.name, label: u.name })),
+                            // A stored pick outside the live list stays pickable
+                            // (the DiT twin — the server may have dropped the
+                            // model since).
+                            ...(paneHires.upscaler !== undefined &&
+                            paneHires.upscaler !== "" &&
+                            !(paneUpscalers ?? []).some((u) => u.name === paneHires.upscaler)
+                              ? [{ id: paneHires.upscaler, label: paneHires.upscaler }]
+                              : []),
+                          ]}
+                          onChange={(next) => setHiresParam({ upscaler: next === "" ? undefined : next })}
+                          triggerTestId="image-gen-hires-upscaler"
+                        />
+                      </div>
+                      <SliderField
+                        label={t("image_gen_hires_steps_label")}
+                        value={paneHires.steps ?? HIRES_DISPLAY_DEFAULTS.steps}
+                        min={IMAGE_GEN_PARAM_RANGES.hiresSteps.min}
+                        max={IMAGE_GEN_PARAM_RANGES.hiresSteps.max}
+                        step={IMAGE_GEN_PARAM_RANGES.hiresSteps.step}
+                        onChange={(value) => setHiresParam({ steps: value })}
+                        rangeTestId="image-gen-hires-steps"
+                      />
+                      <SliderField
+                        label={t("image_gen_hires_scale_label")}
+                        value={paneHires.scale ?? HIRES_DISPLAY_DEFAULTS.scale}
+                        min={IMAGE_GEN_PARAM_RANGES.hiresScale.min}
+                        max={IMAGE_GEN_PARAM_RANGES.hiresScale.max}
+                        step={IMAGE_GEN_PARAM_RANGES.hiresScale.step}
+                        onChange={(value) => setHiresParam({ scale: value })}
+                        rangeTestId="image-gen-hires-scale"
+                      />
+                      <SliderField
+                        label={t("image_gen_hires_denoise_label")}
+                        value={paneHires.denoisingStrength ?? HIRES_DISPLAY_DEFAULTS.denoisingStrength}
+                        min={IMAGE_GEN_PARAM_RANGES.hiresDenoise.min}
+                        max={IMAGE_GEN_PARAM_RANGES.hiresDenoise.max}
+                        step={IMAGE_GEN_PARAM_RANGES.hiresDenoise.step}
+                        onChange={(value) => setHiresParam({ denoisingStrength: value })}
+                        rangeTestId="image-gen-hires-denoise"
                       />
                     </div>
                   )}

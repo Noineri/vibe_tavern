@@ -72,6 +72,7 @@ export function wireUiSettings(): UiSettingsRecord {
 		activeImagePromptProfileId: null,
 		imagePromptVariantsMigrated: false,
 		servicePromptPresetMigrated: false,
+		stockImageGenSamplerSetsSeeded: false,
 		activeDictationProfileId: null,
 		activeVoiceMessageProfileId: null,
 		updatedAt: EPOCH,

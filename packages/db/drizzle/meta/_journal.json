@@ -582,6 +582,13 @@
       "when": 1790233584701,
       "tag": "0082_dapper_vin_gonzales",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1790244690296,
+      "tag": "0083_faithful_leader",
+      "breakpoints": true
     }
   ]
 }

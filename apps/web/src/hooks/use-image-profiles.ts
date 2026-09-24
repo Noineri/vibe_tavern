@@ -61,6 +61,7 @@ import {
   listImageGenSamplers,
   listImageGenSchedulers,
   listImageGenDitSidecars,
+  listImageGenVae,
   removeImageGenModelFavorite,
   updateImageGenProfile,
   upsertImageGenModelSettings,
@@ -164,6 +165,7 @@ export function useImageProfiles(): {
    *  fields — the `schedulersByProfile` rule verbatim (a sidecar fetch
    *  failure is empty options, never a connectivity conclusion). */
   sidecarsByProfile: Record<string, ImageGenDitSidecars>;
+  vaeByProfile: Record<string, string[]>;
   /** Local-server connectivity per saved profile, driven by sampler fetches
    *  (IG-CF12a): `checking` while in flight, `online` on success, `offline`
    *  on ANY fetch failure — connectivity is deliberately NOT routed through
@@ -207,6 +209,12 @@ export function useImageProfiles(): {
    *  unsupported backend; failures land ONLY in the cache as absent
    *  (never in the shared `error` — see `sidecarsByProfile`). */
   fetchSidecars(id?: string): Promise<ImageGenDitSidecars | null>;
+  /** Fetch + cache the VAE list for a saved local profile (IF-7b, defaults
+   *  to the editing one) — the swappable-VAE vocabulary for the advanced
+   *  accordion's VAE field. Null = unknown profile or unsupported
+   *  backend; failures land ONLY in the cache as absent (never in the
+   *  shared `error` — the fetchSidecars rule verbatim). */
+  fetchVae(id?: string): Promise<string[] | null>;
   /** Shared fetch-by-endpoint model listing over the TRANSIENT form config
    *  (the STT draft twin): the just-typed endpoint/key ride inside the
    *  draft config; `profileId` lets the server inject the stored key when
@@ -271,6 +279,7 @@ export function useImageProfiles(): {
   const [samplersByProfile, setSamplersByProfile] = useState<Record<string, ImageGenSamplerInfoValue[]>>({});
   const [schedulersByProfile, setSchedulersByProfile] = useState<Record<string, ImageGenSchedulerInfoValue[]>>({});
   const [sidecarsByProfile, setSidecarsByProfile] = useState<Record<string, ImageGenDitSidecars>>({});
+  const [vaeByProfile, setVaeByProfile] = useState<Record<string, string[]>>({});
   const [samplerStatusByProfile, setSamplerStatusByProfile] = useState<Record<string, LocalConnectionStatus>>({});
   const [favorites, setFavorites] = useState<ImageGenModelFavoriteValue[]>([]);
   const [modelOverlay, setModelOverlayState] = useState<ImageGenModelSettingsOverlayValue | null>(null);
@@ -818,6 +827,25 @@ export function useImageProfiles(): {
     [form],
   );
 
+  const fetchVae = useCallback(
+    async (id?: string): Promise<string[] | null> => {
+      const targetId = id ?? form?.id;
+      if (!targetId) return null;
+      // IF-7b: options data only — the fetchSidecars rule verbatim (a
+      // failure leaves the cache untouched and draws NO connectivity
+      // conclusion).
+      try {
+        const vaes = await listImageGenVae(targetId);
+        if (vaes === null) return null;
+        setVaeByProfile((prev) => ({ ...prev, [targetId]: vaes }));
+        return vaes;
+      } catch {
+        return null;
+      }
+    },
+    [form],
+  );
+
   const fetchDraftModels = useCallback(async (): Promise<ImageGenModelEntry[]> => {
     if (!form) throw new Error("no image-gen form");
     // MR-2 (the IG-CF12a doctrine, draft arm): the shared `error` is never
@@ -852,6 +880,7 @@ export function useImageProfiles(): {
     samplersByProfile,
     schedulersByProfile,
     sidecarsByProfile,
+    vaeByProfile,
     samplerStatusByProfile,
     favorites,
     modelOverlay,
@@ -869,6 +898,7 @@ export function useImageProfiles(): {
     fetchSamplers,
     fetchSchedulers,
     fetchSidecars,
+    fetchVae,
     fetchDraftModels,
     starModel,
     unstarModel,

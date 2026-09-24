@@ -74,7 +74,7 @@ import type {
   StoreContainer,
   UpdateImageGenProfileData,
 } from "@vibe-tavern/db";
-import type { Attachment, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance, ImageGenBackendType, ImageGenCapabilityFlags } from "@vibe-tavern/domain";
+import type { Attachment, ImageGenHiresBlock, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance, ImageGenBackendType, ImageGenCapabilityFlags } from "@vibe-tavern/domain";
 import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, IMAGE_PROMPT_FAMILIES, PROXY_MODE } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
@@ -621,6 +621,29 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     );
   };
 
+  listImageGenProfileVae = async (id: string, signal?: AbortSignal) => {
+    const profile = await this.stores.imageGen.getById(id);
+    if (!profile) return null;
+    // Static dialect gate FIRST (the upscalers twin, IF-7b): the VAE-swap
+    // vocabulary exists on the LOCAL dialects — A1111 (/sdapi/v1/sd-vae)
+    // and ComfyUI (/models/vae) — the check answers without live config
+    // validity.
+    if (
+      profile.backend !== IMAGE_GEN_BACKENDS.A1111 &&
+      profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI
+    ) {
+      return null;
+    }
+    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
+    // Interface-driven second gate: a backend without the VAE-listing
+    // method reports "not supported", not an empty list.
+    if (typeof backend.listVae !== "function") return null;
+    const listVae = backend.listVae.bind(backend);
+    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "VAE list", (inner) =>
+      listVae(inner),
+    );
+  };
+
   listImageGenProfileFaceDetectors = async (id: string, signal?: AbortSignal) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
@@ -834,6 +857,11 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // model, not one-shot knobs). Other backends ignore the fields.
     const encoderName = overlay.encoderName ?? defaults.encoderName;
     const vaeName = overlay.vaeName ?? defaults.vaeName;
+    // VAE override for swappable-slot dialects (IF-7b): the encoder/vaeName
+    // ladder — overlay over profile base, no overrides rung (the chip never
+    // carries a one-shot VAE; the SET is the delivery vehicle). Backends
+    // without a swappable slot (DiT templates, cloud) ignore the field.
+    const vae = overlay.vae ?? defaults.vae;
     const seed = overrides.seed ?? overlay.seed ?? defaults.seed;
     const clipSkip = overrides.clipSkip ?? overlay.clipSkip ?? defaults.clipSkip;
     // ADetailer (IG-CF15/PG-4 v1): OVERLAY-ONLY — the face-fix flag rides the
@@ -853,15 +881,27 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // must not silently drop the lora chain a re-saved twin would send).
     const supportsLoras = IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsLoras === true;
     const loras = supportsLoras ? overrides.loras : undefined;
-    // Hires-fix (FT-A4): the chip-draft rung ONLY — no overlay, no profile
-    // base (per-generation by design, the LoRA ruling's twin) — and gated
-    // off the same CURRENT static table (the IF-6 staleness fix: comfy
-    // profiles saved before 2026-09-24 carry no supportsHiresFix mirror,
-    // yet the dialect now ships the second-pass subgraph).
-    const hires =
-      IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsHiresFix === true
-        ? overrides.hires
-        : undefined;
+    // Hires-fix (FT-A4 → IF-7b): THREE rungs now — the chip draft (the
+    // presence-semantics override, per-run by design) over the per-model
+    // overlay block over the profile base block. Stored blocks carry their
+    // own `enabled` switch (stock sets ship configured-but-disabled — the
+    // owner's opt-in ruling): a disabled block ships NOTHING (the ladder
+    // falls through). Still gated off the CURRENT static table (the IF-6
+    // staleness fix: pre-graduation profiles must not silently drop the
+    // second pass a re-saved twin would send).
+    const supportsHires = IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsHiresFix === true;
+    const storedHiresOf = (block: ImageGenHiresBlock | undefined) => {
+      if (block?.enabled !== true) return undefined;
+      const folded: NonNullable<ImageGenGenerateRequest["hires"]> = {};
+      if (block.upscaler !== undefined && block.upscaler !== "") folded.upscaler = block.upscaler;
+      if (block.steps !== undefined) folded.steps = block.steps;
+      if (block.scale !== undefined) folded.scale = block.scale;
+      if (block.denoisingStrength !== undefined) folded.denoisingStrength = block.denoisingStrength;
+      return folded;
+    };
+    const hires = supportsHires
+      ? (overrides.hires ?? storedHiresOf(overlay.hires) ?? storedHiresOf(defaults.hires))
+      : undefined;
 
     // IG-15 assist runner: built when the profile's assist is ENABLED and
     // BOTH picks exist (absent picks = assist inert — bit-identical legacy
@@ -944,6 +984,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(scheduler !== undefined ? { scheduler } : {}),
       ...(encoderName !== undefined ? { encoderName } : {}),
       ...(vaeName !== undefined ? { vaeName } : {}),
+      ...(vae !== undefined ? { vae } : {}),
       ...(seed !== undefined ? { seed } : {}),
       ...(clipSkip !== undefined ? { clipSkip } : {}),
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
@@ -996,6 +1037,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         ...(scheduler !== undefined ? { scheduler } : {}),
         ...(encoderName !== undefined ? { encoderName } : {}),
         ...(vaeName !== undefined ? { vaeName } : {}),
+        ...(vae !== undefined ? { vae } : {}),
         ...(result.resolvedTemplate !== undefined ? { template: result.resolvedTemplate } : {}),
         ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
         ...(hires !== undefined ? { hires } : {}),

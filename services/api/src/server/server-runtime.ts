@@ -46,6 +46,7 @@ import { ExperienceTimerScheduler } from "../domain/interactive/experience-timer
 import { generateStructuredActionChoice } from "../domain/interactive/experience-model-effect-structured.js";
 import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
 import { migratePresetServicePrompts } from "../domain/service-prompts/preset-to-profile-migration.js";
+import { ensureStockImageGenSamplerSets } from "../domain/imagegen/stock-sampler-set-seed.js";
 import { migrateGlobalImagePromptVariants } from "../domain/imagegen/global-variant-to-profile-migration.js";
 import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
@@ -150,6 +151,13 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	const igMigration = await migrateGlobalImagePromptVariants(stores);
 	if (igMigration.ran && igMigration.createdProfileId) {
 		console.log(`${tag} Image-prompt migration: ${igMigration.cellCount} cell(s) carried into profile "Imported" (now active).`);
+	}
+
+	// IF-7b: one-time stock sampler-set seed — four built-in preset rows as
+	// ordinary editable rows. Marker-guarded; deletes after the seed stick.
+	const stockSets = await ensureStockImageGenSamplerSets(stores);
+	if (stockSets.created) {
+		console.log(`${tag} Stock sampler sets: ${stockSets.present} built-in preset row(s) seeded.`);
 	}
 
 	// Built-in experiences (BE-4): ensure app-owned interactive experiences

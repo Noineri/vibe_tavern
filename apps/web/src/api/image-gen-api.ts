@@ -320,6 +320,22 @@ export async function listImageGenUpscalers(
 /** Re-exported contracts alias — the chip's upscaler list entry. */
 export type ImageGenUpscaler = ImageGenUpscalerInfoValue;
 
+/** VAE list for a saved local profile (IF-7b): the swappable-VAE vocabulary
+ *  for the advanced accordion's VAE field (A1111 `/sdapi/v1/sd-vae` +
+ *  ComfyUI `/models/vae`). Null = unknown profile; a backend without the
+ *  surface throws the route's 400 — callers gate on the profile's backend
+ *  before calling. */
+export async function listImageGenVae(id: string, signal?: AbortSignal): Promise<string[] | null> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/vaes`),
+    { signal },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw await rawError("Image-gen VAE list", response);
+  return (await response.json()) as string[];
+}
+
 /** One live progress snapshot for a saved local profile (PG-2): polled by
  *  the chat surface ONLY while our own generate request is in flight
  *  (A1111's progress is global-per-instance — cross-talk is ignored by

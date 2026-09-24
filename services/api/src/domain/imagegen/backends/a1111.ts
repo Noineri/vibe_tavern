@@ -525,9 +525,16 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       const scheduler = setOrUndefined(request.scheduler);
       if (scheduler !== undefined) body.scheduler = scheduler;
       const model = setOrUndefined(request.model) ?? cfg.model;
-      if (model !== undefined) {
-        // Card: model switching accepts title, filename, or hash — verbatim.
-        body.override_settings = { sd_model_checkpoint: model };
+      // VAE override (IF-7b): a set/profile-carried VAE name → the card's
+      // own override channel. Merged with the model override when both
+      // ride the request; sent ALONE when only the VAE is pinned (a
+      // server-loaded checkpoint + a chosen VAE is a legal combination).
+      const vae = setOrUndefined(request.vae);
+      if (model !== undefined || vae !== undefined) {
+        body.override_settings = {
+          ...(model !== undefined ? { sd_model_checkpoint: model } : {}),
+          ...(vae !== undefined ? { sd_vae: vae } : {}),
+        };
       }
       // ADetailer (IG-CF15/PG-4 v1): presence = enabled — the extension
       // script's own arg contract (see the module doc gate).
@@ -707,6 +714,39 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       }
       const parsed: unknown = await response.json().catch(() => null);
       return parseUpscalerInfos(parsed);
+    },
+
+    async listVae(signal?: AbortSignal): Promise<string[]> {
+      // IF-7b: the card's own VAE catalog (`/sdapi/v1/sd-vae` — entries
+      // carry model_name; "None"/"Automatic" pseudo-entries are filtered
+      // as empty names, the Auto slot stays adapter-side).
+      const response = await fetchOrWrap(
+        cfg.fetch,
+        `${cfg.endpoint}/sd-vae`,
+        {
+          method: "GET",
+          headers: buildSdApiHeaders(cfg.apiKey, false),
+          signal,
+        },
+        "VAE list",
+      );
+      if (!response.ok) {
+        const excerpt = await readProviderErrorBody(response);
+        throw new A1111ImageGenError(
+          `A1111 VAE list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
+          { status: response.status },
+        );
+      }
+      const parsed: unknown = await response.json().catch(() => null);
+      if (!Array.isArray(parsed)) return [];
+      const names: string[] = [];
+      for (const entry of parsed) {
+        if (typeof entry === "object" && entry !== null && "model_name" in entry) {
+          const name = (entry as { model_name?: unknown }).model_name;
+          if (typeof name === "string" && name !== "") names.push(name);
+        }
+      }
+      return names;
     },
 
     async listExtensions(signal?: AbortSignal): Promise<string[]> {

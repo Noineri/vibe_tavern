@@ -379,6 +379,42 @@ describe("useImageProfiles — CRUD", () => {
     expect(body["defaultParamsSetId"]).toBe("set-a");
     expect(body["defaultParams"]).toEqual({ steps: 30, sampler: "Euler a" });
   });
+
+  // IF-7b: the grown set payload (scheduler + vae + hires) lands in the
+  // base verbatim — the stock sets' whole point.
+  it("applyBaseSamplerSet carries the grown payload fields (scheduler, vae, hires) into defaultParams", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "a1111" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+
+    act(() =>
+      hook!.applyBaseSamplerSet("set-anima", {
+        sampler: "euler_sde",
+        scheduler: "simple",
+        steps: 30,
+        cfgScale: 5,
+        vae: "qwen_image_vae.safetensors",
+        hires: { enabled: false, upscaler: "R-ESRGAN 4x+ Anime6B", scale: 1.5, denoisingStrength: 0.35 },
+      }),
+    );
+    expect(hook?.form?.defaultParams).toEqual({
+      sampler: "euler_sde",
+      scheduler: "simple",
+      steps: 30,
+      cfgScale: 5,
+      vae: "qwen_image_vae.safetensors",
+      hires: { enabled: false, upscaler: "R-ESRGAN 4x+ Anime6B", scale: 1.5, denoisingStrength: 0.35 },
+    });
+    expect(hook?.form?.defaultParamsSetId).toBe("set-anima");
+    expect(hook?.dirty).toBe(true);
+  });
 });
 
 describe("useImageProfiles — backend switch hygiene", () => {

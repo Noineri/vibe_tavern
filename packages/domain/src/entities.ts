@@ -1178,6 +1178,20 @@ export interface ImageGenCapabilityFlags {
 /** Profile-level default generation params. EVERY field optional by design
  *  (owner's hardcoded-parameters ban, 2026-09-07): no value ships as code —
  *  empty means "send nothing, use the vendor default". */
+/** Hires-fix block shared by the set payload, the profile base params,
+ *  and the per-model overlay (IF-7b): `enabled` decides whether the block
+ *  rides the generation request at all — the chip-draft rung's
+ *  presence-semantics twin for STORED blocks. Stock sets ship the block
+ *  CONFIGURED but disabled (owner: opt-in by the user, never
+ *  auto-enabled). */
+export interface ImageGenHiresBlock {
+  enabled: boolean;
+  upscaler?: string;
+  steps?: number;
+  scale?: number;
+  denoisingStrength?: number;
+}
+
 export interface ImageGenDefaultParams {
   /** Sampling steps (local backends). */
   steps?: number;
@@ -1202,6 +1216,16 @@ export interface ImageGenDefaultParams {
   /** VAE file for the ComfyUI DiT template (CG-A2, comfyui dialect only):
    *  the VAELoader sidecar. Absent = adapter-side canonical resolution. */
   vaeName?: string;
+  /** VAE override for dialects with a SWAPPABLE VAE slot (IF-7b): A1111 →
+   *  `override_settings.sd_vae`, ComfyUI checkpoint template → the
+   *  VAELoader swap replacing the bundled third output. DiT-family
+   *  templates keep their family-fixed VAE (`vaeName` above) — this field
+   *  never applies there. Absent = the dialect's own default. */
+  vae?: string;
+  /** Hires-fix second pass on the profile base (IF-7b): `enabled` gates
+   *  the request rung — a configured-but-disabled block ships nothing.
+   *  The chip-draft override outranks both stored rungs at generation. */
+  hires?: ImageGenHiresBlock;
 }
 
 /** Per-mode width/height preset on the profile. Optional members — an unset
@@ -1352,6 +1376,12 @@ export interface ImageGenModelSettingsOverlay {
   /** VAE file for the ComfyUI DiT template (CG-A2) — the overlay twin of
    *  `ImageGenDefaultParams.vaeName`. */
   vaeName?: string;
+  /** VAE override for swappable-slot dialects (IF-7b) — the overlay twin
+   *  of `ImageGenDefaultParams.vae`. */
+  vae?: string;
+  /** Hires-fix second pass on the per-model overlay (IF-7b) — the overlay
+   *  twin of `ImageGenDefaultParams.hires`. */
+  hires?: ImageGenHiresBlock;
   seed?: number;
   clipSkip?: number;
   /** ADetailer face-fix switch (IG-CF15/PG-4 v1, A1111-family only):
@@ -1405,17 +1435,24 @@ export interface ImageGenModelSettings {
 }
 
 /** Sampler-set payload for image-gen (IG-CF15, the LLM
- *  `SamplerSetPayload` twin). The five scalar generation params ONLY —
+ *  `SamplerSetPayload` twin). The generation params a set can carry —
  *  `modeSizePresets` deliberately NOT here (the owner's set concept is
  *  "sampler settings"; sizes are the profile/model layer's own surface,
  *  IG-CF14). An inert template: applying copies the values into the target
- *  overlay; no value ships as code. */
+ *  overlay; no value ships as code. IF-7b grew the payload beyond the five
+ *  LS-5 scalars: `scheduler` (Krea presets need it), a `vae` name (owner
+ *  2026-09-25: presets carry the encoders/VAE the model needs — applies
+ *  only where the target dialect has a swappable VAE slot), and a
+ *  configured-but-disabled `hires` block (the owner's opt-in ruling). */
 export interface ImageGenSamplerSetPayload {
   steps?: number;
   cfgScale?: number;
   sampler?: string;
   seed?: number;
   clipSkip?: number;
+  scheduler?: string;
+  vae?: string;
+  hires?: ImageGenHiresBlock;
 }
 
 /** Persisted named image-gen sampler set row (`image_gen_sampler_sets`). */

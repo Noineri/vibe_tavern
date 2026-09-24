@@ -1188,6 +1188,11 @@ export const uiSettings = sqliteTable('ui_settings', {
   // to true) and on pre-SP-7 upgrades (migration snapshots preset overrides
   // into named profiles). Written once by the startup hook, never reset.
   servicePromptPresetMigrated: integer('service_prompt_preset_migrated', { mode: 'boolean' }).notNull().default(false),
+  /** One-time stock sampler-set seed marker (IF-7b): flips when the four
+   *  built-in preset rows were created — deletes AFTER that stick (the
+   *  seed never resurrects rows; the preset-to-profile marker
+   *  convention). */
+  stockImageGenSamplerSetsSeeded: integer('stock_image_gen_sampler_sets_seeded', { mode: 'boolean' }).notNull().default(false),
   // STT scenario pointers (STT_PLAN ST-1): the profile used by dictation
   // (mic → transcript) and by voice-message transcription respectively; may
   // point at the same profile. Null → the isDefault fallback profile / no

@@ -888,6 +888,153 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     expect(await res.json()).toEqual([{ name: "None" }, { name: "Latent" }, { name: "4x-UltraSharp" }]);
   });
 
+  test("a1111 fold (IF-7b): stored hires rungs — a DISABLED stock block ships nothing; an ENABLED base block rides; the overlay outranks the base; the chip draft outranks both", async () => {
+    const capturedBody: Record<string, unknown>[] = [];
+    const { app, stores } = await makeApp(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/sdapi/v1/txt2img") {
+        capturedBody.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ images: [PNG_B64(0x63)] }), { status: 200 });
+      }
+      return new Response("unused", { status: 200 });
+    });
+    const chatId = await makeChat(stores);
+    // Stock-set shape on the profile BASE: configured but DISABLED — the
+    // owner's opt-in ruling. Nothing must ride the wire.
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      endpoint: "http://127.0.0.1:7860",
+      modelId: "sd_xl.ckpt",
+      defaultParams: {
+        steps: 25,
+        hires: { enabled: false, upscaler: "R-ESRGAN 4x+ Anime6B", scale: 1.5, denoisingStrength: 0.35 },
+      },
+    });
+
+    const run = async (body: Record<string, unknown>) => {
+      capturedBody.length = 0;
+      const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(200);
+      expect(capturedBody.length).toBe(1);
+    };
+
+    // (1) Disabled block: no second pass — the flat params ride, hires not.
+    await run({ profileId: id, mode: "portrait", prompt: "a" });
+    expect(capturedBody[0]!.steps).toBe(25);
+    expect("enable_hr" in capturedBody[0]!).toBe(false);
+
+    // (2) Enable the base block (the pane's hires toggle) → it rides.
+    const patch = await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultParams: { hires: { enabled: true, upscaler: "R-ESRGAN 4x+ Anime6B", scale: 1.5, denoisingStrength: 0.35 } } }),
+    });
+    expect(patch.status).toBe(200);
+    await run({ profileId: id, mode: "portrait", prompt: "a" });
+    expect(capturedBody[0]!.enable_hr).toBe(true);
+    expect(capturedBody[0]!.hr_upscaler).toBe("R-ESRGAN 4x+ Anime6B");
+    expect(capturedBody[0]!.hr_scale).toBe(1.5);
+    expect(capturedBody[0]!.denoising_strength).toBe(0.35);
+
+    // (3) The per-model overlay block outranks the base.
+    const put = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl.ckpt`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { hires: { enabled: true, scale: 2, denoisingStrength: 0.6 } } }),
+    });
+    expect(put.status).toBe(200);
+    await run({ profileId: id, mode: "portrait", prompt: "a" });
+    expect(capturedBody[0]!.hr_scale).toBe(2);
+    expect(capturedBody[0]!.denoising_strength).toBe(0.6);
+    // Upscaler stays unset on the overlay block — the overlay REPLACES the
+    // rung wholesale (per-field inheritance is the overlay's own rule, not
+    // the hires ladder's).
+    expect("hr_upscaler" in capturedBody[0]!).toBe(false);
+
+    // (4) The chip draft outranks every stored rung.
+    await run({ profileId: id, mode: "portrait", prompt: "a", overrides: { hires: { scale: 1.2 } } });
+    expect(capturedBody[0]!.hr_scale).toBe(1.2);
+  });
+
+  test("a1111 fold (IF-7b): the vae override rides override_settings.sd_vae — base, overlay, and merged with the model switch", async () => {
+    const capturedBody: Record<string, unknown>[] = [];
+    const { app, stores } = await makeApp(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/sdapi/v1/txt2img") {
+        capturedBody.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ images: [PNG_B64(0x64)] }), { status: 200 });
+      }
+      return new Response("unused", { status: 200 });
+    });
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      endpoint: "http://127.0.0.1:7860",
+      modelId: "sd_xl.ckpt",
+      defaultParams: { vae: "sdxl_vae.safetensors" },
+    });
+
+    // (1) The base default rides merged with the model switch.
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "a" }),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedBody[0]!.override_settings).toEqual({
+      sd_model_checkpoint: "sd_xl.ckpt",
+      sd_vae: "sdxl_vae.safetensors",
+    });
+
+    // (2) The per-model overlay outranks the base.
+    const put = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl.ckpt`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { vae: "vae-ft-mse-840000.safetensors" } }),
+    });
+    expect(put.status).toBe(200);
+    capturedBody.length = 0;
+    const res2 = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "a" }),
+    });
+    expect(res2.status).toBe(200);
+    expect(capturedBody[0]!.override_settings).toEqual({
+      sd_model_checkpoint: "sd_xl.ckpt",
+      sd_vae: "vae-ft-mse-840000.safetensors",
+    });
+  });
+
+  test("sampler-set payload round-trip (IF-7b): scheduler + vae + the hires block persist verbatim", async () => {
+    const { app } = await makeApp();
+    const payload = {
+      steps: 8,
+      cfgScale: 1,
+      sampler: "euler",
+      scheduler: "simple",
+      vae: "qwen_image_vae.safetensors",
+      hires: { enabled: false, upscaler: "R-ESRGAN 4x+ Anime6B", scale: 1.5, denoisingStrength: 0.35 },
+    };
+    const created = (await (await app.request("/api/image-gen/sampler-sets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Krea 2 Turbo", payload }),
+    })).json()) as { id: string; payload: typeof payload };
+    expect(created.payload).toEqual(payload);
+
+    const list = (await (await app.request("/api/image-gen/sampler-sets")).json()) as Array<{
+      id: string;
+      payload: typeof payload;
+    }>;
+    const row = list.find((entry) => entry.id === created.id);
+    expect(row?.payload).toEqual(payload);
+  });
+
   test("a1111 fold: loras + hires ride the txt2img wire capability-gated (FT-A4)", async () => {
     const capturedBody: Record<string, unknown>[] = [];
     const { app, stores } = await makeApp(async (input, init) => {

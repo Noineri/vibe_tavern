@@ -26,6 +26,7 @@ import {
   applyComfyHiresPass,
   buildComfyCheckpointWorkflow,
   buildComfyKrea2Workflow,
+  COMFY_NODE_IDS,
   comfyImageGenFactory,
   normalizeComfyFamily,
 } from "../src/domain/imagegen/backends/comfyui.js";
@@ -201,6 +202,29 @@ describe("comfyui adapter", () => {
       });
       // No clipSkip → no CLIPSetLastLayer node at all.
       expect(graph["10"]).toBeUndefined();
+    });
+
+    it("IF-7b VAE swap: a pinned request.vae adds the VAELoader node and rewires VAEDecode + the second-pass ctx; absent → byte-identical bundled wiring", () => {
+      const withoutVae = buildComfyCheckpointWorkflow({ prompt: "p" }, "m.safetensors");
+      // The pre-swap graph: VAEDecode on the checkpoint's bundled third
+      // output, no node 36 (the no-lora byte-identity rule).
+      expect(withoutVae.graph["8"]!.inputs.vae).toEqual(["4", 2]);
+      expect(withoutVae.graph[COMFY_NODE_IDS.checkpointVaeLoader]).toBeUndefined();
+      expect(withoutVae.ctx.vae).toEqual(["4", 2]);
+
+      const swapped = buildComfyCheckpointWorkflow({ prompt: "p", vae: "sdxl_vae.safetensors" }, "m.safetensors");
+      expect(swapped.graph[COMFY_NODE_IDS.checkpointVaeLoader]).toEqual({
+        class_type: "VAELoader",
+        inputs: { vae_name: "sdxl_vae.safetensors" },
+      });
+      expect(swapped.graph["8"]!.inputs.vae).toEqual([COMFY_NODE_IDS.checkpointVaeLoader, 0]);
+      // The second-pass ctx carries the SWAPPED ref too (the hires/detailer
+      // subgraphs re-encode/decode through the same VAE).
+      expect(swapped.ctx.vae).toEqual([COMFY_NODE_IDS.checkpointVaeLoader, 0]);
+      // Everything else is untouched — the swap adds exactly one node and
+      // rewires exactly one input.
+      const { [COMFY_NODE_IDS.checkpointVaeLoader]: _added, ...rest } = swapped.graph;
+      expect(Object.keys(rest).sort()).toEqual(Object.keys(withoutVae.graph).sort());
     });
 
     it("materializes the node-class defaults for unset fields (the server's own /object_info values)", () => {

@@ -107,6 +107,19 @@ export type ImageGenCapabilityFlagsValue = z.infer<typeof imageGenCapabilityFlag
 
 // ─── Params & size presets ────────────────────────────────────────────────────
 
+/** Hires-fix block on stored params (IF-7b): `enabled` gates the
+ *  request rung; the knob set matches the chip-draft hires block
+ *  (ImageGenHiresSection) so a set can carry it verbatim. */
+export const imageGenHiresBlockSchema = z.object({
+  enabled: z.boolean(),
+  upscaler: z.string().min(1).optional(),
+  /** 0 = the dialect's own "inherit first-pass steps" value. */
+  steps: z.number().int().min(0).optional(),
+  scale: z.number().finite().positive().optional(),
+  denoisingStrength: z.number().finite().min(0).max(1).optional(),
+});
+export type ImageGenHiresBlockValue = z.infer<typeof imageGenHiresBlockSchema>;
+
 /** Profile-level default generation params — EVERY field optional (owner's
  *  hardcoded-parameters ban): absent means "send nothing, use the vendor
  *  default"; no value ships as code. */
@@ -126,6 +139,13 @@ export const imageGenDefaultParamsSchema = z.object({
   /** VAE file for the ComfyUI DiT template (CG-A2, comfyui dialect only):
    *  the VAELoader sidecar. Absent = adapter-side canonical resolution. */
   vaeName: z.string().optional(),
+  /** VAE override for swappable-slot dialects (IF-7b) — A1111's
+   *  `override_settings.sd_vae` and the Comfy checkpoint VAELoader swap;
+   *  DiT templates keep their family-fixed `vaeName`. */
+  vae: z.string().min(1).optional(),
+  /** Hires-fix second pass on the profile base (IF-7b): `enabled` gates
+   *  the request rung (a configured-but-disabled block ships nothing). */
+  hires: imageGenHiresBlockSchema.optional(),
 });
 export type ImageGenDefaultParamsValue = z.infer<typeof imageGenDefaultParamsSchema>;
 
@@ -552,6 +572,12 @@ export const imageGenModelSettingsOverlaySchema = z.object({
   /** VAE file for the ComfyUI DiT template (CG-A2) — the overlay twin of
    *  the profile-default `vaeName`. */
   vaeName: z.string().optional(),
+  /** VAE override for swappable-slot dialects (IF-7b) — the overlay twin
+   *  of the profile-default `vae`. */
+  vae: z.string().min(1).optional(),
+  /** Hires-fix second pass on the per-model overlay (IF-7b) — the overlay
+   *  twin of the profile-default `hires`. */
+  hires: imageGenHiresBlockSchema.optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
   /** ADetailer face-fix switch (IG-CF15/PG-4 v1) — A1111-family only. */
@@ -590,15 +616,21 @@ export type UpsertImageGenModelSettingsValue = z.infer<typeof upsertImageGenMode
 
 // ─── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin) ─────
 
-/** Set payload: the five scalar generation params (no `modeSizePresets` —
- *  sizes are the model layer's own surface, IG-CF14). All-optional like the
- *  overlay: an inert template, empty = nothing to apply. */
+/** Set payload: the generation params a set can carry (no
+ *  `modeSizePresets` — sizes are the model layer's own surface, IG-CF14).
+ *  All-optional like the overlay: an inert template, empty = nothing to
+ *  apply. IF-7b: `scheduler` (Krea presets), `vae` (the encoder ruling),
+ *  and the configured-but-disabled `hires` block joined the five LS-5
+ *  scalars. */
 export const imageGenSamplerSetPayloadSchema = z.object({
   steps: z.number().optional(),
   cfgScale: z.number().optional(),
   sampler: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
+  scheduler: z.string().optional(),
+  vae: z.string().min(1).optional(),
+  hires: imageGenHiresBlockSchema.optional(),
 });
 export type ImageGenSamplerSetPayloadValue = z.infer<typeof imageGenSamplerSetPayloadSchema>;
 

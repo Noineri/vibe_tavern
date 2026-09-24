@@ -102,6 +102,9 @@ export interface ImageGenSlotProvenance {
     encoderName?: string;
     /** VAE file (CG-A2, ComfyUI DiT template) — recorded when sent. */
     vaeName?: string;
+    /** VAE override for swappable-slot dialects (IF-7b) — recorded when
+     *  sent so a regenerated slot reproduces the same VAE. */
+    vae?: string;
     /** Workflow template the backend RESOLVED for the generation (CG-A2,
      *  ComfyUI: "checkpoint" | "krea2-dit") — the adapter picks it by
      *  model auto-detect, so it is recorded from the RESULT, not the

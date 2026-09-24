@@ -168,6 +168,22 @@ describe("a1111 adapter", () => {
       expect(sentJson(calls[0]).override_settings).toEqual({ sd_model_checkpoint: "request-model" });
     });
 
+    it("IF-7b: a pinned vae rides override_settings.sd_vae — merged with the model switch, and ALONE when no model resolves (server-loaded checkpoint + a chosen VAE)", async () => {
+      const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
+      const backend = a1111Factory({ endpoint: ENDPOINT, model: "profile-model", fetch: transport });
+      await backend.generate({ prompt: "p", vae: "sdxl_vae.safetensors" });
+      expect(sentJson(calls[0]).override_settings).toEqual({
+        sd_model_checkpoint: "profile-model",
+        sd_vae: "sdxl_vae.safetensors",
+      });
+
+      // No model anywhere (server-loaded checkpoint) + a VAE pin → the
+      // override channel still opens for the VAE alone.
+      const bare = a1111Factory({ endpoint: ENDPOINT, fetch: transport });
+      await bare.generate({ prompt: "p", vae: "vae-ft-mse.safetensors" });
+      expect(sentJson(calls[1]).override_settings).toEqual({ sd_vae: "vae-ft-mse.safetensors" });
+    });
+
     it("sends basic auth from the apiKey when present (card: --api-auth 'user:pass')", async () => {
       const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
       const backend = a1111Factory({ endpoint: ENDPOINT, apiKey: BASIC_CREDENTIALS, fetch: transport });

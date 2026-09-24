@@ -279,6 +279,24 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
         throw error;
       }
     })
+    // ── VAE list (dialect-gated, IF-7b) ──────────────────────────────
+    .get("/api/image-gen/profiles/:id/vaes", async (c) => {
+      try {
+        const vaes = await runtime.listImageGenProfileVae(c.req.param("id"), c.req.raw.signal);
+        if (vaes === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "VAE listing not supported" }, 400);
+        }
+        return c.json(vaes);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
     // ── Live progress (capability-gated, PG-2) ───────────────────────
     .get("/api/image-gen/profiles/:id/progress", async (c) => {
       try {

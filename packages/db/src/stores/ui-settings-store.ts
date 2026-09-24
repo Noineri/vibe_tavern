@@ -52,6 +52,9 @@ export interface UiSettings {
   imagePromptVariantsMigrated: boolean;
   /** One-time preset→profile migration marker (SP-7) — see db-schema comment. */
   servicePromptPresetMigrated: boolean;
+  /** One-time stock sampler-set seed marker (IF-7b) — see db-schema
+   *  comment. */
+  stockImageGenSamplerSetsSeeded: boolean;
   /** STT scenario pointers (STT_PLAN ST-1): dictation + voice-message
    *  transcription profile ids; may point at the same profile. Null → the
    *  isDefault fallback / no transcription. */
@@ -89,6 +92,7 @@ export interface UiSettingsUpdate {
   activeImagePromptProfileId?: string | null;
   imagePromptVariantsMigrated?: boolean;
   servicePromptPresetMigrated?: boolean;
+  stockImageGenSamplerSetsSeeded?: boolean;
   activeDictationProfileId?: string | null;
   activeVoiceMessageProfileId?: string | null;
 }
@@ -123,6 +127,7 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   activeImagePromptProfileId: null,
   imagePromptVariantsMigrated: false,
   servicePromptPresetMigrated: false,
+  stockImageGenSamplerSetsSeeded: false,
   activeDictationProfileId: null,
   activeVoiceMessageProfileId: null,
 };
@@ -188,6 +193,7 @@ export class UiSettingsStore {
       activeImagePromptProfileId: partial.activeImagePromptProfileId ?? UI_SETTINGS_DEFAULTS.activeImagePromptProfileId,
       imagePromptVariantsMigrated: partial.imagePromptVariantsMigrated ?? UI_SETTINGS_DEFAULTS.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: partial.servicePromptPresetMigrated ?? UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
+      stockImageGenSamplerSetsSeeded: partial.stockImageGenSamplerSetsSeeded ?? UI_SETTINGS_DEFAULTS.stockImageGenSamplerSetsSeeded,
       activeDictationProfileId: partial.activeDictationProfileId ?? UI_SETTINGS_DEFAULTS.activeDictationProfileId,
       activeVoiceMessageProfileId: partial.activeVoiceMessageProfileId ?? UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
@@ -268,6 +274,7 @@ export class UiSettingsStore {
       activeImagePromptProfileId: row.activeImagePromptProfileId ?? null,
       imagePromptVariantsMigrated: row.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: row.servicePromptPresetMigrated,
+      stockImageGenSamplerSetsSeeded: row.stockImageGenSamplerSetsSeeded,
       activeDictationProfileId: row.activeDictationProfileId ?? null,
       activeVoiceMessageProfileId: row.activeVoiceMessageProfileId ?? null,
       updatedAt: row.updatedAt,

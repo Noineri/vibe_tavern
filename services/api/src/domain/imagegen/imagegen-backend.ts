@@ -89,6 +89,12 @@ export interface ImageGenGenerateRequest {
   /** VAE sidecar file for the ComfyUI DiT template (CG-A2, comfyui
    *  dialect only). Absent = the adapter's canonical resolution. */
   vaeName?: string;
+  /** VAE override for dialects with a SWAPPABLE VAE slot (IF-7b): A1111
+   *  sends `override_settings.sd_vae`, the Comfy checkpoint template swaps
+   *  in a VAELoader replacing the bundled third output. DiT-family
+   *  templates keep their family-fixed `vaeName` — they ignore this
+   *  field. Absent = the dialect's own default. */
+  vae?: string;
   seed?: number;
   clipSkip?: number;
   /** ADetailer face-fix model (IG-CF15/PG-4 v1, A1111-family only):
@@ -374,6 +380,11 @@ export interface ImageGenBackend {
    *  dialect-gate twin, not a capability flag): the `hr_upscaler`
    *  vocabulary for the hires-fix block's dropdown. */
   listUpscalers?(signal?: AbortSignal): Promise<ImageGenUpscalerInfo[]>;
+  /** VAE listing (IF-7b, dialect-gated: A1111 `/sdapi/v1/sd-vae` + ComfyUI
+   *  `/models/vae`) — the swappable-VAE vocabulary for the advanced
+   * accordion's VAE field. Bare names; the dialect's own "auto" stays
+   * adapter-side (an absent request field). */
+  listVae?(signal?: AbortSignal): Promise<string[]>;
   /** Server-extension listing (A1111-compat only in v1) — extension dir
    *  names for feature detection (IG-CF15/PG-4: the ADetailer probe). */
   listExtensions?(signal?: AbortSignal): Promise<string[]>;

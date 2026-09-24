@@ -239,6 +239,10 @@ export const COMFY_NODE_IDS = {
   hiresVaeEncode: "33",
   hiresKSampler: "34",
   hiresVaeDecode: "35",
+  /** Checkpoint-template VAE swap (IF-7b): exists ONLY when the request
+   *  pins a VAE — the no-swap graph stays byte-identical to the bundled
+   * third output (the CG no-lora precedent). */
+  checkpointVaeLoader: "36",
   faceDetector: "40",
   faceDetailer: "41",
 } as const;
@@ -504,15 +508,28 @@ export function buildComfyCheckpointWorkflow(
     class_type: "CheckpointLoaderSimple",
     inputs: { ckpt_name: resolvedModel },
   };
-  // The checkpoint's own third output is its bundled VAE.
-  graph[COMFY_NODE_IDS.vaeDecode]!.inputs.vae = [COMFY_NODE_IDS.checkpoint, 2];
+  // VAE swap (IF-7b): a pinned `request.vae` replaces the checkpoint's
+  // bundled third output with a VAELoader — the KREA-2 template's own
+  // wiring pattern. Absent → the bundled output, byte-identical to the
+  // pre-swap template (the no-lora rule).
+  let vaeRef: [string, number] = [COMFY_NODE_IDS.checkpoint, 2];
+  if (request.vae !== undefined && request.vae !== "") {
+    graph[COMFY_NODE_IDS.checkpointVaeLoader] = {
+      class_type: "VAELoader",
+      inputs: { vae_name: request.vae },
+    };
+    vaeRef = [COMFY_NODE_IDS.checkpointVaeLoader, 0];
+  }
+  // The checkpoint's own third output is its bundled VAE (or the swap's
+  // VAELoader output above).
+  graph[COMFY_NODE_IDS.vaeDecode]!.inputs.vae = vaeRef;
   return {
     graph,
     seed: resolved.seed,
     ctx: {
       model: chain.model,
       clip: resolved.clipSource,
-      vae: [COMFY_NODE_IDS.checkpoint, 2],
+      vae: vaeRef,
       seed: resolved.seed,
       steps: resolved.steps,
       cfg: resolved.cfg,
@@ -1890,6 +1907,13 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       // The chip's Auto ("") is the LATENT path — adapter-side, no entry.
       const names = await fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "upscale_models", signal);
       return names.map((name) => ({ name }));
+    },
+
+    async listVae(signal?: AbortSignal): Promise<string[]> {
+      // IF-7b: the live vae folder — the SAME catalog the DiT sidecar
+      // resolver uses; here it feeds the checkpoint template's VAE-swap
+      // field too (one folder, both templates' vocabulary).
+      return fetchComfyFolderNames(cfg.fetch, cfg.endpoint, "vae", signal);
     },
 
     async listFaceDetectors(signal?: AbortSignal): Promise<string[]> {

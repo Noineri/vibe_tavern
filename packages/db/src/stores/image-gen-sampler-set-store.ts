@@ -27,6 +27,11 @@ export interface CreateImageGenSamplerSetData {
   payload: ImageGenSamplerSetPayload | ImageGenSamplerSetStoredPayload;
   /** Explicit order (mass import assigns sequential); default = appended last. */
   sortOrder?: number;
+  /** Fixed row id for the built-in stock sets (IF-7b): stable ids make the
+   *  seed idempotent per row and let the pane's auto-preselect resolver
+   * find a stock row deterministically across renames. Ordinary creates
+   * (the pane's «+», import) keep the generated id. */
+  id?: string;
 }
 
 export type UpdateImageGenSamplerSetData = Partial<CreateImageGenSamplerSetData>;
@@ -72,7 +77,7 @@ export class ImageGenSamplerSetStore {
   }
 
   async create(data: CreateImageGenSamplerSetData): Promise<ImageGenSamplerSetRow> {
-    const id = this.idGen.next('igset');
+    const id = data.id ?? this.idGen.next('igset');
     const now = this.clock.now();
     await this.db
       .insert(imageGenSamplerSets)
