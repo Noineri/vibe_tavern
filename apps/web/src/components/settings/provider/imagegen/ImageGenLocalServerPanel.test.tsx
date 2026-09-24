@@ -50,6 +50,7 @@ function localForm(overrides: Partial<ImageGenProfileForm> = {}): ImageGenProfil
     autoKeyProviderName: null,
     modelId: null,
     defaultParams: {},
+    defaultParamsSetId: null,
     modeSizePresets: {},
     userSizes: [],
     llmAssistEnabled: false,

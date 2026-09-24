@@ -66,6 +66,7 @@ function profile(id: string, name: string, capabilities: Caps, modelId?: string)
     autoKeyProviderName: null,
     modelId,
     defaultParams: {},
+    defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
     familySource: "none",

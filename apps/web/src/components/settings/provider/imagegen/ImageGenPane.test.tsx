@@ -242,6 +242,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     autoKeyProviderName: null,
     modelId: undefined,
     defaultParams: {},
+    defaultParamsSetId: null,
     modeSizePresets: {},
     userSizes: [],
     llmAssistEnabled: false,
@@ -270,6 +271,7 @@ function makeForm(overrides: Partial<NonNullable<ImageGenHook["form"]>> = {}): N
     autoKeyProviderName: null,
     modelId: null,
     defaultParams: {},
+    defaultParamsSetId: null,
     modeSizePresets: {},
     userSizes: [],
     llmAssistEnabled: false,
@@ -321,6 +323,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     setModelOverlay: mock(() => {}),
     modelOverlaySetId: null,
     setModelSamplerSetBinding: mock(() => {}),
+    applyBaseSamplerSet: mock(() => {}),
     ...overrides,
   };
 }
@@ -1404,11 +1407,27 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
     await waitFor(() => expect(view.getByTestId("image-gen-advanced-body")).toBeTruthy());
   });
 
-  it("unbound: the header renders title-only — no set row, no set actions", async () => {
-    const view = render(<ImageGenPane imageGen={makeImageGen()} />);
+  it("unbound (IF-7a): the set row is NOT gated — selecting a set applies its payload to the profile BASE, never the overlay arm", async () => {
+    const applyBaseSamplerSet = mock(
+      (_setId: string | null, _payload?: { steps?: number; cfgScale?: number; sampler?: string; seed?: number; clipSkip?: number }) => {},
+    );
+    const setModelSamplerSetBinding = mock(() => {});
+    const view = render(
+      <ImageGenPane imageGen={makeImageGen({ applyBaseSamplerSet, setModelSamplerSetBinding })} />,
+    );
     await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
-    expect(view.queryByTestId("image-gen-model-set-row")).toBeNull();
-    expect(view.queryByTestId("image-gen-set-new")).toBeNull();
+    // Owner ruling 2026-09-22: the per-model toggle gates only the overlay
+    // FIELDS — the sets row renders with binding OFF too.
+    expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy();
+    expect(view.getByTestId("image-gen-set-new")).toBeTruthy();
+
+    await pickOption(view, "image-gen-model-set-trigger", "Cinematic 30");
+    // The BASE arm receives the copy-on-select payload + pointer.
+    await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
+    expect(applyBaseSamplerSet.mock.calls[0]![0]).toBe("set-a");
+    expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual({ steps: 30, cfgScale: 5, sampler: "Euler a", clipSkip: 1 });
+    // The overlay arm stays untouched while unbound (arm separation).
+    expect(setModelSamplerSetBinding).not.toHaveBeenCalled();
   });
 });
 

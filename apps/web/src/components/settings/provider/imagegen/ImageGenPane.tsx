@@ -995,15 +995,26 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
     };
   }, []);
 
-  const overlay = imageGen.modelOverlay ?? {};
-  const selected = sets.find((s) => s.id === imageGen.modelOverlaySetId) ?? null;
+  // IF-7a: the row serves BOTH bind states — the sets row is NOT gated by
+  // the per-model toggle (owner ruling 2026-09-22: the toggle binds params
+  // to favorite MODELS, it never gates the ability to use sets). Bound →
+  // writes ride the per-model overlay; unbound → writes ride the profile
+  // BASE defaultParams (applyBaseSamplerSet). The payload source, the
+  // bound-set id, and every write route branch on `bound`.
+  const bound = imageGen.modelOverlay !== null;
+  const baseParams = imageGen.form?.defaultParams ?? {};
+  const overlay: Record<string, unknown> = bound ? (imageGen.modelOverlay ?? {}) : baseParams;
+  const boundSetId = bound
+    ? imageGen.modelOverlaySetId
+    : (imageGen.form?.defaultParamsSetId ?? null);
+  const selected = sets.find((s) => s.id === boundSetId) ?? null;
 
   // Back-fill the dirty-dot baseline from the pre-selected set once the
   // library arrives (previous-session pre-selection — no re-apply).
   useEffect(() => {
-    if (!setsLoaded || imageGen.modelOverlaySetId === null) return;
-    if (appliedRef.current?.setId === imageGen.modelOverlaySetId) return;
-    const set = sets.find((s) => s.id === imageGen.modelOverlaySetId);
+    if (!setsLoaded || boundSetId === null) return;
+    if (appliedRef.current?.setId === boundSetId) return;
+    const set = sets.find((s) => s.id === boundSetId);
     if (!set) return;
     appliedRef.current = { setId: set.id, baseline: { ...set.payload } };
     bumpApplied();
@@ -1016,7 +1027,8 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
   );
 
   const applySet = (set: ImageGenSamplerSet) => {
-    imageGen.setModelSamplerSetBinding(set.id, set.payload);
+    if (bound) imageGen.setModelSamplerSetBinding(set.id, set.payload);
+    else imageGen.applyBaseSamplerSet(set.id, set.payload);
     appliedRef.current = { setId: set.id, baseline: { ...set.payload } };
     bumpApplied();
     toast.success(t("sampler_set_applied", { name: set.name }));
@@ -1024,8 +1036,9 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
 
   const handleSelectSet = (id: string) => {
     if (id === "") {
-      // Explicit "no set": clear the pointer, keep the overlay's values.
-      imageGen.setModelSamplerSetBinding(null);
+      // Explicit "no set": clear the pointer, keep the current values.
+      if (bound) imageGen.setModelSamplerSetBinding(null);
+      else imageGen.applyBaseSamplerSet(null);
       appliedRef.current = null;
       bumpApplied();
       return;
@@ -1056,7 +1069,8 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
       try {
         const created = await createImageGenSamplerSet({ name, payload: setPayloadOf(overlay) });
         setSets((list) => [...list, created]);
-        imageGen.setModelSamplerSetBinding(created.id, created.payload);
+        if (bound) imageGen.setModelSamplerSetBinding(created.id, created.payload);
+        else imageGen.applyBaseSamplerSet(created.id, created.payload);
         appliedRef.current = { setId: created.id, baseline: { ...created.payload } };
         bumpApplied();
         setMorph(null);
@@ -1086,8 +1100,13 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
     try {
       await deleteImageGenSamplerSet(confirmDeleteId);
       setSets((list) => list.filter((s) => s.id !== confirmDeleteId));
-      if (imageGen.modelOverlaySetId === confirmDeleteId) {
+      // Clear whichever pointer family referenced the deleted set (the
+      // server nulls STORED pointers for both; this mirrors the live form).
+      if (bound && imageGen.modelOverlaySetId === confirmDeleteId) {
         imageGen.setModelSamplerSetBinding(null);
+      }
+      if (!bound && imageGen.form?.defaultParamsSetId === confirmDeleteId) {
+        imageGen.applyBaseSamplerSet(null);
       }
       if (appliedRef.current?.setId === confirmDeleteId) {
         appliedRef.current = null;
@@ -1200,7 +1219,7 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
       ) : (
         <div className="flex min-w-0 items-center">
           <DropdownSelect
-            value={imageGen.modelOverlaySetId ?? ""}
+            value={boundSetId ?? ""}
             options={sets.map((s) => ({ id: s.id, label: s.name }))}
             defaultOption={t("sampler_set_none")}
             placeholder={t("sampler_set_placeholder")}
@@ -1926,7 +1945,10 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
               </span>
               {t("image_gen_advanced")}
             </span>
-            {bound && form.modelId !== null && <ModelSamplerSetRow imageGen={imageGen} />}
+            {/* IF-7a: the sets row lives here ALWAYS — bound (overlay arm) or
+                unbound (profile-base arm) alike; the per-model toggle gates
+                only the overlay FIELDS below, never set usage. */}
+            <ModelSamplerSetRow imageGen={imageGen} />
           </div>
           {advancedOpen && (
             <div className="grid grid-cols-1 gap-3 bg-surface p-3 sm:grid-cols-2" data-testid="image-gen-advanced-body">

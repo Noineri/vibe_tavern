@@ -90,6 +90,28 @@ describe('ImageGenStore CRUD', () => {
 		expect(loaded).toEqual(created);
 	});
 
+	// IF-7a: the base set pointer (the overlay samplerSetId twin) round-trips
+	// with the same tri-state convention as every other optional pointer.
+	test('defaultParamsSetId: absent on plain create, set/cleared via update tri-state, round-trips on read', async () => {
+		const { store } = await setup();
+		const created = await store.create(baseInput({ name: 'pointer-less' }));
+		expect(created.defaultParamsSetId).toBeUndefined();
+
+		const pointed = await store.update(created.id, { defaultParamsSetId: 'igset_test_9' });
+		expect(pointed?.defaultParamsSetId).toBe('igset_test_9');
+
+		// An unrelated patch keeps the pointer (no accidental wipe).
+		const untouched = await store.update(created.id, { name: 'renamed' });
+		expect(untouched?.defaultParamsSetId).toBe('igset_test_9');
+
+		const cleared = await store.update(created.id, { defaultParamsSetId: null });
+		expect(cleared?.defaultParamsSetId).toBeUndefined();
+
+		// The pointer survives a create-with-pointer too (the duplicate flow).
+		const born = await store.create(baseInput({ name: 'born-pointed', defaultParamsSetId: 'igset_test_1' }));
+		expect(born.defaultParamsSetId).toBe('igset_test_1');
+	});
+
 	test('apiKey round-trips on create but never inside JSON columns', async () => {
 		const { store } = await setup();
 		const created = await store.create(baseInput({ apiKey: 'sk-secret' }));

@@ -1253,6 +1253,10 @@ export interface ImageGenProfile {
   modelId?: string;
   /** Default generation params — all optional, no code defaults. */
   defaultParams: ImageGenDefaultParams;
+  /** IF-7a: the sampler set the BASE params were last applied from — the
+   *  profile-level twin of the overlay row's `samplerSetId` (provenance
+   *  only; copy-on-select, never a live link). Absent/null = no set. */
+  defaultParamsSetId?: string | null;
   /** Per-mode size presets (width/height). */
   modeSizePresets: ImageGenModeSizePresets;
   /** User-added vendor-size entries (IG-20a) — extend the vendor-set grid

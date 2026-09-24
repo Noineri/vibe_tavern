@@ -228,6 +228,47 @@ describe("image-gen routes — profile CRUD", () => {
     expect(((await delRes.json()) as { ok: boolean }).ok).toBe(true);
   });
 
+  // IF-7a: the base set pointer rides the profile record with the standard
+  // optional-pointer tri-state (undefined = keep, null = clear, string = set).
+  test("IF-7a: defaultParamsSetId — fresh null, PATCH sets, params-only PATCH keeps, null clears", async () => {
+    const { app } = await makeApp();
+    const id = await seedProfile(app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+
+    const fresh = (await (await app.request(`/api/image-gen/profiles/${id}`)).json()) as {
+      defaultParamsSetId: string | null;
+    };
+    expect(fresh.defaultParamsSetId).toBe(null);
+
+    const set = (await (await app.request("/api/image-gen/sampler-sets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Base crisp", payload: { steps: 30, sampler: "Euler a" } }),
+    })).json()) as { id: string };
+
+    const pointed = (await (await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultParams: { steps: 30, sampler: "Euler a" }, defaultParamsSetId: set.id }),
+    })).json()) as { defaultParamsSetId: string | null; defaultParams: Record<string, unknown> };
+    expect(pointed.defaultParamsSetId).toBe(set.id);
+    expect(pointed.defaultParams).toEqual({ steps: 30, sampler: "Euler a" });
+
+    // A params-only PATCH must NOT wipe the pointer (the overlay upsert twin).
+    const kept = (await (await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultParams: { steps: 24 } }),
+    })).json()) as { defaultParamsSetId: string | null };
+    expect(kept.defaultParamsSetId).toBe(set.id);
+
+    const cleared = (await (await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultParamsSetId: null }),
+    })).json()) as { defaultParamsSetId: string | null };
+    expect(cleared.defaultParamsSetId).toBe(null);
+  });
+
   // IPT-2: the family/quality surface rides the CRUD record — familySource
   // + qualityLayerEnabled on every read; the quality toggle PATCHes; the
   // family columns are NOT writable through PATCH (the Wave 3 family route
@@ -2460,7 +2501,7 @@ describe("image-gen routes — named sampler sets (IG-CF15)", () => {
     expect(foreign.status).toBe(400);
   });
 
-  test("deleting a set clears overlay rows' pointers but keeps their applied values (LS-5e twin)", async () => {
+  test("deleting a set clears overlay rows' pointers but keeps their applied values (LS-5e twin; IF-7a extends the guarantee to profile BASE pointers)", async () => {
     const { app } = await makeApp();
     const id = await seedProfile(app, { backend: "a1111", endpoint: "http://127.0.0.1:7860" });
 
@@ -2477,6 +2518,15 @@ describe("image-gen routes — named sampler sets (IG-CF15)", () => {
     });
     expect(put.status).toBe(200);
 
+    // IF-7a: the same set also points from a profile's BASE — one delete
+    // clears BOTH pointer families.
+    const basePut = await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultParams: { steps: 30 }, defaultParamsSetId: set.id }),
+    });
+    expect(basePut.status).toBe(200);
+
     const del = await app.request(`/api/image-gen/sampler-sets/${set.id}`, { method: "DELETE" });
     expect(del.status).toBe(200);
 
@@ -2486,6 +2536,13 @@ describe("image-gen routes — named sampler sets (IG-CF15)", () => {
     };
     expect(overlay.samplerSetId).toBe(null);
     expect(overlay.settings.steps).toBe(30);
+
+    const profile = (await (await app.request(`/api/image-gen/profiles/${id}`)).json()) as {
+      defaultParamsSetId: string | null;
+      defaultParams: { steps?: number };
+    };
+    expect(profile.defaultParamsSetId).toBe(null);
+    expect(profile.defaultParams.steps).toBe(30);
   });
 
   test("overlay upsert pointer semantics: absent keeps, null clears, string sets", async () => {

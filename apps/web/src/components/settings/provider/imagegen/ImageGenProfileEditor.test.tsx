@@ -19,7 +19,16 @@ mock.module("../../../../i18n/context.js", () => ({
   }),
 }));
 
-const { act, cleanup, waitFor, fireEvent, render } = await import("@testing-library/react");
+const { act, cleanup, waitFor, fireEvent, render: render_impl } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../../../shared/Tooltip.js");
+
+/** App-realistic tree: app.tsx mounts TooltipProvider at the root, so the
+ *  editor (and the embedded Pane's always-visible sets row with its
+ *  tooltip-wrapped actions) renders under a provider — the IF-7a un-gate
+ *  made the row unconditional, and the raw render crashed it provider-less. */
+function render(node: React.ReactElement) {
+  return render_impl(<TooltipProvider delayDuration={200}>{node}</TooltipProvider>);
+}
 const { ImageGenProfileEditor } = await import("./ImageGenProfileEditor.js");
 const { useImageProfiles } = await import("../../../../hooks/use-image-profiles.js");
 const { IMAGE_GEN_BACKENDS } = await import("@vibe-tavern/domain");
@@ -38,6 +47,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     autoKeyProviderName: null,
     modelId: undefined,
     defaultParams: {},
+    defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
     familySource: "none",
@@ -78,6 +88,7 @@ function makeForm(overrides: Partial<ImageGenHook["form"]> = {}): NonNullable<Im
     autoKeyProviderName: null,
     modelId: null,
     defaultParams: {},
+    defaultParamsSetId: null,
     modeSizePresets: {},
     userSizes: [],
     llmAssistEnabled: false,
@@ -129,6 +140,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     setModelOverlay: mock(() => {}),
     modelOverlaySetId: null,
     setModelSamplerSetBinding: mock(() => {}),
+    applyBaseSamplerSet: mock(() => {}),
     ...overrides,
   };
 }

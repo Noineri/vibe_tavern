@@ -41,6 +41,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     autoKeyProviderName: null,
     modelId: undefined,
     defaultParams: {},
+    defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
     familySource: "none",
@@ -344,6 +345,39 @@ describe("useImageProfiles — CRUD", () => {
     await waitFor(() => expect(hook?.profiles.length).toBe(1));
     expect(hook?.form).toBeNull();
     expect(hook?.editingId).toBeNull();
+  });
+
+  // IF-7a: the unbound arm of the sets row — payload merges into the form's
+  // defaultParams, the pointer rides the profile PATCH on save, and a
+  // pointer-only clear keeps the values (the setModelSamplerSetBinding rule).
+  it("applyBaseSamplerSet merges payload + points defaultParamsSetId; save PATCHes the pointer; null-clear keeps values", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "a1111" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+
+    act(() => hook!.applyBaseSamplerSet("set-a", { steps: 30, sampler: "Euler a" }));
+    expect(hook?.form?.defaultParams).toEqual({ steps: 30, sampler: "Euler a" });
+    expect(hook?.form?.defaultParamsSetId).toBe("set-a");
+    expect(hook?.dirty).toBe(true);
+
+    // Pointer-only clear: values stay (copy-on-select, never a live link).
+    act(() => hook!.applyBaseSamplerSet(null));
+    expect(hook?.form?.defaultParams).toEqual({ steps: 30, sampler: "Euler a" });
+    expect(hook?.form?.defaultParamsSetId).toBe(null);
+
+    // Re-point and save — the update PATCH carries the pointer.
+    act(() => hook!.applyBaseSamplerSet("set-a"));
+    await hook!.save();
+    const body = updateMock.mock.calls[updateMock.mock.calls.length - 1]![1] as Record<string, unknown>;
+    expect(body["defaultParamsSetId"]).toBe("set-a");
+    expect(body["defaultParams"]).toEqual({ steps: 30, sampler: "Euler a" });
   });
 });
 

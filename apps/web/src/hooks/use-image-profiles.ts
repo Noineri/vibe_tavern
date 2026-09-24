@@ -92,6 +92,10 @@ export interface ImageGenProfileForm {
   autoKeyProviderName: string | null;
   modelId: string | null;
   defaultParams: ImageGenDefaultParamsValue;
+  /** IF-7a: the sampler set the base defaultParams were last applied from
+   *  (the unbound arm of the sets row) — provenance only, rides the
+   *  profile PATCH like the rest of the form. */
+  defaultParamsSetId: string | null;
   modeSizePresets: ImageGenModeSizePresetsValue;
   /** User-added vendor-size entries (IG-20a) — extend the vendor-set grid. */
   userSizes: ImageGenUserSizeEntryValue[];
@@ -248,6 +252,12 @@ export function useImageProfiles(): {
    *  (No set — values stay); an apply with `values` also copies the
    *  set's payload into the overlay. Form-dirty like any overlay edit. */
   setModelSamplerSetBinding(setId: string | null, values?: Partial<ImageGenModelSettingsOverlayValue>): void;
+  /** IF-7a: the UNBOUND arm of the sets row — apply a set to the profile
+   *  BASE (copy the payload into the form's defaultParams + point
+   *  `defaultParamsSetId`), or clear the pointer only (`setId` null,
+   *  no payload — values stay, the setModelSamplerSetBinding rule
+   *  verbatim). Form-dirty; rides the profile PATCH on Save. */
+  applyBaseSamplerSet(setId: string | null, payload?: Partial<ImageGenDefaultParamsValue>): void;
 } {
   const [profiles, setProfiles] = useState<ImageGenProfileRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -349,6 +359,7 @@ export function useImageProfiles(): {
       autoKeyProviderName: record.autoKeyProviderName ?? null,
       modelId: record.modelId ?? null,
       defaultParams: { ...record.defaultParams },
+      defaultParamsSetId: record.defaultParamsSetId ?? null,
       modeSizePresets: { ...record.modeSizePresets },
       userSizes: record.userSizes !== undefined ? record.userSizes.map((entry) => ({ ...entry })) : [],
       llmAssistEnabled: record.llmAssistEnabled,
@@ -469,6 +480,24 @@ export function useImageProfiles(): {
     [],
   );
 
+  const applyBaseSamplerSet = useCallback(
+    (setId: string | null, payload?: Partial<ImageGenDefaultParamsValue>) => {
+      // IF-7a: the same copy-on-select contract aimed at the profile BASE —
+      // payload fields merge over the form's defaultParams (set fields
+      // overwrite, unset fields stay), the pointer follows `setId`.
+      setFormState((prev) => {
+        if (prev === null) return prev;
+        return {
+          ...prev,
+          ...(payload !== undefined ? { defaultParams: { ...prev.defaultParams, ...payload } } : {}),
+          defaultParamsSetId: setId,
+        };
+      });
+      setDirty(true);
+    },
+    [],
+  );
+
   const select = useCallback(
     (id: string) => {
       const record = profiles.find((p) => p.id === id);
@@ -517,6 +546,7 @@ export function useImageProfiles(): {
       autoKeyProviderName: null,
       modelId: null,
       defaultParams: {},
+      defaultParamsSetId: null,
       modeSizePresets: {},
       userSizes: [],
       llmAssistEnabled: false,
@@ -622,6 +652,7 @@ export function useImageProfiles(): {
           apiKey: apiKeyPayload,
           modelId: form.modelId ?? undefined,
           defaultParams: form.defaultParams,
+          defaultParamsSetId: form.defaultParamsSetId ?? undefined,
           modeSizePresets: form.modeSizePresets,
           ...(form.userSizes.length > 0 ? { userSizes: form.userSizes } : {}),
           llmAssistEnabled: form.llmAssistEnabled,
@@ -638,6 +669,7 @@ export function useImageProfiles(): {
           apiKey: apiKeyPayload,
           modelId: form.modelId,
           defaultParams: form.defaultParams,
+          defaultParamsSetId: form.defaultParamsSetId,
           modeSizePresets: form.modeSizePresets,
           userSizes: form.userSizes,
           llmAssistEnabled: form.llmAssistEnabled,
@@ -846,5 +878,6 @@ export function useImageProfiles(): {
     setModelOverlay,
     modelOverlaySetId,
     setModelSamplerSetBinding,
+  applyBaseSamplerSet,
   };
 }

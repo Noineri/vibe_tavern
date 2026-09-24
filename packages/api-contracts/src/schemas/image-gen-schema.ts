@@ -186,6 +186,10 @@ export const imageGenProfileSchema = z.object({
   /** Selected model (level-2 outer setting; may be unset on a fresh card). */
   modelId: z.string().optional(),
   defaultParams: imageGenDefaultParamsSchema,
+  /** IF-7a: the sampler set the base defaultParams were last applied from
+   *  (provenance only — copy-on-select, never a live link; null = no set).
+   *  The image_gen_model_settings `samplerSetId` twin at profile level. */
+  defaultParamsSetId: z.string().nullable(),
   modeSizePresets: imageGenModeSizePresetsSchema,
   /** User-added vendor-size entries (IG-20a); absent = none. */
   userSizes: z.array(imageGenUserSizeEntrySchema).optional(),
@@ -233,6 +237,8 @@ export const createImageGenProfileSchema = z.object({
   apiKey: z.string().optional(),
   modelId: z.string().optional(),
   defaultParams: imageGenDefaultParamsSchema,
+  /** IF-7a: optional base set pointer (null/absent = no set). */
+  defaultParamsSetId: z.string().nullable().optional(),
   modeSizePresets: imageGenModeSizePresetsSchema,
   userSizes: z.array(imageGenUserSizeEntrySchema).optional(),
   llmAssistEnabled: z.boolean().optional().default(false),
@@ -258,6 +264,8 @@ export const updateImageGenProfileSchema = z.object({
   apiKey: z.string().optional(),
   modelId: z.string().nullable().optional(),
   defaultParams: imageGenDefaultParamsSchema.optional(),
+  /** IF-7a tri-state: undefined = keep, null = clear, string = point. */
+  defaultParamsSetId: z.string().nullable().optional(),
   modeSizePresets: imageGenModeSizePresetsSchema.optional(),
   userSizes: z.array(imageGenUserSizeEntrySchema).optional(),
   llmAssistEnabled: z.boolean().optional(),

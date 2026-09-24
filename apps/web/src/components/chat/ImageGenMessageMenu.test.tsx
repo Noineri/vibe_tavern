@@ -35,6 +35,7 @@ function profile(id: string, name: string, caps?: Partial<ProfileRecord["capabil
     hasStoredApiKey: true,
     autoKeyProviderName: null,
     defaultParams: {},
+    defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
     familySource: "none",

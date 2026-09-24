@@ -288,6 +288,8 @@ export class ImageGenStore {
           apiKey: input.apiKey ?? null,
           modelId: input.modelId ?? null,
           defaultParamsJson: JSON.stringify(stripSecrets(input.defaultParams as Record<string, unknown>)),
+          // IF-7a: the base set pointer (the overlay samplerSetId twin).
+          defaultParamsSetId: input.defaultParamsSetId ?? null,
           modeSizePresetsJson: JSON.stringify(stripSecrets(input.modeSizePresets as Record<string, unknown>)),
           userSizesJson: input.userSizes !== undefined && input.userSizes.length > 0 ? JSON.stringify(input.userSizes) : null,
           llmAssistEnabled: input.llmAssistEnabled,
@@ -324,6 +326,9 @@ export class ImageGenStore {
     if (patch.defaultParams !== undefined) {
       values.defaultParamsJson = JSON.stringify(stripSecrets(patch.defaultParams as Record<string, unknown>));
     }
+    // IF-7a tri-state (the presetId null-clear convention): undefined =
+    // keep, null = clear the pointer, string = point at that set.
+    if (patch.defaultParamsSetId !== undefined) values.defaultParamsSetId = patch.defaultParamsSetId ?? null;
     if (patch.modeSizePresets !== undefined) {
       values.modeSizePresetsJson = JSON.stringify(stripSecrets(patch.modeSizePresets as Record<string, unknown>));
     }
@@ -511,6 +516,8 @@ export class ImageGenStore {
       updatedAt: row.updatedAt,
     };
     if (row.presetId) profile.presetId = row.presetId;
+    // IF-7a: the base set pointer surfaces when present (absent = no set).
+    if (row.defaultParamsSetId) profile.defaultParamsSetId = row.defaultParamsSetId;
     if (row.modelId) profile.modelId = row.modelId;
     if (row.llmProviderProfileId) profile.llmProviderProfileId = row.llmProviderProfileId;
     if (row.llmModelId) profile.llmModelId = row.llmModelId;
@@ -689,13 +696,20 @@ export class ImageGenStore {
   /** Null the sampler-set pointer on every overlay row referencing `setId`
    *  (IG-CF15, the LS-5e twin): deleting a set never leaves overlay rows
    *  pointing at a ghost — the applied VALUES stay (copy-on-select), only
-   *  the provenance pointer clears. Called by the set-delete adapter path
-   *  BEFORE the set row disappears. */
+   *  the provenance pointer clears. IF-7a extends the same guarantee to
+   *  the profile BASE pointers (`default_params_set_id`) — one set id
+   *  disappearing clears every pointer family in one pass. Called by the
+   *  set-delete adapter path BEFORE the set row disappears. */
   async clearSamplerSetReferences(setId: string): Promise<void> {
     await this.db
       .update(imageGenModelSettings)
       .set({ samplerSetId: null, updatedAt: this.clock.now() })
       .where(eq(imageGenModelSettings.samplerSetId, setId))
+      .run();
+    await this.db
+      .update(imageGenProfiles)
+      .set({ defaultParamsSetId: null, updatedAt: this.clock.now() })
+      .where(eq(imageGenProfiles.defaultParamsSetId, setId))
       .run();
   }
 

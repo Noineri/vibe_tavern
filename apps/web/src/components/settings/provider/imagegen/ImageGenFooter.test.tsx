@@ -56,6 +56,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     autoKeyProviderName: null,
       modelId: null,
       defaultParams: {},
+      defaultParamsSetId: null,
       modeSizePresets: {},
       userSizes: [],
       llmAssistEnabled: false,
@@ -108,6 +109,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     setModelOverlay: mock(() => {}),
     modelOverlaySetId: null,
     setModelSamplerSetBinding: mock(() => {}),
+    applyBaseSamplerSet: mock(() => {}),
     ...overrides,
   };
 }

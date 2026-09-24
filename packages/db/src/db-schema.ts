@@ -1751,6 +1751,10 @@ export const imageGenProfiles = sqliteTable('image_gen_profiles', {
   apiKey: text('api_key'),
   modelId: text('model_id'),
   defaultParamsJson: text('default_params_json').notNull().default('{}'),
+  // IF-7a: the sampler set the base defaultParams were last applied from
+  // (the image_gen_model_settings.sampler_set_id twin at profile level —
+  // provenance for the always-visible sets row while unbound).
+  defaultParamsSetId: text('default_params_set_id'),
   modeSizePresetsJson: text('mode_size_presets_json').notNull().default('{}'),
   userSizesJson: text('user_sizes_json'),
   llmAssistEnabled: integer('llm_assist_enabled', { mode: 'boolean' }).notNull().default(false),

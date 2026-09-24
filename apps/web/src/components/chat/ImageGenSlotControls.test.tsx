@@ -139,6 +139,7 @@ function profileRecord(id: string, backend: ImageGenBackendType): ImageGenProfil
     hasStoredApiKey: false,
     autoKeyProviderName: null,
     defaultParams: {},
+    defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
     familySource: "none",

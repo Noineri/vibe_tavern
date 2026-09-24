@@ -575,6 +575,13 @@
       "when": 1790098826485,
       "tag": "0081_messy_chronomancer",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1790233584701,
+      "tag": "0082_dapper_vin_gonzales",
+      "breakpoints": true
     }
   ]
 }

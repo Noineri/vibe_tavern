@@ -39,6 +39,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     autoKeyProviderName: null,
     modelId: undefined,
     defaultParams: {},
+    defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
     familySource: "none",
@@ -105,6 +106,7 @@ function makeImageGen(overrides: Record<string, unknown> = {}): ImageGenHook {
     setModelOverlay: mock(() => {}),
     modelOverlaySetId: null,
     setModelSamplerSetBinding: mock(() => {}),
+    applyBaseSamplerSet: mock(() => {}),
     ...overrides,
   };
 }
