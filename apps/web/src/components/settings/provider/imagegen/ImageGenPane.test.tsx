@@ -1467,6 +1467,107 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
     expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual(grown.payload);
     restoreSets();
   });
+
+  it("IF-7c: an A1111-vocabulary set on a COMFY target translates through the alias bridge before applying", async () => {
+    const applyBaseSamplerSet = mock((_setId: string | null, _payload?: Record<string, unknown>) => {});
+    const diffusion = {
+      id: "set-diff",
+      name: "Diffusion",
+      sortOrder: 1,
+      payload: { sampler: "Euler a", scheduler: "karras", steps: 25, cfgScale: 5, clipSkip: 2 },
+      createdAt: "2026-09-25T00:00:00.000Z",
+      updatedAt: "2026-09-25T00:00:00.000Z",
+    } as ImageGenSamplerSet;
+    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [diffusion]);
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          applyBaseSamplerSet,
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI }),
+          samplersByProfile: { ig1: [{ name: "euler" }, { name: "euler_ancestral" }] },
+          schedulersByProfile: { ig1: [{ name: "karras" }, { name: "simple" }] },
+        })}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
+    await pickOption(view, "image-gen-model-set-trigger", "Diffusion");
+    await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
+    // «Euler a» (A1111 display name, the stock Diffusion row's vocabulary)
+    // lands as the comfy combo id; numeric fields pass through untouched.
+    expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual({
+      sampler: "euler_ancestral",
+      scheduler: "karras",
+      steps: 25,
+      cfgScale: 5,
+      clipSkip: 2,
+    });
+    restoreSets();
+  });
+
+  it("IF-7c: a sampler missing from the target's live list is SKIPPED with a note — the rest applies, never silent garbage", async () => {
+    const applyBaseSamplerSet = mock((_setId: string | null, _payload?: Record<string, unknown>) => {});
+    const bogus = {
+      id: "set-bogus",
+      name: "Bogus",
+      sortOrder: 1,
+      payload: { sampler: "TotallyMissing", steps: 30 },
+      createdAt: "2026-09-25T00:00:00.000Z",
+      updatedAt: "2026-09-25T00:00:00.000Z",
+    } as ImageGenSamplerSet;
+    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [bogus]);
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          applyBaseSamplerSet,
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI }),
+          samplersByProfile: { ig1: [{ name: "euler" }] },
+          schedulersByProfile: { ig1: [{ name: "simple" }] },
+        })}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
+    await pickOption(view, "image-gen-model-set-trigger", "Bogus");
+    await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
+    // The arm keeps its current sampler (field skipped), steps still apply.
+    expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual({ steps: 30 });
+    restoreSets();
+  });
+
+  it("IF-7c: a set vae on a DiT target (family-fixed sidecar) is stripped — the encoder never applies, the sampler still does", async () => {
+    const applyBaseSamplerSet = mock((_setId: string | null, _payload?: Record<string, unknown>) => {});
+    const anima = {
+      id: "set-anima",
+      name: "Anima",
+      sortOrder: 1,
+      payload: { sampler: "euler_sde", scheduler: "simple", steps: 30, cfgScale: 5, vae: "qwen_image_vae.safetensors" },
+      createdAt: "2026-09-25T00:00:00.000Z",
+      updatedAt: "2026-09-25T00:00:00.000Z",
+    } as ImageGenSamplerSet;
+    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [anima]);
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          applyBaseSamplerSet,
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, modelId: "ray.safetensors" }),
+          modelsByProfile: {
+            ig1: [{ id: "ray.safetensors", label: "ray", family: "Krea 2", template: "krea2-dit" }],
+          },
+          samplersByProfile: { ig1: [{ name: "euler" }, { name: "euler_sde" }] },
+          schedulersByProfile: { ig1: [{ name: "simple" }] },
+        })}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
+    await pickOption(view, "image-gen-model-set-trigger", "Anima");
+    await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
+    expect(applyBaseSamplerSet.mock.calls[0]![1]).toEqual({
+      sampler: "euler_sde",
+      scheduler: "simple",
+      steps: 30,
+      cfgScale: 5,
+    });
+    restoreSets();
+  });
 });
 
 describe("ImageGenPane — VAE field + hires section (IF-7b)", () => {

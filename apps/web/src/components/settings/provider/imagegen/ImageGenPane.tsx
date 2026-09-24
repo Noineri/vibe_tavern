@@ -3,7 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { toast } from "sonner";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, hasAdetailerExtension, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, adaptSamplerSetPayloadToTarget, hasAdetailerExtension, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation, type SetFieldNote } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
@@ -549,8 +549,15 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
     try {
       const stock = (await listImageGenSamplerSets()).find((set) => set.id === stockId) ?? null;
       if (stock === null) return; // the user deleted the stock row — deletes stick
-      if (boundArm) imageGen.setModelSamplerSetBinding(stock.id, stock.payload);
-      else imageGen.applyBaseSamplerSet(stock.id, stock.payload);
+      // IF-7c: the stock row's names are authored in ITS family's dialect —
+      // adapt to the CURRENT target's live lists before applying (a Diffusion
+      // row applied on Comfy translates «Euler a» → euler_ancestral and
+      // warns; a missing name skips the field + warns — never silent).
+      const { payload, notes } = await adaptSetPayloadForTarget(imageGen, stock.payload);
+      if (boundArm) imageGen.setModelSamplerSetBinding(stock.id, payload);
+      else imageGen.applyBaseSamplerSet(stock.id, payload);
+      const lines = composeSetFieldNotes(notes, t);
+      if (lines.length > 0) toast.warning(lines.join(" · "));
     } catch {
       // The fetchSidecars rule: options data never draws connectivity
       // conclusions — the detection result above stays the truth.
@@ -1059,6 +1066,60 @@ function stockSamplerSetIdForFamily(family: string, variantText: string): string
   }
 }
 
+/** IF-7c: gather the CURRENT target's live lists and adapt a set payload
+ *  for that dialect (alias bridge + live validation). A backend with no
+ *  local sampler surface (cloud) applies unchanged; an options-list fetch
+ *  that fails returns null and leaves the payload as stored — options data
+ *  never draws conclusions (the samplers-guard rule). */
+async function adaptSetPayloadForTarget(
+  imageGen: ImageGenHook,
+  payload: ImageGenSamplerSet["payload"],
+): Promise<{ payload: ImageGenSamplerSet["payload"]; notes: SetFieldNote[] }> {
+  const form = imageGen.form;
+  if (!form?.id) return { payload, notes: [] };
+  const dialect =
+    form.backend === IMAGE_GEN_BACKENDS.ComfyUI
+      ? "comfyui"
+      : form.backend === IMAGE_GEN_BACKENDS.A1111
+        ? "a1111"
+        : null;
+  if (dialect === null) return { payload, notes: [] };
+  const modelEntry = (imageGen.modelsByProfile[form.id] ?? []).find((m) => m.id === form.modelId) ?? null;
+  const ditFamilyFixedVae = dialect === "comfyui" && modelEntry?.template === "krea2-dit";
+  let samplers = imageGen.samplersByProfile[form.id] ?? [];
+  if (samplers.length === 0) samplers = (await imageGen.fetchSamplers(form.id)) ?? [];
+  let schedulers = imageGen.schedulersByProfile[form.id] ?? [];
+  if (schedulers.length === 0) schedulers = (await imageGen.fetchSchedulers(form.id)) ?? [];
+  let vaes: string[] = [];
+  if (payload.vae !== undefined && !ditFamilyFixedVae) {
+    vaes = (await imageGen.fetchVae(form.id)) ?? [];
+  }
+  return adaptSamplerSetPayloadToTarget(payload, { dialect, ditFamilyFixedVae, samplers, schedulers, vaes });
+}
+
+/** Compose the structured adaptation notes into localized hint lines (the
+ *  import flow's `toast.warning(notes.join(" · "))` canon — IF-7c rides
+ *  the same surface). */
+function composeSetFieldNotes(
+  notes: SetFieldNote[],
+  t: ReturnType<typeof useT>["t"],
+): string[] {
+  return notes.map((note) => {
+    switch (note.reason) {
+      case "translated":
+        return t("sampler_set_note_translated", { stored: note.stored, resolved: note.resolved ?? "" });
+      case "missing":
+        return note.field === "sampler"
+          ? t("sampler_set_note_sampler_missing", { name: note.stored })
+          : note.field === "scheduler"
+            ? t("sampler_set_note_scheduler_missing", { name: note.stored })
+            : t("sampler_set_note_vae_missing", { name: note.stored });
+      case "dit-fixed-vae":
+        return t("sampler_set_note_vae_dit");
+    }
+  });
+}
+
 function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
   const { t } = useT();
   const [sets, setSets] = useState<ImageGenSamplerSet[]>([]);
@@ -1118,11 +1179,20 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
       JSON.stringify(appliedRef.current.baseline) !== JSON.stringify(setPayloadOf(overlay)),
   );
 
-  const applySet = (set: ImageGenSamplerSet) => {
-    if (bound) imageGen.setModelSamplerSetBinding(set.id, set.payload);
-    else imageGen.applyBaseSamplerSet(set.id, set.payload);
-    appliedRef.current = { setId: set.id, baseline: { ...set.payload } };
+  const applySet = async (set: ImageGenSamplerSet) => {
+    // IF-7c: dialect adaptation before the values ride the arm — names
+    // resolve against the target's LIVE lists (alias bridge on vocabulary
+    // drift); a missing name skips the field + warns (the import-flow
+    // toast canon), never silent garbage.
+    const { payload, notes } = await adaptSetPayloadForTarget(imageGen, set.payload);
+    if (bound) imageGen.setModelSamplerSetBinding(set.id, payload);
+    else imageGen.applyBaseSamplerSet(set.id, payload);
+    // The dirty-dot baseline is the ADAPTED payload — the arm now holds the
+    // adapted names, and the dot compares the arm against what was applied.
+    appliedRef.current = { setId: set.id, baseline: { ...payload } };
     bumpApplied();
+    const lines = composeSetFieldNotes(notes, t);
+    if (lines.length > 0) toast.warning(lines.join(" · "));
     toast.success(t("sampler_set_applied", { name: set.name }));
   };
 
@@ -1136,7 +1206,7 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
       return;
     }
     const set = sets.find((s) => s.id === id);
-    if (set) applySet(set);
+    if (set) void applySet(set);
   };
 
   const handleSaveIntoSet = async () => {
