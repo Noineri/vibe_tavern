@@ -273,7 +273,15 @@ export interface EffectDelivery {
   projection: ExperienceProjection;
 }
 
-/** Parse + validate a persisted effect's `{ kind, request }` envelope into the V1 model-effect payload. */
+/**
+ * Parse + validate a persisted effect's `{ kind, request }` envelope into the V1 model-effect payload.
+ *
+ * Contract notes for starter authors: a `kind: 'model'` effect with `mode: 'text'` MUST carry `actionType`
+ * (the synthetic action type fed back by mapResultToAction) and a REAL `viewer` participant id resolved
+ * from the session roster (a dead literal like 'model_seat' resolves to no participant and fails durably).
+ * Canonical text-mode shape: `{ viewer, mode: 'text', actionType: 'reply', instruction }`. See the
+ * Conversation visual starter (conversation.ts) for the reference implementation.
+ */
 export function parseModelEffectRequest(requestJson: string): ModelEffectRequestPayload | null {
   let envelope: unknown;
   try {
