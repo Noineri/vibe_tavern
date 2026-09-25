@@ -44,6 +44,7 @@ import { openAiImagesFactory } from "../src/domain/imagegen/backends/openai-imag
 import { a1111Factory } from "../src/domain/imagegen/backends/a1111.js";
 import { comfyImageGenFactory } from "../src/domain/imagegen/backends/comfyui.js";
 import { nanoGptImageGenFactory } from "../src/domain/imagegen/backends/openai-images-family.js";
+import { kreaImageFactory } from "../src/domain/imagegen/backends/krea.js";
 import {
   IMAGE_GEN_BACKEND_CAPABILITIES,
   __resetImageGenRegistryForTests,
@@ -74,6 +75,8 @@ beforeEach(() => {
   // MR-3: the nanogpt family backend rides the route ladder in the IG-21
   // suite (the owner's own draft case) — same re-registration rule.
   registerImageGenBackend(IMAGE_GEN_BACKENDS.NanoGpt, nanoGptImageGenFactory);
+  // Krea rides the ladder fold (IF-11/T6: the base/overlay krea rungs).
+  registerImageGenBackend(IMAGE_GEN_BACKENDS.Krea, kreaImageFactory);
 });
 
 /** Distinct PNG-signatured bytes so disk round-trips are verifiable. */
@@ -958,6 +961,94 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     // (4) The chip draft outranks every stored rung.
     await run({ profileId: id, mode: "portrait", prompt: "a", overrides: { hires: { scale: 1.2 } } });
     expect(capturedBody[0]!.hr_scale).toBe(1.2);
+  });
+
+  test("krea fold (IF-11/T6): the profile-BASE krea block rides; the overlay's fields outrank it per-field, absent overlay fields inherit the base", async () => {
+    const capturedBody: Record<string, unknown>[] = [];
+    const { app, stores } = await makeApp(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/openapi.json") {
+        // The krea-2 medium path from the live spec (the backend filters
+        // sent fields against the card's schema — creativity + sliders
+        // must be declared for the ladder rungs to ride).
+        return Response.json({
+          openapi: "3.1.0",
+          paths: {
+            "/generate/image/krea/krea-2/medium": {
+              post: {
+                summary: "Krea 2 Medium",
+                requestBody: { content: { "application/json": { schema: {
+                  type: "object",
+                  properties: {
+                    prompt: { type: "string" },
+                    seed: { type: "number" },
+                    aspect_ratio: { type: "string", enum: ["1:1", "4:3", "4:5", "9:16", "2.35:1"] },
+                    resolution: { type: "string", enum: ["1K"] },
+                    creativity: { type: "string", enum: ["raw", "low", "medium", "high"] },
+                    intensity: { type: "integer", minimum: -100, maximum: 100 },
+                    complexity: { type: "integer", minimum: -100, maximum: 100 },
+                    movement: { type: "integer", minimum: -100, maximum: 100 },
+                  },
+                } } } },
+              },
+            },
+          },
+        });
+      }
+      if (url.pathname.startsWith("/generate/image/")) {
+        capturedBody.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Response.json({ job_id: "11111111-2222-3333-4444-555555555555", status: "queued" });
+      }
+      if (url.pathname.startsWith("/jobs/")) {
+        if (init?.method === "DELETE") return new Response(null, { status: 204 });
+        return Response.json({
+          job_id: "11111111-2222-3333-4444-555555555555",
+          status: "completed",
+          result: { urls: ["https://cdn.krea.ai/img.png"] },
+        });
+      }
+      return new Response(Buffer.from("iVBORw0KGgo=", "base64"), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    });
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.Krea,
+      endpoint: "https://api.krea.ai",
+      apiKey: "krea-key",
+      modelId: "krea/krea-2/medium",
+      defaultParams: { krea: { creativity: "medium", movement: 20 } },
+    });
+
+    const run = async () => {
+      capturedBody.length = 0;
+      const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "a" }),
+      });
+      expect(res.status).toBe(200);
+      expect(capturedBody.length).toBe(1);
+    };
+
+    // (1) The BASE rung rides with no overlay — the pane's unbound arm.
+    await run();
+    expect(capturedBody[0]!.creativity).toBe("medium");
+    expect(capturedBody[0]!.movement).toBe(20);
+
+    // (2) The OVERLAY rung: its fields outrank the base per-field; movement
+    // (absent on the overlay) still inherits the base.
+    const put = await app.request(`/api/image-gen/profiles/${id}/model-settings/${encodeURIComponent("krea/krea-2/medium")}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { krea: { creativity: "high", intensity: 40 } } }),
+    });
+    expect(put.status).toBe(200);
+    await run();
+    expect(capturedBody[0]!.creativity).toBe("high");
+    expect(capturedBody[0]!.intensity).toBe(40);
+    expect(capturedBody[0]!.movement).toBe(20);
   });
 
   test("a1111 fold (IF-7b): the vae override rides override_settings.sd_vae — base, overlay, and merged with the model switch", async () => {

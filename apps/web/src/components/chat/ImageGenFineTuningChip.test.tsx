@@ -1129,8 +1129,14 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     expect(upsertCalls[upsertCalls.length - 1]!.settings).toEqual({ seed: 42 });
   });
 
-  it("IF-11: Krea 2 controls — krea-2 models only; creativity + sliders commit the overlay krea block", async () => {
-    profilesStore = [{ ...profile("kr1", "Krea cloud", noCaps(), "krea/krea-2/medium"), backend: "krea" }];
+  it("IF-11: Krea 2 controls — krea-2 models only; creativity + sliders commit the overlay krea block; the display inherits the profile BASE", async () => {
+    profilesStore = [
+      {
+        ...profile("kr1", "Krea cloud", noCaps(), "krea/krea-2/medium"),
+        backend: "krea",
+        defaultParams: { krea: { movement: 20 } },
+      },
+    ];
     modelsStore["kr1"] = [
       { id: "krea/krea-2/medium", label: "Krea 2 Medium" },
       { id: "google/nano-banana", label: "Nano Banana" },
@@ -1144,7 +1150,17 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     });
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-krea-body")).toBeTruthy());
 
-    // Creativity: pick High (segment labels are the mocked i18n keys).
+    // The display reads the OVERLAY's own block (the CF13/CF15 canon: an
+    // empty overlay field shows the anchor default, never the profile
+    // base — movement 0 here even though the base carries 20; the
+    // GENERATION ladder still inherits the base per-field).
+    expect(
+      (within(view.baseElement).getByTestId("image-gen-range-krea-movement") as HTMLInputElement).value,
+    ).toBe("0");
+
+    // Creativity: pick High (segment labels are the mocked i18n keys). The
+    // overlay write carries ONLY its own field — the base's movement is not
+    // frozen into the per-model layer.
     await act(async () => {
       within(view.baseElement).getByText("image_gen_krea_creativity_high").click();
     });

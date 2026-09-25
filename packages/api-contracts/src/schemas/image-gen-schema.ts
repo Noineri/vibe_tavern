@@ -161,6 +161,12 @@ export const imageGenDefaultParamsSchema = z.object({
   /** Hires-fix second pass on the profile base (IF-7b): `enabled` gates
    *  the request rung (a configured-but-disabled block ships nothing). */
   hires: imageGenHiresBlockSchema.optional(),
+  /** Krea K2 params — the BASE rung of the two-rung ladder (the overlay's
+   *  `krea` block rides on top; absent overlay fields inherit these).
+   *  Owner ruling: the pane's Krea 2 section is not gated behind the
+   *  per-model bind toggle — it writes the active arm like every other
+   *  scalar. */
+  krea: imageGenKreaParamsSchema.optional(),
 });
 export type ImageGenDefaultParamsValue = z.infer<typeof imageGenDefaultParamsSchema>;
 
@@ -601,10 +607,11 @@ export const imageGenModelSettingsOverlaySchema = z.object({
    *  (validated client-side against the constant; kept a plain string here
    *  so the list can grow without a contract bump). */
   adetailerModel: z.string().optional(),
-  /** Krea K2 params (IF-11) — OVERLAY-ONLY in v1 (the adetailerModel
-   *  precedent: no one-shot rung, no profile-base field): creativity +
-   *  the generative sliders, read only by krea-2 models (the backend
-   *  filters every field against the model's own schema). */
+  /** Krea K2 params (IF-11) — the OVERLAY rung of the two-rung ladder
+   *  (the profile base's `krea` block sits underneath; absent fields
+   *  inherit it): creativity + the generative sliders, read only by
+   *  krea-2 models (the backend filters every field against the model's
+   *  own schema). */
   krea: imageGenKreaParamsSchema.optional(),
   modeSizePresets: imageGenModeSizePresetsSchema.optional(),
 });

@@ -285,9 +285,11 @@ export function buildSeedField(): SeedFieldSpec {
 /** T6 — the Krea 2 gate: the krea backend's OWN models only (krea/krea-2/*);
  * the aggregator's third-party models have no generative controls. The gate
  * lives HERE (both surfaces ask the builder, never re-derive it). The commit
- * merge is the ONE copy — the chip's overlay arm and the pane's dual bind
- * arm both route through it. Overlay-only in v1 (the adetailerModel
- * precedent): the pane renders its section bound-only.
+ * merge is the ONE copy — the chip's overlay arm and the pane's dual arm
+ * both route through it. Owner ruling: the section is NEVER gated behind
+ * the per-model bind toggle (the toggle is for per-model overrides, not a
+ * gate for generative controls) — both surfaces render it for any
+ * krea-own model and write their active arm.
  */
 export function buildKreaTwoControls(input: { backend: string; modelId: string }): KreaTwoControlsSpec | null {
   if (input.backend !== IMAGE_GEN_BACKENDS.Krea || !input.modelId.startsWith("krea/")) return null;

@@ -875,11 +875,13 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       overlay.adetailer === true
         ? overlay.adetailerModel?.trim() || IMAGE_GEN_ADETAILER_DEFAULT_MODEL
         : undefined;
-    // Krea K2 params (IF-11): OVERLAY-ONLY (the adetailerModel precedent —
-    // no one-shot rung, no profile-base field in v1); absent = the policy
-    // defaults inside the backend (creativity "raw", sliders unsent).
-    // Only the krea dialect reads the block; other backends ignore it.
-    const krea = overlay.krea;
+    // Krea K2 params (IF-11): the two-rung ladder — the per-model overlay
+    // block over the profile base, merged PER FIELD (an absent overlay
+    // field inherits the base; both absent = the policy defaults inside
+    // the backend: creativity "raw", sliders unsent). Only the krea
+    // dialect reads the block; other backends ignore it.
+    const kreaMerged = { ...defaults.krea, ...overlay.krea };
+    const krea = Object.keys(kreaMerged).length > 0 ? kreaMerged : undefined;
     // LoRAs (CG-C2): the chip-draft rung ONLY — no overlay, no profile base
     // (per-generation by design, the FT plan's draft-level ruling) — and
     // capability-gated off the CURRENT static table by backend (IF-6: the

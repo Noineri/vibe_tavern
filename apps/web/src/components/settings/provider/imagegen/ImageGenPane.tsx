@@ -2347,13 +2347,16 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
               {/* Krea 2 generative controls (T6, TWIN_UNIFICATION step 2): the
                   pane is the section's HOME — rendered from the same
                   model-controls descriptors the chip's accordion reads.
-                  Overlay-only in v1 (the adetailerModel precedent): the
-                  profile base carries no krea block, so the section renders
-                  bound-only and writes the overlay DIRECTLY (setParam's
-                  type is the base-params union — krea is not on it).
+                  Owner ruling: NOT gated behind the per-model bind toggle
+                  — the section renders for any krea-own model and writes
+                  the ACTIVE arm (the base profile when unbound, the
+                  per-model overlay when bound). Display follows the
+                  CF13/CF15 canon: the arm's OWN block — a bound overlay
+                  with an empty field shows the anchor default, never the
+                  base (the generation ladder still inherits per-field).
                   Creativity defaults to the POLICY "raw", sliders to the
                   vendor-neutral unsent 0. */}
-              {bound && kreaControls !== null && (
+              {kreaControls !== null && (
                 <div
                   className="col-span-full flex flex-col gap-2.5 rounded-md border border-border bg-s2/50 p-2.5"
                   data-testid="image-gen-krea-section"
@@ -2364,12 +2367,12 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   <div className="flex flex-col gap-1.5">
                     <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(kreaControls.creativity.labelKey)}</span>
                     <SegmentedControl
-                      value={overlay?.krea?.creativity ?? kreaControls.creativity.default}
+                      value={params.krea?.creativity ?? kreaControls.creativity.default}
                       options={kreaControls.creativity.options.map((option) => ({
                         value: option.value,
                         label: t(option.labelKey),
                       }))}
-                      onChange={(value) => imageGen.setModelOverlay(kreaControls.creativity.commit(overlay?.krea, value))}
+                      onChange={(value) => setParam(kreaControls.creativity.commit(params.krea, value))}
                       wrap
                       mobileFill
                       mobileSelect
@@ -2380,8 +2383,8 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     <SamplerSliderField
                       key={slider.field}
                       label={t(slider.labelKey)}
-                      value={overlay?.krea?.[slider.field] ?? slider.default}
-                      onChange={(value) => imageGen.setModelOverlay(slider.commit(overlay?.krea, value))}
+                      value={params.krea?.[slider.field] ?? slider.default}
+                      onChange={(value) => setParam(slider.commit(params.krea, value))}
                       range={{ min: slider.min, max: slider.max, step: slider.step }}
                       rangeTestId={`image-gen-range-krea-${slider.field}`}
                       cellTestId={`image-gen-field-krea-${slider.field}`}

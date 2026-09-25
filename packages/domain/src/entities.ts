@@ -1227,6 +1227,13 @@ export interface ImageGenDefaultParams {
    *  the request rung — a configured-but-disabled block ships nothing.
    *  The chip-draft override outranks both stored rungs at generation. */
   hires?: ImageGenHiresBlock;
+  /** Krea K2 params — the BASE rung of the two-rung ladder (the per-model
+   *  overlay's `krea` block rides on top; absent overlay fields inherit
+   *  these). Only the krea dialect reads the block; other backends ignore
+   *  it. Owner ruling: the pane's Krea 2 section is NOT gated behind the
+   *  per-model bind toggle — the controls write the ACTIVE arm (the base
+   *  when unbound, the overlay when bound), like every other scalar. */
+  krea?: ImageGenKreaParams;
 }
 
 /** Per-mode width/height preset on the profile. Optional members — an unset
@@ -1393,10 +1400,10 @@ export interface ImageGenModelSettingsOverlay {
   /** Face-model preset for ADetailer (one of IMAGE_GEN_ADETAILER_FACE_MODELS;
    *  absent = the default entry). Ignored unless `adetailer` is true. */
   adetailerModel?: string;
-  /** Krea K2 params (IF-11) — the overlay twin of the wire block:
-   *  creativity (prompt-expansion mode; absent = the VT policy default
-   *  "raw") + the generative sliders (absent = unsent, vendor-neutral
-   *  0). OVERLAY-ONLY in v1 (the adetailerModel precedent); only krea-2
+  /** Krea K2 params (IF-11) — the OVERLAY rung of the two-rung ladder:
+   *  creativity (prompt-expansion mode; absent = inherit the profile
+   *  base, then the VT policy default "raw") + the generative sliders
+   *  (absent = inherit, then unsent vendor-neutral 0). Only krea-2
    *  models read it (the backend filters per the model's own schema). */
   krea?: ImageGenKreaParams;
   /** Per-mode size presets for this model (the same shape as the profile's;

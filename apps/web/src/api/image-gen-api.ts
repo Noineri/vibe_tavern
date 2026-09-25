@@ -458,6 +458,15 @@ export async function removeImageGenModelFavorite(id: string, modelId: string): 
   if (!response.ok) throw await unwrapError(response);
 }
 
+/** Model ids ride the URL PATH — Krea ids (`krea/krea-2/…`) and ComfyUI
+ *  folder paths contain `/`, which must be percent-encoded or Hono's
+ *  `:modelId` (single-segment) misses and the SPA fallback answers HTML
+ *  (the "Unexpected token '<'" JSON error). The hono client substitutes
+ *  params RAW; the route decodes `%2F` back to the id. */
+function modelIdPathSegment(modelId: string): string {
+  return encodeURIComponent(modelId);
+}
+
  /** One model's overlay — null = no bound settings yet (inherit the
   *  profile base) or unknown profile; both are "start empty" for the
   *  editor. */
@@ -466,7 +475,7 @@ export async function getImageGenModelSettings(
   modelId: string,
 ): Promise<ImageGenModelSettingsValue | null> {
   const response = await client.api["image-gen"].profiles[":id"]["model-settings"][":modelId"].$get({
-    param: { id, modelId },
+    param: { id, modelId: modelIdPathSegment(modelId) },
   });
   if (response.status === 404) return null;
   const body: unknown = await response.json();
@@ -484,7 +493,7 @@ export async function upsertImageGenModelSettings(
   samplerSetId?: string | null,
 ): Promise<ImageGenModelSettingsValue> {
   const response = await client.api["image-gen"].profiles[":id"]["model-settings"][":modelId"].$put({
-    param: { id, modelId },
+    param: { id, modelId: modelIdPathSegment(modelId) },
     json: {
       settings: overlay,
       ...(samplerSetId !== undefined ? { samplerSetId } : {}),
@@ -496,7 +505,7 @@ export async function upsertImageGenModelSettings(
 /** Delete a model's overlay — the model reverts to the profile base. */
 export async function deleteImageGenModelSettings(id: string, modelId: string): Promise<void> {
   const response = await client.api["image-gen"].profiles[":id"]["model-settings"][":modelId"].$delete({
-    param: { id, modelId },
+    param: { id, modelId: modelIdPathSegment(modelId) },
   });
   if (!response.ok) throw await unwrapError(response);
 }

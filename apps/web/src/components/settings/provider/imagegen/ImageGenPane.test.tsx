@@ -1330,9 +1330,10 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
 });
 
 describe("ImageGenPane — Krea 2 section (T6, TWIN_UNIFICATION step 2)", () => {
-  it("renders bound-only on krea-2 models (the pane is the section's HOME); hidden unbound and on third-party models", async () => {
-    // Unbound — the profile base carries no krea block (overlay-only v1,
-    // the adetailerModel precedent).
+  it("renders for krea-2 models on BOTH arms — never gated behind the bind toggle (owner ruling); hidden on third-party models", async () => {
+    // Unbound — the section still renders and writes the PROFILE BASE
+    // (the per-model bind toggle is for per-model overrides, not a gate
+    // for generative controls).
     const unbound = render(
       <ImageGenPane
         imageGen={makeImageGen({ form: makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, modelId: "krea/krea-2/medium" }) })}
@@ -1340,7 +1341,9 @@ describe("ImageGenPane — Krea 2 section (T6, TWIN_UNIFICATION step 2)", () => 
     );
     await waitFor(() => expect(unbound.getByTestId("image-gen-advanced-header")).toBeTruthy());
     await openAdvanced(unbound);
-    expect(unbound.queryByTestId("image-gen-krea-section")).toBeNull();
+    await waitFor(() => expect(unbound.getByTestId("image-gen-krea-section")).toBeTruthy());
+    expect(unbound.getByText("image_gen_krea_creativity")).toBeTruthy();
+    expect(unbound.getByText("image_gen_krea_movement")).toBeTruthy();
     cleanup();
 
     // A third-party aggregator model on the same backend — no generative
@@ -1358,33 +1361,37 @@ describe("ImageGenPane — Krea 2 section (T6, TWIN_UNIFICATION step 2)", () => 
     expect(thirdParty.queryByTestId("image-gen-krea-section")).toBeNull();
     cleanup();
 
-    // Bound + a krea-2 model: creativity + the three sliders render.
+    // Bound + a krea-2 model: the CF13/CF15 canon — the display reads the
+    // ARM's own block. The overlay's intensity shows; the base's movement
+    // does NOT leak into the bound display (the anchor default 0 shows;
+    // the GENERATION ladder still inherits the base per-field).
     const view = render(
       <ImageGenPane
         imageGen={makeImageGen({
-          form: makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, modelId: "krea/krea-2/medium" }),
-          modelOverlay: {},
+          form: makeForm({
+            backend: IMAGE_GEN_BACKENDS.Krea,
+            modelId: "krea/krea-2/medium",
+            defaultParams: { krea: { movement: 20 } },
+          }),
+          modelOverlay: { krea: { intensity: 40 } },
         })}
       />,
     );
     await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
     await openAdvanced(view);
     await waitFor(() => expect(view.getByTestId("image-gen-krea-section")).toBeTruthy());
-    expect(view.getByText("image_gen_krea_creativity")).toBeTruthy();
-    expect(view.getByText("image_gen_krea_movement")).toBeTruthy();
     expect(view.getByTestId("image-gen-range-krea-intensity")).toBeTruthy();
-    expect(view.getByTestId("image-gen-field-krea-complexity")).toBeTruthy();
-    expect(view.getByTestId("image-gen-range-krea-movement")).toBeTruthy();
+    expect((view.getByTestId("image-gen-range-krea-intensity") as HTMLInputElement).value).toBe("40");
+    expect((view.getByTestId("image-gen-range-krea-movement") as HTMLInputElement).value).toBe("0");
   });
 
-  it("creativity + a slider commit the overlay's ONE krea block (merge, siblings preserved), never the profile base", async () => {
+  it("commits write the ACTIVE arm — the profile base when unbound, the overlay when bound (merge into the arm's own block, siblings preserved)", async () => {
     const setForm = mock(() => {});
     const setModelOverlay = mock(() => {});
     const view = render(
       <ImageGenPane
         imageGen={makeImageGen({
           form: makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, modelId: "krea/krea-2/medium" }),
-          modelOverlay: {},
           setForm,
           setModelOverlay,
         })}
@@ -1394,23 +1401,27 @@ describe("ImageGenPane — Krea 2 section (T6, TWIN_UNIFICATION step 2)", () => 
     await openAdvanced(view);
     await waitFor(() => expect(view.getByTestId("image-gen-krea-section")).toBeTruthy());
 
-    // Creativity: pick High (segment labels are the mocked i18n keys).
+    // UNBOUND: creativity High writes the BASE defaultParams, not the overlay.
     await act(async () => {
       fireEvent.click(view.getByText("image_gen_krea_creativity_high"));
     });
-    await waitFor(() => expect(setModelOverlay).toHaveBeenCalledTimes(1));
-    expect((setModelOverlay.mock.calls[0] as unknown[])[0]).toEqual({ krea: { creativity: "high" } });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
+    expect((setForm.mock.calls[0] as unknown[])[0]).toEqual({ defaultParams: { krea: { creativity: "high" } } });
+    expect(setModelOverlay).not.toHaveBeenCalled();
 
-    // The real store would hold the written overlay now — re-render with it
-    // (the mock setModelOverlay does not apply the write) so the slider
-    // commit merges against the CURRENT block, as it does in production.
-    const kreaForm = makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, modelId: "krea/krea-2/medium" });
+    // The real store would hold the written base now — re-render with it
+    // (the mock setForm does not apply the write) so the slider commit
+    // merges against the CURRENT block, as it does in production.
+    const kreaForm = makeForm({
+      backend: IMAGE_GEN_BACKENDS.Krea,
+      modelId: "krea/krea-2/medium",
+      defaultParams: { krea: { creativity: "high" } },
+    });
     view.rerender(
       <TooltipProvider delayDuration={200}>
         <ImageGenPane
           imageGen={makeImageGen({
             form: kreaForm,
-            modelOverlay: { krea: { creativity: "high" } },
             setForm,
             setModelOverlay,
           })}
@@ -1419,14 +1430,39 @@ describe("ImageGenPane — Krea 2 section (T6, TWIN_UNIFICATION step 2)", () => 
     );
     await waitFor(() => expect(view.getByTestId("image-gen-krea-section")).toBeTruthy());
 
-    // The intensity slider rides the SAME merged krea block.
+    // The intensity slider merges into the SAME base block.
     const range = view.getByTestId("image-gen-range-krea-intensity") as HTMLInputElement;
     await act(async () => {
       fireEvent.change(range, { target: { value: "40" } });
     });
-    await waitFor(() => expect(setModelOverlay).toHaveBeenCalledTimes(2));
-    expect((setModelOverlay.mock.calls[1] as unknown[])[0]).toEqual({ krea: { creativity: "high", intensity: 40 } });
-    expect(setForm).not.toHaveBeenCalled();
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(2));
+    expect((setForm.mock.calls[1] as unknown[])[0]).toEqual({
+      defaultParams: { krea: { creativity: "high", intensity: 40 } },
+    });
+    expect(setModelOverlay).not.toHaveBeenCalled();
+
+    // BOUND arm: the same section writes the OVERLAY's own block instead.
+    // (Unmount first — two live panes in one document collide on the
+    // document-scoped queries inside openAdvanced.)
+    view.unmount();
+    const bound = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: kreaForm,
+          modelOverlay: {},
+          setForm,
+          setModelOverlay,
+        })}
+      />,
+    );
+    await waitFor(() => expect(bound.getByTestId("image-gen-advanced-header")).toBeTruthy());
+    await openAdvanced(bound);
+    await waitFor(() => expect(bound.getByTestId("image-gen-krea-section")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(bound.getByText("image_gen_krea_creativity_high"));
+    });
+    await waitFor(() => expect(setModelOverlay).toHaveBeenCalledTimes(1));
+    expect((setModelOverlay.mock.calls[0] as unknown[])[0]).toEqual({ krea: { creativity: "high" } });
   });
 });
 
