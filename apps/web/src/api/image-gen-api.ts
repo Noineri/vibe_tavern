@@ -37,6 +37,7 @@ import type {
   ImageGenSamplerSetCreate,
   ImageGenSamplerSetImport,
   ImageGenSamplerSetUpdate,
+  ImageGenPromptCap,
   GenerateImageGenInput,
   ImageGenGenerateResponseValue,
   UpdateImageGenProfileInput,
@@ -51,6 +52,9 @@ import { appendTokenQuery } from "../lib/mobile-token.js";
  *  established (`SttProfileRecord`), bound to the contracts type instead of
  *  a local re-declaration. */
 export type ImageGenProfileRecord = ImageGenProfileValue;
+
+/** IF-10: one learned provider prompt-cap row (advisory counter data). */
+export type { ImageGenPromptCap };
 
 /** One live-model-catalog entry (the picker's data source). */
 export type ImageGenModelEntry = ImageGenModelInfoValue;
@@ -502,6 +506,13 @@ export async function deleteImageGenModelSettings(id: string, modelId: string): 
 /** The set library in store order (global — not scoped to a profile). */
 export async function listImageGenSamplerSets(): Promise<ImageGenSamplerSet[]> {
   const response = await client.api["image-gen"]["sampler-sets"].$get();
+  return unwrapRpc(response);
+}
+
+/** IF-10: learned provider prompt caps — advisory per-(backend, model)
+ *  counter data for the chip's prompt editor; never gates a send. */
+export async function listImageGenPromptCaps(): Promise<ImageGenPromptCap[]> {
+  const response = await client.api["image-gen"]["prompt-caps"].$get();
   return unwrapRpc(response);
 }
 

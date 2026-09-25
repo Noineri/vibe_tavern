@@ -50,6 +50,11 @@ export interface ImageGenModePromptOptions {
   /** The profile-level quality-layer toggle — the tag-dialect quality
    *  block joins the SERVER-built prompt only when explicitly on. */
   qualityLayerEnabled?: boolean;
+  /** IF-10: the provider's learned per-model prompt cap (chars), when one
+   *  exists. Never blocks a send — it only tightens the assist instruction
+   *  (the LLM-written body must fit under cap − quality block − slack) so
+   *  assisted runs stop tripping limits the editor cannot see. */
+  promptCharCap?: number;
 }
 
 /** The IG-15 assist system prompt: the extraction core plus the resolved
@@ -239,7 +244,24 @@ export async function buildImageGenPrompts(
   // resolves any placeholder the model left in place.
   if (assist !== undefined) {
     const instruction = await composeAssistInstruction(family);
-    const refined = (await assist(resolve(instruction).trim(), buildAssistUserPayload(template, contextDigest(mode, character, persona, lastMessage)))).trim();
+    // IF-10: with a learned provider cap, the assist gets a HARD character
+    // budget for its output — cap minus the already-resolved quality block
+    // and a slack for separators/macro expansion. The budget rides the
+    // instruction (English — the assist assets' language); no cap, no line
+    // (byte-identical legacy instruction).
+    const capLine =
+      options?.promptCharCap !== undefined
+        ? `\n\nHard limit: the finished image prompt you write must stay under ${Math.max(
+            64,
+            options.promptCharCap - qualityBlock.length - 64,
+          )} characters.`
+        : "";
+    const refined = (
+      await assist(
+        resolve(instruction).trim() + capLine,
+        buildAssistUserPayload(template, contextDigest(mode, character, persona, lastMessage)),
+      )
+    ).trim();
     if (refined === "") {
       throw new ImageGenModeValidationError("LLM assist returned an empty prompt");
     }

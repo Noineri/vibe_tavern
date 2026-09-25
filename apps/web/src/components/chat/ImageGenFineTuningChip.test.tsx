@@ -80,6 +80,7 @@ function profile(id: string, name: string, capabilities: Caps, modelId?: string)
 }
 
 let profilesStore: ProfileRecord[] = [];
+let promptCapsStore: Array<{ backend: string; modelId: string; maxPromptChars: number }> = [];
 let modelsStore: Record<string, ModelEntry[]> = {};
 let samplersStore: Record<string, SamplerEntry[]> = {};
 let schedulersStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenSchedulerInfoValue[]> = {};
@@ -111,6 +112,8 @@ mock.module("../../api/image-gen-api.js", () => ({
     return new Promise<void>(() => {});
   },
   listAllImageGenProfiles: () => Promise.resolve([...profilesStore]),
+  // IF-10: the learned prompt-cap table (advisory counter data).
+  listImageGenPromptCaps: () => Promise.resolve([...promptCapsStore]),
   listImageGenModels: (id: string) => Promise.resolve([...(modelsStore[id] ?? [])]),
   listImageGenSamplers: (id: string) => Promise.resolve([...(samplersStore[id] ?? [])]),
   listImageGenSchedulers: (id: string) => Promise.resolve([...(schedulersStore[id] ?? [])]),
@@ -237,6 +240,7 @@ async function openAccordion(chatId: string, modelLabel = "SDXL Base") {
 afterEach(() => {
   cleanup();
   profilesStore = [];
+  promptCapsStore = [];
   modelsStore = {};
   samplersStore = {};
   schedulersStore = {};
@@ -369,6 +373,42 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
     // FT-A1: the one-shot sampler row is gone everywhere (the model-settings
     // accordion is the only sampler surface).
     expect(within(view.baseElement).queryByTestId("image-gen-ft-sampler-row")).toBeNull();
+  });
+
+  it("IF-10: the learned-cap counter renders for the effective model only — advisory, red past the cap, absent without a row", async () => {
+    profilesStore = [profile("p1", "Cloud main", noCaps(), "qwen-image")];
+    modelsStore = { p1: [{ id: "qwen-image", label: "Qwen Image" }, { id: "other", label: "Other" }] };
+
+    // No learned row (or a row for a DIFFERENT model) → no counter at all.
+    promptCapsStore = [{ backend: "openrouter", modelId: "unrelated-model", maxPromptChars: 900 }];
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-cap" />);
+    act(() => armChat("chat-cap"));
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-prompt")).toBeTruthy());
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-prompt-cap")).toBeNull();
+    cleanup();
+
+    // A learned row for the effective model → the live counter appears.
+    promptCapsStore = [{ backend: "openrouter", modelId: "qwen-image", maxPromptChars: 1200 }];
+    const armed = renderChip(<ImageGenFineTuningChip chatId="chat-cap2" />);
+    act(() => armChat("chat-cap2"));
+    await waitFor(() => expect(armed.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
+    openChip();
+    await waitFor(() => expect(within(armed.baseElement).getByTestId("image-gen-ft-prompt-cap")).toBeTruthy());
+    const counter = within(armed.baseElement).getByTestId("image-gen-ft-prompt-cap");
+    expect(counter.textContent).toBe("0 / 1200");
+    expect(counter.className).not.toContain("text-danger");
+
+    // Typing past the cap → the counter goes red (advisory — the send stays
+    // enabled; the counter is a warning, never a gate).
+    fireEvent.change(within(armed.baseElement).getByTestId("image-gen-ft-prompt"), {
+      target: { value: "x".repeat(1300) },
+    });
+    await waitFor(() => {
+      expect(within(armed.baseElement).getByTestId("image-gen-ft-prompt-cap").textContent).toBe("1300 / 1200");
+    });
+    expect(within(armed.baseElement).getByTestId("image-gen-ft-prompt-cap").className).toContain("text-danger");
   });
 
   it("a caps profile renders the negative row; edits write the per-chat draft (FT-A1: no one-shot sampler row)", async () => {

@@ -1228,6 +1228,9 @@ export interface ImageGenRuntimeApi {
 	// ── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin;
 	//    a GLOBAL library, no profile scoping) ──
 	listImageGenSamplerSets: () => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerSetList>;
+	/** IF-10: the learned per-(backend, model) prompt caps — advisory
+	 *  counter/budget data, never a send gate. */
+	listImageGenPromptCaps: () => Promise<import("@vibe-tavern/api-contracts").ImageGenPromptCapList>;
 	createImageGenSamplerSet: (
 		input: import("@vibe-tavern/api-contracts").ImageGenSamplerSetCreate,
 	) => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerSet>;

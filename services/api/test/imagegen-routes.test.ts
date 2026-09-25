@@ -3045,6 +3045,34 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     expect(assist.calls[1]!.system).toBe(`${core.trim()}\n\n${ponyAddendum.trim()}`);
   });
 
+  test("IF-10: with a learned cap the assist instruction carries the character budget; without one it stays byte-identical", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+
+    // No cap → no budget line (the IPT-2 byte-identical contract above).
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(assist.calls).toHaveLength(1);
+    expect(assist.calls[0]!.system).not.toContain("must stay under");
+
+    // Learned cap for the run's (backend, model) → the instruction gains the
+    // hard budget line (cap − quality block − slack, floored at 64).
+    await scene.stores.imageGenPromptCaps.upsert(IMAGE_GEN_BACKENDS.OpenRouter, "or-model", 1200);
+    await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(assist.calls).toHaveLength(2);
+    const system = assist.calls[1]!.system;
+    expect(system).toContain("must stay under ");
+    const budget = Number(/must stay under (\d+) characters/.exec(system)![1]);
+    expect(budget).toBeGreaterThan(0);
+    expect(budget).toBeLessThanOrEqual(1200);
+  });
+
   test("toggle on + picks set: the quiet call writes the prompt; residual macros in its output still resolve", async () => {
     const assist = makeAssistDeps({ llm1: makeLlmProfile() });
     // The refinement deliberately leaves a {{char}} placeholder — the design
@@ -4098,5 +4126,115 @@ describe("image-gen routes — profile family API (IPT-3)", () => {
       "civitai-by-hash",
       "extension-preset",
     ]);
+  });
+});
+
+// ── IF-10: learned prompt caps ─────────────────────────────────────────────
+
+describe("image-gen learned prompt caps (IF-10)", () => {
+  const capsOf = async (app: ReturnType<typeof createImageGenRoutes>) =>
+    ((await (await app.request("/api/image-gen/prompt-caps")).json()) as Array<{
+      backend: string;
+      modelId: string;
+      maxPromptChars: number;
+    }>);
+
+  test("a prompt_too_long rejection teaches the (backend, model) cap; a longer SUCCESS invalidates it; a short success keeps it", async () => {
+    let mode: "reject" | "ok" = "reject";
+    const { app, stores } = await makeApp(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/images/generations")) {
+        if (mode === "reject") {
+          // The live nanogpt wire shape (2026-09-25): string-error envelope,
+          // the message names the cap and the current length.
+          return new Response(
+            JSON.stringify({
+              error: "Your prompt is too long for Z Image Turbo. Please shorten it to 1200 characters or less (current: 5399 characters).",
+              code: "prompt_too_long",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ data: [{ b64_json: PNG_B64(0x10) }] }), { status: 200 });
+      }
+      return new Response("nope", { status: 404 });
+    });
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.NanoGpt,
+      endpoint: "https://nano-gpt.com/api/v1",
+      apiKey: "sk-own",
+      modelId: "z-image-turbo",
+    });
+
+    // 1) Rejection → the route surfaces the provider failure AND the cap is
+    // learned under (nanogpt, z-image-turbo).
+    const rejected = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p" }),
+    });
+    expect(rejected.status).toBeGreaterThanOrEqual(400);
+    expect(((await rejected.json()) as { error: string }).error).toContain("shorten it to 1200");
+    expect(await capsOf(app)).toEqual([
+      { backend: "nanogpt", modelId: "z-image-turbo", maxPromptChars: 1200 },
+    ]);
+
+    // 2) A SUCCESS whose composed prompt ran LONGER than the learned cap →
+    // the provider raised the limit; the row self-invalidates.
+    mode = "ok";
+    const long = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "x".repeat(1300) }),
+    });
+    expect(long.status).toBe(200);
+    expect(await capsOf(app)).toEqual([]);
+
+    // 3) Re-learn, then a SHORT success → the cap STAYS (only over-cap
+    // successes invalidate).
+    mode = "reject";
+    await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p" }),
+    });
+    mode = "ok";
+    const short = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "short one" }),
+    });
+    expect(short.status).toBe(200);
+    expect(await capsOf(app)).toEqual([
+      { backend: "nanogpt", modelId: "z-image-turbo", maxPromptChars: 1200 },
+    ]);
+  });
+
+  test("a non-limit failure never teaches a cap", async () => {
+    const { app, stores } = await makeApp(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/images/generations")) {
+        return new Response(JSON.stringify({ error: { message: "Insufficient credits" } }), {
+          status: 402,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("nope", { status: 404 });
+    });
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.NanoGpt,
+      endpoint: "https://nano-gpt.com/api/v1",
+      apiKey: "sk-own",
+      modelId: "qwen-image",
+    });
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p" }),
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(await capsOf(app)).toEqual([]);
   });
 });

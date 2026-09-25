@@ -60,6 +60,7 @@ import type {
   ImageGenSamplerSetImport,
   ImageGenSamplerSetList,
   ImageGenSamplerSetUpdate,
+  ImageGenPromptCapList,
   ImageGenSchedulerInfoValue,
   ImagePromptFamiliesValue,
   ImagePromptFamilyValue,
@@ -85,6 +86,7 @@ import {
 } from "../../domain/chat/imagegen-modes.js";
 import { resolveImageGenPromptFamily } from "../../domain/imagegen/prompt-family-resolution.js";
 import { defaultReadSidecarFile, detectImageGenFamily, type FamilyDetectionBackend } from "../../domain/imagegen/family-detection.js";
+import { parsePromptCharCapFromErrorMessage } from "../../domain/imagegen/prompt-char-caps.js";
 import { getProviderFetchFactory } from "../../domain/providers/provider-fetch-factory.js";
 import { promptFamiliesReadModel } from "../../domain/imagegen/prompt-template-catalog.js";
 import type {
@@ -375,7 +377,7 @@ async function resolveAdapterConfig(
 
 type ImageGenAdapterStores = Pick<
   StoreContainer,
-  "imageGen" | "imageGenSamplerSets" | "chats" | "messages" | "characterAssets" | "db" | "characters" | "personas" | "providers"
+  "imageGen" | "imageGenSamplerSets" | "imageGenPromptCaps" | "chats" | "messages" | "characterAssets" | "db" | "characters" | "personas" | "providers"
 >;
 
 export class ImageGenAdapter implements ImageGenRuntimeApi {
@@ -953,13 +955,20 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // when present (trimmed-empty = the user cleared it — send nothing).
     let prompts: { prompt: string; negativePrompt: string };
     try {
+      // IF-10: the learned provider cap (if any) rides the mode options so
+      // the assist instruction carries a character budget; free/verbatim
+      // paths ignore it. The counter-facing read is the same store.
+      const promptCharCap =
+        model !== undefined && model !== ""
+          ? (await this.stores.imageGenPromptCaps.get(profile.backend, model))?.maxPromptChars
+          : undefined;
       prompts = await buildImageGenPrompts(
         this.stores,
         { ...chat, anchorMessageId: body.anchorMessageId },
         body.mode,
         body.prompt,
         assist,
-        { promptFamily, qualityLayerEnabled: profile.qualityLayerEnabled },
+        { promptFamily, qualityLayerEnabled: profile.qualityLayerEnabled, ...(promptCharCap !== undefined ? { promptCharCap } : {}) },
       );
     } catch (error) {
       if (error instanceof ImageGenModeValidationError) {
@@ -998,16 +1007,38 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     };
 
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
-    // Owner 2026-09-14: LOCAL backends have NO generation timeout (explicit
-    // cancel only); CLOUD backends carry the 3-minute budget.
-    const result = profile.capabilities.localExecution
-      ? await backend.generate(request)
-      : await withImageGenTimeoutMs(
-          signal,
-          IMAGE_GENERATION_CLOUD_TIMEOUT_MS,
-          "generation",
-          (inner) => backend.generate({ ...request, ...(inner !== undefined ? { signal: inner } : {}) }),
-        );
+    // IF-10 learn/invalidate seam — wraps BOTH transport branches below:
+    // a prompt_too_long rejection teaches the per-(backend, model) cap from
+    // the provider's message; a SUCCESS whose composed prompt ran longer
+    // than the stored cap invalidates it (the provider raised the limit —
+    // advisory caps must never outlive their truth).
+    const runBackend = async (): Promise<Awaited<ReturnType<typeof backend.generate>>> => {
+      try {
+        // Owner 2026-09-14: LOCAL backends have NO generation timeout
+        // (explicit cancel only); CLOUD backends carry the 3-minute budget.
+        const generated = profile.capabilities.localExecution
+          ? await backend.generate(request)
+          : await withImageGenTimeoutMs(
+              signal,
+              IMAGE_GENERATION_CLOUD_TIMEOUT_MS,
+              "generation",
+              (inner) => backend.generate({ ...request, ...(inner !== undefined ? { signal: inner } : {}) }),
+            );
+        if (model !== undefined && model !== "") {
+          await this.stores.imageGenPromptCaps.invalidateIfExceeded(profile.backend, model, request.prompt.length);
+        }
+        return generated;
+      } catch (error) {
+        if (model !== undefined && model !== "" && error instanceof Error) {
+          const cap = parsePromptCharCapFromErrorMessage(error.message);
+          if (cap !== null) {
+            await this.stores.imageGenPromptCaps.upsert(profile.backend, model, cap);
+          }
+        }
+        throw error;
+      }
+    };
+    const result = await runBackend();
 
     // Persist every image as a FLAT asset (bytes server-side, immutable) and
     // build the slot's attachment entries — the same shape a client upload
@@ -1248,6 +1279,16 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   listImageGenSamplerSets = async (): Promise<ImageGenSamplerSetList> => {
     const rows = await this.stores.imageGenSamplerSets.list();
     return rows.map(imageGenSamplerSetRowToWire);
+  };
+
+  /** IF-10: the learned prompt-cap table — advisory (backend, model) caps
+   *  surfaced for the chip's live counter; tiny global list, no scoping. */
+  listImageGenPromptCaps = async (): Promise<ImageGenPromptCapList> => {
+    return (await this.stores.imageGenPromptCaps.list()).map((row) => ({
+      backend: row.backend,
+      modelId: row.modelId,
+      maxPromptChars: row.maxPromptChars,
+    }));
   };
 
   createImageGenSamplerSet = async (input: ImageGenSamplerSetCreate): Promise<ImageGenSamplerSet> => {

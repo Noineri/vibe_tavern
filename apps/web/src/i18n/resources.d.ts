@@ -1330,6 +1330,7 @@ export default interface Resources {
     "image_gen_profile_new": "+ New image-gen profile",
     "image_gen_profile_new_title": "New image-gen profile",
     "image_gen_profiles_load_failed": "Failed to load image generation profiles",
+    "image_gen_prompt_cap_hint": "The provider's learned character limit for this model (advisory — you can still send). Assisted modes add a template on top of this text.",
     "image_gen_sampler_auto": "Auto (server default)",
     "image_gen_sampler_label": "Sampler",
     "image_gen_scheduler_label": "Scheduler",

@@ -55,6 +55,7 @@ import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT, type TFunc } from "../../i18n/context.js";
 import {
   listAllImageGenProfiles,
+  listImageGenPromptCaps,
   listImageGenModels,
   listImageGenSamplers,
   listImageGenUpscalers,
@@ -70,6 +71,7 @@ import {
   type ImageGenLora,
   type ImageGenUpscaler,
   type ImageGenDitSidecars,
+  type ImageGenPromptCap,
 } from "../../api/image-gen-api.js";
 import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue, ImageGenBackendValue } from "@vibe-tavern/api-contracts";
 import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, hasAdetailerExtension, type ImageGenerationMode, type ImageSizeOrientation } from "@vibe-tavern/domain";
@@ -186,6 +188,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   const [lorasFailed, setLorasFailed] = useState(false);
   const [upscalers, setUpscalers] = useState<ImageGenUpscaler[] | null>(null);
   const [upscalersFailed, setUpscalersFailed] = useState(false);
+  const [promptCaps, setPromptCaps] = useState<ImageGenPromptCap[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,6 +199,16 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
       .catch(() => {
         if (!cancelled) setProfiles([]);
       });
+    // IF-10: the learned prompt-cap table rides the same mount fetch —
+    // advisory counter data, tiny global list; a failure means no counter
+    // (never a blocked send).
+    void listImageGenPromptCaps()
+      .then((list) => {
+        if (!cancelled) setPromptCaps(list);
+      })
+      .catch(() => {
+        if (!cancelled) setPromptCaps([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -205,6 +218,15 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   //  (the chip is the per-chat OVERRIDE layer; no pick = inherit global).
   const effective = resolveEffectiveImageGenProfile(profiles, activeProfileId, globalActiveId);
   const effectiveId = effective?.id ?? null;
+  // IF-10: the learned cap lookup mirrors the adapter's model resolution —
+  // the chip's model pick (non-empty) outranks the saved profile model.
+  const effectiveModel =
+    draft.model !== undefined && draft.model !== "" ? draft.model : (effective?.modelId ?? null);
+  const promptCap =
+    effective !== null && effectiveModel !== null && promptCaps !== null
+      ? promptCaps.find((row) => row.backend === effective.backend && row.modelId === effectiveModel)
+          ?.maxPromptChars
+      : undefined;
   const caps = effective?.capabilities ?? null;
   const supportsSamplers = caps?.supportsSamplers ?? false;
   const supportsNegative = caps?.supportsNegativePrompt ?? false;
@@ -575,6 +597,20 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
               data-testid="image-gen-ft-prompt"
               aria-label={t("image_gen_chip_prompt_label")}
             />
+            {/* IF-10: the learned provider cap — an advisory live counter
+                (never a send gate). Red past the cap; the hint explains the
+                mode template still adds on top of the editor text. */}
+            {effective !== null && promptCap !== undefined && (
+              <div
+                data-testid="image-gen-ft-prompt-cap"
+                title={t("image_gen_prompt_cap_hint")}
+                className={`flex justify-end font-ui text-[calc(var(--ui-fs)-3px)] ${
+                  draft.prompt.length > promptCap ? "text-danger" : "text-t4"
+                }`}
+              >
+                {draft.prompt.length} / {promptCap}
+              </div>
+            )}
           </div>
 
           {supportsNegative && (

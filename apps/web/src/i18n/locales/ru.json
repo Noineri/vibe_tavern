@@ -586,6 +586,7 @@
 	"image_gen_chip_models_failed": "Не удалось загрузить модели",
 	"image_gen_chip_prompt_label": "Позитивный промпт",
 	"image_gen_chip_prompt_placeholder": "Опишите изображение… (пусто — соберётся из сцены)",
+	"image_gen_prompt_cap_hint": "Выученный лимит символов провайдера для этой модели (рекомендательный — отправить всё равно можно). В assisted-режимах поверх этого текста добавляется шаблон.",
 	"image_gen_chip_negative_label": "Негативный промпт",
 	"image_gen_chip_negative_placeholder": "Чего избегать на изображении…",
 	"image_gen_chip_clear": "Очистить",

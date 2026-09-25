@@ -1867,6 +1867,22 @@ export const imageGenSamplerSets = sqliteTable('image_gen_sampler_sets', {
   updatedAt: text('updated_at').notNull(),
 });
 
+// IF-10: learned provider prompt caps. Providers (nanogpt observed) enforce
+// per-model character limits on the image prompt that NO listing surface
+// exposes — the cap is discoverable only from a `prompt_too_long` rejection
+// (the message names the number). The learned row is advisory (never a
+// send-block) and self-healing: a later SUCCESS with a longer composed
+// prompt deletes the row (the provider raised the limit), a new rejection
+// re-teaches it with the fresh number.
+export const imageGenPromptCaps = sqliteTable('image_gen_prompt_caps', {
+  backend: text('backend').notNull(),
+  modelId: text('model_id').notNull(),
+  maxPromptChars: integer('max_prompt_chars').notNull(),
+  learnedAt: text('learned_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.backend, table.modelId] }),
+}));
+
 // ─── imagePromptVariants ─────────────────────────────────────────────────────
 // User-customized image prompt variants (IPT Wave 1 — IMAGE_PROMPT_TEMPLATES
 // plan): OVERRIDES-ONLY storage. One row per (rowKey, family) the user has

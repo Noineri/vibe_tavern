@@ -497,6 +497,12 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
     .get("/api/image-gen/sampler-sets", async (c) => {
       return c.json(await runtime.listImageGenSamplerSets());
     })
+    // ── Learned prompt caps (IF-10) — advisory per-(backend, model) char
+    //    caps taught by prompt_too_long rejections; global, tiny, no
+    //    scoping (the chip picks its row by backend + effective model). ──
+    .get("/api/image-gen/prompt-caps", async (c) => {
+      return c.json(await runtime.listImageGenPromptCaps());
+    })
     .post("/api/image-gen/sampler-sets/import", zValidator("json", schemas.importImageGenSamplerSetSchema), async (c) => {
       return c.json(await runtime.importImageGenSamplerSet(c.req.valid("json")));
     })

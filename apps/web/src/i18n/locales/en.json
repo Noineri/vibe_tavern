@@ -582,6 +582,7 @@
 	"image_gen_chip_models_failed": "Failed to load models",
 	"image_gen_chip_prompt_label": "Positive prompt",
 	"image_gen_chip_prompt_placeholder": "Describe the image… (empty = built from the scene)",
+	"image_gen_prompt_cap_hint": "The provider's learned character limit for this model (advisory — you can still send). Assisted modes add a template on top of this text.",
 	"image_gen_chip_negative_label": "Negative prompt",
 	"image_gen_chip_negative_placeholder": "What to avoid in the image…",
 	"image_gen_chip_clear": "Clear",

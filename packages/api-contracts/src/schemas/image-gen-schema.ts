@@ -648,6 +648,20 @@ export type ImageGenSamplerSet = z.infer<typeof imageGenSamplerSetSchema>;
 export const imageGenSamplerSetListSchema = z.array(imageGenSamplerSetSchema);
 export type ImageGenSamplerSetList = z.infer<typeof imageGenSamplerSetListSchema>;
 
+/** IF-10: a learned provider prompt cap — advisory, per (backend, model).
+ *  Learned from a `prompt_too_long` rejection (the provider message names
+ *  the number); self-invalidated by any later success whose composed
+ *  prompt exceeded it. Never blocks a send. */
+export const imageGenPromptCapSchema = z.object({
+  backend: z.string().min(1),
+  modelId: z.string().min(1),
+  maxPromptChars: z.number().int().positive(),
+});
+export type ImageGenPromptCap = z.infer<typeof imageGenPromptCapSchema>;
+
+export const imageGenPromptCapListSchema = z.array(imageGenPromptCapSchema);
+export type ImageGenPromptCapList = z.infer<typeof imageGenPromptCapListSchema>;
+
 /** Create from the pane's current values (the «+» flow): name + payload. */
 export const createImageGenSamplerSetSchema = z.object({
   name: z.string().min(1),
