@@ -10,7 +10,22 @@
  *  family), the A1111-compatible local dialect, ComfyUI (raw API —
  *  COMFYUI_BACKEND_PLAN), and the PE-1 OpenAI-images-family cloud slugs
  *  (IMAGEGEN_PROVIDER_EXPANSION_PLAN wave PE-1). */
-export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'a1111', 'comfyui', 'togetherai', 'siliconflow', 'nanogpt', 'electronhub', 'pollinations', 'deepinfra', 'recraft', 'zai', 'minimax', 'volcengine', 'dashscope', 'nim', 'chutes', 'hf', 'google', 'stability', 'ideogram', 'cloudflare', 'aihorde', 'bfl', 'fal', 'replicate', 'leonardo', 'luma', 'novita']);
+export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'a1111', 'comfyui', 'togetherai', 'siliconflow', 'nanogpt', 'electronhub', 'pollinations', 'deepinfra', 'recraft', 'zai', 'minimax', 'volcengine', 'dashscope', 'nim', 'chutes', 'hf', 'google', 'stability', 'ideogram', 'cloudflare', 'aihorde', 'bfl', 'fal', 'replicate', 'leonardo', 'luma', 'novita', 'krea']);
+
+/** Krea per-model params (IF-11): the K2 prompt-expansion mode + the
+ *  generative sliders (intensity / complexity / movement, −100..100,
+ *  0 = neutral — by their docs they never touch the prompt text).
+ *  Every field optional (params-unset): absent creativity = the VT
+ *  policy default "raw" (authored full-form prompts — the vendor default
+ *  expands them with invented style/composition); absent sliders =
+ *  unsent (vendor-neutral). */
+export const imageGenKreaParamsSchema = z.object({
+  creativity: z.enum(["raw", "low", "medium", "high"]).optional(),
+  intensity: z.number().min(-100).max(100).optional(),
+  complexity: z.number().min(-100).max(100).optional(),
+  movement: z.number().min(-100).max(100).optional(),
+});
+export type ImageGenKreaParamsValue = z.infer<typeof imageGenKreaParamsSchema>;
 export type ImageGenBackendValue = z.infer<typeof imageGenBackendSchema>;
 
 /** The generation-mode recipes (domain `IMAGE_GENERATION_MODES`): the six
@@ -586,6 +601,11 @@ export const imageGenModelSettingsOverlaySchema = z.object({
    *  (validated client-side against the constant; kept a plain string here
    *  so the list can grow without a contract bump). */
   adetailerModel: z.string().optional(),
+  /** Krea K2 params (IF-11) — OVERLAY-ONLY in v1 (the adetailerModel
+   *  precedent: no one-shot rung, no profile-base field): creativity +
+   *  the generative sliders, read only by krea-2 models (the backend
+   *  filters every field against the model's own schema). */
+  krea: imageGenKreaParamsSchema.optional(),
   modeSizePresets: imageGenModeSizePresetsSchema.optional(),
 });
 export type ImageGenModelSettingsOverlayValue = z.infer<typeof imageGenModelSettingsOverlaySchema>;

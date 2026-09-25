@@ -122,6 +122,17 @@ export interface ImageGenGenerateRequest {
     scale?: number;
     denoisingStrength?: number;
   };
+  /** Krea cloud dialect (IF-11): prompt-expansion mode + the K2
+   *  generative sliders — only the krea backend reads them. Absent
+   *  creativity → the VT policy default "raw" (authored full-form
+   *  prompts; the vendor default expands them); absent sliders → unsent
+   *  (vendor-neutral 0). */
+  krea?: {
+    creativity?: "raw" | "low" | "medium" | "high";
+    intensity?: number;
+    complexity?: number;
+    movement?: number;
+  };
   /** Cooperative cancellation — adapters forward it to their HTTP calls.
    *  LOCAL backends carry no timeout (owner 2026-09-14: explicit cancel
    *  only); CLOUD backends are wrapped at the adapter layer with

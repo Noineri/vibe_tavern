@@ -380,6 +380,13 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     group: PROVIDER_PRESET_GROUP.native,
   },
   {
+    id: "krea",
+    label: "Krea",
+    backend: IMAGE_GEN_BACKENDS.Krea,
+    baseUrl: "https://api.krea.ai",
+    group: PROVIDER_PRESET_GROUP.native,
+  },
+  {
     id: "leonardo",
     label: "Leonardo.Ai",
     backend: IMAGE_GEN_BACKENDS.Leonardo,

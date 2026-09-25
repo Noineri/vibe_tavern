@@ -1091,6 +1091,43 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     });
   });
 
+  it("IF-11: Krea 2 controls — krea-2 models only; creativity + sliders commit the overlay krea block", async () => {
+    profilesStore = [{ ...profile("kr1", "Krea cloud", noCaps(), "krea/krea-2/medium"), backend: "krea" }];
+    modelsStore["kr1"] = [
+      { id: "krea/krea-2/medium", label: "Krea 2 Medium" },
+      { id: "google/nano-banana", label: "Nano Banana" },
+    ];
+    armChat("chat-krea");
+    const view = await openAccordion("chat-krea", "Krea 2 Medium");
+
+    // The Krea 2 section header is present — open it.
+    await act(async () => {
+      within(view.baseElement).getByTestId("image-gen-ft-krea-header").click();
+    });
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-krea-body")).toBeTruthy());
+
+    // Creativity: pick High (segment labels are the mocked i18n keys).
+    await act(async () => {
+      within(view.baseElement).getByText("image_gen_krea_creativity_high").click();
+    });
+    await waitFor(() => expect(upsertCalls.length).toBe(1));
+    expect(upsertCalls[0]!.settings).toEqual({ krea: { creativity: "high" } });
+
+    // The intensity slider rides the SAME merged krea block.
+    const range = within(view.baseElement).getByTestId("image-gen-range-krea-intensity") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(range, { target: { value: "40" } });
+    });
+    await waitFor(() => expect(upsertCalls.length).toBe(2));
+    expect(upsertCalls[1]!.settings).toEqual({ krea: { creativity: "high", intensity: 40 } });
+
+    // A third-party model on the same backend — no Krea 2 section at all.
+    await pickOption("image-gen-ft-model-select", "Nano Banana");
+    await waitFor(() =>
+      expect(within(view.baseElement).queryByTestId("image-gen-ft-krea")).toBeNull(),
+    );
+  });
+
   it("scheduler dropdown (PG-3/CG-B2): the LOCAL dialect family (a1111 + comfyui), right under the sampler, commits the overlay", async () => {
     profilesStore = [{ ...profile("ig2", "Forge", fullCaps()), backend: "a1111" }];
     modelsStore = { ig2: [{ id: "sdxl-base", label: "SDXL Base" }] };

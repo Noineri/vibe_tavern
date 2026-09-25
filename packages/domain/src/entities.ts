@@ -1074,6 +1074,7 @@ export const IMAGE_GEN_BACKENDS = {
   Leonardo: "leonardo",
   Luma: "luma",
   Novita: "novita",
+  Krea: "krea",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 
@@ -1392,9 +1393,26 @@ export interface ImageGenModelSettingsOverlay {
   /** Face-model preset for ADetailer (one of IMAGE_GEN_ADETAILER_FACE_MODELS;
    *  absent = the default entry). Ignored unless `adetailer` is true. */
   adetailerModel?: string;
+  /** Krea K2 params (IF-11) — the overlay twin of the wire block:
+   *  creativity (prompt-expansion mode; absent = the VT policy default
+   *  "raw") + the generative sliders (absent = unsent, vendor-neutral
+   *  0). OVERLAY-ONLY in v1 (the adetailerModel precedent); only krea-2
+   *  models read it (the backend filters per the model's own schema). */
+  krea?: ImageGenKreaParams;
   /** Per-mode size presets for this model (the same shape as the profile's;
    *  a mode absent here falls back to the profile's own preset). */
   modeSizePresets?: ImageGenModeSizePresets;
+}
+
+/** Krea per-model params (IF-11) — the domain twin of
+ *  `imageGenKreaParamsSchema` (api-contracts). Sliders are integers
+ *  −100..100 with 0 neutral; validation lives on the wire schema, the
+ *  domain type stays structural. */
+export interface ImageGenKreaParams {
+  creativity?: "raw" | "low" | "medium" | "high";
+  intensity?: number;
+  complexity?: number;
+  movement?: number;
 }
 
 /** Starred model row (IG-12b, the LLM model-favorites mechanic). DEVIATION

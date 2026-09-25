@@ -124,10 +124,10 @@ import "../../domain/imagegen/backends/cloudflare.js";
 import "../../domain/imagegen/backends/aihorde.js";
 import "../../domain/imagegen/backends/bfl.js";
 import "../../domain/imagegen/backends/fal.js";
-import "../../domain/imagegen/backends/replicate.js";
-import "../../domain/imagegen/backends/leonardo.js";
+import "../../domain/imagegen/backends/replicate.js";import "../../domain/imagegen/backends/leonardo.js";
 import "../../domain/imagegen/backends/luma.js";
 import "../../domain/imagegen/backends/novita.js";
+import "../../domain/imagegen/backends/krea.js";
 import "../../domain/imagegen/backends/raw-binary.js";
 
 // ─── Route-ladder errors ─────────────────────────────────────────────────────
@@ -875,6 +875,11 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       overlay.adetailer === true
         ? overlay.adetailerModel?.trim() || IMAGE_GEN_ADETAILER_DEFAULT_MODEL
         : undefined;
+    // Krea K2 params (IF-11): OVERLAY-ONLY (the adetailerModel precedent —
+    // no one-shot rung, no profile-base field in v1); absent = the policy
+    // defaults inside the backend (creativity "raw", sliders unsent).
+    // Only the krea dialect reads the block; other backends ignore it.
+    const krea = overlay.krea;
     // LoRAs (CG-C2): the chip-draft rung ONLY — no overlay, no profile base
     // (per-generation by design, the FT plan's draft-level ruling) — and
     // capability-gated off the CURRENT static table by backend (IF-6: the
@@ -997,6 +1002,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(seed !== undefined ? { seed } : {}),
       ...(clipSkip !== undefined ? { clipSkip } : {}),
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
+      ...(krea !== undefined ? { krea } : {}),
       ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
       ...(hires !== undefined ? { hires } : {}),
       // MR-11: the backend announces the moment its progress surface

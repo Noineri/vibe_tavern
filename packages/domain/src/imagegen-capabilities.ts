@@ -902,4 +902,49 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.Krea]: {
+    // IF-11 — Krea card (doc-verified 2026-09-26: live openapi.json at
+    // https://api.krea.ai/openapi.json — 3.1, 118 paths — plus their docs
+    // llms.txt / krea-2 overview / generative-sliders pages; anonymous
+    // no-key ladder probed live 2026-09-26: empty POST → 401
+    // {"message":"Unauthorized"}). Async-job aggregator: POST
+    // /generate/image/{vendor}/{model} (Bearer; every request body is
+    // STRICT — additionalProperties:false — so the adapter filters every
+    // field against the model's own schema) → {job_id,status} → poll GET
+    // /jobs/{id} (backlogged/queued/scheduled/processing/sampling/
+    // intermediate-complete → completed/failed/cancelled) → result.urls
+    // (3-way union: string[] | {type:"model"|"preview",url}[] | url map).
+    // Best-effort DEL /jobs/{id} on failure/abort (the owner's Stop).
+    // 31 image models across 14 vendors (krea-2 ×3, BFL, nano-banana,
+    // ideogram, gpt-image, grok, seedream, qwen, z-image, runway, luma,
+    // recraft, muse) — **NO list endpoint exists**: the model list is
+    // parsed LIVE from the spec's /generate/image/* POST paths (owner
+    // ruling 2026-09-23: «список моделей брать живой» — spec-served, never
+    // a hardcoded catalog), spec cached in-memory 10 min (1.7 MB). Sizes:
+    // per-model aspect_ratio enums (live from the schema) + resolution
+    // enum; W×H maps exact-else-nearest onto the model's OWN enum (the
+    // replicate precedent, generalized live). seed: 18/31 schemas carry
+    // it — sent only when the model's schema has the field. **Prompt-
+    // expansion policy (owner-approved 2026-09-26): VT's prompts are
+    // authored full-form — krea-2 models get creativity:"raw"
+    // explicitly (their default low/medium EXPANDS the prompt with
+    // invented style/composition/camera/palette); z-image gets
+    // skip_prompt_expansion:true. K2 generative sliders (intensity/
+    // complexity/movement, −100..100, prompt untouched by design) ride
+    // the per-model overlay block — user-tunable, unsent = vendor-neutral
+    // 0. No negative/steps/sampler surface on image schemas (1/31
+    // ideogram-only negative → off). URL auth undocumented → keyless
+    // download with a keyed retry on 401/403 (both-ways hedge, no key
+    // to verify the live shape yet).
+    supportsNegativePrompt: false,
+    supportsSamplers: false,
+    supportsSeed: true,
+    sizeSupport: { kind: "free" },
+    noApiKey: false,
+    supportsLiveProgress: false,
+    localExecution: false,
+    supportsImg2img: false,
+    supportsInpaint: false,
+    paramRanges: {},
+  },
 };

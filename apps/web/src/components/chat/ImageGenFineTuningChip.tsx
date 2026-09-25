@@ -44,6 +44,7 @@ import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { SliderField } from "../shared/SliderField.js";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
@@ -750,6 +751,7 @@ function ImageGenModelSettingsAccordion({
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const [adOpen, setAdOpen] = useState(false);
+  const [kreaOpen, setKreaOpen] = useState(false);
   const [overlay, setOverlay] = useState<ImageGenModelSettingsOverlayValue | null>(null);
   const [extensions, setExtensions] = useState<string[] | null>(null);
   // IF-6 (comfy dialect): null = probe pending or failed (block hidden);
@@ -770,6 +772,10 @@ function ImageGenModelSettingsAccordion({
   const isLocalDialect =
     backend === IMAGE_GEN_BACKENDS.A1111 || backend === IMAGE_GEN_BACKENDS.ComfyUI;
   const isDit = backend === IMAGE_GEN_BACKENDS.ComfyUI && modelTemplate === "krea2-dit";
+  // Krea 2 generative controls (IF-11) — the krea backend's OWN models
+  // only (krea/krea-2/*; the aggregator's third-party models have no
+  // creativity/slider surface — the backend filters by schema anyway).
+  const isKreaTwo = backend === IMAGE_GEN_BACKENDS.Krea && modelId.startsWith("krea/");
 
   // Overlay load — keyed by (profileId, modelId); null until first load.
   useEffect(() => {
@@ -1088,6 +1094,79 @@ function ImageGenModelSettingsAccordion({
 
           {saveError && (
             <span className="text-[calc(var(--ui-fs)-3px)] text-danger">{t("image_gen_overlay_save_failed")}</span>
+          )}
+
+          {/* Krea 2 generative controls (IF-11) — nested accordion (the
+              ADetailer idiom) on the krea backend's own models only.
+              Creativity defaults to the POLICY value "raw" (authored
+              full-form prompts — the vendor default would expand them);
+              sliders default to 0 which IS the vendor-neutral unsent —
+              every field still commits the overlay like its neighbors. */}
+          {isKreaTwo && (
+            <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-krea">
+              <button
+                type="button"
+                data-testid="image-gen-ft-krea-header"
+                aria-expanded={kreaOpen}
+                onClick={() => setKreaOpen((v) => !v)}
+                className="flex w-full cursor-pointer items-center justify-between rounded-md border border-border bg-s3 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
+              >
+                <span>{t("image_gen_krea_section")}</span>
+                <Icons.Caret direction={kreaOpen ? "d" : "u"} />
+              </button>
+              {kreaOpen && (
+                <div className="flex flex-col gap-2 px-0.5" data-testid="image-gen-ft-krea-body">
+                  <div className="flex flex-col gap-1.5">
+                    <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_krea_creativity")}</span>
+                    <SegmentedControl
+                      value={overlay.krea?.creativity ?? "raw"}
+                      options={[
+                        { value: "raw", label: t("image_gen_krea_creativity_raw") },
+                        { value: "low", label: t("image_gen_krea_creativity_low") },
+                        { value: "medium", label: t("image_gen_krea_creativity_medium") },
+                        { value: "high", label: t("image_gen_krea_creativity_high") },
+                      ]}
+                      onChange={(value) => commit({ krea: { ...(overlay.krea ?? {}), creativity: value } })}
+                      disabled={disabled}
+                      wrap
+                      mobileFill
+                      mobileSelect
+                      ariaLabel={t("image_gen_krea_creativity")}
+                    />
+                  </div>
+                  <SliderField
+                    label={t("image_gen_krea_intensity")}
+                    value={overlay.krea?.intensity ?? 0}
+                    min={-100}
+                    max={100}
+                    step={1}
+                    onChange={(value) => commit({ krea: { ...(overlay.krea ?? {}), intensity: value } })}
+                    disabled={disabled}
+                    rangeTestId="image-gen-range-krea-intensity"
+                  />
+                  <SliderField
+                    label={t("image_gen_krea_complexity")}
+                    value={overlay.krea?.complexity ?? 0}
+                    min={-100}
+                    max={100}
+                    step={1}
+                    onChange={(value) => commit({ krea: { ...(overlay.krea ?? {}), complexity: value } })}
+                    disabled={disabled}
+                    rangeTestId="image-gen-range-krea-complexity"
+                  />
+                  <SliderField
+                    label={t("image_gen_krea_movement")}
+                    value={overlay.krea?.movement ?? 0}
+                    min={-100}
+                    max={100}
+                    step={1}
+                    onChange={(value) => commit({ krea: { ...(overlay.krea ?? {}), movement: value } })}
+                    disabled={disabled}
+                    rangeTestId="image-gen-range-krea-movement"
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           {/* ADetailer — NESTED inside the samplers accordion (owner
