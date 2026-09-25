@@ -49,7 +49,7 @@ import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
-import { buildSamplerControl } from "../../lib/imagegen/model-controls.js";
+import { buildSamplerControl, translateModelOptions } from "../../lib/imagegen/model-controls.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -945,7 +945,6 @@ function ImageGenModelSettingsAccordion({
   const samplerControl = buildSamplerControl({
     supportsSamplers,
     samplers,
-    autoLabel: t("image_gen_sampler_auto"),
   });
 
   return (
@@ -968,7 +967,7 @@ function ImageGenModelSettingsAccordion({
               <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(samplerControl.labelKey)}</span>
               <DropdownSelect
                 value={sampler ?? ""}
-                options={samplerControl.options}
+                options={translateModelOptions(samplerControl.options, t)}
                 onChange={(id) => commit(samplerControl.commit(id))}
                 disabled={disabled}
                 triggerTestId="image-gen-ft-overlay-sampler"

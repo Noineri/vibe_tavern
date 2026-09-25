@@ -9,7 +9,7 @@ import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
-import { buildSamplerControl } from "../../../../lib/imagegen/model-controls.js";
+import { buildSamplerControl, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { SliderField } from "../../../shared/SliderField.js";
@@ -1749,7 +1749,6 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const samplerControl = buildSamplerControl({
     supportsSamplers: caps.supportsSamplers,
     samplers,
-    autoLabel: t("image_gen_sampler_auto"),
   });
 
   // Effective (routed) params + sizes: the overlay's own values while bound
@@ -2215,7 +2214,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     triggerTestId="image-gen-field-sampler"
                     searchable={false}
                     className="w-auto max-w-[320px]"
-                    options={samplerControl.options}
+                    options={translateModelOptions(samplerControl.options, t)}
                     onChange={(next) => setParam(samplerControl.commit(next))}
                   />
                 </div>
