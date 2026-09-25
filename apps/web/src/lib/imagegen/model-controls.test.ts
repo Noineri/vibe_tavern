@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildKreaTwoControls, buildSamplerControl, translateModelOptions } from "./model-controls.js";
+import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSeedField, translateModelOptions } from "./model-controls.js";
 
 describe("model-controls — buildSamplerControl (T1, the TWIN_UNIFICATION mechanism's first descriptor)", () => {
   test("gate closed (no sampler capability) → null, both surfaces render nothing", () => {
@@ -70,5 +70,46 @@ describe("model-controls — buildKreaTwoControls (T6: the pane section's home +
     expect(movement.commit({ creativity: "low", intensity: -20 }, 55)).toEqual({
       krea: { creativity: "low", intensity: -20, movement: 55 },
     });
+  });
+});
+
+describe("model-controls — buildScalarSliders (T4: the ONE mirror-first range resolution)", () => {
+  test("absent mirror → the global defaults (steps 1–150/1, cfg 1–30/0.5, clip-skip 1–12/1)", () => {
+    const sliders = buildScalarSliders(undefined);
+    expect(sliders.map((slider) => [slider.field, slider.range])).toEqual([
+      ["steps", { min: 1, max: 150, step: 1 }],
+      ["cfgScale", { min: 1, max: 30, step: 0.5 }],
+      ["clipSkip", { min: 1, max: 12, step: 1 }],
+    ]);
+  });
+
+  test("a declared mirror override wins for ITS field only; siblings fall back to globals", () => {
+    const sliders = buildScalarSliders({ steps: { min: 2, max: 60, step: 2 } });
+    expect(sliders[0]!.range).toEqual({ min: 2, max: 60, step: 2 });
+    expect(sliders[1]!.range).toEqual({ min: 1, max: 30, step: 0.5 });
+    expect(sliders[2]!.range).toEqual({ min: 1, max: 12, step: 1 });
+  });
+
+  test("commits are per-field scalars (the overlay/base patch shape both surfaces share)", () => {
+    const [steps, cfg, clip] = buildScalarSliders(undefined);
+    expect(steps.commit(30)).toEqual({ steps: 30 });
+    expect(cfg.commit(4.5)).toEqual({ cfgScale: 4.5 });
+    expect(clip.commit(2)).toEqual({ clipSkip: 2 });
+  });
+});
+
+describe("model-controls — buildSeedField (T5: the ONE seed parse — garbage never wipes)", () => {
+  test("empty (or whitespace) → inherit (undefined); a finite number (any sign) → the value", () => {
+    const seed = buildSeedField();
+    expect(seed.parse("")).toEqual({ seed: undefined });
+    expect(seed.parse("   ")).toEqual({ seed: undefined });
+    expect(seed.parse("42")).toEqual({ seed: 42 });
+    expect(seed.parse(" -7 ")).toEqual({ seed: -7 });
+  });
+
+  test("non-finite garbage → null = NO COMMIT (the unified pane semantics)", () => {
+    const seed = buildSeedField();
+    expect(seed.parse("12abc")).toBeNull();
+    expect(seed.parse("abc")).toBeNull();
   });
 });

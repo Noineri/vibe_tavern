@@ -49,7 +49,7 @@ import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
-import { buildKreaTwoControls, buildSamplerControl, translateModelOptions } from "../../lib/imagegen/model-controls.js";
+import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSeedField, translateModelOptions, type ScalarSliderField } from "../../lib/imagegen/model-controls.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -76,7 +76,7 @@ import {
   type ImageGenPromptCap,
 } from "../../api/image-gen-api.js";
 import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue, ImageGenBackendValue } from "@vibe-tavern/api-contracts";
-import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, hasAdetailerExtension, type ImageGenerationMode, type ImageSizeOrientation } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, hasAdetailerExtension, type ImageGenerationMode, type ImageSizeOrientation, type ImageGenParamRanges } from "@vibe-tavern/domain";
 import { EMPTY_IMAGE_GEN_DRAFT, buildDraftGenerateInput, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useOrderedMessages } from "../../stores/snapshot-store.js";
 import { ImageGenLoraSection } from "./ImageGenLoraSection.js";
@@ -646,6 +646,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
                 profileId={effective.id}
                 modelId={draft.model}
                 supportsSamplers={supportsSamplers}
+                paramRanges={caps?.paramRanges}
                 samplers={supportsSamplers ? (samplers ?? []) : []}
                 backend={effective.backend}
                 modelTemplate={selectedModelEntry?.template}
@@ -719,6 +720,15 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
 
 // ─── Per-model settings accordion (IG-CF15 15d) ─────────────────────────
 
+// The accordion's pinned slider testids (kept VERBATIM from the pre-T4
+// inline rows — tests and muscle memory ride these; the descriptor's field
+// id and the testid stem are NOT the same string for cfg/clip-skip).
+const SLIDER_RANGE_TESTIDS: Record<ScalarSliderField, string> = {
+  steps: "image-gen-range-overlay-steps",
+  cfgScale: "image-gen-range-overlay-cfg",
+  clipSkip: "image-gen-range-overlay-clip",
+};
+
 /** The loaded model's overlay editor — the chip's «quick pult» view of the
  *  same data the providers pane edits (one source of truth, two surfaces).
  *  Fields mirror the pane's advanced section contract: slider cells display
@@ -730,6 +740,7 @@ function ImageGenModelSettingsAccordion({
   profileId,
   modelId,
   supportsSamplers,
+  paramRanges,
   samplers,
   backend,
   modelTemplate,
@@ -738,6 +749,9 @@ function ImageGenModelSettingsAccordion({
   profileId: string;
   modelId: string;
   supportsSamplers: boolean;
+  /** T4: the capability mirror's declared slider-range overrides — the
+   *  accordion feeds them to the shared descriptors (mirror-first). */
+  paramRanges: ImageGenParamRanges | undefined;
   samplers: ImageGenSamplerInfoValue[];
   /** The profile's backend discriminator (CG-B2) — ONE prop, the pane's
    *  guard trio derived inside: a1111 (extensions probe → ADetailer), the
@@ -929,9 +943,6 @@ function ImageGenModelSettingsAccordion({
     );
   }
 
-  const steps = overlay.steps;
-  const cfgScale = overlay.cfgScale;
-  const clipSkip = overlay.clipSkip;
   const seed = overlay.seed;
   const sampler = overlay.sampler;
   const scheduler = overlay.scheduler;
@@ -947,6 +958,12 @@ function ImageGenModelSettingsAccordion({
     supportsSamplers,
     samplers,
   });
+  // T4/T5 (TWIN_UNIFICATION step 3): the scalar sliders + seed ride the
+  // shared descriptors — ranges resolve mirror-first (the chip's old
+  // global-only read was the silent drift), the seed parse is the ONE
+  // copy (garbage commits nothing now, it used to wipe the seed).
+  const scalarSliders = buildScalarSliders(paramRanges);
+  const seedControl = buildSeedField();
 
   return (
     <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-model-settings">
@@ -1053,48 +1070,31 @@ function ImageGenModelSettingsAccordion({
             </>
           )}
 
-          <SliderField
-            label={t("image_gen_steps_label")}
-            value={steps ?? IMAGE_GEN_PARAM_RANGES.steps.min}
-            min={IMAGE_GEN_PARAM_RANGES.steps.min}
-            max={IMAGE_GEN_PARAM_RANGES.steps.max}
-            step={IMAGE_GEN_PARAM_RANGES.steps.step}
-            onChange={(value) => commit({ steps: value })}
-            disabled={disabled}
-            rangeTestId="image-gen-range-overlay-steps"
-          />
-          <SliderField
-            label={t("image_gen_cfg_label")}
-            value={cfgScale ?? IMAGE_GEN_PARAM_RANGES.cfgScale.min}
-            min={IMAGE_GEN_PARAM_RANGES.cfgScale.min}
-            max={IMAGE_GEN_PARAM_RANGES.cfgScale.max}
-            step={IMAGE_GEN_PARAM_RANGES.cfgScale.step}
-            onChange={(value) => commit({ cfgScale: value })}
-            disabled={disabled}
-            rangeTestId="image-gen-range-overlay-cfg"
-          />
-          <SliderField
-            label={t("image_gen_clip_skip_label")}
-            value={clipSkip ?? IMAGE_GEN_PARAM_RANGES.clipSkip.min}
-            min={IMAGE_GEN_PARAM_RANGES.clipSkip.min}
-            max={IMAGE_GEN_PARAM_RANGES.clipSkip.max}
-            step={IMAGE_GEN_PARAM_RANGES.clipSkip.step}
-            onChange={(value) => commit({ clipSkip: value })}
-            disabled={disabled}
-            rangeTestId="image-gen-range-overlay-clip"
-          />
+          {scalarSliders.map((slider) => (
+            <SliderField
+              key={slider.field}
+              label={t(slider.labelKey)}
+              value={overlay[slider.field] ?? slider.range.min}
+              min={slider.range.min}
+              max={slider.range.max}
+              step={slider.range.step}
+              onChange={(value) => commit(slider.commit(value))}
+              disabled={disabled}
+              rangeTestId={SLIDER_RANGE_TESTIDS[slider.field]}
+            />
+          ))}
 
           <div className="flex flex-col gap-1.5">
-            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_seed_label")}</span>
+            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(seedControl.labelKey)}</span>
             <TextInput
               value={seed === undefined ? "" : String(seed)}
               onChange={(e) => {
-                const raw = e.target.value.trim();
-                commit(raw === "" || Number.isNaN(Number(raw)) ? { seed: undefined } : { seed: Number(raw) });
+                const patch = seedControl.parse(e.target.value);
+                if (patch !== null) commit(patch);
               }}
               placeholder="—"
               disabled={disabled}
-              aria-label={t("image_gen_seed_label")}
+              aria-label={t(seedControl.labelKey)}
               data-testid="image-gen-ft-overlay-seed"
             />
           </div>

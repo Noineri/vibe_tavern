@@ -19,7 +19,13 @@
  * (twins migrate one per unit; T1 sampler dropdown is the first).
  */
 
-import { IMAGE_GEN_BACKENDS, type ImageGenKreaParams } from "@vibe-tavern/domain";
+import {
+  IMAGE_GEN_BACKENDS,
+  IMAGE_GEN_PARAM_RANGES,
+  type ImageGenKreaParams,
+  type ImageGenParamRange,
+  type ImageGenParamRanges,
+} from "@vibe-tavern/domain";
 
 /** A dropdown option: either translatable (`kind: "key"` + labelKey) or raw (`kind: "raw"` + label). */
 export type ModelOption<K extends string = string> =
@@ -103,7 +109,69 @@ export interface KreaTwoControlsSpec {
 }
 
 /**
- * T6 — the Krea 2 gate: the krea backend's OWN models only (krea/krea-2/*);
+ * T4 — the advanced scalar sliders (steps / cfg / clip-skip). The range
+ * resolves MIRROR-FIRST in this ONE place: the capability mirror's declared
+ * override wins, the global default otherwise. Both surfaces render the
+ * RESOLVED range — the chip's old global-only read was the silent drift
+ * this killed (a backend declaring limits now shapes both surfaces).
+ */
+export type ScalarSliderField = "steps" | "cfgScale" | "clipSkip";
+
+export interface ScalarSliderSpec {
+  readonly field: ScalarSliderField;
+  readonly labelKey: "image_gen_steps_label" | "image_gen_cfg_label" | "image_gen_clip_skip_label";
+  readonly range: ImageGenParamRange;
+  commit(value: number): Partial<Record<ScalarSliderField, number>>;
+}
+
+export function buildScalarSliders(paramRanges: ImageGenParamRanges | undefined): ScalarSliderSpec[] {
+  return [
+    {
+      field: "steps",
+      labelKey: "image_gen_steps_label",
+      range: paramRanges?.steps ?? IMAGE_GEN_PARAM_RANGES.steps,
+      commit: (steps) => ({ steps }),
+    },
+    {
+      field: "cfgScale",
+      labelKey: "image_gen_cfg_label",
+      range: paramRanges?.cfgScale ?? IMAGE_GEN_PARAM_RANGES.cfgScale,
+      commit: (cfgScale) => ({ cfgScale }),
+    },
+    {
+      field: "clipSkip",
+      labelKey: "image_gen_clip_skip_label",
+      range: paramRanges?.clipSkip ?? IMAGE_GEN_PARAM_RANGES.clipSkip,
+      commit: (clipSkip) => ({ clipSkip }),
+    },
+  ];
+}
+
+/**
+ * T5 — the optional seed. The parse is the ONE copy of the semantics (the
+ * pane's long-standing behavior, now both surfaces'): "" → inherit
+ * (undefined), a finite number → the value, NON-finite garbage → null =
+ * NO COMMIT (garbage never wipes a set seed — the chip's old
+ * clear-on-garbage commit was the divergence this killed).
+ */
+export interface SeedFieldSpec {
+  readonly labelKey: "image_gen_seed_label";
+  parse(raw: string): { seed: number | undefined } | null;
+}
+
+export function buildSeedField(): SeedFieldSpec {
+  return {
+    labelKey: "image_gen_seed_label",
+    parse: (raw) => {
+      const trimmed = raw.trim();
+      if (trimmed === "") return { seed: undefined };
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? { seed: parsed } : null;
+    },
+  };
+}
+
+/** T6 — the Krea 2 gate: the krea backend's OWN models only (krea/krea-2/*);
  * the aggregator's third-party models have no generative controls. The gate
  * lives HERE (both surfaces ask the builder, never re-derive it). The commit
  * merge is the ONE copy — the chip's overlay arm and the pane's dual bind

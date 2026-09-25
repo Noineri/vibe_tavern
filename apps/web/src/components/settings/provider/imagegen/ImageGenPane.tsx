@@ -9,7 +9,7 @@ import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
-import { buildKreaTwoControls, buildSamplerControl, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
+import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSeedField, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { SliderField } from "../../../shared/SliderField.js";
@@ -777,38 +777,6 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
 
 // ─── Optional numeric field (TextInput inputMode=numeric — the empty-able
 //     numeric; no NumberInput because it requires a concrete number) ────────
-
-function OptionalNumberField({
-  value,
-  onChange,
-  label,
-  testId,
-}: {
-  value: number | undefined;
-  onChange: (next: number | undefined) => void;
-  label: string;
-  testId: string;
-}) {
-  return (
-    <div className="min-w-0">
-      <label className={lblCls}>{label}</label>
-      <TextInput
-        inputMode="numeric"
-        data-testid={testId}
-        value={value === undefined ? "" : String(value)}
-        onChange={(e) => {
-          const raw = e.target.value.trim();
-          if (raw === "") {
-            onChange(undefined);
-            return;
-          }
-          const parsed = Number(raw);
-          if (Number.isFinite(parsed)) onChange(parsed);
-        }}
-      />
-    </div>
-  );
-}
 
 // ─── Slider+number field (IG-CF13: the ProviderSamplerPanel SamplerField
 //     taken VERBATIM per the owner's 2026-09-16 ruling — take the existing
@@ -1729,13 +1697,13 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const localStatus: LocalConnectionStatus = imageGen.samplerStatusByProfile[profileId] ?? "unknown";
   const localOffline = isLocalBackend && localStatus === "offline";
   const caps = form.capabilities;
-  // IG-CF5: slider ranges resolve backend-first from the capability mirror
-  // (paramRanges is a declared schema field — it survives the zod boundary),
-  // global IMAGE_GEN_PARAM_RANGES defaults otherwise. Empty/absent today.
+  // IG-CF5: slider ranges resolve MIRROR-FIRST (paramRanges is a declared
+  // schema field — it survives the zod boundary) — now through the shared
+  // T4 descriptors (model-controls), the ONE resolution both surfaces read.
   const paramRanges = caps.paramRanges;
-  const stepsRange = paramRanges?.steps ?? IMAGE_GEN_PARAM_RANGES.steps;
-  const cfgRange = paramRanges?.cfgScale ?? IMAGE_GEN_PARAM_RANGES.cfgScale;
-  const clipSkipRange = paramRanges?.clipSkip ?? IMAGE_GEN_PARAM_RANGES.clipSkip;
+  const [stepsSlider, cfgSlider, clipSkipSlider] = buildScalarSliders(paramRanges);
+  // T5: the optional seed — the ONE parse lives in the descriptor.
+  const seedControl = buildSeedField();
   const bound = imageGen.modelOverlay !== null;
   const overlay = imageGen.modelOverlay;
   // The SELECTED model's cache entry (comfyui dialect enrichment, CG-B1):
@@ -2334,32 +2302,41 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                 </div>
               )}
               <SamplerSliderField
-                label={t("image_gen_steps_label")}
+                label={t(stepsSlider.labelKey)}
                 value={params.steps}
-                onChange={(steps) => setParam({ steps })}
-                range={stepsRange}
+                onChange={(steps) => setParam(stepsSlider.commit(steps))}
+                range={stepsSlider.range}
                 rangeTestId="image-gen-range-steps"
                 cellTestId="image-gen-field-steps"
               />
               <SamplerSliderField
-                label={t("image_gen_cfg_label")}
+                label={t(cfgSlider.labelKey)}
                 value={params.cfgScale}
-                onChange={(cfgScale) => setParam({ cfgScale })}
-                range={cfgRange}
+                onChange={(cfgScale) => setParam(cfgSlider.commit(cfgScale))}
+                range={cfgSlider.range}
                 rangeTestId="image-gen-range-cfg"
                 cellTestId="image-gen-field-cfg"
               />
-              <OptionalNumberField
-                value={params.seed}
-                onChange={(seed) => setParam({ seed })}
-                label={t("image_gen_seed_label")}
-                testId="image-gen-field-seed"
-              />
+              {/* T5: the optional seed — label + numeric TextInput parsed by
+                  the ONE descriptor parse ("" → inherit; garbage → no commit).
+                  A 0..2^32 slider is meaningless here (owner-approved). */}
+              <div className="min-w-0">
+                <label className={lblCls}>{t(seedControl.labelKey)}</label>
+                <TextInput
+                  inputMode="numeric"
+                  data-testid="image-gen-field-seed"
+                  value={params.seed === undefined ? "" : String(params.seed)}
+                  onChange={(e) => {
+                    const patch = seedControl.parse(e.target.value);
+                    if (patch !== null) setParam({ seed: patch.seed });
+                  }}
+                />
+              </div>
               <SamplerSliderField
-                label={t("image_gen_clip_skip_label")}
+                label={t(clipSkipSlider.labelKey)}
                 value={params.clipSkip}
-                onChange={(clipSkip) => setParam({ clipSkip })}
-                range={clipSkipRange}
+                onChange={(clipSkip) => setParam(clipSkipSlider.commit(clipSkip))}
+                range={clipSkipSlider.range}
                 rangeTestId="image-gen-range-clip-skip"
                 cellTestId="image-gen-field-clip-skip"
               />

@@ -1091,6 +1091,44 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     });
   });
 
+  it("T4/T5 (TWIN_UNIFICATION step 3): sliders honor the caps MIRROR ranges; seed garbage commits NOTHING", async () => {
+    profilesStore = [
+      {
+        ...profile("mr1", "Mirror Forge", { ...fullCaps(), paramRanges: { steps: { min: 2, max: 60, step: 2 } } }, "m-alpha"),
+        backend: "a1111",
+      },
+    ];
+    modelsStore["mr1"] = [{ id: "m-alpha", label: "Mirror Alpha" }];
+    armChat("chat-mirror");
+    const view = await openAccordion("chat-mirror", "Mirror Alpha");
+
+    // T4: the steps slider rides the MIRROR override — the chip's old
+    // global-only read (the silent drift) is dead; cfg (absent from the
+    // mirror) still anchors at the global default.
+    const steps = within(view.baseElement).getByTestId("image-gen-range-overlay-steps") as HTMLInputElement;
+    expect(steps.getAttribute("min")).toBe("2");
+    expect(steps.getAttribute("max")).toBe("60");
+    expect(steps.getAttribute("step")).toBe("2");
+    const cfg = within(view.baseElement).getByTestId("image-gen-range-overlay-cfg") as HTMLInputElement;
+    expect(cfg.getAttribute("min")).toBe("1");
+    expect(cfg.getAttribute("max")).toBe("30");
+
+    // T5: typing garbage commits NOTHING (the old chip wiped the seed on
+    // non-numeric input — the named behavior change of this step); a clean
+    // number still commits.
+    const seedInput = within(view.baseElement).getByTestId("image-gen-ft-overlay-seed") as HTMLInputElement;
+    const before = upsertCalls.length;
+    await act(async () => {
+      fireEvent.change(seedInput, { target: { value: "12abc" } });
+    });
+    expect(upsertCalls.length).toBe(before);
+    await act(async () => {
+      fireEvent.change(seedInput, { target: { value: "42" } });
+    });
+    await waitFor(() => expect(upsertCalls.length).toBe(before + 1));
+    expect(upsertCalls[upsertCalls.length - 1]!.settings).toEqual({ seed: 42 });
+  });
+
   it("IF-11: Krea 2 controls — krea-2 models only; creativity + sliders commit the overlay krea block", async () => {
     profilesStore = [{ ...profile("kr1", "Krea cloud", noCaps(), "krea/krea-2/medium"), backend: "krea" }];
     modelsStore["kr1"] = [
