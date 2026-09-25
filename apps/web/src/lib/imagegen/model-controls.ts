@@ -155,6 +155,71 @@ export function buildSchedulerControl({ backend }: { backend: ImageGenBackendVal
 }
 
 /**
+ * T3 — the DiT sidecar fields (text encoder + VAE) for the comfyui
+ * dialect's krea2-dit template (CG-B1). The gate lives HERE (both
+ * surfaces' render guards read it; the fetch guards keep their own
+ * mechanics but the same family rule); each field carries the pickable
+ * Auto option (CF5's honest Auto — the adapter's canonical resolution,
+ * not a hidden default), the since-removed-files rule (a stored value
+ * outside the live list stays pickable — the STT/LLM selector rule) and
+ * the commit semantics.
+ */
+export type DitSidecarField = "encoderName" | "vaeName";
+
+export interface DitSidecarFieldSpec {
+  readonly field: DitSidecarField;
+  readonly labelKey: "image_gen_encoder_label" | "image_gen_vae_label";
+  /** Options for the profile's live folder list + the stored value: the
+   *  Auto (vendor-default) head entry + the live names + the stored
+   *  off-list value kept pickable. */
+  options(names: ReadonlyArray<string>, stored: string | undefined): ModelOption<"image_gen_sidecar_auto">[];
+  /** "" (the Auto entry) → inherit (undefined); a file name → the value. */
+  commit(id: string): { encoderName: string | undefined } | { vaeName: string | undefined };
+}
+
+export interface DitSidecarControlsSpec {
+  readonly encoder: DitSidecarFieldSpec;
+  readonly vae: DitSidecarFieldSpec;
+}
+
+function sidecarOptions(
+  names: ReadonlyArray<string>,
+  stored: string | undefined,
+): ModelOption<"image_gen_sidecar_auto">[] {
+  return [
+    { kind: "key", id: "", labelKey: "image_gen_sidecar_auto" },
+    ...names.map((name) => ({ kind: "raw" as const, id: name, label: name })),
+    ...(stored !== undefined && !names.includes(stored)
+      ? [{ kind: "raw" as const, id: stored, label: stored }]
+      : []),
+  ];
+}
+
+export function buildDitSidecarControls({
+  backend,
+  modelTemplate,
+}: {
+  backend: ImageGenBackendValue | undefined;
+  modelTemplate: string | undefined;
+}): DitSidecarControlsSpec | null {
+  if (backend !== IMAGE_GEN_BACKENDS.ComfyUI || modelTemplate !== "krea2-dit") return null;
+  return {
+    encoder: {
+      field: "encoderName",
+      labelKey: "image_gen_encoder_label",
+      options: sidecarOptions,
+      commit: (id) => ({ encoderName: id === "" ? undefined : id }),
+    },
+    vae: {
+      field: "vaeName",
+      labelKey: "image_gen_vae_label",
+      options: sidecarOptions,
+      commit: (id) => ({ vaeName: id === "" ? undefined : id }),
+    },
+  };
+}
+
+/**
  * T4 — the advanced scalar sliders (steps / cfg / clip-skip). The range
  * resolves MIRROR-FIRST in this ONE place: the capability mirror's declared
  * override wins, the global default otherwise. Both surfaces render the

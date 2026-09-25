@@ -128,6 +128,11 @@ const schedulersMock = mock(async (id: string): Promise<Array<{ name: string; la
   if (id === "missing") return null;
   return [{ name: "karras", label: "Karras" }, { name: "sgm_uniform" }];
 });
+// T3 hint parity: the DiT sidecar list seam (the pane's failure flag).
+const sidecarsMock = mock(async (id: string): Promise<{ encoders: string[]; vaes: string[] } | null> => {
+  if (id === "missing") return null;
+  return { encoders: ["qwen3vl_4b_fp8_scaled.safetensors"], vaes: ["qwen_image_vae.safetensors"] };
+});
 // IG-12b: select() quietly loads the profile's star-favorites — mocked
 // empty so the REAL fetch never runs in happy-dom (its network-block error
 // used to be masked by fetchSamplers' old setError(null) wipe, which
@@ -161,6 +166,7 @@ mock.module("../api/image-gen-api.js", () => ({
   listImageGenModels: modelsMock,
   listImageGenSamplers: samplersMock,
   listImageGenSchedulers: schedulersMock,
+  listImageGenDitSidecars: sidecarsMock,
   listImageGenModelFavorites: favoritesMock,
   draftListImageGenModels: draftModelsMock,
 }));
@@ -549,6 +555,43 @@ describe("useImageProfiles — models / samplers / draft", () => {
     // a scheduler miss is not a load conclusion).
     expect(await hook!.fetchSchedulers("missing")).toBeNull();
     expect(hook?.error).toBeNull();
+  });
+
+  it("fetchSidecars caches per profile; a failure raises the per-profile hint flag, a later success clears it (T3 parity)", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "comfyui" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+
+    // Success: cached, flag clear — options data only, no connectivity
+    // conclusion, no shared error.
+    const sidecars = await hook!.fetchSidecars();
+    expect(sidecars?.encoders.length).toBe(1);
+    await waitFor(() => expect(hook?.sidecarsByProfile.p1?.encoders.length).toBe(1));
+    expect(hook?.sidecarsFailedByProfile.p1).toBe(false);
+    expect(hook?.samplerStatusByProfile.p1).toBeUndefined();
+    expect(hook?.error).toBeNull();
+
+    // Failure: null + the per-profile flag (the pane's hint input) — the
+    // cache, error, and connectivity status stay untouched.
+    sidecarsMock.mockImplementationOnce(async () => {
+      throw new Error("Image-gen sidecar list failed: 503");
+    });
+    const failed = await hook!.fetchSidecars();
+    expect(failed).toBeNull();
+    await waitFor(() => expect(hook?.sidecarsFailedByProfile.p1).toBe(true));
+    expect(hook?.error).toBeNull();
+    expect(hook?.samplerStatusByProfile.p1).toBeUndefined();
+
+    // Recovery: a successful refetch clears the flag.
+    await hook!.fetchSidecars();
+    await waitFor(() => expect(hook?.sidecarsFailedByProfile.p1).toBe(false));
   });
 
   it("IG-21: draftAutoKeyProviderName mirrors the server cascade (saved name wins; drafts match by rule; keyless providers never match)", async () => {

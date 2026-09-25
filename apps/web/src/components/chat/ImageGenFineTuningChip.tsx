@@ -49,7 +49,7 @@ import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
-import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderField } from "../../lib/imagegen/model-controls.js";
+import { buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderField } from "../../lib/imagegen/model-controls.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -785,7 +785,11 @@ function ImageGenModelSettingsAccordion({
   // The LOCAL dialect family — ONE shared derivation (T2, model-controls):
   // both dialects serve the schedulers route (PG-3/CG-A3).
   const isLocalDialect = isLocalDialectBackend(backend);
-  const isDit = backend === IMAGE_GEN_BACKENDS.ComfyUI && modelTemplate === "krea2-dit";
+  // T3 (TWIN_UNIFICATION step 5): the DiT sidecar fields' gate, options
+  // and commit live in model-controls — ONE derivation; `isDit` is its
+  // boolean projection (the fetch effect's stable dep).
+  const ditControls = buildDitSidecarControls({ backend, modelTemplate });
+  const isDit = ditControls !== null;
   // Krea 2 generative controls (IF-11 → T6): the gate, options, ranges,
   // defaults and the commit merge all live in model-controls — the ONE
   // derivation; this surface renders (accordion idiom) and commits the
@@ -1024,38 +1028,26 @@ function ImageGenModelSettingsAccordion({
               unset trigger, `defaultOption` is the pickable list entry);
               a stored value outside the live list stays pickable (the
               since-removed-files rule). */}
-          {isDit && (
+          {ditControls && (
             <>
               <div className="flex flex-col gap-1.5">
-                <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_encoder_label")}</span>
+                <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(ditControls.encoder.labelKey)}</span>
                 <DropdownSelect
                   value={encoderName ?? ""}
                   defaultOption={t("image_gen_sidecar_auto")}
-                  options={[
-                    { id: "", label: t("image_gen_sidecar_auto") },
-                    ...(sidecars?.encoders ?? []).map((name) => ({ id: name, label: name })),
-                    ...(encoderName !== undefined && !(sidecars?.encoders ?? []).includes(encoderName)
-                      ? [{ id: encoderName, label: encoderName }]
-                      : []),
-                  ]}
-                  onChange={(id) => commit(id === "" ? { encoderName: undefined } : { encoderName: id })}
+                  options={translateModelOptions(ditControls.encoder.options(sidecars?.encoders ?? [], encoderName), t)}
+                  onChange={(id) => commit(ditControls.encoder.commit(id))}
                   disabled={disabled}
                   triggerTestId="image-gen-ft-overlay-encoder"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_vae_label")}</span>
+                <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(ditControls.vae.labelKey)}</span>
                 <DropdownSelect
                   value={vaeName ?? ""}
                   defaultOption={t("image_gen_sidecar_auto")}
-                  options={[
-                    { id: "", label: t("image_gen_sidecar_auto") },
-                    ...(sidecars?.vaes ?? []).map((name) => ({ id: name, label: name })),
-                    ...(vaeName !== undefined && !(sidecars?.vaes ?? []).includes(vaeName)
-                      ? [{ id: vaeName, label: vaeName }]
-                      : []),
-                  ]}
-                  onChange={(id) => commit(id === "" ? { vaeName: undefined } : { vaeName: id })}
+                  options={translateModelOptions(ditControls.vae.options(sidecars?.vaes ?? [], vaeName), t)}
+                  onChange={(id) => commit(ditControls.vae.commit(id))}
                   disabled={disabled}
                   triggerTestId="image-gen-ft-overlay-vae"
                 />

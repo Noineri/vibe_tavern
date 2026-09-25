@@ -9,7 +9,7 @@ import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
-import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
+import { buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { SliderField } from "../../../shared/SliderField.js";
@@ -1583,8 +1583,15 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     guardProfileId !== null && guardModelId !== null
       ? ((imageGen.modelsByProfile[guardProfileId] ?? []).find((m) => m.id === guardModelId) ?? null)
       : null;
-  const guardIsDit =
-    form?.backend === IMAGE_GEN_BACKENDS.ComfyUI && guardModelEntry?.template === "krea2-dit";
+  // T3 (TWIN_UNIFICATION step 5): the DiT sidecar gate — ONE derivation
+  // (model-controls) serving the fetch guard AND the render block (single
+  // function scope); `guardIsDit` is the boolean projection for the
+  // effect's stable deps.
+  const ditControls = buildDitSidecarControls({
+    backend: form?.backend,
+    modelTemplate: guardModelEntry?.template,
+  });
+  const guardIsDit = ditControls !== null;
   useEffect(() => {
     if (guardProfileId === null || !guardIsDit) return;
     if (imageGen.sidecarsByProfile[guardProfileId] === undefined) {
@@ -1708,8 +1715,10 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // The SELECTED model's cache entry (comfyui dialect enrichment, CG-B1):
   // the template marker drives the «Detected» readout (picker), the DiT
   // sidecar fields (advanced), and the Krea-2 starting-point prefill.
-  const selectedModelEntry = models.find((m) => m.id === form.modelId) ?? null;
-  const isDitTemplate = selectedModelEntry?.template === "krea2-dit";
+  // T3: the DiT projection of the ONE gate derivation (the guard block's
+  // `ditControls`) — the render rows and the swappable-VAE exclusion read
+  // it. (The Krea-2 prefill below keeps its own local model-entry lookup.)
+  const isDitTemplate = ditControls !== null;
   // T1 (TWIN_UNIFICATION step 1): the sampler dropdown's definition —
   // gate, options, label, commit — lives in model-controls; this surface
   // keeps only the renderer + its dual bind arm (one data source, many
@@ -2222,10 +2231,10 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   auto-resolution (qwen3vl_4b_fp8_scaled / qwen_image_vae,
                   single-entry fold) — CF5's honest Auto, not a hidden
                   default. */}
-              {isDitTemplate && (
+              {ditControls && (
                 <>
                   <div className="min-w-0">
-                    <label className={lblCls}>{t("image_gen_encoder_label")}</label>
+                    <label className={lblCls}>{t(ditControls.encoder.labelKey)}</label>
                     <DropdownSelect
                       value={params.encoderName ?? ""}
                       triggerTestId="image-gen-field-encoder"
@@ -2236,37 +2245,34 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       // review caught the pane's Auto as display-only; the
                       // chip's twin now ships pickable, parity restored).
                       defaultOption={t("image_gen_sidecar_auto")}
-                      options={[
-                        { id: "", label: t("image_gen_sidecar_auto") },
-                        ...(sidecars?.encoders ?? []).map((name) => ({ id: name, label: name })),
-                        // A stored value outside the live list stays pickable
-                        // (the STT/LLM selector rule — since-removed files
-                        // keep rendering the truth).
-                        ...(params.encoderName !== undefined && !(sidecars?.encoders ?? []).includes(params.encoderName)
-                          ? [{ id: params.encoderName, label: params.encoderName }]
-                          : []),
-                      ]}
-                      onChange={(next) => setParam({ encoderName: next === "" ? undefined : next })}
+                      options={translateModelOptions(ditControls.encoder.options(sidecars?.encoders ?? [], params.encoderName), t)}
+                      onChange={(next) => setParam(ditControls.encoder.commit(next))}
                     />
                   </div>
                   <div className="min-w-0">
-                    <label className={lblCls}>{t("image_gen_vae_label")}</label>
+                    <label className={lblCls}>{t(ditControls.vae.labelKey)}</label>
                     <DropdownSelect
                       value={params.vaeName ?? ""}
                       triggerTestId="image-gen-field-vae"
                       searchable={false}
                       className="w-auto max-w-[320px]"
                       defaultOption={t("image_gen_sidecar_auto")}
-                      options={[
-                        { id: "", label: t("image_gen_sidecar_auto") },
-                        ...(sidecars?.vaes ?? []).map((name) => ({ id: name, label: name })),
-                        ...(params.vaeName !== undefined && !(sidecars?.vaes ?? []).includes(params.vaeName)
-                          ? [{ id: params.vaeName, label: params.vaeName }]
-                          : []),
-                      ]}
-                      onChange={(next) => setParam({ vaeName: next === "" ? undefined : next })}
+                      options={translateModelOptions(ditControls.vae.options(sidecars?.vaes ?? [], params.vaeName), t)}
+                      onChange={(next) => setParam(ditControls.vae.commit(next))}
                     />
                   </div>
+                  {/* T3 hint parity: a failed sidecar fetch says so (the
+                      chip's `sidecarsFailed` twin — the store's per-profile
+                      flag, same key, options-data rule: no connectivity
+                      conclusion). */}
+                  {(imageGen.sidecarsFailedByProfile[profileId] ?? false) && (
+                    <span
+                      data-testid="image-gen-sidecars-failed"
+                      className="sm:col-span-2 px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4"
+                    >
+                      {t("image_gen_sidecars_failed")}
+                    </span>
+                  )}
                 </>
               )}
               {/* Swappable-VAE field (IF-7b): the SET/profile-carried VAE

@@ -165,6 +165,12 @@ export function useImageProfiles(): {
    *  fields — the `schedulersByProfile` rule verbatim (a sidecar fetch
    *  failure is empty options, never a connectivity conclusion). */
   sidecarsByProfile: Record<string, ImageGenDitSidecars>;
+  /** Sidecar-fetch failure per saved profile (T3 hint parity — the pane's
+   *  `image_gen_sidecars_failed` twin of the chip's hint): `true` after a
+   *  failed fetch, cleared by a later success. The `sidecarsByProfile`
+   *  rule verbatim — never a connectivity conclusion, never the shared
+   *  `error`. */
+  sidecarsFailedByProfile: Record<string, boolean>;
   vaeByProfile: Record<string, string[]>;
   /** Local-server connectivity per saved profile, driven by sampler fetches
    *  (IG-CF12a): `checking` while in flight, `online` on success, `offline`
@@ -279,6 +285,7 @@ export function useImageProfiles(): {
   const [samplersByProfile, setSamplersByProfile] = useState<Record<string, ImageGenSamplerInfoValue[]>>({});
   const [schedulersByProfile, setSchedulersByProfile] = useState<Record<string, ImageGenSchedulerInfoValue[]>>({});
   const [sidecarsByProfile, setSidecarsByProfile] = useState<Record<string, ImageGenDitSidecars>>({});
+  const [sidecarsFailedByProfile, setSidecarsFailedByProfile] = useState<Record<string, boolean>>({});
   const [vaeByProfile, setVaeByProfile] = useState<Record<string, string[]>>({});
   const [samplerStatusByProfile, setSamplerStatusByProfile] = useState<Record<string, LocalConnectionStatus>>({});
   const [favorites, setFavorites] = useState<ImageGenModelFavoriteValue[]>([]);
@@ -819,8 +826,10 @@ export function useImageProfiles(): {
         const sidecars = await listImageGenDitSidecars(targetId);
         if (sidecars === null) return null;
         setSidecarsByProfile((prev) => ({ ...prev, [targetId]: sidecars }));
+        setSidecarsFailedByProfile((prev) => ({ ...prev, [targetId]: false }));
         return sidecars;
       } catch {
+        setSidecarsFailedByProfile((prev) => ({ ...prev, [targetId]: true }));
         return null;
       }
     },
@@ -880,6 +889,7 @@ export function useImageProfiles(): {
     samplersByProfile,
     schedulersByProfile,
     sidecarsByProfile,
+    sidecarsFailedByProfile,
     vaeByProfile,
     samplerStatusByProfile,
     favorites,

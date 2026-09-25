@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "./model-controls.js";
+import { buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "./model-controls.js";
 
 describe("model-controls — buildSamplerControl (T1, the TWIN_UNIFICATION mechanism's first descriptor)", () => {
   test("gate closed (no sampler capability) → null, both surfaces render nothing", () => {
@@ -152,5 +152,39 @@ describe("model-controls — buildSchedulerControl (T2: gate + options + commit,
     const spec = buildSchedulerControl({ backend: "a1111" })!;
     expect(spec.commit("")).toEqual({ scheduler: undefined });
     expect(spec.commit("karras")).toEqual({ scheduler: "karras" });
+  });
+});
+
+describe("model-controls — buildDitSidecarControls (T3: gate + Auto-pickable + since-removed rules)", () => {
+  test("null unless comfyui + the krea2-dit template (undefined backend included)", () => {
+    expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "krea2-dit" })).not.toBeNull();
+    expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "checkpoint" })).toBeNull();
+    expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: undefined })).toBeNull();
+    expect(buildDitSidecarControls({ backend: "a1111", modelTemplate: "krea2-dit" })).toBeNull();
+    expect(buildDitSidecarControls({ backend: undefined, modelTemplate: "krea2-dit" })).toBeNull();
+  });
+
+  test("options: the Auto KEY entry heads the list; live names ride raw; a stored off-list value stays pickable exactly once", () => {
+    const spec = buildDitSidecarControls({ backend: "comfyui", modelTemplate: "krea2-dit" })!;
+    expect(spec.encoder.options(["enc_b.safetensors"], undefined)).toEqual([
+      { kind: "key", id: "", labelKey: "image_gen_sidecar_auto" },
+      { kind: "raw", id: "enc_b.safetensors", label: "enc_b.safetensors" },
+    ]);
+    // Since-removed: the stored value is NOT in the live list — appended once.
+    expect(spec.vae.options(["vae_b.safetensors"], "vae_removed.safetensors")).toEqual([
+      { kind: "key", id: "", labelKey: "image_gen_sidecar_auto" },
+      { kind: "raw", id: "vae_b.safetensors", label: "vae_b.safetensors" },
+      { kind: "raw", id: "vae_removed.safetensors", label: "vae_removed.safetensors" },
+    ]);
+    // A stored value still in the live list is NOT duplicated.
+    expect(spec.encoder.options(["enc_b.safetensors"], "enc_b.safetensors")).toHaveLength(2);
+  });
+
+  test("commit: Auto (\"\") inherits (undefined); a file name commits it — per field", () => {
+    const spec = buildDitSidecarControls({ backend: "comfyui", modelTemplate: "krea2-dit" })!;
+    expect(spec.encoder.commit("")).toEqual({ encoderName: undefined });
+    expect(spec.encoder.commit("enc_b.safetensors")).toEqual({ encoderName: "enc_b.safetensors" });
+    expect(spec.vae.commit("")).toEqual({ vaeName: undefined });
+    expect(spec.vae.commit("vae_b.safetensors")).toEqual({ vaeName: "vae_b.safetensors" });
   });
 });

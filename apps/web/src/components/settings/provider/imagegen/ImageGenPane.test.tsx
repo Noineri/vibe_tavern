@@ -305,6 +305,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     samplersByProfile: {},
     schedulersByProfile: {},
     sidecarsByProfile: {},
+    sidecarsFailedByProfile: {},
     vaeByProfile: {},
     samplerStatusByProfile: {},
     startEdit: mock(() => {}),
@@ -949,6 +950,43 @@ describe("ImageGenPane — comfyui dialect surfaces (CG-B1)", () => {
     // not render them.
     expect(view.queryByTestId("image-gen-field-encoder")).toBeNull();
     expect(view.queryByTestId("image-gen-field-vae")).toBeNull();
+  });
+
+  it("T3 hint parity: a failed sidecar fetch renders the failure hint under the DiT fields (the chip's twin); a clean fetch renders none", async () => {
+    const view = render(
+      <ImageGenPane
+        imageGen={comfyImageGen(
+          { modelId: "raySemiReal_krea2TurboV1Nsfw.safetensors" },
+          {
+            modelsByProfile: { ig1: COMFY_MODELS },
+            sidecarsByProfile: {
+              ig1: { encoders: ["qwen3vl_4b_fp8_scaled.safetensors"], vaes: ["qwen_image_vae.safetensors"] },
+            },
+            sidecarsFailedByProfile: { ig1: true },
+          },
+        )}
+      />,
+    );
+    await openAdvanced(view);
+    expect(view.getByTestId("image-gen-sidecars-failed").textContent).toBe("image_gen_sidecars_failed");
+
+    // The clean profile (flag clear / absent) renders no hint.
+    view.unmount();
+    const clean = render(
+      <ImageGenPane
+        imageGen={comfyImageGen(
+          { modelId: "raySemiReal_krea2TurboV1Nsfw.safetensors" },
+          {
+            modelsByProfile: { ig1: COMFY_MODELS },
+            sidecarsByProfile: {
+              ig1: { encoders: ["qwen3vl_4b_fp8_scaled.safetensors"], vaes: ["qwen_image_vae.safetensors"] },
+            },
+          },
+        )}
+      />,
+    );
+    await openAdvanced(clean);
+    expect(clean.queryByTestId("image-gen-sidecars-failed")).toBeNull();
   });
 
   it("a DiT model shows the Krea-2 Detected readout, the family chip in the picker, and encoder/VAE fields fed from the sidecar cache", async () => {
