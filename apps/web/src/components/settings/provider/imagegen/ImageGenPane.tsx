@@ -9,6 +9,7 @@ import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
+import { buildSamplerControl } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { SliderField } from "../../../shared/SliderField.js";
@@ -1741,6 +1742,15 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // sidecar fields (advanced), and the Krea-2 starting-point prefill.
   const selectedModelEntry = models.find((m) => m.id === form.modelId) ?? null;
   const isDitTemplate = selectedModelEntry?.template === "krea2-dit";
+  // T1 (TWIN_UNIFICATION step 1): the sampler dropdown's definition —
+  // gate, options, label, commit — lives in model-controls; this surface
+  // keeps only the renderer + its dual bind arm (one data source, many
+  // consumers).
+  const samplerControl = buildSamplerControl({
+    supportsSamplers: caps.supportsSamplers,
+    samplers,
+    autoLabel: t("image_gen_sampler_auto"),
+  });
 
   // Effective (routed) params + sizes: the overlay's own values while bound
   // (empty = inherit the base), the profile base otherwise.
@@ -2197,19 +2207,16 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   rest of the sampler settings (owner 2026-09-17 — it used to
                   stand as a separate row above; the accordion IS the model's
                   sampler-settings surface). Full-width cell, first row. */}
-              {caps.supportsSamplers && (
+              {samplerControl && (
                 <div className="min-w-0 sm:col-span-2">
-                  <label className={lblCls}>{t("image_gen_sampler_label")}</label>
+                  <label className={lblCls}>{t(samplerControl.labelKey)}</label>
                   <DropdownSelect
                     value={params.sampler ?? ""}
                     triggerTestId="image-gen-field-sampler"
                     searchable={false}
                     className="w-auto max-w-[320px]"
-                    options={[
-                      { id: "", label: t("image_gen_sampler_auto") },
-                      ...samplers.map((sampler) => ({ id: sampler.name, label: sampler.name })),
-                    ]}
-                    onChange={(next) => setParam({ sampler: next === "" ? undefined : next })}
+                    options={samplerControl.options}
+                    onChange={(next) => setParam(samplerControl.commit(next))}
                   />
                 </div>
               )}

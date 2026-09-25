@@ -49,6 +49,7 @@ import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
+import { buildSamplerControl } from "../../lib/imagegen/model-controls.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -938,6 +939,15 @@ function ImageGenModelSettingsAccordion({
   const adetailer = overlay.adetailer === true;
   const adetailerModel = overlay.adetailerModel;
 
+  // T1 (TWIN_UNIFICATION step 1): the sampler dropdown's definition —
+  // gate, options, label, commit — lives in model-controls; this surface
+  // keeps only the renderer (one data source, many consumers).
+  const samplerControl = buildSamplerControl({
+    supportsSamplers,
+    samplers,
+    autoLabel: t("image_gen_sampler_auto"),
+  });
+
   return (
     <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-model-settings">
       <button
@@ -953,16 +963,13 @@ function ImageGenModelSettingsAccordion({
 
       {open && (
         <div className="flex flex-col gap-2 px-1.5" data-testid="image-gen-ft-model-settings-body">
-          {supportsSamplers && (
+          {samplerControl && (
             <div className="flex flex-col gap-1.5">
-              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_sampler_label")}</span>
+              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(samplerControl.labelKey)}</span>
               <DropdownSelect
                 value={sampler ?? ""}
-                options={[
-                  { id: "", label: t("image_gen_sampler_auto") },
-                  ...samplers.map((s) => ({ id: s.name, label: s.name })),
-                ]}
-                onChange={(id) => commit(id === "" ? { sampler: undefined } : { sampler: id })}
+                options={samplerControl.options}
+                onChange={(id) => commit(samplerControl.commit(id))}
                 disabled={disabled}
                 triggerTestId="image-gen-ft-overlay-sampler"
               />
