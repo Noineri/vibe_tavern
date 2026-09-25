@@ -9,10 +9,11 @@ import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
-import { buildSamplerControl, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
+import { buildKreaTwoControls, buildSamplerControl, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { SliderField } from "../../../shared/SliderField.js";
+import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
@@ -1750,6 +1751,10 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     supportsSamplers: caps.supportsSamplers,
     samplers,
   });
+  // T6 (TWIN_UNIFICATION step 2): the Krea 2 section's HOME — the chip's
+  // accordion inherits the same descriptors (the IF-11 incident fix: the
+  // controls are provider-modal settings, not a chip-only secret).
+  const kreaControls = buildKreaTwoControls({ backend: form.backend, modelId: form.modelId ?? "" });
 
   // Effective (routed) params + sizes: the overlay's own values while bound
   // (empty = inherit the base), the profile base otherwise.
@@ -2358,6 +2363,51 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                 rangeTestId="image-gen-range-clip-skip"
                 cellTestId="image-gen-field-clip-skip"
               />
+              {/* Krea 2 generative controls (T6, TWIN_UNIFICATION step 2): the
+                  pane is the section's HOME — rendered from the same
+                  model-controls descriptors the chip's accordion reads.
+                  Overlay-only in v1 (the adetailerModel precedent): the
+                  profile base carries no krea block, so the section renders
+                  bound-only and writes the overlay DIRECTLY (setParam's
+                  type is the base-params union — krea is not on it).
+                  Creativity defaults to the POLICY "raw", sliders to the
+                  vendor-neutral unsent 0. */}
+              {bound && kreaControls !== null && (
+                <div
+                  className="col-span-full flex flex-col gap-2.5 rounded-md border border-border bg-s2/50 p-2.5"
+                  data-testid="image-gen-krea-section"
+                >
+                  <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
+                    {t("image_gen_krea_section")}
+                  </span>
+                  <div className="flex flex-col gap-1.5">
+                    <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(kreaControls.creativity.labelKey)}</span>
+                    <SegmentedControl
+                      value={overlay?.krea?.creativity ?? kreaControls.creativity.default}
+                      options={kreaControls.creativity.options.map((option) => ({
+                        value: option.value,
+                        label: t(option.labelKey),
+                      }))}
+                      onChange={(value) => imageGen.setModelOverlay(kreaControls.creativity.commit(overlay?.krea, value))}
+                      wrap
+                      mobileFill
+                      mobileSelect
+                      ariaLabel={t(kreaControls.creativity.labelKey)}
+                    />
+                  </div>
+                  {kreaControls.sliders.map((slider) => (
+                    <SamplerSliderField
+                      key={slider.field}
+                      label={t(slider.labelKey)}
+                      value={overlay?.krea?.[slider.field] ?? slider.default}
+                      onChange={(value) => imageGen.setModelOverlay(slider.commit(overlay?.krea, value))}
+                      range={{ min: slider.min, max: slider.max, step: slider.step }}
+                      rangeTestId={`image-gen-range-krea-${slider.field}`}
+                      cellTestId={`image-gen-field-krea-${slider.field}`}
+                    />
+                  ))}
+                </div>
+              )}
               {/* ADetailer (IG-CF15 15d / PG-4 v1): the pane's twin of the
                   chip's nested accordion — same overlay fields,
                   chain-gated (A1111: the extensions probe; comfy: the

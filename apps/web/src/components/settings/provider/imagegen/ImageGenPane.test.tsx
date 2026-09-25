@@ -1291,6 +1291,107 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
   });
 });
 
+describe("ImageGenPane — Krea 2 section (T6, TWIN_UNIFICATION step 2)", () => {
+  it("renders bound-only on krea-2 models (the pane is the section's HOME); hidden unbound and on third-party models", async () => {
+    // Unbound — the profile base carries no krea block (overlay-only v1,
+    // the adetailerModel precedent).
+    const unbound = render(
+      <ImageGenPane
+        imageGen={makeImageGen({ form: makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, modelId: "krea/krea-2/medium" }) })}
+      />,
+    );
+    await waitFor(() => expect(unbound.getByTestId("image-gen-advanced-header")).toBeTruthy());
+    await openAdvanced(unbound);
+    expect(unbound.queryByTestId("image-gen-krea-section")).toBeNull();
+    cleanup();
+
+    // A third-party aggregator model on the same backend — no generative
+    // controls (the descriptor's gate).
+    const thirdParty = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, modelId: "google/nano-banana" }),
+          modelOverlay: {},
+        })}
+      />,
+    );
+    await waitFor(() => expect(thirdParty.getByTestId("image-gen-advanced-header")).toBeTruthy());
+    await openAdvanced(thirdParty);
+    expect(thirdParty.queryByTestId("image-gen-krea-section")).toBeNull();
+    cleanup();
+
+    // Bound + a krea-2 model: creativity + the three sliders render.
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, modelId: "krea/krea-2/medium" }),
+          modelOverlay: {},
+        })}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
+    await openAdvanced(view);
+    await waitFor(() => expect(view.getByTestId("image-gen-krea-section")).toBeTruthy());
+    expect(view.getByText("image_gen_krea_creativity")).toBeTruthy();
+    expect(view.getByText("image_gen_krea_movement")).toBeTruthy();
+    expect(view.getByTestId("image-gen-range-krea-intensity")).toBeTruthy();
+    expect(view.getByTestId("image-gen-field-krea-complexity")).toBeTruthy();
+    expect(view.getByTestId("image-gen-range-krea-movement")).toBeTruthy();
+  });
+
+  it("creativity + a slider commit the overlay's ONE krea block (merge, siblings preserved), never the profile base", async () => {
+    const setForm = mock(() => {});
+    const setModelOverlay = mock(() => {});
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, modelId: "krea/krea-2/medium" }),
+          modelOverlay: {},
+          setForm,
+          setModelOverlay,
+        })}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
+    await openAdvanced(view);
+    await waitFor(() => expect(view.getByTestId("image-gen-krea-section")).toBeTruthy());
+
+    // Creativity: pick High (segment labels are the mocked i18n keys).
+    await act(async () => {
+      fireEvent.click(view.getByText("image_gen_krea_creativity_high"));
+    });
+    await waitFor(() => expect(setModelOverlay).toHaveBeenCalledTimes(1));
+    expect((setModelOverlay.mock.calls[0] as unknown[])[0]).toEqual({ krea: { creativity: "high" } });
+
+    // The real store would hold the written overlay now — re-render with it
+    // (the mock setModelOverlay does not apply the write) so the slider
+    // commit merges against the CURRENT block, as it does in production.
+    const kreaForm = makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, modelId: "krea/krea-2/medium" });
+    view.rerender(
+      <TooltipProvider delayDuration={200}>
+        <ImageGenPane
+          imageGen={makeImageGen({
+            form: kreaForm,
+            modelOverlay: { krea: { creativity: "high" } },
+            setForm,
+            setModelOverlay,
+          })}
+        />
+      </TooltipProvider>,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-krea-section")).toBeTruthy());
+
+    // The intensity slider rides the SAME merged krea block.
+    const range = view.getByTestId("image-gen-range-krea-intensity") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(range, { target: { value: "40" } });
+    });
+    await waitFor(() => expect(setModelOverlay).toHaveBeenCalledTimes(2));
+    expect((setModelOverlay.mock.calls[1] as unknown[])[0]).toEqual({ krea: { creativity: "high", intensity: 40 } });
+    expect(setForm).not.toHaveBeenCalled();
+  });
+});
+
 /** Open the advanced accordion (module scope — shared across describes). */
 async function openAdvanced(view: { getByTestId: (id: string) => HTMLElement; getByText: (text: string) => HTMLElement }) {
   await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());

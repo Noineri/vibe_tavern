@@ -49,7 +49,7 @@ import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
-import { buildSamplerControl, translateModelOptions } from "../../lib/imagegen/model-controls.js";
+import { buildKreaTwoControls, buildSamplerControl, translateModelOptions } from "../../lib/imagegen/model-controls.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -773,10 +773,11 @@ function ImageGenModelSettingsAccordion({
   const isLocalDialect =
     backend === IMAGE_GEN_BACKENDS.A1111 || backend === IMAGE_GEN_BACKENDS.ComfyUI;
   const isDit = backend === IMAGE_GEN_BACKENDS.ComfyUI && modelTemplate === "krea2-dit";
-  // Krea 2 generative controls (IF-11) — the krea backend's OWN models
-  // only (krea/krea-2/*; the aggregator's third-party models have no
-  // creativity/slider surface — the backend filters by schema anyway).
-  const isKreaTwo = backend === IMAGE_GEN_BACKENDS.Krea && modelId.startsWith("krea/");
+  // Krea 2 generative controls (IF-11 → T6): the gate, options, ranges,
+  // defaults and the commit merge all live in model-controls — the ONE
+  // derivation; this surface renders (accordion idiom) and commits the
+  // overlay. The pane's provider-modal section reads the same builder.
+  const kreaControls = buildKreaTwoControls({ backend, modelId });
 
   // Overlay load — keyed by (profileId, modelId); null until first load.
   useEffect(() => {
@@ -1102,13 +1103,12 @@ function ImageGenModelSettingsAccordion({
             <span className="text-[calc(var(--ui-fs)-3px)] text-danger">{t("image_gen_overlay_save_failed")}</span>
           )}
 
-          {/* Krea 2 generative controls (IF-11) — nested accordion (the
-              ADetailer idiom) on the krea backend's own models only.
-              Creativity defaults to the POLICY value "raw" (authored
-              full-form prompts — the vendor default would expand them);
-              sliders default to 0 which IS the vendor-neutral unsent —
-              every field still commits the overlay like its neighbors. */}
-          {isKreaTwo && (
+          {/* Krea 2 generative controls (IF-11 → T6) — nested accordion (the
+              ADetailer idiom) rendered from the shared descriptors
+              (model-controls): the gate, defaults, ranges and the commit
+              merge are the builder's; this accordion is the chip's render
+              half, the pane's provider-modal section is the other. */}
+          {kreaControls !== null && (
             <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-krea">
               <button
                 type="button"
@@ -1123,53 +1123,34 @@ function ImageGenModelSettingsAccordion({
               {kreaOpen && (
                 <div className="flex flex-col gap-2 px-0.5" data-testid="image-gen-ft-krea-body">
                   <div className="flex flex-col gap-1.5">
-                    <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_krea_creativity")}</span>
+                    <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(kreaControls.creativity.labelKey)}</span>
                     <SegmentedControl
-                      value={overlay.krea?.creativity ?? "raw"}
-                      options={[
-                        { value: "raw", label: t("image_gen_krea_creativity_raw") },
-                        { value: "low", label: t("image_gen_krea_creativity_low") },
-                        { value: "medium", label: t("image_gen_krea_creativity_medium") },
-                        { value: "high", label: t("image_gen_krea_creativity_high") },
-                      ]}
-                      onChange={(value) => commit({ krea: { ...(overlay.krea ?? {}), creativity: value } })}
+                      value={overlay.krea?.creativity ?? kreaControls.creativity.default}
+                      options={kreaControls.creativity.options.map((option) => ({
+                        value: option.value,
+                        label: t(option.labelKey),
+                      }))}
+                      onChange={(value) => commit(kreaControls.creativity.commit(overlay.krea, value))}
                       disabled={disabled}
                       wrap
                       mobileFill
                       mobileSelect
-                      ariaLabel={t("image_gen_krea_creativity")}
+                      ariaLabel={t(kreaControls.creativity.labelKey)}
                     />
                   </div>
-                  <SliderField
-                    label={t("image_gen_krea_intensity")}
-                    value={overlay.krea?.intensity ?? 0}
-                    min={-100}
-                    max={100}
-                    step={1}
-                    onChange={(value) => commit({ krea: { ...(overlay.krea ?? {}), intensity: value } })}
-                    disabled={disabled}
-                    rangeTestId="image-gen-range-krea-intensity"
-                  />
-                  <SliderField
-                    label={t("image_gen_krea_complexity")}
-                    value={overlay.krea?.complexity ?? 0}
-                    min={-100}
-                    max={100}
-                    step={1}
-                    onChange={(value) => commit({ krea: { ...(overlay.krea ?? {}), complexity: value } })}
-                    disabled={disabled}
-                    rangeTestId="image-gen-range-krea-complexity"
-                  />
-                  <SliderField
-                    label={t("image_gen_krea_movement")}
-                    value={overlay.krea?.movement ?? 0}
-                    min={-100}
-                    max={100}
-                    step={1}
-                    onChange={(value) => commit({ krea: { ...(overlay.krea ?? {}), movement: value } })}
-                    disabled={disabled}
-                    rangeTestId="image-gen-range-krea-movement"
-                  />
+                  {kreaControls.sliders.map((slider) => (
+                    <SliderField
+                      key={slider.field}
+                      label={t(slider.labelKey)}
+                      value={overlay.krea?.[slider.field] ?? slider.default}
+                      min={slider.min}
+                      max={slider.max}
+                      step={slider.step}
+                      onChange={(value) => commit(slider.commit(overlay.krea, value))}
+                      disabled={disabled}
+                      rangeTestId={`image-gen-range-krea-${slider.field}`}
+                    />
+                  ))}
                 </div>
               )}
             </div>
