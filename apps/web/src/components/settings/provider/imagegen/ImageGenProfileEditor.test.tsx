@@ -251,13 +251,42 @@ describe("ImageGenProfileEditor — edit mode (level-1 connection form)", () => 
       return items;
     });
     expect(presetLabels).toContain("Google Gemini");
-    expect(presetLabels).toContain("OpenRouter");
     expect(presetLabels).toContain("Black Forest Labs (FLUX)");
-    // The dialect-family rows ride cloud now (OpenAI is the family's
-    // reference row — the LLM-tab twin), so they must NOT appear in the
-    // native picker.
+    // OpenAI-surface rows ride cloud now — the images-dialect family (OpenAI
+    // is the family's reference row — the LLM-tab twin) AND the
+    // chat-completions transports (OpenRouter: chat/completions + modalities
+    // IS the OpenAI chat surface; the LLM-tab twin sits in cloud) — so none
+    // of them appear in the native picker.
     expect(presetLabels).not.toContain("OpenAI");
     expect(presetLabels).not.toContain("Together AI");
+    expect(presetLabels).not.toContain("OpenRouter");
+  });
+
+  it("the cloudflare preset renders the endpoint hint (<ACCOUNT_ID> URL placeholder); other presets render none", async () => {
+    const cloudflare = render(
+      <ImageGenProfileEditor
+        imageGen={makeImageGen({
+          form: makeForm({
+            presetId: "cloudflare",
+            backend: IMAGE_GEN_BACKENDS.Cloudflare,
+            endpoint: "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai",
+          }),
+        })}
+      />,
+    );
+    await waitFor(() => expect(cloudflare.getByTestId("image-gen-field-endpoint")).toBeTruthy());
+    expect(cloudflare.getByTestId("image-gen-endpoint-hint").textContent).toBe("image_gen_endpoint_hint_cloudflare");
+    cloudflare.unmount();
+
+    const google = render(
+      <ImageGenProfileEditor
+        imageGen={makeImageGen({
+          form: makeForm({ presetId: "google", backend: IMAGE_GEN_BACKENDS.Google, endpoint: "https://generativelanguage.googleapis.com/v1beta" }),
+        })}
+      />,
+    );
+    await waitFor(() => expect(google.getByTestId("image-gen-field-endpoint")).toBeTruthy());
+    expect(google.queryByTestId("image-gen-endpoint-hint")).toBeNull();
   });
 
   it("CF8: segment switch to Custom pins the backend to openai-images under the hood + drops the preset slug", async () => {

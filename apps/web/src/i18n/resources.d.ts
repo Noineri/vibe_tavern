@@ -1231,6 +1231,7 @@ export default interface Resources {
     "image_gen_clip_skip_label": "CLIP skip",
     "image_gen_detected_template": "Detected: {template}",
     "image_gen_encoder_label": "Text encoder",
+    "image_gen_endpoint_hint_cloudflare": "Replace <ACCOUNT_ID> in the URL with your Cloudflare account id (dashboard → Workers AI → Use REST API)",
     "image_gen_family_automatic": "Automatic",
     "image_gen_family_detect": "Auto-detect",
     "image_gen_family_detect_failed": "Auto-detection failed",

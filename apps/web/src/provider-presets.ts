@@ -100,11 +100,13 @@ export interface ImageGenProviderPreset {
    *  its segments from the groups present here). The boundary follows the
    * app-wide canon (owner 2026-09-18: the LLM tab is the base taxonomy
    * — STT/TTS follow it, the image tab must too): native = rows speaking
-   * their OWN wire (dedicated adapters — OpenRouter's chat-modalities,
-   * fal, Replicate, Google, BFL…); cloud = the OpenAI-images dialect
-   * family (incl. the OpenAI reference row — the LLM-tab twin) with the
-   * free community tiers kept INSIDE (owner ruling); local; derived
-   * Custom). */
+   * a PROPRIETARY vendor wire (fal, Replicate, Google, BFL…); cloud = any
+   * OpenAI-compatible surface — the OpenAI-images dialect family (incl.
+   * the OpenAI reference row — the LLM-tab twin) AND chat-completions
+   * transports (OpenRouter's modalities: a dedicated adapter executes
+   * it, but the wire is the OpenAI chat surface — the canon classifies
+   * by the wire, not by the adapter file) — with the free community
+   * tiers kept INSIDE (owner ruling); local; derived Custom). */
   group: ProviderPresetGroup;
   /** True when the API key is optional at connect time (A1111 keyless
    *  default; `--api-auth` may add basic auth — the field still renders). */
@@ -114,7 +116,16 @@ export interface ImageGenProviderPreset {
    *  HIDDEN, not marked optional (owner decision 2026-09-18 — an
    *  "optional" label on a field that must stay empty is a lie). */
   noApiKey?: boolean;
+  /** i18n key of a per-preset endpoint hint rendered under the endpoint
+   *  field while this preset is active (URL-embedded placeholders the
+   *  user must replace). Literal union — one data source; the form
+   *  renders whatever the row carries. */
+  endpointHintKey?: ImageGenEndpointHintKey;
 }
+
+/** Endpoint-hint i18n keys — the per-preset hints rendered under the
+ *  provider form's endpoint field. */
+export type ImageGenEndpointHintKey = "image_gen_endpoint_hint_cloudflare";
 
 /** The v1 image-gen roster. Rows (doc-verified):
  *  - OpenRouter — chat-completions transport, https://openrouter.ai/api/v1
@@ -126,17 +137,20 @@ export interface ImageGenProviderPreset {
  *    card: "the A1111-family adapter's prime local target today"). */
 export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
   {
-    id: "openrouter",
-    label: "OpenRouter",
-    backend: IMAGE_GEN_BACKENDS.OpenRouter,
-    baseUrl: "https://openrouter.ai/api/v1",
-    group: PROVIDER_PRESET_GROUP.native,
-  },
-  {
     id: "openai",
     label: "OpenAI",
     backend: IMAGE_GEN_BACKENDS.OpenAiImages,
     baseUrl: "https://api.openai.com/v1",
+    group: PROVIDER_PRESET_GROUP.cloud,
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    backend: IMAGE_GEN_BACKENDS.OpenRouter,
+    baseUrl: "https://openrouter.ai/api/v1",
+    // Chat-completions + modalities IS the OpenAI chat-compat surface: the
+    // wire rule puts this row in cloud (the LLM-tab twin), even though a
+    // dedicated adapter executes it.
     group: PROVIDER_PRESET_GROUP.cloud,
   },
   {
@@ -346,6 +360,7 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     label: "Cloudflare Workers AI",
     backend: IMAGE_GEN_BACKENDS.Cloudflare,
     baseUrl: "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai",
+    endpointHintKey: "image_gen_endpoint_hint_cloudflare",
     group: PROVIDER_PRESET_GROUP.native,
   },
   // AI Horde — crowdsourced free cluster; the key is OPTIONAL (anonymous

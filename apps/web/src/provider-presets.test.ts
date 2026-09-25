@@ -22,10 +22,10 @@ describe("provider preset transport classifications", () => {
 });
 
 describe("image-gen preset segments (MR-6 — the four-segment split; boundary = the app-wide protocol canon, owner 2026-09-18)", () => {
-  test("native = the seventeen own-wire rows (dedicated adapters); cloud = the OpenAI-images dialect family incl. the OpenAI reference row; free stays inside cloud; local unchanged", () => {
+  test("native = the sixteen proprietary-wire rows; cloud = every OpenAI-compatible surface (the images-dialect family + the chat-completions transports) incl. the OpenAI reference row; free stays inside cloud; local unchanged", () => {
     const nativeIds = IMAGE_GEN_PROVIDER_PRESETS.filter((p) => p.group === "native").map((p) => p.id).sort();
     expect(nativeIds).toEqual(
-      ["bfl", "chutes", "cloudflare", "dashscope", "fal", "google", "hf", "ideogram", "krea", "leonardo", "luma", "minimax", "nim", "novita", "openrouter", "replicate", "stability"].sort(),
+      ["bfl", "chutes", "cloudflare", "dashscope", "fal", "google", "hf", "ideogram", "krea", "leonardo", "luma", "minimax", "nim", "novita", "replicate", "stability"].sort(),
     );
     // The OpenAI-images dialect family rides cloud — including the OpenAI
     // reference row (the LLM-tab twin: the LLM openai row sits in cloud) and
@@ -33,6 +33,12 @@ describe("image-gen preset segments (MR-6 — the four-segment split; boundary =
     for (const dialectId of ["openai", "togetherai", "siliconflow", "nanogpt", "electronhub", "deepinfra", "recraft", "zai", "volcengine"]) {
       expect(IMAGE_GEN_PROVIDER_PRESETS.find((p) => p.id === dialectId)!.group).toBe("cloud");
     }
+    // OpenRouter's image transport rides chat/completions + modalities —
+    // the OpenAI chat-compat surface. The canon classifies by the WIRE, not
+    // by whether a dedicated adapter executes it, so the row rides cloud
+    // (the LLM-tab twin). It initially sat in native under a
+    // "dedicated adapter = own wire" misreading; the owner audit caught it.
+    expect(IMAGE_GEN_PROVIDER_PRESETS.find((p) => p.id === "openrouter")!.group).toBe("cloud");
     // Free tiers stay INSIDE the cloud segment with their labels (owner
     // 2026-09-18) — no separate free segment.
     for (const freeId of ["pollinations_free", "aihorde"]) {
@@ -47,5 +53,10 @@ describe("image-gen preset segments (MR-6 — the four-segment split; boundary =
     const total = IMAGE_GEN_PROVIDER_PRESETS.length;
     const grouped = IMAGE_GEN_PROVIDER_PRESETS.filter((p) => p.group === "cloud" || p.group === "native" || p.group === "local").length;
     expect(grouped).toBe(total);
+    // The endpoint-hint carrier set: cloudflare is the roster's only one
+    // (the <ACCOUNT_ID> URL placeholder); every other row carries none.
+    const hintCarriers = IMAGE_GEN_PROVIDER_PRESETS.filter((p) => p.endpointHintKey !== undefined);
+    expect(hintCarriers.map((p) => p.id)).toEqual(["cloudflare"]);
+    expect(hintCarriers[0]!.endpointHintKey).toBe("image_gen_endpoint_hint_cloudflare");
   });
 });

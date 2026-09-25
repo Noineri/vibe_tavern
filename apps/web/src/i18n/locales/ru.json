@@ -515,6 +515,7 @@
 	"image_gen_segment_local": "Локальный сервер",
 	"image_gen_field_endpoint": "Адрес сервера",
 	"image_gen_key_optional_hint": "Необязательно — введите user:pass, только если сервер запущен с --api-auth",
+	"image_gen_endpoint_hint_cloudflare": "Замените <ACCOUNT_ID> в URL на ID вашего аккаунта Cloudflare (дашборд → Workers AI → Use REST API)",
 	"image_gen_key_from_provider_hint": "Ключ берётся из профиля провайдера «{name}» — введите свой ключ, чтобы переопределить.",
 	"image_gen_local_setup_help": "Помощь по запуску локального сервера",
 	"image_gen_local_help_hint": "Запустите UI с флагами --api (открывает API /sdapi/v1, с которым работает VT) и --listen (принимает подключения с других устройств сети).",

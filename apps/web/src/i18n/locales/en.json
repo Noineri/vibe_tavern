@@ -511,6 +511,7 @@
 	"image_gen_segment_local": "Local server",
 	"image_gen_field_endpoint": "Endpoint",
 	"image_gen_key_optional_hint": "Optional — enter user:pass only if the server was started with --api-auth",
+	"image_gen_endpoint_hint_cloudflare": "Replace <ACCOUNT_ID> in the URL with your Cloudflare account id (dashboard → Workers AI → Use REST API)",
 	"image_gen_key_from_provider_hint": "Key is taken from the \"{name}\" provider profile — type your own key here to override.",
 	"image_gen_local_setup_help": "Local server setup help",
 	"image_gen_local_help_hint": "Launch the UI with --api (exposes the /sdapi/v1 API VT talks to) and --listen (accepts connections from other devices on your network).",

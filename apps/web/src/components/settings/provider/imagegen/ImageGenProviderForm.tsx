@@ -220,6 +220,14 @@ export function ImageGenProviderForm({ form, editingId, profiles, updateForm, im
           placeholder="https://api.openai.com/v1"
           data-testid="image-gen-field-endpoint"
         />
+        {/* Per-preset endpoint hint — data-driven (the preset row carries
+            the key; the roster's only carrier is cloudflare: the URL embeds
+            an <ACCOUNT_ID> placeholder the user must replace). */}
+        {selectedPreset?.endpointHintKey && (
+          <div data-testid="image-gen-endpoint-hint" className="mt-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
+            {t(selectedPreset.endpointHintKey)}
+          </div>
+        )}
       </div>
 
       {/* API key — rendered for every dialect EXCEPT `noApiKey` presets
