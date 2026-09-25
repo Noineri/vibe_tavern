@@ -15,10 +15,19 @@
  *   the server produces previews);
  * - cloud runs past the prompt phase → the plain "Generating…" pulse
  *   (cloud backends have no steps surface; no fake percent, ever).
+ *
+ * IF-9 (owner 2026-09-22, locked): the pill's TAIL carries the explicit
+ * Stop control — cancel sits where the generation is visible, in every
+ * phase (prompt/starting/steps alike; local backends have NO timeout,
+ * cancel is the only limit — the owner 2026-09-14 capability ruling that
+ * first created Stop). The message-menu trigger no longer morphs; it
+ * renders as itself, disabled, while a run is in flight.
  */
 
 import { useState } from "react";
 
+import { Icons } from "../shared/icons.js";
+import { CustomTooltip } from "../shared/Tooltip.js";
 import { useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useImageGenProgress } from "../../hooks/use-image-gen-progress.js";
 import { useT } from "../../i18n/context.js";
@@ -30,6 +39,7 @@ export interface ImageGenProgressRowProps {
 export function ImageGenProgressRow({ chatId }: ImageGenProgressRowProps) {
   const { t } = useT();
   const run = useImageGenChatStore((s) => s.runningByChat[chatId]);
+  const abortGeneration = useImageGenChatStore((s) => s.abortGeneration);
   // Poll for ANY active run (MR-11): the phase timeline is backend-agnostic
   // — cloud runs surface their prompt/starting phases through the same
   // endpoint; the steps fields arrive only for live-progress dialects (the
@@ -88,6 +98,18 @@ export function ImageGenProgressRow({ chatId }: ImageGenProgressRowProps) {
       ) : (
         <PhasePulse label={t("image_gen_phase_starting")} />
       )}
+      {/* IF-9: the run's own Stop — the pill tail, present in EVERY phase. */}
+      <CustomTooltip content={t("image_gen_stop_tooltip")}>
+        <button
+          type="button"
+          data-testid="image-gen-progress-stop"
+          aria-label={t("image_gen_stop_tooltip")}
+          className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-accent transition-colors hover:bg-s2 [&_svg]:h-[18px] [&_svg]:w-[18px]"
+          onClick={() => abortGeneration(chatId)}
+        >
+          <Icons.stopSquare />
+        </button>
+      </CustomTooltip>
     </div>
   );
 }

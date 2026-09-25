@@ -15,11 +15,12 @@
  * provider+model); the menu reads the chat's active profile from the store
  * (activeProfileId ?? first — the IG-2 chat-level choice).
  *
- * While a generation is in flight the trigger morphs into the explicit Stop
- * control (owner 2026-09-14 — local backends have NO timeout, cancel is the
- * only limit): every message's trigger for that chat shows Stop; clicking it
- * aborts the shared per-chat AbortController (one in-flight generation per
- * chat in v1). Mode rows are inert while running.
+ * While a generation is in flight the trigger renders as itself, DISABLED
+ * (owner 2026-09-22, locked — IF-9: «я думаю, на прогресс строку логично.
+ * и тогда убрать тот же морф из текстового сообщения, просто гасить
+ * кнопку»): the explicit Stop lives on the progress row (the pill that
+ * narrates the run), not in the menu — desktop and mobile alike. Mode
+ * rows stay inert while running.
  *
  * The `free` recipe is enabled only while Fine tuning is on AND the IG-17
  * chip's positive prompt is non-empty: the server REQUIRES free's raw
@@ -72,46 +73,18 @@ export interface ImageGenMessageMenuProps {
 export function ImageGenMessageMenu({ chatId, messageId, variant, disabled = false }: ImageGenMessageMenuProps) {
   const { t } = useT();
   const running = useImageGenChatStore((s) => s.runningByChat[chatId]);
-  const abortGeneration = useImageGenChatStore((s) => s.abortGeneration);
   const [open, setOpen] = useState(false);
 
   // The menu is an RP surface (owner 2026-09-18): co-author chats never
-  // offer image generation — no trigger and no Stop morph (no entry point
-  // exists there, so nothing can be in flight for the chat either).
+  // offer image generation — no trigger at all (no entry point exists
+  // there, so nothing can be in flight for the chat either).
   const isCoauthorChat = useSnapshotStore((s) => s.activeChat?.mode === "coauthor");
   if (isCoauthorChat) return null;
 
-  // ── Stop morph: every message's trigger for this chat is the Stop while
-  //    a generation is in flight (they all abort the same shared run).
-  if (running !== undefined) {
-    if (variant === "mobile") {
-      return (
-        <button
-          type="button"
-          data-testid="image-gen-message-stop"
-          aria-label={t("image_gen_stop_tooltip")}
-          className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-accent animate-pulse active:bg-s2 [&_svg]:h-5 [&_svg]:w-5"
-          onClick={() => abortGeneration(chatId)}
-        >
-          <Icons.stopSquare />
-        </button>
-      );
-    }
-    return (
-      <CustomTooltip content={t("image_gen_stop_tooltip")}>
-        <button
-          type="button"
-          data-testid="image-gen-message-stop"
-          aria-label={t("image_gen_stop_tooltip")}
-          className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-accent animate-pulse transition-colors duration-100 hover:bg-s2"
-          onClick={() => abortGeneration(chatId)}
-        >
-          <Icons.stopSquare />
-          <Icons.Caret direction="d" />
-        </button>
-      </CustomTooltip>
-    );
-  }
+  // IF-9: no Stop morph — while a run is in flight the trigger renders as
+  // itself, disabled (the progress row owns cancel). The row-level
+  // `disabled` (a busy chat turn) merges into the same idiom.
+  const triggerDisabled = disabled || running !== undefined;
 
   if (variant === "mobile") {
     return (
@@ -120,8 +93,8 @@ export function ImageGenMessageMenu({ chatId, messageId, variant, disabled = fal
           type="button"
           data-testid="image-gen-message-trigger"
           aria-label={t("image_gen_action_tooltip")}
-          aria-disabled={disabled}
-          disabled={disabled}
+          aria-disabled={triggerDisabled}
+          disabled={triggerDisabled}
           className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 disabled:cursor-default disabled:opacity-40 [&_svg]:h-5 [&_svg]:w-5"
           onClick={() => setOpen(true)}
         >
@@ -150,8 +123,8 @@ export function ImageGenMessageMenu({ chatId, messageId, variant, disabled = fal
               type="button"
               data-testid="image-gen-message-trigger"
               aria-label={t("image_gen_action_tooltip")}
-              aria-disabled={disabled}
-              disabled={disabled}
+              aria-disabled={triggerDisabled}
+              disabled={triggerDisabled}
               className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
             >
               <Icons.images />
@@ -179,8 +152,8 @@ export function ImageGenMessageMenu({ chatId, messageId, variant, disabled = fal
           type="button"
           data-testid="image-gen-message-trigger"
           aria-label={t("image_gen_action_tooltip")}
-          aria-disabled={disabled}
-          disabled={disabled}
+          aria-disabled={triggerDisabled}
+          disabled={triggerDisabled}
           className="flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2 disabled:cursor-default disabled:opacity-40"
         >
           <Icons.images />

@@ -347,8 +347,8 @@ describe("ImageGenMessageMenu — fine tuning is per-chat, shared across message
   });
 });
 
-describe("ImageGenMessageMenu — in-flight Stop control (IG-16)", () => {
-  it("while running, the trigger morphs into Stop; Stop aborts the seam and the UI returns to idle", async () => {
+describe("ImageGenMessageMenu — in-flight trigger disable (IF-9)", () => {
+  it("while running, the trigger stays itself but disabled — no Stop in the menu; settling re-enables it", async () => {
     const view = renderMenu(<ImageGenMessageMenu chatId="chat-stop" messageId="m-1" variant="desktop" />);
     openPopover(view);
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-character")).toBeTruthy());
@@ -356,21 +356,20 @@ describe("ImageGenMessageMenu — in-flight Stop control (IG-16)", () => {
       fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-character"));
     });
     expect(generateCalls.length).toBe(1);
-    const signal = generateCalls[0][2]!;
 
-    // The trigger morphed: the popover trigger is gone, the Stop button is there.
-    await waitFor(() => expect(q(view, "image-gen-message-stop")).toBeTruthy());
-    expect(view.container.querySelectorAll('[data-testid="image-gen-message-trigger"]').length).toBe(0);
+    // IF-9 (owner 2026-09-22): no morph — the trigger is still the trigger,
+    // now disabled; the explicit Stop lives on the progress row.
+    await waitFor(() => expect(q(view, "image-gen-message-trigger").hasAttribute("disabled")).toBe(true));
+    expect(q(view, "image-gen-message-trigger").getAttribute("aria-disabled")).toBe("true");
+    expect(view.container.querySelectorAll('[data-testid="image-gen-message-stop"]').length).toBe(0);
 
-    act(() => {
-      fireEvent.click(q(view, "image-gen-message-stop"));
-    });
-    expect(signal.aborted).toBe(true);
-    await waitFor(() => expect(q(view, "image-gen-message-trigger")).toBeTruthy());
+    // Settle the parked run — the trigger re-enables (the UI returns to idle).
+    pendingByChat.get("chat-stop")!.resolve();
+    await waitFor(() => expect(q(view, "image-gen-message-trigger").hasAttribute("disabled")).toBe(false));
     expect(useImageGenChatStore.getState().runningByChat["chat-stop"]).toBeUndefined();
   });
 
-  it("a second mode click while running does not fire a second call (one per chat)", async () => {
+  it("a second message's trigger is disabled while running — no popover, no second call (one per chat)", async () => {
     const view1 = renderMenu(<ImageGenMessageMenu chatId="chat-busy" messageId="m-1" variant="desktop" />);
     const view2 = renderMenu(<ImageGenMessageMenu chatId="chat-busy" messageId="m-2" variant="desktop" />);
     openPopover(view1);
@@ -378,15 +377,16 @@ describe("ImageGenMessageMenu — in-flight Stop control (IG-16)", () => {
     act(() => {
       fireEvent.click(within(view1.baseElement).getByTestId("image-gen-mode-portrait"));
     });
-    // The other message's trigger is a Stop now — no popover to open.
-    await waitFor(() => expect(q(view2, "image-gen-message-stop")).toBeTruthy());
-    expect(view2.container.querySelectorAll('[data-testid="image-gen-message-trigger"]').length).toBe(0);
-    expect(generateCalls.length).toBe(1);
-    // Settle: abort through the shared seam.
+    // The other message's trigger is itself, disabled — a disabled button
+    // click cannot open the popover, so no second generate fires.
+    await waitFor(() => expect(q(view2, "image-gen-message-trigger").hasAttribute("disabled")).toBe(true));
     act(() => {
-      fireEvent.click(q(view2, "image-gen-message-stop"));
+      fireEvent.click(q(view2, "image-gen-message-trigger"));
     });
-    await waitFor(() => expect(q(view1, "image-gen-message-trigger")).toBeTruthy());
+    expect(generateCalls.length).toBe(1);
+    // Settle: resolve through the shared seam.
+    pendingByChat.get("chat-busy")!.resolve();
+    await waitFor(() => expect(q(view2, "image-gen-message-trigger").hasAttribute("disabled")).toBe(false));
   });
 });
 
@@ -433,10 +433,12 @@ describe("ImageGenMessageMenu — mobile sheet (IG-16)", () => {
     // Dismissal: the sheet closed on selection — its overlay portal
     // unregistered (the close seam BottomSheet.test pins).
     expect(getTopmostOverlayPortal()).toBeNull();
-    // The in-flight run morphs the mobile trigger into Stop; settle it, and
-    // the menu reopens with the mode body again (no stuck session).
+    // IF-9: the in-flight run keeps the mobile trigger as itself, disabled;
+    // settle it, and the menu reopens with the mode body again (no stuck
+    // session — the Stop now lives on the progress row, not here).
+    await waitFor(() => expect(q(view, "image-gen-message-trigger").hasAttribute("disabled")).toBe(true));
     pendingByChat.get("chat-mob2")!.resolve();
-    await waitFor(() => expect(q(view, "image-gen-message-trigger")).toBeTruthy());
+    await waitFor(() => expect(q(view, "image-gen-message-trigger").hasAttribute("disabled")).toBe(false));
     act(() => {
       fireEvent.click(q(view, "image-gen-message-trigger"));
     });
