@@ -49,7 +49,7 @@ import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
-import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSeedField, translateModelOptions, type ScalarSliderField } from "../../lib/imagegen/model-controls.js";
+import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderField } from "../../lib/imagegen/model-controls.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -782,10 +782,9 @@ function ImageGenModelSettingsAccordion({
 
   const isA1111 = backend === IMAGE_GEN_BACKENDS.A1111;
   const isComfy = backend === IMAGE_GEN_BACKENDS.ComfyUI;
-  // The LOCAL dialect family (CG-B2 — the pane's guardIsLocalDialect twin):
+  // The LOCAL dialect family — ONE shared derivation (T2, model-controls):
   // both dialects serve the schedulers route (PG-3/CG-A3).
-  const isLocalDialect =
-    backend === IMAGE_GEN_BACKENDS.A1111 || backend === IMAGE_GEN_BACKENDS.ComfyUI;
+  const isLocalDialect = isLocalDialectBackend(backend);
   const isDit = backend === IMAGE_GEN_BACKENDS.ComfyUI && modelTemplate === "krea2-dit";
   // Krea 2 generative controls (IF-11 → T6): the gate, options, ranges,
   // defaults and the commit merge all live in model-controls — the ONE
@@ -958,6 +957,10 @@ function ImageGenModelSettingsAccordion({
     supportsSamplers,
     samplers,
   });
+  // T2 (TWIN_UNIFICATION step 4): the scheduler dropdown's gate, options
+  // and commit live in model-controls; this surface renders (the fetch
+  // guard still rides the same isLocalDialectBackend predicate).
+  const schedulerControl = buildSchedulerControl({ backend });
   // T4/T5 (TWIN_UNIFICATION step 3): the scalar sliders + seed ride the
   // shared descriptors — ranges resolve mirror-first (the chip's old
   // global-only read was the silent drift), the seed parse is the ONE
@@ -994,20 +997,18 @@ function ImageGenModelSettingsAccordion({
           )}
 
           {/* Schedule type (PG-3/CG-B2) — right under the sampler, on the
-              LOCAL dialect family (a1111 + comfyui — both serve the
-              schedulers route; cloud dialects have no scheduler surface).
-              Empty = the server's own default; commits the overlay like
-              every field here (one source of truth with the pane). */}
-          {isLocalDialect && (
+              LOCAL dialect family (the descriptor's gate — a1111 + comfyui,
+              both serve the schedulers route; cloud dialects have no
+              scheduler surface). Empty = the server's own default; commits
+              the overlay like every field here (one source of truth with
+              the pane). */}
+          {schedulerControl && (
             <div className="flex flex-col gap-1.5">
-              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_scheduler_label")}</span>
+              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(schedulerControl.labelKey)}</span>
               <DropdownSelect
                 value={scheduler ?? ""}
-                options={[
-                  { id: "", label: t("image_gen_sampler_auto") },
-                  ...(schedulers ?? []).map((s) => ({ id: s.name, label: s.label ?? s.name })),
-                ]}
-                onChange={(id) => commit(id === "" ? { scheduler: undefined } : { scheduler: id })}
+                options={translateModelOptions(schedulerControl.options(schedulers ?? []), t)}
+                onChange={(id) => commit(schedulerControl.commit(id))}
                 disabled={disabled}
                 triggerTestId="image-gen-ft-overlay-scheduler"
               />

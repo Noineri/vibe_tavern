@@ -9,7 +9,7 @@ import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
-import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSeedField, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
+import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { SliderField } from "../../../shared/SliderField.js";
@@ -1557,10 +1557,10 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // on its own fetch) renders only when the server has the extension.
   // Guard-style null-safe values — this hook sits above the null guard too.
   const guardIsA1111 = form?.backend === IMAGE_GEN_BACKENDS.A1111;
-  // The LOCAL dialect family (A1111 + ComfyUI, CG-B1): the scheduler-list
-  // consumer gate — both dialects expose the schedulers route (PG-3/CG-A3).
-  const guardIsLocalDialect =
-    form?.backend === IMAGE_GEN_BACKENDS.A1111 || form?.backend === IMAGE_GEN_BACKENDS.ComfyUI;
+  // The LOCAL dialect family: ONE shared derivation (T2, model-controls —
+  // isLocalDialectBackend) — the scheduler-list consumer gate; both
+  // dialects expose the schedulers route (PG-3/CG-A3).
+  const guardIsLocalDialect = form !== null && isLocalDialectBackend(form.backend);
   // Scheduler list (PG-3) — the dialect-gated schedule-type catalog, one-shot
   // cache fill per profile (the samplers-guard twin, dialect-gated: the
   // schedulers route exists only on the local family). Failure = empty
@@ -1692,8 +1692,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // control panel). The chip's re-check button is the recovery
   // affordance — it stays interactive while the panel is greyed. Cloud
   // backends (openrouter/openai-images) render no chip.
-  const isLocalBackend =
-    form.backend === IMAGE_GEN_BACKENDS.A1111 || form.backend === IMAGE_GEN_BACKENDS.ComfyUI;
+  const isLocalBackend = isLocalDialectBackend(form.backend);
   const localStatus: LocalConnectionStatus = imageGen.samplerStatusByProfile[profileId] ?? "unknown";
   const localOffline = isLocalBackend && localStatus === "offline";
   const caps = form.capabilities;
@@ -1719,6 +1718,10 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     supportsSamplers: caps.supportsSamplers,
     samplers,
   });
+  // T2 (TWIN_UNIFICATION step 4): the scheduler dropdown's gate, options
+  // and commit live in model-controls (the ONE local-dialect predicate
+  // gates both this render and the fetch guards); this surface renders.
+  const schedulerControl = buildSchedulerControl({ backend: form.backend });
   // T6 (TWIN_UNIFICATION step 2): the Krea 2 section's HOME — the chip's
   // accordion inherits the same descriptors (the IF-11 incident fix: the
   // controls are provider-modal settings, not a chip-only secret).
@@ -2192,28 +2195,23 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   />
                 </div>
               )}
-              {/* Schedule type (PG-3) — the sampler's schedule, A1111
-                  dialect only (the route is dialect-gated; cloud backends
-                  have no scheduler surface). Empty = vendor default, the
+              {/* Schedule type (PG-3) — the sampler's schedule, on the
+                  LOCAL dialect family (the descriptor's gate — a1111 +
+                  comfyui serve the schedulers route; cloud backends have
+                  no scheduler surface). Empty = vendor default, the
                   CF5 no-silent-defaults rule; the SAME bind routing as the
                   sampler above (bound → overlay, unbound → profile
                   defaults). Full-width cell, right under the sampler. */}
-              {isLocalBackend && (
+              {schedulerControl && (
                 <div className="min-w-0 sm:col-span-2">
-                  <label className={lblCls}>{t("image_gen_scheduler_label")}</label>
+                  <label className={lblCls}>{t(schedulerControl.labelKey)}</label>
                   <DropdownSelect
                     value={params.scheduler ?? ""}
                     triggerTestId="image-gen-field-scheduler"
                     searchable={false}
                     className="w-auto max-w-[320px]"
-                    options={[
-                      { id: "", label: t("image_gen_sampler_auto") },
-                      ...schedulers.map((scheduler) => ({
-                        id: scheduler.name,
-                        label: scheduler.label ?? scheduler.name,
-                      })),
-                    ]}
-                    onChange={(next) => setParam({ scheduler: next === "" ? undefined : next })}
+                    options={translateModelOptions(schedulerControl.options(schedulers), t)}
+                    onChange={(next) => setParam(schedulerControl.commit(next))}
                   />
                 </div>
               )}

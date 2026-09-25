@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSeedField, translateModelOptions } from "./model-controls.js";
+import { buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "./model-controls.js";
 
 describe("model-controls — buildSamplerControl (T1, the TWIN_UNIFICATION mechanism's first descriptor)", () => {
   test("gate closed (no sampler capability) → null, both surfaces render nothing", () => {
@@ -111,5 +111,46 @@ describe("model-controls — buildSeedField (T5: the ONE seed parse — garbage 
     const seed = buildSeedField();
     expect(seed.parse("12abc")).toBeNull();
     expect(seed.parse("abc")).toBeNull();
+  });
+});
+
+describe("model-controls — isLocalDialectBackend (T2: the ONE local-family predicate)", () => {
+  test("a1111 + comfyui are the family; every other backend is not", () => {
+    expect(isLocalDialectBackend("a1111")).toBe(true);
+    expect(isLocalDialectBackend("comfyui")).toBe(true);
+    expect(isLocalDialectBackend("krea")).toBe(false);
+    expect(isLocalDialectBackend("openrouter")).toBe(false);
+    expect(isLocalDialectBackend("bfl")).toBe(false);
+  });
+});
+
+describe("model-controls — buildSchedulerControl (T2: gate + options + commit, ONE derivation)", () => {
+  test("null off the local dialect family (cloud backends have no scheduler surface)", () => {
+    expect(buildSchedulerControl({ backend: "openrouter" })).toBeNull();
+    expect(buildSchedulerControl({ backend: "krea" })).toBeNull();
+  });
+
+  test("both local dialects get the spec — the auto (vendor-default) KEY entry heads the list", () => {
+    for (const backend of ["a1111", "comfyui"] as const) {
+      const spec = buildSchedulerControl({ backend });
+      expect(spec).not.toBeNull();
+      expect(spec!.labelKey).toBe("image_gen_scheduler_label");
+      expect(spec!.options([])).toEqual([{ kind: "key", id: "", labelKey: "image_gen_sampler_auto" }]);
+    }
+  });
+
+  test("server schedulers ride as RAW options with the label ?? name fallback", () => {
+    const spec = buildSchedulerControl({ backend: "comfyui" })!;
+    expect(spec.options([{ name: "karras", label: "Karras" }, { name: "sgm_uniform" }])).toEqual([
+      { kind: "key", id: "", labelKey: "image_gen_sampler_auto" },
+      { kind: "raw", id: "karras", label: "Karras" },
+      { kind: "raw", id: "sgm_uniform", label: "sgm_uniform" },
+    ]);
+  });
+
+  test("commit: the auto entry inherits (undefined); a scheduler name commits it", () => {
+    const spec = buildSchedulerControl({ backend: "a1111" })!;
+    expect(spec.commit("")).toEqual({ scheduler: undefined });
+    expect(spec.commit("karras")).toEqual({ scheduler: "karras" });
   });
 });

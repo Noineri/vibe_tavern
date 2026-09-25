@@ -26,6 +26,7 @@ import {
   type ImageGenParamRange,
   type ImageGenParamRanges,
 } from "@vibe-tavern/domain";
+import type { ImageGenBackendValue, ImageGenSchedulerInfoValue } from "@vibe-tavern/api-contracts";
 
 /** A dropdown option: either translatable (`kind: "key"` + labelKey) or raw (`kind: "raw"` + label). */
 export type ModelOption<K extends string = string> =
@@ -106,6 +107,51 @@ export interface KreaTwoControlsSpec {
     commit(current: ImageGenKreaParams | undefined, value: KreaCreativityValue): { krea: ImageGenKreaParams };
   };
   readonly sliders: ReadonlyArray<KreaSliderSpec>;
+}
+
+/**
+ * T2 — the LOCAL dialect family predicate: the backend pair that serves
+ * the schedulers route (PG-3/CG-A3) — A1111 + ComfyUI, nothing else.
+ * THE one membership derivation: every gate (both surfaces' fetch guards
+ * and render guards) reads this; the pane's `guardIsLocalDialect` /
+ * `isLocalBackend` and the chip's `isLocalDialect` were three hand-written
+ * twins of it — the name drift this killed.
+ */
+export function isLocalDialectBackend(backend: ImageGenBackendValue): boolean {
+  return backend === IMAGE_GEN_BACKENDS.A1111 || backend === IMAGE_GEN_BACKENDS.ComfyUI;
+}
+
+export interface SchedulerControlSpec {
+  readonly labelKey: "image_gen_scheduler_label";
+  /** Options for the profile's fetched scheduler list: the auto
+   *  (vendor-default) head entry + the server's schedule types — raw
+   *  server labels with the name fallback, translated as a whole via
+   *  translateModelOptions like every dropdown. */
+  options(schedulers: ReadonlyArray<ImageGenSchedulerInfoValue>): ModelOption<"image_gen_sampler_auto">[];
+  /** "" (the auto entry) → inherit (undefined); a scheduler name → the value. */
+  commit(id: string): { scheduler: string | undefined };
+}
+
+/**
+ * T2 — the scheduler dropdown definition. Returns null off the local
+ * dialect family (cloud dialects have no scheduler surface); the gate
+ * lives HERE, surfaces only check the result — buildSamplerControl's
+ * shape.
+ */
+export function buildSchedulerControl({ backend }: { backend: ImageGenBackendValue }): SchedulerControlSpec | null {
+  if (!isLocalDialectBackend(backend)) return null;
+  return {
+    labelKey: "image_gen_scheduler_label",
+    options: (schedulers): ModelOption<"image_gen_sampler_auto">[] => [
+      { kind: "key", id: "", labelKey: "image_gen_sampler_auto" },
+      ...schedulers.map((scheduler) => ({
+        kind: "raw" as const,
+        id: scheduler.name,
+        label: scheduler.label ?? scheduler.name,
+      })),
+    ],
+    commit: (id) => ({ scheduler: id === "" ? undefined : id }),
+  };
 }
 
 /**
