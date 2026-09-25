@@ -1318,10 +1318,17 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   detectImageGenProfileFamily = async (
     id: string,
     signal?: AbortSignal,
+    modelOverride?: string,
   ): Promise<ImageGenFamilyDetectionResultValue | null> => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
-    const model = profile.modelId;
+    // IF-8a (owner correction 2026-09-25): the ladder inspects the model
+    // the user is LOOKING AT — the client names it explicitly, so a freshly
+    // picked unsaved model is detectable on the spot (the save-first gate
+    // is gone); the saved modelId stays the fallback and the persisted
+    // anchor is the exact model that was inspected.
+    const model =
+      modelOverride !== undefined && modelOverride !== "" ? modelOverride : (profile.modelId ?? undefined);
     if (model === undefined || model === "") {
       throw validation("Image-gen family detection needs a selected model — pick one in the profile first");
     }

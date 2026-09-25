@@ -434,9 +434,10 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
   const modelShown = form?.modelId ?? null;
   const persistedModel = record?.modelId ?? null;
   // Identity guard (the editor operation pattern): async continuations
-  // compare against the live profile AND model identity. The endpoint has no
-  // model parameter, so a response for saved model A must never surface after
-  // the pane starts showing draft model B.
+  // compare against the live profile AND model identity. The request names
+  // the DISPLAYED model explicitly (IF-8a), so the guard's job is binding
+  // the response to that exact model — a response for model A must never
+  // surface after the pane starts showing model B.
   const identityRef = useRef<FamilyRequestIdentity>({ profileId: null, model: null, persistedModel: null });
   // Commit-phase invalidation makes the operation token reflect only targets
   // that reached the screen. A synchronous committed A → B → A move still
@@ -482,10 +483,11 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
     };
   }, [profileId, modelShown, persistedModel]);
 
-  // IPT-5: the ladder inspects the saved model. The full save-first hint is
-  // required when no model is displayed or the displayed model is still a
-  // draft, so the UI never presents a model-A result beside model B.
-  const detectBlocked = modelShown === null || modelShown !== persistedModel;
+  // IF-8a (owner correction 2026-09-25): the ladder inspects the DISPLAYED
+  // model — the request names it explicitly, so a freshly picked unsaved
+  // model is detectable on the spot. The only remaining block is "nothing
+  // picked at all" (no model to inspect); no save-first gate exists anymore.
+  const detectBlocked = modelShown === null;
   const pin = record?.familyOverride ?? null;
   const detected = record?.familyDetected ?? null;
   const detectedForModel = record?.familyDetectedForModel ?? null;
@@ -574,7 +576,10 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const result = await detectImageGenProfileFamily(profileId, controller.signal);
+      // The DISPLAYED model rides the request — detection answers for the
+      // model the user is looking at, saved or not (IF-8a). The identity
+      // guard below still binds the response to that exact model.
+      const result = await detectImageGenProfileFamily(profileId, controller.signal, modelShown);
       if (!isCurrentFamilyOperation(operation, requestIdentity)) return;
       if (result.ok) {
         // The server persisted familyDetected + its exact model anchor on
@@ -664,7 +669,7 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
           </button>
         ) : (
           <TooltipProvider delayDuration={200}>
-            <CustomTooltip content={t("image_gen_family_detect_save_first")}>
+            <CustomTooltip content={t("image_gen_family_detect_pick_model_first")}>
               <span
                 data-testid="image-gen-family-detect-disabled"
                 className="flex min-h-[33.5px] shrink-0 cursor-help items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-[6px] font-ui text-[13px] font-medium text-t4"
@@ -686,7 +691,7 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
             data-testid="image-gen-family-detect-blocked-hint"
             className="font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.5] text-warning"
           >
-            {t("image_gen_family_detect_save_first")}
+            {t("image_gen_family_detect_pick_model_first")}
           </span>
         )}
         {pin !== null ? (

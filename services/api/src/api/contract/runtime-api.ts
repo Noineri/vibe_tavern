@@ -1212,11 +1212,17 @@ export interface ImageGenRuntimeApi {
 	 *  ordered tried[] ladder) — never a thrown error, never a guess;
 	 *  backend transport failures degrade into tried[] reasons (the
 	 *  probe's failures-as-data contract). Throws a validation
-	 *  DomainError when the profile has no selected model. Null = unknown
-	 *  profile (route → 404). */
+	 *  DomainError when neither the explicit `model` nor the profile's
+	 *  saved modelId is set. Null = unknown profile (route → 404). The
+	 *  optional `model` names the model the detection inspects — the
+	 *  client sends the DISPLAYED model so a freshly picked unsaved
+	 *  model is detectable on the spot (the save-first gate is gone,
+	 *  owner correction 2026-09-25); the persisted anchor is that exact
+	 *  model either way. */
 	detectImageGenProfileFamily: (
 		id: string,
 		signal?: AbortSignal,
+		model?: string,
 	) => Promise<import("@vibe-tavern/api-contracts").ImageGenFamilyDetectionResultValue | null>;
 
 	// ── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin;

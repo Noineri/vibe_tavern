@@ -140,10 +140,15 @@ export async function setImageGenProfileFamily(
 export async function detectImageGenProfileFamily(
   id: string,
   signal?: AbortSignal,
+  model?: string,
 ): Promise<ImageGenFamilyDetectionResultValue> {
   const baseUrl = getGatewayBaseUrl();
+  // IF-8a: the DISPLAYED model rides the query — detection runs against it
+  // without a save round-trip (the save-first gate is gone, owner correction
+  // 2026-09-25).
+  const modelQuery = model !== undefined && model !== "" ? `?model=${encodeURIComponent(model)}` : "";
   const response = await fetch(
-    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/detect-family`),
+    appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/detect-family${modelQuery}`),
     { method: "POST", signal },
   );
   if (!response.ok) throw await rawError("Image-gen family detection", response);

@@ -474,7 +474,13 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
       // ladder (unknown profile → 404, no-model/config problems → 400 via
       // the shared backend-error mapping, the models-route twin).
       try {
-        const result = await runtime.detectImageGenProfileFamily(c.req.param("id"), c.req.raw.signal);
+        const result = await runtime.detectImageGenProfileFamily(
+          c.req.param("id"),
+          c.req.raw.signal,
+          // IF-8a: the optional query model names the DISPLAYED model —
+          // detection runs against it without a profile save round-trip.
+          c.req.query("model") ?? undefined,
+        );
         if (result === null) return c.json({ error: "Image-gen profile not found" }, 404);
         return c.json(result);
       } catch (error) {

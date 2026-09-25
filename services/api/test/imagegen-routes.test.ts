@@ -3908,6 +3908,53 @@ describe("image-gen routes — profile family API (IPT-3)", () => {
     expect(profile.familySource).toBe("auto");
   });
 
+  test("POST detect-family: ?model= names the DISPLAYED model — a draft pick is detectable without a save round-trip (IF-8a)", async () => {
+    const draftSha = "b".repeat(64);
+    const { app } = await makeApp(async (input) => {
+      const url = new URL(String(input));
+      if (url.origin === "https://civitai.com") {
+        expect(url.pathname).toBe(`/api/v1/model-versions/by-hash/${draftSha}`);
+        return Response.json({ baseModel: "Pony", modelId: 43 });
+      }
+      if (url.pathname.endsWith("/sd-models")) {
+        return Response.json([
+          {
+            title: "Draft Pony [pony]",
+            model_name: "draftpony_v1",
+            hash: "11bb22cc",
+            sha256: draftSha,
+            filename: "X:/models/Stable-diffusion/draftpony_v1.safetensors",
+            config: "",
+          },
+        ]);
+      }
+      return new Response("nope", { status: 404 });
+    });
+    // The SAVED model differs from the displayed one — the query model wins.
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860", modelId: "snowpony_v10" });
+
+    const res = await app.request(`/api/image-gen/profiles/${id}/detect-family?model=${encodeURIComponent("draftpony_v1")}`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      family: "pony",
+      sourceLabel: "civitai-by-hash",
+      baseModel: "Pony",
+    });
+
+    // Persisted with the REQUESTED model anchor — not the saved one.
+    const profile = (await (await app.request(`/api/image-gen/profiles/${id}`)).json()) as {
+      familyDetected?: string;
+      familyDetectedForModel?: string;
+      modelId?: string;
+    };
+    expect(profile.familyDetected).toBe("pony");
+    expect(profile.familyDetectedForModel).toBe("draftpony_v1");
+    expect(profile.modelId).toBe("snowpony_v10");
+  });
+
   test("POST detect-family: comfyui embedded metadata answers at source (a)", async () => {
     const { app } = await makeApp(async (input) => {
       const url = new URL(String(input));

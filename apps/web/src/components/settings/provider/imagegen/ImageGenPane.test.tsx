@@ -145,9 +145,9 @@ const setFamilyApi = mock(async (id: string, family: ImagePromptFamily | null): 
 });
 
 /** Server-side success persistence mirror: a success stores familyDetected
- *  anchored to the record's PERSISTED model; every no-answer leaves the
- *  stored state untouched (the route contract). */
-function applyDetectOutcome(id: string, outcome: FamilyDetectResult): FamilyDetectResult {
+ *  anchored to the REQUESTED model (the displayed one — the route contract
+ *  since IF-8a); every no-answer leaves the stored state untouched. */
+function applyDetectOutcome(id: string, outcome: FamilyDetectResult, model?: string): FamilyDetectResult {
   if (outcome.ok) {
     const idx = apiStore.findIndex((p) => p.id === id);
     if (idx !== -1) {
@@ -155,7 +155,7 @@ function applyDetectOutcome(id: string, outcome: FamilyDetectResult): FamilyDete
       apiStore[idx] = {
         ...rec,
         familyDetected: outcome.family,
-        familyDetectedForModel: rec.modelId,
+        familyDetectedForModel: model ?? rec.modelId,
         familySource: rec.familyOverride !== undefined ? "manual" : "auto",
       } as ImageGenRecord;
     }
@@ -164,8 +164,8 @@ function applyDetectOutcome(id: string, outcome: FamilyDetectResult): FamilyDete
 }
 let detectOutcome: FamilyDetectResult = { ok: false, error: "no authoritative source answered", tried: [] };
 let pendingDetect: Promise<FamilyDetectResult> | null = null;
-const detectFamilyApi = mock(async (id: string): Promise<FamilyDetectResult> =>
-  applyDetectOutcome(id, await (pendingDetect ?? Promise.resolve(detectOutcome))),
+const detectFamilyApi = mock(async (id: string, _signal?: AbortSignal, model?: string): Promise<FamilyDetectResult> =>
+  applyDetectOutcome(id, await (pendingDetect ?? Promise.resolve(detectOutcome)), model),
 );
 
 mock.module("../../../../api/image-gen-api.js", () => ({
@@ -2352,30 +2352,37 @@ describe("ImageGenPane — prompt family row (IPT-5)", () => {
     expect(pinnedView.queryByTestId("image-gen-family-stale")).toBeNull();
   });
 
-  it("disables detection with the full save-first hint for an absent or unsaved displayed model", async () => {
+  it("detects the DISPLAYED model without a save round-trip; only an absent model blocks (IF-8a, owner correction 2026-09-25)", async () => {
     const record = makeRecord({ modelId: "checkpoint-a" });
     const draftView = render(familyNode(familyHook(record, "checkpoint-b")));
-    await waitFor(() => expect(draftView.getByTestId("image-gen-family-detect-disabled")).toBeTruthy());
-    const draftDetect = draftView.getByTestId("image-gen-family-detect-disabled");
-    expect(draftDetect.textContent).toContain("image_gen_family_detect");
-    // IF-8a: the save-first hint rides the row INLINE (hover-only tooltips
-    // are a trap — touch has no hover; the blocked button read as "dead").
-    expect(draftView.getByTestId("image-gen-family-detect-blocked-hint").textContent).toContain(
-      "image_gen_family_detect_save_first",
-    );
+    await waitFor(() => expect(draftView.getByTestId("image-gen-family-detect")).toBeTruthy());
+    // No disabled twin, no blocked hint — a freshly picked unsaved model is
+    // detectable on the spot (the save-first gate is gone).
+    expect(draftView.queryByTestId("image-gen-family-detect-disabled")).toBeNull();
+    expect(draftView.queryByTestId("image-gen-family-detect-blocked-hint")).toBeNull();
     await act(async () => {
-      fireEvent.pointerMove(draftDetect, { pointerType: "mouse" });
+      draftView.getByTestId("image-gen-family-detect").click();
     });
-    await waitFor(() => expect(document.body.textContent).toContain("image_gen_family_detect_save_first"));
-    expect(draftView.queryByTestId("image-gen-family-detect")).toBeNull();
+    await waitFor(() => expect(detectFamilyApi).toHaveBeenCalledTimes(1));
+    // The DISPLAYED model rides the request (the third arg) — the server
+    // anchors the detection to exactly that model.
+    expect((detectFamilyApi.mock.calls[0] as unknown[])[0]).toBe("ig1");
+    expect((detectFamilyApi.mock.calls[0] as unknown[])[2]).toBe("checkpoint-b");
+    // The default no-answer outcome renders the honest in-row failure box.
+    await waitFor(() => expect(draftView.getByTestId("image-gen-family-error")).toBeTruthy());
     cleanup();
 
     const absentView = render(familyNode(familyHook(record, null)));
     await waitFor(() => expect(absentView.getByTestId("image-gen-family-detect-disabled")).toBeTruthy());
     expect(absentView.queryByTestId("image-gen-family-detect")).toBeNull();
     expect(absentView.getByTestId("image-gen-family-detect-blocked-hint").textContent).toContain(
-      "image_gen_family_detect_save_first",
+      "image_gen_family_detect_pick_model_first",
     );
+    const absentDetect = absentView.getByTestId("image-gen-family-detect-disabled");
+    await act(async () => {
+      fireEvent.pointerMove(absentDetect, { pointerType: "mouse" });
+    });
+    await waitFor(() => expect(document.body.textContent).toContain("image_gen_family_detect_pick_model_first"));
   });
 
   it("does not let an older profile or model detection response clobber the current row", async () => {

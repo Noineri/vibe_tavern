@@ -1234,7 +1234,7 @@ export default interface Resources {
     "image_gen_family_automatic": "Automatic",
     "image_gen_family_detect": "Auto-detect",
     "image_gen_family_detect_failed": "Auto-detection failed",
-    "image_gen_family_detect_save_first": "Save the profile first — detection inspects the saved model, not the unsaved selection.",
+    "image_gen_family_detect_pick_model_first": "Pick a model first — detection inspects the selected model.",
     "image_gen_family_detected": "Detected: {family}",
     "image_gen_family_label": "Family",
     "image_gen_family_manual_note": "Pinned manually — the pin overrides auto-detection.",
