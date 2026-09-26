@@ -43,6 +43,8 @@ import { conflict, validation } from "../../shared/errors.js";
 import type {
   CreateImageGenProfileInput,
   DraftImageGenModelsInput,
+  DraftImageGenPromptInput,
+  DraftImageGenPromptResponseValue,
   FavoriteImageGenModelInput,
   GenerateImageGenInput,
   ImageGenFamilyDetectionResultValue,
@@ -704,6 +706,59 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     return true;
   };
 
+  /** FT-B2: draft an editable image prompt through the profile's saved
+   * assist pick. This deliberately never submits an image backend request:
+   * the caller receives text only and generation remains the IG-14 verbatim
+   * path after the user reviews it in the chip. */
+  draftImageGenPrompt: ImageGenRuntimeApi["draftImageGenPrompt"] = async (
+    chatId: string,
+    body: DraftImageGenPromptInput,
+    signal?: AbortSignal,
+  ): Promise<DraftImageGenPromptResponseValue> => {
+    const chat = await this.stores.chats.getById(chatId);
+    if (!chat) throw new ImageGenNotFoundError(`Chat ${chatId} not found`);
+    const profile = await this.stores.imageGen.getById(body.profileId);
+    if (!profile) throw new ImageGenNotFoundError(`Image-gen profile ${body.profileId} not found`);
+    const assist = this.configuredAssistRunner(profile, signal);
+    if (assist === undefined) {
+      throw new ImageGenValidationError("AI prompt drafting needs a configured LLM assist provider and model");
+    }
+    const model = profile.modelId;
+    const { family: promptFamily } = resolveImageGenPromptFamily(profile, model);
+    try {
+      const promptCharCap =
+        model !== undefined && model !== ""
+          ? (await this.stores.imageGenPromptCaps.get(profile.backend, model))?.maxPromptChars
+          : undefined;
+      const prompts = await buildImageGenPrompts(
+        this.stores,
+        chat,
+        body.mode,
+        undefined,
+        assist,
+        {
+          promptFamily,
+          qualityLayerEnabled: profile.qualityLayerEnabled,
+          ...(promptCharCap !== undefined ? { promptCharCap } : {}),
+          // Presence (even `""`) marks this as the text-only draft path;
+          // Free generation omits the option and retains IG-14's required
+          // finished caller prompt.
+          assistHint: body.hint ?? "",
+        },
+      );
+      const negativePrompt = prompts.negativePrompt.trim();
+      return {
+        prompt: prompts.prompt,
+        ...(profile.capabilities.supportsNegativePrompt && negativePrompt !== "" ? { negativePrompt } : {}),
+      };
+    } catch (error) {
+      if (error instanceof ImageGenModeValidationError) {
+        throw new ImageGenValidationError(error.message);
+      }
+      throw error;
+    }
+  };
+
   draftListImageGenModels: ImageGenRuntimeApi["draftListImageGenModels"] = async (body: DraftImageGenModelsInput) => {
     const config: Record<string, unknown> = { ...body.config };
     const formKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";
@@ -910,18 +965,13 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // behavior, zero extra calls). Resolution is LAZY inside the runner so a
     // free-mode or chip-edit generation (assist exempt by design) never
     // touches the LLM profile.
-    let assist: ImageGenAssistRunner | undefined;
-    const assistProfileId = profile.llmProviderProfileId ?? "";
+    let assist = this.configuredAssistRunner(profile, signal);
     const assistModelId = profile.llmModelId ?? "";
     // C-A: flips true at the exact moment the assist call fires (lazy — a
     // free/verbatim run never touches it), so the provenance can stamp the
     // author model on assist-written prompts only.
     let assistFired = false;
-    if (profile.llmAssistEnabled && assistProfileId !== "" && assistModelId !== "") {
-      if (this.assistDeps === undefined) {
-        throw new ImageGenValidationError("LLM assist is enabled but the assistant seam is unavailable");
-      }
-      assist = this.makeAssistRunner(this.assistDeps, assistProfileId, assistModelId, signal);
+    if (assist !== undefined) {
       // MR-11: the assist wrapper announces the prompt phase at the exact
       // moment the LLM call actually fires (lazy resolution — exempt runs
       // never enter "prompt") and hands the timeline back to "starting"
@@ -1150,6 +1200,22 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       })),
     };
   };
+
+  /** Resolve the profile's configured quiet assist runner. Generate keeps
+   * this optional because non-assisted server builds remain valid; FT-B2's
+   * draft endpoint requires the returned runner and rejects its absence. */
+  private configuredAssistRunner(
+    profile: ImageGenProfile,
+    signal: AbortSignal | undefined,
+  ): ImageGenAssistRunner | undefined {
+    const providerProfileId = profile.llmProviderProfileId ?? "";
+    const model = profile.llmModelId ?? "";
+    if (!profile.llmAssistEnabled || providerProfileId === "" || model === "") return undefined;
+    if (this.assistDeps === undefined) {
+      throw new ImageGenValidationError("LLM assist is enabled but the assistant seam is unavailable");
+    }
+    return this.makeAssistRunner(this.assistDeps, providerProfileId, model, signal);
+  }
 
   /** IG-15: the quiet single-shot runner for one generation. Mirrors the
    *  chat-summary resolution ladder (profile → API-key check → effective

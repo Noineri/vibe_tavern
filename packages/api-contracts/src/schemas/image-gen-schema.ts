@@ -522,6 +522,25 @@ export const generateImageGenSchema = z.object({
 });
 export type GenerateImageGenInput = z.infer<typeof generateImageGenSchema>;
 
+/** Body of `POST /api/chats/:chatId/image-gen/prompt-draft` (FT-B2): asks
+ * the image profile's configured LLM assist to write an editable prompt.
+ * `hint` is deliberately optional for scene-backed modes, where the chat
+ * digest alone is a sufficient instruction. */
+export const draftImageGenPromptSchema = z.object({
+  profileId: z.string(),
+  mode: imageGenerationModeSchema,
+  hint: z.string().optional(),
+});
+export type DraftImageGenPromptInput = z.infer<typeof draftImageGenPromptSchema>;
+
+/** One AI-drafted prompt, returned to the chip before image generation.
+ * Negative text appears only for image backends that support it. */
+export const draftImageGenPromptResponseSchema = z.object({
+  prompt: z.string(),
+  negativePrompt: z.string().optional(),
+});
+export type DraftImageGenPromptResponseValue = z.infer<typeof draftImageGenPromptResponseSchema>;
+
 /** One generated image persisted as a flat chat attachment — the slot's
  *  `attachmentsJson` entry and the wire response item share this shape. */
 export const imageGenGeneratedAttachmentSchema = z.object({

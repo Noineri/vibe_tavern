@@ -3245,6 +3245,13 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
       body: JSON.stringify(body),
     });
 
+  const draftPrompt = (app: ReturnType<typeof createImageGenRoutes>, chatId: string, body: Record<string, unknown>) =>
+    app.request(`/api/chats/${chatId}/image-gen/prompt-draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
   test("disabled by default: no quiet call, the wire prompt is the built template", async () => {
     const assist = makeAssistDeps({ llm1: makeLlmProfile() });
     const scene = await makeAssistScene(assist);
@@ -3285,6 +3292,88 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
     expect(assist.calls).toHaveLength(2);
     expect(assist.calls[1]!.system).toBe(`${core.trim()}\n\n${ponyAddendum.trim()}`);
+  });
+
+  test("FT-B2: prompt draft assembles the family assist instruction, carries an optional hint, and leaves verbatim generation untouched", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    assist.setExecuteBehavior({ text: "drafted English prompt" });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    await scene.stores.imageGen.update(id, { familyOverride: "pony" });
+    const core = await loadPromptAsset("image-assist.md");
+    const ponyAddendum = await loadPromptAsset("image-assist.pony.md");
+
+    const hinted = await draftPrompt(scene.app, scene.chatId, {
+      profileId: id,
+      mode: "portrait",
+      hint: "мрачный портрет под дождём",
+    });
+    expect(hinted.status).toBe(200);
+    expect((await hinted.json()).prompt).toBe("drafted English prompt");
+    expect(assist.calls).toHaveLength(1);
+    expect(assist.calls[0]!.system).toBe(`${core.trim()}\n\n${ponyAddendum.trim()}`);
+    expect(assist.calls[0]!.user).toContain("Seraphine");
+    expect(assist.calls[0]!.user).toContain("мрачный портрет под дождём");
+
+    // Scene-backed modes may draft from their digest alone — no empty hint
+    // marker changes the established assist payload.
+    const contextOnly = await draftPrompt(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(contextOnly.status).toBe(200);
+    expect(assist.calls).toHaveLength(2);
+    expect(assist.calls[1]!.user).toContain("silver-haired tavern keeper");
+    expect(assist.calls[1]!.user).not.toContain("User hint:");
+
+    // IG-14 remains verbatim: an already-finished caller prompt bypasses the
+    // assist even when the profile has a fully configured draft runner.
+    const verbatim = await generate(scene.app, scene.chatId, {
+      profileId: id,
+      mode: "portrait",
+      prompt: "user-reviewed final prompt",
+    });
+    expect(verbatim.status).toBe(200);
+    expect(assist.calls).toHaveLength(2);
+    expect(scene.sent[0]).toBe("user-reviewed final prompt");
+  });
+
+  test("FT-B2: Free drafts use a hint or fall back to the digest; route misses and malformed bodies use the 400/404 family", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    assist.setExecuteBehavior({ text: "free drafted prompt" });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+
+    const contextOnly = await draftPrompt(scene.app, scene.chatId, { profileId: id, mode: "free" });
+    expect(contextOnly.status).toBe(200);
+    expect(assist.calls).toHaveLength(1);
+    expect(assist.calls[0]!.user).toContain("Seraphine");
+    expect(assist.calls[0]!.user).toContain("The tavern door creaks open.");
+
+    const freeHint = await draftPrompt(scene.app, scene.chatId, { profileId: id, mode: "free", hint: "a cat reading" });
+    expect(freeHint.status).toBe(200);
+    expect(assist.calls).toHaveLength(2);
+    expect(assist.calls[1]!.user).toBe("a cat reading");
+
+    // The draft marker is absent from generate: IG-14 still rejects a Free
+    // image request without the user-reviewed verbatim prompt.
+    const generation = await generate(scene.app, scene.chatId, { profileId: id, mode: "free" });
+    expect(generation.status).toBe(400);
+    expect(assist.calls).toHaveLength(2);
+
+    const missing = await draftPrompt(scene.app, "missing", { profileId: id, mode: "portrait" });
+    expect(missing.status).toBe(404);
+    const malformed = await draftPrompt(scene.app, scene.chatId, { profileId: id, mode: "not-a-mode" });
+    expect(malformed.status).toBe(400);
   });
 
   test("IF-10: with a learned cap the assist instruction carries the character budget; without one it stays byte-identical", async () => {

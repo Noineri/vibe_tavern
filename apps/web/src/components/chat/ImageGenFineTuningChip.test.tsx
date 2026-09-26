@@ -3,7 +3,8 @@ import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { brandId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
-import type { AppMessage } from "../../api/types.js";
+import { useProviderDataStore } from "../../stores/provider-data-store.js";
+import type { AppMessage, ProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
 
@@ -20,6 +21,12 @@ mock.module("../../i18n/context.js", () => ({
 }));
 
 const realImageGenApi = await import("../../api/image-gen-api.js");
+const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
+
+mock.module("../../stores/api-actions/provider-actions.js", () => ({
+  ...realProviderActions,
+  fetchProviderModelsAction: async () => ({ models: [{ id: "model-a", label: "Model A" }] }),
+}));
 
 type ProfileRecord = import("../../api/image-gen-api.js").ImageGenProfileRecord;
 type ModelEntry = import("../../api/image-gen-api.js").ImageGenModelEntry;
@@ -103,6 +110,17 @@ let sidecarsStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenD
 const sidecarsFailFor = new Set<string>();
 const sidecarsCalls: string[] = [];
 const generateCalls: Array<[string, import("@vibe-tavern/api-contracts").GenerateImageGenInput]> = [];
+const draftPromptCalls: Array<{
+  chatId: string;
+  body: import("@vibe-tavern/api-contracts").DraftImageGenPromptInput;
+  signal: AbortSignal | undefined;
+}> = [];
+let draftPromptImplementation: (
+  chatId: string,
+  body: import("@vibe-tavern/api-contracts").DraftImageGenPromptInput,
+  signal?: AbortSignal,
+) => Promise<import("@vibe-tavern/api-contracts").DraftImageGenPromptResponseValue> = async () => ({ prompt: "drafted prompt" });
+const updateProfileCalls: Array<{ id: string; body: import("@vibe-tavern/api-contracts").UpdateImageGenProfileInput }> = [];
 const upsertCalls: Array<{
   profileId: string;
   modelId: string;
@@ -116,6 +134,20 @@ mock.module("../../api/image-gen-api.js", () => ({
   generateImageGen: (chatId: string, input: import("@vibe-tavern/api-contracts").GenerateImageGenInput) => {
     generateCalls.push([chatId, input]);
     return new Promise<void>(() => {});
+  },
+  draftImageGenPrompt: (
+    chatId: string,
+    body: import("@vibe-tavern/api-contracts").DraftImageGenPromptInput,
+    signal?: AbortSignal,
+  ) => {
+    draftPromptCalls.push({ chatId, body, signal });
+    return draftPromptImplementation(chatId, body, signal);
+  },
+  updateImageGenProfile: (id: string, body: import("@vibe-tavern/api-contracts").UpdateImageGenProfileInput) => {
+    updateProfileCalls.push({ id, body });
+    const current = profilesStore.find((profile) => profile.id === id);
+    if (!current) return Promise.reject(new Error("profile missing"));
+    return Promise.resolve(current);
   },
   listAllImageGenProfiles: () => Promise.resolve([...profilesStore]),
   // IF-10: the learned prompt-cap table (advisory counter data).
@@ -259,6 +291,10 @@ afterEach(() => {
   upsertCalls.length = 0;
   mobileOverride = false;
   generateCalls.length = 0;
+  draftPromptCalls.length = 0;
+  draftPromptImplementation = async () => ({ prompt: "drafted prompt" });
+  updateProfileCalls.length = 0;
+  useProviderDataStore.setState({ profiles: [], favoritesByProfile: {}, coauthorFavoritesByProfile: {}, copilotFavoritesByProfile: {} });
   // The store is a module singleton shared across files in this worker —
   // leave every map pristine.
   useImageGenChatStore.setState({
@@ -353,6 +389,105 @@ describe("ImageGenFineTuningChip — the IG-16 gate + pill canon (IG-17, CF1)", 
     openChip();
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
     expect(within(view.baseElement).getByTestId("image-gen-ft-profile-select")).toBeTruthy();
+  });
+});
+
+function providerProfile(): ProviderProfileRecord {
+  return {
+    id: "llm-p1", name: "Prompt writer", providerPreset: "openai", coauthorTransport: "chat_completions", generationMode: "chat", endpoint: "https://api.example.test/v1",
+    defaultModel: "model-a", visionModel: null, temperature: 1, topP: 1, minP: 0, topK: 0, topA: 0,
+    typicalP: 1, tfsZ: 1, adaptiveTarget: -1, adaptiveDecay: 0.9, dynatempRange: 0, dynatempExponent: 1, topNSigma: 0, smoothingFactor: 0, repeatLastN: 0, mirostat: 0, mirostatTau: 5, mirostatEta: 0.1,
+    dryMultiplier: 0, dryBase: 1.75, dryAllowedLength: 2, dryPenaltyLastN: -1, drySequenceBreakers: [], bannedStrings: [], xtcThreshold: 0.1,
+    xtcProbability: 0, frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1, maxTokens: 2048,
+    contextBudget: 16000, pinContextBudget: false, tokenPadding: 0, bindPerModel: false, modelFreeOnly: false, modelGroupByOwner: false,
+    stopSequences: [], logitBias: [], seed: null, reasoningEffort: "auto", showReasoning: false, streamResponse: true,
+    customSamplers: false, proxyMode: "inherit", proxyId: null, samplerSetId: null, generationFormat: null, isActive: true, hasStoredApiKey: true,
+    createdAt: "2026-01-01", updatedAt: "2026-01-01",
+  };
+}
+
+describe("ImageGenFineTuningChip — AI quick pill (FT-B1)", () => {
+  it("renders the two pill zones; its gear opens the profile's assist pick and saves changes through the profile PATCH seam", async () => {
+    profilesStore = [{
+      ...profile("p1", "Image profile", noCaps()),
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm-p1",
+      llmModelId: "model-a",
+    }];
+    useProviderDataStore.setState({ profiles: [providerProfile()] });
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-b1" />);
+    act(() => armChat("chat-b1"));
+    openChip();
+    const promptRow = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-prompt").parentElement as HTMLElement);
+    const pillButtons = within(promptRow).getAllByRole("button");
+    expect(pillButtons).toHaveLength(2);
+
+    await act(async () => { fireEvent.click(pillButtons[1]!); });
+    await waitFor(() => expect(within(view.baseElement).getByText("Prompt writer")).toBeTruthy());
+
+    await act(async () => { fireEvent.click(within(view.baseElement).getByText("done_btn")); });
+    await waitFor(() => expect(updateProfileCalls).toEqual([{
+      id: "p1",
+      body: { llmAssistEnabled: true, llmProviderProfileId: "llm-p1", llmModelId: "model-a" },
+    }]));
+  });
+});
+
+describe("ImageGenFineTuningChip — AI prompt draft (FT-B2)", () => {
+  it("star drafts into the positive field and writes a negative only when the profile supports it", async () => {
+    profilesStore = [{
+      ...profile("p1", "Image profile", fullCaps()),
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm-p1",
+      llmModelId: "model-a",
+    }];
+    draftPromptImplementation = async () => ({ prompt: "English portrait prompt", negativePrompt: "blurry" });
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-b2-fill" />);
+    act(() => armChat("chat-b2-fill"));
+    act(() => useImageGenChatStore.getState().setFineTuningDraft("chat-b2-fill", { target: "portrait" }));
+    openChip();
+    const promptRow = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-prompt").parentElement as HTMLElement);
+    await act(async () => { fireEvent.click(within(promptRow).getAllByRole("button")[0]!); });
+    await waitFor(() => expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-b2-fill"]).toEqual({
+      prompt: "English portrait prompt",
+      negative: "blurry",
+      target: "portrait",
+    }));
+    expect(draftPromptCalls).toHaveLength(1);
+    expect(draftPromptCalls[0]!.body).toEqual({ profileId: "p1", mode: "portrait" });
+
+    cleanup();
+    profilesStore = [{ ...profile("p2", "No negative", noCaps()), llmAssistEnabled: true, llmProviderProfileId: "llm-p1", llmModelId: "model-a" }];
+    draftPromptImplementation = async () => ({ prompt: "Only positive", negativePrompt: "ignored negative" });
+    const noNegative = renderChip(<ImageGenFineTuningChip chatId="chat-b2-no-negative" />);
+    act(() => armChat("chat-b2-no-negative"));
+    act(() => useImageGenChatStore.getState().setFineTuningDraft("chat-b2-no-negative", { target: "portrait" }));
+    openChip();
+    const noNegativeRow = await waitFor(() => within(noNegative.baseElement).getByTestId("image-gen-ft-prompt").parentElement as HTMLElement);
+    await act(async () => { fireEvent.click(within(noNegativeRow).getAllByRole("button")[0]!); });
+    await waitFor(() => expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-b2-no-negative"]).toEqual({
+      prompt: "Only positive",
+      negative: "",
+      target: "portrait",
+    }));
+  });
+
+  it("a second star click aborts the in-flight draft", async () => {
+    profilesStore = [{ ...profile("p1", "Image profile", noCaps()), llmAssistEnabled: true, llmProviderProfileId: "llm-p1", llmModelId: "model-a" }];
+    draftPromptImplementation = async (_chatId, _body, signal) => await new Promise((_, reject) => {
+      signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+    });
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-b2-cancel" />);
+    act(() => armChat("chat-b2-cancel"));
+    act(() => useImageGenChatStore.getState().setFineTuningDraft("chat-b2-cancel", { target: "portrait" }));
+    openChip();
+    const promptRow = await waitFor(() => within(view.baseElement).getByTestId("image-gen-ft-prompt").parentElement as HTMLElement);
+    const star = within(promptRow).getAllByRole("button")[0]!;
+    await act(async () => { fireEvent.click(star); });
+    await waitFor(() => expect(draftPromptCalls).toHaveLength(1));
+    const cancel = within(promptRow).getAllByRole("button")[0]!;
+    await act(async () => { fireEvent.click(cancel); });
+    await waitFor(() => expect(draftPromptCalls[0]!.signal?.aborted).toBe(true));
   });
 });
 

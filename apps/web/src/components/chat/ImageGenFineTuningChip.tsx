@@ -36,13 +36,15 @@
  * grid — no dead half-column.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
+import { toast } from "sonner";
 
 import { Icons } from "../shared/icons.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
+import { AiQuickPill, type AiQuickSettings } from "../shared/AiQuickPill.js";
 import { SliderField } from "../shared/SliderField.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { Toggle } from "../shared/Toggle.js";
@@ -68,6 +70,8 @@ import {
   listImageGenDitSidecars,
   getImageGenModelSettings,
   upsertImageGenModelSettings,
+  updateImageGenProfile,
+  draftImageGenPrompt,
   type ImageGenModelEntry,
   type ImageGenProfileRecord,
   type ImageGenLora,
@@ -191,6 +195,9 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   const [upscalers, setUpscalers] = useState<ImageGenUpscaler[] | null>(null);
   const [upscalersFailed, setUpscalersFailed] = useState(false);
   const [promptCaps, setPromptCaps] = useState<ImageGenPromptCap[] | null>(null);
+  const [assistSettings, setAssistSettings] = useState<AiQuickSettings>({ providerId: "", modelName: "" });
+  const [draftLoading, setDraftLoading] = useState(false);
+  const draftAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -234,6 +241,16 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   const supportsNegative = caps?.supportsNegativePrompt ?? false;
   const supportsLoras = caps?.supportsLoras ?? false;
   const supportsHiresFix = caps?.supportsHiresFix ?? false;
+
+  // FT-B1: the chip's quick pill is a third consumer of the image profile's
+  // IG-15 assist pick. Re-seed on profile switches; the profile remains the
+  // sole persisted source for its provider/model pair.
+  useEffect(() => {
+    setAssistSettings({
+      providerId: effective?.llmProviderProfileId ?? "",
+      modelName: effective?.llmModelId ?? "",
+    });
+  }, [effective?.id, effective?.llmProviderProfileId, effective?.llmModelId]);
 
   // Model catalog for the effective profile (re-fetched on profile switch).
   useEffect(() => {
@@ -342,6 +359,57 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   }
 
   const busy = running !== undefined;
+
+  async function draftPromptWithAi(): Promise<void> {
+    if (draftLoading) {
+      draftAbortRef.current?.abort();
+      return;
+    }
+    if (effective === null) return;
+    const mode = draft.target ?? IMAGE_GENERATION_MODES.Free;
+    const hint = draft.prompt.trim();
+    const controller = new AbortController();
+    draftAbortRef.current = controller;
+    setDraftLoading(true);
+    try {
+      const response = await draftImageGenPrompt(
+        chatId,
+        { profileId: effective.id, mode, ...(hint !== "" ? { hint } : {}) },
+        controller.signal,
+      );
+      setFineTuningDraft(chatId, {
+        prompt: response.prompt,
+        ...(supportsNegative && response.negativePrompt?.trim()
+          ? { negative: response.negativePrompt }
+          : {}),
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast.error(t("image_gen_prompt_draft_failed"));
+    } finally {
+      if (draftAbortRef.current === controller) {
+        draftAbortRef.current = null;
+        setDraftLoading(false);
+      }
+    }
+  }
+
+  async function saveAssistSettings(settings: AiQuickSettings): Promise<void> {
+    if (effective === null) return;
+    setAssistSettings(settings);
+    try {
+      const updated = await updateImageGenProfile(effective.id, {
+        // The gear is provider/model-only. Saving its pick enables IG-15;
+        // the backend still rejects an incomplete pick at the assist seam.
+        llmAssistEnabled: true,
+        llmProviderProfileId: settings.providerId || null,
+        llmModelId: settings.modelName || null,
+      });
+      setProfiles((current) => current?.map((profile) => profile.id === updated.id ? updated : profile) ?? current);
+    } catch {
+      toast.error(t("image_gen_prompt_draft_settings_failed"));
+    }
+  }
 
   // ── The Generate action (FT-A3) ───────────────────────────────
   // Anchor = the chat's TAIL message (the cockpit sits above the input —
@@ -589,7 +657,20 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
           <div className="my-0.5 h-px bg-border opacity-40" />
 
           <div className="flex flex-col gap-1.5 px-1.5">
-            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_prompt_label")}</span>
+            <div className="flex items-center justify-between gap-2">
+              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_chip_prompt_label")}</span>
+              <AiQuickPill
+                settings={assistSettings}
+                onSettingsChange={(settings) => { void saveAssistSettings(settings); }}
+                onGenerate={() => { void draftPromptWithAi(); }}
+                onCancel={() => { draftAbortRef.current?.abort(); }}
+                loading={draftLoading}
+                disabled={effective === null}
+                starTooltip={t("image_gen_prompt_draft")}
+                gearTooltip={t("image_gen_prompt_draft_settings")}
+                size="sm"
+              />
+            </div>
             <AutoTextarea
               value={draft.prompt}
               onChange={(e) => setFineTuningDraft(chatId, { prompt: e.target.value })}

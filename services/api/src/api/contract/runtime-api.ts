@@ -1137,6 +1137,13 @@ export interface ImageGenRuntimeApi {
 	 *  `profileId` for stored-key resolution (endpoint-guarded). Null = the
 	 *  backend exposes no model list (route → 400). */
 	draftListImageGenModels: (body: import("@vibe-tavern/api-contracts").DraftImageGenModelsInput) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelInfoValue[] | null>;
+	/** FT-B2: use the image profile's configured LLM assist to write an
+	 * editable prompt only. No image backend or chat message is touched. */
+	draftImageGenPrompt: (
+		chatId: string,
+		body: import("@vibe-tavern/api-contracts").DraftImageGenPromptInput,
+		signal?: AbortSignal,
+	) => Promise<import("@vibe-tavern/api-contracts").DraftImageGenPromptResponseValue>;
 	/** One-shot generation: resolve the profile + chat, merge the per-mode
 	 *  size presets and default params with the request overrides, generate
 	 *  through the backend adapter, persist the image bytes as flat

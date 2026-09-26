@@ -24,6 +24,7 @@
  *   GET    /api/image-gen/profiles/:id/progress        (capability-gated, PG-2)
  *   POST   /api/image-gen/profiles/:id/interrupt       (capability-gated, PG-2)
  *   POST   /api/image-gen/draft/models                 (shared fetch-by-endpoint)
+ *   POST   /api/chats/:chatId/image-gen/prompt-draft   (LLM prompt text only)
  *   POST   /api/chats/:chatId/image-gen/generate       (image message slot)
  *   POST   /api/image-gen/attachments/:assetId/promote-to-gallery
  *   GET    /api/image-gen/profiles/:id/model-favorites  (IG-12b)
@@ -346,6 +347,27 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
         throw error;
       }
     })
+    // ── Prompt draft (FT-B2: LLM text only, never image generation) ───────
+    .post(
+      "/api/chats/:chatId/image-gen/prompt-draft",
+      zValidator("json", schemas.draftImageGenPromptSchema),
+      async (c) => {
+        try {
+          return c.json(await runtime.draftImageGenPrompt(c.req.param("chatId"), c.req.valid("json"), c.req.raw.signal));
+        } catch (error) {
+          if (error instanceof ImageGenNotFoundError) {
+            return c.json({ error: error.message }, 404);
+          }
+          if (error instanceof ImageGenValidationError) {
+            return c.json({ error: error.message }, 400);
+          }
+          if (error instanceof ProviderExecutionError) {
+            return c.json({ error: `LLM assist failed: ${error.message}` }, 502);
+          }
+          throw error;
+        }
+      },
+    )
     // ── Generate (image message slot) ─────────────────────────────────────
     .post(
       "/api/chats/:chatId/image-gen/generate",

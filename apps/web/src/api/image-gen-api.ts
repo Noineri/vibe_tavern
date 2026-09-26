@@ -18,6 +18,8 @@ import type { z } from "zod";
 import type {
   CreateImageGenProfileInput,
   DraftImageGenModelsInput,
+  DraftImageGenPromptInput,
+  DraftImageGenPromptResponseValue,
   FavoriteImageGenModelInput,
   ImageGenModelFavoriteValue,
   ImageGenModelInfoValue,
@@ -398,6 +400,30 @@ export async function draftListImageGenModels(
   });
   if (!response.ok) throw await rawError("Image-gen draft model list", response);
   return (await response.json()) as ImageGenModelEntry[];
+}
+
+// ─── Chat-surface draft / generate (FT-B2 / IG-16 — raw fetch, abort-aware) ─
+
+/** Ask the profile's configured LLM assist to write editable prompt text.
+ * This endpoint never starts image generation; the user can revise the draft
+ * before the normal IG-14 generate path submits it. */
+export async function draftImageGenPrompt(
+  chatId: string,
+  body: DraftImageGenPromptInput,
+  signal?: AbortSignal,
+): Promise<DraftImageGenPromptResponseValue> {
+  const baseUrl = getGatewayBaseUrl();
+  const response = await fetch(
+    appendTokenQuery(`${baseUrl}/api/chats/${encodeURIComponent(chatId)}/image-gen/prompt-draft`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    },
+  );
+  if (!response.ok) throw await rawError("Image-gen prompt draft", response);
+  return (await response.json()) as DraftImageGenPromptResponseValue;
 }
 
 // ─── Chat-surface generate (IG-16 — raw fetch, abort-signal aware) ──────────

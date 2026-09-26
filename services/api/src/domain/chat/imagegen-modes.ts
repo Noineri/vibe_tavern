@@ -23,7 +23,9 @@
  *                             message; {{lastChatMessage}} rides the canon)
  *   user-persona             → the chat's persona ({{user}}, {{persona}})
  *   scene-background / scene-illustration → the last chat message
- *   free                     → the caller-provided raw prompt (required)
+ *   free                     → the caller-provided raw prompt (required for
+ *                             generation; assist-backed drafting instead
+ *                             writes editable text from a hint or digest)
  *
  * RP-PROMPT SEPARATION (the plan's negative self-check): this module shares
  * NOTHING with the roleplay prompt assembly — it builds its own light
@@ -55,6 +57,9 @@ export interface ImageGenModePromptOptions {
    *  (the LLM-written body must fit under cap − quality block − slack) so
    *  assisted runs stop tripping limits the editor cannot see. */
   promptCharCap?: number;
+  /** FT-B2: a short user intent for the LLM assist. It is optional in every
+   *  mode: the mode digest drives context-only drafts when absent. */
+  assistHint?: string;
 }
 
 /** The IG-15 assist system prompt: the extraction core plus the resolved
@@ -165,9 +170,17 @@ export async function buildImageGenPrompts(
   assist?: ImageGenAssistRunner,
   options?: ImageGenModePromptOptions,
 ): Promise<BuiltImageGenPrompts> {
-  if (mode === IMAGE_GENERATION_MODES.Free && (callerPrompt === undefined || callerPrompt === "")) {
-    // The design's free recipe is "custom size + raw prompt" — the raw
-    // prompt IS the payload; there is nothing to template against.
+  const assistHint = options?.assistHint?.trim() ?? "";
+  // `assistHint` being present (including the empty string) marks the
+  // text-only FT-B2 drafting call. Generate never sets it, so IG-14 Free
+  // requests still require their finished caller prompt even if a profile
+  // happens to have its assist configured.
+  const isAssistDraft = options?.assistHint !== undefined;
+  if (
+    mode === IMAGE_GENERATION_MODES.Free &&
+    (callerPrompt === undefined || callerPrompt === "") &&
+    (assist === undefined || !isAssistDraft)
+  ) {
     throw new ImageGenModeValidationError("mode 'free' requires the caller-provided prompt");
   }
 
@@ -220,7 +233,7 @@ export async function buildImageGenPrompts(
   // append (finished user text is not a template surface).
   const qualityBlock = await resolveQualityBlock(mode, family, options?.qualityLayerEnabled === true, overrides);
 
-  if (mode === IMAGE_GENERATION_MODES.Free) {
+  if (mode === IMAGE_GENERATION_MODES.Free && callerPrompt !== undefined && callerPrompt !== "") {
     // The free template is a WRAPPER ("Depict exactly what the accompanying
     // prompt describes") — the caller text is the accompanying prompt, so
     // the composed payload is template + separator + raw prompt. The raw
@@ -232,7 +245,7 @@ export async function buildImageGenPrompts(
   // re-substitution (substituting user-edited text could double-expand
   // braces the user deliberately kept). Assist does not apply: the prompt is
   // finished text, not a scene to build.
-  if (callerPrompt !== undefined) {
+  if (mode !== IMAGE_GENERATION_MODES.Free && callerPrompt !== undefined) {
     return { prompt: callerPrompt, negativePrompt: resolve(negative).trim() };
   }
 
@@ -259,7 +272,18 @@ export async function buildImageGenPrompts(
     const refined = (
       await assist(
         resolve(instruction).trim() + capLine,
-        buildAssistUserPayload(template, contextDigest(mode, character, persona, lastMessage)),
+        mode === IMAGE_GENERATION_MODES.Free && assistHint !== ""
+          ? assistHint
+          : buildAssistUserPayload(
+              // Free's canon is a WRAPPER around a caller prompt that a
+              // draft does not have — name the actual task instead of
+              // pointing at an absent "accompanying prompt".
+              mode === IMAGE_GENERATION_MODES.Free
+                ? "Depict the scene facts above as one finished image prompt."
+                : template,
+              contextDigest(mode, character, persona, lastMessage),
+              assistHint,
+            ),
       )
     ).trim();
     if (refined === "") {
@@ -374,6 +398,7 @@ function contextDigest(mode: ImageGenerationMode, character: ModeCharacter, pers
 
 /** The assist call's user message: the digest + the RAW mode template (the
  *  task). The instruction (system) comes from the image_assist template. */
-function buildAssistUserPayload(rawTemplate: string, digest: string): string {
-  return `Scene facts:\n${digest}\n\nImage task (expand into one finished image prompt; the placeholders refer to the facts above):\n${rawTemplate}`;
+function buildAssistUserPayload(rawTemplate: string, digest: string, hint: string): string {
+  const base = `Scene facts:\n${digest}\n\nImage task (expand into one finished image prompt; the placeholders refer to the facts above):\n${rawTemplate}`;
+  return hint === "" ? base : `${base}\n\nUser hint:\n${hint}`;
 }
