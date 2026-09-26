@@ -62,7 +62,12 @@ export function imageGenStockSamplerSets(): Array<{
       name: "Anima",
       // Euler SDE (owner-confirmed), 1024×1536-class checkpoint lore:
       // steps 25–35 → 30, CFG 4–6 → 5; hires CONFIGURED, opt-in only, hard
-      // scale cap 1.5 (checkpoint creator's "do NOT go over 1.5x").
+      // scale cap 1.5 (checkpoint creator's "do NOT go over 1.5x"). The
+      // creator's recommended upscaler is deliberately NOT named here
+      // (owner ruling 2026-09-27: no hardcoded upscaler names) — its name
+      // is dialect vocabulary (an A1111 label, a Comfy upscale_models
+      // FILE), so unset lets each dialect fill its own default; the
+      // numeric recommendations are dialect-neutral and stay.
       payload: {
         sampler: "euler_sde",
         scheduler: "simple",
@@ -70,7 +75,6 @@ export function imageGenStockSamplerSets(): Array<{
         cfgScale: 5,
         hires: {
           enabled: false,
-          upscaler: "R-ESRGAN 4x+ Anime6B",
           scale: 1.5,
           denoisingStrength: 0.35,
         },
