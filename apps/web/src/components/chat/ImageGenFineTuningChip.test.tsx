@@ -444,6 +444,37 @@ describe("ImageGenFineTuningChip — editor body (IG-17)", () => {
     });
   });
 
+  it("switching profiles clears the picked model and returns the trigger to its default entry", async () => {
+    profilesStore = [
+      profile("p1", "First profile", fullCaps(), "first-default"),
+      profile("p2", "Second profile", fullCaps(), "second-default"),
+    ];
+    modelsStore = {
+      p1: [
+        { id: "first-default", label: "First default" },
+        { id: "foreign-picked", label: "Foreign picked model" },
+      ],
+      p2: [{ id: "second-default", label: "Second default" }],
+    };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-profile-switch" />);
+    act(() => armChat("chat-profile-switch"));
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
+    openChip();
+    await pickOption("image-gen-ft-model-select", "Foreign picked model");
+    expect(within(view.baseElement).getByTestId("image-gen-ft-model-select").textContent).toContain(
+      "Foreign picked model",
+    );
+
+    await pickOption("image-gen-ft-profile-select", "Second profile");
+
+    await waitFor(() => {
+      expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-profile-switch"]?.model).toBeUndefined();
+      const modelTrigger = within(view.baseElement).getByTestId("image-gen-ft-model-select");
+      expect(modelTrigger.textContent).toContain("image_gen_chip_model_default");
+      expect(modelTrigger.textContent).not.toContain("Foreign picked model");
+    });
+  });
+
   it("the draft persists across unmount/remount while the toggle stays on; Clear resets it", async () => {
     profilesStore = [profile("p1", "A1111 local", fullCaps(), "sdxl-base")];
     modelsStore = { p1: [{ id: "sdxl-base", label: "SDXL Base" }] };

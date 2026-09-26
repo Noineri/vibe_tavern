@@ -215,6 +215,64 @@ describe("image-gen chat store — MR-5 global active profile", () => {
   });
 });
 
+describe("image-gen chat store — profile changes clear stale model picks", () => {
+  afterEach(() => {
+    useImageGenChatStore.setState({ activeImageGenProfileId: null, activeProfileIdByChat: {} });
+  });
+
+  it("a changed chat profile clears only that draft's model; an unchanged effective profile keeps it", () => {
+    const store = useImageGenChatStore.getState();
+    store.setActiveImageGenProfile("p1");
+    store.setFineTuningDraft("chat-switched", {
+      prompt: "keep this prompt",
+      negative: "keep this negative",
+      model: "old-profile-model",
+      loras: [{ name: "keep.safetensors", strength: 0.8 }],
+    });
+    store.setFineTuningDraft("chat-same", { model: "global-profile-model" });
+    store.setFineTuningDraft("chat-other", { model: "other-profile-model" });
+
+    store.setActiveProfile("chat-switched", "p2");
+    store.setActiveProfile("chat-same", "p1");
+
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-switched"]).toEqual({
+      prompt: "keep this prompt",
+      negative: "keep this negative",
+      model: undefined,
+      loras: [{ name: "keep.safetensors", strength: 0.8 }],
+    });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-same"]?.model).toBe("global-profile-model");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-other"]?.model).toBe("other-profile-model");
+  });
+
+  it("a changed global profile clears follower models and keeps explicit-profile drafts", () => {
+    const store = useImageGenChatStore.getState();
+    store.setActiveImageGenProfile("p1");
+    store.setActiveProfile("chat-explicit", "p1");
+    store.setFineTuningDraft("chat-follower", {
+      prompt: "keep this prompt",
+      negative: "keep this negative",
+      model: "old-global-model",
+      loras: [{ name: "keep.safetensors", strength: 0.8 }],
+      hires: { enabled: true, upscaler: "keep-upscaler" },
+    });
+    store.setFineTuningDraft("chat-explicit", { model: "explicit-profile-model" });
+
+    store.setActiveImageGenProfile("p2");
+
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-follower"]).toEqual({
+      prompt: "keep this prompt",
+      negative: "keep this negative",
+      model: undefined,
+      loras: [{ name: "keep.safetensors", strength: 0.8 }],
+      hires: { enabled: true, upscaler: "keep-upscaler" },
+    });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-explicit"]?.model).toBe(
+      "explicit-profile-model",
+    );
+  });
+});
+
 describe("image-gen chat store — fine-tuning draft (IG-17)", () => {
   it("starts pristine; setFineTuningDraft patches from EMPTY and keeps the rest", () => {
     expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-i"]).toBeUndefined();

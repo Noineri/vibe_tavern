@@ -222,11 +222,21 @@ interface ImageGenChatState {
 
 interface ImageGenChatActions {
   setFineTuning(chatId: string, on: boolean): void;
+  /** Set this chat's profile override. A model pick belongs to its profile
+   *  context, so an effective-profile change clears it back to the new
+   *  profile's `modelId` through the chip's default-entry fallback (owner
+   *  2026-09-26). Even a pick valid in both catalogs is cleared: cross-profile
+   *  id reuse is rarer than the stale-poison path this prevents. */
   setActiveProfile(chatId: string, profileId: string | undefined): void;
   /** MR-5/MR-12: set the GLOBAL active image-gen profile — the SESSION
    *  flip only. The persisting path is the pane hook's `activateProfile`
    *  (server PUT → reload → this flip); keeping the raw setter lets the
-   *  hook flip without re-implementing the store write. */
+   *  hook flip without re-implementing the store write. A model pick belongs
+   *  to its profile context, so every changed effective profile clears it
+   *  back to the new profile's `modelId` through the chip's default-entry
+   *  fallback (owner 2026-09-26). Even a pick valid in both catalogs is
+   *  cleared: cross-profile id reuse is rarer than the stale-poison path
+   *  this prevents. */
   setActiveImageGenProfile(profileId: string): void;
   /** Fire ONE generation (guarded one-per-chat); resolves when the run
    *  settles. User-aborts are silent; failures toast the normalized server
@@ -262,6 +272,14 @@ export type ImageGenChatStore = ImageGenChatState & ImageGenChatActions;
 /** Imperative abort handles, keyed by chatId (kept OUT of zustand state). */
 const controllers = new Map<string, AbortController>();
 
+/** The chat override wins; without one the chat follows the global profile. */
+function effectiveProfileId(
+  state: Pick<ImageGenChatState, "activeProfileIdByChat" | "activeImageGenProfileId">,
+  chatId: string,
+): string | null {
+  return state.activeProfileIdByChat[chatId] ?? state.activeImageGenProfileId;
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
@@ -278,11 +296,45 @@ export const useImageGenChatStore = create<ImageGenChatStore>()((set, get) => ({
   },
 
   setActiveProfile: (chatId, profileId) => {
-    set((s) => ({ activeProfileIdByChat: { ...s.activeProfileIdByChat, [chatId]: profileId } }));
+    set((s) => {
+      const activeProfileIdByChat = { ...s.activeProfileIdByChat, [chatId]: profileId };
+      const before = effectiveProfileId(s, chatId);
+      const after = effectiveProfileId({ activeProfileIdByChat, activeImageGenProfileId: s.activeImageGenProfileId }, chatId);
+      const draft = s.fineTuningDraftByChat[chatId];
+      return {
+        activeProfileIdByChat,
+        ...(before !== after && draft !== undefined
+          ? {
+              fineTuningDraftByChat: {
+                ...s.fineTuningDraftByChat,
+                [chatId]: { ...draft, model: undefined },
+              },
+            }
+          : {}),
+      };
+    });
   },
 
   setActiveImageGenProfile: (profileId) => {
-    set({ activeImageGenProfileId: profileId });
+    set((s) => {
+      const nextProfileState = {
+        activeProfileIdByChat: s.activeProfileIdByChat,
+        activeImageGenProfileId: profileId,
+      };
+      let fineTuningDraftByChat = s.fineTuningDraftByChat;
+      for (const [chatId, draft] of Object.entries(s.fineTuningDraftByChat)) {
+        if (
+          draft !== undefined &&
+          effectiveProfileId(s, chatId) !== effectiveProfileId(nextProfileState, chatId)
+        ) {
+          if (fineTuningDraftByChat === s.fineTuningDraftByChat) {
+            fineTuningDraftByChat = { ...s.fineTuningDraftByChat };
+          }
+          fineTuningDraftByChat[chatId] = { ...draft, model: undefined };
+        }
+      }
+      return { activeImageGenProfileId: profileId, fineTuningDraftByChat };
+    });
   },
 
   runGeneration: async (chatId, input, meta) => {
