@@ -183,6 +183,12 @@ import type {
 } from "../imagegen-backend.js";
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
+import {
+  COMFY_TEMPLATE_SPECS,
+  comfyWeightsBasename,
+  resolveComfySidecar,
+} from "./comfy-workflow-templates.js";
+import type { ComfyDitTemplateSpec } from "./comfy-workflow-templates.js";
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -297,17 +303,10 @@ export function buildComfyLoraChain(
  *  `{class_type, inputs}` — the exact `prompt` value POSTed to `/prompt`. */
 export type ComfyWorkflowGraph = Record<string, { class_type: string; inputs: Record<string, unknown> }>;
 
-/** `CLIPLoader.type` for the Krea-2 DiT template — HARDCODED (the owner's
- *  SM lesson, 2026-09-18: a qwen3vl_4b encoder under the "qwen_image"
- *  type is a silently-broken graph — the manual fix her launcher template
- *  needed; the adapter's template is correct standalone). */
-export const COMFY_KREA2_CLIP_TYPE = "krea2";
-
-/** Canonical Krea-2 ecosystem sidecar basenames for UNSET request fields
- *  (extension-flexible at resolution — the ecosystem spec, not any one
- *  install's filenames). */
-export const COMFY_KREA2_DEFAULT_ENCODER = "qwen3vl_4b_fp8_scaled";
-export const COMFY_KREA2_DEFAULT_VAE = "qwen_image_vae";
+/** Backward-compatible aliases for the Krea-2 registry fields. */
+export const COMFY_KREA2_CLIP_TYPE = COMFY_TEMPLATE_SPECS.krea2Dit.clipType;
+export const COMFY_KREA2_DEFAULT_ENCODER = COMFY_TEMPLATE_SPECS.krea2Dit.canonicalEncoder;
+export const COMFY_KREA2_DEFAULT_VAE = COMFY_TEMPLATE_SPECS.krea2Dit.canonicalVae;
 
 /** The two workflow-template ids the adapter resolves — the marker each
  *  model-picker entry carries (CG-A3) and the value recorded in the slot
@@ -541,12 +540,13 @@ export function buildComfyCheckpointWorkflow(
 
 /** Build the KREA-2 DiT-template workflow graph (CG-A2): a bare diffusion
  *  model loads through UNETLoader, and the text encoder + VAE come from
- *  SEPARATE loaders (a DiT file bundles neither). `CLIPLoader.type` is the
- *  hardcoded "krea2" — see COMFY_KREA2_CLIP_TYPE. Pure — exported for the
- *  wire tests. The second return value is the second-pass ctx. */
+ *  SEPARATE loaders (a DiT file bundles neither). `CLIPLoader.type` comes
+ *  from the selected template spec. Pure — exported for the wire tests. The
+ *  second return value is the second-pass ctx. */
 export function buildComfyKrea2Workflow(
   request: ImageGenGenerateRequest,
   sidecars: ComfyKrea2Sidecars,
+  spec: ComfyDitTemplateSpec = COMFY_TEMPLATE_SPECS.krea2Dit,
 ): { graph: ComfyWorkflowGraph; seed: number; ctx: ComfySecondPassCtx } {
   // LoRA chain (CG-C2): UNETLoader's MODEL and CLIPLoader's CLIP thread
   // through the LoraLoaders; the VAELoader stays wired directly.
@@ -562,7 +562,7 @@ export function buildComfyKrea2Workflow(
   };
   graph[COMFY_NODE_IDS.clip] = {
     class_type: "CLIPLoader",
-    inputs: { clip_name: sidecars.encoder, type: COMFY_KREA2_CLIP_TYPE },
+    inputs: { clip_name: sidecars.encoder, type: spec.clipType },
   };
   graph[COMFY_NODE_IDS.vae] = {
     class_type: "VAELoader",
@@ -1151,13 +1151,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** Basename without the weights extension — the label/canonical-match key
- *  (a DiT “all-in-one” file bundles both halves). */
-function weightsBasename(name: string): string {
-  const base = name.split(/[\\/]/).pop() ?? name;
-  return base.replace(/\.(safetensors|ckpt|pt|pth|gguf|bin|sft)$/i, "");
-}
-
 /** GET /object_info/{node} → the combo values of a required input — the
  *  accepted filename enum ComfyUI's own queue validation checks against
  *  (template detection's ground truth, live-verified 0.36.0). CG-A3: the
@@ -1225,37 +1218,6 @@ async function fetchComfyFolderNames(
     throw new ComfyImageGenError(`ComfyUI /models/${folder} returned an unexpected shape (not a filename array)`);
   }
   return parsed.filter((value): value is string => typeof value === "string" && value.length > 0);
-}
-
-/** Resolve a Krea-2 sidecar file (text encoder / VAE): an EXPLICIT request
- *  value rides verbatim (the server validates it at queue time); an unset
- *  one resolves against the live folder — the canonical Krea-2 ecosystem
- *  basename (extension-flexible), else the folder's single entry, else a
- *  config error naming the candidates. Never a silent guess among many. */
-async function resolveKrea2Sidecar(
-  transport: typeof fetch,
-  endpoint: string,
-  options: {
-    folder: string;
-    explicit: string | undefined;
-    canonical: string;
-    what: string;
-    signal: AbortSignal | undefined;
-  },
-): Promise<string> {
-  const set = setOrUndefined(options.explicit);
-  if (set !== undefined) return set;
-  const names = await fetchComfyFolderNames(transport, endpoint, options.folder, options.signal);
-  const canonical = names.find((name) => weightsBasename(name) === options.canonical);
-  if (canonical !== undefined) return canonical;
-  if (names.length === 1 && names[0] !== undefined) return names[0];
-  const candidates =
-    names.length === 0
-      ? "the folder is empty"
-      : `candidates: ${names.slice(0, 5).join(", ")}${names.length > 5 ? ", …" : ""}`;
-  throw new ComfyImageGenConfigError(
-    `ComfyUI ${options.what} for the Krea-2 template is unresolved: no "${options.canonical}.*" in the ${options.folder} folder (${candidates}) — pick one in the profile's advanced fields`,
-  );
 }
 
 // ─── Model family ladder (CG-A3) ────────────────────────────────────
@@ -1647,21 +1609,35 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
             `ComfyUI model "${model}" is in neither the checkpoints nor the diffusion-models folder — reselect it from the model list`,
           );
         }
-        const encoder = await resolveKrea2Sidecar(cfg.fetch, cfg.endpoint, {
-          folder: "text_encoders",
-          explicit: request.encoderName,
-          canonical: COMFY_KREA2_DEFAULT_ENCODER,
-          what: "text encoder",
-          signal: request.signal,
-        });
-        const vae = await resolveKrea2Sidecar(cfg.fetch, cfg.endpoint, {
-          folder: "vae",
-          explicit: request.vaeName,
-          canonical: COMFY_KREA2_DEFAULT_VAE,
-          what: "VAE",
-          signal: request.signal,
-        });
-        ({ graph, ctx: secondPassCtx } = buildComfyKrea2Workflow(request, { unet: model, encoder, vae }));
+        const spec = COMFY_TEMPLATE_SPECS.krea2Dit;
+        const listFolder = (folder: string, signal: AbortSignal | undefined) =>
+          fetchComfyFolderNames(cfg.fetch, cfg.endpoint, folder, signal);
+        const createConfigError = (message: string) => new ComfyImageGenConfigError(message);
+        const encoder = await resolveComfySidecar(
+          {
+            folder: "text_encoders",
+            explicit: request.encoderName,
+            canonical: spec.canonicalEncoder,
+            what: "text encoder",
+            signal: request.signal,
+            listFolder,
+            createConfigError,
+          },
+          spec,
+        );
+        const vae = await resolveComfySidecar(
+          {
+            folder: "vae",
+            explicit: request.vaeName,
+            canonical: spec.canonicalVae,
+            what: "VAE",
+            signal: request.signal,
+            listFolder,
+            createConfigError,
+          },
+          spec,
+        );
+        ({ graph, ctx: secondPassCtx } = buildComfyKrea2Workflow(request, { unet: model, encoder, vae }, spec));
         template = COMFY_MODEL_TEMPLATES.krea2Dit;
       }
 
@@ -1852,7 +1828,7 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
             signal,
             rootsOf,
           });
-          const label = weightsBasename(name);
+          const label = comfyWeightsBasename(name);
           entries.push({
             id: name,
             label: label.length > 0 ? label : name,
