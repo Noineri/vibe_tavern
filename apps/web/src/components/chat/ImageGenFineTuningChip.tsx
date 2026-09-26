@@ -49,7 +49,7 @@ import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
-import { buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderField, type ScalarSliderSpec } from "../../lib/imagegen/model-controls.js";
+import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderField, type ScalarSliderSpec } from "../../lib/imagegen/model-controls.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -76,7 +76,7 @@ import {
   type ImageGenPromptCap,
 } from "../../api/image-gen-api.js";
 import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue, ImageGenBackendValue } from "@vibe-tavern/api-contracts";
-import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, hasAdetailerExtension, type ImageGenerationMode, type ImageSizeOrientation } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, type ImageGenerationMode, type ImageSizeOrientation } from "@vibe-tavern/domain";
 import { EMPTY_IMAGE_GEN_DRAFT, buildDraftGenerateInput, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useOrderedMessages } from "../../stores/snapshot-store.js";
 import { ImageGenLoraSection } from "./ImageGenLoraSection.js";
@@ -905,25 +905,6 @@ function ImageGenModelSettingsAccordion({
     };
   }, [profileId, isDit, sidecars, sidecarsFailed]);
 
-  const hasAdetailer =
-    isA1111
-      ? extensions !== null && hasAdetailerExtension(extensions)
-      : faceDetectors !== null && faceDetectors.length > 0;
-  // IF-6 (comfy dialect): the probe ANSWERED but the Impact Pack chain is
-  // absent — the block renders as a disabled label + the install hint
-  // (the plan's "honestly unavailable" ruling), never silently missing.
-  const adetailerUnavailable =
-    !isA1111 && faceDetectors !== null && faceDetectors.length === 0;
-  // The picker vocabulary (IF-6): the A1111 twin keeps its static preset
-  // list (the extension validates server-side); comfy rides the DISCOVERED
-  // face bbox models — one code path per dialect, same overlay fields.
-  const adetailerOptions = isA1111
-    ? IMAGE_GEN_ADETAILER_FACE_MODELS.map((m) => ({ id: m, label: m }))
-    : (faceDetectors ?? []).map((m) => ({ id: m, label: m }));
-  const adetailerFallback = isA1111
-    ? IMAGE_GEN_ADETAILER_DEFAULT_MODEL
-    : (faceDetectors ?? [])[0] ?? "";
-
   /** Merge a patch into the overlay and persist it (the overlay row is the
    *  whole truth — every edit writes the full merged settings; an undefined
    *  patch value clears the field back to inherit — JSON drops the key). */
@@ -969,6 +950,9 @@ function ImageGenModelSettingsAccordion({
   // renderer sees them; ranges still resolve mirror-first.
   const scalarSliders = buildScalarSliders(capabilities);
   const seedControl = buildSeedField(capabilities);
+  // T7: gate, unavailable state, options, and fallback live in the shared
+  // descriptor; this surface keeps the deliberate nested-accordion renderer.
+  const adetailerControl = buildAdetailerControl({ backend, extensions, faceDetectors });
 
   return (
     <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-model-settings">
@@ -1145,23 +1129,21 @@ function ImageGenModelSettingsAccordion({
           )}
 
           {/* ADetailer — NESTED inside the model-settings body (owner
-              2026-09-17); the whole block is hidden unless the server
-              reports the chain (A1111: the extension probe; comfy: the
-              discovered face bbox models, IF-6). A comfy probe that ANSWERED
-              empty renders the disabled label + install hint instead. */}
-          {adetailerUnavailable ? (
+              2026-09-17); T7 supplies the dialect tri-state while this
+              renderer preserves its accordion idiom. */}
+          {adetailerControl?.state === "unavailable" ? (
             <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-adetailer">
               <div className="flex w-full items-center justify-between rounded-md border border-border bg-s3 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3">
-                <span>{t("image_gen_adetailer")}</span>
+                <span>{t(adetailerControl.labelKey)}</span>
               </div>
               <span
                 className="font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t3"
                 data-testid="image-gen-ft-adetailer-missing"
               >
-                {t("image_gen_adetailer_missing_hint")}
+                {t(adetailerControl.hintKey)}
               </span>
             </div>
-          ) : hasAdetailer && (
+          ) : adetailerControl?.state === "ready" && (
             <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-adetailer">
               <button
                 type="button"
@@ -1170,26 +1152,26 @@ function ImageGenModelSettingsAccordion({
                 onClick={() => setAdOpen((v) => !v)}
                 className="flex w-full cursor-pointer items-center justify-between rounded-md border border-border bg-s3 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
               >
-                <span>{t("image_gen_adetailer")}</span>
+                <span>{t(adetailerControl.labelKey)}</span>
                 <Icons.Caret direction={adOpen ? "d" : "u"} />
               </button>
               {adOpen && (
                 <div className="flex flex-col gap-2 px-0.5" data-testid="image-gen-ft-adetailer-body">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t2">{t("image_gen_adetailer")}</span>
+                    <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t2">{t(adetailerControl.labelKey)}</span>
                     <Toggle
                       checked={adetailer}
                       onChange={(checked) => commit({ adetailer: checked })}
                       disabled={disabled}
-                      aria-label={t("image_gen_adetailer")}
+                      aria-label={t(adetailerControl.labelKey)}
                     />
                   </div>
                   {adetailer && (
                     <div className="flex flex-col gap-1.5">
-                      <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t("image_gen_adetailer_model")}</span>
+                      <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.modelLabelKey)}</span>
                       <DropdownSelect
-                        value={adetailerModel ?? adetailerFallback}
-                        options={adetailerOptions}
+                        value={adetailerModel ?? adetailerControl.fallback}
+                        options={translateModelOptions(adetailerControl.options, t)}
                         onChange={(id) => commit({ adetailerModel: id })}
                         disabled={disabled}
                         triggerTestId="image-gen-ft-adetailer-model"

@@ -16,12 +16,16 @@
  * the keys literal so the pane's generated i18n union type-checks them.
  *
  * Migration queue: vibe_tavern_plan/reports/IMAGEGEN_TWIN_UNIFICATION_REPORT.md
- * (twins migrate one per unit; T1 sampler dropdown is the first).
+ * (twins migrate one per unit; T1 sampler through T7 ADetailer each name
+ * their shared builder here).
  */
 
 import {
+  IMAGE_GEN_ADETAILER_DEFAULT_MODEL,
+  IMAGE_GEN_ADETAILER_FACE_MODELS,
   IMAGE_GEN_BACKENDS,
   IMAGE_GEN_PARAM_RANGES,
+  hasAdetailerExtension,
   type ImageGenCapabilityFlags,
   type ImageGenKreaParams,
   type ImageGenParamRange,
@@ -151,6 +155,65 @@ export function buildSchedulerControl({ backend }: { backend: ImageGenBackendVal
       })),
     ],
     commit: (id) => ({ scheduler: id === "" ? undefined : id }),
+  };
+}
+
+type RawModelOption = Extract<ModelOption, { kind: "raw" }>;
+
+export type AdetailerControlSpec =
+  | {
+      readonly state: "ready";
+      /** ADetailer names are server/static raw labels, never i18n keys. */
+      readonly options: ReadonlyArray<RawModelOption>;
+      readonly fallback: string;
+      readonly labelKey: "image_gen_adetailer";
+      readonly modelLabelKey: "image_gen_adetailer_model";
+    }
+  | {
+      readonly state: "unavailable";
+      readonly labelKey: "image_gen_adetailer";
+      readonly hintKey: "image_gen_adetailer_missing_hint";
+    };
+
+/**
+ * T7 — ADetailer's twin derivation. A1111 is ready only when its extension
+ * probe answered with the matching entry, otherwise hidden (including an
+ * unanswered probe); it never has an unavailable state. ComfyUI is hidden
+ * while its face-detector probe is unanswered or failed, unavailable when it
+ * answered empty, and ready with its discovered detector list otherwise.
+ * The chip keeps its nested accordion and the pane its bound-only row; both
+ * retain their own probe fetches while reading this shared descriptor.
+ */
+export function buildAdetailerControl(input: {
+  backend: ImageGenBackendValue;
+  extensions: ReadonlyArray<string> | null;
+  faceDetectors: ReadonlyArray<string> | null;
+}): AdetailerControlSpec | null {
+  if (input.backend === IMAGE_GEN_BACKENDS.A1111) {
+    if (input.extensions === null || !hasAdetailerExtension(input.extensions)) return null;
+    return {
+      state: "ready",
+      options: IMAGE_GEN_ADETAILER_FACE_MODELS.map((label) => ({ kind: "raw", id: label, label })),
+      fallback: IMAGE_GEN_ADETAILER_DEFAULT_MODEL,
+      labelKey: "image_gen_adetailer",
+      modelLabelKey: "image_gen_adetailer_model",
+    };
+  }
+
+  if (input.backend !== IMAGE_GEN_BACKENDS.ComfyUI || input.faceDetectors === null) return null;
+  if (input.faceDetectors.length === 0) {
+    return {
+      state: "unavailable",
+      labelKey: "image_gen_adetailer",
+      hintKey: "image_gen_adetailer_missing_hint",
+    };
+  }
+  return {
+    state: "ready",
+    options: input.faceDetectors.map((label) => ({ kind: "raw", id: label, label })),
+    fallback: input.faceDetectors[0]!,
+    labelKey: "image_gen_adetailer",
+    modelLabelKey: "image_gen_adetailer_model",
   };
 }
 

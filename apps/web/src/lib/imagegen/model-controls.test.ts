@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "./model-controls.js";
+import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "./model-controls.js";
 
 describe("model-controls — buildSamplerControl (T1, the TWIN_UNIFICATION mechanism's first descriptor)", () => {
   test("gate closed (no sampler capability) → null, both surfaces render nothing", () => {
@@ -167,6 +167,59 @@ describe("model-controls — buildSchedulerControl (T2: gate + options + commit,
     const spec = buildSchedulerControl({ backend: "a1111" })!;
     expect(spec.commit("")).toEqual({ scheduler: undefined });
     expect(spec.commit("karras")).toEqual({ scheduler: "karras" });
+  });
+});
+
+describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-state)", () => {
+  test("a1111: a matching answered extension probe is ready with static options and fallback; any absence stays hidden", () => {
+    const ready = buildAdetailerControl({
+      backend: "a1111",
+      extensions: ["sd-webui-adetailer"],
+      faceDetectors: null,
+    });
+    expect(ready).toEqual({
+      state: "ready",
+      options: [
+        { kind: "raw", id: "face_yolov8n.pt", label: "face_yolov8n.pt" },
+        { kind: "raw", id: "face_yolov8s.pt", label: "face_yolov8s.pt" },
+        { kind: "raw", id: "mediapipe_face_full", label: "mediapipe_face_full" },
+        { kind: "raw", id: "mediapipe_face_short", label: "mediapipe_face_short" },
+        { kind: "raw", id: "mediapipe_face_mesh", label: "mediapipe_face_mesh" },
+      ],
+      fallback: "face_yolov8n.pt",
+      labelKey: "image_gen_adetailer",
+      modelLabelKey: "image_gen_adetailer_model",
+    });
+    expect(buildAdetailerControl({ backend: "a1111", extensions: ["controlnet"], faceDetectors: [] })).toBeNull();
+    expect(buildAdetailerControl({ backend: "a1111", extensions: null, faceDetectors: [] })).toBeNull();
+  });
+
+  test("comfyui: an answered detector list is ready with discovered raw options and its first-item fallback", () => {
+    expect(
+      buildAdetailerControl({
+        backend: "comfyui",
+        extensions: ["adetailer"],
+        faceDetectors: ["bbox/face_yolov8m.pt", "bbox/face_yolov8n.pt"],
+      }),
+    ).toEqual({
+      state: "ready",
+      options: [
+        { kind: "raw", id: "bbox/face_yolov8m.pt", label: "bbox/face_yolov8m.pt" },
+        { kind: "raw", id: "bbox/face_yolov8n.pt", label: "bbox/face_yolov8n.pt" },
+      ],
+      fallback: "bbox/face_yolov8m.pt",
+      labelKey: "image_gen_adetailer",
+      modelLabelKey: "image_gen_adetailer_model",
+    });
+  });
+
+  test("comfyui: answered-empty is unavailable, while an unanswered or failed probe is hidden", () => {
+    expect(buildAdetailerControl({ backend: "comfyui", extensions: null, faceDetectors: [] })).toEqual({
+      state: "unavailable",
+      labelKey: "image_gen_adetailer",
+      hintKey: "image_gen_adetailer_missing_hint",
+    });
+    expect(buildAdetailerControl({ backend: "comfyui", extensions: null, faceDetectors: null })).toBeNull();
   });
 });
 

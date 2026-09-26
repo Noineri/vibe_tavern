@@ -3,13 +3,13 @@ import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { toast } from "sonner";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, adaptSamplerSetPayloadToTarget, hasAdetailerExtension, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation, type SetFieldNote } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, adaptSamplerSetPayloadToTarget, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation, type SetFieldNote } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
-import { buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
+import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { SliderField } from "../../../shared/SliderField.js";
@@ -1637,20 +1637,20 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot
     // vocabulary fill per profile; listImageGenUpscalers is a stable import.
   }, [guardProfileId, guardSupportsHires]);
-  const [hasAdetailer, setHasAdetailer] = useState(false);
+  const [extensions, setExtensions] = useState<string[] | null>(null);
   useEffect(() => {
     if (!guardIsA1111 || guardProfileId === null) {
-      setHasAdetailer(false);
+      setExtensions(null);
       return;
     }
     let cancelled = false;
-    setHasAdetailer(false);
+    setExtensions(null);
     void listImageGenExtensions(guardProfileId)
       .then((names) => {
-        if (!cancelled) setHasAdetailer(names !== null && hasAdetailerExtension(names));
+        if (!cancelled) setExtensions(names ?? []);
       })
       .catch(() => {
-        if (!cancelled) setHasAdetailer(false);
+        if (!cancelled) setExtensions(null);
       });
     return () => {
       cancelled = true;
@@ -1682,9 +1682,6 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
       cancelled = true;
     };
   }, [guardIsComfy, guardProfileId]);
-  const adetailerReady = guardIsComfy ? (faceDetectors?.length ?? 0) > 0 : hasAdetailer;
-  const adetailerMissing = guardIsComfy && faceDetectors !== null && faceDetectors.length === 0;
-
   if (form === null || form.id === null) return null;
   const profileId = form.id;
   const models: ImageGenModelEntry[] = imageGen.modelsByProfile[profileId] ?? [];
@@ -1733,6 +1730,9 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // accordion inherits the same descriptors (the IF-11 incident fix: the
   // controls are provider-modal settings, not a chip-only secret).
   const kreaControls = buildKreaTwoControls({ backend: form.backend, modelId: form.modelId ?? "" });
+  // T7: gate, unavailable state, options, and fallback live in the shared
+  // descriptor; this surface keeps its bound-only, non-accordion row.
+  const adetailerControl = buildAdetailerControl({ backend: form.backend, extensions, faceDetectors });
 
   // Effective (routed) params + sizes: the overlay's own values while bound
   // (empty = inherit the base), the profile base otherwise.
@@ -2398,14 +2398,10 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   ))}
                 </div>
               )}
-              {/* ADetailer (IG-CF15 15d / PG-4 v1): the pane's twin of the
-                  chip's nested accordion — same overlay fields,
-                  chain-gated (A1111: the extensions probe; comfy: the
-                  discovered face bbox models, IF-6); one source of truth,
-                  two surfaces. Overlay-only (the profile base carries no
-                  face-fix flag in v1). A comfy probe that ANSWERED empty
-                  renders the row disabled + the install hint. */}
-              {bound && (adetailerReady || adetailerMissing) && (
+              {/* ADetailer (IG-CF15 15d / PG-4 v1): T7 supplies the
+                  dialect tri-state while this pane preserves its bound-only,
+                  non-accordion overlay row. */}
+              {bound && adetailerControl !== null && (
                 <div
                   className="col-span-full flex flex-col gap-2 rounded-md border border-border bg-s2/50 p-2.5"
                   data-testid="image-gen-adetailer-row"
@@ -2414,38 +2410,31 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     <span
                       className={cn(
                         "font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
-                        adetailerMissing ? "text-t3" : "text-t1",
+                        adetailerControl.state === "unavailable" ? "text-t3" : "text-t1",
                       )}
                     >
-                      {t("image_gen_adetailer")}
+                      {t(adetailerControl.labelKey)}
                     </span>
                     <Toggle
                       checked={overlay?.adetailer === true}
                       onChange={(checked) => imageGen.setModelOverlay({ adetailer: checked })}
-                      disabled={adetailerMissing}
-                      aria-label={t("image_gen_adetailer")}
+                      disabled={adetailerControl.state === "unavailable"}
+                      aria-label={t(adetailerControl.labelKey)}
                     />
                   </div>
-                  {adetailerMissing ? (
+                  {adetailerControl.state === "unavailable" ? (
                     <span
                       className="font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t3"
                       data-testid="image-gen-adetailer-missing"
                     >
-                      {t("image_gen_adetailer_missing_hint")}
+                      {t(adetailerControl.hintKey)}
                     </span>
                   ) : overlay?.adetailer === true && (
                     <div className="flex flex-col gap-1.5">
-                      <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t("image_gen_adetailer_model")}</span>
+                      <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(adetailerControl.modelLabelKey)}</span>
                       <DropdownSelect
-                        value={
-                          overlay?.adetailerModel ??
-                          (guardIsComfy ? faceDetectors?.[0] ?? "" : IMAGE_GEN_ADETAILER_DEFAULT_MODEL)
-                        }
-                        options={
-                          guardIsComfy
-                            ? (faceDetectors ?? []).map((m) => ({ id: m, label: m }))
-                            : IMAGE_GEN_ADETAILER_FACE_MODELS.map((m) => ({ id: m, label: m }))
-                        }
+                        value={overlay?.adetailerModel ?? adetailerControl.fallback}
+                        options={translateModelOptions(adetailerControl.options, t)}
                         onChange={(id) => imageGen.setModelOverlay({ adetailerModel: id })}
                         triggerTestId="image-gen-adetailer-model"
                       />
