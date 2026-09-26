@@ -450,6 +450,21 @@ describe("comfyui adapter", () => {
       expect(schnell["3"]!.inputs.negative).toBeUndefined();
     });
 
+    it("GGUF unet files load through UnetLoaderGGUF — the quant carries its dtype, so no weight_dtype (owner's artsyLite_v1Q4KS.gguf, a Flux.1 S finetune)", () => {
+      const gguf = buildComfyDitWorkflow(
+        { prompt: "p", seed: 1 },
+        { ...SIDECARS, unet: "artsyLite_v1Q4KS.gguf" },
+        COMFY_TEMPLATE_SPECS.fluxSchnell,
+      ).graph;
+      expect(gguf["11"]).toEqual({ class_type: "UnetLoaderGGUF", inputs: { unet_name: "artsyLite_v1Q4KS.gguf" } });
+      // Non-gguf keeps the plain loader + required weight_dtype.
+      const safetensors = buildComfyDitWorkflow({ prompt: "p", seed: 1 }, SIDECARS, COMFY_TEMPLATE_SPECS.fluxSchnell).graph;
+      expect(safetensors["11"]).toEqual({
+        class_type: "UNETLoader",
+        inputs: { unet_name: SIDECARS.unet, weight_dtype: "default" },
+      });
+    });
+
     it("auto-routes exact cm-info BaseModel labels and accepts fluxVAE as the ae VAE role", async () => {
       const cases = [
         { baseModel: "Qwen 2", spec: COMFY_TEMPLATE_SPECS.qwenImage21, encoder: "qwen3vl_8b_int8_convrot.safetensors", vae: "qwen_image_2.1_vae_bf16.safetensors" },

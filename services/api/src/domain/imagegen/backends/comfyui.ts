@@ -659,6 +659,21 @@ export function buildComfyCheckpointWorkflow(
   };
 }
 
+/** The unet loader node for a resolved model FILE: GGUF quants load
+ *  through UnetLoaderGGUF (ComfyUI-GGUF; no weight_dtype — the quant
+ *  carries its own dtype), safetensors/ckpt through UNETLoader. The split
+ *  keys on the file EXTENSION — a format fact, never name-guessing
+ *  (owner's flux fleet: artsyLite_v1Q4KS.gguf, a Flux.1 S finetune). */
+function buildComfyUnetLoader(unet: string): { class_type: string; inputs: Record<string, unknown> } {
+  if (unet.toLowerCase().endsWith(".gguf")) {
+    return { class_type: "UnetLoaderGGUF", inputs: { unet_name: unet } };
+  }
+  return {
+    class_type: "UNETLoader",
+    inputs: { unet_name: unet, weight_dtype: COMFY_NODE_DEFAULTS.unetWeightDtype },
+  };
+}
+
 /** Build the KREA-2 DiT-template workflow graph (CG-A2): a bare diffusion
  *  model loads through UNETLoader, and the text encoder + VAE come from
  *  SEPARATE loaders (a DiT file bundles neither). `CLIPLoader.type` comes
@@ -677,10 +692,7 @@ export function buildComfyKrea2Workflow(
   });
   const { graph, resolved } = buildComfyCommonNodes(request, { model: chain.model, clip: chain.clip });
   Object.assign(graph, chain.nodes);
-  graph[COMFY_NODE_IDS.unet] = {
-    class_type: "UNETLoader",
-    inputs: { unet_name: sidecars.unet, weight_dtype: COMFY_NODE_DEFAULTS.unetWeightDtype },
-  };
+  graph[COMFY_NODE_IDS.unet] = buildComfyUnetLoader(sidecars.unet);
   graph[COMFY_NODE_IDS.clip] = {
     class_type: "CLIPLoader",
     inputs: { clip_name: sidecars.encoder, type: spec.clipType },
@@ -736,10 +748,7 @@ export function buildComfyDitWorkflow(
   });
   const { graph, resolved } = buildComfyCommonNodes(requestWithDefaults, { model: chain.model, clip: chain.clip });
   Object.assign(graph, chain.nodes);
-  graph[COMFY_NODE_IDS.unet] = {
-    class_type: "UNETLoader",
-    inputs: { unet_name: sidecars.unet, weight_dtype: COMFY_NODE_DEFAULTS.unetWeightDtype },
-  };
+  graph[COMFY_NODE_IDS.unet] = buildComfyUnetLoader(sidecars.unet);
   if (spec.canonicalSecondaryEncoder !== undefined) {
     if (sidecars.secondaryEncoder === undefined) {
       throw new ComfyImageGenConfigError(`ComfyUI ${spec.familyLabel} template needs its second text encoder`);
