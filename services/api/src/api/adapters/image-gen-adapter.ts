@@ -836,14 +836,25 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const scheduler = overlay.scheduler ?? defaults.scheduler;
     // ComfyUI DiT sidecars (CG-A2): the scheduler precedent — overlay over
     // profile defaults, NO overrides rung (they are wiring concerns of the
-    // model, not one-shot knobs). Other backends ignore the fields.
-    const encoderName = overlay.encoderName ?? defaults.encoderName;
-    const vaeName = overlay.vaeName ?? defaults.vaeName;
-    // VAE override for swappable-slot dialects (IF-7b): the encoder/vaeName
-    // ladder — overlay over profile base, no overrides rung (the chip never
-    // carries a one-shot VAE; the SET is the delivery vehicle). Backends
-    // without a swappable slot (DiT templates, cloud) ignore the field.
-    const vae = overlay.vae ?? defaults.vae;
+    // model, not one-shot knobs). T9 (owner ruling 2026-09-27): the profile
+    // base is an attribute of the PROFILE'S OWN MODEL — when the chat
+    // overrides the model to a different one, the base rung drops and the
+    // backend's family ladder re-resolves the switched model's own
+    // sidecars; the per-model overlay row stays (it IS the active model's
+    // layer). Other backends ignore the fields.
+    const sidecarBaseDropped =
+      model !== undefined && model !== "" && model !== profile.modelId;
+    const encoderName = sidecarBaseDropped
+      ? overlay.encoderName
+      : overlay.encoderName ?? defaults.encoderName;
+    const vaeName = sidecarBaseDropped
+      ? overlay.vaeName
+      : overlay.vaeName ?? defaults.vaeName;
+    // VAE override for swappable-slot dialects (IF-7b): the same T9 rule —
+    // a chat model switch drops the profile base (the swapped checkpoint
+    // rides its own VAE); the per-model overlay row stays. Backends without
+    // a swappable slot (DiT templates, cloud) ignore the field.
+    const vae = sidecarBaseDropped ? overlay.vae : overlay.vae ?? defaults.vae;
     const seed = overrides.seed ?? overlay.seed ?? defaults.seed;
     const clipSkip = overrides.clipSkip ?? overlay.clipSkip ?? defaults.clipSkip;
     // ADetailer / face-detailer (IG-CF15/PG-4 v1 → widened 2026-09-27):
