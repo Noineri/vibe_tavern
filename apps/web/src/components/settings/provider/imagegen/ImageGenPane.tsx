@@ -1726,13 +1726,17 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const localStatus: LocalConnectionStatus = imageGen.samplerStatusByProfile[profileId] ?? "unknown";
   const localOffline = isLocalBackend && localStatus === "offline";
   const caps = form.capabilities;
-  // IG-CF5: scalar controls resolve MIRROR-FIRST through the shared T4
-  // descriptors, whose capability gate removes fields the backend never wires.
-  const [stepsSlider, cfgSlider, clipSkipSlider] = buildScalarSliders(caps);
-  // T5: the optional seed — the ONE parse lives in the descriptor.
-  const seedControl = buildSeedField(caps);
   const bound = imageGen.modelOverlay !== null;
   const overlay = imageGen.modelOverlay;
+  const selectedWorkflowFamily = overlay?.workflowFamily ?? form.defaultParams.workflowFamily;
+  // The shared descriptor owns both backend and CFG-1-family gates.
+  const [stepsSlider, cfgSlider, clipSkipSlider, cfgRescaleSlider] = buildScalarSliders({
+    capabilities: caps,
+    backend: form.backend,
+    workflowFamily: selectedWorkflowFamily,
+  });
+  // T5: the optional seed — the ONE parse lives in the descriptor.
+  const seedControl = buildSeedField(caps);
   // The SELECTED model's cache entry (comfyui dialect enrichment, CG-B1):
   // the template marker drives the «Detected» readout (picker), the DiT
   // sidecar fields (advanced), and the Krea-2 starting-point prefill.
@@ -2380,6 +2384,16 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   range={cfgSlider.range}
                   rangeTestId="image-gen-range-cfg"
                   cellTestId="image-gen-field-cfg"
+                />
+              )}
+              {cfgRescaleSlider && (
+                <SamplerSliderField
+                  label={t(cfgRescaleSlider.labelKey)}
+                  value={params.cfgRescale}
+                  onChange={(cfgRescale) => setParam(cfgRescaleSlider.commit(cfgRescale))}
+                  range={cfgRescaleSlider.range}
+                  rangeTestId="image-gen-range-cfg-rescale"
+                  cellTestId="image-gen-field-cfg-rescale"
                 />
               )}
               {/* T5: the optional seed — label + numeric TextInput parsed by

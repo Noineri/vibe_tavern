@@ -23,6 +23,7 @@
  */
 
 import {
+  CFG_ONE_WORKFLOW_FAMILIES,
   IMAGE_GEN_ADETAILER_DEFAULT_MODEL,
   IMAGE_GEN_ADETAILER_FACE_MODELS,
   IMAGE_GEN_BACKENDS,
@@ -316,11 +317,11 @@ export function buildDitSidecarControls({
  * RESOLVED range — the chip's old global-only read was the silent drift
  * this killed (a backend declaring limits now shapes both surfaces).
  */
-export type ScalarSliderField = "steps" | "cfgScale" | "clipSkip";
+export type ScalarSliderField = "steps" | "cfgScale" | "cfgRescale" | "clipSkip";
 
 export interface ScalarSliderSpec {
   readonly field: ScalarSliderField;
-  readonly labelKey: "image_gen_steps_label" | "image_gen_cfg_label" | "image_gen_clip_skip_label";
+  readonly labelKey: "image_gen_steps_label" | "image_gen_cfg_label" | "image_gen_cfg_rescale_label" | "image_gen_clip_skip_label";
   readonly range: ImageGenParamRange;
   commit(value: number): Partial<Record<ScalarSliderField, number>>;
 }
@@ -329,14 +330,28 @@ export type ScalarSliders = readonly [
   ScalarSliderSpec | undefined,
   ScalarSliderSpec | undefined,
   ScalarSliderSpec | undefined,
+  ScalarSliderSpec | undefined,
 ];
 
 /** Fixed slots preserve the pane's positional field contract while absent
  *  capability flags remove the corresponding control from both renderers. */
 export function buildScalarSliders(
-  capabilities: Pick<ImageGenCapabilityFlags, "supportsSteps" | "supportsCfgScale" | "supportsClipSkip" | "paramRanges">,
+  input:
+    | Pick<ImageGenCapabilityFlags, "supportsSteps" | "supportsCfgScale" | "supportsClipSkip" | "paramRanges">
+    | {
+        capabilities: Pick<ImageGenCapabilityFlags, "supportsSteps" | "supportsCfgScale" | "supportsClipSkip" | "paramRanges">;
+        backend: ImageGenBackendValue;
+        workflowFamily?: string;
+      },
 ): ScalarSliders {
+  const capabilities = "capabilities" in input ? input.capabilities : input;
+  const backend = "capabilities" in input ? input.backend : undefined;
+  const workflowFamily = "capabilities" in input ? input.workflowFamily : undefined;
   const paramRanges = capabilities.paramRanges;
+  // The family gate lives here: both renderers consume this descriptor and
+  // never re-derive CFG-1-only workflow knowledge.
+  const supportsCfgScale = capabilities.supportsCfgScale && !CFG_ONE_WORKFLOW_FAMILIES.has(workflowFamily ?? "");
+  const supportsCfgRescale = supportsCfgScale && backend !== undefined && isLocalDialectBackend(backend);
   return [
     capabilities.supportsSteps
       ? {
@@ -346,7 +361,7 @@ export function buildScalarSliders(
           commit: (steps) => ({ steps }),
         }
       : undefined,
-    capabilities.supportsCfgScale
+    supportsCfgScale
       ? {
           field: "cfgScale",
           labelKey: "image_gen_cfg_label",
@@ -360,6 +375,14 @@ export function buildScalarSliders(
           labelKey: "image_gen_clip_skip_label",
           range: paramRanges?.clipSkip ?? IMAGE_GEN_PARAM_RANGES.clipSkip,
           commit: (clipSkip) => ({ clipSkip }),
+        }
+      : undefined,
+    supportsCfgRescale
+      ? {
+          field: "cfgRescale",
+          labelKey: "image_gen_cfg_rescale_label",
+          range: paramRanges?.cfgRescale ?? IMAGE_GEN_PARAM_RANGES.cfgRescale,
+          commit: (cfgRescale) => ({ cfgRescale }),
         }
       : undefined,
   ];

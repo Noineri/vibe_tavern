@@ -241,6 +241,13 @@ describe("comfyui adapter", () => {
       expect(Object.keys(rest).sort()).toEqual(Object.keys(withoutVae.graph).sort());
     });
 
+    it("wraps the checkpoint MODEL in RescaleCFG only above zero", () => {
+      const { graph } = buildComfyCheckpointWorkflow({ prompt: "p", cfgRescale: 0.6 }, "base.safetensors");
+      expect(graph["16"]).toEqual({ class_type: "RescaleCFG", inputs: { model: ["4", 0], multiplier: 0.6 } });
+      expect(graph["3"]!.inputs.model).toEqual(["16", 0]);
+      expect(buildComfyCheckpointWorkflow({ prompt: "p", cfgRescale: 0 }, "base.safetensors").graph["16"]).toBeUndefined();
+    });
+
     it("materializes the node-class defaults for unset fields (the server's own /object_info values)", () => {
       const { graph, seed } = buildComfyCheckpointWorkflow({ prompt: "p" }, "m.safetensors");
       expect(graph["3"]!.inputs.steps).toBe(COMFY_NODE_DEFAULTS.steps);
@@ -340,6 +347,12 @@ describe("comfyui adapter", () => {
       expect(graph["7"]!.inputs.clip).toEqual(["12", 0]);
       expect(graph["8"]!.inputs.vae).toEqual(["13", 0]);
       expect(graph["4"]).toBeUndefined();
+    });
+
+    it("wraps the DiT MODEL in RescaleCFG when requested", () => {
+      const { graph } = buildComfyKrea2Workflow({ prompt: "p", cfgRescale: 0.5 }, SIDECARS);
+      expect(graph["16"]).toEqual({ class_type: "RescaleCFG", inputs: { model: ["11", 0], multiplier: 0.5 } });
+      expect(graph["3"]!.inputs.model).toEqual(["16", 0]);
     });
 
     it("hardcodes CLIPLoader.type=krea2 (the owner's SM lesson: a qwen3vl encoder under type qwen_image is a silently-broken graph)", () => {

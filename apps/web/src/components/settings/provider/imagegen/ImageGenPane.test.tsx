@@ -1309,10 +1309,10 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     );
     await openAdvanced(view);
     expect((view.getByTestId("image-gen-field-seed") as HTMLInputElement).value).toBe("");
-    for (const id of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-clip-skip"]) {
+    for (const id of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-cfg-rescale", "image-gen-field-clip-skip"]) {
       expect(view.getByTestId(id).querySelector("input")).toBeTruthy();
     }
-    expect(view.getByTestId("image-gen-advanced-body").querySelectorAll("input").length).toBe(7);
+    expect(view.getByTestId("image-gen-advanced-body").querySelectorAll("input").length).toBe(9);
   });
 
   it("bind OFF: numeric edits route to the PROFILE BASE (setForm defaultParams), overlay untouched", async () => {

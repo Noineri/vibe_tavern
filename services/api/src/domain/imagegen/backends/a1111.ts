@@ -565,6 +565,9 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       if (negativePrompt !== undefined) body.negative_prompt = negativePrompt;
       if (request.steps !== undefined) body.steps = request.steps;
       if (request.cfgScale !== undefined) body.cfg_scale = request.cfgScale;
+      // Forge's builtin RescaleCFG script reads this API field; zero/absent
+      // leaves the server's model chain untouched.
+      if (request.cfgRescale !== undefined && request.cfgRescale > 0) body.rescale_cfg = request.cfgRescale;
       // Free W×H: validated positive integers, sent INDEPENDENTLY (unlike
       // the cloud twins' coupled complete-size rule).
       if (request.width !== undefined) body.width = requirePositiveInt("width", request.width);

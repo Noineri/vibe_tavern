@@ -242,6 +242,7 @@ export const COMFY_NODE_IDS = {
   vae: "13",
   modelSamplingAuraFlow: "14",
   conditioningZeroOut: "15",
+  cfgRescale: "16",
   hiresLatentUpscale: "30",
   hiresUpscaleModel: "31",
   hiresImageUpscale: "32",
@@ -506,6 +507,21 @@ function resolveComfySeed(seed: number | undefined): number {
  *  text encoders. The VAEDecode.vae ref starts as a placeholder the two
  *  wrappers overwrite (checkpoint: its bundled third output; DiT: the
  *  separate VAELoader). Pure. */
+function applyComfyCfgRescale(
+  graph: ComfyWorkflowGraph,
+  model: [string, number],
+  cfgRescale: number | undefined,
+): [string, number] {
+  if (cfgRescale === undefined || cfgRescale <= 0) return model;
+  graph[COMFY_NODE_IDS.cfgRescale] = {
+    class_type: "RescaleCFG",
+    inputs: { model, multiplier: cfgRescale },
+  };
+  const rescaled: [string, number] = [COMFY_NODE_IDS.cfgRescale, 0];
+  graph[COMFY_NODE_IDS.kSampler]!.inputs.model = rescaled;
+  return rescaled;
+}
+
 function buildComfyCommonNodes(
   request: ImageGenGenerateRequest,
   refs: { model: [string, number]; clip: [string, number] },
@@ -658,11 +674,12 @@ export function buildComfyCheckpointWorkflow(
   // The checkpoint's own third output is its bundled VAE (or the swap's
   // VAELoader output above).
   graph[COMFY_NODE_IDS.vaeDecode]!.inputs.vae = vaeRef;
+  const modelRef = applyComfyCfgRescale(graph, chain.model, request.cfgRescale);
   return {
     graph,
     seed: resolved.seed,
     ctx: {
-      model: chain.model,
+      model: modelRef,
       clip: resolved.clipSource,
       vae: vaeRef,
       seed: resolved.seed,
@@ -720,11 +737,12 @@ export function buildComfyKrea2Workflow(
     inputs: { vae_name: sidecars.vae },
   };
   graph[COMFY_NODE_IDS.vaeDecode]!.inputs.vae = [COMFY_NODE_IDS.vae, 0];
+  const modelRef = applyComfyCfgRescale(graph, chain.model, request.cfgRescale);
   return {
     graph,
     seed: resolved.seed,
     ctx: {
-      model: chain.model,
+      model: modelRef,
       clip: resolved.clipSource,
       vae: [COMFY_NODE_IDS.vae, 0],
       seed: resolved.seed,
@@ -801,6 +819,8 @@ export function buildComfyDitWorkflow(
     modelRef = [COMFY_NODE_IDS.modelSamplingAuraFlow, 0];
     graph[COMFY_NODE_IDS.kSampler]!.inputs.model = modelRef;
   }
+
+  modelRef = applyComfyCfgRescale(graph, modelRef, request.cfgRescale);
 
   if (spec.workflowShape === COMFY_DIT_WORKFLOW_SHAPES.QwenImage21) {
     graph[COMFY_NODE_IDS.positive] = {

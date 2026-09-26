@@ -658,6 +658,7 @@
 	"image_gen_advanced": "Дополнительно",
 	"image_gen_steps_label": "Шаги",
 	"image_gen_cfg_label": "Масштаб CFG",
+	"image_gen_cfg_rescale_label": "Нормализация CFG",
 	"image_gen_seed_label": "Зерно",
 	"image_gen_seed_random": "Случайное зерно",
 	"image_gen_clip_skip_label": "Пропуск CLIP",

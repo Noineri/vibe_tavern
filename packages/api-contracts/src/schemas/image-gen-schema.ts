@@ -98,6 +98,7 @@ const imageGenParamRangeSchema = z.object({
 export const imageGenParamRangesSchema = z.object({
   steps: imageGenParamRangeSchema.optional(),
   cfgScale: imageGenParamRangeSchema.optional(),
+  cfgRescale: imageGenParamRangeSchema.optional(),
   clipSkip: imageGenParamRangeSchema.optional(),
 });
 export type ImageGenParamRangesValue = z.infer<typeof imageGenParamRangesSchema>;
@@ -153,6 +154,7 @@ export type ImageGenHiresBlockValue = z.infer<typeof imageGenHiresBlockSchema>;
 export const imageGenDefaultParamsSchema = z.object({
   steps: z.number().optional(),
   cfgScale: z.number().optional(),
+  cfgRescale: z.number().min(0).max(1).optional(),
   sampler: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
@@ -472,6 +474,7 @@ export const imageGenGenerateOverridesSchema = z.object({
   height: z.number().optional(),
   steps: z.number().optional(),
   cfgScale: z.number().optional(),
+  cfgRescale: z.number().min(0).max(1).optional(),
   sampler: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
@@ -633,6 +636,7 @@ export type ImageGenModelFavoriteValue = z.infer<typeof imageGenModelFavoriteSch
 export const imageGenModelSettingsOverlaySchema = z.object({
   steps: z.number().optional(),
   cfgScale: z.number().optional(),
+  cfgRescale: z.number().min(0).max(1).optional(),
   sampler: z.string().optional(),
   /** Schedule type (PG-3, A1111 dialect) — the overlay twin of the
    *  profile-default `scheduler`. */
@@ -710,6 +714,7 @@ export type UpsertImageGenModelSettingsValue = z.infer<typeof upsertImageGenMode
 export const imageGenSamplerSetPayloadSchema = z.object({
   steps: z.number().optional(),
   cfgScale: z.number().optional(),
+  cfgRescale: z.number().min(0).max(1).optional(),
   sampler: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),

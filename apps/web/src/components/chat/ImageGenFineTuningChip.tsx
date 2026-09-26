@@ -729,6 +729,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
                 capabilities={effective.capabilities}
                 samplers={supportsSamplers ? (samplers ?? []) : []}
                 backend={effective.backend}
+                workflowFamily={effective.defaultParams.workflowFamily}
                 modelTemplate={selectedModelEntry?.template}
                 disabled={busy}
               />
@@ -806,6 +807,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
 const SLIDER_RANGE_TESTIDS: Record<ScalarSliderField, string> = {
   steps: "image-gen-range-overlay-steps",
   cfgScale: "image-gen-range-overlay-cfg",
+  cfgRescale: "image-gen-range-overlay-cfg-rescale",
   clipSkip: "image-gen-range-overlay-clip",
 };
 
@@ -823,6 +825,7 @@ function ImageGenModelSettingsAccordion({
   capabilities,
   samplers,
   backend,
+  workflowFamily,
   modelTemplate,
   disabled,
 }: {
@@ -838,6 +841,7 @@ function ImageGenModelSettingsAccordion({
    *  local family a1111+comfyui (scheduler catalog), comfyui (DiT
    *  sidecars). Booleans would permit stale combos; the enum cannot. */
   backend: ImageGenBackendValue;
+  workflowFamily?: string;
   /** The picked model's workflow-template marker (comfyui dialect, from the
    *  chip body's fetched models list) — gates the DiT sidecar rows. */
   modelTemplate?: string;
@@ -1030,7 +1034,11 @@ function ImageGenModelSettingsAccordion({
   // T4/T5 (TWIN_UNIFICATION step 3): the scalar sliders + seed ride the
   // shared descriptors — capability flags gate dead fields before either
   // renderer sees them; ranges still resolve mirror-first.
-  const scalarSliders = buildScalarSliders(capabilities);
+  const scalarSliders = buildScalarSliders({
+    capabilities,
+    backend,
+    workflowFamily: overlay.workflowFamily ?? workflowFamily ?? modelTemplate,
+  });
   const seedControl = buildSeedField(capabilities);
   // The scalar steps row displays its overlay value or its range-min anchor;
   // ADetailer's empty override inherits that exact effective chip value.

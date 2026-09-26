@@ -35,11 +35,12 @@ import type { ImageGenBackendType, ImageGenCapabilityFlags, ImageGenParamRange }
  *  trained weight, 2 exaggeration) feeding both strength_model and
  *  strength_clip on ComfyUI. */
 export const IMAGE_GEN_PARAM_RANGES: Record<
-  "steps" | "cfgScale" | "clipSkip" | "loraStrength" | "hiresSteps" | "hiresScale" | "hiresDenoise",
+  "steps" | "cfgScale" | "cfgRescale" | "clipSkip" | "loraStrength" | "hiresSteps" | "hiresScale" | "hiresDenoise",
   ImageGenParamRange
 > = {
   steps: { min: 1, max: 150, step: 1 },
   cfgScale: { min: 1, max: 30, step: 0.5 },
+  cfgRescale: { min: 0, max: 1, step: 0.05 },
   clipSkip: { min: 1, max: 12, step: 1 },
   loraStrength: { min: 0, max: 2, step: 0.05 },
   /** Hires-fix second pass (FT-A6, A1111 `hr_*`): steps 0 = the dialect's

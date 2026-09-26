@@ -23,6 +23,17 @@ describe("image-gen workflow family schemas", () => {
     ).toBe(true);
   });
 
+  test("accepts cfgRescale 0..1 and rejects values outside that range", () => {
+    expect(imageGenSamplerSetPayloadSchema.safeParse({ cfgRescale: 0.6 }).success).toBe(true);
+    expect(
+      generateImageGenSchema.safeParse({
+        profileId: "profile-1",
+        mode: "portrait",
+        overrides: { cfgRescale: 1.01 },
+      }).success,
+    ).toBe(false);
+  });
+
   test("rejects unknown workflow ids at both wire boundaries", () => {
     expect(imageGenSamplerSetPayloadSchema.safeParse({ workflowFamily: "made-up" }).success).toBe(false);
     expect(

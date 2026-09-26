@@ -920,6 +920,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const vae = sidecarBaseDropped ? overlay.vae : overlay.vae ?? defaults.vae;
     const seed = overrides.seed ?? overlay.seed ?? defaults.seed;
     const clipSkip = overrides.clipSkip ?? overlay.clipSkip ?? defaults.clipSkip;
+    const cfgRescale = overrides.cfgRescale ?? overlay.cfgRescale ?? defaults.cfgRescale;
     // ADetailer / face-detailer (IG-CF15/PG-4 v1 → widened 2026-09-27):
     // the two-rung ladder — the per-model overlay flag over the profile
     // base (the pane row lives on BOTH arms: the bind toggle routes
@@ -1049,6 +1050,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(height !== undefined ? { height } : {}),
       ...(steps !== undefined ? { steps } : {}),
       ...(cfgScale !== undefined ? { cfgScale } : {}),
+      ...(cfgRescale !== undefined ? { cfgRescale } : {}),
       ...(sampler !== undefined ? { sampler } : {}),
       ...(scheduler !== undefined ? { scheduler } : {}),
       ...(encoderName !== undefined ? { encoderName } : {}),
@@ -1128,6 +1130,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         ...(height !== undefined ? { height } : {}),
         ...(steps !== undefined ? { steps } : {}),
         ...(cfgScale !== undefined ? { cfgScale } : {}),
+        ...(cfgRescale !== undefined ? { cfgRescale } : {}),
         ...(sampler !== undefined ? { sampler } : {}),
         ...(scheduler !== undefined ? { scheduler } : {}),
         ...(encoderName !== undefined ? { encoderName } : {}),

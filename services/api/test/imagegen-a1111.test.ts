@@ -137,6 +137,15 @@ describe("a1111 adapter", () => {
       });
     });
 
+    it("sends Rescale CFG only above zero", async () => {
+      const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
+      const backend = backendWith(transport);
+      await backend.generate({ prompt: "p", cfgRescale: 0.6 });
+      await backend.generate({ prompt: "p", cfgRescale: 0 });
+      expect(sentJson(calls[0])).toMatchObject({ rescale_cfg: 0.6 });
+      expect("rescale_cfg" in sentJson(calls[1])).toBe(false);
+    });
+
     it("sends width and height independently (free W×H, no coupled grid)", async () => {
       const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
       const backend = backendWith(transport);

@@ -93,6 +93,8 @@ export interface ImageGenGenerateRequest {
   height?: number;
   steps?: number;
   cfgScale?: number;
+  /** CFG-rescale multiplier; 0/absent leaves the model chain unchanged. */
+  cfgRescale?: number;
   sampler?: string;
   /** Schedule type (PG-3, A1111 dialect) — the sampler's schedule riding
    *  the txt2img payload per request; absent = the server's own default. */

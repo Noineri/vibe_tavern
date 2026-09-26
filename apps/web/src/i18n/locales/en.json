@@ -652,6 +652,7 @@
 	"image_gen_advanced": "Advanced",
 	"image_gen_steps_label": "Steps",
 	"image_gen_cfg_label": "CFG scale",
+	"image_gen_cfg_rescale_label": "Rescale CFG",
 	"image_gen_seed_label": "Seed",
 	"image_gen_seed_random": "Random seed",
 	"image_gen_clip_skip_label": "CLIP skip",

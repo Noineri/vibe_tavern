@@ -93,6 +93,7 @@ export interface ImageGenSlotProvenance {
     height?: number;
     steps?: number;
     cfgScale?: number;
+    cfgRescale?: number;
     sampler?: string;
     /** Schedule type (PG-3, A1111 dialect) — recorded when sent so a
      *  regenerated slot reproduces the same schedule. */

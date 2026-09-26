@@ -1218,6 +1218,7 @@ export default interface Resources {
     "image_gen_bind_per_model": "Per-model settings",
     "image_gen_bind_per_model_hint": "When on, the sizes and parameters below apply only to {model}; empty fields inherit the profile base.",
     "image_gen_cfg_label": "CFG scale",
+    "image_gen_cfg_rescale_label": "Rescale CFG",
     "image_gen_chip_clear": "Clear",
     "image_gen_chip_generate": "Generate",
     "image_gen_chip_model_default": "Profile default",

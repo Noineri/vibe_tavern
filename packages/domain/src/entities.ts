@@ -1134,6 +1134,7 @@ export interface ImageGenParamRange {
 export interface ImageGenParamRanges {
   steps?: ImageGenParamRange;
   cfgScale?: ImageGenParamRange;
+  cfgRescale?: ImageGenParamRange;
   clipSkip?: ImageGenParamRange;
 }
 
@@ -1206,6 +1207,8 @@ export interface ImageGenDefaultParams {
   steps?: number;
   /** CFG scale (local backends). */
   cfgScale?: number;
+  /** CFG-rescale multiplier (local dialects only; 0/absent = disabled). */
+  cfgRescale?: number;
   /** Sampler name (samplers-capable backends only). */
   sampler?: string;
   /** Fixed seed; absent = vendor-random. */
@@ -1397,6 +1400,7 @@ export interface ImageGenProfileLink {
 export interface ImageGenModelSettingsOverlay {
   steps?: number;
   cfgScale?: number;
+  cfgRescale?: number;
   sampler?: string;
   /** Schedule type (PG-3) — the sampler's schedule on the A1111 dialect;
    *  the overlay twin of `ImageGenDefaultParams.scheduler`. */
@@ -1500,6 +1504,7 @@ export interface ImageGenModelSettings {
 export interface ImageGenSamplerSetPayload {
   steps?: number;
   cfgScale?: number;
+  cfgRescale?: number;
   sampler?: string;
   seed?: number;
   clipSkip?: number;

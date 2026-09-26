@@ -134,13 +134,13 @@ describe("model-controls — buildKreaTwoControls (T6: the pane section's home +
 describe("model-controls — scalar capability gates (T4/T5)", () => {
   test("a krea-style capability mirror renders no scalar sliders but keeps seed", () => {
     const sliders = buildScalarSliders({});
-    expect(sliders).toEqual([undefined, undefined, undefined]);
+    expect(sliders).toEqual([undefined, undefined, undefined, undefined]);
     expect(buildSeedField({ supportsSeed: true })).not.toBeNull();
   });
 
   test("a seed-less mirror renders neither scalar sliders nor seed", () => {
     const sliders = buildScalarSliders({});
-    expect(sliders).toEqual([undefined, undefined, undefined]);
+    expect(sliders).toEqual([undefined, undefined, undefined, undefined]);
     expect(buildSeedField({ supportsSeed: false })).toBeNull();
   });
 
@@ -155,6 +155,20 @@ describe("model-controls — scalar capability gates (T4/T5)", () => {
     expect(clip).toBeUndefined();
     expect(steps!.commit(30)).toEqual({ steps: 30 });
     expect(cfg!.commit(4.5)).toEqual({ cfgScale: 4.5 });
+  });
+
+  test("CFG-1 workflow families hide both CFG controls while mixed families retain them", () => {
+    for (const workflowFamily of ["qwen-image-2.1", "flux-schnell"]) {
+      const sliders = buildScalarSliders({ capabilities: { supportsCfgScale: true }, backend: "comfyui", workflowFamily });
+      expect(sliders[1]).toBeUndefined();
+      expect(sliders[3]).toBeUndefined();
+    }
+    for (const workflowFamily of ["flux-dev", "krea2-dit", "qwen-image", "z-image"]) {
+      const sliders = buildScalarSliders({ capabilities: { supportsCfgScale: true }, backend: "comfyui", workflowFamily });
+      expect(sliders[1]?.field).toBe("cfgScale");
+      expect(sliders[3]?.field).toBe("cfgRescale");
+    }
+    expect(buildScalarSliders({ capabilities: { supportsCfgScale: true }, backend: "openrouter" })[3]).toBeUndefined();
   });
 
   test("comfyui is the only all-four fixture: every scalar slot and seed are present", () => {

@@ -15,6 +15,12 @@ export const IMAGE_GEN_WORKFLOW_FAMILY_IDS = [
 
 export type ImageGenWorkflowFamilyId = (typeof IMAGE_GEN_WORKFLOW_FAMILY_IDS)[number];
 
+/** CFG-1-only families hide the editable CFG control while their set value
+ * still ships. Flux dev stays editable despite its seeded cfg 1 because it
+ * supports guidance; Krea2 Turbo/RAW and Z-Image Turbo/Base are mixed
+ * workflow/default variants, so their shared family ids stay editable. */
+export const CFG_ONE_WORKFLOW_FAMILIES = new Set(["qwen-image-2.1", "flux-schnell"]);
+
 /** Official sampler defaults for the fleet workflow variants.
  * `z-image-base` selects the `z-image` workflow with the Base model's
  * different scalar defaults. */
