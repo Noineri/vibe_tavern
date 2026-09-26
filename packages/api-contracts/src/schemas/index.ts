@@ -36,6 +36,40 @@ export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, Coau
 export { regenerateOverrideSchema } from "./chat-regenerate-schema.js";
 export type { RegenerateOverride } from "./chat-regenerate-schema.js";
 export {
+  FLY_TRIBUNAL_PRECEDENT_GATE,
+  FLY_TRIBUNAL_REGEN_CAP_MIN,
+  FLY_TRIBUNAL_REGEN_CAP_MAX,
+  FLY_HINT_PLACEHOLDER,
+  FLY_HINT_TEMPLATE_MAX_LENGTH,
+  FLY_HINT_LIST_MAX,
+  FLY_STEERING_NOTE_MAX_LENGTH,
+  FLY_WEIGHTS_MAX_BASE64_LENGTH,
+  flyReactionTierSchema,
+  flySensitivitySchema,
+  flyTrainingSpeedSchema,
+  flyAutoSwipeConfidenceSchema,
+  flyPrecedentLifetimeSchema,
+  flyMemoryScopeSchema,
+  flyHintTemplateSchema,
+  flyTribunalSettingsSchema,
+  flyBrainManifestSchema,
+  flyMemoryPutSchema,
+  flyMemoryGetResponseSchema,
+} from "./fly-tribunal-schema.js";
+export type {
+  FlyReactionTier,
+  FlySensitivity,
+  FlyTrainingSpeed,
+  FlyAutoSwipeConfidence,
+  FlyPrecedentLifetime,
+  FlyMemoryScope,
+  FlyHintTemplate,
+  FlyTribunalSettings,
+  FlyBrainManifest,
+  FlyMemoryPut,
+  FlyMemoryGetResponse,
+} from "./fly-tribunal-schema.js";
+export {
   createLorebookSchema,
   updateLorebookMetaSchema,
   testActivationSchema,
