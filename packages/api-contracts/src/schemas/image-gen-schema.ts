@@ -1,6 +1,8 @@
 /** The per-cell template routes were RETIRED (IF-1e): templates live in
  * image prompt profiles now — the cell + families schemas below serve the
- * profile-scoped catalog and the registry dropdown. */import { z } from 'zod';
+ * profile-scoped catalog and the registry dropdown. */
+import { IMAGE_GEN_WORKFLOW_FAMILY_IDS } from "@vibe-tavern/domain";
+import { z } from "zod";
 
 // ─── Closed vocabularies ──────────────────────────────────────────────────────
 
@@ -63,6 +65,11 @@ export type ImagePromptFamilyValue = z.infer<typeof imagePromptFamilySchema>;
  *  `familySource` read-model field (domain `IMAGE_GEN_FAMILY_SOURCES`). */
 export const imageGenFamilySourceSchema = z.enum(['none', 'auto', 'manual']);
 export type ImageGenFamilySourceValue = z.infer<typeof imageGenFamilySourceSchema>;
+
+/** ComfyUI base workflows selectable manually by image-gen sampler sets.
+ * A1111 accepts the pass-through field but ignores it. */
+export const imageGenWorkflowFamilySchema = z.enum(IMAGE_GEN_WORKFLOW_FAMILY_IDS);
+export type ImageGenWorkflowFamilyValue = z.infer<typeof imageGenWorkflowFamilySchema>;
 
 // ─── Capability mirror ────────────────────────────────────────────────────────
 
@@ -159,6 +166,9 @@ export const imageGenDefaultParamsSchema = z.object({
   /** VAE file for the ComfyUI DiT template (CG-A2, comfyui dialect only):
    *  the VAELoader sidecar. Absent = adapter-side canonical resolution. */
   vaeName: z.string().optional(),
+  /** Manual ComfyUI base-workflow selection carried by a sampler-set pick.
+   * A1111 ignores it. */
+  workflowFamily: imageGenWorkflowFamilySchema.optional(),
   /** VAE override for swappable-slot dialects (IF-7b) — A1111's
    *  `override_settings.sd_vae` and the Comfy checkpoint VAELoader swap;
    *  DiT templates keep their family-fixed `vaeName`. */
@@ -465,6 +475,8 @@ export const imageGenGenerateOverridesSchema = z.object({
   sampler: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
+  /** Per-run manual ComfyUI base-workflow override. A1111 ignores it. */
+  workflowFamily: imageGenWorkflowFamilySchema.optional(),
   /** Explicit detail-pass steps; absent falls back to the profile's stored ladder. */
   adetailerSteps: z.number().int().optional(),
   /** Enabled LoRAs of this run (CG-C2, chip-draft level): name verbatim
@@ -631,6 +643,9 @@ export const imageGenModelSettingsOverlaySchema = z.object({
   /** VAE file for the ComfyUI DiT template (CG-A2) — the overlay twin of
    *  the profile-default `vaeName`. */
   vaeName: z.string().optional(),
+  /** Manual ComfyUI base-workflow selection carried by a sampler-set pick;
+   * the overlay twin of the profile default. A1111 ignores it. */
+  workflowFamily: imageGenWorkflowFamilySchema.optional(),
   /** VAE override for swappable-slot dialects (IF-7b) — the overlay twin
    *  of the profile-default `vae`. */
   vae: z.string().min(1).optional(),
@@ -699,6 +714,11 @@ export const imageGenSamplerSetPayloadSchema = z.object({
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
   scheduler: z.string().optional(),
+  /** Text-encoder pin carried by a manual ComfyUI workflow selection. */
+  encoderName: z.string().min(1).optional(),
+  /** Manual base-workflow selection carried by a sampler-set pick;
+   * ComfyUI-only, A1111 ignores it. */
+  workflowFamily: imageGenWorkflowFamilySchema.optional(),
   vae: z.string().min(1).optional(),
   hires: imageGenHiresBlockSchema.optional(),
   /** Face-fix second pass — configured-but-disabled in stock sets (the

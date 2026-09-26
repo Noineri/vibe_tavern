@@ -23,11 +23,11 @@ async function makeStores() {
 }
 
 describe("stock sampler-set seed (IF-7b)", () => {
-  test("first boot creates the four stock rows in matrix order + flips the marker; a second call is a no-op", async () => {
+  test("first boot creates all stock rows in deterministic order + flips the marker; a second call is a no-op", async () => {
     const stores = await makeStores();
     const first = await ensureStockImageGenSamplerSets(stores);
     expect(first.created).toBe(true);
-    expect(first.present).toBe(4);
+    expect(first.present).toBe(10);
 
     const rows = await stores.imageGenSamplerSets.list();
     expect(rows.map((row) => row.id)).toEqual([
@@ -35,6 +35,12 @@ describe("stock sampler-set seed (IF-7b)", () => {
       IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Raw,
       IMAGE_GEN_STOCK_SAMPLER_SET_IDS.anima,
       IMAGE_GEN_STOCK_SAMPLER_SET_IDS.diffusion,
+      IMAGE_GEN_STOCK_SAMPLER_SET_IDS.qwenImage21,
+      IMAGE_GEN_STOCK_SAMPLER_SET_IDS.qwenImage,
+      IMAGE_GEN_STOCK_SAMPLER_SET_IDS.zImageTurbo,
+      IMAGE_GEN_STOCK_SAMPLER_SET_IDS.zImageBase,
+      IMAGE_GEN_STOCK_SAMPLER_SET_IDS.fluxDev,
+      IMAGE_GEN_STOCK_SAMPLER_SET_IDS.fluxSchnell,
     ]);
     // The matrix's own values, verbatim (owner-provided 2026-09-22); the
     // upscaler is deliberately unnamed (owner ruling 2026-09-27: no
@@ -54,12 +60,49 @@ describe("stock sampler-set seed (IF-7b)", () => {
     // configured, opt-in only, model unset (the dialect's own default).
     expect(rows.every((row) => row.payload.adetailer === false)).toBe(true);
 
+    const qwenImage21 = rows.find((row) => row.id === IMAGE_GEN_STOCK_SAMPLER_SET_IDS.qwenImage21);
+    expect(qwenImage21?.payload).toEqual({
+      steps: 25,
+      cfgScale: 1,
+      sampler: "euler",
+      scheduler: "simple",
+      adetailer: false,
+      workflowFamily: "qwen-image-2.1",
+    });
+    // Fleet rows intentionally leave sidecars on Auto so the selected
+    // template resolves its canonical pair against the live folders.
+    expect(qwenImage21?.payload.encoderName).toBeUndefined();
+    expect(qwenImage21?.payload.vae).toBeUndefined();
+
     // Marker persisted: the seed never re-runs.
     const settings = await stores.uiSettings.get();
     expect(settings.stockImageGenSamplerSetsSeeded).toBe(true);
+    expect(settings.stockImageGenFleetSamplerSetsSeeded).toBe(true);
     const second = await ensureStockImageGenSamplerSets(stores);
     expect(second.created).toBe(false);
-    expect((await stores.imageGenSamplerSets.list()).length).toBe(4);
+    expect((await stores.imageGenSamplerSets.list()).length).toBe(10);
+  });
+
+  test("an IF-7b-marked install seeds the fleet once, then a deleted fleet row stays deleted", async () => {
+    const stores = await makeStores();
+    const legacy = imageGenStockSamplerSets().slice(0, 4);
+    for (const [sortOrder, row] of legacy.entries()) {
+      await stores.imageGenSamplerSets.create({ id: row.id, name: row.name, sortOrder, payload: row.payload });
+    }
+    await stores.uiSettings.update({ stockImageGenSamplerSetsSeeded: true });
+
+    const first = await ensureStockImageGenSamplerSets(stores);
+    expect(first.created).toBe(true);
+    expect(first.present).toBe(10);
+    expect((await stores.uiSettings.get()).stockImageGenFleetSamplerSetsSeeded).toBe(true);
+
+    const second = await ensureStockImageGenSamplerSets(stores);
+    expect(second.created).toBe(false);
+    await stores.imageGenSamplerSets.delete(IMAGE_GEN_STOCK_SAMPLER_SET_IDS.qwenImage21);
+    const afterDelete = await ensureStockImageGenSamplerSets(stores);
+    expect(afterDelete.created).toBe(false);
+    expect(afterDelete.present).toBe(9);
+    expect((await stores.imageGenSamplerSets.list()).some((row) => row.id === IMAGE_GEN_STOCK_SAMPLER_SET_IDS.qwenImage21)).toBe(false);
   });
 
   test("deletes stick: a marked install never resurrects removed stock rows, and a rename survives", async () => {
@@ -73,7 +116,7 @@ describe("stock sampler-set seed (IF-7b)", () => {
 
     const again = await ensureStockImageGenSamplerSets(stores);
     expect(again.created).toBe(false);
-    expect(again.present).toBe(3);
+    expect(again.present).toBe(9);
     const after = await stores.imageGenSamplerSets.list();
     expect(after.some((row) => row.id === IMAGE_GEN_STOCK_SAMPLER_SET_IDS.diffusion)).toBe(false);
     expect(after.find((row) => row.id === IMAGE_GEN_STOCK_SAMPLER_SET_IDS.anima)?.name).toBe("My Anima");
@@ -88,7 +131,7 @@ describe("stock sampler-set seed (IF-7b)", () => {
     const result = await ensureStockImageGenSamplerSets(stores);
     expect(result.created).toBe(true);
     const rows = await stores.imageGenSamplerSets.list();
-    expect(rows.length).toBe(4);
+    expect(rows.length).toBe(10);
     // No duplicate of the pre-existing row.
     expect(rows.filter((row) => row.id === partial.id).length).toBe(1);
   });
@@ -118,7 +161,10 @@ describe("stock sampler-set seed (IF-7b)", () => {
       name: "My a1111 set",
       payload: { ...seededPayload, sampler: "Euler a" },
     });
-    await stores.uiSettings.update({ stockImageGenSamplerSetsSeeded: true });
+    await stores.uiSettings.update({
+      stockImageGenSamplerSetsSeeded: true,
+      stockImageGenFleetSamplerSetsSeeded: true,
+    });
 
     const result = await ensureStockImageGenSamplerSets(stores);
     expect(result.created).toBe(false);

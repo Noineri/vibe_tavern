@@ -1779,6 +1779,56 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
     restoreSets();
   });
 
+  it("IF-12a: applying a workflow set restores its sidecars with the workflow selection", async () => {
+    const setModelSamplerSetBinding = mock((_setId: string | null, _values?: Record<string, unknown>) => {});
+    const qwen = {
+      id: "set-qwen-image21",
+      name: "Qwen Image 2.1",
+      sortOrder: 4,
+      payload: {
+        steps: 25,
+        cfgScale: 1,
+        sampler: "euler",
+        scheduler: "simple",
+        encoderName: "qwen3vl_8b.safetensors",
+        vae: "qwen_image_2.1_vae.safetensors",
+        workflowFamily: "qwen-image-2.1",
+      },
+      createdAt: "2026-09-25T00:00:00.000Z",
+      updatedAt: "2026-09-25T00:00:00.000Z",
+    } as ImageGenSamplerSet;
+    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [qwen]);
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, modelId: "krea.safetensors" }),
+          modelOverlay: {},
+          setModelSamplerSetBinding,
+          modelsByProfile: {
+            ig1: [{ id: "krea.safetensors", label: "Krea", family: "Krea 2", template: "krea2-dit" }],
+          },
+        })}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
+    await pickOption(view, "image-gen-model-set-trigger", "Qwen Image 2.1");
+    await waitFor(() => expect(setModelSamplerSetBinding).toHaveBeenCalledTimes(1));
+    // The set is authoritative over the old Krea template: it restores both
+    // sidecars and workflowFamily instead of the template-change path
+    // clearing these fresh pins. The compact set `vae` maps to Comfy's
+    // request/overlay `vaeName` spelling.
+    expect(setModelSamplerSetBinding.mock.calls[0]![1]).toEqual({
+      steps: 25,
+      cfgScale: 1,
+      sampler: "euler",
+      scheduler: "simple",
+      encoderName: "qwen3vl_8b.safetensors",
+      vaeName: "qwen_image_2.1_vae.safetensors",
+      workflowFamily: "qwen-image-2.1",
+    });
+    restoreSets();
+  });
+
   it("IF-7c: an A1111-vocabulary set on a COMFY target translates through the alias bridge before applying", async () => {
     const applyBaseSamplerSet = mock((_setId: string | null, _payload?: Record<string, unknown>) => {});
     const diffusion = {
@@ -2288,6 +2338,69 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
     await waitFor(() =>
       expect((view2.getByTestId("image-gen-field-steps").querySelector("input") as HTMLInputElement).value).toBe("30"),
     );
+  });
+
+  it("IF-12a: applying a Qwen workflow set persists its sidecars through a re-render, while the separate model-switch test keeps stale-pin clearing", async () => {
+    const qwenSet = {
+      id: "set-qwen",
+      name: "Qwen Image 2.1",
+      sortOrder: 4,
+      payload: {
+        steps: 25,
+        cfgScale: 1,
+        sampler: "euler",
+        scheduler: "simple",
+        encoderName: "qwen3vl_8b.safetensors",
+        vae: "qwen_image_2.1_vae.safetensors",
+        workflowFamily: "qwen-image-2.1",
+      },
+      createdAt: "2026-09-25T00:00:00.000Z",
+      updatedAt: "2026-09-25T00:00:00.000Z",
+    } as ImageGenSamplerSet;
+    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [qwenSet]);
+    apiStore = [
+      makeRecord({
+        id: "p-qwen",
+        backend: IMAGE_GEN_BACKENDS.ComfyUI,
+        endpoint: "http://127.0.0.1:8188",
+        modelId: "krea.safetensors",
+        capabilities: makeCaps({
+          supportsSamplers: true,
+          supportsSteps: true,
+          supportsCfgScale: true,
+          sizeSupport: { kind: "free" },
+          noApiKey: true,
+          localExecution: true,
+        }),
+      }),
+    ];
+    const hookRef: { current: ImageGenHook | null } = { current: null };
+    const view = render(<Harness hookRef={hookRef} />);
+    await waitFor(() => expect(hookRef.current!.profiles.length).toBe(1));
+    await act(async () => {
+      hookRef.current!.select("p-qwen");
+    });
+    await waitFor(() => expect(view.getByTestId("image-gen-pane")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(view.getByRole("switch", { name: "image_gen_bind_per_model" }));
+    });
+    await waitFor(() => expect(hookRef.current!.modelOverlay).toEqual({}));
+    await pickOption(view, "image-gen-model-set-trigger", "Qwen Image 2.1");
+    await waitFor(() => expect(hookRef.current!.modelOverlay).toEqual({
+      steps: 25,
+      cfgScale: 1,
+      scheduler: "simple",
+      encoderName: "qwen3vl_8b.safetensors",
+      vaeName: "qwen_image_2.1_vae.safetensors",
+      workflowFamily: "qwen-image-2.1",
+    }));
+    // Re-rendering the pane does not invoke ModelPicker's model-switch
+    // guard, so fresh set pins remain available to the eventual save.
+    view.rerender(<TooltipProvider delayDuration={200}><Harness hookRef={hookRef} /></TooltipProvider>);
+    expect(hookRef.current!.modelOverlay?.workflowFamily).toBe("qwen-image-2.1");
+    expect(hookRef.current!.modelOverlay?.encoderName).toBe("qwen3vl_8b.safetensors");
+    expect(hookRef.current!.modelOverlay?.vaeName).toBe("qwen_image_2.1_vae.safetensors");
+    restoreSets();
   });
 
   it("unbind immediately DELETEs the stored overlay (the revert is the destructive action)", async () => {

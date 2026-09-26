@@ -933,6 +933,40 @@ describe("comfyui adapter", () => {
       expect(kreaResult.resolvedTemplate).toBe("krea2-dit");
     });
 
+    it("a sampler-set workflow selection wins over prompt pins, checkpoint membership, and metadata routing", async () => {
+      const { transport, calls } = ditTransport("pid-workflow-manual", {
+        checkpoints: [MUSE],
+        family: "Anima",
+      });
+      const result = await backendWith(transport).generate({
+        prompt: "p",
+        model: MUSE,
+        workflowFamily: "qwen-image-2.1",
+        promptFamilyOverride: "anima",
+        encoderName: "qwen3vl_8b.safetensors",
+        vaeName: "qwen_image_2.1_vae.safetensors",
+      });
+      const paths = calls.map((call) => new URL(call.url).pathname);
+      expect(paths).not.toContain("/object_info/CheckpointLoaderSimple");
+      expect(paths).not.toContain("/view_metadata/diffusion_models");
+      const prompt = calls.find((call) => new URL(call.url).pathname === "/prompt");
+      const graph = sentJson(prompt!).prompt as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+      expect(graph["11"]!.class_type).toBe("UNETLoader");
+      expect(graph["12"]!.inputs.type).toBe("qwen_image");
+      expect(result.resolvedTemplate).toBe("qwen-image-2.1");
+    });
+
+    it("fails closed on an unknown direct workflow selection instead of falling back", async () => {
+      const { transport } = ditTransport("pid-workflow-unknown");
+      await expect(
+        backendWith(transport).generate({
+          prompt: "p",
+          model: MUSE,
+          workflowFamily: "unregistered-workflow" as never,
+        }),
+      ).rejects.toThrow('ComfyUI workflow family "unregistered-workflow" has no workflow template');
+    });
+
     it("fails closed for a manually pinned family with no workflow template", async () => {
       const { transport } = ditTransport("pid-qwen-pin");
       await expect(

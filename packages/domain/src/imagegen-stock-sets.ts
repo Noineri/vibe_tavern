@@ -1,4 +1,5 @@
 import type { ImageGenSamplerSetPayload } from "./entities.js";
+import { IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS } from "./imagegen-workflow-families.js";
 
 /**
  * Built-in stock sampler sets (IF-7b, owner-provided matrix 2026-09-22;
@@ -35,10 +36,31 @@ export const IMAGE_GEN_STOCK_SAMPLER_SET_IDS = {
   krea2Raw: "igset_stock_krea2_raw",
   anima: "igset_stock_anima",
   diffusion: "igset_stock_diffusion",
+  qwenImage21: "igset_stock_qwen_image21",
+  qwenImage: "igset_stock_qwen_image",
+  zImageTurbo: "igset_stock_z_image_turbo",
+  zImageBase: "igset_stock_z_image_base",
+  fluxDev: "igset_stock_flux_dev",
+  fluxSchnell: "igset_stock_flux_schnell",
 } as const;
 
 export type ImageGenStockSamplerSetId =
   (typeof IMAGE_GEN_STOCK_SAMPLER_SET_IDS)[keyof typeof IMAGE_GEN_STOCK_SAMPLER_SET_IDS];
+
+/** Project a fleet workflow's official defaults into the sampler-set dialect. */
+function fleetWorkflowPayload(
+  defaults: (typeof IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS)[keyof typeof IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS],
+  workflowFamily: ImageGenSamplerSetPayload["workflowFamily"],
+): ImageGenSamplerSetPayload {
+  return {
+    steps: defaults.steps,
+    cfgScale: defaults.cfg,
+    sampler: defaults.sampler,
+    scheduler: defaults.scheduler,
+    adetailer: false,
+    workflowFamily,
+  };
+}
 
 /** The stock rows to seed (IF-7b) — id + name + payload, deterministic. */
 export function imageGenStockSamplerSets(): Array<{
@@ -99,6 +121,39 @@ export function imageGenStockSamplerSets(): Array<{
         adetailer: false,
         hires: { enabled: false, denoisingStrength: 0.7 },
       },
+    },
+    {
+      id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.qwenImage21,
+      name: "Qwen Image 2.1",
+      payload: fleetWorkflowPayload(
+        IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["qwen-image-2.1"],
+        "qwen-image-2.1",
+      ),
+    },
+    {
+      id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.qwenImage,
+      name: "Qwen Image",
+      payload: fleetWorkflowPayload(IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["qwen-image"], "qwen-image"),
+    },
+    {
+      id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.zImageTurbo,
+      name: "Z-Image Turbo",
+      payload: fleetWorkflowPayload(IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["z-image"], "z-image"),
+    },
+    {
+      id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.zImageBase,
+      name: "Z-Image Base",
+      payload: fleetWorkflowPayload(IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["z-image-base"], "z-image"),
+    },
+    {
+      id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.fluxDev,
+      name: "FLUX.1 Dev",
+      payload: fleetWorkflowPayload(IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["flux-dev"], "flux-dev"),
+    },
+    {
+      id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.fluxSchnell,
+      name: "FLUX.1 Schnell",
+      payload: fleetWorkflowPayload(IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["flux-schnell"], "flux-schnell"),
     },
   ];
 }

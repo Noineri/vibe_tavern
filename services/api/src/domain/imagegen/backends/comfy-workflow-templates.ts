@@ -1,3 +1,5 @@
+import { IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS } from "@vibe-tavern/domain";
+
 /**
  * ComfyUI workflow-template registry (IF-16a).
  *
@@ -87,7 +89,7 @@ export const COMFY_TEMPLATE_SPECS = {
     canonicalVaeAliases: ["qwen_image_2.1_vae_bf16"],
     latentNode: "EmptyLatentImage",
     workflowShape: COMFY_DIT_WORKFLOW_SHAPES.QwenImage21,
-    defaults: { width: 1024, height: 1024, steps: 25, cfg: 1, sampler: "euler", scheduler: "simple" },
+    defaults: { width: 1024, height: 1024, ...IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["qwen-image-2.1"] },
   } satisfies ComfyDitTemplateSpec,
   qwenImage: {
     id: "qwen-image",
@@ -98,7 +100,7 @@ export const COMFY_TEMPLATE_SPECS = {
     canonicalVae: "qwen_image_vae",
     latentNode: "EmptySD3LatentImage",
     auraFlowShift: 3.1,
-    defaults: { width: 1328, height: 1328, steps: 20, cfg: 4, sampler: "euler", scheduler: "simple" },
+    defaults: { width: 1328, height: 1328, ...IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["qwen-image"] },
   } satisfies ComfyDitTemplateSpec,
   zImage: {
     id: "z-image",
@@ -109,7 +111,7 @@ export const COMFY_TEMPLATE_SPECS = {
     canonicalVaeAliases: ["fluxVAE"],
     latentNode: "EmptySD3LatentImage",
     auraFlowShift: 3,
-    defaults: { width: 1024, height: 1024, steps: 8, cfg: 1, sampler: "res_multistep", scheduler: "simple" },
+    defaults: { width: 1024, height: 1024, ...IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["z-image"] },
   } satisfies ComfyDitTemplateSpec,
   fluxDev: {
     id: "flux-dev",
@@ -121,7 +123,7 @@ export const COMFY_TEMPLATE_SPECS = {
     canonicalVaeAliases: ["fluxVAE"],
     latentNode: "EmptySD3LatentImage",
     workflowShape: COMFY_DIT_WORKFLOW_SHAPES.FluxDev,
-    defaults: { width: 1024, height: 1024, steps: 20, cfg: 1, sampler: "euler", scheduler: "simple" },
+    defaults: { width: 1024, height: 1024, ...IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["flux-dev"] },
   } satisfies ComfyDitTemplateSpec,
   fluxSchnell: {
     id: "flux-schnell",
@@ -133,7 +135,7 @@ export const COMFY_TEMPLATE_SPECS = {
     canonicalVaeAliases: ["fluxVAE"],
     latentNode: "EmptySD3LatentImage",
     workflowShape: COMFY_DIT_WORKFLOW_SHAPES.FluxSchnell,
-    defaults: { width: 1024, height: 1024, steps: 4, cfg: 1, sampler: "euler", scheduler: "simple", guidance: 3.5 },
+    defaults: { width: 1024, height: 1024, ...IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["flux-schnell"], guidance: 3.5 },
   } satisfies ComfyDitTemplateSpec,
 } as const;
 

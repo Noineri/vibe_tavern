@@ -16,6 +16,7 @@ export * from "./imagegen-capabilities.js";
 export * from "./imagegen-sizes.js";
 export * from "./imagegen-sampler-aliases.js";
 export * from "./imagegen-stock-sets.js";
+export * from "./imagegen-workflow-families.js";
 export * from "./image-prompt-families.js";
 export * from "./event-bus.js";
 export * from "./extract-thinking-tags.js";

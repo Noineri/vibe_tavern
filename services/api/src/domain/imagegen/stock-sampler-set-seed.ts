@@ -40,16 +40,13 @@ async function healSeededAnimaUpscaler(
 }
 
 /**
- * One-time stock sampler-set seed (IF-7b): creates the four built-in preset
- * rows as ORDINARY editable rows on first boot, guarded by the
- * `uiSettings.stockImageGenSamplerSetsSeeded` marker so deletes STICK (the
- * seed never resurrects a row the user removed — the preset-to-profile
- * migration marker convention).
+ * One-time stock sampler-set seed: the original IF-7b rows and the IF-12a
+ * fleet rows use separate markers. This lets an existing IF-7b installation
+ * receive the fleet once while preserving later deletes from either wave.
  *
  * Idempotency is PER ROW, not just marker-wide: a crash between rows leaves
- * the marker unset, and the next boot skips the ids that already exist and
- * completes the missing ones. The marker flips in the FINAL write, so a
- * clean completion never re-runs.
+ * the wave marker unset, and the next boot skips ids that already exist and
+ * completes the missing ones. Each marker flips only in the final write.
  */
 export async function ensureStockImageGenSamplerSets(stores: StoreContainer): Promise<{
   /** True when at least one row was created this call. */
@@ -59,33 +56,44 @@ export async function ensureStockImageGenSamplerSets(stores: StoreContainer): Pr
 }> {
   const settings = await stores.uiSettings.get();
   const stock = imageGenStockSamplerSets();
-  if (settings.stockImageGenSamplerSetsSeeded) {
-    const existing = await stores.imageGenSamplerSets.list();
-    // Cheap every-boot heal (exact-match scan; rides the list already in
-    // hand): installs seeded before 2026-09-27 carry the A1111 label.
-    await healSeededAnimaUpscaler(stores, existing);
-    const existingIds = new Set(existing.map((row) => row.id));
-    return { created: false, present: stock.filter((row) => existingIds.has(row.id)).length };
-  }
+  const legacyStock = stock.slice(0, 4);
+  const fleetStock = stock.slice(4);
   const existing = new Set((await stores.imageGenSamplerSets.list()).map((row) => row.id));
   let created = false;
-  for (const row of stock.entries()) {
-    const [index, def] = row;
-    if (existing.has(def.id)) continue;
-    await stores.imageGenSamplerSets.create({
-      id: def.id,
-      name: def.name,
-      // Stock rows open the list in matrix order (0–3), ahead of any
-      // user-created rows on a pre-IF-7b install.
-      sortOrder: index,
-      payload: def.payload,
-    });
-    created = true;
+
+  const seedMissing = async (
+    definitions: typeof stock,
+    sortOrderOffset: number,
+  ): Promise<void> => {
+    for (const [index, def] of definitions.entries()) {
+      if (existing.has(def.id)) continue;
+      await stores.imageGenSamplerSets.create({
+        id: def.id,
+        name: def.name,
+        // Matrix order keeps stock rows ahead of pre-existing user rows.
+        sortOrder: sortOrderOffset + index,
+        payload: def.payload,
+      });
+      existing.add(def.id);
+      created = true;
+    }
+  };
+
+  if (!settings.stockImageGenSamplerSetsSeeded) {
+    await seedMissing(legacyStock, 0);
   }
-  await stores.uiSettings.update({ stockImageGenSamplerSetsSeeded: true });
-  // Crash-mid-seed edge: an install that seeded SOME rows under the old
-  // code (marker still unset) keeps those rows — the loop above skips
-  // existing ids — so the heal runs once more over the finished table.
+  if (!settings.stockImageGenFleetSamplerSetsSeeded) {
+    await seedMissing(fleetStock, legacyStock.length);
+  }
+  if (!settings.stockImageGenSamplerSetsSeeded || !settings.stockImageGenFleetSamplerSetsSeeded) {
+    await stores.uiSettings.update({
+      ...(settings.stockImageGenSamplerSetsSeeded ? {} : { stockImageGenSamplerSetsSeeded: true }),
+      ...(settings.stockImageGenFleetSamplerSetsSeeded ? {} : { stockImageGenFleetSamplerSetsSeeded: true }),
+    });
+  }
+
+  // Cheap every-boot heal (exact-match scan): installs seeded before
+  // 2026-09-27 carry the A1111 label on the original Anima stock row.
   await healSeededAnimaUpscaler(stores, await stores.imageGenSamplerSets.list());
-  return { created, present: stock.length };
+  return { created, present: stock.filter((row) => existing.has(row.id)).length };
 }

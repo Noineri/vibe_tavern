@@ -1,0 +1,1 @@
+ALTER TABLE `ui_settings` ADD `stock_image_gen_fleet_sampler_sets_seeded` integer DEFAULT false NOT NULL;

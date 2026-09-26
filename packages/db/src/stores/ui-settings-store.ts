@@ -55,6 +55,8 @@ export interface UiSettings {
   /** One-time stock sampler-set seed marker (IF-7b) — see db-schema
    *  comment. */
   stockImageGenSamplerSetsSeeded: boolean;
+  /** One-time fleet workflow sampler-set seed marker (IF-12a). */
+  stockImageGenFleetSamplerSetsSeeded: boolean;
   /** STT scenario pointers (STT_PLAN ST-1): dictation + voice-message
    *  transcription profile ids; may point at the same profile. Null → the
    *  isDefault fallback / no transcription. */
@@ -93,6 +95,7 @@ export interface UiSettingsUpdate {
   imagePromptVariantsMigrated?: boolean;
   servicePromptPresetMigrated?: boolean;
   stockImageGenSamplerSetsSeeded?: boolean;
+  stockImageGenFleetSamplerSetsSeeded?: boolean;
   activeDictationProfileId?: string | null;
   activeVoiceMessageProfileId?: string | null;
 }
@@ -128,6 +131,7 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   imagePromptVariantsMigrated: false,
   servicePromptPresetMigrated: false,
   stockImageGenSamplerSetsSeeded: false,
+  stockImageGenFleetSamplerSetsSeeded: false,
   activeDictationProfileId: null,
   activeVoiceMessageProfileId: null,
 };
@@ -194,6 +198,7 @@ export class UiSettingsStore {
       imagePromptVariantsMigrated: partial.imagePromptVariantsMigrated ?? UI_SETTINGS_DEFAULTS.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: partial.servicePromptPresetMigrated ?? UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
       stockImageGenSamplerSetsSeeded: partial.stockImageGenSamplerSetsSeeded ?? UI_SETTINGS_DEFAULTS.stockImageGenSamplerSetsSeeded,
+      stockImageGenFleetSamplerSetsSeeded: partial.stockImageGenFleetSamplerSetsSeeded ?? UI_SETTINGS_DEFAULTS.stockImageGenFleetSamplerSetsSeeded,
       activeDictationProfileId: partial.activeDictationProfileId ?? UI_SETTINGS_DEFAULTS.activeDictationProfileId,
       activeVoiceMessageProfileId: partial.activeVoiceMessageProfileId ?? UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
@@ -235,6 +240,8 @@ export class UiSettingsStore {
       activeImagePromptProfileId: UI_SETTINGS_DEFAULTS.activeImagePromptProfileId,
       imagePromptVariantsMigrated: UI_SETTINGS_DEFAULTS.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
+      stockImageGenSamplerSetsSeeded: UI_SETTINGS_DEFAULTS.stockImageGenSamplerSetsSeeded,
+      stockImageGenFleetSamplerSetsSeeded: UI_SETTINGS_DEFAULTS.stockImageGenFleetSamplerSetsSeeded,
       activeDictationProfileId: UI_SETTINGS_DEFAULTS.activeDictationProfileId,
       activeVoiceMessageProfileId: UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
@@ -275,6 +282,7 @@ export class UiSettingsStore {
       imagePromptVariantsMigrated: row.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: row.servicePromptPresetMigrated,
       stockImageGenSamplerSetsSeeded: row.stockImageGenSamplerSetsSeeded,
+      stockImageGenFleetSamplerSetsSeeded: row.stockImageGenFleetSamplerSetsSeeded,
       activeDictationProfileId: row.activeDictationProfileId ?? null,
       activeVoiceMessageProfileId: row.activeVoiceMessageProfileId ?? null,
       updatedAt: row.updatedAt,

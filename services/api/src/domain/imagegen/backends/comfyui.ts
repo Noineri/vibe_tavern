@@ -363,6 +363,24 @@ function resolveComfyPinnedTemplate(family: ImagePromptFamilyId): ComfySelectedT
   );
 }
 
+/** Map a sampler-set manual workflow pick to its ComfyUI template.
+ * The executor checks this before profile prompt pins and metadata so an
+ * explicit set is authoritative. The string parameter deliberately remains
+ * runtime-wide: direct adapter callers bypass the Zod route boundary. */
+function resolveComfyManualWorkflowTemplate(family: string): ComfySelectedTemplateSpec {
+  if (family === "qwen-image-2.1") return COMFY_TEMPLATE_SPECS.qwenImage21;
+  if (family === "qwen-image") return COMFY_TEMPLATE_SPECS.qwenImage;
+  if (family === "z-image") return COMFY_TEMPLATE_SPECS.zImage;
+  if (family === "flux-dev") return COMFY_TEMPLATE_SPECS.fluxDev;
+  if (family === "flux-schnell") return COMFY_TEMPLATE_SPECS.fluxSchnell;
+  if (family === "krea2-dit") return COMFY_TEMPLATE_SPECS.krea2Dit;
+  if (family === "anima-dit") return COMFY_TEMPLATE_SPECS.animaDit;
+  if (family === "checkpoint") return COMFY_TEMPLATE_SPECS.checkpoint;
+  throw new ComfyImageGenConfigError(
+    `ComfyUI workflow family "${family}" has no workflow template`,
+  );
+}
+
 /** Registry spec → its typed picker/provenance marker. */
 function comfyTemplateMarker(spec: ComfyDitTemplateSpec): (typeof COMFY_MODEL_TEMPLATES)[keyof typeof COMFY_MODEL_TEMPLATES] {
   if (spec === COMFY_TEMPLATE_SPECS.krea2Dit) return COMFY_MODEL_TEMPLATES.krea2Dit;
@@ -1906,13 +1924,16 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           }
         }
       }
-      // An explicit prompt-family pin is authoritative. Without one, the
-      // loader folder selects checkpoints and the CG-A3 metadata ladder
-      // selects a diffusion template; names are never a detection signal.
-      const pinnedSpec = request.promptFamilyOverride === undefined
+      // A sampler-set workflow pick is authoritative over both the legacy
+      // prompt-family pin and metadata detection. Without any manual pick,
+      // the existing loader-folder + CG-A3 ladder remains byte-identical.
+      const manualSpec = request.workflowFamily === undefined
         ? undefined
-        : resolveComfyPinnedTemplate(request.promptFamilyOverride);
-      const checkpointNames = pinnedSpec === undefined
+        : resolveComfyManualWorkflowTemplate(request.workflowFamily);
+      const pinnedSpec = manualSpec === undefined && request.promptFamilyOverride !== undefined
+        ? resolveComfyPinnedTemplate(request.promptFamilyOverride)
+        : undefined;
+      const checkpointNames = manualSpec === undefined && pinnedSpec === undefined
         ? await fetchComfyComboValues(
           cfg.fetch,
           cfg.endpoint,
@@ -1927,12 +1948,20 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
       let template: (typeof COMFY_MODEL_TEMPLATES)[keyof typeof COMFY_MODEL_TEMPLATES];
       let graph: ComfyWorkflowGraph;
       let secondPassCtx: ComfySecondPassCtx;
-      if (pinnedSpec === COMFY_TEMPLATE_SPECS.checkpoint || checkpointNames.includes(model)) {
+      if (
+        manualSpec === COMFY_TEMPLATE_SPECS.checkpoint ||
+        (manualSpec === undefined && (pinnedSpec === COMFY_TEMPLATE_SPECS.checkpoint || checkpointNames.includes(model)))
+      ) {
         ({ graph, ctx: secondPassCtx } = buildComfyCheckpointWorkflow(request, model));
         template = COMFY_MODEL_TEMPLATES.checkpoint;
       } else {
         let spec: ComfyDitTemplateSpec;
-        if (pinnedDitSpec !== undefined) {
+        if (manualSpec !== undefined) {
+          if (!isComfyPinnedDitTemplate(manualSpec)) {
+            throw new ComfyImageGenConfigError(`ComfyUI workflow family "${request.workflowFamily}" has no DiT template`);
+          }
+          spec = manualSpec;
+        } else if (pinnedDitSpec !== undefined) {
           spec = pinnedDitSpec;
         } else {
           const unetNames = await fetchComfyComboValues(

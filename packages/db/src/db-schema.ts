@@ -1193,6 +1193,10 @@ export const uiSettings = sqliteTable('ui_settings', {
    *  seed never resurrects rows; the preset-to-profile marker
    *  convention). */
   stockImageGenSamplerSetsSeeded: integer('stock_image_gen_sampler_sets_seeded', { mode: 'boolean' }).notNull().default(false),
+  /** One-time fleet workflow sampler-set seed marker (IF-12a): separate
+   * from IF-7b so upgrades receive these six rows once while later deletes
+   * still stick. */
+  stockImageGenFleetSamplerSetsSeeded: integer('stock_image_gen_fleet_sampler_sets_seeded', { mode: 'boolean' }).notNull().default(false),
   // STT scenario pointers (STT_PLAN ST-1): the profile used by dictation
   // (mic → transcript) and by voice-message transcription respectively; may
   // point at the same profile. Null → the isDefault fallback profile / no

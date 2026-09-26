@@ -13,7 +13,12 @@
  * dialect (per IMAGE_GEN_LOCAL_BACKENDS_RESEARCH).
  */
 
-import type { ImageGenCapabilityFlags, ImageGenUserSizeEntry, ImagePromptFamilyId } from "@vibe-tavern/domain";
+import type {
+  ImageGenCapabilityFlags,
+  ImageGenUserSizeEntry,
+  ImageGenWorkflowFamilyId,
+  ImagePromptFamilyId,
+} from "@vibe-tavern/domain";
 
 /** Factory config — resolved from the profile by the caller: the endpoint
  *  base URL, the write-only API key (absent for keyless backends), and the
@@ -77,6 +82,9 @@ export interface ImageGenGenerateRequest {
   /** The profile's explicit prompt-family pin. Backend template routing
    *  honors this authoritative value; absent = backend auto-detection. */
   promptFamilyOverride?: ImagePromptFamilyId;
+  /** Manual ComfyUI base-workflow selection, normally copied from a sampler
+   * set. A1111 ignores it. */
+  workflowFamily?: ImageGenWorkflowFamilyId;
   /** Face-fix second pass switch — BOTH local dialects (A1111: the
    *  ADetailer extension; ComfyUI: the IF-6 FaceDetailer chain). Absent =
    *  disabled; `true` enables the rung. */

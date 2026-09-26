@@ -3,7 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { toast } from "sonner";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_PARAM_RANGES, IMAGE_GENERATION_MODES, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, adaptSamplerSetPayloadToTarget, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation, type SetFieldNote } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_PARAM_RANGES, IMAGE_GENERATION_MODES, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_GEN_WORKFLOW_FAMILY_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, adaptSamplerSetPayloadToTarget, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation, type SetFieldNote } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
@@ -24,6 +24,9 @@ import type {
   ImageGenFamilyDetectionAttemptValue,
   ImageGenFamilyDetectionSourceValue,
   ImageGenSamplerSet,
+  ImageGenBackendValue,
+  ImageGenDefaultParamsValue,
+  ImageGenModelSettingsOverlayValue,
   ImagePromptFamilyInfoValue,
   ImagePromptFamilyValue,
 } from "@vibe-tavern/api-contracts";
@@ -1017,7 +1020,22 @@ function setPayloadOf(overlay: Record<string, unknown>): ImageGenSamplerSet["pay
   if (typeof overlay.seed === "number") payload.seed = overlay.seed;
   if (typeof overlay.clipSkip === "number") payload.clipSkip = overlay.clipSkip;
   if (typeof overlay.scheduler === "string") payload.scheduler = overlay.scheduler;
-  if (typeof overlay.vae === "string" && overlay.vae !== "") payload.vae = overlay.vae;
+  if (typeof overlay.encoderName === "string" && overlay.encoderName !== "") payload.encoderName = overlay.encoderName;
+  if (
+    typeof overlay.workflowFamily === "string" &&
+    (IMAGE_GEN_WORKFLOW_FAMILY_IDS as readonly string[]).includes(overlay.workflowFamily)
+  ) {
+    payload.workflowFamily = overlay.workflowFamily as ImageGenSamplerSet["payload"]["workflowFamily"];
+  }
+  // Sampler-set `vae` is the compact wire field for both dialects: A1111
+  // restores its swappable VAE directly, while Comfy restores it into the
+  // DiT sidecar's `vaeName` (the adapter/request spelling).
+  const vae = typeof overlay.vaeName === "string" && overlay.vaeName !== ""
+    ? overlay.vaeName
+    : typeof overlay.vae === "string" && overlay.vae !== ""
+      ? overlay.vae
+      : undefined;
+  if (vae !== undefined) payload.vae = vae;
   const hires = readHiresBlockOf(overlay);
   if (hires !== undefined) payload.hires = hires;
   return payload;
@@ -1069,7 +1087,10 @@ async function adaptSetPayloadForTarget(
         : null;
   if (dialect === null) return { payload, notes: [] };
   const modelEntry = (imageGen.modelsByProfile[form.id] ?? []).find((m) => m.id === form.modelId) ?? null;
-  const ditFamilyFixedVae = dialect === "comfyui" && modelEntry?.template === "krea2-dit";
+  const ditFamilyFixedVae =
+    dialect === "comfyui" &&
+    payload.workflowFamily === undefined &&
+    modelEntry?.template === "krea2-dit";
   let samplers = imageGen.samplersByProfile[form.id] ?? [];
   if (samplers.length === 0) samplers = (await imageGen.fetchSamplers(form.id)) ?? [];
   let schedulers = imageGen.schedulersByProfile[form.id] ?? [];
@@ -1084,6 +1105,18 @@ async function adaptSetPayloadForTarget(
 /** Compose the structured adaptation notes into localized hint lines (the
  *  import flow's `toast.warning(notes.join(" · "))` canon — IF-7c rides
  *  the same surface). */
+/** Restore the sampler-set VAE carrier onto the target arm's native field.
+ * Comfy's DiT templates consume `vaeName`; A1111/checkpoint flows retain the
+ * historical swappable `vae` field. */
+function samplerSetValuesForTarget(
+  payload: ImageGenSamplerSet["payload"],
+  backend: ImageGenBackendValue | undefined,
+): Partial<ImageGenDefaultParamsValue & ImageGenModelSettingsOverlayValue> {
+  if (backend !== IMAGE_GEN_BACKENDS.ComfyUI || payload.vae === undefined) return payload;
+  const { vae, ...values } = payload;
+  return { ...values, vaeName: vae };
+}
+
 function composeSetFieldNotes(
   notes: SetFieldNote[],
   t: ReturnType<typeof useT>["t"],
@@ -1169,8 +1202,9 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
     // drift); a missing name skips the field + warns (the import-flow
     // toast canon), never silent garbage.
     const { payload, notes } = await adaptSetPayloadForTarget(imageGen, set.payload);
-    if (bound) imageGen.setModelSamplerSetBinding(set.id, payload);
-    else imageGen.applyBaseSamplerSet(set.id, payload);
+    const values = samplerSetValuesForTarget(payload, imageGen.form?.backend);
+    if (bound) imageGen.setModelSamplerSetBinding(set.id, values);
+    else imageGen.applyBaseSamplerSet(set.id, values);
     // The dirty-dot baseline is the ADAPTED payload — the arm now holds the
     // adapted names, and the dot compares the arm against what was applied.
     appliedRef.current = { setId: set.id, baseline: { ...payload } };

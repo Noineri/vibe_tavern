@@ -1717,6 +1717,52 @@ describe("image-gen routes — schedulers (PG-3, dialect-gated)", () => {
     expect(attachments[0]!.imageGen!.params.steps).toBe(8);
   });
 
+  test("generate (comfyui IF-12a): the active model overlay carries its sampler-set workflow and sidecars into the request", async () => {
+    const queuedBodies: Array<Record<string, unknown>> = [];
+    const { app, stores } = await makeApp(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/prompt") {
+        queuedBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ prompt_id: "pid-workflow-overlay", number: 1, node_errors: {} }));
+      }
+      if (url.pathname === "/history/pid-workflow-overlay") {
+        return Response.json({
+          "pid-workflow-overlay": {
+            outputs: { "9": { images: [{ filename: "vt_imagegen_workflow.png", subfolder: "", type: "output" }] } },
+            status: { status_str: "success", completed: true, messages: [] },
+          },
+        });
+      }
+      if (url.pathname === "/view") return new Response(new Uint8Array(PNG_BYTES(0x66)));
+      return new Response("unexpected", { status: 404 });
+    });
+    const chatId = await makeChat(stores);
+    const modelId = "selected-unet.safetensors";
+    const profileId = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.ComfyUI,
+      endpoint: "http://127.0.0.1:8188",
+      modelId,
+      defaultParams: { workflowFamily: "krea2-dit" },
+    });
+    // The overlay is the persisted set-apply destination. It deliberately
+    // conflicts with the profile base to prove the model-local set wins.
+    await stores.imageGen.upsertModelSettings(profileId, modelId, {
+      workflowFamily: "qwen-image-2.1",
+      encoderName: "qwen3vl_8b.safetensors",
+      vaeName: "qwen_image_2.1_vae.safetensors",
+    });
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId, mode: "portrait", prompt: "a tavern" }),
+    });
+    expect(res.status).toBe(200);
+    const graph = queuedBodies[0]!.prompt as Record<string, { inputs: Record<string, unknown> }>;
+    expect(graph["12"]!.inputs).toEqual({ clip_name: "qwen3vl_8b.safetensors", type: "qwen_image" });
+    expect(graph["13"]!.inputs.vae_name).toBe("qwen_image_2.1_vae.safetensors");
+  });
+
   test("generate (comfyui DiT, T9): a chat model SWITCH drops the profile-base sidecars — the family ladder re-resolves the switched model's own", async () => {
     const queuedBodies: Array<Record<string, unknown>> = [];
     const { app, stores } = await makeApp(async (input, init) => {

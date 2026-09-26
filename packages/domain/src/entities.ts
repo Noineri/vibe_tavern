@@ -30,6 +30,7 @@ import type {
 } from "./ids.js";
 
 import type { ImagePromptFamilyId } from "./image-prompt-families.js";
+import type { ImageGenWorkflowFamilyId } from "./imagegen-workflow-families.js";
 
 import type {
   CardFormat,
@@ -1224,6 +1225,9 @@ export interface ImageGenDefaultParams {
   /** VAE file for the ComfyUI DiT template (CG-A2, comfyui dialect only):
    *  the VAELoader sidecar. Absent = adapter-side canonical resolution. */
   vaeName?: string;
+  /** Manual ComfyUI base-workflow selection carried by a sampler-set pick.
+   * A1111 ignores it. */
+  workflowFamily?: ImageGenWorkflowFamilyId;
   /** VAE override for dialects with a SWAPPABLE VAE slot (IF-7b): A1111 →
    *  `override_settings.sd_vae`, ComfyUI checkpoint template → the
    *  VAELoader swap replacing the bundled third output. DiT-family
@@ -1403,6 +1407,9 @@ export interface ImageGenModelSettingsOverlay {
   /** VAE file for the ComfyUI DiT template (CG-A2) — the overlay twin of
    *  `ImageGenDefaultParams.vaeName`. */
   vaeName?: string;
+  /** Manual ComfyUI base-workflow selection — the overlay twin of
+   * `ImageGenDefaultParams.workflowFamily`; A1111 ignores it. */
+  workflowFamily?: ImageGenWorkflowFamilyId;
   /** VAE override for swappable-slot dialects (IF-7b) — the overlay twin
    *  of `ImageGenDefaultParams.vae`. */
   vae?: string;
@@ -1497,6 +1504,10 @@ export interface ImageGenSamplerSetPayload {
   seed?: number;
   clipSkip?: number;
   scheduler?: string;
+  /** Text-encoder pin carried with a manual ComfyUI workflow selection. */
+  encoderName?: string;
+  /** Manual ComfyUI base-workflow selection; A1111 ignores it. */
+  workflowFamily?: ImageGenWorkflowFamilyId;
   vae?: string;
   hires?: ImageGenHiresBlock;
   /** Face-fix second pass (ADetailer / FaceDetailer) — configured,

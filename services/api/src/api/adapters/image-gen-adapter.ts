@@ -905,6 +905,14 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const vaeName = sidecarBaseDropped
       ? overlay.vaeName
       : overlay.vaeName ?? defaults.vaeName;
+    // Manual base-workflow selection follows the same model-local rule as
+    // DiT sidecars: a chat model override drops a profile-base set, while
+    // the selected model's overlay (or a one-run override) remains
+    // authoritative. A1111 receives this optional field and ignores it.
+    const workflowFamily =
+      overrides.workflowFamily ??
+      overlay.workflowFamily ??
+      (sidecarBaseDropped ? undefined : defaults.workflowFamily);
     // VAE override for swappable-slot dialects (IF-7b): the same T9 rule —
     // a chat model switch drops the profile base (the swapped checkpoint
     // rides its own VAE); the per-model overlay row stays. Backends without
@@ -1045,6 +1053,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(scheduler !== undefined ? { scheduler } : {}),
       ...(encoderName !== undefined ? { encoderName } : {}),
       ...(vaeName !== undefined ? { vaeName } : {}),
+      ...(workflowFamily !== undefined ? { workflowFamily } : {}),
       ...(vae !== undefined ? { vae } : {}),
       ...(seed !== undefined ? { seed } : {}),
       ...(clipSkip !== undefined ? { clipSkip } : {}),
