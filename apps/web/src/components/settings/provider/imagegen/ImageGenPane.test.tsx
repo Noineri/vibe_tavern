@@ -1125,6 +1125,50 @@ describe("ImageGenPane — comfyui dialect surfaces (CG-B1)", () => {
     expect((setForm2.mock.calls[0] as unknown[])[0]).toEqual({ modelId: "raySemiReal_krea2TurboV1Nsfw.safetensors" });
   });
 
+  it("IF-14 hotfix: a DiT-template change on model switch clears the sidecar pins — they are template-local, never cross-family state (owner defect 2026-09-27)", async () => {
+    // Her live case: an Anima-era encoder/VAE pin survived the switch to a
+    // Krea model both ways — explicit beats the new family's canonical in
+    // resolveComfySidecar, silently mis-wiring the graph. The switch to a
+    // DIFFERENT template drops the pins (Auto → the new family's canonical).
+    const anima = { id: "homosimileAnima_v20.safetensors", label: "homosimileAnima_v20", family: "Anima", template: "anima-dit" };
+    const krea = { id: "muse_v35.safetensors", label: "muse_v35", family: "Krea 2", template: "krea2-dit" };
+    const setForm = mock(() => {});
+    const view = render(
+      <ImageGenPane
+        imageGen={comfyImageGen(
+          { modelId: anima.id, defaultParams: { encoderName: "qwen_3_06b_base.safetensors", vaeName: "qwen_image_vae.safetensors" } },
+          { modelsByProfile: { ig1: [anima, krea] }, setForm },
+        )}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-field-model")).toBeTruthy());
+    await act(async () => {
+      view.getByTestId("image-gen-field-model").click();
+    });
+    const kreaOption = await waitFor(() => {
+      const el = Array.from(document.body.querySelectorAll("[data-testid='image-gen-model-option']")).find(
+        (n) => n.textContent?.includes("muse_v35"),
+      );
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await act(async () => {
+      kreaOption.click();
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
+    // modelId + the pin clear: both keys read back undefined (present-
+    // and-undefined in the spread — JSON drops them at save; Auto then
+    // resolves krea2's own canonical pair). The anima-era filenames must
+    // NOT survive the template change.
+    const patch = (setForm.mock.calls[0] as unknown[])[0] as {
+      modelId: string;
+      defaultParams: Record<string, string | undefined>;
+    };
+    expect(patch.modelId).toBe(krea.id);
+    expect(patch.defaultParams.encoderName).toBeUndefined();
+    expect(patch.defaultParams.vaeName).toBeUndefined();
+  });
+
   it("IF-8b: a krea2-dit template WITHOUT Krea-2 family truth (a bare Anima DiT) prefills NOTHING — the folder marker is not Krea-2 truth", async () => {
     // The owner's live case: homosimileAnima lives in diffusion_models (the
     // krea2-dit template marker) but is its own family — krea2 starting

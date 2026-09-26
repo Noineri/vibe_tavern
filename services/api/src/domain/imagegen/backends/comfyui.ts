@@ -1870,15 +1870,18 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
         finalImage = applyComfyHiresPass(graph, request, secondPassCtx).finalImage;
       }
       // Face detailing (IF-6, comfy dialect — the ADetailer equivalent):
-      // the request boolean is the switch; the model is the EXPLICIT pick
-      // or this dialect's own default — the live list's FIRST entry (the
-      // pane control's fallback mirror), never a cross-dialect constant.
-      // The Impact Pack FaceDetailer node must exist (honest config error
+      // the request boolean is the ONLY switch (owner defect report
+      // 2026-09-27: toggle OFF + a configured detector name still ran the
+      // second pass — the name is configured-but-DISABLED state, the hires
+      // pattern, never an activator); the model is the EXPLICIT pick or
+      // this dialect's own default — the live list's FIRST entry (the pane
+      // control's fallback mirror), never a cross-dialect constant. The
+      // Impact Pack FaceDetailer node must exist (honest config error
       // naming the pack, never a queue-time blob) and an explicit pick
       // must be in the discovered face list (the lora fail-closed
       // precedent).
       const faceDetectorExplicit = setOrUndefined(request.adetailerModel);
-      if (request.adetailer === true || faceDetectorExplicit !== undefined) {
+      if (request.adetailer === true) {
         if (!(await comfyNodeClassExists(cfg.fetch, cfg.endpoint, "FaceDetailer", request.signal))) {
           throw new ComfyImageGenConfigError(
             "ComfyUI face detailing requires the Impact Pack — the FaceDetailer node was not found on the server",

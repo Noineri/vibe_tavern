@@ -1852,6 +1852,18 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           // tuned for checkpoints keeps its values; the overlay inherits
           // whatever the base carries.
           const entry = models.find((m) => m.id === modelId) ?? null;
+          const prevEntry = form.modelId != null ? (models.find((m) => m.id === form.modelId) ?? null) : null;
+          // DiT sidecar pins are TEMPLATE-LOCAL (owner defect report
+          // 2026-09-27: an Anima-era encoder/VAE pin survived the switch to
+          // a Krea model both ways — explicit beats the new family's
+          // canonical in resolveComfySidecar, so a stale pin silently
+          // mis-wires the graph). A switch that changes the resolved
+          // template drops the pins; Auto resolves the new family's own
+          // canonical pair (the Anima canonicals ARE qwen_3_06b_base +
+          // qwen_image_vae — the owner's saved pair). Unknown listings
+          // (hand-typed ids, missing entries) never trigger a clear.
+          const templateChanged =
+            prevEntry !== null && entry !== null && prevEntry.template !== entry.template;
           const prefillKrea2 =
             form.backend === IMAGE_GEN_BACKENDS.ComfyUI &&
             entry?.template === "krea2-dit" &&
@@ -1862,8 +1874,14 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
             form.defaultParams.scheduler === undefined;
           imageGen.setForm({
             modelId,
-            ...(prefillKrea2
-              ? { defaultParams: { ...form.defaultParams, ...KREA2_FORM_DEFAULTS } }
+            ...(prefillKrea2 || templateChanged
+              ? {
+                  defaultParams: {
+                    ...form.defaultParams,
+                    ...(prefillKrea2 ? KREA2_FORM_DEFAULTS : {}),
+                    ...(templateChanged ? { encoderName: undefined, vaeName: undefined } : {}),
+                  },
+                }
               : {}),
           });
         }}

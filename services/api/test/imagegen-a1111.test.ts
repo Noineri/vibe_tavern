@@ -405,15 +405,20 @@ describe("a1111 adapter", () => {
   });
 
   describe("generate — ADetailer (IG-CF15/PG-4 v1)", () => {
-    it("sends alwayson_scripts.ADetailer with the enable bool + ad_model dict when adetailerModel is set", async () => {
+    it("the flag is the ONLY switch — a configured detector name without adetailer sends no ADetailer (owner defect 2026-09-27), with the flag it names the model", async () => {
       const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
       const backend = backendWith(transport);
 
+      // The name alone is configured-but-DISABLED state (the hires pattern) —
+      // it must never activate the second pass.
       await backend.generate({ prompt: "a bard", adetailerModel: "face_yolov8s.pt" });
+      expect("alwayson_scripts" in sentJson(calls[0])).toBe(false);
 
-      // The extension script's own arg contract (source-pinned): a leading
-      // enable bool + pydantic dict whose ad_model names the face detector.
-      expect(sentJson(calls[0])).toEqual({
+      // Flag + explicit model: the extension script's own arg contract
+      // (source-pinned): a leading enable bool + pydantic dict whose
+      // ad_model names the face detector.
+      await backend.generate({ prompt: "a bard", adetailer: true, adetailerModel: "face_yolov8s.pt" });
+      expect(sentJson(calls[1])).toEqual({
         prompt: "a bard",
         send_images: true,
         alwayson_scripts: {

@@ -538,11 +538,14 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
         };
       }
       // ADetailer (IG-CF15/PG-4 v1 → widened 2026-09-27): the boolean is
-      // the switch; the model is the EXPLICIT pick or this dialect's own
+      // the ONLY switch (owner defect report 2026-09-27: toggle OFF + a
+      // configured detector name still ran the second pass — the name is
+      // configured-but-DISABLED state, the hires pattern, never an
+      // activator); the model is the EXPLICIT pick or this dialect's own
       // default (the extension's bundled lightweight detector — a1111
       // vocabulary, valid ONLY here; the cross-dialect constant lesson).
       const adetailerExplicit = setOrUndefined(request.adetailerModel);
-      if (request.adetailer === true || adetailerExplicit !== undefined) {
+      if (request.adetailer === true) {
         body.alwayson_scripts = {
           ADetailer: {
             args: [

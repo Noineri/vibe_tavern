@@ -1956,6 +1956,7 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
       backendWith(absent.transport).generate({
         prompt: "a tavern",
         model: "graycolor_v18.safetensors",
+        adetailer: true,
         adetailerModel: "bbox/face_yolov8m.pt",
       }),
     ).rejects.toThrow("Impact Pack");
@@ -1966,6 +1967,7 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
       backendWith(unknown.transport).generate({
         prompt: "a tavern",
         model: "graycolor_v18.safetensors",
+        adetailer: true,
         adetailerModel: "bbox/ghost.pt",
       }),
     ).rejects.toThrow("is not in the discovered list");
@@ -1975,12 +1977,26 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
     await backendWith(ok.transport).generate({
       prompt: "a tavern",
       model: "graycolor_v18.safetensors",
+      adetailer: true,
       adetailerModel: "bbox/face_yolov8m.pt",
       hires: { scale: 1.5 },
     });
     const graph = queuedGraph(ok.calls);
     expect(graph["41"]!.inputs.image).toEqual(["35", 0]);
     expect(graph["9"]!.inputs.images).toEqual(["41", 0]);
+  });
+
+  it("generate: the flag is the ONLY switch — a configured detector name WITHOUT adetailer runs no FaceDetailer pass (owner defect 2026-09-27)", async () => {
+    const ok = secondPassTransport("p-adetailer-name-only");
+    await backendWith(ok.transport).generate({
+      prompt: "a tavern",
+      model: "graycolor_v18.safetensors",
+      adetailerModel: "bbox/face_yolov8m.pt",
+    });
+    const graph = queuedGraph(ok.calls);
+    // The FaceDetailer node (41) never exists when the toggle is off — the
+    // stale configured name is disabled state, not an activator.
+    expect(graph["41"]).toBeUndefined();
   });
 
   it("generate: the boolean alone enables face detailing — the unset model resolves to the LIVE list's first entry (the pane fallback mirror, never a cross-dialect constant)", async () => {
