@@ -23,23 +23,17 @@
  * loras gate precedent).
  */
 
+// fork #1 of the hires field block (source: model-controls buildHiresControl renders via this idiom)
+// Correspondence: toggle row, upscaler dropdown, and three shared-descriptor sliders.
+// Deviations: chip column chrome and failed hint.
+
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { SliderField } from "../shared/SliderField.js";
 import { Toggle } from "../shared/Toggle.js";
-import { IMAGE_GEN_PARAM_RANGES } from "@vibe-tavern/domain";
 import { useT } from "../../i18n/context.js";
+import { buildHiresControl, translateModelOptions } from "../../lib/imagegen/model-controls.js";
 import { EMPTY_IMAGE_GEN_DRAFT, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import type { ImageGenUpscaler } from "../../api/image-gen-api.js";
-
-/** Display anchors for UNSET knobs = the A1111 server's own defaults
- *  (processing.py) — an untouched slider shows what will actually run,
- *  the FT-A2 «Auto» honesty rule; nothing is committed until the user
- *  touches the control. */
-const HIRES_DISPLAY_DEFAULTS = {
-  steps: 0,
-  scale: 2,
-  denoisingStrength: 0.75,
-} as const;
 
 export interface ImageGenHiresSectionProps {
   chatId: string;
@@ -47,27 +41,31 @@ export interface ImageGenHiresSectionProps {
   upscalers: ImageGenUpscaler[] | null;
   failed: boolean;
   disabled: boolean;
+  supportsHiresFix: boolean;
 }
 
-export function ImageGenHiresSection({ chatId, upscalers, failed, disabled }: ImageGenHiresSectionProps) {
+export function ImageGenHiresSection({ chatId, upscalers, failed, disabled, supportsHiresFix }: ImageGenHiresSectionProps) {
   const { t } = useT();
   const draft = useImageGenChatStore((s) => s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT);
   const setHires = useImageGenChatStore((s) => s.setFineTuningHires);
   const block = draft.hires ?? { enabled: false };
   const enabled = block.enabled;
+  const hiresControl = buildHiresControl({ supportsHiresFix });
+  if (hiresControl === null) return null;
+  const [hiresSteps, hiresScale, hiresDenoise] = hiresControl.sliders;
 
   return (
     <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-hires">
       {/* The toggle row — the ADetailer twin. */}
       <div className="flex items-center justify-between gap-2 px-1.5">
         <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t2" data-testid="image-gen-ft-hires-label">
-          {t("image_gen_hires_label")}
+          {t(hiresControl.labelKey)}
         </span>
         <Toggle
           checked={enabled}
           onChange={(checked) => setHires(chatId, { enabled: checked })}
           disabled={disabled}
-          aria-label={t("image_gen_hires_label")}
+          aria-label={t(hiresControl.labelKey)}
         />
       </div>
 
@@ -75,23 +73,13 @@ export function ImageGenHiresSection({ chatId, upscalers, failed, disabled }: Im
         <div className="flex flex-col gap-2 px-1.5" data-testid="image-gen-ft-hires-body">
           <div className="flex flex-col gap-1.5">
             <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
-              {t("image_gen_hires_upscaler_label")}
+              {t(hiresControl.upscalerLabelKey)}
             </span>
             <DropdownSelect
               value={block.upscaler ?? ""}
-              defaultOption={t("image_gen_hires_upscaler_auto")}
-              options={[
-                { id: "", label: t("image_gen_hires_upscaler_auto") },
-                ...(upscalers ?? []).map((u) => ({ id: u.name, label: u.name })),
-                // A stored pick outside the live list stays pickable — the
-                // server may have dropped the model since (the DiT twin).
-                ...(block.upscaler !== undefined &&
-                block.upscaler !== "" &&
-                !(upscalers ?? []).some((u) => u.name === block.upscaler)
-                  ? [{ id: block.upscaler, label: block.upscaler }]
-                  : []),
-              ]}
-              onChange={(id) => setHires(chatId, { upscaler: id === "" ? undefined : id })}
+              defaultOption={t(hiresControl.upscalerAutoLabelKey)}
+              options={translateModelOptions(hiresControl.upscalerOptions(upscalers, block.upscaler), t)}
+              onChange={(id) => setHires(chatId, { upscaler: hiresControl.commitUpscaler(id) })}
               disabled={disabled}
               triggerTestId="image-gen-ft-hires-upscaler"
             />
@@ -106,31 +94,31 @@ export function ImageGenHiresSection({ chatId, upscalers, failed, disabled }: Im
           </div>
 
           <SliderField
-            label={t("image_gen_hires_steps_label")}
-            value={block.steps ?? HIRES_DISPLAY_DEFAULTS.steps}
-            min={IMAGE_GEN_PARAM_RANGES.hiresSteps.min}
-            max={IMAGE_GEN_PARAM_RANGES.hiresSteps.max}
-            step={IMAGE_GEN_PARAM_RANGES.hiresSteps.step}
+            label={t(hiresSteps.labelKey)}
+            value={block.steps ?? hiresSteps.displayAnchor}
+            min={hiresSteps.range.min}
+            max={hiresSteps.range.max}
+            step={hiresSteps.range.step}
             onChange={(value) => setHires(chatId, { steps: value })}
             disabled={disabled}
             rangeTestId="image-gen-ft-hires-steps"
           />
           <SliderField
-            label={t("image_gen_hires_scale_label")}
-            value={block.scale ?? HIRES_DISPLAY_DEFAULTS.scale}
-            min={IMAGE_GEN_PARAM_RANGES.hiresScale.min}
-            max={IMAGE_GEN_PARAM_RANGES.hiresScale.max}
-            step={IMAGE_GEN_PARAM_RANGES.hiresScale.step}
+            label={t(hiresScale.labelKey)}
+            value={block.scale ?? hiresScale.displayAnchor}
+            min={hiresScale.range.min}
+            max={hiresScale.range.max}
+            step={hiresScale.range.step}
             onChange={(value) => setHires(chatId, { scale: value })}
             disabled={disabled}
             rangeTestId="image-gen-ft-hires-scale"
           />
           <SliderField
-            label={t("image_gen_hires_denoise_label")}
-            value={block.denoisingStrength ?? HIRES_DISPLAY_DEFAULTS.denoisingStrength}
-            min={IMAGE_GEN_PARAM_RANGES.hiresDenoise.min}
-            max={IMAGE_GEN_PARAM_RANGES.hiresDenoise.max}
-            step={IMAGE_GEN_PARAM_RANGES.hiresDenoise.step}
+            label={t(hiresDenoise.labelKey)}
+            value={block.denoisingStrength ?? hiresDenoise.displayAnchor}
+            min={hiresDenoise.range.min}
+            max={hiresDenoise.range.max}
+            step={hiresDenoise.range.step}
             onChange={(value) => setHires(chatId, { denoisingStrength: value })}
             disabled={disabled}
             rangeTestId="image-gen-ft-hires-denoise"

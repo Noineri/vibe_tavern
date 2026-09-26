@@ -3,13 +3,13 @@ import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { toast } from "sonner";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, adaptSamplerSetPayloadToTarget, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation, type SetFieldNote } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, adaptSamplerSetPayloadToTarget, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation, type SetFieldNote } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
-import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
+import { buildAdetailerControl, buildDitSidecarControls, buildHiresControl, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
 import { SliderField } from "../../../shared/SliderField.js";
@@ -988,15 +988,6 @@ function LlmAssistSection({
 //     touches applied values — the pointer clears. Edits ride the SAME
 //     form-dirty Save as every other overlay edit (one Save button). ───────
 
-/** Display anchors for UNSET hires knobs — the chip's own twin
- *  (ImageGenHiresSection): an untouched slider shows what will actually
- *  run (the FT-A2 «Auto» honesty rule). */
-const HIRES_DISPLAY_DEFAULTS = {
-  steps: 0,
-  scale: 2,
-  denoisingStrength: 0.75,
-} as const;
-
 /** Structural read of a stored hires block off a loose record (either
  *  arm's params arrive as Record<string, unknown> here) — the setPayloadOf
  *  twin of the zod boundary: wrong-shaped values drop out, never crash. */
@@ -1757,6 +1748,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // (the adapter's own gate; the profile's mirrored capabilities can be a
   // stale snapshot, the IF-6 lesson).
   const supportsHiresPane = IMAGE_GEN_BACKEND_CAPABILITIES[form.backend].supportsHiresFix === true;
+  const hiresControl = buildHiresControl({ supportsHiresFix: supportsHiresPane });
   const setModeSize = (mode: string, next: { width?: number; height?: number } | undefined) => {
     const nextSizes = { ...sizes };
     if (next === undefined || (next.width === undefined && next.height === undefined)) {
@@ -2450,71 +2442,64 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   (owner ruling 2026-09-22: the user opts in — see
                   reports/IMAGEGEN_FOLLOWUP_REPORT.md). Gated off the
                   STATIC capability table — the adapter's own gate (the
-                  mirror can be stale, the IF-6 lesson). */}
-              {supportsHiresPane && (
+                  mirror can be stale, the IF-6 lesson).
+                  fork #2 of the hires field block (source: model-controls
+                  buildHiresControl); correspondence: toggle row, upscaler
+                  dropdown, and three shared-descriptor sliders; deviations:
+                  pane card chrome, dual-arm routing, and no failed hint. */}
+              {hiresControl !== null && (
                 <div
                   className="col-span-full flex flex-col gap-2 rounded-md border border-border bg-s2/50 p-2.5"
                   data-testid="image-gen-hires-row"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">
-                      {t("image_gen_hires_label")}
+                      {t(hiresControl.labelKey)}
                     </span>
                     <Toggle
                       checked={paneHires?.enabled === true}
                       onChange={(checked) => setHiresParam({ enabled: checked })}
-                      aria-label={t("image_gen_hires_label")}
+                      aria-label={t(hiresControl.labelKey)}
                     />
                   </div>
                   {paneHires?.enabled === true && (
                     <div className="flex flex-col gap-2" data-testid="image-gen-hires-body">
                       <div className="flex flex-col gap-1.5">
                         <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>
-                          {t("image_gen_hires_upscaler_label")}
+                          {t(hiresControl.upscalerLabelKey)}
                         </span>
                         <DropdownSelect
                           value={paneHires.upscaler ?? ""}
-                          defaultOption={t("image_gen_hires_upscaler_auto")}
-                          options={[
-                            { id: "", label: t("image_gen_hires_upscaler_auto") },
-                            ...(paneUpscalers ?? []).map((u) => ({ id: u.name, label: u.name })),
-                            // A stored pick outside the live list stays pickable
-                            // (the DiT twin — the server may have dropped the
-                            // model since).
-                            ...(paneHires.upscaler !== undefined &&
-                            paneHires.upscaler !== "" &&
-                            !(paneUpscalers ?? []).some((u) => u.name === paneHires.upscaler)
-                              ? [{ id: paneHires.upscaler, label: paneHires.upscaler }]
-                              : []),
-                          ]}
-                          onChange={(next) => setHiresParam({ upscaler: next === "" ? undefined : next })}
+                          defaultOption={t(hiresControl.upscalerAutoLabelKey)}
+                          options={translateModelOptions(hiresControl.upscalerOptions(paneUpscalers, paneHires.upscaler), t)}
+                          onChange={(next) => setHiresParam({ upscaler: hiresControl.commitUpscaler(next) })}
                           triggerTestId="image-gen-hires-upscaler"
                         />
                       </div>
                       <SliderField
-                        label={t("image_gen_hires_steps_label")}
-                        value={paneHires.steps ?? HIRES_DISPLAY_DEFAULTS.steps}
-                        min={IMAGE_GEN_PARAM_RANGES.hiresSteps.min}
-                        max={IMAGE_GEN_PARAM_RANGES.hiresSteps.max}
-                        step={IMAGE_GEN_PARAM_RANGES.hiresSteps.step}
+                        label={t(hiresControl.sliders[0].labelKey)}
+                        value={paneHires.steps ?? hiresControl.sliders[0].displayAnchor}
+                        min={hiresControl.sliders[0].range.min}
+                        max={hiresControl.sliders[0].range.max}
+                        step={hiresControl.sliders[0].range.step}
                         onChange={(value) => setHiresParam({ steps: value })}
                         rangeTestId="image-gen-hires-steps"
                       />
                       <SliderField
-                        label={t("image_gen_hires_scale_label")}
-                        value={paneHires.scale ?? HIRES_DISPLAY_DEFAULTS.scale}
-                        min={IMAGE_GEN_PARAM_RANGES.hiresScale.min}
-                        max={IMAGE_GEN_PARAM_RANGES.hiresScale.max}
-                        step={IMAGE_GEN_PARAM_RANGES.hiresScale.step}
+                        label={t(hiresControl.sliders[1].labelKey)}
+                        value={paneHires.scale ?? hiresControl.sliders[1].displayAnchor}
+                        min={hiresControl.sliders[1].range.min}
+                        max={hiresControl.sliders[1].range.max}
+                        step={hiresControl.sliders[1].range.step}
                         onChange={(value) => setHiresParam({ scale: value })}
                         rangeTestId="image-gen-hires-scale"
                       />
                       <SliderField
-                        label={t("image_gen_hires_denoise_label")}
-                        value={paneHires.denoisingStrength ?? HIRES_DISPLAY_DEFAULTS.denoisingStrength}
-                        min={IMAGE_GEN_PARAM_RANGES.hiresDenoise.min}
-                        max={IMAGE_GEN_PARAM_RANGES.hiresDenoise.max}
-                        step={IMAGE_GEN_PARAM_RANGES.hiresDenoise.step}
+                        label={t(hiresControl.sliders[2].labelKey)}
+                        value={paneHires.denoisingStrength ?? hiresControl.sliders[2].displayAnchor}
+                        min={hiresControl.sliders[2].range.min}
+                        max={hiresControl.sliders[2].range.max}
+                        step={hiresControl.sliders[2].range.step}
                         onChange={(value) => setHiresParam({ denoisingStrength: value })}
                         rangeTestId="image-gen-hires-denoise"
                       />

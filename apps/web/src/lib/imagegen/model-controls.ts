@@ -18,6 +18,8 @@
  * Migration queue: vibe_tavern_plan/reports/IMAGEGEN_TWIN_UNIFICATION_REPORT.md
  * (twins migrate one per unit; T1 sampler through T7 ADetailer each name
  * their shared builder here).
+ *
+ * forks: 2 — ImageGenHiresSection.tsx; ImageGenPane.tsx.
  */
 
 import {
@@ -360,6 +362,87 @@ export function buildSeedField(input: Pick<ImageGenCapabilityFlags, "supportsSee
       const parsed = Number(trimmed);
       return Number.isFinite(parsed) ? { seed: parsed } : null;
     },
+  };
+}
+
+/** Display anchors for unset hires knobs: the A1111 server's own defaults. */
+export const HIRES_DISPLAY_ANCHORS = {
+  steps: 0,
+  scale: 2,
+  denoisingStrength: 0.75,
+} as const;
+
+export type HiresSliderField = "steps" | "scale" | "denoisingStrength";
+
+const HIRES_UPSCALER_AUTO_LABEL_KEY = "image_gen_hires_upscaler_auto";
+
+export interface HiresSliderSpec {
+  readonly field: HiresSliderField;
+  readonly labelKey:
+    | "image_gen_hires_steps_label"
+    | "image_gen_hires_scale_label"
+    | "image_gen_hires_denoise_label";
+  readonly range: ImageGenParamRange;
+  readonly displayAnchor: number;
+}
+
+export interface HiresControlSpec {
+  readonly labelKey: "image_gen_hires_label";
+  readonly upscalerLabelKey: "image_gen_hires_upscaler_label";
+  readonly upscalerAutoLabelKey: typeof HIRES_UPSCALER_AUTO_LABEL_KEY;
+  readonly sliders: readonly [HiresSliderSpec, HiresSliderSpec, HiresSliderSpec];
+  upscalerOptions(
+    upscalers: ReadonlyArray<{ name: string }> | null,
+    stored: string | undefined,
+  ): ModelOption<"image_gen_hires_upscaler_auto">[];
+  commitUpscaler(id: string): string | undefined;
+}
+
+/**
+ * T8 — hires-fix control knowledge shared by the fine-tuning chip and the
+ * profile pane. Unset slider values display the A1111 server's own defaults,
+ * so an untouched slider tells the truth without committing a value. Auto
+ * leads the live upscaler list, and a non-empty stored pick missing from that
+ * list remains pickable (the stale-pick rule). Renderers remain per-surface
+ * forks: each owns its chrome, state arm, and test-id dialect.
+ */
+export function buildHiresControl({ supportsHiresFix }: { supportsHiresFix: boolean }): HiresControlSpec | null {
+  if (!supportsHiresFix) return null;
+  return {
+    labelKey: "image_gen_hires_label",
+    upscalerLabelKey: "image_gen_hires_upscaler_label",
+    upscalerAutoLabelKey: HIRES_UPSCALER_AUTO_LABEL_KEY,
+    sliders: [
+      {
+        field: "steps",
+        labelKey: "image_gen_hires_steps_label",
+        range: IMAGE_GEN_PARAM_RANGES.hiresSteps,
+        displayAnchor: HIRES_DISPLAY_ANCHORS.steps,
+      },
+      {
+        field: "scale",
+        labelKey: "image_gen_hires_scale_label",
+        range: IMAGE_GEN_PARAM_RANGES.hiresScale,
+        displayAnchor: HIRES_DISPLAY_ANCHORS.scale,
+      },
+      {
+        field: "denoisingStrength",
+        labelKey: "image_gen_hires_denoise_label",
+        range: IMAGE_GEN_PARAM_RANGES.hiresDenoise,
+        displayAnchor: HIRES_DISPLAY_ANCHORS.denoisingStrength,
+      },
+    ],
+    upscalerOptions: (upscalers, stored) => {
+      const names = upscalers ?? [];
+      return [
+        { kind: "key", id: "", labelKey: HIRES_UPSCALER_AUTO_LABEL_KEY },
+        ...names.map((upscaler) => ({ kind: "raw" as const, id: upscaler.name, label: upscaler.name })),
+        ...(stored !== undefined && stored !== "" && !names.some((upscaler) => upscaler.name === stored)
+          ? [{ kind: "raw" as const, id: stored, label: stored }]
+          : []),
+      ];
+    },
+    commitUpscaler: (id) => (id === "" ? undefined : id),
   };
 }
 

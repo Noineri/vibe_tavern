@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "./model-controls.js";
+import { HIRES_DISPLAY_ANCHORS, buildAdetailerControl, buildDitSidecarControls, buildHiresControl, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "./model-controls.js";
 
 describe("model-controls — buildSamplerControl (T1, the TWIN_UNIFICATION mechanism's first descriptor)", () => {
   test("gate closed (no sampler capability) → null, both surfaces render nothing", () => {
@@ -37,6 +37,64 @@ describe("model-controls — translateModelOptions (the one translation flow, re
       { id: "euler", label: "euler" },
     ]);
     expect(seen).toEqual(["image_gen_sampler_auto"]);
+  });
+});
+
+describe("model-controls — buildHiresControl (T8: the chip and pane read ONE descriptor)", () => {
+  test("closed gate returns null, following the shared don't-render convention", () => {
+    expect(buildHiresControl({ supportsHiresFix: false })).toBeNull();
+  });
+
+  test("sliders pin field order, literal keys, domain ranges, and the A1111 display anchors", () => {
+    const spec = buildHiresControl({ supportsHiresFix: true })!;
+    expect(HIRES_DISPLAY_ANCHORS).toEqual({ steps: 0, scale: 2, denoisingStrength: 0.75 });
+    expect(spec.labelKey).toBe("image_gen_hires_label");
+    expect(spec.upscalerLabelKey).toBe("image_gen_hires_upscaler_label");
+    expect(spec.upscalerAutoLabelKey).toBe("image_gen_hires_upscaler_auto");
+    expect(spec.sliders).toEqual([
+      {
+        field: "steps",
+        labelKey: "image_gen_hires_steps_label",
+        range: { min: 0, max: 150, step: 1 },
+        displayAnchor: 0,
+      },
+      {
+        field: "scale",
+        labelKey: "image_gen_hires_scale_label",
+        range: { min: 1, max: 4, step: 0.05 },
+        displayAnchor: 2,
+      },
+      {
+        field: "denoisingStrength",
+        labelKey: "image_gen_hires_denoise_label",
+        range: { min: 0, max: 1, step: 0.05 },
+        displayAnchor: 0.75,
+      },
+    ]);
+  });
+
+  test("upscaler options keep Auto first, carry live names, and retain a stale stored pick exactly once", () => {
+    const spec = buildHiresControl({ supportsHiresFix: true })!;
+    expect(spec.upscalerOptions(null, undefined)).toEqual([
+      { kind: "key", id: "", labelKey: "image_gen_hires_upscaler_auto" },
+    ]);
+    expect(spec.upscalerOptions([{ name: "Latent" }, { name: "4x-UltraSharp" }], undefined)).toEqual([
+      { kind: "key", id: "", labelKey: "image_gen_hires_upscaler_auto" },
+      { kind: "raw", id: "Latent", label: "Latent" },
+      { kind: "raw", id: "4x-UltraSharp", label: "4x-UltraSharp" },
+    ]);
+    expect(spec.upscalerOptions([{ name: "Latent" }], "Removed-Upscaler")).toEqual([
+      { kind: "key", id: "", labelKey: "image_gen_hires_upscaler_auto" },
+      { kind: "raw", id: "Latent", label: "Latent" },
+      { kind: "raw", id: "Removed-Upscaler", label: "Removed-Upscaler" },
+    ]);
+    expect(spec.upscalerOptions([{ name: "Latent" }], "Latent")).toHaveLength(2);
+  });
+
+  test("commit maps Auto to inherit and preserves a picked upscaler id", () => {
+    const spec = buildHiresControl({ supportsHiresFix: true })!;
+    expect(spec.commitUpscaler("")).toBeUndefined();
+    expect(spec.commitUpscaler("4x-UltraSharp")).toBe("4x-UltraSharp");
   });
 });
 

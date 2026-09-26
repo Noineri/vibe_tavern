@@ -674,6 +674,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
                 upscalers={upscalers}
                 failed={upscalersFailed}
                 disabled={busy}
+                supportsHiresFix={supportsHiresFix}
               />
             )}
           </div>

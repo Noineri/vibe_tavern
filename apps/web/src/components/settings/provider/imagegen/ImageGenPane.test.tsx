@@ -1880,7 +1880,7 @@ describe("ImageGenPane — VAE field + hires section (IF-7b)", () => {
       scale: 1.5,
       denoisingStrength: 0.35,
     });
-    cleanup();
+    view.unmount();
 
     // An ENABLED block (the state the toggle write produces) reveals the
     // knob body — the seeded-state reveal twin of the ADetailer pattern.
