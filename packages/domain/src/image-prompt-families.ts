@@ -182,6 +182,27 @@ function normalizeBaseModelLabel(raw: string): string {
  *  not a precedence mechanism — every rule is evaluated and a label
  *  matching several DISTINCT families is the ambiguous outcome (the
  *  no-guess rule), never a first-match pick. */
+/** Exact cm-info/Civitai BaseModel labels that select an IF-12/IF-16
+ * Comfy workflow. The prompt family remains a many-to-one projection: Qwen
+ * Image v1/2.1 and Z-Image share `qwen`; FLUX dev/schnell share `prose`.
+ * Exact lookup precedes word matching because `Qwen` is a prefix of
+ * `Qwen 2`; model filenames never participate. */
+export const COMFY_WORKFLOW_FAMILY_BASE_MODEL_MAP = {
+  "Qwen 2": { workflowFamily: "qwen-image-2.1", promptFamily: "qwen" },
+  Qwen: { workflowFamily: "qwen-image", promptFamily: "qwen" },
+  "Flux.1 D": { workflowFamily: "flux-dev", promptFamily: "prose" },
+  "Flux.1 S": { workflowFamily: "flux-schnell", promptFamily: "prose" },
+  ZImageTurbo: { workflowFamily: "z-image", promptFamily: "qwen" },
+  ZImageBase: { workflowFamily: "z-image", promptFamily: "qwen" },
+} as const satisfies Record<string, { workflowFamily: string; promptFamily: ImagePromptFamilyId }>;
+
+/** Exact cm-info/Civitai BaseModel lookup, deliberately not normalized. */
+export function comfyWorkflowFamilyForBaseModel(baseModel: string):
+  | (typeof COMFY_WORKFLOW_FAMILY_BASE_MODEL_MAP)[keyof typeof COMFY_WORKFLOW_FAMILY_BASE_MODEL_MAP]
+  | undefined {
+  return Object.entries(COMFY_WORKFLOW_FAMILY_BASE_MODEL_MAP).find(([label]) => label === baseModel)?.[1];
+}
+
 const IMAGE_PROMPT_BASE_MODEL_RULES: ReadonlyArray<{
   family: ImagePromptFamilyId;
   keywords: readonly string[];
@@ -190,11 +211,11 @@ const IMAGE_PROMPT_BASE_MODEL_RULES: ReadonlyArray<{
   { family: "illustrious", keywords: ["illustrious"] },
   { family: "anima", keywords: ["anima"] },
   { family: "pony", keywords: ["pony"] },
-  { family: "qwen", keywords: ["qwen"] },
+  { family: "qwen", keywords: ["qwen", "z image", "zimage"] },
   { family: "krea2", keywords: ["krea", "krea2"] },
   // Vendor prose bases (the prose family's own registry description lists
-  // FLUX, gpt-image, Seedream, Z-Image — recognizable without clones).
-  { family: "prose", keywords: ["flux", "seedream", "gpt image", "z image", "zimage"] },
+  // FLUX, gpt-image, and Seedream — Z-Image uses the Qwen dialect).
+  { family: "prose", keywords: ["flux", "seedream", "gpt image"] },
 ];
 
 /** SDXL-class words/runs: an architecture-level SDXL label needs the tag
@@ -231,6 +252,10 @@ function labelHasKeyword(normalized: string, keyword: string): boolean {
  *  — no registry family exists for them) return `unmapped` carrying the
  *  label the same way. */
 export function matchImagePromptBaseModel(rawBaseModel: string): ImagePromptBaseModelMatch {
+  const exactWorkflowFamily = comfyWorkflowFamilyForBaseModel(rawBaseModel);
+  if (exactWorkflowFamily !== undefined) {
+    return { kind: "family", family: exactWorkflowFamily.promptFamily };
+  }
   const normalized = normalizeBaseModelLabel(rawBaseModel);
   if (normalized.length === 0) return { kind: "unmapped", label: rawBaseModel };
   const matched = new Set<ImagePromptFamilyId>();

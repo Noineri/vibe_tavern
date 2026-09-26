@@ -111,7 +111,14 @@ describe("matchImagePromptBaseModel — base-model → family mapping", () => {
     expect(matchImagePromptBaseModel("NoobAI")).toEqual({ kind: "family", family: "noobai" });
     expect(matchImagePromptBaseModel("Anima")).toEqual({ kind: "family", family: "anima" });
     expect(matchImagePromptBaseModel("Qwen-Image")).toEqual({ kind: "family", family: "qwen" });
+    // The exact Comfy BaseModel map is prefix-safe: Qwen and Qwen 2 both
+    // project to one dialect but select different workflow templates.
+    expect(matchImagePromptBaseModel("Qwen 2")).toEqual({ kind: "family", family: "qwen" });
+    expect(matchImagePromptBaseModel("Qwen")).toEqual({ kind: "family", family: "qwen" });
     expect(matchImagePromptBaseModel("Flux.1 D")).toEqual({ kind: "family", family: "prose" });
+    expect(matchImagePromptBaseModel("Flux.1 S")).toEqual({ kind: "family", family: "prose" });
+    expect(matchImagePromptBaseModel("ZImageTurbo")).toEqual({ kind: "family", family: "qwen" });
+    expect(matchImagePromptBaseModel("ZImageBase")).toEqual({ kind: "family", family: "qwen" });
     // Sidecar BaseModel / embedded-header dialects (separators + suffixes).
     expect(matchImagePromptBaseModel("Pony V6")).toEqual({ kind: "family", family: "pony" });
     expect(matchImagePromptBaseModel("NoobAI-XL VPred 0.6")).toEqual({ kind: "family", family: "noobai" });
@@ -121,8 +128,8 @@ describe("matchImagePromptBaseModel — base-model → family mapping", () => {
     // The prose group's vendor bases (registry description vocabulary).
     expect(matchImagePromptBaseModel("Seedream")).toEqual({ kind: "family", family: "prose" });
     expect(matchImagePromptBaseModel("gpt-image")).toEqual({ kind: "family", family: "prose" });
-    expect(matchImagePromptBaseModel("Z-Image")).toEqual({ kind: "family", family: "prose" });
-    expect(matchImagePromptBaseModel("ZImage")).toEqual({ kind: "family", family: "prose" });
+    expect(matchImagePromptBaseModel("Z-Image")).toEqual({ kind: "family", family: "qwen" });
+    expect(matchImagePromptBaseModel("ZImage")).toEqual({ kind: "family", family: "qwen" });
   });
 
   test("word boundaries: a model NAME never leaks into the base label match", () => {
@@ -164,7 +171,11 @@ describe("matchImagePromptBaseModel — base-model → family mapping", () => {
 
   test("several keywords of the SAME family are still that one family", () => {
     expect(matchImagePromptBaseModel("Flux Seedream")).toEqual({ kind: "family", family: "prose" });
-    expect(matchImagePromptBaseModel("gpt-image Z-Image")).toEqual({ kind: "family", family: "prose" });
+    expect(matchImagePromptBaseModel("gpt-image Z-Image")).toEqual({
+      kind: "ambiguous",
+      label: "gpt-image Z-Image",
+      families: ["qwen", "prose"],
+    });
     expect(matchImagePromptBaseModel("Krea2 Krea")).toEqual({ kind: "family", family: "krea2" });
   });
 });

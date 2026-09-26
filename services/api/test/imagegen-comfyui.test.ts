@@ -14,6 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
 
+import { COMFY_TEMPLATE_SPECS } from "../src/domain/imagegen/backends/comfy-workflow-templates.js";
+
 import {
   COMFY_HISTORY_POLL_INTERVAL_MS,
   COMFY_KREA2_CLIP_TYPE,
@@ -26,6 +28,7 @@ import {
   applyComfyHiresPass,
   buildComfyCheckpointWorkflow,
   buildComfyKrea2Workflow,
+  buildComfyDitWorkflow,
   COMFY_NODE_IDS,
   comfyImageGenFactory,
   normalizeComfyFamily,
@@ -359,6 +362,117 @@ describe("comfyui adapter", () => {
       expect(() => buildComfyKrea2Workflow({ prompt: "p", height: -4 }, SIDECARS)).toThrow(
         ComfyImageGenSizeError,
       );
+    });
+  });
+
+  describe("IF-12b + IF-16c/d DiT workflow templates", () => {
+    const SIDECARS = {
+      unet: "family-model.safetensors",
+      encoder: "primary.safetensors",
+      secondaryEncoder: "secondary.safetensors",
+      vae: "family-vae.safetensors",
+    };
+
+    it("Qwen Image 2.1 uses its dedicated single conditioning node, plain latent, and official defaults", () => {
+      const { graph } = buildComfyDitWorkflow(
+        { prompt: "lettering", negativePrompt: "blur", seed: 42 },
+        SIDECARS,
+        COMFY_TEMPLATE_SPECS.qwenImage21,
+      );
+      expect(graph["12"]).toEqual({
+        class_type: "CLIPLoader",
+        inputs: { clip_name: "primary.safetensors", type: "qwen_image" },
+      });
+      expect(graph["5"]).toEqual({
+        class_type: "EmptyLatentImage",
+        inputs: { width: 1024, height: 1024, batch_size: 1 },
+      });
+      expect(graph["6"]).toEqual({
+        class_type: "TextEncodeQwenImage21",
+        inputs: { clip: ["12", 0], prompt: "lettering", negative_prompt: "blur", resolution: 1024 },
+      });
+      expect(graph["7"]).toBeUndefined();
+      expect(graph["3"]!.inputs).toMatchObject({
+        seed: 42,
+        steps: 25,
+        cfg: 1,
+        sampler_name: "euler",
+        scheduler: "simple",
+        positive: ["6", 0],
+        negative: ["6", 1],
+      });
+      expect(graph["14"]).toBeUndefined();
+    });
+
+    it("Qwen Image v1 and Z-Image wire AuraFlow over the UNET with their distinct latent and sampler defaults", () => {
+      const qwen = buildComfyDitWorkflow({ prompt: "p", seed: 1 }, SIDECARS, COMFY_TEMPLATE_SPECS.qwenImage).graph;
+      expect(qwen["5"]).toEqual({
+        class_type: "EmptySD3LatentImage",
+        inputs: { width: 1328, height: 1328, batch_size: 1 },
+      });
+      expect(qwen["14"]).toEqual({
+        class_type: "ModelSamplingAuraFlow",
+        inputs: { model: ["11", 0], shift: 3.1 },
+      });
+      expect(qwen["3"]!.inputs).toMatchObject({ steps: 20, cfg: 4, sampler_name: "euler", scheduler: "simple", model: ["14", 0] });
+
+      const zImage = buildComfyDitWorkflow({ prompt: "p", seed: 1 }, SIDECARS, COMFY_TEMPLATE_SPECS.zImage).graph;
+      expect(zImage["12"]).toEqual({
+        class_type: "CLIPLoader",
+        inputs: { clip_name: "primary.safetensors", type: "lumina2" },
+      });
+      expect(zImage["14"]).toEqual({
+        class_type: "ModelSamplingAuraFlow",
+        inputs: { model: ["11", 0], shift: 3 },
+      });
+      expect(zImage["3"]!.inputs).toMatchObject({ steps: 8, cfg: 1, sampler_name: "res_multistep", scheduler: "simple", model: ["14", 0] });
+    });
+
+    it("FLUX dev uses DualCLIPLoader plus a zeroed negative, while schnell has dedicated guidance and no negative branch", () => {
+      const dev = buildComfyDitWorkflow({ prompt: "p", seed: 1 }, SIDECARS, COMFY_TEMPLATE_SPECS.fluxDev).graph;
+      expect(dev["12"]).toEqual({
+        class_type: "DualCLIPLoader",
+        inputs: { clip_name1: "primary.safetensors", clip_name2: "secondary.safetensors", type: "flux" },
+      });
+      expect(dev["7"]).toEqual({
+        class_type: "ConditioningZeroOut",
+        inputs: { conditioning: ["6", 0] },
+      });
+      expect(dev["3"]!.inputs).toMatchObject({ steps: 20, cfg: 1, sampler_name: "euler", scheduler: "simple" });
+
+      const schnell = buildComfyDitWorkflow({ prompt: "p", seed: 1 }, SIDECARS, COMFY_TEMPLATE_SPECS.fluxSchnell).graph;
+      expect(schnell["6"]).toEqual({
+        class_type: "CLIPTextEncodeFlux",
+        inputs: { clip: ["12", 0], clip_l: "p", t5xxl: "p", guidance: 3.5 },
+      });
+      expect(schnell["7"]).toBeUndefined();
+      expect(schnell["3"]!.inputs).toMatchObject({ steps: 4, cfg: 1, sampler_name: "euler", scheduler: "simple" });
+      expect(schnell["3"]!.inputs.negative).toBeUndefined();
+    });
+
+    it("auto-routes exact cm-info BaseModel labels and accepts fluxVAE as the ae VAE role", async () => {
+      const cases = [
+        { baseModel: "Qwen 2", spec: COMFY_TEMPLATE_SPECS.qwenImage21, encoder: "qwen3vl_8b_int8_convrot.safetensors", vae: "qwen_image_2.1_vae_bf16.safetensors" },
+        { baseModel: "Qwen", spec: COMFY_TEMPLATE_SPECS.qwenImage, encoder: "qwen_2.5_vl_7b_fp8_scaled.safetensors", vae: "qwen_image_vae.safetensors" },
+        { baseModel: "ZImageTurbo", spec: COMFY_TEMPLATE_SPECS.zImage, encoder: "qwen_3_4b.safetensors", vae: "fluxVAE.safetensors" },
+        { baseModel: "Flux.1 D", spec: COMFY_TEMPLATE_SPECS.fluxDev, encoder: "clip_l.safetensors", vae: "fluxVAE.safetensors" },
+        { baseModel: "Flux.1 S", spec: COMFY_TEMPLATE_SPECS.fluxSchnell, encoder: "clip_l.safetensors", vae: "fluxVAE.safetensors" },
+      ] as const;
+      for (const entry of cases) {
+        const model = `${entry.spec.id}.safetensors`;
+        const { transport, calls } = ditTransport(`pid-${entry.spec.id}`, {
+          family: entry.baseModel,
+          unets: [model],
+          encoders: [entry.encoder, ...(entry.spec.canonicalSecondaryEncoder !== undefined ? ["t5xxl_fp16.safetensors"] : [])],
+          vaes: [entry.vae],
+        });
+        const result = await backendWith(transport).generate({ prompt: "p", model, seed: 1 });
+        expect(result.resolvedTemplate).toBe(entry.spec.id);
+        const promptCall = calls.find((call) => new URL(call.url).pathname === "/prompt");
+        expect(promptCall).toBeDefined();
+        const graph = sentJson(promptCall!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+        expect(graph["13"]!.inputs.vae_name).toBe(entry.vae);
+      }
     });
   });
 
@@ -1019,7 +1133,7 @@ describe("comfyui adapter", () => {
         folderPaths: { checkpoints: [root] },
       });
       const models = await backendWith(transport).listModels();
-      expect(models[0]!.family).toBe("Flux");
+      expect(models[0]!.family).toBe("flux-dev");
     });
 
     it("subfolder ids join their sidecar inside the subdirectory", async () => {
@@ -1105,7 +1219,14 @@ describe("comfyui adapter", () => {
       expect(normalizeComfyFamily("NoobAI XL v1")).toBe("Illustrious");
       expect(normalizeComfyFamily("Krea 2")).toBe("Krea 2");
       expect(normalizeComfyFamily("qwen-image")).toBe("Qwen Image");
-      expect(normalizeComfyFamily("Flux.1 D")).toBe("Flux");
+      // Exact BaseModel map: Qwen is a prefix of Qwen 2, so these must
+      // remain distinct workflow markers rather than substring buckets.
+      expect(normalizeComfyFamily("Qwen 2")).toBe("qwen-image-2.1");
+      expect(normalizeComfyFamily("Qwen")).toBe("qwen-image");
+      expect(normalizeComfyFamily("Flux.1 D")).toBe("flux-dev");
+      expect(normalizeComfyFamily("Flux.1 S")).toBe("flux-schnell");
+      expect(normalizeComfyFamily("ZImageTurbo")).toBe("z-image");
+      expect(normalizeComfyFamily("ZImageBase")).toBe("z-image");
       expect(normalizeComfyFamily("SDXL 1.0")).toBe("SDXL");
       expect(normalizeComfyFamily("sd_xl_base")).toBe("SDXL");
       expect(normalizeComfyFamily("stable-diffusion-xl-v1-base")).toBe("SDXL");

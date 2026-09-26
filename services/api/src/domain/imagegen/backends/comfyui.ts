@@ -184,6 +184,7 @@ import type {
 import { registerImageGenBackend } from "../imagegen-registry.js";
 import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 import {
+  COMFY_DIT_WORKFLOW_SHAPES,
   COMFY_TEMPLATE_SPECS,
   comfyWeightsBasename,
   resolveComfySidecar,
@@ -239,6 +240,8 @@ export const COMFY_NODE_IDS = {
   unet: "11",
   clip: "12",
   vae: "13",
+  modelSamplingAuraFlow: "14",
+  conditioningZeroOut: "15",
   hiresLatentUpscale: "30",
   hiresUpscaleModel: "31",
   hiresImageUpscale: "32",
@@ -325,16 +328,15 @@ export const COMFY_MODEL_TEMPLATES = {
   checkpoint: "checkpoint",
   krea2Dit: "krea2-dit",
   animaDit: "anima-dit",
+  qwenImage21: "qwen-image-2.1",
+  qwenImage: "qwen-image",
+  zImage: "z-image",
+  fluxDev: "flux-dev",
+  fluxSchnell: "flux-schnell",
 } as const;
 
-type ComfySelectedTemplateSpec =
-  | typeof COMFY_TEMPLATE_SPECS.checkpoint
-  | typeof COMFY_TEMPLATE_SPECS.krea2Dit
-  | typeof COMFY_TEMPLATE_SPECS.animaDit;
-
-type ComfyPinnedDitTemplateSpec =
-  | typeof COMFY_TEMPLATE_SPECS.krea2Dit
-  | typeof COMFY_TEMPLATE_SPECS.animaDit;
+type ComfySelectedTemplateSpec = (typeof COMFY_TEMPLATE_SPECS)[keyof typeof COMFY_TEMPLATE_SPECS];
+type ComfyPinnedDitTemplateSpec = Exclude<ComfySelectedTemplateSpec, typeof COMFY_TEMPLATE_SPECS.checkpoint>;
 
 function isComfyPinnedDitTemplate(
   spec: ComfySelectedTemplateSpec,
@@ -361,6 +363,18 @@ function resolveComfyPinnedTemplate(family: ImagePromptFamilyId): ComfySelectedT
   );
 }
 
+/** Registry spec → its typed picker/provenance marker. */
+function comfyTemplateMarker(spec: ComfyDitTemplateSpec): (typeof COMFY_MODEL_TEMPLATES)[keyof typeof COMFY_MODEL_TEMPLATES] {
+  if (spec === COMFY_TEMPLATE_SPECS.krea2Dit) return COMFY_MODEL_TEMPLATES.krea2Dit;
+  if (spec === COMFY_TEMPLATE_SPECS.animaDit) return COMFY_MODEL_TEMPLATES.animaDit;
+  if (spec === COMFY_TEMPLATE_SPECS.qwenImage21) return COMFY_MODEL_TEMPLATES.qwenImage21;
+  if (spec === COMFY_TEMPLATE_SPECS.qwenImage) return COMFY_MODEL_TEMPLATES.qwenImage;
+  if (spec === COMFY_TEMPLATE_SPECS.zImage) return COMFY_MODEL_TEMPLATES.zImage;
+  if (spec === COMFY_TEMPLATE_SPECS.fluxDev) return COMFY_MODEL_TEMPLATES.fluxDev;
+  if (spec === COMFY_TEMPLATE_SPECS.fluxSchnell) return COMFY_MODEL_TEMPLATES.fluxSchnell;
+  throw new ComfyImageGenConfigError(`ComfyUI ${spec.familyLabel} template has no registry marker`);
+}
+
 /** Resolve a metadata-detected diffusion family without guessing from its filename. */
 function resolveComfyAutoDiffusionTemplate(
   family: string | undefined,
@@ -368,6 +382,11 @@ function resolveComfyAutoDiffusionTemplate(
 ): ComfyDitTemplateSpec {
   if (family === "Krea 2") return COMFY_TEMPLATE_SPECS.krea2Dit;
   if (family === "Anima") return COMFY_TEMPLATE_SPECS.animaDit;
+  if (family === "qwen-image-2.1") return COMFY_TEMPLATE_SPECS.qwenImage21;
+  if (family === "qwen-image") return COMFY_TEMPLATE_SPECS.qwenImage;
+  if (family === "z-image") return COMFY_TEMPLATE_SPECS.zImage;
+  if (family === "flux-dev") return COMFY_TEMPLATE_SPECS.fluxDev;
+  if (family === "flux-schnell") return COMFY_TEMPLATE_SPECS.fluxSchnell;
   if (family === undefined) {
     throw new ComfyImageGenConfigError(
       `ComfyUI model "${model}" has no detected family — pin the family on the profile`,
@@ -382,6 +401,11 @@ function resolveComfyAutoDiffusionTemplate(
 function resolveComfyListedDiffusionTemplate(family: string | undefined): string | undefined {
   if (family === "Krea 2") return COMFY_MODEL_TEMPLATES.krea2Dit;
   if (family === "Anima") return COMFY_MODEL_TEMPLATES.animaDit;
+  if (family === "qwen-image-2.1") return COMFY_MODEL_TEMPLATES.qwenImage21;
+  if (family === "qwen-image") return COMFY_MODEL_TEMPLATES.qwenImage;
+  if (family === "z-image") return COMFY_MODEL_TEMPLATES.zImage;
+  if (family === "flux-dev") return COMFY_MODEL_TEMPLATES.fluxDev;
+  if (family === "flux-schnell") return COMFY_MODEL_TEMPLATES.fluxSchnell;
   return undefined;
 }
 
@@ -393,6 +417,12 @@ export interface ComfyKrea2Sidecars {
   encoder: string;
   /** `VAELoader.vae_name`. */
   vae: string;
+}
+
+/** Resolved loader inputs for a DiT template with an optional second CLIP. */
+export interface ComfyDitSidecars extends ComfyKrea2Sidecars {
+  /** `DualCLIPLoader.clip_name2`, required by FLUX templates only. */
+  secondaryEncoder?: string;
 }
 
 /** Node-class defaults for the graph inputs VT leaves unset — verbatim
@@ -665,6 +695,122 @@ export function buildComfyKrea2Workflow(
     seed: resolved.seed,
     ctx: {
       model: chain.model,
+      clip: resolved.clipSource,
+      vae: [COMFY_NODE_IDS.vae, 0],
+      seed: resolved.seed,
+      steps: resolved.steps,
+      adetailerSteps: request.adetailerSteps,
+      cfg: resolved.cfg,
+      samplerName: resolved.samplerName,
+      scheduler: resolved.scheduler,
+      width: resolved.width,
+      height: resolved.height,
+    },
+  };
+}
+
+/** Build one of IF-12/IF-16c/d's non-Krea DiT graphs from its registry spec.
+ *  The existing Krea-2 builder stays untouched so its wire shape remains
+ *  byte-identical. */
+export function buildComfyDitWorkflow(
+  request: ImageGenGenerateRequest,
+  sidecars: ComfyDitSidecars,
+  spec: ComfyDitTemplateSpec,
+): { graph: ComfyWorkflowGraph; seed: number; ctx: ComfySecondPassCtx } {
+  const defaults = spec.defaults;
+  if (defaults === undefined) {
+    throw new ComfyImageGenConfigError(`ComfyUI ${spec.familyLabel} template has no graph defaults`);
+  }
+  const requestWithDefaults: ImageGenGenerateRequest = {
+    ...request,
+    width: request.width ?? defaults.width,
+    height: request.height ?? defaults.height,
+    steps: request.steps ?? defaults.steps,
+    cfgScale: request.cfgScale ?? defaults.cfg,
+    sampler: request.sampler ?? defaults.sampler,
+    scheduler: request.scheduler ?? defaults.scheduler,
+  };
+  const chain = buildComfyLoraChain(request.loras ?? [], {
+    model: [COMFY_NODE_IDS.unet, 0],
+    clip: [COMFY_NODE_IDS.clip, 0],
+  });
+  const { graph, resolved } = buildComfyCommonNodes(requestWithDefaults, { model: chain.model, clip: chain.clip });
+  Object.assign(graph, chain.nodes);
+  graph[COMFY_NODE_IDS.unet] = {
+    class_type: "UNETLoader",
+    inputs: { unet_name: sidecars.unet, weight_dtype: COMFY_NODE_DEFAULTS.unetWeightDtype },
+  };
+  if (spec.canonicalSecondaryEncoder !== undefined) {
+    if (sidecars.secondaryEncoder === undefined) {
+      throw new ComfyImageGenConfigError(`ComfyUI ${spec.familyLabel} template needs its second text encoder`);
+    }
+    graph[COMFY_NODE_IDS.clip] = {
+      class_type: "DualCLIPLoader",
+      inputs: {
+        clip_name1: sidecars.encoder,
+        clip_name2: sidecars.secondaryEncoder,
+        type: spec.clipType,
+      },
+    };
+  } else {
+    graph[COMFY_NODE_IDS.clip] = {
+      class_type: "CLIPLoader",
+      inputs: { clip_name: sidecars.encoder, type: spec.clipType },
+    };
+  }
+  graph[COMFY_NODE_IDS.vae] = {
+    class_type: "VAELoader",
+    inputs: { vae_name: sidecars.vae },
+  };
+  graph[COMFY_NODE_IDS.latent]!.class_type = spec.latentNode ?? "EmptyLatentImage";
+  graph[COMFY_NODE_IDS.vaeDecode]!.inputs.vae = [COMFY_NODE_IDS.vae, 0];
+
+  let modelRef: [string, number] = chain.model;
+  if (spec.auraFlowShift !== undefined) {
+    graph[COMFY_NODE_IDS.modelSamplingAuraFlow] = {
+      class_type: "ModelSamplingAuraFlow",
+      inputs: { model: modelRef, shift: spec.auraFlowShift },
+    };
+    modelRef = [COMFY_NODE_IDS.modelSamplingAuraFlow, 0];
+    graph[COMFY_NODE_IDS.kSampler]!.inputs.model = modelRef;
+  }
+
+  if (spec.workflowShape === COMFY_DIT_WORKFLOW_SHAPES.QwenImage21) {
+    graph[COMFY_NODE_IDS.positive] = {
+      class_type: "TextEncodeQwenImage21",
+      inputs: {
+        clip: resolved.clipSource,
+        prompt: request.prompt,
+        negative_prompt: request.negativePrompt ?? "",
+        resolution: 1024,
+      },
+    };
+    delete graph[COMFY_NODE_IDS.negative];
+    graph[COMFY_NODE_IDS.kSampler]!.inputs.positive = [COMFY_NODE_IDS.positive, 0];
+    graph[COMFY_NODE_IDS.kSampler]!.inputs.negative = [COMFY_NODE_IDS.positive, 1];
+  } else if (spec.workflowShape === COMFY_DIT_WORKFLOW_SHAPES.FluxDev) {
+    graph[COMFY_NODE_IDS.negative] = {
+      class_type: "ConditioningZeroOut",
+      inputs: { conditioning: [COMFY_NODE_IDS.positive, 0] },
+    };
+  } else if (spec.workflowShape === COMFY_DIT_WORKFLOW_SHAPES.FluxSchnell) {
+    graph[COMFY_NODE_IDS.positive] = {
+      class_type: "CLIPTextEncodeFlux",
+      inputs: {
+        clip: resolved.clipSource,
+        clip_l: request.prompt,
+        t5xxl: request.prompt,
+        guidance: defaults.guidance ?? 3.5,
+      },
+    };
+    delete graph[COMFY_NODE_IDS.negative];
+    delete graph[COMFY_NODE_IDS.kSampler]!.inputs.negative;
+  }
+  return {
+    graph,
+    seed: resolved.seed,
+    ctx: {
+      model: modelRef,
       clip: resolved.clipSource,
       vae: [COMFY_NODE_IDS.vae, 0],
       seed: resolved.seed,
@@ -1820,6 +1966,7 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
             folder: "text_encoders",
             explicit: request.encoderName,
             canonical: spec.canonicalEncoder,
+            canonicalAliases: spec.canonicalEncoderAliases,
             pairedStem: model,
             what: "text encoder",
             signal: request.signal,
@@ -1828,11 +1975,27 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           },
           spec,
         );
+        const secondaryEncoder = spec.canonicalSecondaryEncoder === undefined
+          ? undefined
+          : await resolveComfySidecar(
+            {
+              folder: "text_encoders",
+              explicit: undefined,
+              canonical: spec.canonicalSecondaryEncoder,
+              pairedStem: undefined,
+              what: "second text encoder",
+              signal: request.signal,
+              listFolder,
+              createConfigError,
+            },
+            spec,
+          );
         const vae = await resolveComfySidecar(
           {
             folder: "vae",
             explicit: request.vaeName,
             canonical: spec.canonicalVae,
+            canonicalAliases: spec.canonicalVaeAliases,
             pairedStem: undefined,
             what: "VAE",
             signal: request.signal,
@@ -1841,10 +2004,24 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           },
           spec,
         );
-        ({ graph, ctx: secondPassCtx } = buildComfyKrea2Workflow(request, { unet: model, encoder, vae }, spec));
-        template = spec === COMFY_TEMPLATE_SPECS.animaDit
-          ? COMFY_MODEL_TEMPLATES.animaDit
-          : COMFY_MODEL_TEMPLATES.krea2Dit;
+        if (spec === COMFY_TEMPLATE_SPECS.krea2Dit || spec === COMFY_TEMPLATE_SPECS.animaDit) {
+          ({ graph, ctx: secondPassCtx } = buildComfyKrea2Workflow(request, { unet: model, encoder, vae }, spec));
+        } else {
+          ({ graph, ctx: secondPassCtx } = buildComfyDitWorkflow(
+            request,
+            { unet: model, encoder, vae, ...(secondaryEncoder !== undefined ? { secondaryEncoder } : {}) },
+            spec,
+          ));
+          if (
+            spec.workflowShape === COMFY_DIT_WORKFLOW_SHAPES.FluxSchnell &&
+            (request.hires !== undefined || request.adetailer === true)
+          ) {
+            throw new ComfyImageGenConfigError(
+              "ComfyUI FLUX.1-schnell's stock workflow has no negative conditioning, so hires and face detailing are unavailable",
+            );
+          }
+        }
+        template = comfyTemplateMarker(spec);
       }
 
       // Hires second pass (FT-A4 flat field, comfy dialect): a NAMED

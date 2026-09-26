@@ -110,6 +110,26 @@ describe("family detection — source (a): backend-native metadata", () => {
     expect(sidecarReads).toEqual([]);
   });
 
+  test("the exact Comfy BaseModel map projects every new workflow family onto its existing prompt dialect", async () => {
+    const expected = [
+      ["Qwen 2", "qwen"],
+      ["Qwen", "qwen"],
+      ["Flux.1 D", "prose"],
+      ["Flux.1 S", "prose"],
+      ["ZImageTurbo", "qwen"],
+      ["ZImageBase", "qwen"],
+    ] as const;
+    for (const [baseModel, family] of expected) {
+      const result = await run({ baseModel }, makeDeps());
+      expect(result).toEqual({
+        ok: true,
+        family,
+        sourceLabel: FAMILY_DETECTION_SOURCES.BackendMetadata,
+        baseModel,
+      });
+    }
+  });
+
   test("a backend without the metadata surface records the structural miss", async () => {
     const backend: FamilyDetectionBackend = {};
     const result = await detectImageGenFamily({

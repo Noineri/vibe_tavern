@@ -11,6 +11,8 @@
  * matching a LoRA's "Krea 2" across dialects.
  */
 
+import { comfyWorkflowFamilyForBaseModel } from "@vibe-tavern/domain";
+
 /** Embedded-metadata fields that name a model family, in precedence order:
  *  `ss_base_model_version` (kohya-training convention, LoRAs and finetunes)
  *  and `modelspec.architecture` (AI-Toolkit modelspec convention, DiT
@@ -35,16 +37,15 @@ export function readEmbeddedFamilyValue(record: unknown): string | undefined {
  *  canonical family label — the picker subtitle and (CG-A2/C3, FT-A4) the
  *  LoRA family-filter match key both sides normalize through, so a model's
  *  "Krea 2" matches a LoRA's "Krea 2" regardless of which store either
- *  side read. Recognized ecosystem buckets map to their display names
- *  (checked lowercase-substring, order matters — krea before qwen, pony
- *  before the SDXL bucket); modelspec architecture stamps map into the
- *  same buckets ("stable-diffusion-xl-v1-base" → SDXL — a merge tool's
- *  spec stamp is architecture-level truth, not ecosystem noise);
- *  anything unrecognized passes through VERBATIM (an honest labeled
- *  bucket, never a wrong guess); empty → undefined. */
+ *  side read. Exact DiT workflow labels are checked before legacy ecosystem
+ *  buckets; every other recognized label keeps its existing behavior.
+ * Anything unrecognized passes through VERBATIM (an honest labeled bucket,
+ * never a wrong guess); empty → undefined. */
 export function normalizeModelFamily(raw: string | undefined): string | undefined {
   const trimmed = raw?.trim();
   if (trimmed === undefined || trimmed.length === 0) return undefined;
+  const exactWorkflowFamily = comfyWorkflowFamilyForBaseModel(trimmed);
+  if (exactWorkflowFamily !== undefined) return exactWorkflowFamily.workflowFamily;
   const lower = trimmed.toLowerCase();
   if (lower.includes("krea")) return "Krea 2";
   if (lower.includes("qwen")) return "Qwen Image";
