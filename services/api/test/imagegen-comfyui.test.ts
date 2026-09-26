@@ -1967,9 +1967,13 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
     expect(list).toEqual([{ name: "4x-UltraSharp.pth" }, { name: "ESRGAN_4x.pth" }]);
   });
 
-  it("listFaceDetectors: the face bbox combo, face-filtered; absent chain = []; a truncated combo falls back to the folder (separator-normalized)", async () => {
+  it("listFaceDetectors: the FULL ultralytics combo verbatim (no face filter); absent chain = []; a truncated combo falls back to the folder (separator-normalized)", async () => {
     const full = secondPassTransport("p-d1");
-    expect(await backendWith(full.transport).listFaceDetectors?.()).toEqual(["bbox/face_yolov8m.pt"]);
+    expect(await backendWith(full.transport).listFaceDetectors?.()).toEqual([
+      "bbox/face_yolov8m.pt",
+      "bbox/hand_yolov8s.pt",
+      "segm/person_yolov8m-seg.pt",
+    ]);
 
     const absent = secondPassTransport("p-d2", { faceDetailerNode: false });
     expect(await backendWith(absent.transport).listFaceDetectors?.()).toEqual([]);
@@ -1978,9 +1982,15 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
       detectorCombo: "COMBO",
       detectorFolder: ["bbox\\face_yolov8m.pt", "bbox\\hand_yolov8s.pt", "segm\\person_yolov8m-seg.pt"],
     });
-    expect(await backendWith(truncated.transport).listFaceDetectors?.()).toEqual(["bbox/face_yolov8m.pt"]);
+    expect(await backendWith(truncated.transport).listFaceDetectors?.()).toEqual([
+      "bbox/face_yolov8m.pt",
+      "bbox/hand_yolov8s.pt",
+      "segm/person_yolov8m-seg.pt",
+    ]);
 
-    const noFaces = secondPassTransport("p-d4", { detectorCombo: ["bbox/hand_yolov8s.pt"] });
-    expect(await backendWith(noFaces.transport).listFaceDetectors?.()).toEqual([]);
+    // A hand-only install is a VALID detector list now (the pass details
+    // whatever the chosen detector finds) — never silently empty.
+    const hands = secondPassTransport("p-d4", { detectorCombo: ["bbox/hand_yolov8s.pt"] });
+    expect(await backendWith(hands.transport).listFaceDetectors?.()).toEqual(["bbox/hand_yolov8s.pt"]);
   });
 });

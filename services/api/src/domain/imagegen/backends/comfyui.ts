@@ -877,23 +877,15 @@ async function comfyNodeClassExists(
   return isRecord(parsed) && parsed[nodeClass] !== undefined;
 }
 
-/** A face bbox detector entry: under the `bbox/` prefix with "face" in
- *  the basename (the ultralytics ecosystem's own face-detector naming —
- *  the same vocabulary the A1111 ADetailer presets ride; hand/person
- *  entries are a different tool, the ADetailer face-only scope twin). */
-function isComfyFaceBboxDetector(name: string): boolean {
-  const normalized = name.replace(/\\/g, "/");
-  if (!normalized.startsWith("bbox/")) return false;
-  const base = normalized.split("/").pop() ?? "";
-  return base.toLowerCase().includes("face");
-}
-
-/** The available face bbox detectors (IF-6 chain discovery): the
- *  UltralyticsDetectorProvider combo (small lists come through whole —
- *  live 4-entry verification) with a /models/ultralytics fallback whose
- *  Windows separators normalize to the combo's forward-slash form when
- *  0.37+ combo truncation ("COMBO") or an absent node empties the first
- *  source. Face-filtered to the detector vocabulary the picker serves. */
+/** The available detector models (the IF-6 chain discovery): the FULL
+ *  UltralyticsDetectorProvider vocabulary, verbatim — no face filter
+ *  (owner ruling 2026-09-27; the chosen detector defines what the pass
+ *  details: a face model details faces, a hand model details hands — the
+ *  Impact FaceDetailer node accepts any bbox/segm ultralytics model). The
+ *  combo is the node's own live list (small lists come through whole —
+ *  live 4-entry verification); a /models/ultralytics fallback normalizes
+ *  Windows separators to the combo's forward-slash form when 0.37+ combo
+ *  truncation ("COMBO") or an absent node empties the first source. */
 async function fetchComfyFaceDetectors(
   transport: typeof fetch,
   endpoint: string,
@@ -913,7 +905,11 @@ async function fetchComfyFaceDetectors(
       name.replace(/\\/g, "/"),
     );
   }
-  return names.filter(isComfyFaceBboxDetector);
+  // The FULL detector vocabulary, verbatim (owner ruling 2026-09-27:
+  // no face filter) — the chosen detector defines what the pass details
+  // (a face model details faces, a hand model details hands; the Impact
+  // FaceDetailer node accepts any bbox/segm ultralytics model).
+  return names;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
