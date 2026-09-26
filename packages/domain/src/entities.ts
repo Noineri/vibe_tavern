@@ -1234,6 +1234,16 @@ export interface ImageGenDefaultParams {
    *  the request rung — a configured-but-disabled block ships nothing.
    *  The chip-draft override outranks both stored rungs at generation. */
   hires?: ImageGenHiresBlock;
+  /** ADetailer / face-detailer second pass on the profile base — BOTH
+   *  local dialects (A1111: the extension toggle; ComfyUI: the IF-6
+   *  FaceDetailer chain). `false`/absent ships nothing; `true` enables
+   *  the face-fix rung. The pane row renders in BOTH bind arms (the bind
+   *  toggle routes writes, it never hides controls). */
+  adetailer?: boolean;
+  /** Detector model of the face-fix rung — absent = the dialect's own
+   *  default (A1111: the extension's bundled lightweight detector;
+   *  ComfyUI: the live-probed detector list's pick). */
+  adetailerModel?: string;
   /** Krea K2 params — the BASE rung of the two-rung ladder (the per-model
    *  overlay's `krea` block rides on top; absent overlay fields inherit
    *  these). Only the krea dialect reads the block; other backends ignore

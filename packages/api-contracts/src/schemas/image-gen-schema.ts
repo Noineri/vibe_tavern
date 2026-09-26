@@ -166,6 +166,16 @@ export const imageGenDefaultParamsSchema = z.object({
   /** Hires-fix second pass on the profile base (IF-7b): `enabled` gates
    *  the request rung (a configured-but-disabled block ships nothing). */
   hires: imageGenHiresBlockSchema.optional(),
+  /** ADetailer / face-detailer second pass on the profile base — BOTH
+   *  local dialects (A1111: the extension toggle; ComfyUI: the IF-6
+   *  FaceDetailer chain). `false`/absent ships nothing; `true` enables
+   *  the face-fix rung. Not gated behind the per-model bind — the bind
+   *  routes writes, it never hides controls. */
+  adetailer: z.boolean().optional(),
+  /** Detector model of the face-fix rung — absent = the dialect's own
+   *  default (A1111: the extension's bundled lightweight detector;
+   *  ComfyUI: the live-probed detector list's pick). */
+  adetailerModel: z.string().min(1).optional(),
   /** Krea K2 params — the BASE rung of the two-rung ladder (the overlay's
    *  `krea` block rides on top; absent overlay fields inherit these).
    *  Owner ruling: the pane's Krea 2 section is not gated behind the
@@ -606,11 +616,14 @@ export const imageGenModelSettingsOverlaySchema = z.object({
   hires: imageGenHiresBlockSchema.optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
-  /** ADetailer face-fix switch (IG-CF15/PG-4 v1) — A1111-family only. */
+  /** ADetailer face-fix switch — BOTH local dialects (A1111: the
+   *  extension; ComfyUI: the IF-6 FaceDetailer chain). */
   adetailer: z.boolean().optional(),
   /** Face-model preset — one of the domain's IMAGE_GEN_ADETAILER_FACE_MODELS
    *  (validated client-side against the constant; kept a plain string here
-   *  so the list can grow without a contract bump). */
+   *  so the list can grow without a contract bump). The face-fix pair is
+   *  consumed by BOTH local dialects (A1111: the extension; ComfyUI: the
+   *  IF-6 FaceDetailer chain — widened 2026-09-27 from the a1111-only v1). */
   adetailerModel: z.string().optional(),
   /** Krea K2 params (IF-11) — the OVERLAY rung of the two-rung ladder
    *  (the profile base's `krea` block sits underneath; absent fields

@@ -2127,6 +2127,15 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
 
         {form.modelId !== null && (
           <div className="mb-3 rounded-lg border border-border2 bg-s2 px-4 py-2.5">
+            {/* The per-model bind toggle scopes WHERE parameter edits land:
+                bound → the per-model overlay, unbound → the profile's
+                default params (the same shape as per-model LLM settings).
+                It is NEVER a visibility gate for settings themselves —
+                every generation control renders in BOTH arms and
+                reads/writes through the arm-routed `params`/`setParam`
+                seam. The only bind-conditional element is the
+                overlay-inherit hint below (copy describing the active
+                arm). */}
             <div className="flex items-center gap-3">
               <Toggle
                 checked={bound}
@@ -2391,9 +2400,11 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                 </div>
               )}
               {/* ADetailer (IG-CF15 15d / PG-4 v1): T7 supplies the
-                  dialect tri-state while this pane preserves its bound-only,
-                  non-accordion overlay row. */}
-              {bound && adetailerControl !== null && (
+                  dialect tri-state. Renders in BOTH bind arms — the bind
+                  toggle routes edits (overlay vs default params), it never
+                  hides controls; IO rides the shared `params`/`setParam`
+                  seam like the krea sliders and the hires section. */}
+              {adetailerControl !== null && (
                 <div
                   className="col-span-full flex flex-col gap-2 rounded-md border border-border bg-s2/50 p-2.5"
                   data-testid="image-gen-adetailer-row"
@@ -2408,8 +2419,8 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       {t(adetailerControl.labelKey)}
                     </span>
                     <Toggle
-                      checked={overlay?.adetailer === true}
-                      onChange={(checked) => imageGen.setModelOverlay({ adetailer: checked })}
+                      checked={params.adetailer === true}
+                      onChange={(checked) => setParam({ adetailer: checked })}
                       disabled={adetailerControl.state === "unavailable"}
                       aria-label={t(adetailerControl.labelKey)}
                     />
@@ -2421,13 +2432,13 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     >
                       {t(adetailerControl.hintKey)}
                     </span>
-                  ) : overlay?.adetailer === true && (
+                  ) : params.adetailer === true && (
                     <div className="flex flex-col gap-1.5">
                       <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(adetailerControl.modelLabelKey)}</span>
                       <DropdownSelect
-                        value={overlay?.adetailerModel ?? adetailerControl.fallback}
+                        value={params.adetailerModel ?? adetailerControl.fallback}
                         options={translateModelOptions(adetailerControl.options, t)}
-                        onChange={(id) => imageGen.setModelOverlay({ adetailerModel: id })}
+                        onChange={(id) => setParam({ adetailerModel: id })}
                         triggerTestId="image-gen-adetailer-model"
                       />
                     </div>

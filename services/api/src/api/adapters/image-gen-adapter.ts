@@ -846,14 +846,17 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const vae = overlay.vae ?? defaults.vae;
     const seed = overrides.seed ?? overlay.seed ?? defaults.seed;
     const clipSkip = overrides.clipSkip ?? overlay.clipSkip ?? defaults.clipSkip;
-    // ADetailer (IG-CF15/PG-4 v1): OVERLAY-ONLY — the face-fix flag rides the
-    // per-model layer (no request-level override and no profile-base field
-    // in v1); enabled = the overlay's boolean, the model preset falls back
-    // to the domain default. Only the a1111 dialect consumes it; other
-    // backends ignore the field.
+    // ADetailer / face-detailer (IG-CF15/PG-4 v1 → widened 2026-09-27):
+    // the two-rung ladder — the per-model overlay flag over the profile
+    // base (the pane row lives on BOTH arms: the bind toggle routes
+    // writes, it never hides the control). Enabled = either rung true
+    // (overlay wins); the model preset climbs overlay → base → the domain
+    // default. BOTH local dialects consume the pair (A1111: the extension;
+    // ComfyUI: the IF-6 FaceDetailer chain); other backends ignore it.
+    const adetailerEnabled = overlay.adetailer ?? defaults.adetailer;
     const adetailerModel =
-      overlay.adetailer === true
-        ? overlay.adetailerModel?.trim() || IMAGE_GEN_ADETAILER_DEFAULT_MODEL
+      adetailerEnabled === true
+        ? overlay.adetailerModel?.trim() || defaults.adetailerModel?.trim() || IMAGE_GEN_ADETAILER_DEFAULT_MODEL
         : undefined;
     // Krea K2 params (IF-11): the two-rung ladder — the per-model overlay
     // block over the profile base, merged PER FIELD (an absent overlay

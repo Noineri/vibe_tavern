@@ -1960,18 +1960,28 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     expect(view.queryByTestId("image-gen-adetailer-row")).toBeNull();
   });
 
-  it("hidden when unbound (no overlay row) — even with the extension present", async () => {
+  it("renders UNBOUND too (2026-09-27: the bind toggle routes writes, it never hides controls) and writes the profile base", async () => {
     extensionsValue = ["adetailer"];
+    const setForm = mock((patch: Partial<NonNullable<ImageGenHook["form"]>>) => {});
     const view = render(
       <ImageGenPane
         imageGen={makeImageGen({
           form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha" }),
           modelOverlay: null,
+          setForm,
         })}
       />,
     );
     await openAdvanced(view);
-    expect(view.queryByTestId("image-gen-adetailer-row")).toBeNull();
+    const row = view.getByTestId("image-gen-adetailer-row");
+    expect(row).toBeTruthy();
+    const toggle = within(row).getByRole("switch");
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    // The unbound arm writes defaultParams — NOT the per-model overlay.
+    const last = setForm.mock.calls.at(-1)?.[0] as { defaultParams?: { adetailer?: boolean } };
+    expect(last?.defaultParams?.adetailer).toBe(true);
   });
 
   it("hidden on cloud backends — no extension surface at all", async () => {
