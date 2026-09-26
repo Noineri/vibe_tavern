@@ -28,6 +28,7 @@ import { InsightsAdapter } from "./insights-adapter.js";
 import type { ObjectiveService } from "../../domain/insights/objective-service.js";
 import type { SceneTrackerService } from "../../domain/insights/tracker-service.js";
 import { SettingsAdapter } from "./settings-adapter.js";
+import { FlyTribunalAdapter } from "./fly-tribunal-adapter.js";
 import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
 import { CopilotSkillAdapter } from "./copilot-skill-adapter.js";
@@ -76,6 +77,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly asset: AssetAdapter;
 	readonly aiAssistant: AiAssistantAdapter;
 	readonly settings: SettingsAdapter;
+	readonly flyTribunal: FlyTribunalAdapter;
 	readonly mobileAccess: MobileAccessAdapter;
 	readonly insights: InsightsAdapter;
 	readonly coauthorSkills: CoauthorSkillAdapter;
@@ -147,6 +149,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.asset = new AssetAdapter(assetService);
 		this.aiAssistant = new AiAssistantAdapter(stores, sessionRuntime);
 		this.settings = new SettingsAdapter(stores);
+		this.flyTribunal = new FlyTribunalAdapter(stores);
 		this.mobileAccess = new MobileAccessAdapter(mobileAccessService);
 		this.insights = new InsightsAdapter(stores, sessionRuntime, objectiveService, trackerService);
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);

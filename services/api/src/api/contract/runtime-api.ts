@@ -60,6 +60,7 @@ import type { ScriptTestResult } from "../../domain/scripts-engine/script-test-s
 import type { StDirectoryScanResult, StDirectoryImportResult, ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 import type { MobileAccessInfo } from "../../domain/mobile-access/mobile-access-service.js";
 import type { SkillImportFile, SkillImportResult } from "../../domain/coauthor/skills/skill-library.js";
+import type { FlyMemoryGetResponse, FlyMemoryPut, FlyMemoryScope, FlyTribunalSettings } from "@vibe-tavern/api-contracts";
 
 // ─── Shared type aliases ────────────────────────────────────────────
 //
@@ -523,6 +524,16 @@ export interface AiAssistantRuntimeApi {
 export interface SettingsRuntimeApi {
 	getUiSettings: () => Promise<UiSettings>;
 	updateUiSettings: (body: Record<string, unknown>) => Promise<UiSettings>;
+}
+
+// ─── Fly Tribunal ────────────────────────────────────────────────────
+
+/** Route-facing persistence seam for Fly Tribunal's settings and learned memory. */
+export interface FlyTribunalRuntimeApi {
+	getSettings: () => Promise<FlyTribunalSettings>;
+	putSettings: (settings: FlyTribunalSettings) => Promise<FlyTribunalSettings>;
+	getMemory: (scope: FlyMemoryScope, chatId?: string) => Promise<FlyMemoryGetResponse>;
+	putMemory: (memory: FlyMemoryPut) => Promise<FlyMemoryGetResponse>;
 }
 
 // ─── Mobile Access ───────────────────────────────────────────────────
@@ -1277,6 +1288,7 @@ export interface RuntimeApi {
 	copilotSkills: CoauthorSkillsRuntimeApi;
 	aiAssistant: AiAssistantRuntimeApi;
 	settings: SettingsRuntimeApi;
+	flyTribunal: FlyTribunalRuntimeApi;
 	mobileAccess: MobileAccessRuntimeApi;
 	insights: InsightsRuntimeApi;
 	dice: DiceRuntimeApi;

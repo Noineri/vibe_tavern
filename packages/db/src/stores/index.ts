@@ -36,6 +36,9 @@ export type {
   FlyTribunalMemoryScope,
 } from './fly-tribunal-store.js';
 
+export { FlyTribunalSettingsStore, DEFAULT_FLY_TRIBUNAL_SETTINGS } from './fly-tribunal-settings-store.js';
+export type { FlyTribunalSettings, FlyTribunalSettingsPutData } from './fly-tribunal-settings-store.js';
+
 export { ChatStore } from './chat-store.js';
 export type {
   Chat,

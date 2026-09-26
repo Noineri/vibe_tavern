@@ -18,6 +18,7 @@ import { createPresetRoutes } from "./preset.js";
 import { createImportRoutes } from "./import.js";
 import { createAssetRoutes } from "./asset.js";
 import { createSettingsRoutes } from "./settings.js";
+import { createFlyTribunalRoutes } from "./fly-tribunal.js";
 import { createMobileAccessRoutes } from "./mobile-access.js";
 import { createInsightsRoutes } from "./insights.js";
 import { createRuntimeRoutes } from "./runtime.js";
@@ -53,6 +54,7 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createImportRoutes(runtime.importExport))
     .route("/", createAssetRoutes(runtime.asset))
     .route("/", createSettingsRoutes(runtime.settings))
+    .route("/", createFlyTribunalRoutes(runtime.flyTribunal))
     .route("/", createMobileAccessRoutes(runtime.mobileAccess))
     .route("/", createInsightsRoutes(runtime.insights))
     .route("/", createDiceRoutes(runtime.dice))

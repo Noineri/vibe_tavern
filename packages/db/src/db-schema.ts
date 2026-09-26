@@ -706,6 +706,30 @@ export const chatSummaries = sqliteTable('chat_summaries', {
   chatBranchIdx: index('idx_chat_summaries_chat_branch').on(table.chatId, table.branchId),
 }));
 
+// ─── flyTribunalSettings ───────────────────────────────────────────────────────
+//
+// One typed, feature-owned settings row for Fly Tribunal (FLY_TRIBUNAL_PLAN
+// FT-4). This deliberately is NOT a JSON dumping-ground column on the shared
+// `ui_settings` row: the tribunal owns its own stable wire fields and defaults.
+// FlyTribunalSettingsStore selects first before replacing, so this table stays a
+// singleton (the store owns that invariant).
+export const flyTribunalSettings = sqliteTable('fly_tribunal_settings', {
+  id: text('id').primaryKey(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+  reactionTier: text('reaction_tier').notNull().default('indication'),
+  regenCap: integer('regen_cap').notNull().default(2),
+  sensitivity: text('sensitivity').notNull().default('normal'),
+  autoSwipeConfidence: text('auto_swipe_confidence').notNull().default('high'),
+  trainingEnabled: integer('training_enabled', { mode: 'boolean' }).notNull().default(true),
+  trainingSpeed: text('training_speed').notNull().default('normal'),
+  /** Null = infinity (no precedent decay). */
+  precedentLifetimeDays: integer('precedent_lifetime_days'),
+  /** JSON array of `{detected}`-bearing user-editable hint templates. */
+  hintsJson: text('hints_json').notNull().default('[]'),
+  memoryScope: text('memory_scope').notNull().default('chat'),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── flyTribunalMemory ─────────────────────────────────────────────────────────
 //
 // Slow associative learning state for Fly Tribunal (FLY_TRIBUNAL_PLAN FT-3).
