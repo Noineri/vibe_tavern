@@ -29,6 +29,13 @@ export type { ProxyProfile } from './proxy-store.js';
 export { UiSettingsStore } from './ui-settings-store.js';
 export type { UiSettings, UiSettingsUpdate } from './ui-settings-store.js';
 
+export { FlyTribunalStore, FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION } from './fly-tribunal-store.js';
+export type {
+  FlyTribunalMemory,
+  FlyTribunalMemoryPutData,
+  FlyTribunalMemoryScope,
+} from './fly-tribunal-store.js';
+
 export { ChatStore } from './chat-store.js';
 export type {
   Chat,

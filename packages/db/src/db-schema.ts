@@ -13,7 +13,7 @@ import type {
   ScriptKind,
 } from '@vibe-tavern/domain';
 import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
 
 // ─── characters ────────────────────────────────────────────────────────────────
 
@@ -704,6 +704,30 @@ export const chatSummaries = sqliteTable('chat_summaries', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   chatBranchIdx: index('idx_chat_summaries_chat_branch').on(table.chatId, table.branchId),
+}));
+
+// ─── flyTribunalMemory ─────────────────────────────────────────────────────────
+//
+// Slow associative learning state for Fly Tribunal (FLY_TRIBUNAL_PLAN FT-3).
+// `chat_id` null means the one global memory; a non-null chat id means that
+// chat's isolated memory and cascades away with the chat. SQLite permits
+// multiple NULLs in a unique index, so the FlyTribunalStore select-first
+// global-write path owns the one-global-row invariant.
+export const flyTribunalMemory = sqliteTable('fly_tribunal_memory', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  /** Gzipped sparse weight deltas, decoded from/encoded to the base64 API wire value. */
+  weights: blob('weights', { mode: 'buffer' }),
+  precedentCount: integer('precedent_count').notNull().default(0),
+  /** Version of the sparse-delta encoding, not the connectome format version. */
+  schemaVersion: integer('schema_version').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  chatIdUnique: uniqueIndex('idx_fly_tribunal_memory_chat_id').on(table.chatId),
+  precedentCountNonnegative: check(
+    'fly_tribunal_memory_precedent_count_nonnegative',
+    sql`${table.precedentCount} >= 0`,
+  ),
 }));
 
 // ─── messageVariants ───────────────────────────────────────────────────────────
