@@ -80,7 +80,7 @@ import {
   type ImageGenPromptCap,
 } from "../../api/image-gen-api.js";
 import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue, ImageGenBackendValue } from "@vibe-tavern/api-contracts";
-import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, type ImageGenerationMode, type ImageSizeOrientation } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_PARAM_RANGES, IMAGE_GENERATION_MODES, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, type ImageGenerationMode, type ImageSizeOrientation } from "@vibe-tavern/domain";
 import { EMPTY_IMAGE_GEN_DRAFT, buildDraftGenerateInput, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useOrderedMessages } from "../../stores/snapshot-store.js";
 import { ImageGenLoraSection } from "./ImageGenLoraSection.js";
@@ -1034,9 +1034,12 @@ function ImageGenModelSettingsAccordion({
   // renderer sees them; ranges still resolve mirror-first.
   const scalarSliders = buildScalarSliders(capabilities);
   const seedControl = buildSeedField(capabilities);
+  // The scalar steps row displays its overlay value or its range-min anchor;
+  // ADetailer's empty override inherits that exact effective chip value.
+  const baseSteps = overlay.steps ?? scalarSliders[0]?.range.min ?? IMAGE_GEN_PARAM_RANGES.steps.min;
   // T7: gate, unavailable state, options, and fallback live in the shared
   // descriptor; this surface keeps the deliberate nested-accordion renderer.
-  const adetailerControl = buildAdetailerControl({ backend, extensions, faceDetectors });
+  const adetailerControl = buildAdetailerControl({ backend, extensions, faceDetectors, baseSteps });
 
   return (
     <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-model-settings">
@@ -1141,17 +1144,33 @@ function ImageGenModelSettingsAccordion({
           {seedControl && (
             <div className="flex flex-col gap-1.5">
               <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(seedControl.labelKey)}</span>
-              <TextInput
-                value={seed === undefined ? "" : String(seed)}
-                onChange={(e) => {
-                  const patch = seedControl.parse(e.target.value);
-                  if (patch !== null) commit(patch);
-                }}
-                placeholder="—"
-                disabled={disabled}
-                aria-label={t(seedControl.labelKey)}
-                data-testid="image-gen-ft-overlay-seed"
-              />
+              <div className="relative">
+                <TextInput
+                  className="!pr-8"
+                  value={seed === undefined ? "" : String(seed)}
+                  onChange={(e) => {
+                    const patch = seedControl.parse(e.target.value);
+                    if (patch !== null) commit(patch);
+                  }}
+                  placeholder="—"
+                  disabled={disabled}
+                  aria-label={t(seedControl.labelKey)}
+                  data-testid="image-gen-ft-overlay-seed"
+                />
+                <button
+                  type="button"
+                  aria-label={t("image_gen_seed_random")}
+                  data-testid="image-gen-ft-random-seed"
+                  disabled={disabled}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer text-t3 transition-colors hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                  onClick={() => {
+                    const patch = seedControl.parse(String(seedControl.randomSeed()));
+                    if (patch !== null) commit(patch);
+                  }}
+                >
+                  <Icons.Dices />
+                </button>
+              </div>
             </div>
           )}
 
@@ -1264,18 +1283,37 @@ function ImageGenModelSettingsAccordion({
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.stepsLabelKey)}</span>
-                      <TextInput
-                        value={adetailerSteps === undefined ? "" : String(adetailerSteps)}
-                        onChange={(e) => {
-                          const patch = adetailerControl.parseSteps(e.target.value);
-                          if (patch !== null) commit(patch);
-                        }}
-                        placeholder={adetailerControl.stepsPlaceholder}
-                        inputMode="numeric"
-                        disabled={disabled}
-                        aria-label={t(adetailerControl.stepsLabelKey)}
-                        data-testid="image-gen-ft-adetailer-steps"
-                      />
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          data-testid="image-gen-ft-range-adetailer-steps"
+                          min={adetailerControl.stepsRange.min}
+                          max={adetailerControl.stepsRange.max}
+                          step={adetailerControl.stepsRange.step}
+                          value={adetailerSteps ?? baseSteps}
+                          onChange={(e) => {
+                            const patch = adetailerControl.parseSteps(e.target.value);
+                            if (patch !== null) commit(patch);
+                          }}
+                          disabled={disabled}
+                          className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
+                        />
+                        <div className="w-[60px] shrink-0">
+                          <TextInput
+                            className="h-[30px] w-[60px]"
+                            value={adetailerSteps === undefined ? "" : String(adetailerSteps)}
+                            onChange={(e) => {
+                              const patch = adetailerControl.parseSteps(e.target.value);
+                              if (patch !== null) commit(patch);
+                            }}
+                            placeholder={adetailerControl.stepsPlaceholder}
+                            inputMode="numeric"
+                            disabled={disabled}
+                            aria-label={t(adetailerControl.stepsLabelKey)}
+                            data-testid="image-gen-ft-adetailer-steps"
+                          />
+                        </div>
+                      </div>
                     </div>
                     </>
                   )}

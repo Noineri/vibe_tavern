@@ -3,7 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { toast } from "sonner";
 import { useT, type TFunc } from "../../../../i18n/context.js";
-import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, adaptSamplerSetPayloadToTarget, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation, type SetFieldNote } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_PARAM_RANGES, IMAGE_GENERATION_MODES, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, adaptSamplerSetPayloadToTarget, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation, type SetFieldNote } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";
 import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
@@ -786,7 +786,7 @@ function ImagePromptFamilyRow({ imageGen }: { imageGen: ImageGenHook }) {
 //     hideControls — its own self-clamping), the label is the uppercase micro
 //     canon, and the display value is `value ?? min` exactly like the LLM
 //     panel. Untouched params still don't send until edited. Seed keeps the
-//     plain OptionalNumberField above (a 0..2^32 slider is meaningless —
+//     plain OptionalNumberField above (a full seed-range slider is meaningless —
 //     owner-approved).
 
 function SamplerSliderField({
@@ -1722,14 +1722,19 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // accordion inherits the same descriptors (the IF-11 incident fix: the
   // controls are provider-modal settings, not a chip-only secret).
   const kreaControls = buildKreaTwoControls({ backend: form.backend, modelId: form.modelId ?? "" });
-  // T7: gate, unavailable state, options, and fallback live in the shared
-  // descriptor; this surface keeps its bound-only, non-accordion row.
-  const adetailerControl = buildAdetailerControl({ backend: form.backend, extensions, faceDetectors });
-
   // Effective (routed) params + sizes: the overlay's own values while bound
   // (empty = inherit the base), the profile base otherwise.
   const params = bound ? (overlay ?? {}) : form.defaultParams;
   const sizes = bound ? (overlay?.modeSizePresets ?? {}) : form.modeSizePresets;
+  const adetailerBaseSteps = params.steps ?? stepsSlider?.range.min ?? IMAGE_GEN_PARAM_RANGES.steps.min;
+  // T7: gate, unavailable state, options, and fallback live in the shared
+  // descriptor; this surface keeps its bound-only, non-accordion row.
+  const adetailerControl = buildAdetailerControl({
+    backend: form.backend,
+    extensions,
+    faceDetectors,
+    baseSteps: adetailerBaseSteps,
+  });
 
   const setParam = (patch: Partial<typeof params>) => {
     if (bound) imageGen.setModelOverlay(patch);
@@ -2327,19 +2332,34 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
               )}
               {/* T5: the optional seed — label + numeric TextInput parsed by
                   the ONE descriptor parse ("" → inherit; garbage → no commit).
-                  A 0..2^32 slider is meaningless here (owner-approved). */}
+                  A full seed-range slider is meaningless here (owner-approved). */}
               {seedControl && (
                 <div className="min-w-0">
                   <label className={lblCls}>{t(seedControl.labelKey)}</label>
-                  <TextInput
-                    inputMode="numeric"
-                    data-testid="image-gen-field-seed"
-                    value={params.seed === undefined ? "" : String(params.seed)}
-                    onChange={(e) => {
-                      const patch = seedControl.parse(e.target.value);
-                      if (patch !== null) setParam({ seed: patch.seed });
-                    }}
-                  />
+                  <div className="relative">
+                    <TextInput
+                      className="!pr-8"
+                      inputMode="numeric"
+                      data-testid="image-gen-field-seed"
+                      value={params.seed === undefined ? "" : String(params.seed)}
+                      onChange={(e) => {
+                        const patch = seedControl.parse(e.target.value);
+                        if (patch !== null) setParam({ seed: patch.seed });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label={t("image_gen_seed_random")}
+                      data-testid="image-gen-random-seed"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer text-t3 transition-colors hover:text-t1"
+                      onClick={() => {
+                        const patch = seedControl.parse(String(seedControl.randomSeed()));
+                        if (patch !== null) setParam({ seed: patch.seed });
+                      }}
+                    >
+                      <Icons.Dices />
+                    </button>
+                  </div>
                 </div>
               )}
               {clipSkipSlider && (
@@ -2446,17 +2466,35 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(adetailerControl.stepsLabelKey)}</span>
-                      <TextInput
-                        value={params.adetailerSteps === undefined ? "" : String(params.adetailerSteps)}
-                        onChange={(e) => {
-                          const patch = adetailerControl.parseSteps(e.target.value);
-                          if (patch !== null) setParam(patch);
-                        }}
-                        placeholder={adetailerControl.stepsPlaceholder}
-                        inputMode="numeric"
-                        aria-label={t(adetailerControl.stepsLabelKey)}
-                        data-testid="image-gen-adetailer-steps"
-                      />
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          data-testid="image-gen-range-adetailer-steps"
+                          min={adetailerControl.stepsRange.min}
+                          max={adetailerControl.stepsRange.max}
+                          step={adetailerControl.stepsRange.step}
+                          value={params.adetailerSteps ?? adetailerBaseSteps}
+                          onChange={(e) => {
+                            const patch = adetailerControl.parseSteps(e.target.value);
+                            if (patch !== null) setParam(patch);
+                          }}
+                          className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
+                        />
+                        <div className="w-[60px] shrink-0">
+                          <TextInput
+                            className="h-[30px] w-[60px]"
+                            value={params.adetailerSteps === undefined ? "" : String(params.adetailerSteps)}
+                            onChange={(e) => {
+                              const patch = adetailerControl.parseSteps(e.target.value);
+                              if (patch !== null) setParam(patch);
+                            }}
+                            placeholder={adetailerControl.stepsPlaceholder}
+                            inputMode="numeric"
+                            aria-label={t(adetailerControl.stepsLabelKey)}
+                            data-testid="image-gen-adetailer-steps"
+                          />
+                        </div>
+                      </div>
                     </div>
                     </>
                   )}

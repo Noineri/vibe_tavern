@@ -1300,6 +1300,16 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     });
     await waitFor(() => expect(upsertCalls.length).toBe(before + 1));
     expect(upsertCalls[upsertCalls.length - 1]!.settings).toEqual({ seed: 42 });
+
+    await act(async () => {
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-ft-random-seed"));
+    });
+    await waitFor(() => expect(upsertCalls.length).toBe(before + 2));
+    const randomSeed = Number(seedInput.value);
+    expect(Number.isInteger(randomSeed)).toBe(true);
+    expect(randomSeed).toBeGreaterThanOrEqual(0);
+    expect(randomSeed).toBeLessThan(Number.MAX_SAFE_INTEGER);
+    expect(upsertCalls[upsertCalls.length - 1]!.settings).toEqual({ seed: randomSeed });
   });
 
   it("capability gates remove dead scalar controls while retaining only supported seed fields", async () => {
@@ -1450,6 +1460,7 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     profilesStore = [{ ...profile("ig2", "Forge", fullCaps()), backend: "a1111" }];
     modelsStore["ig2"] = [{ id: "sdxl-base", label: "SDXL Base" }];
     extensionsStore["ig2"] = ["adetailer", "sd-webui-controlnet"];
+    overlayStore["ig2/sdxl-base"] = { steps: 31 };
     armChat("chat-ms4");
 
     const view = await openAccordion("chat-ms4");
@@ -1477,20 +1488,30 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
       fireEvent.click(toggle);
     });
     await waitFor(() => expect(upsertCalls.length).toBe(1));
-    expect(upsertCalls[0].settings).toEqual({ adetailer: true });
+    expect(upsertCalls[0].settings).toEqual({ steps: 31, adetailer: true });
 
     // Toggle ON reveals the face-model dropdown; picking writes merged.
     await pickOption("image-gen-ft-adetailer-model", "face_yolov8s.pt");
     await waitFor(() => expect(upsertCalls.length).toBe(2));
-    expect(upsertCalls[1].settings).toEqual({ adetailer: true, adetailerModel: "face_yolov8s.pt" });
+    expect(upsertCalls[1].settings).toEqual({ steps: 31, adetailer: true, adetailerModel: "face_yolov8s.pt" });
 
+    const range = within(adBody as HTMLElement).getByTestId("image-gen-ft-range-adetailer-steps") as HTMLInputElement;
+    expect(range.value).toBe("31");
+    expect(range.getAttribute("min")).toBe("1");
+    expect(range.getAttribute("max")).toBe("150");
+    expect(range.getAttribute("step")).toBe("1");
     const steps = within(adBody as HTMLElement).getByTestId("image-gen-ft-adetailer-steps") as HTMLInputElement;
-    expect(steps.getAttribute("placeholder")).toBe("20");
+    expect(steps.getAttribute("placeholder")).toBe("31");
     await act(async () => {
-      fireEvent.change(steps, { target: { value: "17" } });
+      fireEvent.change(range, { target: { value: "17" } });
     });
     await waitFor(() => expect(upsertCalls.length).toBe(3));
-    expect(upsertCalls[2].settings).toEqual({ adetailer: true, adetailerModel: "face_yolov8s.pt", adetailerSteps: 17 });
+    expect(upsertCalls[2].settings).toEqual({ steps: 31, adetailer: true, adetailerModel: "face_yolov8s.pt", adetailerSteps: 17 });
+    await act(async () => {
+      fireEvent.change(steps, { target: { value: "" } });
+    });
+    await waitFor(() => expect(upsertCalls.length).toBe(4));
+    expect(upsertCalls[3].settings).toEqual({ steps: 31, adetailer: true, adetailerModel: "face_yolov8s.pt", adetailerSteps: undefined });
   });
 });
 

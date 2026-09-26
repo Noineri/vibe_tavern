@@ -660,6 +660,7 @@
 	"image_gen_steps_label": "Шаги",
 	"image_gen_cfg_label": "Масштаб CFG",
 	"image_gen_seed_label": "Зерно",
+	"image_gen_seed_random": "Случайное зерно",
 	"image_gen_clip_skip_label": "Пропуск CLIP",
 	"image_gen_model_settings": "Настройки семплеров",
 	"image_gen_adetailer": "Проход детализации (ADetailer)",

@@ -1551,23 +1551,42 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
     expect((imageGen.setForm as ReturnType<typeof mock>).mock.calls.length).toBe(0);
   });
 
-  it("seed stays a plain numeric field with NO range input", async () => {
+  it("seed stays a plain numeric field with NO range input; its dice pins a concrete random value", async () => {
     const setForm = mock(() => {});
-    const view = render(
-      <ImageGenPane imageGen={makeImageGen({ form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, capabilities: scalarCaps() }), setForm })} />,
-    );
+    const form = makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, capabilities: scalarCaps() });
+    const view = render(<ImageGenPane imageGen={makeImageGen({ form, setForm })} />);
     await openAdvanced(view);
-    // A 0..2^32 range is meaningless on a slider (owner-approved) — no
+    // A full seed range is meaningless on a slider (owner-approved) — no
     // range input exists for seed, only the plain numeric cell.
     expect(view.queryByTestId("image-gen-range-seed")).toBeNull();
-    const seed = view.getByTestId("image-gen-field-seed") as HTMLInputElement;
+    let seed = view.getByTestId("image-gen-field-seed") as HTMLInputElement;
     expect(seed.tagName).toBe("INPUT");
     expect(seed.value).toBe("");
     await act(async () => {
-      fireEvent.change(seed, { target: { value: "12345" } });
+      fireEvent.click(view.getByTestId("image-gen-random-seed"));
     });
     await waitFor(() => expect(setForm).toHaveBeenCalledTimes(1));
-    const patch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: Record<string, unknown> };
+    const randomPatch = (setForm.mock.calls[0] as unknown[])[0] as { defaultParams: { seed: number } };
+    expect(Number.isInteger(randomPatch.defaultParams.seed)).toBe(true);
+    expect(randomPatch.defaultParams.seed).toBeGreaterThanOrEqual(0);
+    expect(randomPatch.defaultParams.seed).toBeLessThan(Number.MAX_SAFE_INTEGER);
+    view.rerender(
+      <TooltipProvider delayDuration={200}>
+        <ImageGenPane
+          imageGen={makeImageGen({
+            form: makeForm({ ...form, defaultParams: { seed: randomPatch.defaultParams.seed } }),
+            setForm,
+          })}
+        />
+      </TooltipProvider>,
+    );
+    seed = view.getByTestId("image-gen-field-seed") as HTMLInputElement;
+    expect(seed.value).toBe(String(randomPatch.defaultParams.seed));
+    await act(async () => {
+      fireEvent.change(seed, { target: { value: "12345" } });
+    });
+    await waitFor(() => expect(setForm).toHaveBeenCalledTimes(2));
+    const patch = (setForm.mock.calls[1] as unknown[])[0] as { defaultParams: Record<string, unknown> };
     expect(patch.defaultParams).toEqual({ seed: 12345 });
   });
 
@@ -1937,7 +1956,7 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     const setModelOverlay = mock((_patch: Partial<import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue>) => {});
     const imageGen = makeImageGen({
       form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha" }),
-      modelOverlay: { adetailer: true },
+      modelOverlay: { adetailer: true, steps: 31 },
       setModelOverlay,
     });
     const view = render(<ImageGenPane imageGen={imageGen} />);
@@ -1945,12 +1964,33 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     await pickOption(view, "image-gen-adetailer-model", "face_yolov8s.pt");
     expect((setModelOverlay.mock.calls.at(-1) as unknown[])[0]).toEqual({ adetailerModel: "face_yolov8s.pt" });
 
+    const range = view.getByTestId("image-gen-range-adetailer-steps") as HTMLInputElement;
+    expect(range.value).toBe("31");
+    expect(range.getAttribute("min")).toBe("1");
+    expect(range.getAttribute("max")).toBe("150");
+    expect(range.getAttribute("step")).toBe("1");
     const steps = view.getByTestId("image-gen-adetailer-steps") as HTMLInputElement;
-    expect(steps.getAttribute("placeholder")).toBe("20");
+    expect(steps.getAttribute("placeholder")).toBe("31");
     await act(async () => {
-      fireEvent.change(steps, { target: { value: "17" } });
+      fireEvent.change(range, { target: { value: "17" } });
     });
     expect((setModelOverlay.mock.calls.at(-1) as unknown[])[0]).toEqual({ adetailerSteps: 17 });
+    view.rerender(
+      <TooltipProvider delayDuration={200}>
+        <ImageGenPane
+          imageGen={makeImageGen({
+            form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha" }),
+            modelOverlay: { adetailer: true, steps: 31, adetailerSteps: 17 },
+            setModelOverlay,
+          })}
+        />
+      </TooltipProvider>,
+    );
+    const clearedSteps = view.getByTestId("image-gen-adetailer-steps") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(clearedSteps, { target: { value: "" } });
+    });
+    expect((setModelOverlay.mock.calls.at(-1) as unknown[])[0]).toEqual({ adetailerSteps: undefined });
   });
 
   it("hidden when the server lacks the extension (a1111, bound)", async () => {

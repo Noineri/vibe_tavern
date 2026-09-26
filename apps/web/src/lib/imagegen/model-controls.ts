@@ -171,7 +171,8 @@ export type AdetailerControlSpec =
       readonly labelKey: "image_gen_adetailer";
       readonly modelLabelKey: "image_gen_adetailer_model";
       readonly stepsLabelKey: "image_gen_adetailer_steps_label";
-      readonly stepsPlaceholder: "20";
+      readonly stepsRange: ImageGenParamRange;
+      readonly stepsPlaceholder: string;
       /** Empty clears the stored override; an integer commits it. */
       parseSteps(raw: string): { adetailerSteps: number | undefined } | null;
     }
@@ -194,6 +195,8 @@ export function buildAdetailerControl(input: {
   backend: ImageGenBackendValue;
   extensions: ReadonlyArray<string> | null;
   faceDetectors: ReadonlyArray<string> | null;
+  /** The surface's resolved base steps, displayed when the override is empty. */
+  baseSteps: number;
 }): AdetailerControlSpec | null {
   if (input.backend === IMAGE_GEN_BACKENDS.A1111) {
     if (input.extensions === null || !hasAdetailerExtension(input.extensions)) return null;
@@ -204,7 +207,8 @@ export function buildAdetailerControl(input: {
       labelKey: "image_gen_adetailer",
       modelLabelKey: "image_gen_adetailer_model",
       stepsLabelKey: "image_gen_adetailer_steps_label",
-      stepsPlaceholder: "20",
+      stepsRange: IMAGE_GEN_PARAM_RANGES.steps,
+      stepsPlaceholder: String(input.baseSteps),
       parseSteps,
     };
   }
@@ -224,7 +228,8 @@ export function buildAdetailerControl(input: {
     labelKey: "image_gen_adetailer",
     modelLabelKey: "image_gen_adetailer_model",
     stepsLabelKey: "image_gen_adetailer_steps_label",
-    stepsPlaceholder: "20",
+    stepsRange: IMAGE_GEN_PARAM_RANGES.steps,
+    stepsPlaceholder: String(input.baseSteps),
     parseSteps,
   };
 }
@@ -369,6 +374,8 @@ export function buildScalarSliders(
  */
 export interface SeedFieldSpec {
   readonly labelKey: "image_gen_seed_label";
+  /** A concrete, reproducible seed mirroring ComfyUI's adapter resolution. */
+  randomSeed(): number;
   parse(raw: string): { seed: number | undefined } | null;
 }
 
@@ -376,6 +383,9 @@ export function buildSeedField(input: Pick<ImageGenCapabilityFlags, "supportsSee
   if (!input.supportsSeed) return null;
   return {
     labelKey: "image_gen_seed_label",
+    // Mirrors resolveComfySeed: the local adapter generates integers in
+    // [0, Number.MAX_SAFE_INTEGER) when a seed is unset or random.
+    randomSeed: () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER),
     parse: (raw) => {
       const trimmed = raw.trim();
       if (trimmed === "") return { seed: undefined };

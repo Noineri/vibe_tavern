@@ -185,6 +185,13 @@ describe("model-controls — buildSeedField (T5: the ONE seed parse — garbage 
     expect(seed.parse("12abc")).toBeNull();
     expect(seed.parse("abc")).toBeNull();
   });
+
+  test("randomSeed mirrors ComfyUI's concrete integer range", () => {
+    const value = buildSeedField({ supportsSeed: true })!.randomSeed();
+    expect(Number.isInteger(value)).toBe(true);
+    expect(value).toBeGreaterThanOrEqual(0);
+    expect(value).toBeLessThan(Number.MAX_SAFE_INTEGER);
+  });
 });
 
 describe("model-controls — isLocalDialectBackend (T2: the ONE local-family predicate)", () => {
@@ -229,11 +236,12 @@ describe("model-controls — buildSchedulerControl (T2: gate + options + commit,
 });
 
 describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-state)", () => {
-  test("a1111: a matching answered extension probe is ready with static options and fallback; any absence stays hidden", () => {
+  test("a1111: a matching answered extension probe is ready with static options, a dynamic base-steps placeholder, and fallback; any absence stays hidden", () => {
     const ready = buildAdetailerControl({
       backend: "a1111",
       extensions: ["sd-webui-adetailer"],
       faceDetectors: null,
+      baseSteps: 37,
     });
     expect(ready).toEqual({
       state: "ready",
@@ -248,7 +256,8 @@ describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-stat
       labelKey: "image_gen_adetailer",
       modelLabelKey: "image_gen_adetailer_model",
       stepsLabelKey: "image_gen_adetailer_steps_label",
-      stepsPlaceholder: "20",
+      stepsRange: { min: 1, max: 150, step: 1 },
+      stepsPlaceholder: "37",
       parseSteps: expect.any(Function),
     });
     if (ready?.state === "ready") {
@@ -256,16 +265,17 @@ describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-stat
       expect(ready.parseSteps("17")).toEqual({ adetailerSteps: 17 });
       expect(ready.parseSteps("17.5")).toBeNull();
     }
-    expect(buildAdetailerControl({ backend: "a1111", extensions: ["controlnet"], faceDetectors: [] })).toBeNull();
-    expect(buildAdetailerControl({ backend: "a1111", extensions: null, faceDetectors: [] })).toBeNull();
+    expect(buildAdetailerControl({ backend: "a1111", extensions: ["controlnet"], faceDetectors: [], baseSteps: 20 })).toBeNull();
+    expect(buildAdetailerControl({ backend: "a1111", extensions: null, faceDetectors: [], baseSteps: 20 })).toBeNull();
   });
 
-  test("comfyui: an answered detector list is ready with discovered raw options and its first-item fallback", () => {
+  test("comfyui: an answered detector list is ready with discovered raw options, its first-item fallback, and a dynamic base-steps placeholder", () => {
     expect(
       buildAdetailerControl({
         backend: "comfyui",
         extensions: ["adetailer"],
         faceDetectors: ["bbox/face_yolov8m.pt", "bbox/face_yolov8n.pt"],
+        baseSteps: 42,
       }),
     ).toEqual({
       state: "ready",
@@ -277,18 +287,19 @@ describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-stat
       labelKey: "image_gen_adetailer",
       modelLabelKey: "image_gen_adetailer_model",
       stepsLabelKey: "image_gen_adetailer_steps_label",
-      stepsPlaceholder: "20",
+      stepsRange: { min: 1, max: 150, step: 1 },
+      stepsPlaceholder: "42",
       parseSteps: expect.any(Function),
     });
   });
 
   test("comfyui: answered-empty is unavailable, while an unanswered or failed probe is hidden", () => {
-    expect(buildAdetailerControl({ backend: "comfyui", extensions: null, faceDetectors: [] })).toEqual({
+    expect(buildAdetailerControl({ backend: "comfyui", extensions: null, faceDetectors: [], baseSteps: 20 })).toEqual({
       state: "unavailable",
       labelKey: "image_gen_adetailer",
       hintKey: "image_gen_adetailer_missing_hint",
     });
-    expect(buildAdetailerControl({ backend: "comfyui", extensions: null, faceDetectors: null })).toBeNull();
+    expect(buildAdetailerControl({ backend: "comfyui", extensions: null, faceDetectors: null, baseSteps: 20 })).toBeNull();
   });
 });
 
