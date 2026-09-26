@@ -1798,16 +1798,30 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
     expect(graph["30"]!.inputs.scale_by).toBe(2.0);
   });
 
-  it("hire pass (pure): a NAMED upscaler rides the model path — UpscaleModelLoader → ImageUpscaleWithModel → VAEEncode", () => {
+  it("hire pass (pure): a NAMED upscaler rides the model path — UpscaleModelLoader → ImageUpscaleWithModel → ImageScale → VAEEncode, resized to base × hr_scale (a1111 semantics)", () => {
     const { graph, ctx } = buildComfyCheckpointWorkflow(
-      { prompt: "a tavern", model: "graycolor_v18.safetensors" },
+      { prompt: "a tavern", model: "graycolor_v18.safetensors", width: 1024, height: 1536 },
       "graycolor_v18.safetensors",
     );
-    applyComfyHiresPass(graph, { prompt: "a tavern", hires: { upscaler: "4x-UltraSharp.pth" } }, ctx);
+    applyComfyHiresPass(
+      graph,
+      { prompt: "a tavern", width: 1024, height: 1536, hires: { upscaler: "4x-UltraSharp.pth", scale: 1.5 } },
+      ctx,
+    );
     expect(graph["30"]).toBeUndefined();
     expect(graph["31"]!.inputs).toEqual({ model_name: "4x-UltraSharp.pth" });
     expect(graph["32"]!.inputs).toEqual({ upscale_model: ["31", 0], image: ["8", 0] });
-    expect(graph["33"]!.inputs).toEqual({ pixels: ["32", 0], vae: ["4", 2] });
+    // The native-factor output (4x here) never reaches the sampler: the
+    // resize to base × hr_scale happens BEFORE the re-encode (2026-09-27
+    // fix — the native latent thrashed a 12 GB GPU at ~100 s/step).
+    expect(graph["37"]!.inputs).toEqual({
+      image: ["32", 0],
+      upscale_method: "lanczos",
+      width: 1536,
+      height: 2304,
+      crop: "disabled",
+    });
+    expect(graph["33"]!.inputs).toEqual({ pixels: ["37", 0], vae: ["4", 2] });
     expect(graph["34"]!.inputs.latent_image).toEqual(["33", 0]);
     expect(graph["9"]!.inputs.images).toEqual(["35", 0]);
   });

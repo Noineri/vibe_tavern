@@ -242,6 +242,12 @@ export const COMFY_NODE_IDS = {
   hiresLatentUpscale: "30",
   hiresUpscaleModel: "31",
   hiresImageUpscale: "32",
+  /** A1111-parity resize (2026-09-27 fix): the model upscaler's native
+   *  output (e.g. 4x) is resampled down to base × hr_scale BEFORE the
+   *  re-encode — without it the second KSampler samples the upscaler's
+   *  full native latent (a 4x RRDB off a 1024×1536 base = 25 MP on a
+   *  12 GB GPU = ~100 s/step of VRAM thrash — the owner's live report). */
+  hiresImageScale: "37",
   hiresVaeEncode: "33",
   hiresKSampler: "34",
   hiresVaeDecode: "35",
@@ -515,7 +521,7 @@ function buildComfyCommonNodes(
       inputs: { stop_at_clip_layer: -clipSkip, clip: refs.clip },
     };
   }
-  return { graph, resolved: { seed, steps, cfg, samplerName, scheduler, clipSource } };
+  return { graph, resolved: { seed, steps, cfg, samplerName, scheduler, clipSource, width: width ?? COMFY_NODE_DEFAULTS.latentWidth, height: height ?? COMFY_NODE_DEFAULTS.latentHeight } };
 }
 
 /** The first-pass resolved values the second-pass subgraphs inherit —
@@ -533,6 +539,11 @@ export interface ComfySecondPassCtx {
   cfg: number;
   samplerName: string;
   scheduler: string;
+  /** The first-pass latent's resolved pixel size — the hires model path
+   *  resizes to base × hr_scale before re-encoding (the sampled resolution
+   *  IS the target, never the upscaler's native factor). */
+  width: number;
+  height: number;
 }
 
 /** The first-pass resolved params (sampler half) — buildComfyCommonNodes's
@@ -544,6 +555,11 @@ interface ComfySamplerResolved {
   samplerName: string;
   scheduler: string;
   clipSource: [string, number];
+  /** The first-pass latent's resolved pixel size (request value or the
+   *  EmptyLatentImage defaults) — the hires model path's resize target
+   * base (base × hr_scale, the A1111 sampled-resolution semantics). */
+  width: number;
+  height: number;
 }
 
 /** Build the CHECKPOINT-template workflow graph from the flat request +
@@ -593,6 +609,8 @@ export function buildComfyCheckpointWorkflow(
       cfg: resolved.cfg,
       samplerName: resolved.samplerName,
       scheduler: resolved.scheduler,
+      width: resolved.width,
+      height: resolved.height,
     },
   };
 }
@@ -640,6 +658,8 @@ export function buildComfyKrea2Workflow(
       cfg: resolved.cfg,
       samplerName: resolved.samplerName,
       scheduler: resolved.scheduler,
+      width: resolved.width,
+      height: resolved.height,
     },
   };
 }
@@ -654,6 +674,10 @@ export const COMFY_HIRES_DEFAULTS = {
   scale: 2.0,
   denoise: 0.75,
   latentMethod: "nearest-exact",
+  /** The model path's post-upscale resample (a1111 parity): lanczos —
+   *  the sharp filter for downsampling the native-factor output to the
+   *  base × hr_scale target. */
+  imageResizeMethod: "lanczos",
 } as const;
 
 /** FaceDetailer's node-declared defaults (live-verified 0.37.0 — the
@@ -688,7 +712,10 @@ export const COMFY_FACE_DETAILER_DEFAULTS = {
  *  maps by name: unset (the chip's Auto) → the LATENT path
  *  (LatentUpscaleBy on the first sampler's latent — no model file needed,
  *  the A1111 "Latent" upscaler analog); a real name → the model path
- *  (UpscaleModelLoader → ImageUpscaleWithModel → VAEEncode). Steps inherit
+ *  (UpscaleModelLoader → ImageUpscaleWithModel → ImageScale → VAEEncode;
+ *  the native-factor output is resampled to base × hr_scale — the sampled
+ *  resolution is the TARGET, never the upscaler's native factor, the
+ *  2026-09-27 fix). Steps inherit
  *  the first pass when unset or 0 (A1111 hr_second_pass_steps=0
  *  semantics); sampler/scheduler/cfg/seed are the first pass's own
  *  resolved values — a deterministic chain. Mutates the passed graph;
@@ -727,9 +754,22 @@ export function applyComfyHiresPass(
         image: [COMFY_NODE_IDS.vaeDecode, 0],
       },
     };
+    // A1111 hr semantics: resize to the TARGET (base × hr_scale) — the
+    // upscaler's native factor (4x, 2x…) only builds detail; the second
+    // sampler never sees it.
+    graph[COMFY_NODE_IDS.hiresImageScale] = {
+      class_type: "ImageScale",
+      inputs: {
+        image: [COMFY_NODE_IDS.hiresImageUpscale, 0],
+        upscale_method: COMFY_HIRES_DEFAULTS.imageResizeMethod,
+        width: Math.round(ctx.width * scale),
+        height: Math.round(ctx.height * scale),
+        crop: "disabled",
+      },
+    };
     graph[COMFY_NODE_IDS.hiresVaeEncode] = {
       class_type: "VAEEncode",
-      inputs: { pixels: [COMFY_NODE_IDS.hiresImageUpscale, 0], vae: ctx.vae },
+      inputs: { pixels: [COMFY_NODE_IDS.hiresImageScale, 0], vae: ctx.vae },
     };
     secondLatent = [COMFY_NODE_IDS.hiresVaeEncode, 0];
   }
