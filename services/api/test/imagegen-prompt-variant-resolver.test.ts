@@ -17,9 +17,8 @@ import { loadPromptAsset } from "../src/shared/prompt-asset-loader.js";
 // (4) non-authoring families fall back to prose canon (krea2 templates,
 //     krea2 negative) with the honest prose-canon source label;
 // (5) the negative row keys beside mode slugs with its own family chain;
-// (6) free mode is family-NEUTRAL end to end: under pony it serves the prose
-//     wrapper with the prose-canon label, and a (free, pony) override cell is
-//     unreachable by design (both tiers see prose for free);
+// (6) free mode resolves the requested family's saved override first, then
+//     falls back to the neutral prose asset with an honest prose-canon label;
 // (7) the pointer seam: no pointer / dangling pointer / the read-only
 //     Default profile all resolve the empty map (pure canon).
 
@@ -93,24 +92,18 @@ describe("resolveImagePromptVariant (IF-1c profile chain)", () => {
     expect(krea2.text).toBe(prose.text);
   });
 
-  test("free mode is family-neutral: prose wrapper under any family, pony cells unreachable", async () => {
-    const row = await resolveImagePromptVariant(
-      { rowKey: "free", family: "pony" },
-      // The profile API refuses (free, non-prose) cells; even a smuggled one
-      // (direct store write) stays unreachable — both tiers see prose.
-      { "free|pony": { body: "unreachable custom" } },
-    );
-    const proseFree = await resolveImagePromptVariant({ rowKey: "free", family: "prose" }, {});
-    expect(row.source).toBe("prose-canon");
-    expect(row.text).toBe(proseFree.text);
-
-    // the prose lookup CAN be customized (the wrapper belongs to prose)
+  test("free mode reads the requested family's saved template, then falls back to neutral prose", async () => {
     const customized = await resolveImagePromptVariant(
-      { rowKey: "free", family: "prose" },
-      { "free|prose": { body: "my wrapper" } },
+      { rowKey: "free", family: "pony" },
+      { "free|pony": { body: "my pony free template" } },
     );
     expect(customized.source).toBe("custom");
-    expect(customized.text).toBe("my wrapper");
+    expect(customized.text).toBe("my pony free template");
+
+    const fallback = await resolveImagePromptVariant({ rowKey: "free", family: "pony" }, {});
+    const proseFree = await resolveImagePromptVariant({ rowKey: "free", family: "prose" }, {});
+    expect(fallback.source).toBe("prose-canon");
+    expect(fallback.text).toBe(proseFree.text);
   });
 });
 

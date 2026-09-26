@@ -570,7 +570,6 @@
 	"image_gen_profile_label": "Profile",
 	"image_gen_no_profiles": "No image generation profiles yet",
 	"image_gen_open_settings": "Open settings",
-	"image_gen_free_hint": "custom prompt required",
 	"image_gen_generating": "Generating…",
 	"image_gen_phase_prompt": "Writing prompt…",
 	"image_gen_phase_starting": "Starting…",

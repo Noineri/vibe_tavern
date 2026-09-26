@@ -134,16 +134,16 @@ describe("IF-1b image prompt profile routes (real adapter + in-memory DB)", () =
     expect(updated.overrides["selfie|krea2"]).toEqual({ body: "SELFIE", qualityText: null });
   });
 
-  test("semantic guards: (free, non-prose) cell → 400; quality on non-authoring family → 400", async () => {
+  test("semantic guards allow per-family Free cells but reject quality on non-authoring families", async () => {
     const { app } = await setupAdapter();
 
     const free = await app.request("/api/image-gen/prompt-profiles", {
       method: "POST",
       ...jsonInit(),
-      body: JSON.stringify({ name: "Bad1", overrides: { "free|pony": { body: "X" } } }),
+      body: JSON.stringify({ name: "Free by family", overrides: { "free|pony": { body: "X" } } }),
     });
-    expect(free.status).toBe(400);
-    expect(((await free.json()) as { error: string }).error).toContain("free|pony");
+    expect(free.status).toBe(201);
+    expect(((await free.json()) as { overrides: Record<string, unknown> }).overrides["free|pony"]).toEqual({ body: "X", qualityText: null });
 
     const profile = await createProfile(app, "Ok");
     const quality = await app.request(`/api/image-gen/prompt-profiles/${profile.id}`, {
@@ -213,7 +213,8 @@ describe("IF-1b image prompt profile routes (real adapter + in-memory DB)", () =
     expect(cell("negative", "qwen").canonSource).toBe("family-canon");
     expect(cell("negative", "qwen").canonText).toBe(await loadPromptAsset("image-negative.qwen.md"));
     expect(cell("negative", "krea2").canonSource).toBe("prose-canon");
-    // Free mode is family-neutral: every family cell shows the prose wrapper.
+    // Free has one neutral shipped fallback; a saved cell may still override
+    // it per family.
     expect(cell("free", "pony").canonSource).toBe("prose-canon");
     expect(cell("free", "pony").canonText).toBe(await loadPromptAsset("image-free.md"));
     // Clean profile: no custom cells anywhere.

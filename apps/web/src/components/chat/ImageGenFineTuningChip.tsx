@@ -415,12 +415,11 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   // Anchor = the chat's TAIL message (the cockpit sits above the input —
   // "generate the latest moment", the message-popover twin with the last
   // message as its anchor). The target mode comes from FT-A2's selector
-  // (Free display default); free still REQUIRES the chip prompt (the
-  // menu's free-row gate, IG-17).
+  // (Free display default). An empty Free draft resolves the active
+  // profile's saved template; a non-empty draft is its per-run override.
   const tailAnchor = orderedMessages.length > 0 ? orderedMessages[orderedMessages.length - 1]!.id : undefined;
   const targetMode = draft.target ?? IMAGE_GENERATION_MODES.Free;
-  const freeBlocked = targetMode === IMAGE_GENERATION_MODES.Free && draft.prompt.trim() === "";
-  const generateDisabled = busy || freeBlocked;
+  const generateDisabled = busy;
   function fireGenerate(): void {
     if (generateDisabled || effective === null) return;
     const input = buildDraftGenerateInput({
@@ -765,9 +764,9 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
             image_gen_chip_generate) — fires the
             shared draft fold on the current chat (mode = the target selector,
             anchor = the tail message) and closes the editor; the image lands
-            as a chat slot message exactly like the message-popover path. Free
-            target still requires the chip prompt (IG-17 gate). The footer
-            spans BOTH columns in the IF-5 grid (`col-span-2` is inert in the
+            as a chat slot message exactly like the message-popover path. An
+            empty Free prompt resolves its saved template. The footer spans
+            BOTH columns in the IF-5 grid (`col-span-2` is inert in the
             single-column flex). */}
         <div className="flex items-center justify-end gap-1.5 px-1.5 @min-[480px]:col-span-2">
           <button
@@ -783,7 +782,6 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
             data-testid="image-gen-ft-generate"
             aria-disabled={generateDisabled}
             disabled={generateDisabled}
-            title={freeBlocked ? t("image_gen_free_hint") : undefined}
             onClick={fireGenerate}
             className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:cursor-default disabled:opacity-50"
           >

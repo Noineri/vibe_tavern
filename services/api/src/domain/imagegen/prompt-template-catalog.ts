@@ -75,8 +75,8 @@ async function canonFor(
   family: ImagePromptFamilyId,
   memo: Map<string, string>,
 ): Promise<{ text: string; source: ImagePromptCanonSource }> {
-  // Free mode is family-neutral end to end (the prose wrapper over raw
-  // user text) — every family cell shows the prose canon.
+  // Free mode's shipped fallback is neutral prose; saved overrides still
+  // remain per-family through readProfilePromptVariantCell's exact cell key.
   const effective = rowKey === IMAGE_GENERATION_MODES.Free ? IMAGE_PROMPT_DEFAULT_FAMILY : family;
   const canonFamily = imagePromptCanonFamily(
     effective,

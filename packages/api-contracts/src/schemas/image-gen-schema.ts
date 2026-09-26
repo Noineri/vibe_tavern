@@ -509,9 +509,9 @@ export const generateImageGenSchema = z.object({
    *  mode's Images-tab template + chat-context macros (the design's
    *  generation flow). Present → used verbatim for non-free modes (the
    *  fine-tuning chip's edited positive prompt — already built/substituted
-   *  client-side, never re-substituted here); for `free` it is the raw
-   *  payload the free template wraps ("the accompanying prompt") and is
-   *  REQUIRED — a prompt-less free request is a client inconsistency. */
+   *  client-side, never re-substituted here). This applies to `free` too:
+   *  absent uses the active profile's saved Free template; present is the
+   *  per-run override. */
   prompt: z.string().min(1).optional(),
   /** The message the generation was requested from (provenance for the
    *  slot position + context-aware prompt building). */
@@ -789,8 +789,8 @@ export type ImagePromptCanonSourceValue = z.infer<typeof imagePromptCanonSourceS
  *  canon that applies when NOT customized — tier-resolved SERVER-side (the
  *  family's own asset, else the prose fallback); the pane never
  *  re-implements the fallback rule. `canonSource` tells which tier won
- *  ("prose-canon" on a non-prose family = the family inherits prose — and
- *  for the family-neutral free row, under any family). */
+ *  ("prose-canon" on a non-prose family = the family inherits prose,
+ *  including Free's neutral shipped fallback). */
 export const imagePromptTemplateCellSchema = z.object({
   rowKey: imagePromptTemplateRowKeySchema,
   family: imagePromptFamilySchema,

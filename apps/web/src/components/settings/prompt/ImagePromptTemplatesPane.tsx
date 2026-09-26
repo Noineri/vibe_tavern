@@ -12,7 +12,7 @@ import type {
   CreateImagePromptProfileRequest,
   UpdateImagePromptProfileRequest,
 } from "@vibe-tavern/api-contracts";
-import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY } from "@vibe-tavern/domain";
+import { IMAGE_GENERATION_MODES } from "@vibe-tavern/domain";
 import {
   createImagePromptProfile,
   deleteImagePromptProfile,
@@ -337,7 +337,6 @@ export function ImagePromptTemplatesPane({
           for (const rowId of [...ROW_ORDER, "assist"] as ImagePromptTemplatesPaneRowId[]) {
             next[rowId] ??= firstFamily;
           }
-          next[IMAGE_GENERATION_MODES.Free] = IMAGE_PROMPT_DEFAULT_FAMILY;
           return next;
         });
       }
@@ -789,11 +788,8 @@ export function ImagePromptTemplatesPane({
   // ─── Detail: mode rows × family dropdown + editor (IPT side, kept) ───────
 
   const renderRowDisclosure = (rowId: ImagePromptTemplatesPaneRowId, label: string, isTemplate: boolean) => {
-    const isFreeRow = rowId === IMAGE_GENERATION_MODES.Free;
-    const family = isFreeRow
-      ? IMAGE_PROMPT_DEFAULT_FAMILY
-      : selectedFamilies[rowId] ?? families[0]?.id;
-        const cell = isTemplate && family ? cellFor(rowId as ImagePromptTemplateRowKeyValue, family) : null;
+    const family = selectedFamilies[rowId] ?? families[0]?.id;
+    const cell = isTemplate && family ? cellFor(rowId as ImagePromptTemplateRowKeyValue, family) : null;
     const isOpen = expandedRows[rowId] ?? false;
     const draftKey = isTemplate && family ? `${rowId}|${family}` : null;
     const draftCell = draftKey ? draftOverrides[draftKey] : undefined;
@@ -832,10 +828,9 @@ export function ImagePromptTemplatesPane({
               value={family}
               options={familyOptions}
               onChange={(next) => {
-                if (isFreeRow) return;
                 setSelectedFamilies((current) => ({ ...current, [rowId]: next as ImagePromptFamilyValue }));
               }}
-              disabled={saving || isFreeRow}
+              disabled={saving}
               searchable={false}
               triggerDetail={false}
               contentWidth={300}

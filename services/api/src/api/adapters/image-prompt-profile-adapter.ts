@@ -7,7 +7,7 @@ import type {
 } from "../contract/runtime-api.js";
 import type { AppDb } from "@vibe-tavern/db";
 import { ImagePromptProfileStore, UiSettingsStore } from "@vibe-tavern/db";
-import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, IMAGE_PROMPT_FAMILIES } from "@vibe-tavern/domain";
+import { IMAGE_PROMPT_FAMILIES } from "@vibe-tavern/domain";
 import { buildProfileTemplateCatalog, type ImagePromptProfileOverridesMap } from "../../domain/imagegen/prompt-template-catalog.js";
 import { ImageGenValidationError } from "./image-gen-adapter.js";
 import type {
@@ -28,11 +28,10 @@ import type {
  *  - create / update / delete (forbidden on the built-in Default profile)
  *  - active-pointer put via uiSettings (activeImagePromptProfileId)
  *
- * Cell semantic guards on whole-profile saves (the same rules the per-cell
- * IPT-3 upsert enforces, applied per key): a (free, non-prose) cell would be
- * unreachable by generation and is refused; a qualityText on a
- * non-quality-authoring family is refused. Both throw ImageGenValidationError
- * (the route maps them to 400) naming the offending cell key.
+ * Cell semantic guards on whole-profile saves: a qualityText on a
+ * non-quality-authoring family is refused. Free cells remain ordinary
+ * per-family overrides. ImageGenValidationError maps failures to 400 and
+ * names the offending cell key.
  */
 export class ImagePromptProfileAdapter implements ImagePromptProfileRuntimeApi {
   constructor(private readonly stores: { db: AppDb }) {}
@@ -140,19 +139,13 @@ function toWire(row: {
 }
 
 /** Per-cell semantic guards + quality normalization on whole-profile saves.
- *  Mirrors the IPT-3 upsert guards: refuse (free, non-prose) cells (dead
- *  data — unreachable by generation) and qualityText on families that author
- *  no quality layer; trim-empty quality normalizes to null (clear), like the
- *  profile PATCH null-clear convention. */
+ *  Free rows are ordinary per-family cells. QualityText on families with no
+ *  quality layer is refused; trim-empty quality normalizes to null (clear),
+ *  like the profile PATCH null-clear convention. */
 function validateCells(overrides: ImagePromptProfileOverridesMap): ImagePromptProfileOverridesMap {
   const out: ImagePromptProfileOverridesMap = {};
   for (const [key, cell] of Object.entries(overrides) as Array<[keyof ImagePromptProfileOverridesMap, { body: string; qualityText?: string | null }]>) {
     const [rowKey, family] = key.split("|") as [string, string];
-    if (rowKey === IMAGE_GENERATION_MODES.Free && family !== IMAGE_PROMPT_DEFAULT_FAMILY) {
-      throw new ImageGenValidationError(
-        `Free mode is family-neutral: customize its shared prose template instead of the '${family}' variant (cell '${key}').`,
-      );
-    }
     let qualityText = cell.qualityText ?? null;
     // Normalize BEFORE the authorship guard: a blank/whitespace quality is a
     // CLEAR (back to canon), harmless on any family — same convention as the

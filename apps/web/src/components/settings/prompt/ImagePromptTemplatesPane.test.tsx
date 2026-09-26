@@ -299,14 +299,26 @@ describe("ImagePromptTemplatesPane (IF-1d profile fork)", () => {
     await waitFor(() => expect(api.update).toHaveBeenLastCalledWith("p1", { name: "My Profile", overrides: {} }));
   });
 
-  test("free row is fixed to prose (dropdown disabled) and its pony cell is unreachable", async () => {
+  test("free row's enabled family dropdown selects and persists a non-default family cell", async () => {
     const { api } = makeApi({ profiles: [makeDefaultProfile(), makeProfile()], activeProfileId: "p1" });
-    const { getByTestId } = render(<Harness api={api} />);
+    const { getByTestId, getByRole } = render(<Harness api={api} />);
     await waitFor(() => expect(getByTestId("image-prompt-template-row-free")).toBeTruthy());
-    const trigger = getByTestId("image-prompt-template-family-free");
-    // The trigger shows prose and carries the disabled attribute.
-    expect(trigger.textContent).toContain("Prose");
-    expect(trigger.querySelector("button")?.disabled ?? (trigger as HTMLButtonElement).disabled).toBeTruthy();
+    const trigger = getByTestId("image-prompt-template-family-free") as HTMLButtonElement;
+    expect(trigger.disabled).toBe(false);
+    await selectFamily(getByTestId, "free", "Pony");
+    expect(getByTestId("image-prompt-template-family-free").textContent).toContain("Pony");
+    await openRow(getByTestId, "free");
+    const editor = getByRole("textbox", { name: "Image prompt template" }) as HTMLTextAreaElement;
+    await act(async () => {
+      fireEvent.change(editor, { target: { value: "my pony free template" } });
+    });
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Save" }));
+    });
+    await waitFor(() => expect(api.update).toHaveBeenLastCalledWith("p1", {
+      name: "My Profile",
+      overrides: { "free|pony": { body: "my pony free template", qualityText: null } },
+    }));
   });
 
   test("quality layer: toggle rides the draft, blank quality clears to canon on save", async () => {

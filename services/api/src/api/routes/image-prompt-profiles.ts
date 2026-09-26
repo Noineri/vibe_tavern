@@ -20,9 +20,9 @@ import { ImageGenValidationError } from "../adapters/image-gen-adapter.js";
  *   PUT    /api/image-gen/prompt-profiles/active     (set the live profile)
  *   PATCH  /api/image-gen/prompt-profiles/reorder    (drag order)
  *
- * Whole-profile saves run the adapter's per-cell semantic guards
- * (free-mode family-neutrality, quality-layer authorship) — an
- * ImageGenValidationError maps to 400 naming the offending cell key.
+ * Whole-profile saves run the adapter's quality-layer authorship guard;
+ * Free cells are ordinary per-family overrides. An ImageGenValidationError
+ * maps a rejected cell to 400 naming its key.
  */
 export function createImagePromptProfileRoutes(runtime: ImagePromptProfileRuntimeApi) {
   return new Hono()

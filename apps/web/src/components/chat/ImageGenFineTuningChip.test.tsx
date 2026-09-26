@@ -831,12 +831,11 @@ describe("ImageGenFineTuningChip — Generate button (FT-A3)", () => {
     await waitFor(() => expect(within(view.baseElement).queryByTestId("image-gen-ft-body")).toBeNull());
   });
 
-  it("a committed target rides the call; free without a chip prompt disables the button (IG-17 gate)", async () => {
+  it("an empty Free chip prompt fires the active profile template path", async () => {
     profilesStore = [profile("p1", "A1111 local", fullCaps(), "sdxl-base")];
     modelsStore = { p1: [{ id: "sdxl-base", label: "SDXL Base" }] };
     act(() => armChat(chatB));
-    // Portrait target, NO prompt — non-free modes generate without one.
-    useImageGenChatStore.getState().setFineTuningDraft(chatB, { target: "portrait" });
+    useImageGenChatStore.getState().setFineTuningDraft(chatB, { target: "free" });
     const view = renderChip(<ImageGenFineTuningChip chatId={chatB} />);
     await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
     openChip();
@@ -846,22 +845,8 @@ describe("ImageGenFineTuningChip — Generate button (FT-A3)", () => {
       fireEvent.click(button);
     });
     expect(generateCalls.length).toBe(1);
-    expect(generateCalls[0]![1].mode).toBe("portrait");
+    expect(generateCalls[0]![1].mode).toBe("free");
     expect(generateCalls[0]![1].prompt).toBeUndefined();
-
-    // Now free + empty prompt: the button is disabled and clicking does
-    // nothing. Firing CLOSED the editor (FT-A3's onGenerateFired) — reopen.
-    act(() => {
-      useImageGenChatStore.getState().setFineTuningDraft(chatB, { target: "free" });
-    });
-    openChip();
-    await waitFor(() =>
-      expect((within(view.baseElement).getByTestId("image-gen-ft-generate") as HTMLButtonElement).disabled).toBe(true),
-    );
-    act(() => {
-      fireEvent.click(within(view.baseElement).getByTestId("image-gen-ft-generate"));
-    });
-    expect(generateCalls.length).toBe(1);
   });
 });
 

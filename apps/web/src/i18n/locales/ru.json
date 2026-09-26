@@ -574,7 +574,6 @@
 	"image_gen_profile_label": "Профиль",
 	"image_gen_no_profiles": "Профилей генерации изображений пока нет",
 	"image_gen_open_settings": "Открыть настройки",
-	"image_gen_free_hint": "нужен свой промпт",
 	"image_gen_generating": "Генерация…",
 	"image_gen_phase_prompt": "Готовим промпт…",
 	"image_gen_phase_starting": "Запускаем генерацию…",

@@ -150,8 +150,8 @@ export interface BuiltImageGenPrompts {
 
 /** Load the mode's context and resolve the mode's template + the shared
  *  negative through the MacroEngine. The callerPrompt contract is the
- *  generate schema's (see image-gen-schema.ts): verbatim override on
- *  non-free modes, the REQUIRED payload on free.
+ *  generate schema's (see image-gen-schema.ts): a verbatim per-run override
+ *  for every mode, including free.
  *
  *  IG-15 assist (`assist` provided): on the one path where the SERVER builds
  *  the prompt from the scene (non-free mode, no caller prompt), the quiet
@@ -159,9 +159,8 @@ export interface BuiltImageGenPrompts {
  *  ("the model writes the image prompt from the scene, then substitutes
  *  macros") — and the macro engine then resolves whatever placeholders the
  *  model left in its output. The verbatim paths are exempt by design: a
- *  caller prompt (the chip's built edit, free mode's raw payload) is
- *  finished user-authored text, and rewriting it would break the IG-14
- *  verbatim contract. */
+ *  caller prompt is finished user-authored text, and rewriting it would
+ *  break the IG-14 verbatim contract. */
 export async function buildImageGenPrompts(
   stores: ModeStores,
   chat: ImageGenModeChat,
@@ -171,19 +170,6 @@ export async function buildImageGenPrompts(
   options?: ImageGenModePromptOptions,
 ): Promise<BuiltImageGenPrompts> {
   const assistHint = options?.assistHint?.trim() ?? "";
-  // `assistHint` being present (including the empty string) marks the
-  // text-only FT-B2 drafting call. Generate never sets it, so IG-14 Free
-  // requests still require their finished caller prompt even if a profile
-  // happens to have its assist configured.
-  const isAssistDraft = options?.assistHint !== undefined;
-  if (
-    mode === IMAGE_GENERATION_MODES.Free &&
-    (callerPrompt === undefined || callerPrompt === "") &&
-    (assist === undefined || !isAssistDraft)
-  ) {
-    throw new ImageGenModeValidationError("mode 'free' requires the caller-provided prompt");
-  }
-
   const [character, persona, lastMessage] = await Promise.all([
     stores.characters.getById(chat.characterId),
     resolvePersona(stores, chat.personaId),
@@ -233,19 +219,11 @@ export async function buildImageGenPrompts(
   // append (finished user text is not a template surface).
   const qualityBlock = await resolveQualityBlock(mode, family, options?.qualityLayerEnabled === true, overrides);
 
-  if (mode === IMAGE_GENERATION_MODES.Free && callerPrompt !== undefined && callerPrompt !== "") {
-    // The free template is a WRAPPER ("Depict exactly what the accompanying
-    // prompt describes") — the caller text is the accompanying prompt, so
-    // the composed payload is template + separator + raw prompt. The raw
-    // prompt is NOT macro-substituted (it is already finished text).
-    return { prompt: `${resolve(template).trim()}\n\n${callerPrompt}`, negativePrompt: resolve(negative).trim() };
-  }
-
-  // Non-free + callerPrompt = the chip's already-built edit — verbatim, no
-  // re-substitution (substituting user-edited text could double-expand
-  // braces the user deliberately kept). Assist does not apply: the prompt is
-  // finished text, not a scene to build.
-  if (mode !== IMAGE_GENERATION_MODES.Free && callerPrompt !== undefined) {
+  // A caller prompt is the fine-tuning layer's per-run override for every
+  // target mode. It is verbatim, never macro-substituted: substituting
+  // user-edited text could double-expand braces the user deliberately kept.
+  // Assist does not apply because the prompt is already finished text.
+  if (callerPrompt !== undefined) {
     return { prompt: callerPrompt, negativePrompt: resolve(negative).trim() };
   }
 
@@ -255,7 +233,10 @@ export async function buildImageGenPrompts(
   // mode template (placeholders intact — the model resolves them against the
   // digest); its output IS the image prompt body, and the macro pass then
   // resolves any placeholder the model left in place.
-  if (assist !== undefined) {
+  // A normal Free run is its saved template, even when the profile's assist
+  // is configured. The explicit prompt-draft route still opts into assist
+  // through assistHint (including an empty hint).
+  if (assist !== undefined && (mode !== IMAGE_GENERATION_MODES.Free || options?.assistHint !== undefined)) {
     const instruction = await composeAssistInstruction(family);
     // IF-10: with a learned provider cap, the assist gets a HARD character
     // budget for its output — cap minus the already-resolved quality block

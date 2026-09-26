@@ -2256,9 +2256,9 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
       }
       expect(prompt, `mode ${mode}`).not.toContain("{{");
     }
-    // The free template is a wrapper: the raw prompt rides WITH template
-    // prose, not alone.
-    expect(sent[5]).not.toBe("raw caller direction");
+    // Fine tuning's raw Free prompt is the per-run override, not input to a
+    // wrapper template.
+    expect(sent[5]).toBe("raw caller direction");
   });
 
   test("custom variant row beats the built-in canon; macros still substitute inside it", async () => {
@@ -2362,19 +2362,19 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
     expect(sent[2]).not.toContain(qualityCanon.trim());
   });
 
-  test("free mode without a caller prompt → 400 (the raw prompt IS the payload)", async () => {
-    const scene = await makeScene(async () => {
-      throw new TypeError("must not be called");
-    });
+  test("free mode without a caller prompt uses the active profile family's saved template", async () => {
+    const sent: string[] = [];
+    const scene = await makeScene(promptCapturingTransport(sent));
     const id = await seedProfile(scene.app, { apiKey: "sk-own", modelId: "gpt-image-2" });
+    await activateImageOverrides(scene, { "free|pony": { body: "MY PONY FREE TEMPLATE" } });
+    await scene.stores.imageGen.update(id, { familyOverride: "pony" });
     const res = await scene.app.request(`/api/chats/${scene.chatId}/image-gen/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profileId: id, mode: "free" }),
     });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("free");
+    expect(res.status).toBe(200);
+    expect(sent).toEqual(["MY PONY FREE TEMPLATE"]);
   });
 
   test("negative template rides only negative-capable backends; the chip's edit wins when it does", async () => {
@@ -3365,10 +3365,10 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     expect(assist.calls).toHaveLength(2);
     expect(assist.calls[1]!.user).toBe("a cat reading");
 
-    // The draft marker is absent from generate: IG-14 still rejects a Free
-    // image request without the user-reviewed verbatim prompt.
+    // Generate with no Free override uses the saved template directly; the
+    // configured assist remains reserved for the explicit prompt-draft route.
     const generation = await generate(scene.app, scene.chatId, { profileId: id, mode: "free" });
-    expect(generation.status).toBe(400);
+    expect(generation.status).toBe(200);
     expect(assist.calls).toHaveLength(2);
 
     const missing = await draftPrompt(scene.app, "missing", { profileId: id, mode: "portrait" });
@@ -3582,7 +3582,7 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     expect(assist.calls).toHaveLength(0);
   });
 
-  test("verbatim contracts exempt: free payload and chip edit never hit the quiet call", async () => {
+  test("verbatim contracts exempt: Free override and chip edit never hit the quiet call", async () => {
     const assist = makeAssistDeps({ llm1: makeLlmProfile() });
     const scene = await makeAssistScene(assist);
     const id = await seedProfile(scene.app, {
@@ -3597,7 +3597,7 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     const chip = await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait", prompt: "chip's built edit" });
     expect(chip.status).toBe(200);
     expect(assist.calls).toHaveLength(0);
-    expect(scene.sent[0]).toContain("raw caller direction");
+    expect(scene.sent[0]).toBe("raw caller direction");
     expect(scene.sent[1]).toBe("chip's built edit");
   });
 

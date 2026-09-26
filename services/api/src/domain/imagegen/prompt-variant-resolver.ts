@@ -33,10 +33,9 @@ export interface ImagePromptVariantLookup {
  * 1. PROFILE tier — the ACTIVE image prompt profile's override cell for the
  *    (rowKey, family) pair (`resolveActiveImagePromptOverrides` reads the
  *    pointer; a dangling pointer or the read-only Default profile resolves
- *    an empty map = pure canon). Free mode is family-neutral end to end: its
- *    wrapper always resolves prose, so BOTH tiers see prose for it (a
- *    (free, non-prose) cell is unreachable by design — the profile API
- *    refuses to write one).
+ *    an empty map = pure canon). Free mode reads the requested family's
+ *    saved cell first; absent a saved cell, it falls back to the neutral
+ *    prose canon because no family-specific shipped scaffold exists.
  * 2. FAMILY-CANON tier — `imagePromptCanonFamily` decides whether the family
  *    authors the row itself; the asset is `image-{mode}.{family}.md`
  *    (or `image-negative.{family}.md`).
@@ -66,9 +65,7 @@ export async function resolveImagePromptVariant(
   lookup: ImagePromptVariantLookup,
   overrides: ImagePromptOverridesMap,
 ): Promise<ResolvedImagePromptVariant> {
-  const { rowKey } = lookup;
-  // Family-neutral free wrapper: both tiers resolve prose regardless of family.
-  const family = rowKey === IMAGE_GENERATION_MODES.Free ? IMAGE_PROMPT_DEFAULT_FAMILY : lookup.family;
+  const { rowKey, family } = lookup;
 
   const custom = overrides[`${rowKey}|${family}`];
   if (custom) {
@@ -83,8 +80,8 @@ export async function resolveImagePromptVariant(
   const suffix = canonFamily === IMAGE_PROMPT_DEFAULT_FAMILY ? "" : `.${canonFamily}`;
   const stem = rowKey === "negative" ? "image-negative" : `image-${rowKey}`;
   const text = await loadPromptAsset(`${stem}${suffix}.md`);
-  // The label compares against the REQUESTED family: a row the requested
-  // family does not author (incl. the family-neutral free wrapper under any
-  // non-prose family) is honestly a prose-canon fallback.
+  // The label compares against the requested family: a row the requested
+  // family does not author (including Free's neutral shipped fallback under
+  // a non-prose family) is honestly a prose-canon fallback.
   return { text, source: canonFamily === lookup.family ? "family-canon" : "prose-canon" };
 }

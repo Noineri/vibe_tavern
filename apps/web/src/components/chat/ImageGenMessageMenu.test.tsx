@@ -208,7 +208,7 @@ describe("ImageGenMessageMenu — co-author gate (RP-only surface)", () => {
 });
 
 describe("ImageGenMessageMenu — desktop popover (IG-16)", () => {
-  it("opens from the message action and lists all eight modes flat in the Wave-5 order; free is disabled with its hint", async () => {
+  it("opens from the message action and lists all eight modes flat in the Wave-5 order; free is enabled without fine tuning", async () => {
     const view = renderMenu(<ImageGenMessageMenu chatId="chat-1" messageId="m-1" variant="desktop" />);
     openPopover(view);
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-portrait")).toBeTruthy());
@@ -239,8 +239,7 @@ describe("ImageGenMessageMenu — desktop popover (IG-16)", () => {
       expect(row.className).not.toMatch(/truncate|text-ellipsis|whitespace-nowrap|overflow-hidden/);
     }
     const free = within(view.baseElement).getByTestId("image-gen-mode-free") as HTMLButtonElement;
-    expect(free.disabled).toBe(true);
-    expect(within(view.baseElement).getByText("image_gen_free_hint")).toBeTruthy();
+    expect(free.disabled).toBe(false);
     // The fine-tuning switch (shared Toggle → role=switch) lives in the
     // popover; the profile pick does NOT (CF2: the popover is modes + toggle
     // only — provider+model belong to the fine-tuning pill's editor; the
@@ -575,47 +574,42 @@ describe("ImageGenMessageMenu — chip draft reaches the generate payload (IG-17
   });
 });
 
-describe("ImageGenMessageMenu — free mode unparks with the chip (IG-17)", () => {
+describe("ImageGenMessageMenu — free mode template and fine-tuning override (IF-14)", () => {
   function settle(chatId: string): void {
     pendingByChat.get(chatId)!.resolve();
   }
 
-  it("fine tuning on + non-empty chip prompt: free is enabled and carries the chip prompt as the raw payload", async () => {
-    useImageGenChatStore.getState().setFineTuning("chat-free", true);
-    useImageGenChatStore.getState().setFineTuningDraft("chat-free", { prompt: "watercolor dragon" });
-    const view = renderMenu(<ImageGenMessageMenu chatId="chat-free" messageId="m-1" variant="desktop" />);
+  it("without fine tuning, Free is clickable and sends no prompt override so the active profile template resolves", async () => {
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-free-template" messageId="m-1" variant="desktop" />);
     openPopover(view);
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-free")).toBeTruthy());
     const free = within(view.baseElement).getByTestId("image-gen-mode-free") as HTMLButtonElement;
     expect(free.disabled).toBe(false);
-    // The hint hides once the requirement is satisfied.
-    expect(within(view.baseElement).queryByText("image_gen_free_hint")).toBeNull();
     act(() => {
       fireEvent.click(free);
     });
     expect(generateCalls.length).toBe(1);
     const [, body] = generateCalls[0];
     expect(body.mode).toBe("free");
-    expect(body.prompt).toBe("watercolor dragon");
-    settle("chat-free");
+    expect(body.prompt).toBeUndefined();
+    settle("chat-free-template");
     await act(async () => { await Promise.resolve(); });
   });
 
-  it("fine tuning on + EMPTY chip prompt: free stays disabled with the hint (the contract's required payload)", async () => {
-    useImageGenChatStore.getState().setFineTuning("chat-free2", true);
-    const view = renderMenu(<ImageGenMessageMenu chatId="chat-free2" messageId="m-1" variant="desktop" />);
+  it("a non-empty fine-tuning prompt is the Free run's per-run override", async () => {
+    useImageGenChatStore.getState().setFineTuning("chat-free-override", true);
+    useImageGenChatStore.getState().setFineTuningDraft("chat-free-override", { prompt: "watercolor dragon" });
+    const view = renderMenu(<ImageGenMessageMenu chatId="chat-free-override" messageId="m-1" variant="desktop" />);
     openPopover(view);
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-mode-free")).toBeTruthy());
-    const free = within(view.baseElement).getByTestId("image-gen-mode-free") as HTMLButtonElement;
-    expect(free.disabled).toBe(true);
-    expect(within(view.baseElement).getByText("image_gen_free_hint")).toBeTruthy();
-    // Other modes still fire — the block is free-specific.
     act(() => {
-      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-portrait"));
+      fireEvent.click(within(view.baseElement).getByTestId("image-gen-mode-free"));
     });
     expect(generateCalls.length).toBe(1);
-    expect(generateCalls[0][1].mode).toBe("portrait");
-    settle("chat-free2");
+    const [, body] = generateCalls[0];
+    expect(body.mode).toBe("free");
+    expect(body.prompt).toBe("watercolor dragon");
+    settle("chat-free-override");
     await act(async () => { await Promise.resolve(); });
   });
 });

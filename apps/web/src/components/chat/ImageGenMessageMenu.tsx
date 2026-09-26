@@ -22,11 +22,10 @@
  * narrates the run), not in the menu — desktop and mobile alike. Mode
  * rows stay inert while running.
  *
- * The `free` recipe is enabled only while Fine tuning is on AND the IG-17
- * chip's positive prompt is non-empty: the server REQUIRES free's raw
- * prompt (`prompt` on the generate contract), and that field is the chip's
- * positive-prompt editor. With the toggle off (or an empty chip prompt) the
- * row stays disabled with its hint.
+ * The `free` recipe is a normal mode: it resolves the active image prompt
+ * profile's free template. Fine tuning is an optional per-run override
+ * layer, so its positive prompt may replace that template but never gates
+ * the row.
  */
 
 import { useEffect, useState } from "react";
@@ -281,13 +280,7 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
       )}
 
       {MODES.map((mode) => {
-        // `free` unparks with IG-17: enabled while Fine tuning is on AND the
-        // chip's positive prompt is non-empty (its raw payload — the locked
-        // contract rejects a prompt-less free request). Off-toggle or an
-        // empty chip prompt keeps the row disabled with the hint.
-        const isFree = mode === IMAGE_GENERATION_MODES.Free;
-        const freeBlocked = !fineTuning || draft.prompt.trim() === "";
-        const disabledRow = busy || (isFree && freeBlocked);
+        const disabledRow = busy;
         return (
           <button
             key={mode}
@@ -299,7 +292,6 @@ function ImageGenMenuBody({ chatId, messageId, onDone }: {
             onClick={() => startMode(mode)}
           >
             <span>{tDynamic(`image_gen_mode_${mode}`)}</span>
-            {isFree && freeBlocked && <span className="text-[calc(var(--ui-fs)-3px)] text-t4">{t("image_gen_free_hint")}</span>}
           </button>
         );
       })}

@@ -60,7 +60,7 @@ export type ImagePromptVariantKind = (typeof IMAGE_PROMPT_VARIANT_KINDS)[keyof t
  *  none; there is no universal quality fallback). */
 export interface ImagePromptFamily {
   grammar: ImagePromptGrammar;
-  /** Authors its own mode templates (the free-mode wrapper aside — see the resolver). */
+  /** Authors its own shipped mode templates; Free uses the neutral prose fallback. */
   ownTemplates: boolean;
   /** Authors its own negative row; false = the prose negative applies. */
   ownNegative: boolean;
@@ -272,8 +272,8 @@ export function disambiguateSdxlFamily(tags: readonly string[]): ImagePromptFami
  *
  * This is the canon tier only. The full storage-time precedence (IPT
  * Wave 1) sits ABOVE it: user-custom row for the resolved (row, family)
- * → this canon. Free mode is family-neutral by design (the prose wrapper
- * around raw user text) — it always resolves prose regardless of family.
+ * → this canon. Free's shipped fallback is neutral prose, while its saved
+ * override tier remains keyed by the requested family.
  */
 export function imagePromptCanonFamily(
   family: ImagePromptFamilyId,
@@ -293,6 +293,8 @@ export function imagePromptCanonFamily(
   if (kind === IMAGE_PROMPT_VARIANT_KINDS.Quality) {
     return IMAGE_PROMPT_FAMILIES[family].ownQuality ? family : undefined;
   }
+  // Free has one neutral shipped fallback; its per-family saved override
+  // is resolved by the caller before this canon-tier helper is consulted.
   if (mode === IMAGE_GENERATION_MODES.Free) return IMAGE_PROMPT_DEFAULT_FAMILY;
   if (kind === IMAGE_PROMPT_VARIANT_KINDS.Negative) {
     return IMAGE_PROMPT_FAMILIES[family].ownNegative ? family : IMAGE_PROMPT_DEFAULT_FAMILY;
