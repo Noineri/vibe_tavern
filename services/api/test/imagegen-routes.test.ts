@@ -1162,6 +1162,39 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     expect(capturedBody[0]!.denoising_strength).toBe(0.4);
   });
 
+  test("a1111 fold: the profile-base adetailer flag rides the wire with the dialect's own default model (the 2026-09-27 ladder)", async () => {
+    const capturedBody: Record<string, unknown>[] = [];
+    const { app, stores } = await makeApp(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/sdapi/v1/txt2img") {
+        capturedBody.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ images: [PNG_B64(0x61)] }), { status: 200 });
+      }
+      return new Response("unused", { status: 200 });
+    });
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.A1111, endpoint: "http://127.0.0.1:7860" });
+    // The stock-set delivery shape: the flag ON, the model UNSET — the
+    // dialect resolves its own default (the a1111 bundled detector),
+    // never a cross-dialect constant fabricated at the fold.
+    const patched = await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultParams: { adetailer: true } }),
+    });
+    expect(patched.status).toBe(200);
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "a tavern at dusk" }),
+    });
+    expect(res.status).toBe(200);
+    expect(capturedBody[0]!.alwayson_scripts).toEqual({
+      ADetailer: { args: [true, { ad_model: "face_yolov8n.pt" }] },
+    });
+  });
+
   test("a1111 fold (IF-6 static-gate fix): a pre-FT-A4 STALE capability snapshot no longer strips loras + hires — the CURRENT static table gates (the 2026-09-18 progress-gate incident class)", async () => {
     const capturedBody: Record<string, unknown>[] = [];
     const { app, stores } = await makeApp(async (input, init) => {

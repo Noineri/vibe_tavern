@@ -849,15 +849,14 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // ADetailer / face-detailer (IG-CF15/PG-4 v1 → widened 2026-09-27):
     // the two-rung ladder — the per-model overlay flag over the profile
     // base (the pane row lives on BOTH arms: the bind toggle routes
-    // writes, it never hides the control). Enabled = either rung true
-    // (overlay wins); the model preset climbs overlay → base → the domain
-    // default. BOTH local dialects consume the pair (A1111: the extension;
-    // ComfyUI: the IF-6 FaceDetailer chain); other backends ignore it.
+    // writes, it never hides the control). The boolean rides the request;
+    // the model rides ONLY when the user picked one — each DIALECT
+    // resolves its own unset-model default (A1111: the extension's
+    // bundled detector; ComfyUI: the live-probed list's first entry),
+    // never a cross-dialect constant (the upscaler-label lesson).
     const adetailerEnabled = overlay.adetailer ?? defaults.adetailer;
     const adetailerModel =
-      adetailerEnabled === true
-        ? overlay.adetailerModel?.trim() || defaults.adetailerModel?.trim() || IMAGE_GEN_ADETAILER_DEFAULT_MODEL
-        : undefined;
+      overlay.adetailerModel?.trim() || defaults.adetailerModel?.trim() || undefined;
     // Krea K2 params (IF-11): the two-rung ladder — the per-model overlay
     // block over the profile base, merged PER FIELD (an absent overlay
     // field inherits the base; both absent = the policy defaults inside
@@ -987,6 +986,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(vae !== undefined ? { vae } : {}),
       ...(seed !== undefined ? { seed } : {}),
       ...(clipSkip !== undefined ? { clipSkip } : {}),
+      ...(adetailerEnabled === true ? { adetailer: true } : {}),
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
       ...(krea !== undefined ? { krea } : {}),
       ...(loras !== undefined && loras.length > 0 ? { loras } : {}),

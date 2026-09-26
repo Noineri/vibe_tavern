@@ -77,6 +77,10 @@ export interface ImageGenGenerateRequest {
   /** The profile's explicit prompt-family pin. Backend template routing
    *  honors this authoritative value; absent = backend auto-detection. */
   promptFamilyOverride?: ImagePromptFamilyId;
+  /** Face-fix second pass switch — BOTH local dialects (A1111: the
+   *  ADetailer extension; ComfyUI: the IF-6 FaceDetailer chain). Absent =
+   *  disabled; `true` enables the rung. */
+  adetailer?: boolean;
   width?: number;
   height?: number;
   steps?: number;
@@ -100,12 +104,12 @@ export interface ImageGenGenerateRequest {
   vae?: string;
   seed?: number;
   clipSkip?: number;
-  /** ADetailer face-fix model (IG-CF15/PG-4 v1, A1111-family only):
-   *  PRESENCE = enabled — the a1111 adapter sends
-   *  `alwayson_scripts: {ADetailer: {args: [true, {ad_model}]}}` (the
-   *  extension script's own arg signature: a leading enable bool plus
-   *  pydantic dicts whose `ad_model` names the face detector; "None" skips).
-   *  Other backends ignore the field. */
+  /** ADetailer face-fix model (IG-CF15/PG-4 v1 → both LOCAL dialects
+   *  2026-09-27): the EXPLICIT detector pick. Absent while `adetailer`
+   *  is true = the dialect's own default (A1111: the extension's
+   *  bundled detector via `alwayson_scripts` args; ComfyUI: the
+   *  live-probed list's first entry) — never a cross-dialect constant
+   *  (the upscaler-label lesson). */
   adetailerModel?: string;
   /** Enabled LoRAs of this run (CG-C2, capability-gated backends): each
    *  entry maps onto the backend's own wire — ComfyUI threads them as

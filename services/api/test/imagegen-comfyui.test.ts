@@ -1932,6 +1932,21 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
     expect(graph["9"]!.inputs.images).toEqual(["41", 0]);
   });
 
+  it("generate: the boolean alone enables face detailing — the unset model resolves to the LIVE list's first entry (the pane fallback mirror, never a cross-dialect constant)", async () => {
+    const ok = secondPassTransport("p-adetailer-auto");
+    await backendWith(ok.transport).generate({
+      prompt: "a tavern",
+      model: "graycolor_v18.safetensors",
+      adetailer: true,
+    });
+    const graph = queuedGraph(ok.calls);
+    // The fixture's discovered list: bbox/face_yolov8m.pt is its FIRST entry
+    // — the a1111 extension's bundled face_yolov8n.pt must NEVER appear.
+    expect(graph["40"]!.inputs).toEqual({ model_name: "bbox/face_yolov8m.pt" });
+    expect(graph["41"]!.class_type).toBe("FaceDetailer");
+    expect(graph["9"]!.inputs.images).toEqual(["41", 0]);
+  });
+
   it("generate: without second passes the base graph stays byte-identical — no hires/detailer nodes on the wire", async () => {
     const transport = secondPassTransport("p-plain");
     await backendWith(transport.transport).generate({ prompt: "a tavern", model: "graycolor_v18.safetensors" });

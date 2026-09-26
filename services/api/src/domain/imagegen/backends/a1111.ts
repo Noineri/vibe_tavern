@@ -112,7 +112,7 @@
  *   global — one seam for the txt2img POST, model/sampler/progress GETs.
  */
 
-import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
+import { IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
 
 import type {
   ImageGenAdapterConfig,
@@ -536,12 +536,14 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
           ...(vae !== undefined ? { sd_vae: vae } : {}),
         };
       }
-      // ADetailer (IG-CF15/PG-4 v1): presence = enabled — the extension
-      // script's own arg contract (see the module doc gate).
-      const adetailerModel = setOrUndefined(request.adetailerModel);
-      if (adetailerModel !== undefined) {
+      // ADetailer (IG-CF15/PG-4 v1 → widened 2026-09-27): the boolean is
+      // the switch; the model is the EXPLICIT pick or this dialect's own
+      // default (the extension's bundled lightweight detector — a1111
+      // vocabulary, valid ONLY here; the cross-dialect constant lesson).
+      const adetailerExplicit = setOrUndefined(request.adetailerModel);
+      if (request.adetailer === true || adetailerExplicit !== undefined) {
         body.alwayson_scripts = {
-          ADetailer: { args: [true, { ad_model: adetailerModel }] },
+          ADetailer: { args: [true, { ad_model: adetailerExplicit ?? IMAGE_GEN_ADETAILER_DEFAULT_MODEL }] },
         };
       }
       // Hires-fix (FT-A4): PRESENCE = enabled — enable_hr plus ONLY the

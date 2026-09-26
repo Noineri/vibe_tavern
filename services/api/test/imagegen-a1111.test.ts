@@ -422,6 +422,21 @@ describe("a1111 adapter", () => {
       });
     });
 
+    it("the boolean alone enables the rung — the unset model falls back to THIS dialect's own default (the extension's bundled detector)", async () => {
+      const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
+      const backend = backendWith(transport);
+
+      await backend.generate({ prompt: "a bard", adetailer: true });
+
+      expect(sentJson(calls[0])).toEqual({
+        prompt: "a bard",
+        send_images: true,
+        alwayson_scripts: {
+          ADetailer: { args: [true, { ad_model: "face_yolov8n.pt" }] },
+        },
+      });
+    });
+
     it("omits alwayson_scripts entirely when adetailerModel is absent or blank", async () => {
       const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
       const backend = backendWith(transport);

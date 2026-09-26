@@ -1797,25 +1797,29 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
         finalImage = applyComfyHiresPass(graph, request, secondPassCtx).finalImage;
       }
       // Face detailing (IF-6, comfy dialect — the ADetailer equivalent):
-      // presence of the field = enabled. The Impact Pack FaceDetailer node
-      // must exist (honest config error naming the pack, never a queue-time
-      // blob) and the detector must be in the discovered face list (the
-      // lora fail-closed precedent).
-      const faceDetector = setOrUndefined(request.adetailerModel);
-      if (faceDetector !== undefined) {
+      // the request boolean is the switch; the model is the EXPLICIT pick
+      // or this dialect's own default — the live list's FIRST entry (the
+      // pane control's fallback mirror), never a cross-dialect constant.
+      // The Impact Pack FaceDetailer node must exist (honest config error
+      // naming the pack, never a queue-time blob) and an explicit pick
+      // must be in the discovered face list (the lora fail-closed
+      // precedent).
+      const faceDetectorExplicit = setOrUndefined(request.adetailerModel);
+      if (request.adetailer === true || faceDetectorExplicit !== undefined) {
         if (!(await comfyNodeClassExists(cfg.fetch, cfg.endpoint, "FaceDetailer", request.signal))) {
           throw new ComfyImageGenConfigError(
             "ComfyUI face detailing requires the Impact Pack — the FaceDetailer node was not found on the server",
           );
         }
         const detectors = await fetchComfyFaceDetectors(cfg.fetch, cfg.endpoint, request.signal);
-        if (!detectors.includes(faceDetector)) {
+        const faceDetector = faceDetectorExplicit ?? detectors[0];
+        if (faceDetector === undefined || !detectors.includes(faceDetector)) {
           const candidates =
             detectors.length === 0
               ? "no face bbox models were found in the ultralytics folder"
               : `available: ${detectors.slice(0, 5).join(", ")}${detectors.length > 5 ? ", …" : ""}`;
           throw new ComfyImageGenConfigError(
-            `ComfyUI face detector "${faceDetector}" is not in the discovered list (${candidates}) — reselect it from the face-model list`,
+            `ComfyUI face detector "${faceDetector ?? "(unset)"}" is not in the discovered list (${candidates}) — reselect it from the face-model list`,
           );
         }
         applyComfyFaceDetailerPass(graph, request, { ...secondPassCtx, finalImage, detector: faceDetector });
