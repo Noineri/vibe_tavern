@@ -247,7 +247,15 @@ describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-stat
       fallback: "face_yolov8n.pt",
       labelKey: "image_gen_adetailer",
       modelLabelKey: "image_gen_adetailer_model",
+      stepsLabelKey: "image_gen_adetailer_steps_label",
+      stepsPlaceholder: "20",
+      parseSteps: expect.any(Function),
     });
+    if (ready?.state === "ready") {
+      expect(ready.parseSteps("")).toEqual({ adetailerSteps: undefined });
+      expect(ready.parseSteps("17")).toEqual({ adetailerSteps: 17 });
+      expect(ready.parseSteps("17.5")).toBeNull();
+    }
     expect(buildAdetailerControl({ backend: "a1111", extensions: ["controlnet"], faceDetectors: [] })).toBeNull();
     expect(buildAdetailerControl({ backend: "a1111", extensions: null, faceDetectors: [] })).toBeNull();
   });
@@ -268,6 +276,9 @@ describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-stat
       fallback: "bbox/face_yolov8m.pt",
       labelKey: "image_gen_adetailer",
       modelLabelKey: "image_gen_adetailer_model",
+      stepsLabelKey: "image_gen_adetailer_steps_label",
+      stepsPlaceholder: "20",
+      parseSteps: expect.any(Function),
     });
   });
 

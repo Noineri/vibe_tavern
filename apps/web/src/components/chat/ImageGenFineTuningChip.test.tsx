@@ -1483,6 +1483,14 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     await pickOption("image-gen-ft-adetailer-model", "face_yolov8s.pt");
     await waitFor(() => expect(upsertCalls.length).toBe(2));
     expect(upsertCalls[1].settings).toEqual({ adetailer: true, adetailerModel: "face_yolov8s.pt" });
+
+    const steps = within(adBody as HTMLElement).getByTestId("image-gen-ft-adetailer-steps") as HTMLInputElement;
+    expect(steps.getAttribute("placeholder")).toBe("20");
+    await act(async () => {
+      fireEvent.change(steps, { target: { value: "17" } });
+    });
+    await waitFor(() => expect(upsertCalls.length).toBe(3));
+    expect(upsertCalls[2].settings).toEqual({ adetailer: true, adetailerModel: "face_yolov8s.pt", adetailerSteps: 17 });
   });
 });
 

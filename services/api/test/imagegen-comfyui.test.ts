@@ -1826,14 +1826,14 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
     expect(graph["9"]!.inputs.images).toEqual(["35", 0]);
   });
 
-  it("face detailer (pure): the Impact Pack chain rewrites SaveImage and carries every required input explicitly", () => {
+  it("face detailer (pure): an explicit detail-step override reaches the bbox arm", () => {
     const { graph, ctx } = buildComfyCheckpointWorkflow(
-      { prompt: "a tavern", model: "graycolor_v18.safetensors", steps: 30 },
+      { prompt: "a tavern", model: "graycolor_v18.safetensors", steps: 30, adetailerSteps: 17 },
       "graycolor_v18.safetensors",
     );
     applyComfyFaceDetailerPass(
       graph,
-      { prompt: "a tavern" },
+      { prompt: "a tavern", adetailerSteps: 17 },
       { ...ctx, finalImage: ["8", 0], detector: "bbox/face_yolov8m.pt" },
     );
     expect(graph["40"]!.inputs).toEqual({ model_name: "bbox/face_yolov8m.pt" });
@@ -1848,7 +1848,7 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
       bbox_detector: ["40", 0],
       wildcard: "",
       seed: ctx.seed,
-      steps: 30,
+      steps: 17,
       denoise: 0.5,
       guide_size: 512,
       guide_size_for: true,
@@ -1860,14 +1860,14 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
     expect(graph["9"]!.inputs.images).toEqual(["41", 0]);
   });
 
-  it("detail pass (pure): a segm/ pick rides the SEGS hop — SegmDetectorSEGS on provider slot 1, DetailerForEach on its SEGS, no FaceDetailer", () => {
+  it("detail pass (pure): an explicit detail-step override reaches the segm arm", () => {
     const { graph, ctx } = buildComfyCheckpointWorkflow(
-      { prompt: "a tavern", model: "graycolor_v18.safetensors", steps: 30 },
+      { prompt: "a tavern", model: "graycolor_v18.safetensors", steps: 30, adetailerSteps: 19 },
       "graycolor_v18.safetensors",
     );
     applyComfyFaceDetailerPass(
       graph,
-      { prompt: "a tavern" },
+      { prompt: "a tavern", adetailerSteps: 19 },
       { ...ctx, finalImage: ["8", 0], detector: "segm/person_yolov8m-seg.pt" },
     );
     expect(graph["40"]!.inputs).toEqual({ model_name: "segm/person_yolov8m-seg.pt" });
@@ -1891,7 +1891,7 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
       positive: ["6", 0],
       negative: ["7", 0],
       seed: ctx.seed,
-      steps: 30,
+      steps: 19,
       denoise: 0.5,
       guide_size: 512,
       guide_size_for: true,
@@ -1903,9 +1903,9 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
     expect(graph["9"]!.inputs.images).toEqual(["43", 0]);
   });
 
-  it("face detailer (pure): chains AFTER hires — its image is the second decode", () => {
+  it("face detailer (pure): unset detail steps inherit the first pass and chain after hires", () => {
     const { graph, ctx } = buildComfyCheckpointWorkflow(
-      { prompt: "a tavern", model: "graycolor_v18.safetensors" },
+      { prompt: "a tavern", model: "graycolor_v18.safetensors", steps: 30 },
       "graycolor_v18.safetensors",
     );
     const { finalImage } = applyComfyHiresPass(graph, { prompt: "a tavern", hires: {} }, ctx);
@@ -1915,6 +1915,7 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
       { ...ctx, finalImage, detector: "bbox/face_yolov8m.pt" },
     );
     expect(graph["41"]!.inputs.image).toEqual(["35", 0]);
+    expect(graph["41"]!.inputs.steps).toBe(30);
     expect(graph["9"]!.inputs.images).toEqual(["41", 0]);
   });
 

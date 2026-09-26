@@ -664,6 +664,7 @@
 	"image_gen_model_settings": "Настройки семплеров",
 	"image_gen_adetailer": "Проход детализации (ADetailer)",
 	"image_gen_adetailer_model": "Модель детектора",
+	"image_gen_adetailer_steps_label": "Шаги прохода детализации",
 	"image_gen_adetailer_missing_hint": "На сервере не найден Impact Pack с моделями детекторов — установи ComfyUI-Impact-Pack и положи детекторы (например, face_yolov8m) в models/ultralytics, чтобы включить проход детализации",
 	"image_gen_krea_section": "Настройки Krea 2",
 	"image_gen_krea_creativity": "Расширение промпта",

@@ -540,6 +540,8 @@ export interface ComfySecondPassCtx {
   vae: [string, number];
   seed: number;
   steps: number;
+  /** Explicit detail-pass steps; absent inherits the first pass. */
+  adetailerSteps?: number;
   cfg: number;
   samplerName: string;
   scheduler: string;
@@ -610,6 +612,7 @@ export function buildComfyCheckpointWorkflow(
       vae: vaeRef,
       seed: resolved.seed,
       steps: resolved.steps,
+      adetailerSteps: request.adetailerSteps,
       cfg: resolved.cfg,
       samplerName: resolved.samplerName,
       scheduler: resolved.scheduler,
@@ -659,6 +662,7 @@ export function buildComfyKrea2Workflow(
       vae: [COMFY_NODE_IDS.vae, 0],
       seed: resolved.seed,
       steps: resolved.steps,
+      adetailerSteps: request.adetailerSteps,
       cfg: resolved.cfg,
       samplerName: resolved.samplerName,
       scheduler: resolved.scheduler,
@@ -861,7 +865,7 @@ export function applyComfyFaceDetailerPass(
         positive: [COMFY_NODE_IDS.positive, 0],
         negative: [COMFY_NODE_IDS.negative, 0],
         seed: ctx.seed,
-        steps: ctx.steps,
+        steps: ctx.adetailerSteps ?? ctx.steps,
         cfg: ctx.cfg,
         sampler_name: ctx.samplerName,
         scheduler: ctx.scheduler,
@@ -891,7 +895,7 @@ export function applyComfyFaceDetailerPass(
       bbox_detector: [COMFY_NODE_IDS.faceDetector, 0],
       wildcard: "",
       seed: ctx.seed,
-      steps: ctx.steps,
+      steps: ctx.adetailerSteps ?? ctx.steps,
       cfg: ctx.cfg,
       sampler_name: ctx.samplerName,
       scheduler: ctx.scheduler,

@@ -1015,6 +1015,7 @@ function ImageGenModelSettingsAccordion({
   const vaeName = overlay.vaeName;
   const adetailer = overlay.adetailer === true;
   const adetailerModel = overlay.adetailerModel;
+  const adetailerSteps = overlay.adetailerSteps;
 
   // T1 (TWIN_UNIFICATION step 1): the sampler dropdown's definition —
   // gate, options, label, commit — lives in model-controls; this surface
@@ -1249,6 +1250,7 @@ function ImageGenModelSettingsAccordion({
                     />
                   </div>
                   {adetailer && (
+                    <>
                     <div className="flex flex-col gap-1.5">
                       <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.modelLabelKey)}</span>
                       <DropdownSelect
@@ -1259,6 +1261,22 @@ function ImageGenModelSettingsAccordion({
                         triggerTestId="image-gen-ft-adetailer-model"
                       />
                     </div>
+                    <div className="flex flex-col gap-1.5">
+                      <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.stepsLabelKey)}</span>
+                      <TextInput
+                        value={adetailerSteps === undefined ? "" : String(adetailerSteps)}
+                        onChange={(e) => {
+                          const patch = adetailerControl.parseSteps(e.target.value);
+                          if (patch !== null) commit(patch);
+                        }}
+                        placeholder={adetailerControl.stepsPlaceholder}
+                        inputMode="numeric"
+                        disabled={disabled}
+                        aria-label={t(adetailerControl.stepsLabelKey)}
+                        data-testid="image-gen-ft-adetailer-steps"
+                      />
+                    </div>
+                    </>
                   )}
                 </div>
               )}

@@ -1207,6 +1207,7 @@ export default interface Resources {
     "image_gen_adetailer": "Detail pass (ADetailer)",
     "image_gen_adetailer_missing_hint": "No detector models found on the server — install ComfyUI-Impact-Pack and place detector models (e.g. face_yolov8m) into models/ultralytics to enable the detail pass",
     "image_gen_adetailer_model": "Detector model",
+    "image_gen_adetailer_steps_label": "Detail pass steps",
     "image_gen_advanced": "Advanced",
     "image_gen_assist_hint": "When on, the chosen AI model writes the image prompt from the scene before each generation.",
     "image_gen_assist_model_label": "AI model",

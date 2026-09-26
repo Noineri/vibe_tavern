@@ -658,6 +658,7 @@
 	"image_gen_model_settings": "Model sampler settings",
 	"image_gen_adetailer": "Detail pass (ADetailer)",
 	"image_gen_adetailer_model": "Detector model",
+	"image_gen_adetailer_steps_label": "Detail pass steps",
 	"image_gen_adetailer_missing_hint": "No detector models found on the server — install ComfyUI-Impact-Pack and place detector models (e.g. face_yolov8m) into models/ultralytics to enable the detail pass",
 	"image_gen_krea_section": "Krea 2 controls",
 	"image_gen_krea_creativity": "Prompt expansion",

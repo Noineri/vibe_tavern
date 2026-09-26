@@ -176,6 +176,8 @@ export const imageGenDefaultParamsSchema = z.object({
    *  default (A1111: the extension's bundled lightweight detector;
    *  ComfyUI: the live-probed detector list's pick). */
   adetailerModel: z.string().min(1).optional(),
+  /** Explicit steps for the detail pass; absent inherits the base steps. */
+  adetailerSteps: z.number().optional(),
   /** Krea K2 params — the BASE rung of the two-rung ladder (the overlay's
    *  `krea` block rides on top; absent overlay fields inherit these).
    *  Owner ruling: the pane's Krea 2 section is not gated behind the
@@ -463,6 +465,8 @@ export const imageGenGenerateOverridesSchema = z.object({
   sampler: z.string().optional(),
   seed: z.number().optional(),
   clipSkip: z.number().optional(),
+  /** Explicit detail-pass steps; absent falls back to the profile's stored ladder. */
+  adetailerSteps: z.number().int().optional(),
   /** Enabled LoRAs of this run (CG-C2, chip-draft level): name verbatim
    *  + one strength feeding both strength_model and strength_clip on
    *  ComfyUI (single-slider chip, FT-A5); the A1111 dialect maps the same
@@ -644,6 +648,8 @@ export const imageGenModelSettingsOverlaySchema = z.object({
    *  consumed by BOTH local dialects (A1111: the extension; ComfyUI: the
    *  IF-6 FaceDetailer chain — widened 2026-09-27 from the a1111-only v1). */
   adetailerModel: z.string().optional(),
+  /** Explicit steps for the detail pass; absent inherits the profile base steps. */
+  adetailerSteps: z.number().optional(),
   /** Krea K2 params (IF-11) — the OVERLAY rung of the two-rung ladder
    *  (the profile base's `krea` block sits underneath; absent fields
    *  inherit it): creativity + the generative sliders, read only by

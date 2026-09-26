@@ -3037,7 +3037,7 @@ describe("image-gen routes — generate with ADetailer (IG-CF15/PG-4 v1)", () =>
     };
   }
 
-  test("overlay adetailer:true sends the alwayson script with the chosen face model; disabled or unset sends none", async () => {
+  test("ADetailer steps fold from the profile base and the overlay wins on the wire", async () => {
     const captured: { url?: string; init?: RequestInit } = {};
     const { app, stores } = await makeApp(txt2imgTransport(captured));
     const chatId = await makeChat(stores);
@@ -3045,13 +3045,14 @@ describe("image-gen routes — generate with ADetailer (IG-CF15/PG-4 v1)", () =>
       backend: IMAGE_GEN_BACKENDS.A1111,
       endpoint: "http://127.0.0.1:7860",
       modelId: "sd_xl_refiner",
+      defaultParams: { adetailerSteps: 12 },
     });
 
-    // Enabled WITH a chosen preset → the preset ships.
+    // The overlay's explicit detail steps outrank the profile base.
     const putOn = await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl_refiner`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings: { adetailer: true, adetailerModel: "face_yolov8s.pt" } }),
+      body: JSON.stringify({ settings: { adetailer: true, adetailerModel: "face_yolov8s.pt", adetailerSteps: 17 } }),
     });
     expect(putOn.status).toBe(200);
 
@@ -3064,10 +3065,10 @@ describe("image-gen routes — generate with ADetailer (IG-CF15/PG-4 v1)", () =>
     expect(captured.url).toBe("http://127.0.0.1:7860/sdapi/v1/txt2img");
     let wire = JSON.parse(String(captured.init?.body)) as { alwayson_scripts?: unknown };
     expect(wire.alwayson_scripts).toEqual({
-      ADetailer: { args: [true, { ad_model: "face_yolov8s.pt" }] },
+      ADetailer: { args: [true, { ad_model: "face_yolov8s.pt", ad_use_steps: true, ad_steps: 17 }] },
     });
 
-    // Enabled WITHOUT a preset → the domain default face model ships.
+    // With the overlay steps absent, the profile-base steps still ride.
     await app.request(`/api/image-gen/profiles/${id}/model-settings/sd_xl_refiner`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -3080,7 +3081,7 @@ describe("image-gen routes — generate with ADetailer (IG-CF15/PG-4 v1)", () =>
     });
     wire = JSON.parse(String(captured.init?.body)) as { alwayson_scripts?: unknown };
     expect(wire.alwayson_scripts).toEqual({
-      ADetailer: { args: [true, { ad_model: "face_yolov8n.pt" }] },
+      ADetailer: { args: [true, { ad_model: "face_yolov8n.pt", ad_use_steps: true, ad_steps: 12 }] },
     });
 
     // Flag off → nothing on the wire.

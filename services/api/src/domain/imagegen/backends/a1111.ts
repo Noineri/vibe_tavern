@@ -84,11 +84,12 @@
  *   `sampler_index` (legacy alias), and `script_name`/`script_args` are
  *   never sent — the v1 request interface carries no field for them and
  *   inventing values is banned. The ONE script surface is ADetailer
- *   (IG-CF15/PG-4 v1): when the request carries `adetailerModel`, it ships
- *   as `alwayson_scripts.ADetailer.args = [true, {ad_model}]` — the
- *   extension script's own arg contract (source-pinned: a leading enable
- *   bool + pydantic dicts with `extra=forbid`, an `ad_model` of "None"
- *   means skip, all other fields default server-side). `clip_skip` is
+ *   (IG-CF15/PG-4 v1): it ships as
+ *   `alwayson_scripts.ADetailer.args = [true, {ad_model, ad_use_steps?,
+ *   ad_steps?}]` — the extension script's own arg contract (source-pinned:
+ *   a leading enable bool + pydantic dicts with `extra=forbid`; detail steps
+ *   require both `ad_use_steps: true` and `ad_steps`, otherwise they inherit
+ *   the base pass). `clip_skip` is
  *   likewise absent: it is NOT in the card's enumerated core param
  *   surface (prompt, negative_prompt, steps, cfg_scale, width, height,
  *   seed, sampler_name, scheduler, batch_size, n_iter, restore_faces,
@@ -543,7 +544,17 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       const adetailerExplicit = setOrUndefined(request.adetailerModel);
       if (request.adetailer === true || adetailerExplicit !== undefined) {
         body.alwayson_scripts = {
-          ADetailer: { args: [true, { ad_model: adetailerExplicit ?? IMAGE_GEN_ADETAILER_DEFAULT_MODEL }] },
+          ADetailer: {
+            args: [
+              true,
+              {
+                ad_model: adetailerExplicit ?? IMAGE_GEN_ADETAILER_DEFAULT_MODEL,
+                ...(request.adetailerSteps !== undefined
+                  ? { ad_use_steps: true, ad_steps: request.adetailerSteps }
+                  : {}),
+              },
+            ],
+          },
         };
       }
       // Hires-fix (FT-A4): PRESENCE = enabled — enable_hr plus ONLY the

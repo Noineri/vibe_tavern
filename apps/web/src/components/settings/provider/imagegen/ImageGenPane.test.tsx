@@ -1944,6 +1944,13 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     await openAdvanced(view);
     await pickOption(view, "image-gen-adetailer-model", "face_yolov8s.pt");
     expect((setModelOverlay.mock.calls.at(-1) as unknown[])[0]).toEqual({ adetailerModel: "face_yolov8s.pt" });
+
+    const steps = view.getByTestId("image-gen-adetailer-steps") as HTMLInputElement;
+    expect(steps.getAttribute("placeholder")).toBe("20");
+    await act(async () => {
+      fireEvent.change(steps, { target: { value: "17" } });
+    });
+    expect((setModelOverlay.mock.calls.at(-1) as unknown[])[0]).toEqual({ adetailerSteps: 17 });
   });
 
   it("hidden when the server lacks the extension (a1111, bound)", async () => {
@@ -1982,6 +1989,26 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     // The unbound arm writes defaultParams — NOT the per-model overlay.
     const last = setForm.mock.calls.at(-1)?.[0] as { defaultParams?: { adetailer?: boolean } };
     expect(last?.defaultParams?.adetailer).toBe(true);
+
+    // A fresh enabled base arm exposes the same optional field and routes it
+    // through setParam to defaultParams even with the bind toggle off.
+    view.unmount();
+    const enabled = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha", defaultParams: { adetailer: true } }),
+          modelOverlay: null,
+          setForm,
+        })}
+      />,
+    );
+    await openAdvanced(enabled);
+    const steps = enabled.getByTestId("image-gen-adetailer-steps") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(steps, { target: { value: "19" } });
+    });
+    const base = setForm.mock.calls.at(-1)?.[0] as { defaultParams?: { adetailerSteps?: number } };
+    expect(base?.defaultParams?.adetailerSteps).toBe(19);
   });
 
   it("hidden on cloud backends — no extension surface at all", async () => {

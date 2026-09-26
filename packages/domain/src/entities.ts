@@ -1244,6 +1244,8 @@ export interface ImageGenDefaultParams {
    *  default (A1111: the extension's bundled lightweight detector;
    *  ComfyUI: the live-probed detector list's pick). */
   adetailerModel?: string;
+  /** Explicit detail-pass steps; absent inherits the base generation steps. */
+  adetailerSteps?: number;
   /** Krea K2 params — the BASE rung of the two-rung ladder (the per-model
    *  overlay's `krea` block rides on top; absent overlay fields inherit
    *  these). Only the krea dialect reads the block; other backends ignore
@@ -1417,6 +1419,8 @@ export interface ImageGenModelSettingsOverlay {
   /** Face-model preset for ADetailer (one of IMAGE_GEN_ADETAILER_FACE_MODELS;
    *  absent = the default entry). Ignored unless `adetailer` is true. */
   adetailerModel?: string;
+  /** Explicit detail-pass steps; absent inherits the profile base steps. */
+  adetailerSteps?: number;
   /** Krea K2 params (IF-11) — the OVERLAY rung of the two-rung ladder:
    *  creativity (prompt-expansion mode; absent = inherit the profile
    *  base, then the VT policy default "raw") + the generative sliders

@@ -437,6 +437,22 @@ describe("a1111 adapter", () => {
       });
     });
 
+    it("sends explicit detail steps with the extension's enabling flag and omits both keys when unset", async () => {
+      const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
+      const backend = backendWith(transport);
+
+      await backend.generate({ prompt: "a bard", adetailer: true, adetailerSteps: 17 });
+      expect(sentJson(calls[0]).alwayson_scripts).toEqual({
+        ADetailer: { args: [true, { ad_model: "face_yolov8n.pt", ad_use_steps: true, ad_steps: 17 }] },
+      });
+
+      await backend.generate({ prompt: "a bard", adetailer: true });
+      const args = (sentJson(calls[1]).alwayson_scripts as { ADetailer: { args: [boolean, Record<string, unknown>] } })
+        .ADetailer.args[1];
+      expect("ad_use_steps" in args).toBe(false);
+      expect("ad_steps" in args).toBe(false);
+    });
+
     it("omits alwayson_scripts entirely when adetailerModel is absent or blank", async () => {
       const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
       const backend = backendWith(transport);

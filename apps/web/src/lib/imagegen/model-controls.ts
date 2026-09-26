@@ -170,6 +170,10 @@ export type AdetailerControlSpec =
       readonly fallback: string;
       readonly labelKey: "image_gen_adetailer";
       readonly modelLabelKey: "image_gen_adetailer_model";
+      readonly stepsLabelKey: "image_gen_adetailer_steps_label";
+      readonly stepsPlaceholder: "20";
+      /** Empty clears the stored override; an integer commits it. */
+      parseSteps(raw: string): { adetailerSteps: number | undefined } | null;
     }
   | {
       readonly state: "unavailable";
@@ -199,6 +203,9 @@ export function buildAdetailerControl(input: {
       fallback: IMAGE_GEN_ADETAILER_DEFAULT_MODEL,
       labelKey: "image_gen_adetailer",
       modelLabelKey: "image_gen_adetailer_model",
+      stepsLabelKey: "image_gen_adetailer_steps_label",
+      stepsPlaceholder: "20",
+      parseSteps,
     };
   }
 
@@ -216,7 +223,17 @@ export function buildAdetailerControl(input: {
     fallback: input.faceDetectors[0]!,
     labelKey: "image_gen_adetailer",
     modelLabelKey: "image_gen_adetailer_model",
+    stepsLabelKey: "image_gen_adetailer_steps_label",
+    stepsPlaceholder: "20",
+    parseSteps,
   };
+}
+
+function parseSteps(raw: string): { adetailerSteps: number | undefined } | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return { adetailerSteps: undefined };
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) ? { adetailerSteps: parsed } : null;
 }
 
 /**

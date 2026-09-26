@@ -2433,6 +2433,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       {t(adetailerControl.hintKey)}
                     </span>
                   ) : params.adetailer === true && (
+                    <>
                     <div className="flex flex-col gap-1.5">
                       <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(adetailerControl.modelLabelKey)}</span>
                       <DropdownSelect
@@ -2442,6 +2443,21 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                         triggerTestId="image-gen-adetailer-model"
                       />
                     </div>
+                    <div className="flex flex-col gap-1.5">
+                      <span className={cn(lblCls, "!mb-0 font-ui text-t2")}>{t(adetailerControl.stepsLabelKey)}</span>
+                      <TextInput
+                        value={params.adetailerSteps === undefined ? "" : String(params.adetailerSteps)}
+                        onChange={(e) => {
+                          const patch = adetailerControl.parseSteps(e.target.value);
+                          if (patch !== null) setParam(patch);
+                        }}
+                        placeholder={adetailerControl.stepsPlaceholder}
+                        inputMode="numeric"
+                        aria-label={t(adetailerControl.stepsLabelKey)}
+                        data-testid="image-gen-adetailer-steps"
+                      />
+                    </div>
+                    </>
                   )}
                 </div>
               )}

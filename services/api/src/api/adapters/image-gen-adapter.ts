@@ -923,6 +923,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const adetailerEnabled = overlay.adetailer ?? defaults.adetailer;
     const adetailerModel =
       overlay.adetailerModel?.trim() || defaults.adetailerModel?.trim() || undefined;
+    const adetailerSteps = overlay.adetailerSteps ?? defaults.adetailerSteps;
     // Krea K2 params (IF-11): the two-rung ladder — the per-model overlay
     // block over the profile base, merged PER FIELD (an absent overlay
     // field inherits the base; both absent = the policy defaults inside
@@ -1049,6 +1050,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(clipSkip !== undefined ? { clipSkip } : {}),
       ...(adetailerEnabled === true ? { adetailer: true } : {}),
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
+      ...(adetailerSteps !== undefined ? { adetailerSteps } : {}),
       ...(krea !== undefined ? { krea } : {}),
       ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
       ...(hires !== undefined ? { hires } : {}),

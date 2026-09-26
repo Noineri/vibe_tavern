@@ -111,6 +111,8 @@ export interface ImageGenGenerateRequest {
    *  live-probed list's first entry) — never a cross-dialect constant
    *  (the upscaler-label lesson). */
   adetailerModel?: string;
+  /** Explicit detail-pass steps; absent inherits this request's base steps. */
+  adetailerSteps?: number;
   /** Enabled LoRAs of this run (CG-C2, capability-gated backends): each
    *  entry maps onto the backend's own wire — ComfyUI threads them as
    *  LoraLoader nodes (one strength feeding strength_model +
