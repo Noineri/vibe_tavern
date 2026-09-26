@@ -75,8 +75,8 @@ import type {
   StoreContainer,
   UpdateImageGenProfileData,
 } from "@vibe-tavern/db";
-import type { Attachment, ImageGenHiresBlock, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance, ImageGenBackendType, ImageGenCapabilityFlags } from "@vibe-tavern/domain";
-import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, IMAGE_PROMPT_FAMILIES, PROXY_MODE } from "@vibe-tavern/domain";
+import type { Attachment, ImageGenHiresBlock, ImageGenModelSettings, ImageGenProfile, ImageGenSlotProvenance } from "@vibe-tavern/domain";
+import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, IMAGE_PROMPT_FAMILIES, PROXY_MODE, resolveImageGenCapabilities } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
 import {
@@ -174,22 +174,6 @@ export interface ImageGenAssistDeps {
 
 // ─── Wire projections ────────────────────────────────────────────────────────
 
-/** Overlay the current static-table graduation flags onto a stored
- *  capability snapshot — the flags that land on a backend AFTER profiles
- *  were saved (CG-C2 loras, FT-A4 hires, IF-6 comfy hires). Static wins
- *  BOTH ways: a stale-absent mirror gains the flag, a stale-present mirror
- *  on a backend that never had it cannot keep it either. */
-function overlayGraduationFlags(
-  backend: ImageGenBackendType,
-  stored: ImageGenCapabilityFlags,
-): ImageGenCapabilityFlags {
-  const flags = { ...stored };
-  const staticFlags = IMAGE_GEN_BACKEND_CAPABILITIES[backend];
-  flags.supportsLoras = staticFlags.supportsLoras === true;
-  flags.supportsHiresFix = staticFlags.supportsHiresFix === true;
-  return flags;
-}
-
 /** IG-1 key rule (the TE2-16/ST-1 projection): the secret lives in the typed
  *  `apiKey` column and is reported as `hasStoredApiKey` — it never crosses
  *  the boundary on a read; every JSON blob was strip-on-write in the store. */
@@ -208,14 +192,10 @@ function toClientProfile(profile: ImageGenProfile): ImageGenProfileValue {
     llmAssistEnabled: profile.llmAssistEnabled,
     qualityLayerEnabled: profile.qualityLayerEnabled,
     familySource: profile.familySource,
-    // IF-6 (2026-09-24): the GRADUATION flags (supportsLoras / supportsHiresFix)
-    // are overlaid from the CURRENT static table by backend — the stored
-    // snapshot is a save-time cache that goes stale the moment a backend
-    // graduates (the progress-gate staleness incident, 2026-09-18: a
-    // post-graduation mirror hid a live feature from the owner). The
-    // editor keeps snapshotting on save (the create contract is
-    // unchanged); reads never serve a stale graduation flag again.
-    capabilities: overlayGraduationFlags(profile.backend, profile.capabilities),
+    // Graduation flags resolve at the profile-read seam: a snapshot saved
+    // before a backend gained a capability inherits current vendor truth,
+    // while an explicit stored value remains authoritative.
+    capabilities: resolveImageGenCapabilities(profile.backend, profile.capabilities),
     isDefault: profile.isDefault,
     sortOrder: profile.sortOrder,
     createdAt: profile.createdAt,

@@ -113,6 +113,11 @@ export const imageGenCapabilityFlagsSchema = z.object({
   /** LoRA selection (CG-C2/FT-A4) — optional: absent = false, graduates
    *  per backend (ComfyUI now; A1111 with FT-A4). */
   supportsLoras: z.boolean().optional(),
+  /** Advanced scalar controls — optional by design: absent = false, so the
+   *  UI renders only fields the adapter actually wires. */
+  supportsSteps: z.boolean().optional(),
+  supportsCfgScale: z.boolean().optional(),
+  supportsClipSkip: z.boolean().optional(),
   /** Hires-fix second pass (FT-A4) — the supportsLoras twin: absent =
    *  false, A1111 dialect today. */
   supportsHiresFix: z.boolean().optional(),

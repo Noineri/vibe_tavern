@@ -135,6 +135,10 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsNegativePrompt: true,
     supportsSamplers: true,
     supportsSeed: true,
+    // Wire: a1111.ts:91-95 enumerates steps/cfg_scale and deliberately
+    // excludes clip_skip from this dialect's request surface.
+    supportsSteps: true,
+    supportsCfgScale: true,
     sizeSupport: { kind: "free" },
     noApiKey: true,
     supportsLiveProgress: true,
@@ -156,6 +160,11 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsNegativePrompt: true,
     supportsSamplers: true,
     supportsSeed: true,
+    // Wire: comfyui.ts:400-402 reads clipSkip/steps/cfgScale; :452-457
+    // materializes CLIPSetLastLayer when clip skip is supplied.
+    supportsSteps: true,
+    supportsCfgScale: true,
+    supportsClipSkip: true,
     sizeSupport: { kind: "free" },
     noApiKey: true,
     supportsLiveProgress: true,
@@ -187,6 +196,9 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsNegativePrompt: true,
     supportsSamplers: false,
     supportsSeed: true,
+    // Wire: openai-images-family.ts:68-69 maps steps and guidance scale.
+    supportsSteps: true,
+    supportsCfgScale: true,
     sizeSupport: { kind: "free" },
     noApiKey: false,
     supportsLiveProgress: false,
@@ -214,6 +226,10 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsNegativePrompt: true,
     supportsSamplers: false,
     supportsSeed: true,
+    // Wire: openai-images-family.ts:126-127 maps num_inference_steps and
+    // guidance_scale for SiliconFlow.
+    supportsSteps: true,
+    supportsCfgScale: true,
     sizeSupport: {
       kind: "vendor-set",
       sizes: [
@@ -528,6 +544,9 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsNegativePrompt: true,
     supportsSamplers: true,
     supportsSeed: true,
+    // Wire: nim.ts:266/276/283 map cfg_scale; :288 maps shared steps.
+    supportsSteps: true,
+    supportsCfgScale: true,
     sizeSupport: { kind: "free" },
     noApiKey: false,
     supportsLiveProgress: false,
@@ -552,6 +571,9 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsNegativePrompt: false,
     supportsSamplers: false,
     supportsSeed: true,
+    // Wire: raw-binary.ts:370-371 maps num_inference_steps/guidance_scale.
+    supportsSteps: true,
+    supportsCfgScale: true,
     sizeSupport: { kind: "free" },
     noApiKey: false,
     supportsLiveProgress: false,
@@ -574,6 +596,9 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsNegativePrompt: true,
     supportsSamplers: false,
     supportsSeed: true,
+    // Wire: raw-binary.ts:457-458 maps num_inference_steps/guidance_scale.
+    supportsSteps: true,
+    supportsCfgScale: true,
     sizeSupport: { kind: "free" },
     noApiKey: false,
     supportsLiveProgress: false,
@@ -622,6 +647,9 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsNegativePrompt: true,
     supportsSamplers: false,
     supportsSeed: true,
+    // Wire: stability.ts:247-252 maps cfg_scale for SD3 only; :254-255
+    // confirms steps are never sent.
+    supportsCfgScale: true,
     sizeSupport: { kind: "free" },
     noApiKey: false,
     supportsLiveProgress: false,
@@ -673,6 +701,10 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsNegativePrompt: true,
     supportsSamplers: false,
     supportsSeed: true,
+    // Wire: cloudflare.ts:221 uses steps for schnell; :229-230 maps SDXL
+    // num_steps/guidance. The per-model adapter gate owns that split.
+    supportsSteps: true,
+    supportsCfgScale: true,
     sizeSupport: { kind: "free" },
     noApiKey: false,
     supportsLiveProgress: false,
@@ -699,6 +731,9 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsNegativePrompt: true,
     supportsSamplers: true,
     supportsSeed: true,
+    // Wire: aihorde.ts:287-288 maps steps/cfg_scale.
+    supportsSteps: true,
+    supportsCfgScale: true,
     sizeSupport: { kind: "free" },
     noApiKey: true,
     supportsLiveProgress: false,
@@ -948,3 +983,21 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     paramRanges: {},
   },
 };
+
+/** Resolve flags that graduated after a profile's capability snapshot was
+ *  saved. An absent stored flag inherits static vendor truth, while an
+ *  explicit stored value (true or false) always wins. */
+export function resolveImageGenCapabilities(
+  backend: ImageGenBackendType,
+  stored: ImageGenCapabilityFlags,
+): ImageGenCapabilityFlags {
+  const table = IMAGE_GEN_BACKEND_CAPABILITIES[backend];
+  return {
+    ...stored,
+    supportsLoras: stored.supportsLoras ?? table.supportsLoras,
+    supportsHiresFix: stored.supportsHiresFix ?? table.supportsHiresFix,
+    supportsSteps: stored.supportsSteps ?? table.supportsSteps,
+    supportsCfgScale: stored.supportsCfgScale ?? table.supportsCfgScale,
+    supportsClipSkip: stored.supportsClipSkip ?? table.supportsClipSkip,
+  };
+}

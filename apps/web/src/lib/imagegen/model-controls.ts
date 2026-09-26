@@ -22,9 +22,9 @@
 import {
   IMAGE_GEN_BACKENDS,
   IMAGE_GEN_PARAM_RANGES,
+  type ImageGenCapabilityFlags,
   type ImageGenKreaParams,
   type ImageGenParamRange,
-  type ImageGenParamRanges,
 } from "@vibe-tavern/domain";
 import type { ImageGenBackendValue, ImageGenSchedulerInfoValue } from "@vibe-tavern/api-contracts";
 
@@ -235,26 +235,43 @@ export interface ScalarSliderSpec {
   commit(value: number): Partial<Record<ScalarSliderField, number>>;
 }
 
-export function buildScalarSliders(paramRanges: ImageGenParamRanges | undefined): ScalarSliderSpec[] {
+export type ScalarSliders = readonly [
+  ScalarSliderSpec | undefined,
+  ScalarSliderSpec | undefined,
+  ScalarSliderSpec | undefined,
+];
+
+/** Fixed slots preserve the pane's positional field contract while absent
+ *  capability flags remove the corresponding control from both renderers. */
+export function buildScalarSliders(
+  capabilities: Pick<ImageGenCapabilityFlags, "supportsSteps" | "supportsCfgScale" | "supportsClipSkip" | "paramRanges">,
+): ScalarSliders {
+  const paramRanges = capabilities.paramRanges;
   return [
-    {
-      field: "steps",
-      labelKey: "image_gen_steps_label",
-      range: paramRanges?.steps ?? IMAGE_GEN_PARAM_RANGES.steps,
-      commit: (steps) => ({ steps }),
-    },
-    {
-      field: "cfgScale",
-      labelKey: "image_gen_cfg_label",
-      range: paramRanges?.cfgScale ?? IMAGE_GEN_PARAM_RANGES.cfgScale,
-      commit: (cfgScale) => ({ cfgScale }),
-    },
-    {
-      field: "clipSkip",
-      labelKey: "image_gen_clip_skip_label",
-      range: paramRanges?.clipSkip ?? IMAGE_GEN_PARAM_RANGES.clipSkip,
-      commit: (clipSkip) => ({ clipSkip }),
-    },
+    capabilities.supportsSteps
+      ? {
+          field: "steps",
+          labelKey: "image_gen_steps_label",
+          range: paramRanges?.steps ?? IMAGE_GEN_PARAM_RANGES.steps,
+          commit: (steps) => ({ steps }),
+        }
+      : undefined,
+    capabilities.supportsCfgScale
+      ? {
+          field: "cfgScale",
+          labelKey: "image_gen_cfg_label",
+          range: paramRanges?.cfgScale ?? IMAGE_GEN_PARAM_RANGES.cfgScale,
+          commit: (cfgScale) => ({ cfgScale }),
+        }
+      : undefined,
+    capabilities.supportsClipSkip
+      ? {
+          field: "clipSkip",
+          labelKey: "image_gen_clip_skip_label",
+          range: paramRanges?.clipSkip ?? IMAGE_GEN_PARAM_RANGES.clipSkip,
+          commit: (clipSkip) => ({ clipSkip }),
+        }
+      : undefined,
   ];
 }
 
@@ -270,7 +287,8 @@ export interface SeedFieldSpec {
   parse(raw: string): { seed: number | undefined } | null;
 }
 
-export function buildSeedField(): SeedFieldSpec {
+export function buildSeedField(input: Pick<ImageGenCapabilityFlags, "supportsSeed">): SeedFieldSpec | null {
+  if (!input.supportsSeed) return null;
   return {
     labelKey: "image_gen_seed_label",
     parse: (raw) => {

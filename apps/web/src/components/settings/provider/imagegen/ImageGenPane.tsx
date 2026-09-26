@@ -1703,13 +1703,11 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const localStatus: LocalConnectionStatus = imageGen.samplerStatusByProfile[profileId] ?? "unknown";
   const localOffline = isLocalBackend && localStatus === "offline";
   const caps = form.capabilities;
-  // IG-CF5: slider ranges resolve MIRROR-FIRST (paramRanges is a declared
-  // schema field — it survives the zod boundary) — now through the shared
-  // T4 descriptors (model-controls), the ONE resolution both surfaces read.
-  const paramRanges = caps.paramRanges;
-  const [stepsSlider, cfgSlider, clipSkipSlider] = buildScalarSliders(paramRanges);
+  // IG-CF5: scalar controls resolve MIRROR-FIRST through the shared T4
+  // descriptors, whose capability gate removes fields the backend never wires.
+  const [stepsSlider, cfgSlider, clipSkipSlider] = buildScalarSliders(caps);
   // T5: the optional seed — the ONE parse lives in the descriptor.
-  const seedControl = buildSeedField();
+  const seedControl = buildSeedField(caps);
   const bound = imageGen.modelOverlay !== null;
   const overlay = imageGen.modelOverlay;
   // The SELECTED model's cache entry (comfyui dialect enrichment, CG-B1):
@@ -2305,45 +2303,53 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   />
                 </div>
               )}
-              <SamplerSliderField
-                label={t(stepsSlider.labelKey)}
-                value={params.steps}
-                onChange={(steps) => setParam(stepsSlider.commit(steps))}
-                range={stepsSlider.range}
-                rangeTestId="image-gen-range-steps"
-                cellTestId="image-gen-field-steps"
-              />
-              <SamplerSliderField
-                label={t(cfgSlider.labelKey)}
-                value={params.cfgScale}
-                onChange={(cfgScale) => setParam(cfgSlider.commit(cfgScale))}
-                range={cfgSlider.range}
-                rangeTestId="image-gen-range-cfg"
-                cellTestId="image-gen-field-cfg"
-              />
+              {stepsSlider && (
+                <SamplerSliderField
+                  label={t(stepsSlider.labelKey)}
+                  value={params.steps}
+                  onChange={(steps) => setParam(stepsSlider.commit(steps))}
+                  range={stepsSlider.range}
+                  rangeTestId="image-gen-range-steps"
+                  cellTestId="image-gen-field-steps"
+                />
+              )}
+              {cfgSlider && (
+                <SamplerSliderField
+                  label={t(cfgSlider.labelKey)}
+                  value={params.cfgScale}
+                  onChange={(cfgScale) => setParam(cfgSlider.commit(cfgScale))}
+                  range={cfgSlider.range}
+                  rangeTestId="image-gen-range-cfg"
+                  cellTestId="image-gen-field-cfg"
+                />
+              )}
               {/* T5: the optional seed — label + numeric TextInput parsed by
                   the ONE descriptor parse ("" → inherit; garbage → no commit).
                   A 0..2^32 slider is meaningless here (owner-approved). */}
-              <div className="min-w-0">
-                <label className={lblCls}>{t(seedControl.labelKey)}</label>
-                <TextInput
-                  inputMode="numeric"
-                  data-testid="image-gen-field-seed"
-                  value={params.seed === undefined ? "" : String(params.seed)}
-                  onChange={(e) => {
-                    const patch = seedControl.parse(e.target.value);
-                    if (patch !== null) setParam({ seed: patch.seed });
-                  }}
+              {seedControl && (
+                <div className="min-w-0">
+                  <label className={lblCls}>{t(seedControl.labelKey)}</label>
+                  <TextInput
+                    inputMode="numeric"
+                    data-testid="image-gen-field-seed"
+                    value={params.seed === undefined ? "" : String(params.seed)}
+                    onChange={(e) => {
+                      const patch = seedControl.parse(e.target.value);
+                      if (patch !== null) setParam({ seed: patch.seed });
+                    }}
+                  />
+                </div>
+              )}
+              {clipSkipSlider && (
+                <SamplerSliderField
+                  label={t(clipSkipSlider.labelKey)}
+                  value={params.clipSkip}
+                  onChange={(clipSkip) => setParam(clipSkipSlider.commit(clipSkip))}
+                  range={clipSkipSlider.range}
+                  rangeTestId="image-gen-range-clip-skip"
+                  cellTestId="image-gen-field-clip-skip"
                 />
-              </div>
-              <SamplerSliderField
-                label={t(clipSkipSlider.labelKey)}
-                value={params.clipSkip}
-                onChange={(clipSkip) => setParam(clipSkipSlider.commit(clipSkip))}
-                range={clipSkipSlider.range}
-                rangeTestId="image-gen-range-clip-skip"
-                cellTestId="image-gen-field-clip-skip"
-              />
+              )}
               {/* Krea 2 generative controls (T6, TWIN_UNIFICATION step 2): the
                   pane is the section's HOME — rendered from the same
                   model-controls descriptors the chip's accordion reads.

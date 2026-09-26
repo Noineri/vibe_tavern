@@ -73,34 +73,49 @@ describe("model-controls — buildKreaTwoControls (T6: the pane section's home +
   });
 });
 
-describe("model-controls — buildScalarSliders (T4: the ONE mirror-first range resolution)", () => {
-  test("absent mirror → the global defaults (steps 1–150/1, cfg 1–30/0.5, clip-skip 1–12/1)", () => {
-    const sliders = buildScalarSliders(undefined);
-    expect(sliders.map((slider) => [slider.field, slider.range])).toEqual([
-      ["steps", { min: 1, max: 150, step: 1 }],
-      ["cfgScale", { min: 1, max: 30, step: 0.5 }],
-      ["clipSkip", { min: 1, max: 12, step: 1 }],
-    ]);
+describe("model-controls — scalar capability gates (T4/T5)", () => {
+  test("a krea-style capability mirror renders no scalar sliders but keeps seed", () => {
+    const sliders = buildScalarSliders({});
+    expect(sliders).toEqual([undefined, undefined, undefined]);
+    expect(buildSeedField({ supportsSeed: true })).not.toBeNull();
   });
 
-  test("a declared mirror override wins for ITS field only; siblings fall back to globals", () => {
-    const sliders = buildScalarSliders({ steps: { min: 2, max: 60, step: 2 } });
-    expect(sliders[0]!.range).toEqual({ min: 2, max: 60, step: 2 });
-    expect(sliders[1]!.range).toEqual({ min: 1, max: 30, step: 0.5 });
-    expect(sliders[2]!.range).toEqual({ min: 1, max: 12, step: 1 });
+  test("a seed-less mirror renders neither scalar sliders nor seed", () => {
+    const sliders = buildScalarSliders({});
+    expect(sliders).toEqual([undefined, undefined, undefined]);
+    expect(buildSeedField({ supportsSeed: false })).toBeNull();
   });
 
-  test("commits are per-field scalars (the overlay/base patch shape both surfaces share)", () => {
-    const [steps, cfg, clip] = buildScalarSliders(undefined);
-    expect(steps.commit(30)).toEqual({ steps: 30 });
-    expect(cfg.commit(4.5)).toEqual({ cfgScale: 4.5 });
-    expect(clip.commit(2)).toEqual({ clipSkip: 2 });
+  test("a1111 keeps stable slots for steps and cfg only; its deliberately unwired clip skip stays absent", () => {
+    const [steps, cfg, clip] = buildScalarSliders({
+      supportsSteps: true,
+      supportsCfgScale: true,
+      paramRanges: { steps: { min: 2, max: 60, step: 2 } },
+    });
+    expect(steps!.range).toEqual({ min: 2, max: 60, step: 2 });
+    expect(cfg!.range).toEqual({ min: 1, max: 30, step: 0.5 });
+    expect(clip).toBeUndefined();
+    expect(steps!.commit(30)).toEqual({ steps: 30 });
+    expect(cfg!.commit(4.5)).toEqual({ cfgScale: 4.5 });
+  });
+
+  test("comfyui is the only all-four fixture: every scalar slot and seed are present", () => {
+    const [steps, cfg, clip] = buildScalarSliders({
+      supportsSteps: true,
+      supportsCfgScale: true,
+      supportsClipSkip: true,
+    });
+    expect(steps!.range).toEqual({ min: 1, max: 150, step: 1 });
+    expect(cfg!.range).toEqual({ min: 1, max: 30, step: 0.5 });
+    expect(clip!.range).toEqual({ min: 1, max: 12, step: 1 });
+    expect(clip!.commit(2)).toEqual({ clipSkip: 2 });
+    expect(buildSeedField({ supportsSeed: true })).not.toBeNull();
   });
 });
 
 describe("model-controls — buildSeedField (T5: the ONE seed parse — garbage never wipes)", () => {
   test("empty (or whitespace) → inherit (undefined); a finite number (any sign) → the value", () => {
-    const seed = buildSeedField();
+    const seed = buildSeedField({ supportsSeed: true })!;
     expect(seed.parse("")).toEqual({ seed: undefined });
     expect(seed.parse("   ")).toEqual({ seed: undefined });
     expect(seed.parse("42")).toEqual({ seed: 42 });
@@ -108,7 +123,7 @@ describe("model-controls — buildSeedField (T5: the ONE seed parse — garbage 
   });
 
   test("non-finite garbage → null = NO COMMIT (the unified pane semantics)", () => {
-    const seed = buildSeedField();
+    const seed = buildSeedField({ supportsSeed: true })!;
     expect(seed.parse("12abc")).toBeNull();
     expect(seed.parse("abc")).toBeNull();
   });

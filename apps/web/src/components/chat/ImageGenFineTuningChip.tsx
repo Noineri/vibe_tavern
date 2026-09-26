@@ -49,7 +49,7 @@ import { Toggle } from "../shared/Toggle.js";
 import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
-import { buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderField } from "../../lib/imagegen/model-controls.js";
+import { buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderField, type ScalarSliderSpec } from "../../lib/imagegen/model-controls.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -76,7 +76,7 @@ import {
   type ImageGenPromptCap,
 } from "../../api/image-gen-api.js";
 import type { ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenModelSettingsOverlayValue, ImageGenBackendValue } from "@vibe-tavern/api-contracts";
-import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, hasAdetailerExtension, type ImageGenerationMode, type ImageSizeOrientation, type ImageGenParamRanges } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_GEN_ADETAILER_FACE_MODELS, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, hasAdetailerExtension, type ImageGenerationMode, type ImageSizeOrientation } from "@vibe-tavern/domain";
 import { EMPTY_IMAGE_GEN_DRAFT, buildDraftGenerateInput, resolveEffectiveImageGenProfile, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useOrderedMessages } from "../../stores/snapshot-store.js";
 import { ImageGenLoraSection } from "./ImageGenLoraSection.js";
@@ -646,7 +646,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
                 profileId={effective.id}
                 modelId={draft.model}
                 supportsSamplers={supportsSamplers}
-                paramRanges={caps?.paramRanges}
+                capabilities={effective.capabilities}
                 samplers={supportsSamplers ? (samplers ?? []) : []}
                 backend={effective.backend}
                 modelTemplate={selectedModelEntry?.template}
@@ -740,7 +740,7 @@ function ImageGenModelSettingsAccordion({
   profileId,
   modelId,
   supportsSamplers,
-  paramRanges,
+  capabilities,
   samplers,
   backend,
   modelTemplate,
@@ -749,9 +749,9 @@ function ImageGenModelSettingsAccordion({
   profileId: string;
   modelId: string;
   supportsSamplers: boolean;
-  /** T4: the capability mirror's declared slider-range overrides — the
-   *  accordion feeds them to the shared descriptors (mirror-first). */
-  paramRanges: ImageGenParamRanges | undefined;
+  /** The profile's capability mirror gates the scalar controls and carries
+   *  their per-field range overrides. */
+  capabilities: ImageGenProfileRecord["capabilities"];
   samplers: ImageGenSamplerInfoValue[];
   /** The profile's backend discriminator (CG-B2) — ONE prop, the pane's
    *  guard trio derived inside: a1111 (extensions probe → ADetailer), the
@@ -966,11 +966,10 @@ function ImageGenModelSettingsAccordion({
   // guard still rides the same isLocalDialectBackend predicate).
   const schedulerControl = buildSchedulerControl({ backend });
   // T4/T5 (TWIN_UNIFICATION step 3): the scalar sliders + seed ride the
-  // shared descriptors — ranges resolve mirror-first (the chip's old
-  // global-only read was the silent drift), the seed parse is the ONE
-  // copy (garbage commits nothing now, it used to wipe the seed).
-  const scalarSliders = buildScalarSliders(paramRanges);
-  const seedControl = buildSeedField();
+  // shared descriptors — capability flags gate dead fields before either
+  // renderer sees them; ranges still resolve mirror-first.
+  const scalarSliders = buildScalarSliders(capabilities);
+  const seedControl = buildSeedField(capabilities);
 
   return (
     <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-model-settings">
@@ -1063,7 +1062,7 @@ function ImageGenModelSettingsAccordion({
             </>
           )}
 
-          {scalarSliders.map((slider) => (
+          {scalarSliders.filter((slider): slider is ScalarSliderSpec => slider !== undefined).map((slider) => (
             <SliderField
               key={slider.field}
               label={t(slider.labelKey)}
@@ -1077,20 +1076,22 @@ function ImageGenModelSettingsAccordion({
             />
           ))}
 
-          <div className="flex flex-col gap-1.5">
-            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(seedControl.labelKey)}</span>
-            <TextInput
-              value={seed === undefined ? "" : String(seed)}
-              onChange={(e) => {
-                const patch = seedControl.parse(e.target.value);
-                if (patch !== null) commit(patch);
-              }}
-              placeholder="—"
-              disabled={disabled}
-              aria-label={t(seedControl.labelKey)}
-              data-testid="image-gen-ft-overlay-seed"
-            />
-          </div>
+          {seedControl && (
+            <div className="flex flex-col gap-1.5">
+              <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(seedControl.labelKey)}</span>
+              <TextInput
+                value={seed === undefined ? "" : String(seed)}
+                onChange={(e) => {
+                  const patch = seedControl.parse(e.target.value);
+                  if (patch !== null) commit(patch);
+                }}
+                placeholder="—"
+                disabled={disabled}
+                aria-label={t(seedControl.labelKey)}
+                data-testid="image-gen-ft-overlay-seed"
+              />
+            </div>
+          )}
 
           {saveError && (
             <span className="text-[calc(var(--ui-fs)-3px)] text-danger">{t("image_gen_overlay_save_failed")}</span>

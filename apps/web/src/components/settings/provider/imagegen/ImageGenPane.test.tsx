@@ -239,6 +239,10 @@ function makeCaps(overrides: Partial<ImageGenRecord["capabilities"]> = {}): Imag
   };
 }
 
+function scalarCaps(overrides: Partial<ImageGenRecord["capabilities"]> = {}): ImageGenRecord["capabilities"] {
+  return makeCaps({ supportsSeed: true, supportsSteps: true, supportsCfgScale: true, ...overrides });
+}
+
 function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
   return {
     id: "ig1",
@@ -1226,37 +1230,55 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     expect(view2.queryByTestId("image-gen-field-scheduler")).toBeNull();
   });
 
-  it("advanced expand reveals steps/cfg/seed/clip-skip; seed stays EMPTY, sliders show anchors — nothing is a committed default (IG-CF13)", async () => {
-    const view = render(<ImageGenPane imageGen={makeImageGen()} />);
-    await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
-    expect(view.queryByTestId("image-gen-advanced-body")).toBeNull();
-    await act(async () => {
-      fireEvent.click(view.getByText("image_gen_advanced"));
-    });
-    await waitFor(() => expect(view.getByTestId("image-gen-advanced-body")).toBeTruthy());
-    // Seed keeps its empty-able plain numeric cell (CF13 ruling: seed stays
-    // a plain optional field). The three slider cells show their anchors
-    // (range min) — the no-code-defaults rule now lives in "anchors commit
-    // nothing", pinned in the IG-CF5 block.
-    expect((view.getByTestId("image-gen-field-seed") as HTMLInputElement).value).toBe("");
-    for (const fieldId of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-clip-skip"]) {
-      expect(view.getByTestId(fieldId).querySelector("input")).toBeTruthy();
+  it("capability gates show Krea seed only, Luma no scalar controls, and all four controls for ComfyUI", async () => {
+    let view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.Krea, capabilities: makeCaps({ supportsSeed: true }) }),
+        })}
+      />,
+    );
+    await openAdvanced(view);
+    for (const id of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-clip-skip"]) {
+      expect(view.queryByTestId(id)).toBeNull();
     }
-    // IG-CF5 (named reason for the count change below): steps/CFG/CLIP-skip
-    // are slider+number pairs now — each adds ONE range input beside its
-    // number box (3 ranges + 4 numbers = 7). Seed stays a lone numeric with
-    // no range (asserted in the IG-CF5 block).
-    // The pane's param surface is EXACTLY these fields (+ the gated
-    // sampler above): the negative prompt is NOT a pane field — the
-    // IG-13/IG-17 surfaces own it (plan line 80/88), so nothing may sprout
-    // here.
+    expect(view.getByTestId("image-gen-field-seed")).toBeTruthy();
+    cleanup();
+
+    view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({ form: makeForm({ backend: "luma", capabilities: makeCaps() }) })}
+      />,
+    );
+    await openAdvanced(view);
+    for (const id of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-clip-skip", "image-gen-field-seed"]) {
+      expect(view.queryByTestId(id)).toBeNull();
+    }
+    cleanup();
+
+    view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, capabilities: scalarCaps({ supportsClipSkip: true }) }),
+        })}
+      />,
+    );
+    await openAdvanced(view);
+    expect((view.getByTestId("image-gen-field-seed") as HTMLInputElement).value).toBe("");
+    for (const id of ["image-gen-field-steps", "image-gen-field-cfg", "image-gen-field-clip-skip"]) {
+      expect(view.getByTestId(id).querySelector("input")).toBeTruthy();
+    }
     expect(view.getByTestId("image-gen-advanced-body").querySelectorAll("input").length).toBe(7);
   });
 
   it("bind OFF: numeric edits route to the PROFILE BASE (setForm defaultParams), overlay untouched", async () => {
     const setForm = mock(() => {});
     const setModelOverlay = mock(() => {});
-    const imageGen = makeImageGen({ form: makeForm({ modelId: "m-alpha" }), setForm, setModelOverlay });
+    const imageGen = makeImageGen({
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha", capabilities: scalarCaps() }),
+      setForm,
+      setModelOverlay,
+    });
     const view = render(<ImageGenPane imageGen={imageGen} />);
     await waitFor(() => expect(view.getByTestId("image-gen-advanced-header")).toBeTruthy());
     // Unbound: no overlay-inherit hint renders.
@@ -1280,7 +1302,7 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     // Phase 1 — UNBOUND (modelOverlay null): the toggle is off, no hint;
     // clicking it routes through bindModelOverlay.
     const unbound = makeImageGen({
-      form: makeForm({ modelId: "m-alpha" }),
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha", capabilities: scalarCaps() }),
       setForm,
       setModelOverlay,
       bindModelOverlay,
@@ -1296,7 +1318,7 @@ describe("ImageGenPane — params: sampler gating + bind routing + advanced", ()
     // Phase 2 — BOUND (modelOverlay {}): the inherit hint renders; numeric
     // edits route to the overlay, never to the profile base.
     const imageGen = makeImageGen({
-      form: makeForm({ modelId: "m-alpha" }),
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, modelId: "m-alpha", capabilities: scalarCaps() }),
       modelOverlay: {},
       setForm,
       setModelOverlay,
@@ -1478,7 +1500,9 @@ async function openAdvanced(view: { getByTestId: (id: string) => HTMLElement; ge
 describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
   it("a range move commits the value to the profile base (bind off)", async () => {
     const setForm = mock(() => {});
-    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    const view = render(
+      <ImageGenPane imageGen={makeImageGen({ form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, capabilities: scalarCaps() }), setForm })} />,
+    );
     await openAdvanced(view);
     const max = IMAGE_GEN_PARAM_RANGES.steps.max;
     await act(async () => {
@@ -1491,7 +1515,9 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
 
   it("a typed number commits through the slider field's number cell", async () => {
     const setForm = mock(() => {});
-    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    const view = render(
+      <ImageGenPane imageGen={makeImageGen({ form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, capabilities: scalarCaps() }), setForm })} />,
+    );
     await openAdvanced(view);
     const max = IMAGE_GEN_PARAM_RANGES.cfgScale.max;
     await typeCell(view, "image-gen-field-cfg", String(max));
@@ -1508,7 +1534,12 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
     // merge ladder (overlay > base > vendor) is where inheritance actually
     // resolves, not in the cell display.
     const imageGen = makeImageGen({
-      form: makeForm({ modelId: "m-alpha", defaultParams: { steps: IMAGE_GEN_PARAM_RANGES.steps.max } }),
+      form: makeForm({
+        backend: IMAGE_GEN_BACKENDS.A1111,
+        modelId: "m-alpha",
+        capabilities: scalarCaps(),
+        defaultParams: { steps: IMAGE_GEN_PARAM_RANGES.steps.max },
+      }),
       modelOverlay: {},
     });
     const view = render(<ImageGenPane imageGen={imageGen} />);
@@ -1522,7 +1553,9 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
 
   it("seed stays a plain numeric field with NO range input", async () => {
     const setForm = mock(() => {});
-    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    const view = render(
+      <ImageGenPane imageGen={makeImageGen({ form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, capabilities: scalarCaps() }), setForm })} />,
+    );
     await openAdvanced(view);
     // A 0..2^32 range is meaningless on a slider (owner-approved) — no
     // range input exists for seed, only the plain numeric cell.
@@ -1539,13 +1572,14 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
   });
 
   it("an a1111 profile renders the steps slider with the domain min/max/step (no duplicated literals)", async () => {
-    const imageGen = makeImageGen({ form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111 }) });
+    const imageGen = makeImageGen({
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, capabilities: scalarCaps() }),
+    });
     const view = render(<ImageGenPane imageGen={imageGen} />);
     await openAdvanced(view);
-    // All three slider pairs exist; the steps triple is pinned attribute by
-    // attribute against the domain constants (assert, never re-literalize).
+    // A1111 wires steps and CFG but deliberately has no clip-skip surface.
     expect(view.getByTestId("image-gen-range-cfg")).toBeTruthy();
-    expect(view.getByTestId("image-gen-range-clip-skip")).toBeTruthy();
+    expect(view.queryByTestId("image-gen-range-clip-skip")).toBeNull();
     const range = view.getByTestId("image-gen-range-steps");
     expect(range.getAttribute("min")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.min));
     expect(range.getAttribute("max")).toBe(String(IMAGE_GEN_PARAM_RANGES.steps.max));
@@ -1554,7 +1588,12 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
 
   it("IG-CF13: undefined params render the range-min anchor (SamplerField `value ?? min` — no empty box); nothing commits on open", async () => {
     const setForm = mock(() => {});
-    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    const view = render(
+      <ImageGenPane imageGen={makeImageGen({
+        form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, capabilities: scalarCaps({ supportsClipSkip: true }) }),
+        setForm,
+      })} />,
+    );
     await openAdvanced(view);
     const pairs: Array<[string, string, keyof typeof IMAGE_GEN_PARAM_RANGES]> = [
       ["image-gen-field-steps", "image-gen-range-steps", "steps"],
@@ -1573,7 +1612,9 @@ describe("ImageGenPane — advanced sliders (IG-CF5)", () => {
 
   it("a typed out-of-range number commits CLAMPED to the domain max (the NumberInput semantics)", async () => {
     const setForm = mock(() => {});
-    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    const view = render(
+      <ImageGenPane imageGen={makeImageGen({ form: makeForm({ backend: IMAGE_GEN_BACKENDS.A1111, capabilities: scalarCaps() }), setForm })} />,
+    );
     await openAdvanced(view);
     // Ten-times-max via string concat (no literals): forces the clamp lane.
     const over = `${IMAGE_GEN_PARAM_RANGES.steps.max}0`;
@@ -2056,10 +2097,12 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
           supportsNegativePrompt: true,
           supportsSamplers: true,
           supportsSeed: true,
+          supportsSteps: true,
+          supportsCfgScale: true,
           sizeSupport: { kind: "free" },
           noApiKey: true,
           supportsLiveProgress: true,
-        localExecution: true,
+          localExecution: true,
         }),
       }),
     ];

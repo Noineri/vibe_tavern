@@ -160,6 +160,9 @@ function parseCapabilities(raw: string): ImageGenCapabilityFlags {
   // generate-fold capability gate silently strips loras/hires from every
   // saved profile (caught by the FT-A4 route pin 2026-09-21).
   if (parsed.supportsLoras === true) flags.supportsLoras = true;
+  if (parsed.supportsSteps === true) flags.supportsSteps = true;
+  if (parsed.supportsCfgScale === true) flags.supportsCfgScale = true;
+  if (parsed.supportsClipSkip === true) flags.supportsClipSkip = true;
   if (parsed.supportsHiresFix === true) flags.supportsHiresFix = true;
   if (
     typeof sizeSupport === 'object' &&

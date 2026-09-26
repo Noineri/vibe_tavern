@@ -34,6 +34,9 @@ function fullCaps(): Caps {
     supportsNegativePrompt: true,
     supportsSamplers: true,
     supportsSeed: true,
+    supportsSteps: true,
+    supportsCfgScale: true,
+    supportsClipSkip: true,
     supportsLoras: true,
     supportsHiresFix: true,
     sizeSupport: { kind: "free" },
@@ -51,6 +54,9 @@ function noCaps(): Caps {
     supportsNegativePrompt: false,
     supportsSamplers: false,
     supportsSeed: false,
+    supportsSteps: false,
+    supportsCfgScale: false,
+    supportsClipSkip: false,
     supportsLoras: false,
     supportsHiresFix: false,
   };
@@ -1094,7 +1100,7 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
   it("T4/T5 (TWIN_UNIFICATION step 3): sliders honor the caps MIRROR ranges; seed garbage commits NOTHING", async () => {
     profilesStore = [
       {
-        ...profile("mr1", "Mirror Forge", { ...fullCaps(), paramRanges: { steps: { min: 2, max: 60, step: 2 } } }, "m-alpha"),
+        ...profile("mr1", "Mirror Forge", { ...fullCaps(), supportsClipSkip: false, paramRanges: { steps: { min: 2, max: 60, step: 2 } } }, "m-alpha"),
         backend: "a1111",
       },
     ];
@@ -1112,6 +1118,7 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     const cfg = within(view.baseElement).getByTestId("image-gen-range-overlay-cfg") as HTMLInputElement;
     expect(cfg.getAttribute("min")).toBe("1");
     expect(cfg.getAttribute("max")).toBe("30");
+    expect(within(view.baseElement).queryByTestId("image-gen-range-overlay-clip")).toBeNull();
 
     // T5: typing garbage commits NOTHING (the old chip wiped the seed on
     // non-numeric input — the named behavior change of this step); a clean
@@ -1127,6 +1134,40 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     });
     await waitFor(() => expect(upsertCalls.length).toBe(before + 1));
     expect(upsertCalls[upsertCalls.length - 1]!.settings).toEqual({ seed: 42 });
+  });
+
+  it("capability gates remove dead scalar controls while retaining only supported seed fields", async () => {
+    profilesStore = [
+      {
+        ...profile("krea-gate", "Krea", { ...noCaps(), supportsSeed: true }, "krea/krea-2/medium"),
+        backend: "krea",
+      },
+    ];
+    modelsStore["krea-gate"] = [{ id: "krea/krea-2/medium", label: "Krea 2" }];
+    armChat("chat-krea-gate");
+    let view = await openAccordion("chat-krea-gate", "Krea 2");
+    for (const id of ["image-gen-range-overlay-steps", "image-gen-range-overlay-cfg", "image-gen-range-overlay-clip"]) {
+      expect(within(view.baseElement).queryByTestId(id)).toBeNull();
+    }
+    expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-seed")).toBeTruthy();
+    cleanup();
+
+    profilesStore = [{ ...profile("luma-gate", "Luma", noCaps(), "ray-2"), backend: "luma" }];
+    modelsStore["luma-gate"] = [{ id: "ray-2", label: "Ray 2" }];
+    armChat("chat-luma-gate");
+    view = await openAccordion("chat-luma-gate", "Ray 2");
+    for (const id of ["image-gen-range-overlay-steps", "image-gen-range-overlay-cfg", "image-gen-range-overlay-clip", "image-gen-ft-overlay-seed"]) {
+      expect(within(view.baseElement).queryByTestId(id)).toBeNull();
+    }
+    cleanup();
+
+    profilesStore = [{ ...profile("comfy-gate", "ComfyUI", fullCaps(), "sdxl"), backend: "comfyui" }];
+    modelsStore["comfy-gate"] = [{ id: "sdxl", label: "SDXL" }];
+    armChat("chat-comfy-gate");
+    view = await openAccordion("chat-comfy-gate", "SDXL");
+    for (const id of ["image-gen-range-overlay-steps", "image-gen-range-overlay-cfg", "image-gen-range-overlay-clip", "image-gen-ft-overlay-seed"]) {
+      expect(within(view.baseElement).getByTestId(id)).toBeTruthy();
+    }
   });
 
   it("IF-11: Krea 2 controls — krea-2 models only; creativity + sliders commit the overlay krea block; the display inherits the profile BASE", async () => {

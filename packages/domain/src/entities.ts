@@ -1165,6 +1165,13 @@ export interface ImageGenCapabilityFlags {
    *  per backend without touching every row (owner 2026-09-17:
    *  capability-gated, never local-hardcoded). */
   supportsLoras?: boolean;
+  /** Advanced scalar controls (steps / CFG scale / CLIP skip): each backend
+   *  exposes only the request fields it actually wires. OPTIONAL by design:
+   *  absent = false, so capability-gated controls never local-hardcode a
+   *  vendor surface (owner precedent 2026-09-17). */
+  supportsSteps?: boolean;
+  supportsCfgScale?: boolean;
+  supportsClipSkip?: boolean;
   /** Hires-fix second pass (FT-A4): the backend exposes a hires surface —
    *  the A1111 dialect (enable_hr + hr_* processing fields) today. The
    *  OPTIONAL-by-design twin of supportsLoras: absent = false, existing

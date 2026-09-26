@@ -1241,20 +1241,51 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     expect(serialized).not.toContain("enable_hr");
   });
 
-  test("profile reads overlay the CURRENT static graduation flags onto a stale stored snapshot (IF-6 — a comfy profile saved before the hires graduation serves the flag)", async () => {
+  test("profile GET/list inherit static graduation flags absent from legacy snapshots", async () => {
     const { app } = await makeApp(async () => modelsBody());
-    const staleCaps = { ...IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.ComfyUI] };
-    delete (staleCaps as { supportsHiresFix?: boolean }).supportsHiresFix;
-    const id = await seedProfile(app, {
+    const {
+      supportsSteps: _a1111Steps,
+      supportsCfgScale: _a1111CfgScale,
+      supportsClipSkip: _a1111ClipSkip,
+      ...a1111LegacyCaps
+    } = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.A1111];
+    const a1111Id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.A1111,
+      endpoint: "http://127.0.0.1:7860",
+      capabilities: a1111LegacyCaps,
+    });
+    const {
+      supportsHiresFix: _comfyHires,
+      supportsSteps: _comfySteps,
+      supportsCfgScale: _comfyCfgScale,
+      supportsClipSkip: _comfyClipSkip,
+      ...comfyLegacyCaps
+    } = IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.ComfyUI];
+    const comfyId = await seedProfile(app, {
       backend: IMAGE_GEN_BACKENDS.ComfyUI,
       endpoint: "http://127.0.0.1:8188",
-      capabilities: staleCaps,
+      capabilities: comfyLegacyCaps,
     });
-    const res = await app.request(`/api/image-gen/profiles/${id}`);
-    expect(res.status).toBe(200);
-    const row = (await res.json()) as { capabilities: { supportsHiresFix?: boolean; supportsLoras?: boolean } };
-    expect(row.capabilities.supportsHiresFix).toBe(true);
-    expect(row.capabilities.supportsLoras).toBe(true);
+
+    const a1111Get = await app.request(`/api/image-gen/profiles/${a1111Id}`);
+    expect(a1111Get.status).toBe(200);
+    const a1111 = (await a1111Get.json()) as {
+      capabilities: { supportsSteps?: boolean; supportsCfgScale?: boolean; supportsClipSkip?: boolean };
+    };
+    expect(a1111.capabilities.supportsSteps).toBe(true);
+    expect(a1111.capabilities.supportsCfgScale).toBe(true);
+    expect(a1111.capabilities.supportsClipSkip).toBeUndefined();
+
+    const list = (await (await app.request("/api/image-gen/profiles/all")).json()) as Array<{
+      id: string;
+      capabilities: { supportsHiresFix?: boolean; supportsLoras?: boolean; supportsSteps?: boolean; supportsCfgScale?: boolean; supportsClipSkip?: boolean };
+    }>;
+    const comfy = list.find((profile) => profile.id === comfyId);
+    expect(comfy?.capabilities.supportsHiresFix).toBe(true);
+    expect(comfy?.capabilities.supportsLoras).toBe(true);
+    expect(comfy?.capabilities.supportsSteps).toBe(true);
+    expect(comfy?.capabilities.supportsCfgScale).toBe(true);
+    expect(comfy?.capabilities.supportsClipSkip).toBe(true);
   });
 
   test("face-detectors route (IF-6): comfy serves the discovered chain; a1111 is dialect-gated 400; unknown profile 404", async () => {
