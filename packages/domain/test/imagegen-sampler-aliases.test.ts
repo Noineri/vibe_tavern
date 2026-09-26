@@ -41,13 +41,38 @@ describe("sampler dialect aliases", () => {
     expect(resolveSamplerNameForDialect("Euler a", comfyList).name).toBe("euler_ancestral");
   });
 
-  test("static map bridges comfy ids to A1111 display names when the live list carries no aliases", () => {
-    const bare: SamplerLiveEntry[] = [{ name: "Euler SDE" }, { name: "Euler" }];
-    expect(resolveSamplerNameForDialect("euler_sde", bare).name).toBe("Euler SDE");
+  test("static map bridges comfy ids to the live Forge display names when the list carries no aliases", () => {
+    const bare: SamplerLiveEntry[] = [{ name: "ER SDE" }, { name: "Euler" }];
+    expect(resolveSamplerNameForDialect("euler_sde", bare).name).toBe("ER SDE");
   });
 
   test("static map is case-insensitive on the stored name", () => {
     expect(resolveSamplerNameForDialect("euler a", comfyList).name).toBe("euler_ancestral");
+  });
+
+  test("fleet vocabulary bridges each stock sampler to the live Forge labels and back", () => {
+    const forge: SamplerLiveEntry[] = [
+      { name: "Euler" },
+      { name: "ER SDE" },
+      { name: "Res Multistep" },
+      { name: "DPM++ 2M" },
+    ];
+    const comfy: SamplerLiveEntry[] = [
+      { name: "euler" },
+      { name: "euler_sde" },
+      { name: "res_multistep" },
+      // A compatible Comfy spelling must still round-trip when it is the
+      // only live target; dpmpp_2m remains the map's canonical spelling.
+      { name: "dpm_2m" },
+    ];
+    expect(resolveSamplerNameForDialect("euler", forge).name).toBe("Euler");
+    expect(resolveSamplerNameForDialect("euler_sde", forge).name).toBe("ER SDE");
+    expect(resolveSamplerNameForDialect("res_multistep", forge).name).toBe("Res Multistep");
+    expect(resolveSamplerNameForDialect("dpm_2m", forge).name).toBe("DPM++ 2M");
+    expect(resolveSamplerNameForDialect("Euler", comfy).name).toBe("euler");
+    expect(resolveSamplerNameForDialect("ER SDE", comfy).name).toBe("euler_sde");
+    expect(resolveSamplerNameForDialect("Res Multistep", comfy).name).toBe("res_multistep");
+    expect(resolveSamplerNameForDialect("DPM++ 2M", comfy).name).toBe("dpm_2m");
   });
 
   test("karras-suffixed legacy names are deliberately NOT bridged — they encode a scheduler the map cannot express", () => {
@@ -65,10 +90,19 @@ describe("sampler dialect aliases", () => {
     });
   });
 
-  test("schedulers are identity-vocabulary: exact match passes, absent is null, empty list passes through", () => {
-    const schedulers: SamplerLiveEntry[] = [{ name: "simple" }, { name: "karras" }];
-    expect(resolveSchedulerNameForDialect("simple", schedulers).name).toBe("simple");
-    expect(resolveSchedulerNameForDialect("beta", schedulers).name).toBeNull();
+  test("fleet scheduler vocabulary resolves the live entry in either display casing", () => {
+    const comfySchedulers: SamplerLiveEntry[] = [{ name: "simple" }, { name: "karras" }];
+    const forgeDisplaySchedulers: SamplerLiveEntry[] = [{ name: "Simple" }, { name: "Karras" }];
+    expect(resolveSchedulerNameForDialect("simple", comfySchedulers).name).toBe("simple");
+    expect(resolveSchedulerNameForDialect("simple", forgeDisplaySchedulers)).toEqual({
+      name: "Simple",
+      viaBridge: true,
+    });
+    expect(resolveSchedulerNameForDialect("Simple", comfySchedulers)).toEqual({
+      name: "simple",
+      viaBridge: true,
+    });
+    expect(resolveSchedulerNameForDialect("beta", comfySchedulers).name).toBeNull();
     expect(resolveSchedulerNameForDialect("beta", []).name).toBe("beta");
   });
 });
@@ -96,6 +130,29 @@ describe("adaptSamplerSetPayloadToTarget", () => {
     expect(payload.steps).toBe(25);
     expect(notes).toEqual([
       { field: "sampler", stored: "Euler a", resolved: "euler_ancestral", reason: "translated" },
+    ]);
+  });
+
+  test("a fleet workflow payload applies its translated sampler and scheduler as flat Forge values", () => {
+    const { payload, notes } = adaptSamplerSetPayloadToTarget(
+      { workflowFamily: "qwen-image-2.1", sampler: "euler", scheduler: "simple", steps: 25, cfgScale: 1 },
+      {
+        dialect: "a1111",
+        ditFamilyFixedVae: false,
+        samplers: [{ name: "Euler" }],
+        schedulers: [{ name: "simple" }],
+        vaes: [],
+      },
+    );
+    expect(payload).toEqual({
+      workflowFamily: "qwen-image-2.1",
+      sampler: "Euler",
+      scheduler: "simple",
+      steps: 25,
+      cfgScale: 1,
+    });
+    expect(notes).toEqual([
+      { field: "sampler", stored: "euler", resolved: "Euler", reason: "translated" },
     ]);
   });
 

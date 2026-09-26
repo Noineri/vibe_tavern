@@ -39,7 +39,9 @@ export type LocalImageGenDialect = "a1111" | "comfyui";
 const SAMPLER_ALIAS_PAIRS: ReadonlyArray<readonly [a1111: string, comfyui: string]> = [
   ["Euler", "euler"],
   ["Euler a", "euler_ancestral"],
-  ["Euler SDE", "euler_sde"],
+  // Forge Neo's live Euler-SDE-family label is "ER SDE", not the A1111
+  // display spelling "Euler SDE". No closer live entry exists.
+  ["ER SDE", "euler_sde"],
   ["Heun", "heun"],
   ["LMS", "lms"],
   ["DDIM", "ddim"],
@@ -49,6 +51,7 @@ const SAMPLER_ALIAS_PAIRS: ReadonlyArray<readonly [a1111: string, comfyui: strin
   ["DPM++ 3M SDE", "dpmpp_3m_sde"],
   ["DPM++ SDE", "dpmpp_sde"],
   ["DPM++ 2S a", "dpmpp_2s_ancestral"],
+  ["Res Multistep", "res_multistep"],
 ];
 
 const A1111_TO_COMFY: ReadonlyMap<string, string> = new Map(
@@ -57,6 +60,17 @@ const A1111_TO_COMFY: ReadonlyMap<string, string> = new Map(
 const COMFY_TO_A1111: ReadonlyMap<string, string> = new Map(
   SAMPLER_ALIAS_PAIRS.map(([a, c]) => [c.toLowerCase(), a]),
 );
+
+/** Comfy variants for an A1111 name where the canonical pair above already
+ * has a different Comfy spelling. Both DPM 2M ids name the same Forge sampler;
+ * preserve `dpmpp_2m` as the canonical reverse translation, but accept the
+ * fleet's `dpm_2m` vocabulary when that is the target's live entry. */
+const A1111_TO_COMFY_COMPAT: ReadonlyMap<string, readonly string[]> = new Map([
+  ["dpm++ 2m", ["dpm_2m"]],
+]);
+const COMFY_TO_A1111_COMPAT: ReadonlyMap<string, string> = new Map([
+  ["dpm_2m", "DPM++ 2M"],
+]);
 
 /** Result of resolving one stored name against a target dialect's live list. */
 export interface SamplerNameResolution {
@@ -90,7 +104,11 @@ export function resolveSamplerNameForDialect(
   if (a !== undefined && live.some((entry) => entry.name === a)) {
     return { name: a, viaBridge: true };
   }
-  const c = COMFY_TO_A1111.get(lowered);
+  const aCompat = A1111_TO_COMFY_COMPAT.get(lowered)?.find((name) =>
+    live.some((entry) => entry.name === name),
+  );
+  if (aCompat !== undefined) return { name: aCompat, viaBridge: true };
+  const c = COMFY_TO_A1111.get(lowered) ?? COMFY_TO_A1111_COMPAT.get(lowered);
   if (c !== undefined && live.some((entry) => entry.name === c)) {
     return { name: c, viaBridge: true };
   }
@@ -99,8 +117,11 @@ export function resolveSamplerNameForDialect(
 
 /**
  * Resolve a stored scheduler name. Both dialects share the k-diffusion
- * scheduler vocabulary (`karras`, `simple`, `sgm_uniform`, …) — identity
- * plus the live check; no static map needed. Same empty-list and
+ * scheduler vocabulary (`karras`, `simple`, `sgm_uniform`, …), so no static
+ * table is needed: exact match, then the target API's aliases and
+ * case-insensitive display vocabulary resolve to the live entry's own name.
+ * This keeps a stock `simple` valid whether Forge reports its payload value
+ * as `simple` or its display spelling `Simple`. Same empty-list and
  * missing-name semantics as the sampler resolver.
  */
 export function resolveSchedulerNameForDialect(
@@ -108,9 +129,14 @@ export function resolveSchedulerNameForDialect(
   live: readonly SamplerLiveEntry[],
 ): SamplerNameResolution {
   if (live.length === 0) return { name: stored, viaBridge: false };
-  return live.some((entry) => entry.name === stored)
-    ? { name: stored, viaBridge: false }
-    : { name: null, viaBridge: false };
+  const exact = live.find((entry) => entry.name === stored);
+  if (exact !== undefined) return { name: exact.name, viaBridge: false };
+  const alias = live.find((entry) => entry.aliases?.includes(stored));
+  if (alias !== undefined) return { name: alias.name, viaBridge: true };
+  const caseFolded = live.find((entry) => entry.name.toLowerCase() === stored.toLowerCase());
+  return caseFolded === undefined
+    ? { name: null, viaBridge: false }
+    : { name: caseFolded.name, viaBridge: true };
 }
 
 /** Why one adapted field note exists — the caller composes the hint copy. */

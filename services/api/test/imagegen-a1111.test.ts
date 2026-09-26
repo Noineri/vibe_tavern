@@ -15,6 +15,7 @@ import {
   A1111ImageGenSizeError,
   a1111Factory,
 } from "../src/domain/imagegen/backends/a1111.js";
+import { detectImageGenFamily } from "../src/domain/imagegen/family-detection.js";
 import {
   createImageGenBackend,
   IMAGE_GEN_BACKEND_CAPABILITIES,
@@ -282,10 +283,10 @@ describe("a1111 adapter", () => {
   });
 
   describe("listModels", () => {
-    it("queries /sd-models and maps title/model_name per checkpoint", async () => {
+    it("uses the server title as the model id, retaining model_name only for malformed-title fallback", async () => {
       const { transport, calls } = makeTransport(() =>
         Response.json([
-          { title: "Flux1 Dev", model_name: "flux1-dev.safetensors", hash: "abc", sha256: null, filename: "flux1-dev.safetensors", config: null },
+          { title: "sd\\flux1-dev.safetensors [abc123]", model_name: "flux1-dev", hash: "abc", sha256: null, filename: "flux1-dev.safetensors", config: null },
           { title: "", model_name: "sd_xl_base.safetensors" },
           { title: "Broken entry" },
         ]),
@@ -293,11 +294,31 @@ describe("a1111 adapter", () => {
       const backend = backendWith(transport);
       const models = await backend.listModels();
       expect(models).toEqual([
-        { id: "flux1-dev.safetensors", label: "Flux1 Dev" },
+        { id: "sd\\flux1-dev.safetensors [abc123]", label: "sd\\flux1-dev.safetensors [abc123]" },
         { id: "sd_xl_base.safetensors", label: "sd_xl_base.safetensors" },
+        { id: "Broken entry", label: "Broken entry" },
       ]);
       expect(calls[0].url).toBe(`${SD_API_ROOT}/sd-models`);
       expect(calls[0].init?.method).toBe("GET");
+    });
+
+    it("keeps a Forge unet title verbatim from discovery through profile model config to the payload", async () => {
+      const unetTitle = "unet\\qwenImage21_bf16.safetensors";
+      const { transport, calls } = makeTransport((url) => {
+        if (url.pathname.endsWith("/sd-models")) {
+          return Response.json([{ title: unetTitle, model_name: "unet_qwenImage21_bf16" }]);
+        }
+        return imagesResponse([PNG_BYTES]);
+      });
+      const listed = await backendWith(transport).listModels();
+      const profileBackend = a1111Factory({ endpoint: ENDPOINT, model: listed[0]!.id, fetch: transport });
+
+      await profileBackend.generate({ prompt: "p" });
+
+      expect(listed).toEqual([{ id: unetTitle, label: unetTitle }]);
+      expect(sentJson(calls[1]!)).toMatchObject({
+        override_settings: { sd_model_checkpoint: unetTitle },
+      });
     });
 
     it("sends basic auth on the model list when apiKey is present", async () => {
@@ -316,6 +337,74 @@ describe("a1111 adapter", () => {
       const promise = backend.listModels();
       await expect(promise).rejects.toBeInstanceOf(A1111ImageGenError);
       await expect(promise).rejects.toMatchObject({ status: 500 });
+    });
+  });
+
+  describe("fleet workflow requests", () => {
+    it("sends adapted stock scalars flat while ignoring the Comfy-only workflowFamily", async () => {
+      const { transport, calls } = makeTransport(() => imagesResponse([PNG_BYTES]));
+      const backend = backendWith(transport);
+      // The alias bridge has already translated the stock `euler` to Forge's
+      // live `Euler`; this adapter keeps it a classic flat sampler_name.
+      for (const [workflowFamily, steps] of [
+        ["qwen-image-2.1", 25],
+        ["krea2-dit", 8],
+      ] as const) {
+        await backend.generate({
+          prompt: "p",
+          workflowFamily,
+          steps,
+          cfgScale: 1,
+          sampler: "Euler",
+          scheduler: "simple",
+        });
+      }
+
+      for (const [index, steps] of [25, 8].entries()) {
+        expect(sentJson(calls[index]!)).toEqual({
+          prompt: "p",
+          send_images: true,
+          steps,
+          cfg_scale: 1,
+          sampler_name: "Euler",
+          scheduler: "simple",
+        });
+      }
+    });
+  });
+
+  describe("family detection", () => {
+    it("resolves Forge unet titles through the shared DiffusionModels cm-info sidecar ladder", async () => {
+      const entries = [
+        ["unet\\qwenImage21_bf16.safetensors", "Qwen 2", "qwen"],
+        ["unet\\pixelwave_flux1Dev03_full_fp8.safetensors", "Flux.1 D", "prose"],
+        ["unet\\krealisV1Krea2_v10_bf16.safetensors", "Krea 2", "krea2"],
+        ["unet\\oneObsessionAnima_v40.safetensors", "Anima", "anima"],
+      ] as const;
+      const { transport } = makeTransport(() => Response.json(
+        entries.map(([title]) => ({
+          title,
+          model_name: title.replace(/[^a-z0-9]/gi, "_"),
+          filename: `matrix\\Packages\\Forge Neo\\models\\Stable-diffusion\\${title}`,
+        })),
+      ));
+      const backend = backendWith(transport);
+      for (const [title, baseModel, family] of entries) {
+        const result = await detectImageGenFamily({
+          backend,
+          model: title,
+          deps: {
+            civitaiFetch: async () => new Response("unexpected", { status: 500 }),
+            readSidecarFile: async (path) => {
+              expect(path.replace(/\\/g, "/")).toBe(
+                `matrix/Models/DiffusionModels/${title.slice("unet\\".length, -".safetensors".length)}.cm-info.json`,
+              );
+              return JSON.stringify({ BaseModel: baseModel });
+            },
+          },
+        });
+        expect(result).toEqual({ ok: true, family, sourceLabel: "sidecar", baseModel });
+      }
     });
   });
 

@@ -288,29 +288,32 @@ function extractImages(payload: unknown): string[] {
 
 /** Parse the `GET /sdapi/v1/sd-models` checkpoint list — a top-level array
  *  of `{title, model_name, hash, sha256, filename, config}` records. `id`
- *  maps `model_name` (the switchable identifier), `label` maps `title`
- *  (the picker display string). Entries without a usable model_name are
- *  skipped (the twins' malformed-entry discipline). */
+ *  maps the server's `title` verbatim: it is the canonical
+ *  `sd_model_checkpoint` vocabulary, including Forge Neo's `unet\\…`
+ *  entries with their extension and no hash suffix. `model_name` is only a
+ *  legacy fallback for malformed entries without a title, so pre-IF-16f
+ *  profile ids remain selectable. */
 function parseCheckpointInfos(parsed: unknown): ImageGenModelInfo[] {
   if (!Array.isArray(parsed)) return [];
   const out: ImageGenModelInfo[] = [];
   for (const entry of parsed) {
     if (typeof entry !== "object" || entry === null) continue;
     const item = entry as Record<string, unknown>;
-    const id = item.model_name;
-    if (typeof id !== "string" || id.length === 0) continue;
-    const info: ImageGenModelInfo = {
-      id,
-      label: typeof item.title === "string" && item.title.length > 0 ? item.title : id,
-    };
-    out.push(info);
+    const title = typeof item.title === "string" && item.title.length > 0 ? item.title : undefined;
+    const modelName = typeof item.model_name === "string" && item.model_name.length > 0
+      ? item.model_name
+      : undefined;
+    const id = title ?? modelName;
+    if (id === undefined) continue;
+    out.push({ id, label: title ?? id });
   }
   return out;
 }
 
 /** Parse `GET /sdapi/v1/sd-models` for family detection (IPT-3): the
- *  entry whose `model_name` matches the current model id, carrying the
- *  authoritative anchors — `sha256` (feeds the Civitai by-hash source)
+ *  entry whose canonical `title` (or a legacy `model_name`) matches the
+ *  current model id, carrying the authoritative anchors — `sha256` (feeds
+ *  the Civitai by-hash source)
  *  and `filename` (the sidecar join / extension-probe file path). This
  *  surface carries NO base-model label — an honest structural miss for
  *  source (a) on this dialect. Undefined = the model is not in the list
@@ -318,18 +321,68 @@ function parseCheckpointInfos(parsed: unknown): ImageGenModelInfo[] {
 function findDetectionCheckpointEntry(
   parsed: unknown,
   model: string,
-): { sha256?: string; filename?: string } | undefined {
+): { sha256?: string; filename?: string; title?: string } | undefined {
   if (!Array.isArray(parsed)) return undefined;
+  let legacyMatch: Record<string, unknown> | undefined;
   for (const entry of parsed) {
     if (typeof entry !== "object" || entry === null) continue;
     const item = entry as Record<string, unknown>;
-    if (item.model_name !== model) continue;
-    return {
-      ...(typeof item.sha256 === "string" && item.sha256.length > 0 ? { sha256: item.sha256 } : {}),
-      ...(typeof item.filename === "string" && item.filename.length > 0 ? { filename: item.filename } : {}),
-    };
+    // `title` is the current picker/profile id and must win over an
+    // old-style model_name match. The fallback preserves detection for
+    // profiles saved before titles became the stored vocabulary.
+    if (item.title === model) {
+      return {
+        ...(typeof item.sha256 === "string" && item.sha256.length > 0 ? { sha256: item.sha256 } : {}),
+        ...(typeof item.filename === "string" && item.filename.length > 0 ? { filename: item.filename } : {}),
+        title: model,
+      };
+    }
+    if (item.model_name === model) legacyMatch = item;
   }
-  return undefined;
+  if (legacyMatch === undefined) return undefined;
+  return {
+    ...(typeof legacyMatch.sha256 === "string" && legacyMatch.sha256.length > 0
+      ? { sha256: legacyMatch.sha256 }
+      : {}),
+    ...(typeof legacyMatch.filename === "string" && legacyMatch.filename.length > 0
+      ? { filename: legacyMatch.filename }
+      : {}),
+    ...(typeof legacyMatch.title === "string" && legacyMatch.title.length > 0
+      ? { title: legacyMatch.title }
+      : {}),
+  };
+}
+
+/** Forge Neo exposes shared DiT files through sd-models as `unet\\…` titles
+ * while its `filename` points at the Stable-diffusion compatibility link.
+ * Stability Matrix keeps the authoritative cm-info sidecars in its models
+ * root's DiffusionModels folder (alongside, not inside, Packages), so add
+ * that known root before the compatibility directory. A non-Matrix layout
+ * falls back to a DiffusionModels sibling of Stable-diffusion. This derives
+ * paths only from the backend-exposed title and filename; it never infers a
+ * family from a name. */
+function forgeUnetSidecarRoot(filename: string, title: string | undefined): string | undefined {
+  if (title === undefined || !/^unet[\\/]/i.test(title)) return undefined;
+  const parts = filename.split(/[\\/]+/);
+  let stableDiffusionIndex = -1;
+  let packagesIndex = -1;
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    if (stableDiffusionIndex === -1 && parts[index]?.toLowerCase() === "stable-diffusion") {
+      stableDiffusionIndex = index;
+    }
+    if (parts[index]?.toLowerCase() === "packages") {
+      packagesIndex = index;
+      break;
+    }
+  }
+  if (stableDiffusionIndex <= 0 || parts[stableDiffusionIndex + 1]?.toLowerCase() !== "unet") {
+    return undefined;
+  }
+  const separator = filename.includes("\\") ? "\\" : "/";
+  const modelsRoot = packagesIndex > 0 && packagesIndex < stableDiffusionIndex
+    ? [...parts.slice(0, packagesIndex), "Models"]
+    : parts.slice(0, stableDiffusionIndex);
+  return `${modelsRoot.join(separator)}${separator}DiffusionModels`;
 }
 
 /** Parse the `GET /sdapi/v1/samplers` list — a top-level array of
@@ -896,8 +949,12 @@ export const a1111Factory = (config: ImageGenAdapterConfig): ImageGenBackend => 
       if (filename !== undefined && /[/\\]/.test(filename)) {
         metadata.modelFilePath = filename;
         const slash = Math.max(filename.lastIndexOf("/"), filename.lastIndexOf("\\"));
+        const compatibilityRoot = filename.slice(0, slash);
+        const sharedUnetRoot = forgeUnetSidecarRoot(filename, entry.title);
         metadata.sidecar = {
-          roots: [filename.slice(0, slash)],
+          roots: sharedUnetRoot === undefined
+            ? [compatibilityRoot]
+            : [sharedUnetRoot, compatibilityRoot],
           relativeName: filename.slice(slash + 1),
         };
       }
