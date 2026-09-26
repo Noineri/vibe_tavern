@@ -46,7 +46,7 @@ import {
 } from "@vibe-tavern/api-contracts";
 
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
-import { providerRequiresApiKey, resolveEffectiveSummaryProfile } from "../chat/summary-generation-seam.js";
+import { resolveEffectiveSummaryProfile } from "../chat/summary-generation-seam.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import { resolveSeatAssignment } from "./experience-model-effect-service.js";
 
@@ -201,7 +201,6 @@ export class ExperienceChatterService {
 				model = active.defaultModel?.trim() ?? "";
 			}
 			if (!model) return failedView();
-			if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) return failedView();
 
 			const effectiveProfile = await resolveEffectiveSummaryProfile(profile, model, this.providerProfiles);
 			const result = await this.execute({ profile: effectiveProfile, model, prompt: buildChatterPrompt(request) });

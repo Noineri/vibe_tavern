@@ -102,7 +102,6 @@ import { clearImageGenRunPhase, getImageGenRunPhase, setImageGenRunPhase } from 
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
 import {
-  providerRequiresApiKey,
   resolveEffectiveSummaryProfile,
 } from "../../domain/chat/summary-generation-seam.js";
 import type { AssemblePromptResponse, StoredProviderProfileRecord } from "@vibe-tavern/domain";
@@ -1232,10 +1231,14 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   }
 
   /** IG-15: the quiet single-shot runner for one generation. Mirrors the
-   *  chat-summary resolution ladder (profile → API-key check → effective
-   *  profile with the bound-model overlay merge → execute with the route
-   *  signal); failures PROPAGATE — the generation fails with the normalized
-   *  provider error rather than silently skipping the assist. */
+   *  chat-summary resolution ladder (profile → effective profile with the
+   *  bound-model overlay merge → execute with the route signal); failures
+   *  PROPAGATE — the generation fails with the normalized provider error
+   *  rather than silently skipping the assist. No VT-side key preflight:
+   *  keyless providers (local gateways, BYOK endpoints) are legitimate
+   *  assist providers — the endpoint answers for itself if it wants a key
+   *  (owner ruling 2026-09-27: internal features never gate which provider
+   *  profiles a user may bind). */
   private makeAssistRunner(
     deps: ImageGenAssistDeps,
     providerProfileId: string,
@@ -1248,9 +1251,6 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       const profile = await providerProfiles.getProviderProfile(providerProfileId);
       if (!profile) {
         throw new ImageGenNotFoundError(`LLM provider profile '${providerProfileId}' not found`);
-      }
-      if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
-        throw new ImageGenValidationError("The LLM assist provider has no saved API key.");
       }
       const effectiveProfile = await resolveEffectiveSummaryProfile(profile, model, providerProfiles);
       const result = await execute({

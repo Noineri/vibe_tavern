@@ -8,7 +8,6 @@ import { notFound, validation } from "../../shared/errors.js";
 import { BackgroundTaskLocks } from "../../shared/background-task-locks.js";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import {
-	providerRequiresApiKey,
 	resolveEffectiveSummaryProfile,
 } from "./summary-generation-seam.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
@@ -82,9 +81,6 @@ export class ChatSummaryService {
     if (!profile) {
       throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
     }
-    if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
-      throw validation("Selected provider has no saved API key.");
-    }
     const model = input.model?.trim() || profile.defaultModel?.trim();
     if (!model) {
       throw validation("Select a model for summarization.");
@@ -143,9 +139,6 @@ export class ChatSummaryService {
     const profile = await this.providerProfiles.getProviderProfile(providerProfileId);
     if (!profile) {
       throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
-    }
-    if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
-      throw validation("Selected provider has no saved API key.");
     }
     const model = input.model?.trim() || profile.defaultModel?.trim();
     if (!model) {

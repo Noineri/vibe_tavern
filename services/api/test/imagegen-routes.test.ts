@@ -3698,7 +3698,7 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     expect(body.error).toContain("empty");
   });
 
-  test("dangling LLM profile id → 404; keyless key-required provider → 400", async () => {
+  test("dangling LLM profile id → 404; keyless provider proceeds — the endpoint answers for itself (no VT-side key preflight)", async () => {
     const assist = makeAssistDeps({ llm1: makeLlmProfile() });
     const scene = await makeAssistScene(assist);
     const dangling = await seedProfile(scene.app, {
@@ -3712,6 +3712,9 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     expect(gone.status).toBe(404);
     expect(((await gone.json()) as { error: string }).error).toContain("LLM provider profile");
 
+    // Owner ruling 2026-09-27: internal features never pre-gate which
+    // provider profiles may be bound — a keyless gateway profile runs the
+    // assist; a truly key-needing endpoint answers with its own 401.
     const keyless = makeAssistDeps({ llm1: makeLlmProfile({ apiKey: "" }) });
     const scene2 = await makeAssistScene(keyless);
     const id2 = await seedProfile(scene2.app, {
@@ -3722,8 +3725,8 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
       llmModelId: "writer-model",
     });
     const noKey = await generate(scene2.app, scene2.chatId, { profileId: id2, mode: "portrait" });
-    expect(noKey.status).toBe(400);
-    expect(((await noKey.json()) as { error: string }).error).toContain("API key");
+    expect(noKey.status).toBe(200);
+    expect(keyless.calls).toHaveLength(1);
   });
 
   test("the route's abort signal threads into the quiet call", async () => {
