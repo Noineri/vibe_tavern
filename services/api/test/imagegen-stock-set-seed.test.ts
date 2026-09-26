@@ -45,10 +45,14 @@ describe("stock sampler-set seed (IF-7b)", () => {
       scheduler: "simple",
       steps: 30,
       cfgScale: 5,
+      adetailer: false,
       hires: { enabled: false, scale: 1.5, denoisingStrength: 0.35 },
     });
     const turbo = rows.find((row) => row.id === IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Turbo);
-    expect(turbo?.payload).toEqual({ sampler: "euler", scheduler: "simple", steps: 8, cfgScale: 1 });
+    expect(turbo?.payload).toEqual({ sampler: "euler", scheduler: "simple", steps: 8, cfgScale: 1, adetailer: false });
+    // The face-fix block rides EVERY stock set (owner ruling 2026-09-27) —
+    // configured, opt-in only, model unset (the dialect's own default).
+    expect(rows.every((row) => row.payload.adetailer === false)).toBe(true);
 
     // Marker persisted: the seed never re-runs.
     const settings = await stores.uiSettings.get();

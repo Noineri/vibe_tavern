@@ -676,6 +676,11 @@ export const imageGenSamplerSetPayloadSchema = z.object({
   scheduler: z.string().optional(),
   vae: z.string().min(1).optional(),
   hires: imageGenHiresBlockSchema.optional(),
+  /** Face-fix second pass — configured-but-disabled in stock sets (the
+   *  detector model stays unset: the dialect's own default fills it, no
+   *  hardcoded names). Both LOCAL dialects consume the pair. */
+  adetailer: z.boolean().optional(),
+  adetailerModel: z.string().min(1).optional(),
 });
 export type ImageGenSamplerSetPayloadValue = z.infer<typeof imageGenSamplerSetPayloadSchema>;
 

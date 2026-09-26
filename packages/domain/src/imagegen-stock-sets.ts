@@ -50,12 +50,12 @@ export function imageGenStockSamplerSets(): Array<{
     {
       id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Turbo,
       name: "Krea 2 Turbo",
-      payload: { sampler: "euler", scheduler: "simple", steps: 8, cfgScale: 1 },
+      payload: { sampler: "euler", scheduler: "simple", steps: 8, cfgScale: 1, adetailer: false },
     },
     {
       id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Raw,
       name: "Krea 2 RAW",
-      payload: { sampler: "euler", scheduler: "simple", steps: 50, cfgScale: 3.5 },
+      payload: { sampler: "euler", scheduler: "simple", steps: 50, cfgScale: 3.5, adetailer: false },
     },
     {
       id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.anima,
@@ -73,6 +73,7 @@ export function imageGenStockSamplerSets(): Array<{
         scheduler: "simple",
         steps: 30,
         cfgScale: 5,
+        adetailer: false,
         hires: {
           enabled: false,
           scale: 1.5,
@@ -87,11 +88,15 @@ export function imageGenStockSamplerSets(): Array<{
       // the strictly-wanted-but-off hires block (owner: configure, never
       // auto-enable). Upscaler/scale stay unset — the dialect's own server
       // defaults fill them; the stock row carries opinions the owner gave.
+      // The face-fix block rides EVERY stock set (owner ruling 2026-09-27):
+      // configured, opt-in only; the detector model stays unset — the
+      // dialect's own default fills it (no hardcoded names).
       payload: {
         sampler: "Euler a",
         steps: 25,
         clipSkip: 2,
         cfgScale: 5,
+        adetailer: false,
         hires: { enabled: false, denoisingStrength: 0.7 },
       },
     },

@@ -1495,6 +1495,12 @@ export interface ImageGenSamplerSetPayload {
   scheduler?: string;
   vae?: string;
   hires?: ImageGenHiresBlock;
+  /** Face-fix second pass (ADetailer / FaceDetailer) — configured,
+   *  opt-in only: a set ships `adetailer: false` and the user flips it;
+   *  the detector model stays unset (the dialect's own default fills it,
+   *  no hardcoded names). Both LOCAL dialects consume the pair. */
+  adetailer?: boolean;
+  adetailerModel?: string;
 }
 
 /** Persisted named image-gen sampler set row (`image_gen_sampler_sets`). */
