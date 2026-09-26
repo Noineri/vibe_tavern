@@ -121,8 +121,8 @@
  * - NO local timeout: the run continues until terminal state or the
  *   caller's abort (the localExecution contract; the poll delay is
  *   abortable so cancellation is prompt).
- * - clipSkip rides `CLIPSetLastLayer.stop_at_clip_layer = -clipSkip`
- *   (ComfyUI counts from the end; the node is OMITTED when clipSkip is
+ * - clipSkip >= 2 rides `CLIPSetLastLayer.stop_at_clip_layer = -clipSkip`
+ *   (ComfyUI counts from the end; the node is OMITTED for clipSkip 1 or
  *   unset — no silent layer-slicing).
  * - v1 ignores (no VT field maps yet): denoise stays the node default 1
  *   (txt2img), batch_size 1, `preview_method`, and the WS preview BINARY
@@ -472,9 +472,10 @@ function buildComfyCommonNodes(
   const scheduler = setOrUndefined(request.scheduler) ?? COMFY_NODE_DEFAULTS.scheduler;
 
   // The clip source of the two text encoders: the loader output directly,
-  // or through CLIPSetLastLayer when the request slices layers.
+  // or through CLIPSetLastLayer when the request slices layers (clipSkip >=
+  // 2 — clipSkip 1 is a1111's no-skip and must not emit the node).
   const clipSource: [string, number] =
-    clipSkip !== undefined ? [COMFY_NODE_IDS.clipSetLastLayer, 0] : refs.clip;
+    clipSkip !== undefined && clipSkip >= 2 ? [COMFY_NODE_IDS.clipSetLastLayer, 0] : refs.clip;
 
   const graph: ComfyWorkflowGraph = {
     [COMFY_NODE_IDS.kSampler]: {
@@ -517,11 +518,17 @@ function buildComfyCommonNodes(
       inputs: { filename_prefix: COMFY_NODE_DEFAULTS.filenamePrefix, images: [COMFY_NODE_IDS.vaeDecode, 0] },
     },
   };
-  if (clipSkip !== undefined) {
+  if (clipSkip !== undefined && clipSkip >= 2) {
     graph[COMFY_NODE_IDS.clipSetLastLayer] = {
       class_type: "CLIPSetLastLayer",
-      // ComfyUI counts from the end: clipSkip 2 (skip one layer) → -2;
-      // clipSkip 1 → -1 = the node's own no-skip default.
+      // ComfyUI counts from the end: clipSkip 2 (skip one layer) → -2.
+      // clipSkip 1 (a1111's "no skip") must OMIT the node entirely: SDXL's
+      // no-node default IS its trained penultimate layer, while an explicit
+      // -1 shifts the hidden state one block off-distribution → garbage
+      // conditioning → mush images (live-diagnosed 2026-09-27: every run
+      // with the node at -1 produced mush, every run without it — including
+      // a controlled default-workflow probe on the same checkpoint — was
+      // clean).
       inputs: { stop_at_clip_layer: -clipSkip, clip: refs.clip },
     };
   }

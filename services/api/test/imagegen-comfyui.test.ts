@@ -270,6 +270,13 @@ describe("comfyui adapter", () => {
       expect(graph["7"]!.inputs.clip).toEqual(["10", 0]);
     });
 
+    it("clipSkip 1 (a1111's no-skip) OMITS the node — an explicit -1 shifts SDXL one block off-distribution (mush images)", () => {
+      const { graph } = buildComfyCheckpointWorkflow({ prompt: "p", clipSkip: 1 }, "m.safetensors");
+      expect(graph["10"]).toBeUndefined();
+      expect(graph["6"]!.inputs.clip).toEqual(["4", 1]);
+      expect(graph["7"]!.inputs.clip).toEqual(["4", 1]);
+    });
+
     it("fail-closes on non-positive sizes", () => {
       expect(() => buildComfyCheckpointWorkflow({ prompt: "p", width: 0 }, "m.safetensors")).toThrow(
         ComfyImageGenSizeError,
