@@ -650,6 +650,7 @@
 	"image_gen_family_registry_failed": "Не удалось загрузить список семейств.",
 	"image_gen_template_checkpoint": "Чекпоинт",
 	"image_gen_template_krea2_dit": "DiT",
+	"image_gen_template_anima_dit": "Анима",
 	"image_gen_sampler_auto": "Авто (по умолчанию сервера)",
 	"image_gen_advanced": "Дополнительно",
 	"image_gen_steps_label": "Шаги",

@@ -282,8 +282,9 @@ describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-stat
 });
 
 describe("model-controls — buildDitSidecarControls (T3: gate + Auto-pickable + since-removed rules)", () => {
-  test("null unless comfyui + the krea2-dit template (undefined backend included)", () => {
+  test("returns controls for either ComfyUI DiT template and null otherwise", () => {
     expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "krea2-dit" })).not.toBeNull();
+    expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "anima-dit" })).not.toBeNull();
     expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "checkpoint" })).toBeNull();
     expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: undefined })).toBeNull();
     expect(buildDitSidecarControls({ backend: "a1111", modelTemplate: "krea2-dit" })).toBeNull();

@@ -1594,7 +1594,7 @@ describe("image-gen routes — schedulers (PG-3, dialect-gated)", () => {
     expect(attachments[0]!.imageGen!.params.template).toBe("checkpoint");
   });
 
-  test("generate (comfyui DiT): auto-detect routes to the krea2 template, profile sidecars ride the graph + provenance (CG-A2)", async () => {
+  test("generate (comfyui DiT): metadata-detected Krea-2 routes to its template, profile sidecars ride the graph + provenance (CG-A2)", async () => {
     const queuedBodies: Array<Record<string, unknown>> = [];
     const { app, stores } = await makeApp(async (input, init) => {
       const url = new URL(String(input));
@@ -1613,6 +1613,9 @@ describe("image-gen routes — schedulers (PG-3, dialect-gated)", () => {
             },
           }),
         );
+      }
+      if (url.pathname === "/view_metadata/diffusion_models") {
+        return Response.json({ "modelspec.architecture": "Krea 2" });
       }
       if (url.pathname === "/prompt") {
         queuedBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);

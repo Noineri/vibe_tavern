@@ -108,7 +108,13 @@ function happyTransport(promptId: string, pendingPolls = 0, checkpoints: string[
  *  hits the UNET combo; sidecar folders serve configurable lists. */
 function ditTransport(
   promptId: string,
-  folders: { encoders?: string[]; vaes?: string[]; unets?: string[]; checkpoints?: string[] } = {},
+  folders: {
+    encoders?: string[];
+    vaes?: string[];
+    unets?: string[];
+    checkpoints?: string[];
+    family?: string | null;
+  } = {},
 ) {
   return makeTransport((url) => {
     if (url.pathname === "/object_info/CheckpointLoaderSimple") {
@@ -123,6 +129,11 @@ function ditTransport(
         "UNETLoader",
         "unet_name",
         folders.unets ?? ["museByStableYogi_v35Int8Extended.safetensors", "kreation.safetensors"],
+      );
+    }
+    if (url.pathname === "/view_metadata/diffusion_models") {
+      return Response.json(
+        folders.family === null ? {} : { "modelspec.architecture": folders.family ?? "Krea 2" },
       );
     }
     if (url.pathname === "/models/text_encoders") {
@@ -665,18 +676,19 @@ describe("comfyui adapter", () => {
 
       const result = await backend.generate({ prompt: "p", model: MUSE, seed: 7 });
 
-      // Detection order: checkpoint combo (miss) → unet combo (hit) → the
-      // two sidecar folders → queue → poll → download.
+      // Detection order: checkpoint combo (miss) → unet combo (hit) →
+      // metadata family → two sidecar folders → queue → poll → download.
       expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
         "/object_info/CheckpointLoaderSimple",
         "/object_info/UNETLoader",
+        "/view_metadata/diffusion_models",
         "/models/text_encoders",
         "/models/vae",
         "/prompt",
         "/history/pid-d1",
         "/view",
       ]);
-      const graph = sentJson(calls[4]!).prompt as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+      const graph = sentJson(calls[5]!).prompt as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
       expect(graph["11"]!.inputs.unet_name).toBe(MUSE);
       expect(graph["12"]!.inputs.clip_name).toBe("qwen3vl_4b_fp8_scaled.safetensors");
       expect(graph["12"]!.inputs.type).toBe("krea2");
@@ -684,6 +696,112 @@ describe("comfyui adapter", () => {
       expect(result.images).toHaveLength(1);
       expect(result.seed).toBe(7);
       expect(result.resolvedTemplate).toBe("krea2-dit");
+    });
+
+    it("routes metadata-detected Anima models through the stable_diffusion graph and resolves their sidecars", async () => {
+      const nijce = ditTransport("pid-anima-nijce", {
+        unets: ["nijce_1.safetensors"],
+        family: "Anima",
+        encoders: ["qwen_3_06b_base.safetensors", "nijce_1_txt.safetensors"],
+        vaes: ["qwen_image_vae (1).safetensors", "qwen_image_vae.safetensors"],
+      });
+      const nijceResult = await backendWith(nijce.transport).generate({ prompt: "p", model: "nijce_1.safetensors", seed: 7 });
+      const nijcePrompt = nijce.calls.find((call) => new URL(call.url).pathname === "/prompt");
+      const nijceGraph = sentJson(nijcePrompt!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+      expect(nijceGraph["12"]!.inputs).toEqual({ clip_name: "nijce_1_txt.safetensors", type: "stable_diffusion" });
+      expect(nijceGraph["13"]!.inputs.vae_name).toBe("qwen_image_vae.safetensors");
+      expect(nijceResult.resolvedTemplate).toBe("anima-dit");
+
+      const homosimile = ditTransport("pid-anima-homosimile", {
+        unets: ["homosimileAnima_v20.safetensors"],
+        family: "Anima",
+        encoders: ["qwen_3_06b_base.safetensors", "other.safetensors"],
+      });
+      await backendWith(homosimile.transport).generate({ prompt: "p", model: "homosimileAnima_v20.safetensors" });
+      const homosimilePrompt = homosimile.calls.find((call) => new URL(call.url).pathname === "/prompt");
+      const homosimileGraph = sentJson(homosimilePrompt!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+      expect(homosimileGraph["12"]!.inputs.clip_name).toBe("qwen_3_06b_base.safetensors");
+    });
+
+    it("keeps a metadata-detected Krea-2 graph byte-identical to the Krea builder", async () => {
+      const { transport, calls } = ditTransport("pid-krea-identical");
+      await backendWith(transport).generate({ prompt: "p", model: MUSE, seed: 17 });
+      const prompt = calls.find((call) => new URL(call.url).pathname === "/prompt");
+      const sentGraph = sentJson(prompt!).prompt;
+      const expectedGraph = buildComfyKrea2Workflow(
+        { prompt: "p", model: MUSE, seed: 17 },
+        {
+          unet: MUSE,
+          encoder: "qwen3vl_4b_fp8_scaled.safetensors",
+          vae: "qwen_image_vae.safetensors",
+        },
+      ).graph;
+      expect(sentGraph).toEqual(expectedGraph);
+    });
+
+    it("honors a manual Anima pin without consulting the auto-detection ladder, while explicit sidecars still win", async () => {
+      const { transport, calls } = ditTransport("pid-anima-pin", { family: null });
+      const result = await backendWith(transport).generate({
+        prompt: "p",
+        model: "renamed-model.safetensors",
+        promptFamilyOverride: "anima",
+        encoderName: "chosen_encoder.safetensors",
+        vaeName: "chosen_vae.safetensors",
+      });
+      const paths = calls.map((call) => new URL(call.url).pathname);
+      expect(paths).not.toContain("/view_metadata/diffusion_models");
+      expect(paths).not.toContain("/models/text_encoders");
+      expect(paths).not.toContain("/models/vae");
+      const prompt = calls.find((call) => new URL(call.url).pathname === "/prompt");
+      const graph = sentJson(prompt!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+      expect(graph["12"]!.inputs).toEqual({ clip_name: "chosen_encoder.safetensors", type: "stable_diffusion" });
+      expect(graph["13"]!.inputs.vae_name).toBe("chosen_vae.safetensors");
+      expect(result.resolvedTemplate).toBe("anima-dit");
+    });
+
+    it("fails closed for auto diffusion models without metadata or without a workflow template", async () => {
+      const metadataMissing = ditTransport("pid-missing-family", { family: null });
+      await expect(
+        backendWith(metadataMissing.transport).generate({ prompt: "p", model: MUSE }),
+      ).rejects.toThrow(`ComfyUI model "${MUSE}" has no detected family — pin the family on the profile`);
+
+      const qwen = ditTransport("pid-qwen-family", { family: "Qwen Image" });
+      await expect(
+        backendWith(qwen.transport).generate({ prompt: "p", model: MUSE }),
+      ).rejects.toThrow(`ComfyUI model "${MUSE}" resolves to the "Qwen Image" family, which has no workflow template yet`);
+    });
+
+    it("maps manual checkpoint and Krea-2 family pins to their declared templates", async () => {
+      const checkpoint = happyTransport("pid-pony-pin");
+      const checkpointResult = await backendWith(checkpoint.transport).generate({
+        prompt: "p",
+        model: "renamed-checkpoint.safetensors",
+        promptFamilyOverride: "pony",
+      });
+      const checkpointPrompt = checkpoint.calls.find((call) => new URL(call.url).pathname === "/prompt");
+      const checkpointGraph = sentJson(checkpointPrompt!).prompt as Record<string, { class_type: string }>;
+      expect(checkpointGraph["4"]!.class_type).toBe("CheckpointLoaderSimple");
+      expect(checkpointResult.resolvedTemplate).toBe("checkpoint");
+
+      const krea = ditTransport("pid-krea-pin");
+      const kreaResult = await backendWith(krea.transport).generate({
+        prompt: "p",
+        model: "renamed-dit.safetensors",
+        promptFamilyOverride: "krea2",
+        encoderName: "chosen_encoder.safetensors",
+        vaeName: "chosen_vae.safetensors",
+      });
+      const kreaPrompt = krea.calls.find((call) => new URL(call.url).pathname === "/prompt");
+      const kreaGraph = sentJson(kreaPrompt!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+      expect(kreaGraph["12"]!.inputs.type).toBe("krea2");
+      expect(kreaResult.resolvedTemplate).toBe("krea2-dit");
+    });
+
+    it("fails closed for a manually pinned family with no workflow template", async () => {
+      const { transport } = ditTransport("pid-qwen-pin");
+      await expect(
+        backendWith(transport).generate({ prompt: "p", model: MUSE, promptFamilyOverride: "qwen" }),
+      ).rejects.toThrow('ComfyUI prompt family "qwen" has no workflow template yet');
     });
 
     it("short-circuits on a checkpoint hit: one detection call, no sidecar fetches", async () => {
@@ -723,7 +841,7 @@ describe("comfyui adapter", () => {
         encoderName: "my_encoder.sft",
         vaeName: "my_vae.safetensors",
       });
-      const graph = sentJson(calls[2]!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+      const graph = sentJson(calls[3]!).prompt as Record<string, { inputs: Record<string, unknown> }>;
       expect(graph["12"]!.inputs.clip_name).toBe("my_encoder.sft");
       expect(graph["13"]!.inputs.vae_name).toBe("my_vae.safetensors");
       expect(result.resolvedTemplate).toBe("krea2-dit");
@@ -739,7 +857,7 @@ describe("comfyui adapter", () => {
       });
       const backend = backendWith(transport);
       await backend.generate({ prompt: "p", model: MUSE });
-      const graph = sentJson(calls[4]!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+      const graph = sentJson(calls[5]!).prompt as Record<string, { inputs: Record<string, unknown> }>;
       expect(graph["12"]!.inputs.clip_name).toBe("sub/qwen3vl_4b_fp8_scaled.sft");
       expect(graph["13"]!.inputs.vae_name).toBe("qwen_image_vae.safetensors");
     });
@@ -751,7 +869,7 @@ describe("comfyui adapter", () => {
       });
       const backend = backendWith(transport);
       await backend.generate({ prompt: "p", model: MUSE });
-      const graph = sentJson(calls[4]!).prompt as Record<string, { inputs: Record<string, unknown> }>;
+      const graph = sentJson(calls[5]!).prompt as Record<string, { inputs: Record<string, unknown> }>;
       expect(graph["12"]!.inputs.clip_name).toBe("only_encoder.safetensors");
       expect(graph["13"]!.inputs.vae_name).toBe("only_vae.safetensors");
     });
@@ -818,6 +936,10 @@ describe("comfyui adapter", () => {
       const { transport } = modelsTransport({
         checkpoints: ["graycolor_v18.safetensors", "illustrious\\xl-mix_v3.safetensors"],
         unets: ["museByStableYogi_v35Int8Extended.safetensors"],
+        embedded: (name) =>
+          name === "museByStableYogi_v35Int8Extended.safetensors"
+            ? { "modelspec.architecture": "Krea 2" }
+            : undefined,
         folderPaths: null,
       });
       const models = await backendWith(transport).listModels();
@@ -827,7 +949,24 @@ describe("comfyui adapter", () => {
         {
           id: "museByStableYogi_v35Int8Extended.safetensors",
           label: "museByStableYogi_v35Int8Extended",
+          family: "Krea 2",
           template: COMFY_MODEL_TEMPLATES.krea2Dit,
+        },
+      ]);
+    });
+
+    it("marks metadata-detected Anima diffusion models with the Anima template", async () => {
+      const { transport } = modelsTransport({
+        unets: ["renamed-model.safetensors"],
+        embedded: (name) => name === "renamed-model.safetensors" ? { "modelspec.architecture": "Anima" } : undefined,
+        folderPaths: null,
+      });
+      expect(await backendWith(transport).listModels()).toEqual([
+        {
+          id: "renamed-model.safetensors",
+          label: "renamed-model",
+          family: "Anima",
+          template: COMFY_MODEL_TEMPLATES.animaDit,
         },
       ]);
     });

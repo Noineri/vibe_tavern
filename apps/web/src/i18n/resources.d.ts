@@ -1366,6 +1366,7 @@ export default interface Resources {
     "image_gen_slot_regenerate_same_prompt": "Repeat with this exact prompt (new swipe variant)",
     "image_gen_steps_label": "Steps",
     "image_gen_stop_tooltip": "Stop image generation",
+    "image_gen_template_anima_dit": "Anima",
     "image_gen_template_checkpoint": "Checkpoint",
     "image_gen_template_krea2_dit": "DiT",
     "image_gen_user_size_add": "Add",

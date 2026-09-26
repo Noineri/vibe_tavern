@@ -1,1 +1,1 @@
-masterpiece, best quality, very aesthetic, extremely detailed, score_7
+masterpiece, best quality, newest, very aesthetic, extremely detailed, score_9, score_8, score_7

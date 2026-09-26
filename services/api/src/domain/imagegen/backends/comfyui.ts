@@ -162,7 +162,7 @@
  *   VT owns (detector model, inherited sampler/steps/cfg/seed).
  */
 
-import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS, type ImagePromptFamilyId } from "@vibe-tavern/domain";
 
 import type {
   ImageGenAdapterConfig,
@@ -308,13 +308,72 @@ export const COMFY_KREA2_CLIP_TYPE = COMFY_TEMPLATE_SPECS.krea2Dit.clipType;
 export const COMFY_KREA2_DEFAULT_ENCODER = COMFY_TEMPLATE_SPECS.krea2Dit.canonicalEncoder;
 export const COMFY_KREA2_DEFAULT_VAE = COMFY_TEMPLATE_SPECS.krea2Dit.canonicalVae;
 
-/** The two workflow-template ids the adapter resolves — the marker each
+/** The workflow-template ids the adapter resolves — the marker each
  *  model-picker entry carries (CG-A3) and the value recorded in the slot
  *  provenance `params.template` (CG-A2). */
 export const COMFY_MODEL_TEMPLATES = {
   checkpoint: "checkpoint",
   krea2Dit: "krea2-dit",
+  animaDit: "anima-dit",
 } as const;
+
+type ComfySelectedTemplateSpec =
+  | typeof COMFY_TEMPLATE_SPECS.checkpoint
+  | typeof COMFY_TEMPLATE_SPECS.krea2Dit
+  | typeof COMFY_TEMPLATE_SPECS.animaDit;
+
+type ComfyPinnedDitTemplateSpec =
+  | typeof COMFY_TEMPLATE_SPECS.krea2Dit
+  | typeof COMFY_TEMPLATE_SPECS.animaDit;
+
+function isComfyPinnedDitTemplate(
+  spec: ComfySelectedTemplateSpec,
+): spec is ComfyPinnedDitTemplateSpec {
+  return spec !== COMFY_TEMPLATE_SPECS.checkpoint;
+}
+
+/** Map the profile's authoritative manual family pin to a workflow template. */
+function resolveComfyPinnedTemplate(family: ImagePromptFamilyId): ComfySelectedTemplateSpec {
+  if (family === "krea2") return COMFY_TEMPLATE_SPECS.krea2Dit;
+  if (family === "anima") return COMFY_TEMPLATE_SPECS.animaDit;
+  if (
+    family === "prose" ||
+    family === "pony" ||
+    family === "illustrious" ||
+    family === "noobai" ||
+    family === "sdxl-realism" ||
+    family === "hybrid"
+  ) {
+    return COMFY_TEMPLATE_SPECS.checkpoint;
+  }
+  throw new ComfyImageGenConfigError(
+    `ComfyUI prompt family "${family}" has no workflow template yet`,
+  );
+}
+
+/** Resolve a metadata-detected diffusion family without guessing from its filename. */
+function resolveComfyAutoDiffusionTemplate(
+  family: string | undefined,
+  model: string,
+): ComfyDitTemplateSpec {
+  if (family === "Krea 2") return COMFY_TEMPLATE_SPECS.krea2Dit;
+  if (family === "Anima") return COMFY_TEMPLATE_SPECS.animaDit;
+  if (family === undefined) {
+    throw new ComfyImageGenConfigError(
+      `ComfyUI model "${model}" has no detected family — pin the family on the profile`,
+    );
+  }
+  throw new ComfyImageGenConfigError(
+    `ComfyUI model "${model}" resolves to the "${family}" family, which has no workflow template yet`,
+  );
+}
+
+/** The listing marker mirrors only metadata-resolved diffusion templates. */
+function resolveComfyListedDiffusionTemplate(family: string | undefined): string | undefined {
+  if (family === "Krea 2") return COMFY_MODEL_TEMPLATES.krea2Dit;
+  if (family === "Anima") return COMFY_MODEL_TEMPLATES.animaDit;
+  return undefined;
+}
 
 /** Resolved loader inputs of the Krea-2 DiT template. */
 export interface ComfyKrea2Sidecars {
@@ -1579,37 +1638,67 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           }
         }
       }
-      // Template detection (CG-A2): which loader folder owns the model. The
-      // checkpoint combo is checked first (sync checkpoints are the common
-      // case — one list fetch); a miss falls through to the diffusion-model
-      // combo (Krea-2-class bare DiT files) and its sidecar resolution.
-      const checkpointNames = await fetchComfyComboValues(
-        cfg.fetch,
-        cfg.endpoint,
-        "CheckpointLoaderSimple",
-        "ckpt_name",
-        request.signal,
-      );
-      let template: "checkpoint" | "krea2-dit";
+      // An explicit prompt-family pin is authoritative. Without one, the
+      // loader folder selects checkpoints and the CG-A3 metadata ladder
+      // selects a diffusion template; names are never a detection signal.
+      const pinnedSpec = request.promptFamilyOverride === undefined
+        ? undefined
+        : resolveComfyPinnedTemplate(request.promptFamilyOverride);
+      const checkpointNames = pinnedSpec === undefined
+        ? await fetchComfyComboValues(
+          cfg.fetch,
+          cfg.endpoint,
+          "CheckpointLoaderSimple",
+          "ckpt_name",
+          request.signal,
+        )
+        : [];
+      const pinnedDitSpec = pinnedSpec !== undefined && isComfyPinnedDitTemplate(pinnedSpec)
+        ? pinnedSpec
+        : undefined;
+      let template: (typeof COMFY_MODEL_TEMPLATES)[keyof typeof COMFY_MODEL_TEMPLATES];
       let graph: ComfyWorkflowGraph;
       let secondPassCtx: ComfySecondPassCtx;
-      if (checkpointNames.includes(model)) {
+      if (pinnedSpec === COMFY_TEMPLATE_SPECS.checkpoint || checkpointNames.includes(model)) {
         ({ graph, ctx: secondPassCtx } = buildComfyCheckpointWorkflow(request, model));
         template = COMFY_MODEL_TEMPLATES.checkpoint;
       } else {
-        const unetNames = await fetchComfyComboValues(
-          cfg.fetch,
-          cfg.endpoint,
-          "UNETLoader",
-          "unet_name",
-          request.signal,
-        );
-        if (!unetNames.includes(model)) {
-          throw new ComfyImageGenConfigError(
-            `ComfyUI model "${model}" is in neither the checkpoints nor the diffusion-models folder — reselect it from the model list`,
+        let spec: ComfyDitTemplateSpec;
+        if (pinnedDitSpec !== undefined) {
+          spec = pinnedDitSpec;
+        } else {
+          const unetNames = await fetchComfyComboValues(
+            cfg.fetch,
+            cfg.endpoint,
+            "UNETLoader",
+            "unet_name",
+            request.signal,
           );
+          if (!unetNames.includes(model)) {
+            throw new ComfyImageGenConfigError(
+              `ComfyUI model "${model}" is in neither the checkpoints nor the diffusion-models folder — reselect it from the model list`,
+            );
+          }
+          // Reuse the CG-A3 metadata ladder for auto routing. Its embedded
+          // metadata and sidecar stores are authoritative; no filename guess
+          // can select a workflow graph.
+          let folderRoots: Record<string, string[]> | undefined;
+          let folderRootsFetched = false;
+          const rootsOf = async (): Promise<Record<string, string[]> | undefined> => {
+            if (!folderRootsFetched) {
+              folderRoots = await fetchComfyFolderRoots(cfg.fetch, cfg.endpoint, request.signal);
+              folderRootsFetched = true;
+            }
+            return folderRoots;
+          };
+          const family = await resolveComfyModelFamily(cfg.fetch, cfg.endpoint, {
+            folder: "diffusion_models",
+            name: model,
+            signal: request.signal,
+            rootsOf,
+          });
+          spec = resolveComfyAutoDiffusionTemplate(family, model);
         }
-        const spec = COMFY_TEMPLATE_SPECS.krea2Dit;
         const listFolder = (folder: string, signal: AbortSignal | undefined) =>
           fetchComfyFolderNames(cfg.fetch, cfg.endpoint, folder, signal);
         const createConfigError = (message: string) => new ComfyImageGenConfigError(message);
@@ -1618,6 +1707,7 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
             folder: "text_encoders",
             explicit: request.encoderName,
             canonical: spec.canonicalEncoder,
+            pairedStem: model,
             what: "text encoder",
             signal: request.signal,
             listFolder,
@@ -1630,6 +1720,7 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
             folder: "vae",
             explicit: request.vaeName,
             canonical: spec.canonicalVae,
+            pairedStem: undefined,
             what: "VAE",
             signal: request.signal,
             listFolder,
@@ -1638,7 +1729,9 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           spec,
         );
         ({ graph, ctx: secondPassCtx } = buildComfyKrea2Workflow(request, { unet: model, encoder, vae }, spec));
-        template = COMFY_MODEL_TEMPLATES.krea2Dit;
+        template = spec === COMFY_TEMPLATE_SPECS.animaDit
+          ? COMFY_MODEL_TEMPLATES.animaDit
+          : COMFY_MODEL_TEMPLATES.krea2Dit;
       }
 
       // Hires second pass (FT-A4 flat field, comfy dialect): a NAMED
@@ -1829,11 +1922,14 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
             rootsOf,
           });
           const label = comfyWeightsBasename(name);
+          const resolvedTemplate = folder === "diffusion_models"
+            ? resolveComfyListedDiffusionTemplate(family)
+            : template;
           entries.push({
             id: name,
             label: label.length > 0 ? label : name,
             ...(family !== undefined ? { family } : {}),
-            template,
+            ...(resolvedTemplate !== undefined ? { template: resolvedTemplate } : {}),
           });
         }
       }

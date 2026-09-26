@@ -11,6 +11,7 @@ import type { TFunc } from "../../i18n/locale-helpers.js";
 export const TEMPLATE_LABEL_KEYS: Record<string, Parameters<TFunc>[0]> = {
   checkpoint: "image_gen_template_checkpoint",
   "krea2-dit": "image_gen_template_krea2_dit",
+  "anima-dit": "image_gen_template_anima_dit",
 };
 
 /** «Detected» label for a template marker — the known map through i18n,

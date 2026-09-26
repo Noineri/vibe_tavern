@@ -267,7 +267,10 @@ export function buildDitSidecarControls({
   backend: ImageGenBackendValue | undefined;
   modelTemplate: string | undefined;
 }): DitSidecarControlsSpec | null {
-  if (backend !== IMAGE_GEN_BACKENDS.ComfyUI || modelTemplate !== "krea2-dit") return null;
+  if (
+    backend !== IMAGE_GEN_BACKENDS.ComfyUI ||
+    (modelTemplate !== "krea2-dit" && modelTemplate !== "anima-dit")
+  ) return null;
   return {
     encoder: {
       field: "encoderName",

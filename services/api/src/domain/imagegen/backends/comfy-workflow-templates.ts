@@ -37,6 +37,14 @@ export const COMFY_TEMPLATE_SPECS = {
     canonicalEncoder: "qwen3vl_4b_fp8_scaled",
     canonicalVae: "qwen_image_vae",
   } satisfies ComfyDitTemplateSpec,
+  animaDit: {
+    id: "anima-dit",
+    familyLabel: "Anima",
+    clipType: "stable_diffusion",
+    canonicalEncoder: "qwen_3_06b_base",
+    canonicalVae: "qwen_image_vae",
+    encoderPairedStem: true,
+  } satisfies ComfyDitTemplateSpec,
 } as const;
 
 /** Basename without a weights extension — the model-label and sidecar-match key. */
@@ -50,6 +58,8 @@ export interface ComfySidecarResolveOptions {
   readonly folder: string;
   readonly explicit: string | undefined;
   readonly canonical: string;
+  /** The selected diffusion-model name, supplied for encoder paired-stem lookup only. */
+  readonly pairedStem: string | undefined;
   readonly what: string;
   readonly signal: AbortSignal | undefined;
   readonly listFolder: (folder: string, signal: AbortSignal | undefined) => Promise<readonly string[]>;
@@ -57,8 +67,9 @@ export interface ComfySidecarResolveOptions {
 }
 
 /**
- * Resolve a DiT sidecar: explicit request value, exact canonical basename,
- * then a single-file folder; otherwise fail closed with the registry family.
+ * Resolve a DiT sidecar: explicit request value, optionally the selected
+ * model's paired encoder stem, exact canonical basename, then a single-file
+ * folder; otherwise fail closed with the registry family.
  */
 export async function resolveComfySidecar(
   options: ComfySidecarResolveOptions,
@@ -68,6 +79,11 @@ export async function resolveComfySidecar(
   if (explicit) return explicit;
 
   const names = await options.listFolder(options.folder, options.signal);
+  if (spec.encoderPairedStem && options.pairedStem !== undefined) {
+    const pairedStem = `${comfyWeightsBasename(options.pairedStem)}_txt`;
+    const paired = names.find((name) => comfyWeightsBasename(name) === pairedStem);
+    if (paired !== undefined) return paired;
+  }
   const canonical = names.find((name) => comfyWeightsBasename(name) === options.canonical);
   if (canonical !== undefined) return canonical;
   if (names.length === 1 && names[0] !== undefined) return names[0];
