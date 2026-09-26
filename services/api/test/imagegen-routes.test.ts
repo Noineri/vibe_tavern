@@ -1342,7 +1342,8 @@ describe("image-gen routes — progress + interrupt (PG-2, capability-gated)", (
     });
     const ok = await app.request(`/api/image-gen/profiles/${comfyId}/face-detectors`);
     expect(ok.status).toBe(200);
-    expect(await ok.json()).toEqual(["bbox/face_yolov8m.pt"]);
+    // The FULL discovered vocabulary, verbatim (no face filter).
+    expect(await ok.json()).toEqual(["bbox/face_yolov8m.pt", "bbox/hand_yolov8s.pt"]);
 
     const a1111Id = await seedProfile(app, {
       backend: IMAGE_GEN_BACKENDS.A1111,

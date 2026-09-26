@@ -1860,6 +1860,49 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
     expect(graph["9"]!.inputs.images).toEqual(["41", 0]);
   });
 
+  it("detail pass (pure): a segm/ pick rides the SEGS hop — SegmDetectorSEGS on provider slot 1, DetailerForEach on its SEGS, no FaceDetailer", () => {
+    const { graph, ctx } = buildComfyCheckpointWorkflow(
+      { prompt: "a tavern", model: "graycolor_v18.safetensors", steps: 30 },
+      "graycolor_v18.safetensors",
+    );
+    applyComfyFaceDetailerPass(
+      graph,
+      { prompt: "a tavern" },
+      { ...ctx, finalImage: ["8", 0], detector: "segm/person_yolov8m-seg.pt" },
+    );
+    expect(graph["40"]!.inputs).toEqual({ model_name: "segm/person_yolov8m-seg.pt" });
+    expect(graph["42"]!.class_type).toBe("SegmDetectorSEGS");
+    expect(graph["42"]!.inputs).toMatchObject({
+      segm_detector: ["40", 1],
+      image: ["8", 0],
+      threshold: 0.5,
+      dilation: 10,
+      crop_factor: 3.0,
+      drop_size: 10,
+      labels: "all",
+    });
+    expect(graph["43"]!.class_type).toBe("DetailerForEach");
+    expect(graph["43"]!.inputs).toMatchObject({
+      image: ["8", 0],
+      segs: ["42", 0],
+      model: ["4", 0],
+      clip: ["4", 1],
+      vae: ["4", 2],
+      positive: ["6", 0],
+      negative: ["7", 0],
+      seed: ctx.seed,
+      steps: 30,
+      denoise: 0.5,
+      guide_size: 512,
+      guide_size_for: true,
+      max_size: 1024,
+      cycle: 1,
+    });
+    // The bbox arm's node is absent on a segm pick — the arms are exclusive.
+    expect(graph["41"]).toBeUndefined();
+    expect(graph["9"]!.inputs.images).toEqual(["43", 0]);
+  });
+
   it("face detailer (pure): chains AFTER hires — its image is the second decode", () => {
     const { graph, ctx } = buildComfyCheckpointWorkflow(
       { prompt: "a tavern", model: "graycolor_v18.safetensors" },
@@ -1917,7 +1960,7 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
         model: "graycolor_v18.safetensors",
         adetailerModel: "bbox/ghost.pt",
       }),
-    ).rejects.toThrow("face detector");
+    ).rejects.toThrow("is not in the discovered list");
     expect(unknown.calls.filter((call) => call.url.endsWith("/prompt")).length).toBe(0);
 
     const ok = secondPassTransport("p-ok");
@@ -1967,7 +2010,7 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
     expect(list).toEqual([{ name: "4x-UltraSharp.pth" }, { name: "ESRGAN_4x.pth" }]);
   });
 
-  it("listFaceDetectors: the FULL ultralytics combo verbatim (no face filter); absent chain = []; a truncated combo falls back to the folder (separator-normalized)", async () => {
+  it("listFaceDetectors: the FULL ultralytics combo verbatim (no face filter, no bbox filter); absent chain = []; a truncated combo falls back to the folder (separator-normalized)", async () => {
     const full = secondPassTransport("p-d1");
     expect(await backendWith(full.transport).listFaceDetectors?.()).toEqual([
       "bbox/face_yolov8m.pt",
@@ -1988,7 +2031,7 @@ describe("comfyui second passes (FT-A4 hires + IF-6 face detailing)", () => {
       "segm/person_yolov8m-seg.pt",
     ]);
 
-    // A hand-only install is a VALID detector list now (the pass details
+    // A hand-only install is a VALID detector list (the pass details
     // whatever the chosen detector finds) — never silently empty.
     const hands = secondPassTransport("p-d4", { detectorCombo: ["bbox/hand_yolov8s.pt"] });
     expect(await backendWith(hands.transport).listFaceDetectors?.()).toEqual(["bbox/hand_yolov8s.pt"]);

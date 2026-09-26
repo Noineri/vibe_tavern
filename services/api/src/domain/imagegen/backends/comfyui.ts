@@ -257,6 +257,10 @@ export const COMFY_NODE_IDS = {
   checkpointVaeLoader: "36",
   faceDetector: "40",
   faceDetailer: "41",
+  /** Segmentation arm (segm/ picks): the SEGS hop and its detailer —
+   *  ids 42/43 keep the face arm's 40/41 untouched. */
+  segmDetectorSegs: "42",
+  segmDetailer: "43",
 } as const;
 
 /** First LoraLoader node id of the CG-C2 chain — loras append ABOVE the
@@ -707,6 +711,18 @@ export const COMFY_FACE_DETAILER_DEFAULTS = {
   cycle: 1,
 } as const;
 
+/** SegmDetectorSEGS's node-declared defaults (live-verified 0.37.0 — the
+ *  same materialize-declared-defaults discipline). DetailerForEach reuses
+ *  COMFY_FACE_DETAILER_DEFAULTS: the per-detection knobs are the same node
+ *  family values (512/1024/0.5). */
+const COMFY_SEGM_DETECTOR_DEFAULTS = {
+  threshold: 0.5,
+  dilation: 10,
+  cropFactor: 3.0,
+  dropSize: 10,
+  labels: "all",
+} as const;
+
 /** Inject the hires-fix second pass (FT-A4, comfy dialect) into a built
  *  template graph and rewire SaveImage to the second decode. The upscaler
  *  maps by name: unset (the chip's Auto) → the LATENT path
@@ -796,25 +812,73 @@ export function applyComfyHiresPass(
   return { finalImage: [COMFY_NODE_IDS.hiresVaeDecode, 0] };
 }
 
-/** Inject the face-detailing second pass (IF-6, comfy dialect — the
- *  ADetailer equivalent): UltralyticsDetectorProvider loads the discovered
- *  face bbox model, FaceDetailer (the Impact Pack's self-contained pass:
- *  detect → crop → upscale → low-denoise inpaint → paste) takes the final
- *  image from the base/hires pass and every loader-half ref. All required
- *  inputs ride explicitly (the node's own declared defaults materialized —
- *  the weight_dtype lesson); sampler knobs inherit the first pass's
- *  resolved values; denoise is the node's 0.5. Mutates the passed graph
- *  and rewires SaveImage to FaceDetailer's image output. Pure. */
+/** Inject the detail second pass (IF-6, comfy dialect — the
+ *  ADetailer equivalent). The pick's ultralytics folder decides the arm
+ *  (live-verified 0.37.0 — the provider's slot 0 is BBOX_DETECTOR, slot 1
+ *  is SEGM_DETECTOR; a bbox model nulls slot 1, a segm model nulls slot 0,
+ *  and every detailer's bbox_detector is required, so segm models cannot
+ *  ride it): bbox/ picks feed FaceDetailer's bbox_detector (the
+ *  self-contained detect → crop → low-denoise inpaint → paste); segm/
+ *  picks ride the SEGS hop — SegmDetectorSEGS consumes provider slot 1,
+ *  DetailerForEach consumes its SEGS. Owner ruling 2026-09-27: the full
+ *  detector vocabulary is pickable, no filter — both arms built. All
+ *  required inputs ride explicitly (the weight_dtype lesson); sampler
+ *  knobs inherit the first pass's resolved values; denoise is the node's
+ *  0.5. Mutates the passed graph and rewires SaveImage to the detailer's
+ *  image output. Pure. */
 export function applyComfyFaceDetailerPass(
   graph: ComfyWorkflowGraph,
   request: ImageGenGenerateRequest,
   ctx: ComfySecondPassCtx & { finalImage: [string, number]; detector: string },
 ): void {
   const d = COMFY_FACE_DETAILER_DEFAULTS;
+  const s = COMFY_SEGM_DETECTOR_DEFAULTS;
   graph[COMFY_NODE_IDS.faceDetector] = {
     class_type: "UltralyticsDetectorProvider",
     inputs: { model_name: ctx.detector },
   };
+  if (ctx.detector.replace(/\\/g, "/").startsWith("segm/")) {
+    graph[COMFY_NODE_IDS.segmDetectorSegs] = {
+      class_type: "SegmDetectorSEGS",
+      inputs: {
+        segm_detector: [COMFY_NODE_IDS.faceDetector, 1],
+        image: ctx.finalImage,
+        threshold: s.threshold,
+        dilation: s.dilation,
+        crop_factor: s.cropFactor,
+        drop_size: s.dropSize,
+        labels: s.labels,
+      },
+    };
+    graph[COMFY_NODE_IDS.segmDetailer] = {
+      class_type: "DetailerForEach",
+      inputs: {
+        image: ctx.finalImage,
+        segs: [COMFY_NODE_IDS.segmDetectorSegs, 0],
+        model: ctx.model,
+        clip: ctx.clip,
+        vae: ctx.vae,
+        positive: [COMFY_NODE_IDS.positive, 0],
+        negative: [COMFY_NODE_IDS.negative, 0],
+        seed: ctx.seed,
+        steps: ctx.steps,
+        cfg: ctx.cfg,
+        sampler_name: ctx.samplerName,
+        scheduler: ctx.scheduler,
+        denoise: d.denoise,
+        guide_size: d.guideSize,
+        guide_size_for: d.guideSizeFor,
+        max_size: d.maxSize,
+        feather: d.feather,
+        noise_mask: d.noiseMask,
+        force_inpaint: d.forceInpaint,
+        wildcard: "",
+        cycle: d.cycle,
+      },
+    };
+    graph[COMFY_NODE_IDS.saveImage]!.inputs.images = [COMFY_NODE_IDS.segmDetailer, 0];
+    return;
+  }
   graph[COMFY_NODE_IDS.faceDetailer] = {
     class_type: "FaceDetailer",
     inputs: {
@@ -877,15 +941,15 @@ async function comfyNodeClassExists(
   return isRecord(parsed) && parsed[nodeClass] !== undefined;
 }
 
-/** The available detector models (the IF-6 chain discovery): the FULL
- *  UltralyticsDetectorProvider vocabulary, verbatim — no face filter
- *  (owner ruling 2026-09-27; the chosen detector defines what the pass
- *  details: a face model details faces, a hand model details hands — the
- *  Impact FaceDetailer node accepts any bbox/segm ultralytics model). The
- *  combo is the node's own live list (small lists come through whole —
- *  live 4-entry verification); a /models/ultralytics fallback normalizes
- *  Windows separators to the combo's forward-slash form when 0.37+ combo
- *  truncation ("COMBO") or an absent node empties the first source. */
+/** The pickable detector models (the IF-6 chain discovery): the FULL
+ *  UltralyticsDetectorProvider vocabulary, verbatim — no face filter, no
+ *  bbox filter (owner ruling 2026-09-27; the pick's folder routes the
+ *  detail arm: bbox/ → FaceDetailer, segm/ → SegmDetectorSEGS +
+ *  DetailerForEach). The combo is the node's own live list (small lists
+ *  come through whole — live 4-entry verification); a /models/ultralytics
+ *  fallback normalizes Windows separators to the combo's forward-slash
+ *  form when 0.37+ combo truncation ("COMBO") or an absent node empties
+ *  the first source. */
 async function fetchComfyFaceDetectors(
   transport: typeof fetch,
   endpoint: string,
@@ -905,10 +969,12 @@ async function fetchComfyFaceDetectors(
       name.replace(/\\/g, "/"),
     );
   }
-  // The FULL detector vocabulary, verbatim (owner ruling 2026-09-27:
-  // no face filter) — the chosen detector defines what the pass details
-  // (a face model details faces, a hand model details hands; the Impact
-  // FaceDetailer node accepts any bbox/segm ultralytics model).
+  // The FULL detector vocabulary, verbatim (owner ruling 2026-09-27: no
+  // face filter, no bbox filter) — the builder wires BOTH arms: bbox/
+  // picks ride FaceDetailer's bbox_detector, segm/ picks ride the
+  // SegmDetectorSEGS → DetailerForEach hop. The chosen detector defines
+  // what the pass details (a face model details faces, a hand model
+  // details hands).
   return names;
 }
 
@@ -1815,7 +1881,7 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
               ? "no face bbox models were found in the ultralytics folder"
               : `available: ${detectors.slice(0, 5).join(", ")}${detectors.length > 5 ? ", …" : ""}`;
           throw new ComfyImageGenConfigError(
-            `ComfyUI face detector "${faceDetector ?? "(unset)"}" is not in the discovered list (${candidates}) — reselect it from the face-model list`,
+            `ComfyUI detector "${faceDetector ?? "(unset)"}" is not in the discovered list (${candidates}) — reselect it from the detector list`,
           );
         }
         applyComfyFaceDetailerPass(graph, request, { ...secondPassCtx, finalImage, detector: faceDetector });
