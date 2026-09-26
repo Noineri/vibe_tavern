@@ -224,19 +224,13 @@ async function pickOption(triggerId: string, label: string) {
   });
 }
 
-/** Open the chip, pick a concrete model, and open the model-settings
- *  accordion — returns the popover root to query inside. */
+/** Open the chip and pick a concrete model — the model-settings body renders
+ *  directly, so every settings field is reachable without a click. */
 async function openAccordion(chatId: string, modelLabel = "SDXL Base") {
   const view = renderChip(<ImageGenFineTuningChip chatId={chatId} />);
   openChip();
   await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-model-select")).toBeTruthy());
   await pickOption("image-gen-ft-model-select", modelLabel);
-  await waitFor(() =>
-    expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
-  );
-  await act(async () => {
-    within(view.baseElement).getByTestId("image-gen-ft-model-settings-header").click();
-  });
   await waitFor(() =>
     expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings-body")).toBeTruthy(),
   );
@@ -1088,8 +1082,8 @@ describe("ImageGenFineTuningChip — hires-fix block (FT-A6)", () => {
   });
 });
 
-describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", () => {
-  it("renders ONLY when a concrete model is picked — the default-model state has no accordion", async () => {
+describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
+  it("renders ONLY when a concrete model is picked — the default-model state has no settings block", async () => {
     profilesStore = [profile("ig1", "Local Forge", fullCaps())];
     modelsStore["ig1"] = [{ id: "sdxl-base", label: "SDXL Base" }];
     armChat("chat-ms1");
@@ -1101,8 +1095,11 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
 
     await pickOption("image-gen-ft-model-select", "SDXL Base");
     await waitFor(() =>
-      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
+      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings-body")).toBeTruthy(),
     );
+    const header = within(view.baseElement).getByTestId("image-gen-ft-model-settings-header");
+    expect(header.tagName).toBe("DIV");
+    expect(header.textContent).toBe("image_gen_model_settings");
   });
 
   it("overlay edits merge over the loaded row and persist through upsert (one truth, two surfaces)", async () => {
@@ -1112,6 +1109,9 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     armChat("chat-ms2");
 
     const view = await openAccordion("chat-ms2");
+    // The sampler trigger and scalar slider are directly reachable after the
+    // model pick; no model-settings toggle is required.
+    expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-sampler")).toBeTruthy();
     // Loaded overlay shows through: the steps range sits at the stored 20.
     const range = within(view.baseElement).getByTestId("image-gen-range-overlay-steps") as HTMLInputElement;
     expect(range.value).toBe("20");
@@ -1311,30 +1311,20 @@ describe("ImageGenFineTuningChip — model settings accordion (IG-CF15 15d)", ()
     expect(within(view2.baseElement).queryByTestId("image-gen-ft-adetailer")).toBeNull();
   });
 
-  it("ADetailer nests INSIDE the samplers accordion; toggle + face model write the overlay", async () => {
+  it("ADetailer nests INSIDE the model-settings body; toggle + face model write the overlay", async () => {
     profilesStore = [{ ...profile("ig2", "Forge", fullCaps()), backend: "a1111" }];
     modelsStore["ig2"] = [{ id: "sdxl-base", label: "SDXL Base" }];
     extensionsStore["ig2"] = ["adetailer", "sd-webui-controlnet"];
     armChat("chat-ms4");
 
-    const view = renderChip(<ImageGenFineTuningChip chatId="chat-ms4" />);
-    openChip();
-    await pickOption("image-gen-ft-model-select", "SDXL Base");
-    await waitFor(() =>
-      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
-    );
-    // Parent accordion COLLAPSED → the nested accordion is not in the DOM.
-    expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer")).toBeNull();
-
-    await act(async () => {
-      within(view.baseElement).getByTestId("image-gen-ft-model-settings-header").click();
-    });
+    const view = await openAccordion("chat-ms4");
     const adHeader = await waitFor(() => {
       const el = within(view.baseElement).getByTestId("image-gen-ft-adetailer-header");
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    // Nesting pin: the adetailer header lives inside the samplers body.
+    // Nesting pin: the ADetailer header lives inside the directly rendered
+    // model-settings body, while retaining its own collapsible boundary.
     const parentBody = within(view.baseElement).getByTestId("image-gen-ft-model-settings-body");
     expect(parentBody.contains(adHeader)).toBe(true);
 
@@ -1598,9 +1588,9 @@ describe("ImageGenFineTuningChip — IF-5 two-column body", () => {
     openChip();
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
 
-    // Pick a concrete model → the settings accordion renders → the
-    // advanced column has its flagship block (hasAdvanced is true even
-    // before the pick via supportsLoras, but the accordion needs the pick).
+    // Pick a concrete model → the settings block renders → the advanced
+    // column has its flagship block (hasAdvanced is true even before the
+    // pick via supportsLoras, but the settings block needs the pick).
     await pickOption("image-gen-ft-model-select", "SDXL Base");
     await waitFor(() =>
       expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
@@ -1620,7 +1610,7 @@ describe("ImageGenFineTuningChip — IF-5 two-column body", () => {
     expect(grid.className).toContain("@min-[480px]:grid-cols-2");
 
     // Grouping: base column first (prompt pair inside), advanced column
-    // second (accordion inside), footer last with the col-span (inert in
+    // second (settings block inside), footer last with the col-span (inert in
     // single-column flex — no dead half-column without advanced content).
     const advanced = within(view.baseElement).getByTestId("image-gen-ft-advanced-col");
     const base = grid.firstElementChild as HTMLElement;

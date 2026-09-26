@@ -13,7 +13,7 @@
  * shows roll internals); profile/model/samplers live in the editor body.
  *
  * The editor holds the design's chip contents (design lines 30/160):
- * profile + model pick, the model-settings accordion (FT-A1: the ONLY
+ * profile + model pick, the model-settings block (FT-A1: the ONLY
  * sampler surface — the one-shot draft sampler row is gone; owner ruling
  * 2026-09-17: the fine-tuning editor is THE place to pick everything, see
  * plans/FINE_TUNING_CHIP_REBUILD_PLAN.md), LoRAs, positive prompt, negative
@@ -377,7 +377,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   const modelFamily = models?.find((m) => m.id === effectiveModelId)?.family;
   // The PICKED model's own cache entry (comfyui dialect enrichment, CG-B2 —
   // the pane's selectedModelEntry twin): its `template` marker drives the
-  // «Detected» readout under the picker and the accordion's DiT gate.
+  // «Detected» readout under the picker and the settings block's DiT gate.
   const selectedModelEntry = models?.find((m) => m.id === draft.model) ?? null;
 
   // ── Resolution option set (FT-A2) ────────────────────────────────
@@ -424,7 +424,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
       ];
   const isCustomResolution = !isVendorSet && resolutionValue === "custom";
   // IF-5 (2026-09-24): with advanced blocks present (a picked local model →
-  // the settings accordion, LoRAs, hires fix) the body is a two-column
+  // the settings block, LoRAs, hires fix) the body is a two-column
   // grid at a comfortable container width — Tailwind 4 container queries,
   // the body root itself being the container, so the desktop popover AND
   // the mobile BottomSheet switch from one place ("narrow screen = single
@@ -639,7 +639,7 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
             {/* The loaded model's own settings (IG-CF15 15d): edits the per-model
                 overlay directly — one source of truth with the providers pane,
                 the chip acting as the quick pult. Only with a concrete model
-                picked; the ADetailer accordion nests INSIDE it when the server
+                picked; the ADetailer accordion nests INSIDE its body when the server
                 reports the extension (owner 2026-09-17). */}
             {effective !== null && draft.model !== undefined && (
               <ImageGenModelSettingsAccordion
@@ -718,9 +718,9 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   );
 }
 
-// ─── Per-model settings accordion (IG-CF15 15d) ─────────────────────────
+// ─── Per-model settings (IG-CF15 15d) ───────────────────────────────────
 
-// The accordion's pinned slider testids (kept VERBATIM from the pre-T4
+// The settings block's pinned slider testids (kept VERBATIM from the pre-T4
 // inline rows — tests and muscle memory ride these; the descriptor's field
 // id and the testid stem are NOT the same string for cfg/clip-skip).
 const SLIDER_RANGE_TESTIDS: Record<ScalarSliderField, string> = {
@@ -734,7 +734,7 @@ const SLIDER_RANGE_TESTIDS: Record<ScalarSliderField, string> = {
  *  Fields mirror the pane's advanced section contract: slider cells display
  *  the range-min anchor for an unset field and commit on interaction; seed
  *  stays a plain optional numeric cell (empty = inherit). The ADetailer
- *  accordion NESTS INSIDE this accordion's body (owner 2026-09-17) and is
+ *  accordion NESTS INSIDE this model-settings body (owner 2026-09-17) and is
  *  hidden entirely unless the profile's server reports the extension. */
 function ImageGenModelSettingsAccordion({
   profileId,
@@ -764,7 +764,6 @@ function ImageGenModelSettingsAccordion({
   disabled: boolean;
 }) {
   const { t } = useT();
-  const [open, setOpen] = useState(false);
   const [adOpen, setAdOpen] = useState(false);
   const [kreaOpen, setKreaOpen] = useState(false);
   const [overlay, setOverlay] = useState<ImageGenModelSettingsOverlayValue | null>(null);
@@ -776,7 +775,7 @@ function ImageGenModelSettingsAccordion({
   const [saveError, setSaveError] = useState(false);
   // DiT sidecar lists (CG-B2, comfyui + krea2-dit only): null = not fetched
   // yet; a settled list/failure survives gate flips (fetched ONCE per
-  // profile while the accordion lives — the pane's one-shot cache fill).
+  // profile while the settings block lives — the pane's one-shot cache fill).
   const [sidecars, setSidecars] = useState<ImageGenDitSidecars | null>(null);
   const [sidecarsFailed, setSidecarsFailed] = useState(false);
 
@@ -861,7 +860,7 @@ function ImageGenModelSettingsAccordion({
   // Scheduler list (PG-3/CG-B2) — the schedule-type catalog for the dropdown
   // next to the sampler, on the LOCAL dialect family (a1111 + comfyui —
   // the pane's gate; both dialects serve the schedulers route); fetched on
-  // the accordion's own profile (the extensions-probe twin — failure =
+  // the settings block's own profile (the extensions-probe twin — failure =
   // empty options, not an error).
   useEffect(() => {
     if (!isLocalDialect) {
@@ -973,19 +972,14 @@ function ImageGenModelSettingsAccordion({
 
   return (
     <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-model-settings">
-      <button
-        type="button"
+      <div
         data-testid="image-gen-ft-model-settings-header"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full cursor-pointer items-center justify-between rounded-md px-1.5 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
+        className="px-1.5 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2"
       >
-        <span>{t("image_gen_model_settings")}</span>
-        <Icons.Caret direction={open ? "d" : "u"} />
-      </button>
+        {t("image_gen_model_settings")}
+      </div>
 
-      {open && (
-        <div className="flex flex-col gap-2 px-1.5" data-testid="image-gen-ft-model-settings-body">
+      <div className="flex flex-col gap-2 px-1.5" data-testid="image-gen-ft-model-settings-body">
           {samplerControl && (
             <div className="flex flex-col gap-1.5">
               <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(samplerControl.labelKey)}</span>
@@ -1150,7 +1144,7 @@ function ImageGenModelSettingsAccordion({
             </div>
           )}
 
-          {/* ADetailer — NESTED inside the samplers accordion (owner
+          {/* ADetailer — NESTED inside the model-settings body (owner
               2026-09-17); the whole block is hidden unless the server
               reports the chain (A1111: the extension probe; comfy: the
               discovered face bbox models, IF-6). A comfy probe that ANSWERED
@@ -1206,8 +1200,7 @@ function ImageGenModelSettingsAccordion({
               )}
             </div>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
