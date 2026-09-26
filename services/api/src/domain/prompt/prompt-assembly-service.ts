@@ -160,6 +160,13 @@ export interface AssemblePromptForChatInput {
    * global default). This is the queue's per-job preset key (frozen at enqueue).
    */
   presetId?: PromptPresetId;
+  /**
+   * Optional one-shot Fly Tribunal instruction (FT-5). It is appended to the
+   * latest user turn ONLY in the final pipeline context — after lore/retrieval
+   * activation and scripts have read the untouched stored history. It is never
+   * written to a message row or emitted as its own prompt layer.
+   */
+  steeringNote?: string;
   /** LS-10: the ACTIVE provider profile's stored generation format (the
    *  format block in provider settings), threaded by the session runtime. The
    *  decision-(c) resolution applies — see resolveEffectiveGenerationFormat:
@@ -581,6 +588,14 @@ export class PromptAssemblyService {
     const mutatedPersonality = scriptResult.personality;
     const mutatedScenario = scriptResult.scenario;
 
+    // FT-5: a tribunal steering note belongs to the latest USER turn, not a
+    // synthetic prompt layer. Apply it only after lore/retrieval activation and
+    // scripts have consumed the unchanged stored history. The absent path keeps
+    // the exact original array reference, so legacy assembly remains byte-identical.
+    const promptRecentMessages = input.steeringNote
+      ? appendSteeringNoteToLatestUserMessage(recentMessages, input.steeringNote)
+      : recentMessages;
+
     // Set model hint so estimateTokens uses the model-specific tokenizer
     setModelHint(input.model);
 
@@ -688,7 +703,7 @@ export class PromptAssemblyService {
       objectiveLongTerm,
       sceneState,
       chat: {
-        recentMessages,
+        recentMessages: promptRecentMessages,
         scriptInjections: scriptResult.injectedMessages,
         dynamicPrompt: chat.dynamicPrompt?.trim() || null,
       },
@@ -720,7 +735,7 @@ export class PromptAssemblyService {
       activeLoreEntries,
       retrievedMemories,
       scriptResult,
-      recentMessageCount: recentMessages.length,
+      recentMessageCount: promptRecentMessages.length,
     };
   }
 
@@ -738,6 +753,28 @@ export class PromptAssemblyService {
     await this.fileStore.writeJson(filePath, trace);
     return filePath;
   }
+}
+
+/**
+ * Return a transient history projection with `steeringNote` appended to its
+ * latest user turn. This deliberately clones only the note-bearing path:
+ * no note means callers preserve the exact stored-history projection.
+ */
+function appendSteeringNoteToLatestUserMessage<T extends { role: string; content: string }>(
+  messages: T[],
+  steeringNote: string,
+): T[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === "user") {
+      return messages.map((candidate, candidateIndex) =>
+        candidateIndex === index
+          ? { ...candidate, content: `${candidate.content}\n\n${steeringNote}` }
+          : candidate,
+      );
+    }
+  }
+  throw new Error("Fly Tribunal steering note requires a user message in the assembled history.");
 }
 
 function mapPromptLayerDto(layer: {

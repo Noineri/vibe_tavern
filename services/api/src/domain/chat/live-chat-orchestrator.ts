@@ -312,6 +312,9 @@ export class LiveChatOrchestrator {
      * adapter can thread it without a second signature change.
      */
     presetId?: PromptPresetId;
+    /** One-shot tribunal instruction appended to the latest user turn during
+     * prompt assembly; never stored with the chat or reply variant. */
+    steeringNote?: string;
     prefill?: string;
     signal?: AbortSignal;
   }): Promise<{
@@ -328,6 +331,7 @@ export class LiveChatOrchestrator {
         contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
         responseReserve: provider.profile.maxTokens,
         presetId: input.presetId,
+        steeringNote: input.steeringNote,
       }),
     );
     logSendDebug("live.regenerate.prompt.ready", {
@@ -548,6 +552,8 @@ export class LiveChatOrchestrator {
     transport?: CoauthorTransport;
     /** Optional per-request prompt preset override (Wave Q1b). See regenerateMessage. */
     presetId?: PromptPresetId;
+    /** One-shot tribunal instruction; see regenerateMessage. */
+    steeringNote?: string;
     prefill?: string;
     signal?: AbortSignal;
   }): AsyncGenerator<{ event: string; data: string }> {
@@ -560,6 +566,7 @@ export class LiveChatOrchestrator {
         contextBudget: effectiveContextBudget(provider.profile.contextBudget, provider.profile.tokenPadding),
         responseReserve: provider.profile.maxTokens,
         presetId: input.presetId,
+        steeringNote: input.steeringNote,
       }),
     );
     // Resolved again here for drainStream's echo seam; startStream applies the
