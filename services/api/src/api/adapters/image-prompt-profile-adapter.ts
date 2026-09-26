@@ -1,3 +1,7 @@
+/**
+ * fork #1 of api/adapters/service-prompt-adapter.ts.
+ */
+
 import type {
   ImagePromptProfileRuntimeApi,
 } from "../contract/runtime-api.js";

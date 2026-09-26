@@ -240,10 +240,7 @@ function extractImageUrls(payload: unknown): string[] {
   return urls;
 }
 
-/** Parse the OpenAI-compatible models catalog — the same two shapes and the
- *  same aggregator enrichment the STT/TTS openai-compat adapters parse
- *  (`{data:[…]}"` / `{models:[…]}`, OpenRouter-style `pricing` zero = free
- *  tier); forked from stt/backends/openai-stt.ts. */
+/** fork #1 of stt/backends/openai-stt.ts (parseModelInfos) */
 function parseModelInfos(parsed: unknown): ImageGenModelInfo[] {
   if (typeof parsed !== "object" || parsed === null) return [];
   const record = parsed as Record<string, unknown>;

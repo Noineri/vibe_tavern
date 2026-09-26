@@ -35,7 +35,8 @@
  * upstream responses get the true size injected from the HF tree listing
  * (`model-mirror/hf-repo-sizes.ts`, cached per repo). An upstream-provided
  * length always wins as-is.
- */
+  * forks: 1 — domain/stt/whisper-mirror.ts.
+*/
 
 import { createWriteStream } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";

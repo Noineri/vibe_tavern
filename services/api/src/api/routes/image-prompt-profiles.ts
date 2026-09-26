@@ -1,3 +1,7 @@
+/**
+ * fork #1 of api/routes/service-prompts.ts.
+ */
+
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import * as schemas from "@vibe-tavern/api-contracts";

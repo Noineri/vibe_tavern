@@ -1,3 +1,9 @@
+/**
+ * fork #1 of the RP chat feature family: CoauthorMessageList, CoauthorInputArea, CoauthorMobileInputArea, CoauthorMessageBlock, CoauthorRail, CoauthorSidebar (+Flyout), CoauthorEditorPanel, CoauthorCharacterForm, CoauthorLoreReview, CoauthorModuleModal, coauthor-message-controls.
+ * Correspondence: CoauthorMessageList ← chat MessageScroller family.
+ * Correspondence: CoauthorInputArea / CoauthorMobileInputArea ← chat InputArea / MobileInputArea family.
+ */
+
 import { useEffect, useRef, useState } from "react";
 import { CoauthorInputArea } from "./CoauthorInputArea.js";
 import { CoauthorMessageList } from "./CoauthorMessageList.js";

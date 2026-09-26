@@ -16,7 +16,8 @@
  * → danger text + Retry. A gpu→cpu fallback surfaces as a warning line. The
  * panel and the preview share the client singleton, so a download started
  * here is joined (never duplicated) by an impatient Preview click.
- */
+  * forks: 1 — stt/WhisperModelPanel.tsx.
+*/
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 

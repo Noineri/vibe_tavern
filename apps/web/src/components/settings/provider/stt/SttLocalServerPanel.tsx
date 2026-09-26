@@ -1,3 +1,7 @@
+/**
+ * fork #1 of tts/TtsLocalServerPanel.tsx.
+ */
+
 import { useState } from "react";
 
 import { STT_BACKENDS } from "@vibe-tavern/domain";

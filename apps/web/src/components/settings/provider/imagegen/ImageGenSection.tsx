@@ -1,3 +1,7 @@
+/**
+ * fork #2 of TtsSection.tsx (provider master column).
+ */
+
 import { useT } from "../../../../i18n/context.js";
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
 import { ImageGenProfileList } from "./ImageGenProfileList.js";

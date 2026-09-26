@@ -19,7 +19,9 @@
  * (stopWhen: stepCountIs(maxSteps)) feeds results back so the model stays
  * coherent. See `CoauthorModeStrategy.assemble` for the prompt that governs
  * these calls (batching, retain-unchanged-sections, sequential-dependent-calls).
- */
+  * fork #1 of the RP chat feature family (rides the live-chat runtime — live-chat-orchestrator.ts).
+ * Members: domain/chat/coauthor-prompt.ts, coauthor-tools.ts, domain/coauthor/* (lore/, macro-subset.ts, modules/), api/adapters/coauthor-skill-adapter.ts.
+*/
 
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";

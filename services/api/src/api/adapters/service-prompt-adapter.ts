@@ -1,3 +1,7 @@
+/**
+ * forks: 1 — api/adapters/image-prompt-profile-adapter.ts.
+ */
+
 import type {
   ServicePromptRuntimeApi,
   ServicePromptUpdateResult,

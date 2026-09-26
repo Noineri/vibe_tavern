@@ -21,7 +21,8 @@
  * The openai-compat STT backend self-registers via a side-effect import here
  * (protocol-registry pattern) — this file is its home, relocated from the
  * temporary spot in `tts-adapter.ts`.
- */
+  * fork #1 of api/adapters/tts-adapter.ts.
+*/
 
 import type {
   ClientSttProfileRecord,

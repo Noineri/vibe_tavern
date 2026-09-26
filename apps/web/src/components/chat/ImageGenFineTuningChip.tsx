@@ -902,6 +902,7 @@ function ImageGenModelSettingsAccordion({
     }
     let cancelled = false;
     setExtensions(null);
+    // fork #1 of 2 (counterpart: apps/web/src/components/settings/provider/imagegen/ImageGenPane.tsx) — adetailer probe fetch; no shared source yet
     void listImageGenExtensions(profileId)
       .then((names) => {
         if (!cancelled) setExtensions(names ?? []);

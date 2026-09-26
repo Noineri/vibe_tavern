@@ -1,3 +1,7 @@
+/**
+ * forks: 1 — stt/SttLocalConnectionChip.tsx.
+ */
+
 import { useCallback, useEffect, useState } from "react";
 
 import { useT } from "../../../../i18n/context.js";

@@ -1,3 +1,7 @@
+/**
+ * forks: 1 — stt/SttBaseCard.tsx.
+ */
+
 import { useT } from "../../../../i18n/context.js";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { ttsTagDialectForProfile } from "../../../../lib/tts/tts-tags.js";

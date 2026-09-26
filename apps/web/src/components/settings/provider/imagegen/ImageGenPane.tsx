@@ -1636,6 +1636,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     }
     let cancelled = false;
     setExtensions(null);
+    // fork #2 of 2 (counterpart: apps/web/src/components/chat/ImageGenFineTuningChip.tsx) — adetailer probe fetch; no shared source yet
     void listImageGenExtensions(guardProfileId)
       .then((names) => {
         if (!cancelled) setExtensions(names ?? []);

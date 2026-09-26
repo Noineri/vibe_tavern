@@ -19,7 +19,8 @@
  * the kokoro twin (pre-approved, audit-scoped): no WebGPU gate / fallback
  * line (kokoro-only seams), no auto-preview effect (whisper has no preview
  * lane — dictation joins the in-flight load instead).
- */
+  * fork #1 of tts/KokoroModelPanel.tsx.
+*/
 
 import { useEffect, useState, type ReactNode } from "react";
 

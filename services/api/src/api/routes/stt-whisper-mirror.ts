@@ -7,7 +7,8 @@
  * whisper roster), strict path validation, disk cache, upstream through the
  * app's proxy infrastructure. This route module only adapts the service
  * result to HTTP.
- */
+  * fork #1 of api/routes/kokoro-mirror.ts.
+*/
 
 import { Hono } from "hono";
 

@@ -1,3 +1,7 @@
+/**
+ * forks: 1 — stt/SttProfileEditor.tsx.
+ */
+
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { TTS_BACKEND } from "@vibe-tavern/domain";
 import { useT } from "../../../../i18n/context.js";

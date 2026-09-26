@@ -212,6 +212,7 @@ export const openAiCompatSttFactory: SttBackendFactory = (config) => {
       return result;
     },
 
+    // forks: 1 — imagegen/backends/openrouter.ts (parseModelInfos)
     async listModels(): Promise<SttModelInfo[]> {
       // The STT twin of the TTS modality discovery: the /models catalog
       // filtered to transcription-capable models. Servers that ignore the

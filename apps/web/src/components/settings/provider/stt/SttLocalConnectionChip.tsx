@@ -1,3 +1,7 @@
+/**
+ * fork #1 of tts/TtsLocalConnectionChip.tsx.
+ */
+
 import { useCallback, useEffect, useState } from "react";
 
 import { useT } from "../../../../i18n/context.js";

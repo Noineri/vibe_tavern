@@ -18,7 +18,8 @@
  * An undescribed voice note reaching prompt assembly means no STT profile
  * was configured (or the transcription failed) → `VoiceTranscribeUnavailableError`
  * — the honest configuration error, the mirror of `VisionNotSupportedError`.
- */
+  * fork #1 of infrastructure/ai/vision-gate.ts (cross-modality copy).
+*/
 
 import { composeVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
 

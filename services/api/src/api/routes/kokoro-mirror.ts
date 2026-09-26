@@ -6,7 +6,8 @@
  * `domain/tts/kokoro-mirror.ts` for the design: single fixed repo, strict
  * path validation, disk cache, upstream through the app's proxy
  * infrastructure. This route module only adapts the service result to HTTP.
- */
+  * forks: 1 — api/routes/stt-whisper-mirror.ts.
+*/
 
 import { Hono } from "hono";
 
