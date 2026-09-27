@@ -31,7 +31,7 @@ export function FlyVerdictPanel() {
           {t("fly_tribunal_cold_start_title", { current: gate.current, gate: gate.gate })}
         </p>
         <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t3">
-          {t("fly_tribunal_cold_start_body")}
+          {t("fly_tribunal_cold_start_body", { gate: gate.gate })}
         </p>
       </section>
     );

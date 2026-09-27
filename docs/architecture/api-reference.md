@@ -1107,6 +1107,77 @@ CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profi
 
 ---
 
+## Fly Tribunal
+
+Fly Tribunal serves a CC-BY 4.0 MCNS connectome artifact plus the user's selected learning state.
+The canonical wire schemas live in `packages/api-contracts/src/schemas/fly-tribunal-schema.ts`.
+
+### `GET /api/fly/brain/manifest`
+
+Get the metadata for the downloadable compressed connectome.
+
+**Response:** `FlyBrainManifest` (`flyBrainManifestSchema`).
+
+The response includes the source attribution and license, `binary.file`, format version, SHA-256, compressed byte size, neuron and edge counts, neurotransmitter-weight convention, group table, group counts, and cell-type table.
+
+### `GET /api/fly/brain`
+
+Get the exact compressed connectome bytes named by the manifest.
+
+**Response:** `application/octet-stream` containing `connectome.bin.gz`.
+
+The route sends the exact byte length, `ETag: "<manifest.binary.sha256>"`, and `Cache-Control: no-store`.
+It does not set `Content-Encoding`, because the gzip file is an opaque artifact that the browser worker verifies before caching.
+
+### `GET /api/fly/settings`
+
+Get the complete Fly Tribunal settings object.
+
+**Response:** `FlyTribunalSettings` (`flyTribunalSettingsSchema`).
+
+A fresh install receives the schema defaults, including disabled tribunal, indication reaction tier, cap 2, normal sensitivity, high auto-swipe confidence, training enabled, normal training speed, 14-day lifetime, empty hints, and per-chat memory.
+
+### `PUT /api/fly/settings`
+
+Replace the complete Fly Tribunal settings object.
+
+**Body:** `FlyTribunalSettings` (`flyTribunalSettingsSchema`).
+
+**Response:** `FlyTribunalSettings` (`flyTribunalSettingsSchema`).
+
+Hint templates must contain `{detected}` and meet the schema's length and list bounds.
+
+### `GET /api/fly/memory/:scope`
+
+Get persisted learned deltas and the confirmed-precedent count.
+
+**Path:** `scope` is `chat` or `global` (`flyMemoryScopeSchema`).
+
+**Query:** `chatId` is required for `scope=chat` and must be absent for `scope=global`.
+
+**Response:** `FlyMemoryGetResponse` (`flyMemoryGetResponseSchema`).
+
+A missing row returns the fresh-fly shape with `precedentCount: 0` and `weights: null`, rather than 404.
+
+### `PUT /api/fly/memory/:scope`
+
+Persist one selected-scope learning-state payload.
+
+**Path:** `scope` is `chat` or `global` (`flyMemoryScopeSchema`).
+
+**Body:** `FlyMemoryPut` (`flyMemoryPutSchema`) with `scope`, optional `chatId`, `schemaVersion`, nonnegative `precedentCount`, and nullable base64 `weights`.
+
+For chat scope, `chatId` is required.
+For global scope, `chatId` must be absent.
+The path scope must match `body.scope`.
+
+**Response:** `FlyMemoryGetResponse` (`flyMemoryGetResponseSchema`).
+
+`weights` is the base64 form of the browser worker's gzip-compressed FTWD sparse KC-to-MBON delta payload.
+An amnesty writes `precedentCount: 0` and `weights: null` through this endpoint.
+
+---
+
 ## Assets
 
 ### `POST /api/assets/upload`

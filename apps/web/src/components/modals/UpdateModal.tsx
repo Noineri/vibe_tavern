@@ -125,6 +125,7 @@ export function UpdateModal({ latestVersion, latestTag, releaseUrl, releaseNotes
 									{t("update_modal_self_update_unavailable")}
 								</p>
 							)}
+							<p className="mt-4 font-ui text-[calc(var(--ui-fs)-3px)] leading-relaxed text-t4">{t("fly_tribunal_brain_attribution")}</p>
 						</>
 					)}
 
