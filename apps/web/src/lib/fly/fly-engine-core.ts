@@ -6,12 +6,15 @@
  * Bun tests. `fly-worker.ts` supplies browser gzip decompression and owns the
  * message protocol; the UI never instantiates this core directly.
  *
- * Pipeline for one assistant variant:
+ * Pipeline for one assistant variant (FT-16 hybrid activation):
  * 1. parse the FT-1 `FTCB` gzip artifact through an injected decompressor;
  * 2. retain the olfactory/KC/MBON/DAN/GF learning circuit (drop OTHER);
  * 3. tokenize 1–3 word n-grams, hash them into 50 glomerular channels;
- * 4. run a bounded 10 Hz leaky-integrate-and-fire burst (no idle ticking);
- * 5. take a sparse KC winner set and read learned KC→MBON deltas;
+ * 4. map each channel onto a real glomerular PN-type cohort and project the
+ *    cohort activity through the actual PN→KC edges (degree-normalized),
+ *    keeping the strongest 10% as a winner-take-all KC code (FlyHash);
+ * 5. read learned KC→MBON deltas over that sparse code — the bounded
+ *    downstream LIF burst returns in FT-17, seeded by these KC spikes;
  * 6. return confidence plus channel-backed driving spans for the verdict UI.
  *
  * There is intentionally NO habituation/session repetition detector here.
@@ -374,9 +377,23 @@ export function encodeFlyStimulus(text: string): FlyStimulusEncoding {
   };
 }
 
-// ─── LIF engine and plasticity seam ──────────────────────────────────────────
+// ─── Engine parameters, projection, and plasticity seam ─────────────────────
 
-/** snedea/flybrain (`sim-worker.js`) baseline, research verified FT-7. */
+/**
+ * FT-16 projection edge-mass modes for the PN→KC FlyHash expansion.
+ * `binary` counts every presynaptic edge as 1; `log-synapse` weighs each edge
+ * by `log1p(|synapseCount|)`. Both are degree-normalized per KC so heavily
+ * connected KCs do not dominate the winner-take-all ranking. FT-18 freezes
+ * the winner on the validation partition; do not tune it by eye.
+ */
+export const FLY_PROJECTION_MODES = ["binary", "log-synapse"] as const;
+export type FlyProjectionMode = (typeof FLY_PROJECTION_MODES)[number];
+
+/**
+ * snedea/flybrain (`sim-worker.js`) LIF constants (FT-7). Since FT-16 the LIF
+ * burst no longer gates text→KC activation — these constants parameterize
+ * the downstream burst that FT-17 re-introduces, seeded by the WTA KC code.
+ */
 export const FLY_LIF_DEFAULTS = {
   leak: 0.95,
   threshold: 1,
@@ -385,14 +402,16 @@ export const FLY_LIF_DEFAULTS = {
   tickRateHz: 10,
   /** Burst-only: no continuous simulation consumes mobile battery. */
   burstTicks: 8,
-  /** Max-normalized channel activation × this value stimulates OSNs. */
+  /** Reserved for the FT-17 downstream burst (OSN stimulation ended in FT-16). */
   stimulusScale: 1.25,
-  /** Select the top 10% of positive KC membrane scores as a sparse code. */
+  /** Winner-take-all fraction of the KC population in the sparse code. */
   kcSparsity: 0.1,
   /** Maximum registry-backed n-grams surfaced as verdict evidence. */
   maxDrivingSpans: 5,
   /** Positive learned delta per active KC→MBON synapse for confidence 1. */
   learnedDeltaForFullConfidence: 1,
+  /** PN→KC projection edge mass; see `FLY_PROJECTION_MODES`. */
+  projectionMode: "binary",
 } as const;
 
 export interface FlyEngineParams {
@@ -406,6 +425,7 @@ export interface FlyEngineParams {
   kcSparsity: number;
   maxDrivingSpans: number;
   learnedDeltaForFullConfidence: number;
+  projectionMode: FlyProjectionMode;
 }
 
 export interface FlyDrivingSpan {
@@ -443,13 +463,25 @@ export interface FlyEngineOptions {
 
 /**
  * Stateful only in its KC→MBON weight deltas and runtime parameters. Every
- * evaluation's stimulus/LIF arrays are freshly allocated, so messages never
- * leak a repetition/session state into the next verdict.
+ * evaluation's stimulus/projection arrays are freshly allocated, so messages
+ * never leak a repetition/session state into the next verdict.
  */
 export class FlyEngine {
   readonly subgraph: FlyLearningSubgraph;
   readonly typeNames: readonly string[];
   private readonly learnedDeltas: Float32Array;
+  /**
+   * FT-16 connectome-backed FlyHash projection, built once per engine from
+   * the immutable subgraph: channel→glomerular-PN-cohort assignment plus the
+   * degree-normalized PN→KC edge CSR (both mass modes precomputed).
+   */
+  private readonly channelPnOffsets: Uint32Array;
+  private readonly channelPnIndexes: Uint32Array;
+  private readonly pnToKcOffsets: Uint32Array;
+  private readonly pnToKcTargetKc: Uint32Array;
+  private readonly pnToKcMassLog: Float32Array;
+  private readonly kcBinaryMass: Float32Array;
+  private readonly kcLogMass: Float32Array;
   private params: FlyEngineParams;
 
   constructor(subgraph: FlyLearningSubgraph, options: FlyEngineOptions = {}) {
@@ -461,6 +493,14 @@ export class FlyEngine {
     this.learnedDeltas = new Float32Array(subgraph.edgeCount);
     this.params = { ...FLY_LIF_DEFAULTS, ...options.params };
     this.assertParams(this.params);
+    const projection = this.buildProjection();
+    this.channelPnOffsets = projection.channelPnOffsets;
+    this.channelPnIndexes = projection.channelPnIndexes;
+    this.pnToKcOffsets = projection.pnToKcOffsets;
+    this.pnToKcTargetKc = projection.pnToKcTargetKc;
+    this.pnToKcMassLog = projection.pnToKcMassLog;
+    this.kcBinaryMass = projection.kcBinaryMass;
+    this.kcLogMass = projection.kcLogMass;
   }
 
   getParams(): FlyEngineParams {
@@ -481,10 +521,9 @@ export class FlyEngine {
 
   evaluate(text: string): FlyEvaluation {
     const stimulus = this.encode(text);
-    const { potentials, spikeCounts } = this.runBurst(stimulus.channels);
-    const activeKcIndexes = this.selectSparseKcs(potentials, spikeCounts);
+    const activeKcIndexes = this.selectWtaKcs(stimulus.channels);
     const activeKcGlobalIndexes = activeKcIndexes.map((index) => this.subgraph.subgraphToGlobal[index]!);
-    const mbonReadout = this.readMbonActivity(activeKcIndexes, potentials);
+    const mbonReadout = this.readMbonActivity(activeKcIndexes);
     const confidence = this.readLearnedConfidence(activeKcIndexes);
     const drivingSpans = [...stimulus.registry]
       .sort((a, b) => b.activation - a.activation || b.count - a.count || a.ngram.localeCompare(b.ngram))
@@ -632,73 +671,138 @@ export class FlyEngine {
     return factor;
   }
 
-  private runBurst(channels: Float32Array): { potentials: Float32Array; spikeCounts: Uint16Array } {
-    const count = this.subgraph.neuronCount;
-    const potentials = new Float32Array(count);
-    const currentInput = new Float32Array(count);
-    let nextInput = new Float32Array(count);
-    const refractory = new Uint8Array(count);
-    const spikeCounts = new Uint16Array(count);
+  /**
+   * Build the FT-16 projection from the immutable subgraph:
+   * - glomerular cohorts = distinct OLF_PN types, enumerated by ascending
+   *   typeIndex (the FT-1 type table is sorted, so this is rebuild-stable);
+   * - every channel owns one cohort, spread evenly across the cohort list;
+   * - PN→KC edges become a per-PN CSR with both mass modes precomputed, plus
+   *   per-KC total input mass for degree normalization.
+   */
+  private buildProjection(): {
+    channelPnOffsets: Uint32Array;
+    channelPnIndexes: Uint32Array;
+    pnToKcOffsets: Uint32Array;
+    pnToKcTargetKc: Uint32Array;
+    pnToKcMassLog: Float32Array;
+    kcBinaryMass: Float32Array;
+    kcLogMass: Float32Array;
+  } {
+    const subgraph = this.subgraph;
+    const distinctTypes: number[] = [];
+    const seenTypes = new Set<number>();
+    for (let index = 0; index < subgraph.neuronCount; index += 1) {
+      if (subgraph.group[index] !== FLY_GROUP.OLF_PN) continue;
+      const type = subgraph.typeIndex[index]!;
+      if (!seenTypes.has(type)) {
+        seenTypes.add(type);
+        distinctTypes.push(type);
+      }
+    }
+    distinctTypes.sort((a, b) => a - b);
+    const cohortCount = Math.max(1, distinctTypes.length);
+    const cohortByType = new Map(distinctTypes.map((type, cohort) => [type, cohort]));
+    const pnsByCohort: number[][] = Array.from({ length: cohortCount }, () => []);
+    for (let index = 0; index < subgraph.neuronCount; index += 1) {
+      if (subgraph.group[index] !== FLY_GROUP.OLF_PN) continue;
+      pnsByCohort[cohortByType.get(subgraph.typeIndex[index]!)!]!.push(index);
+    }
 
+    const channelPnIndexes: number[] = [];
+    const channelPnOffsets = new Uint32Array(FLY_GLOMERULAR_CHANNEL_COUNT + 1);
+    for (let channel = 0; channel < FLY_GLOMERULAR_CHANNEL_COUNT; channel += 1) {
+      const cohort = Math.floor((channel * cohortCount) / FLY_GLOMERULAR_CHANNEL_COUNT);
+      channelPnOffsets[channel] = channelPnIndexes.length;
+      for (const pn of pnsByCohort[cohort]!) channelPnIndexes.push(pn);
+    }
+    channelPnOffsets[FLY_GLOMERULAR_CHANNEL_COUNT] = channelPnIndexes.length;
+
+    const pnPre: number[] = [];
+    const kcPost: number[] = [];
+    const massLog: number[] = [];
+    const kcBinaryMass = new Float32Array(subgraph.neuronCount);
+    const kcLogMass = new Float32Array(subgraph.neuronCount);
+    for (let edgeIndex = 0; edgeIndex < subgraph.edgeCount; edgeIndex += 1) {
+      const pre = subgraph.edgePre[edgeIndex]!;
+      const post = subgraph.edgePost[edgeIndex]!;
+      if (subgraph.group[pre] !== FLY_GROUP.OLF_PN || subgraph.group[post] !== FLY_GROUP.KC) continue;
+      pnPre.push(pre);
+      kcPost.push(post);
+      const log = Math.log1p(Math.abs(subgraph.baseEdgeWeight[edgeIndex]!));
+      massLog.push(log);
+      kcBinaryMass[post] += 1;
+      kcLogMass[post] += log;
+    }
+
+    const pnToKcOffsets = new Uint32Array(subgraph.neuronCount + 1);
+    for (const pre of pnPre) pnToKcOffsets[pre + 1] += 1;
+    for (let index = 1; index < pnToKcOffsets.length; index += 1) {
+      pnToKcOffsets[index] += pnToKcOffsets[index - 1]!;
+    }
+    const pnToKcTargetKc = new Uint32Array(pnPre.length);
+    const pnToKcMassLog = new Float32Array(pnPre.length);
+    const cursors = pnToKcOffsets.slice(0, subgraph.neuronCount);
+    for (let edge = 0; edge < pnPre.length; edge += 1) {
+      const pre = pnPre[edge]!;
+      const cursor = cursors[pre]!;
+      pnToKcTargetKc[cursor] = kcPost[edge]!;
+      pnToKcMassLog[cursor] = massLog[edge]!;
+      cursors[pre] = cursor + 1;
+    }
+
+    return {
+      channelPnOffsets,
+      channelPnIndexes: Uint32Array.from(channelPnIndexes),
+      pnToKcOffsets,
+      pnToKcTargetKc,
+      pnToKcMassLog,
+      kcBinaryMass,
+      kcLogMass,
+    };
+  }
+
+  /**
+   * FT-16 winner-take-all KC code: project active channel cohorts through the
+   * real PN→KC edges, degree-normalize each KC by its total PN input mass, and
+   * keep the strongest `kcSparsity` fraction (ties broken by subgraph index).
+   * Only positively-driven KCs enter the code; a stimulus reaching fewer KCs
+   * than the quota simply yields a shorter code.
+   */
+  private selectWtaKcs(channels: Float32Array): number[] {
+    const logMode = this.params.projectionMode === "log-synapse";
+    const scores = new Float32Array(this.subgraph.neuronCount);
     for (let channel = 0; channel < channels.length; channel += 1) {
       const activation = channels[channel]!;
-      if (activation === 0) continue;
-      const olfactoryIndex = this.subgraph.olfactoryInputIndexes[channel % this.subgraph.olfactoryInputIndexes.length]!;
-      currentInput[olfactoryIndex] += activation * this.params.stimulusScale;
-    }
-
-    for (let tick = 0; tick < this.params.burstTicks; tick += 1) {
-      const spikes = new Uint8Array(count);
-      for (let neuron = 0; neuron < count; neuron += 1) {
-        if (refractory[neuron] > 0) {
-          refractory[neuron] -= 1;
-          potentials[neuron] = 0;
-          continue;
-        }
-        const potential = potentials[neuron]! * this.params.leak + currentInput[neuron]!;
-        if (potential >= this.params.threshold) {
-          spikes[neuron] = 1;
-          spikeCounts[neuron] += 1;
-          potentials[neuron] = 0;
-          refractory[neuron] = this.params.refractoryTicks;
-        } else {
-          potentials[neuron] = potential;
+      if (activation <= 0) continue;
+      const pnStart = this.channelPnOffsets[channel]!;
+      const pnEnd = this.channelPnOffsets[channel + 1]!;
+      for (let pnCursor = pnStart; pnCursor < pnEnd; pnCursor += 1) {
+        const pn = this.channelPnIndexes[pnCursor]!;
+        const edgeStart = this.pnToKcOffsets[pn]!;
+        const edgeEnd = this.pnToKcOffsets[pn + 1]!;
+        for (let edgeCursor = edgeStart; edgeCursor < edgeEnd; edgeCursor += 1) {
+          const mass = logMode ? this.pnToKcMassLog[edgeCursor]! : 1;
+          scores[this.pnToKcTargetKc[edgeCursor]!] += activation * mass;
         }
       }
-
-      nextInput.fill(0);
-      for (let pre = 0; pre < count; pre += 1) {
-        if (spikes[pre] === 0) continue;
-        const start = this.subgraph.outgoingOffsets[pre]!;
-        const end = this.subgraph.outgoingOffsets[pre + 1]!;
-        for (let cursor = start; cursor < end; cursor += 1) {
-          const edgeIndex = this.subgraph.outgoingEdgeIndexes[cursor]!;
-          const post = this.subgraph.edgePost[edgeIndex]!;
-          nextInput[post] += this.synapticWeight(edgeIndex) * this.params.weightScale;
-        }
-      }
-      currentInput.set(nextInput);
     }
-
-    return { potentials, spikeCounts };
+    const candidates: Array<{ index: number; score: number }> = [];
+    for (const kc of this.subgraph.kcIndexes) {
+      const total = logMode ? this.kcLogMass[kc]! : this.kcBinaryMass[kc]!;
+      if (total <= 0) continue;
+      const score = scores[kc]! / total;
+      if (score > 0) candidates.push({ index: kc, score });
+    }
+    candidates.sort((a, b) => b.score - a.score || a.index - b.index);
+    const wanted = Math.max(1, Math.ceil(this.subgraph.kcIndexes.length * this.params.kcSparsity));
+    return candidates.slice(0, wanted).map((candidate) => candidate.index);
   }
 
   private synapticWeight(edgeIndex: number): number {
     return (this.subgraph.baseEdgeWeight[edgeIndex]! + this.learnedDeltas[edgeIndex]!) / this.subgraph.synapseNormalization;
   }
 
-  private selectSparseKcs(potentials: Float32Array, spikeCounts: Uint16Array): number[] {
-    const candidates = Array.from(this.subgraph.kcIndexes, (index) => ({
-      index,
-      // Spikes dominate, then subthreshold membrane potential ranks ties.
-      score: spikeCounts[index]! * this.params.threshold + potentials[index]!,
-    })).filter((candidate) => candidate.score > 0);
-    candidates.sort((a, b) => b.score - a.score || a.index - b.index);
-    const wanted = Math.max(1, Math.ceil(this.subgraph.kcIndexes.length * this.params.kcSparsity));
-    return candidates.slice(0, wanted).map((candidate) => candidate.index);
-  }
-
-  private readMbonActivity(activeKcIndexes: readonly number[], potentials: Float32Array): FlyMbonReadout[] {
+  private readMbonActivity(activeKcIndexes: readonly number[]): FlyMbonReadout[] {
     const active = new Uint8Array(this.subgraph.neuronCount);
     for (const index of activeKcIndexes) active[index] = 1;
     const activationByMbon = new Float32Array(this.subgraph.neuronCount);
@@ -706,7 +810,7 @@ export class FlyEngine {
       const kc = this.subgraph.edgePre[edgeIndex]!;
       if (active[kc] === 0) continue;
       const mbon = this.subgraph.edgePost[edgeIndex]!;
-      activationByMbon[mbon] += Math.max(0, this.synapticWeight(edgeIndex)) + Math.max(0, potentials[kc]!);
+      activationByMbon[mbon] += Math.max(0, this.synapticWeight(edgeIndex));
     }
     return Array.from(this.subgraph.mbonIndexes, (index) => ({
       subgraphIndex: index,
@@ -742,6 +846,9 @@ export class FlyEngine {
     if (!Number.isFinite(params.kcSparsity) || params.kcSparsity <= 0 || params.kcSparsity > 1) throw new Error("Fly KC sparsity must be in (0, 1].");
     if (!Number.isInteger(params.maxDrivingSpans) || params.maxDrivingSpans < 1) throw new Error("Fly driving-span limit must be a positive integer.");
     if (!Number.isFinite(params.learnedDeltaForFullConfidence) || params.learnedDeltaForFullConfidence <= 0) throw new Error("Fly learned-delta normalization must be positive.");
+    if (!(FLY_PROJECTION_MODES as readonly string[]).includes(params.projectionMode)) {
+      throw new Error("Fly projection mode must be 'binary' or 'log-synapse'.");
+    }
   }
 }
 

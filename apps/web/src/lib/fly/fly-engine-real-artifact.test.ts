@@ -13,9 +13,13 @@ import {
 } from "./fly-engine-core.js";
 
 /**
- * FT-15 characterization against the committed MCNS artifact, deliberately
- * separate from the FT-1 synthetic fixture suite. FT-16 replaces the inert
- * activation path and must update only the explicitly marked defect pin.
+ * FT-15/FT-16 characterization against the committed MCNS artifact, deliberately
+ * separate from the FT-1 synthetic fixture suite. FT-15 pinned the inert
+ * activation defect (0 active KCs, empty FTWD); FT-16 replaced the OSN→LIF
+ * gate with the connectome-backed FlyHash projection, so these tests now pin
+ * the LIVE behavior: deterministic top-10% winner-take-all KC codes,
+ * similarity-sensitive KC overlap, and training that writes real plastic
+ * deltas while a fresh fly stays exactly at confidence 0.
  *
  * L1 checklist:
  * 1. Paths: artifact path derives from import.meta.dir through node:path; no
@@ -33,6 +37,11 @@ import {
 const repoRoot = resolve(import.meta.dir, "../../../../..");
 const realArtifactPath = join(repoRoot, "services", "api", "assets", "fly", "connectome.bin.gz");
 const representativeText = "she smiled slowly, tracing her fingers along the windowsill";
+const variantText = "she smiled slowly, tracing her fingers along the dusty windowsill";
+const disjointText = "quartz fox midnight cedar archive ember violin snow";
+
+/** Winner-take-all quota on the real KC population: ceil(4,064 × 0.10). */
+const realKcQuota = 407;
 
 let connectome: FlyConnectome;
 let subgraph: FlyLearningSubgraph;
@@ -58,7 +67,7 @@ beforeAll(async () => {
   subgraph = instantiateLearningSubgraph(connectome);
 });
 
-describe("Fly engine real MCNS artifact characterization (FT-15)", () => {
+describe("Fly engine real MCNS artifact characterization (FT-15/FT-16)", () => {
   test("parses the committed MCNS learning subgraph with its stable group counts", () => {
     expect(loadAndParseMs).toBeGreaterThan(0);
     expect(connectome.neuronCount).toBe(166_700);
@@ -85,25 +94,67 @@ describe("Fly engine real MCNS artifact characterization (FT-15)", () => {
     expect(first.registry).toEqual(second.registry);
   });
 
-  test("pins the known inert real-artifact activation defect before FT-16 repairs it", () => {
-    const engine = freshEngine();
-    const beforeTraining = engine.evaluate(representativeText);
+  test("selects exactly the 407-KC winner-take-all code for representative text", () => {
+    const first = freshEngine().evaluate(representativeText);
+    const second = freshEngine().evaluate(representativeText);
 
-    expect(beforeTraining.activeKcIndexes).toHaveLength(0);
-    expect(beforeTraining.mbonReadout).toHaveLength(0);
-    expect(beforeTraining.confidence).toBe(0);
+    expect(first.activeKcIndexes).toHaveLength(realKcQuota);
+    expect([...first.activeKcIndexes].sort((a, b) => a - b)).toEqual(
+      [...second.activeKcIndexes].sort((a, b) => a - b),
+    );
+
+    // A sparse multi-channel stimulus reaches fewer KCs than the quota and
+    // yields a shorter code rather than padding with silent KCs. (A
+    // single-word text can hash entirely onto a PN cohort with no calyx
+    // projection and legitimately yield zero KCs — honest connectome
+    // behavior, so the sparse pin uses a multi-channel stimulus.)
+    const sparse = freshEngine().evaluate("the rain falls softly");
+    expect(sparse.activeKcIndexes.length).toBeGreaterThan(0);
+    expect(sparse.activeKcIndexes.length).toBeLessThan(realKcQuota);
+  });
+
+  test("log-synapse projection mass keeps the same deterministic quota", () => {
+    const engine = freshEngine();
+    engine.setParams({ projectionMode: "log-synapse" });
+    const evaluation = engine.evaluate(representativeText);
+    expect(evaluation.activeKcIndexes).toHaveLength(realKcQuota);
+
+    const repeat = freshEngine();
+    repeat.setParams({ projectionMode: "log-synapse" });
+    expect([...evaluation.activeKcIndexes].sort((a, b) => a - b)).toEqual(
+      [...repeat.evaluate(representativeText).activeKcIndexes].sort((a, b) => a - b),
+    );
+  });
+
+  test("similar variants share more of the KC code than disjoint text", () => {
+    const engine = freshEngine();
+    const base = engine.evaluate(representativeText).activeKcIndexes;
+    const variant = engine.evaluate(variantText).activeKcIndexes;
+    const disjoint = engine.evaluate(disjointText).activeKcIndexes;
+    const overlapWith = (other: readonly number[]): number => {
+      const theirs = new Set(other);
+      return base.filter((index) => theirs.has(index)).length;
+    };
+
+    expect(overlapWith(variant)).toBeGreaterThan(overlapWith(disjoint));
+  });
+
+  test("training on the live KC code writes plastic deltas and raises learned confidence", () => {
+    const engine = freshEngine();
+    const before = engine.evaluate(representativeText);
+    expect(before.confidence).toBe(0);
+    expect(before.mbonReadout.length).toBeGreaterThan(0);
 
     engine.trainText(representativeText, "PPL1", 0.5);
-    const afterTraining = engine.evaluate(representativeText);
+    const after = engine.evaluate(representativeText);
+    expect(after.confidence).toBeGreaterThan(0);
+
     const weights = engine.exportSparseDeltas();
     const header = new DataView(weights.buffer, weights.byteOffset, weights.byteLength);
-
-    expect(afterTraining.activeKcIndexes).toHaveLength(0);
-    expect(afterTraining.mbonReadout).toHaveLength(0);
-    expect(afterTraining.confidence).toBe(0);
-    expect(weights.byteLength).toBe(8);
+    const count = header.getUint32(4, true);
     expect(header.getUint32(0, true)).toBe(FLY_WEIGHT_DELTA_MAGIC);
-    expect(header.getUint32(4, true)).toBe(0);
+    expect(count).toBeGreaterThan(0);
+    expect(weights.byteLength).toBe(8 + count * 8);
   });
 
   test("keeps empty and whitespace text without channels or active Kenyon cells", () => {

@@ -585,7 +585,11 @@ export function generateFixtureCsv(): FixtureCsv {
 	for (const spec of specs) {
 		for (let i = 0; i < spec.count; i++) {
 			const rootId = id(next);
-			const cellType = spec.cellType === "MBON" || spec.cellType === "Or42b" ? `${spec.cellType}_${i + 1}` : spec.cellType;
+			// Per-neuron types for OSN/PN/MBON: distinct PN types are the FT-16
+			// glomerular cohorts, so the fixture projection separates KC blocks.
+			const cellType = ["MBON", "Or42b", "PN_cluster"].includes(spec.cellType)
+				? `${spec.cellType}_${i + 1}`
+				: spec.cellType;
 			neurons.push({ id: rootId, kind: spec.cellType, index: next });
 			cellLines.push(`${rootId},central,${spec.cls},${spec.cls},${cellType},${cellType},${spec.nt},${i % 2 === 0 ? "L" : "R"},${spec.cls === "olfactory" ? "afferent" : "intrinsic"}`);
 			next++;

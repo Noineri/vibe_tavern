@@ -93,6 +93,26 @@ describe("Fly engine deterministic text encoding", () => {
   });
 });
 
+describe("Fly engine FT-16 winner-take-all projection", () => {
+  test("selects exactly the top-10% KC quota deterministically", () => {
+    const evaluation = freshEngine().evaluate("violet lantern harbor");
+    const repeat = freshEngine().evaluate("violet lantern harbor");
+    // ceil(60 fixture KCs × 0.10)
+    expect(evaluation.activeKcIndexes).toHaveLength(6);
+    expect([...evaluation.activeKcIndexes].sort((a, b) => a - b)).toEqual(
+      [...repeat.activeKcIndexes].sort((a, b) => a - b),
+    );
+  });
+
+  test("accepts both projection mass modes with the same quota", () => {
+    for (const projectionMode of ["binary", "log-synapse"] as const) {
+      const engine = freshEngine();
+      engine.setParams({ projectionMode });
+      expect(engine.evaluate("violet lantern harbor").activeKcIndexes).toHaveLength(6);
+    }
+  });
+});
+
 describe("Fly engine plasticity/readout", () => {
   test("PPL1 training raises matching confidence while a disjoint control stays flat", () => {
     const engine = freshEngine();
