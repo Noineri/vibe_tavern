@@ -40,11 +40,42 @@ describe("FT-18R style nose", () => {
     expect(Array.from(first.channels)).toEqual(Array.from(repeat.channels));
     expect(first.registry.map((entry) => entry.ngram)).toEqual(repeat.registry.map((entry) => entry.ngram));
     expect(first.channels.length).toBe(FLY_STYLE_NOSE_CHANNEL_COUNT);
-    expect(first.registry).toHaveLength(FLY_STYLE_NOSE_CHANNEL_COUNT);
+    // 22 raw feature entries + exactly one entry per crossed bucket channel.
+    const rawCount = first.registry.filter((entry) => !entry.ngram.includes("@")).length;
+    const bucketCount = first.registry.filter((entry) => entry.ngram.includes("@")).length;
+    expect(rawCount).toBe(22);
+    expect(bucketCount).toBe(
+      Array.from(first.channels).slice(22).filter((value) => value === 1).length,
+    );
     for (const value of first.channels) {
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThanOrEqual(1);
     }
+  });
+
+  test("thermometer buckets fire on threshold crossings and keep raw layout stable", () => {
+    const nose = createStyleNose();
+    // The duplicated paragraph IS the longest (0.42 of the text) — all three
+    // thresholds cross: @ge5, @ge15, @ge35 fire in order.
+    const base = "One short paragraph.\n\nSecond paragraph with more words in it than the first one has.";
+    const duplicated = `${base}\n\nSecond paragraph with more words in it than the first one has.`;
+    const encoding = nose.encode(duplicated);
+    const rawIndex = encoding.registry.findIndex((entry) => entry.ngram === "repetition:paragraph-duplicate");
+    const rawValue = encoding.registry[rawIndex]!.activation;
+    expect(rawValue).toBeGreaterThan(0.35);
+    const bucketIds = encoding.registry
+      .filter((entry) => entry.ngram.startsWith("repetition:paragraph-duplicate@"))
+      .map((entry) => entry.ngram);
+    expect(bucketIds).toEqual([
+      "repetition:paragraph-duplicate@ge5",
+      "repetition:paragraph-duplicate@ge15",
+      "repetition:paragraph-duplicate@ge35",
+    ]);
+    // Clean text fires no repetition buckets at all.
+    const clean = nose.encode(base);
+    expect(clean.registry.some((entry) => entry.ngram.includes("repetition:paragraph-duplicate@"))).toBe(false);
+    // v1 compatibility: the first 22 channels are the raw feature values.
+    expect(clean.registry.filter((entry) => !entry.ngram.includes("@")).every((entry) => entry.channel < 22)).toBe(true);
   });
 
   test("separates a verbose italic-monologue wall from terse dash dialogue", () => {
@@ -81,8 +112,8 @@ describe("FT-18R style nose", () => {
   test("empty text encodes to honest silence", () => {
     const encoding = createStyleNose().encode("   ");
     expect(Array.from(encoding.channels).every((value) => value === 0)).toBe(true);
-    expect(encoding.registry).toHaveLength(FLY_STYLE_NOSE_CHANNEL_COUNT);
     expect(encoding.registry.every((entry) => entry.activation === 0)).toBe(true);
+    expect(encoding.registry.some((entry) => entry.ngram.includes("@"))).toBe(false);
   });
 });
 

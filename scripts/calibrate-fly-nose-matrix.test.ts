@@ -218,9 +218,9 @@ describe("FT-18R nose registry", () => {
 	test("resolves every local nose with its channel count", async () => {
 		expect((await resolveFlyNose("old")).nose.channelCount).toBe(50);
 		expect((await resolveFlyNose("wide")).nose.channelCount).toBe(1024);
-		expect((await resolveFlyNose("style")).nose.channelCount).toBe(22);
+		expect((await resolveFlyNose("style")).nose.channelCount).toBe(22 * 4);
 		expect((await resolveFlyNose("char")).nose.channelCount).toBe(256);
-		expect((await resolveFlyNose("multi")).nose.channelCount).toBe(256 + 256 + 22);
+		expect((await resolveFlyNose("multi")).nose.channelCount).toBe(256 + 256 + 22 * 4);
 	});
 
 	test("embedder without a vectors file and unknown ids fail loud", async () => {

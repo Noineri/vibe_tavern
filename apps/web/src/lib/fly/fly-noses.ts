@@ -198,13 +198,28 @@ const FLY_STYLE_FEATURES: readonly FlyStyleFeature[] = [
   { id: "script:uppercase-ratio", measure: (text) => letterProfile(text).uppercase, squash: clamp01 },
 ];
 
-export const FLY_STYLE_NOSE_CHANNEL_COUNT = FLY_STYLE_FEATURES.length;
+export const FLY_STYLE_BUCKET_THRESHOLDS = [0.05, 0.15, 0.35] as const;
+
+/** Total style-view channels: one raw channel per feature + one thermometer
+ * bucket per (feature, threshold). Layout is [raw 22 | buckets 66] so the
+ * first 22 channels keep their v1 meaning and ordering. */
+export const FLY_STYLE_NOSE_CHANNEL_COUNT =
+  FLY_STYLE_FEATURES.length * (1 + FLY_STYLE_BUCKET_THRESHOLDS.length);
 
 /**
  * Interpretable style/structure nose. Unlike the hash nose there is NO
  * max-normalization: every feature is individually squashed to [0, 1], so a
  * monologue ratio of 0.9 stays 0.9 regardless of what other features fire —
  * absolute calibration is the point of this representation.
+ *
+ * v2 (FT-18R, 2026-09-27 code-sensitivity diagnosis): every feature also
+ * drives threshold bucket channels (1.0 when the squashed value crosses the
+ * threshold). A single feature jumping (e.g. paragraph duplication 0→0.16)
+ * moves only its ONE cohort's KCs in the WTA and the code barely shifts
+ * (measured 93.7% same-batch overlap, accuracy 0.557 despite the feature
+ * separating 344/344 pairs); crossing thresholds lights up ADDITIONAL PN
+ * cohorts, so the KC code actually moves. Bucket channels are binary and
+ * appended after the raw block.
  */
 export function createStyleNose(): FlyNose {
   return {
@@ -233,12 +248,28 @@ function encodeStyleView(text: string): FlyStimulusEncoding {
     };
   }
   const tokens = tokenizeFlyText(text);
-  const registry = FLY_STYLE_FEATURES.map((feature, channel) => {
+  const registry: FlyNgramRegistryEntry[] = [];
+  for (let channel = 0; channel < FLY_STYLE_FEATURES.length; channel += 1) {
+    const feature = FLY_STYLE_FEATURES[channel]!;
     const raw = feature.measure(text, tokens);
     const activation = feature.squash(raw);
     channels[channel] = activation;
-    return { ngram: feature.id, channel, count: Math.round(raw * 10_000) / 10_000, activation };
-  });
+    registry.push({ ngram: feature.id, channel, count: Math.round(raw * 10_000) / 10_000, activation });
+    for (let bucket = 0; bucket < FLY_STYLE_BUCKET_THRESHOLDS.length; bucket += 1) {
+      const threshold = FLY_STYLE_BUCKET_THRESHOLDS[bucket]!;
+      const bucketChannel = FLY_STYLE_FEATURES.length + channel * FLY_STYLE_BUCKET_THRESHOLDS.length + bucket;
+      const crossed = activation >= threshold ? 1 : 0;
+      channels[bucketChannel] = crossed;
+      if (crossed === 1) {
+        registry.push({
+          ngram: `${feature.id}@ge${Math.round(threshold * 100)}`,
+          channel: bucketChannel,
+          count: 1,
+          activation: crossed,
+        });
+      }
+    }
+  }
   return { channels, registry };
 }
 
