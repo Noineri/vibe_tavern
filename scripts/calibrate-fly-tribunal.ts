@@ -193,6 +193,9 @@ export interface FlyScoredPair {
 	batchId: string;
 	rejectedConfidence: number;
 	keptConfidence: number;
+	/** FT-18R unclamped margins — the saturation-proof comparison. */
+	rejectedMargin: number;
+	keptMargin: number;
 }
 
 export interface FlyScoredVariant {
@@ -201,6 +204,8 @@ export interface FlyScoredVariant {
 	/** True when this text was rejected (non-selected in a choice batch). */
 	rejected: boolean;
 	confidence: number;
+	/** FT-18R unclamped margin behind the clamped confidence. */
+	margin: number;
 	kcCode: readonly number[];
 }
 
@@ -230,6 +235,34 @@ export function classAuc(variants: readonly FlyScoredVariant[]): number {
 	return credit / (rejected.length * kept.length);
 }
 
+/** Pairwise accuracy on the UNCLAMPED margins — the saturation-proof readout
+ * (FT-18R: the clamped confidence ties at 1 for every text after ~3
+ * full-strength events, so margin comparison is the only informative one). */
+export function pairwiseMarginAccuracy(pairs: readonly FlyScoredPair[]): number {
+	if (pairs.length === 0) return 0;
+	let credit = 0;
+	for (const pair of pairs) {
+		if (pair.rejectedMargin > pair.keptMargin) credit += 1;
+		else if (pair.rejectedMargin === pair.keptMargin) credit += 0.5;
+	}
+	return credit / pairs.length;
+}
+
+/** Mann-Whitney AUC on the unclamped margins (ties 0.5). */
+export function marginAuc(variants: readonly FlyScoredVariant[]): number {
+	const rejected = variants.filter((variant) => variant.rejected).map((v) => v.margin);
+	const kept = variants.filter((variant) => !variant.rejected).map((v) => v.margin);
+	if (rejected.length === 0 || kept.length === 0) return 0.5;
+	let credit = 0;
+	for (const rej of rejected) {
+		for (const keep of kept) {
+			if (rej > keep) credit += 1;
+			else if (rej === keep) credit += 0.5;
+		}
+	}
+	return credit / (rejected.length * kept.length);
+}
+
 /** Deterministic seeded PRNG so every rerun prints identical intervals. */
 export function mulberry32(seed: number): () => number {
 	let state = seed >>> 0;
@@ -247,9 +280,10 @@ export function mulberry32(seed: number): () => number {
  */
 export function bootstrapAccuracyCi(
 	pairs: readonly FlyScoredPair[],
-	options: { resamples?: number; seed?: number } = {},
+	options: { resamples?: number; seed?: number; accuracyFn?: (pairs: readonly FlyScoredPair[]) => number } = {},
 ): { low: number; high: number } {
 	const resamples = options.resamples ?? 10_000;
+	const accuracyFn = options.accuracyFn ?? pairwiseAccuracy;
 	const random = mulberry32(options.seed ?? 42);
 	const byBatch = new Map<string, FlyScoredPair[]>();
 	for (const pair of pairs) {
@@ -265,7 +299,7 @@ export function bootstrapAccuracyCi(
 		for (let pick = 0; pick < clusters.length; pick += 1) {
 			sample.push(...clusters[Math.floor(random() * clusters.length)]!);
 		}
-		accuracies.push(pairwiseAccuracy(sample));
+		accuracies.push(accuracyFn(sample));
 	}
 	accuracies.sort((a, b) => a - b);
 	const lowIndex = Math.floor(accuracies.length * 0.025);
@@ -341,12 +375,14 @@ export function runPrequential(
 		}
 		const codes = new Map<string, number[]>();
 		const confidences = new Map<string, number>();
+		const margins = new Map<string, number>();
 		const texts = new Set<string>(batch.variants.map((variant) => variant.content));
 		if (batch.finalContent !== null) texts.add(batch.finalContent);
 		for (const text of texts) {
-			const evaluation = engine.evaluate(text);
+			const evaluation = engine.evaluateDiagnostic(text);
 			codes.set(text, evaluation.activeKcIndexes);
 			confidences.set(text, evaluation.confidence);
+			margins.set(text, evaluation.rawMargin);
 		}
 		const selected = batch.variants.find((variant) => variant.selected) ?? null;
 		const edited = selected !== null
@@ -359,6 +395,7 @@ export function runPrequential(
 					content: variant.content,
 					rejected: variant !== selected,
 					confidence: confidences.get(variant.content) ?? 0,
+					margin: margins.get(variant.content) ?? 0,
 					kcCode: codes.get(variant.content) ?? [],
 				});
 			}
@@ -371,16 +408,20 @@ export function runPrequential(
 					content: batch.finalContent,
 					rejected: false,
 					confidence: confidences.get(batch.finalContent) ?? 0,
+					margin: margins.get(batch.finalContent) ?? 0,
 					kcCode: codes.get(batch.finalContent) ?? [],
 				});
 			}
 			const keptConfidence = confidences.get(keptText) ?? 0;
+			const keptMargin = margins.get(keptText) ?? 0;
 			for (const variant of batch.variants) {
 				if (variant === selected) continue;
 				run.pairs.push({
 					batchId: batch.messageId,
 					rejectedConfidence: confidences.get(variant.content) ?? 0,
 					keptConfidence,
+					rejectedMargin: margins.get(variant.content) ?? 0,
+					keptMargin,
 				});
 			}
 		}
@@ -391,6 +432,7 @@ export function runPrequential(
 				content: text,
 				rejected: false,
 				confidence: confidences.get(text) ?? 0,
+				margin: margins.get(text) ?? 0,
 				kcCode: codes.get(text) ?? [],
 			});
 		}
@@ -690,7 +732,7 @@ export async function main(argv: string[]): Promise<void> {
 		const evaluateMode = (
 			mode: FlyProjectionMode,
 			label: string,
-		): { metrics: FlySplitMetrics; engine: FlyEngine; clock: FlyReplayClock; ms: number } => {
+		): { metrics: FlySplitMetrics; marginAccuracy: number; engine: FlyEngine; clock: FlyReplayClock; ms: number } => {
 			const engine = createFlyEngine(connectome, { params: { projectionMode: mode }, nose });
 			const clock = createReplayClock();
 			const started = performance.now();
@@ -701,24 +743,27 @@ export async function main(argv: string[]): Promise<void> {
 				const texts = new Set(batch.variants.map((variant) => variant.content));
 				if (batch.finalContent !== null) texts.add(batch.finalContent);
 				const codes: Array<[string, number[]]> = [];
-				for (const text of texts) codes.push([text, engine.evaluate(text).activeKcIndexes]);
+				for (const text of texts) codes.push([text, engine.evaluateDiagnostic(text).activeKcIndexes]);
 				trainBatch(engine, batch, new Map(codes));
 				trained += 1;
 				if (trained % 500 === 0) console.log(`  [${label}] trained ${trained} train batches`);
 			}
 			const validationRun = runPrequential(engine, splits.validation, { clock, lifetimeDays });
 			const metrics = summarizeRun(validationRun, { resamples: args.resamples, seed: args.seed });
+			const marginAccuracy = pairwiseMarginAccuracy(validationRun.pairs);
 			const ms = performance.now() - started;
 			console.log(
 				`[${label}] validation accuracy ${metrics.accuracy.toFixed(4)} (CI ${metrics.accuracyCi.low.toFixed(3)}–${metrics.accuracyCi.high.toFixed(3)}),` +
-				` AUC ${metrics.classAuc.toFixed(4)}, pairs ${metrics.pairs} [${(ms / 1000).toFixed(1)}s]`,
+				` AUC ${metrics.classAuc.toFixed(4)}, pairs ${metrics.pairs}, margin accuracy ${marginAccuracy.toFixed(4)} [${(ms / 1000).toFixed(1)}s]`,
 			);
-			return { metrics, engine, clock, ms };
+			return { metrics, marginAccuracy, engine, clock, ms };
 		};
 
 		const binaryRun = evaluateMode("binary", "binary");
 		const logRun = evaluateMode("log-synapse", "log-synapse");
-		const winner = binaryRun.metrics.accuracy >= logRun.metrics.accuracy ? binaryRun : logRun;
+		// FT-18R: freeze on the MARGIN validation accuracy — the clamped readout
+		// saturates (ties at ~0.5) and cannot rank modes at this training scale.
+		const winner = binaryRun.marginAccuracy >= logRun.marginAccuracy ? binaryRun : logRun;
 		const winnerMode: FlyProjectionMode = winner === binaryRun ? "binary" : "log-synapse";
 		console.log(`frozen projection mode: ${winnerMode}`);
 		console.log(
@@ -733,7 +778,11 @@ export async function main(argv: string[]): Promise<void> {
 		const testStarted = performance.now();
 		const testRun = runPrequential(winner.engine, splits.test, { clock: winner.clock, lifetimeDays });
 		const testMetrics = summarizeRun(testRun, { resamples: args.resamples, seed: args.seed });
+		const testMarginAccuracy = pairwiseMarginAccuracy(testRun.pairs);
+		const testMarginCi = bootstrapAccuracyCi(testRun.pairs, { resamples: args.resamples, seed: args.seed, accuracyFn: pairwiseMarginAccuracy });
+		const testMarginAuc = marginAuc(testRun.scored);
 		console.log(`sealed test: accuracy ${testMetrics.accuracy.toFixed(4)} (CI ${testMetrics.accuracyCi.low.toFixed(4)}–${testMetrics.accuracyCi.high.toFixed(4)}), AUC ${testMetrics.classAuc.toFixed(4)}`);
+		console.log(`sealed test (margin): accuracy ${testMarginAccuracy.toFixed(4)} (CI ${testMarginCi.low.toFixed(4)}–${testMarginCi.high.toFixed(4)}), AUC ${testMarginAuc.toFixed(4)}`);
 
 		const deltas = winner.engine.exportSparseDeltas();
 		const deltaView = new DataView(deltas.buffer, deltas.byteOffset, deltas.byteLength);
@@ -768,8 +817,17 @@ export async function main(argv: string[]): Promise<void> {
 				binary: binaryRun.metrics,
 				"log-synapse": logRun.metrics,
 			},
+			validationMarginAccuracy: {
+				binary: binaryRun.marginAccuracy,
+				"log-synapse": logRun.marginAccuracy,
+			},
 			winnerMode,
 			test: testMetrics,
+			testMargin: {
+				accuracy: testMarginAccuracy,
+				accuracyCi: testMarginCi,
+				auc: testMarginAuc,
+			},
 			weights: {
 				nonzeroSynapses: weightCount,
 				payloadBase64Length: payloadBase64.length,

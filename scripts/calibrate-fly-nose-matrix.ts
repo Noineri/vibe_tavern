@@ -35,11 +35,14 @@ import {
 } from "../apps/web/src/lib/fly/fly-engine-core.js";
 import {
 	advanceReplayClock,
+	bootstrapAccuracyCi,
 	classAuc,
 	createReplayClock,
 	FLY_CAL_DAY_MS,
+	marginAuc,
 	netDecayFactor,
 	pairwiseAccuracy,
+	pairwiseMarginAccuracy,
 	parseLifetimeDays,
 	splitChronological,
 	summarizeRun,
@@ -51,6 +54,19 @@ import {
 } from "./calibrate-fly-tribunal.js";
 import { FLY_NOSE_IDS, resolveFlyNose, type FlyNoseId } from "./fly-nose-registry.js";
 import type { FlySyntheticBatch } from "./generate-fly-synthetic-corpus.js";
+
+// Shared margin readouts live in calibrate-fly-tribunal.ts (single source);
+// re-exported here for the matrix tests and downstream consumers.
+export { marginAuc, pairwiseMarginAccuracy };
+
+/** Matrix-shaped adapter over the shared cluster bootstrap. */
+export function bootstrapPairAccuracy(
+	pairs: readonly FlyMatrixPair[],
+	accuracyFn: (pairs: readonly FlyScoredPair[]) => number,
+	options: { resamples: number; seed: number },
+): { low: number; high: number } {
+	return bootstrapAccuracyCi(pairs, { ...options, accuracyFn });
+}
 
 // ─── Defect-aware prequential runner ────────────────────────────────────────
 
@@ -189,65 +205,6 @@ export function pairwiseAccuracyByDefect(
 		result[defect] = { pairs: bucket.length, accuracy: accuracyFn(bucket) };
 	}
 	return result;
-}
-
-/** Pairwise accuracy on the UNCLAMPED margins — the saturation-proof headline. */
-export function pairwiseMarginAccuracy(pairs: readonly FlyMatrixPair[]): number {
-	if (pairs.length === 0) return 0;
-	let credit = 0;
-	for (const pair of pairs) {
-		if (pair.rejectedMargin > pair.keptMargin) credit += 1;
-		else if (pair.rejectedMargin === pair.keptMargin) credit += 0.5;
-	}
-	return credit / pairs.length;
-}
-
-/** Mann-Whitney AUC on margins: P(rejected variant margin > kept variant margin), ties 0.5. */
-export function marginAuc(scored: readonly FlyMatrixScored[]): number {
-	const rejected = scored.filter((entry) => entry.rejected).map((entry) => entry.margin);
-	const kept = scored.filter((entry) => !entry.rejected).map((entry) => entry.margin);
-	if (rejected.length === 0 || kept.length === 0) return 0.5;
-	let credit = 0;
-	for (const rejection of rejected) {
-		for (const keep of kept) {
-			credit += rejection > keep ? 1 : rejection === keep ? 0.5 : 0;
-		}
-	}
-	return credit / (rejected.length * kept.length);
-}
-
-/** Seeded cluster bootstrap CI for an accuracy-style statistic over batch clusters. */
-export function bootstrapPairAccuracy(
-	pairs: readonly FlyMatrixPair[],
-	accuracyFn: (pairs: readonly FlyMatrixPair[]) => number = pairwiseMarginAccuracy,
-	options: { resamples: number; seed: number },
-): { low: number; high: number } {
-	if (pairs.length === 0) return { low: 0, high: 0 };
-	const clusters = new Map<string, FlyMatrixPair[]>();
-	for (const pair of pairs) {
-		const bucket = clusters.get(pair.batchId);
-		if (bucket === undefined) clusters.set(pair.batchId, [pair]);
-		else bucket.push(pair);
-	}
-	const keys = [...clusters.keys()];
-	let state = options.seed >>> 0;
-	const nextRandom = () => {
-		state = (state + 0x6d2b79f5) >>> 0;
-		let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
-		mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
-		return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
-	};
-	const resampled: number[] = [];
-	for (let index = 0; index < options.resamples; index += 1) {
-		const draw: FlyMatrixPair[] = [];
-		for (let pick = 0; pick < keys.length; pick += 1) draw.push(...clusters.get(keys[Math.floor(nextRandom() * keys.length)]!)!);
-		resampled.push(accuracyFn(draw));
-	}
-	resampled.sort((a, b) => a - b);
-	return {
-		low: resampled[Math.floor(0.025 * resampled.length)]!,
-		high: resampled[Math.ceil(0.975 * resampled.length) - 1]!,
-	};
 }
 
 function median(values: readonly number[]): number {

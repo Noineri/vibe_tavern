@@ -250,6 +250,8 @@ describe("FT-18 pairwise metrics", () => {
 		batchId,
 		rejectedConfidence,
 		keptConfidence,
+		rejectedMargin: rejectedConfidence,
+		keptMargin: keptConfidence,
 	});
 
 	test("accuracy counts wins, ties earn half credit", () => {
@@ -265,6 +267,7 @@ describe("FT-18 pairwise metrics", () => {
 				content: `t${index}`,
 				rejected,
 				confidence,
+				margin: confidence,
 				kcCode: [],
 			}));
 		expect(classAuc(scored([[0.9, true], [0.8, true], [0.2, false], [0.1, false]]))).toBe(1);
