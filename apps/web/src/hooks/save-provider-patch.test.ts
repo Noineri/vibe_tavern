@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildFavoriteModelSwitchPatch, computeOverlayPatch, computeSavePatch, connectionToSavePatch } from "./save-provider-patch.js";
+import { buildFavoriteModelSwitchPatch, computeBindingIdentityPatch, computeOverlayPatch, computeSavePatch, connectionToSavePatch } from "./save-provider-patch.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
 
 /** Minimal FormState factory — override only what matters for the test.
@@ -249,6 +249,15 @@ describe("computeOverlayPatch", () => {
     expect(overlay.pinContextBudget).toBe(true);
   });
 
+  test("carries the per-model sampler-set pointer (IG-CF15 LLM twin — the set is THIS model's provenance)", () => {
+    const form = makeForm({ samplerSetId: "sset_a" });
+    const overlay = computeOverlayPatch(form);
+    expect(overlay.samplerSetId).toBe("sset_a");
+    // No set picked for this model → explicit null ("no set"), not base inheritance.
+    const bare = computeOverlayPatch(makeForm({ samplerSetId: null }));
+    expect(bare.samplerSetId).toBeNull();
+  });
+
   test("contextBudget null when form has 0/empty budget", () => {
     const form = makeForm({ contextBudget: 0 });
     const overlay = computeOverlayPatch(form);
@@ -260,5 +269,33 @@ describe("computeOverlayPatch", () => {
     const overlay = computeOverlayPatch(form);
     expect(overlay.stopSequences).toEqual(["\\n\nUser:"]);
     expect(overlay.drySequenceBreakers).toEqual(["\n"]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Overlay-mode base routing: computeBindingIdentityPatch — the base half of the
+// split (what an overlay save still writes to the profile row).
+// ────────────────────────────────────────────────────────────────────────
+
+describe("computeBindingIdentityPatch", () => {
+  test("overlay-mode base write keeps identity + proxy + format, drops sampler fields AND the set pointer", () => {
+    const basePatch = computeSavePatch(makeForm({
+      temperature: 0.9,
+      contextBudget: 12000,
+      samplerSetId: "sset_b",
+    }));
+    const identity = computeBindingIdentityPatch(basePatch);
+    // Identity survives on the base.
+    expect(identity.name).toBe(basePatch.name);
+    expect(identity.defaultModel).toBe(basePatch.defaultModel);
+    expect(identity.bindPerModel).toBe(basePatch.bindPerModel);
+    // The sampler payload and the set POINTER never touch the base in overlay
+    // mode (owner ruling 2026-09-27: the set is per-model; the base pointer is
+    // the binding-off fallback and stays put).
+    expect(identity).not.toHaveProperty("temperature");
+    expect(identity).not.toHaveProperty("contextBudget");
+    expect(identity).not.toHaveProperty("samplerSetId");
+    // Profile-level chrome that must survive overlay saves still rides along.
+    expect(identity.generationFormat).toBe(basePatch.generationFormat);
   });
 });

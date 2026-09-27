@@ -4,7 +4,7 @@ import type { ProviderProbeResponse, ProviderProxyMode } from "@vibe-tavern/doma
 import { MODEL_FAVORITE_SCOPE, PROVIDER_TYPE, tag } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import { computeHydration } from "./hydrate-provider.js";
-import { computeSavePatch, computeOverlayPatch, connectionToSavePatch, validateSavePatch, buildFavoriteModelSwitchPatch } from "./save-provider-patch.js";
+import { computeSavePatch, computeOverlayPatch, computeBindingIdentityPatch, connectionToSavePatch, validateSavePatch, buildFavoriteModelSwitchPatch } from "./save-provider-patch.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord, TestChatResponse } from "../api/types.js";
@@ -487,12 +487,15 @@ export function useProviderProfiles() {
     const validationError = validateSavePatch(basePatch);
     if (validationError) return null;
 
-    // Binding routing (plan §Wave 4):
+    // Binding routing (plan §Wave 4; owner ruling 2026-09-27 — the editor
+    //  follows the profile's ACTIVE model, no manual binding dropdown):
     //  - Overlay mode (bindPerModel && editingModelId): identity fields → base
-    //    (partial PATCH), sampler/context → the model's overlay. The base's own
-    //    sampler columns stay put (the overlay is the bound model's override).
-    //  - Base mode (binding OFF, or no model picked): full PATCH — byte-identical
-    //    to today's behavior (identity + sampler + bindPerModel all on base).
+    //    (partial PATCH), sampler/context + the sampler-set POINTER → the model's
+    //    overlay. The base's own sampler columns and base set pointer stay put
+    //    (the overlay is the bound model's override).
+    //  - Base mode (binding OFF, or the active model is not a favorite): full
+    //    PATCH — byte-identical to today's behavior (identity + sampler +
+    //    bindPerModel + the set pointer all on base).
     //  - bindPerModel toggle is an identity-level field → always on the base.
     const isInOverlayMode = form.bindPerModel && form.editingModelId != null;
 
@@ -502,22 +505,7 @@ export function useProviderProfiles() {
         // Identity-only base write (partial PATCH — updateProviderProfileSchema
         // is providerCoreSchema.partial(), so omitted sampler fields are not
         // touched on the base).
-        const identityPatch = {
-          name: basePatch.name,
-          providerPreset: basePatch.providerPreset,
-          endpoint: basePatch.endpoint,
-          apiKey: basePatch.apiKey,
-          defaultModel: basePatch.defaultModel,
-          visionModel: basePatch.visionModel,
-          bindPerModel: basePatch.bindPerModel,
-          proxyMode: basePatch.proxyMode,
-          proxyId: basePatch.proxyId,
-          // The sampler-set pointer is PROFILE-level (never overlay): the
-          // dropdown pre-selection + dirty-dot baseline survive overlay saves.
-          samplerSetId: basePatch.samplerSetId,
-          // Same for the LS-10 format block — profile-level, survives overlays.
-          generationFormat: basePatch.generationFormat,
-        };
+        const identityPatch = computeBindingIdentityPatch(basePatch);
         saved = form.id
           ? await updateProviderProfileAction(form.id, identityPatch)
           : await saveProviderProfileAction(basePatch);

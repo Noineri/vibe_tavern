@@ -3,41 +3,32 @@ import type { FavoriteProviderModelRecord } from "../../../api/types.js";
 import type { FormState } from "../../modals/ProviderModal.js";
 import { Icons } from "../../shared/icons.js";
 import { Toggle } from "../../shared/Toggle.js";
-import { DropdownSelect } from "../../shared/DropdownSelect.js";
-
-const labelCls =
-  "block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3";
 
 interface ProviderBindingPanelProps {
   form: FormState;
-  /** Starred models for this profile (drives the binding-target dropdown). */
+  /** Starred models for this profile (drives the follow/badge state). */
   favorites: FavoriteProviderModelRecord[];
   updateForm: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
-  /** Fired when the user picks a model in the binding dropdown. The modal
-   *  re-hydrates the form's sampler/context fields from that model's overlay
-   *  (merged over the persisted base profile) and sets `editingModelId`. */
-  onSelectBindingModel: (modelId: string) => Promise<void>;
 }
 
 /**
  * Per-model binding control. Renders the profile-level "bind settings per
- * model" toggle and, when ON, a favorites dropdown to pick WHICH model's
- * overlay to edit + an "Editing: <model>" badge.
+ * model" toggle and, when ON, an honest badge saying WHERE the settings below
+ * are being edited (owner ruling 2026-09-27):
+ *  - active model is a favorite → "Editing: <model>" — its own overlay;
+ *  - active model is not a favorite (or none starred) → "Base settings" —
+ *    edits land on the profile base, which is exactly what non-favorite
+ *    models use at generation.
  *
- * The toggle is profile-level (persisted as `bindPerModel` on the profile).
- * The dropdown selection is UI-only state (`editingModelId` on the form) — it
- * routes saves to that model's overlay (see Wave 4 save routing) and
- * re-hydrates the form to show that model's effective settings.
- *
- * When binding is OFF, the dropdown is hidden (toggle collapsed) and
- * `editingModelId` is preserved (not cleared) so re-enabling restores the
- * selection — per plan §102.
+ * The editor FOLLOWS the profile's active model (ProviderModal's follow
+ * effect) — there is no manual binding dropdown: switching the model (here or
+ * via the chat quick-switch) re-points the editor automatically. The toggle
+ * itself is profile-level (persisted as `bindPerModel` on the profile).
  */
 export function ProviderBindingPanel({
   form,
   favorites,
   updateForm,
-  onSelectBindingModel,
 }: ProviderBindingPanelProps) {
   const { t } = useT();
 
@@ -60,7 +51,7 @@ export function ProviderBindingPanel({
         </div>
       </div>
 
-      {/* Dropdown + badge — only when binding is ON */}
+      {/* Editing-target badge — only when binding is ON */}
       {form.bindPerModel && (
         <div className="mt-3">
           {favorites.length === 0 ? (
@@ -68,31 +59,20 @@ export function ProviderBindingPanel({
               <span className="[&_svg]:h-[12px] [&_svg]:w-[12px]"><Icons.Alert /></span>
               {t("binding_no_favorites_hint")}
             </div>
+          ) : form.editingModelId ? (
+            <div>
+              <span className="inline-flex items-center gap-1.5 rounded bg-accent/10 px-2.5 py-1 font-mono text-[11px] text-accent">
+                <span className="[&_svg]:h-[11px] [&_svg]:w-[11px]"><Icons.Edit /></span>
+                {t("editing_model_badge", { model: form.editingModelId })}
+              </span>
+            </div>
           ) : (
-            <>
-              <label className={labelCls + " mb-[6px]"}>{t("binding_dropdown_label")}</label>
-              <DropdownSelect
-                value={form.editingModelId ?? ""}
-                options={favorites.map((f) => ({
-                  id: f.modelId,
-                  label: f.label?.trim() || f.modelId,
-                  detail: f.contextLength != null ? `${f.contextLength.toLocaleString()} ctx` : undefined,
-                }))}
-                placeholder={t("binding_dropdown_placeholder")}
-                searchable
-                onChange={(modelId) => {
-                  if (modelId) void onSelectBindingModel(modelId);
-                }}
-              />
-              {form.editingModelId && (
-                <div className="mt-2">
-                  <span className="inline-flex items-center gap-1.5 rounded bg-accent/10 px-2.5 py-1 font-mono text-[11px] text-accent">
-                    <span className="[&_svg]:h-[11px] [&_svg]:w-[11px]"><Icons.Edit /></span>
-                    {t("editing_model_badge", { model: form.editingModelId })}
-                  </span>
-                </div>
-              )}
-            </>
+            <div>
+              <span className="inline-flex items-center gap-1.5 rounded bg-s3 px-2.5 py-1 font-mono text-[11px] text-t3">
+                <span className="[&_svg]:h-[11px] [&_svg]:w-[11px]"><Icons.Settings /></span>
+                {t("binding_base_badge")}
+              </span>
+            </div>
           )}
         </div>
       )}

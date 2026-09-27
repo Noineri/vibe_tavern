@@ -171,6 +171,9 @@ export function effectiveContextBudget(
  * Identity / view fields (`name`, `endpoint`, `apiKey`, `defaultModel`,
  * `visionModel`, `providerPreset`, `isActive`, `bindPerModel`, `customSamplers`,
  * timestamps, `id`) are deliberately NOT here — they always live on the base.
+ * `samplerSetId` IS here (owner ruling 2026-09-27: the applied sampler set is
+ * per-model — the LLM twin of the imagegen overlay's set pointer, IG-CF15);
+ * an overlay without it inherits the base pointer.
  */
 export type ModelSettingsOverlay = Partial<
   Pick<
@@ -213,6 +216,7 @@ export type ModelSettingsOverlay = Partial<
     | 'showReasoning'
     | 'streamResponse'
     | 'customSamplers'
+    | 'samplerSetId'
   >
 >;
 

@@ -103,6 +103,23 @@ describe("provider model-settings overlay routes", () => {
     expect((capturedSettings as Record<string, unknown>).name).toBeUndefined();
   });
 
+  test("PUT keeps the per-model sampler-set pointer (samplerSetId rides the overlay — IG-CF15 LLM twin)", async () => {
+    let capturedSettings: unknown = null;
+    const runtime = mockRuntime({
+      upsertProviderModelSettings: async (_p, _m, settings) => {
+        capturedSettings = settings;
+        return { id: "x", providerProfileId: "p", modelId: "m", settings: settings as never, createdAt: "t", updatedAt: "t" };
+      },
+    });
+    const app = createProviderRoutes(runtime);
+    await app.request("/api/providers/prov_1/model-settings/gpt-4o", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ temperature: 0.7, samplerSetId: "sset_1" }),
+    });
+    expect(capturedSettings).toEqual({ temperature: 0.7, samplerSetId: "sset_1" });
+  });
+
   test("PUT with invalid bias (>100) → 400 (zod rejects)", async () => {
     const runtime = mockRuntime();
     const app = createProviderRoutes(runtime);

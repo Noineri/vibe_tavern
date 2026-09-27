@@ -513,29 +513,39 @@ export function ProviderModal({
   };
   const handleClose = () => requestClose("close");
 
-  // ── Per-model binding: re-hydrate form when the user picks a model to edit ──
-  // Fetch the model's overlay and merge it over the PERSISTED base profile, so
-  // the sampler panel shows that model's effective settings. The base comes from
-  // providerProfiles (always current — autoSaveField persists identity/sampler
-  // on every change when NOT in overlay mode). In overlay mode, sampler edits
-  // route to the overlay via Wave 4's save routing, so switching models reads
-  // the clean persisted base, not a stale form snapshot.
-  const handleSelectBindingModel = async (modelId: string) => {
+  // ── Per-model binding: re-hydrate form for the ACTIVE model ──
+  // Owner ruling 2026-09-27: the editor FOLLOWS the profile's active model
+  // (there is no manual binding dropdown anymore). A favorited model shows
+  // and edits ITS overlay (fetched and merged over the PERSISTED base); a
+  // non-favorite (or binding OFF) shows and edits the base. The base comes
+  // from providerProfiles (always current — autoSaveField persists
+  // identity/sampler on every change when NOT in overlay mode). In overlay
+  // mode, sampler edits route to the overlay via the save routing, so
+  // switching models reads the clean persisted base, not a stale form
+  // snapshot. `followKey` guards the async gap: a faster model switch re-keys
+  // the follow and a stale hydrate aborts instead of overwriting the fresh one.
+  const bindingFollowKeyRef = useRef<string>("");
+  const hydrateForActiveModel = async (modelId: string | null, followKey: string) => {
     if (!form) return;
     const baseProfile = providerProfiles.find((p) => p.id === form.id);
     if (!baseProfile) return;
     let overlay = null;
-    try {
-      overlay = await getProviderModelSettingsAction(form.id, modelId);
-    } catch {
-      // Network/API error — fall through with null overlay (base passthrough).
-      overlay = null;
+    if (modelId != null) {
+      try {
+        overlay = await getProviderModelSettingsAction(form.id, modelId);
+      } catch {
+        // Network/API error — fall through with null overlay (base passthrough).
+        overlay = null;
+      }
     }
     // Manual field-wise merge: overlay value if present, else base profile value.
     // (Cannot use domain's resolveEffectiveSettings directly — web
     // ProviderProfileRecord omits apiKey for security, so it isn't structurally
     // assignable to StoredProviderProfileRecord.)
     const ov = overlay?.settings ?? null;
+    // A faster model switch may have re-keyed the follow while the overlay
+    // fetch was in flight — a stale hydrate must never overwrite the fresh one.
+    if (bindingFollowKeyRef.current !== followKey) return;
     const pick = <K extends keyof typeof effectiveFields>(k: K): (typeof effectiveFields)[K] =>
       (ov && ov[k] != null ? ov[k] : effectiveFields[k]) as (typeof effectiveFields)[K];
     const effectiveFields = {
@@ -624,12 +634,37 @@ export function ProviderModal({
         showReasoning: pick("showReasoning"),
         streamResponse: pick("streamResponse"),
         customSamplers: pick("customSamplers"),
+        // Per-model set pointer (IG-CF15 twin): the overlay's pointer when the
+        // model carries one, else the base pointer (binding-off fallback).
+        samplerSetId: (ov?.samplerSetId ?? baseProfile.samplerSetId) ?? null,
       };
       latestFormRef.current = next;
       return next;
     });
     setDirty(true);
   };
+
+  // ── Follow-the-active-model (owner ruling 2026-09-27) ──
+  // With binding ON the settings below the toggle always mirror the ACTIVE
+  // model: favorited → its overlay, non-favorite → base. The follow runs on
+  // open, on model switch, and on toggle flips — there is no manual binding
+  // dropdown anymore. The followKey ref keeps one hydrate per (profile,
+  // model, binding) state; unrelated re-renders and the hydrate's own setForm
+  // never re-trigger it.
+  useEffect(() => {
+    if (!form || !form.id) return;
+    const favorites = favoriteModelsByProfile[form.id] ?? [];
+    const activeModel = form.model.trim();
+    const target = form.bindPerModel && activeModel !== "" && favorites.some((f) => f.modelId === activeModel)
+      ? activeModel
+      : null;
+    const followKey = `${form.id}::${form.bindPerModel ? target : "off"}`;
+    if (bindingFollowKeyRef.current === followKey) return;
+    bindingFollowKeyRef.current = followKey;
+    if (target !== form.editingModelId) {
+      void hydrateForActiveModel(target, followKey);
+    }
+  }, [form, favoriteModelsByProfile, hydrateForActiveModel]);
 
   // ── Test connection ──
   const handleTestConnection = async () => {
@@ -911,7 +946,6 @@ export function ProviderModal({
                     form={form}
                     favorites={favoriteModelsByProfile[form.id] ?? []}
                     updateForm={autoSaveField}
-                    onSelectBindingModel={handleSelectBindingModel}
                   />
 
                   <ProviderSamplerPanel form={form} updateForm={lazyAutoSaveField} capabilities={capabilities} />
