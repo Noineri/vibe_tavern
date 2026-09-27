@@ -16,7 +16,7 @@ import { resolveCoauthorBinding } from "../lib/coauthor-provider-binding.js";
 import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
-import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema, type RegenerateOverride } from "@vibe-tavern/api-contracts";
 import {
   fetchChatAction,
   sendChatMessageAction,
@@ -289,7 +289,7 @@ export interface ChatControllerActions {
   runRegenerateJob: (
     chatId: ChatId,
     messageId: string,
-    override?: { model?: string; promptPresetId?: string },
+    override?: RegenerateOverride,
   ) => Promise<StreamOutcome>;
 }
 
@@ -1021,7 +1021,7 @@ export function useChatController(): ChatControllerActions {
     async (
       chatId: ChatId,
       messageId: string,
-      override?: { model?: string; promptPresetId?: string },
+      override?: RegenerateOverride,
     ): Promise<StreamOutcome> => {
       useChatStore.getState().setMessageActionId(messageId);
       try {

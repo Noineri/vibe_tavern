@@ -51,6 +51,7 @@ function resetStore(): void {
     settingsLoadState: "idle",
     settingsError: null,
     workerClient: null,
+    actionNotice: null,
   });
 }
 
@@ -136,17 +137,21 @@ describe("Fly Tribunal display state machine", () => {
     expect(selectFlyDisplayState(useFlyTribunalStore.getState())).toBe("active");
 
     store.recordEvaluation("message_1", 0, evaluation(0.3));
+    expect(selectFlyDisplayState(useFlyTribunalStore.getState())).toBe("active");
+
+    store.applySettings({ ...defaultSettings(), sensitivity: "soft" });
+    store.recordEvaluation("message_1", 0, evaluation(0.3));
     expect(selectFlyDisplayState(useFlyTribunalStore.getState())).toBe("alert");
 
-    store.applySettings({ ...defaultSettings(), reactionTier: "hint" });
+    store.applySettings({ ...defaultSettings(), reactionTier: "hint", sensitivity: "soft" });
     store.recordEvaluation("message_1", 0, evaluation(0.3));
     expect(selectFlyDisplayState(useFlyTribunalStore.getState())).toBe("verdict");
 
-    store.applySettings({ ...defaultSettings(), reactionTier: "auto" });
+    store.applySettings({ ...defaultSettings(), reactionTier: "auto", sensitivity: "soft" });
     store.recordEvaluation("message_1", 0, evaluation(0.3));
     expect(selectFlyDisplayState(useFlyTribunalStore.getState())).toBe("verdict");
 
-    store.showEscape();
+    store.showEscape("auto");
     expect(selectFlyDisplayState(useFlyTribunalStore.getState())).toBe("escapes");
     store.showSleep();
     expect(selectFlyDisplayState(useFlyTribunalStore.getState())).toBe("sleeps");

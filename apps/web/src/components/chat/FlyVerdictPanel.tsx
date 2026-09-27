@@ -20,6 +20,7 @@ export function FlyVerdictPanel() {
   const { t } = useT();
   const precedentCount = useFlyTribunalStore((state) => state.precedentCount);
   const verdicts = useFlyTribunalStore((state) => state.verdicts);
+  const actionNotice = useFlyTribunalStore((state) => state.actionNotice);
   const gate = selectFlyGateProgress({ precedentCount });
   const verdict = latestVerdict(verdicts);
 
@@ -45,10 +46,10 @@ export function FlyVerdictPanel() {
     );
   }
 
-  return <FlyVerdictEvidence verdict={verdict} />;
+  return <FlyVerdictEvidence verdict={verdict} actionNotice={actionNotice} />;
 }
 
-function FlyVerdictEvidence({ verdict }: { verdict: FlyVariantVerdict }) {
+function FlyVerdictEvidence({ verdict, actionNotice }: { verdict: FlyVariantVerdict; actionNotice: "hint" | "auto" | "sleep" | null }) {
   const { t } = useT();
   const [openSpan, setOpenSpan] = useState<number | null>(null);
   const signal = verdict.confidence.toFixed(2);
@@ -62,6 +63,11 @@ function FlyVerdictEvidence({ verdict }: { verdict: FlyVariantVerdict }) {
         </span>
       </div>
       <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2">{t("fly_tribunal_verdict_metaphor")}</p>
+      {actionNotice !== null && (
+        <p className="rounded-md border border-border bg-s2 px-2.5 py-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t2" data-testid="fly-tribunal-action-cause">
+          {t(actionNotice === "auto" ? "fly_tribunal_action_auto" : actionNotice === "hint" ? "fly_tribunal_action_hint" : "fly_tribunal_action_sleep")}
+        </p>
+      )}
       <div className="flex flex-wrap gap-x-3 gap-y-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
         <span>{t("fly_tribunal_evidence_type")}</span>
         <span data-testid="fly-verdict-match-count">{t("fly_tribunal_match_count", { count: verdict.drivingSpans.length })}</span>

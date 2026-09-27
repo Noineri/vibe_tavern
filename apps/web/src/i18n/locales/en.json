@@ -3327,5 +3327,10 @@
 	"fly_tribunal_evidence_list_label": "Fly Tribunal evidence",
 	"fly_tribunal_channel_disclosure": "Channel {channel} · activation {activation}",
 	"fly_tribunal_match_count_one": "Match: {count}",
-	"fly_tribunal_match_count_other": "Matches: {count}"
+	"fly_tribunal_match_count_other": "Matches: {count}",
+	"fly_tribunal_authority_toast": "The court has gained authority.",
+	"fly_tribunal_silent_toast": "Amnesty granted: the court is silent until it learns 25 precedents again.",
+	"fly_tribunal_action_hint": "The court requested a new variant based on its precedents.",
+	"fly_tribunal_action_auto": "The court swiped this variant by precedents and requested another.",
+	"fly_tribunal_action_sleep": "The court is tired of this message."
 }

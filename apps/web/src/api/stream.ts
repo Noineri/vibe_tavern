@@ -1,7 +1,7 @@
 import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
 import { parseSSEStream } from "../lib/sse-parser.js";
-import type { ProviderErrorCategory } from "@vibe-tavern/api-contracts";
+import type { ProviderErrorCategory, RegenerateOverride } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "./provider-stream-error.js";
 import type { ChatGenerationStatus, DiceMode } from "./types.js";
 import type { RpcErrorBody } from "./unwrap.js";
@@ -99,8 +99,8 @@ export const regenerateStream = (
   chatId: string,
   messageId: string,
   opts: StreamOpts,
-  /** Optional per-request { model?, promptPresetId? } override (chat generation queue). Undefined → legacy empty body. */
-  override?: { model?: string; promptPresetId?: string },
+  /** Optional per-request regenerate override. Undefined → legacy empty body. */
+  override?: RegenerateOverride,
 ) => streamChatEndpoint(`/api/chats/${chatId}/messages/${messageId}/regenerate/stream`, override ?? {}, opts);
 
 /** Convenience: generate reply stream */

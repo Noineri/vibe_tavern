@@ -3373,5 +3373,10 @@
 	"fly_tribunal_match_count_few": "Совпадения: {count}",
 	"fly_tribunal_match_count_many": "Совпадений: {count}",
 	"fly_tribunal_match_count_one": "Совпадение: {count}",
-	"fly_tribunal_match_count_other": "Совпадений: {count}"
+	"fly_tribunal_match_count_other": "Совпадений: {count}",
+	"fly_tribunal_authority_toast": "суд получил полномочия",
+	"fly_tribunal_silent_toast": "Амнистия принята: суд снова молчит, пока не изучит 25 прецедентов.",
+	"fly_tribunal_action_hint": "Суд запросил новый вариант по прецедентам.",
+	"fly_tribunal_action_auto": "Суд отклонил этот вариант по прецедентам и запросил другой.",
+	"fly_tribunal_action_sleep": "Суд устал от этого сообщения."
 }

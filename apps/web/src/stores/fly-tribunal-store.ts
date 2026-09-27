@@ -6,6 +6,7 @@ import {
 } from "@vibe-tavern/api-contracts";
 import type { FlyDrivingSpan, FlyEvaluation } from "../lib/fly/fly-engine-core.js";
 import type { FlyWorkerRequest } from "../lib/fly/fly-worker.js";
+import { flySensitivityThreshold } from "../lib/fly/fly-tribunal-policy.js";
 
 /**
  * Fly Tribunal UI state (FLY_TRIBUNAL_PLAN FT-8).
@@ -29,6 +30,7 @@ import type { FlyWorkerRequest } from "../lib/fly/fly-worker.js";
 export type FlyCourtState = "silent" | "active";
 export type FlyTransientState = "notes-a-precedent" | "alert" | "verdict" | "escapes" | "sleeps";
 export type FlyDisplayState = FlyCourtState | FlyTransientState;
+export type FlyActionNotice = "hint" | "auto" | "sleep" | null;
 export type FlySettingsLoadState = "idle" | "loading" | "ready" | "error";
 
 /** The small worker-facing seam kept in UI state; the store never constructs
@@ -67,6 +69,8 @@ export interface FlyTribunalState {
   settingsLoadState: FlySettingsLoadState;
   settingsError: string | null;
   workerClient: FlyWorkerClient | null;
+  /** Last tribunal action, shown in the panel as a visible cause. */
+  actionNotice: FlyActionNotice;
 }
 
 export interface FlyTribunalActions {
@@ -90,7 +94,7 @@ export interface FlyTribunalActions {
   /** Return-and-clear the one-shot re-silence signal. */
   consumeJustFellSilent: () => boolean;
   /** FT-13 enters these only after applying its own confidence/cap rules. */
-  showEscape: () => void;
+  showEscape: (cause: Exclude<FlyActionNotice, "sleep" | null>) => void;
   showSleep: () => void;
   /** UI has finished its transient animation. */
   clearTransientState: () => void;
@@ -109,7 +113,7 @@ function transientForEvaluation(
   settings: FlyTribunalSettings,
   confidence: number,
 ): FlyTransientState | null {
-  if (courtState === "silent" || confidence <= 0) return null;
+  if (courtState === "silent" || confidence < flySensitivityThreshold(settings.sensitivity)) return null;
   return settings.reactionTier === "indication" ? "alert" : "verdict";
 }
 
@@ -154,6 +158,7 @@ export const useFlyTribunalStore = create<FlyTribunalStore>()((set, get) => ({
   settingsLoadState: "idle",
   settingsError: null,
   workerClient: null,
+  actionNotice: null,
 
   beginSettingsLoad: () => set({ settingsLoadState: "loading", settingsError: null }),
 
@@ -229,12 +234,12 @@ export const useFlyTribunalStore = create<FlyTribunalStore>()((set, get) => ({
     return justFellSilent;
   },
 
-  showEscape: () => {
-    if (get().courtState === "active") set({ transientState: "escapes" });
+  showEscape: (cause) => {
+    if (get().courtState === "active") set({ transientState: "escapes", actionNotice: cause });
   },
 
   showSleep: () => {
-    if (get().courtState === "active") set({ transientState: "sleeps" });
+    if (get().courtState === "active") set({ transientState: "sleeps", actionNotice: "sleep" });
   },
 
   clearTransientState: () => set({ transientState: null }),

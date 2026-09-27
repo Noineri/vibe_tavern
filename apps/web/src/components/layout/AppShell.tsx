@@ -6,8 +6,8 @@ import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
-import { resolveAssistantPrefillSupport } from "@vibe-tavern/domain";
-import { flyTribunalSettingsSchema, type FlyTribunalSettings } from "@vibe-tavern/api-contracts";
+import { resolveAssistantPrefillSupport, type ChatId } from "@vibe-tavern/domain";
+import { FLY_TRIBUNAL_PRECEDENT_GATE, flyTribunalSettingsSchema, type FlyTribunalSettings } from "@vibe-tavern/api-contracts";
 import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
@@ -50,6 +50,7 @@ import type { ProxyRecord } from "../../api/types.js";
 import { deleteProxy, getDefaultProxy, listProxies, saveProxy, setDefaultProxy, updateProxy } from "../../api/proxy-api.js";
 import { loadCachedFlyBrain } from "../../lib/fly/fly-brain-download.js";
 import { startFlyTribunalWiring, stopFlyTribunalWiring } from "../../lib/fly/fly-tribunal-wiring.js";
+import { startFlyTribunalActions, stopFlyTribunalActions } from "../../lib/fly/fly-tribunal-actions.js";
 import { useFlyTribunalStore } from "../../stores/fly-tribunal-store.js";
 
 interface AppShellProps {
@@ -105,6 +106,8 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const setCreateCharacterModalOpen = useModalStore((s) => s.setCreateCharacterModalOpen);
   const setUpdateModalOpen = useModalStore((s) => s.setUpdateModalOpen);
   const flyTribunalSettings = useFlyTribunalStore((s) => s.settings);
+  const flyPrecedentCount = useFlyTribunalStore((s) => s.precedentCount);
+  const flyJustFellSilent = useFlyTribunalStore((s) => s.justFellSilent);
   const [flyTribunalOpen, setFlyTribunalOpen] = useState(false);
   const [flyBrainReady, setFlyBrainReady] = useState(false);
 
@@ -114,6 +117,12 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   useEffect(() => { void fetchPersonasAction(); }, []);
 
   const chat = useChatController();
+  const flyVariantSelectionRef = useRef(chat.handleSelectMessageVariant);
+  flyVariantSelectionRef.current = chat.handleSelectMessageVariant;
+  const selectFlyTribunalVariant = useCallback((messageId: string, variantIndex: number): void => {
+    useSnapshotStore.getState().selectVariant(messageId, variantIndex, 1);
+    void flyVariantSelectionRef.current(messageId, variantIndex);
+  }, []);
   // W7: subscribe to the per-chat SSE channel for background notifications
   // (auto-summary). No-op when no chat is active.
   useChatEvents(activeChatId);
@@ -166,11 +175,29 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     return () => { live = false; };
   }, [t]);
 
+  const priorFlyPrecedentCount = useRef(flyPrecedentCount);
+  useEffect(() => {
+    if (priorFlyPrecedentCount.current < FLY_TRIBUNAL_PRECEDENT_GATE && flyPrecedentCount >= FLY_TRIBUNAL_PRECEDENT_GATE) {
+      toast.success(t("fly_tribunal_authority_toast"));
+    }
+    priorFlyPrecedentCount.current = flyPrecedentCount;
+    if (flyJustFellSilent && useFlyTribunalStore.getState().consumeJustFellSilent()) {
+      toast.info(t("fly_tribunal_silent_toast"));
+    }
+  }, [flyJustFellSilent, flyPrecedentCount, t]);
+
   useEffect(() => {
     if (!flyTribunalSettings.enabled || !flyBrainReady) return undefined;
     void startFlyTribunalWiring();
-    return () => stopFlyTribunalWiring();
-  }, [flyTribunalSettings.enabled, flyTribunalSettings.memoryScope, flyBrainReady]);
+    startFlyTribunalActions(
+      (chatId, messageId, override) => chat.runRegenerateJob(chatId as ChatId, messageId, override),
+      selectFlyTribunalVariant,
+    );
+    return () => {
+      stopFlyTribunalActions();
+      stopFlyTribunalWiring();
+    };
+  }, [chat.runRegenerateJob, flyTribunalSettings.enabled, flyTribunalSettings.memoryScope, flyBrainReady, selectFlyTribunalVariant]);
 
   const toggleFlyTribunal = (enabled: boolean): void => {
     if (requiresCachedFlyBrain(enabled, flyBrainReady)) {

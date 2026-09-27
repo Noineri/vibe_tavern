@@ -1,5 +1,5 @@
 import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, SceneTrackerConfig, ChatBranchId, MessageVariantId } from "@vibe-tavern/domain";
-import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
+import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate, RegenerateOverride } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError, type RpcResponse } from "./unwrap.js";
@@ -159,7 +159,7 @@ async function sendChatMessageError(response: RpcResponse): Promise<Error> {
 export async function regenerateChatMessage(
   chatId: ChatId,
   messageId: string,
-  options?: { signal?: AbortSignal; override?: { model?: string; promptPresetId?: string } },
+  options?: { signal?: AbortSignal; override?: RegenerateOverride },
 ): Promise<AppSnapshot> {
   const response = await client.api.chats[":chatId"].messages[":messageId"].regenerate.$post(
     { param: { chatId, messageId }, json: options?.override },
