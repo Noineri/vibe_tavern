@@ -75,6 +75,20 @@ describe("Fly Tribunal verdicts", () => {
     expect(selectFlyVerdict(state, "message_1", 1)).toMatchObject({ confidence: 0.4 });
     expect(flyVerdictKey("message_1", 0)).not.toBe(flyVerdictKey("message_1", 1));
   });
+
+  test("clears worker-derived verdicts without discarding the persisted precedent gate", () => {
+    const store = useFlyTribunalStore.getState();
+    store.setPrecedentCount(FLY_TRIBUNAL_PRECEDENT_GATE);
+    store.recordEvaluation("message_1", 0, evaluation(0.8));
+
+    store.clearDerivedVerdicts();
+
+    const state = useFlyTribunalStore.getState();
+    expect(state.verdicts).toEqual({});
+    expect(state.transientState).toBeNull();
+    expect(state.precedentCount).toBe(FLY_TRIBUNAL_PRECEDENT_GATE);
+    expect(state.courtState).toBe("active");
+  });
 });
 
 describe("Fly Tribunal precedent gate", () => {

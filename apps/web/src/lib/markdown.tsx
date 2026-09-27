@@ -26,6 +26,12 @@ interface MarkdownProps {
    * renders without chat-specific transforms.
    */
   variant?: "chat" | "plain";
+  /**
+   * Optional Fly Tribunal evidence spans. The opt-in plugin marks only visible
+   * prose text nodes (never code/pre blocks), after markdown parsing and
+   * sanitization, so source text and Markdown semantics remain unchanged.
+   */
+  highlightPhrases?: readonly string[];
 }
 
 const SCENE_META_BLOCK_RE = /\[[^\]\n]*?:[^\]\n]*?\]/g;
@@ -580,6 +586,97 @@ function extractText(children: React.ReactNode): string {
   return "";
 }
 
+// ─── Fly Tribunal evidence spans ────────────────────────────────────────────
+
+const FLY_HIGHLIGHT_CLASSES = [
+  "rounded-sm",
+  "bg-accent/15",
+  "underline",
+  "decoration-accent",
+  "decoration-1",
+  "underline-offset-2",
+];
+const FLY_HIGHLIGHT_SKIP_TAGS = new Set(["code", "pre", "script", "style"]);
+
+/**
+ * Opt-in HAST transform used only by the Fly Tribunal's active assistant
+ * variant. It runs after markdown sanitization, marks prose nodes without
+ * changing the source string, and deliberately leaves code/pre blocks alone.
+ */
+function rehypeFlyPrecedentHighlights(options: { phrases: readonly string[] }) {
+  const phrases = [...new Set(options.phrases.map((phrase) => phrase.trim().toLowerCase()).filter(Boolean))]
+    .sort((left, right) => right.length - left.length || left.localeCompare(right));
+  return (tree: HastRoot) => {
+    if (phrases.length > 0) markFlyPrecedentText(tree, phrases);
+  };
+}
+
+function markFlyPrecedentText(node: HastNode, phrases: readonly string[]): void {
+  if (isText(node)) return;
+  const skipChildren = isElement(node) && FLY_HIGHLIGHT_SKIP_TAGS.has(node.tagName);
+  if (skipChildren) return;
+
+  const nextChildren: HastNode[] = [];
+  for (const child of node.children) {
+    if (isText(child)) {
+      nextChildren.push(...splitFlyPrecedentText(child.value, phrases));
+    } else {
+      markFlyPrecedentText(child, phrases);
+      nextChildren.push(child);
+    }
+  }
+  node.children = nextChildren;
+}
+
+function splitFlyPrecedentText(text: string, phrases: readonly string[]): HastNode[] {
+  const result: HastNode[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    const match = findNextFlyPrecedentMatch(text, cursor, phrases);
+    if (match === null) break;
+    if (match.start > cursor) result.push({ type: "text", value: text.slice(cursor, match.start) });
+    result.push({
+      type: "element",
+      tagName: "span",
+      properties: { className: FLY_HIGHLIGHT_CLASSES, "data-fly-precedent-highlight": "true" },
+      children: [{ type: "text", value: text.slice(match.start, match.end) }],
+    });
+    cursor = match.end;
+  }
+  if (cursor < text.length) result.push({ type: "text", value: text.slice(cursor) });
+  return result;
+}
+
+function findNextFlyPrecedentMatch(
+  text: string,
+  cursor: number,
+  phrases: readonly string[],
+): { start: number; end: number } | null {
+  let best: { start: number; end: number } | null = null;
+  for (const phrase of phrases) {
+    const match = flyNgramPattern(phrase).exec(text.slice(cursor));
+    if (match === null || match.index === undefined) continue;
+    const candidate = { start: cursor + match.index, end: cursor + match.index + match[0].length };
+    if (best === null || candidate.start < best.start || (candidate.start === best.start && candidate.end > best.end)) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+/** Mirrors `tokenizeFlyText`: words may be separated by whitespace or punctuation. */
+function flyNgramPattern(phrase: string): RegExp {
+  const tokens = phrase.split(" ").map(escapeFlyRegex);
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}'’])${tokens.join("[^\\p{L}\\p{N}]+")}(?![\\p{L}\\p{N}'’])`,
+    "iu",
+  );
+}
+
+function escapeFlyRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // ─── Public API ───
 
 // react-markdown caches nothing: it rebuilds its unified processor and re-parses
@@ -600,14 +697,19 @@ const CHAT_REHYPE_PLUGINS: PluggableList = [
   rehypeSystemBanner,
 ];
 
-export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, variant = "chat" }: MarkdownProps) => {
+export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, variant = "chat", highlightPhrases = [] }: MarkdownProps) => {
   if (!text) return null;
+
+  const baseRehypePlugins = variant === "plain" ? BASE_REHYPE_PLUGINS : CHAT_REHYPE_PLUGINS;
+  const rehypePlugins: PluggableList = highlightPhrases.length > 0
+    ? [...baseRehypePlugins, [rehypeFlyPrecedentHighlights, { phrases: highlightPhrases }]]
+    : baseRehypePlugins;
 
   return (
     <div className={className || "md-content"}>
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
-        rehypePlugins={variant === "plain" ? BASE_REHYPE_PLUGINS : CHAT_REHYPE_PLUGINS}
+        rehypePlugins={rehypePlugins}
         components={components}
       >
         {text}

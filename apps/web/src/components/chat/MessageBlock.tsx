@@ -11,6 +11,7 @@ import { BottomSheet } from "../shared/BottomSheet.js";
 import * as Select from "@radix-ui/react-select";
 import { useDisplayMessage, useMacroContext, useMessageAuthor, useIsStreamingTarget, useStreamingRevealedFor } from "../../stores/chat-selectors.js";
 import { useChatStore, useIsSending } from "../../stores/index.js";
+import { selectFlyVerdict, useFlyTribunalStore } from "../../stores/fly-tribunal-store.js";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
@@ -54,6 +55,9 @@ const EMPTY_PICKER_ITEMS: VariantPickerItem[] = [];
 
 /** Stable empty array for the display-regex fallback (no applicable presets). */
 const EMPTY_REGEX_PRESETS: RegexPreset[] = [];
+
+/** Stable selector fallback: no Fly Tribunal evidence means no Markdown plugin. */
+const EMPTY_FLY_HIGHLIGHT_PHRASES: readonly string[] = [];
 
 type VariantControlsOverlayState = {
   rect: DOMRectReadOnly;
@@ -170,6 +174,18 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // detects fewer hooks than the previous render → React error #300 → blank page.
   const isMobile = useIsMobile();
   const selectedVariant = variants[selectedVariantIndex] ?? variants[0];
+  const flyVariantIndex = selectedVariant?.variantIndex ?? selectedVariantIndex;
+  const flyTribunalEnabled = useFlyTribunalStore((state) => state.settings.enabled);
+  const flyCourtState = useFlyTribunalStore((state) => state.courtState);
+  const flyVerdict = useFlyTribunalStore((state) =>
+    msg?.role === "assistant" ? selectFlyVerdict(state, msg.id, flyVariantIndex) : undefined,
+  );
+  const flyHighlightPhrases = useMemo(() => {
+    if (!flyTribunalEnabled || flyCourtState !== "active" || flyVerdict === undefined) {
+      return EMPTY_FLY_HIGHLIGHT_PHRASES;
+    }
+    return [...new Set(flyVerdict.drivingSpans.map((span) => span.ngram).filter(Boolean))];
+  }, [flyCourtState, flyTribunalEnabled, flyVerdict]);
   // Preset name is baked on the variant at generation time (immutable text, no
   // FK to a preset row) — read directly instead of resolving id → name.
   const presetName = selectedVariant?.presetName ?? null;
@@ -464,6 +480,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
         <MobileVariantCarousel
           selectedVariantIndex={selectedVariantIndex}
           variants={variants}
+          highlightPhrases={flyHighlightPhrases}
           onSelectVariant={handleSelectVariant}
         />
       ) : (
@@ -480,7 +497,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               {/* IG-CF6: a pure image slot has no text body — the empty
                   Markdown shell renders nothing and only adds a stray
                   zero-content block above the image. */}
-              {!isPureImageSlot && <Markdown text={renderContent} />}
+              {!isPureImageSlot && <Markdown text={renderContent} highlightPhrases={flyHighlightPhrases} />}
             </motion.div>
           </AnimatePresence>
         </div>

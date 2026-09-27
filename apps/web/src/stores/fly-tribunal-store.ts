@@ -77,6 +77,8 @@ export interface FlyTribunalActions {
   failSettingsLoad: (message: string) => void;
   /** Attach/detach the app-lifetime protocol client. The raw Worker stays outside this store. */
   attachWorkerClient: (client: FlyWorkerClient | null) => void;
+  /** Drop worker-derived outputs when its brain session ends; persisted precedents stay. */
+  clearDerivedVerdicts: () => void;
   /** Upsert, rather than append, the one verdict for this message variant. */
   recordEvaluation: (messageId: string, variantIndex: number, evaluation: FlyEvaluation) => void;
   /** Confirmed training event: increments the counter and starts the note animation. */
@@ -160,6 +162,8 @@ export const useFlyTribunalStore = create<FlyTribunalStore>()((set, get) => ({
   failSettingsLoad: (message) => set({ settingsLoadState: "error", settingsError: message }),
 
   attachWorkerClient: (client) => set({ workerClient: client }),
+
+  clearDerivedVerdicts: () => set({ verdicts: {}, transientState: null }),
 
   recordEvaluation: (messageId, variantIndex, evaluation) => {
     const evaluatedAt = Date.now();

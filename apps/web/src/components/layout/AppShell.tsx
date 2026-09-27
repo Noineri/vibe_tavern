@@ -49,6 +49,7 @@ import type { TweaksSettings } from "../../lib/local-storage.js";
 import type { ProxyRecord } from "../../api/types.js";
 import { deleteProxy, getDefaultProxy, listProxies, saveProxy, setDefaultProxy, updateProxy } from "../../api/proxy-api.js";
 import { loadCachedFlyBrain } from "../../lib/fly/fly-brain-download.js";
+import { startFlyTribunalWiring, stopFlyTribunalWiring } from "../../lib/fly/fly-tribunal-wiring.js";
 import { useFlyTribunalStore } from "../../stores/fly-tribunal-store.js";
 
 interface AppShellProps {
@@ -164,6 +165,12 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
     void loadCachedFlyBrain().then((result) => { if (live) setFlyBrainReady(result.status === "ready"); });
     return () => { live = false; };
   }, [t]);
+
+  useEffect(() => {
+    if (!flyTribunalSettings.enabled || !flyBrainReady) return undefined;
+    void startFlyTribunalWiring();
+    return () => stopFlyTribunalWiring();
+  }, [flyTribunalSettings.enabled, flyTribunalSettings.memoryScope, flyBrainReady]);
 
   const toggleFlyTribunal = (enabled: boolean): void => {
     if (requiresCachedFlyBrain(enabled, flyBrainReady)) {

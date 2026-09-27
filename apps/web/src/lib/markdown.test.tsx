@@ -88,6 +88,21 @@ describe("Markdown — plain variant omits chat-only transforms", () => {
   });
 });
 
+describe("Markdown — Fly Tribunal evidence spans", () => {
+  it("marks an encoder n-gram across punctuation without changing visible prose", () => {
+    const { container } = render(<Markdown text="Violet, lantern: observed." highlightPhrases={["violet lantern"]} />);
+    const highlight = container.querySelector('[data-fly-precedent-highlight="true"]');
+    expect(highlight?.textContent).toBe("Violet, lantern");
+    expect(container.textContent).toContain("Violet, lantern: observed.");
+  });
+
+  it("never marks a code node, even when it contains a driving n-gram", () => {
+    const { container } = render(<Markdown text="`violet lantern` and violet lantern" highlightPhrases={["violet lantern"]} />);
+    expect(container.querySelector("code [data-fly-precedent-highlight]")).toBeNull();
+    expect(container.querySelectorAll('[data-fly-precedent-highlight="true"]')).toHaveLength(1);
+  });
+});
+
 describe("Markdown — empty input", () => {
   it("renders nothing for an empty string", () => {
     const { container } = render(<Markdown text="" />);

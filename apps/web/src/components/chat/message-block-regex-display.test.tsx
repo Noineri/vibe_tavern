@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { ReactNode } from "react";
@@ -138,8 +138,19 @@ beforeEach(async () => {
 
 import type { AppCharacter, AppMessage, AppSnapshot } from "../../api/types.js";
 import type { ChatId } from "@vibe-tavern/domain";
+import { useFlyTribunalStore } from "../../stores/fly-tribunal-store.js";
 
 const CHAT = "chat-1" as ChatId;
+const originalFlyTribunalState = useFlyTribunalStore.getState();
+
+function restoreFlyTribunalState(): void {
+  useFlyTribunalStore.setState(originalFlyTribunalState, true);
+}
+
+// This file mounts the real MessageBlock; restore the shared UI sink so its
+// verdict subscription cannot leak into another web test in Bun's worker pool.
+afterEach(() => restoreFlyTribunalState());
+afterAll(() => restoreFlyTribunalState());
 
 function makeCharacter(id: string): AppCharacter {
   return {
@@ -275,5 +286,44 @@ describe("MessageBlock — RX-13 display regex seam", () => {
     const { text } = await mountAndRead("a secret appears");
     expect(text()).toContain("secret");
     mockResolveFails = false;
+  });
+
+  test("Fly Tribunal marks only the active assistant variant after the precedent gate unlocks", async () => {
+    mockResolvedPresets = [];
+    const mods = await loadModules();
+    const message = makeAssistantMessage("m1", "first answer");
+    message.selectedVariantIndex = 0;
+    message.variants = [
+      { id: "v0", variantIndex: 0, content: "first answer", isSelected: true },
+      { id: "v1", variantIndex: 1, content: "violet lantern evidence", isSelected: false },
+    ] as unknown as AppMessage["variants"];
+    mods.snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([message]));
+    mods.chatStore.useChatStore.getState().setActiveChatId(CHAT);
+    const utils = render(
+      <mods.MessageBlock messageId="m1" index={0} isFirstAssistant={false} isLast prevRole={null} />,
+    );
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    act(() => {
+      const store = useFlyTribunalStore.getState();
+      store.applySettings({ ...store.settings, enabled: true });
+      store.setPrecedentCount(25);
+      store.recordEvaluation("m1", 1, {
+        confidence: 0.8,
+        registry: [],
+        drivingSpans: [{ ngram: "violet lantern", channel: 3, activation: 1, activeKcGlobalIndexes: [4] }],
+        activeKcIndexes: [2],
+        activeKcGlobalIndexes: [4],
+        mbonReadout: [],
+      });
+    });
+    expect(utils.container.querySelector('[data-fly-precedent-highlight="true"]')).toBeNull();
+
+    act(() => { mods.snapshotStore.useSnapshotStore.getState().selectVariant("m1", 1, 1); });
+    const highlight = utils.container.querySelector('[data-fly-precedent-highlight="true"]');
+    expect(highlight?.textContent).toBe("violet lantern");
+
+    act(() => { useFlyTribunalStore.getState().setPrecedentCount(24); });
+    expect(utils.container.querySelector('[data-fly-precedent-highlight="true"]')).toBeNull();
   });
 });

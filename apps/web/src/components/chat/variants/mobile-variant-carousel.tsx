@@ -6,6 +6,8 @@ import type { SwipeDirection } from "./types.js";
 type MobileVariantCarouselProps = {
   selectedVariantIndex: number;
   variants: { content: string }[];
+  /** Fly Tribunal evidence for the CURRENT (shown) variant only. */
+  highlightPhrases?: readonly string[];
   onSelectVariant: (targetIndex: number, direction: SwipeDirection) => void;
 };
 
@@ -14,7 +16,7 @@ type MobileVariantCarouselProps = {
  *  track; drag past threshold snaps to the neighbor and fires onSelectVariant.
  *  Height auto-fits the current panel via a ResizeObserver (no inner scroll). */
 export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
-  const { selectedVariantIndex, variants, onSelectVariant } = props;
+  const { selectedVariantIndex, variants, highlightPhrases = [], onSelectVariant } = props;
   const controls = useAnimationControls();
   const viewportRef = useRef<HTMLDivElement>(null);
   const currentPanelRef = useRef<HTMLDivElement>(null);
@@ -125,7 +127,7 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
         </div>
         <div ref={currentPanelRef} className="w-1/3 shrink-0" translate="yes">
           <div className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-            <Markdown text={currentVariant.content} />
+            <Markdown text={currentVariant.content} highlightPhrases={highlightPhrases} />
           </div>
         </div>
         <div className="w-1/3 shrink-0 pl-3" aria-hidden={!nextVariant}>
