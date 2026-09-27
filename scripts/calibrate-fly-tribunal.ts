@@ -20,10 +20,20 @@
  * PAM 0.25, edited save PAM 0.75). The verdict thresholds reported for the
  * false-positive table mirror `fly-tribunal-policy.ts`.
  *
+ * Replay clock (FT-18R): batches are replayed at their real `createdAt`
+ * times on ONE continuous clock threaded across the train, validation and
+ * test passes — before each batch is scored and trained, the summed
+ * KC→MBON delta field is decayed by exp(−gap/lifetime), exactly the
+ * flat-delta approximation the live persistence tick applies (FT-12).
+ * `--lifetime inf` (the default) maps to the engine's null lifetime —
+ * permanent memory, numerically identical to the committed FT-18 no-decay
+ * baseline run.
+ *
  * Usage:
  *   bun scripts/calibrate-fly-tribunal.ts
  *     [--db data/vibe-tavern.db]
  *     [--connectome services/api/assets/fly/connectome.bin.gz]
+ *     [--lifetime <7|14|30|inf>]
  *     [--out <result.json>] [--seed 42] [--resamples 10000]
  */
 
@@ -52,6 +62,75 @@ export const FLY_CAL_EDITED_SAVE_STRENGTH = 0.75;
 
 /** Hint bars from `FLY_SENSITIVITY_CONFIDENCE` + auto bars — FPR table keys. */
 export const FLY_CAL_FLAG_BARS = [0.25, 0.5, 0.7, 0.75, 0.85, 0.95] as const;
+
+/** Mirror of the engine's module-private day constant (`FLY_DAY_MS`). */
+export const FLY_CAL_DAY_MS = 86_400_000;
+
+/** Replayable lifetime settings; `null` is the settings-schema ∞ (permanent). */
+export type FlyCalibrationLifetimeDays = 7 | 14 | 30 | null;
+
+const FLY_CAL_LIFETIME_DAYS: Record<string, 7 | 14 | 30> = { "7": 7, "14": 14, "30": 30 };
+
+/** Parse `--lifetime`: "7" | "14" | "30" | "inf"/"∞" → engine lifetime value. */
+export function parseLifetimeDays(raw: string): FlyCalibrationLifetimeDays {
+	if (raw === "inf" || raw === "∞") return null;
+	const days = FLY_CAL_LIFETIME_DAYS[raw];
+	if (days === undefined) throw new Error(`Unknown lifetime "${raw}" — expected 7, 14, 30, or inf.`);
+	return days;
+}
+
+/** Structural slice of the engine the replay clock needs — keeps the clock
+ *  unit-testable without a connectome. */
+export interface FlyDecayCapable {
+	applyExponentialDecay(elapsedMs: number, lifetimeDays: number | null): number;
+}
+
+/** One continuous replay clock, threaded across train/validation/test passes. */
+export interface FlyReplayClock {
+	/** `createdAt` (ms) of the last replayed batch, or null before the first. */
+	lastMs: number | null;
+	/** Sum of applied positive gaps; exp(−decayedMs/lifetime) is the net factor. */
+	decayedMs: number;
+	/** How many batches advanced the clock with a positive gap. */
+	decayEvents: number;
+}
+
+export function createReplayClock(): FlyReplayClock {
+	return { lastMs: null, decayedMs: 0, decayEvents: 0 };
+}
+
+/**
+ * Advance the clock to the batch's `createdAt`, decaying the engine first —
+ * the same flat-delta exp(−gap/lifetime) the live persistence tick applies.
+ * Unknown timestamps (NaN) leave the clock untouched; nonpositive gaps are
+ * identity (the engine's null lifetime already returns before touching any
+ * delta, and multiplying by exp(0) would only burn a pass over the field),
+ * and the clock never moves backwards.
+ */
+export function advanceReplayClock(
+	engine: FlyDecayCapable,
+	clock: FlyReplayClock,
+	batchCreatedAtMs: number,
+	lifetimeDays: FlyCalibrationLifetimeDays,
+): number {
+	if (!Number.isFinite(batchCreatedAtMs)) return 1;
+	if (clock.lastMs === null) {
+		clock.lastMs = batchCreatedAtMs;
+		return 1;
+	}
+	const gap = batchCreatedAtMs - clock.lastMs;
+	if (gap <= 0) return 1;
+	clock.decayedMs += gap;
+	clock.decayEvents += 1;
+	clock.lastMs = batchCreatedAtMs;
+	return engine.applyExponentialDecay(gap, lifetimeDays);
+}
+
+/** exp(−decayedMs/lifetime) — the net decay applied across the whole replay. */
+export function netDecayFactor(clock: FlyReplayClock, lifetimeDays: FlyCalibrationLifetimeDays): number {
+	if (lifetimeDays === null || clock.decayedMs === 0) return 1;
+	return Math.exp(-clock.decayedMs / (lifetimeDays * FLY_CAL_DAY_MS));
+}
 
 export interface FlyCalibrationVariant {
 	index: number;
@@ -199,6 +278,13 @@ export interface FlySplitRun {
 	pairs: FlyScoredPair[];
 }
 
+/** Replay options: when present, every scored batch first advances the given
+ *  clock (decaying the engine by the gap since the previous batch). */
+export interface FlyReplayOptions {
+	clock: FlyReplayClock;
+	lifetimeDays: FlyCalibrationLifetimeDays;
+}
+
 function trainBatch(engine: FlyEngine, batch: FlyCalibrationBatch, codes: Map<string, number[]>): void {
 	const rejectedStrength = FLY_CAL_REJECTED_STRENGTH;
 	if (batch.kind === "implicit") {
@@ -232,12 +318,20 @@ function trainBatch(engine: FlyEngine, batch: FlyCalibrationBatch, codes: Map<st
 /**
  * Score every variant of every batch BEFORE training that batch (strict
  * prequential "score-before-update" semantics), then train the batch. The
- * engine is mutated in place so split passes can continue one another.
+ * engine is mutated in place so split passes can continue one another; with
+ * `replay` the passes share one continuous decay clock.
  */
-export function runPrequential(engine: FlyEngine, batches: readonly FlyCalibrationBatch[]): FlySplitRun {
+export function runPrequential(
+	engine: FlyEngine,
+	batches: readonly FlyCalibrationBatch[],
+	replay?: FlyReplayOptions,
+): FlySplitRun {
 	const run: FlySplitRun = { scored: [], pairs: [] };
 	for (const batch of batches) {
 		if (batch.excludedReason !== null) continue;
+		if (replay !== undefined) {
+			advanceReplayClock(engine, replay.clock, Date.parse(batch.createdAt), replay.lifetimeDays);
+		}
 		const codes = new Map<string, number[]>();
 		const confidences = new Map<string, number>();
 		const texts = new Set<string>(batch.variants.map((variant) => variant.content));
@@ -514,6 +608,7 @@ export function worstFailures(run: FlySplitRun, count = 5): FlyWorstPair[] {
 interface CliArgs {
 	db: string;
 	connectome: string;
+	lifetime: string;
 	out: string | null;
 	seed: number;
 	resamples: number;
@@ -523,6 +618,7 @@ function parseArgs(argv: string[]): CliArgs {
 	const args: CliArgs = {
 		db: "data/vibe-tavern.db",
 		connectome: "services/api/assets/fly/connectome.bin.gz",
+		lifetime: "inf",
 		out: null,
 		seed: 42,
 		resamples: 10_000,
@@ -531,6 +627,7 @@ function parseArgs(argv: string[]): CliArgs {
 		const arg = argv[index]!;
 		if (arg === "--db") args.db = argv[++index] ?? args.db;
 		else if (arg === "--connectome") args.connectome = argv[++index] ?? args.connectome;
+		else if (arg === "--lifetime") args.lifetime = argv[++index] ?? args.lifetime;
 		else if (arg === "--out") args.out = argv[++index] ?? null;
 		else if (arg === "--seed") args.seed = Number(argv[++index] ?? args.seed);
 		else if (arg === "--resamples") args.resamples = Number(argv[++index] ?? args.resamples);
@@ -566,18 +663,25 @@ export async function main(argv: string[]): Promise<void> {
 		);
 
 		const splits = splitChronological(usable);
+		const lifetimeDays = parseLifetimeDays(args.lifetime);
 		console.log(`splits: train ${splits.train.length} / validation ${splits.validation.length} / test ${splits.test.length}`);
+		console.log(`lifetime: ${lifetimeDays === null ? "∞ (permanent)" : `${lifetimeDays} days`}`);
 
 		const compressed = new Uint8Array(await new Response(Bun.file(brainPath)).arrayBuffer());
 		const connectome: FlyConnectome = await parseConnectome(compressed, async (bytes) => new Uint8Array(gunzipSync(bytes)));
 		const subgraph = instantiateLearningSubgraph(connectome);
 
-		const evaluateMode = (mode: FlyProjectionMode, label: string): { metrics: FlySplitMetrics; engine: FlyEngine; ms: number } => {
+		const evaluateMode = (
+			mode: FlyProjectionMode,
+			label: string,
+		): { metrics: FlySplitMetrics; engine: FlyEngine; clock: FlyReplayClock; ms: number } => {
 			const engine = createFlyEngine(connectome, { params: { projectionMode: mode } });
+			const clock = createReplayClock();
 			const started = performance.now();
 			let trained = 0;
 			for (const batch of splits.train) {
 				if (batch.excludedReason !== null) continue;
+				advanceReplayClock(engine, clock, Date.parse(batch.createdAt), lifetimeDays);
 				const texts = new Set(batch.variants.map((variant) => variant.content));
 				if (batch.finalContent !== null) texts.add(batch.finalContent);
 				const codes: Array<[string, number[]]> = [];
@@ -586,14 +690,14 @@ export async function main(argv: string[]): Promise<void> {
 				trained += 1;
 				if (trained % 500 === 0) console.log(`  [${label}] trained ${trained} train batches`);
 			}
-			const validationRun = runPrequential(engine, splits.validation);
+			const validationRun = runPrequential(engine, splits.validation, { clock, lifetimeDays });
 			const metrics = summarizeRun(validationRun, { resamples: args.resamples, seed: args.seed });
 			const ms = performance.now() - started;
 			console.log(
 				`[${label}] validation accuracy ${metrics.accuracy.toFixed(4)} (CI ${metrics.accuracyCi.low.toFixed(3)}–${metrics.accuracyCi.high.toFixed(3)}),` +
 				` AUC ${metrics.classAuc.toFixed(4)}, pairs ${metrics.pairs} [${(ms / 1000).toFixed(1)}s]`,
 			);
-			return { metrics, engine, ms };
+			return { metrics, engine, clock, ms };
 		};
 
 		const binaryRun = evaluateMode("binary", "binary");
@@ -601,11 +705,17 @@ export async function main(argv: string[]): Promise<void> {
 		const winner = binaryRun.metrics.accuracy >= logRun.metrics.accuracy ? binaryRun : logRun;
 		const winnerMode: FlyProjectionMode = winner === binaryRun ? "binary" : "log-synapse";
 		console.log(`frozen projection mode: ${winnerMode}`);
+		console.log(
+			`replay clock: ${winner.clock.decayEvents} decay gaps,` +
+			` ${(winner.clock.decayedMs / FLY_CAL_DAY_MS).toFixed(1)} days decayed,` +
+			` net factor ${netDecayFactor(winner.clock, lifetimeDays).toExponential(3)}`,
+		);
 
 		// The winning engine already trained through validation prequentially;
-		// the sealed test pass runs exactly once on the newest batches.
+		// the sealed test pass runs exactly once on the newest batches — the
+		// winner's clock continues, so decay keeps flowing across the boundary.
 		const testStarted = performance.now();
-		const testRun = runPrequential(winner.engine, splits.test);
+		const testRun = runPrequential(winner.engine, splits.test, { clock: winner.clock, lifetimeDays });
 		const testMetrics = summarizeRun(testRun, { resamples: args.resamples, seed: args.seed });
 		console.log(`sealed test: accuracy ${testMetrics.accuracy.toFixed(4)} (CI ${testMetrics.accuracyCi.low.toFixed(4)}–${testMetrics.accuracyCi.high.toFixed(4)}), AUC ${testMetrics.classAuc.toFixed(4)}`);
 
@@ -615,6 +725,10 @@ export async function main(argv: string[]): Promise<void> {
 		const payloadBase64 = Buffer.from(gzipSync(deltas)).toString("base64");
 
 		const result = {
+			lifetimeDays,
+			caveats: [
+				"NON-PRISTINE: the test partition was exposed by the 2026-09-27 FT-18 run — diagnostic only, never an acceptance number.",
+			],
 			corpus: {
 				batches: batches.length,
 				usable: usable.length,
@@ -627,6 +741,11 @@ export async function main(argv: string[]): Promise<void> {
 				train: splits.train.length,
 				validation: splits.validation.length,
 				test: splits.test.length,
+			},
+			replayClock: {
+				decayEvents: winner.clock.decayEvents,
+				decayedMs: winner.clock.decayedMs,
+				netDecayFactor: netDecayFactor(winner.clock, lifetimeDays),
 			},
 			validation: {
 				binary: binaryRun.metrics,

@@ -4,15 +4,20 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 import {
+	advanceReplayClock,
 	bootstrapAccuracyCi,
 	classAuc,
+	createReplayClock,
 	mulberry32,
+	netDecayFactor,
 	pairwiseAccuracy,
+	parseLifetimeDays,
 	runPrequential,
 	splitChronological,
 	summarizeRun,
 	worstFailures,
 	type FlyCalibrationBatch,
+	type FlyDecayCapable,
 	type FlyScoredPair,
 	type FlyScoredVariant,
 } from "./calibrate-fly-tribunal.js";
@@ -95,6 +100,131 @@ beforeAll(async () => {
 
 afterAll(async () => {
 	if (fixtureDir !== "") await rm(fixtureDir, { recursive: true, force: true });
+});
+
+describe("FT-18R lifetime parsing", () => {
+	test("accepts 7, 14, 30 and both infinity spellings, rejects everything else", () => {
+		expect(parseLifetimeDays("7")).toBe(7);
+		expect(parseLifetimeDays("14")).toBe(14);
+		expect(parseLifetimeDays("30")).toBe(30);
+		expect(parseLifetimeDays("inf")).toBeNull();
+		expect(parseLifetimeDays("∞")).toBeNull();
+		expect(() => parseLifetimeDays("90")).toThrow(/lifetime/);
+		expect(() => parseLifetimeDays("forever")).toThrow(/lifetime/);
+	});
+});
+
+describe("FT-18R replay clock", () => {
+	const DAY = 86_400_000;
+	const T0 = Date.UTC(2026, 0, 1);
+	const at = (days: number) => new Date(T0 + days * DAY).toISOString();
+
+	/** Recording double of the engine's decay seam (structural interface). */
+	function recordingEngine() {
+		const calls: Array<{ elapsedMs: number; lifetimeDays: number | null }> = [];
+		const engine: FlyDecayCapable = {
+			applyExponentialDecay(elapsedMs, lifetimeDays) {
+				calls.push({ elapsedMs, lifetimeDays });
+				if (lifetimeDays === null) return 1;
+				return Math.exp(-elapsedMs / (lifetimeDays * DAY));
+			},
+		};
+		return { engine, calls };
+	}
+
+	test("the first batch only sets the clock — no decay happens", () => {
+		const { engine, calls } = recordingEngine();
+		const clock = createReplayClock();
+		expect(advanceReplayClock(engine, clock, T0, 7)).toBe(1);
+		expect(calls).toHaveLength(0);
+		expect(clock.lastMs).toBe(T0);
+		expect(clock.decayedMs).toBe(0);
+	});
+
+	test("a positive gap decays by exactly exp(−gap/lifetime) and advances the clock", () => {
+		const { engine, calls } = recordingEngine();
+		const clock = createReplayClock();
+		advanceReplayClock(engine, clock, T0, 7);
+		const factor = advanceReplayClock(engine, clock, T0 + 10 * DAY, 7);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]!.elapsedMs).toBe(10 * DAY);
+		expect(calls[0]!.lifetimeDays).toBe(7);
+		expect(factor).toBeCloseTo(Math.exp(-10 / 7), 12);
+		expect(clock.lastMs).toBe(T0 + 10 * DAY);
+		expect(clock.decayedMs).toBe(10 * DAY);
+		expect(clock.decayEvents).toBe(1);
+	});
+
+	test("zero gaps, negative gaps and unknown timestamps never decay nor rewind the clock", () => {
+		const { engine, calls } = recordingEngine();
+		const clock = createReplayClock();
+		advanceReplayClock(engine, clock, T0 + 5 * DAY, 7);
+		// Same timestamp: identity.
+		expect(advanceReplayClock(engine, clock, T0 + 5 * DAY, 7)).toBe(1);
+		// Earlier timestamp (clock skew): the clock stays at the later time.
+		expect(advanceReplayClock(engine, clock, T0 + 2 * DAY, 7)).toBe(1);
+		expect(clock.lastMs).toBe(T0 + 5 * DAY);
+		// Unknown timestamp: nothing changes at all.
+		expect(advanceReplayClock(engine, clock, Number.NaN, 7)).toBe(1);
+		expect(clock.lastMs).toBe(T0 + 5 * DAY);
+		expect(calls).toHaveLength(0);
+	});
+
+	test("permanent memory (∞) forwards null to the engine and never nets any decay", () => {
+		const { engine, calls } = recordingEngine();
+		const clock = createReplayClock();
+		advanceReplayClock(engine, clock, T0, null);
+		expect(advanceReplayClock(engine, clock, T0 + 365 * DAY, null)).toBe(1);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]!.lifetimeDays).toBeNull();
+		expect(clock.decayedMs).toBe(365 * DAY);
+		expect(netDecayFactor(clock, null)).toBe(1);
+	});
+
+	test("chained gaps compose exactly like one jump, and netDecayFactor matches the product", () => {
+		const { engine } = recordingEngine();
+		const clock = createReplayClock();
+		advanceReplayClock(engine, clock, T0, 7);
+		const first = advanceReplayClock(engine, clock, T0 + 1 * DAY, 7);
+		const second = advanceReplayClock(engine, clock, T0 + 10 * DAY, 7);
+		expect(first * second).toBeCloseTo(Math.exp(-10 / 7), 12);
+		expect(netDecayFactor(clock, 7)).toBeCloseTo(first * second, 12);
+	});
+});
+
+describe("FT-18R decayed prequential replay", () => {
+	const DAY = 86_400_000;
+	const at = (days: number) => new Date(Date.UTC(2026, 0, 1) + days * DAY).toISOString();
+
+	test("lifetime ∞ reproduces the no-replay baseline bit-for-bit; a 7-day lifetime shrinks it", () => {
+		const rejectedText = "violet lantern harbor";
+		const keptText = "marble compass beneath rain";
+		const batches = [
+			choiceBatch("m1", at(0), rejectedText, keptText),
+			choiceBatch("m2", at(100), rejectedText, keptText),
+		];
+		const baseline = runPrequential(freshEngine(), batches);
+		const permanent = runPrequential(freshEngine(), batches, { clock: createReplayClock(), lifetimeDays: null });
+		expect(permanent.pairs[1]!.rejectedConfidence).toBe(baseline.pairs[1]!.rejectedConfidence);
+		expect(permanent.pairs[1]!.keptConfidence).toBe(baseline.pairs[1]!.keptConfidence);
+
+		const weekly = runPrequential(freshEngine(), batches, { clock: createReplayClock(), lifetimeDays: 7 });
+		// exp(−100/7) ≈ 4.3e-7 of the m1 delta survives to m2 — still nonzero,
+		// strictly below the permanent-memory confidence.
+		expect(weekly.pairs[1]!.rejectedConfidence).toBeGreaterThan(0);
+		expect(weekly.pairs[1]!.rejectedConfidence).toBeLessThan(permanent.pairs[1]!.rejectedConfidence);
+	});
+
+	test("one clock threads continuously across chained prequential passes", () => {
+		const clock = createReplayClock();
+		const engine = freshEngine();
+		runPrequential(engine, [implicitBatch("a", at(0), "one")], { clock, lifetimeDays: 7 });
+		runPrequential(engine, [implicitBatch("b", at(10), "two")], { clock, lifetimeDays: 7 });
+		runPrequential(engine, [implicitBatch("c", at(30), "three")], { clock, lifetimeDays: 7 });
+		expect(clock.lastMs).toBe(Date.parse(at(30)));
+		expect(clock.decayedMs).toBe(30 * DAY);
+		expect(clock.decayEvents).toBe(2);
+	});
 });
 
 describe("FT-18 chronological split", () => {
