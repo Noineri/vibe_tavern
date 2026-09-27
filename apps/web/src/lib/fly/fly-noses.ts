@@ -414,6 +414,81 @@ export function createMultiViewNose(options: FlyMultiViewNoseOptions = {}): FlyN
   };
 }
 
+// ─── Style + embedder hybrid nose (candidate G) ──────────────────────────
+
+export interface FlyStyleEmbedNoseOptions {
+  /** Family output multipliers (post-normalization); default 1 each. */
+  styleWeight?: number;
+  vectorWeight?: number;
+}
+
+/**
+ * Candidate G (owner 2026-09-27, «можно и то и другое включить»): the style
+ * features + precomputed embedding dims in one channel vector. Each family
+ * is L1-normalized to unit activation mass per text, so at weight 1 both
+ * families contribute equally regardless of channel count; weights
+ * rebalance. Layout: [style features | embedding dims]; registry entries are
+ * prefixed `style:` / `emb:`. A text without a precomputed vector encodes the
+ * style family only — the vector family stays silent, never fabricated.
+ */
+export function createStyleEmbedNose(
+  vectors: ReadonlyMap<string, readonly number[]>,
+  dims: number,
+  options: FlyStyleEmbedNoseOptions = {},
+): FlyNose {
+  const styleWeight = options.styleWeight ?? 1;
+  const vectorWeight = options.vectorWeight ?? 1;
+  assertFamilyWeight(styleWeight, "style");
+  assertFamilyWeight(vectorWeight, "vector");
+  if (!Number.isInteger(dims) || dims < 1 || dims > 100_000) {
+    throw new Error("Fly style+embed nose dims must be an integer in [1, 100000].");
+  }
+  const channelCount = FLY_STYLE_NOSE_CHANNEL_COUNT + dims;
+  return {
+    channelCount,
+    encode: (text: string): FlyStimulusEncoding => {
+      const channels = new Float32Array(channelCount);
+      const registry: FlyNgramRegistryEntry[] = [];
+
+      const styleView = encodeStyleView(text);
+      let styleMass = 0;
+      for (let channel = 0; channel < FLY_STYLE_NOSE_CHANNEL_COUNT; channel += 1) {
+        styleMass += Math.abs(styleView.channels[channel]!);
+      }
+      const styleScale = styleMass > 0 ? 1 / styleMass : 0;
+      for (let channel = 0; channel < FLY_STYLE_NOSE_CHANNEL_COUNT; channel += 1) {
+        channels[channel] = styleView.channels[channel]! * styleScale * styleWeight;
+      }
+      for (const entry of styleView.registry) {
+        registry.push({
+          ngram: `style:${entry.ngram}`,
+          channel: entry.channel,
+          count: entry.count,
+          activation: channels[entry.channel]!,
+        });
+      }
+
+      const vector = vectors.get(text);
+      if (vector !== undefined) {
+        const offset = FLY_STYLE_NOSE_CHANNEL_COUNT;
+        let vectorMass = 0;
+        for (const value of vector) vectorMass += Math.abs(value);
+        const vectorScale = vectorMass > 0 ? 1 / vectorMass : 0;
+        for (let index = 0; index < dims; index += 1) {
+          channels[offset + index] = vector[index]! * vectorScale * vectorWeight;
+        }
+        for (let index = 0; index < dims; index += 1) {
+          const value = channels[offset + index]!;
+          if (value === 0) continue;
+          registry.push({ ngram: `emb:${index}`, channel: offset + index, count: vector[index]!, activation: value });
+        }
+      }
+
+      return { channels, registry };
+    },
+  };
+}
+
 // ─── Pre-computed embedding-vector nose ─────────────────────────────────────
 
 /**

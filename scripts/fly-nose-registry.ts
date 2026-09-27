@@ -15,10 +15,11 @@ import {
 	createCharHashNose,
 	createMultiViewNose,
 	createPrecomputedVectorNose,
+	createStyleEmbedNose,
 	createStyleNose,
 } from "../apps/web/src/lib/fly/fly-noses.js";
 
-export const FLY_NOSE_IDS = ["old", "wide", "style", "char", "multi", "embedder"] as const;
+export const FLY_NOSE_IDS = ["old", "wide", "style", "char", "multi", "embedder", "hybrid"] as const;
 export type FlyNoseId = (typeof FLY_NOSE_IDS)[number];
 
 export const FLY_NOSE_LABELS: Record<FlyNoseId, string> = {
@@ -27,7 +28,8 @@ export const FLY_NOSE_LABELS: Record<FlyNoseId, string> = {
 	style: "C: 22 interpretable style/structure features, absolute [0,1] calibration",
 	char: "E: char 3-5-gram hash, 256 channels, absolute log normalization",
 	multi: "F: multi-view char(256,log) + word(256,log) + style(22), per-family scaling",
-	embedder: "D: precomputed embedding vectors (see scripts/embed-fly-corpus.ts)",
+	embedder: "D: precomputed embedding vectors (see scripts/embed-fly-synthetic-corpus.ts)",
+	hybrid: "G: style(22) + embedding dims, per-family unit L1 mass, equal default weights",
 };
 
 export interface ResolvedFlyNose {
@@ -36,8 +38,8 @@ export interface ResolvedFlyNose {
 }
 
 /**
- * Resolve a nose id. `embedder` requires `vectorsFile` — a JSON produced by
- * `scripts/embed-fly-synthetic-corpus.ts` with `{ model, dims, vectors }`.
+ * Resolve a nose id. `embedder` and `hybrid` require `vectorsFile` — a JSON
+ * produced by `scripts/embed-fly-synthetic-corpus.ts` with `{ model, dims, vectors }`.
  */
 export async function resolveFlyNose(id: string, options: { vectorsFile?: string } = {}): Promise<ResolvedFlyNose> {
 	switch (id) {
@@ -52,19 +54,33 @@ export async function resolveFlyNose(id: string, options: { vectorsFile?: string
 		case "multi":
 			return { id, nose: createMultiViewNose({ charChannels: 256, wordChannels: 256, normalization: "log" }) };
 		case "embedder": {
-			if (options.vectorsFile === undefined) {
-				throw new Error("Nose 'embedder' requires --vectors <file> — precompute it with scripts/embed-fly-synthetic-corpus.ts.");
-			}
-			const raw = JSON.parse(await Bun.file(options.vectorsFile).text()) as {
-				model: string;
-				dims: number;
-				vectors: Record<string, number[]>;
-			};
-			const vectors = new Map(Object.entries(raw.vectors));
-			if (vectors.size === 0) throw new Error(`Vectors file ${options.vectorsFile} contains no vectors.`);
-			return { id, nose: createPrecomputedVectorNose(vectors, raw.dims) };
+			const vectorsFile = requireVectorsFile(id, options);
+			const raw = await loadVectorsFile(vectorsFile);
+			return { id, nose: createPrecomputedVectorNose(new Map(Object.entries(raw.vectors)), raw.dims) };
+		}
+		case "hybrid": {
+			const vectorsFile = requireVectorsFile(id, options);
+			const raw = await loadVectorsFile(vectorsFile);
+			return { id, nose: createStyleEmbedNose(new Map(Object.entries(raw.vectors)), raw.dims) };
 		}
 		default:
 			throw new Error(`Unknown nose "${id}" — expected one of ${FLY_NOSE_IDS.join(", ")}.`);
 	}
+}
+
+function requireVectorsFile(id: string, options: { vectorsFile?: string }): string {
+	if (options.vectorsFile === undefined) {
+		throw new Error(`Nose '${id}' requires --vectors <file> — precompute it with scripts/embed-fly-synthetic-corpus.ts.`);
+	}
+	return options.vectorsFile;
+}
+
+async function loadVectorsFile(vectorsFile: string): Promise<{ model: string; dims: number; vectors: Record<string, number[]> }> {
+	const raw = JSON.parse(await Bun.file(vectorsFile).text()) as {
+		model: string;
+		dims: number;
+		vectors: Record<string, number[]>;
+	};
+	if (Object.keys(raw.vectors).length === 0) throw new Error(`Vectors file ${vectorsFile} contains no vectors.`);
+	return raw;
 }

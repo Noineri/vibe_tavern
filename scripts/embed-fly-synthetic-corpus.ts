@@ -12,7 +12,7 @@
  *
  * Usage:
  *   bun scripts/embed-fly-synthetic-corpus.ts --corpus <corpus.json>
- *     [--model bge-m3] [--url http://127.0.0.1:11434] [--batch 16]
+ *     [--model snowflake-arctic-embed2:568m] [--url http://127.0.0.1:11434] [--batch 16]
  *     [--out <vectors.json>]  (default: %TEMP%/fly-embedder-vectors-<model>.json)
  */
 
@@ -32,7 +32,7 @@ interface CliArgs {
 function parseArgs(argv: string[]): CliArgs {
 	const args: CliArgs = {
 		corpus: "",
-		model: "bge-m3",
+		model: "snowflake-arctic-embed2:568m",
 		url: "http://127.0.0.1:11434",
 		batch: 16,
 		out: "",
@@ -47,7 +47,10 @@ function parseArgs(argv: string[]): CliArgs {
 		else throw new Error(`Unknown embedder argument: ${arg}`);
 	}
 	if (args.corpus === "") throw new Error("--corpus <file> is required.");
-	if (args.out === "") args.out = resolve(tmpdir(), `fly-embedder-vectors-${args.model}.json`);
+	if (args.out === "") {
+		// Keep the output name filesystem-safe (the model tag contains a colon).
+		args.out = resolve(tmpdir(), `fly-embedder-vectors-${args.model.replace(/[^\w.-]+/g, "-")}.json`);
+	}
 	return args;
 }
 

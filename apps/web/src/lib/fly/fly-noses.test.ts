@@ -4,6 +4,7 @@ import {
   createCharHashNose,
   createMultiViewNose,
   createPrecomputedVectorNose,
+  createStyleEmbedNose,
   createStyleNose,
   FLY_STYLE_NOSE_CHANNEL_COUNT,
 } from "./fly-noses.js";
@@ -214,5 +215,53 @@ describe("FT-18R pre-computed vector nose", () => {
     expect(() => createPrecomputedVectorNose(new Map([["x", [1, 2]]]), 3)).toThrow(/dims/);
     expect(() => createPrecomputedVectorNose(new Map([["x", [1, Number.NaN]]]), 2)).toThrow(/finite/);
     expect(() => createPrecomputedVectorNose(new Map(), 0)).toThrow(/channel count/);
+  });
+});
+
+describe("FT-18R style+embedder hybrid nose (candidate G)", () => {
+  const text = "*He turned the phrase over once, then let it go — the harbor lights said the rest.* She stayed by the door.";
+  const vectors = new Map([[text, [0.5, 0, -1.5]]]);
+
+  function familyMasses(encoding: { channels: Float32Array }): { style: number; embed: number } {
+    let style = 0;
+    for (let index = 0; index < FLY_STYLE_NOSE_CHANNEL_COUNT; index += 1) style += Math.abs(encoding.channels[index]!);
+    let embed = 0;
+    for (let index = FLY_STYLE_NOSE_CHANNEL_COUNT; index < encoding.channels.length; index += 1) embed += Math.abs(encoding.channels[index]!);
+    return { style, embed };
+  }
+
+  test("each family carries unit L1 mass at default weights; registry is prefixed", () => {
+    const nose = createStyleEmbedNose(vectors, 3);
+    expect(nose.channelCount).toBe(FLY_STYLE_NOSE_CHANNEL_COUNT + 3);
+    const encoding = nose.encode(text);
+    const masses = familyMasses(encoding);
+    expect(masses.style).toBeCloseTo(1, 6);
+    expect(masses.embed).toBeCloseTo(1, 6);
+    // The vector family splits its mass over |0.5| + |1.5| = 2 → 0.25 / 0.75.
+    expect(encoding.channels[FLY_STYLE_NOSE_CHANNEL_COUNT]!).toBeCloseTo(0.25, 6);
+    expect(encoding.channels[FLY_STYLE_NOSE_CHANNEL_COUNT + 2]!).toBeCloseTo(-0.75, 6);
+    const prefixes = new Set(encoding.registry.map((entry) => entry.ngram.split(":")[0]));
+    expect(prefixes.has("style")).toBe(true);
+    expect(prefixes.has("emb")).toBe(true);
+  });
+
+  test("weights rebalance family mass; unknown texts keep style and drop the vector family", () => {
+    const balanced = createStyleEmbedNose(vectors, 3).encode(text);
+    const styleHeavy = createStyleEmbedNose(vectors, 3, { styleWeight: 3 }).encode(text);
+    const balancedMasses = familyMasses(balanced);
+    const heavyMasses = familyMasses(styleHeavy);
+    expect(heavyMasses.style).toBeCloseTo(3 * balancedMasses.style, 6);
+    expect(heavyMasses.embed).toBeCloseTo(balancedMasses.embed, 6);
+
+    const unknown = createStyleEmbedNose(vectors, 3).encode("a text with no precomputed vector");
+    const unknownMasses = familyMasses(unknown);
+    expect(unknownMasses.style).toBeCloseTo(1, 6);
+    expect(unknownMasses.embed).toBe(0);
+    expect(unknown.registry.every((entry) => entry.ngram.startsWith("style:"))).toBe(true);
+  });
+
+  test("rejects non-positive weights and invalid dims", () => {
+    expect(() => createStyleEmbedNose(vectors, 3, { styleWeight: 0 })).toThrow(/weight/);
+    expect(() => createStyleEmbedNose(vectors, 0)).toThrow(/dims/);
   });
 });
