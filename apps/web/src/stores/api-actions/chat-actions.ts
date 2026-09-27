@@ -14,6 +14,7 @@ import { useChatStore } from "../chat-store.js";
 import { useNavigationStore } from "../navigation-store.js";
 import { extractPersistedCoauthorActivities, useCoauthorTurnStore } from "../coauthor-turn-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
+import { toast } from "sonner";
 import { startInsightsCompletionRefreshFromSnapshot } from "./insights-completion-actions.js";
 
 // Single canonical backend snapshot cache.
@@ -52,6 +53,10 @@ function syncCommittedCoauthorTurn(chatId: ChatId): void {
 }
 
 const pendingVariantSelectionsByChat = new Map<string, Set<Promise<void>>>();
+
+/** Ordered tail of the per-message variant-selection queue (live defect
+ * 2026-09-27: swipes persisted out of order). Key: `${chatId}::${messageId}`. */
+const variantSelectionTailsByMessage = new Map<string, Promise<void>>();
 
 export async function waitForPendingVariantSelections(chatId: ChatId): Promise<void> {
   const pending = pendingVariantSelectionsByChat.get(chatId);
@@ -313,17 +318,47 @@ export async function selectVariantAction(chatId: ChatId, messageId: string, var
   // No syncSnapshot — handleSelectMessageVariant already did the optimistic update.
   // syncSnapshot would replace the entire messagesById with fresh JSON objects,
   // breaking reselect memoization and causing all MessageBlocks to re-render.
-  const promise = selectMessageVariant(chatId, messageId, variantIndex).then(() => undefined);
+  //
+  // ORDERED PERSIST (live defect 2026-09-27): a swipe persists through a
+  // fire-and-forget POST, and rapid back-and-forth swiping used to fire
+  // those POSTs in PARALLEL — the browser's connection pool does not
+  // guarantee arrival order, so the server could land on an EARLIER swipe
+  // than the last one the user saw. After a reload/restart the slot then
+  // flipped to the wrong variant (owner hit this live on an image slot:
+  // swiped 0↔1, restarted the server, reopened — the slot showed the
+  // previous variant's image). Serialize per message: each POST starts
+  // only after the previous one settles, so the LAST swipe is the last
+  // write. A failed request toasts and does NOT poison the chain (later
+  // swipes still run); the chain tail stays in pendingVariantSelectionsByChat
+  // until the whole queue settles, so a concurrent fetchChatAction waits
+  // for queued-but-not-yet-started selections too (the stale-snapshot flip
+  // guard covers the queue, not just the in-flight request).
+  const queueKey = `${chatId}::${messageId}`;
+  const previous = variantSelectionTailsByMessage.get(queueKey) ?? Promise.resolve();
+  const run = previous
+    .catch(() => undefined)
+    .then(() => selectMessageVariant(chatId, messageId, variantIndex))
+    .then(() => undefined)
+    .catch((err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to save the selected variant");
+    });
+  const tail = run.finally(() => {
+    if (variantSelectionTailsByMessage.get(queueKey) === tail) {
+      variantSelectionTailsByMessage.delete(queueKey);
+    }
+  });
+  variantSelectionTailsByMessage.set(queueKey, tail);
+
   let pending = pendingVariantSelectionsByChat.get(chatId);
   if (!pending) {
     pending = new Set();
     pendingVariantSelectionsByChat.set(chatId, pending);
   }
-  pending.add(promise);
+  pending.add(tail);
   try {
-    await promise;
+    await tail;
   } finally {
-    pending.delete(promise);
+    pending.delete(tail);
     if (pending.size === 0) pendingVariantSelectionsByChat.delete(chatId);
   }
 }

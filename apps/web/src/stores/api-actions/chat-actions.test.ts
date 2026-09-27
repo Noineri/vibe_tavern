@@ -23,6 +23,9 @@ const realBootstrapActions = await import("./bootstrap-actions.js");
 const realChatApi = await import("../../api/chat-api.js");
 
 const updateChatDynamicPromptMock = mock();
+const selectMessageVariantMock = mock();
+const toastErrorMock = mock();
+const realSonner = await import("sonner");
 
 mock.module("./insights-completion-actions.js", () => ({
   ...realInsightsCompletionActions,
@@ -40,6 +43,11 @@ mock.module("../../api/chat-api.js", () => ({
   generateReply: generateReplyMock,
   sendChatMessage: sendChatMessageMock,
   updateChatDynamicPrompt: updateChatDynamicPromptMock,
+  selectMessageVariant: selectMessageVariantMock,
+}));
+mock.module("sonner", () => ({
+  ...realSonner,
+  toast: { ...realSonner.toast, error: toastErrorMock },
 }));
 
 let deleteChatAction: typeof import("./chat-actions.js").deleteChatAction;
@@ -49,8 +57,10 @@ let generateReplyAction: typeof import("./chat-actions.js").generateReplyAction;
 let sendChatMessageAction: typeof import("./chat-actions.js").sendChatMessageAction;
 let switchModeAction: typeof import("./chat-actions.js").switchModeAction;
 let updateChatDynamicPromptAction: typeof import("./chat-actions.js").updateChatDynamicPromptAction;
+let selectVariantAction: typeof import("./chat-actions.js").selectVariantAction;
+let waitForPendingVariantSelections: typeof import("./chat-actions.js").waitForPendingVariantSelections;
 beforeAll(async () => {
-  ({ deleteChatAction, forkBranchAction, generateObjectiveTasksAction, generateReplyAction, sendChatMessageAction, switchModeAction, updateChatDynamicPromptAction } = await import("./chat-actions.js"));
+  ({ deleteChatAction, forkBranchAction, generateObjectiveTasksAction, generateReplyAction, sendChatMessageAction, switchModeAction, updateChatDynamicPromptAction, selectVariantAction, waitForPendingVariantSelections } = await import("./chat-actions.js"));
 });
 
 const chatId = (id: string) => id as ChatId;
@@ -98,6 +108,8 @@ beforeEach(() => {
   sendChatMessageMock.mockReset();
   startCompletionRefreshMock.mockReset();
   updateChatDynamicPromptMock.mockReset();
+  selectMessageVariantMock.mockReset();
+  toastErrorMock.mockReset();
   useSnapshotStore.getState().clear();
   useContextPreviewStore.setState({ entries: {} });
   useCoauthorTurnStore.setState({ turnsByChat: {} });
@@ -343,6 +355,77 @@ describe("deleteChatAction", () => {
     expect(state.chatsById["c1"]).toBeUndefined();       // deleted chat is gone (no ghost)
     expect(state.chatIds).toEqual([chatId("c2")]);         // sibling remains
     expect(useChatStore.getState().activeChatId).toBeNull(); // active cleared
+  });
+});
+
+describe("selectVariantAction (ordered per-message persist)", () => {
+  /** Deferred gate for one selectMessageVariant call: the mock resolves only
+   *  when the test releases it, so the suite can observe whether the NEXT
+   *  queued POST starts before the previous one settled. */
+  function gateCalls(): Array<{ promise: Promise<unknown>; resolve(): void }> {
+    const gates: Array<{ promise: Promise<unknown>; resolve(): void }> = [];
+    selectMessageVariantMock.mockImplementation(() => {
+      let resolve!: (value: unknown) => void;
+      const promise = new Promise<unknown>((res) => { resolve = res; });
+      gates.push({ promise, resolve: () => resolve(undefined) });
+      return promise;
+    });
+    return gates;
+  }
+
+  const flush = () => new Promise<void>((res) => setTimeout(res, 0));
+
+  test("rapid back-and-forth swipes persist SEQUENTIALLY — the last swipe is the last write (live defect 2026-09-27)", async () => {
+    const gates = gateCalls();
+    const first = selectVariantAction(chatId("c1"), "m1", 0);
+    const second = selectVariantAction(chatId("c1"), "m1", 1);
+    const third = selectVariantAction(chatId("c1"), "m1", 0);
+    await flush();
+    // Only the FIRST POST started — 2nd/3rd wait for its settlement. The old
+    // code fired all three in parallel: arrival order was the browser's to
+    // decide, and the DB could land on an EARLIER swipe than the last seen
+    // (owner live hit: swiped back and forth, restarted the server, reopened
+    // — the image slot showed the wrong variant's image).
+    expect(selectMessageVariantMock.mock.calls.length).toBe(1);
+    gates[0].resolve();
+    await flush();
+    expect(selectMessageVariantMock.mock.calls.length).toBe(2);
+    gates[1].resolve();
+    await flush();
+    expect(selectMessageVariantMock.mock.calls.length).toBe(3);
+    gates[2].resolve();
+    await Promise.all([first, second, third]);
+    // Arrival order mirrors swipe order — the last write is variant 0.
+    expect(selectMessageVariantMock.mock.calls.map((c) => c[2])).toEqual([0, 1, 0]);
+  });
+
+  test("waitForPendingVariantSelections waits for the whole queue, not just the in-flight POST", async () => {
+    const gates = gateCalls();
+    void selectVariantAction(chatId("c2"), "m1", 0);
+    void selectVariantAction(chatId("c2"), "m1", 1);
+    await flush();
+    expect(selectMessageVariantMock.mock.calls.length).toBe(1);
+    let waited = false;
+    const waiter = waitForPendingVariantSelections(chatId("c2")).then(() => { waited = true; });
+    gates[0].resolve();
+    await flush();
+    // First POST settled but the second is still queued — the fetch guard
+    // must NOT read the snapshot yet (it would miss the queued selection).
+    expect(waited).toBe(false);
+    gates[1].resolve();
+    await waiter;
+    expect(waited).toBe(true);
+  });
+
+  test("a failed POST toasts and never poisons the queue — the next swipe still persists", async () => {
+    selectMessageVariantMock.mockImplementationOnce(() => Promise.reject(new Error("server restarted")));
+    selectMessageVariantMock.mockImplementation(async () => undefined);
+    const failed = selectVariantAction(chatId("c3"), "m1", 1);
+    const next = selectVariantAction(chatId("c3"), "m1", 0);
+    await Promise.all([failed, next]);
+    expect(selectMessageVariantMock.mock.calls.length).toBe(2);
+    expect(selectMessageVariantMock.mock.calls[1][2]).toBe(0);
+    expect(toastErrorMock.mock.calls.length).toBe(1);
   });
 });
 
