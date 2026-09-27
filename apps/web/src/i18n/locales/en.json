@@ -3313,5 +3313,19 @@
 	"fly_tribunal_memory_global": "All chats",
 	"fly_tribunal_memory_scope_hint": "Switching scope starts a fresh fly. Its learned precedents are not moved.",
 	"fly_tribunal_amnesty": "Grant amnesty",
-	"fly_tribunal_amnesty_confirm": "Grant amnesty? This resets learned weights and the precedent count. Below {gate} precedents, the fly becomes silent again."
+	"fly_tribunal_amnesty_confirm": "Grant amnesty? This resets learned weights and the precedent count. Below {gate} precedents, the fly becomes silent again.",
+	"fly_tribunal_widget_label": "Open Fly Tribunal",
+	"fly_tribunal_cold_start_title": "the young judge is studying cases: {current}/{gate}",
+	"fly_tribunal_cold_start_body": "The fly is learning from your choices. After {gate} confirmed precedents, it can show its evidence.",
+	"fly_tribunal_verdict_empty_title": "No precedent scent yet",
+	"fly_tribunal_verdict_empty_body": "The fly has not smelled this variant yet.",
+	"fly_tribunal_verdict_title": "Verdict by precedents",
+	"fly_tribunal_verdict_signal": "Precedent signal: {value}",
+	"fly_tribunal_verdict_metaphor": "Smells like variants you usually swipe.",
+	"fly_tribunal_evidence_type": "Evidence: by precedents",
+	"fly_tribunal_match_count": "Matches: {count}",
+	"fly_tribunal_evidence_list_label": "Fly Tribunal evidence",
+	"fly_tribunal_channel_disclosure": "Channel {channel} · activation {activation}",
+	"fly_tribunal_match_count_one": "Match: {count}",
+	"fly_tribunal_match_count_other": "Matches: {count}"
 }

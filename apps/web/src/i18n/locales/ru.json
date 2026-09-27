@@ -3357,5 +3357,21 @@
 	"fly_tribunal_memory_global": "Все чаты",
 	"fly_tribunal_memory_scope_hint": "Переключение области создаёт свежую муху. Её выученные прецеденты не переносятся.",
 	"fly_tribunal_amnesty": "Объявить амнистию",
-	"fly_tribunal_amnesty_confirm": "Объявить амнистию? Это сбросит выученные веса и счётчик прецедентов. Ниже {gate} прецедентов муха снова замолчит."
+	"fly_tribunal_amnesty_confirm": "Объявить амнистию? Это сбросит выученные веса и счётчик прецедентов. Ниже {gate} прецедентов муха снова замолчит.",
+	"fly_tribunal_widget_label": "Открыть Мушиный суд",
+	"fly_tribunal_cold_start_title": "молодой судья изучает дела: {current}/{gate}",
+	"fly_tribunal_cold_start_body": "Муха учится на ваших выборах. После {gate} подтверждённых прецедентов она сможет показывать улики.",
+	"fly_tribunal_verdict_empty_title": "Пока без запаха прецедента",
+	"fly_tribunal_verdict_empty_body": "Муха ещё не учуяла этот вариант.",
+	"fly_tribunal_verdict_title": "Вердикт по прецедентам",
+	"fly_tribunal_verdict_signal": "Сила прецедентного сигнала: {value}",
+	"fly_tribunal_verdict_metaphor": "Пахнет как варианты, которые ты обычно свайпаешь.",
+	"fly_tribunal_evidence_type": "Улики: по прецедентам",
+	"fly_tribunal_match_count": "Совпадений: {count}",
+	"fly_tribunal_evidence_list_label": "Улики Мушиного суда",
+	"fly_tribunal_channel_disclosure": "Канал {channel} · активация {activation}",
+	"fly_tribunal_match_count_few": "Совпадения: {count}",
+	"fly_tribunal_match_count_many": "Совпадений: {count}",
+	"fly_tribunal_match_count_one": "Совпадение: {count}",
+	"fly_tribunal_match_count_other": "Совпадений: {count}"
 }

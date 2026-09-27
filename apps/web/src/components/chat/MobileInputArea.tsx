@@ -17,6 +17,7 @@ import { BottomSheet } from "../shared/BottomSheet.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
+import { FlyWidget } from "./FlyWidget.js";
 import { VoiceMessageButton } from "./VoiceMessageButton.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PerSendPrefillStrip } from "./PerSendPrefillStrip.js";
@@ -120,6 +121,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
             rows={1}
           />
           <div className="flex shrink-0 items-center gap-2">
+            <FlyWidget compact />
             {showGenerateMore && (
               <button type="button"
                 onClick={handleGenerateMore}

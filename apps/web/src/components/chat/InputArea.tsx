@@ -13,6 +13,7 @@ import { usePerSendPrefillStore } from "../../stores/per-send-prefill-store.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
+import { FlyWidget } from "./FlyWidget.js";
 import { VoiceMessageButton } from "./VoiceMessageButton.js";
 import { MobileInputArea } from "./MobileInputArea.js";
 import { QuotaIndicator } from "./QuotaIndicator.js";
@@ -250,6 +251,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
             />
 
             <QuotaIndicator providerProfileId={provider.activeProviderProfile?.id ?? null} />
+            <FlyWidget compact />
 
             <div className="absolute right-3 bottom-[9px] flex items-center gap-[9px]">
                 <ToolbarSelect
