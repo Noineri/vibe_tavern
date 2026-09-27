@@ -56,7 +56,9 @@ import type { FlySyntheticBatch } from "./generate-fly-synthetic-corpus.js";
 
 /** Structural engine slice the runner needs (real FlyEngine satisfies it). */
 export interface FlyMatrixEngine {
-	evaluate(text: string): { confidence: number; activeKcIndexes: number[] };
+	/** FT-18R diagnostic seam: unclamped margin — the discriminating readout
+	 * that survives saturation (see fly-engine-core.ts FlyDiagnosticEvaluation). */
+	evaluateDiagnostic(text: string): { confidence: number; rawMargin: number; unitChange: number; activeKcIndexes: number[] };
 	applyThreeFactor(activeKcIndexes: readonly number[], danCluster: "PPL1" | "PAM", strength: number): void;
 	applyExponentialDecay(elapsedMs: number, lifetimeDays: number | null): number;
 }
@@ -70,11 +72,22 @@ export interface FlyMatrixPair extends FlyScoredPair {
 	rejectedNearMiss: boolean;
 	/** True when the batch was built on a holdout (unseen) base. */
 	holdout: boolean;
+	/** Unclamped learned margins — the saturation-proof comparison. */
+	rejectedMargin: number;
+	keptMargin: number;
+}
+
+/** A scored variant plus its unclamped margin. */
+export interface FlyMatrixScored extends FlyScoredVariant {
+	margin: number;
 }
 
 export interface FlyMatrixRun extends FlySplitRun {
+	scored: FlyMatrixScored[];
 	pairs: FlyMatrixPair[];
-	/** Confidences of KEPT near-miss variants — the false-alert control set. */
+	/** Margins of KEPT near-miss variants — the false-alert control set. */
+	nearMissKeptMargins: number[];
+	/** Clamped confidences of KEPT near-miss variants (saturation reference). */
 	nearMissKeptConfidences: number[];
 }
 
@@ -94,43 +107,56 @@ export function runDefectAwarePrequential(
 	clock: ReturnType<typeof createReplayClock>,
 	lifetimeDays: FlyCalibrationLifetimeDays,
 ): FlyMatrixRun {
-	const run: FlyMatrixRun = { scored: [], pairs: [], nearMissKeptConfidences: [] };
+	const run: FlyMatrixRun = { scored: [], pairs: [], nearMissKeptMargins: [], nearMissKeptConfidences: [] };
 	for (const batch of batches) {
 		advanceReplayClock(engine, clock, Date.parse(batch.createdAt), lifetimeDays);
 		const codes = new Map<string, number[]>();
 		const confidences = new Map<string, number>();
+		const margins = new Map<string, number>();
 		for (const variant of batch.variants) {
-			const evaluation = engine.evaluate(variant.content);
+			const evaluation = engine.evaluateDiagnostic(variant.content);
 			codes.set(variant.content, evaluation.activeKcIndexes);
 			confidences.set(variant.content, evaluation.confidence);
+			margins.set(variant.content, evaluation.rawMargin);
 		}
 		const selected = batch.variants.find((variant) => variant.selected) ?? null;
 		if (batch.kind === "implicit") {
 			const text = batch.variants[0]!.content;
 			const confidence = confidences.get(text) ?? 0;
-			run.scored.push({ batchId: batch.messageId, content: text, rejected: false, confidence, kcCode: codes.get(text) ?? [] });
-			if (isNearMissKind(batch.variants[0]!.defect)) run.nearMissKeptConfidences.push(confidence);
+			const margin = margins.get(text) ?? 0;
+			run.scored.push({ batchId: batch.messageId, content: text, rejected: false, confidence, margin, kcCode: codes.get(text) ?? [] });
+			if (isNearMissKind(batch.variants[0]!.defect)) {
+				run.nearMissKeptConfidences.push(confidence);
+				run.nearMissKeptMargins.push(margin);
+			}
 		} else if (selected !== null) {
 			for (const variant of batch.variants) {
 				const confidence = confidences.get(variant.content) ?? 0;
+				const margin = margins.get(variant.content) ?? 0;
 				run.scored.push({
 					batchId: batch.messageId,
 					content: variant.content,
 					rejected: !variant.selected,
 					confidence,
+					margin,
 					kcCode: codes.get(variant.content) ?? [],
 				});
-				if (variant.selected && isNearMissKind(variant.defect)) run.nearMissKeptConfidences.push(confidence);
+				if (variant.selected && isNearMissKind(variant.defect)) {
+					run.nearMissKeptConfidences.push(confidence);
+					run.nearMissKeptMargins.push(margin);
+				}
 				if (!variant.selected) {
 					run.pairs.push({
-						batchId: batch.messageId,
-						profileId: batch.profileId,
-						rejectedConfidence: confidence,
-						keptConfidence: confidences.get(selected.content) ?? 0,
-						rejectedDefect: variant.defect,
-						rejectedNearMiss: isNearMissKind(variant.defect),
-						holdout: batch.holdout,
-					});
+					batchId: batch.messageId,
+					profileId: batch.profileId,
+					rejectedConfidence: confidence,
+					keptConfidence: confidences.get(selected.content) ?? 0,
+					rejectedMargin: margin,
+					keptMargin: margins.get(selected.content) ?? 0,
+					rejectedDefect: variant.defect,
+					rejectedNearMiss: isNearMissKind(variant.defect),
+					holdout: batch.holdout,
+				});
 				}
 			}
 		}
@@ -147,7 +173,10 @@ export interface FlyDefectClassMetrics {
 }
 
 /** Pairwise accuracy grouped by the rejected variant's defect class. */
-export function pairwiseAccuracyByDefect(pairs: readonly FlyMatrixPair[]): Record<string, FlyDefectClassMetrics> {
+export function pairwiseAccuracyByDefect(
+	pairs: readonly FlyMatrixPair[],
+	accuracyFn: (pairs: readonly FlyMatrixPair[]) => number = pairwiseAccuracy,
+): Record<string, FlyDefectClassMetrics> {
 	const byDefect = new Map<string, FlyMatrixPair[]>();
 	for (const pair of pairs) {
 		const key = pair.rejectedDefect ?? "clean";
@@ -157,9 +186,103 @@ export function pairwiseAccuracyByDefect(pairs: readonly FlyMatrixPair[]): Recor
 	}
 	const result: Record<string, FlyDefectClassMetrics> = {};
 	for (const [defect, bucket] of byDefect) {
-		result[defect] = { pairs: bucket.length, accuracy: pairwiseAccuracy(bucket) };
+		result[defect] = { pairs: bucket.length, accuracy: accuracyFn(bucket) };
 	}
 	return result;
+}
+
+/** Pairwise accuracy on the UNCLAMPED margins — the saturation-proof headline. */
+export function pairwiseMarginAccuracy(pairs: readonly FlyMatrixPair[]): number {
+	if (pairs.length === 0) return 0;
+	let credit = 0;
+	for (const pair of pairs) {
+		if (pair.rejectedMargin > pair.keptMargin) credit += 1;
+		else if (pair.rejectedMargin === pair.keptMargin) credit += 0.5;
+	}
+	return credit / pairs.length;
+}
+
+/** Mann-Whitney AUC on margins: P(rejected variant margin > kept variant margin), ties 0.5. */
+export function marginAuc(scored: readonly FlyMatrixScored[]): number {
+	const rejected = scored.filter((entry) => entry.rejected).map((entry) => entry.margin);
+	const kept = scored.filter((entry) => !entry.rejected).map((entry) => entry.margin);
+	if (rejected.length === 0 || kept.length === 0) return 0.5;
+	let credit = 0;
+	for (const rejection of rejected) {
+		for (const keep of kept) {
+			credit += rejection > keep ? 1 : rejection === keep ? 0.5 : 0;
+		}
+	}
+	return credit / (rejected.length * kept.length);
+}
+
+/** Seeded cluster bootstrap CI for an accuracy-style statistic over batch clusters. */
+export function bootstrapPairAccuracy(
+	pairs: readonly FlyMatrixPair[],
+	accuracyFn: (pairs: readonly FlyMatrixPair[]) => number = pairwiseMarginAccuracy,
+	options: { resamples: number; seed: number },
+): { low: number; high: number } {
+	if (pairs.length === 0) return { low: 0, high: 0 };
+	const clusters = new Map<string, FlyMatrixPair[]>();
+	for (const pair of pairs) {
+		const bucket = clusters.get(pair.batchId);
+		if (bucket === undefined) clusters.set(pair.batchId, [pair]);
+		else bucket.push(pair);
+	}
+	const keys = [...clusters.keys()];
+	let state = options.seed >>> 0;
+	const nextRandom = () => {
+		state = (state + 0x6d2b79f5) >>> 0;
+		let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+		mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+		return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+	};
+	const resampled: number[] = [];
+	for (let index = 0; index < options.resamples; index += 1) {
+		const draw: FlyMatrixPair[] = [];
+		for (let pick = 0; pick < keys.length; pick += 1) draw.push(...clusters.get(keys[Math.floor(nextRandom() * keys.length)]!)!);
+		resampled.push(accuracyFn(draw));
+	}
+	resampled.sort((a, b) => a - b);
+	return {
+		low: resampled[Math.floor(0.025 * resampled.length)]!,
+		high: resampled[Math.ceil(0.975 * resampled.length) - 1]!,
+	};
+}
+
+function median(values: readonly number[]): number {
+	if (values.length === 0) return 0;
+	const sorted = [...values].sort((a, b) => a - b);
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
+}
+
+/** False-alert control on margins: how often a KEPT near-miss reads worse
+ * than the median REJECTED full-defect margin in the same run. */
+export interface FlyNearMissMarginControl {
+	keptNearMissCount: number;
+	rejectedFullDefectCount: number;
+	medianRejectedFullDefectMargin: number;
+	/** Share of kept near-miss margins above that median (lower = better). */
+	shareAboveMedianFullDefect: number;
+}
+
+export function nearMissMarginControl(
+	pairs: readonly FlyMatrixPair[],
+	keptNearMissMargins: readonly number[],
+): FlyNearMissMarginControl {
+	const fullDefectMargins = pairs
+		.filter((pair) => !pair.rejectedNearMiss && pair.rejectedDefect !== null)
+		.map((pair) => pair.rejectedMargin);
+	const reference = median(fullDefectMargins);
+	return {
+		keptNearMissCount: keptNearMissMargins.length,
+		rejectedFullDefectCount: fullDefectMargins.length,
+		medianRejectedFullDefectMargin: reference,
+		shareAboveMedianFullDefect: keptNearMissMargins.length === 0
+			? 0
+			: keptNearMissMargins.filter((margin) => margin > reference).length / keptNearMissMargins.length,
+	};
 }
 
 /** Flag rates on KEPT near-miss variants — the false-alert control. */
@@ -174,12 +297,15 @@ export function nearMissKeptFlagRates(confidences: readonly number[], bars: read
 }
 
 /** Accuracy split by holdout (unseen base) vs seen-base pairs. */
-export function holdoutSplit(pairs: readonly FlyMatrixPair[]): { seen: FlyDefectClassMetrics; holdout: FlyDefectClassMetrics } {
+export function holdoutSplit(
+	pairs: readonly FlyMatrixPair[],
+	accuracyFn: (pairs: readonly FlyMatrixPair[]) => number = pairwiseAccuracy,
+): { seen: FlyDefectClassMetrics; holdout: FlyDefectClassMetrics } {
 	const seen = pairs.filter((pair) => !pair.holdout);
 	const holdoutPairs = pairs.filter((pair) => pair.holdout);
 	return {
-		seen: { pairs: seen.length, accuracy: pairwiseAccuracy(seen) },
-		holdout: { pairs: holdoutPairs.length, accuracy: pairwiseAccuracy(holdoutPairs) },
+		seen: { pairs: seen.length, accuracy: accuracyFn(seen) },
+		holdout: { pairs: holdoutPairs.length, accuracy: accuracyFn(holdoutPairs) },
 	};
 }
 
@@ -260,9 +386,10 @@ export async function main(argv: string[]): Promise<void> {
 		const { nose } = await resolveFlyNose(noseId, { vectorsFile: args.vectors });
 		console.log(`\n=== nose ${noseId} (${nose.channelCount} channels) ===`);
 		const profileResults: unknown[] = [];
-		const pooledScored: FlyScoredVariant[] = [];
+		const pooledScored: FlyMatrixScored[] = [];
 		const pooledPairs: FlyMatrixPair[] = [];
-		const pooledNearMiss: number[] = [];
+		const pooledNearMissMargins: number[] = [];
+		const pooledNearMissConfidences: number[] = [];
 		for (const profileId of profileIds) {
 			const splits = splitChronological(byProfile.get(profileId)!);
 			const modeRuns = (["binary", "log-synapse"] as const).map((mode) => {
@@ -273,61 +400,88 @@ export async function main(argv: string[]): Promise<void> {
 					advanceReplayClock(engine, clock, Date.parse(batch.createdAt), lifetimeDays);
 					const codes = new Map<string, number[]>();
 					for (const variant of batch.variants) {
-						codes.set(variant.content, engine.evaluate(variant.content).activeKcIndexes);
+						codes.set(variant.content, engine.evaluateDiagnostic(variant.content).activeKcIndexes);
 					}
 					trainBatch(engine, batch, codes);
 				}
 				const validation = runDefectAwarePrequential(engine, splits.validation, clock, lifetimeDays);
 				return { mode, engine, clock, validation };
 			});
+			// Mode freeze on the MARGIN readout — the one that survives saturation.
 			const winner = modeRuns[0]!.validation.pairs.length === 0
 				? modeRuns[0]!
 				: (modeRuns.reduce((best, run) =>
-					pairwiseAccuracy(run.validation.pairs) > pairwiseAccuracy(best.validation.pairs) ? run : best));
+					pairwiseMarginAccuracy(run.validation.pairs) > pairwiseMarginAccuracy(best.validation.pairs) ? run : best));
 			const test = runDefectAwarePrequential(winner.engine, splits.test, winner.clock, lifetimeDays);
-			const metrics = summarizeRun(test, { resamples: args.resamples, seed: args.seed });
+			const marginCi = bootstrapPairAccuracy(test.pairs, pairwiseMarginAccuracy, { resamples: args.resamples, seed: args.seed });
+			const marginBlock = {
+				accuracy: pairwiseMarginAccuracy(test.pairs),
+				accuracyCi: marginCi,
+				auc: marginAuc(test.scored),
+				perDefectAccuracy: pairwiseAccuracyByDefect(test.pairs, pairwiseMarginAccuracy),
+				holdoutSplit: holdoutSplit(test.pairs, pairwiseMarginAccuracy),
+				nearMissControl: nearMissMarginControl(test.pairs, test.nearMissKeptMargins),
+				validationAccuracy: {
+					binary: pairwiseMarginAccuracy(modeRuns[0]!.validation.pairs),
+					"log-synapse": pairwiseMarginAccuracy(modeRuns[1]!.validation.pairs),
+				},
+			};
+			const clampedMetrics = summarizeRun(test, { resamples: args.resamples, seed: args.seed });
 			const extras = {
 				winnerMode: winner.mode,
-				validationAccuracy: {
-					binary: pairwiseAccuracy(modeRuns[0]!.validation.pairs),
-					"log-synapse": pairwiseAccuracy(modeRuns[1]!.validation.pairs),
+				clamped: {
+					...clampedMetrics,
+					perDefectAccuracy: pairwiseAccuracyByDefect(test.pairs),
+					nearMissKeptFlagRates: nearMissKeptFlagRates(test.nearMissKeptConfidences),
 				},
-				perDefectAccuracy: pairwiseAccuracyByDefect(test.pairs),
-				nearMissKeptFlagRates: nearMissKeptFlagRates(test.nearMissKeptConfidences),
-				holdoutSplit: holdoutSplit(test.pairs),
 				replayClock: {
 					decayEvents: winner.clock.decayEvents,
 					decayedDays: winner.clock.decayedMs / FLY_CAL_DAY_MS,
 					netFactor: netDecayFactor(winner.clock, lifetimeDays),
 				},
 			};
-			profileResults.push({ profileId, train: splits.train.length, validation: splits.validation.length, test: splits.test.length, metrics, extras });
+			profileResults.push({
+				profileId,
+				train: splits.train.length,
+				validation: splits.validation.length,
+				test: splits.test.length,
+				margin: marginBlock,
+				...extras,
+			});
 			pooledScored.push(...test.scored);
 			pooledPairs.push(...test.pairs);
-			pooledNearMiss.push(...test.nearMissKeptConfidences);
+			pooledNearMissMargins.push(...test.nearMissKeptMargins);
+			pooledNearMissConfidences.push(...test.nearMissKeptConfidences);
 			console.log(
-				`  [${profileId}] mode ${extras.winnerMode}: test accuracy ${metrics.accuracy.toFixed(4)}` +
-				` (CI ${metrics.accuracyCi.low.toFixed(3)}–${metrics.accuracyCi.high.toFixed(3)}),` +
-				` AUC ${metrics.classAuc.toFixed(4)}, pairs ${metrics.pairs},` +
-				` holdout acc ${extras.holdoutSplit.holdout.accuracy.toFixed(3)} (${extras.holdoutSplit.holdout.pairs})`,
+				`  [${profileId}] mode ${extras.winnerMode}: margin accuracy ${marginBlock.accuracy.toFixed(4)}` +
+				` (CI ${marginCi.low.toFixed(3)}–${marginCi.high.toFixed(3)}), AUC ${marginBlock.auc.toFixed(4)},` +
+				` pairs ${test.pairs.length}, holdout acc ${marginBlock.holdoutSplit.holdout.accuracy.toFixed(3)} (${marginBlock.holdoutSplit.holdout.pairs}),` +
+				` near-miss>median-defect ${(100 * marginBlock.nearMissControl.shareAboveMedianFullDefect).toFixed(1)}%`,
 			);
 		}
 		const pooledRun: FlySplitRun = { scored: pooledScored, pairs: pooledPairs };
-		const pooledMetrics = summarizeRun(pooledRun, { resamples: args.resamples, seed: args.seed });
+		const pooledClamped = summarizeRun(pooledRun, { resamples: args.resamples, seed: args.seed });
+		const pooledMarginCi = bootstrapPairAccuracy(pooledPairs, pairwiseMarginAccuracy, { resamples: args.resamples, seed: args.seed });
 		results[noseId] = {
 			channels: nose.channelCount,
 			pooled: {
-				...pooledMetrics,
-				perDefectAccuracy: pairwiseAccuracyByDefect(pooledPairs),
-				nearMissKeptFlagRates: nearMissKeptFlagRates(pooledNearMiss),
-				holdoutSplit: holdoutSplit(pooledPairs),
-				classAucRaw: classAuc(pooledScored),
+				margin: {
+					accuracy: pairwiseMarginAccuracy(pooledPairs),
+					accuracyCi: pooledMarginCi,
+					auc: marginAuc(pooledScored),
+					perDefectAccuracy: pairwiseAccuracyByDefect(pooledPairs, pairwiseMarginAccuracy),
+					holdoutSplit: holdoutSplit(pooledPairs, pairwiseMarginAccuracy),
+					nearMissControl: nearMissMarginControl(pooledPairs, pooledNearMissMargins),
+				},
+				clamped: { ...pooledClamped, classAucRaw: classAuc(pooledScored) },
 			},
 			profiles: profileResults,
 		};
 		console.log(
-			`  POOLED: accuracy ${pooledMetrics.accuracy.toFixed(4)} (CI ${pooledMetrics.accuracyCi.low.toFixed(4)}–${pooledMetrics.accuracyCi.high.toFixed(4)}),` +
-			` AUC ${pooledMetrics.classAuc.toFixed(4)}, KC-overlap ${pooledMetrics.sameBatchKcOverlap?.mean.toFixed(0) ?? "n/a"}`,
+			`  POOLED: margin accuracy ${pairwiseMarginAccuracy(pooledPairs).toFixed(4)}` +
+			` (CI ${pooledMarginCi.low.toFixed(4)}–${pooledMarginCi.high.toFixed(4)}),` +
+			` AUC ${marginAuc(pooledScored).toFixed(4)}, clamped accuracy ${pooledClamped.accuracy.toFixed(4)},` +
+			` KC-overlap ${pooledClamped.sameBatchKcOverlap?.mean.toFixed(0) ?? "n/a"}`,
 		);
 	}
 

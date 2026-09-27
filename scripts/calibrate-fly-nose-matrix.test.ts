@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
+	bootstrapPairAccuracy,
 	holdoutSplit,
+	marginAuc,
 	nearMissKeptFlagRates,
+	nearMissMarginControl,
 	pairwiseAccuracyByDefect,
+	pairwiseMarginAccuracy,
 	runDefectAwarePrequential,
 	type FlyMatrixEngine,
 	type FlyMatrixPair,
+	type FlyMatrixScored,
 } from "./calibrate-fly-nose-matrix.js";
 import { createReplayClock, type FlyCalibrationLifetimeDays } from "./calibrate-fly-tribunal.js";
 import { resolveFlyNose } from "./fly-nose-registry.js";
@@ -27,9 +32,17 @@ import type { FlySyntheticBatch } from "./generate-fly-synthetic-corpus.js";
 class FakeEngine implements FlyMatrixEngine {
 	readonly trainCalls: Array<{ cluster: "PPL1" | "PAM"; strength: number }> = [];
 	readonly decayCalls: number[] = [];
-	constructor(private readonly confidenceBy: ReadonlyMap<string, number>) {}
-	evaluate(text: string): { confidence: number; activeKcIndexes: number[] } {
-		return { confidence: this.confidenceBy.get(text) ?? 0, activeKcIndexes: [7] };
+	constructor(
+		private readonly confidenceBy: ReadonlyMap<string, number>,
+		private readonly marginBy: ReadonlyMap<string, number>,
+	) {}
+	evaluateDiagnostic(text: string): { confidence: number; rawMargin: number; unitChange: number; activeKcIndexes: number[] } {
+		return {
+			confidence: this.confidenceBy.get(text) ?? 0,
+			rawMargin: this.marginBy.get(text) ?? 0,
+			unitChange: 1,
+			activeKcIndexes: [7],
+		};
 	}
 	applyThreeFactor(_indexes: readonly number[], cluster: "PPL1" | "PAM", strength: number): void {
 		this.trainCalls.push({ cluster, strength });
@@ -60,7 +73,7 @@ describe("FT-18R nose matrix: defect-aware runner", () => {
 	const mono = `${clean}\n\n*He turned her words over slowly, weighing each one against the silence.*`;
 	const mild = `${clean}\n\n*Not for the first time, he wondered whether this was progress.*`;
 
-	test("pairs carry defect, near-miss, and holdout metadata; training mirrors live strengths", () => {
+	test("pairs carry defect, near-miss, and holdout metadata; margins survive clamped ties", () => {
 		const batch = makeBatch({
 			messageId: "m1",
 			profileId: "terse",
@@ -70,7 +83,9 @@ describe("FT-18R nose matrix: defect-aware runner", () => {
 				{ index: 1, content: clean, selected: true, defect: null, baseId: "b-000001" },
 			],
 		});
-		const engine = new FakeEngine(new Map([[mono, 0.8], [clean, 0.3]]));
+		// Saturation scenario: clamped confidences both 1 (a tie) while the
+		// unclamped margins still order the defected text above the clean one.
+		const engine = new FakeEngine(new Map([[mono, 1], [clean, 1]]), new Map([[mono, 2.5], [clean, 1.9]]));
 		const run = runDefectAwarePrequential(engine, [batch], createReplayClock(), null as FlyCalibrationLifetimeDays);
 
 		expect(run.pairs).toHaveLength(1);
@@ -78,9 +93,9 @@ describe("FT-18R nose matrix: defect-aware runner", () => {
 		expect(run.pairs[0]!.rejectedNearMiss).toBe(false);
 		expect(run.pairs[0]!.holdout).toBe(true);
 		expect(run.pairs[0]!.profileId).toBe("terse");
-		// Score-before-train: the rejected text evaluated higher ⇒ wrong pair.
-		expect(run.pairs[0]!.rejectedConfidence).toBe(0.8);
-		expect(run.pairs[0]!.keptConfidence).toBe(0.3);
+		expect(run.pairs[0]!.rejectedMargin).toBe(2.5);
+		expect(run.pairs[0]!.keptMargin).toBe(1.9);
+		expect(pairwiseMarginAccuracy(run.pairs)).toBe(1);
 		// Training mirrors the live wiring: rejected PPL1 0.5, choice keep PAM 0.25.
 		expect(engine.trainCalls).toEqual([
 			{ cluster: "PPL1", strength: 0.5 },
@@ -103,10 +118,11 @@ describe("FT-18R nose matrix: defect-aware runner", () => {
 			kind: "implicit",
 			variants: [{ index: 0, content: mild, selected: true, defect: "monologue-mild", baseId: "b-2" }],
 		});
-		const engine = new FakeEngine(new Map([[clean, 0.1], [mild, 0.75]]));
+		const engine = new FakeEngine(new Map([[clean, 0.1], [mild, 0.75]]), new Map([[clean, 0.1], [mild, 1.2]]));
 		const run = runDefectAwarePrequential(engine, [choice, implicit], createReplayClock(), null);
 
 		expect(run.nearMissKeptConfidences).toEqual([0.75, 0.75]);
+		expect(run.nearMissKeptMargins).toEqual([1.2, 1.2]);
 		expect(run.pairs[0]!.rejectedDefect).toBeNull(); // a clean text lost its batch
 		expect(run.pairs[0]!.rejectedNearMiss).toBe(false);
 		// choice: clean rejected PPL1 + mild keep PAM 0.25; implicit: PAM 0.25.
@@ -124,6 +140,8 @@ describe("FT-18R nose matrix: diagnostics", () => {
 		profileId: "terse",
 		rejectedConfidence: 0.8,
 		keptConfidence: 0.3,
+		rejectedMargin: 2,
+		keptMargin: 1,
 		rejectedDefect: null,
 		rejectedNearMiss: false,
 		holdout: false,
@@ -150,6 +168,49 @@ describe("FT-18R nose matrix: diagnostics", () => {
 		]);
 		expect(split.seen).toEqual({ pairs: 1, accuracy: 0 });
 		expect(split.holdout).toEqual({ pairs: 1, accuracy: 1 });
+		// Same split on margins with the margin accuracy fn.
+		const marginSplit = holdoutSplit([
+			pair({ holdout: false, rejectedMargin: 0.5 }),
+			pair({ holdout: true, rejectedMargin: 3 }),
+		], pairwiseMarginAccuracy);
+		expect(marginSplit.seen).toEqual({ pairs: 1, accuracy: 0 });
+		expect(marginSplit.holdout).toEqual({ pairs: 1, accuracy: 1 });
+	});
+
+	test("margin AUC (Mann-Whitney) orders rejected above kept variants", () => {
+		const scored: FlyMatrixScored[] = [
+			{ batchId: "m1", content: "a", rejected: true, confidence: 1, margin: 3, kcCode: [] },
+			{ batchId: "m2", content: "b", rejected: true, confidence: 1, margin: 2, kcCode: [] },
+			{ batchId: "m3", content: "c", rejected: false, confidence: 1, margin: 2.5, kcCode: [] },
+			{ batchId: "m4", content: "d", rejected: false, confidence: 1, margin: 1, kcCode: [] },
+		];
+		// a (3) beats both kept (2), b (2) beats only d (1) → 3/4 = 0.75.
+		expect(marginAuc(scored)).toBe(0.75);
+		expect(marginAuc([])).toBe(0.5);
+	});
+
+	test("near-miss margin control and deterministic bootstrap CI", () => {
+		const pairs = [
+			pair({ rejectedDefect: "monologue", rejectedMargin: 4 }),
+			pair({ rejectedDefect: "monologue", rejectedMargin: 2 }),
+			pair({ rejectedDefect: "tag-leak", rejectedMargin: 10 }),
+			pair({ rejectedDefect: "tag-leak", rejectedMargin: 6 }),
+			pair({ rejectedDefect: "monologue-mild", rejectedNearMiss: true, rejectedMargin: 1 }),
+		];
+		// Full-defect rejected margins [4,2,10,6] → median 5; kept near-misses
+		// [5.5, 4.5] → share above median = 0.5.
+		const control = nearMissMarginControl(pairs, [5.5, 4.5]);
+		expect(control).toEqual({
+			keptNearMissCount: 2,
+			rejectedFullDefectCount: 4,
+			medianRejectedFullDefectMargin: 5,
+			shareAboveMedianFullDefect: 0.5,
+		});
+		const point = pairwiseMarginAccuracy(pairs);
+		const ci = bootstrapPairAccuracy(pairs, pairwiseMarginAccuracy, { resamples: 500, seed: 7 });
+		expect(ci.low).toBeLessThanOrEqual(point + 1e-12);
+		expect(ci.high).toBeGreaterThanOrEqual(point - 1e-12);
+		expect(bootstrapPairAccuracy(pairs, pairwiseMarginAccuracy, { resamples: 500, seed: 7 })).toEqual(ci);
 	});
 });
 

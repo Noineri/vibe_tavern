@@ -543,6 +543,24 @@ export interface FlyEvaluation {
   gfSpikeCount: number;
 }
 
+/**
+ * FT-18R diagnostic readout: the UNCLAMPED learned response margin behind
+ * `confidence`. The clamped confidence saturates at 1 once accumulated
+ * learning exceeds a single unit-reference event (~3 full-strength swipes),
+ * which hides every pairwise distinction at calibration scale; the raw
+ * margin keeps growing and stays orderable. Calibration tooling only — the
+ * product verdict still reads `evaluate().confidence`.
+ */
+export interface FlyDiagnosticEvaluation {
+  /** Same value `evaluate()` would return (clamped fraction of unit change). */
+  confidence: number;
+  /** learned.response − base.response, unclamped (negative under PAM). */
+  rawMargin: number;
+  /** unit.response − base.response — the one-event reference scale. */
+  unitChange: number;
+  activeKcIndexes: number[];
+}
+
 /** One downstream LIF burst outcome (FT-17); feeds confidence and readout. */
 interface FlyBurstResult {
   /** Integrated positive potential per MBON across the burst. */
@@ -654,6 +672,18 @@ export class FlyEngine {
       mbonReadout,
       gfSpikeCount,
     };
+  }
+
+  /**
+   * FT-18R calibration seam: same encoding, WTA, and burst pipeline as
+   * `evaluate`, but reports the unclamped margin (see FlyDiagnosticEvaluation).
+   * Compute cost matches `evaluate` (three bursts); not for hot UI paths.
+   */
+  evaluateDiagnostic(text: string): FlyDiagnosticEvaluation {
+    const stimulus = this.encode(text);
+    const activeKcIndexes = this.selectWtaKcs(stimulus.channels);
+    const [confidence, , , rawMargin, unitChange] = this.evaluateLearnedState(activeKcIndexes);
+    return { confidence, rawMargin, unitChange, activeKcIndexes };
   }
 
   /**
@@ -922,7 +952,7 @@ export class FlyEngine {
    */
   private evaluateLearnedState(
     activeKcIndexes: readonly number[],
-  ): [confidence: number, mbonReadout: FlyMbonReadout[], gfSpikeCount: number] {
+  ): [confidence: number, mbonReadout: FlyMbonReadout[], gfSpikeCount: number, rawMargin: number, unitChange: number] {
     const base = this.runDownstreamBurst(activeKcIndexes, null);
     const learned = this.runDownstreamBurst(activeKcIndexes, this.learnedDeltas);
     const active = new Uint8Array(this.subgraph.neuronCount);
@@ -935,8 +965,9 @@ export class FlyEngine {
     }
     const unit = this.runDownstreamBurst(activeKcIndexes, this.unitBoostScratch);
     const unitChange = unit.response - base.response;
-    const confidence = unitChange > 0 ? clamp((learned.response - base.response) / unitChange, 0, 1) : 0;
-    return [confidence, this.readMbonReadout(learned), learned.gfSpikes];
+    const rawMargin = learned.response - base.response;
+    const confidence = unitChange > 0 ? clamp(rawMargin / unitChange, 0, 1) : 0;
+    return [confidence, this.readMbonReadout(learned), learned.gfSpikes, rawMargin, unitChange];
   }
 
   /**

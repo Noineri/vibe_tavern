@@ -253,3 +253,37 @@ describe("Fly engine plasticity/readout", () => {
     expect(editedSave.evaluate(text).confidence).toBeLessThan(implicitKeep.evaluate(text).confidence);
   });
 });
+
+describe("Fly engine FT-18R diagnostic readout (unclamped margin seam)", () => {
+  test("fresh engine: margin and confidence agree at 0; unit reference is positive", () => {
+    const engine = freshEngine();
+    const text = "violet lantern harbor";
+    const diagnostic = engine.evaluateDiagnostic(text);
+    expect(diagnostic.rawMargin).toBe(0);
+    expect(diagnostic.confidence).toBe(0);
+    expect(diagnostic.unitChange).toBeGreaterThan(0);
+    expect(diagnostic.confidence).toBe(engine.evaluate(text).confidence);
+  });
+
+  test("after enough PPL1 events confidence saturates at 1 while rawMargin stays orderable", () => {
+    const trained = "violet lantern harbor mast chorus";
+    const other = "unrelated wooden bell carriage scent";
+    const engine = freshEngine();
+    for (let index = 0; index < 5; index += 1) engine.trainText(trained, "PPL1", 0.5);
+
+    const trainedReadout = engine.evaluateDiagnostic(trained);
+    const otherReadout = engine.evaluateDiagnostic(other);
+    // Saturation: the trained text's clamped readout maxes out…
+    expect(trainedReadout.confidence).toBe(1);
+    // …while the unclamped margin keeps discriminating: the trained text
+    // carries more learned rejection evidence than a text never trained on
+    // (on the full connectome the clamp hides this for EVERY text).
+    expect(trainedReadout.rawMargin).toBeGreaterThan(otherReadout.rawMargin);
+    expect(trainedReadout.rawMargin).toBeGreaterThan(trainedReadout.unitChange);
+    // The margin is a consistent extension of the clamped value below 1.
+    const single = freshEngine();
+    single.trainText(trained, "PPL1", 0.5);
+    const singleReadout = single.evaluateDiagnostic(trained);
+    expect(singleReadout.confidence).toBeCloseTo(singleReadout.rawMargin / singleReadout.unitChange, 12);
+  });
+});
