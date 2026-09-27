@@ -1,6 +1,9 @@
 /**
  * Real Web Worker factory for the Kokoro TTS client (TTS_PLAN TS-3b).
  *
+ * forks: 2 — apps/web/src/lib/stt/whisper/whisper-worker-factory.ts;
+ * apps/web/src/lib/fly/fly-worker-factory.ts.
+ *
  * Lives apart from `kokoro-client.ts` so tests (which inject a fake) never
  * load this module.
  *
