@@ -34,6 +34,7 @@
  *     [--db data/vibe-tavern.db]
  *     [--connectome services/api/assets/fly/connectome.bin.gz]
  *     [--lifetime <7|14|30|inf>]
+ *     [--nose <old|wide|style|char|multi|embedder>] [--vectors <file>]
  *     [--out <result.json>] [--seed 42] [--resamples 10000]
  */
 
@@ -50,6 +51,7 @@ import {
 	type FlyEngine,
 	type FlyProjectionMode,
 } from "../apps/web/src/lib/fly/fly-engine-core.js";
+import { resolveFlyNose, type FlyNoseId } from "./fly-nose-registry.js";
 
 // ─── Shared constants ────────────────────────────────────────────────────────
 
@@ -285,7 +287,13 @@ export interface FlyReplayOptions {
 	lifetimeDays: FlyCalibrationLifetimeDays;
 }
 
-function trainBatch(engine: FlyEngine, batch: FlyCalibrationBatch, codes: Map<string, number[]>): void {
+/** Structural slice `trainBatch` needs — lets the matrix runner and its
+ * tests pass any engine-shaped object, not just the real `FlyEngine`. */
+export interface FlyTrainCapable {
+	applyThreeFactor(activeKcIndexes: readonly number[], danCluster: "PPL1" | "PAM", strength: number): void;
+}
+
+export function trainBatch(engine: FlyTrainCapable, batch: FlyCalibrationBatch, codes: Map<string, number[]>): void {
 	const rejectedStrength = FLY_CAL_REJECTED_STRENGTH;
 	if (batch.kind === "implicit") {
 		const text = batch.finalContent ?? batch.variants[0]!.content;
@@ -315,8 +323,7 @@ function trainBatch(engine: FlyEngine, batch: FlyCalibrationBatch, codes: Map<st
 	}
 }
 
-/**
- * Score every variant of every batch BEFORE training that batch (strict
+/** Score every variant of every batch BEFORE training that batch (strict
  * prequential "score-before-update" semantics), then train the batch. The
  * engine is mutated in place so split passes can continue one another; with
  * `replay` the passes share one continuous decay clock.
@@ -609,6 +616,8 @@ interface CliArgs {
 	db: string;
 	connectome: string;
 	lifetime: string;
+	nose: string;
+	vectors: string | undefined;
 	out: string | null;
 	seed: number;
 	resamples: number;
@@ -619,6 +628,8 @@ function parseArgs(argv: string[]): CliArgs {
 		db: "data/vibe-tavern.db",
 		connectome: "services/api/assets/fly/connectome.bin.gz",
 		lifetime: "inf",
+		nose: "old",
+		vectors: undefined,
 		out: null,
 		seed: 42,
 		resamples: 10_000,
@@ -628,6 +639,8 @@ function parseArgs(argv: string[]): CliArgs {
 		if (arg === "--db") args.db = argv[++index] ?? args.db;
 		else if (arg === "--connectome") args.connectome = argv[++index] ?? args.connectome;
 		else if (arg === "--lifetime") args.lifetime = argv[++index] ?? args.lifetime;
+		else if (arg === "--nose") args.nose = argv[++index] ?? args.nose;
+		else if (arg === "--vectors") args.vectors = argv[++index] ?? args.vectors;
 		else if (arg === "--out") args.out = argv[++index] ?? null;
 		else if (arg === "--seed") args.seed = Number(argv[++index] ?? args.seed);
 		else if (arg === "--resamples") args.resamples = Number(argv[++index] ?? args.resamples);
@@ -670,12 +683,15 @@ export async function main(argv: string[]): Promise<void> {
 		const compressed = new Uint8Array(await new Response(Bun.file(brainPath)).arrayBuffer());
 		const connectome: FlyConnectome = await parseConnectome(compressed, async (bytes) => new Uint8Array(gunzipSync(bytes)));
 		const subgraph = instantiateLearningSubgraph(connectome);
+		void subgraph;
+		const { nose, id: noseId } = await resolveFlyNose(args.nose, { vectorsFile: args.vectors });
+		console.log(`nose: ${noseId} (${nose.channelCount} channels)`);
 
 		const evaluateMode = (
 			mode: FlyProjectionMode,
 			label: string,
 		): { metrics: FlySplitMetrics; engine: FlyEngine; clock: FlyReplayClock; ms: number } => {
-			const engine = createFlyEngine(connectome, { params: { projectionMode: mode } });
+			const engine = createFlyEngine(connectome, { params: { projectionMode: mode }, nose });
 			const clock = createReplayClock();
 			const started = performance.now();
 			let trained = 0;
@@ -726,6 +742,7 @@ export async function main(argv: string[]): Promise<void> {
 
 		const result = {
 			lifetimeDays,
+			nose: noseId,
 			caveats: [
 				"NON-PRISTINE: the test partition was exposed by the 2026-09-27 FT-18 run — diagnostic only, never an acceptance number.",
 			],
