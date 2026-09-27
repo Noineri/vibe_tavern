@@ -13,13 +13,14 @@ import {
 } from "./fly-engine-core.js";
 
 /**
- * FT-15/FT-16 characterization against the committed MCNS artifact, deliberately
- * separate from the FT-1 synthetic fixture suite. FT-15 pinned the inert
- * activation defect (0 active KCs, empty FTWD); FT-16 replaced the OSN→LIF
- * gate with the connectome-backed FlyHash projection, so these tests now pin
- * the LIVE behavior: deterministic top-10% winner-take-all KC codes,
- * similarity-sensitive KC overlap, and training that writes real plastic
- * deltas while a fresh fly stays exactly at confidence 0.
+ * FT-15/FT-16/FT-17 characterization against the committed MCNS artifact,
+ * deliberately separate from the FT-1 synthetic fixture suite. FT-15 pinned
+ * the inert activation defect (0 active KCs, empty FTWD); FT-16 replaced the
+ * OSN→LIF gate with the connectome-backed FlyHash projection; FT-17 pins the
+ * downstream LIF burst those KC codes seed: real MBON spikes, baseline-
+ * relative confidence (fresh fly exactly 0), PAM evidence pulling the burst
+ * response below baseline, the structural GF silence, and overlap-
+ * proportional generalization to minimally overlapping controls.
  *
  * L1 checklist:
  * 1. Paths: artifact path derives from import.meta.dir through node:path; no
@@ -67,7 +68,7 @@ beforeAll(async () => {
   subgraph = instantiateLearningSubgraph(connectome);
 });
 
-describe("Fly engine real MCNS artifact characterization (FT-15/FT-16)", () => {
+describe("Fly engine real MCNS artifact characterization (FT-15/FT-16/FT-17)", () => {
   test("parses the committed MCNS learning subgraph with its stable group counts", () => {
     expect(loadAndParseMs).toBeGreaterThan(0);
     expect(connectome.neuronCount).toBe(166_700);
@@ -144,10 +145,16 @@ describe("Fly engine real MCNS artifact characterization (FT-15/FT-16)", () => {
     const before = engine.evaluate(representativeText);
     expect(before.confidence).toBe(0);
     expect(before.mbonReadout.length).toBeGreaterThan(0);
+    // Evidence the LIF burst actually fires, not just sub-threshold drift.
+    expect(before.mbonReadout.some((entry) => entry.spikes > 0)).toBe(true);
 
     engine.trainText(representativeText, "PPL1", 0.5);
     const after = engine.evaluate(representativeText);
     expect(after.confidence).toBeGreaterThan(0);
+    // One rejection moves the burst response UP from the fresh baseline.
+    const burstResponse = (evaluation: ReturnType<FlyEngine["evaluate"]>) =>
+      evaluation.mbonReadout.reduce((total, entry) => total + entry.activation, 0);
+    expect(burstResponse(after)).toBeGreaterThan(burstResponse(before));
 
     const weights = engine.exportSparseDeltas();
     const header = new DataView(weights.buffer, weights.byteOffset, weights.byteLength);
@@ -155,6 +162,65 @@ describe("Fly engine real MCNS artifact characterization (FT-15/FT-16)", () => {
     expect(header.getUint32(0, true)).toBe(FLY_WEIGHT_DELTA_MAGIC);
     expect(count).toBeGreaterThan(0);
     expect(weights.byteLength).toBe(8 + count * 8);
+  });
+
+  test("PAM evidence lowers the burst response below the fresh baseline", () => {
+    const engine = freshEngine();
+    const before = engine.evaluate(representativeText);
+    engine.trainText(representativeText, "PAM", 0.5);
+    const after = engine.evaluate(representativeText);
+
+    expect(after.confidence).toBe(0);
+    const burstResponse = (evaluation: ReturnType<FlyEngine["evaluate"]>) =>
+      evaluation.mbonReadout.reduce((total, entry) => total + entry.activation, 0);
+    expect(burstResponse(after)).toBeLessThan(burstResponse(before));
+  });
+
+  test("generalization scales with KC-code overlap: a minimal-overlap control stays far below the trained text", () => {
+    const engine = freshEngine();
+    const trainedCode = new Set(engine.evaluate(representativeText).activeKcIndexes);
+    // Hub Kenyon cells collect from many glomeruli, so every strongly driven
+    // 407-code shares a core with every other (measured: 37/407 for this
+    // control, 178/407 for the vocabulary-disjoint text). Confidence leak is
+    // proportional to overlap — similarity semantics — and FT-18's
+    // false-positive metric quantifies it on real swipes. Exact zero-overlap
+    // flatness is pinned by the fixture suite, where codes can be disjoint.
+    const controlText = "mining lamps flicker underground";
+    const controlCode = engine.evaluate(controlText).activeKcIndexes;
+    const overlap = controlCode.filter((index) => trainedCode.has(index)).length;
+    expect(overlap).toBeGreaterThan(0);
+    expect(overlap / controlCode.length).toBeLessThan(0.15);
+
+    engine.trainText(representativeText, "PPL1", 0.5);
+    const trainedConfidence = engine.evaluate(representativeText).confidence;
+    const controlConfidence = engine.evaluate(controlText).confidence;
+    expect(controlConfidence).toBeGreaterThan(0);
+    expect(controlConfidence).toBeLessThan(trainedConfidence / 3);
+  });
+
+  test("GF is structurally silent: nothing in the learning subgraph feeds it", () => {
+    expect(countGroup(FLY_GROUP.GF)).toBe(2);
+    let gfIncomingEdges = 0;
+    for (let edgeIndex = 0; edgeIndex < subgraph.edgeCount; edgeIndex += 1) {
+      if (subgraph.group[subgraph.edgePost[edgeIndex]!] === FLY_GROUP.GF) gfIncomingEdges += 1;
+    }
+    // MCNS GF inputs (912 of them) all come from the OTHER group, which the
+    // learning circuit drops — the flourish is structurally impossible.
+    expect(gfIncomingEdges).toBe(0);
+    for (const text of [representativeText, variantText, disjointText]) {
+      const engine = freshEngine();
+      engine.trainText(text, "PPL1", 0.5);
+      expect(engine.evaluate(text).gfSpikeCount).toBe(0);
+    }
+  });
+
+  test("the downstream burst is deterministic across independent engines", () => {
+    const first = freshEngine().evaluate(representativeText);
+    const second = freshEngine().evaluate(representativeText);
+
+    expect(first.confidence).toBe(second.confidence);
+    expect(first.gfSpikeCount).toBe(second.gfSpikeCount);
+    expect(first.mbonReadout).toEqual(second.mbonReadout);
   });
 
   test("keeps empty and whitespace text without channels or active Kenyon cells", () => {

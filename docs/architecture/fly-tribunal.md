@@ -95,7 +95,7 @@ The FTWD payload is little-endian `FTWD` magic followed by an entry count and re
 Import rejects the wrong magic, a malformed length, non-plastic edge indexes, and non-finite deltas.
 The worker gzip-compresses the FTWD payload and base64-encodes it for `FlyMemoryPut`.
 The wiring persists it with a 400 ms debounce to the selected per-chat or global memory scope.
-`FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION = 1` is shared from `@vibe-tavern/domain` by the API, database, and worker.
+`FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION = 2` is shared from `@vibe-tavern/domain` by the API, database, and worker.
 Amnesty resets the worker weights, writes `precedentCount: 0` and `weights: null`, clears derived verdicts, and returns the court to silence.
 
 Precedent lifetime applies approximate exponential decay to the summed delta field on memory load and persistence export.
@@ -146,7 +146,6 @@ Wire-format magic, format-version, and byte-size constants are intentionally doc
 | `FLY_LIF_DEFAULTS.weightScale` | `fly-engine-core.ts` | 0.15 | Scale applied to normalized synaptic weight. |
 | `FLY_LIF_DEFAULTS.tickRateHz` | `fly-engine-core.ts` | 10 | Declared burst tick rate. |
 | `FLY_LIF_DEFAULTS.burstTicks` | `fly-engine-core.ts` | 8 | Bounded LIF ticks per evaluation. |
-| `FLY_LIF_DEFAULTS.stimulusScale` | `fly-engine-core.ts` | 1.25 | Max-normalized channel input multiplier. |
 | `FLY_LIF_DEFAULTS.kcSparsity` | `fly-engine-core.ts` | 0.10 | Fraction of positive Kenyon-cell candidates selected. |
 | `FLY_LIF_DEFAULTS.maxDrivingSpans` | `fly-engine-core.ts` | 5 | Maximum evidence spans returned to the UI. |
 | `FLY_LIF_DEFAULTS.learnedDeltaForFullConfidence` | `fly-engine-core.ts` | 1 | Per-active-synapse positive delta representing confidence 1. |

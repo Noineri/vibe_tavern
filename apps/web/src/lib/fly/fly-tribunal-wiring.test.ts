@@ -1,5 +1,8 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import type { FlyBrainManifest } from "@vibe-tavern/api-contracts";
+import {
+  FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION,
+  type FlyBrainManifest,
+} from "@vibe-tavern/api-contracts";
 import {
   selectFlyVerdict,
   useFlyTribunalStore,
@@ -175,6 +178,7 @@ function evaluation(confidence = 0.8): FlyEvaluation {
     activeKcIndexes: [2],
     activeKcGlobalIndexes: [4],
     mbonReadout: [],
+    gfSpikeCount: 0,
   };
 }
 
@@ -235,7 +239,7 @@ describe("FlyTribunalWiring", () => {
       fetchMemory: async () => ({
         scope: "chat",
         chatId: "chat_1",
-        schemaVersion: 1,
+        schemaVersion: FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION,
         precedentCount: 7,
         weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=",
         updatedAt: "2026-09-27T00:00:00.000Z",
@@ -249,7 +253,7 @@ describe("FlyTribunalWiring", () => {
     const load = worker.requests.find((request): request is Extract<FlyWorkerRequest, { type: "load" }> => request.type === "load");
     if (load === undefined || load.memory === undefined) throw new Error("expected memory on load");
     expect(load.memory).toEqual({
-      schemaVersion: 1,
+      schemaVersion: FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION,
       weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=",
       updatedAt: "2026-09-27T00:00:00.000Z",
       lifetimeDays: 14,
@@ -258,6 +262,53 @@ describe("FlyTribunalWiring", () => {
     expect(useFlyTribunalStore.getState().precedentCount).toBe(7);
     worker.emit({ type: "loaded", id: 0, neuronCount: 1, edgeCount: 1 });
     expect(evaluateRequests(worker)).toHaveLength(1);
+    wiring.stop();
+  });
+
+  test("a stale schema row hydrates as a fresh fly and persists an empty current-version row", async () => {
+    enableTribunal();
+    const worker = new FakeWorker();
+    const putBodies: unknown[] = [];
+    const snapshot = makeSnapshot(assistantMessage("m1", 0, [{ variantIndex: 0, content: "violet lantern", isSelected: true }]));
+    const wiring = new FlyTribunalWiring({
+      createWorker: () => worker,
+      loadCachedBrain: async () => readyBrain(),
+      fetchPrecedentCount: async () => 0,
+      fetchMemory: async () => ({
+        scope: "chat",
+        chatId: "chat_1",
+        schemaVersion: FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION - 1,
+        precedentCount: 9,
+        weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=",
+        updatedAt: "2026-09-27T00:00:00.000Z",
+      }),
+      putMemory: async (memory) => { putBodies.push(memory); },
+      snapshot,
+      store: useFlyTribunalStore,
+    });
+
+    await wiring.start();
+    await Promise.resolve();
+    // FT-17 owner-approved full reset: stale rows count as zero precedents.
+    expect(useFlyTribunalStore.getState().precedentCount).toBe(0);
+    const load = worker.requests.find((request): request is Extract<FlyWorkerRequest, { type: "load" }> => request.type === "load");
+    if (load === undefined || load.memory === undefined) throw new Error("expected memory on load");
+    expect(load.memory).toEqual({
+      schemaVersion: FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION,
+      weights: null,
+      updatedAt: "",
+      lifetimeDays: 14,
+      nowMs: load.memory.nowMs,
+    });
+    expect(putBodies).toEqual([
+      {
+        scope: "chat",
+        chatId: "chat_1",
+        schemaVersion: FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION,
+        precedentCount: 0,
+        weights: null,
+      },
+    ]);
     wiring.stop();
   });
 
@@ -446,13 +497,13 @@ describe("FlyTribunalWiring", () => {
     timer.flush();
     const exportRequest = worker.requests.find((request): request is Extract<FlyWorkerRequest, { type: "export-memory" }> => request.type === "export-memory");
     if (exportRequest === undefined) throw new Error("expected debounced export request");
-    worker.emit({ type: "memory-exported", id: exportRequest.id, schemaVersion: 1, weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=" });
+    worker.emit({ type: "memory-exported", id: exportRequest.id, schemaVersion: FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION, weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=" });
     await Promise.resolve();
     expect(putBodies).toEqual([
       {
         scope: "chat",
         chatId: "chat_1",
-        schemaVersion: 1,
+        schemaVersion: FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION,
         precedentCount: 26,
         weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=",
       },
@@ -469,14 +520,14 @@ describe("FlyTribunalWiring", () => {
       {
         scope: "chat",
         chatId: "chat_1",
-        schemaVersion: 1,
+        schemaVersion: FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION,
         precedentCount: 26,
         weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=",
       },
       {
         scope: "chat",
         chatId: "chat_1",
-        schemaVersion: 1,
+        schemaVersion: FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION,
         precedentCount: 0,
         weights: null,
       },

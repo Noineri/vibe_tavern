@@ -36,6 +36,7 @@ function evaluation(confidence: number, ngram = "violet lantern"): FlyEvaluation
     activeKcIndexes: [3, 4],
     activeKcGlobalIndexes: [10, 11],
     mbonReadout: [],
+    gfSpikeCount: 0,
   };
 }
 

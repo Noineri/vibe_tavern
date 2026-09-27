@@ -315,6 +315,7 @@ describe("MessageBlock — RX-13 display regex seam", () => {
         activeKcIndexes: [2],
         activeKcGlobalIndexes: [4],
         mbonReadout: [],
+        gfSpikeCount: 0,
       });
     });
     expect(utils.container.querySelector('[data-fly-precedent-highlight="true"]')).toBeNull();

@@ -13,9 +13,11 @@
  * 4. map each channel onto a real glomerular PN-type cohort and project the
  *    cohort activity through the actual PN→KC edges (degree-normalized),
  *    keeping the strongest 10% as a winner-take-all KC code (FlyHash);
- * 5. read learned KC→MBON deltas over that sparse code — the bounded
- *    downstream LIF burst returns in FT-17, seeded by these KC spikes;
- * 6. return confidence plus channel-backed driving spans for the verdict UI.
+ * 5. seed those KCs as the tick-zero spike pattern of a bounded LIF burst
+ *    over the actual downstream KC/MBON/DAN/GF edges (FT-17);
+ * 6. derive confidence from the learned change in MBON burst response
+ *    relative to the fresh baseline and return it with channel-backed
+ *    driving spans for the verdict UI.
  *
  * There is intentionally NO habituation/session repetition detector here.
  * Plasticity is an explicit three-factor lever only; FT-12 decides WHEN a
@@ -391,8 +393,8 @@ export type FlyProjectionMode = (typeof FLY_PROJECTION_MODES)[number];
 
 /**
  * snedea/flybrain (`sim-worker.js`) LIF constants (FT-7). Since FT-16 the LIF
- * burst no longer gates text→KC activation — these constants parameterize
- * the downstream burst that FT-17 re-introduces, seeded by the WTA KC code.
+ * burst no longer gates text→KC activation; FT-17 runs it downstream over
+ * the real KC/MBON/DAN/GF edges, seeded by the WTA KC code at tick zero.
  */
 export const FLY_LIF_DEFAULTS = {
   leak: 0.95,
@@ -402,8 +404,6 @@ export const FLY_LIF_DEFAULTS = {
   tickRateHz: 10,
   /** Burst-only: no continuous simulation consumes mobile battery. */
   burstTicks: 8,
-  /** Reserved for the FT-17 downstream burst (OSN stimulation ended in FT-16). */
-  stimulusScale: 1.25,
   /** Winner-take-all fraction of the KC population in the sparse code. */
   kcSparsity: 0.1,
   /** Maximum registry-backed n-grams surfaced as verdict evidence. */
@@ -421,7 +421,6 @@ export interface FlyEngineParams {
   weightScale: number;
   tickRateHz: number;
   burstTicks: number;
-  stimulusScale: number;
   kcSparsity: number;
   maxDrivingSpans: number;
   learnedDeltaForFullConfidence: number;
@@ -443,6 +442,8 @@ export interface FlyMbonReadout {
   /** Manifest type-table label when the worker received it at load time. */
   typeName: string | null;
   activation: number;
+  /** Spikes this MBON fired during the burst (evidence LIF actually fires). */
+  spikes: number;
 }
 
 export interface FlyEvaluation {
@@ -453,6 +454,18 @@ export interface FlyEvaluation {
   activeKcIndexes: number[];
   activeKcGlobalIndexes: number[];
   mbonReadout: FlyMbonReadout[];
+  /** GF spikes from the burst; structurally 0 on MCNS (all GF inputs are OTHER). */
+  gfSpikeCount: number;
+}
+
+/** One downstream LIF burst outcome (FT-17); feeds confidence and readout. */
+interface FlyBurstResult {
+  /** Integrated positive potential per MBON across the burst. */
+  mbonIntegrated: Float32Array;
+  mbonSpikes: Uint16Array;
+  /** Σ integrated positive MBON potential — the confidence signal carrier. */
+  response: number;
+  gfSpikes: number;
 }
 
 export interface FlyEngineOptions {
@@ -482,6 +495,8 @@ export class FlyEngine {
   private readonly pnToKcMassLog: Float32Array;
   private readonly kcBinaryMass: Float32Array;
   private readonly kcLogMass: Float32Array;
+  /** FT-17 scratch: per-edge boost of active KC→MBON edges for the unit-reference burst. */
+  private readonly unitBoostScratch: Float32Array;
   private params: FlyEngineParams;
 
   constructor(subgraph: FlyLearningSubgraph, options: FlyEngineOptions = {}) {
@@ -501,6 +516,7 @@ export class FlyEngine {
     this.pnToKcMassLog = projection.pnToKcMassLog;
     this.kcBinaryMass = projection.kcBinaryMass;
     this.kcLogMass = projection.kcLogMass;
+    this.unitBoostScratch = new Float32Array(subgraph.edgeCount);
   }
 
   getParams(): FlyEngineParams {
@@ -523,8 +539,7 @@ export class FlyEngine {
     const stimulus = this.encode(text);
     const activeKcIndexes = this.selectWtaKcs(stimulus.channels);
     const activeKcGlobalIndexes = activeKcIndexes.map((index) => this.subgraph.subgraphToGlobal[index]!);
-    const mbonReadout = this.readMbonActivity(activeKcIndexes);
-    const confidence = this.readLearnedConfidence(activeKcIndexes);
+    const [confidence, mbonReadout, gfSpikeCount] = this.evaluateLearnedState(activeKcIndexes);
     const drivingSpans = [...stimulus.registry]
       .sort((a, b) => b.activation - a.activation || b.count - a.count || a.ngram.localeCompare(b.ngram))
       .slice(0, this.params.maxDrivingSpans)
@@ -542,6 +557,7 @@ export class FlyEngine {
       activeKcIndexes,
       activeKcGlobalIndexes,
       mbonReadout,
+      gfSpikeCount,
     };
   }
 
@@ -798,41 +814,112 @@ export class FlyEngine {
     return candidates.slice(0, wanted).map((candidate) => candidate.index);
   }
 
-  private synapticWeight(edgeIndex: number): number {
-    return (this.subgraph.baseEdgeWeight[edgeIndex]! + this.learnedDeltas[edgeIndex]!) / this.subgraph.synapseNormalization;
-  }
-
-  private readMbonActivity(activeKcIndexes: readonly number[]): FlyMbonReadout[] {
+  /**
+   * FT-17 downstream trial. The WTA code seeds one tick-zero LIF burst per
+   * weight state: the fresh baseline (`null` deltas), the current learned
+   * state, and a unit reference boosting every active KC→MBON synapse by one
+   * full-confidence event. Confidence is the learned MBON-response change as
+   * a fraction of the unit-reference change — a fresh fly is exactly 0 (both
+   * bursts identical) and PAM evidence pulls the change toward or below 0.
+   * A nonpositive unit change (earlier spikes can shorten accumulation)
+   * safely yields confidence 0 instead of dividing by a degenerate scale.
+   */
+  private evaluateLearnedState(
+    activeKcIndexes: readonly number[],
+  ): [confidence: number, mbonReadout: FlyMbonReadout[], gfSpikeCount: number] {
+    const base = this.runDownstreamBurst(activeKcIndexes, null);
+    const learned = this.runDownstreamBurst(activeKcIndexes, this.learnedDeltas);
     const active = new Uint8Array(this.subgraph.neuronCount);
     for (const index of activeKcIndexes) active[index] = 1;
-    const activationByMbon = new Float32Array(this.subgraph.neuronCount);
+    this.unitBoostScratch.fill(0);
     for (const edgeIndex of this.subgraph.kcToMbonEdgeIndexes) {
-      const kc = this.subgraph.edgePre[edgeIndex]!;
-      if (active[kc] === 0) continue;
-      const mbon = this.subgraph.edgePost[edgeIndex]!;
-      activationByMbon[mbon] += Math.max(0, this.synapticWeight(edgeIndex));
+      if (active[this.subgraph.edgePre[edgeIndex]!] === 1) {
+        this.unitBoostScratch[edgeIndex] = this.params.learnedDeltaForFullConfidence;
+      }
     }
+    const unit = this.runDownstreamBurst(activeKcIndexes, this.unitBoostScratch);
+    const unitChange = unit.response - base.response;
+    const confidence = unitChange > 0 ? clamp((learned.response - base.response) / unitChange, 0, 1) : 0;
+    return [confidence, this.readMbonReadout(learned), learned.gfSpikes];
+  }
+
+  /**
+   * Bounded LIF burst seeded by the WTA code (FT-17): the selected KCs spike
+   * at tick zero, then `burstTicks` ticks of leaky integration run over the
+   * real downstream edges of every spiking neuron — KC→MBON, MBON→DAN,
+   * DAN→KC, MBON→MBON, and GF wherever the learning subgraph actually has
+   * them (on MCNS all GF inputs come from the dropped OTHER group, so GF
+   * stays structurally silent). Refractory neurons neither integrate nor
+   * spike. The readout accumulates each MBON's positive potential per tick,
+   * so a response exists even when nothing crosses the spiking threshold.
+   */
+  private runDownstreamBurst(seedKcIndexes: readonly number[], deltaOverride: Float32Array | null): FlyBurstResult {
+    const subgraph = this.subgraph;
+    const { leak, threshold, refractoryTicks, weightScale, burstTicks } = this.params;
+    const potentials = new Float32Array(subgraph.neuronCount);
+    const refractoryUntil = new Int32Array(subgraph.neuronCount).fill(-1);
+    const seen = new Uint8Array(subgraph.neuronCount);
+    const mbonIntegrated = new Float32Array(subgraph.neuronCount);
+    const mbonSpikes = new Uint16Array(subgraph.neuronCount);
+    let gfSpikes = 0;
+    let frontier: number[] = [];
+    for (const kc of seedKcIndexes) {
+      refractoryUntil[kc] = refractoryTicks;
+      frontier.push(kc);
+    }
+    const touched: number[] = [];
+    const next: number[] = [];
+    for (let tick = 1; tick <= burstTicks; tick += 1) {
+      for (let index = 0; index < potentials.length; index += 1) potentials[index]! *= leak;
+      touched.length = 0;
+      seen.fill(0);
+      for (const pre of frontier) {
+        const start = subgraph.outgoingOffsets[pre]!;
+        const end = subgraph.outgoingOffsets[pre + 1]!;
+        for (let cursor = start; cursor < end; cursor += 1) {
+          const edgeIndex = subgraph.outgoingEdgeIndexes[cursor]!;
+          const post = subgraph.edgePost[edgeIndex]!;
+          if (refractoryUntil[post]! >= tick) continue;
+          potentials[post] += weightScale * this.burstEdgeWeight(edgeIndex, deltaOverride);
+          if (seen[post] === 0) {
+            seen[post] = 1;
+            touched.push(post);
+          }
+        }
+      }
+      next.length = 0;
+      for (const post of touched) {
+        const potential = potentials[post]!;
+        const group = subgraph.group[post]!;
+        if (group === FLY_GROUP.MBON) mbonIntegrated[post] += Math.max(0, potential);
+        if (potential >= threshold) {
+          potentials[post] = 0;
+          refractoryUntil[post] = tick + refractoryTicks;
+          if (group === FLY_GROUP.MBON) mbonSpikes[post] += 1;
+          else if (group === FLY_GROUP.GF) gfSpikes += 1;
+          next.push(post);
+        }
+      }
+      frontier = next.slice();
+    }
+    let response = 0;
+    for (const mbon of subgraph.mbonIndexes) response += mbonIntegrated[mbon]!;
+    return { mbonIntegrated, mbonSpikes, response, gfSpikes };
+  }
+
+  private burstEdgeWeight(edgeIndex: number, deltaOverride: Float32Array | null): number {
+    const delta = deltaOverride === null ? 0 : deltaOverride[edgeIndex]!;
+    return (this.subgraph.baseEdgeWeight[edgeIndex]! + delta) / this.subgraph.synapseNormalization;
+  }
+
+  private readMbonReadout(burst: FlyBurstResult): FlyMbonReadout[] {
     return Array.from(this.subgraph.mbonIndexes, (index) => ({
       subgraphIndex: index,
       globalIndex: this.subgraph.subgraphToGlobal[index]!,
       typeName: this.typeNames[this.subgraph.typeIndex[index]!] ?? null,
-      activation: activationByMbon[index]!,
-    })).filter((entry) => entry.activation > 0);
-  }
-
-  private readLearnedConfidence(activeKcIndexes: readonly number[]): number {
-    if (activeKcIndexes.length === 0) return 0;
-    const active = new Uint8Array(this.subgraph.neuronCount);
-    for (const index of activeKcIndexes) active[index] = 1;
-    let learnedPositive = 0;
-    let activeSynapses = 0;
-    for (const edgeIndex of this.subgraph.kcToMbonEdgeIndexes) {
-      if (active[this.subgraph.edgePre[edgeIndex]!] === 0) continue;
-      activeSynapses += 1;
-      learnedPositive += Math.max(0, this.learnedDeltas[edgeIndex]!);
-    }
-    if (activeSynapses === 0) return 0;
-    return clamp(learnedPositive / (activeSynapses * this.params.learnedDeltaForFullConfidence), 0, 1);
+      activation: burst.mbonIntegrated[index]!,
+      spikes: burst.mbonSpikes[index]!,
+    })).filter((entry) => entry.activation > 0 || entry.spikes > 0);
   }
 
   private assertParams(params: FlyEngineParams): void {
@@ -842,7 +929,6 @@ export class FlyEngine {
     if (!Number.isFinite(params.weightScale) || params.weightScale <= 0) throw new Error("Fly LIF weight scale must be positive.");
     if (!Number.isFinite(params.tickRateHz) || params.tickRateHz <= 0) throw new Error("Fly LIF tick rate must be positive.");
     if (!Number.isInteger(params.burstTicks) || params.burstTicks < 1 || params.burstTicks > 100) throw new Error("Fly LIF burst ticks must be an integer from 1 to 100.");
-    if (!Number.isFinite(params.stimulusScale) || params.stimulusScale <= 0) throw new Error("Fly stimulus scale must be positive.");
     if (!Number.isFinite(params.kcSparsity) || params.kcSparsity <= 0 || params.kcSparsity > 1) throw new Error("Fly KC sparsity must be in (0, 1].");
     if (!Number.isInteger(params.maxDrivingSpans) || params.maxDrivingSpans < 1) throw new Error("Fly driving-span limit must be a positive integer.");
     if (!Number.isFinite(params.learnedDeltaForFullConfidence) || params.learnedDeltaForFullConfidence <= 0) throw new Error("Fly learned-delta normalization must be positive.");

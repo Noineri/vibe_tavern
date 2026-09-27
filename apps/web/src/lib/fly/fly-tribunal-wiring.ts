@@ -343,7 +343,7 @@ export class FlyTribunalWiring {
     this.memoryKey = context.key;
 
     try {
-      const memory = this.deps.fetchMemory === undefined
+      const fetched = this.deps.fetchMemory === undefined
         ? {
           scope: context.scope,
           ...(context.chatId === undefined ? {} : { chatId: context.chatId }),
@@ -353,11 +353,25 @@ export class FlyTribunalWiring {
           updatedAt: "",
         }
         : await this.deps.fetchMemory(context.scope, context.chatId);
+      // Owner-approved full memory reset (hybrid calibration, FT-17): a stale
+      // schema row hydrates as a fresh fly — zero weights, zero precedents —
+      // and is immediately rewritten as an empty current-version row.
+      const staleSchema = fetched.schemaVersion !== FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION;
+      const memory = staleSchema
+        ? {
+          ...fetched,
+          schemaVersion: FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION,
+          precedentCount: 0,
+          weights: null,
+          updatedAt: "",
+        }
+        : fetched;
       const current = this.memoryContext();
       if (this.started && current?.key === context.key) {
         this.deps.store.getState().setPrecedentCount(memory.precedentCount);
         const persistedAt = Date.parse(memory.updatedAt);
         if (Number.isFinite(persistedAt)) this.lastPersistedAtByMemoryKey.set(context.key, persistedAt);
+        if (staleSchema) void this.persistMemory(context, FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION, null, 0);
         // Scope/chat switches retain the same worker instance: replace its
         // learned field before the next snapshot-driven evaluation.
         if (this.brainLoaded && this.worker !== null) {
