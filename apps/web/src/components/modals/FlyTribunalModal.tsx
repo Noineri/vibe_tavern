@@ -10,6 +10,7 @@ import { Modal } from "../shared/Modal.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { Toggle } from "../shared/Toggle.js";
 import { lblCls } from "../../lib/field-tokens.js";
+import { grantFlyTribunalAmnesty } from "../../lib/fly/fly-tribunal-wiring.js";
 import { useFlyBrain } from "./use-fly-brain.js";
 
 export interface FlyTribunalModalProps {
@@ -93,7 +94,9 @@ export function FlyTribunalModal({ open, onClose, onSaveSettings, onBrainReadyCh
 
   const grantAmnesty = (): void => {
     if (!window.confirm(t("fly_tribunal_amnesty_confirm", { gate: gate.gate }))) return;
-    resetForAmnesty();
+    // The active wiring session resets engine + persisted memory before this
+    // sink re-silences. No worker exists only while the tribunal is disabled.
+    if (!grantFlyTribunalAmnesty()) resetForAmnesty();
   };
 
   const reactionOptions = [

@@ -1,16 +1,17 @@
+import { FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION } from '@vibe-tavern/domain';
 import { asc, eq, isNull } from 'drizzle-orm';
 import { flyTribunalMemory } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 
 /**
- * Current encoding version for the gzipped sparse KC→MBON delta blob.
+ * Shared version for the gzipped sparse KC→MBON delta blob.
  *
  * `weights` is null before the fly has learned any precedent (or after
  * amnesty). The worker owns the binary encoding; this store only preserves its
  * opaque bytes and exposes base64 at the API boundary.
  */
-export const FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION = 1;
+export { FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION } from '@vibe-tavern/domain';
 
 export type FlyTribunalMemoryScope = 'chat' | 'global';
 

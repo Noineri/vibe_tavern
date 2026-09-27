@@ -37,6 +37,7 @@ export { regenerateOverrideSchema } from "./chat-regenerate-schema.js";
 export type { RegenerateOverride } from "./chat-regenerate-schema.js";
 export {
   FLY_TRIBUNAL_PRECEDENT_GATE,
+  FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION,
   FLY_TRIBUNAL_REGEN_CAP_MIN,
   FLY_TRIBUNAL_REGEN_CAP_MAX,
   FLY_HINT_PLACEHOLDER,

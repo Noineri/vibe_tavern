@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
   createFlyEngine,
   instantiateLearningSubgraph,
@@ -35,6 +35,10 @@ let connectome: FlyConnectome;
 
 async function decompressFixture(compressed: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(gunzipSync(compressed));
+}
+
+async function compressFixture(raw: Uint8Array): Promise<Uint8Array> {
+  return new Uint8Array(gzipSync(raw));
 }
 
 function freshEngine(): FlyEngine {
@@ -143,5 +147,47 @@ describe("Fly engine plasticity/readout", () => {
 
     engine.resetWeights();
     expect(engine.evaluate(text).confidence).toBeCloseTo(baseline.confidence, 10);
+  });
+
+  test("sparse gzip memory round-trips and exponential decay respects infinity", async () => {
+    const text = "violet lantern harbor";
+    const trained = freshEngine();
+    trained.trainText(text, "PPL1", 0.75);
+    const beforeDecay = trained.evaluate(text).confidence;
+    const payload = await trained.exportGzippedSparseDeltas(compressFixture);
+
+    const restored = freshEngine();
+    await restored.importGzippedSparseDeltas(payload, decompressFixture);
+    expect(restored.evaluate(text).confidence).toBeCloseTo(beforeDecay, 10);
+
+    restored.applyExponentialDecay(86_400_000, 1);
+    expect(restored.evaluate(text).confidence).toBeLessThan(beforeDecay);
+    restored.resetWeights();
+    await restored.importGzippedSparseDeltas(payload, decompressFixture);
+    restored.applyExponentialDecay(86_400_000 * 100, null);
+    expect(restored.evaluate(text).confidence).toBeCloseTo(beforeDecay, 10);
+  });
+
+  test("PAM calibration offsets shared learned rejection evidence", () => {
+    const text = "violet lantern harbor";
+    const negativeOnly = freshEngine();
+    negativeOnly.trainText(text, "PPL1", 0.5);
+    const contrastive = freshEngine();
+    contrastive.trainText(text, "PPL1", 0.5);
+    contrastive.trainText(text, "PAM", 0.25);
+
+    expect(contrastive.evaluate(text).confidence).toBeLessThan(negativeOnly.evaluate(text).confidence);
+  });
+
+  test("a stronger edited-save PAM signal outweighs the implicit keep signal", () => {
+    const text = "violet lantern harbor";
+    const implicitKeep = freshEngine();
+    implicitKeep.trainText(text, "PPL1", 0.5);
+    implicitKeep.trainText(text, "PAM", 0.25);
+    const editedSave = freshEngine();
+    editedSave.trainText(text, "PPL1", 0.5);
+    editedSave.trainText(text, "PAM", 0.75);
+
+    expect(editedSave.evaluate(text).confidence).toBeLessThan(implicitKeep.evaluate(text).confidence);
   });
 });

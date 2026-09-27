@@ -6,6 +6,8 @@ import {
 } from "../../stores/fly-tribunal-store.js";
 import type { FlyEvaluation } from "./fly-engine-core.js";
 import {
+  FLY_EDITED_SAVE_STRENGTH,
+  FLY_IMPLICIT_KEEP_STRENGTH,
   FlyTribunalWiring,
   type FlyTribunalSnapshotMessage,
   type FlyTribunalSnapshotSource,
@@ -51,6 +53,28 @@ class FakeWorker implements FlyTribunalWorker {
   }
 }
 
+class FakeTimer {
+  private next = 0;
+  private readonly callbacks = new Map<number, () => void>();
+
+  set = (callback: () => void, _delayMs: number): unknown => {
+    const id = this.next;
+    this.next += 1;
+    this.callbacks.set(id, callback);
+    return id;
+  };
+
+  clear = (handle: unknown): void => {
+    if (typeof handle === "number") this.callbacks.delete(handle);
+  };
+
+  flush(): void {
+    const callbacks = [...this.callbacks.values()];
+    this.callbacks.clear();
+    for (const callback of callbacks) callback();
+  }
+}
+
 class FakeSnapshot implements FlyTribunalSnapshotSource {
   private readonly listeners = new Set<() => void>();
 
@@ -68,6 +92,15 @@ class FakeSnapshot implements FlyTribunalSnapshotSource {
   setMessage(message: FlyTribunalSnapshotMessage): void {
     this.state = {
       ...this.state,
+      messagesById: { ...this.state.messagesById, [message.id]: message },
+    };
+    this.notify();
+  }
+
+  appendMessage(message: FlyTribunalSnapshotMessage): void {
+    this.state = {
+      ...this.state,
+      messageOrder: [...this.state.messageOrder, message.id],
       messagesById: { ...this.state.messagesById, [message.id]: message },
     };
     this.notify();
@@ -97,6 +130,10 @@ function manifest(): FlyBrainManifest {
     countsByGroup: {},
     types: [""],
   };
+}
+
+function userMessage(id: string, content = "continue"): FlyTribunalSnapshotMessage {
+  return { id, role: "user", content, selectedVariantIndex: null, variants: [] };
 }
 
 function assistantMessage(
@@ -183,6 +220,43 @@ describe("FlyTribunalWiring", () => {
     expect(evaluateRequests(worker).map((request) => request.text)).toEqual(["violet lantern"]);
 
     snapshot.setMessage(snapshot.getState().messagesById.m1!);
+    expect(evaluateRequests(worker)).toHaveLength(1);
+    wiring.stop();
+  });
+
+  test("threads persisted sparse weights into worker load before its first evaluation", async () => {
+    enableTribunal();
+    const worker = new FakeWorker();
+    const snapshot = makeSnapshot(assistantMessage("m1", 0, [{ variantIndex: 0, content: "violet lantern", isSelected: true }]));
+    const wiring = new FlyTribunalWiring({
+      createWorker: () => worker,
+      loadCachedBrain: async () => readyBrain(),
+      fetchPrecedentCount: async () => 0,
+      fetchMemory: async () => ({
+        scope: "chat",
+        chatId: "chat_1",
+        schemaVersion: 1,
+        precedentCount: 7,
+        weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=",
+        updatedAt: "2026-09-27T00:00:00.000Z",
+      }),
+      now: () => Date.parse("2026-09-28T00:00:00.000Z"),
+      snapshot,
+      store: useFlyTribunalStore,
+    });
+
+    await wiring.start();
+    const load = worker.requests.find((request): request is Extract<FlyWorkerRequest, { type: "load" }> => request.type === "load");
+    if (load === undefined || load.memory === undefined) throw new Error("expected memory on load");
+    expect(load.memory).toEqual({
+      schemaVersion: 1,
+      weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=",
+      updatedAt: "2026-09-27T00:00:00.000Z",
+      lifetimeDays: 14,
+      nowMs: Date.parse("2026-09-28T00:00:00.000Z"),
+    });
+    expect(useFlyTribunalStore.getState().precedentCount).toBe(7);
+    worker.emit({ type: "loaded", id: 0, neuronCount: 1, edgeCount: 1 });
     expect(evaluateRequests(worker)).toHaveLength(1);
     wiring.stop();
   });
@@ -277,6 +351,136 @@ describe("FlyTribunalWiring", () => {
     worker.emit({ type: "trained", id: train.id, result: evaluation() });
     expect(useFlyTribunalStore.getState().precedentCount).toBe(1);
     expect(useFlyTribunalStore.getState().transientState).toBe("notes-a-precedent");
+    wiring.stop();
+  });
+
+  test("settles a swipe chain on the next user message as one contrastive precedent", async () => {
+    enableTribunal();
+    const worker = new FakeWorker();
+    const snapshot = makeSnapshot(assistantMessage("m1", 0, [
+      { variantIndex: 0, content: "rejected answer", isSelected: true },
+      { variantIndex: 1, content: "kept answer" },
+    ]));
+    const wiring = new FlyTribunalWiring({
+      createWorker: () => worker,
+      loadCachedBrain: async () => readyBrain(),
+      fetchPrecedentCount: async () => 0,
+      snapshot,
+      store: useFlyTribunalStore,
+    });
+
+    await wiring.start();
+    worker.emit({ type: "loaded", id: 0, neuronCount: 1, edgeCount: 1 });
+    snapshot.setMessage(assistantMessage("m1", 1, [
+      { variantIndex: 0, content: "rejected answer" },
+      { variantIndex: 1, content: "kept answer", isSelected: true },
+    ]));
+    expect(worker.requests.some((request) => request.type === "train-batch")).toBe(false);
+
+    snapshot.appendMessage(userMessage("u2"));
+    const batch = worker.requests.find((request): request is Extract<FlyWorkerRequest, { type: "train-batch" }> => request.type === "train-batch");
+    if (batch === undefined) throw new Error("expected settled contrastive training batch");
+    expect(batch.events).toEqual([
+      { text: "rejected answer", danCluster: "PPL1", strength: 0.5 },
+      { text: "kept answer", danCluster: "PAM", strength: FLY_IMPLICIT_KEEP_STRENGTH },
+    ]);
+    worker.emit({ type: "trained", id: batch.id, result: null });
+    expect(useFlyTribunalStore.getState().precedentCount).toBe(1);
+    wiring.stop();
+  });
+
+  test("historical saved edits use the stronger PAM weight and training-off sends nothing", async () => {
+    enableTribunal();
+    const worker = new FakeWorker();
+    const original = assistantMessage("m1", 0, [{ variantIndex: 0, content: "before edit", isSelected: true }]);
+    const snapshot = new FakeSnapshot({
+      activeChat: { id: "chat_1" },
+      messageOrder: ["u1", "m1", "u2"],
+      messagesById: { u1: userMessage("u1"), m1: original, u2: userMessage("u2") },
+    });
+    const wiring = new FlyTribunalWiring({
+      createWorker: () => worker,
+      loadCachedBrain: async () => readyBrain(),
+      fetchPrecedentCount: async () => 0,
+      snapshot,
+      store: useFlyTribunalStore,
+    });
+
+    await wiring.start();
+    worker.emit({ type: "loaded", id: 0, neuronCount: 1, edgeCount: 1 });
+    snapshot.setMessage(assistantMessage("m1", 0, [{ variantIndex: 0, content: "final saved edit", isSelected: true }]));
+    const edited = worker.requests.find((request): request is Extract<FlyWorkerRequest, { type: "train" }> => request.type === "train");
+    if (edited === undefined) throw new Error("expected edited-save training request");
+    expect(edited.strength).toBe(FLY_EDITED_SAVE_STRENGTH);
+    expect(FLY_EDITED_SAVE_STRENGTH).toBeGreaterThan(FLY_IMPLICIT_KEEP_STRENGTH);
+
+    useFlyTribunalStore.getState().applySettings({ ...useFlyTribunalStore.getState().settings, trainingEnabled: false });
+    expect(wiring.train("must not learn", "PPL1", 0.5)).toBe(false);
+    expect(worker.requests.filter((request) => request.type === "train")).toHaveLength(1);
+    wiring.stop();
+  });
+
+  test("debounced export persists one confirmed precedent and amnesty clears the scope", async () => {
+    enableTribunal();
+    const worker = new FakeWorker();
+    const timer = new FakeTimer();
+    const putBodies: unknown[] = [];
+    const snapshot = makeSnapshot(assistantMessage("m1", 0, [{ variantIndex: 0, content: "violet lantern", isSelected: true }]));
+    const wiring = new FlyTribunalWiring({
+      createWorker: () => worker,
+      loadCachedBrain: async () => readyBrain(),
+      fetchPrecedentCount: async () => 25,
+      putMemory: async (memory) => { putBodies.push(memory); },
+      timer,
+      now: () => 1_000,
+      snapshot,
+      store: useFlyTribunalStore,
+    });
+
+    await wiring.start();
+    worker.emit({ type: "loaded", id: 0, neuronCount: 1, edgeCount: 1 });
+    expect(wiring.train("violet lantern", "PPL1", 0.5)).toBe(true);
+    const training = worker.requests.find((request): request is Extract<FlyWorkerRequest, { type: "train" }> => request.type === "train");
+    if (training === undefined) throw new Error("expected direct training request");
+    worker.emit({ type: "trained", id: training.id, result: evaluation() });
+    timer.flush();
+    const exportRequest = worker.requests.find((request): request is Extract<FlyWorkerRequest, { type: "export-memory" }> => request.type === "export-memory");
+    if (exportRequest === undefined) throw new Error("expected debounced export request");
+    worker.emit({ type: "memory-exported", id: exportRequest.id, schemaVersion: 1, weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=" });
+    await Promise.resolve();
+    expect(putBodies).toEqual([
+      {
+        scope: "chat",
+        chatId: "chat_1",
+        schemaVersion: 1,
+        precedentCount: 26,
+        weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=",
+      },
+    ]);
+
+    expect(wiring.grantAmnesty()).toBe(true);
+    const reset = worker.requests.find((request): request is Extract<FlyWorkerRequest, { type: "reset-weights" }> => request.type === "reset-weights");
+    if (reset === undefined) throw new Error("expected amnesty reset request");
+    worker.emit({ type: "weights-reset", id: reset.id });
+    await Promise.resolve();
+    expect(useFlyTribunalStore.getState().precedentCount).toBe(0);
+    expect(useFlyTribunalStore.getState().consumeJustFellSilent()).toBe(true);
+    expect(putBodies).toEqual([
+      {
+        scope: "chat",
+        chatId: "chat_1",
+        schemaVersion: 1,
+        precedentCount: 26,
+        weights: "H4sIAAAAAAAA/2NgYGBgAgAAAP//AwAV6QEAAAA=",
+      },
+      {
+        scope: "chat",
+        chatId: "chat_1",
+        schemaVersion: 1,
+        precedentCount: 0,
+        weights: null,
+      },
+    ]);
     wiring.stop();
   });
 });

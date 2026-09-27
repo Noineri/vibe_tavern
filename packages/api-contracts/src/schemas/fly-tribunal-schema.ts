@@ -26,6 +26,13 @@ import { z } from 'zod';
  */
 export const FLY_TRIBUNAL_PRECEDENT_GATE = 25;
 
+/**
+ * Version of the sparse KC→MBON delta payload stored in `fly_tribunal_memory`.
+ * Domain owns this leaf constant so API contracts, DB persistence, and the
+ * browser worker cannot drift independently.
+ */
+export { FLY_TRIBUNAL_MEMORY_SCHEMA_VERSION } from '@vibe-tavern/domain';
+
 /** «суд устал» auto-swipe retry-cap bounds (owner: offered 1–3, default 2). */
 export const FLY_TRIBUNAL_REGEN_CAP_MIN = 1;
 export const FLY_TRIBUNAL_REGEN_CAP_MAX = 3;

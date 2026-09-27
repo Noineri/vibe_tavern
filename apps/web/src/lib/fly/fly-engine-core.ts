@@ -59,6 +59,14 @@ const GROUP_NAMES: readonly FlyGroupName[] = [
 
 /** Browser/worker-specific gzip implementation injected into the pure parser. */
 export type FlyGzipDecompress = (compressed: Uint8Array) => Promise<Uint8Array>;
+/** Compression seam for browser workers / deterministic Bun tests. */
+export type FlyGzipCompress = (raw: Uint8Array) => Promise<Uint8Array>;
+
+/** Sparse learned-delta payload magic: little-endian "FTWD". */
+export const FLY_WEIGHT_DELTA_MAGIC = 0x44575446;
+const FLY_WEIGHT_DELTA_HEADER_BYTES = 8;
+const FLY_WEIGHT_DELTA_ENTRY_BYTES = 8;
+const FLY_DAY_MS = 86_400_000;
 
 export interface FlyConnectome {
   formatVersion: number;
@@ -539,6 +547,91 @@ export class FlyEngine {
     this.learnedDeltas.fill(0);
   }
 
+  /**
+   * Serialize nonzero KC→MBON deltas as `(edgeIndex:u32, delta:f32)` pairs.
+   * The worker compresses this deterministic binary payload before it crosses
+   * the API as base64; other edge classes are intentionally never persisted.
+   */
+  exportSparseDeltas(): Uint8Array {
+    const entries: Array<{ edgeIndex: number; delta: number }> = [];
+    for (const edgeIndex of this.subgraph.kcToMbonEdgeIndexes) {
+      const delta = this.learnedDeltas[edgeIndex]!;
+      if (delta !== 0) entries.push({ edgeIndex, delta });
+    }
+    const bytes = new Uint8Array(FLY_WEIGHT_DELTA_HEADER_BYTES + entries.length * FLY_WEIGHT_DELTA_ENTRY_BYTES);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(0, FLY_WEIGHT_DELTA_MAGIC, true);
+    view.setUint32(4, entries.length, true);
+    let offset = FLY_WEIGHT_DELTA_HEADER_BYTES;
+    for (const entry of entries) {
+      view.setUint32(offset, entry.edgeIndex, true);
+      view.setFloat32(offset + 4, entry.delta, true);
+      offset += FLY_WEIGHT_DELTA_ENTRY_BYTES;
+    }
+    return bytes;
+  }
+
+  /** Replace the learned state from a validated sparse payload. */
+  importSparseDeltas(bytes: Uint8Array): void {
+    if (bytes.byteLength < FLY_WEIGHT_DELTA_HEADER_BYTES) {
+      throw new Error("Fly weight payload is shorter than its header.");
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (view.getUint32(0, true) !== FLY_WEIGHT_DELTA_MAGIC) {
+      throw new Error("Fly weight payload magic mismatch.");
+    }
+    const count = view.getUint32(4, true);
+    const expectedBytes = FLY_WEIGHT_DELTA_HEADER_BYTES + count * FLY_WEIGHT_DELTA_ENTRY_BYTES;
+    if (!Number.isSafeInteger(expectedBytes) || expectedBytes !== bytes.byteLength) {
+      throw new Error("Fly weight payload length mismatch.");
+    }
+    this.learnedDeltas.fill(0);
+    const validPlasticEdge = new Uint8Array(this.subgraph.edgeCount);
+    for (const edgeIndex of this.subgraph.kcToMbonEdgeIndexes) validPlasticEdge[edgeIndex] = 1;
+    let offset = FLY_WEIGHT_DELTA_HEADER_BYTES;
+    for (let index = 0; index < count; index += 1) {
+      const edgeIndex = view.getUint32(offset, true);
+      const delta = view.getFloat32(offset + 4, true);
+      if (edgeIndex >= this.subgraph.edgeCount || validPlasticEdge[edgeIndex] !== 1 || !Number.isFinite(delta)) {
+        throw new Error(`Fly weight payload entry ${index} is invalid.`);
+      }
+      this.learnedDeltas[edgeIndex] = delta;
+      offset += FLY_WEIGHT_DELTA_ENTRY_BYTES;
+    }
+  }
+
+  /** Encode + gzip the sparse payload for the base64 API memory contract. */
+  async exportGzippedSparseDeltas(compress: FlyGzipCompress): Promise<string> {
+    return bytesToBase64(await compress(this.exportSparseDeltas()));
+  }
+
+  /** Decode + gunzip a persisted sparse payload; null is the fresh baseline. */
+  async importGzippedSparseDeltas(weights: string | null, decompress: FlyGzipDecompress): Promise<void> {
+    if (weights === null) {
+      this.resetWeights();
+      return;
+    }
+    this.importSparseDeltas(await decompress(base64ToBytes(weights)));
+  }
+
+  /**
+   * Approximate per-precedent lifetime with exponential decay of the summed
+   * delta field: `delta *= exp(-elapsedMs / (lifetimeDays * dayMs))`.
+   * The compact flat-delta encoding has no per-event timestamps, so this is
+   * applied on load and persistence ticks rather than to individual events.
+   */
+  applyExponentialDecay(elapsedMs: number, lifetimeDays: number | null): number {
+    if (lifetimeDays === null) return 1;
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || !Number.isFinite(lifetimeDays) || lifetimeDays <= 0) {
+      throw new Error("Fly decay requires nonnegative elapsed time and a positive lifetime.");
+    }
+    const factor = Math.exp(-elapsedMs / (lifetimeDays * FLY_DAY_MS));
+    for (const edgeIndex of this.subgraph.kcToMbonEdgeIndexes) {
+      this.learnedDeltas[edgeIndex] *= factor;
+    }
+    return factor;
+  }
+
   private runBurst(channels: Float32Array): { potentials: Float32Array; spikeCounts: Uint16Array } {
     const count = this.subgraph.neuronCount;
     const potentials = new Float32Array(count);
@@ -654,6 +747,19 @@ export class FlyEngine {
 
 export function createFlyEngine(connectome: FlyConnectome, options: FlyEngineOptions = {}): FlyEngine {
   return new FlyEngine(instantiateLearningSubgraph(connectome), options);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
