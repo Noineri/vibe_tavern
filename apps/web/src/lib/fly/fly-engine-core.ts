@@ -346,7 +346,11 @@ export function tokenizeFlyText(text: string): string[] {
   return text.toLowerCase().match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? [];
 }
 
-export function encodeFlyStimulus(text: string): FlyStimulusEncoding {
+/**
+ * Parameterized hash-nose core shared by the FT-7 default (50 channels) and
+ * calibration variants with other channel counts (FT-18R program step 0).
+ */
+function encodeHashStimulus(text: string, channelCount: number): FlyStimulusEncoding {
   const counts = new Map<string, number>();
   const tokens = tokenizeFlyText(text);
   for (let width = 1; width <= 3; width += 1) {
@@ -356,15 +360,15 @@ export function encodeFlyStimulus(text: string): FlyStimulusEncoding {
     }
   }
 
-  const rawChannels = new Float32Array(FLY_GLOMERULAR_CHANNEL_COUNT);
+  const rawChannels = new Float32Array(channelCount);
   const entries = [...counts.entries()]
-    .map(([ngram, count]) => ({ ngram, count, channel: hashNgram(ngram) % FLY_GLOMERULAR_CHANNEL_COUNT }))
+    .map(([ngram, count]) => ({ ngram, count, channel: hashNgram(ngram) % channelCount }))
     .sort((a, b) => a.ngram.localeCompare(b.ngram));
   for (const entry of entries) {
     rawChannels[entry.channel] += Math.sqrt(entry.count);
   }
   const maximum = rawChannels.reduce((current, value) => Math.max(current, value), 0);
-  const channels = new Float32Array(FLY_GLOMERULAR_CHANNEL_COUNT);
+  const channels = new Float32Array(channelCount);
   if (maximum > 0) {
     for (let channel = 0; channel < channels.length; channel += 1) {
       channels[channel] = rawChannels[channel]! / maximum;
@@ -376,6 +380,34 @@ export function encodeFlyStimulus(text: string): FlyStimulusEncoding {
       ...entry,
       activation: channels[entry.channel]!,
     })),
+  };
+}
+
+export function encodeFlyStimulus(text: string): FlyStimulusEncoding {
+  return encodeHashStimulus(text, FLY_GLOMERULAR_CHANNEL_COUNT);
+}
+
+/**
+ * The fly's "nose": a swappable stimulus encoder (FT-18R program step 0).
+ * Text becomes glomerular channel activations plus the evidence registry
+ * that backs driving spans; everything downstream (PN→KC projection, WTA,
+ * LIF, plasticity) is nose-agnostic. Calibration swaps noses to test whether
+ * the representation or the labels explain the FT-18 chance result.
+ */
+export interface FlyNose {
+  /** Channels this nose emits; the projection spreads them across PN cohorts. */
+  readonly channelCount: number;
+  encode(text: string): FlyStimulusEncoding;
+}
+
+/** The FT-7 default nose: 1–3-gram FNV-1a hash into glomerular channels. */
+export function createHashNose(channelCount: number = FLY_GLOMERULAR_CHANNEL_COUNT): FlyNose {
+  if (!Number.isInteger(channelCount) || channelCount < 1 || channelCount > 100_000) {
+    throw new Error("Fly hash nose channel count must be an integer in [1, 100000].");
+  }
+  return {
+    channelCount,
+    encode: (text: string): FlyStimulusEncoding => encodeHashStimulus(text, channelCount),
   };
 }
 
@@ -472,6 +504,8 @@ export interface FlyEngineOptions {
   /** Manifest type table; optional in core tests, present in worker load. */
   typeNames?: readonly string[];
   params?: Partial<FlyEngineParams>;
+  /** Stimulus encoder; defaults to the FT-7 50-channel hash nose. */
+  nose?: FlyNose;
 }
 
 /**
@@ -497,6 +531,8 @@ export class FlyEngine {
   private readonly kcLogMass: Float32Array;
   /** FT-17 scratch: per-edge boost of active KC→MBON edges for the unit-reference burst. */
   private readonly unitBoostScratch: Float32Array;
+  /** Swappable stimulus encoder (FT-18R); the default is the FT-7 hash nose. */
+  private readonly nose: FlyNose;
   private params: FlyEngineParams;
 
   constructor(subgraph: FlyLearningSubgraph, options: FlyEngineOptions = {}) {
@@ -508,6 +544,7 @@ export class FlyEngine {
     this.learnedDeltas = new Float32Array(subgraph.edgeCount);
     this.params = { ...FLY_LIF_DEFAULTS, ...options.params };
     this.assertParams(this.params);
+    this.nose = options.nose ?? createHashNose();
     const projection = this.buildProjection();
     this.channelPnOffsets = projection.channelPnOffsets;
     this.channelPnIndexes = projection.channelPnIndexes;
@@ -532,11 +569,16 @@ export class FlyEngine {
   }
 
   encode(text: string): FlyStimulusEncoding {
-    return encodeFlyStimulus(text);
+    return this.nose.encode(text);
   }
 
   evaluate(text: string): FlyEvaluation {
     const stimulus = this.encode(text);
+    if (stimulus.channels.length !== this.nose.channelCount) {
+      throw new Error(
+        `Fly nose emitted ${stimulus.channels.length} channels; expected ${this.nose.channelCount}.`,
+      );
+    }
     const activeKcIndexes = this.selectWtaKcs(stimulus.channels);
     const activeKcGlobalIndexes = activeKcIndexes.map((index) => this.subgraph.subgraphToGlobal[index]!);
     const [confidence, mbonReadout, gfSpikeCount] = this.evaluateLearnedState(activeKcIndexes);
@@ -724,14 +766,15 @@ export class FlyEngine {
       pnsByCohort[cohortByType.get(subgraph.typeIndex[index]!)!]!.push(index);
     }
 
+    const channelCount = this.nose.channelCount;
     const channelPnIndexes: number[] = [];
-    const channelPnOffsets = new Uint32Array(FLY_GLOMERULAR_CHANNEL_COUNT + 1);
-    for (let channel = 0; channel < FLY_GLOMERULAR_CHANNEL_COUNT; channel += 1) {
-      const cohort = Math.floor((channel * cohortCount) / FLY_GLOMERULAR_CHANNEL_COUNT);
+    const channelPnOffsets = new Uint32Array(channelCount + 1);
+    for (let channel = 0; channel < channelCount; channel += 1) {
+      const cohort = Math.floor((channel * cohortCount) / channelCount);
       channelPnOffsets[channel] = channelPnIndexes.length;
       for (const pn of pnsByCohort[cohort]!) channelPnIndexes.push(pn);
     }
-    channelPnOffsets[FLY_GLOMERULAR_CHANNEL_COUNT] = channelPnIndexes.length;
+    channelPnOffsets[channelCount] = channelPnIndexes.length;
 
     const pnPre: number[] = [];
     const kcPost: number[] = [];

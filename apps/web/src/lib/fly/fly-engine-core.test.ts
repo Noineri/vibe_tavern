@@ -5,10 +5,13 @@ import { join, resolve } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
   createFlyEngine,
+  createHashNose,
+  encodeFlyStimulus,
   instantiateLearningSubgraph,
   parseConnectome,
   type FlyConnectome,
   type FlyEngine,
+  type FlyNose,
 } from "./fly-engine-core.js";
 
 /**
@@ -110,6 +113,45 @@ describe("Fly engine FT-16 winner-take-all projection", () => {
       engine.setParams({ projectionMode });
       expect(engine.evaluate("violet lantern harbor").activeKcIndexes).toHaveLength(6);
     }
+  });
+});
+
+describe("Fly engine nose seam (FT-18R)", () => {
+  test("the default nose is the explicit 50-channel hash nose, bit-for-bit", () => {
+    const text = "violet lantern harbor";
+    const plain = freshEngine().evaluate(text);
+    const explicit = createFlyEngine(connectome, { nose: createHashNose() }).evaluate(text);
+    expect(explicit.activeKcIndexes).toEqual(plain.activeKcIndexes);
+    expect(explicit.confidence).toBe(plain.confidence);
+    expect(explicit.registry).toEqual(plain.registry);
+    const standalone = encodeFlyStimulus(text);
+    expect(standalone.registry).toEqual(plain.registry);
+    expect(Array.from(standalone.channels)).toEqual(Array.from(freshEngine().encode(text).channels));
+  });
+
+  test("a wide hash nose changes the KC code while the WTA quota stays the same", () => {
+    const text = "violet lantern harbor marble compass beneath rain";
+    const narrow = freshEngine().evaluate(text);
+    const wide = createFlyEngine(connectome, { nose: createHashNose(512) }).evaluate(text);
+    expect(narrow.activeKcIndexes).toHaveLength(6);
+    expect(wide.activeKcIndexes).toHaveLength(6);
+    expect([...wide.activeKcIndexes].sort((a, b) => a - b)).not.toEqual(
+      [...narrow.activeKcIndexes].sort((a, b) => a - b),
+    );
+    expect(wide.confidence).toBe(0);
+    const wideRepeat = createFlyEngine(connectome, { nose: createHashNose(512) }).evaluate(text);
+    expect([...wideRepeat.activeKcIndexes].sort((a, b) => a - b)).toEqual(
+      [...wide.activeKcIndexes].sort((a, b) => a - b),
+    );
+  });
+
+  test("a nose emitting the wrong channel count fails loud on evaluate", () => {
+    const broken: FlyNose = {
+      channelCount: 4,
+      encode: () => ({ channels: new Float32Array(3), registry: [] }),
+    };
+    const engine = createFlyEngine(connectome, { nose: broken });
+    expect(() => engine.evaluate("anything")).toThrow(/channels/);
   });
 });
 
