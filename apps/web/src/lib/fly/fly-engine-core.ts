@@ -316,7 +316,11 @@ export interface FlyNgramRegistryEntry {
   ngram: string;
   channel: number;
   count: number;
-  /** √-damped count, max-normalized across this message's channels. */
+  /**
+   * √-damped channel mass scaled by the nose's normalization mode: `max`
+   * keeps [0, 1] per message, `log` is an absolute log scale, `none` is the
+   * raw damped mass (unbounded).
+   */
   activation: number;
 }
 
@@ -328,8 +332,10 @@ export interface FlyStimulusEncoding {
 /**
  * Stable FNV-1a hash with a fixed seed. It is intentionally not crypto: this
  * is a deterministic feature encoder, not a privacy/security primitive.
+ * Exported for the calibration noses (fly-noses.ts) so all families hash
+ * with the same primitive.
  */
-function hashNgram(ngram: string): number {
+export function hashNgram(ngram: string): number {
   let hash = 0x811c9dc5;
   for (let index = 0; index < ngram.length; index += 1) {
     hash ^= ngram.charCodeAt(index);
@@ -347,10 +353,53 @@ export function tokenizeFlyText(text: string): string[] {
 }
 
 /**
- * Parameterized hash-nose core shared by the FT-7 default (50 channels) and
- * calibration variants with other channel counts (FT-18R program step 0).
+ * FT-18R normalization axis: how per-channel √-damped hash mass becomes the
+ * activations the projection consumes. Engine fact motivating the axis: the
+ * downstream burst consumes only the WTA KC SET (membership, not magnitude),
+ * so a per-message common rescale cannot change the code — `max` is exactly
+ * such a rescale (rank-preserving), `log` nonlinearly compresses dominant
+ * channels (rank-shifting: weak channels' cohorts win relatively more KCs),
+ * `none` passes the raw damped mass through unchanged.
  */
-function encodeHashStimulus(text: string, channelCount: number): FlyStimulusEncoding {
+export const FLY_HASH_NORMALIZATION_MODES = ["max", "log", "none"] as const;
+export type FlyHashNormalization = (typeof FLY_HASH_NORMALIZATION_MODES)[number];
+
+/** `log` saturation: a channel reaches activation 1 at √-damped mass 12 (~144 raw gram hits). */
+export const FLY_HASH_LOG_SATURATION = 12;
+
+export function applyFlyHashNormalization(rawChannels: Float32Array, mode: FlyHashNormalization): Float32Array {
+  if (mode === "none") return rawChannels;
+  const channels = new Float32Array(rawChannels.length);
+  if (mode === "log") {
+    const scale = Math.log1p(FLY_HASH_LOG_SATURATION);
+    for (let channel = 0; channel < channels.length; channel += 1) {
+      channels[channel] = Math.min(1, Math.log1p(rawChannels[channel]!) / scale);
+    }
+    return channels;
+  }
+  let maximum = 0;
+  for (const value of rawChannels) {
+    if (value > maximum) maximum = value;
+  }
+  if (maximum > 0) {
+    for (let channel = 0; channel < channels.length; channel += 1) {
+      channels[channel] = rawChannels[channel]! / maximum;
+    }
+  }
+  return channels;
+}
+
+/**
+ * Parameterized hash-nose core shared by the FT-7 default (50 channels, max
+ * normalization) and calibration variants with other channel counts and
+ * normalization modes (FT-18R program step 0). Exported so the multi-view
+ * calibration nose reuses the exact word-family semantics.
+ */
+export function encodeHashStimulus(
+  text: string,
+  channelCount: number,
+  normalization: FlyHashNormalization = "max",
+): FlyStimulusEncoding {
   const counts = new Map<string, number>();
   const tokens = tokenizeFlyText(text);
   for (let width = 1; width <= 3; width += 1) {
@@ -367,13 +416,7 @@ function encodeHashStimulus(text: string, channelCount: number): FlyStimulusEnco
   for (const entry of entries) {
     rawChannels[entry.channel] += Math.sqrt(entry.count);
   }
-  const maximum = rawChannels.reduce((current, value) => Math.max(current, value), 0);
-  const channels = new Float32Array(channelCount);
-  if (maximum > 0) {
-    for (let channel = 0; channel < channels.length; channel += 1) {
-      channels[channel] = rawChannels[channel]! / maximum;
-    }
-  }
+  const channels = applyFlyHashNormalization(rawChannels, normalization);
   return {
     channels,
     registry: entries.map((entry) => ({
@@ -400,14 +443,24 @@ export interface FlyNose {
   encode(text: string): FlyStimulusEncoding;
 }
 
-/** The FT-7 default nose: 1–3-gram FNV-1a hash into glomerular channels. */
-export function createHashNose(channelCount: number = FLY_GLOMERULAR_CHANNEL_COUNT): FlyNose {
+/**
+ * The FT-7 default nose: 1–3-gram FNV-1a hash into glomerular channels.
+ * `normalization` defaults to the FT-7 per-message max rescale so the
+ * product path stays bit-identical; calibration runs pass other modes.
+ */
+export function createHashNose(
+  channelCount: number = FLY_GLOMERULAR_CHANNEL_COUNT,
+  normalization: FlyHashNormalization = "max",
+): FlyNose {
   if (!Number.isInteger(channelCount) || channelCount < 1 || channelCount > 100_000) {
     throw new Error("Fly hash nose channel count must be an integer in [1, 100000].");
   }
+  if (!(FLY_HASH_NORMALIZATION_MODES as readonly string[]).includes(normalization)) {
+    throw new Error(`Fly hash nose normalization must be one of ${FLY_HASH_NORMALIZATION_MODES.join(", ")}.`);
+  }
   return {
     channelCount,
-    encode: (text: string): FlyStimulusEncoding => encodeHashStimulus(text, channelCount),
+    encode: (text: string): FlyStimulusEncoding => encodeHashStimulus(text, channelCount, normalization),
   };
 }
 

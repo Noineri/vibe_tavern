@@ -8,7 +8,7 @@
  * representation — not the labels or the learning rule — explains the FT-18
  * chance-level result.
  *
- * Two variants live here:
+ * Four variants live here:
  * - `createStyleNose` — interpretable style/structure features, one channel
  *   per feature, directly targeting the declared defect classes (verbosity,
  *   inner monologue instead of a reply, duplication, tag leakage, dialogue
@@ -18,9 +18,25 @@
  *   vectors (e.g. a local MiniLM run offline by the calibration harness).
  *   The engine's evaluate() is synchronous, so the async embedder runs once
  *   per corpus beforehand and this nose looks vectors up by exact text.
+ * - `createCharHashNose` (candidate E, 2026-09-27 external consultation) —
+ *   character 3–5-gram hash: encodes the surface layer (punctuation,
+ *   whitespace, leaked tags, truncation, morphology) that word tokens
+ *   collapse away; absolute `log` calibration by default.
+ * - `createMultiViewNose` (candidate F) — char family + word family + style
+ *   features in one channel vector, each family normalized WITHIN itself so
+ *   a strong family cannot erase another's evidence (no cross-family max).
  */
 
-import { tokenizeFlyText, type FlyNose, type FlyStimulusEncoding } from "./fly-engine-core.js";
+import {
+  applyFlyHashNormalization,
+  encodeHashStimulus,
+  hashNgram,
+  tokenizeFlyText,
+  type FlyHashNormalization,
+  type FlyNgramRegistryEntry,
+  type FlyNose,
+  type FlyStimulusEncoding,
+} from "./fly-engine-core.js";
 
 // ─── Style/structure feature nose ────────────────────────────────────────────
 
@@ -193,28 +209,206 @@ export const FLY_STYLE_NOSE_CHANNEL_COUNT = FLY_STYLE_FEATURES.length;
 export function createStyleNose(): FlyNose {
   return {
     channelCount: FLY_STYLE_NOSE_CHANNEL_COUNT,
-    encode(text: string): FlyStimulusEncoding {
-      const channels = new Float32Array(FLY_STYLE_NOSE_CHANNEL_COUNT);
-      // Blank texts encode to silence (hash-nose semantics: no tokens, no KCs) —
-      // a whitespace-only message must not drive a WTA code off its length.
-      if (text.trim().length === 0) {
-        return {
-          channels,
-          registry: FLY_STYLE_FEATURES.map((feature, channel) => ({
-            ngram: feature.id,
-            channel,
-            count: 0,
-            activation: 0,
-          })),
-        };
+    encode: (text: string): FlyStimulusEncoding => encodeStyleView(text),
+  };
+}
+
+/**
+ * Style-feature core shared by `createStyleNose` and the multi-view nose's
+ * style family. Blank texts encode to silence (hash-nose semantics: no
+ * tokens, no KCs) — a whitespace-only message must not drive a WTA code off
+ * its length.
+ */
+function encodeStyleView(text: string): FlyStimulusEncoding {
+  const channels = new Float32Array(FLY_STYLE_NOSE_CHANNEL_COUNT);
+  if (text.trim().length === 0) {
+    return {
+      channels,
+      registry: FLY_STYLE_FEATURES.map((feature, channel) => ({
+        ngram: feature.id,
+        channel,
+        count: 0,
+        activation: 0,
+      })),
+    };
+  }
+  const tokens = tokenizeFlyText(text);
+  const registry = FLY_STYLE_FEATURES.map((feature, channel) => {
+    const raw = feature.measure(text, tokens);
+    const activation = feature.squash(raw);
+    channels[channel] = activation;
+    return { ngram: feature.id, channel, count: Math.round(raw * 10_000) / 10_000, activation };
+  });
+  return { channels, registry };
+}
+
+// ─── Character n-gram hash nose (candidate E) ──────────────────────────────
+
+/**
+ * Character 3–5-gram source: lowercase text with whitespace runs collapsed
+ * to single spaces (platform-stable: CRLF and LF collapse identically), so
+ * grams span word boundaries, punctuation, tags, and morphology — exactly
+ * the surface differences that word tokens discard.
+ */
+export function extractCharGrams(text: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
+  for (let width = 3; width <= 5; width += 1) {
+    for (let start = 0; start + width <= normalized.length; start += 1) {
+      const gram = normalized.slice(start, start + width);
+      counts.set(gram, (counts.get(gram) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * Hash one gram family into channels: √-damped mass per channel plus the
+ * sorted entry list (shared by the char nose and the multi-view char family).
+ */
+function encodeHashGramFamily(
+  gramCounts: ReadonlyMap<string, number>,
+  channelCount: number,
+  normalization: FlyHashNormalization,
+): { channels: Float32Array; entries: Array<{ gram: string; count: number; channel: number }> } {
+  const rawChannels = new Float32Array(channelCount);
+  const entries = [...gramCounts.entries()]
+    .map(([gram, count]) => ({ gram, count, channel: hashNgram(gram) % channelCount }))
+    .sort((a, b) => a.gram.localeCompare(b.gram));
+  for (const entry of entries) {
+    rawChannels[entry.channel] += Math.sqrt(entry.count);
+  }
+  return { channels: applyFlyHashNormalization(rawChannels, normalization), entries };
+}
+
+export interface FlyCharHashNoseOptions {
+  /** Hash channels for the char-gram family; default 256. */
+  channelCount?: number;
+  /** Family normalization; default `log` (absolute calibration). */
+  normalization?: FlyHashNormalization;
+}
+
+/**
+ * Candidate E (FT-18R, external consultation 2026-09-27): character 3–5-gram
+ * hash nose. Separates punctuation/whitespace/tag/truncation edits that the
+ * word hash provably maps to identical vectors.
+ */
+export function createCharHashNose(options: FlyCharHashNoseOptions = {}): FlyNose {
+  const channelCount = options.channelCount ?? 256;
+  const normalization = options.normalization ?? "log";
+  assertNoseChannelCount(channelCount, "char hash nose");
+  return {
+    channelCount,
+    encode: (text: string): FlyStimulusEncoding => {
+      const family = encodeHashGramFamily(extractCharGrams(text), channelCount, normalization);
+      return {
+        channels: family.channels,
+        registry: family.entries.map((entry) => ({
+          ngram: `char:${entry.gram}`,
+          channel: entry.channel,
+          count: entry.count,
+          activation: family.channels[entry.channel]!,
+        })),
+      };
+    },
+  };
+}
+
+// ─── Multi-view nose (candidate F) ───────────────────────────────────────────
+
+export interface FlyMultiViewNoseOptions {
+  /** Char-family hash channels; default 256. */
+  charChannels?: number;
+  /** Word-family hash channels; default 256. */
+  wordChannels?: number;
+  /** Normalization for both hash families; default `log`. The style family
+   *  is always its own absolute [0, 1] squash. */
+  normalization?: FlyHashNormalization;
+  /** Family output multipliers (post-normalization); default 1 each. */
+  charWeight?: number;
+  wordWeight?: number;
+  styleWeight?: number;
+}
+
+function assertNoseChannelCount(channelCount: number, label: string): void {
+  if (!Number.isInteger(channelCount) || channelCount < 1 || channelCount > 100_000) {
+    throw new Error(`Fly ${label} channel count must be an integer in [1, 100000].`);
+  }
+}
+
+function assertFamilyWeight(weight: number, label: string): void {
+  if (!Number.isFinite(weight) || weight <= 0) {
+    throw new Error(`Fly multi-view ${label} weight must be a positive finite number.`);
+  }
+}
+
+/**
+ * Candidate F (FT-18R, external consultation 2026-09-27): the recommended
+ * "first practical nose" — char 3–5-grams + word 1–3-grams + the style
+ * features in one channel vector, every family scaled WITHIN itself. Channel
+ * layout: [char family | word family | style features]; registry entries are
+ * prefixed `char:` / `word:` / `style:` so verdict evidence names its family.
+ */
+export function createMultiViewNose(options: FlyMultiViewNoseOptions = {}): FlyNose {
+  const charChannels = options.charChannels ?? 256;
+  const wordChannels = options.wordChannels ?? 256;
+  const normalization = options.normalization ?? "log";
+  const charWeight = options.charWeight ?? 1;
+  const wordWeight = options.wordWeight ?? 1;
+  const styleWeight = options.styleWeight ?? 1;
+  assertNoseChannelCount(charChannels, "multi-view char channels");
+  assertNoseChannelCount(wordChannels, "multi-view word channels");
+  assertFamilyWeight(charWeight, "char");
+  assertFamilyWeight(wordWeight, "word");
+  assertFamilyWeight(styleWeight, "style");
+  const wordOffset = charChannels;
+  const styleOffset = charChannels + wordChannels;
+  const channelCount = styleOffset + FLY_STYLE_NOSE_CHANNEL_COUNT;
+  return {
+    channelCount,
+    encode: (text: string): FlyStimulusEncoding => {
+      const channels = new Float32Array(channelCount);
+      const registry: FlyNgramRegistryEntry[] = [];
+
+      const charFamily = encodeHashGramFamily(extractCharGrams(text), charChannels, normalization);
+      for (let channel = 0; channel < charChannels; channel += 1) {
+        channels[channel] = charFamily.channels[channel]! * charWeight;
       }
-      const tokens = tokenizeFlyText(text);
-      const registry = FLY_STYLE_FEATURES.map((feature, channel) => {
-        const raw = feature.measure(text, tokens);
-        const activation = feature.squash(raw);
-        channels[channel] = activation;
-        return { ngram: feature.id, channel, count: Math.round(raw * 10_000) / 10_000, activation };
-      });
+      for (const entry of charFamily.entries) {
+        registry.push({
+          ngram: `char:${entry.gram}`,
+          channel: entry.channel,
+          count: entry.count,
+          activation: channels[entry.channel]!,
+        });
+      }
+
+      const wordFamily = encodeHashStimulus(text, wordChannels, normalization);
+      for (let channel = 0; channel < wordChannels; channel += 1) {
+        channels[wordOffset + channel] = wordFamily.channels[channel]! * wordWeight;
+      }
+      for (const entry of wordFamily.registry) {
+        registry.push({
+          ngram: `word:${entry.ngram}`,
+          channel: wordOffset + entry.channel,
+          count: entry.count,
+          activation: channels[wordOffset + entry.channel]!,
+        });
+      }
+
+      const styleView = encodeStyleView(text);
+      for (let channel = 0; channel < FLY_STYLE_NOSE_CHANNEL_COUNT; channel += 1) {
+        channels[styleOffset + channel] = styleView.channels[channel]! * styleWeight;
+      }
+      for (const entry of styleView.registry) {
+        registry.push({
+          ngram: `style:${entry.ngram}`,
+          channel: styleOffset + entry.channel,
+          count: entry.count,
+          activation: channels[styleOffset + entry.channel]!,
+        });
+      }
+
       return { channels, registry };
     },
   };

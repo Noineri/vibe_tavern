@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { createHashNose, encodeFlyStimulus, encodeHashStimulus } from "./fly-engine-core.js";
 import {
+  createCharHashNose,
+  createMultiViewNose,
   createPrecomputedVectorNose,
   createStyleNose,
   FLY_STYLE_NOSE_CHANNEL_COUNT,
@@ -79,6 +82,113 @@ describe("FT-18R style nose", () => {
     expect(Array.from(encoding.channels).every((value) => value === 0)).toBe(true);
     expect(encoding.registry).toHaveLength(FLY_STYLE_NOSE_CHANNEL_COUNT);
     expect(encoding.registry.every((entry) => entry.activation === 0)).toBe(true);
+  });
+});
+
+describe("FT-18R char hash nose (candidate E)", () => {
+  test("is deterministic, honors channel count, and blanks to silence", () => {
+    const nose = createCharHashNose({ channelCount: 128 });
+    const text = "— Привет! Как твои дела? Хорошо…";
+    const first = nose.encode(text);
+    const repeat = nose.encode(text);
+
+    expect(nose.channelCount).toBe(128);
+    expect(first.channels.length).toBe(128);
+    expect(Array.from(first.channels)).toEqual(Array.from(repeat.channels));
+    expect(first.registry.length).toBeGreaterThan(0);
+    expect(first.registry.every((entry) => entry.ngram.startsWith("char:"))).toBe(true);
+
+    const silence = nose.encode("   ");
+    expect(Array.from(silence.channels).every((value) => value === 0)).toBe(true);
+    expect(silence.registry).toEqual([]);
+  });
+
+  test("separates punctuation-only edits the word nose maps to identical vectors", () => {
+    const full = "Привет! Как дела?";
+    const edited = "Привет!!  Как дела???";
+    const wordFull = encodeFlyStimulus(full);
+    const wordEdited = encodeFlyStimulus(edited);
+    expect(Array.from(wordFull.channels)).toEqual(Array.from(wordEdited.channels));
+
+    const nose = createCharHashNose({ channelCount: 64 });
+    expect(Array.from(nose.encode(full).channels)).not.toEqual(Array.from(nose.encode(edited).channels));
+  });
+
+  test("log normalization is absolutely calibrated; max stretches per message", () => {
+    const text = "abcdef";
+    const log = createCharHashNose({ channelCount: 256, normalization: "log" }).encode(text);
+    const max = createCharHashNose({ channelCount: 256, normalization: "max" }).encode(text);
+    const logTop = Math.max(...Array.from(log.channels));
+    expect(logTop).toBeGreaterThan(0);
+    expect(logTop).toBeLessThan(1);
+    expect(Math.max(...Array.from(max.channels))).toBe(1);
+  });
+});
+
+describe("FT-18R multi-view nose (candidate F)", () => {
+  const text = "— Стой, — сказал он. *Рука дрогнула, но он смолчал.*\n\n— Ну, говори.";
+
+  test("concatenates families, each scaled within itself", () => {
+    const nose = createMultiViewNose({ charChannels: 100, wordChannels: 80, normalization: "log" });
+    expect(nose.channelCount).toBe(100 + 80 + FLY_STYLE_NOSE_CHANNEL_COUNT);
+    const encoding = nose.encode(text);
+    expect(encoding.channels.length).toBe(nose.channelCount);
+
+    const pureChar = createCharHashNose({ channelCount: 100, normalization: "log" }).encode(text);
+    expect(Array.from(encoding.channels.slice(0, 100))).toEqual(Array.from(pureChar.channels));
+
+    const pureWord = encodeHashStimulus(text, 80, "log");
+    expect(Array.from(encoding.channels.slice(100, 180))).toEqual(Array.from(pureWord.channels));
+
+    const pureStyle = createStyleNose().encode(text);
+    expect(Array.from(encoding.channels.slice(180))).toEqual(Array.from(pureStyle.channels));
+  });
+
+  test("registry names the family of every entry", () => {
+    const registry = createMultiViewNose().encode(text).registry;
+    expect(registry.some((entry) => entry.ngram.startsWith("char:"))).toBe(true);
+    expect(registry.some((entry) => entry.ngram.startsWith("word:"))).toBe(true);
+    expect(registry.some((entry) => entry.ngram.startsWith("style:"))).toBe(true);
+    expect(registry.every((entry) => entry.ngram.startsWith("char:") || entry.ngram.startsWith("word:") || entry.ngram.startsWith("style:"))).toBe(true);
+  });
+
+  test("family weights scale their slices; blank text stays silent", () => {
+    const doubled = createMultiViewNose({ charChannels: 50, wordChannels: 50, charWeight: 2, styleWeight: 0.5 });
+    const plain = createMultiViewNose({ charChannels: 50, wordChannels: 50 });
+    const weighted = doubled.encode(text);
+    const baseline = plain.encode(text);
+    for (let channel = 0; channel < 50; channel += 1) {
+      expect(weighted.channels[channel]!).toBeCloseTo(baseline.channels[channel]! * 2, 6);
+    }
+    for (let channel = 100; channel < 100 + FLY_STYLE_NOSE_CHANNEL_COUNT; channel += 1) {
+      expect(weighted.channels[channel]!).toBeCloseTo(baseline.channels[channel]! * 0.5, 6);
+    }
+    const blank = plain.encode("  ");
+    expect(Array.from(blank.channels).every((value) => value === 0)).toBe(true);
+  });
+
+  test("rejects invalid options at creation", () => {
+    expect(() => createMultiViewNose({ charChannels: 0 })).toThrow(/channel count/);
+    expect(() => createMultiViewNose({ wordWeight: 0 })).toThrow(/weight/);
+    expect(() => createCharHashNose({ channelCount: 1.5 })).toThrow(/channel count/);
+  });
+});
+
+describe("FT-18R hash-nose normalization axis", () => {
+  test("default stays max and bit-identical to the product encoder; modes differ", () => {
+    const repeated = "Она молчала. Она молчала. Она молчала.";
+    const defaultNose = createHashNose(64).encode(repeated);
+    const explicitMax = createHashNose(64, "max").encode(repeated);
+    expect(Array.from(defaultNose.channels)).toEqual(Array.from(explicitMax.channels));
+
+    const fifty = createHashNose(50, "max").encode(repeated);
+    expect(Array.from(fifty.channels)).toEqual(Array.from(encodeFlyStimulus(repeated).channels));
+
+    const logEncoding = createHashNose(64, "log").encode(repeated);
+    expect(Array.from(logEncoding.channels)).not.toEqual(Array.from(explicitMax.channels));
+
+    const noneEncoding = createHashNose(64, "none").encode(repeated);
+    expect(Math.max(...Array.from(noneEncoding.channels))).toBeGreaterThan(1);
   });
 });
 
