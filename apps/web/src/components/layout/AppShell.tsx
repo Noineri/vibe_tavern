@@ -6,6 +6,7 @@ import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
+import { apiFetch } from "../../api/client.js";
 import { resolveAssistantPrefillSupport, type ChatId } from "@vibe-tavern/domain";
 import { FLY_TRIBUNAL_PRECEDENT_GATE, flyTribunalSettingsSchema, type FlyTribunalSettings } from "@vibe-tavern/api-contracts";
 import { type ThemeMode } from "../../themes/registry.js";
@@ -149,7 +150,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const persistFlyTribunalSettings = useCallback(async (settings: FlyTribunalSettings): Promise<void> => {
     useFlyTribunalStore.getState().applySettings(settings);
     try {
-      const response = await fetch("/api/fly/settings", {
+      const response = await apiFetch("/api/fly/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
@@ -164,7 +165,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   useEffect(() => {
     let live = true;
     useFlyTribunalStore.getState().beginSettingsLoad();
-    void fetch("/api/fly/settings")
+    void apiFetch("/api/fly/settings")
       .then(async (response) => {
         if (!response.ok) throw new Error(`Fly Tribunal settings request failed with HTTP ${response.status}.`);
         return flyTribunalSettingsSchema.parse(await response.json());
@@ -451,10 +452,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             onOpenMobileAccess={async () => {
               // Ensure a token exists before opening the modal
               try {
-                const resp = await fetch("/api/settings/mobile-access");
+                const resp = await apiFetch("/api/settings/mobile-access");
                 if (resp.ok) {
                   const data = await resp.json();
-                  if (!data.token) await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
+                  if (!data.token) await apiFetch("/api/settings/mobile-access/regenerate", { method: "POST" });
                 }
               } catch { /* ignore */ }
               setMobileAccessOpen(true);
@@ -476,10 +477,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         setSetting={handleSetTweak}
         onOpenMobileAccess={async () => {
           try {
-            const resp = await fetch("/api/settings/mobile-access");
+            const resp = await apiFetch("/api/settings/mobile-access");
             if (resp.ok) {
               const data = await resp.json();
-              if (!data.token) await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
+              if (!data.token) await apiFetch("/api/settings/mobile-access/regenerate", { method: "POST" });
             }
           } catch { /* ignore */ }
           setMobileAccessOpen(true);

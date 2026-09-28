@@ -1,6 +1,6 @@
 import type { ChatId, PronounForms } from "@vibe-tavern/domain";
 import type { AppSnapshot, PersonaRecord, LorebookRecord, ScriptRecord } from "./types.js";
-import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
+import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 
 export async function listPersonas(): Promise<PersonaRecord[]> {
@@ -65,7 +65,7 @@ export async function uploadPersonaAvatar(personaId: string, crop: File, full?: 
   if (full) formData.append("full", full);
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
-  const response = await fetch(`${baseUrl}/api/personas/${personaId}/avatar`, {
+  const response = await apiFetch(`${baseUrl}/api/personas/${personaId}/avatar`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData,
@@ -91,7 +91,7 @@ function todayStamp(): string {
 export async function exportPersona(personaId: string, format: "st" | "vt"): Promise<void> {
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
-  const response = await fetch(`${baseUrl}/api/personas/${personaId}/export?format=${format}`, {
+  const response = await apiFetch(`${baseUrl}/api/personas/${personaId}/export?format=${format}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (!response.ok) throw new Error(`Persona export failed (${response.status})`);
@@ -102,7 +102,7 @@ export async function exportPersona(personaId: string, format: "st" | "vt"): Pro
 export async function exportAllPersonas(format: "st" | "vt"): Promise<void> {
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
-  const response = await fetch(`${baseUrl}/api/personas/export?format=${format}`, {
+  const response = await apiFetch(`${baseUrl}/api/personas/export?format=${format}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (!response.ok) throw new Error(`Bulk export failed (${response.status})`);
@@ -120,7 +120,7 @@ export async function importPersonas(file: File): Promise<{ created: number; ski
   } catch {
     return { created: 0, skipped: 0, errors: ["File is not valid JSON"] };
   }
-  const response = await fetch(`${baseUrl}/api/personas/import`, {
+  const response = await apiFetch(`${baseUrl}/api/personas/import`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

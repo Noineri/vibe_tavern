@@ -10,7 +10,7 @@ import type {
   SkillCatalogEntryDto,
   SkillImportResult,
 } from "@vibe-tavern/api-contracts";
-import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
+import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 
 /** `GET /api/copilot/skills` — merged metadata-only catalog (built-in + user). */
@@ -50,7 +50,7 @@ export async function importCopilotSkills(files: File[]): Promise<SkillImportRes
     formData.append(relativePath, file);
   }
   const token = getMobileToken();
-  const response = await fetch(`${getGatewayBaseUrl()}/api/copilot/skills/import`, {
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/copilot/skills/import`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData,

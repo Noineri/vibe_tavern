@@ -13,6 +13,7 @@ import {
 } from "../../stores/fly-tribunal-store.js";
 import { getSharedFlyWorker } from "./fly-client-instance.js";
 import { loadCachedFlyBrain, type FlyBrainLoadState } from "./fly-brain-download.js";
+import { apiFetch } from "../../api/client.js";
 import type { FlyDanCluster } from "./fly-engine-core.js";
 import type { FlyWorkerRequest, FlyWorkerResponse } from "./fly-worker.js";
 
@@ -651,13 +652,13 @@ async function fetchFlyMemory(scope: FlyMemoryScope, chatId?: string): Promise<F
   const query = scope === "chat" && chatId !== undefined
     ? `?${new URLSearchParams({ chatId }).toString()}`
     : "";
-  const response = await fetch(`/api/fly/memory/${scope}${query}`);
+  const response = await apiFetch(`/api/fly/memory/${scope}${query}`);
   if (!response.ok) throw new Error(`Fly Tribunal memory request failed with HTTP ${response.status}.`);
   return flyMemoryGetResponseSchema.parse(await response.json());
 }
 
 async function putFlyMemory(memory: FlyMemoryPut): Promise<void> {
-  const response = await fetch(`/api/fly/memory/${memory.scope}`, {
+  const response = await apiFetch(`/api/fly/memory/${memory.scope}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(memory),
