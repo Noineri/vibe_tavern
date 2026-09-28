@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
+import type { ImageGenWorkflowFamilyId } from "@vibe-tavern/domain";
 
 import { COMFY_TEMPLATE_SPECS } from "../src/domain/imagegen/backends/comfy-workflow-templates.js";
 
@@ -975,7 +976,7 @@ describe("comfyui adapter", () => {
         backendWith(transport).generate({
           prompt: "p",
           model: MUSE,
-          workflowFamily: "unregistered-workflow" as never,
+          workflowFamily: "unregistered-workflow" as unknown as ImageGenWorkflowFamilyId,
         }),
       ).rejects.toThrow('ComfyUI workflow family "unregistered-workflow" has no workflow template');
     });
