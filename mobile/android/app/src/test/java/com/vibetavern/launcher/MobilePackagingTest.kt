@@ -85,6 +85,28 @@ class MobilePackagingTest {
     }
 
     @Test
+    fun `native server is launched with the seccomp shim preloaded`() {
+        val shimSource = File(repoRoot, "mobile/android/app/src/main/cpp/seccomp_shim.c")
+        val cmake = File(repoRoot, "mobile/android/app/src/main/cpp/CMakeLists.txt").readText()
+        val gradle = File(repoRoot, "mobile/android/app/build.gradle.kts").readText()
+        val serverService = File(
+            repoRoot,
+            "mobile/android/app/src/main/java/com/vibetavern/launcher/ServerService.kt",
+        ).readText()
+        val workflow = File(repoRoot, ".github/workflows/release.yml").readText()
+
+        assertTrue(shimSource.isFile)
+        assertTrue(shimSource.readText().contains("SYS_SECCOMP"))
+        assertTrue(shimSource.readText().contains("-ENOSYS"))
+        assertTrue(cmake.contains("add_library(seccompshim SHARED seccomp_shim.c)"))
+        assertTrue(gradle.contains("ndkVersion = "))
+        assertTrue(gradle.contains("path = file(\"src/main/cpp/CMakeLists.txt\")"))
+        assertTrue(serverService.contains("File(applicationInfo.nativeLibraryDir, \"libseccompshim.so\")"))
+        assertTrue(serverService.contains("environment[\"LD_PRELOAD\"] = seccompShim.absolutePath"))
+        assertTrue(workflow.contains("unzip -p \"\$APK\" lib/arm64-v8a/libseccompshim.so"))
+    }
+
+    @Test
     fun `legacy Termux tooling is frozen outside the active Android build`() {
         val packageJson = File(repoRoot, "package.json").readText()
         val updaterHelper = File(repoRoot, "mobile/android/scripts/serve-local-update.ts").readText()

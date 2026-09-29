@@ -252,10 +252,13 @@ jobs:
           set -euo pipefail
           APK="mobile/android/app/build/outputs/apk/release/app-release.apk"
           NATIVE_SERVER="$RUNNER_TEMP/libvibetavern.so"
+          SECCOMP_SHIM="$RUNNER_TEMP/libseccompshim.so"
           WEB_INDEX="$RUNNER_TEMP/index.html"
           ! unzip -l "$APK" | grep -q 'assets/vibe-tavern-android-arm64.tgz'
           unzip -p "$APK" lib/arm64-v8a/libvibetavern.so > "$NATIVE_SERVER"
           test -s "$NATIVE_SERVER"
+          unzip -p "$APK" lib/arm64-v8a/libseccompshim.so > "$SECCOMP_SHIM"
+          test -s "$SECCOMP_SHIM"
           unzip -p "$APK" assets/payload/web/index.html > "$WEB_INDEX"
           test -s "$WEB_INDEX"
       - name: Verify APK signature
