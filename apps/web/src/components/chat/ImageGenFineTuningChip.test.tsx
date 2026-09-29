@@ -1510,6 +1510,7 @@ describe("ImageGenFineTuningChip — comfyui dialect (CG-B2)", () => {
         { id: "ray_dit", label: "Ray DiT", template: "krea2-dit" },
         { id: "flux_ckpt", label: "Flux Checkpoint", template: "checkpoint" },
         { id: "plain", label: "Plain Model" },
+        { id: "qwen21", label: "Qwen 21", template: "qwen-image-2.1" },
       ],
     };
     sidecarsStore = {
@@ -1577,7 +1578,7 @@ describe("ImageGenFineTuningChip — comfyui dialect (CG-B2)", () => {
     expect(trigger.textContent).not.toContain("Krea 2");
   });
 
-  it("encoder/VAE rows render ONLY for comfyui + krea2-dit — checkpoint and a1111 hide them; the sidecar list is fetched ONCE per profile", async () => {
+  it("encoder/VAE rows render ONLY for comfyui + a DiT family — checkpoint and a1111 hide them; the sidecar list is fetched ONCE per profile", async () => {
     armDitChat("chat-sc1");
     const view = await openAccordion("chat-sc1", "Ray DiT");
     await waitFor(() =>
@@ -1600,6 +1601,13 @@ describe("ImageGenFineTuningChip — comfyui dialect (CG-B2)", () => {
       expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy(),
     );
     expect(sidecarsCalls).toEqual(["cgx"]);
+
+    // IF-19: every DiT workflow family renders the rows + the hint (Qwen Image 2.1).
+    await pickOption("image-gen-ft-model-select", "Qwen 21");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy(),
+    );
+    expect(within(view.baseElement).getByTestId("image-gen-ft-sidecar-hint").textContent).toBe("image_gen_sidecar_hint");
 
     // A1111 dialect → never any DiT rows (even for a template-marked model).
     cleanup();
@@ -1630,7 +1638,8 @@ describe("ImageGenFineTuningChip — comfyui dialect (CG-B2)", () => {
     });
 
     // Auto clears ONLY the encoder — the merged overlay keeps the VAE.
-    await pickOption("image-gen-ft-overlay-encoder", "image_gen_sidecar_auto");
+    // IF-19: Auto's label names the resolved file (the key under the key-only t mock).
+    await pickOption("image-gen-ft-overlay-encoder", "image_gen_sidecar_auto_file");
     await waitFor(() => expect(upsertCalls.length).toBe(3));
     expect(upsertCalls[2].settings).toEqual({ vaeName: "qwen_image_vae.safetensors" });
 

@@ -317,30 +317,112 @@ describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-stat
   });
 });
 
-describe("model-controls — buildDitSidecarControls (T3: gate + Auto-pickable + since-removed rules)", () => {
-  test("returns controls for either ComfyUI DiT template and null otherwise", () => {
-    expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "krea2-dit" })).not.toBeNull();
-    expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "anima-dit" })).not.toBeNull();
+describe("model-controls — buildDitSidecarControls (T3: gate + Auto-pickable + since-removed rules; IF-19 honest Auto + hint)", () => {
+  test("returns controls for every ComfyUI DiT workflow family and null otherwise", () => {
+    for (const family of ["krea2-dit", "anima-dit", "qwen-image-2.1", "qwen-image", "z-image", "flux-dev", "flux-schnell"]) {
+      expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: family })).not.toBeNull();
+    }
     expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "checkpoint" })).toBeNull();
     expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: undefined })).toBeNull();
+    expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "future-family" })).toBeNull();
     expect(buildDitSidecarControls({ backend: "a1111", modelTemplate: "krea2-dit" })).toBeNull();
     expect(buildDitSidecarControls({ backend: undefined, modelTemplate: "krea2-dit" })).toBeNull();
   });
 
+  test("the manual base-workflow pick outranks the model's template (the executor's order)", () => {
+    // A checkpoint-listed model driven through a DiT set gets the fields…
+    expect(
+      buildDitSidecarControls({ backend: "comfyui", workflowFamily: "qwen-image-2.1", modelTemplate: "checkpoint" }),
+    ).not.toBeNull();
+    // …and a manual checkpoint pick hides them on a DiT-listed model.
+    expect(
+      buildDitSidecarControls({ backend: "comfyui", workflowFamily: "checkpoint", modelTemplate: "krea2-dit" }),
+    ).toBeNull();
+    // The hint follows the manual family, not the template.
+    const spec = buildDitSidecarControls({ backend: "comfyui", workflowFamily: "flux-dev", modelTemplate: "krea2-dit" })!;
+    expect(spec.hint.params.family).toBe("FLUX.1-dev");
+  });
+
   test("options: the Auto KEY entry heads the list; live names ride raw; a stored off-list value stays pickable exactly once", () => {
     const spec = buildDitSidecarControls({ backend: "comfyui", modelTemplate: "krea2-dit" })!;
-    expect(spec.encoder.options(["enc_b.safetensors"], undefined)).toEqual([
-      { kind: "key", id: "", labelKey: "image_gen_sidecar_auto" },
+    expect(spec.encoder.options(["enc_b.safetensors", "enc_c.safetensors"], undefined)).toEqual([
+      { kind: "key", id: "", labelKey: "image_gen_sidecar_auto_missing" },
       { kind: "raw", id: "enc_b.safetensors", label: "enc_b.safetensors" },
+      { kind: "raw", id: "enc_c.safetensors", label: "enc_c.safetensors" },
     ]);
     // Since-removed: the stored value is NOT in the live list — appended once.
     expect(spec.vae.options(["vae_b.safetensors"], "vae_removed.safetensors")).toEqual([
-      { kind: "key", id: "", labelKey: "image_gen_sidecar_auto" },
+      { kind: "key", id: "", labelKey: "image_gen_sidecar_auto_file", params: { file: "vae_b.safetensors" } },
       { kind: "raw", id: "vae_b.safetensors", label: "vae_b.safetensors" },
       { kind: "raw", id: "vae_removed.safetensors", label: "vae_removed.safetensors" },
     ]);
     // A stored value still in the live list is NOT duplicated.
     expect(spec.encoder.options(["enc_b.safetensors"], "enc_b.safetensors")).toHaveLength(2);
+  });
+
+  test("Auto names the file the executor's ladder resolves — plain until the list loads, an honest miss when nothing matches", () => {
+    const qwen = buildDitSidecarControls({ backend: "comfyui", modelTemplate: "qwen-image-2.1" })!;
+    // Not loaded yet: no conclusion from missing data.
+    expect(qwen.encoder.options(undefined, undefined)).toEqual([
+      { kind: "key", id: "", labelKey: "image_gen_sidecar_auto" },
+    ]);
+    // Canonical beats an unrelated neighbour; an alias counts as canonical.
+    expect(qwen.encoder.options(["qwen3vl_4b.safetensors", "qwen3vl_8b_int8_convrot.safetensors"], undefined)[0]).toEqual({
+      kind: "key",
+      id: "",
+      labelKey: "image_gen_sidecar_auto_file",
+      params: { file: "qwen3vl_8b_int8_convrot.safetensors" },
+    });
+    // Loaded but empty: Auto cannot resolve.
+    expect(qwen.vae.options([], undefined)[0]).toEqual({
+      kind: "key",
+      id: "",
+      labelKey: "image_gen_sidecar_auto_missing",
+    });
+    // Anima: the model's paired `_txt` encoder wins over the canonical file.
+    const anima = buildDitSidecarControls({
+      backend: "comfyui",
+      modelTemplate: "anima-dit",
+      modelId: "anima/nijce_1.safetensors",
+    })!;
+    expect(anima.encoder.options(["qwen_3_06b_base.safetensors", "nijce_1_txt.safetensors"], undefined)[0]).toEqual({
+      kind: "key",
+      id: "",
+      labelKey: "image_gen_sidecar_auto_file",
+      params: { file: "nijce_1_txt.safetensors" },
+    });
+  });
+
+  test("hint: the family label + the files it needs, from the domain's one sidecar source", () => {
+    expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "qwen-image-2.1" })!.hint).toEqual({
+      labelKey: "image_gen_sidecar_hint",
+      params: {
+        family: "Qwen Image 2.1",
+        encoder: "qwen3vl_8b / qwen3vl_8b_int8_convrot",
+        vae: "qwen_image_2.1_vae / qwen_image_2.1_vae_bf16",
+      },
+    });
+    // FLUX's always-automatic second encoder joins with " + ".
+    expect(buildDitSidecarControls({ backend: "comfyui", modelTemplate: "flux-schnell" })!.hint.params).toEqual({
+      family: "FLUX.1-schnell",
+      encoder: "clip_l + t5xxl_fp16",
+      vae: "ae / fluxVAE",
+    });
+    // Anima names the paired stem first once a model is picked.
+    expect(
+      buildDitSidecarControls({ backend: "comfyui", modelTemplate: "anima-dit", modelId: "nijce_1.safetensors" })!.hint.params
+        .encoder,
+    ).toBe("nijce_1_txt / qwen_3_06b_base");
+  });
+
+  test("translateModelOptions passes the Auto entry's params to t", () => {
+    const spec = buildDitSidecarControls({ backend: "comfyui", modelTemplate: "krea2-dit" })!;
+    const t = (key: string, params?: Record<string, unknown>) =>
+      params === undefined ? key : `${key}:${String(params.file)}`;
+    expect(translateModelOptions(spec.vae.options(["qwen_image_vae.safetensors"], undefined), t)[0]).toEqual({
+      id: "",
+      label: "image_gen_sidecar_auto_file:qwen_image_vae.safetensors",
+    });
   });
 
   test("commit: Auto (\"\") inherits (undefined); a file name commits it — per field", () => {

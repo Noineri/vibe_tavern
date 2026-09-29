@@ -1,4 +1,11 @@
-import { IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS } from "@vibe-tavern/domain";
+import {
+  IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS,
+  IMAGE_GEN_WORKFLOW_FAMILY_SIDECARS,
+  imageGenWeightsBasename,
+  pickImageGenSidecar,
+  type ImageGenDitWorkflowFamilyId,
+  type ImageGenWorkflowSidecars,
+} from "@vibe-tavern/domain";
 
 /**
  * ComfyUI workflow-template registry (IF-16a).
@@ -58,7 +65,25 @@ export interface ComfyDitTemplateSpec extends ComfyTemplateSpec {
   };
 }
 
-/** The built-in workflow families. */
+/** A DiT family's label + sidecar names, projected from the domain's ONE
+ *  sidecar source (IF-19) into the executor's spec field names. */
+function ditSidecarFields(family: ImageGenDitWorkflowFamilyId) {
+  const sidecars: ImageGenWorkflowSidecars = IMAGE_GEN_WORKFLOW_FAMILY_SIDECARS[family];
+  return {
+    familyLabel: sidecars.label,
+    canonicalEncoder: sidecars.encoder.canonical,
+    ...(sidecars.encoder.aliases !== undefined ? { canonicalEncoderAliases: sidecars.encoder.aliases } : {}),
+    ...(sidecars.encoder.pairedStem === true ? { encoderPairedStem: true } : {}),
+    ...(sidecars.secondaryEncoder !== undefined
+      ? { canonicalSecondaryEncoder: sidecars.secondaryEncoder.canonical }
+      : {}),
+    canonicalVae: sidecars.vae.canonical,
+    ...(sidecars.vae.aliases !== undefined ? { canonicalVaeAliases: sidecars.vae.aliases } : {}),
+  };
+}
+
+/** The built-in workflow families. DiT members take their label and
+ *  sidecar names from the domain's IMAGE_GEN_WORKFLOW_FAMILY_SIDECARS. */
 export const COMFY_TEMPLATE_SPECS = {
   checkpoint: {
     id: "checkpoint",
@@ -66,73 +91,50 @@ export const COMFY_TEMPLATE_SPECS = {
   } satisfies ComfyTemplateSpec,
   krea2Dit: {
     id: "krea2-dit",
-    familyLabel: "Krea-2",
+    ...ditSidecarFields("krea2-dit"),
     clipType: "krea2",
-    canonicalEncoder: "qwen3vl_4b_fp8_scaled",
-    canonicalVae: "qwen_image_vae",
   } satisfies ComfyDitTemplateSpec,
   animaDit: {
     id: "anima-dit",
-    familyLabel: "Anima",
+    ...ditSidecarFields("anima-dit"),
     clipType: "stable_diffusion",
-    canonicalEncoder: "qwen_3_06b_base",
-    canonicalVae: "qwen_image_vae",
-    encoderPairedStem: true,
   } satisfies ComfyDitTemplateSpec,
   qwenImage21: {
     id: "qwen-image-2.1",
-    familyLabel: "Qwen Image 2.1",
+    ...ditSidecarFields("qwen-image-2.1"),
     clipType: "qwen_image",
-    canonicalEncoder: "qwen3vl_8b",
-    canonicalEncoderAliases: ["qwen3vl_8b_int8_convrot"],
-    canonicalVae: "qwen_image_2.1_vae",
-    canonicalVaeAliases: ["qwen_image_2.1_vae_bf16"],
     latentNode: "EmptyLatentImage",
     workflowShape: COMFY_DIT_WORKFLOW_SHAPES.QwenImage21,
     defaults: { width: 1024, height: 1024, ...IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["qwen-image-2.1"] },
   } satisfies ComfyDitTemplateSpec,
   qwenImage: {
     id: "qwen-image",
-    familyLabel: "Qwen Image",
+    ...ditSidecarFields("qwen-image"),
     clipType: "qwen_image",
-    canonicalEncoder: "qwen_2_5_vl_7b",
-    canonicalEncoderAliases: ["qwen_2.5_vl_7b_fp8_scaled"],
-    canonicalVae: "qwen_image_vae",
     latentNode: "EmptySD3LatentImage",
     auraFlowShift: 3.1,
     defaults: { width: 1328, height: 1328, ...IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["qwen-image"] },
   } satisfies ComfyDitTemplateSpec,
   zImage: {
     id: "z-image",
-    familyLabel: "Z-Image",
+    ...ditSidecarFields("z-image"),
     clipType: "lumina2",
-    canonicalEncoder: "qwen_3_4b",
-    canonicalVae: "ae",
-    canonicalVaeAliases: ["fluxVAE"],
     latentNode: "EmptySD3LatentImage",
     auraFlowShift: 3,
     defaults: { width: 1024, height: 1024, ...IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["z-image"] },
   } satisfies ComfyDitTemplateSpec,
   fluxDev: {
     id: "flux-dev",
-    familyLabel: "FLUX.1-dev",
+    ...ditSidecarFields("flux-dev"),
     clipType: "flux",
-    canonicalEncoder: "clip_l",
-    canonicalSecondaryEncoder: "t5xxl_fp16",
-    canonicalVae: "ae",
-    canonicalVaeAliases: ["fluxVAE"],
     latentNode: "EmptySD3LatentImage",
     workflowShape: COMFY_DIT_WORKFLOW_SHAPES.FluxDev,
     defaults: { width: 1024, height: 1024, ...IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["flux-dev"] },
   } satisfies ComfyDitTemplateSpec,
   fluxSchnell: {
     id: "flux-schnell",
-    familyLabel: "FLUX.1-schnell",
+    ...ditSidecarFields("flux-schnell"),
     clipType: "flux",
-    canonicalEncoder: "clip_l",
-    canonicalSecondaryEncoder: "t5xxl_fp16",
-    canonicalVae: "ae",
-    canonicalVaeAliases: ["fluxVAE"],
     latentNode: "EmptySD3LatentImage",
     workflowShape: COMFY_DIT_WORKFLOW_SHAPES.FluxSchnell,
     defaults: { width: 1024, height: 1024, ...IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS["flux-schnell"], guidance: 3.5 },
@@ -141,8 +143,7 @@ export const COMFY_TEMPLATE_SPECS = {
 
 /** Basename without a weights extension — the model-label and sidecar-match key. */
 export function comfyWeightsBasename(name: string): string {
-  const base = name.split(/[\\/]/).pop() ?? name;
-  return base.replace(/\.(safetensors|ckpt|pt|pth|gguf|bin|sft)$/i, "");
+  return imageGenWeightsBasename(name);
 }
 
 /** Inputs owned by the executor around a sidecar lookup. */
@@ -173,15 +174,18 @@ export async function resolveComfySidecar(
   if (explicit) return explicit;
 
   const names = await options.listFolder(options.folder, options.signal);
-  if (spec.encoderPairedStem && options.pairedStem !== undefined) {
-    const pairedStem = `${comfyWeightsBasename(options.pairedStem)}_txt`;
-    const paired = names.find((name) => comfyWeightsBasename(name) === pairedStem);
-    if (paired !== undefined) return paired;
-  }
+  // Auto's pick is the domain's ONE ladder — the UI names the same file.
+  const picked = pickImageGenSidecar(
+    names,
+    {
+      canonical: options.canonical,
+      ...(options.canonicalAliases !== undefined ? { aliases: options.canonicalAliases } : {}),
+      ...(spec.encoderPairedStem === true ? { pairedStem: true } : {}),
+    },
+    options.pairedStem,
+  );
+  if (picked !== undefined) return picked;
   const canonicalNames = [options.canonical, ...(options.canonicalAliases ?? [])];
-  const canonical = names.find((name) => canonicalNames.includes(comfyWeightsBasename(name)));
-  if (canonical !== undefined) return canonical;
-  if (names.length === 1 && names[0] !== undefined) return names[0];
 
   const candidates =
     names.length === 0

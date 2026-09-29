@@ -28,25 +28,33 @@ import {
   IMAGE_GEN_ADETAILER_FACE_MODELS,
   IMAGE_GEN_BACKENDS,
   IMAGE_GEN_PARAM_RANGES,
+  IMAGE_GEN_WORKFLOW_FAMILY_SIDECARS,
   hasAdetailerExtension,
+  imageGenSidecarCandidates,
+  isImageGenDitWorkflowFamily,
+  pickImageGenSidecar,
   type ImageGenCapabilityFlags,
   type ImageGenKreaParams,
   type ImageGenParamRange,
+  type ImageGenSidecarRule,
+  type ImageGenWorkflowSidecars,
 } from "@vibe-tavern/domain";
 import type { ImageGenBackendValue, ImageGenSchedulerInfoValue } from "@vibe-tavern/api-contracts";
 
 /** A dropdown option: either translatable (`kind: "key"` + labelKey) or raw (`kind: "raw"` + label). */
 export type ModelOption<K extends string = string> =
   | { kind: "raw"; id: string; label: string }
-  | { kind: "key"; id: string; labelKey: K };
+  | { kind: "key"; id: string; labelKey: K; params?: Readonly<Record<string, string>> };
 
 /** Translate a descriptor's options for rendering. Surfaces pass their own `t`. */
 export function translateModelOptions<K extends string>(
   options: ReadonlyArray<ModelOption<K>>,
-  t: (key: K) => string,
+  t: (key: K, params?: Record<string, unknown>) => string,
 ): { id: string; label: string }[] {
   return options.map((option) =>
-    option.kind === "key" ? { id: option.id, label: t(option.labelKey) } : { id: option.id, label: option.label },
+    option.kind === "key"
+      ? { id: option.id, label: t(option.labelKey, option.params) }
+      : { id: option.id, label: option.label },
   );
 }
 
@@ -244,68 +252,126 @@ function parseSteps(raw: string): { adetailerSteps: number | undefined } | null 
 
 /**
  * T3 — the DiT sidecar fields (text encoder + VAE) for the comfyui
- * dialect's krea2-dit template (CG-B1). The gate lives HERE (both
- * surfaces' render guards read it; the fetch guards keep their own
- * mechanics but the same family rule); each field carries the pickable
- * Auto option (CF5's honest Auto — the adapter's canonical resolution,
- * not a hidden default), the since-removed-files rule (a stored value
- * outside the live list stays pickable — the STT/LLM selector rule) and
- * the commit semantics.
+ * dialect's DiT workflow families (CG-B1; every fleet family since IF-19).
+ * The gate lives HERE (both surfaces' render guards read it; the fetch
+ * guards keep their own mechanics but the same family rule); each field
+ * carries the pickable Auto option (CF5's honest Auto — the adapter's
+ * canonical resolution, not a hidden default), the since-removed-files
+ * rule (a stored value outside the live list stays pickable — the STT/LLM
+ * selector rule) and the commit semantics.
+ *
+ * IF-19 (owner 2026-09-27: an honest hint over silent auto-substitution):
+ * Auto names the file it resolves to from the live folder list — the
+ * domain's `pickImageGenSidecar`, the SAME ladder the Comfy executor runs —
+ * and the block carries a hint naming the files the family needs, read
+ * from the domain's IMAGE_GEN_WORKFLOW_FAMILY_SIDECARS (the executor's
+ * source too).
  */
 export type DitSidecarField = "encoderName" | "vaeName";
+
+/** Auto's label: plain while the folder list is not loaded, the resolved
+ *  file once it is, an honest miss when nothing matches. */
+export type DitSidecarAutoKey =
+  | "image_gen_sidecar_auto"
+  | "image_gen_sidecar_auto_file"
+  | "image_gen_sidecar_auto_missing";
 
 export interface DitSidecarFieldSpec {
   readonly field: DitSidecarField;
   readonly labelKey: "image_gen_encoder_label" | "image_gen_vae_label";
   /** Options for the profile's live folder list + the stored value: the
-   *  Auto (vendor-default) head entry + the live names + the stored
-   *  off-list value kept pickable. */
-  options(names: ReadonlyArray<string>, stored: string | undefined): ModelOption<"image_gen_sidecar_auto">[];
+   *  Auto head entry (labelled with the file Auto resolves to) + the live
+   *  names + the stored off-list value kept pickable. `names` undefined =
+   *  the list has not loaded yet (Auto stays unlabelled — no conclusion
+   *  from missing data). */
+  options(names: ReadonlyArray<string> | undefined, stored: string | undefined): ModelOption<DitSidecarAutoKey>[];
   /** "" (the Auto entry) → inherit (undefined); a file name → the value. */
   commit(id: string): { encoderName: string | undefined } | { vaeName: string | undefined };
+}
+
+/** The block's hint: which files the family needs (alternatives joined by
+ *  " / ", FLUX's always-automatic second encoder joined by " + "). */
+export interface DitSidecarHint {
+  readonly labelKey: "image_gen_sidecar_hint";
+  readonly params: { readonly family: string; readonly encoder: string; readonly vae: string };
 }
 
 export interface DitSidecarControlsSpec {
   readonly encoder: DitSidecarFieldSpec;
   readonly vae: DitSidecarFieldSpec;
+  readonly hint: DitSidecarHint;
+}
+
+function sidecarAutoOption(
+  names: ReadonlyArray<string> | undefined,
+  rule: ImageGenSidecarRule,
+  modelId: string | undefined,
+): ModelOption<DitSidecarAutoKey> {
+  if (names === undefined) return { kind: "key", id: "", labelKey: "image_gen_sidecar_auto" };
+  const picked = pickImageGenSidecar(names, rule, modelId);
+  return picked === undefined
+    ? { kind: "key", id: "", labelKey: "image_gen_sidecar_auto_missing" }
+    : { kind: "key", id: "", labelKey: "image_gen_sidecar_auto_file", params: { file: picked } };
 }
 
 function sidecarOptions(
-  names: ReadonlyArray<string>,
-  stored: string | undefined,
-): ModelOption<"image_gen_sidecar_auto">[] {
-  return [
-    { kind: "key", id: "", labelKey: "image_gen_sidecar_auto" },
-    ...names.map((name) => ({ kind: "raw" as const, id: name, label: name })),
-    ...(stored !== undefined && !names.includes(stored)
-      ? [{ kind: "raw" as const, id: stored, label: stored }]
-      : []),
-  ];
+  rule: ImageGenSidecarRule,
+  modelId: string | undefined,
+): DitSidecarFieldSpec["options"] {
+  return (names, stored) => {
+    const live = names ?? [];
+    return [
+      sidecarAutoOption(names, rule, modelId),
+      ...live.map((name) => ({ kind: "raw" as const, id: name, label: name })),
+      ...(stored !== undefined && !live.includes(stored)
+        ? [{ kind: "raw" as const, id: stored, label: stored }]
+        : []),
+    ];
+  };
 }
 
 export function buildDitSidecarControls({
   backend,
+  workflowFamily,
   modelTemplate,
+  modelId,
 }: {
   backend: ImageGenBackendValue | undefined;
+  /** The manual base-workflow pick (sampler-set channel) — outranks the
+   *  model's detected template, the executor's own order. */
+  workflowFamily?: string | undefined;
+  /** The picked model's workflow-template marker from the models listing. */
   modelTemplate: string | undefined;
+  /** The picked model — Anima's paired `<stem>_txt` encoder keys off it. */
+  modelId?: string | undefined;
 }): DitSidecarControlsSpec | null {
-  if (
-    backend !== IMAGE_GEN_BACKENDS.ComfyUI ||
-    (modelTemplate !== "krea2-dit" && modelTemplate !== "anima-dit")
-  ) return null;
+  const family = workflowFamily ?? modelTemplate;
+  if (backend !== IMAGE_GEN_BACKENDS.ComfyUI || !isImageGenDitWorkflowFamily(family)) return null;
+  const sidecars: ImageGenWorkflowSidecars = IMAGE_GEN_WORKFLOW_FAMILY_SIDECARS[family];
+  const encoderNames = imageGenSidecarCandidates(sidecars.encoder, modelId).join(" / ");
   return {
     encoder: {
       field: "encoderName",
       labelKey: "image_gen_encoder_label",
-      options: sidecarOptions,
+      options: sidecarOptions(sidecars.encoder, modelId),
       commit: (id) => ({ encoderName: id === "" ? undefined : id }),
     },
     vae: {
       field: "vaeName",
       labelKey: "image_gen_vae_label",
-      options: sidecarOptions,
+      options: sidecarOptions(sidecars.vae, modelId),
       commit: (id) => ({ vaeName: id === "" ? undefined : id }),
+    },
+    hint: {
+      labelKey: "image_gen_sidecar_hint",
+      params: {
+        family: sidecars.label,
+        encoder:
+          sidecars.secondaryEncoder === undefined
+            ? encoderNames
+            : `${encoderNames} + ${imageGenSidecarCandidates(sidecars.secondaryEncoder).join(" / ")}`,
+        vae: imageGenSidecarCandidates(sidecars.vae).join(" / "),
+      },
     },
   };
 }

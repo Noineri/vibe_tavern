@@ -1599,22 +1599,28 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     // fill per profile; imageGen actions are stable callbacks.
   }, [guardProfileId, guardIsLocalDialect]);
   // DiT sidecar lists (CG-B1, comfyui dialect): one-shot cache fill when
-  // the SELECTED model resolves the krea2-dit template — the encoder/VAE
-  // fields need them. Options-data only (the fetchSchedulers rule): a
-  // failure = empty options, no connectivity signal. Sits above the null
-  // guard like its siblings (hook-order invariant).
+  // the SELECTED model (or the manual base-workflow pick) resolves a DiT
+  // workflow family — the encoder/VAE fields need them. Options-data only
+  // (the fetchSchedulers rule): a failure = empty options, no connectivity
+  // signal. Sits above the null guard like its siblings (hook-order
+  // invariant).
   const guardModelId = form?.modelId ?? null;
   const guardModelEntry =
     guardProfileId !== null && guardModelId !== null
       ? ((imageGen.modelsByProfile[guardProfileId] ?? []).find((m) => m.id === guardModelId) ?? null)
       : null;
+  // The manual base-workflow pick (IF-12a sets): the active arm's value —
+  // the ONE derivation the sliders' CFG gate below reads too.
+  const guardWorkflowFamily = imageGen.modelOverlay?.workflowFamily ?? form?.defaultParams.workflowFamily;
   // T3 (TWIN_UNIFICATION step 5): the DiT sidecar gate — ONE derivation
   // (model-controls) serving the fetch guard AND the render block (single
   // function scope); `guardIsDit` is the boolean projection for the
   // effect's stable deps.
   const ditControls = buildDitSidecarControls({
     backend: form?.backend,
+    workflowFamily: guardWorkflowFamily,
     modelTemplate: guardModelEntry?.template,
+    modelId: guardModelId ?? undefined,
   });
   const guardIsDit = ditControls !== null;
   useEffect(() => {
@@ -1728,7 +1734,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const caps = form.capabilities;
   const bound = imageGen.modelOverlay !== null;
   const overlay = imageGen.modelOverlay;
-  const selectedWorkflowFamily = overlay?.workflowFamily ?? form.defaultParams.workflowFamily;
+  const selectedWorkflowFamily = guardWorkflowFamily;
   // The shared descriptor owns both backend and CFG-1-family gates.
   const [stepsSlider, cfgSlider, clipSkipSlider, cfgRescaleSlider] = buildScalarSliders({
     capabilities: caps,
@@ -1763,6 +1769,15 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   // Effective (routed) params + sizes: the overlay's own values while bound
   // (empty = inherit the base), the profile base otherwise.
   const params = bound ? (overlay ?? {}) : form.defaultParams;
+  // IF-19: the DiT sidecar options, translated once — the Auto head entry
+  // (labelled with the file Auto resolves to) doubles as the pickable
+  // `defaultOption` label.
+  const ditEncoderOptions = ditControls
+    ? translateModelOptions(ditControls.encoder.options(sidecars?.encoders, params.encoderName), t)
+    : [];
+  const ditVaeOptions = ditControls
+    ? translateModelOptions(ditControls.vae.options(sidecars?.vaes, params.vaeName), t)
+    : [];
   const sizes = bound ? (overlay?.modeSizePresets ?? {}) : form.modeSizePresets;
   const adetailerBaseSteps = params.steps ?? stepsSlider?.range.min ?? IMAGE_GEN_PARAM_RANGES.steps.min;
   // T7: gate, unavailable state, options, and fallback live in the shared
@@ -2285,13 +2300,13 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                   />
                 </div>
               )}
-              {/* DiT sidecar fields (CG-B1, comfyui dialect): text encoder
-                  + VAE for the krea2-dit template — live folder lists, the
-                  SAME bind routing as the sampler (bound → overlay, unbound
-                  → profile defaults). Empty = the adapter's canonical
-                  auto-resolution (qwen3vl_4b_fp8_scaled / qwen_image_vae,
-                  single-entry fold) — CF5's honest Auto, not a hidden
-                  default. */}
+              {/* DiT sidecar fields (CG-B1, comfyui dialect; every DiT
+                  workflow family since IF-19): text encoder + VAE — live
+                  folder lists, the SAME bind routing as the sampler (bound
+                  → overlay, unbound → profile defaults). Empty = the
+                  adapter's canonical auto-resolution — CF5's honest Auto,
+                  labelled with the file it resolves to, and the hint below
+                  names what the family needs (IF-19). */}
               {ditControls && (
                 <>
                   <div className="min-w-0">
@@ -2305,8 +2320,9 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       // list (empty-id options are filtered out — the CG-B2
                       // review caught the pane's Auto as display-only; the
                       // chip's twin now ships pickable, parity restored).
-                      defaultOption={t("image_gen_sidecar_auto")}
-                      options={translateModelOptions(ditControls.encoder.options(sidecars?.encoders ?? [], params.encoderName), t)}
+                      // Its label is the descriptor's Auto head entry.
+                      defaultOption={ditEncoderOptions[0]?.label}
+                      options={ditEncoderOptions}
                       onChange={(next) => setParam(ditControls.encoder.commit(next))}
                     />
                   </div>
@@ -2317,11 +2333,17 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       triggerTestId="image-gen-field-vae"
                       searchable={false}
                       className="w-auto max-w-[320px]"
-                      defaultOption={t("image_gen_sidecar_auto")}
-                      options={translateModelOptions(ditControls.vae.options(sidecars?.vaes ?? [], params.vaeName), t)}
+                      defaultOption={ditVaeOptions[0]?.label}
+                      options={ditVaeOptions}
                       onChange={(next) => setParam(ditControls.vae.commit(next))}
                     />
                   </div>
+                  <span
+                    data-testid="image-gen-sidecar-hint"
+                    className="sm:col-span-2 px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4"
+                  >
+                    {t(ditControls.hint.labelKey, ditControls.hint.params)}
+                  </span>
                   {/* T3 hint parity: a failed sidecar fetch says so (the
                       chip's `sidecarsFailed` twin — the store's per-profile
                       flag, same key, options-data rule: no connectivity

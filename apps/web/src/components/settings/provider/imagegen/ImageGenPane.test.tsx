@@ -1037,12 +1037,50 @@ describe("ImageGenPane — comfyui dialect surfaces (CG-B1)", () => {
     const patch2 = (setForm.mock.calls[1] as unknown[])[0] as { defaultParams: Record<string, unknown> };
     expect(patch2.defaultParams).toEqual({ vaeName: "qwen_image_vae.safetensors" });
 
+    // IF-19: the hint names the family's files (the domain's one source).
+    expect(view.getByTestId("image-gen-sidecar-hint").textContent).toBe(
+      "image_gen_sidecar_hint:Krea-2,qwen3vl_4b_fp8_scaled,qwen_image_vae",
+    );
+
     // CG-B2 parity fix: Auto is PICKABLE in the opened list (defaultOption —
     // empty-id options are filtered out) and picking it CLEARS the field.
-    await pickOption(view, "image-gen-field-encoder", "image_gen_sidecar_auto");
+    // IF-19: its label names the file the executor's ladder resolves to.
+    await pickOption(view, "image-gen-field-encoder", "image_gen_sidecar_auto_file:qwen3vl_4b_fp8_scaled.safetensors");
     await waitFor(() => expect(setForm).toHaveBeenCalledTimes(3));
     const patch3 = (setForm.mock.calls[2] as unknown[])[0] as { defaultParams: Record<string, unknown> };
     expect(patch3.defaultParams).toEqual({ encoderName: undefined });
+  });
+
+  it("IF-19: a fleet DiT model (Qwen Image 2.1) gets the encoder/VAE fields + hint; the dead swappable-VAE field is gone", async () => {
+    const view = render(
+      <ImageGenPane
+        imageGen={comfyImageGen(
+          { modelId: "qwenImage21_bf16.safetensors" },
+          {
+            modelsByProfile: {
+              ig1: [
+                ...COMFY_MODELS,
+                { id: "qwenImage21_bf16.safetensors", label: "qwenImage21_bf16", family: "qwen-image-2.1", template: "qwen-image-2.1" },
+              ],
+            },
+            sidecarsByProfile: {
+              ig1: { encoders: ["qwen3vl_8b_int8_convrot.safetensors", "t5xxl_fp16.safetensors"], vaes: ["qwen_image_vae.safetensors", "fluxVAE.safetensors"] },
+            },
+          },
+        )}
+      />,
+    );
+    await openAdvanced(view);
+    expect(view.getByTestId("image-gen-field-encoder").textContent).toContain(
+      "image_gen_sidecar_auto_file:qwen3vl_8b_int8_convrot.safetensors",
+    );
+    // No qwen_image_2.1_vae in the folder and more than one file: Auto says so.
+    expect(view.getByTestId("image-gen-field-vae").textContent).toContain("image_gen_sidecar_auto_missing");
+    expect(view.getByTestId("image-gen-sidecar-hint").textContent).toBe(
+      "image_gen_sidecar_hint:Qwen Image 2.1,qwen3vl_8b / qwen3vl_8b_int8_convrot,qwen_image_2.1_vae / qwen_image_2.1_vae_bf16",
+    );
+    // The checkpoint-template VAE swap is ignored by DiT graphs — not rendered.
+    expect(view.queryByTestId("image-gen-field-vae-swap")).toBeNull();
   });
 
   it("the sidecar cache fills ONCE while a DiT model is selected (options-data fetch, no status signal)", async () => {

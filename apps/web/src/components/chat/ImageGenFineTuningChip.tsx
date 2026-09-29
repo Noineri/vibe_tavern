@@ -857,7 +857,7 @@ function ImageGenModelSettingsAccordion({
   const [faceDetectors, setFaceDetectors] = useState<string[] | null>(null);
   const [schedulers, setSchedulers] = useState<ImageGenSchedulerInfoValue[] | null>(null);
   const [saveError, setSaveError] = useState(false);
-  // DiT sidecar lists (CG-B2, comfyui + krea2-dit only): null = not fetched
+  // DiT sidecar lists (CG-B2, comfyui + DiT families): null = not fetched
   // yet; a settled list/failure survives gate flips (fetched ONCE per
   // profile while the settings block lives — the pane's one-shot cache fill).
   const [sidecars, setSidecars] = useState<ImageGenDitSidecars | null>(null);
@@ -870,8 +870,15 @@ function ImageGenModelSettingsAccordion({
   const isLocalDialect = isLocalDialectBackend(backend);
   // T3 (TWIN_UNIFICATION step 5): the DiT sidecar fields' gate, options
   // and commit live in model-controls — ONE derivation; `isDit` is its
-  // boolean projection (the fetch effect's stable dep).
-  const ditControls = buildDitSidecarControls({ backend, modelTemplate });
+  // boolean projection (the fetch effect's stable dep). The manual
+  // base-workflow pick outranks the model's template (IF-19: every DiT
+  // family renders the fields, not only krea2/anima).
+  const ditControls = buildDitSidecarControls({
+    backend,
+    workflowFamily: overlay?.workflowFamily ?? workflowFamily,
+    modelTemplate,
+    modelId,
+  });
   const isDit = ditControls !== null;
   // Krea 2 generative controls (IF-11 → T6): the gate, options, ranges,
   // defaults and the commit merge all live in model-controls — the ONE
@@ -1046,6 +1053,15 @@ function ImageGenModelSettingsAccordion({
   // T7: gate, unavailable state, options, and fallback live in the shared
   // descriptor; this surface keeps the deliberate nested-accordion renderer.
   const adetailerControl = buildAdetailerControl({ backend, extensions, faceDetectors, baseSteps });
+  // IF-19: the DiT sidecar options, translated once — the Auto head entry
+  // (labelled with the file Auto resolves to) doubles as the pickable
+  // `defaultOption` label. Lists not fetched yet stay `undefined`.
+  const ditEncoderOptions = ditControls
+    ? translateModelOptions(ditControls.encoder.options(sidecars?.encoders, encoderName), t)
+    : [];
+  const ditVaeOptions = ditControls
+    ? translateModelOptions(ditControls.vae.options(sidecars?.vaes, vaeName), t)
+    : [];
 
   return (
     <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-model-settings">
@@ -1089,8 +1105,10 @@ function ImageGenModelSettingsAccordion({
             </div>
           )}
 
-          {/* DiT sidecar fields (CG-B2, comfyui + krea2-dit only — the
-              pane's DiT rows in the popover's vertical-stack idiom (the
+          {/* DiT sidecar fields (CG-B2, comfyui + every DiT workflow family
+              since IF-19 — Auto names its resolved file, the hint names what
+              the family needs; the pane's DiT rows in the popover's
+              vertical-stack idiom (the
               popover's w-full form-shaped triggers are correct here):
               text encoder + VAE ride the SAME per-model overlay the pane
               edits. Auto = the adapter's canonical resolution (CF5's honest
@@ -1104,8 +1122,8 @@ function ImageGenModelSettingsAccordion({
                 <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(ditControls.encoder.labelKey)}</span>
                 <DropdownSelect
                   value={encoderName ?? ""}
-                  defaultOption={t("image_gen_sidecar_auto")}
-                  options={translateModelOptions(ditControls.encoder.options(sidecars?.encoders ?? [], encoderName), t)}
+                  defaultOption={ditEncoderOptions[0]?.label}
+                  options={ditEncoderOptions}
                   onChange={(id) => commit(ditControls.encoder.commit(id))}
                   disabled={disabled}
                   triggerTestId="image-gen-ft-overlay-encoder"
@@ -1115,13 +1133,19 @@ function ImageGenModelSettingsAccordion({
                 <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(ditControls.vae.labelKey)}</span>
                 <DropdownSelect
                   value={vaeName ?? ""}
-                  defaultOption={t("image_gen_sidecar_auto")}
-                  options={translateModelOptions(ditControls.vae.options(sidecars?.vaes ?? [], vaeName), t)}
+                  defaultOption={ditVaeOptions[0]?.label}
+                  options={ditVaeOptions}
                   onChange={(id) => commit(ditControls.vae.commit(id))}
                   disabled={disabled}
                   triggerTestId="image-gen-ft-overlay-vae"
                 />
               </div>
+              <span
+                data-testid="image-gen-ft-sidecar-hint"
+                className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4"
+              >
+                {t(ditControls.hint.labelKey, ditControls.hint.params)}
+              </span>
               {sidecarsFailed && (
                 <span
                   data-testid="image-gen-ft-sidecars-failed"
