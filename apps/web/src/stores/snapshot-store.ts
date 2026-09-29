@@ -197,14 +197,21 @@ function deepEqual(a: unknown, b: unknown): boolean {
  * set is visible on the wire exactly when the selected variant carries none
  * (`attachmentsJson == null`, or no variants at all) — capture it fresh then
  * (this also heals row edits: description/include/delete flows persist to
- * the row and arrive via snapshot ingest). Otherwise the row set is
- * unknowable from this snapshot and the previously captured set is kept, so
- * it survives wholesale message replacement (post-regen refresh lands with
- * the new variant selected). When neither is known the shadow stays absent.
+ * the row and arrive via snapshot ingest). Otherwise the row set arrives as
+ * the explicit `messageLevelAttachments` field (IG-CF10b, 2026-09-29 owner
+ * defect: without it, a chat loaded with a variant selected had NO source
+ * for the row set, and swiping back to the base variant kept the previous
+ * variant's image on screen — identical content on swipes 1 and 2). When
+ * neither is known (older server payloads) the previously captured set is
+ * kept, so it survives wholesale message replacement (post-regen refresh
+ * lands with the new variant selected). When neither is known at all the
+ * shadow stays absent.
  */
 function withMessageLevelShadow(prev: AppMessage | undefined, msg: AppMessage): AppMessage {
   const selected = msg.variants.find((variant) => variant.isSelected) ?? null;
-  const shadow = selected?.attachmentsJson == null ? msg.attachments : prev?.messageLevelAttachments;
+  const shadow =
+    msg.messageLevelAttachments ??
+    (selected?.attachmentsJson == null ? msg.attachments : prev?.messageLevelAttachments);
   if (shadow === undefined || msg.messageLevelAttachments === shadow) return msg;
   return { ...msg, messageLevelAttachments: shadow };
 }

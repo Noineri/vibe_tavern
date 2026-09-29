@@ -101,14 +101,15 @@ type WireSessionSnapshot = NonNullable<RpcData<Api["bootstrap"]["$get"]>["snapsh
  *  locally on selection); `diceRolls` is present only on user messages with bound rolls. */
 export type AppMessage = WireSessionSnapshot["messages"][number] & {
   /**
-   * IG-CF10: client-only shadow of the message ROW's attachment set (the
+   * IG-CF10: client shadow of the message ROW's attachment set (the
    * fallthrough behind the server DTO merge — session-runtime-dto.ts IG-18a).
-   * The row set itself never reaches the wire (only the merged `attachments`
-   * do), so the snapshot store stamps it at ingest whenever the merge
-   * provably equals the row set, and preserves it across wholesale message
-   * replacements. Never sent by the server, never serialized back — swipe
-   * (`selectVariant`) reads it when the target variant carries no
-   * attachmentsJson. Absent = the row set was never visible on the wire.
+   * The row set reaches the wire as this field when (and only when) the
+   * selected variant's own set hides it (IG-CF10b server side); when the
+   * merge provably equals the row set the store stamps `attachments` into
+   * this field at ingest, and it is preserved across wholesale message
+   * replacements. Never serialized back — swipe (`selectVariant`) reads it
+   * when the target variant carries no attachmentsJson. Absent = the row set
+   * was never visible on the wire.
    */
   messageLevelAttachments?: Attachment[];
 };

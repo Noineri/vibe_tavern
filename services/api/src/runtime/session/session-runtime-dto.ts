@@ -36,6 +36,14 @@ export interface MessageDto extends Message {
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
   attachments?: Attachment[];
+  /** IG-CF10b: the message ROW's own attachment set, sent ONLY when the
+   *  selected-variant projection hides it (an image slot with a
+   *  variant-level set active). The client's optimistic swipe back to the
+   *  slot's base variant (null attachments) reads this instead of keeping
+   *  the previous variant's image on screen (owner defect 2026-09-29:
+   *  identical content on swipes 1 and 2 in the Karl test chat). Absent
+   *  otherwise — never a duplicate of `attachments`. */
+  messageLevelAttachments?: Attachment[];
   /** Message-bound Dice results (user messages only; absent on assistant
    *  messages and on user messages with no bound rolls). The immutable
    *  snapshot the message-meta badge and historical rendering read — never
@@ -121,6 +129,13 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
   const attachments = parseStoredAttachments(
     selectedVariant?.attachmentsJson ?? ('attachmentsJson' in message ? message.attachmentsJson : null) ?? null,
   );
+  // IG-CF10b: expose the row set when (and only when) the merge above hides
+  // it behind a variant-level set. On text messages and base-variant-selected
+  // slots `attachments` already IS the row set — no duplication on the wire.
+  const rowAttachments = parseStoredAttachments(
+    'attachmentsJson' in message ? message.attachmentsJson : null,
+  );
+  const rowSetHidden = selectedVariant?.attachmentsJson != null && rowAttachments != null;
   return {
     id: message.id as MessageId,
     chatId: message.chatId as ChatId,
@@ -139,6 +154,7 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
     variants: domainVariants,
     selectedVariantIndex: selectedVariant?.variantIndex ?? null,
     ...(attachments ? { attachments } : {}),
+    ...(rowSetHidden ? { messageLevelAttachments: rowAttachments } : {}),
     ...(diceRolls && diceRolls.length > 0 ? { diceRolls } : {}),
   } satisfies MessageDto;
 }

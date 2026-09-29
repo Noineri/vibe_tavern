@@ -382,10 +382,11 @@ describe("selectVariant — slot attachment swap (IG-CF10)", () => {
     expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(ROW_ATTS);
   });
 
-  test("fresh ingest landing on an attachment-carrying variant keeps the current set for null targets", () => {
-    // The row set never appeared on the wire (no prior shadow): the client
-    // cannot invent it, so swiping to the null variant keeps the current
-    // set instead of overwriting it with a guess.
+  test("fresh ingest landing on an attachment-carrying variant keeps the current set for null targets (legacy payload)", () => {
+    // Legacy server payload (pre-CF10b): the row set never appeared on the
+    // wire (no explicit field, no prior shadow): the client cannot invent
+    // it, so swiping to the null variant keeps the current set instead of
+    // overwriting it with a guess.
     const landedOnV1 = {
       ...makeSlotMessage(),
       attachments: V1_ATTS,
@@ -398,5 +399,35 @@ describe("selectVariant — slot attachment swap (IG-CF10)", () => {
     useSnapshotStore.getState().ingestSnapshot({ messages: [landedOnV1] } as AppSnapshot);
     useSnapshotStore.getState().selectVariant("slot-1", 0, -1);
     expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(V1_ATTS);
+  });
+
+  test("CF10b: an explicit messageLevelAttachments field resolves the row set on swipe (owner defect 2026-09-29)", () => {
+    // The fixed wire shape: a chat loaded with a variant-level set selected
+    // carries the hidden row set as an explicit field (IG-CF10b). Swiping
+    // back to the base variant must show the ROW image — previously this
+    // corner kept the previous variant's image on screen, which read as
+    // "identical content on swipes 1 and 2".
+    const withExplicitRowSet = {
+      ...makeSlotMessage(),
+      attachments: V1_ATTS,
+      messageLevelAttachments: ROW_ATTS,
+      selectedVariantIndex: 1,
+      variants: [
+        { id: "var_0", messageId: "slot-1", variantIndex: 0, content: "", isSelected: false, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: null },
+        { id: "var_1", messageId: "slot-1", variantIndex: 1, content: "", isSelected: true, finishReason: null, createdAt: "2026-01-01T00:00:00.000Z", attachmentsJson: JSON.stringify(V1_ATTS) },
+      ],
+    } as unknown as AppMessage;
+    useSnapshotStore.getState().ingestSnapshot({ messages: [withExplicitRowSet] } as AppSnapshot);
+    // Loaded state: the selected variant's set.
+    expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(V1_ATTS);
+    useSnapshotStore.getState().selectVariant("slot-1", 0, -1);
+    // Base variant: the row set, in the same session, no reload.
+    expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(ROW_ATTS);
+    // And the explicit field survives wholesale replacement (later snapshots
+    // keep carrying it while a variant-level set is selected).
+    useSnapshotStore.getState().selectVariant("slot-1", 1, 1);
+    expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(V1_ATTS);
+    useSnapshotStore.getState().selectVariant("slot-1", 0, -1);
+    expect(useSnapshotStore.getState().messagesById["slot-1"]!.attachments).toEqual(ROW_ATTS);
   });
 });
