@@ -11,6 +11,8 @@ import {
   type PromptAssemblyResolver,
 } from "../src/domain/prompt/prompt-assembly-service.js";
 
+type PromptPreset = NonNullable<Awaited<ReturnType<PromptAssemblyResolver["getPromptPreset"]>>>;
+
 interface ScanMessage {
   id: string;
   position: number;
@@ -21,14 +23,18 @@ interface ScanMessage {
 
 function makeService(messages: ScanMessage[], options: {
   summaries?: Array<{
+    id: string;
+    source: string;
     includeInContext: boolean;
     excludeSummarized: boolean;
     content: string;
     summarizedFrom: number;
     summarizedTo: number;
   }>;
+  promptPreset?: PromptPreset;
   messageHistoryLimit?: number;
   onScanMessages: (messages: Array<{ role: string; content: string }>) => void;
+  onLoreScanInput?: (input: Parameters<PromptAssemblyResolver["listActiveLoreEntries"]>[0]) => void;
 }) {
   const stores = {
     chats: {
@@ -36,7 +42,7 @@ function makeService(messages: ScanMessage[], options: {
         id: "chat_1",
         characterId: "char_1",
         personaId: null,
-        promptPresetId: null,
+        promptPresetId: options.promptPreset ? "preset_1" : null,
         activeBranchId: "branch_1",
         insightsConfig: normalizeInsightsConfig({}),
         insightsObjectiveState: normalizeObjectiveState({}),
@@ -60,9 +66,10 @@ function makeService(messages: ScanMessage[], options: {
   const resolver: PromptAssemblyResolver = {
     getCharacter: async () => ({ id: "char_1", name: "Lorekeeper", description: "" }),
     getPersona: async () => null,
-    getPromptPreset: async () => null,
+    getPromptPreset: async () => options.promptPreset ?? null,
     listActiveLoreEntries: async (input) => {
       options.onScanMessages(input.scanMessages);
+      options.onLoreScanInput?.(input);
       return { entries: [], overflowedLorebooks: [] };
     },
     listRetrievedMemories: async () => [],
@@ -85,6 +92,28 @@ function makeService(messages: ScanMessage[], options: {
   return new PromptAssemblyService(stores, resolver, fileStore);
 }
 
+function makePromptPreset(authorsNote: string): PromptPreset {
+  return {
+    id: "preset_1",
+    name: "Lore scan preset",
+    text: "",
+    jailbreak: "",
+    summary: "",
+    tools: "",
+    prefill: "",
+    authorsNote,
+    authorsNoteDepth: 4,
+    authorsNotePosition: "in_chat",
+    authorsNoteRole: "system",
+    nsfw: "",
+    enhanceDefinitions: "",
+    advancedMode: false,
+    mergeConsecutiveRoles: false,
+    customInjections: [],
+    promptOrder: [],
+  };
+}
+
 function message(index: number, role: "user" | "assistant", content: string): ScanMessage {
   return {
     id: `msg_${index}`,
@@ -101,7 +130,7 @@ async function scanContents(
     excludeMessageIds?: MessageId[];
     throughMessageId?: MessageId;
   } = {},
-  options: Omit<Parameters<typeof makeService>[1], "onScanMessages"> = {},
+  options: Omit<Parameters<typeof makeService>[1], "onScanMessages" | "onLoreScanInput"> = {},
 ): Promise<string[]> {
   let scanMessages: Array<{ role: string; content: string }> = [];
   const service = makeService(messages, {
@@ -137,6 +166,8 @@ describe("PromptAssemblyService lore scan input (P13)", () => {
 
     expect(await scanContents(messages, {}, {
       summaries: [{
+        id: "summary_1",
+        source: "manual",
         includeInContext: true,
         excludeSummarized: true,
         content: "summary",
@@ -179,5 +210,27 @@ describe("PromptAssemblyService lore scan input (P13)", () => {
     expect(await scanContents(messages, {
       excludeMessageIds: ["msg_2" as MessageId],
     })).toEqual(["kept-key", "final-user-key"]);
+  });
+
+  it("passes the effective Author's Note and only enabled summaries through the assembly seam (P15)", async () => {
+    let scanInput: Parameters<PromptAssemblyResolver["listActiveLoreEntries"]>[0] | null = null;
+    const service = makeService([], {
+      promptPreset: makePromptPreset("effective-author-note"),
+      summaries: [
+        { id: "included", source: "manual", includeInContext: true, excludeSummarized: false, content: "included-summary", summarizedFrom: 1, summarizedTo: 1 },
+        { id: "disabled", source: "manual", includeInContext: false, excludeSummarized: false, content: "disabled-summary", summarizedFrom: 1, summarizedTo: 1 },
+        { id: "empty", source: "manual", includeInContext: true, excludeSummarized: false, content: "   ", summarizedFrom: 1, summarizedTo: 1 },
+      ],
+      onScanMessages: () => {},
+      onLoreScanInput: (seen) => { scanInput = seen; },
+    });
+
+    await service.assembleForChat({
+      chatId: "chat_1" as ChatId,
+      model: "test-model",
+    });
+
+    expect(scanInput?.authorsNote).toBe("effective-author-note");
+    expect(scanInput?.summaries).toEqual(["included-summary"]);
   });
 });

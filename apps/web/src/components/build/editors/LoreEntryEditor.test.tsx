@@ -225,6 +225,14 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     expect(form.getValues("matchWholeWords")).toBe(null); // untouched sibling
   });
 
+  it("renders the injected-prompt source chips with their dedicated labels", () => {
+    const { getByText } = renderEditor(makeEntry());
+    fireEvent.click(getByText(/lore_advanced_settings/));
+    expect(getByText("match_src_character_note")).toBeTruthy();
+    expect(getByText("match_src_authors_note")).toBeTruthy();
+    expect(getByText("match_src_summaries")).toBeTruthy();
+  });
+
   it("constant checkbox binds via ControlledField", () => {
     const { form, getByText } = renderEditor(makeEntry({ constant: false }));
     fireEvent.click(getByText("lore_constant"));

@@ -102,6 +102,10 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		branchId: ChatBranchId;
 		recentText: string;
 		scanMessages: Array<{ role: string; content: string }>;
+		/** Effective preset Author's Note, passed from prompt assembly (P15). */
+		authorsNote?: string;
+		/** Enabled summary texts, passed from prompt assembly (P15). */
+		summaries?: string[];
 		/** Turn clock override — the FULL branch count. Defaults to the scan
 		 * count only for direct test callers; production passes the branch total
 		 * so sticky/cooldown windows don't shift with prompt exclusions (P13). */
@@ -188,6 +192,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			characterNote: character.depthPrompt ?? undefined,
 			scenario: character.defaultScenario ?? undefined,
 			creatorNotes: character.creatorNotes ?? undefined,
+			authorsNote: input.authorsNote,
+			summaries: input.summaries,
 			activationState,
 			currentTurn,
 			estimateTokenCount: countTokens,

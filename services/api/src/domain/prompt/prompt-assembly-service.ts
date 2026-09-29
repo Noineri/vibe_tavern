@@ -96,6 +96,10 @@ export interface PromptAssemblyResolver {
     recentText: string;
     /** Assembly-derived branch messages to scan for lore activation. */
     scanMessages: Array<{ role: string; content: string }>;
+    /** Effective preset Author's Note, resolved by this assembly. */
+    authorsNote?: string;
+    /** Enabled summary texts from the same set injected into prompt memory. */
+    summaries?: string[];
     /** Turn clock for sticky/cooldown windows — the FULL branch message count,
      * not the post-exclusion scan count (P13 changes scan input only; timed
      * windows must not shift when the prompt excludes messages). */
@@ -579,6 +583,11 @@ export class PromptAssemblyService {
         role: message.role,
         content: message.content,
       })),
+      // P15: one assembly-derived source feeds both prompt injection and lore
+      // scanning. The entry's source chip is the default-off scan gate; do not
+      // derive either value again in the resolver.
+      authorsNote: promptPreset?.authorsNote,
+      summaries: enabledSummaries.map((summary) => summary.content),
       // Turn clock stays on the full branch — exclusions shape the scan input,
       // never the sticky/cooldown arithmetic.
       currentTurn: branchMessages.length,

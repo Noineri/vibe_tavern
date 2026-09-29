@@ -124,6 +124,10 @@ export interface ActivationInput {
   scenario?: string;
   /** Optional: creator notes for matchSources */
   creatorNotes?: string;
+  /** Optional: effective preset Author's Note for matchSources */
+  authorsNote?: string;
+  /** Optional: enabled chat-summary texts for matchSources */
+  summaries?: string[];
   /** Current activation state from chat (deserialized from loreActivationStateJson) */
   activationState: LoreActivationState;
   /** Current turn number (for time window calculations) */
@@ -796,6 +800,19 @@ function buildScanText(
   }
   if (sources.includes("creator_notes") && input.creatorNotes) {
     result += SCAN_JOINER + input.creatorNotes;
+  }
+  // ST appends prompt injections after its selected global sources
+  // (world-info.js:317-320). ST gates Author's Note and the character depth
+  // prompt with allowWIScan, default false (authors-note.js:295-305, 375-392;
+  // script.js:4415-4430). VT has no global switch: selecting a source chip is
+  // the per-entry, default-off gate. Persona remains separately selectable and
+  // has no such global gate, matching ST's hardcoded scan=true at depth
+  // (script.js:3155-3166).
+  if (sources.includes("authors_note") && input.authorsNote) {
+    result += SCAN_JOINER + input.authorsNote;
+  }
+  if (sources.includes("summaries") && input.summaries?.length) {
+    result += SCAN_JOINER + input.summaries.join(SCAN_JOINER);
   }
   if (recurseBuffer.length > 0) {
     result += SCAN_JOINER + recurseBuffer.join(SCAN_JOINER);

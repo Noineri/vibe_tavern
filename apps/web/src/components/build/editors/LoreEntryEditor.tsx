@@ -437,6 +437,8 @@ export function LoreEntryEditor({
                         "persona_desc",
                         "scenario",
                         "creator_notes",
+                        "authors_note",
+                        "summaries",
                       ] as const
                     ).map((src) => ({
                       value: src,
