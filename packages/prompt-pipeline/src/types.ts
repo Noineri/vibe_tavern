@@ -172,6 +172,8 @@ export interface PromptAssemblyContext {
     id: string;
     title: string;
     content: string;
+    /** True when StaticPromptResolver already applied the full macro engine. */
+    macrosResolved?: boolean;
     priority: number;
     position?: string;
     /** Injection depth for at_depth position. Defaults to 4. */

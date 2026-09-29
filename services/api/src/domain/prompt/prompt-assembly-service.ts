@@ -704,6 +704,10 @@ export class PromptAssemblyService {
       lore: activeLoreEntries.map((entry) => ({
         id: entry.id,
         title: entry.title,
+        // P16 boundary: StaticPromptResolver macro-expands activated lore
+        // before the WORLD_INFO regex hook. Pipeline assembly must preserve
+        // that resolved text rather than invoking a competing second pass.
+        macrosResolved: true,
         content: entry.content,
         priority: entry.priority,
         position: entry.position,

@@ -13,6 +13,7 @@ import {
 	type PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
+import { buildPromptVariableContext, createFullMacroEngine } from "@vibe-tavern/prompt-pipeline";
 import { notFound } from "../../shared/errors.js";
 import {
 	type CharacterRecord,
@@ -141,6 +142,49 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			'{{user}}': persona?.name ?? 'User',
 			'{{char}}': character.name,
 		};
+		// P16: lore keys/content share the pipeline's full macro vocabulary. A
+		// fresh synchronous engine is bound for this activation resolve, so the
+		// pure lore engine receives only text→text substitution and stays free of
+		// prompt-context construction or I/O.
+		const macroEngine = createFullMacroEngine();
+		const macroContext = buildPromptVariableContext({
+			character: {
+				name: character.name,
+				description: character.description,
+				personality: character.personalitySummary,
+				scenario: character.defaultScenario,
+				firstMessage: character.firstMessage,
+				alternateGreetings: character.alternateGreetings,
+				mesExample: character.mesExample,
+				postHistoryInstructions: character.postHistoryInstructions,
+				creatorNotes: character.creatorNotes,
+				depthPrompt: character.depthPrompt,
+				depthPromptDepth: character.depthPromptDepth,
+				depthPromptRole: character.depthPromptRole,
+				systemPrompt: character.systemPrompt,
+			},
+			persona: persona ? {
+				name: persona.name,
+				description: persona.description,
+				pronouns: persona.pronouns,
+				pronounForms: persona.pronounForms,
+			} : undefined,
+			chat: {
+				messages: recentMessages.map((message, index) => ({
+					id: `lore_scan_${index}`,
+					role: message.role,
+					content: message.content,
+				})),
+				lastMessage: recentMessages.at(-1)?.content ?? null,
+				lastUserMessage: recentMessages.findLast(message => message.role === "user")?.content ?? null,
+				lastCharMessage: recentMessages.findLast(message => message.role === "assistant")?.content ?? null,
+			},
+			prompt: {
+				authorsNote: input.authorsNote ?? null,
+				summary: chat.summary ?? "",
+			},
+			runtime: { contextBudget: input.maxContextTokens ?? null },
+		});
 		const recentMessagesWithNames = recentMessages.map(message => ({
 			...message,
 			// ST scans `${name}: ${message}` when includeNames is enabled
@@ -184,6 +228,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			})),
 			messages: recentMessagesWithNames,
 			macroMap,
+			resolveMacros: (text) => macroEngine.resolve(text, macroContext),
 			characterId: character.id,
 			characterName: character.name,
 			characterDescription: character.description,
@@ -216,7 +261,9 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 					id: brandId<LoreEntry['id']>(e.id),
 					lorebookId: brandId<LoreEntry['lorebookId']>(e.lorebookId),
 					title: e.title,
-					content: e.content,
+					// The engine commits macro-expanded content; keep the stored row
+					// raw while carrying its resolved prompt view through regex/assembly.
+					content: detail.content,
 					keys: e.keys,
 				secondaryKeys: e.secondaryKeys,
 				logic: e.logic as LoreEntry['logic'],
@@ -254,10 +301,11 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			};
 		});
 
-		// 10. WORLD_INFO regex hook (RX-9): transform activated entry CONTENT in
-		//     the prompt view only — the lorebook row is shared content and is
-		//     never rewritten. The macroMap built above is reused as the engine's
-		//     macro source (no second context is built).
+		// 10. WORLD_INFO regex hook (RX-9): the activation engine has already
+		//     macro-expanded this lore-only prompt view before recursion commits.
+		//     The hook therefore sees the same expanded content ST passes to its
+		//     WORLD_INFO regex scripts (world-info.js:4938-4939, 5085-5086). The
+		//     lorebook row remains raw and is never rewritten.
 		const entries = await this.regexHooks.transformWorldInfo(input.chatId, activeEntries, {
 			characterId: chat.characterId,
 			presetId: chat.promptPresetId ?? null,

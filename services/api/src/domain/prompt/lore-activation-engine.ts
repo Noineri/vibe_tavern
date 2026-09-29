@@ -106,8 +106,13 @@ export interface ActivationInput {
     /** Real speaker name when known; used only for ST-style scan prefixes. */
     name?: string;
   }>;
-  /** Macro substitution map, e.g. { "{{user}}": "Alice", "{{char}}": "Bob" } */
+  /** Legacy macro substitution map retained for direct engine callers. */
   macroMap: Record<string, string>;
+  /**
+   * Canonical full macro resolver bound by the prompt resolver. It keeps this
+   * engine synchronous and pure while reusing prompt-pipeline's vocabulary.
+   */
+  resolveMacros?: (text: string) => string;
   /** Character id for characterFilter matching (id-bound entries). */
   characterId: string;
   /** Character name for characterFilter matching (ghost name-fallback). */
@@ -265,7 +270,8 @@ function parseDecorators(content: string): [string[], string] {
 // ─── Main function ───────────────────────────────────────────────────────────
 
 export function resolveActivatedEntries(input: ActivationInput): ActivationResult {
-  const { macroMap, characterId, characterName, currentTurn, activationState } = input;
+  const { characterId, characterName, currentTurn, activationState } = input;
+  const resolveMacros = input.resolveMacros ?? ((text: string) => applyLegacyMacros(text, input.macroMap));
   const updatedState: LoreActivationState = { ...activationState };
 
   // Flatten all entries from all lorebooks
@@ -274,6 +280,9 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   for (const lorebook of input.lorebooks) {
     scanDepths.set(lorebook.id, lorebook.scanDepth);
     for (const entry of lorebook.entries) {
+      // ST parses decorators before it substitutes committed content
+      // (world-info.js:4540-4586, 4938-4939). Both keys and content remain
+      // raw until their ST-equivalent phase: matching and commit respectively.
       const [decorators, content] = parseDecorators(entry.content);
       allEntries.push({
         ...entry,
@@ -395,7 +404,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
 
       const result = tryActivateEntry({
-        entry, macroMap, characterId, characterName, currentTurn,
+        entry, resolveMacros, characterId, characterName, currentTurn,
         scanText: buildScanText(entry, input.messages, scanDepths, input, depthSkew),
         scanState: "normal",
         currentRecursionLevel: 0,
@@ -436,11 +445,15 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       }
       normalActivated++;
       activatedIds.add(survivor.id);
-      activated.push(survivor);
+      // ST substitutes content after this entry survives the probability gate
+      // (world-info.js:4938-4952). The same resolved string is the prompt
+      // payload and recursion source.
+      const committedSurvivor = { ...survivor, content: resolveMacros(survivor.content) };
+      activated.push(committedSurvivor);
       const flat = flatById.get(survivor.id);
       if (flat) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
       if (!flat?.preventRecursion) {
-        normalRecurseContents.push(survivor.content);
+        normalRecurseContents.push(committedSurvivor.content);
       }
     }
     if (normalRecurseContents.length > 0) {
@@ -507,7 +520,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
 
         const result = tryActivateEntry({
-          entry, macroMap, characterId, characterName, currentTurn,
+          entry, resolveMacros, characterId, characterName, currentTurn,
           // Recursion scan includes the (possibly widened — the skew is
           // buffer state in ST, world-info.js 280/402, and survives into
           // every later scan state) window plus each recursion-buffer unit.
@@ -540,11 +553,12 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         }
         newActivations++;
         activatedIds.add(survivor.id);
-        activated.push(survivor);
+        const committedSurvivor = { ...survivor, content: resolveMacros(survivor.content) };
+        activated.push(committedSurvivor);
         const flat = flatById.get(survivor.id);
         if (flat) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
         if (!flat?.preventRecursion) {
-          newRecurseContents.push(survivor.content);
+          newRecurseContents.push(committedSurvivor.content);
         }
       }
 
@@ -614,7 +628,7 @@ type ActivationOutcome =
 
 function tryActivateEntry(ctx: {
   entry: FlatEntry;
-  macroMap: Record<string, string>;
+  resolveMacros: (text: string) => string;
   characterId: string;
   characterName: string;
   currentTurn: number;
@@ -625,7 +639,7 @@ function tryActivateEntry(ctx: {
   activatedIds: Set<string>;
 
 }): ActivationOutcome {
-  const { entry, macroMap, characterId, characterName, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
+  const { entry, resolveMacros, characterId, characterName, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
   const reason = (msg: string): ActivationOutcome => { logger.debug("  skip %s: %s | title=%s", entry.id, msg, entry.title); return { status: "skipped" }; };
 
   if (!entry.enabled) return reason("disabled");
@@ -699,7 +713,7 @@ function tryActivateEntry(ctx: {
     logger.debug("  actv %s: constant | title=%s", entry.id, entry.title);
     // LG-6: the state write moved to the pass-survivor loop (see
     // commitActivationState) — group losers must not persist activation state.
-    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "constant" }, groupScore: scoreEntryKeysForGroup(entry, scanText, macroMap) };
+    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "constant" }, groupScore: scoreEntryKeysForGroup(entry, scanText, resolveMacros) };
   }
 
   // 5. Time windows — sticky check
@@ -729,9 +743,8 @@ function tryActivateEntry(ctx: {
   let matchedKeys: string[] = [];
   let secondaryMatches: string[] = [];
   if (!decoratorActive) {
-    const resolvedKeys = entry.keys.map(k => applyMacros(k, macroMap));
-    const resolvedSecondaryKeys = entry.secondaryKeys.map(k => applyMacros(k, macroMap));
-
+    const resolvedKeys = entry.keys.map(resolveMacros);
+    const resolvedSecondaryKeys = entry.secondaryKeys.map(resolveMacros);
     matchedKeys = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
     if (matchedKeys.length === 0) return reason("no key match");
 
@@ -839,18 +852,17 @@ function buildScanText(
   return result;
 }
 
-function applyMacros(key: string, macroMap: Record<string, string>): string {
-  let result = key;
+function applyLegacyMacros(text: string, macroMap: Record<string, string>): string {
+  let result = text;
   for (const [macro, value] of Object.entries(macroMap)) {
     result = result.replaceAll(macro, value);
   }
-  // Also resolve case-insensitive {{USER}}, {{CHAR}}, etc.
-  result = result.replace(/\{\{(\w+)\}\}/gi, (_match, name: string) => {
-    const lower = name.toLowerCase();
-    const resolved = macroMap[`{{${lower}}}`];
+  // Compatibility fallback for direct engine callers that still supply only
+  // the old user/char map; production binds the full macro engine above.
+  return result.replace(/\{\{(\w+)\}\}/gi, (_match, name: string) => {
+    const resolved = macroMap[`{{${name.toLowerCase()}}}`];
     return resolved ?? `{{${name}}}`;
   });
-  return result;
 }
 
 function matchKeys(keys: string[], text: string, caseSensitive: boolean, wholeWords: boolean): string[] {
@@ -938,11 +950,13 @@ function computeGroupScore(
 /** Score an entry's keys against the scan text WITHOUT any activation gate —
  *  used for constants (always active, but their group score is their real key
  *  matches, per ST where scoring runs over every activated entry). */
-function scoreEntryKeysForGroup(entry: FlatEntry, scanText: string, macroMap: Record<string, string>): number {
-  const resolvedKeys = entry.keys.map(k => applyMacros(k, macroMap));
-  const resolvedSecondaryKeys = entry.secondaryKeys.map(k => applyMacros(k, macroMap));
-  const primaryMatches = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords).length;
-  const secondaryMatches = matchKeys(resolvedSecondaryKeys, scanText, entry.caseSensitive, entry.matchWholeWords).length;
+function scoreEntryKeysForGroup(
+  entry: FlatEntry,
+  scanText: string,
+  resolveMacros: (text: string) => string,
+): number {
+  const primaryMatches = matchKeys(entry.keys.map(resolveMacros), scanText, entry.caseSensitive, entry.matchWholeWords).length;
+  const secondaryMatches = matchKeys(entry.secondaryKeys.map(resolveMacros), scanText, entry.caseSensitive, entry.matchWholeWords).length;
   return computeGroupScore(entry.keys.length, primaryMatches, entry.secondaryKeys.length, secondaryMatches, entry.logic);
 }
 
