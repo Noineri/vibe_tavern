@@ -53,9 +53,21 @@ describe("stock sampler-set seed (IF-7b)", () => {
       cfgScale: 5,
       adetailer: false,
       hires: { enabled: false, scale: 1.5, denoisingStrength: 0.35 },
+      workflowFamily: "anima-dit",
     });
     const turbo = rows.find((row) => row.id === IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Turbo);
-    expect(turbo?.payload).toEqual({ sampler: "euler", scheduler: "simple", steps: 8, cfgScale: 1, adetailer: false });
+    expect(turbo?.payload).toEqual({
+      sampler: "euler",
+      scheduler: "simple",
+      steps: 8,
+      cfgScale: 1,
+      adetailer: false,
+      workflowFamily: "krea2-dit",
+    });
+    // IF-19b: Diffusion stays on Auto — a forced checkpoint graph would break
+    // a DiT model the set is applied to.
+    const diffusion = rows.find((row) => row.id === IMAGE_GEN_STOCK_SAMPLER_SET_IDS.diffusion);
+    expect(diffusion?.payload.workflowFamily).toBeUndefined();
     // The face-fix block rides EVERY stock set (owner ruling 2026-09-27) —
     // configured, opt-in only, model unset (the dialect's own default).
     expect(rows.every((row) => row.payload.adetailer === false)).toBe(true);
@@ -78,6 +90,7 @@ describe("stock sampler-set seed (IF-7b)", () => {
     const settings = await stores.uiSettings.get();
     expect(settings.stockImageGenSamplerSetsSeeded).toBe(true);
     expect(settings.stockImageGenFleetSamplerSetsSeeded).toBe(true);
+    expect(settings.stockImageGenSetWorkflowFamiliesBackfilled).toBe(true);
     const second = await ensureStockImageGenSamplerSets(stores);
     expect(second.created).toBe(false);
     expect((await stores.imageGenSamplerSets.list()).length).toBe(10);
@@ -176,6 +189,8 @@ describe("stock sampler-set seed (IF-7b)", () => {
       steps: 30,
       cfgScale: 5,
       hires: { enabled: false, scale: 1.5, denoisingStrength: 0.35 },
+      // The same boot also runs the one-time IF-19b base-workflow backfill.
+      workflowFamily: "anima-dit",
     });
     // The user row with the SAME label is untouched (heal is stock-id-scoped).
     const userRow = rows.find((row) => row.name === "My a1111 set")!;
@@ -214,5 +229,48 @@ describe("stock sampler-set seed (IF-7b)", () => {
     const anima = (await stores.imageGenSamplerSets.list())
       .find((row) => row.id === IMAGE_GEN_STOCK_SAMPLER_SET_IDS.anima)!;
     expect((anima.payload.hires as Record<string, unknown>).upscaler).toBeUndefined();
+  });
+
+  test("IF-19b backfill: pre-existing Krea 2 / Anima stock rows gain their base workflow once; renamed, deleted and later-edited rows are respected", async () => {
+    const stores = await makeStores();
+    // An install seeded before the stock rows named a base workflow.
+    const legacy = imageGenStockSamplerSets().slice(0, 4);
+    for (const [sortOrder, row] of legacy.entries()) {
+      const { workflowFamily: _dropped, ...payload } = row.payload;
+      await stores.imageGenSamplerSets.create({ id: row.id, name: row.name, sortOrder, payload });
+    }
+    await stores.uiSettings.update({ stockImageGenSamplerSetsSeeded: true, stockImageGenFleetSamplerSetsSeeded: true });
+    // The user edited Turbo's steps, renamed RAW, and deleted nothing else.
+    await stores.imageGenSamplerSets.update(IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Turbo, {
+      payload: { sampler: "euler", scheduler: "simple", steps: 12, cfgScale: 1, adetailer: false },
+    });
+    await stores.imageGenSamplerSets.update(IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Raw, { name: "My RAW" });
+
+    const result = await ensureStockImageGenSamplerSets(stores);
+    expect(result.created).toBe(false);
+    const byId = new Map((await stores.imageGenSamplerSets.list()).map((row) => [row.id, row]));
+    // Edited payload keeps the edit and gains the workflow.
+    expect(byId.get(IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Turbo)?.payload).toEqual({
+      sampler: "euler",
+      scheduler: "simple",
+      steps: 12,
+      cfgScale: 1,
+      adetailer: false,
+      workflowFamily: "krea2-dit",
+    });
+    expect(byId.get(IMAGE_GEN_STOCK_SAMPLER_SET_IDS.anima)?.payload.workflowFamily).toBe("anima-dit");
+    // A renamed stock row is the user's own — untouched.
+    expect(byId.get(IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Raw)?.payload.workflowFamily).toBeUndefined();
+    // Diffusion stays on Auto.
+    expect(byId.get(IMAGE_GEN_STOCK_SAMPLER_SET_IDS.diffusion)?.payload.workflowFamily).toBeUndefined();
+    expect((await stores.uiSettings.get()).stockImageGenSetWorkflowFamiliesBackfilled).toBe(true);
+
+    // One-time: a later user removal of the workflow sticks across reboots.
+    const anima = byId.get(IMAGE_GEN_STOCK_SAMPLER_SET_IDS.anima)!;
+    const { workflowFamily: _removed, ...withoutWorkflow } = anima.payload;
+    await stores.imageGenSamplerSets.update(anima.id, { payload: withoutWorkflow });
+    await ensureStockImageGenSamplerSets(stores);
+    const after = (await stores.imageGenSamplerSets.list()).find((row) => row.id === anima.id)!;
+    expect(after.payload.workflowFamily).toBeUndefined();
   });
 });

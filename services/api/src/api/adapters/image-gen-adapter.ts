@@ -1004,7 +1004,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // else a FRESH auto detection (freshness vs the model ACTUALLY
     // generating: the chip's model override outranks the saved pick), else
     // the universal prose default. Unpinned profiles stay byte-identical.
-    const { family: promptFamily, source: promptFamilySource } = resolveImageGenPromptFamily(profile, model);
+    const { family: promptFamily } = resolveImageGenPromptFamily(profile, model);
 
     // IG-14 mode assembly: the prompt the design's generation flow builds —
     // Images-tab template + chat-context macros (free mode wraps the caller
@@ -1044,7 +1044,6 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       prompt: prompts.prompt,
       ...(negativePrompt !== undefined && negativePrompt !== "" ? { negativePrompt } : {}),
       ...(model !== undefined && model !== "" ? { model } : {}),
-      ...(promptFamilySource === "manual" ? { promptFamilyOverride: promptFamily } : {}),
       ...(width !== undefined ? { width } : {}),
       ...(height !== undefined ? { height } : {}),
       ...(steps !== undefined ? { steps } : {}),

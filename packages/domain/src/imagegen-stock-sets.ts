@@ -25,6 +25,12 @@ import { IMAGE_GEN_WORKFLOW_FAMILY_DEFAULTS } from "./imagegen-workflow-families
  * hires denoising 0.65–0.8 → 0.7. Anima's defaults were given explicitly
  * (steps 30, CFG 5, scale 1.5 cap, denoise 0.35, R-ESRGAN 4x+ Anime6B).
  *
+ * Base workflow (IF-19b, owner 2026-09-29): every DiT stock row names its
+ * ComfyUI base workflow (`workflowFamily`) — the ONE channel that picks a
+ * graph for a model without metadata (the prompt-family pin no longer
+ * routes templates). Diffusion stays on Auto: forcing `checkpoint` would
+ * break a DiT model the set is applied to. A1111 ignores the field.
+ *
  * Sampler/scheduler dialect note: stock rows store names in the dialect
  * their target family actually runs (Krea/Anima → comfy lowercase ids;
  * Diffusion → the A1111 display name). The per-dialect alias map and
@@ -72,12 +78,12 @@ export function imageGenStockSamplerSets(): Array<{
     {
       id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Turbo,
       name: "Krea 2 Turbo",
-      payload: { sampler: "euler", scheduler: "simple", steps: 8, cfgScale: 1, adetailer: false },
+      payload: { sampler: "euler", scheduler: "simple", steps: 8, cfgScale: 1, adetailer: false, workflowFamily: "krea2-dit" },
     },
     {
       id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Raw,
       name: "Krea 2 RAW",
-      payload: { sampler: "euler", scheduler: "simple", steps: 50, cfgScale: 3.5, adetailer: false },
+      payload: { sampler: "euler", scheduler: "simple", steps: 50, cfgScale: 3.5, adetailer: false, workflowFamily: "krea2-dit" },
     },
     {
       id: IMAGE_GEN_STOCK_SAMPLER_SET_IDS.anima,
@@ -101,6 +107,7 @@ export function imageGenStockSamplerSets(): Array<{
           scale: 1.5,
           denoisingStrength: 0.35,
         },
+        workflowFamily: "anima-dit",
       },
     },
     {

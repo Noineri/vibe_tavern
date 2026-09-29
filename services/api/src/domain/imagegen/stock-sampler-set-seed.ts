@@ -39,6 +39,35 @@ async function healSeededAnimaUpscaler(
   });
 }
 
+/** The stock rows the IF-7b seed created WITHOUT a base workflow — the
+ *  only rows the IF-19b backfill touches (the fleet rows shipped with one). */
+const WORKFLOW_BACKFILL_IDS: ReadonlySet<string> = new Set([
+  IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Turbo,
+  IMAGE_GEN_STOCK_SAMPLER_SET_IDS.krea2Raw,
+  IMAGE_GEN_STOCK_SAMPLER_SET_IDS.anima,
+]);
+
+/** One-time backfill (IF-19b, owner 2026-09-29 «допиши»): the Krea 2 /
+ *  Anima stock rows seeded before they named a base workflow receive the
+ *  stock definition's `workflowFamily` — the channel that now routes a
+ *  metadata-less model to its graph. Guarded per row: only a stock id whose
+ *  name is still the stock name and whose payload names no workflow yet;
+ *  a renamed row is the user's own and stays untouched, deleted rows stay
+ *  deleted. Idempotent per row, so a crash before the marker flips is safe. */
+async function backfillStockWorkflowFamilies(
+  stores: StoreContainer,
+  stock: ReturnType<typeof imageGenStockSamplerSets>,
+): Promise<void> {
+  const rows = await stores.imageGenSamplerSets.list();
+  for (const def of stock) {
+    const workflowFamily = def.payload.workflowFamily;
+    if (!WORKFLOW_BACKFILL_IDS.has(def.id) || workflowFamily === undefined) continue;
+    const row = rows.find((candidate) => candidate.id === def.id);
+    if (!row || row.name !== def.name || row.payload.workflowFamily !== undefined) continue;
+    await stores.imageGenSamplerSets.update(row.id, { payload: { ...row.payload, workflowFamily } });
+  }
+}
+
 /**
  * One-time stock sampler-set seed: the original IF-7b rows and the IF-12a
  * fleet rows use separate markers. This lets an existing IF-7b installation
@@ -90,6 +119,11 @@ export async function ensureStockImageGenSamplerSets(stores: StoreContainer): Pr
       ...(settings.stockImageGenSamplerSetsSeeded ? {} : { stockImageGenSamplerSetsSeeded: true }),
       ...(settings.stockImageGenFleetSamplerSetsSeeded ? {} : { stockImageGenFleetSamplerSetsSeeded: true }),
     });
+  }
+
+  if (!settings.stockImageGenSetWorkflowFamiliesBackfilled) {
+    await backfillStockWorkflowFamilies(stores, stock);
+    await stores.uiSettings.update({ stockImageGenSetWorkflowFamiliesBackfilled: true });
   }
 
   // Cheap every-boot heal (exact-match scan): installs seeded before

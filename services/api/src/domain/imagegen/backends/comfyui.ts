@@ -162,7 +162,7 @@
  *   VT owns (detector model, inherited sampler/steps/cfg/seed).
  */
 
-import { IMAGE_GEN_BACKENDS, type ImagePromptFamilyId } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
 
 import type {
   ImageGenAdapterConfig,
@@ -337,31 +337,12 @@ export const COMFY_MODEL_TEMPLATES = {
 } as const;
 
 type ComfySelectedTemplateSpec = (typeof COMFY_TEMPLATE_SPECS)[keyof typeof COMFY_TEMPLATE_SPECS];
-type ComfyPinnedDitTemplateSpec = Exclude<ComfySelectedTemplateSpec, typeof COMFY_TEMPLATE_SPECS.checkpoint>;
+type ComfyManualDitTemplateSpec = Exclude<ComfySelectedTemplateSpec, typeof COMFY_TEMPLATE_SPECS.checkpoint>;
 
-function isComfyPinnedDitTemplate(
+function isComfyManualDitTemplate(
   spec: ComfySelectedTemplateSpec,
-): spec is ComfyPinnedDitTemplateSpec {
+): spec is ComfyManualDitTemplateSpec {
   return spec !== COMFY_TEMPLATE_SPECS.checkpoint;
-}
-
-/** Map the profile's authoritative manual family pin to a workflow template. */
-function resolveComfyPinnedTemplate(family: ImagePromptFamilyId): ComfySelectedTemplateSpec {
-  if (family === "krea2") return COMFY_TEMPLATE_SPECS.krea2Dit;
-  if (family === "anima") return COMFY_TEMPLATE_SPECS.animaDit;
-  if (
-    family === "prose" ||
-    family === "pony" ||
-    family === "illustrious" ||
-    family === "noobai" ||
-    family === "sdxl-realism" ||
-    family === "hybrid"
-  ) {
-    return COMFY_TEMPLATE_SPECS.checkpoint;
-  }
-  throw new ComfyImageGenConfigError(
-    `ComfyUI prompt family "${family}" has no workflow template yet`,
-  );
 }
 
 /** Map a sampler-set manual workflow pick to its ComfyUI template.
@@ -408,7 +389,7 @@ function resolveComfyAutoDiffusionTemplate(
   if (family === "flux-schnell") return COMFY_TEMPLATE_SPECS.fluxSchnell;
   if (family === undefined) {
     throw new ComfyImageGenConfigError(
-      `ComfyUI model "${model}" has no detected family — pin the family on the profile`,
+      `ComfyUI model "${model}" has no detected family — pick its base workflow with a sampler set`,
     );
   }
   throw new ComfyImageGenConfigError(
@@ -1944,16 +1925,15 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           }
         }
       }
-      // A sampler-set workflow pick is authoritative over both the legacy
-      // prompt-family pin and metadata detection. Without any manual pick,
-      // the existing loader-folder + CG-A3 ladder remains byte-identical.
+      // The base-workflow pick (a sampler set's `workflowFamily`) is the ONE
+      // manual template channel (IF-19b, owner 2026-09-29): it outranks
+      // metadata detection; the prompt-family pin chooses only the prompt
+      // dialect and never a graph. Without a pick, the loader-folder +
+      // CG-A3 metadata ladder decides.
       const manualSpec = request.workflowFamily === undefined
         ? undefined
         : resolveComfyManualWorkflowTemplate(request.workflowFamily);
-      const pinnedSpec = manualSpec === undefined && request.promptFamilyOverride !== undefined
-        ? resolveComfyPinnedTemplate(request.promptFamilyOverride)
-        : undefined;
-      const checkpointNames = manualSpec === undefined && pinnedSpec === undefined
+      const checkpointNames = manualSpec === undefined
         ? await fetchComfyComboValues(
           cfg.fetch,
           cfg.endpoint,
@@ -1962,27 +1942,22 @@ export const comfyImageGenFactory = (config: ImageGenAdapterConfig): ImageGenBac
           request.signal,
         )
         : [];
-      const pinnedDitSpec = pinnedSpec !== undefined && isComfyPinnedDitTemplate(pinnedSpec)
-        ? pinnedSpec
-        : undefined;
       let template: (typeof COMFY_MODEL_TEMPLATES)[keyof typeof COMFY_MODEL_TEMPLATES];
       let graph: ComfyWorkflowGraph;
       let secondPassCtx: ComfySecondPassCtx;
       if (
         manualSpec === COMFY_TEMPLATE_SPECS.checkpoint ||
-        (manualSpec === undefined && (pinnedSpec === COMFY_TEMPLATE_SPECS.checkpoint || checkpointNames.includes(model)))
+        (manualSpec === undefined && checkpointNames.includes(model))
       ) {
         ({ graph, ctx: secondPassCtx } = buildComfyCheckpointWorkflow(request, model));
         template = COMFY_MODEL_TEMPLATES.checkpoint;
       } else {
         let spec: ComfyDitTemplateSpec;
         if (manualSpec !== undefined) {
-          if (!isComfyPinnedDitTemplate(manualSpec)) {
+          if (!isComfyManualDitTemplate(manualSpec)) {
             throw new ComfyImageGenConfigError(`ComfyUI workflow family "${request.workflowFamily}" has no DiT template`);
           }
           spec = manualSpec;
-        } else if (pinnedDitSpec !== undefined) {
-          spec = pinnedDitSpec;
         } else {
           const unetNames = await fetchComfyComboValues(
             cfg.fetch,

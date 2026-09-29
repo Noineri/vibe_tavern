@@ -889,12 +889,14 @@ describe("comfyui adapter", () => {
       expect(sentGraph).toEqual(expectedGraph);
     });
 
-    it("honors a manual Anima pin without consulting the auto-detection ladder, while explicit sidecars still win", async () => {
+    it("honors a manual Anima base-workflow pick without consulting the auto-detection ladder, while explicit sidecars still win", async () => {
+      // IF-19b: the base workflow (a sampler set's workflowFamily) is the ONE
+      // manual template channel — the renamed-model case rides it.
       const { transport, calls } = ditTransport("pid-anima-pin", { family: null });
       const result = await backendWith(transport).generate({
         prompt: "p",
         model: "renamed-model.safetensors",
-        promptFamilyOverride: "anima",
+        workflowFamily: "anima-dit",
         encoderName: "chosen_encoder.safetensors",
         vaeName: "chosen_vae.safetensors",
       });
@@ -913,7 +915,7 @@ describe("comfyui adapter", () => {
       const metadataMissing = ditTransport("pid-missing-family", { family: null });
       await expect(
         backendWith(metadataMissing.transport).generate({ prompt: "p", model: MUSE }),
-      ).rejects.toThrow(`ComfyUI model "${MUSE}" has no detected family — pin the family on the profile`);
+      ).rejects.toThrow(`ComfyUI model "${MUSE}" has no detected family — pick its base workflow with a sampler set`);
 
       const qwen = ditTransport("pid-qwen-family", { family: "Qwen Image" });
       await expect(
@@ -921,12 +923,12 @@ describe("comfyui adapter", () => {
       ).rejects.toThrow(`ComfyUI model "${MUSE}" resolves to the "Qwen Image" family, which has no workflow template yet`);
     });
 
-    it("maps manual checkpoint and Krea-2 family pins to their declared templates", async () => {
+    it("maps manual checkpoint and Krea-2 base-workflow picks to their declared templates", async () => {
       const checkpoint = happyTransport("pid-pony-pin");
       const checkpointResult = await backendWith(checkpoint.transport).generate({
         prompt: "p",
         model: "renamed-checkpoint.safetensors",
-        promptFamilyOverride: "pony",
+        workflowFamily: "checkpoint",
       });
       const checkpointPrompt = checkpoint.calls.find((call) => new URL(call.url).pathname === "/prompt");
       const checkpointGraph = sentJson(checkpointPrompt!).prompt as Record<string, { class_type: string }>;
@@ -937,7 +939,7 @@ describe("comfyui adapter", () => {
       const kreaResult = await backendWith(krea.transport).generate({
         prompt: "p",
         model: "renamed-dit.safetensors",
-        promptFamilyOverride: "krea2",
+        workflowFamily: "krea2-dit",
         encoderName: "chosen_encoder.safetensors",
         vaeName: "chosen_vae.safetensors",
       });
@@ -947,7 +949,7 @@ describe("comfyui adapter", () => {
       expect(kreaResult.resolvedTemplate).toBe("krea2-dit");
     });
 
-    it("a sampler-set workflow selection wins over prompt pins, checkpoint membership, and metadata routing", async () => {
+    it("a sampler-set workflow selection wins over checkpoint membership and metadata routing", async () => {
       const { transport, calls } = ditTransport("pid-workflow-manual", {
         checkpoints: [MUSE],
         family: "Anima",
@@ -956,7 +958,6 @@ describe("comfyui adapter", () => {
         prompt: "p",
         model: MUSE,
         workflowFamily: "qwen-image-2.1",
-        promptFamilyOverride: "anima",
         encoderName: "qwen3vl_8b.safetensors",
         vaeName: "qwen_image_2.1_vae.safetensors",
       });
@@ -979,13 +980,6 @@ describe("comfyui adapter", () => {
           workflowFamily: "unregistered-workflow" as unknown as ImageGenWorkflowFamilyId,
         }),
       ).rejects.toThrow('ComfyUI workflow family "unregistered-workflow" has no workflow template');
-    });
-
-    it("fails closed for a manually pinned family with no workflow template", async () => {
-      const { transport } = ditTransport("pid-qwen-pin");
-      await expect(
-        backendWith(transport).generate({ prompt: "p", model: MUSE, promptFamilyOverride: "qwen" }),
-      ).rejects.toThrow('ComfyUI prompt family "qwen" has no workflow template yet');
     });
 
     it("short-circuits on a checkpoint hit: one detection call, no sidecar fetches", async () => {

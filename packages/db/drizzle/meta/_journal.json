@@ -617,6 +617,13 @@
       "when": 1790464616885,
       "tag": "0087_uneven_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "6",
+      "when": 1790692103019,
+      "tag": "0088_numerous_shocker",
+      "breakpoints": true
     }
   ]
 }

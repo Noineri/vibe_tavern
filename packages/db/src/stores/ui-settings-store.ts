@@ -57,6 +57,8 @@ export interface UiSettings {
   stockImageGenSamplerSetsSeeded: boolean;
   /** One-time fleet workflow sampler-set seed marker (IF-12a). */
   stockImageGenFleetSamplerSetsSeeded: boolean;
+  /** One-time stock-row base-workflow backfill marker (IF-19b). */
+  stockImageGenSetWorkflowFamiliesBackfilled: boolean;
   /** STT scenario pointers (STT_PLAN ST-1): dictation + voice-message
    *  transcription profile ids; may point at the same profile. Null → the
    *  isDefault fallback / no transcription. */
@@ -96,6 +98,7 @@ export interface UiSettingsUpdate {
   servicePromptPresetMigrated?: boolean;
   stockImageGenSamplerSetsSeeded?: boolean;
   stockImageGenFleetSamplerSetsSeeded?: boolean;
+  stockImageGenSetWorkflowFamiliesBackfilled?: boolean;
   activeDictationProfileId?: string | null;
   activeVoiceMessageProfileId?: string | null;
 }
@@ -132,6 +135,7 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   servicePromptPresetMigrated: false,
   stockImageGenSamplerSetsSeeded: false,
   stockImageGenFleetSamplerSetsSeeded: false,
+  stockImageGenSetWorkflowFamiliesBackfilled: false,
   activeDictationProfileId: null,
   activeVoiceMessageProfileId: null,
 };
@@ -199,6 +203,7 @@ export class UiSettingsStore {
       servicePromptPresetMigrated: partial.servicePromptPresetMigrated ?? UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
       stockImageGenSamplerSetsSeeded: partial.stockImageGenSamplerSetsSeeded ?? UI_SETTINGS_DEFAULTS.stockImageGenSamplerSetsSeeded,
       stockImageGenFleetSamplerSetsSeeded: partial.stockImageGenFleetSamplerSetsSeeded ?? UI_SETTINGS_DEFAULTS.stockImageGenFleetSamplerSetsSeeded,
+      stockImageGenSetWorkflowFamiliesBackfilled: partial.stockImageGenSetWorkflowFamiliesBackfilled ?? UI_SETTINGS_DEFAULTS.stockImageGenSetWorkflowFamiliesBackfilled,
       activeDictationProfileId: partial.activeDictationProfileId ?? UI_SETTINGS_DEFAULTS.activeDictationProfileId,
       activeVoiceMessageProfileId: partial.activeVoiceMessageProfileId ?? UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
@@ -242,6 +247,7 @@ export class UiSettingsStore {
       servicePromptPresetMigrated: UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
       stockImageGenSamplerSetsSeeded: UI_SETTINGS_DEFAULTS.stockImageGenSamplerSetsSeeded,
       stockImageGenFleetSamplerSetsSeeded: UI_SETTINGS_DEFAULTS.stockImageGenFleetSamplerSetsSeeded,
+      stockImageGenSetWorkflowFamiliesBackfilled: UI_SETTINGS_DEFAULTS.stockImageGenSetWorkflowFamiliesBackfilled,
       activeDictationProfileId: UI_SETTINGS_DEFAULTS.activeDictationProfileId,
       activeVoiceMessageProfileId: UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
@@ -283,6 +289,7 @@ export class UiSettingsStore {
       servicePromptPresetMigrated: row.servicePromptPresetMigrated,
       stockImageGenSamplerSetsSeeded: row.stockImageGenSamplerSetsSeeded,
       stockImageGenFleetSamplerSetsSeeded: row.stockImageGenFleetSamplerSetsSeeded,
+      stockImageGenSetWorkflowFamiliesBackfilled: row.stockImageGenSetWorkflowFamiliesBackfilled,
       activeDictationProfileId: row.activeDictationProfileId ?? null,
       activeVoiceMessageProfileId: row.activeVoiceMessageProfileId ?? null,
       updatedAt: row.updatedAt,
