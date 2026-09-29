@@ -7,6 +7,9 @@
  * the process by default. Bun 1.4.x calls close_range(2) first thing at
  * startup (bun_initialize_process), and the Android 10-12 allowlist lacks it,
  * so the server died with exit 159 before printing anything (issue #47).
+ * Bun.serve {dir} routes (resolveStaticDirRoutes) open files with openat2(2),
+ * which no Android release allows, so every version needs the shim once the
+ * browser requests /assets/*.
  *
  * ServerService loads this library into the server through LD_PRELOAD. Its
  * constructor installs a SIGSYS handler before Bun's own code runs. For a

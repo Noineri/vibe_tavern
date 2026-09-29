@@ -103,7 +103,7 @@ Wait for bundled-file extraction to finish, then copy the server log with **Copy
 ### The server exits with code 159
 
 Code 159 means Android's system-call filter stopped the server.
-The launcher ships a compatibility layer for this; its lines in the server log start with `seccomp-shim:`, for example `seccomp-shim: syscall 436 trapped, returning ENOSYS` — that line is expected on Android 10–12 and harmless.
+The launcher ships a compatibility layer for this; its lines in the server log start with `seccomp-shim:`, for example `seccomp-shim: syscall 437 trapped, returning ENOSYS` — such lines are expected and harmless: each one means the server handled a restricted call instead of stopping.
 If the server still exits with code 159, copy the server log with **Copy server log** and attach it to a [GitHub issue](https://github.com/Noineri/vibe_tavern/issues) together with your Android version.
 Until it is fixed, the [npm package in Termux](#alternative-the-npm-package-in-termux) is a working alternative.
 
