@@ -746,11 +746,16 @@ function matchKeys(keys: string[], text: string, caseSensitive: boolean, wholeWo
   const matched: string[] = [];
   for (const key of keys) {
     if (!key) continue;
-    // Regex pattern: /pattern/flags
+    // Regex pattern: /pattern/flags — ST runs regex keys with EXACTLY the
+    // authored flags (parseRegexFromString, world-info.js:2846) and the regex
+    // channel overrides the entry's caseSensitive / matchWholeWords options
+    // (world-info.js:337: "override all the other options"). A flagless regex
+    // is therefore case-SENSITIVE even when the entry resolves
+    // case-insensitive (resweep N3 — no auto-`i` fallback).
     const regexMatch = key.match(/^\/(.+)\/([gimsuy]*)$/s);
     if (regexMatch) {
       try {
-        const regex = new RegExp(regexMatch[1], regexMatch[2] || (caseSensitive ? "" : "i"));
+        const regex = new RegExp(regexMatch[1], regexMatch[2]);
         if (regex.test(text)) matched.push(key);
       } catch {
         // Invalid regex — skip
