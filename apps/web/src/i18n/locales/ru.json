@@ -636,6 +636,8 @@
 	"image_gen_sidecar_auto_missing": "Авто: файл не найден",
 	"image_gen_sidecar_hint": "{family}: нужен энкодер {encoder} и VAE {vae}",
 	"image_gen_sidecars_failed": "Не удалось загрузить списки энкодеров и VAE",
+	"image_gen_models_snapshot": "Живой список недоступен — показан сохранённый {time}",
+	"image_gen_sidecars_snapshot": "Живые списки энкодеров и VAE недоступны — показаны сохранённые {time}",
 	"image_gen_detected_template": "Распознано: {template}",
 	"image_gen_family_title": "Семейство промптов",
 	"image_gen_family_label": "Семейство",

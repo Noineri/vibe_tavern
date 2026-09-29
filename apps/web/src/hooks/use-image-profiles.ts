@@ -171,6 +171,12 @@ export function useImageProfiles(): {
    *  rule verbatim — never a connectivity conclusion, never the shared
    *  `error`. */
   sidecarsFailedByProfile: Record<string, boolean>;
+  /** IF-20: the ISO time of the server's last-good snapshot when the cached
+   *  listing came from it (the live fetch failed); null/absent = live. One
+   *  entry per saved profile and listing — the models catalog and the DiT
+   *  sidecar folders. Renderers show it as an honest «saved list» hint. */
+  modelsSnapshotAtByProfile: Record<string, string | null>;
+  sidecarsSnapshotAtByProfile: Record<string, string | null>;
   vaeByProfile: Record<string, string[]>;
   /** Local-server connectivity per saved profile, driven by sampler fetches
    *  (IG-CF12a): `checking` while in flight, `online` on success, `offline`
@@ -286,6 +292,8 @@ export function useImageProfiles(): {
   const [schedulersByProfile, setSchedulersByProfile] = useState<Record<string, ImageGenSchedulerInfoValue[]>>({});
   const [sidecarsByProfile, setSidecarsByProfile] = useState<Record<string, ImageGenDitSidecars>>({});
   const [sidecarsFailedByProfile, setSidecarsFailedByProfile] = useState<Record<string, boolean>>({});
+  const [modelsSnapshotAtByProfile, setModelsSnapshotAtByProfile] = useState<Record<string, string | null>>({});
+  const [sidecarsSnapshotAtByProfile, setSidecarsSnapshotAtByProfile] = useState<Record<string, string | null>>({});
   const [vaeByProfile, setVaeByProfile] = useState<Record<string, string[]>>({});
   const [samplerStatusByProfile, setSamplerStatusByProfile] = useState<Record<string, LocalConnectionStatus>>({});
   const [favorites, setFavorites] = useState<ImageGenModelFavoriteValue[]>([]);
@@ -751,13 +759,14 @@ export function useImageProfiles(): {
       if (!targetId) return null;
       setError(null);
       try {
-        const models = await listImageGenModels(targetId);
-        if (models === null) {
+        const listing = await listImageGenModels(targetId);
+        if (listing === null) {
           setError("Image-gen profile not found");
           return null;
         }
-        setModelsByProfile((prev) => ({ ...prev, [targetId]: models }));
-        return models;
+        setModelsByProfile((prev) => ({ ...prev, [targetId]: listing.data }));
+        setModelsSnapshotAtByProfile((prev) => ({ ...prev, [targetId]: listing.snapshotAt }));
+        return listing.data;
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
         return null;
@@ -823,11 +832,12 @@ export function useImageProfiles(): {
       // failure leaves the cache untouched and draws NO connectivity
       // conclusion; the samplers fetch owns `samplerStatusByProfile`).
       try {
-        const sidecars = await listImageGenDitSidecars(targetId);
-        if (sidecars === null) return null;
-        setSidecarsByProfile((prev) => ({ ...prev, [targetId]: sidecars }));
+        const listing = await listImageGenDitSidecars(targetId);
+        if (listing === null) return null;
+        setSidecarsByProfile((prev) => ({ ...prev, [targetId]: listing.data }));
         setSidecarsFailedByProfile((prev) => ({ ...prev, [targetId]: false }));
-        return sidecars;
+        setSidecarsSnapshotAtByProfile((prev) => ({ ...prev, [targetId]: listing.snapshotAt }));
+        return listing.data;
       } catch {
         setSidecarsFailedByProfile((prev) => ({ ...prev, [targetId]: true }));
         return null;
@@ -890,6 +900,8 @@ export function useImageProfiles(): {
     schedulersByProfile,
     sidecarsByProfile,
     sidecarsFailedByProfile,
+    modelsSnapshotAtByProfile,
+    sidecarsSnapshotAtByProfile,
     vaeByProfile,
     samplerStatusByProfile,
     favorites,

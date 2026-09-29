@@ -97,6 +97,8 @@ export { SamplerSetStore } from './sampler-set-store.js';
 export { ImageGenSamplerSetStore } from './image-gen-sampler-set-store.js';
 export type { ImageGenSamplerSetRow, CreateImageGenSamplerSetData, UpdateImageGenSamplerSetData } from './image-gen-sampler-set-store.js';
 export { ImageGenPromptCapStore } from './image-gen-prompt-cap-store.js';
+export { ImageGenListingSnapshotStore, IMAGE_GEN_LISTING_SNAPSHOT_KINDS } from './image-gen-listing-snapshot-store.js';
+export type { ImageGenListingSnapshot, ImageGenListingSnapshotKind } from './image-gen-listing-snapshot-store.js';
 export type { ImageGenPromptCapRow } from './image-gen-prompt-cap-store.js';
 
 export { ImagePromptVariantStore } from './image-prompt-variant-store.js';

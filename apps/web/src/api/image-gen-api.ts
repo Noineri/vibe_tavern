@@ -44,7 +44,7 @@ import type {
   ImageGenGenerateResponseValue,
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
-import { createImageGenProfileSchema } from "@vibe-tavern/api-contracts";
+import { createImageGenProfileSchema, IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER } from "@vibe-tavern/api-contracts";
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { getGatewayBaseUrl } from "../gateway-client.js";
@@ -174,13 +174,26 @@ async function rawError(operation: string, response: Response): Promise<Error> {
   );
 }
 
-/** Live model catalog for a saved profile (picker data source). Null = the
- *  route's 404 (unknown profile); upstream backend failures throw (the route
- *  maps them to typed error bodies). */
+/** IF-20: a saved profile's listing — `snapshotAt` is the ISO fetch time
+ *  when the server answered from its last-good snapshot (the live fetch
+ *  failed), null for a live answer. */
+export interface ImageGenListingResult<T> {
+  data: T;
+  snapshotAt: string | null;
+}
+
+function listingSnapshotAt(response: Response): string | null {
+  return response.headers.get(IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER);
+}
+
+/** Model catalog for a saved profile (picker data source) — live, or the
+ *  server's last-good snapshot (IF-20, `snapshotAt` set). Null = the route's
+ *  404 (unknown profile); upstream failures with no snapshot throw (the
+ *  route maps them to typed error bodies). */
 export async function listImageGenModels(
   id: string,
   signal?: AbortSignal,
-): Promise<ImageGenModelEntry[] | null> {
+): Promise<ImageGenListingResult<ImageGenModelEntry[]> | null> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(
     appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/models`),
@@ -188,7 +201,7 @@ export async function listImageGenModels(
   );
   if (response.status === 404) return null;
   if (!response.ok) throw await rawError("Image-gen model list", response);
-  return (await response.json()) as ImageGenModelEntry[];
+  return { data: (await response.json()) as ImageGenModelEntry[], snapshotAt: listingSnapshotAt(response) };
 }
 
 /** Samplers for a saved profile — capability-gated (A1111-compat only in
@@ -269,11 +282,12 @@ export async function listImageGenSchedulers(
  *  profile (CG-B1): the live folder catalogs for the advanced accordion's
  *  DiT fields. Null = unknown profile; a non-comfy backend throws the
  *  route's 400 ("DiT sidecar listing not supported") — callers gate on
- *  the profile's backend before calling. */
+ *  the profile's backend before calling. Live, or the server's last-good
+ *  snapshot (IF-20, `snapshotAt` set). */
 export async function listImageGenDitSidecars(
   id: string,
   signal?: AbortSignal,
-): Promise<ImageGenDitSidecarsValue | null> {
+): Promise<ImageGenListingResult<ImageGenDitSidecarsValue> | null> {
   const baseUrl = getGatewayBaseUrl();
   const response = await fetch(
     appendTokenQuery(`${baseUrl}/api/image-gen/profiles/${encodeURIComponent(id)}/sidecars`),
@@ -281,7 +295,7 @@ export async function listImageGenDitSidecars(
   );
   if (response.status === 404) return null;
   if (!response.ok) throw await rawError("Image-gen DiT sidecar list", response);
-  return (await response.json()) as ImageGenDitSidecarsValue;
+  return { data: (await response.json()) as ImageGenDitSidecarsValue, snapshotAt: listingSnapshotAt(response) };
 }
 
 /** Re-exported contracts alias — the hook's sidecar cache entry. */

@@ -1945,6 +1945,22 @@ export const imageGenPromptCaps = sqliteTable('image_gen_prompt_caps', {
   pk: primaryKey({ columns: [table.backend, table.modelId] }),
 }));
 
+// IF-20: last-good listing snapshots. Every successful live listing (the
+// model catalog, the ComfyUI DiT sidecar folders) overwrites its row; the
+// adapter serves the row — flagged stale — only when the live fetch fails,
+// so a restarting server no longer empties the pickers. `kind` is an
+// IMAGE_GEN_LISTING_SNAPSHOT_KINDS value; `payloadJson` is the listing as
+// the live route returned it. Rows cascade with the profile and are cleared
+// when its endpoint/backend changes (another server's files).
+export const imageGenListingSnapshots = sqliteTable('image_gen_listing_snapshots', {
+  imageGenProfileId: text('image_gen_profile_id').notNull().references(() => imageGenProfiles.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  fetchedAt: text('fetched_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.imageGenProfileId, table.kind] }),
+}));
+
 // ─── imagePromptVariants ─────────────────────────────────────────────────────
 // User-customized image prompt variants (IPT Wave 1 — IMAGE_PROMPT_TEMPLATES
 // plan): OVERRIDES-ONLY storage. One row per (rowKey, family) the user has

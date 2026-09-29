@@ -113,12 +113,15 @@ const updateMock = mock(
 const deleteMock = mock(async (id: string) => {
   store = store.filter((p) => p.id !== id);
 });
-const modelsMock = mock(async (id: string): Promise<ImageGenModelEntry[] | null> => {
+const modelsMock = mock(async (id: string): Promise<{ data: ImageGenModelEntry[]; snapshotAt: string | null } | null> => {
   if (id === "missing") return null;
-  return [
-    { id: "google/gemini-2.5-flash-image", label: "Gemini 2.5 Flash Image", isFree: false },
-    { id: "openai/gpt-image-2", label: "GPT Image 2", isFree: true },
-  ];
+  return {
+    data: [
+      { id: "google/gemini-2.5-flash-image", label: "Gemini 2.5 Flash Image", isFree: false },
+      { id: "openai/gpt-image-2", label: "GPT Image 2", isFree: true },
+    ],
+    snapshotAt: null,
+  };
 });
 const samplersMock = mock(async (id: string): Promise<ImageGenSampler[] | null> => {
   if (id === "missing") return null;
@@ -129,10 +132,15 @@ const schedulersMock = mock(async (id: string): Promise<Array<{ name: string; la
   return [{ name: "karras", label: "Karras" }, { name: "sgm_uniform" }];
 });
 // T3 hint parity: the DiT sidecar list seam (the pane's failure flag).
-const sidecarsMock = mock(async (id: string): Promise<{ encoders: string[]; vaes: string[] } | null> => {
-  if (id === "missing") return null;
-  return { encoders: ["qwen3vl_4b_fp8_scaled.safetensors"], vaes: ["qwen_image_vae.safetensors"] };
-});
+const sidecarsMock = mock(
+  async (id: string): Promise<{ data: { encoders: string[]; vaes: string[] }; snapshotAt: string | null } | null> => {
+    if (id === "missing") return null;
+    return {
+      data: { encoders: ["qwen3vl_4b_fp8_scaled.safetensors"], vaes: ["qwen_image_vae.safetensors"] },
+      snapshotAt: null,
+    };
+  },
+);
 // IG-12b: select() quietly loads the profile's star-favorites — mocked
 // empty so the REAL fetch never runs in happy-dom (its network-block error
 // used to be masked by fetchSamplers' old setError(null) wipe, which
@@ -592,6 +600,35 @@ describe("useImageProfiles — models / samplers / draft", () => {
     // Recovery: a successful refetch clears the flag.
     await hook!.fetchSidecars();
     await waitFor(() => expect(hook?.sidecarsFailedByProfile.p1).toBe(false));
+  });
+
+  it("IF-20: a snapshot answer fills the caches and records its time; a live answer clears it", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "comfyui" })];
+    let hook: any = null;
+    function Probe() {
+      hook = useImageProfiles();
+      return null;
+    }
+    render(React.createElement(Probe));
+    await waitFor(() => expect(hook?.profiles.length).toBe(1));
+    hook!.select("p1");
+    await waitFor(() => expect(hook?.form?.id).toBe("p1"));
+
+    const at = "2026-09-29T10:00:00.000Z";
+    modelsMock.mockImplementationOnce(async () => ({ data: [{ id: "saved", label: "Saved" }], snapshotAt: at }));
+    sidecarsMock.mockImplementationOnce(async () => ({ data: { encoders: ["e"], vaes: ["v"] }, snapshotAt: at }));
+    await hook!.fetchSavedModels();
+    await hook!.fetchSidecars();
+    await waitFor(() => expect(hook?.modelsSnapshotAtByProfile.p1).toBe(at));
+    expect(hook?.modelsByProfile.p1).toEqual([{ id: "saved", label: "Saved" }]);
+    expect(hook?.sidecarsSnapshotAtByProfile.p1).toBe(at);
+    // A snapshot is data, not a failure: the failed flag stays clear.
+    expect(hook?.sidecarsFailedByProfile.p1).toBe(false);
+
+    await hook!.fetchSavedModels();
+    await hook!.fetchSidecars();
+    await waitFor(() => expect(hook?.modelsSnapshotAtByProfile.p1).toBeNull());
+    expect(hook?.sidecarsSnapshotAtByProfile.p1).toBeNull();
   });
 
   it("IG-21: draftAutoKeyProviderName mirrors the server cascade (saved name wins; drafts match by rule; keyless providers never match)", async () => {

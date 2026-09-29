@@ -70,8 +70,8 @@ import type {
   ImagePromptTemplateRowKeyValue,
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
-import { imageGenSamplerSetPayloadSchema } from "@vibe-tavern/api-contracts";
-import { ImagePromptVariantStore } from "@vibe-tavern/db";
+import { imageGenDitSidecarsSchema, imageGenModelInfoSchema, imageGenSamplerSetPayloadSchema } from "@vibe-tavern/api-contracts";
+import { IMAGE_GEN_LISTING_SNAPSHOT_KINDS, ImagePromptVariantStore, type ImageGenListingSnapshotKind } from "@vibe-tavern/db";
 import type {
   CreateImageGenProfileData,
   StoreContainer,
@@ -105,7 +105,7 @@ import {
   resolveEffectiveSummaryProfile,
 } from "../../domain/chat/summary-generation-seam.js";
 import type { AssemblePromptResponse, StoredProviderProfileRecord } from "@vibe-tavern/domain";
-import type { ImageGenRuntimeApi } from "../contract/runtime-api.js";
+import type { ImageGenListing, ImageGenRuntimeApi } from "../contract/runtime-api.js";
 
 // Import backend modules for their side-effect registrations (the
 // stt-adapter twin): importing the module makes its slug creatable via the
@@ -358,7 +358,7 @@ async function resolveAdapterConfig(
 
 type ImageGenAdapterStores = Pick<
   StoreContainer,
-  "imageGen" | "imageGenSamplerSets" | "imageGenPromptCaps" | "chats" | "messages" | "characterAssets" | "db" | "characters" | "personas" | "providers"
+  "imageGen" | "imageGenSamplerSets" | "imageGenPromptCaps" | "imageGenListingSnapshots" | "chats" | "messages" | "characterAssets" | "db" | "characters" | "personas" | "providers"
 >;
 
 export class ImageGenAdapter implements ImageGenRuntimeApi {
@@ -463,7 +463,17 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     if (body.qualityLayerEnabled !== undefined) patch.qualityLayerEnabled = body.qualityLayerEnabled;
     if (body.capabilities !== undefined) patch.capabilities = body.capabilities;
     if (body.sortOrder !== undefined) patch.sortOrder = body.sortOrder;
+    const before = await this.stores.imageGen.getById(id);
     const updated = await this.stores.imageGen.update(id, patch);
+    // IF-20: a different server (endpoint or backend) lists different files —
+    // its predecessor's snapshots must never stand in for it.
+    if (
+      before !== null &&
+      updated !== null &&
+      (before.endpoint !== updated.endpoint || before.backend !== updated.backend)
+    ) {
+      await this.stores.imageGenListingSnapshots.clear(id);
+    }
     return updated ? (await this.decorateAutoKey([toClientProfile(updated)]))[0] : null;
   };
 
@@ -490,12 +500,58 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "probe", (inner) => backend.probe(inner));
   };
 
+  /**
+   * IF-20 (owner 2026-09-27: a restarted server must not empty the pickers):
+   * run a live listing; a success overwrites the profile's last-good
+   * snapshot, a failure serves that snapshot flagged with `snapshotAt` —
+   * never silent freshness — and rethrows when none exists. A caller-side
+   * abort always rethrows (nobody is waiting for the fallback). The stored
+   * payload is re-validated on read; an unreadable one counts as none.
+   */
+  private async listWithSnapshot<T>(
+    profileId: string,
+    kind: ImageGenListingSnapshotKind,
+    signal: AbortSignal | undefined,
+    parse: (raw: unknown) => T | null,
+    live: () => Promise<T>,
+  ): Promise<ImageGenListing<T>> {
+    let data: T;
+    try {
+      data = await live();
+    } catch (error) {
+      if (signal?.aborted === true) throw error;
+      const snapshot = await this.stores.imageGenListingSnapshots.get(profileId, kind);
+      const stored = snapshot === null ? null : parse(snapshot.payload);
+      if (snapshot === null || stored === null) throw error;
+      return { data: stored, snapshotAt: snapshot.fetchedAt };
+    }
+    try {
+      await this.stores.imageGenListingSnapshots.put(profileId, kind, data);
+    } catch (error) {
+      // The live listing is still correct — a failed snapshot write only
+      // costs the next outage its fallback.
+      console.warn(`[image-gen] ${kind} snapshot write failed for profile ${profileId}:`, error);
+    }
+    return { data };
+  }
+
   listImageGenProfileModels = async (id: string, signal?: AbortSignal) => {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
-    const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
-    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "model list", (inner) =>
-      backend.listModels(inner),
+    return this.listWithSnapshot(
+      profile.id,
+      IMAGE_GEN_LISTING_SNAPSHOT_KINDS.Models,
+      signal,
+      (raw) => {
+        const parsed = imageGenModelInfoSchema.array().safeParse(raw);
+        return parsed.success ? parsed.data : null;
+      },
+      async () => {
+        const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
+        return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "model list", (inner) =>
+          backend.listModels(inner),
+        );
+      },
     );
   };
 
@@ -553,8 +609,17 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // reports "not supported", not an empty list.
     if (typeof backend.listDitSidecars !== "function") return null;
     const listDitSidecars = backend.listDitSidecars.bind(backend);
-    return withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "DiT sidecar list", (inner) =>
-      listDitSidecars(inner),
+    // IF-20: the encoder/VAE folders ride the last-good snapshot too — the
+    // lists the owner saw go empty across a Comfy restart.
+    return this.listWithSnapshot(
+      profile.id,
+      IMAGE_GEN_LISTING_SNAPSHOT_KINDS.DitSidecars,
+      signal,
+      (raw) => {
+        const parsed = imageGenDitSidecarsSchema.safeParse(raw);
+        return parsed.success ? parsed.data : null;
+      },
+      () => withImageGenTimeoutMs(signal, TEST_CHAT_TIMEOUT_MS, "DiT sidecar list", (inner) => listDitSidecars(inner)),
     );
   };
 

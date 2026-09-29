@@ -68,3 +68,30 @@ describe("image prompt-template API client", () => {
     expect(requests[2]?.init?.body).toBe(JSON.stringify({ family: null }));
   });
 });
+
+describe("image-gen listing client (IF-20)", () => {
+  test("reads the snapshot header into snapshotAt; a live answer reports null; 404 stays null", async () => {
+    const responses: Response[] = [
+      new Response(JSON.stringify([{ id: "m", label: "M" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "X-VT-Listing-Snapshot-At": "2026-09-29T10:00:00.000Z" },
+      }),
+      new Response(JSON.stringify({ encoders: ["e"], vaes: ["v"] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+      new Response("missing", { status: 404 }),
+    ];
+    globalThis.fetch = mockFetch(async () => responses.shift()!);
+
+    expect(await imageGenApi.listImageGenModels("p1")).toEqual({
+      data: [{ id: "m", label: "M" }],
+      snapshotAt: "2026-09-29T10:00:00.000Z",
+    });
+    expect(await imageGenApi.listImageGenDitSidecars("p1")).toEqual({
+      data: { encoders: ["e"], vaes: ["v"] },
+      snapshotAt: null,
+    });
+    expect(await imageGenApi.listImageGenModels("missing")).toBeNull();
+  });
+});

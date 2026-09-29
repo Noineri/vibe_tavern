@@ -55,6 +55,7 @@ import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, b
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
+import { formatListingSnapshotTime } from "../../lib/imagegen/listing-snapshot.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT, type TFunc } from "../../i18n/context.js";
 import {
@@ -189,6 +190,8 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   const [profiles, setProfiles] = useState<ImageGenProfileRecord[] | null>(null);
   const [models, setModels] = useState<ImageGenModelEntry[] | null>(null);
   const [modelsFailed, setModelsFailed] = useState(false);
+  // IF-20: the server answered from its last-good snapshot (ISO fetch time).
+  const [modelsSnapshotAt, setModelsSnapshotAt] = useState<string | null>(null);
   const [samplers, setSamplers] = useState<ImageGenSamplerInfoValue[] | null>(null);
   const [loras, setLoras] = useState<ImageGenLora[] | null>(null);
   const [lorasFailed, setLorasFailed] = useState(false);
@@ -261,9 +264,12 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
     let cancelled = false;
     setModels(null);
     setModelsFailed(false);
+    setModelsSnapshotAt(null);
     void listImageGenModels(effectiveId)
-      .then((list) => {
-        if (!cancelled) setModels(list ?? []);
+      .then((listing) => {
+        if (cancelled) return;
+        setModels(listing?.data ?? []);
+        setModelsSnapshotAt(listing?.snapshotAt ?? null);
       })
       .catch(() => {
         if (!cancelled) {
@@ -564,6 +570,14 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
             {modelsFailed && (
               <span className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4">{t("image_gen_chip_models_failed")}</span>
             )}
+            {modelsSnapshotAt !== null && (
+              <span
+                data-testid="image-gen-ft-models-snapshot"
+                className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4"
+              >
+                {t("image_gen_models_snapshot", { time: formatListingSnapshotTime(modelsSnapshotAt) })}
+              </span>
+            )}
           </div>
 
           {/* Generation target (FT-A2) — the same six modes as the message
@@ -862,6 +876,7 @@ function ImageGenModelSettingsAccordion({
   // profile while the settings block lives — the pane's one-shot cache fill).
   const [sidecars, setSidecars] = useState<ImageGenDitSidecars | null>(null);
   const [sidecarsFailed, setSidecarsFailed] = useState(false);
+  const [sidecarsSnapshotAt, setSidecarsSnapshotAt] = useState<string | null>(null);
 
   const isA1111 = backend === IMAGE_GEN_BACKENDS.A1111;
   const isComfy = backend === IMAGE_GEN_BACKENDS.ComfyUI;
@@ -986,8 +1001,10 @@ function ImageGenModelSettingsAccordion({
     if (!isDit || sidecars !== null || sidecarsFailed) return;
     let cancelled = false;
     void listImageGenDitSidecars(profileId)
-      .then((row) => {
-        if (!cancelled) setSidecars(row ?? { encoders: [], vaes: [] });
+      .then((listing) => {
+        if (cancelled) return;
+        setSidecars(listing?.data ?? { encoders: [], vaes: [] });
+        setSidecarsSnapshotAt(listing?.snapshotAt ?? null);
       })
       .catch(() => {
         if (!cancelled) setSidecarsFailed(true);
@@ -1146,6 +1163,14 @@ function ImageGenModelSettingsAccordion({
               >
                 {t(ditControls.hint.labelKey, ditControls.hint.params)}
               </span>
+              {sidecarsSnapshotAt !== null && (
+                <span
+                  data-testid="image-gen-ft-sidecars-snapshot"
+                  className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4"
+                >
+                  {t("image_gen_sidecars_snapshot", { time: formatListingSnapshotTime(sidecarsSnapshotAt) })}
+                </span>
+              )}
               {sidecarsFailed && (
                 <span
                   data-testid="image-gen-ft-sidecars-failed"

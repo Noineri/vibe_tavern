@@ -310,6 +310,8 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
     schedulersByProfile: {},
     sidecarsByProfile: {},
     sidecarsFailedByProfile: {},
+    modelsSnapshotAtByProfile: {},
+    sidecarsSnapshotAtByProfile: {},
     vaeByProfile: {},
     samplerStatusByProfile: {},
     startEdit: mock(() => {}),
@@ -1081,6 +1083,52 @@ describe("ImageGenPane — comfyui dialect surfaces (CG-B1)", () => {
     );
     // The checkpoint-template VAE swap is ignored by DiT graphs — not rendered.
     expect(view.queryByTestId("image-gen-field-vae-swap")).toBeNull();
+  });
+
+  it("IF-20: snapshot-served listings show the honest «saved list» lines; refresh re-fetches the models AND the DiT sidecars", async () => {
+    const fetchSavedModels = mock(async (_id?: string) => null);
+    const fetchSidecars = mock(async (_id?: string) => null);
+    const view = render(
+      <ImageGenPane
+        imageGen={comfyImageGen(
+          { modelId: "raySemiReal_krea2TurboV1Nsfw.safetensors" },
+          {
+            modelsByProfile: { ig1: COMFY_MODELS },
+            sidecarsByProfile: {
+              ig1: { encoders: ["qwen3vl_4b_fp8_scaled.safetensors"], vaes: ["qwen_image_vae.safetensors"] },
+            },
+            modelsSnapshotAtByProfile: { ig1: "not-a-date" },
+            sidecarsSnapshotAtByProfile: { ig1: "not-a-date" },
+            fetchSavedModels,
+            fetchSidecars,
+          },
+        )}
+      />,
+    );
+    // An unparseable time renders verbatim (the formatter's honest fallback).
+    expect(view.getByTestId("image-gen-models-snapshot").textContent).toBe("image_gen_models_snapshot:not-a-date");
+    await openAdvanced(view);
+    expect(view.getByTestId("image-gen-sidecars-snapshot").textContent).toBe("image_gen_sidecars_snapshot:not-a-date");
+
+    const sidecarCallsBefore = fetchSidecars.mock.calls.length;
+    await act(async () => {
+      view.getByTestId("image-gen-models-refresh").click();
+    });
+    expect(fetchSavedModels).toHaveBeenCalledWith("ig1");
+    expect(fetchSidecars.mock.calls.length).toBe(sidecarCallsBefore + 1);
+    expect(fetchSidecars.mock.calls.at(-1)).toEqual(["ig1"]);
+  });
+
+  it("IF-20: live listings render no «saved list» line", async () => {
+    const view = render(
+      <ImageGenPane
+        imageGen={comfyImageGen(
+          { modelId: "raySemiReal_krea2TurboV1Nsfw.safetensors" },
+          { modelsByProfile: { ig1: COMFY_MODELS }, modelsSnapshotAtByProfile: { ig1: null } },
+        )}
+      />,
+    );
+    expect(view.queryByTestId("image-gen-models-snapshot")).toBeNull();
   });
 
   it("the sidecar cache fills ONCE while a DiT model is selected (options-data fetch, no status signal)", async () => {

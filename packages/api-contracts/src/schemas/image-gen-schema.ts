@@ -382,6 +382,12 @@ export const imageGenDitSidecarsSchema = z.object({
 });
 export type ImageGenDitSidecarsValue = z.infer<typeof imageGenDitSidecarsSchema>;
 
+/** IF-20: response header on a saved profile's listing (`/models`,
+ *  `/sidecars`) served from the last-good snapshot because the live fetch
+ *  failed — its value is the snapshot's ISO fetch time. Absent = live.
+ *  The body keeps the live route's shape either way. */
+export const IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER = "X-VT-Listing-Snapshot-At";
+
 /** One LoRA list entry (CG-C2, capability-gated backends) — the adapter
  *  interface's `ImageGenLoraInfo` verbatim. `family` is NULL for the
  *  unknown-family bucket (family ladder exhausted: no embedded metadata,

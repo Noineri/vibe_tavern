@@ -145,7 +145,9 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
       try {
         const models = await runtime.listImageGenProfileModels(c.req.param("id"), c.req.raw.signal);
         if (models === null) return c.json({ error: "Image-gen profile not found" }, 404);
-        return c.json(models);
+        // IF-20: a snapshot answer keeps the live body shape; the header says so.
+        if (models.snapshotAt !== undefined) c.header(schemas.IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER, models.snapshotAt);
+        return c.json(models.data);
       } catch (error) {
         // The saved-profile twin of the draft route's ladder (the STT
         // convention): a picker data source maps upstream failures, never 500s.
@@ -219,7 +221,8 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
           if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
           return c.json({ error: "DiT sidecar listing not supported" }, 400);
         }
-        return c.json(sidecars);
+        if (sidecars.snapshotAt !== undefined) c.header(schemas.IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER, sidecars.snapshotAt);
+        return c.json(sidecars.data);
       } catch (error) {
         const mapped = backendErrorResponse(error);
         if (mapped) return c.json(mapped.body, mapped.status);

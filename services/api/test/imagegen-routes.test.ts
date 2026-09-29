@@ -656,6 +656,111 @@ describe("image-gen routes — live model discovery", () => {
   });
 });
 
+describe("image-gen routes — last-good listing snapshots (IF-20)", () => {
+  const SNAPSHOT_HEADER = "X-VT-Listing-Snapshot-At";
+
+  /** A transport the test can take down: `up = false` = the server is gone. */
+  function switchableTransport(handler: (input: FetchArgs[0]) => Response) {
+    const state = { up: true };
+    const transport = async (input: FetchArgs[0]) => {
+      if (!state.up) throw new TypeError("fetch failed: connect ECONNREFUSED");
+      return handler(input);
+    };
+    return { state, transport };
+  }
+
+  test("models: a live success is recorded; with the server down the route serves it flagged by the header", async () => {
+    const { state, transport } = switchableTransport(() => modelsBody());
+    const { app } = await makeApp(transport);
+    const id = await seedProfile(app, { apiKey: "sk-own" });
+
+    const live = await app.request(`/api/image-gen/profiles/${id}/models`);
+    expect(live.status).toBe(200);
+    expect(live.headers.get(SNAPSHOT_HEADER)).toBeNull();
+    const liveBody = await live.json();
+
+    state.up = false;
+    const offline = await app.request(`/api/image-gen/profiles/${id}/models`);
+    expect(offline.status).toBe(200);
+    // Same body shape and content as the live answer; the header carries the fetch time.
+    expect(await offline.json()).toEqual(liveBody);
+    const snapshotAt = offline.headers.get(SNAPSHOT_HEADER);
+    expect(snapshotAt).not.toBeNull();
+    expect(Number.isNaN(Date.parse(snapshotAt!))).toBe(false);
+
+    // Back online: live again, no header.
+    state.up = true;
+    const back = await app.request(`/api/image-gen/profiles/${id}/models`);
+    expect(back.headers.get(SNAPSHOT_HEADER)).toBeNull();
+  });
+
+  test("models: no snapshot yet → the live failure surfaces as before (502)", async () => {
+    const { state, transport } = switchableTransport(() => modelsBody());
+    state.up = false;
+    const { app } = await makeApp(transport);
+    const id = await seedProfile(app, { apiKey: "sk-own" });
+    const res = await app.request(`/api/image-gen/profiles/${id}/models`);
+    expect(res.status).toBe(502);
+    expect(res.headers.get(SNAPSHOT_HEADER)).toBeNull();
+  });
+
+  test("sidecars: the ComfyUI encoder/VAE folders survive a server restart window", async () => {
+    const { state, transport } = switchableTransport((input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/models/text_encoders") return Response.json(["qwen3vl_4b_fp8_scaled.safetensors"]);
+      if (url.pathname === "/models/vae") return Response.json(["qwen_image_vae.safetensors"]);
+      return new Response("not found", { status: 404 });
+    });
+    const { app } = await makeApp(transport);
+    const id = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.ComfyUI, endpoint: "http://127.0.0.1:8188" });
+
+    expect((await app.request(`/api/image-gen/profiles/${id}/sidecars`)).status).toBe(200);
+    state.up = false;
+    const offline = await app.request(`/api/image-gen/profiles/${id}/sidecars`);
+    expect(offline.status).toBe(200);
+    expect(offline.headers.get(SNAPSHOT_HEADER)).not.toBeNull();
+    expect(await offline.json()).toEqual({
+      encoders: ["qwen3vl_4b_fp8_scaled.safetensors"],
+      vaes: ["qwen_image_vae.safetensors"],
+    });
+  });
+
+  test("a changed endpoint drops the snapshots — another server's files never stand in", async () => {
+    const { state, transport } = switchableTransport(() => modelsBody());
+    const { app } = await makeApp(transport);
+    const id = await seedProfile(app, { apiKey: "sk-own" });
+    expect((await app.request(`/api/image-gen/profiles/${id}/models`)).status).toBe(200);
+
+    // A PATCH that keeps the endpoint keeps the snapshot…
+    const same = await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Renamed", endpoint: "http://localhost:8000/v1" }),
+    });
+    expect(same.status).toBe(200);
+    state.up = false;
+    expect((await app.request(`/api/image-gen/profiles/${id}/models`)).headers.get(SNAPSHOT_HEADER)).not.toBeNull();
+
+    // …a new endpoint drops it.
+    const moved = await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: "http://localhost:9000/v1" }),
+    });
+    expect(moved.status).toBe(200);
+    expect((await app.request(`/api/image-gen/profiles/${id}/models`)).status).toBe(502);
+  });
+
+  test("an unreadable stored payload counts as no snapshot (the live failure surfaces)", async () => {
+    const { state, transport } = switchableTransport(() => modelsBody());
+    const { app, stores } = await makeApp(transport);
+    const id = await seedProfile(app, { apiKey: "sk-own" });
+    await stores.imageGenListingSnapshots.put(id, "models", { not: "a model list" });
+    state.up = false;
+    expect((await app.request(`/api/image-gen/profiles/${id}/models`)).status).toBe(502);
+  });
+});
+
 describe("image-gen routes — samplers (capability-gated)", () => {
   test("a1111 profile lists samplers via the documented endpoint", async () => {
     let capturedUrl = "";

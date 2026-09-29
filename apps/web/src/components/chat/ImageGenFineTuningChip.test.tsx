@@ -107,6 +107,9 @@ const lorasFailFor = new Set<string>();
 let upscalersStore: Record<string, import("../../api/image-gen-api.js").ImageGenUpscaler[]> = {};
 const upscalersFailFor = new Set<string>();
 let sidecarsStore: Record<string, import("@vibe-tavern/api-contracts").ImageGenDitSidecarsValue> = {};
+// IF-20: per-profile snapshot times the listing mocks report (absent = live).
+let modelsSnapshotAtStore: Record<string, string> = {};
+let sidecarsSnapshotAtStore: Record<string, string> = {};
 const sidecarsFailFor = new Set<string>();
 const sidecarsCalls: string[] = [];
 const generateCalls: Array<[string, import("@vibe-tavern/api-contracts").GenerateImageGenInput]> = [];
@@ -152,7 +155,8 @@ mock.module("../../api/image-gen-api.js", () => ({
   listAllImageGenProfiles: () => Promise.resolve([...profilesStore]),
   // IF-10: the learned prompt-cap table (advisory counter data).
   listImageGenPromptCaps: () => Promise.resolve([...promptCapsStore]),
-  listImageGenModels: (id: string) => Promise.resolve([...(modelsStore[id] ?? [])]),
+  listImageGenModels: (id: string) =>
+    Promise.resolve({ data: [...(modelsStore[id] ?? [])], snapshotAt: modelsSnapshotAtStore[id] ?? null }),
   listImageGenSamplers: (id: string) => Promise.resolve([...(samplersStore[id] ?? [])]),
   listImageGenSchedulers: (id: string) => Promise.resolve([...(schedulersStore[id] ?? [])]),
   listImageGenExtensions: (id: string) => Promise.resolve([...(extensionsStore[id] ?? [])]),
@@ -176,7 +180,10 @@ mock.module("../../api/image-gen-api.js", () => ({
       ? Promise.reject(new Error("sidecar list boom"))
       : Promise.resolve(
           sidecarsStore[id]
-            ? { encoders: [...sidecarsStore[id].encoders], vaes: [...sidecarsStore[id].vaes] }
+            ? {
+                data: { encoders: [...sidecarsStore[id].encoders], vaes: [...sidecarsStore[id].vaes] },
+                snapshotAt: sidecarsSnapshotAtStore[id] ?? null,
+              }
             : null,
         );
   },
@@ -286,6 +293,8 @@ afterEach(() => {
   upscalersStore = {};
   upscalersFailFor.clear();
   sidecarsStore = {};
+  modelsSnapshotAtStore = {};
+  sidecarsSnapshotAtStore = {};
   sidecarsFailFor.clear();
   sidecarsCalls.length = 0;
   upsertCalls.length = 0;
@@ -1664,6 +1673,32 @@ describe("ImageGenFineTuningChip — comfyui dialect (CG-B2)", () => {
     // The rows still render (Auto + any stored value) — a hint, not a teardown.
     expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy();
     expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-vae")).toBeTruthy();
+  });
+
+  it("IF-20: listings served from the server's snapshot fill the pickers and say so; live listings carry no hint", async () => {
+    armDitChat("chat-snap");
+    modelsSnapshotAtStore = { cgx: "2026-09-29T10:00:00.000Z" };
+    sidecarsSnapshotAtStore = { cgx: "2026-09-29T10:00:00.000Z" };
+    const view = await openAccordion("chat-snap", "Ray DiT");
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-sidecars-snapshot").textContent).toBe(
+        "image_gen_sidecars_snapshot",
+      ),
+    );
+    expect(within(view.baseElement).getByTestId("image-gen-ft-models-snapshot").textContent).toBe(
+      "image_gen_models_snapshot",
+    );
+    // The snapshot is data: the encoder picker has its list, no failure hint.
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-sidecars-failed")).toBeNull();
+
+    cleanup();
+    modelsSnapshotAtStore = {};
+    sidecarsSnapshotAtStore = {};
+    armDitChat("chat-live");
+    const live = await openAccordion("chat-live", "Ray DiT");
+    await waitFor(() => expect(within(live.baseElement).getByTestId("image-gen-ft-overlay-encoder")).toBeTruthy());
+    expect(within(live.baseElement).queryByTestId("image-gen-ft-models-snapshot")).toBeNull();
+    expect(within(live.baseElement).queryByTestId("image-gen-ft-sidecars-snapshot")).toBeNull();
   });
 });
 

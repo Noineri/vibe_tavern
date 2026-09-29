@@ -1084,6 +1084,13 @@ export interface SttRuntimeApi {
  *  registry (imported for their registration side effects in the adapter),
  *  one-shot generation that persists bytes as flat attachments and appends
  *  the image message slot, and the gallery-promotion mirror. */
+/** IF-20: a saved profile's listing — live, or the last-good snapshot
+ *  (`snapshotAt` = its ISO fetch time) when the live fetch failed. */
+export interface ImageGenListing<T> {
+	data: T;
+	snapshotAt?: string;
+}
+
 export interface ImageGenRuntimeApi {
 	listImageGenProfiles: () => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue[]>;
 	getImageGenProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue | null>;
@@ -1096,9 +1103,10 @@ export interface ImageGenRuntimeApi {
 	/** Probe a saved profile's endpoint/credential. Null = unknown profile
 	 *  (route → 404); failures arrive as `{ok:false}` data, never thrown. */
 	probeImageGenProfile: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenProbeResultValue | null>;
-	/** Live model catalog for a saved profile (picker data source). Null =
-	 *  unknown profile (route → 404). */
-	listImageGenProfileModels: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelInfoValue[] | null>;
+	/** Model catalog for a saved profile (picker data source): live, or the
+	 *  last-good snapshot flagged with `snapshotAt` when the live fetch
+	 *  failed (IF-20). Null = unknown profile (route → 404). */
+	listImageGenProfileModels: (id: string, signal?: AbortSignal) => Promise<ImageGenListing<import("@vibe-tavern/api-contracts").ImageGenModelInfoValue[]> | null>;
 	/** Samplers for a saved profile — capability-gated (A1111-compat only in
 	 *  v1). Null = unknown profile (route → 404); `[]`-with-ok-probe is NOT
 	 *  used here — a backend without the surface returns null too (route →
@@ -1110,8 +1118,9 @@ export interface ImageGenRuntimeApi {
 	listImageGenProfileSchedulers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenSchedulerInfoValue[] | null>;
 	/** DiT sidecar (text encoder + VAE) listing for a saved profile —
 	 *  comfyui-dialect gate (CG-B1, the schedulers twin): null = unknown
-	 *  profile or unsupported backend (route → 404/400). */
-	listImageGenProfileDitSidecars: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenDitSidecarsValue | null>;
+	 *  profile or unsupported backend (route → 404/400). Live, or the
+	 *  last-good snapshot flagged with `snapshotAt` (IF-20). */
+	listImageGenProfileDitSidecars: (id: string, signal?: AbortSignal) => Promise<ImageGenListing<import("@vibe-tavern/api-contracts").ImageGenDitSidecarsValue> | null>;
 	/** LoRA list for a saved profile (dialect-gated: ComfyUI CG-C2, the
 	 *  sidecars twin; A1111 with FT-A4). Null = unknown profile or
 	 *  unsupported backend (route → 404/400, the samplers ladder). */

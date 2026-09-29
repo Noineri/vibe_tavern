@@ -81,6 +81,8 @@ function makeImageGen(overrides: Record<string, unknown> = {}): ImageGenHook {
     schedulersByProfile: {},
     sidecarsByProfile: {},
     sidecarsFailedByProfile: {},
+    modelsSnapshotAtByProfile: {},
+    sidecarsSnapshotAtByProfile: {},
     vaeByProfile: {},
     samplerStatusByProfile: {},
     startEdit: mock(() => {}),

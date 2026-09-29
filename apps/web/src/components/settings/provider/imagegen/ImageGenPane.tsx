@@ -9,6 +9,7 @@ import { CustomTooltip, TooltipProvider } from "../../../shared/Tooltip.js";
 import { cn } from "../../../../lib/cn.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { templateDisplayLabel } from "../../../../lib/imagegen/template-labels.js";
+import { formatListingSnapshotTime } from "../../../../lib/imagegen/listing-snapshot.js";
 import { buildAdetailerControl, buildDitSidecarControls, buildHiresControl, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions } from "../../../../lib/imagegen/model-controls.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { NumberInput } from "../../../shared/NumberInput.js";
@@ -135,6 +136,7 @@ function ModelPicker({
   favoriteIds,
   onToggleFavorite,
   onRefresh,
+  snapshotAt,
 }: {
   value: string | null;
   onChange: (modelId: string) => void;
@@ -143,6 +145,8 @@ function ModelPicker({
   favoriteIds: Set<string>;
   onToggleFavorite: (model: ModelOption) => void;
   onRefresh: () => void;
+  /** IF-20: the list came from the server's last-good snapshot (ISO time). */
+  snapshotAt: string | null;
 }) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -358,6 +362,17 @@ function ModelPicker({
             {t("image_gen_detected_template", {
               template: templateDisplayLabel(selectedModel.template, t),
             })}
+          </div>
+        )}
+        {/* IF-20: an honest «saved list» line — the live fetch failed and
+            the server answered from its last-good snapshot; «refresh»
+            re-fetches live. */}
+        {snapshotAt !== null && (
+          <div
+            data-testid="image-gen-models-snapshot"
+            className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4"
+          >
+            {t("image_gen_models_snapshot", { time: formatListingSnapshotTime(snapshotAt) })}
           </div>
         )}
       </div>
@@ -1720,6 +1735,9 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const samplers = imageGen.samplersByProfile[profileId] ?? [];
   const schedulers = imageGen.schedulersByProfile[profileId] ?? [];
   const sidecars = imageGen.sidecarsByProfile[profileId];
+  // IF-20: set when the server answered from its last-good snapshot.
+  const modelsSnapshotAt = imageGen.modelsSnapshotAtByProfile[profileId];
+  const sidecarsSnapshotAt = imageGen.sidecarsSnapshotAtByProfile[profileId];
   // IG-CF12a: the LOCAL-family pane (A1111 + ComfyUI, CG-B1) is a LOCAL
   // control surface — the shared status chip rides above the picker,
   // driven by the sampler fetch signal (`samplerStatusByProfile`), and an
@@ -1944,7 +1962,13 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
         onToggleFavorite={(model) =>
           void (favoriteIds.has(model.id) ? imageGen.unstarModel(model.id) : imageGen.starModel(model.id, model.label))
         }
-        onRefresh={() => void imageGen.fetchSavedModels(profileId)}
+        onRefresh={() => {
+          void imageGen.fetchSavedModels(profileId);
+          // IF-20: «refresh» is the force-live path for every listing the
+          // pane shows from the models folders — the DiT sidecar lists too.
+          if (ditControls !== null) void imageGen.fetchSidecars(profileId);
+        }}
+        snapshotAt={modelsSnapshotAt ?? null}
       />
 
       {/* ── Image prompt family (IPT-5): ALWAYS visible under the model
@@ -2348,6 +2372,14 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                       chip's `sidecarsFailed` twin — the store's per-profile
                       flag, same key, options-data rule: no connectivity
                       conclusion). */}
+                  {sidecarsSnapshotAt != null && (
+                    <span
+                      data-testid="image-gen-sidecars-snapshot"
+                      className="sm:col-span-2 px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4"
+                    >
+                      {t("image_gen_sidecars_snapshot", { time: formatListingSnapshotTime(sidecarsSnapshotAt) })}
+                    </span>
+                  )}
                   {(imageGen.sidecarsFailedByProfile[profileId] ?? false) && (
                     <span
                       data-testid="image-gen-sidecars-failed"
