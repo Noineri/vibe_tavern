@@ -176,7 +176,7 @@ describe("entryMatchesRecentText", () => {
     priority: 100,
     stickyWindow: 0,
     cooldownWindow: 0,
-    delayWindow: 0,
+    minChatMessages: 0,
     enabled: true,
     metadata: {},
   };

@@ -238,7 +238,7 @@ const FULL_ENTRY: CreateLoreEntryData = {
   priority: 42,
   stickyWindow: 3,
   cooldownWindow: 5,
-  delayWindow: 2,
+  minChatMessages: 2,
   constant: true,
   probability: 77,
   ignoreBudget: true,
@@ -312,7 +312,7 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect(read.priority).toBe(100);
     expect(read.stickyWindow).toBe(0);
     expect(read.cooldownWindow).toBe(0);
-    expect(read.delayWindow).toBe(0);
+    expect(read.minChatMessages).toBe(0);
     expect(read.probability).toBe(100);
     expect(read.groupWeight).toBe(100);
     expect(read.recursionLevel).toBe(0);

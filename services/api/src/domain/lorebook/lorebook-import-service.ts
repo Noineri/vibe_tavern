@@ -104,7 +104,7 @@ export async function importLorebook(
 		priority: entry.priority,
 		stickyWindow: entry.stickyWindow,
 		cooldownWindow: entry.cooldownWindow,
-		delayWindow: entry.delayWindow,
+		minChatMessages: entry.minChatMessages,
 		constant: entry.constant,
 		probability: entry.probability,
 		role: entry.role,

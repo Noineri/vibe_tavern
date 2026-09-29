@@ -4,8 +4,8 @@ import { resolveActivatedEntries, type ActivationInput } from "../src/domain/pro
 /**
  * Activation-reason tests for the live lore activation engine.
  *
- * Each activation path (constant / sticky / delay-fulfilled / @@activate
- * decorator / key match) must tag the resulting entry with a structured
+ * Each activation path (constant / sticky / @@activate decorator /
+ * key match) must tag the resulting entry with a structured
  * `reason: LoreActivationReason` so the prompt trace can surface *why* an
  * entry activated (reports/lorebook-trace-conditions.md). These tests
  * characterize every reason kind + the recursion variant of key_match.
@@ -27,7 +27,7 @@ function makeEntry(id: string, overrides: Record<string, unknown> = {}) {
     priority: 100,
     stickyWindow: 0,
     cooldownWindow: 0,
-    delayWindow: 0,
+    minChatMessages: 0,
     constant: false,
     probability: 100,
     ignoreBudget: false,
@@ -139,23 +139,6 @@ describe("lore activation engine — reason tagging on activated entries", () =>
     const entry = activated(result, "e_dec");
     expect(entry).toBeDefined();
     expect(entry!.reason).toEqual({ kind: "decorator" });
-  });
-
-  it("tags a delay-fulfilled entry with reason { kind: 'delay_fulfilled' }", () => {
-    // delayWindow=2; pendingDelayUntilTurn=1; currentTurn=5 → pending reached.
-    const result = resolveActivatedEntries(
-      makeInput(
-        [makeEntry("e_delay", { delayWindow: 2, keys: ["trigger"] })],
-        {
-          activationState: { e_delay: { pendingDelayUntilTurn: 1 } },
-          messages: [{ role: "user", content: "trigger fired" }],
-          currentTurn: 5,
-        },
-      ),
-    );
-    const entry = activated(result, "e_delay");
-    expect(entry).toBeDefined();
-    expect(entry!.reason).toEqual({ kind: "delay_fulfilled" });
   });
 
   it("tags a recursion-pass key match with scanState: 'recursion'", () => {

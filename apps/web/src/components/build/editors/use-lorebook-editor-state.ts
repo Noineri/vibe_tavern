@@ -64,7 +64,7 @@ const EMPTY_ENTRY_DRAFT: LoreEntryDraft = {
   priority: 0,
   stickyWindow: 0,
   cooldownWindow: 0,
-  delayWindow: 0,
+  minChatMessages: 0,
   enabled: true,
   constant: false,
   probability: 100,

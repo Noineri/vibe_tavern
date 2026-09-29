@@ -298,7 +298,9 @@ export const loreEntries = sqliteTable('lore_entries', {
   priority: integer('priority').notNull().default(100),
   stickyWindow: integer('sticky_window').notNull().default(0),
   cooldownWindow: integer('cooldown_window').notNull().default(0),
-  delayWindow: integer('delay_window').notNull().default(0),
+  // Absolute chat-length gate (ST `delay`); replaces the removed VT-only
+  // delay_window column (LOREBOOK_ST_PARITY_RESWEEP_2026-09, step 1).
+  minChatMessages: integer('min_chat_messages').notNull().default(0),
   constant: integer('constant').notNull().default(0),
   probability: integer('probability').notNull().default(100),
   ignoreBudget: integer('ignore_budget').notNull().default(0),

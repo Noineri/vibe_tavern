@@ -26,7 +26,7 @@ function makeEntry(id: string, content: string, priority: number, overrides: Rec
     priority,
     stickyWindow: 0,
     cooldownWindow: 0,
-    delayWindow: 0,
+    minChatMessages: 0,
     constant: true,
     probability: 100,
     ignoreBudget: false,

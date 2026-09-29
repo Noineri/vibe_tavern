@@ -27,7 +27,6 @@ export interface LoreActivationState {
   [entryId: string]: {
     activatedAtTurn?: number;
     lastMatchedAtTurn?: number;
-    pendingDelayUntilTurn?: number;
   };
 }
 
@@ -61,7 +60,9 @@ export interface ActivationInput {
       priority: number;
       stickyWindow: number;
       cooldownWindow: number;
-      delayWindow: number;
+      /** Absolute chat-length gate (ST `delay`): fully suppressed while the
+       * current message count is below it. 0 = off. */
+      minChatMessages: number;
       constant: boolean;
       probability: number;
       ignoreBudget: boolean;
@@ -159,7 +160,8 @@ interface FlatEntry {
   priority: number;
   stickyWindow: number;
   cooldownWindow: number;
-  delayWindow: number;
+  /** Absolute chat-length gate (ST `delay`). 0 = off. */
+  minChatMessages: number;
   constant: boolean;
   probability: number;
   ignoreBudget: boolean;
@@ -506,6 +508,17 @@ function tryActivateEntry(ctx: {
     if (entry.characterFilterExclude ? matches : !matches) return reason("character filter");
   }
 
+  // 2. Absolute chat-length gate (ST `delay`). ST computes isDelay from
+  // chat.length via #checkDelayEffect and `continue`s on it BEFORE the
+  // cooldown, delay-until-recursion, decorator, constant and sticky gates
+  // (world-info.js ~4735-4790) — so an entry below its threshold is fully
+  // suppressed, constants and live sticky windows included. Stateless: like
+  // ST, it re-evaluates every scan against the current chat length (deleting
+  // messages re-suppresses the entry). 0 = off.
+  if (entry.minChatMessages > 0 && currentTurn < entry.minChatMessages) {
+    return reason("min chat messages not reached");
+  }
+
   // 3. Recursion-specific filters
   if (scanState === "recursion") {
     if (entry.excludeRecursion) return reason("exclude recursion");
@@ -577,13 +590,6 @@ function tryActivateEntry(ctx: {
     if (turnsSince < entry.cooldownWindow) return reason("cooldown");
   }
 
-  // 7. Delay check
-  if (entry.delayWindow > 0 && state?.pendingDelayUntilTurn != null) {
-    if (currentTurn < state.pendingDelayUntilTurn) return reason("delay pending");
-    // LG-6: state write moved to the pass-survivor loop.
-    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "delay_fulfilled" }, groupScore: 0 };
-  }
-
   // 8. Key matching (skip if @@activate decorator forces activation)
   let matchedKeys: string[] = [];
   let secondaryMatches: string[] = [];
@@ -608,16 +614,6 @@ function tryActivateEntry(ctx: {
   // world-info.js 4909-4931): group losers never roll, a prob-failed WINNER
   // leaves its group empty, constants roll like everyone else, and
   // sticky-active auto-passes. The gate lives in the pass-survivor loops.
-
-  // 11. Delay — if delayWindow > 0 and this is first match, set pending
-  // LG-12: "never activated before" must ALSO hold for lastMatchedAtTurn —
-  // the expiry sweep clears activatedAtTurn, and a cleared anchor must not
-  // re-arm a delay that already ran (ST's delay is an absolute threshold,
-  // never re-armed). Both-null = genuinely first-ever match.
-  if (entry.delayWindow > 0 && state?.activatedAtTurn == null && state?.lastMatchedAtTurn == null) {
-    updatedState[entry.id] = { pendingDelayUntilTurn: currentTurn + entry.delayWindow };
-    return reason("delay window set");
-  }
 
   // 12. Activate
   logger.debug("  actv %s: key match | title=%s", entry.id, entry.title);
@@ -798,9 +794,7 @@ function toActivatedEntry(
  * sticky window would auto-activate on every later scan within the window
  * despite never reaching the prompt. Writes now happen in the survivor loop,
  * preserving each activation path's original write shape: constant/sticky
- * merge over the existing state; key-match/decorator/delay-fulfilled replace
- * it. The delay-pending SETUP write stays inside tryActivateEntry
- * (delay-pending entries never become group candidates).
+ * merge over the existing state; key-match/decorator replace it.
  */
 function commitActivationState(
   entry: FlatEntry,
@@ -836,7 +830,7 @@ function commitActivationState(
       // lives; the sweep's handoff re-anchors it at the sticky end instead.
       updatedState[entry.id] = { ...state, lastMatchedAtTurn: state?.lastMatchedAtTurn ?? currentTurn };
       break;
-    default: // key_match / decorator / delay_fulfilled — full replace
+    default: // key_match / decorator — full replace
       // Reachable only when no sticky is alive and no cooldown is alive (the
       // gates above), so both anchors are genuinely absent or expired — a
       // fresh dual anchor matches ST's only-if-absent set exactly.

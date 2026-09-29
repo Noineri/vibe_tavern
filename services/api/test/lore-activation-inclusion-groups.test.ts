@@ -29,7 +29,7 @@ function makeEntry(overrides: Record<string, unknown> = {}) {
 		priority: 10,
 		stickyWindow: 0,
 		cooldownWindow: 0,
-		delayWindow: 0,
+		minChatMessages: 0,
 		constant: true,
 		probability: 100,
 		ignoreBudget: true,
@@ -112,15 +112,6 @@ describe("probability ordering (LG-11 characterization)", () => {
 		// so constants never rolled at all). ST rolls constants in the same
 		// verifyProbability loop; the failure is permanent for the resolve.
 		expect(activatedIds(result)).toEqual([]);
-	});
-
-	it("LG-11: delay setup happens at match time — a prob-0 entry still becomes delay-pending", () => {
-		const d = makeEntry({ id: "d", constant: false, keys: ["storm"], delayWindow: 2, probability: 0 });
-		const result = resolveActivatedEntries(makeInput([d], ["storm"]));
-		expect(activatedIds(result)).toEqual([]);
-		// Pre-LG11 pin: undefined (the roll preceded the delay setup). ST
-		// writes delay state at match time; probability rolls after the groups.
-		expect(result.updatedState.d).toEqual({ pendingDelayUntilTurn: 3 });
 	});
 
 	it("LG-11: sticky-first candidate order is the BUDGET consumption order — a sticky survivor beats an earlier plain entry", () => {
@@ -398,23 +389,5 @@ describe("timed-effect windows (LG-12 characterization)", () => {
 		// ST: the effect ended (3-1 >= 2, never re-anchored) → no dominance →
 		// scoring → the matched competitor wins again. (Pre-LG12 pin: ["cc"].)
 		expect(activatedIds(t3)).toEqual(["comp"]);
-	});
-
-	it("LG-12 (stability): a delay+sticky entry never re-arms its delay after the sticky expires", () => {
-		const d = makeEntry({ id: "d", constant: false, keys: ["storm"], delayWindow: 2, stickyWindow: 3 });
-		const t1 = scan([d], ["storm"], undefined, 1);
-		expect(activatedIds(t1)).toEqual([]); // delay-pending, no activation
-		expect(t1.updatedState.d).toEqual({ pendingDelayUntilTurn: 3 });
-		const t3 = scan([d], ["quiet"], t1.updatedState, 3);
-		expect(activatedIds(t3)).toEqual(["d"]); // delay fulfilled
-		const t4 = scan([d], ["quiet"], t3.updatedState, 4);
-		expect(activatedIds(t4)).toEqual(["d"]); // sticky alive (4-3 < 3)
-		const t6 = scan([d], ["storm"], t4.updatedState, 6);
-		// Sticky dead (6-3 >= 3) and the pendingDelay was consumed by the
-		// delay_fulfilled commit at scan 3 — a fresh key match must NOT re-arm
-		// the delay (ST's delay is an absolute threshold, never re-armed). The
-		// expiry sweep clearing the sticky anchor must not change this.
-		expect(activatedIds(t6)).toEqual(["d"]);
-		expect(t6.updatedState.d).toEqual({ activatedAtTurn: 6, lastMatchedAtTurn: 6 });
 	});
 });

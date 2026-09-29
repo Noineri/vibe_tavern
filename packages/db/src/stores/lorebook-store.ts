@@ -72,7 +72,8 @@ export interface CreateLoreEntryData {
   priority?: number;
   stickyWindow?: number;
   cooldownWindow?: number;
-  delayWindow?: number;
+  /** Absolute chat-length gate (ST `delay`). 0 = off. */
+  minChatMessages?: number;
   constant?: boolean;
   probability?: number;
   ignoreBudget?: boolean;
@@ -198,7 +199,8 @@ export interface LoreEntry {
   priority: number;
   stickyWindow: number;
   cooldownWindow: number;
-  delayWindow: number;
+  /** Absolute chat-length gate (ST `delay`). 0 = off. */
+  minChatMessages: number;
   constant: boolean;
   probability: number;
   ignoreBudget: boolean;
@@ -272,7 +274,7 @@ const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldS
   priority:               { column: 'priority',               coerce: 'raw',  insertDefault: 100 },
   stickyWindow:           { column: 'stickyWindow',           coerce: 'raw',  insertDefault: 0 },
   cooldownWindow:         { column: 'cooldownWindow',         coerce: 'raw',  insertDefault: 0 },
-  delayWindow:            { column: 'delayWindow',            coerce: 'raw',  insertDefault: 0 },
+  minChatMessages:        { column: 'minChatMessages',        coerce: 'raw',  insertDefault: 0 },
   constant:               { column: 'constant',               coerce: 'bool', insertDefault: false },
   probability:            { column: 'probability',            coerce: 'raw',  insertDefault: 100 },
   ignoreBudget:           { column: 'ignoreBudget',           coerce: 'bool', insertDefault: false },
@@ -1197,7 +1199,7 @@ export class LorebookStore {
         priority: e.priority,
         stickyWindow: e.stickyWindow,
         cooldownWindow: e.cooldownWindow,
-        delayWindow: e.delayWindow,
+        minChatMessages: e.minChatMessages,
         constant: e.constant === 1,
         probability: e.probability,
         ignoreBudget: e.ignoreBudget ?? false,

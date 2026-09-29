@@ -196,7 +196,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				priority: e.priority,
 				stickyWindow: e.stickyWindow,
 				cooldownWindow: e.cooldownWindow,
-				delayWindow: e.delayWindow,
+				minChatMessages: e.minChatMessages,
 				constant: e.constant,
 				probability: e.probability,
 				ignoreBudget: e.ignoreBudget,

@@ -34,7 +34,7 @@ function baseEntry(overrides: Partial<ExportEntry> = {}): ExportEntry {
     enabled: true,
     stickyWindow: 0,
     cooldownWindow: 0,
-    delayWindow: 0,
+    minChatMessages: 0,
     probability: 100,
     role: "system",
     groupName: "",
@@ -75,7 +75,7 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
       [baseEntry({
         title: "T", content: "C", keys: ["k"], secondaryKeys: ["s"], logic: "not_all",
         position: "at_depth", depth: 6, priority: 22, stickyWindow: 2, cooldownWindow: 4,
-        delayWindow: 1, constant: true, probability: 50, enabled: false, role: "assistant",
+        minChatMessages: 1, constant: true, probability: 50, enabled: false, role: "assistant",
         groupName: "g", groupWeight: 3, scanDepthOverride: 8, caseSensitive: true,
         matchWholeWords: true, excludeRecursion: true, preventRecursion: true,
         delayUntilRecursion: true,

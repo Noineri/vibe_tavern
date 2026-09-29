@@ -38,23 +38,32 @@ const testClock: StoreClock = { now: () => "2026-06-21T00:00:00.000Z" };
 let nextId = 0;
 const testIdGen: StoreIdGenerator = { next: (p: string) => `${p}_rebuild_${++nextId}` };
 
-/** Build a self-contained migrations folder: real squashed baseline (0000) +
- *  a synthetic lorebooks rebuild (0001) that mirrors drizzle-kit's __new_ template. */
+/** Build a self-contained migrations folder: the REAL migrations folder
+ *  (squashed baseline + every incremental) with a synthetic lorebooks rebuild
+ *  appended LAST. Mirroring the real folder keeps the synthetic schema current:
+ *  the store's INSERT references every live column, so a frozen baseline alone
+ *  stops working the first time an incremental migration adds a lore_entries
+ *  column (min_chat_messages, 2026-09). */
 async function buildSyntheticMigrations(): Promise<{ folder: string; rebuildHash: string }> {
   const dir = await mkdtemp(join(tmpdir(), "vt-rebuild-mig-"));
   const folder = join(dir, "drizzle");
   const meta = join(folder, "meta");
   await mkdir(meta, { recursive: true });
 
-  // 0000 = the real squashed baseline (full current schema, CREATE TABLE only).
-  const baselineSrc = resolve(import.meta.dir, "..", "drizzle", "0000_baseline.sql");
-  await copyFile(baselineSrc, join(folder, "0000_baseline.sql"));
-  const baselineWhen = 1_700_000_000_000;
+  const realFolder = resolve(import.meta.dir, "..", "drizzle");
+  const realJournal = JSON.parse(
+    await Bun.file(join(realFolder, "meta", "_journal.json")).text(),
+  ) as {
+    entries: Array<{ idx: number; version: string; when: number; tag: string; breakpoints: boolean }>;
+  };
+  for (const entry of realJournal.entries) {
+    await copyFile(join(realFolder, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
+  }
 
-  // 0001 = synthetic lorebooks rebuild, mirroring drizzle-kit's emitted template:
-  // PRAGMA foreign_keys=OFF; CREATE __new → INSERT…SELECT → DROP → RENAME.
-  // Rebuild of lorebooks in particular is the historically dangerous one because
-  // lore_entries has ON DELETE CASCADE on lorebooks.id.
+  // Synthetic lorebooks rebuild appended last, mirroring drizzle-kit's emitted
+  // template: PRAGMA foreign_keys=OFF; CREATE __new → INSERT…SELECT → DROP →
+  // RENAME. Rebuild of lorebooks in particular is the historically dangerous
+  // one because lore_entries has ON DELETE CASCADE on lorebooks.id.
   const rebuildSql = [
     "PRAGMA foreign_keys=OFF;",
     'CREATE TABLE `__new_lorebooks` (`id` text PRIMARY KEY NOT NULL, `name` text NOT NULL, `description` text NOT NULL DEFAULT \'\', `scope_type` text NOT NULL, `scan_depth` integer NOT NULL DEFAULT 10, `token_budget` integer NOT NULL DEFAULT 1000, `token_budget_percent` integer, `recursive_scanning` integer NOT NULL DEFAULT 0, `use_group_scoring` integer NOT NULL DEFAULT 0, `max_recursion_steps` integer NOT NULL DEFAULT 5, `include_names` integer NOT NULL DEFAULT 0, `min_activations` integer NOT NULL DEFAULT 0, `min_activations_depth_max` integer NOT NULL DEFAULT 0, `overflow_alert` integer NOT NULL DEFAULT 0, `character_strategy` integer NOT NULL DEFAULT 0, `sort_order` integer NOT NULL DEFAULT 0, `character_id` text, `persona_id` text, `chat_id` text, `enabled` integer NOT NULL DEFAULT 1, `extensions_json` text NOT NULL DEFAULT \'{}\', `content_hash` text, `has_file_on_disk` integer NOT NULL DEFAULT 0, `created_at` text NOT NULL, `updated_at` text NOT NULL, FOREIGN KEY (`character_id`) REFERENCES `characters`(`id`) ON UPDATE no action ON DELETE cascade, FOREIGN KEY (`persona_id`) REFERENCES `personas`(`id`) ON UPDATE no action ON DELETE cascade, FOREIGN KEY (`chat_id`) REFERENCES `chats`(`id`) ON UPDATE no action ON DELETE cascade);',
@@ -66,16 +75,17 @@ async function buildSyntheticMigrations(): Promise<{ folder: string; rebuildHash
     'CREATE INDEX `idx_lorebooks_chat` ON `lorebooks` (`chat_id`);',
     'CREATE INDEX `idx_lorebooks_scope` ON `lorebooks` (`scope_type`);',
   ].join("\n--> statement-breakpoint\n");
-  await Bun.write(join(folder, "0001_rebuild_lorebooks.sql"), rebuildSql);
+  const rebuildTag = `${String(realJournal.entries.length).padStart(4, "0")}_rebuild_lorebooks`;
+  await Bun.write(join(folder, `${rebuildTag}.sql`), rebuildSql);
   const rebuildHash = new Bun.CryptoHasher("sha256").update(rebuildSql).digest("hex");
-  const rebuildWhen = baselineWhen + 1_000;
+  const lastWhen = realJournal.entries[realJournal.entries.length - 1].when;
 
   const journal = {
     version: "7",
     dialect: "sqlite",
     entries: [
-      { idx: 0, version: "6", when: baselineWhen, tag: "0000_baseline", breakpoints: true },
-      { idx: 1, version: "6", when: rebuildWhen, tag: "0001_rebuild_lorebooks", breakpoints: true },
+      ...realJournal.entries,
+      { idx: realJournal.entries.length, version: "6", when: lastWhen + 1_000, tag: rebuildTag, breakpoints: true },
     ],
   };
   await Bun.write(join(meta, "_journal.json"), JSON.stringify(journal));

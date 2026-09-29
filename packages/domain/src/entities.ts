@@ -255,8 +255,10 @@ export interface CharacterFilterEntry {
  *
  * `keys` are activation triggers; `secondaryKeys` provide additional conditions
  * combined via `logic`.
- * `stickyWindow`, `cooldownWindow`, and `delayWindow` control time-based
- * activation behaviour (Phase 2).
+ * `stickyWindow` and `cooldownWindow` control time-based activation
+ * behaviour (Phase 2). `minChatMessages` is an absolute chat-length gate
+ * (ST parity, the old VT-only `delayWindow` mechanic was removed —
+ * LOREBOOK_ST_PARITY_RESWEEP_2026-09, owner ruling 2026-09-24).
  */
 export interface LoreEntry {
   id: LoreEntryId;
@@ -272,7 +274,11 @@ export interface LoreEntry {
   // Time windows
   stickyWindow: number;
   cooldownWindow: number;
-  delayWindow: number;
+  /** Absolute chat-length gate (ST `delay`): while the current message count
+   * is below this value the entry is fully suppressed — constants, sticky
+   * windows and @@activate decorators included, exactly ST's `isDelay`
+   * continue (world-info.js #checkDelayEffect). 0 = off. */
+  minChatMessages: number;
   // Extended ST fields
   constant: boolean;
   probability: number;
@@ -318,7 +324,9 @@ export type LoreActivationReason =
   | { kind: "constant" }
   /** Previously activated, still inside its `stickyWindow` (step 5). */
   | { kind: "sticky"; turnsSinceActivation: number; window: number }
-  /** `delayWindow` elapsed — first-match pending now fulfilled (step 7). */
+  /** LEGACY — the `delayWindow` mechanic was removed (resweep step 1,
+   * 2026-09-29); the engine no longer produces this reason. Kept in the union
+   * so prompt traces persisted before the removal still render in the trace UI. */
   | { kind: "delay_fulfilled" }
   /** `@@activate` decorator forced activation without a key match (step 8/12). */
   | { kind: "decorator" }

@@ -631,6 +631,20 @@
       "when": 1790692880193,
       "tag": "0089_blue_boomer",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "6",
+      "when": 1790698137179,
+      "tag": "0090_tricky_ricochet",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "6",
+      "when": 1790698148890,
+      "tag": "0091_misty_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

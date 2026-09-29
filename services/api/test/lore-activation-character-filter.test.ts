@@ -30,7 +30,7 @@ function makeEntry(overrides: Record<string, unknown> = {}) {
 		priority: 10,
 		stickyWindow: 0,
 		cooldownWindow: 0,
-		delayWindow: 0,
+		minChatMessages: 0,
 		constant: true,
 		probability: 100,
 		ignoreBudget: true,

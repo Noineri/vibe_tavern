@@ -207,10 +207,10 @@ export function importJanitorLorebookJson(
       position: "in_prompt",
       depth: asNumber(entry.depth, 4),
       priority,
-      // Janitor does not expose sticky/cooldown/delay windows.
+      // Janitor does not expose sticky/cooldown windows or a chat-length delay gate.
       stickyWindow: 0,
       cooldownWindow: 0,
-      delayWindow: 0,
+      minChatMessages: 0,
       constant: asBoolean(entry.constant, false),
       probability: asNumber(entry.probability, 100),
       ignoreBudget: false,

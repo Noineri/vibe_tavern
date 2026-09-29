@@ -79,7 +79,7 @@ const loreEntryCoreSchema = z.object({
   enabled: z.boolean().optional().default(true),
   stickyWindow: z.number().optional().default(0),
   cooldownWindow: z.number().optional().default(0),
-  delayWindow: z.number().optional().default(0),
+  minChatMessages: z.number().optional().default(0),
 });
 
 export const createLoreEntrySchema = loreEntryCoreSchema;
@@ -116,7 +116,7 @@ const loreEntryUpdateSchema = z.object({
   enabled: z.boolean().optional(),
   stickyWindow: z.number().optional(),
   cooldownWindow: z.number().optional(),
-  delayWindow: z.number().optional(),
+  minChatMessages: z.number().optional(),
 });
 
 export const updateLoreEntrySchema = loreEntryUpdateSchema;

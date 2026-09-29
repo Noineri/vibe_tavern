@@ -95,7 +95,7 @@ function toVtInput(c: ParityCase): ActivationInput {
 					priority: e.order ?? 10,
 					stickyWindow: e.sticky ? 5 : 0,
 					cooldownWindow: 0,
-					delayWindow: 0,
+					minChatMessages: 0,
 					constant: e.constant ?? false,
 					probability: 100,
 					ignoreBudget: true,

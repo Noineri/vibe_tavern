@@ -249,7 +249,10 @@ export function importStLorebookJson(
       priority: asNumber(entry.order, 100),
       stickyWindow: asNumber(entry.sticky, 0),
       cooldownWindow: asNumber(entry.cooldown, 0),
-      delayWindow: asNumber(entry.delay, 0),
+      // ST `delay` is an absolute chat-length gate — imported 1:1 into VT's
+      // `minChatMessages` (the old VT-only `delayWindow` mechanic is gone;
+      // resweep step 1, LOREBOOK_ST_PARITY_RESWEEP_2026-09).
+      minChatMessages: asNumber(entry.delay, 0),
       constant: asBoolean(entry.constant, false),
       probability: asNumber(entry.probability, 100),
       ignoreBudget: asBoolean(entry.ignoreBudget, false),
@@ -352,7 +355,7 @@ interface StExportLoreEntry {
   readonly enabled: boolean;
   readonly stickyWindow: number;
   readonly cooldownWindow: number;
-  readonly delayWindow: number;
+  readonly minChatMessages: number;
   readonly probability: number;
   readonly role: string;
   readonly groupName: string;
@@ -399,7 +402,7 @@ export function exportLorebookToSt(
       disable: !e.enabled,
       sticky: e.stickyWindow,
       cooldown: e.cooldownWindow,
-      delay: e.delayWindow,
+      delay: e.minChatMessages,
       probability: e.probability,
       useProbability: true,
       role: e.role,

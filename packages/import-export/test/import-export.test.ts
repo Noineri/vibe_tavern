@@ -410,6 +410,21 @@ describe("importStLorebookJson", () => {
     expect(result.entries).toHaveLength(2);
   });
 
+  it("maps ST `delay` (absolute chat-length gate) to VT `minChatMessages` 1:1", () => {
+    // ST `delay` suppresses the entry until the chat has N messages — the
+    // old VT `delayWindow` (match-armed, never re-arming) is removed.
+    const lorebook = {
+      name: "Delay Gate",
+      entries: [{
+        keys: ["dragon"], content: "Delayed lore.", delay: 30,
+        extensions: { position: 0 },
+      }],
+    };
+    const result = importStLorebookJson(lorebook);
+    expect(result.entries[0].minChatMessages).toBe(30);
+    expect((result.entries[0] as Record<string, unknown>).delayWindow).toBeUndefined();
+  });
+
   it("maps selective logic values correctly", () => {
     const cases: Array<[number, string]> = [
       [0, "and_any"],

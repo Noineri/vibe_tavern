@@ -500,7 +500,7 @@ export class CharacterRuntime {
         groupName: e.groupName,
         groupWeight: e.groupWeight,
         cooldownWindow: e.cooldownWindow,
-        delayWindow: e.delayWindow,
+        minChatMessages: e.minChatMessages,
         stickyWindow: e.stickyWindow,
         scanDepthOverride: e.scanDepthOverride,
         matchWholeWords: e.matchWholeWords,

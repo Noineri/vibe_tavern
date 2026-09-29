@@ -590,12 +590,12 @@ export function LoreEntryEditor({
                     </ControlledField>
                   </div>
                 </CustomTooltip>
-                <CustomTooltip content={t("delay_hint")}>
+                <CustomTooltip content={t("min_chat_messages_hint")}>
                   <div>
                     <FieldLabel>
-                      {t("lore_delay_window")}
+                      {t("lore_min_chat_messages")}
                     </FieldLabel>
-                    <ControlledField name="delayWindow">
+                    <ControlledField name="minChatMessages">
                       {(field) => (
                         <NumberInput min={0} value={field.value} onChange={field.onChange} />
                       )}
