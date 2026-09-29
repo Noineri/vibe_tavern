@@ -232,7 +232,14 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
 
   // Check if any lorebook has recursive scanning enabled
   const anyRecursiveScanning = input.lorebooks.some(lb => lb.recursiveScanning);
-  const maxSteps = Math.max(1, ...input.lorebooks.map(lb => lb.maxRecursionSteps || 0));
+  // N10/P10 (ST parity, world-info.js 4655-4663): steps = 0 = unlimited;
+  // the cap counts EVERY scan pass INCLUDING the initial normal scan, so
+  // steps = N allows N−1 recursion passes. ST has one global cap; VT merges
+  // per-book — a book with 0 (no cap) lifts the cap for the whole resolve
+  // (named deviation: truncating an explicitly unlimited book would be the
+  // harder violation than letting a capped book's chain run long).
+  const anyUnlimitedSteps = input.lorebooks.some(lb => !(lb.maxRecursionSteps > 0));
+  const maxSteps = anyUnlimitedSteps ? 0 : Math.max(0, ...input.lorebooks.map(lb => lb.maxRecursionSteps || 0));
 
   // Track already activated entry ids to avoid duplicates
   const activatedIds = new Set<string>();
@@ -389,12 +396,15 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   if (!anyRecursiveScanning || recurseBuffer.trim().length === 0) {
     logger.debug("Recursive scanning skipped (enabled=%s, buffer=%d)", anyRecursiveScanning, recurseBuffer.trim().length);
   } else {
-    logger.debug("Recursive scanning START — maxSteps=%d, delayLevels=%o", maxSteps, recursionDelayLevels);
+    logger.debug("Recursive scanning START — steps=%d (%s), delayLevels=%o", maxSteps, maxSteps === 0 ? "unlimited" : `${maxSteps - 1} recursion passes`, recursionDelayLevels);
     let loopCount = 0;
     let delayLevelIdx = 0;
     let currentRecursionLevel = recursionDelayLevels[0] ?? 1;
 
-    while (loopCount < maxSteps) {
+    // The initial normal scan consumed pass #1 of the budget (ST's `count`
+    // starts at the first pass); 0 = unlimited.
+    const maxRecursionPasses = maxSteps === 0 ? Number.POSITIVE_INFINITY : maxSteps - 1;
+    while (loopCount < maxRecursionPasses) {
       loopCount++;
       logger.debug("  Recursion pass #%d — level=%d, buffer=%d chars", loopCount, currentRecursionLevel, recurseBuffer.length);
       let newActivations = 0;

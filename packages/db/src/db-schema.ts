@@ -269,7 +269,7 @@ export const lorebooks = sqliteTable('lorebooks', {
   // global world-info settings; VT scopes that default to the book).
   caseSensitive: integer('case_sensitive').notNull().default(0),
   matchWholeWords: integer('match_whole_words').notNull().default(0),
-  maxRecursionSteps: integer('max_recursion_steps').notNull().default(5),
+  maxRecursionSteps: integer('max_recursion_steps').notNull().default(0),
   includeNames: integer('include_names').notNull().default(0),
   minActivations: integer('min_activations').notNull().default(0),
   minActivationsDepthMax: integer('min_activations_depth_max').notNull().default(0),

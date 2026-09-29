@@ -319,13 +319,35 @@ describe("lore activation — recursion", () => {
     expect(activated(result, "deep")?.reason).toMatchObject({ kind: "key_match", scanState: "normal" });
   });
 
-  // ── maxRecursionSteps: hard cap on the number of recursion passes ────────
+  // ── maxRecursionSteps: cap on TOTAL scan passes (N10/P10 ST parity) ────
+  // ST world-info.js 4655-4663: the cap check (`steps && steps <= count`)
+  // runs BEFORE each pass and `count` includes the INITIAL normal scan, so
+  // steps = N allows N-1 recursion passes; steps = 0 = unlimited (loop ends
+  // only via no-new-activations / exhausted delay levels). The old VT
+  // semantics ran N recursion passes after the normal pass and clamped 0 to 1.
 
-  it("cuts a multi-hop chain once maxRecursionSteps is exceeded", () => {
-    // A→B→C→D chain: each entry's content contains the next entry's key.
-    // With maxRecursionSteps: 2 there are two recursion passes, so A (normal)
-    // and B, C (recursion passes 1 and 2) activate, but D never gets a chance.
+  it("steps = 1 allows ZERO recursion passes — the chain's second link never activates (the N10 probe)", () => {
     const result = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("a", { keys: ["ka"], content: "kb" }),
+          makeEntry("b", { keys: ["kb"], content: "kc" }),
+        ],
+        { recursiveScanning: true, maxRecursionSteps: 1 },
+        { messages: [{ role: "user", content: "ka" }] },
+      ),
+    );
+
+    expectActivated(result, ["a"]);
+    expect(activated(result, "b")).toBeUndefined();
+  });
+
+  it("cuts a multi-hop chain once maxRecursionSteps is exceeded (steps = N → N−1 recursion passes)", () => {
+    // A→B→C→D chain: each entry's content contains the next entry's key.
+    // steps = 2 → ONE recursion pass: A (normal) and B (recursion pass 1)
+    // activate, C and D never get a chance. (Pre-N10 VT ran two recursion
+    // passes here and activated C — re-pinned to ST's pass counting.)
+    const cut = resolveActivatedEntries(
       makeInput(
         [
           makeEntry("a", { keys: ["ka"], content: "kb" }),
@@ -337,9 +359,64 @@ describe("lore activation — recursion", () => {
         { messages: [{ role: "user", content: "ka" }] },
       ),
     );
+    expectActivated(cut, ["a", "b"]);
+    expect(activated(cut, "d")).toBeUndefined();
 
-    expectActivated(result, ["a", "b", "c"]);
-    expect(activated(result, "d")).toBeUndefined();
+    // steps = 3 → TWO recursion passes: B and C, D stays out.
+    const wider = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("a", { keys: ["ka"], content: "kb" }),
+          makeEntry("b", { keys: ["kb"], content: "kc" }),
+          makeEntry("c", { keys: ["kc"], content: "kd" }),
+          makeEntry("d", { keys: ["kd"] }),
+        ],
+        { recursiveScanning: true, maxRecursionSteps: 3 },
+        { messages: [{ role: "user", content: "ka" }] },
+      ),
+    );
+    expectActivated(wider, ["a", "b", "c"]);
+    expect(activated(wider, "d")).toBeUndefined();
+  });
+
+  it("steps = 0 = unlimited — the full chain completes and the loop terminates", () => {
+    // Unlimited recursion is bounded only by the chain running dry (pass
+    // with no new activations stops the loop). A 3-hop chain activates to
+    // its end; the resolve returns (termination is implicitly pinned — the
+    // test would hang if the no-new-activations stop were broken).
+    const result = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("a", { keys: ["ka"], content: "kb" }),
+          makeEntry("b", { keys: ["kb"], content: "kc" }),
+          makeEntry("c", { keys: ["kc"], content: "kd" }),
+          makeEntry("d", { keys: ["kd"] }),
+        ],
+        { recursiveScanning: true, maxRecursionSteps: 0 },
+        { messages: [{ role: "user", content: "ka" }] },
+      ),
+    );
+
+    expectActivated(result, ["a", "b", "c", "d"]);
+  });
+
+  it("a book with steps = 0 lifts the cap for a multi-book resolve (unlimited dominates the merge)", () => {
+    // ST has one global cap; VT merges per-book. A book with 0 (no cap)
+    // lifts the cap for the whole resolve — truncating an explicitly
+    // unlimited book would be the harder violation (named deviation).
+    // Book A: steps 1 (alone it would allow zero recursion passes); book B:
+    // steps 0. The 1-hop chain in book A completes via B's unlimited merge.
+    const base = [
+      makeEntry("a", { keys: ["ka"], content: "kb" }),
+      makeEntry("b", { keys: ["kb"] }),
+    ];
+    const input = makeInput(base, { recursiveScanning: true, maxRecursionSteps: 1 }, {
+      messages: [{ role: "user", content: "ka" }],
+    });
+    input.lorebooks.push({ ...input.lorebooks[0]!, id: "lb_other", maxRecursionSteps: 0, entries: [] });
+
+    const result = resolveActivatedEntries(input);
+    expectActivated(result, ["a", "b"]);
   });
 
   // ── delayUntilRecursion: defers activation to a recursion pass ───────────

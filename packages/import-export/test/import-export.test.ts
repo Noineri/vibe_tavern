@@ -438,6 +438,20 @@ describe("importStLorebookJson", () => {
     expect(absent.lorebook.tokenBudgetCap).toBe(0);
   });
 
+  it("defaults maxRecursionSteps to 0 = unlimited (ST global default); extensions override wins (N10)", () => {
+    // ST's max_recursion_steps is a client global defaulting to 0/unlimited
+    // (world-info.js:82); native world files carry it only as an extension
+    // override. Absent → 0 (was 5 pre-N10); present → verbatim.
+    const absent = importStLorebookJson({ name: "Unlimited", entries: [] });
+    expect(absent.lorebook.maxRecursionSteps).toBe(0);
+    const overridden = importStLorebookJson({
+      name: "Capped",
+      entries: [],
+      extensions: { max_recursion_steps: 4 },
+    });
+    expect(overridden.lorebook.maxRecursionSteps).toBe(4);
+  });
+
   it("maps selective logic values correctly", () => {
     const cases: Array<[number, string]> = [
       [0, "and_any"],

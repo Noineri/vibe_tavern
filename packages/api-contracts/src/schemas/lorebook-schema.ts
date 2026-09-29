@@ -19,7 +19,7 @@ export const createLorebookSchema = z.object({
   useGroupScoring: z.boolean().optional().default(false),
   caseSensitive: z.boolean().optional().default(false),
   matchWholeWords: z.boolean().optional().default(false),
-  maxRecursionSteps: z.number().optional().default(5),
+  maxRecursionSteps: z.number().optional().default(0),
   includeNames: z.boolean().optional().default(false),
   minActivations: z.number().optional().default(0),
   minActivationsDepthMax: z.number().optional().default(0),

@@ -390,6 +390,16 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect(cloned.lorebook.tokenBudgetCap).toBe(250);
   });
 
+  test("N10: maxRecursionSteps defaults to 0 = unlimited (ST default, world-info.js:82), update persists", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    expect(lb.maxRecursionSteps).toBe(0);
+    await store.updateLorebook(lb.id, { maxRecursionSteps: 3 });
+    expect((await store.getLorebook(lb.id))!.maxRecursionSteps).toBe(3);
+    const cloned = await store.duplicateLorebook(lb.id, { name: "LB copy" });
+    expect(cloned.lorebook.maxRecursionSteps).toBe(3);
+  });
+
   test("D2: book-level caseSensitive / matchWholeWords defaults round-trip (default false, update flips)", async () => {
     const store = await mkStore();
     const lb = await store.createLorebook({ name: "LB", scopeType: "global" });

@@ -192,7 +192,9 @@ export function importStLorebookJson(
       return typeof cap === 'number' && cap >= 0 ? Math.floor(cap) : 0;
     })(),
     recursiveScanning: asBoolean(root.recursive_scanning, false),
-    maxRecursionSteps: asNumber((root.extensions as Record<string, unknown>)?.max_recursion_steps, 5),
+    // ST global default is 0 = unlimited (world-info.js:82); a file-level
+    // extension override wins when present (N10).
+    maxRecursionSteps: asNumber((root.extensions as Record<string, unknown>)?.max_recursion_steps, 0),
     extensions: isRecord(root.extensions) ? root.extensions : {},
   };
 
@@ -215,7 +217,7 @@ export function importStLorebookJson(
     useGroupScoring: options.globalUseGroupScoring ?? false,
     caseSensitive: options.globalCaseSensitive ?? false,
     matchWholeWords: options.globalMatchWholeWords ?? false,
-    maxRecursionSteps: normalized.maxRecursionSteps ?? 5,
+    maxRecursionSteps: normalized.maxRecursionSteps ?? 0,
     includeNames: false,
     minActivations: 0,
     minActivationsDepthMax: 0,

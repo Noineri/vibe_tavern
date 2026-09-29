@@ -143,7 +143,7 @@ export function importJanitorLorebookJson(
     // Janitor cards carry no case/whole-words globals either — VT defaults.
     caseSensitive: false,
     matchWholeWords: false,
-    maxRecursionSteps: 5,
+    maxRecursionSteps: 0,
     includeNames: false,
     minActivations: 0,
     minActivationsDepthMax: 0,
