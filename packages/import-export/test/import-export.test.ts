@@ -532,6 +532,35 @@ describe("importStLorebookJson", () => {
     expect(result.entries.map((e) => e.useGroupScoring)).toEqual([true, false, null]);
   });
 
+  it("preserves per-entry caseSensitive / matchWholeWords tri-state on import (D2)", () => {
+    // ST stores null (inherit the global switch) / true / false
+    // (world-info.js:4033-4034 `boolean?` defaults). The old importer
+    // hardcoded false/false — an ST user with global whole-words ON got
+    // substring matching in VT. Null must survive as null.
+    const lorebook = {
+      name: "Matching Tri-state",
+      entries: [
+        { key: ["cs"], content: "Case on", caseSensitive: true },
+        { key: ["ww"], content: "Words on", matchWholeWords: true },
+        { key: ["both"], content: "Both off explicitly", caseSensitive: false, matchWholeWords: false },
+        { key: ["inherit"], content: "Inherits both", extensions: { position: 0 } },
+      ],
+    };
+    const result = importStLorebookJson(lorebook);
+    expect(result.entries.map((e) => e.caseSensitive)).toEqual([true, null, false, null]);
+    expect(result.entries.map((e) => e.matchWholeWords)).toEqual([null, true, false, null]);
+  });
+
+  it("maps the ST global case/whole-words switches onto the book defaults when the caller knows them (D2)", () => {
+    // Same story as globalUseGroupScoring: world_info_case_sensitive /
+    // world_info_match_whole_words are global client state read from
+    // settings.json by the ST directory importer; absent → false.
+    expect(importStLorebookJson(minimalLorebook).lorebook.caseSensitive).toBe(false);
+    expect(importStLorebookJson(minimalLorebook).lorebook.matchWholeWords).toBe(false);
+    expect(importStLorebookJson(minimalLorebook, { globalCaseSensitive: true, globalMatchWholeWords: true }).lorebook.caseSensitive).toBe(true);
+    expect(importStLorebookJson(minimalLorebook, { globalCaseSensitive: true, globalMatchWholeWords: true }).lorebook.matchWholeWords).toBe(true);
+  });
+
   it("imports books with useGroupScoring defaulting to false (D9: ST's switch is global, not in files)", () => {
     const result = importStLorebookJson(minimalLorebook);
     expect(result.lorebook.useGroupScoring).toBe(false);

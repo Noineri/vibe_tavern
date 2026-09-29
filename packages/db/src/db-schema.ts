@@ -260,6 +260,11 @@ export const lorebooks = sqliteTable('lorebooks', {
   // per-entry flag: entry.useGroupScoring ?? book.useGroupScoring.
   // See LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-2).
   useGroupScoring: integer('use_group_scoring').notNull().default(0),
+  // Book-level defaults for entry.caseSensitive / entry.matchWholeWords when
+  // the entry is set to Inherit (ST resolves per-entry null against its
+  // global world-info settings; VT scopes that default to the book).
+  caseSensitive: integer('case_sensitive').notNull().default(0),
+  matchWholeWords: integer('match_whole_words').notNull().default(0),
   maxRecursionSteps: integer('max_recursion_steps').notNull().default(5),
   includeNames: integer('include_names').notNull().default(0),
   minActivations: integer('min_activations').notNull().default(0),
@@ -317,8 +322,10 @@ export const loreEntries = sqliteTable('lore_entries', {
   delayUntilRecursion: integer('delay_until_recursion').notNull().default(0),
   recursionLevel: integer('recursion_level').notNull().default(0),
   scanDepthOverride: integer('scan_depth_override'),
-  caseSensitive: integer('case_sensitive').notNull().default(0),
-  matchWholeWords: integer('match_whole_words').notNull().default(0),
+  // Tri-state (ST parity): null = inherit the book-level caseSensitive /
+  // matchWholeWords default, true/false = explicit per-entry override.
+  caseSensitive: integer('case_sensitive'),
+  matchWholeWords: integer('match_whole_words'),
   characterFilterJson: text('character_filter_json').notNull().default('[]'),
   characterFilterExclude: integer('character_filter_exclude').notNull().default(0),
   triggersJson: text('triggers_json').notNull().default('[]'),

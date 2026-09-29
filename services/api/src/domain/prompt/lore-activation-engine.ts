@@ -37,6 +37,10 @@ export interface ActivationInput {
     id: string;
     /** Book-level group-scoring default for entries whose own flag is null (ST's global world_info_use_group_scoring, scoped to the book). See LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-4). */
     useGroupScoring?: boolean;
+    /** Book-level case-sensitive default for entries whose own flag is null (ST resolves per-entry null against its global world_info_case_sensitive; VT scopes that default to the book). */
+    caseSensitive?: boolean;
+    /** Book-level whole-words default for entries whose own flag is null — see caseSensitive above (ST world_info_match_whole_words). */
+    matchWholeWords?: boolean;
     scanDepth: number;
     tokenBudget: number;
     /** When non-null (0-100), override the fixed `tokenBudget` with a cap of
@@ -81,8 +85,10 @@ export interface ActivationInput {
       /** The recursion depth level at which a delay-until-recursion entry activates. */
       recursionLevel: number;
       scanDepthOverride: number | null;
-      caseSensitive: boolean;
-      matchWholeWords: boolean;
+      /** Tri-state (ST parity): null = inherit the book-level default (ActivationInput.lorebooks[].caseSensitive), true/false = explicit. */
+      caseSensitive: boolean | null;
+      /** Tri-state (ST parity): null = inherit the book-level default (ActivationInput.lorebooks[].matchWholeWords), true/false = explicit. */
+      matchWholeWords: boolean | null;
       characterFilter: Array<{ id: string | null; name: string }>;
       characterFilterExclude: boolean;
       matchSources: string[];
@@ -171,6 +177,7 @@ interface FlatEntry {
   delayUntilRecursion: boolean;
   recursionLevel: number;
   scanDepthOverride: number | null;
+  /** Resolved per-scan form: the per-entry tri-state has already inherited the book-level default (see the flatten loop). */
   caseSensitive: boolean;
   matchWholeWords: boolean;
   characterFilter: Array<{ id: string | null; name: string }>;
@@ -197,7 +204,15 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   for (const lorebook of input.lorebooks) {
     scanDepths.set(lorebook.id, lorebook.scanDepth);
     for (const entry of lorebook.entries) {
-      allEntries.push({ ...entry, lorebookId: lorebook.id });
+      allEntries.push({
+        ...entry,
+        lorebookId: lorebook.id,
+        // Tri-state resolution (ST parity): a per-entry null inherits the
+        // book-level default (ST's world-info.js:269/347 resolves per-entry
+        // null against the global client setting; VT scopes it to the book).
+        caseSensitive: entry.caseSensitive ?? lorebook.caseSensitive ?? false,
+        matchWholeWords: entry.matchWholeWords ?? lorebook.matchWholeWords ?? false,
+      });
     }
   }
 

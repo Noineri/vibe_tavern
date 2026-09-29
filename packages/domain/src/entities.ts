@@ -219,6 +219,10 @@ export interface Lorebook {
   recursiveScanning: boolean;
   /** Book-level default for entry.useGroupScoring (ST's global switch, scoped to the book). Effective flag: entry.useGroupScoring ?? book.useGroupScoring. See LOREBOOK_GROUP_SCORING_PARITY_REPORT. */
   useGroupScoring: boolean;
+  /** Book-level default for entry.caseSensitive when the entry is set to Inherit (ST resolves per-entry null against its global world-info setting; VT scopes that default to the book). Effective flag: entry.caseSensitive ?? book.caseSensitive. */
+  caseSensitive: boolean;
+  /** Book-level default for entry.matchWholeWords when the entry is set to Inherit — see caseSensitive above. */
+  matchWholeWords: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
   minActivations: number;
@@ -297,8 +301,10 @@ export interface LoreEntry {
   recursionLevel: number;
   scanDepthOverride: number | null;
   // Matching
-  caseSensitive: boolean;
-  matchWholeWords: boolean;
+  /** Tri-state (ST parity): null = inherit the book-level caseSensitive default, true/false = explicit per-entry override. */
+  caseSensitive: boolean | null;
+  /** Tri-state (ST parity): null = inherit the book-level matchWholeWords default, true/false = explicit per-entry override. */
+  matchWholeWords: boolean | null;
   characterFilter: CharacterFilterEntry[];
   characterFilterExclude: boolean;
   matchSources: LoreMatchSource[];

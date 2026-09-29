@@ -191,18 +191,42 @@ export function LoreEntryEditor({
             </ControlledField>
           </CustomTooltip>
           <CustomTooltip content={t("case_sensitive_hint")} align="start">
-            <ControlledField name="caseSensitive">
-              {(field) => (
-                <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_case_sensitive")} />
-              )}
-            </ControlledField>
+            <div>
+              <FieldLabel>{t("lore_case_sensitive")}</FieldLabel>
+              <ControlledField name="caseSensitive">
+                {(field) => (
+                  <SegmentedControl
+                    compact
+                    value={field.value == null ? "inherit" : field.value ? "on" : "off"}
+                    options={[
+                      { value: "inherit", label: t("lore_tri_inherit") },
+                      { value: "on", label: t("lore_tri_on") },
+                      { value: "off", label: t("lore_tri_off") },
+                    ]}
+                    onChange={(v) => field.onChange(v === "inherit" ? null : v === "on")}
+                  />
+                )}
+              </ControlledField>
+            </div>
           </CustomTooltip>
           <CustomTooltip content={t("match_whole_words_hint")} align="start">
-            <ControlledField name="matchWholeWords">
-              {(field) => (
-                <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_match_whole_words")} />
-              )}
-            </ControlledField>
+            <div>
+              <FieldLabel>{t("lore_match_whole_words")}</FieldLabel>
+              <ControlledField name="matchWholeWords">
+                {(field) => (
+                  <SegmentedControl
+                    compact
+                    value={field.value == null ? "inherit" : field.value ? "on" : "off"}
+                    options={[
+                      { value: "inherit", label: t("lore_tri_inherit") },
+                      { value: "on", label: t("lore_tri_on") },
+                      { value: "off", label: t("lore_tri_off") },
+                    ]}
+                    onChange={(v) => field.onChange(v === "inherit" ? null : v === "on")}
+                  />
+                )}
+              </ControlledField>
+            </div>
           </CustomTooltip>
           <CustomTooltip content={t("ignore_budget_hint")} align="start">
             <ControlledField name="ignoreBudget">
@@ -520,9 +544,9 @@ export function LoreEntryEditor({
                           compact
                           value={field.value == null ? "inherit" : field.value ? "on" : "off"}
                           options={[
-                            { value: "inherit", label: t("lore_group_scoring_inherit") },
-                            { value: "on", label: t("lore_group_scoring_on") },
-                            { value: "off", label: t("lore_group_scoring_off") },
+                            { value: "inherit", label: t("lore_tri_inherit") },
+                            { value: "on", label: t("lore_tri_on") },
+                            { value: "off", label: t("lore_tri_off") },
                           ]}
                           onChange={(v) => field.onChange(v === "inherit" ? null : v === "on")}
                         />

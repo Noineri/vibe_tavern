@@ -326,8 +326,10 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect(read.excludeRecursion).toBe(false);
     expect(read.preventRecursion).toBe(false);
     expect(read.delayUntilRecursion).toBe(false);
-    expect(read.caseSensitive).toBe(false);
-    expect(read.matchWholeWords).toBe(false);
+    // Tri-state (D2): matching flags default to null = inherit the book-level
+    // default, not false (was false before the book-level default existed).
+    expect(read.caseSensitive).toBe(null);
+    expect(read.matchWholeWords).toBe(null);
     expect(read.characterFilterExclude).toBe(false);
     expect(read.enabled).toBe(true);
     // Nullable
@@ -355,6 +357,37 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect((await store.getEntry(e.id))!.useGroupScoring).toBe(null);
     await store.updateEntry(e.id, { useGroupScoring: true });
     expect((await store.getEntry(e.id))!.useGroupScoring).toBe(true);
+  });
+
+  // D2: the matching flags are tri-state exactly like useGroupScoring — null
+  // (inherit the book default) and false (explicitly off) must survive the
+  // store separately, and the book-level defaults must round-trip too.
+  test("D2: entry caseSensitive / matchWholeWords tri-state round-trips (null vs false are distinct)", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    const e = await store.createEntry(lb.id, { title: "inherit" });
+    expect((await store.getEntry(e.id))!.caseSensitive).toBe(null);
+    expect((await store.getEntry(e.id))!.matchWholeWords).toBe(null);
+    await store.updateEntry(e.id, { caseSensitive: false, matchWholeWords: false });
+    expect((await store.getEntry(e.id))!.caseSensitive).toBe(false);
+    expect((await store.getEntry(e.id))!.matchWholeWords).toBe(false);
+    await store.updateEntry(e.id, { caseSensitive: null, matchWholeWords: null });
+    expect((await store.getEntry(e.id))!.caseSensitive).toBe(null);
+    expect((await store.getEntry(e.id))!.matchWholeWords).toBe(null);
+    await store.updateEntry(e.id, { caseSensitive: true, matchWholeWords: true });
+    expect((await store.getEntry(e.id))!.caseSensitive).toBe(true);
+    expect((await store.getEntry(e.id))!.matchWholeWords).toBe(true);
+  });
+
+  test("D2: book-level caseSensitive / matchWholeWords defaults round-trip (default false, update flips)", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    expect(lb.caseSensitive).toBe(false);
+    expect(lb.matchWholeWords).toBe(false);
+    await store.updateLorebook(lb.id, { caseSensitive: true, matchWholeWords: true });
+    const read = (await store.getLorebook(lb.id))!;
+    expect(read.caseSensitive).toBe(true);
+    expect(read.matchWholeWords).toBe(true);
   });
 
   test("duplicateLorebook preserves every entry field (LoreEntry→CreateLoreEntryData projection)", async () => {

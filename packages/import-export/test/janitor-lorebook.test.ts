@@ -105,6 +105,24 @@ describe("importJanitorLorebookJson", () => {
     expect(entry.scanDepthOverride).toBeNull();
   });
 
+  it("decodes case_sensitive / matchWholeWords tri-state: absent → null, explicit boolean kept (D2)", () => {
+    // Old VT exports always wrote booleans — those stay pinned (explicit).
+    // Entries that never carried the flags import as null = inherit the book
+    // default, not as an explicit false.
+    const explicit = importJanitorLorebookJson(
+      [janitorEntry({ case_sensitive: false, matchWholeWords: false })],
+      { fallbackName: "Explicit" },
+    );
+    expect(explicit.entries[0].caseSensitive).toBe(false);
+    expect(explicit.entries[0].matchWholeWords).toBe(false);
+    const absent = importJanitorLorebookJson(
+      [janitorEntry({ name: "NoFlags", case_sensitive: undefined, matchWholeWords: undefined })],
+      { fallbackName: "Absent" },
+    );
+    expect(absent.entries[0].caseSensitive).toBeNull();
+    expect(absent.entries[0].matchWholeWords).toBeNull();
+  });
+
   it("maps inclusionGroupRaw → groupName (Janitor's name for ST's group)", () => {
     const result = importJanitorLorebookJson(
       [janitorEntry({ inclusionGroupRaw: "weather, mood" })],

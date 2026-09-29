@@ -645,6 +645,13 @@
       "when": 1790698148890,
       "tag": "0091_misty_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "6",
+      "when": 1790700759294,
+      "tag": "0092_superb_the_professor",
+      "breakpoints": true
     }
   ]
 }

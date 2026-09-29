@@ -111,6 +111,8 @@ const LOREBOOK: LorebookRecord = {
   tokenBudgetPercent: null,
   recursiveScanning: false,
   useGroupScoring: false,
+  caseSensitive: false,
+  matchWholeWords: false,
   enabled: true,
 };
 
@@ -313,6 +315,19 @@ describe("LorebookAccordion book-level group scoring (LG-7)", () => {
 
     const on = renderAccordion({ lorebook: { ...LOREBOOK, useGroupScoring: true } });
     expect(await on.findByText("lore_book_group_scoring")).toBeTruthy();
+  });
+
+  it("renders the D2 book-level matching defaults and toggling reports onUpdateMeta (D2)", async () => {
+    const onUpdateMeta = mock();
+    const view = renderAccordion({
+      lorebook: { ...LOREBOOK, caseSensitive: false, matchWholeWords: false },
+      onUpdateMeta,
+    });
+    expect(await view.findByText("lore_book_case_sensitive")).toBeTruthy();
+    expect(view.getByText("lore_book_match_whole_words")).toBeTruthy();
+    fireEvent.click(view.getByText("lore_book_case_sensitive"));
+    expect(onUpdateMeta).toHaveBeenCalledWith({ caseSensitive: true });
+    view.unmount();
   });
 
   it("toggling reports onUpdateMeta({ useGroupScoring }) in both directions", async () => {

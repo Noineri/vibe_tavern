@@ -24,7 +24,7 @@ export interface LorebookImportResult {
 async function parseLorebook(
 	format: string,
 	data: unknown,
-	options: { scopeType?: LoreScopeType; fallbackName?: string; globalUseGroupScoring?: boolean },
+	options: { scopeType?: LoreScopeType; fallbackName?: string; globalUseGroupScoring?: boolean; globalCaseSensitive?: boolean; globalMatchWholeWords?: boolean },
 ) {
 	const { importStLorebookJson, importJanitorLorebookJson, isJanitorLorebookArray } = await import(
 		"@vibe-tavern/import-export"
@@ -40,6 +40,8 @@ async function parseLorebook(
 		scopeType: options.scopeType,
 		fallbackName: options.fallbackName,
 		globalUseGroupScoring: options.globalUseGroupScoring,
+		globalCaseSensitive: options.globalCaseSensitive,
+		globalMatchWholeWords: options.globalMatchWholeWords,
 	});
 }
 
@@ -56,6 +58,8 @@ export async function importLorebook(
 		chatId?: string;
 		fallbackName?: string;
 		globalUseGroupScoring?: boolean;
+		globalCaseSensitive?: boolean;
+		globalMatchWholeWords?: boolean;
 		enabled?: boolean;
 	},
 ): Promise<LorebookImportResult> {
@@ -63,6 +67,8 @@ export async function importLorebook(
 		scopeType: (body.scopeType as LoreScopeType | undefined) ?? "entity",
 		fallbackName: body.fallbackName,
 		globalUseGroupScoring: body.globalUseGroupScoring,
+		globalCaseSensitive: body.globalCaseSensitive,
+		globalMatchWholeWords: body.globalMatchWholeWords,
 	});
 
 	let targetId = lorebookId;
@@ -76,6 +82,8 @@ export async function importLorebook(
 			tokenBudget: parsed.lorebook.tokenBudget,
 			recursiveScanning: parsed.lorebook.recursiveScanning,
 			useGroupScoring: parsed.lorebook.useGroupScoring,
+			caseSensitive: parsed.lorebook.caseSensitive,
+			matchWholeWords: parsed.lorebook.matchWholeWords,
 			characterId: body.characterId ?? null,
 			personaId: body.personaId ?? null,
 			chatId: body.chatId ?? null,

@@ -20,7 +20,7 @@ export async function createLorebook(body: { name: string; description?: string;
   return unwrapRpc(response);
 }
 
-export async function updateLorebookMeta(lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean; useGroupScoring?: boolean; enabled?: boolean; scopeType?: string }): Promise<LorebookRecord> {
+export async function updateLorebookMeta(lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean; useGroupScoring?: boolean; caseSensitive?: boolean; matchWholeWords?: boolean; enabled?: boolean; scopeType?: string }): Promise<LorebookRecord> {
   const response = await client.api.lorebooks[":lorebookId"].$patch({ param: { lorebookId }, json: body });
   return unwrapRpc(response);
 }

@@ -114,6 +114,8 @@ export function wireLorebook(): LorebookRecord {
 		tokenBudgetPercent: null,
 		recursiveScanning: false,
 		useGroupScoring: false,
+		caseSensitive: false,
+		matchWholeWords: false,
 		maxRecursionSteps: 5,
 		includeNames: false,
 		minActivations: 0,

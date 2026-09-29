@@ -80,8 +80,9 @@ const EMPTY_ENTRY_DRAFT: LoreEntryDraft = {
   delayUntilRecursion: false,
   recursionLevel: 0,
   scanDepthOverride: null,
-  caseSensitive: false,
-  matchWholeWords: false,
+  // Tri-state: new entries inherit the book-level defaults (ST parity).
+  caseSensitive: null,
+  matchWholeWords: null,
   characterFilter: [],
   characterFilterExclude: false,
   matchSources: [],

@@ -124,6 +124,27 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
     expect(e.metadata).toEqual({ m: 1 });
   });
 
+  test("emits caseSensitive / matchWholeWords tri-state verbatim — null exports as null, never false (D2)", () => {
+    // ST re-import resolves null against the global switch; a hardcoded
+    // false would permanently pin inherit-entries against it. Full ST-native
+    // export shape is resweep step 21 — this pins the tri-state passthrough.
+    const exported = exportLorebookToSt(
+      baseLorebook(),
+      [
+        baseEntry({ title: "Inherit", keys: ["a"], caseSensitive: null, matchWholeWords: null }),
+        baseEntry({ title: "Off", keys: ["b"], caseSensitive: false, matchWholeWords: false }),
+        baseEntry({ title: "On", keys: ["c"], caseSensitive: true, matchWholeWords: true }),
+      ],
+    );
+    const entries = exported.entries as Record<string, Record<string, unknown>>;
+    expect(entries["0"].caseSensitive).toBeNull();
+    expect(entries["0"].matchWholeWords).toBeNull();
+    expect(entries["1"].caseSensitive).toBe(false);
+    expect(entries["1"].matchWholeWords).toBe(false);
+    expect(entries["2"].caseSensitive).toBe(true);
+    expect(entries["2"].matchWholeWords).toBe(true);
+  });
+
   test("maps all 8 lorebook positions to SillyTavern numeric positions", () => {
     const positions: ReadonlyArray<readonly [string, number]> = [
       ["before_char", 0], ["after_char", 1], ["top_an", 2], ["bottom_an", 3],

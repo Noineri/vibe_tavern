@@ -150,6 +150,23 @@ function renderEditor(entry: LoreEntryRecord) {
   return { form: formHolder.current!, ...result };
 }
 
+// Several tri-state SegmentedControls (case / whole-words / group scoring)
+// render identical option captions ("lore_tri_*"), so a plain
+// getByText(caption) is ambiguous. Scope the click to the control whose
+// FieldLabel is given: captions are looked up inside that control's wrapper.
+async function clickSegment(
+  getByText: (text: string) => HTMLElement,
+  labelText: string,
+  caption: string,
+): Promise<void> {
+  const scope = getByText(labelText).closest("div") as HTMLElement;
+  const target = [...scope.querySelectorAll("*")].find(
+    (el) => el.textContent === caption && el.children.length === 0,
+  );
+  if (!target) throw new Error(`segment "${caption}" not found near "${labelText}"`);
+  await userEvent.setup().click(target as HTMLElement);
+}
+
 describe("LoreEntryEditor (RHF field binding)", () => {
   it("title binds to the form via register", async () => {
     const { form, container } = renderEditor(makeEntry());
@@ -185,15 +202,27 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     fireEvent.click(getByText(/lore_advanced_settings/)); // open advanced
     // Inherit is the default for null — clicking through the cycle writes
     // true / false / null back into the form (the DB boundary is boolean|null).
-    await userEvent.setup().click(getByText("lore_group_scoring_on"));
+    await clickSegment(getByText, "lore_use_group_scoring", "lore_tri_on");
     expect(form.getValues("useGroupScoring")).toBe(true);
     expect(form.formState.isDirty).toBe(true); // null → true is a real change
-    await userEvent.setup().click(getByText("lore_group_scoring_off"));
+    await clickSegment(getByText, "lore_use_group_scoring", "lore_tri_off");
     expect(form.getValues("useGroupScoring")).toBe(false);
     // Cycling back to null returns to defaultValues — RHF rightly sees the
     // form as clean again (the DB write already happened via the autosave).
-    await userEvent.setup().click(getByText("lore_group_scoring_inherit"));
+    await clickSegment(getByText, "lore_use_group_scoring", "lore_tri_inherit");
     expect(form.getValues("useGroupScoring")).toBe(null);
+  });
+
+  it("matching flags are tri-state: inherit ↔ on ↔ off binds to the form (D2)", async () => {
+    const { form, getByText } = renderEditor(makeEntry({ caseSensitive: null, matchWholeWords: null }));
+    // The controls live in the always-visible activation-flags row.
+    await clickSegment(getByText, "lore_case_sensitive", "lore_tri_on");
+    expect(form.getValues("caseSensitive")).toBe(true);
+    await clickSegment(getByText, "lore_case_sensitive", "lore_tri_off");
+    expect(form.getValues("caseSensitive")).toBe(false);
+    await clickSegment(getByText, "lore_case_sensitive", "lore_tri_inherit");
+    expect(form.getValues("caseSensitive")).toBe(null);
+    expect(form.getValues("matchWholeWords")).toBe(null); // untouched sibling
   });
 
   it("constant checkbox binds via ControlledField", () => {

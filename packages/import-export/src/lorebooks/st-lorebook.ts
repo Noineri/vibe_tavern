@@ -85,6 +85,9 @@ export interface ImportLorebookOptions {
    * 2026-08-31). Absent → false. See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
    */
   globalUseGroupScoring?: boolean;
+  /** ST's world_info_case_sensitive / world_info_match_whole_words — same story as globalUseGroupScoring: global client state read from settings.json by the ST directory importer, mapped onto the imported book's caseSensitive / matchWholeWords defaults. Absent → false. */
+  globalCaseSensitive?: boolean;
+  globalMatchWholeWords?: boolean;
 }
 
 function mapSelectiveLogic(value: unknown): LoreLogic {
@@ -201,6 +204,8 @@ export function importStLorebookJson(
     recursiveScanning: normalized.recursiveScanning,
     // Maps the ST global switch when the caller knows it; default false.
     useGroupScoring: options.globalUseGroupScoring ?? false,
+    caseSensitive: options.globalCaseSensitive ?? false,
+    matchWholeWords: options.globalMatchWholeWords ?? false,
     maxRecursionSteps: normalized.maxRecursionSteps ?? 5,
     includeNames: false,
     minActivations: 0,
@@ -265,13 +270,18 @@ export function importStLorebookJson(
       // pin imported entries against the book default. See
       // LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-4).
       useGroupScoring: entry.useGroupScoring === true ? true : entry.useGroupScoring === false ? false : null,
+      // Tri-state preserve (ST parity, D2): ST stores null (inherit the
+      // global switch) / true / false for caseSensitive and matchWholeWords —
+      // collapsing null to false would permanently pin imported entries
+      // against the book default (world-info.js:269/347 resolves null against
+      // the global setting).
+      caseSensitive: entry.caseSensitive === true ? true : entry.caseSensitive === false ? false : null,
+      matchWholeWords: entry.matchWholeWords === true ? true : entry.matchWholeWords === false ? false : null,
       excludeRecursion: asBoolean(entry.excludeRecursion, false),
       preventRecursion: asBoolean(entry.preventRecursion, false),
       delayUntilRecursion: asBoolean(entry.delayUntilRecursion, false),
       recursionLevel: 0,
       scanDepthOverride: entry.scanDepth != null ? asNumber(entry.scanDepth, 0) : null,
-      caseSensitive: false,
-      matchWholeWords: false,
       characterFilter: asStringArray(entry.character_filter).map((name) => ({ id: null, name })),
       characterFilterExclude: asBoolean(entry.character_filter_exclude, false),
       matchSources: [] as LoreMatchSource[],
@@ -361,8 +371,8 @@ interface StExportLoreEntry {
   readonly groupName: string;
   readonly groupWeight: number;
   readonly scanDepthOverride: number | null;
-  readonly caseSensitive: boolean;
-  readonly matchWholeWords: boolean;
+  readonly caseSensitive: boolean | null;
+  readonly matchWholeWords: boolean | null;
   readonly characterFilter: ReadonlyArray<{ name: string }>;
   readonly characterFilterExclude: boolean;
   readonly automationId: string;

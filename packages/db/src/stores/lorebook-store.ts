@@ -45,6 +45,8 @@ export interface CreateLorebookData {
   tokenBudgetPercent?: number | null;
   recursiveScanning?: boolean;
   useGroupScoring?: boolean;
+  caseSensitive?: boolean;
+  matchWholeWords?: boolean;
   maxRecursionSteps?: number;
   includeNames?: boolean;
   minActivations?: number;
@@ -88,8 +90,9 @@ export interface CreateLoreEntryData {
   delayUntilRecursion?: boolean;
   recursionLevel?: number;
   scanDepthOverride?: number | null;
-  caseSensitive?: boolean;
-  matchWholeWords?: boolean;
+  /** Tri-state (ST parity): null = inherit the book-level caseSensitive/matchWholeWords default, true/false = explicit. */
+  caseSensitive?: boolean | null;
+  matchWholeWords?: boolean | null;
   characterFilter?: CharacterFilterEntry[];
   characterFilterExclude?: boolean;
   matchSources?: string[];
@@ -128,6 +131,8 @@ export interface CoauthorLoreDraftBundle {
     tokenBudget?: number;
     recursiveScanning?: boolean;
     useGroupScoring?: boolean;
+    caseSensitive?: boolean;
+    matchWholeWords?: boolean;
     /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
     mode?: 'create' | 'edit';
   }>;
@@ -167,6 +172,8 @@ export interface Lorebook {
   tokenBudgetPercent: number | null;
   recursiveScanning: boolean;
   useGroupScoring: boolean;
+  caseSensitive: boolean;
+  matchWholeWords: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
   minActivations: number;
@@ -208,15 +215,16 @@ export interface LoreEntry {
   groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
-  /** Tri-state (ST parity): null = inherit the book default, true/false = explicit. */
+  /** Tri-state (ST parity): null = inherit the book-level default, true/false = explicit. */
   useGroupScoring: boolean | null;
   excludeRecursion: boolean;
   preventRecursion: boolean;
   delayUntilRecursion: boolean;
   recursionLevel: number;
   scanDepthOverride: number | null;
-  caseSensitive: boolean;
-  matchWholeWords: boolean;
+  /** Tri-state (ST parity): null = inherit the book-level caseSensitive/matchWholeWords default, true/false = explicit. */
+  caseSensitive: boolean | null;
+  matchWholeWords: boolean | null;
   characterFilter: CharacterFilterEntry[];
   characterFilterExclude: boolean;
   matchSources: string[];
@@ -288,8 +296,8 @@ const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldS
   delayUntilRecursion:    { column: 'delayUntilRecursion',    coerce: 'bool', insertDefault: false },
   recursionLevel:         { column: 'recursionLevel',         coerce: 'raw',  insertDefault: 0 },
   scanDepthOverride:      { column: 'scanDepthOverride',      coerce: 'raw',  insertDefault: null },
-  caseSensitive:          { column: 'caseSensitive',          coerce: 'bool', insertDefault: false },
-  matchWholeWords:        { column: 'matchWholeWords',        coerce: 'bool', insertDefault: false },
+  caseSensitive:          { column: 'caseSensitive',          coerce: 'bool3', insertDefault: null },
+  matchWholeWords:        { column: 'matchWholeWords',        coerce: 'bool3', insertDefault: null },
   characterFilter:        { column: 'characterFilterJson',    coerce: 'json', insertDefault: [] },
   characterFilterExclude: { column: 'characterFilterExclude', coerce: 'bool', insertDefault: false },
   matchSources:           { column: 'matchSourcesJson',       coerce: 'json', insertDefault: [] },
@@ -536,6 +544,8 @@ export class LorebookStore {
         tokenBudgetPercent: data.tokenBudgetPercent ?? null,
         recursiveScanning: (data.recursiveScanning ?? false) ? 1 : 0,
         useGroupScoring: (data.useGroupScoring ?? false) ? 1 : 0,
+        caseSensitive: (data.caseSensitive ?? false) ? 1 : 0,
+        matchWholeWords: (data.matchWholeWords ?? false) ? 1 : 0,
         maxRecursionSteps: data.maxRecursionSteps ?? 5,
         includeNames: data.includeNames ? 1 : 0,
         minActivations: data.minActivations ?? 0,
@@ -572,6 +582,8 @@ export class LorebookStore {
     if (data.tokenBudgetPercent !== undefined) values.tokenBudgetPercent = data.tokenBudgetPercent;
     if (data.recursiveScanning !== undefined) values.recursiveScanning = data.recursiveScanning ? 1 : 0;
     if (data.useGroupScoring !== undefined) values.useGroupScoring = data.useGroupScoring ? 1 : 0;
+    if (data.caseSensitive !== undefined) values.caseSensitive = data.caseSensitive ? 1 : 0;
+    if (data.matchWholeWords !== undefined) values.matchWholeWords = data.matchWholeWords ? 1 : 0;
     if (data.maxRecursionSteps !== undefined) values.maxRecursionSteps = data.maxRecursionSteps;
     if (data.includeNames !== undefined) values.includeNames = data.includeNames ? 1 : 0;
     if (data.minActivations !== undefined) values.minActivations = data.minActivations;
@@ -796,6 +808,8 @@ export class LorebookStore {
             tokenBudgetPercent: null,
             recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
             useGroupScoring: (lb.useGroupScoring ?? false) ? 1 : 0,
+            caseSensitive: (lb.caseSensitive ?? false) ? 1 : 0,
+            matchWholeWords: (lb.matchWholeWords ?? false) ? 1 : 0,
             maxRecursionSteps: 5,
             includeNames: 0,
             minActivations: 0,
@@ -822,6 +836,8 @@ export class LorebookStore {
               tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
               recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
               useGroupScoring: (lb.useGroupScoring ?? false) ? 1 : 0,
+              caseSensitive: (lb.caseSensitive ?? false) ? 1 : 0,
+              matchWholeWords: (lb.matchWholeWords ?? false) ? 1 : 0,
               enabled: lb.enabled ? 1 : 0,
               characterId: entityScoped ? characterId : null,
               updatedAt: now,
@@ -1114,6 +1130,8 @@ export class LorebookStore {
       tokenBudgetPercent: source.tokenBudgetPercent ?? null,
       recursiveScanning: source.recursiveScanning,
       useGroupScoring: source.useGroupScoring ?? false,
+      caseSensitive: source.caseSensitive ?? false,
+      matchWholeWords: source.matchWholeWords ?? false,
       maxRecursionSteps: source.maxRecursionSteps,
       includeNames: source.includeNames,
       minActivations: source.minActivations,
@@ -1175,6 +1193,8 @@ export class LorebookStore {
       tokenBudgetPercent: row.tokenBudgetPercent,
       recursiveScanning: row.recursiveScanning === 1,
       useGroupScoring: row.useGroupScoring === 1,
+      caseSensitive: row.caseSensitive === 1,
+      matchWholeWords: row.matchWholeWords === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
       minActivations: row.minActivations,
@@ -1212,8 +1232,8 @@ export class LorebookStore {
         delayUntilRecursion: e.delayUntilRecursion === 1,
         recursionLevel: e.recursionLevel,
         scanDepthOverride: e.scanDepthOverride,
-        caseSensitive: e.caseSensitive === 1,
-        matchWholeWords: e.matchWholeWords === 1,
+        caseSensitive: e.caseSensitive === null ? null : e.caseSensitive === 1,
+        matchWholeWords: e.matchWholeWords === null ? null : e.matchWholeWords === 1,
         characterFilter: parseCharacterFilter(JSON.parse(e.characterFilterJson)),
         characterFilterExclude: e.characterFilterExclude === 1,
         matchSources: JSON.parse(e.matchSourcesJson),
@@ -1239,6 +1259,8 @@ export class LorebookStore {
       tokenBudgetPercent: row.tokenBudgetPercent,
       recursiveScanning: row.recursiveScanning === 1,
       useGroupScoring: row.useGroupScoring === 1,
+      caseSensitive: row.caseSensitive === 1,
+      matchWholeWords: row.matchWholeWords === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
       minActivations: row.minActivations,

@@ -725,6 +725,8 @@ export async function importSillyTavernDirectory(
 	// a file referenced by an imported card/ chat binds to that owner; a file
 	// referenced nowhere lands global+DISABLED (inert at the source stays inert).
 	let globalUseGroupScoring: boolean | undefined;
+	let globalCaseSensitive: boolean | undefined;
+	let globalMatchWholeWords: boolean | undefined;
 	const globalSelectNames = new Set<string>();
 	try {
 		const settingsRaw: unknown = JSON.parse(await Bun.file(join(resolved, "settings.json")).text());
@@ -732,6 +734,13 @@ export async function importSillyTavernDirectory(
 			const record = settingsRaw as Record<string, unknown>;
 			const flag = record.world_info_use_group_scoring;
 			if (typeof flag === "boolean") globalUseGroupScoring = flag;
+			// D2 (ST parity): world_info_case_sensitive / world_info_match_whole_words
+			// are the globals that per-entry null inherits; same flat keys, same
+			// mapping onto the imported book's defaults.
+			const caseFlag = record.world_info_case_sensitive;
+			if (typeof caseFlag === "boolean") globalCaseSensitive = caseFlag;
+			const wholeFlag = record.world_info_match_whole_words;
+			if (typeof wholeFlag === "boolean") globalMatchWholeWords = wholeFlag;
 			const worldInfoSettings = record.world_info_settings;
 			if (typeof worldInfoSettings === "object" && worldInfoSettings !== null) {
 				const select = (worldInfoSettings as Record<string, unknown>).globalSelect;
@@ -799,6 +808,8 @@ export async function importSillyTavernDirectory(
 				chatId,
 				fallbackName,
 				globalUseGroupScoring,
+				globalCaseSensitive,
+				globalMatchWholeWords,
 				enabled,
 			});
 			result.lorebooks++;

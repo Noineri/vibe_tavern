@@ -107,6 +107,9 @@ async function buildStDir(root: string) {
 		join(root, "settings.json"),
 		JSON.stringify({
 			world_info_use_group_scoring: true,
+			// D2: the globals that per-entry null case/whole-words inherit.
+			world_info_case_sensitive: true,
+			world_info_match_whole_words: true,
 			power_user: {
 				personas: { "default.png": "Test User" },
 				persona_descriptions: { "default.png": { description: "A test persona." } },
@@ -207,6 +210,9 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		// LG-8 amendment: ST's GLOBAL group-scoring switch (settings.json
 		// world_info_use_group_scoring: true above) maps onto the imported book.
 		expect(loreAfter[0]?.useGroupScoring).toBe(true);
+		// D2: same mapping for the matching globals.
+		expect(loreAfter[0]?.caseSensitive).toBe(true);
+		expect(loreAfter[0]?.matchWholeWords).toBe(true);
 		expect(loreAfter.length).toBe(loreBefore + 1);
 		const importedLore = loreAfter.find((lb) => lb.name === "Test World");
 		expect(importedLore).toBeTruthy();

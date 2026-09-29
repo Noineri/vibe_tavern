@@ -139,6 +139,9 @@ export function importJanitorLorebookJson(
     // nothing to import; imported books keep the VT default (false).
     // See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
     useGroupScoring: false,
+    // Janitor cards carry no case/whole-words globals either — VT defaults.
+    caseSensitive: false,
+    matchWholeWords: false,
     maxRecursionSteps: 5,
     includeNames: false,
     minActivations: 0,
@@ -225,8 +228,12 @@ export function importJanitorLorebookJson(
       delayUntilRecursion: false,
       recursionLevel: 0,
       scanDepthOverride: null,
-      caseSensitive: asBoolean(entry.case_sensitive, false),
-      matchWholeWords: asBoolean(entry.matchWholeWords, false),
+      // Tri-state (ST parity, D2): an explicit boolean in the file is kept as
+      // the per-entry override; absent/non-boolean → null = inherit the book
+      // default. Old VT exports always wrote booleans — they stay pinned,
+      // behavior unchanged.
+      caseSensitive: entry.case_sensitive === true ? true : entry.case_sensitive === false ? false : null,
+      matchWholeWords: entry.matchWholeWords === true ? true : entry.matchWholeWords === false ? false : null,
       characterFilter: [],
       characterFilterExclude: false,
       matchSources: [],

@@ -88,6 +88,8 @@ interface LorebookAccordionProps {
     tokenBudgetPercent?: number | null;
     recursiveScanning?: boolean;
     useGroupScoring?: boolean;
+    caseSensitive?: boolean;
+    matchWholeWords?: boolean;
   }) => void;
   onReorderEntries: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntryRecord[]>;
   onToggleEntryEnabled: (entryId: string, enabled: boolean) => Promise<LoreEntryRecord>;
@@ -541,6 +543,24 @@ export function LorebookAccordion({
                     checked={lorebook.useGroupScoring}
                     onChange={(v) => onUpdateMeta({ useGroupScoring: v })}
                     label={t("lore_book_group_scoring")}
+                  />
+                </div>
+              </CustomTooltip>
+              <CustomTooltip content={t("lore_book_case_sensitive_hint")}>
+                <div>
+                  <Checkbox
+                    checked={lorebook.caseSensitive}
+                    onChange={(v) => onUpdateMeta({ caseSensitive: v })}
+                    label={t("lore_book_case_sensitive")}
+                  />
+                </div>
+              </CustomTooltip>
+              <CustomTooltip content={t("lore_book_match_whole_words_hint")}>
+                <div>
+                  <Checkbox
+                    checked={lorebook.matchWholeWords}
+                    onChange={(v) => onUpdateMeta({ matchWholeWords: v })}
+                    label={t("lore_book_match_whole_words")}
                   />
                 </div>
               </CustomTooltip>
