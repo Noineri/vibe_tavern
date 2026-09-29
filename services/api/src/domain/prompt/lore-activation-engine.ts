@@ -166,7 +166,10 @@ interface FlatEntry {
   id: string;
   lorebookId: string;
   title: string;
+  /** Content after ST parseDecorators removes the leading decorator block. */
   content: string;
+  /** Known decorators extracted from the raw entry content. */
+  decorators: string[];
   keys: string[];
   secondaryKeys: string[];
   logic: string;
@@ -201,6 +204,53 @@ interface FlatEntry {
   useGroupScoring: boolean | null;
 }
 
+/**
+ * Port of ST's parseDecorators (world-info.js 4540-4586).
+ *
+ * Its fallback and escaped-line behavior is intentionally non-obvious: keep
+ * this structurally close to the source so decorator extraction and stripped
+ * prompt/recursion content remain identical to ST.
+ */
+function parseDecorators(content: string): [string[], string] {
+  const isKnownDecorator = (data: string): boolean => {
+    if (data.startsWith("@@@")) {
+      data = data.substring(1);
+    }
+
+    return data.startsWith("@@activate") || data.startsWith("@@dont_activate");
+  };
+
+  if (content.startsWith("@@")) {
+    let newContent = content;
+    const lines = content.split("\n");
+    const decorators: string[] = [];
+    let fallbacked = false;
+
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      if (line.startsWith("@@")) {
+        if (line.startsWith("@@@") && !fallbacked) {
+          continue;
+        }
+
+        if (isKnownDecorator(line)) {
+          decorators.push(line.startsWith("@@@") ? line.substring(1) : line);
+          fallbacked = false;
+        } else {
+          fallbacked = true;
+        }
+      } else {
+        newContent = lines.slice(index).join("\n");
+        break;
+      }
+    }
+
+    return [decorators, newContent];
+  }
+
+  return [[], content];
+}
+
 // ─── Main function ───────────────────────────────────────────────────────────
 
 export function resolveActivatedEntries(input: ActivationInput): ActivationResult {
@@ -213,8 +263,11 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   for (const lorebook of input.lorebooks) {
     scanDepths.set(lorebook.id, lorebook.scanDepth);
     for (const entry of lorebook.entries) {
+      const [decorators, content] = parseDecorators(entry.content);
       allEntries.push({
         ...entry,
+        content,
+        decorators,
         lorebookId: lorebook.id,
         // Tri-state resolution (ST parity): a per-entry null inherits the
         // book-level default (ST's world-info.js:269/347 resolves per-entry
@@ -591,16 +644,13 @@ function tryActivateEntry(ctx: {
     }
   }
 
-  // 3b. Decorators — @@activate / @@dont_activate at start of content
-  let decoratorActive = false;
-  const rawContent = entry.content.trimStart();
-  if (rawContent.startsWith("@@")) {
-    const firstLine = rawContent.split("\n")[0].trim();
-    if (firstLine === "@@activate" || firstLine === "@@@activate") {
-      decoratorActive = true;
-    } else if (firstLine === "@@dont_activate" || firstLine === "@@@dont_activate") {
-      return reason("@@dont_activate decorator");
-    }
+  // 3b. ST parseDecorators (world-info.js 4540-4586) reads every leading
+  // `@@` line before this scan. It preserves raw-start semantics (no trim),
+  // treats `@@@` as an escape until fallback, and gives @@activate precedence
+  // because ST checks it before @@dont_activate (4763-4771).
+  const decoratorActive = entry.decorators.includes("@@activate");
+  if (!decoratorActive && entry.decorators.includes("@@dont_activate")) {
+    return reason("@@dont_activate decorator");
   }
 
   // 4. Constant entries — always active
