@@ -2670,7 +2670,7 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
       }),
       getPersona: async () => null,
       getPromptPreset: async () => null,
-      listActiveLoreEntries: async () => [],
+      listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
       listRetrievedMemories: async () => [],
       executeScripts: async () => ({
         character: { personality: "", scenario: "" },
@@ -2728,7 +2728,7 @@ describe("image-gen routes — mode assembly (IG-14)", () => {
       }),
       getPersona: async () => null,
       getPromptPreset: async () => null,
-      listActiveLoreEntries: async () => [],
+      listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
       listRetrievedMemories: async () => [],
       executeScripts: async () => ({
         character: { personality: "", scenario: "" },

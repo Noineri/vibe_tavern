@@ -102,7 +102,7 @@ function makeDiceService(options: DiceServiceOptions = {}) {
 		}),
 		getPersona: async () => null,
 		getPromptPreset: async () => null,
-		listActiveLoreEntries: async () => [],
+		listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
 		listRetrievedMemories: async () => [],
 		executeScripts: async () => ({ personality: "Bold.", scenario: null, injectedMessages: [], errors: [], scriptRuns: [] }),
 		getToolInstructions: () => null,

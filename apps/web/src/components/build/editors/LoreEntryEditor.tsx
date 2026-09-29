@@ -275,7 +275,7 @@ export function LoreEntryEditor({
 
         <ActivationTestPanel lorebookId={lorebookId} isMobile={isMobile} t={t} />
 
-        {/* ── Advanced settings toggle ── */}
+        {/* ── Advanced settings toggle ── forks: 2 — LorebookAccordion book settings + search */}
         <button type="button"
           className="flex items-center gap-1.5 text-[13px] font-medium text-accent-t transition-all hover:text-accent"
           onClick={() => setAdvancedOpen((v) => !v)}

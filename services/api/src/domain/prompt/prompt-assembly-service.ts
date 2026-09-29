@@ -17,6 +17,8 @@ import type {
   PromptTraceId,
   RetrievedMemoryHit,
   ActiveLoreEntry,
+  ActiveLoreEntriesResult,
+  OverflowedLorebook,
   ActivatedLoreDetail,
   InsightsConfig,
   ObjectiveState,
@@ -96,7 +98,7 @@ export interface PromptAssemblyResolver {
      * token-budget mode on lorebooks. Optional — when absent, percent-mode
      * lorebooks silently fall back to their fixed `tokenBudget`. */
     maxContextTokens?: number;
-  }): Promise<ActiveLoreEntry[]>;
+  }): Promise<ActiveLoreEntriesResult>;
   listRetrievedMemories(input: {
     chatId: ChatId;
     branchId: ChatBranchId;
@@ -242,6 +244,11 @@ export interface BuiltPipelineContext {
   promptPresetId: string | null;
   promptPresetName: string | null;
   activeLoreEntries: ActiveLoreEntry[];
+  /** P21: books whose budget overflowed during this resolve (name + dropped
+   *  count + alert flag). Carried into the live-turn trace draft only — the
+   *  context-preview path ignores it (a toast there would fire without a
+   *  generation; named deviation from ST, which toasts dry runs too). */
+  overflowedLorebooks: OverflowedLorebook[];
   retrievedMemories: RetrievedMemoryHit[];
   scriptResult: Awaited<ReturnType<PromptAssemblyResolver["executeScripts"]>>;
   recentMessageCount: number;
@@ -334,6 +341,9 @@ export class PromptAssemblyService {
         },
         activatedLoreEntries: result.activatedLoreEntries.map((id) => brandId<LoreEntryId>(id)),
         activatedLoreDetail,
+        // P21: full overflow list (alert-off books included) — evidence in the
+        // trace; the finish-event toast channel filters to alert-on.
+        overflowedLorebooks: built.overflowedLorebooks,
         scriptInjections,
         retrievedMemories: built.retrievedMemories.map((memory) => ({
           id: memory.id,
@@ -550,12 +560,13 @@ export class PromptAssemblyService {
     });
 
     const recentText = recentMessages.map((message) => message.content).join("\n");
-    const activeLoreEntries = await this.resolver.listActiveLoreEntries({
+    const loreActivation = await this.resolver.listActiveLoreEntries({
       chatId: chat.id as ChatId,
       branchId,
       recentText,
       maxContextTokens: input.contextBudget ?? undefined,
     });
+    const activeLoreEntries = loreActivation.entries;
     const retrievedMemories = await this.resolver.listRetrievedMemories({
       chatId: chat.id as ChatId,
       branchId,
@@ -717,6 +728,7 @@ export class PromptAssemblyService {
       chatPromptPresetId: chat.promptPresetId ?? null,
       promptPresetId: promptPresetId ?? null,
       promptPresetName: promptPreset?.name ?? null,
+      overflowedLorebooks: loreActivation.overflowedLorebooks,
       activeLoreEntries,
       retrievedMemories,
       scriptResult,

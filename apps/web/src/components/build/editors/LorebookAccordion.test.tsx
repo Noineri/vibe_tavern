@@ -11,6 +11,7 @@
  * Runner: bun:test with scoped happy-dom.
  */
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
+import { useState } from "react";
 import { wireLorebook, wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
 import type { LoreEntryRecord, LorebookRecord } from "../../../api/types.js";
@@ -166,19 +167,21 @@ const ENTRIES: LoreEntryRecord[] = [
   makeEntry({ id: "e3", title: "Fire Sprite", content: "ember", keys: ["fire"], secondaryKeys: ["lair"] }),
 ];
 
-function renderAccordion(
-  overrides: Partial<{
-    lorebook: LorebookRecord;
-    onUpdateMeta: (body: Parameters<NonNullable<Parameters<typeof LorebookAccordion>[0]["onUpdateMeta"]>>[0]) => void;
-    editing: boolean;
-    editLbName: string;
-    editLbScope: string;
-    isMobile: boolean;
-    onEditLbScope: (scope: string) => void;
-    onSaveEdit: () => void;
-  }> = {},
+type AccordionOverrides = Partial<{
+  lorebook: LorebookRecord;
+  onUpdateMeta: (body: Parameters<NonNullable<Parameters<typeof LorebookAccordion>[0]["onUpdateMeta"]>>[0]) => void;
+  editing: boolean;
+  editLbName: string;
+  editLbScope: string;
+  isMobile: boolean;
+  onEditLbScope: (scope: string) => void;
+  onSaveEdit: () => void;
+}>;
+
+function accordionElement(
+  overrides: AccordionOverrides = {},
 ) {
-  return render(
+  return (
     <LorebookAccordion
       lorebook={overrides.lorebook ?? LOREBOOK}
       links={[]}
@@ -209,8 +212,31 @@ function renderAccordion(
       onExport={() => {}}
       characters={[]}
       personas={[]}
-    />,
+    />
   );
+}
+
+function renderAccordion(overrides: AccordionOverrides = {}) {
+  return render(accordionElement(overrides));
+}
+
+/** Stateful harness for the advanced-settings suite (resweep step 6):
+ *  onUpdateMeta merges back into the lorebook prop, emulating the store
+ *  refresh the real wiring performs — the exclusion note and the zero
+ *  captions only render once the refreshed record catches up. */
+function renderStatefulAccordion(lbOverrides: Partial<LorebookRecord> = {}) {
+  const writes: Array<Record<string, unknown>> = [];
+  const Harness = () => {
+    const [lb, setLb] = useState<LorebookRecord>({ ...LOREBOOK, ...lbOverrides });
+    return accordionElement({
+      lorebook: lb,
+      onUpdateMeta: (body) => {
+        writes.push(body as Record<string, unknown>);
+        setLb((prev) => ({ ...prev, ...body }));
+      },
+    });
+  };
+  return { view: render(<Harness />), writes };
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
@@ -221,6 +247,27 @@ describe("LorebookAccordion search", () => {
     listLoreEntries.mockResolvedValue(ENTRIES);
   });
 
+  /** The search panel is collapsed by default (owner request 2026-09-29) —
+   *  open it before driving the filter inputs. */
+  async function openSearch(view: ReturnType<typeof render>) {
+    await view.findAllByTestId("entry-row"); // wait for load
+    fireEvent.click(view.getByText("lore_search_toggle"));
+    return view;
+  }
+
+  it("collapsed by default; opens on the toggle; the badge surfaces active filters while collapsed", async () => {
+    const view = renderAccordion();
+    await view.findAllByTestId("entry-row");
+    expect(view.queryByPlaceholderText("search_name_placeholder")).toBeNull();
+    fireEvent.click(view.getByText("lore_search_toggle"));
+    expect(view.getByPlaceholderText("search_name_placeholder")).not.toBeNull();
+    // type a query, then collapse — the ·N badge keeps the filter visible
+    const user = userEvent.setup();
+    await user.type(view.getByPlaceholderText("search_name_placeholder"), "fire");
+    fireEvent.click(view.getByText("lore_search_collapse"));
+    expect(view.getByText("· 1")).not.toBeNull();
+  });
+
   it("renders all entries unfiltered; DnD enabled", async () => {
     const { findAllByTestId, getByTestId } = renderAccordion();
     expect(await findAllByTestId("entry-row")).toHaveLength(3);
@@ -228,73 +275,73 @@ describe("LorebookAccordion search", () => {
   });
 
   it("text query filters by title OR content, case-insensitive", async () => {
-    const { findAllByTestId, getByPlaceholderText } = renderAccordion();
+    const view = renderAccordion();
     const user = userEvent.setup();
-    await findAllByTestId("entry-row"); // wait for load
-    const search = getByPlaceholderText("search_name_placeholder");
+    await openSearch(view);
+    const search = view.getByPlaceholderText("search_name_placeholder");
     // "fire" → e1 (content "breathes fire") + e3 (title "Fire Sprite")
     await user.type(search, "fire");
-    expect(await findAllByTestId("entry-row")).toHaveLength(2);
+    expect(await view.findAllByTestId("entry-row")).toHaveLength(2);
     // "stone" → e2 only (content)
     await user.click(search);
     await user.keyboard("{Control>}a{/Control}{Backspace}");
     await user.type(search, "stone");
-    expect(await findAllByTestId("entry-row")).toHaveLength(1);
+    expect(await view.findAllByTestId("entry-row")).toHaveLength(1);
     // case-insensitive
     await user.clear(search);
     await user.type(search, "FIRE");
-    expect(await findAllByTestId("entry-row")).toHaveLength(2);
+    expect(await view.findAllByTestId("entry-row")).toHaveLength(2);
   });
 
   it("activation-key chips combine with AND; clears with the query", async () => {
-    const { findAllByTestId, getByPlaceholderText } = renderAccordion();
+    const view = renderAccordion();
     const user = userEvent.setup();
-    await findAllByTestId("entry-row");
-    const tagInput = getByPlaceholderText("lore_search_keys_placeholder");
+    await openSearch(view);
+    const tagInput = view.getByPlaceholderText("lore_search_keys_placeholder");
     // key "fire" → e1 + e3 (both have it)
     await user.type(tagInput, "fire{Enter}");
-    expect(await findAllByTestId("entry-row")).toHaveLength(2);
+    expect(await view.findAllByTestId("entry-row")).toHaveLength(2);
     // add key "boss" (AND) → only e1 has both [boss, fire]
     await user.type(tagInput, "boss{Enter}");
-    expect(await findAllByTestId("entry-row")).toHaveLength(1);
+    expect(await view.findAllByTestId("entry-row")).toHaveLength(1);
   });
 
   it("secondary-key combobox is a distinct input filtering on secondaryKeys", async () => {
-    const { findAllByTestId, queryAllByTestId, getByPlaceholderText } = renderAccordion();
+    const view = renderAccordion();
     const user = userEvent.setup();
-    await findAllByTestId("entry-row");
+    await openSearch(view);
     // The secondary combobox has its own placeholder (distinct from primary).
-    const secInput = getByPlaceholderText("lore_search_secondary_keys_placeholder");
+    const secInput = view.getByPlaceholderText("lore_search_secondary_keys_placeholder");
     // secondary "lair" → e1 + e3 (both have it in secondaryKeys)
     await user.type(secInput, "lair{Enter}");
-    expect(await findAllByTestId("entry-row")).toHaveLength(2);
+    expect(await view.findAllByTestId("entry-row")).toHaveLength(2);
     // primary "fire" (e1+e3) AND secondary "moat" (e2 only) → no overlap → 0
-    const primInput = getByPlaceholderText("lore_search_keys_placeholder");
+    const primInput = view.getByPlaceholderText("lore_search_keys_placeholder");
     await user.type(primInput, "fire{Enter}");
     await user.type(secInput, "moat{Enter}");
     // queryAll (not findAll) — findAllByTestId throws when zero match.
     await waitFor(() =>
-      expect(queryAllByTestId("entry-row")).toHaveLength(0),
+      expect(view.queryAllByTestId("entry-row")).toHaveLength(0),
     );
   });
 
   it("DnD is disabled while a filter is active, re-enabled when clear", async () => {
-    const { findAllByTestId, getByPlaceholderText, getByTestId } = renderAccordion();
+    const view = renderAccordion();
     const user = userEvent.setup();
-    await findAllByTestId("entry-row");
-    expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("false");
+    await openSearch(view);
+    expect(view.getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("false");
     // text filter arms the disable
-    const search = getByPlaceholderText("search_name_placeholder");
+    const search = view.getByPlaceholderText("search_name_placeholder");
     await user.type(search, "fire");
-    expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("true");
+    expect(view.getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("true");
     // clearing re-enables
     await user.click(search);
     await user.keyboard("{Control>}a{/Control}{Backspace}");
-    await waitFor(() => expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("false"));
+    await waitFor(() => expect(view.getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("false"));
     // tag filter arms it too
-    const tagInput = getByPlaceholderText("lore_search_keys_placeholder");
+    const tagInput = view.getByPlaceholderText("lore_search_keys_placeholder");
     await user.type(tagInput, "stone{Enter}");
-    expect(getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("true");
+    expect(view.getByTestId("entry-list").getAttribute("data-dnd-disabled")).toBe("true");
   });
 });
 
@@ -444,5 +491,141 @@ describe("LorebookAccordion mobile edit form (MUI step 6)", () => {
   it("outside edit mode the caret is present on mobile too (expansion still works)", async () => {
     const { container } = renderAccordion({ editing: false, isMobile: true });
     expect(container.textContent).toContain("\u25BC");
+  });
+});
+
+// ── Advanced book settings (resweep step 6) ─────────────────────────────
+// Pins the disclosure + SliderField.onCommit wiring: collapsed by default,
+// drag ticks paint locally (no write), release commits one write per field,
+// the ST mutual exclusion writes BOTH fields in ONE call, disabled states
+// follow recursive scanning / min activations, zero captions appear only
+// at 0, and the overflow checkbox writes its flag.
+
+describe("LorebookAccordion advanced settings", () => {
+  beforeEach(() => {
+    listLoreEntries.mockClear();
+    listLoreEntries.mockResolvedValue(ENTRIES);
+  });
+
+  /** Open the section and return the view with the body mounted. */
+  async function openAdvanced(view: ReturnType<typeof render>) {
+    await view.findAllByTestId("entry-row"); // wait for load
+    fireEvent.click(view.getByText("lore_advanced_settings"));
+    return view;
+  }
+
+  /** Drag a slider to v (change per tick) and release (commit). */
+  function dragAndRelease(view: ReturnType<typeof render>, testId: string, v: number) {
+    fireEvent.change(view.getByTestId(testId), { target: { value: String(v) } });
+    fireEvent.pointerUp(view.getByTestId(testId));
+  }
+
+  it("collapsed by default; opens on the toggle", async () => {
+    const view = renderAccordion({ lorebook: { ...LOREBOOK, recursiveScanning: true } });
+    await view.findAllByTestId("entry-row");
+    expect(view.queryByTestId("lore-steps-range")).toBeNull();
+    fireEvent.click(view.getByText("lore_advanced_settings"));
+    expect(view.getByTestId("lore-steps-range")).not.toBeNull();
+    expect(view.getByTestId("lore-min-act-range")).not.toBeNull();
+    expect(view.getByTestId("lore-depth-max-range")).not.toBeNull();
+    expect(view.getByRole("checkbox", { name: "lore_overflow_alert" })).not.toBeNull();
+  });
+
+  it("drag ticks paint locally — no write until release", async () => {
+    const { view, writes } = renderStatefulAccordion({ recursiveScanning: true });
+    await openAdvanced(view);
+    fireEvent.change(view.getByTestId("lore-steps-range"), { target: { value: "5" } });
+    expect(writes).toHaveLength(0);
+    // release commits once
+    fireEvent.pointerUp(view.getByTestId("lore-steps-range"));
+    expect(writes).toEqual([{ maxRecursionSteps: 5 }]);
+  });
+
+  it("each slider commits its own field", async () => {
+    const { view, writes } = renderStatefulAccordion({ recursiveScanning: true, minActivations: 2 });
+    await openAdvanced(view);
+    dragAndRelease(view, "lore-depth-max-range", 7);
+    expect(writes).toEqual([{ minActivationsDepthMax: 7 }]);
+    writes.length = 0;
+    dragAndRelease(view, "lore-min-act-range", 5); // steps is 0 → no exclusion
+    expect(writes).toEqual([{ minActivations: 5 }]);
+    writes.length = 0;
+    // no-op release (value already committed) writes nothing
+    dragAndRelease(view, "lore-depth-max-range", 7);
+    expect(writes).toHaveLength(0);
+  });
+
+  it("mutual exclusion: steps → non-zero zeroes min activations in ONE write, note on the zeroed control", async () => {
+    const { view, writes } = renderStatefulAccordion({ recursiveScanning: true, minActivations: 2, maxRecursionSteps: 0 });
+    await openAdvanced(view);
+    dragAndRelease(view, "lore-steps-range", 3);
+    expect(writes).toEqual([{ maxRecursionSteps: 3, minActivations: 0 }]);
+    // min-act fell to 0 → its caption slot carries the reset note (NOT «выключено»)
+    expect(view.getByText("lore_reset_by_steps")).not.toBeNull();
+    expect(view.queryByText("lore_min_act_zero")).toBeNull();
+  });
+
+  it("mutual exclusion mirror: min activations → non-zero zeroes steps in ONE write", async () => {
+    const { view, writes } = renderStatefulAccordion({ maxRecursionSteps: 4, minActivations: 0 });
+    await openAdvanced(view);
+    dragAndRelease(view, "lore-min-act-range", 1);
+    expect(writes).toEqual([{ minActivations: 1, maxRecursionSteps: 0 }]);
+    // steps fell to 0 → reset note, phrased as unlimited, never «выключено»
+    expect(view.getByText("lore_reset_by_min_act")).not.toBeNull();
+    expect(view.queryByText("lore_steps_zero")).toBeNull();
+  });
+
+  it("the reset note clears when the zeroed control next changes", async () => {
+    const { view, writes } = renderStatefulAccordion({ recursiveScanning: true, minActivations: 2, maxRecursionSteps: 0 });
+    await openAdvanced(view);
+    dragAndRelease(view, "lore-steps-range", 3);
+    expect(view.getByText("lore_reset_by_steps")).not.toBeNull();
+    // re-raising min activations flips the exclusion the other way: steps
+    // (non-zero now) is zeroed and the note moves to the steps control
+    dragAndRelease(view, "lore-min-act-range", 1);
+    expect(view.queryByText("lore_reset_by_steps")).toBeNull();
+    expect(view.getByText("lore_reset_by_min_act")).not.toBeNull();
+    expect(writes[1]).toEqual({ minActivations: 1, maxRecursionSteps: 0 });
+  });
+
+  it("disabled states: steps gated on recursive scanning, depth max gated on min activations", async () => {
+    const view = renderAccordion(); // recursiveScanning: false, minActivations: 0
+    await openAdvanced(view);
+    expect(view.getByTestId("lore-steps-range").hasAttribute("disabled")).toBe(true);
+    expect(view.getByTestId("lore-depth-max-range").hasAttribute("disabled")).toBe(true);
+    expect(view.getByTestId("lore-min-act-range").hasAttribute("disabled")).toBe(false);
+    view.unmount(); // one live view at a time — queries bind to document.body
+
+    const enabled = renderAccordion({ lorebook: { ...LOREBOOK, recursiveScanning: true, minActivations: 2 } });
+    await openAdvanced(enabled);
+    expect(enabled.getByTestId("lore-steps-range").hasAttribute("disabled")).toBe(false);
+    expect(enabled.getByTestId("lore-depth-max-range").hasAttribute("disabled")).toBe(false);
+  });
+
+  it("zero captions appear only at 0", async () => {
+    const zero = renderAccordion({ lorebook: { ...LOREBOOK, recursiveScanning: true, minActivations: 2, minActivationsDepthMax: 0, maxRecursionSteps: 0 } });
+    await openAdvanced(zero);
+    expect(zero.getByText("lore_steps_zero")).not.toBeNull();
+    expect(zero.getByText("lore_depth_max_zero")).not.toBeNull();
+    expect(zero.queryByText("lore_min_act_zero")).toBeNull(); // minAct 2 ≠ 0
+    zero.unmount(); // one live view at a time — queries bind to document.body
+    // depth-max caption is gated on the minimum actually running (minAct ≠ 0)
+    const minActZero = renderAccordion({ lorebook: { ...LOREBOOK, minActivations: 0, minActivationsDepthMax: 0 } });
+    await openAdvanced(minActZero);
+    expect(minActZero.queryByText("lore_depth_max_zero")).toBeNull();
+    expect(minActZero.getByText("lore_min_act_zero")).not.toBeNull();
+    minActZero.unmount();
+
+    const { view } = renderStatefulAccordion({ recursiveScanning: true, minActivations: 2 });
+    await openAdvanced(view);
+    dragAndRelease(view, "lore-steps-range", 3);
+    expect(view.queryByText("lore_steps_zero")).toBeNull(); // 3 ≠ 0 → no caption
+  });
+
+  it("the overflow checkbox writes overflowAlert", async () => {
+    const { view, writes } = renderStatefulAccordion();
+    await openAdvanced(view);
+    fireEvent.click(view.getByRole("checkbox", { name: "lore_overflow_alert" }));
+    expect(writes).toEqual([{ overflowAlert: true }]);
   });
 });

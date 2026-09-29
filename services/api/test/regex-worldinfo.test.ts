@@ -121,15 +121,15 @@ afterAll(async () => {
 });
 
 async function listActive(world: TestWorld): Promise<ActiveLoreEntry[]> {
-  const entries = await world.resolver.listActiveLoreEntries({
+  const result = await world.resolver.listActiveLoreEntries({
     chatId: world.chatId,
     branchId: brandId<ChatBranchId>(world.branchId),
     recentText: SCAN_MESSAGE,
   });
   // The scan message contains the entry key — the entry MUST activate for
   // these tests to exercise the transform path at all.
-  expect(entries.length).toBeGreaterThan(0);
-  return entries;
+  expect(result.entries.length).toBeGreaterThan(0);
+  return result.entries;
 }
 
 /** Full field set minus store-generated columns (CreateRegexPresetData). */

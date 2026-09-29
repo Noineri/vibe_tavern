@@ -150,6 +150,11 @@ export interface ActivationResult {
     /** Structured reason this entry activated — surfaced in the prompt trace. */
     reason: LoreActivationReason;
   }>;
+  /** Books whose token budget overflowed this resolve (P21): per-book count
+   *  of entries dropped by the N5 overflow latch. Empty when no book
+   *  overflowed. Surfaces the overflowAlert toast + the prompt trace; the
+   *  engine itself only reports, it never alerts. */
+  overflowedBooks: Array<{ lorebookId: string; dropped: number }>;
   /** Updated activation state (to persist back to chat) */
   updatedState: LoreActivationState;
 }
@@ -509,9 +514,9 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // Token budget per lorebook
   const budgeted = applyTokenBudget(activated, input.lorebooks, input.estimateTokenCount, input.maxContextTokens);
 
-  logger.debug("DONE: %d entries activated, %d after budget, %d after groups", activated.length, budgeted.length, budgeted.length);
+  logger.debug("DONE: %d entries activated, %d after budget, %d after groups, %d books overflowed", activated.length, budgeted.kept.length, budgeted.kept.length, budgeted.overflow.length);
 
-  return { activatedEntries: budgeted, updatedState };
+  return { activatedEntries: budgeted.kept, overflowedBooks: budgeted.overflow, updatedState };
 }
 
 // ─── Entry activation logic ─────────────────────────────────────────────────
@@ -1071,7 +1076,7 @@ function applyTokenBudget(
   lorebooks: ActivationInput["lorebooks"],
   estimateTokenCount?: (text: string) => number,
   maxContextTokens?: number,
-): ActivationResult["activatedEntries"] {
+): { kept: ActivationResult["activatedEntries"]; overflow: ActivationResult["overflowedBooks"] } {
   const count = estimateTokenCount ?? ((text: string) => Math.ceil(text.length / 4));
   // Resolve each lorebook's effective budget. Percent mode: ST parity —
   // budget = round(% of context) with a floor of 1 (world-info.js:4624), then
@@ -1101,18 +1106,33 @@ function applyTokenBudget(
   // 4942: cumulative-after-add reaching the budget exactly is an overflow —
   // the entry that lands exactly on the limit is dropped).
   const overflowed = new Set<string>();
-  return entries.filter(e => {
+  // P21: per-book count of entries the latch dropped — the overflowAlert
+  // channel (id + dropped count). Counted here, one place, next to the
+  // dropping itself.
+  const droppedCount = new Map<string, number>();
+  const drop = (lorebookId: string) => droppedCount.set(lorebookId, (droppedCount.get(lorebookId) ?? 0) + 1);
+  const kept = entries.filter(e => {
     if (e.ignoreBudget) return true;
     const budget = budgetPerLorebook.get(e.lorebookId);
     if (budget == null) return true;
-    if (overflowed.has(e.lorebookId)) return false;
+    if (overflowed.has(e.lorebookId)) {
+      drop(e.lorebookId);
+      return false;
+    }
     const current = used.get(e.lorebookId) ?? 0;
     const cost = count(e.content);
     if (current + cost >= budget) {
       overflowed.add(e.lorebookId);
+      drop(e.lorebookId);
       return false;
     }
     used.set(e.lorebookId, current + cost);
     return true;
   });
+  return {
+    kept,
+    overflow: Array.from(droppedCount.entries())
+      .map(([lorebookId, dropped]) => ({ lorebookId, dropped }))
+      .sort((a, b) => a.lorebookId.localeCompare(b.lorebookId)),
+  };
 }

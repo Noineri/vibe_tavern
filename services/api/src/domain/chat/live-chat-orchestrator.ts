@@ -467,7 +467,7 @@ export class LiveChatOrchestrator {
         });
         logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
         this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
-        return appended.response;
+        return { ...appended.response, lorebookOverflows: appended.overflowAlerts };
       },
     });
   }
@@ -534,7 +534,7 @@ export class LiveChatOrchestrator {
         });
         logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
         this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
-        return appended.response;
+        return { ...appended.response, lorebookOverflows: appended.overflowAlerts };
       },
     });
   }
@@ -609,7 +609,7 @@ export class LiveChatOrchestrator {
           toolResults,
         });
         logSendDebug("live.regenerate-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
-        return snapshot;
+        return { ...snapshot, lorebookOverflows: snapshot.overflowAlerts };
       },
     });
   }
@@ -762,7 +762,7 @@ export class LiveChatOrchestrator {
           toolResults,
         });
         logSendDebug("live.continue-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
-        return snapshot;
+        return { ...snapshot, lorebookOverflows: snapshot.overflowAlerts };
       },
     });
   }
@@ -867,7 +867,12 @@ export class LiveChatOrchestrator {
     omitMessageCountInFinish?: boolean;
     prefill?: string;
     onAbort: (text: string, reasoning: string, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<void>;
-    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number, toolCalls?: ExtractedToolCall[], toolResults?: ExtractedToolResult[]) => Promise<MessageResponse>;
+    /** P21: the final return carries the wire snapshot PLUS the lorebook
+     *  overflow-alert channel (alert-on books that overflowed this turn) —
+     *  drainStream forwards it on the `finish` SSE event so the client can
+     *  toast without a refetch. Intersection type: existing `snapshot.messages`
+     *  consumers are unchanged. */
+    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number, toolCalls?: ExtractedToolCall[], toolResults?: ExtractedToolResult[]) => Promise<MessageResponse & { lorebookOverflows?: Array<{ name: string; dropped: number }> }>;
   }): AsyncGenerator<{ event: string; data: string }> {
     const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish, prefill } = input;
     // ── CA-17/CANARY: loop observability. Counts every tool interaction so a
@@ -1050,6 +1055,11 @@ export class LiveChatOrchestrator {
     };
     if (!omitMessageCountInFinish) {
       finishData.messageCount = snapshot.messages.length;
+    }
+    // P21 (overflowAlert): the per-book overflow notices ride the finish
+    // event (same channel as usage) — the client toasts them once per turn.
+    if (snapshot.lorebookOverflows?.length) {
+      finishData.lorebookOverflows = snapshot.lorebookOverflows;
     }
     yield { event: "finish", data: JSON.stringify(finishData) };
   }

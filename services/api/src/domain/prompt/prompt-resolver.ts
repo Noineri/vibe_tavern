@@ -6,6 +6,7 @@ import {
 	type CharacterId,
 	type LoreEntry,
 	type ActiveLoreEntry,
+	type ActiveLoreEntriesResult,
 	type RetrievedMemoryHit,
 	type CustomInjection,
 	type GenerationFormat,
@@ -101,9 +102,9 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		branchId: ChatBranchId;
 		recentText: string;
 		maxContextTokens?: number;
-	}): Promise<ActiveLoreEntry[]> {
+	}): Promise<ActiveLoreEntriesResult> {
 		const chat = await this.stores.chats.getById(input.chatId);
-		if (!chat) return [];
+		if (!chat) return { entries: [], overflowedLorebooks: [] };
 
 		// 1. Load lorebooks with entries for this chat
 		const lorebookSets = await this.stores.lorebooks.listAllActiveForChat(
@@ -112,7 +113,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			input.chatId,
 		);
 
-		if (lorebookSets.length === 0) return [];
+		if (lorebookSets.length === 0) return { entries: [], overflowedLorebooks: [] };
 
 		// 2. Load messages for scan depth
 		const messages = await this.stores.messages.getMessages(input.branchId);
@@ -123,7 +124,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 
 		// 3. Load character name for macro resolution + character filter
 		const character = await this.stores.characters.getById(chat.characterId);
-		if (!character) return [];
+		if (!character) return { entries: [], overflowedLorebooks: [] };
 
 		// 4. Build macro map
 		const allPersonas = await this.stores.personas.listAll();
@@ -232,11 +233,26 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		//     the prompt view only — the lorebook row is shared content and is
 		//     never rewritten. The macroMap built above is reused as the engine's
 		//     macro source (no second context is built).
-		return this.regexHooks.transformWorldInfo(input.chatId, activeEntries, {
+		const entries = await this.regexHooks.transformWorldInfo(input.chatId, activeEntries, {
 			characterId: chat.characterId,
 			presetId: chat.promptPresetId ?? null,
 			macroMap,
 		});
+
+		// P21 (overflowAlert): enrich the engine's per-book overflow report with
+		// the book's name + its overflowAlert flag — the single place that has
+		// both (the engine knows only ids; the flag is a per-book setting, not
+		// engine logic). The trace keeps the full list; the live-turn finish
+		// event filters to alert-on books (see appendAssistantReply).
+		const lorebookById = new Map(lorebookSets.map(set => [set.lorebook.id, set.lorebook]));
+		const overflowedLorebooks = result.overflowedBooks.map(o => ({
+			lorebookId: o.lorebookId,
+			name: lorebookById.get(o.lorebookId)?.name ?? o.lorebookId,
+			dropped: o.dropped,
+			alert: lorebookById.get(o.lorebookId)?.overflowAlert ?? false,
+		}));
+
+		return { entries, overflowedLorebooks };
 	}
 
 	async executeScripts(input: {

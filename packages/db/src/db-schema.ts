@@ -1151,6 +1151,9 @@ export const promptTraces = sqliteTable('prompt_traces', {
   activatedLoreEntriesJson: text('activated_lore_entries_json').notNull().default('[]'),
   /** Per-entry activation reasons (JSON ActivatedLoreDetail[]). Nullable for traces saved before this column existed. */
   activatedLoreDetailJson: text('activated_lore_detail_json'),
+  /** P21: books whose budget overflowed (JSON OverflowedLorebook[]). Default
+   *  '[]' — absent on previews and traces saved before the column existed. */
+  overflowedLorebooksJson: text('overflowed_lorebooks_json').notNull().default('[]'),
   retrievedMemoriesJson: text('retrieved_memories_json').notNull().default('[]'),
   scriptInjectionsJson: text('script_injections_json').notNull().default('[]'),
   prefill: text('prefill'),

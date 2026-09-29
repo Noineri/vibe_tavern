@@ -15,9 +15,11 @@ import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { Ic, Icons } from "../../shared/icons.js";
 import { AddButton } from "../../shared/add-button.js";
 import { cn } from "../../../lib/cn.js";
+import { lblCls } from "../../../lib/field-tokens.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { SliderField } from "../../shared/SliderField.js";
 import { TokenCounter } from "../../shared/TokenCounter.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
@@ -91,6 +93,10 @@ interface LorebookAccordionProps {
     useGroupScoring?: boolean;
     caseSensitive?: boolean;
     matchWholeWords?: boolean;
+    maxRecursionSteps?: number;
+    minActivations?: number;
+    minActivationsDepthMax?: number;
+    overflowAlert?: boolean;
   }) => void;
   onReorderEntries: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntryRecord[]>;
   onToggleEntryEnabled: (entryId: string, enabled: boolean) => Promise<LoreEntryRecord>;
@@ -211,6 +217,86 @@ export function LorebookAccordion({
       return true;
     });
   }, [entries, isFiltering, searchQuery, selectedKeys, selectedSecondaryKeys]);
+
+  // ── Advanced book settings (resweep step 6): min activations, depth max,
+//    max recursion steps, overflow alert. Collapsed by default, local state
+//    (never persisted) — the entry editor's disclosure pattern.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Slider drag drafts — the range fires onChange per drag tick, but
+  // onUpdateMeta is an RPC per call (updateLorebookMeta + refreshLorebooks),
+  // so the tick only paints local state and SliderField.onCommit persists
+  // on release (NumberInput's half commits on blur — same boundary).
+  const [stepsDraft, setStepsDraft] = useState<number | null>(null);
+  const [minActDraft, setMinActDraft] = useState<number | null>(null);
+  const [depthMaxDraft, setDepthMaxDraft] = useState<number | null>(null);
+  // Which control was auto-zeroed by the ST mutual exclusion (setting one of
+  // minActivations / maxRecursionSteps to non-zero zeroes the other,
+  // world-info.js 6118-6124 / 6184-6192 — UI-only there, UI-only here). The
+  // note shows in the zeroed control's caption slot until that control next
+  // changes or the section collapses.
+  const [exclusionNote, setExclusionNote] = useState<"steps" | "minActivations" | null>(null);
+
+  const stepsValue = stepsDraft ?? lorebook.maxRecursionSteps;
+  const minActValue = minActDraft ?? lorebook.minActivations;
+  const depthMaxValue = depthMaxDraft ?? lorebook.minActivationsDepthMax;
+
+  // Drop each draft once the refreshed record catches up (commit keeps the
+  // draft painted so the thumb does not snap back while the RPC round-trips;
+  // this returns control to the canonical prop).
+  useEffect(() => {
+    if (stepsDraft != null && lorebook.maxRecursionSteps === stepsDraft) setStepsDraft(null);
+  }, [lorebook.maxRecursionSteps, stepsDraft]);
+  useEffect(() => {
+    if (minActDraft != null && lorebook.minActivations === minActDraft) setMinActDraft(null);
+  }, [lorebook.minActivations, minActDraft]);
+  useEffect(() => {
+    if (depthMaxDraft != null && lorebook.minActivationsDepthMax === depthMaxDraft) setDepthMaxDraft(null);
+  }, [lorebook.minActivationsDepthMax, depthMaxDraft]);
+
+  // Commits — the mutual-exclusion pair writes BOTH fields in ONE
+  // onUpdateMeta call (never two writes) and parks the note on the zeroed
+  // control. No-op releases (value unchanged) persist nothing.
+  const commitSteps = (v: number) => {
+    if (v === lorebook.maxRecursionSteps) return;
+    setExclusionNote(null);
+    if (v > 0 && minActValue > 0) {
+      onUpdateMeta({ maxRecursionSteps: v, minActivations: 0 });
+      setExclusionNote("minActivations");
+    } else {
+      onUpdateMeta({ maxRecursionSteps: v });
+    }
+  };
+  const commitMinActivations = (v: number) => {
+    if (v === lorebook.minActivations) return;
+    setExclusionNote(null);
+    if (v > 0 && stepsValue > 0) {
+      onUpdateMeta({ minActivations: v, maxRecursionSteps: 0 });
+      setExclusionNote("steps");
+    } else {
+      onUpdateMeta({ minActivations: v });
+    }
+  };
+  const commitDepthMax = (v: number) => {
+    if (v === lorebook.minActivationsDepthMax) return;
+    onUpdateMeta({ minActivationsDepthMax: v });
+  };
+
+  // Collapsing the section clears the transient exclusion note (and stale
+  // drafts fall back to the canonical record).
+  const toggleAdvanced = () => {
+    setAdvancedOpen((v) => {
+      if (v) setExclusionNote(null);
+      return !v;
+    });
+  };
+
+  // Search panel disclosure (owner request 2026-09-29): the panel is
+//    collapsed by default — the advanced-toggle pattern again. The badge on
+//    the toggle keeps an ACTIVE filter visible while collapsed (a filtered
+//    list with no visible reason is a trap).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const activeFilterCount =
+    (searchQuery.trim() !== "" ? 1 : 0) + selectedKeys.length + selectedSecondaryKeys.length;
 
   const handleReorderEntries = async (
     updates: Array<{ id: string; sortOrder: number; position?: string }>
@@ -468,17 +554,24 @@ export function LorebookAccordion({
         className="flex flex-col gap-3 border-t border-border"
         style={{ padding: "10px 12px" }}
       >
-          {/* Lorebook settings: token budget, scan depth, recursive scanning, links */}
+          {/* Lorebook settings: token budget, scan depth, recursive scanning, links.
+              The card is a column: [inputs row] → [advanced toggle] → [advanced
+              section] (resweep step 6). */}
           <div
             className={cn(
-              "flex items-end gap-6 rounded-lg border border-border bg-s2/50 px-3 py-2.5",
+              "flex flex-col gap-2.5 rounded-lg border border-border bg-s2/50 px-3 py-2.5",
+            )}
+          >
+          <div
+            className={cn(
+              "flex items-end gap-6",
               isMobile && "flex-col items-stretch gap-3"
             )}
           >
             <div className={cn("flex gap-4", isMobile && "flex-col gap-3")}>
               <CustomTooltip content={t("lore_token_budget_hint")}>
                 <div className="flex-1">
-                  <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
+                  <label className={lblCls}>
                     {t("lore_token_budget")}
                   </label>
                   <div className="flex items-center gap-1.5">
@@ -515,7 +608,7 @@ export function LorebookAccordion({
               </CustomTooltip>
               <CustomTooltip content={t("lore_scan_depth_hint")}>
                 <div className="flex-1">
-                  <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
+                  <label className={lblCls}>
                     {t("lore_scan_depth")}
                   </label>
                   <NumberInput
@@ -530,7 +623,7 @@ export function LorebookAccordion({
               {lorebook.tokenBudgetPercent != null && (
                 <CustomTooltip content={t("lore_token_budget_cap_hint")}>
                   <div className="flex-1">
-                    <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
+                    <label className={lblCls}>
                       {t("lore_token_budget_cap")}
                     </label>
                     <NumberInput
@@ -585,7 +678,7 @@ export function LorebookAccordion({
             {/* Link targets — only for non-chat scopes */}
             {lorebook.scopeType !== 'chat' && (
               <div className={cn("w-fit self-start", !isMobile && "flex-1 pb-0.5")}>
-                <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
+                <label className={lblCls}>
                   {t("lore_link_targets")}
                 </label>
                 <LinkBindingPopover
@@ -604,19 +697,138 @@ export function LorebookAccordion({
             )}
           </div>
 
+            {/* fork #1 of the LoreEntryEditor advanced toggle — collapsed by
+                default, local state, same ▲/▼ text-link shape (resweep step 6). */}
+            <button type="button"
+              className="flex items-center gap-1.5 self-start text-[13px] font-medium text-accent-t transition-all hover:text-accent"
+              onClick={toggleAdvanced}
+            >
+              <span className="text-[10px]">{advancedOpen ? "▲" : "▼"}</span>
+              {advancedOpen
+                ? t("lore_advanced_collapse")
+                : t("lore_advanced_settings")}
+            </button>
+
+            {/* Advanced book settings body (min activations / depth max /
+                recursion steps / overflow alert). Desktop: auto-fit grid —
+                minmax(200px,1fr) keeps RU uppercase labels one-or-two lines
+                (ПРЕДЕЛ ГЛУБИНЫ ДЛЯ МИНИМУМА ≈ 27 chars is the worst case;
+                AD-022); the grid collapses to 2 columns when the panel is
+                narrow. Mobile: one column like the row above. */}
+            <AnimatedDisclosure open={advancedOpen} className="flex flex-col gap-3">
+              <div
+                className={cn(
+                  "grid gap-x-6 gap-y-3",
+                  isMobile ? "grid-cols-1" : "grid-cols-[repeat(auto-fit,minmax(200px,1fr))]",
+                )}
+              >
+                <CustomTooltip content={t("lore_max_recursion_steps_hint")}>
+                  <div>
+                    <SliderField
+                      label={t("lore_max_recursion_steps")}
+                      value={stepsValue}
+                      min={0}
+                      max={10}
+                      step={1}
+                      disabled={!lorebook.recursiveScanning}
+                      onChange={setStepsDraft}
+                      onCommit={commitSteps}
+                      rangeTestId="lore-steps-range"
+                      numberTestId="lore-steps-number"
+                    />
+                    {stepsValue === 0 && (
+                      <p className="mt-1 text-[calc(var(--ui-fs)-2px)] text-t3">
+                        {exclusionNote === "steps"
+                          ? t("lore_reset_by_min_act")
+                          : t("lore_steps_zero")}
+                      </p>
+                    )}
+                  </div>
+                </CustomTooltip>
+                <CustomTooltip content={t("lore_min_activations_hint")}>
+                  <div>
+                    <SliderField
+                      label={t("lore_min_activations")}
+                      value={minActValue}
+                      min={0}
+                      max={100}
+                      step={1}
+                      onChange={setMinActDraft}
+                      onCommit={commitMinActivations}
+                      rangeTestId="lore-min-act-range"
+                      numberTestId="lore-min-act-number"
+                    />
+                    {minActValue === 0 && (
+                      <p className="mt-1 text-[calc(var(--ui-fs)-2px)] text-t3">
+                        {exclusionNote === "minActivations"
+                          ? t("lore_reset_by_steps")
+                          : t("lore_min_act_zero")}
+                      </p>
+                    )}
+                  </div>
+                </CustomTooltip>
+                <CustomTooltip content={t("lore_min_activations_depth_max_hint")}>
+                  <div>
+                    <SliderField
+                      label={t("lore_min_activations_depth_max")}
+                      value={depthMaxValue}
+                      min={0}
+                      max={100}
+                      step={1}
+                      disabled={minActValue === 0}
+                      onChange={setDepthMaxDraft}
+                      onCommit={commitDepthMax}
+                      rangeTestId="lore-depth-max-range"
+                      numberTestId="lore-depth-max-number"
+                    />
+                    {depthMaxValue === 0 && minActValue !== 0 && (
+                      <p className="mt-1 text-[calc(var(--ui-fs)-2px)] text-t3">
+                        {t("lore_depth_max_zero")}
+                      </p>
+                    )}
+                  </div>
+                </CustomTooltip>
+              </div>
+              <CustomTooltip content={t("lore_overflow_alert_hint")}>
+                <div>
+                  <Checkbox
+                    checked={lorebook.overflowAlert}
+                    onChange={(v) => onUpdateMeta({ overflowAlert: v })}
+                    label={t("lore_overflow_alert")}
+                  />
+                </div>
+              </CustomTooltip>
+            </AnimatedDisclosure>
+          </div>
+
           {/* Drag-and-drop entry list grouped by position */}
-          <ListSearchPanel
-            query={searchQuery}
-            onQueryChange={setSearchQuery}
-            selectedTags={selectedKeys}
-            onSelectedTagsChange={setSelectedKeys}
-            availableTags={availableKeys}
-            tagInputPlaceholder={t("lore_search_keys_placeholder")}
-            secondarySelectedTags={selectedSecondaryKeys}
-            onSecondarySelectedTagsChange={setSelectedSecondaryKeys}
-            secondaryAvailableTags={availableSecondaryKeys}
-            secondaryTagInputPlaceholder={t("lore_search_secondary_keys_placeholder")}
-          />
+          {/* fork #2 of the LoreEntryEditor advanced toggle — collapsed by
+              default, same ▲/▼ text-link shape; the ·N suffix surfaces active
+              filters while collapsed (owner request 2026-09-29). */}
+          <button type="button"
+            className="flex items-center gap-1.5 self-start text-[13px] font-medium text-accent-t transition-all hover:text-accent"
+            onClick={() => setSearchOpen((v) => !v)}
+          >
+            <span className="text-[10px]">{searchOpen ? "▲" : "▼"}</span>
+            {searchOpen ? t("lore_search_collapse") : t("lore_search_toggle")}
+            {activeFilterCount > 0 && (
+              <span className="text-t3">· {activeFilterCount}</span>
+            )}
+          </button>
+          <AnimatedDisclosure open={searchOpen} className="flex flex-col">
+            <ListSearchPanel
+              query={searchQuery}
+              onQueryChange={setSearchQuery}
+              selectedTags={selectedKeys}
+              onSelectedTagsChange={setSelectedKeys}
+              availableTags={availableKeys}
+              tagInputPlaceholder={t("lore_search_keys_placeholder")}
+              secondarySelectedTags={selectedSecondaryKeys}
+              onSecondarySelectedTagsChange={setSelectedSecondaryKeys}
+              secondaryAvailableTags={availableSecondaryKeys}
+              secondaryTagInputPlaceholder={t("lore_search_secondary_keys_placeholder")}
+            />
+          </AnimatedDisclosure>
           <LoreEntryList
             entries={filteredEntries}
             activeEntryId={activeEntryId}

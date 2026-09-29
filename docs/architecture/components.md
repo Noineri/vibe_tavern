@@ -24,6 +24,7 @@
 | `<ChipInput>` | Custom tag input | `ChipInput.tsx` | Tag/chip input, chips inside the box; `mode="tokens"` (Shift+Enter commits) / `mode="words"` (Enter commits) |
 | `<MaskedConnectionKeyField>` | forked API-key fields | `masked-connection-key-field.tsx` | Masked key input + show/hide toggle + stored-key status (STT/TTS) |
 | `<NumberInput>` | `<input type="number">` | `NumberInput.tsx` | Numeric input with +/- stepper controls |
+| `<SliderField>` | hand-rolled range rows | `SliderField.tsx` | Bounded numeric setting: `lblCls` label + range + synced `NumberInput`; optional `onCommit` = persist on release (drag ticks stay local) |
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
 | `<CustomTooltip>` | `title="..."` | `Tooltip.tsx` | Dark tooltip with arrow |
 | `<OverflowTooltip>` | `title="..."` on names | `OverflowTooltip.tsx` | Truncating text that tooltips only when it overflows |

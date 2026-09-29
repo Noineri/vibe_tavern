@@ -70,7 +70,7 @@ const mockResolver: PromptAssemblyResolver = {
     authorsNote: "",
     authorsNoteDepth: 4,
   }),
-  listActiveLoreEntries: async () => [],
+  listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
   listRetrievedMemories: async () => [],
   executeScripts: async () => ({
     character: { personality: "", scenario: "" },
@@ -368,7 +368,7 @@ function makeFilterService(
     }),
     getPersona: async () => null,
     getPromptPreset: async () => null,
-    listActiveLoreEntries: async () => [],
+    listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
     listRetrievedMemories: async () => [],
     executeScripts: async () => ({ personality: "Bold.", scenario: null, injectedMessages: [], errors: [], scriptRuns: [] }),
     getToolInstructions: () => null,

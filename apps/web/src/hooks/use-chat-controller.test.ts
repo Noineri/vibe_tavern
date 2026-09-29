@@ -32,6 +32,25 @@ const continueMessageAction = mock();
 const realChatApi = await import("../api/chat-api.js");
 const realChatActions = await import("../stores/api-actions/chat-actions.js");
 const realLocaleHelpers = await import("../i18n/locale-helpers.js");
+const realSonner = await import("sonner");
+// P21 (overflowAlert): the overflow warning toast. A delegating wrapper —
+// NOT Object.assign on the real toast singleton (that mutation would leak
+// into every other file sharing this worker, R4): callable surface forwards
+// to the real toast, only `warning` is swapped for the test mock.
+const toastWarning = mock();
+const toastMock = new Proxy(realSonner.toast, {
+	get(target, prop) {
+		if (prop === "warning") return toastWarning;
+		return Reflect.get(target, prop, target);
+	},
+	apply(target, _thisArg, args) {
+		return Reflect.apply(target, target, args);
+	},
+}) as typeof realSonner.toast;
+mock.module("sonner", () => ({
+	...realSonner,
+	toast: toastMock,
+}));
 mock.module("../api/chat-api.js", () => {
 	return { ...realChatApi, regenerateChatMessage, sendChatMessageStream, fetchChat };
 });
@@ -82,6 +101,7 @@ beforeEach(() => {
   sendChatMessageStream.mockReset();
   continueMessageAction.mockReset();
   fetchChat.mockReset();
+  toastWarning.mockClear();
   // ingestSnapshot preserves absent fields, so an empty snapshot is a safe
   // no-op refresh for the post-abort / post-error refetch.
   fetchChat.mockResolvedValue({});
@@ -377,6 +397,22 @@ describe("diceSendBlockReason (DICE-F3 pure send gate)", () => {
   });
 });
 
+/** Seed a minimal RP snapshot (chat/branch/persona + insights config) —
+ *  shared by the dice-send and P21 suites so the partial-shape casts live
+ *  here ONCE (hygiene `as never` budget is a ratchet). */
+function seedRpSnapshot(over: { characterId?: string; personaId?: string; diceEnabled?: boolean } = {}) {
+  useSnapshotStore.setState({
+    activeChat: {
+      id: CHAT,
+      characterId: over.characterId ?? "char-1",
+      mode: "rp",
+      insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: over.diceEnabled ?? false, diceMode: "normal" },
+    } as never,
+    activeBranch: { id: "br-1" } as never,
+    persona: { id: over.personaId ?? "per-1" } as never,
+  });
+}
+
 describe("useChatController — handleSend dice send (DICE-F3, stream path)", () => {
   // Stubbed once per file so conflict tests can assert it fired; cleared in
   // beforeEach. `tryHandleDiceSendConflict` calls it fire-and-forget.
@@ -395,16 +431,7 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     useProviderDataStore.setState({ profiles: [{ id: "p1", isActive: true, defaultModel: "m" } as never] });
     // `readDiceSendState` reads chatId / branchId / insights / persona /
     // characterId straight from the snapshot, so seed them all here.
-    useSnapshotStore.setState({
-      activeChat: {
-        id: CHAT,
-        characterId: DICE_CHAR,
-        mode: "rp",
-        insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: true, diceMode: "normal" },
-      } as never,
-      activeBranch: { id: BRANCH } as never,
-      persona: { id: DICE_PER } as never,
-    });
+    seedRpSnapshot({ characterId: DICE_CHAR, personaId: DICE_PER, diceEnabled: true });
     useChatStore.setState({ activeChatId: CHAT, draft: "hi", generations: {}, messageActionId: null });
     useDiceStore.setState({ byScope: {}, refreshPending: refreshPending as never });
     // IR-73D: clear experience scope and override refreshAttachment with the
@@ -500,14 +527,7 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
   });
 
   test("Dice OFF ⇒ byte-identical send body (no dice fields)", async () => {
-    useSnapshotStore.setState({
-      activeChat: {
-        id: CHAT, characterId: DICE_CHAR, mode: "rp",
-        insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: false, diceMode: "normal" },
-      } as never,
-      activeBranch: { id: BRANCH } as never,
-      persona: { id: DICE_PER } as never,
-    });
+    seedRpSnapshot({ characterId: DICE_CHAR, personaId: DICE_PER, diceEnabled: false });
     sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
       opts?.onDone?.();
       return Promise.resolve();
@@ -598,14 +618,7 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
 
   test("non-stream: Dice OFF ⇒ no diceCommit arg (undefined, byte-identical)", async () => {
     useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: false } }));
-    useSnapshotStore.setState({
-      activeChat: {
-        id: CHAT, characterId: DICE_CHAR, mode: "rp",
-        insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: false, diceMode: "normal" },
-      } as never,
-      activeBranch: { id: BRANCH } as never,
-      persona: { id: DICE_PER } as never,
-    });
+    seedRpSnapshot({ characterId: DICE_CHAR, personaId: DICE_PER, diceEnabled: false });
     sendChatMessageAction.mockResolvedValue({});
     const { result } = renderHook(() => useChatController());
 
@@ -953,5 +966,44 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     expect(body.experienceQueueRevision).toBeUndefined();
     expect(body.experienceSessionRevision).toBeUndefined();
     expect(refreshAttachment).not.toHaveBeenCalled();
+  });
+});
+
+describe("useChatController — lorebook overflow toast (P21, stream done path)", () => {
+  beforeEach(() => {
+    sendChatMessageStream.mockReset();
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: true } }));
+    useProviderDataStore.setState({ profiles: [{ id: "p1", isActive: true, defaultModel: "m" } as never] });
+    seedRpSnapshot();
+    useChatStore.setState({ activeChatId: CHAT, draft: "hi", generations: {}, messageActionId: null });
+  });
+
+  test("overflows on the finish payload ⇒ one toast.warning per book", async () => {
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve({
+        finishReason: "stop",
+        lorebookOverflows: [{ name: "Мир драконов", dropped: 2 }, { name: "Город", dropped: 1 }],
+      });
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(toastWarning).toHaveBeenCalledTimes(2);
+    expect(toastWarning.mock.calls[0][0]).toBe("lore_overflow_toast");
+    expect(toastWarning.mock.calls[1][0]).toBe("lore_overflow_toast");
+  });
+
+  test("no overflows on the finish payload ⇒ no warning", async () => {
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve({ finishReason: "stop" });
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(toastWarning).not.toHaveBeenCalled();
   });
 });

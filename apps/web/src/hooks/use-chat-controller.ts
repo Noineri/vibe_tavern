@@ -372,7 +372,7 @@ export function useChatController(): ChatControllerActions {
       onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
       onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
       onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
-    }) => Promise<{ finishReason: string; usage?: Record<string, number> }>,
+    }) => Promise<{ finishReason: string; usage?: Record<string, number>; metrics?: unknown; lorebookOverflows?: Array<{ name: string; dropped: number }> }>,
     pendingUserContent?: string | null,
     pendingAttachments?: import("@vibe-tavern/domain").Attachment[],
     /**
@@ -399,7 +399,7 @@ export function useChatController(): ChatControllerActions {
 
     try {
       let collected = "";
-      await streamFn({
+      const streamResult = await streamFn({
         signal: controller.signal,
         onStatus: (status) => useChatStore.getState().setGenerationStatus(chatId, status),
         onChunk: (delta) => {
@@ -518,6 +518,14 @@ export function useChatController(): ChatControllerActions {
       // Fresh send/generate paths emit message.appended and start insight work;
       // regenerate targets an existing message and intentionally does not.
       if (!streamingMessageId) startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
+      // P21 (overflowAlert): alert-on books that overflowed this turn ride the
+      // finish SSE event (server filters on the per-book overflowAlert flag —
+      // the flag lives in the DB, this page has no lorebook list). One warning
+      // per book, once per turn. Named deviation: ST toasts dry runs too; VT
+      // carries the notice on live generations only.
+      for (const overflow of streamResult?.lorebookOverflows ?? []) {
+        toast.warning(getT()("lore_overflow_toast", { name: overflow.name, n: overflow.dropped }));
+      }
       return "done";
     } catch (error) {
       if (controller.signal.aborted) {

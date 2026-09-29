@@ -103,7 +103,7 @@ const mockResolver: PromptAssemblyResolver = {
     authorsNote: "",
     authorsNoteDepth: 4,
   }),
-  listActiveLoreEntries: async () => [],
+  listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
   listRetrievedMemories: async () => [],
   getToolInstructions: () => null,
   executeScripts: async () => ({

@@ -345,3 +345,61 @@ describe("token budget — N5: stop-after-first-overflow latch", () => {
     expect(result.activatedEntries.map(e => e.id).sort()).toEqual(["a1", "b1", "b2"]);
   });
 });
+
+describe("P21: overflowed books are reported (overflowAlert channel)", () => {
+  // The engine reports; it never alerts. Per-book dropped counts = entries
+  // removed by the N5 latch (first-overflow drop + every later latch drop).
+  const base = (over: Record<string, unknown> = {}): ActivationInput => ({
+    lorebooks: [
+      {
+        id: "lb_a",
+        scanDepth: 1,
+        tokenBudget: 250,
+        tokenBudgetPercent: null,
+        recursiveScanning: false,
+        maxRecursionSteps: 0,
+        includeNames: false,
+        minActivations: 0,
+        minActivationsDepthMax: 0,
+        entries: [
+          makeEntry("a1", "x".repeat(800), 30), // fits (200 ≤ budget)
+          makeEntry("a2", "x".repeat(400), 20), // first overflow → dropped
+          makeEntry("a3", "x".repeat(40), 10),  // latch drop
+        ],
+        ...over,
+      },
+    ],
+    messages: [],
+    macroMap: {},
+    characterId: "c_test",
+    characterName: "Test",
+    activationState: {},
+    currentTurn: 1,
+    estimateTokenCount: (text: string) => Math.ceil(text.length / 4),
+  });
+
+  it("reports the overflowed book with its dropped count; absent for books that fit", () => {
+    const result = resolveActivatedEntries(base());
+    expect(result.overflowedBooks).toEqual([{ lorebookId: "lb_a", dropped: 2 }]);
+  });
+
+  it("no overflow → empty report", () => {
+    const input = base();
+    input.lorebooks[0]!.tokenBudget = 100_000;
+    const result = resolveActivatedEntries(input);
+    expect(result.overflowedBooks).toEqual([]);
+  });
+
+  it("a book whose overflow drops are all compensated by ignoreBudget entries is not reported", () => {
+    // ignoreBudget entries bypass the budget entirely — they never drop and
+    // never latch. A book with only ignoreBudget survivors overflows nothing.
+    const input = base();
+    input.lorebooks[0]!.entries = [
+      makeEntry("a1", "x".repeat(400), 30, { ignoreBudget: true }),
+      makeEntry("a2", "x".repeat(400), 20, { ignoreBudget: true }),
+    ];
+    const result = resolveActivatedEntries(input);
+    expect(result.overflowedBooks).toEqual([]);
+    expect(result.activatedEntries.map(e => e.id)).toEqual(["a1", "a2"]);
+  });
+});

@@ -49,6 +49,10 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
   /** The copilot finish event's segmented context metrics (CM-4), when the
    *  server emitted them. RP-chat streams never carry this — it stays undefined. */
   metrics?: unknown;
+  /** P21 (overflowAlert): alert-on lorebooks that overflowed this turn
+   *  ({ name, dropped }[]), carried on the RP chat `finish` event. The
+   *  controller toasts one warning per entry. */
+  lorebookOverflows?: Array<{ name: string; dropped: number }>;
 }> {
   const reader = opts.response.body?.getReader();
   if (!reader) throw new Error("No response body");
@@ -57,6 +61,7 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
   let finishReason = "stop";
   let usage: Record<string, number> | undefined;
   let metrics: unknown;
+  let lorebookOverflows: Array<{ name: string; dropped: number }> | undefined;
 
   // Early exit if already aborted.
   if (opts.signal?.aborted) {
@@ -176,6 +181,7 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
         if (parsed.finishReason) finishReason = parsed.finishReason;
         if (parsed.usage) usage = parsed.usage;
         if (parsed.metrics !== undefined) metrics = parsed.metrics;
+        if (parsed.lorebookOverflows !== undefined) lorebookOverflows = parsed.lorebookOverflows as Array<{ name: string; dropped: number }>;
       }
     },
   });
@@ -204,5 +210,5 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
   }
 
   opts.onStatus("idle");
-  return { finishReason, usage, metrics };
+  return { finishReason, usage, ...(metrics !== undefined ? { metrics } : {}), ...(lorebookOverflows !== undefined ? { lorebookOverflows } : {}) };
 }

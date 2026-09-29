@@ -117,7 +117,7 @@ export function wireLorebook(): LorebookRecord {
 		useGroupScoring: false,
 		caseSensitive: false,
 		matchWholeWords: false,
-		maxRecursionSteps: 5,
+		maxRecursionSteps: 0,
 		includeNames: false,
 		minActivations: 0,
 		minActivationsDepthMax: 0,

@@ -365,6 +365,24 @@ export type ActiveLoreEntry = LoreEntry & {
   matchCount: number;
 };
 
+/** P21 (overflowAlert): a lorebook whose token budget overflowed during a
+ *  resolve. `dropped` = entries removed by the N5 latch; `alert` = the book's
+ *  overflowAlert setting at resolve time (the live-turn finish event filters
+ *  on it server-side; the trace keeps the full list). */
+export interface OverflowedLorebook {
+  lorebookId: string;
+  name: string;
+  dropped: number;
+  alert: boolean;
+}
+
+/** Result of PromptAssemblyResolver.listActiveLoreEntries (P21 widened the
+ *  plain ActiveLoreEntry[] return with the per-book overflow report). */
+export interface ActiveLoreEntriesResult {
+  entries: ActiveLoreEntry[];
+  overflowedLorebooks: OverflowedLorebook[];
+}
+
 export interface Script {
   id: ScriptId;
   name: string;
@@ -2342,6 +2360,10 @@ export interface PromptTrace {
   activatedLoreEntries: LoreEntryId[];
   /** Per-entry activation reasons parallel to `activatedLoreEntries`. */
   activatedLoreDetail: ActivatedLoreDetail[];
+  /** P21: books whose budget overflowed on this generation (full list,
+   *  alert-off included). Absent on previews and traces persisted before
+   *  the column existed. */
+  overflowedLorebooks?: OverflowedLorebook[];
   scriptInjections: Array<{
     scriptId: string;
     scriptName: string;
