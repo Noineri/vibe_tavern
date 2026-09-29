@@ -240,6 +240,15 @@ class ServerService : Service() {
         environment["BUN_OPTIONS"] = "--no-orphans"
         environment["HOME"] = filesDir.absolutePath
         environment["TMPDIR"] = cacheDir.absolutePath
+        // Android 10-12 seccomp kills the server on syscalls Bun calls at startup
+        // (close_range, issue #47); the shim turns those traps into ENOSYS. Loaded on
+        // every Android version: inert until a trap happens. Removal trigger: AD-026.
+        val seccompShim = File(applicationInfo.nativeLibraryDir, "libseccompshim.so")
+        if (seccompShim.exists()) {
+            environment["LD_PRELOAD"] = seccompShim.absolutePath
+        } else {
+            logWriter.writeLine("warning: libseccompshim.so missing; starting without the seccomp shim")
+        }
 
         // Do not move this start() into a helper thread: runServer() remains parked on waitFor().
         val process = try {
