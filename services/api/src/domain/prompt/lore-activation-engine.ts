@@ -247,6 +247,14 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   const minActivations = Math.max(0, ...input.lorebooks.map(lb => lb.minActivations || 0));
   const depthMax = Math.max(0, ...input.lorebooks.map(lb => lb.minActivationsDepthMax || 0));
   let depthSkew = 0;
+  // N9/P6: the widening cap is on the ABSOLUTE window depth, like ST's
+  // buffer.getDepth() (world-info.js 402-404 = global depth + skew). ST has
+  // one global base; VT entries carry per-book scanDepth with per-entry
+  // overrides, so the loop measures from the WIDEST base — widening stops
+  // once the deepest current window exceeds the cap (named deviation, same
+  // per-book shape as the N5 budget ruling).
+  const maxBaseDepth = allEntries.reduce(
+    (m, e) => Math.max(m, entryBaseDepth(e, scanDepths)), 0);
 
   // Book-level group-scoring defaults (per-lorebook, LG-2/LG-4) — consumed by
   // the per-pass inclusion-group pipeline below.
@@ -309,7 +317,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
 
       const result = tryActivateEntry({
         entry, macroMap, characterId, characterName, currentTurn,
-        scanText: buildScanText(entry, input.messages, scanDepths, input),
+        scanText: buildScanText(entry, input.messages, scanDepths, input, depthSkew),
         scanState: "normal",
         currentRecursionLevel: 0,
         updatedState, activatedIds,
@@ -358,10 +366,21 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
 
     logger.debug("Pass done: %d activated, %d total", normalActivated, activated.length);
 
-    // Min activations retry
-    if (minActivations > 0 && activated.length < minActivations && depthSkew < depthMax) {
+    // Min activations retry — N9/P6 ST parity (world-info.js 4992-5003):
+    // widen while the count is unmet AND the absolute depth is within the
+    // cap (depthMax > 0 && depth > depthMax → stop) and within the chat
+    // (depth > chat.length → stop). The check runs AFTER the pass and
+    // BEFORE advancing, so depthMax admits a window one deeper than the cap
+    // (ST's arithmetic, pinned by test). depthMax 0 = no cap — the chat
+    // length is the only bound (owner ruling: 0 = unlimited widening).
+    // (ST also stops widening after a budget overflow; VT applies the
+    // budget per book at the END of the resolve, so that guard has no
+    // mid-loop equivalent — consequence of the N5 per-book model.)
+    const absoluteDepth = maxBaseDepth + depthSkew;
+    const overMax = (depthMax > 0 && absoluteDepth > depthMax) || (absoluteDepth > input.messages.length);
+    if (minActivations > 0 && activated.length < minActivations && !overMax) {
       depthSkew++;
-      logger.debug("Min activations not met (%d/%d), advancing depth to +%d", activated.length, minActivations, depthSkew);
+      logger.debug("Min activations not met (%d/%d), advancing depth to %d (abs %d)", activated.length, minActivations, depthSkew, absoluteDepth + 1);
       normalScanRetry = true;
     }
   }
@@ -388,8 +407,10 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
 
         const result = tryActivateEntry({
           entry, macroMap, characterId, characterName, currentTurn,
-          // Recursion scan: combine original scan text with recurse buffer
-          scanText: buildScanText(entry, input.messages, scanDepths, input) + "\n" + recurseBuffer,
+          // Recursion scan: combine the (possibly widened — the skew is
+          // buffer state in ST, world-info.js 280/402, and survives into
+          // every later scan state) window with the recurse buffer.
+          scanText: buildScanText(entry, input.messages, scanDepths, input, depthSkew) + "\n" + recurseBuffer,
           scanState: "recursion",
           currentRecursionLevel,
           updatedState, activatedIds,
@@ -653,6 +674,10 @@ function tryActivateEntry(ctx: {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function entryBaseDepth(entry: FlatEntry, scanDepths: Map<string, number>): number {
+  return entry.scanDepthOverride ?? (scanDepths.get(entry.lorebookId) ?? 2);
+}
+
 function buildScanText(
   entry: FlatEntry,
   messages: Array<{ role: string; content: string }>,
@@ -660,7 +685,7 @@ function buildScanText(
   input: ActivationInput,
   depthSkew = 0,
 ): string {
-  const scanDepth = (entry.scanDepthOverride ?? (scanDepths.get(entry.lorebookId) ?? 2)) + depthSkew;
+  const scanDepth = entryBaseDepth(entry, scanDepths) + depthSkew;
   const effectiveMessages = messages.slice(-scanDepth);
   const parts: string[] = [];
   const sources = entry.matchSources.length > 0 ? entry.matchSources : ["chat_messages"];
