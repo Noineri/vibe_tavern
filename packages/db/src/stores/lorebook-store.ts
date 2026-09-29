@@ -43,6 +43,7 @@ export interface CreateLorebookData {
   scanDepth?: number;
   tokenBudget?: number;
   tokenBudgetPercent?: number | null;
+  tokenBudgetCap?: number;
   recursiveScanning?: boolean;
   useGroupScoring?: boolean;
   caseSensitive?: boolean;
@@ -170,6 +171,7 @@ export interface Lorebook {
   scanDepth: number;
   tokenBudget: number;
   tokenBudgetPercent: number | null;
+  tokenBudgetCap: number;
   recursiveScanning: boolean;
   useGroupScoring: boolean;
   caseSensitive: boolean;
@@ -542,6 +544,7 @@ export class LorebookStore {
         scanDepth: data.scanDepth ?? 10,
         tokenBudget: data.tokenBudget ?? 1000,
         tokenBudgetPercent: data.tokenBudgetPercent ?? null,
+        tokenBudgetCap: data.tokenBudgetCap ?? 0,
         recursiveScanning: (data.recursiveScanning ?? false) ? 1 : 0,
         useGroupScoring: (data.useGroupScoring ?? false) ? 1 : 0,
         caseSensitive: (data.caseSensitive ?? false) ? 1 : 0,
@@ -580,6 +583,7 @@ export class LorebookStore {
     if (data.scanDepth !== undefined) values.scanDepth = data.scanDepth;
     if (data.tokenBudget !== undefined) values.tokenBudget = data.tokenBudget;
     if (data.tokenBudgetPercent !== undefined) values.tokenBudgetPercent = data.tokenBudgetPercent;
+    if (data.tokenBudgetCap !== undefined) values.tokenBudgetCap = data.tokenBudgetCap;
     if (data.recursiveScanning !== undefined) values.recursiveScanning = data.recursiveScanning ? 1 : 0;
     if (data.useGroupScoring !== undefined) values.useGroupScoring = data.useGroupScoring ? 1 : 0;
     if (data.caseSensitive !== undefined) values.caseSensitive = data.caseSensitive ? 1 : 0;
@@ -1128,6 +1132,7 @@ export class LorebookStore {
       scanDepth: source.scanDepth,
       tokenBudget: source.tokenBudget,
       tokenBudgetPercent: source.tokenBudgetPercent ?? null,
+      tokenBudgetCap: source.tokenBudgetCap ?? 0,
       recursiveScanning: source.recursiveScanning,
       useGroupScoring: source.useGroupScoring ?? false,
       caseSensitive: source.caseSensitive ?? false,
@@ -1191,6 +1196,7 @@ export class LorebookStore {
       scanDepth: row.scanDepth,
       tokenBudget: row.tokenBudget,
       tokenBudgetPercent: row.tokenBudgetPercent,
+      tokenBudgetCap: row.tokenBudgetCap,
       recursiveScanning: row.recursiveScanning === 1,
       useGroupScoring: row.useGroupScoring === 1,
       caseSensitive: row.caseSensitive === 1,
@@ -1257,6 +1263,7 @@ export class LorebookStore {
       scanDepth: row.scanDepth,
       tokenBudget: row.tokenBudget,
       tokenBudgetPercent: row.tokenBudgetPercent,
+      tokenBudgetCap: row.tokenBudgetCap,
       recursiveScanning: row.recursiveScanning === 1,
       useGroupScoring: row.useGroupScoring === 1,
       caseSensitive: row.caseSensitive === 1,

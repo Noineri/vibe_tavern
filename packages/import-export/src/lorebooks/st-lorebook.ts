@@ -58,6 +58,7 @@ export interface StLorebookNormalized {
   scanDepth: number;
   tokenBudget: number;
   tokenBudgetPercent: number | null;
+  tokenBudgetCap: number;
   recursiveScanning: boolean;
   maxRecursionSteps?: number;
   includeNames?: boolean;
@@ -183,6 +184,13 @@ export function importStLorebookJson(
       const pct = (root.extensions as Record<string, unknown>)?.token_budget_pct;
       return typeof pct === 'number' && pct >= 0 && pct <= 100 ? pct : null;
     })(),
+    // VT round-trip twin of token_budget_pct: the percent-mode absolute cap
+    // (ST world_info_budget_cap is a client global, so the book-scoped value
+    // rides in extensions; ST itself ignores unknown extension keys).
+    tokenBudgetCap: (() => {
+      const cap = (root.extensions as Record<string, unknown>)?.token_budget_cap;
+      return typeof cap === 'number' && cap >= 0 ? Math.floor(cap) : 0;
+    })(),
     recursiveScanning: asBoolean(root.recursive_scanning, false),
     maxRecursionSteps: asNumber((root.extensions as Record<string, unknown>)?.max_recursion_steps, 5),
     extensions: isRecord(root.extensions) ? root.extensions : {},
@@ -201,6 +209,7 @@ export function importStLorebookJson(
     scanDepth: normalized.scanDepth,
     tokenBudget: normalized.tokenBudget,
     tokenBudgetPercent: normalized.tokenBudgetPercent,
+    tokenBudgetCap: normalized.tokenBudgetCap,
     recursiveScanning: normalized.recursiveScanning,
     // Maps the ST global switch when the caller knows it; default false.
     useGroupScoring: options.globalUseGroupScoring ?? false,
@@ -339,6 +348,7 @@ interface StExportLorebook {
   readonly scanDepth: number;
   readonly tokenBudget: number;
   readonly tokenBudgetPercent: number | null;
+  readonly tokenBudgetCap: number;
   readonly recursiveScanning: boolean;
   readonly maxRecursionSteps: number;
   readonly extensions: Record<string, unknown>;
@@ -441,6 +451,7 @@ export function exportLorebookToSt(
     scan_depth: lorebook.scanDepth,
     token_budget: lorebook.tokenBudget,
     token_budget_percent: lorebook.tokenBudgetPercent,
+    token_budget_cap: lorebook.tokenBudgetCap,
     recursive_scanning: lorebook.recursiveScanning,
     extensions: {
       ...((lorebook.extensions as Record<string, unknown>) ?? {}),

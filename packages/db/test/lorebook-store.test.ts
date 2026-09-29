@@ -379,6 +379,17 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect((await store.getEntry(e.id))!.matchWholeWords).toBe(true);
   });
 
+  test("N5: book tokenBudgetCap round-trips (default 0 = no cap, update persists)", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    expect(lb.tokenBudgetCap).toBe(0);
+    await store.updateLorebook(lb.id, { tokenBudgetCap: 250 });
+    expect((await store.getLorebook(lb.id))!.tokenBudgetCap).toBe(250);
+    // Clone carries the cap too (a cloned book must keep its budget model).
+    const cloned = await store.duplicateLorebook(lb.id, { name: "LB copy" });
+    expect(cloned.lorebook.tokenBudgetCap).toBe(250);
+  });
+
   test("D2: book-level caseSensitive / matchWholeWords defaults round-trip (default false, update flips)", async () => {
     const store = await mkStore();
     const lb = await store.createLorebook({ name: "LB", scopeType: "global" });

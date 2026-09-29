@@ -121,12 +121,12 @@ describe("probability ordering (LG-11 characterization)", () => {
 			...makeInput([plain, sticky], ["storm"]),
 			activationState: { s: { activatedAtTurn: 1, lastMatchedAtTurn: 1 } },
 		};
-		input.lorebooks[0].tokenBudget = 100; // fits exactly ONE ~100-token entry
+		input.lorebooks[0].tokenBudget = 150; // fits ONE ~100-token entry with headroom (ST `>=`: an exact landing is an overflow — N5)
 		const result = resolveActivatedEntries(input);
 		// Pre-LG11 pin: ["p"] (the final priority/id sort decided the budget
 		// queue). ST sorts candidates sticky-first (world-info.js 4881-4886)
 		// before the probability/budget loop, so the sticky survivor consumes
-		// the budget first.
+		// the budget first; the plain entry then overflows (200 >= 150).
 		expect(activatedIds(result)).toEqual(["s"]);
 	});
 });

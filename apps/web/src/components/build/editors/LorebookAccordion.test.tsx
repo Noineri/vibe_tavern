@@ -113,6 +113,7 @@ const LOREBOOK: LorebookRecord = {
   useGroupScoring: false,
   caseSensitive: false,
   matchWholeWords: false,
+  tokenBudgetCap: 0,
   enabled: true,
 };
 
@@ -315,6 +316,35 @@ describe("LorebookAccordion book-level group scoring (LG-7)", () => {
 
     const on = renderAccordion({ lorebook: { ...LOREBOOK, useGroupScoring: true } });
     expect(await on.findByText("lore_book_group_scoring")).toBeTruthy();
+  });
+
+  it("budget cap field: hidden in fixed mode, rendered in percent mode, reports onUpdateMeta (N5)", async () => {
+    const onUpdateMeta = mock();
+    const fixed = renderAccordion({
+      lorebook: { ...LOREBOOK, tokenBudgetPercent: null, tokenBudgetCap: 0 },
+      onUpdateMeta,
+    });
+    // Disclosure content only renders when expanded.
+    await fixed.findByText("lore_scan_depth");
+    expect(fixed.queryByText("lore_token_budget_cap")).toBeNull(); // fixed mode → no cap field
+    // The mode button in fixed mode is labeled "Tokens" and switches to percent.
+    fireEvent.click(fixed.getByText("lore_token_budget_mode_fixed"));
+    expect(onUpdateMeta).toHaveBeenCalledWith({ tokenBudgetPercent: 25 });
+    fixed.unmount();
+
+    const pct = renderAccordion({
+      lorebook: { ...LOREBOOK, tokenBudgetPercent: 5, tokenBudgetCap: 250 },
+      onUpdateMeta,
+    });
+    await pct.findByText("lore_token_budget_cap");
+    // Scope to the cap control's wrapper (three NumberInputs live in this row).
+    const capScope = pct.getByText("lore_token_budget_cap").closest("div") as HTMLElement;
+    const capInput = capScope.querySelector("input") as HTMLInputElement;
+    expect(capInput.value).toBe("250");
+    fireEvent.change(capInput, { target: { value: "300" } });
+    fireEvent.blur(capInput);
+    await waitFor(() => expect(onUpdateMeta).toHaveBeenCalledWith({ tokenBudgetCap: 300 }));
+    pct.unmount();
   });
 
   it("renders the D2 book-level matching defaults and toggling reports onUpdateMeta (D2)", async () => {

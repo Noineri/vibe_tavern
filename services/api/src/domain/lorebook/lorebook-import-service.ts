@@ -80,6 +80,7 @@ export async function importLorebook(
 			scopeType: (body.scopeType as LoreScopeType) ?? "entity",
 			scanDepth: parsed.lorebook.scanDepth,
 			tokenBudget: parsed.lorebook.tokenBudget,
+			tokenBudgetCap: parsed.lorebook.tokenBudgetCap,
 			recursiveScanning: parsed.lorebook.recursiveScanning,
 			useGroupScoring: parsed.lorebook.useGroupScoring,
 			caseSensitive: parsed.lorebook.caseSensitive,

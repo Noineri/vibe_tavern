@@ -204,6 +204,7 @@ export interface Persona {
 export const LOREBOOK_DEFAULTS = {
   scanDepth: 10,
   tokenBudget: 1000,
+  tokenBudgetCap: 0,
   recursiveScanning: false,
 } as const;
 
@@ -216,6 +217,8 @@ export interface Lorebook {
   tokenBudget: number;
   /** Null = fixed token-budget mode (use tokenBudget). 0-100 = percent of model context. See lorebook-st-parity-audit.md §1.4. */
   tokenBudgetPercent: number | null;
+  /** Absolute ceiling for percent mode (ST's world_info_budget_cap, scoped to the book). 0 = no cap; applies only when tokenBudgetPercent is set. Fixed mode is already absolute. */
+  tokenBudgetCap: number;
   recursiveScanning: boolean;
   /** Book-level default for entry.useGroupScoring (ST's global switch, scoped to the book). Effective flag: entry.useGroupScoring ?? book.useGroupScoring. See LOREBOOK_GROUP_SCORING_PARITY_REPORT. */
   useGroupScoring: boolean;

@@ -13,6 +13,7 @@ function baseLorebook(overrides: Partial<ExportLorebook> = {}): ExportLorebook {
     scanDepth: 10,
     tokenBudget: 1000,
     tokenBudgetPercent: null,
+    tokenBudgetCap: 0,
     recursiveScanning: false,
     maxRecursionSteps: 5,
     extensions: {},
@@ -122,6 +123,17 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
     expect(e.preventRecursion).toBe(true);
     expect(e.delayUntilRecursion).toBe(true);
     expect(e.metadata).toEqual({ m: 1 });
+  });
+
+  test("emits token_budget_cap (N5) — 0 default and an explicit cap both round the book's budget model", () => {
+    const noCap = exportLorebookToSt(baseLorebook(), [baseEntry({ title: "A", keys: ["a"] })]);
+    expect(noCap.token_budget_cap).toBe(0);
+    const capped = exportLorebookToSt(
+      baseLorebook({ tokenBudgetPercent: 5, tokenBudgetCap: 250 }),
+      [baseEntry({ title: "A", keys: ["a"] })],
+    );
+    expect(capped.token_budget_percent).toBe(5);
+    expect(capped.token_budget_cap).toBe(250);
   });
 
   test("emits caseSensitive / matchWholeWords tri-state verbatim — null exports as null, never false (D2)", () => {

@@ -86,6 +86,7 @@ interface LorebookAccordionProps {
     scanDepth?: number;
     tokenBudget?: number;
     tokenBudgetPercent?: number | null;
+    tokenBudgetCap?: number;
     recursiveScanning?: boolean;
     useGroupScoring?: boolean;
     caseSensitive?: boolean;
@@ -526,6 +527,22 @@ export function LorebookAccordion({
                   />
                 </div>
               </CustomTooltip>
+              {lorebook.tokenBudgetPercent != null && (
+                <CustomTooltip content={t("lore_token_budget_cap_hint")}>
+                  <div className="flex-1">
+                    <label className="mb-1 block text-[11px] font-medium uppercase leading-tight tracking-[0.05em] text-t3/70">
+                      {t("lore_token_budget_cap")}
+                    </label>
+                    <NumberInput
+                      className="w-full"
+                      hideControls
+                      min={0}
+                      value={lorebook.tokenBudgetCap}
+                      onChange={(v) => onUpdateMeta({ tokenBudgetCap: Math.max(0, v) })}
+                    />
+                  </div>
+                </CustomTooltip>
+              )}
             </div>
             <div className="flex flex-col gap-2 pb-0.5">
               <CustomTooltip content={t("lore_recursive_scanning_hint")}>

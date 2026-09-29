@@ -47,6 +47,10 @@ export interface ActivationInput {
      * round(maxContextTokens * percent / 100). Matches SillyTavern's Context%
      * mode. See lorebook-st-parity-audit.md §1.4. */
     tokenBudgetPercent: number | null;
+    /** Absolute ceiling for the percent-mode budget (ST world_info_budget_cap,
+     * world-info.js:4626-4628, scoped to the book here). 0 = no cap; applies
+     * only in percent mode. Ignored when absent (legacy inputs). */
+    tokenBudgetCap?: number;
     recursiveScanning: boolean;
     maxRecursionSteps: number;
     includeNames: boolean;
@@ -1034,23 +1038,45 @@ function applyTokenBudget(
   maxContextTokens?: number,
 ): ActivationResult["activatedEntries"] {
   const count = estimateTokenCount ?? ((text: string) => Math.ceil(text.length / 4));
-  // Resolve each lorebook's effective budget: percent mode overrides fixed.
+  // Resolve each lorebook's effective budget. Percent mode: ST parity —
+  // budget = round(% of context) with a floor of 1 (world-info.js:4624), then
+  // an optional absolute cap clamps it DOWN (world-info.js:4626-4628;
+  // cap > budget → budget = cap, cap is never a raise). Fixed mode: the
+  // literal tokenBudget, unchanged.
   const budgetPerLorebook = new Map<string, number>();
   for (const lb of lorebooks) {
     if (lb.tokenBudgetPercent != null && typeof maxContextTokens === 'number' && maxContextTokens > 0) {
-      budgetPerLorebook.set(lb.id, Math.round(maxContextTokens * lb.tokenBudgetPercent / 100));
+      const pctBudget = Math.round(maxContextTokens * lb.tokenBudgetPercent / 100) || 1;
+      const cap = lb.tokenBudgetCap ?? 0;
+      budgetPerLorebook.set(lb.id, cap > 0 && pctBudget > cap ? cap : pctBudget);
     } else {
       budgetPerLorebook.set(lb.id, lb.tokenBudget);
     }
   }
   const used = new Map<string, number>();
+  // N5 stop-after-first-overflow latch, per book: once a book's budget
+  // overflows, that book's later non-ignoreBudget entries are dropped WITHOUT
+  // a fit check — ST world-info.js:4902-4947 sets token_budget_overflowed on
+  // the first overflow and skips every later non-ignore entry; there is no
+  // best-effort fill that lets a later, smaller entry into the leftover.
+  // (ST's `break` when no ignoreBudget entries remain is a list-wide
+  // optimization; per-book skipping here is the same semantics because books
+  // are independent.) ignoreBudget entries bypass the budget entirely and
+  // stay eligible after the latch. Overflow itself is `>=` (ST world-info.js
+  // 4942: cumulative-after-add reaching the budget exactly is an overflow —
+  // the entry that lands exactly on the limit is dropped).
+  const overflowed = new Set<string>();
   return entries.filter(e => {
     if (e.ignoreBudget) return true;
     const budget = budgetPerLorebook.get(e.lorebookId);
     if (budget == null) return true;
+    if (overflowed.has(e.lorebookId)) return false;
     const current = used.get(e.lorebookId) ?? 0;
     const cost = count(e.content);
-    if (current + cost > budget) return false;
+    if (current + cost >= budget) {
+      overflowed.add(e.lorebookId);
+      return false;
+    }
     used.set(e.lorebookId, current + cost);
     return true;
   });

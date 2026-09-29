@@ -425,6 +425,19 @@ describe("importStLorebookJson", () => {
     expect((result.entries[0] as Record<string, unknown>).delayWindow).toBeUndefined();
   });
 
+  it("reads extensions.token_budget_cap into the book's percent-mode absolute cap (N5); absent → 0", () => {
+    // ST's budget cap is a client global — the book-scoped value rides in
+    // extensions (same channel as token_budget_pct); ST itself ignores it.
+    const capped = importStLorebookJson({
+      name: "Capped",
+      entries: [],
+      extensions: { token_budget_pct: 5, token_budget_cap: 250 },
+    });
+    expect(capped.lorebook.tokenBudgetCap).toBe(250);
+    const absent = importStLorebookJson({ name: "NoCap", entries: [] });
+    expect(absent.lorebook.tokenBudgetCap).toBe(0);
+  });
+
   it("maps selective logic values correctly", () => {
     const cases: Array<[number, string]> = [
       [0, "and_any"],

@@ -112,6 +112,7 @@ export function wireLorebook(): LorebookRecord {
 		scanDepth: 4,
 		tokenBudget: 2048,
 		tokenBudgetPercent: null,
+		tokenBudgetCap: 0,
 		recursiveScanning: false,
 		useGroupScoring: false,
 		caseSensitive: false,

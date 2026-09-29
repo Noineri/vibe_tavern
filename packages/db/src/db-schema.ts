@@ -254,6 +254,10 @@ export const lorebooks = sqliteTable('lorebooks', {
   // Matches SillyTavern's dual Context% / Budget Cap modes. See
   // lorebook-st-parity-audit.md §1.4.
   tokenBudgetPercent: integer('token_budget_percent'),
+  // Absolute ceiling for percent mode (ST's world_info_budget_cap, scoped to
+  // the book). 0 = no cap. Applies only when token_budget_percent is set —
+  // fixed mode is already absolute.
+  tokenBudgetCap: integer('token_budget_cap').notNull().default(0),
   recursiveScanning: integer('recursive_scanning').notNull().default(0),
   // Book-level default for entry.useGroupScoring (ST's global
   // world_info_use_group_scoring switch, scoped to the book). Effective

@@ -1587,6 +1587,8 @@ export default interface Resources {
     "lore_test_run": "Run Test",
     "lore_timed_section": "Timed Effects",
     "lore_token_budget": "Token Budget",
+    "lore_token_budget_cap": "Budget Cap",
+    "lore_token_budget_cap_hint": "Absolute ceiling for the Context % budget, in tokens. 0 = no cap. Only used in Context % mode; the fixed mode is already absolute. When the budget overflows, filling stops at the first entry that does not fit — later entries are not squeezed into the leftover.",
     "lore_token_budget_hint": "Maximum tokens the activated lore from this lorebook may occupy. Toggle ‘%’ to switch to percent-of-context mode (cap = model's context size × %).",
     "lore_token_budget_mode_fixed": "Tokens",
     "lore_token_budget_mode_percent": "Context %",
