@@ -313,8 +313,10 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   const failedProbabilityIds = new Set<string>();
   const activated: ActivationResult['activatedEntries'] = [];
 
-  // Recursion buffer: text from activated entries (for recursive scanning)
-  let recurseBuffer = "";
+  // ST's recursion buffer is an array whose unit is one scan pass's joined
+  // activated content (world-info.js:369-374, 5020-5024). `buildScanText`
+  // places sentinels between those units.
+  const recurseBuffer: string[] = [];
 
   // ── Min activations setup ──────────────────────────────────────────────
   const minActivations = Math.max(0, ...input.lorebooks.map(lb => lb.minActivations || 0));
@@ -409,6 +411,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     passCandidates.sort((a, b) => Number(stickyActiveIds.has(b.id)) - Number(stickyActiveIds.has(a.id)));
     applyInclusionGroups(passCandidates, activated, allEntries, bookDefaults, stickyActiveIds);
     let normalActivated = 0;
+    const normalRecurseContents: string[] = [];
     for (const survivor of passCandidates) {
       // LG-11 (ST parity, verifyProbability 4909-4931): probability rolls
       // AFTER the group pipeline. Group losers never rolled. Sticky-active
@@ -433,8 +436,11 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       const flat = flatById.get(survivor.id);
       if (flat) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
       if (!flat?.preventRecursion) {
-        recurseBuffer += survivor.content + "\n";
+        normalRecurseContents.push(survivor.content);
       }
+    }
+    if (normalRecurseContents.length > 0) {
+      recurseBuffer.push(normalRecurseContents.join("\n"));
     }
 
     logger.debug("Pass done: %d activated, %d total", normalActivated, activated.length);
@@ -459,8 +465,9 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   }
 
   // ── Pass 2+: Recursive scans ─────────────────────────────────────────────
-  if (!anyRecursiveScanning || recurseBuffer.trim().length === 0) {
-    logger.debug("Recursive scanning skipped (enabled=%s, buffer=%d)", anyRecursiveScanning, recurseBuffer.trim().length);
+  const recurseBufferLength = recurseBuffer.join("").trim().length;
+  if (!anyRecursiveScanning || recurseBufferLength === 0) {
+    logger.debug("Recursive scanning skipped (enabled=%s, buffer=%d)", anyRecursiveScanning, recurseBufferLength);
   } else {
     logger.debug("Recursive scanning START — steps=%d (%s), delayLevels=%o", maxSteps, maxSteps === 0 ? "unlimited" : `${maxSteps - 1} recursion passes`, recursionDelayLevels);
     let loopCount = 0;
@@ -472,9 +479,9 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     const maxRecursionPasses = maxSteps === 0 ? Number.POSITIVE_INFINITY : maxSteps - 1;
     while (loopCount < maxRecursionPasses) {
       loopCount++;
-      logger.debug("  Recursion pass #%d — level=%d, buffer=%d chars", loopCount, currentRecursionLevel, recurseBuffer.length);
+      logger.debug("  Recursion pass #%d — level=%d, buffer=%d chars", loopCount, currentRecursionLevel, recurseBuffer.join("").length);
       let newActivations = 0;
-      let newRecurseText = "";
+      const newRecurseContents: string[] = [];
       const passCandidates: ActivationResult["activatedEntries"] = [];
 
       for (const entry of allEntries) {
@@ -483,10 +490,10 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
 
         const result = tryActivateEntry({
           entry, macroMap, characterId, characterName, currentTurn,
-          // Recursion scan: combine the (possibly widened — the skew is
+          // Recursion scan includes the (possibly widened — the skew is
           // buffer state in ST, world-info.js 280/402, and survives into
-          // every later scan state) window with the recurse buffer.
-          scanText: buildScanText(entry, input.messages, scanDepths, input, depthSkew) + "\n" + recurseBuffer,
+          // every later scan state) window plus each recursion-buffer unit.
+          scanText: buildScanText(entry, input.messages, scanDepths, input, depthSkew, recurseBuffer),
           scanState: "recursion",
           currentRecursionLevel,
           updatedState, activatedIds,
@@ -519,15 +526,16 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         const flat = flatById.get(survivor.id);
         if (flat) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
         if (!flat?.preventRecursion) {
-          newRecurseText += survivor.content + "\n";
+          newRecurseContents.push(survivor.content);
         }
       }
 
       logger.debug("  Recursion pass #%d done: %d activated", loopCount, newActivations);
 
-      // Add new content to recurse buffer for next pass
-      if (newRecurseText) {
-        recurseBuffer += newRecurseText;
+      // ST adds one joined content unit per successful scan pass before the
+      // next recursion pass (world-info.js:5020-5024).
+      if (newRecurseContents.length > 0) {
+        recurseBuffer.push(newRecurseContents.join("\n"));
       }
 
       // Advance delay-until-recursion level if available and no new activations
@@ -742,45 +750,55 @@ function entryBaseDepth(entry: FlatEntry, scanDepths: Map<string, number>): numb
   return entry.scanDepthOverride ?? (scanDepths.get(entry.lorebookId) ?? 2);
 }
 
+const SCAN_SENTINEL = "\x01";
+const SCAN_JOINER = `\n${SCAN_SENTINEL}`;
+
 function buildScanText(
   entry: FlatEntry,
   messages: ActivationInput["messages"],
   scanDepths: Map<string, number>,
   input: ActivationInput,
   depthSkew = 0,
+  recurseBuffer: readonly string[] = [],
 ): string {
   const scanDepth = entryBaseDepth(entry, scanDepths) + depthSkew;
   const effectiveMessages = messages.slice(-scanDepth);
-  const parts: string[] = [];
   const sources = entry.matchSources.length > 0 ? entry.matchSources : ["chat_messages"];
+
+  // Port of ST's WorldInfoBuffer.get construction (world-info.js:278-325):
+  // start with a sentinel, then separate every scanned message, selected
+  // global source, and recursion-buffer unit with `\n\x01`. `\x01` is not
+  // matched by JS `\s`, so regex keys cannot cross those seams. ST's message
+  // text itself is assembled by chatForWI (public/script.js:4563-4572), which
+  // supplies the optional speaker prefix below.
+  let result = SCAN_SENTINEL;
   if (sources.includes("chat_messages")) {
-    // ST's `chatForWI` maps each message to `${x.name}: ${x.mes}` when
-    // world_info_include_names is enabled (public/script.js 4563-4572).
-    // The prefix belongs to scan input only; recursion appends stripped entry
-    // content separately, matching ST's world-info.js 4517-4523.
-    parts.push(effectiveMessages.map(m =>
+    result += effectiveMessages.map(m =>
       entry.includeNames && m.name ? `${m.name}: ${m.content}` : m.content,
-    ).join("\n"));
-  }
-  if (sources.includes("character_desc") && input.characterDescription) {
-    parts.push(input.characterDescription);
+    ).join(SCAN_JOINER);
   }
   if (sources.includes("persona_desc") && input.personaDescription) {
-    parts.push(input.personaDescription);
+    result += SCAN_JOINER + input.personaDescription;
+  }
+  if (sources.includes("character_desc") && input.characterDescription) {
+    result += SCAN_JOINER + input.characterDescription;
   }
   if (sources.includes("character_personality") && input.characterPersonality) {
-    parts.push(input.characterPersonality);
+    result += SCAN_JOINER + input.characterPersonality;
   }
   if (sources.includes("character_note") && input.characterNote) {
-    parts.push(input.characterNote);
+    result += SCAN_JOINER + input.characterNote;
   }
   if (sources.includes("scenario") && input.scenario) {
-    parts.push(input.scenario);
+    result += SCAN_JOINER + input.scenario;
   }
   if (sources.includes("creator_notes") && input.creatorNotes) {
-    parts.push(input.creatorNotes);
+    result += SCAN_JOINER + input.creatorNotes;
   }
-  return parts.join("\n");
+  if (recurseBuffer.length > 0) {
+    result += SCAN_JOINER + recurseBuffer.join(SCAN_JOINER);
+  }
+  return result;
 }
 
 function applyMacros(key: string, macroMap: Record<string, string>): string {
