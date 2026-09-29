@@ -706,6 +706,12 @@ export const chatSummaries = sqliteTable('chat_summaries', {
   chatBranchIdx: index('idx_chat_summaries_chat_branch').on(table.chatId, table.branchId),
 }));
 
+// The two Fly Tribunal tables below stay in the schema on this branch even
+// though the feature itself lives on `feat/fly-tribunal` (owner 2026-09-29):
+// migrations 0086/0087 are committed and never edited, and dropping the
+// definitions would make the next `db:generate` emit a DROP migration. No
+// store reads or writes them here.
+
 // ─── flyTribunalSettings ───────────────────────────────────────────────────────
 //
 // One typed, feature-owned settings row for Fly Tribunal (FLY_TRIBUNAL_PLAN

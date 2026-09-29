@@ -21,12 +21,9 @@ interface MobileSettingsProps {
 	setSetting: (key: string, value: unknown) => void;
 	onOpenMobileAccess: () => void;
 	onOpenProxyManager?: () => void;
-	flyTribunalEnabled?: boolean;
-	onToggleFlyTribunal?: (enabled: boolean) => void;
-	onOpenFlyTribunal?: () => void;
 }
 
-export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobileAccess, onOpenProxyManager = () => {}, flyTribunalEnabled = false, onToggleFlyTribunal = () => {}, onOpenFlyTribunal = () => {} }: MobileSettingsProps) {
+export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobileAccess, onOpenProxyManager = () => {} }: MobileSettingsProps) {
 	const { t } = useT();
 	if (!open) return null;
 
@@ -182,15 +179,6 @@ export function MobileSettings({ open, onClose, settings, setSetting, onOpenMobi
 						<span className="flex items-center gap-3"><Icons.Globe />{t("proxies")}</span>
 						<Icons.Caret direction="r" />
 					</button>
-				</div>
-				<div className="px-5 py-2.5" data-testid="fly-tribunal-mobile-row">
-					<div className="flex min-h-[48px] items-center justify-between gap-3 rounded-lg border border-border bg-s2 px-3">
-						<span className="flex items-center gap-3 font-body text-[length:var(--ui-fs)] text-t1"><Icons.Brain />{t("fly_tribunal_title")}</span>
-						<div className="flex items-center gap-3">
-							<Toggle checked={flyTribunalEnabled} onChange={onToggleFlyTribunal} aria-label={t("fly_tribunal_title")} />
-							<button type="button" aria-label={t("fly_tribunal_settings")} className="cursor-pointer text-t3 active:text-t1" onClick={onOpenFlyTribunal}><Icons.Settings /></button>
-						</div>
-					</div>
 				</div>
 
 				{/* Safe area spacer */}

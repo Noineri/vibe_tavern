@@ -2,7 +2,8 @@
  * Whisper model download hook (audit P5) — a VERBATIM STRUCTURAL CLONE of
  * `use-kokoro-model.ts` (the TTS reference), trimmed to the whisper seams.
  *
- * forks: 1 — apps/web/src/components/modals/use-fly-brain.ts.
+ * forks: 0 on this branch (the Fly Tribunal brain-download hook forks it on
+ * feat/fly-tribunal).
  *
  * First browser-tier use pulls the ONNX weights (~42–250 MB by roster
  * entry) from huggingface.co via transformers.js. Hiding that inside the

@@ -66,7 +66,7 @@ export interface ChatRuntimeDeps {
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
-    options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; steeringNote?: string },
+    options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
   ) => Promise<ChatModeAssembleResult>;
   getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
   /** Narrowed message-path response (messages + contextPreview + latest trace; summaries optional). */
@@ -531,7 +531,7 @@ export class ChatRuntime {
 
   async assemblePromptPreview(
     chatId: ChatId,
-    options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; steeringNote?: string },
+    options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
   ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number; coauthorModuleId?: string; coauthorSkillId?: string | null }> {
     const { assemblePrompt } = this.deps;
     const assembled = await assemblePrompt(chatId, undefined, {
@@ -540,7 +540,6 @@ export class ChatRuntime {
       contextBudget: options.contextBudget,
       responseReserve: options.responseReserve,
       presetId: options.presetId,
-      steeringNote: options.steeringNote,
     });
     if (options.excludeMessageId) {
       this.pendingPromptTraceByChat.set(chatId, {

@@ -50,15 +50,14 @@ async function main(): Promise<void> {
 	// not emit `new Worker(new URL(...))` chunks (a Vite feature), so the main
 	// HTML graph loses the worker entirely — the prod app would 404 on it and
 	// the model download would stall forever. Compiled here to the fixed
-	// asset names `assets/kokoro-worker.js` / `assets/whisper-worker.js` /
-	// `assets/fly-worker.js` that the worker factories point at in production
+	// asset names `assets/kokoro-worker.js` / `assets/whisper-worker.js`
+	// that the worker factories point at in production
 	// (cache-busted with `?v=APP_VERSION`). All workers in ONE build call so
 	// shared chunks dedupe between them.
 	const workerResult = await Bun.build({
 		entrypoints: [
 			join(WEB_DIR, "src/lib/tts/kokoro/kokoro-worker.ts"),
 			join(WEB_DIR, "src/lib/stt/whisper/whisper-worker.ts"),
-			join(WEB_DIR, "src/lib/fly/fly-worker.ts"),
 		],
 		outdir: join(OUT_DIR, "assets"),
 		naming: { entry: "[name].[ext]", chunk: "index-[hash].[ext]", asset: "[name]-[hash].[ext]" },

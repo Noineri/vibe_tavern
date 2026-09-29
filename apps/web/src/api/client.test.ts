@@ -60,7 +60,7 @@ describe("apiFetch — the API seam", () => {
 
   test("stored token rides along on same-origin /api calls (the outage fix)", async () => {
     saveMobileToken("tok_123");
-    await apiFetch("/api/fly/settings");
+    await apiFetch("/api/chats");
     expect(calls.length).toBe(1);
     expect(authOf(calls[0])).toBe("Bearer tok_123");
   });

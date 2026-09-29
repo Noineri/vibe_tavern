@@ -7,8 +7,6 @@ import type { SwipeDirection } from "./types.js";
 type MobileVariantCarouselProps = {
   selectedVariantIndex: number;
   variants: { content: string }[];
-  /** Fly Tribunal evidence for the CURRENT (shown) variant only. */
-  highlightPhrases?: readonly string[];
   onSelectVariant: (targetIndex: number, direction: SwipeDirection) => void;
   /** IG-CF11 (mobile swipe zone): panel renderer for pure image slots. Their
    *  variant panels carry no text, so the Markdown panels collapsed to ~0
@@ -26,7 +24,7 @@ type MobileVariantCarouselProps = {
  *  track; drag past threshold snaps to the neighbor and fires onSelectVariant.
  *  Height auto-fits the current panel via a ResizeObserver (no inner scroll). */
 export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
-  const { selectedVariantIndex, variants, highlightPhrases = [], onSelectVariant, renderPanel } = props;
+  const { selectedVariantIndex, variants, onSelectVariant, renderPanel } = props;
   const controls = useAnimationControls();
   const viewportRef = useRef<HTMLDivElement>(null);
   const currentPanelRef = useRef<HTMLDivElement>(null);
@@ -145,7 +143,7 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
             ? renderPanel(selectedVariantIndex)
             : (
               <div className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-                <Markdown text={currentVariant.content} highlightPhrases={highlightPhrases} />
+                <Markdown text={currentVariant.content} />
               </div>
             )}
         </div>

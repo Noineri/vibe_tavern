@@ -860,7 +860,7 @@ export function pickBootstrapChatId<T extends string>(
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; steeringNote?: string; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
+		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
 	) {
 		void await this.getActiveProviderProfile();
 		const strategy = await this.resolveChatModeStrategy(chatId);
@@ -907,7 +907,6 @@ export function pickBootstrapChatId<T extends string>(
 			contextBudget: options?.contextBudget ?? null,
 			responseReserve: options?.responseReserve,
 			presetId: options?.presetId,
-			steeringNote: options?.steeringNote,
 			priorSummaries: options?.priorSummaries,
 			// LS-10: the ACTIVE profile's stored generation format — the assembly
 			// applies the decision-(c) resolution (profile wins when set, else the

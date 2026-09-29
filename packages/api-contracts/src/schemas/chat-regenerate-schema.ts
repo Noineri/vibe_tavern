@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { FLY_STEERING_NOTE_MAX_LENGTH } from "./fly-tribunal-schema.js";
 
 /**
  * Optional per-request override for message regeneration.
@@ -16,17 +15,11 @@ import { FLY_STEERING_NOTE_MAX_LENGTH } from "./fly-tribunal-schema.js";
  * is resolved at the adapter's generation-boundary chokepoint. `promptPresetId`
  * overrides the chat's preset for that one generation without mutating the chat
  * row.
- *
- * `steeringNote` (FLY_TRIBUNAL_PLAN FT-2/FT-5, threaded later): a one-shot
- * tribunal hint injected at the user-message level for THIS generation only
- * — absent note = byte-identical legacy prompt. Length-bounded by the fly
- * module's constant; never persisted with the chat.
  */
 export const regenerateOverrideSchema = z
   .object({
     model: z.string().min(1).optional(),
     promptPresetId: z.string().min(1).optional(),
-    steeringNote: z.string().min(1).max(FLY_STEERING_NOTE_MAX_LENGTH).optional(),
   })
   .optional();
 

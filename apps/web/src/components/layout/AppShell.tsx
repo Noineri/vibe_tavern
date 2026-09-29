@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Toaster, toast } from "sonner";
 import * as Popover from "@radix-ui/react-popover";
 import * as buildConfig from "../../build-config.js";
@@ -7,8 +7,7 @@ import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { apiFetch } from "../../api/client.js";
-import { resolveAssistantPrefillSupport, type ChatId } from "@vibe-tavern/domain";
-import { FLY_TRIBUNAL_PRECEDENT_GATE, flyTribunalSettingsSchema, type FlyTribunalSettings } from "@vibe-tavern/api-contracts";
+import { resolveAssistantPrefillSupport } from "@vibe-tavern/domain";
 import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
 import { saveCharacterAction } from "../../stores/api-actions/character-actions.js";
@@ -39,8 +38,6 @@ import { TweaksPanel } from "../settings/popovers/TweaksPanel.js";
 import { MobileSettings } from "../settings/popovers/MobileSettings.js";
 import { MobileAccessModal } from "../modals/MobileAccessModal.js";
 import { ProxyManagerModal } from "../modals/ProxyManagerModal.js";
-import { FlyTribunalModal } from "../modals/FlyTribunalModal.js";
-import { requiresCachedFlyBrain } from "../modals/use-fly-brain.js";
 import { UpdateModal } from "../modals/UpdateModal.js";
 import { StarPromptModal } from "../modals/StarPromptModal.js";
 import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
@@ -49,10 +46,6 @@ import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
 import type { ProxyRecord } from "../../api/types.js";
 import { deleteProxy, getDefaultProxy, listProxies, saveProxy, setDefaultProxy, updateProxy } from "../../api/proxy-api.js";
-import { loadCachedFlyBrain } from "../../lib/fly/fly-brain-download.js";
-import { startFlyTribunalWiring, stopFlyTribunalWiring } from "../../lib/fly/fly-tribunal-wiring.js";
-import { startFlyTribunalActions, stopFlyTribunalActions } from "../../lib/fly/fly-tribunal-actions.js";
-import { useFlyTribunalStore } from "../../stores/fly-tribunal-store.js";
 
 interface AppShellProps {
   tweaksSettings: TweaksSettings;
@@ -106,11 +99,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const isCreateCharacterModalOpen = useModalStore((s) => s.isCreateCharacterModalOpen);
   const setCreateCharacterModalOpen = useModalStore((s) => s.setCreateCharacterModalOpen);
   const setUpdateModalOpen = useModalStore((s) => s.setUpdateModalOpen);
-  const flyTribunalSettings = useFlyTribunalStore((s) => s.settings);
-  const flyPrecedentCount = useFlyTribunalStore((s) => s.precedentCount);
-  const flyJustFellSilent = useFlyTribunalStore((s) => s.justFellSilent);
-  const [flyTribunalOpen, setFlyTribunalOpen] = useState(false);
-  const [flyBrainReady, setFlyBrainReady] = useState(false);
 
   // --- Sub-hooks (self-contained) ---
   const bootstrapData = useBootstrapStore((s) => s.data);
@@ -118,12 +106,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   useEffect(() => { void fetchPersonasAction(); }, []);
 
   const chat = useChatController();
-  const flyVariantSelectionRef = useRef(chat.handleSelectMessageVariant);
-  flyVariantSelectionRef.current = chat.handleSelectMessageVariant;
-  const selectFlyTribunalVariant = useCallback((messageId: string, variantIndex: number): void => {
-    useSnapshotStore.getState().selectVariant(messageId, variantIndex, 1);
-    void flyVariantSelectionRef.current(messageId, variantIndex);
-  }, []);
   // W7: subscribe to the per-chat SSE channel for background notifications
   // (auto-summary). No-op when no chat is active.
   useChatEvents(activeChatId);
@@ -146,67 +128,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       toast.error(error instanceof Error ? error.message : t("request_failed"));
     });
   }, []);
-
-  const persistFlyTribunalSettings = useCallback(async (settings: FlyTribunalSettings): Promise<void> => {
-    useFlyTribunalStore.getState().applySettings(settings);
-    try {
-      const response = await apiFetch("/api/fly/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
-      });
-      if (!response.ok) throw new Error(`Fly Tribunal settings request failed with HTTP ${response.status}.`);
-      useFlyTribunalStore.getState().applySettings(flyTribunalSettingsSchema.parse(await response.json()));
-    } catch (error) {
-      useFlyTribunalStore.getState().failSettingsLoad(error instanceof Error ? error.message : t("request_failed"));
-    }
-  }, [t]);
-
-  useEffect(() => {
-    let live = true;
-    useFlyTribunalStore.getState().beginSettingsLoad();
-    void apiFetch("/api/fly/settings")
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Fly Tribunal settings request failed with HTTP ${response.status}.`);
-        return flyTribunalSettingsSchema.parse(await response.json());
-      })
-      .then((settings) => { if (live) useFlyTribunalStore.getState().applySettings(settings); })
-      .catch((error: unknown) => { if (live) useFlyTribunalStore.getState().failSettingsLoad(error instanceof Error ? error.message : t("request_failed")); });
-    void loadCachedFlyBrain().then((result) => { if (live) setFlyBrainReady(result.status === "ready"); });
-    return () => { live = false; };
-  }, [t]);
-
-  const priorFlyPrecedentCount = useRef(flyPrecedentCount);
-  useEffect(() => {
-    if (priorFlyPrecedentCount.current < FLY_TRIBUNAL_PRECEDENT_GATE && flyPrecedentCount >= FLY_TRIBUNAL_PRECEDENT_GATE) {
-      toast.success(t("fly_tribunal_authority_toast"));
-    }
-    priorFlyPrecedentCount.current = flyPrecedentCount;
-    if (flyJustFellSilent && useFlyTribunalStore.getState().consumeJustFellSilent()) {
-      toast.info(t("fly_tribunal_silent_toast"));
-    }
-  }, [flyJustFellSilent, flyPrecedentCount, t]);
-
-  useEffect(() => {
-    if (!flyTribunalSettings.enabled || !flyBrainReady) return undefined;
-    void startFlyTribunalWiring();
-    startFlyTribunalActions(
-      (chatId, messageId, override) => chat.runRegenerateJob(chatId as ChatId, messageId, override),
-      selectFlyTribunalVariant,
-    );
-    return () => {
-      stopFlyTribunalActions();
-      stopFlyTribunalWiring();
-    };
-  }, [chat.runRegenerateJob, flyTribunalSettings.enabled, flyTribunalSettings.memoryScope, flyBrainReady, selectFlyTribunalVariant]);
-
-  const toggleFlyTribunal = (enabled: boolean): void => {
-    if (requiresCachedFlyBrain(enabled, flyBrainReady)) {
-      setFlyTribunalOpen(true);
-      return;
-    }
-    void persistFlyTribunalSettings({ ...useFlyTribunalStore.getState().settings, enabled });
-  };
 
   const updateCheck = useUpdateCheck(buildConfig.APP_VERSION);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -463,9 +384,6 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             proxyCount={proxies.length}
             defaultProxyName={proxies.find((proxy) => proxy.id === defaultProxyId)?.name ?? null}
             onOpenProxyManager={() => setIsProxyManagerOpen(true)}
-            flyTribunalEnabled={flyTribunalSettings.enabled}
-            onToggleFlyTribunal={toggleFlyTribunal}
-            onOpenFlyTribunal={() => setFlyTribunalOpen(true)}
           />
         )}
       </Popover.Root>
@@ -486,17 +404,8 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
           setMobileAccessOpen(true);
         }}
         onOpenProxyManager={() => setIsProxyManagerOpen(true)}
-        flyTribunalEnabled={flyTribunalSettings.enabled}
-        onToggleFlyTribunal={toggleFlyTribunal}
-        onOpenFlyTribunal={() => setFlyTribunalOpen(true)}
       />}
       {mobileAccessOpen && !isMobile && <MobileAccessModal open={mobileAccessOpen} onClose={() => setMobileAccessOpen(false)} onDisabled={() => {}} />}
-      <FlyTribunalModal
-        open={flyTribunalOpen}
-        onClose={() => setFlyTribunalOpen(false)}
-        onSaveSettings={persistFlyTribunalSettings}
-        onBrainReadyChange={setFlyBrainReady}
-      />
       <ProxyManagerModal
         proxies={proxies}
         defaultProxyId={defaultProxyId}

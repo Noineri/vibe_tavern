@@ -223,7 +223,6 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
-			steeringNote: override?.steeringNote,
 			signal,
 		});
 		return result.snapshot;
@@ -238,7 +237,6 @@ export class ChatAdapter implements ChatRuntimeApi {
 			model: profile.defaultModel,
 			transport,
 			presetId: override?.promptPresetId ? brandId<PromptPresetId>(override.promptPresetId) : undefined,
-			steeringNote: override?.steeringNote,
 			signal,
 		});
 	};
