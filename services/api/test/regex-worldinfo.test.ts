@@ -120,11 +120,19 @@ afterAll(async () => {
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})));
 });
 
+async function scanMessages(world: TestWorld): Promise<Array<{ role: string; content: string }>> {
+  return (await world.stores.messages.getMessages(world.branchId)).map((message) => ({
+    role: message.role,
+    content: message.content,
+  }));
+}
+
 async function listActive(world: TestWorld): Promise<ActiveLoreEntry[]> {
   const result = await world.resolver.listActiveLoreEntries({
     chatId: world.chatId,
     branchId: brandId<ChatBranchId>(world.branchId),
     recentText: SCAN_MESSAGE,
+    scanMessages: await scanMessages(world),
   });
   // The scan message contains the entry key — the entry MUST activate for
   // these tests to exercise the transform path at all.
@@ -298,6 +306,7 @@ describe("Lore activation include names — resolver message-name wiring (N1)", 
       chatId: world.chatId,
       branchId: brandId<ChatBranchId>(world.branchId),
       recentText: SCAN_MESSAGE,
+      scanMessages: await scanMessages(world),
     });
     expect(result.entries.map((entry) => entry.title).sort()).toEqual([
       "character speaker key",

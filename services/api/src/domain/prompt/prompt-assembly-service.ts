@@ -94,6 +94,12 @@ export interface PromptAssemblyResolver {
     chatId: ChatId;
     branchId: ChatBranchId;
     recentText: string;
+    /** Assembly-derived branch messages to scan for lore activation. */
+    scanMessages: Array<{ role: string; content: string }>;
+    /** Turn clock for sticky/cooldown windows — the FULL branch message count,
+     * not the post-exclusion scan count (P13 changes scan input only; timed
+     * windows must not shift when the prompt excludes messages). */
+    currentTurn?: number;
     /** Max context tokens of the active model. Needed for percent-of-context
      * token-budget mode on lorebooks. Optional — when absent, percent-mode
      * lorebooks silently fall back to their fixed `tokenBudget`. */
@@ -560,10 +566,22 @@ export class PromptAssemblyService {
     });
 
     const recentText = recentMessages.map((message) => message.content).join("\n");
+    // P13: lore scans the post-exclusion set before the history-limit window,
+    // matching ST's coreChat construction (public/script.js:4437–4440): hidden
+    // messages are removed and the swipe target is dropped before WI scanning.
+    // `ensureLastUser` also preserves the normal chat-mode final-user safeguard;
+    // `windowedMessages` must not narrow the scan beyond the lorebook scan depth.
     const loreActivation = await this.resolver.listActiveLoreEntries({
       chatId: chat.id as ChatId,
       branchId,
       recentText,
+      scanMessages: ensureLastUser.map((message) => ({
+        role: message.role,
+        content: message.content,
+      })),
+      // Turn clock stays on the full branch — exclusions shape the scan input,
+      // never the sticky/cooldown arithmetic.
+      currentTurn: branchMessages.length,
       maxContextTokens: input.contextBudget ?? undefined,
     });
     const activeLoreEntries = loreActivation.entries;

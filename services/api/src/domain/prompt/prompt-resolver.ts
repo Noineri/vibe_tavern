@@ -101,6 +101,11 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		chatId: ChatId;
 		branchId: ChatBranchId;
 		recentText: string;
+		scanMessages: Array<{ role: string; content: string }>;
+		/** Turn clock override — the FULL branch count. Defaults to the scan
+		 * count only for direct test callers; production passes the branch total
+		 * so sticky/cooldown windows don't shift with prompt exclusions (P13). */
+		currentTurn?: number;
 		maxContextTokens?: number;
 	}): Promise<ActiveLoreEntriesResult> {
 		const chat = await this.stores.chats.getById(input.chatId);
@@ -115,12 +120,10 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 
 		if (lorebookSets.length === 0) return { entries: [], overflowedLorebooks: [] };
 
-		// 2. Load messages for scan depth
-		const messages = await this.stores.messages.getMessages(input.branchId);
-		const recentMessages = messages.map(m => ({
-			role: m.role,
-			content: m.content,
-		}));
+		// 2. Scan the assembly's effective branch messages. P13 deliberately keeps
+		// this separate from the prompt's history-limit window; see the assembly's
+		// ST coreChat rationale (public/script.js:4437–4440).
+		const recentMessages = input.scanMessages;
 
 		// 3. Load character name for macro resolution + character filter
 		const character = await this.stores.characters.getById(chat.characterId);
@@ -151,8 +154,11 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		// 5. Use activation state from typed Chat object (already parsed by mapRow)
 		const activationState = (chat.loreActivationState ?? {}) as LoreActivationState;
 
-		// 6. Estimate current turn from message count
-		const currentTurn = messages.length;
+		// 6. Turn clock: the full branch count when the assembly provides it; the
+		// scan count is only a fallback for direct callers (sticky/cooldown
+		// windows must not shift when the prompt excludes messages — P13 keeps
+		// exclusions scoped to the scan input).
+		const currentTurn = input.currentTurn ?? recentMessages.length;
 
 		// 7. Run activation engine
 		const result = resolveActivatedEntries({
