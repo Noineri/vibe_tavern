@@ -762,10 +762,21 @@ function matchKeys(keys: string[], text: string, caseSensitive: boolean, wholeWo
       }
       continue;
     }
-    // Plain string match
+    // Plain string match — ST dialect (world-info.js 345-366):
+    // case-insensitivity rides the i flag (ST lowercases both strings in
+    // #transformString — equivalent surface); whole words = ST's
+    // punctuation-inclusive boundary `(?:^|\W)(key)(?:$|\W)` (JS \W is
+    // ASCII-defined, so Cyrillic letters count as \W: a Russian key matches
+    // across spaces/punctuation AND over-matches inside longer word forms,
+    // exactly ST — the fix for the over-match is the opt-in case-forms flag,
+    // never a dialect change, resweep P5); a multi-word key degrades to a
+    // plain substring (`haystack.includes(key)` in ST) — no phrase boundary.
     const flags = caseSensitive ? "" : "i";
     const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = wholeWords ? `\\b${escaped}\\b` : escaped;
+    let pattern = escaped;
+    if (wholeWords && key.split(/\s+/).length === 1) {
+      pattern = `(?:^|\\W)(${escaped})(?:$|\\W)`;
+    }
     try {
       if (new RegExp(pattern, flags).test(text)) matched.push(key);
     } catch {
