@@ -762,7 +762,9 @@ function buildScanText(
   recurseBuffer: readonly string[] = [],
 ): string {
   const scanDepth = entryBaseDepth(entry, scanDepths) + depthSkew;
-  const effectiveMessages = messages.slice(-scanDepth);
+  // Array#slice(-0) is equivalent to slice(0), which scans the full chat.
+  // ST's buffer has no chat-message units at depth 0 (world-info.js:279-297).
+  const effectiveMessages = scanDepth === 0 ? [] : messages.slice(-scanDepth);
   const sources = entry.matchSources.length > 0 ? entry.matchSources : ["chat_messages"];
 
   // Port of ST's WorldInfoBuffer.get construction (world-info.js:278-325):
