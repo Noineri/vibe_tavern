@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { motion, useAnimationControls, type PanInfo } from "framer-motion";
 import { Markdown } from "../../../lib/markdown.js";
+import { cn } from "../../../lib/cn.js";
 import type { SwipeDirection } from "./types.js";
 
 type MobileVariantCarouselProps = {
@@ -9,6 +10,15 @@ type MobileVariantCarouselProps = {
   /** Fly Tribunal evidence for the CURRENT (shown) variant only. */
   highlightPhrases?: readonly string[];
   onSelectVariant: (targetIndex: number, direction: SwipeDirection) => void;
+  /** IG-CF11 (mobile swipe zone): panel renderer for pure image slots. Their
+   *  variant panels carry no text, so the Markdown panels collapsed to ~0
+   *  height — the swipe gesture had no surface and phones could only use the
+   *  chevrons. When provided, each panel renders this instead of the Markdown
+   *  block (position-aligned with `variants`). Prev/next panels render
+   *  non-interactive (pointer-events-none): neighbor images must not open the
+   *  lightbox/menus — the drag lives on the track, which still receives the
+   *  events through a pointer-events-none child. */
+  renderPanel?: (position: number) => ReactNode;
 };
 
 /** Three-panel swipe carousel for variant browsing on mobile (framer-motion
@@ -16,7 +26,7 @@ type MobileVariantCarouselProps = {
  *  track; drag past threshold snaps to the neighbor and fires onSelectVariant.
  *  Height auto-fits the current panel via a ResizeObserver (no inner scroll). */
 export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
-  const { selectedVariantIndex, variants, highlightPhrases = [], onSelectVariant } = props;
+  const { selectedVariantIndex, variants, highlightPhrases = [], onSelectVariant, renderPanel } = props;
   const controls = useAnimationControls();
   const viewportRef = useRef<HTMLDivElement>(null);
   const currentPanelRef = useRef<HTMLDivElement>(null);
@@ -118,24 +128,38 @@ export function MobileVariantCarousel(props: MobileVariantCarouselProps) {
         dragElastic={0.08}
         onDragEnd={handleDragEnd}
       >
-        <div className="w-1/3 shrink-0 pr-3" aria-hidden={!previousVariant}>
-          {previousVariant && (
-            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-              <Markdown text={previousVariant.content} />
-            </div>
-          )}
+        <div
+          className={cn("w-1/3 shrink-0 pr-3", renderPanel && previousVariant && "pointer-events-none")}
+          aria-hidden={!previousVariant}
+        >
+          {previousVariant && (renderPanel
+            ? renderPanel(selectedVariantIndex - 1)
+            : (
+              <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+                <Markdown text={previousVariant.content} />
+              </div>
+            ))}
         </div>
         <div ref={currentPanelRef} className="w-1/3 shrink-0" translate="yes">
-          <div className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-            <Markdown text={currentVariant.content} highlightPhrases={highlightPhrases} />
-          </div>
+          {renderPanel
+            ? renderPanel(selectedVariantIndex)
+            : (
+              <div className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+                <Markdown text={currentVariant.content} highlightPhrases={highlightPhrases} />
+              </div>
+            )}
         </div>
-        <div className="w-1/3 shrink-0 pl-3" aria-hidden={!nextVariant}>
-          {nextVariant && (
-            <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
-              <Markdown text={nextVariant.content} />
-            </div>
-          )}
+        <div
+          className={cn("w-1/3 shrink-0 pl-3", renderPanel && nextVariant && "pointer-events-none")}
+          aria-hidden={!nextVariant}
+        >
+          {nextVariant && (renderPanel
+            ? renderPanel(selectedVariantIndex + 1)
+            : (
+              <div translate="yes" className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2">
+                <Markdown text={nextVariant.content} />
+              </div>
+            ))}
         </div>
       </motion.div>
     </motion.div>

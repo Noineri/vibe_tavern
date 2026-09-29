@@ -20,7 +20,7 @@ import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
-import { brandId, REGEX_PLACEMENT, resolveAssistantPrefillSupport, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, REGEX_PLACEMENT, resolveAssistantPrefillSupport, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
 import {
   applyRegexLayer,
   createValueEscapingMacroSource,
@@ -333,6 +333,32 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   const canContinue = canRegenerate && canContinueByCapability;
   const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
   const canSwitchVariant = (isLast || isPureImageSlot) && !isCoauthorMode;
+
+  // ── IG-CF11 (mobile swipe zone): a pure image slot's variant panels carry
+  // no text, so the mobile carousel's Markdown panels collapsed to ~0 height —
+  // the swipe gesture had no surface (owner defect 2026-09-29: on phones only
+  // the chevron buttons worked). On mobile the carousel now renders the image
+  // per panel. The per-position set resolution mirrors the store's
+  // selectVariant EXACTLY (variant's own set → row-set shadow → current set),
+  // so a panel's preview is always what the store resolves when the swipe
+  // lands there — never a stale-by-guess image.
+  const mobileImageSlotCarousel = isMobile && isPureImageSlot && variantCount > 1 && canSwitchVariant;
+  const carouselPanelAttachments = mobileImageSlotCarousel
+    ? variants.map((v) =>
+        v.attachmentsJson != null
+          ? parseStoredAttachments(v.attachmentsJson)
+          : (msg.messageLevelAttachments ?? msg.attachments))
+    : undefined;
+  const renderImagePanel =
+    carouselPanelAttachments
+      ? (position: number) => {
+          const atts = carouselPanelAttachments[position];
+          if (!atts || atts.length === 0) return null;
+          // No `variantIndex`: the IF-4a slide idiom must not animate inside
+          // a panel — the carousel track already owns the swipe motion.
+          return <AttachmentGrid attachments={atts} messageId={msg.id} />;
+        }
+      : undefined;
   const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
   // TPE-14: the inverse gate — "prepare for narration" is offered on
   // greetings only (the editor opens directly in annotate mode).
@@ -482,6 +508,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           variants={variants}
           highlightPhrases={flyHighlightPhrases}
           onSelectVariant={handleSelectVariant}
+          renderPanel={renderImagePanel}
         />
       ) : (
         <div className="relative overflow-hidden">
@@ -502,7 +529,12 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           </AnimatePresence>
         </div>
       )}
-      <AttachmentGrid attachments={msg.attachments} messageId={msg.id} variantIndex={selectedVariantIndex} />
+      {/* IG-CF11: the mobile image-slot carousel renders the image panels
+          itself — a second AttachmentGrid below would duplicate the current
+          variant's image. */}
+      {!mobileImageSlotCarousel && (
+        <AttachmentGrid attachments={msg.attachments} messageId={msg.id} variantIndex={selectedVariantIndex} />
+      )}
       {isGenerating && <GenerationDots label={t("generating_response")} />}
     </div>
   );
