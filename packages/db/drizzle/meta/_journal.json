@@ -673,6 +673,13 @@
       "when": 1790706556870,
       "tag": "0095_fuzzy_power_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "6",
+      "when": 1790717969048,
+      "tag": "0096_long_johnny_storm",
+      "breakpoints": true
     }
   ]
 }

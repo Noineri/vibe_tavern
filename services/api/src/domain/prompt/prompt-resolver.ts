@@ -134,6 +134,19 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			'{{user}}': persona?.name ?? 'User',
 			'{{char}}': character.name,
 		};
+		const recentMessagesWithNames = recentMessages.map(message => ({
+			...message,
+			// ST scans `${name}: ${message}` when includeNames is enabled
+			// (public/script.js 4563-4572); ST's name1 defaults to "User", so the
+			// persona-less fallback mirrors both ST and the macroMap above.
+			// System/tool messages have no real speaker name — engine keeps them
+			// unprefixed.
+			name: message.role === "assistant"
+				? character.name
+				: message.role === "user"
+					? persona?.name ?? "User"
+					: undefined,
+		}));
 
 		// 5. Use activation state from typed Chat object (already parsed by mapRow)
 		const activationState = (chat.loreActivationState ?? {}) as LoreActivationState;
@@ -159,7 +172,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				minActivationsDepthMax: lb.lorebook.minActivationsDepthMax,
 				entries: lb.entries,
 			})),
-			messages: recentMessages,
+			messages: recentMessagesWithNames,
 			macroMap,
 			characterId: character.id,
 			characterName: character.name,

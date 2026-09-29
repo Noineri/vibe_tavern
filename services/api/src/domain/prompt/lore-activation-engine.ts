@@ -100,7 +100,12 @@ export interface ActivationInput {
       sortOrder: number;
     }>;
   }>;
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{
+    role: string;
+    content: string;
+    /** Real speaker name when known; used only for ST-style scan prefixes. */
+    name?: string;
+  }>;
   /** Macro substitution map, e.g. { "{{user}}": "Alice", "{{char}}": "Bob" } */
   macroMap: Record<string, string>;
   /** Character id for characterFilter matching (id-bound entries). */
@@ -165,6 +170,8 @@ export interface ActivationResult {
 interface FlatEntry {
   id: string;
   lorebookId: string;
+  /** Whether this entry's source book prefixes real speaker names in scan text. */
+  includeNames: boolean;
   title: string;
   /** Content after ST parseDecorators removes the leading decorator block. */
   content: string;
@@ -269,6 +276,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         content,
         decorators,
         lorebookId: lorebook.id,
+        includeNames: lorebook.includeNames,
         // Tri-state resolution (ST parity): a per-entry null inherits the
         // book-level default (ST's world-info.js:269/347 resolves per-entry
         // null against the global client setting; VT scopes it to the book).
@@ -535,15 +543,6 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     }
   }
 
-  // ── Include names ────────────────────────────────────────────────────────
-  // Build lorebookId → includeNames map
-  const includeNamesMap = new Map(input.lorebooks.map(lb => [lb.id, lb.includeNames]));
-  for (const entry of activated) {
-    if (includeNamesMap.get(entry.lorebookId)) {
-      entry.content = `[${entry.title}] ${entry.content}`;
-    }
-  }
-
   // (Group filtering is NOT run here anymore — LG-5 moved the inclusion-group
   // pipeline into each scan pass, right after the pass's candidates are
   // collected, matching ST's filterByInclusionGroups placement inside the
@@ -745,7 +744,7 @@ function entryBaseDepth(entry: FlatEntry, scanDepths: Map<string, number>): numb
 
 function buildScanText(
   entry: FlatEntry,
-  messages: Array<{ role: string; content: string }>,
+  messages: ActivationInput["messages"],
   scanDepths: Map<string, number>,
   input: ActivationInput,
   depthSkew = 0,
@@ -755,7 +754,13 @@ function buildScanText(
   const parts: string[] = [];
   const sources = entry.matchSources.length > 0 ? entry.matchSources : ["chat_messages"];
   if (sources.includes("chat_messages")) {
-    parts.push(effectiveMessages.map(m => m.content).join("\n"));
+    // ST's `chatForWI` maps each message to `${x.name}: ${x.mes}` when
+    // world_info_include_names is enabled (public/script.js 4563-4572).
+    // The prefix belongs to scan input only; recursion appends stripped entry
+    // content separately, matching ST's world-info.js 4517-4523.
+    parts.push(effectiveMessages.map(m =>
+      entry.includeNames && m.name ? `${m.name}: ${m.content}` : m.content,
+    ).join("\n"));
   }
   if (sources.includes("character_desc") && input.characterDescription) {
     parts.push(input.characterDescription);

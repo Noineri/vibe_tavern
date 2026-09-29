@@ -270,7 +270,7 @@ export const lorebooks = sqliteTable('lorebooks', {
   caseSensitive: integer('case_sensitive').notNull().default(0),
   matchWholeWords: integer('match_whole_words').notNull().default(0),
   maxRecursionSteps: integer('max_recursion_steps').notNull().default(0),
-  includeNames: integer('include_names').notNull().default(0),
+  includeNames: integer('include_names').notNull().default(1),
   minActivations: integer('min_activations').notNull().default(0),
   minActivationsDepthMax: integer('min_activations_depth_max').notNull().default(0),
   overflowAlert: integer('overflow_alert').notNull().default(0),

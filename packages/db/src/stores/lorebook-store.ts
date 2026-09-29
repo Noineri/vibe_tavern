@@ -550,7 +550,8 @@ export class LorebookStore {
         caseSensitive: (data.caseSensitive ?? false) ? 1 : 0,
         matchWholeWords: (data.matchWholeWords ?? false) ? 1 : 0,
         maxRecursionSteps: data.maxRecursionSteps ?? 0,
-        includeNames: data.includeNames ? 1 : 0,
+        // ST's global default is on; native VT books inherit that default.
+        includeNames: data.includeNames === false ? 0 : 1,
         minActivations: data.minActivations ?? 0,
         minActivationsDepthMax: data.minActivationsDepthMax ?? 0,
         overflowAlert: data.overflowAlert ? 1 : 0,

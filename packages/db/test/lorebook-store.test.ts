@@ -400,6 +400,15 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect(cloned.lorebook.maxRecursionSteps).toBe(3);
   });
 
+  test("N1: includeNames defaults to on and round-trips", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    expect(lb.includeNames).toBe(true);
+    expect((await store.getLorebook(lb.id))!.includeNames).toBe(true);
+    await store.updateLorebook(lb.id, { includeNames: false });
+    expect((await store.getLorebook(lb.id))!.includeNames).toBe(false);
+  });
+
   test("D2: book-level caseSensitive / matchWholeWords defaults round-trip (default false, update flips)", async () => {
     const store = await mkStore();
     const lb = await store.createLorebook({ name: "LB", scopeType: "global" });

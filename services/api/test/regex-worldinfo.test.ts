@@ -271,6 +271,41 @@ describe("RX-9 WORLD_INFO — macro source wiring", () => {
   });
 });
 
+describe("Lore activation include names — resolver message-name wiring (N1)", () => {
+  it("supplies the effective persona name for user messages and character name for assistant messages", async () => {
+    const world = await setup();
+    const persona = await world.stores.personas.getDefault();
+    expect(persona).not.toBeNull();
+    await world.stores.lorebooks.updateLorebook(world.lorebookId, { includeNames: true });
+    await world.stores.lorebooks.updateEntry(world.entryId, {
+      title: "persona speaker key",
+      keys: [`${persona!.name}:`],
+    });
+    await world.stores.lorebooks.createEntry(world.lorebookId, {
+      title: "character speaker key",
+      content: "Character speaker matched.",
+      keys: ["LoreProbe:"],
+    });
+    await world.stores.messages.addMessage({
+      chatId: world.chatId as string,
+      branchId: world.branchId,
+      role: "assistant",
+      authorType: "character",
+      content: "I answer from the character side.",
+    });
+
+    const result = await world.resolver.listActiveLoreEntries({
+      chatId: world.chatId,
+      branchId: brandId<ChatBranchId>(world.branchId),
+      recentText: SCAN_MESSAGE,
+    });
+    expect(result.entries.map((entry) => entry.title).sort()).toEqual([
+      "character speaker key",
+      "persona speaker key",
+    ]);
+  });
+});
+
 describe("RX-9 WORLD_INFO — identity when nothing applies", () => {
   it("no presets at all: resolver output matches the entry content byte-for-byte", async () => {
     const world = await setup();

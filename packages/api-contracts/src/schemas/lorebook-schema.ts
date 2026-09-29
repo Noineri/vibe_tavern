@@ -20,7 +20,7 @@ export const createLorebookSchema = z.object({
   caseSensitive: z.boolean().optional().default(false),
   matchWholeWords: z.boolean().optional().default(false),
   maxRecursionSteps: z.number().optional().default(0),
-  includeNames: z.boolean().optional().default(false),
+  includeNames: z.boolean().optional().default(true),
   minActivations: z.number().optional().default(0),
   minActivationsDepthMax: z.number().optional().default(0),
   overflowAlert: z.boolean().optional().default(false),
