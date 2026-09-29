@@ -470,18 +470,32 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
 
   // ── Pass 2+: Recursive scans ─────────────────────────────────────────────
   const recurseBufferLength = recurseBuffer.join("").trim().length;
-  if (!anyRecursiveScanning || recurseBufferLength === 0) {
-    logger.debug("Recursive scanning skipped (enabled=%s, buffer=%d)", anyRecursiveScanning, recurseBufferLength);
+  // ST presets the first distinct delay level before the normal pass
+  // (world-info.js:4644-4653). It remains current when normal activation
+  // seeds recursion; only the remaining levels are scheduled after a pass.
+  let currentRecursionLevel = recursionDelayLevels[0] ?? 0;
+  const remainingRecursionDelayLevels = recursionDelayLevels.slice(1);
+  let runRecursionPass = anyRecursiveScanning && recurseBufferLength > 0;
+
+  // ST schedules an otherwise-empty RECURSION pass for each remaining delay
+  // level (world-info.js:5010-5013). This bookkeeping is independent of the
+  // recursive toggle and buffer contents, so level 2+ can match the ordinary
+  // scan text even when no entry has supplied recursion content.
+  if (!runRecursionPass && remainingRecursionDelayLevels.length > 0) {
+    currentRecursionLevel = remainingRecursionDelayLevels.shift()!;
+    runRecursionPass = true;
+  }
+
+  if (!runRecursionPass) {
+    logger.debug("Recursive scanning skipped (enabled=%s, buffer=%d, remainingDelayLevels=%d)", anyRecursiveScanning, recurseBufferLength, remainingRecursionDelayLevels.length);
   } else {
     logger.debug("Recursive scanning START — steps=%d (%s), delayLevels=%o", maxSteps, maxSteps === 0 ? "unlimited" : `${maxSteps - 1} recursion passes`, recursionDelayLevels);
     let loopCount = 0;
-    let delayLevelIdx = 0;
-    let currentRecursionLevel = recursionDelayLevels[0] ?? 1;
 
     // The initial normal scan consumed pass #1 of the budget (ST's `count`
     // starts at the first pass); 0 = unlimited.
     const maxRecursionPasses = maxSteps === 0 ? Number.POSITIVE_INFINITY : maxSteps - 1;
-    while (loopCount < maxRecursionPasses) {
+    while (runRecursionPass && loopCount < maxRecursionPasses) {
       loopCount++;
       logger.debug("  Recursion pass #%d — level=%d, buffer=%d chars", loopCount, currentRecursionLevel, recurseBuffer.join("").length);
       let newActivations = 0;
@@ -542,16 +556,18 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         recurseBuffer.push(newRecurseContents.join("\n"));
       }
 
-      // Advance delay-until-recursion level if available and no new activations
-      if (newActivations === 0) {
-        delayLevelIdx++;
-        if (delayLevelIdx < recursionDelayLevels.length) {
-          currentRecursionLevel = recursionDelayLevels[delayLevelIdx];
-          continue; // try again with next delay level
-        }
-        // No more delay levels and no new activations — stop
-        break;
+      // A regular recursion pass repeats the current level only when it has
+      // fresh recursion content. Otherwise ST advances the next remaining
+      // delay level, even with recursion disabled or an empty buffer
+      // (world-info.js:5010-5013).
+      if (anyRecursiveScanning && newRecurseContents.length > 0) {
+        continue;
       }
+      if (remainingRecursionDelayLevels.length > 0) {
+        currentRecursionLevel = remainingRecursionDelayLevels.shift()!;
+        continue;
+      }
+      runRecursionPass = false;
     }
   }
 
@@ -646,7 +662,10 @@ function tryActivateEntry(ctx: {
       if (entryLevel > currentRecursionLevel) return reason("recursion level not reached");
     }
   } else {
-    if (entry.delayUntilRecursion && !entry.constant) {
+    // ST evaluates delayUntilRecursion before its constant gate
+    // (world-info.js:4748-4752, 4781-4784), so constants stay deferred on
+    // the normal pass unless a live sticky window exempts them.
+    if (entry.delayUntilRecursion) {
       const state = updatedState[entry.id];
       if (!(entry.stickyWindow > 0 && state?.activatedAtTurn != null &&
             currentTurn - state.activatedAtTurn < entry.stickyWindow)) {

@@ -459,4 +459,95 @@ describe("lore activation — recursion", () => {
     expectActivated(result, ["anchor"]);
     expect(activated(result, "delayed")).toBeUndefined();
   });
+
+  // ST gate order: delayUntilRecursion precedes constant (world-info.js:4748-4752,
+  // 4781-4784). A constant is therefore still blocked on the normal pass.
+  it("does not activate a constant delayUntilRecursion entry on normal-only steps", () => {
+    const result = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("anchor", { keys: ["gate"], content: "recursion seed" }),
+          makeEntry("delayed_constant", {
+            constant: true,
+            delayUntilRecursion: true,
+            recursionLevel: 1,
+          }),
+        ],
+        { recursiveScanning: true, maxRecursionSteps: 1 },
+        { messages: [{ role: "user", content: "gate" }] },
+      ),
+    );
+
+    expectActivated(result, ["anchor"]);
+    expect(activated(result, "delayed_constant")).toBeUndefined();
+  });
+
+  it("activates that constant only after its recursion level is reached", () => {
+    const result = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("anchor", { keys: ["gate"], content: "recursion seed" }),
+          makeEntry("delayed_constant", {
+            constant: true,
+            delayUntilRecursion: true,
+            recursionLevel: 1,
+          }),
+        ],
+        { recursiveScanning: true, maxRecursionSteps: 2 },
+        { messages: [{ role: "user", content: "gate" }] },
+      ),
+    );
+
+    expectActivated(result, ["anchor", "delayed_constant"]);
+  });
+
+  // ST presets the first level for the normal pass, then schedules each
+  // remaining level even when regular recursion cannot run
+  // (world-info.js:4644-4653, 5010-5013). Level 1 has no recursion pass here;
+  // the scheduler advances to 2 and then 3 without recursion text.
+  it("advances remaining delay levels with recursion disabled and steps = 0", () => {
+    const result = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("level_one", {
+            keys: ["never_matches"], delayUntilRecursion: true, recursionLevel: 1,
+          }),
+          makeEntry("level_two", {
+            keys: ["gate"], delayUntilRecursion: true, recursionLevel: 2,
+          }),
+          makeEntry("level_three", {
+            keys: ["gate"], delayUntilRecursion: true, recursionLevel: 3,
+          }),
+        ],
+        { recursiveScanning: false, maxRecursionSteps: 0 },
+        { messages: [{ role: "user", content: "gate" }] },
+      ),
+    );
+
+    expectActivated(result, ["level_two", "level_three"]);
+    expect(activated(result, "level_one")).toBeUndefined();
+  });
+
+  it("advances remaining delay levels from an empty recursion buffer with steps = 0", () => {
+    const result = resolveActivatedEntries(
+      makeInput(
+        [
+          makeEntry("level_one", {
+            keys: ["never_matches"], delayUntilRecursion: true, recursionLevel: 1,
+          }),
+          makeEntry("level_two", {
+            keys: ["gate"], delayUntilRecursion: true, recursionLevel: 2, preventRecursion: true,
+          }),
+          makeEntry("level_three", {
+            keys: ["gate"], delayUntilRecursion: true, recursionLevel: 3, preventRecursion: true,
+          }),
+        ],
+        { recursiveScanning: true, maxRecursionSteps: 0 },
+        { messages: [{ role: "user", content: "gate" }] },
+      ),
+    );
+
+    expectActivated(result, ["level_two", "level_three"]);
+    expect(activated(result, "level_one")).toBeUndefined();
+  });
 });
