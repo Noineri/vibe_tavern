@@ -37,18 +37,23 @@ function baseEntry(overrides: Partial<ExportEntry> = {}): ExportEntry {
     cooldownWindow: 0,
     minChatMessages: 0,
     probability: 100,
+    ignoreBudget: false,
     role: "system",
     groupName: "",
     groupWeight: 100,
+    prioritizeInclusion: false,
+    useGroupScoring: null,
     scanDepthOverride: null,
     caseSensitive: false,
     matchWholeWords: false,
     characterFilter: [],
     characterFilterExclude: false,
+    matchSources: [],
     automationId: "",
     excludeRecursion: false,
     preventRecursion: false,
     delayUntilRecursion: false,
+    recursionLevel: 0,
     metadata: {},
     ...overrides,
   };
@@ -110,19 +115,18 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
     expect(e.cooldown).toBe(4);
     expect(e.delay).toBe(1);
     expect(e.probability).toBe(50);
-    expect(e.role).toBe("assistant");
+    expect(e.role).toBe(2);
     expect(e.group).toBe("g");
     expect(e.groupWeight).toBe(3);
     expect(e.scanDepth).toBe(8);
     expect(e.caseSensitive).toBe(true);
     expect(e.matchWholeWords).toBe(true);
-    expect(e.character_filter).toEqual(["Alice"]); // name only, id stripped
-    expect(e.character_filter_exclude).toBe(true);
+    expect(e.characterFilter).toEqual({ isExclude: true, names: ["Alice"], tags: [] });
     expect(e.automationId).toBe("a1");
     expect(e.excludeRecursion).toBe(true);
     expect(e.preventRecursion).toBe(true);
     expect(e.delayUntilRecursion).toBe(true);
-    expect(e.metadata).toEqual({ m: 1 });
+    expect(e.metadata).toBeUndefined();
   });
 
   test("emits token_budget_cap (N5) — 0 default and an explicit cap both round the book's budget model", () => {
@@ -136,10 +140,8 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
     expect(capped.token_budget_cap).toBe(250);
   });
 
-  test("emits caseSensitive / matchWholeWords tri-state verbatim — null exports as null, never false (D2)", () => {
-    // ST re-import resolves null against the global switch; a hardcoded
-    // false would permanently pin inherit-entries against it. Full ST-native
-    // export shape is resweep step 21 — this pins the tri-state passthrough.
+  test("round-trips caseSensitive / matchWholeWords tri-state — null exports as null, never false (D2)", () => {
+    // ST's template defines these as nullable booleans (world-info.js:4035-4036), so null must remain inherit on re-import.
     const exported = exportLorebookToSt(
       baseLorebook(),
       [
@@ -155,6 +157,116 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
     expect(entries["1"].matchWholeWords).toBe(false);
     expect(entries["2"].caseSensitive).toBe(true);
     expect(entries["2"].matchWholeWords).toBe(true);
+
+    const reimported = importStLorebookJson(exported);
+    expect(reimported.entries.map((entry) => [entry.caseSensitive, entry.matchWholeWords])).toEqual([
+      [null, null],
+      [false, false],
+      [true, true],
+    ]);
+  });
+
+  test("emits ST-native step-22 fields and re-imports their values", () => {
+    // ST's entry template defines the native field names and shapes (world-info.js:4003-4044); export must serialize that surface, not VT aliases.
+    const exported = exportLorebookToSt(
+      baseLorebook(),
+      [baseEntry({
+        keys: ["primary"],
+        secondaryKeys: ["secondary"],
+        logic: "not_any",
+        position: "outlet",
+        minChatMessages: 7,
+        probability: 100,
+        ignoreBudget: true,
+        role: "assistant",
+        groupName: "included",
+        groupWeight: 25,
+        prioritizeInclusion: true,
+        useGroupScoring: true,
+        caseSensitive: null,
+        matchWholeWords: null,
+        characterFilter: [{ name: "Alice" }, { name: "ghost.png" }],
+        characterFilterExclude: true,
+        matchSources: [
+          "persona_desc",
+          "character_desc",
+          "character_personality",
+          "character_note",
+          "scenario",
+          "creator_notes",
+        ],
+        delayUntilRecursion: true,
+        recursionLevel: 3,
+        metadata: {
+          stUid: 42,
+          stUseProbability: false,
+          stAddMemo: true,
+          stOutletName: "memory",
+          stCharacterFilterNames: ["alice.png", "ghost.png"],
+          stCharacterFilterTags: ["tag-id"],
+        },
+      })],
+    );
+
+    const stEntry = (exported.entries as Record<string, Record<string, unknown>>)["0"];
+    expect(stEntry.uid).toBe(42);
+    expect(stEntry.role).toBe(2);
+    expect(stEntry.characterFilter).toEqual({ isExclude: true, names: ["alice.png", "ghost.png"], tags: ["tag-id"] });
+    expect(stEntry.ignoreBudget).toBe(true);
+    expect(stEntry.groupOverride).toBe(true);
+    expect(stEntry.useGroupScoring).toBe(true);
+    expect(stEntry.useProbability).toBe(false);
+    expect(stEntry.addMemo).toBe(true);
+    expect(stEntry.outletName).toBe("memory");
+    expect(stEntry.delay).toBe(7);
+    expect(stEntry.delayUntilRecursion).toBe(3);
+    expect(stEntry.selective).toBe(true);
+    expect(stEntry.selectiveLogic).toBe(2);
+    expect(stEntry.matchPersonaDescription).toBe(true);
+    expect(stEntry.matchCharacterDescription).toBe(true);
+    expect(stEntry.matchCharacterPersonality).toBe(true);
+    expect(stEntry.matchCharacterDepthPrompt).toBe(true);
+    expect(stEntry.matchScenario).toBe(true);
+    expect(stEntry.matchCreatorNotes).toBe(true);
+    expect(stEntry.metadata).toBeUndefined();
+    expect(stEntry.character_filter).toBeUndefined();
+
+    const reimported = importStLorebookJson(exported);
+    const entry = reimported.entries[0];
+    expect(entry.role).toBe("assistant");
+    expect(entry.characterFilter).toEqual([{ id: null, name: "alice.png" }, { id: null, name: "ghost.png" }]);
+    expect(entry.characterFilterExclude).toBe(true);
+    expect(entry.matchSources).toEqual([
+      "persona_desc",
+      "character_desc",
+      "character_personality",
+      "character_note",
+      "scenario",
+      "creator_notes",
+    ]);
+    expect(entry.ignoreBudget).toBe(true);
+    expect(entry.prioritizeInclusion).toBe(true);
+    expect(entry.useGroupScoring).toBe(true);
+    expect(entry.probability).toBe(100);
+    expect(entry.minChatMessages).toBe(7);
+    expect(entry.delayUntilRecursion).toBe(true);
+    expect(entry.recursionLevel).toBe(3);
+    expect(entry.logic).toBe("not_any");
+    expect(entry.metadata.stUid).toBe(42);
+    expect(entry.metadata.stUseProbability).toBe(false);
+    expect(entry.metadata.stAddMemo).toBe(true);
+    expect(entry.metadata.stOutletName).toBe("memory");
+    expect(reimported.warnings).toEqual(["Lore entry 42 has character-filter tags that Vibe Tavern cannot import."]);
+
+    const resolved = importStLorebookJson(exported, {
+      characterFilterAvatarResolver: (avatarFilename) => avatarFilename === "alice.png"
+        ? { id: "character-1", name: "Alice" }
+        : null,
+    });
+    const resolvedReexport = exportLorebookToSt(baseLorebook(), resolved.entries);
+    const resolvedStEntry = (resolvedReexport.entries as Record<string, Record<string, unknown>>)["0"];
+    // ST filters use avatar filenames, while VT resolves them to display names; metadata preserves the ST source filename.
+    expect(resolvedStEntry.characterFilter).toEqual({ isExclude: true, names: ["alice.png", "ghost.png"], tags: ["tag-id"] });
   });
 
   test("maps all 8 lorebook positions to SillyTavern numeric positions", () => {

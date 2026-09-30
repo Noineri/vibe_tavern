@@ -192,22 +192,25 @@ function mapDelayUntilRecursion(value: unknown): { delayUntilRecursion: boolean;
   return { delayUntilRecursion: false, recursionLevel: 0 };
 }
 
+const ST_MATCH_SOURCE_MAP = [
+  { field: "matchPersonaDescription", source: LORE_MATCH_SOURCE.personaDesc },
+  { field: "matchCharacterDescription", source: LORE_MATCH_SOURCE.characterDesc },
+  { field: "matchCharacterPersonality", source: LORE_MATCH_SOURCE.characterPersonality },
+  { field: "matchCharacterDepthPrompt", source: LORE_MATCH_SOURCE.characterNote },
+  { field: "matchScenario", source: LORE_MATCH_SOURCE.scenario },
+  { field: "matchCreatorNotes", source: LORE_MATCH_SOURCE.creatorNotes },
+] as const;
+
 function mapMatchSources(entry: StLorebookEntryRecord): LoreMatchSource[] {
-  const flags = [
-    [entry.matchPersonaDescription, LORE_MATCH_SOURCE.personaDesc],
-    [entry.matchCharacterDescription, LORE_MATCH_SOURCE.characterDesc],
-    [entry.matchCharacterPersonality, LORE_MATCH_SOURCE.characterPersonality],
-    [entry.matchCharacterDepthPrompt, LORE_MATCH_SOURCE.characterNote],
-    [entry.matchScenario, LORE_MATCH_SOURCE.scenario],
-    [entry.matchCreatorNotes, LORE_MATCH_SOURCE.creatorNotes],
-  ] as const;
-  return flags.filter(([enabled]) => enabled === true).map(([, source]) => source);
+  return ST_MATCH_SOURCE_MAP
+    .filter(({ field }) => entry[field] === true)
+    .map(({ source }) => source);
 }
 
 function mapCharacterFilter(
   entry: StLorebookEntryRecord,
   resolver: ImportLorebookOptions["characterFilterAvatarResolver"],
-): { characterFilter: Array<{ id: string | null; name: string }>; characterFilterExclude: boolean; tags: string[] } {
+): { characterFilter: Array<{ id: string | null; name: string }>; characterFilterExclude: boolean; names: string[]; tags: string[] } {
   const nativeFilter = isRecord(entry.characterFilter) ? entry.characterFilter : null;
   const names = nativeFilter ? asStringArray(nativeFilter.names) : asStringArray(entry.character_filter);
   return {
@@ -215,6 +218,7 @@ function mapCharacterFilter(
     characterFilterExclude: nativeFilter
       ? asBoolean(nativeFilter.isExclude, false)
       : asBoolean(entry.character_filter_exclude, false),
+    names,
     tags: nativeFilter ? asStringArray(nativeFilter.tags) : [],
   };
 }
@@ -395,6 +399,11 @@ export function importStLorebookJson(
         stScanDepth: entry.scanDepth ?? null,
         stAutomationId: asString(entry.automationId),
         stOutletName: asString(entry.outletName),
+        // VT binds known ST avatar filenames to local character names. Keep the
+        // source names and unsupported tags in metadata so export can restore
+        // ST's characterFilter object without a schema-only storage field.
+        stCharacterFilterNames: characterFilter.names,
+        stCharacterFilterTags: characterFilter.tags,
       },
     };
   });
@@ -451,18 +460,23 @@ interface StExportLoreEntry {
   readonly cooldownWindow: number;
   readonly minChatMessages: number;
   readonly probability: number;
+  readonly ignoreBudget: boolean;
   readonly role: string;
   readonly groupName: string;
   readonly groupWeight: number;
+  readonly prioritizeInclusion: boolean;
+  readonly useGroupScoring: boolean | null;
   readonly scanDepthOverride: number | null;
   readonly caseSensitive: boolean | null;
   readonly matchWholeWords: boolean | null;
   readonly characterFilter: ReadonlyArray<{ name: string }>;
   readonly characterFilterExclude: boolean;
+  readonly matchSources: readonly string[];
   readonly automationId: string;
   readonly excludeRecursion: boolean;
   readonly preventRecursion: boolean;
   readonly delayUntilRecursion: boolean;
+  readonly recursionLevel: number;
   readonly metadata: Record<string, unknown>;
 }
 
@@ -474,6 +488,32 @@ interface StExportLoreEntry {
  * cannot drift from the other. Colocated with its inverse (previously the
  * export lived in the db store, split from its inverse across two packages).
  */
+function vtRoleToSt(role: string): number {
+  if (role === "user") return 1;
+  if (role === "assistant") return 2;
+  return 0;
+}
+
+function stUidFromMetadata(metadata: Record<string, unknown>, fallback: number): number {
+  const uid = metadata.stUid;
+  return typeof uid === "number" && Number.isFinite(uid) ? uid : fallback;
+}
+
+function stCharacterFilterNames(entry: StExportLoreEntry): string[] {
+  const preservedNames = asStringArray(entry.metadata.stCharacterFilterNames);
+  // Imported resolved entries retain only the VT character name. Reuse the
+  // source avatar filename when its one-to-one list still matches the filter;
+  // native VT entries and changed filters fall back to their visible names.
+  return preservedNames.length === entry.characterFilter.length
+    ? preservedNames
+    : entry.characterFilter.map((character) => character.name);
+}
+
+function stDelayUntilRecursion(entry: StExportLoreEntry): boolean | number {
+  if (!entry.delayUntilRecursion) return false;
+  return entry.recursionLevel > 1 ? entry.recursionLevel : true;
+}
+
 export function exportLorebookToSt(
   lorebook: StExportLorebook,
   entries: readonly StExportLoreEntry[],
@@ -482,7 +522,7 @@ export function exportLorebookToSt(
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
     stEntries[String(i)] = {
-      uid: i,
+      uid: stUidFromMetadata(e.metadata, i),
       key: e.keys,
       keysecondary: e.secondaryKeys,
       comment: e.title,
@@ -496,25 +536,34 @@ export function exportLorebookToSt(
       disable: !e.enabled,
       sticky: e.stickyWindow,
       cooldown: e.cooldownWindow,
+      // Step 1 parity: VT's minChatMessages is ST's absolute chat-length
+      // delay gate, not the removed VT-only delay-window mechanic.
       delay: e.minChatMessages,
       probability: e.probability,
-      useProbability: true,
-      role: e.role,
+      // VT represents a disabled ST roll as probability 100. Metadata retains
+      // the otherwise-lossy source switch so an imported entry exports exactly.
+      useProbability: e.metadata.stUseProbability !== false,
+      role: vtRoleToSt(e.role),
       group: e.groupName,
       groupWeight: e.groupWeight,
+      groupOverride: e.prioritizeInclusion,
+      useGroupScoring: e.useGroupScoring,
+      ignoreBudget: e.ignoreBudget,
       scanDepth: e.scanDepthOverride,
       caseSensitive: e.caseSensitive,
       matchWholeWords: e.matchWholeWords,
-      // characterFilter: strip the bound id (ST has no notion of it) and emit
-      // the name list. Ghosts (id=null) round-trip as plain names. The exclude
-      // flag is a VT extension; emitted so VT-origin cards lossless round-trip.
-      character_filter: e.characterFilter.map((c) => c.name),
-      character_filter_exclude: e.characterFilterExclude,
+      characterFilter: {
+        isExclude: e.characterFilterExclude,
+        names: stCharacterFilterNames(e),
+        tags: asStringArray(e.metadata.stCharacterFilterTags),
+      },
+      addMemo: e.metadata.stAddMemo === true,
+      outletName: asString(e.metadata.stOutletName),
       automationId: e.automationId,
       excludeRecursion: e.excludeRecursion,
       preventRecursion: e.preventRecursion,
-      delayUntilRecursion: e.delayUntilRecursion,
-      metadata: e.metadata,
+      delayUntilRecursion: stDelayUntilRecursion(e),
+      ...Object.fromEntries(ST_MATCH_SOURCE_MAP.map(({ field, source }) => [field, e.matchSources.includes(source)])),
     };
   }
 
