@@ -48,7 +48,7 @@ export type {
   UpdateChatSummaryData,
 } from './chat-summary-store.js';
 
-export { LorebookStore } from './lorebook-store.js';
+export { LorebookStore, LOREBOOK_BINDING_KIND } from './lorebook-store.js';
 export type {
   CreateLorebookData,
   UpdateLorebookData,
@@ -57,6 +57,8 @@ export type {
   Lorebook as LorebookRow,
   LoreEntry as LoreEntryRow,
   LorebookLink,
+  ActiveLorebookSet,
+  LorebookBindingKind,
   CoauthorLoreDraftBundle,
 } from './lorebook-store.js';
 

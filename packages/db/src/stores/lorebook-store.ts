@@ -195,6 +195,22 @@ export interface Lorebook {
 /**
  * Store-level LoreEntry — domain LoreEntry projected from a DB row.
  */
+export const LOREBOOK_BINDING_KIND = {
+  chat: 'chat',
+  persona: 'persona',
+  character: 'character',
+  global: 'global',
+} as const;
+
+export type LorebookBindingKind = typeof LOREBOOK_BINDING_KIND[keyof typeof LOREBOOK_BINDING_KIND];
+
+/** One enabled lorebook resolved for a chat, with its most specific binding. */
+export interface ActiveLorebookSet {
+  lorebook: Lorebook;
+  entries: LoreEntry[];
+  bindingKind: LorebookBindingKind;
+}
+
 export interface LoreEntry {
   id: string;
   lorebookId: string;
@@ -913,9 +929,15 @@ export class LorebookStore {
     characterId: string,
     personaId: string | null,
     chatId: string,
-  ): Promise<Array<{ lorebook: Lorebook; entries: LoreEntry[] }>> {
-    // Build lorebook ID set from multiple sources
-    const lorebookIds = new Set<string>();
+  ): Promise<ActiveLorebookSet[]> {
+    // One book can match through several bindings. Preserve every matching
+    // source, then select its most specific kind after loading the rows.
+    const bindingKindsByLorebookId = new Map<string, Set<LorebookBindingKind>>();
+    const addBinding = (lorebookId: string, bindingKind: LorebookBindingKind): void => {
+      const bindingKinds = bindingKindsByLorebookId.get(lorebookId) ?? new Set<LorebookBindingKind>();
+      bindingKinds.add(bindingKind);
+      bindingKindsByLorebookId.set(lorebookId, bindingKinds);
+    };
 
     // 1. Global lorebooks
     const globalRows = await this.db
@@ -923,7 +945,7 @@ export class LorebookStore {
       .from(lorebooks)
       .where(and(eq(lorebooks.scopeType, 'global'), eq(lorebooks.enabled, 1)))
       .all();
-    for (const r of globalRows) lorebookIds.add(r.id);
+    for (const r of globalRows) addBinding(r.id, LOREBOOK_BINDING_KIND.global);
 
     // 2. Entity-scoped lorebooks: FK-owned (home scope) AND junction-linked.
     //    The resolver consults BOTH — the previous junction-only query silently
@@ -938,11 +960,18 @@ export class LorebookStore {
       ? and(eq(lorebooks.scopeType, 'entity'), or(eq(lorebooks.characterId, characterId), eq(lorebooks.personaId, personaId)), eq(lorebooks.enabled, 1))
       : and(eq(lorebooks.scopeType, 'entity'), eq(lorebooks.characterId, characterId), eq(lorebooks.enabled, 1));
     const entityFkRows = await this.db
-      .select({ id: lorebooks.id })
+      .select({ id: lorebooks.id, characterId: lorebooks.characterId, personaId: lorebooks.personaId })
       .from(lorebooks)
       .where(entityFkCondition)
       .all();
-    for (const r of entityFkRows) lorebookIds.add(r.id);
+    for (const r of entityFkRows) {
+      addBinding(
+        r.id,
+        personaId && r.personaId === personaId
+          ? LOREBOOK_BINDING_KIND.persona
+          : LOREBOOK_BINDING_KIND.character,
+      );
+    }
     const charLinks = await this.db
       .select({ lorebookId: lorebookLinks.lorebookId })
       .from(lorebookLinks)
@@ -952,7 +981,7 @@ export class LorebookStore {
       ))
       .where(and(eq(lorebookLinks.targetType, 'character'), eq(lorebookLinks.targetId, characterId)))
       .all();
-    for (const r of charLinks) lorebookIds.add(r.lorebookId);
+    for (const r of charLinks) addBinding(r.lorebookId, LOREBOOK_BINDING_KIND.character);
 
     // 3. Persona junction links (target-typed, unchanged by the collapse).
     if (personaId) {
@@ -965,7 +994,7 @@ export class LorebookStore {
         ))
         .where(and(eq(lorebookLinks.targetType, 'persona'), eq(lorebookLinks.targetId, personaId)))
         .all();
-      for (const r of personaLinks) lorebookIds.add(r.lorebookId);
+      for (const r of personaLinks) addBinding(r.lorebookId, LOREBOOK_BINDING_KIND.persona);
     }
 
     // 4. Chat-scoped lorebooks (direct FK — not via links)
@@ -974,19 +1003,21 @@ export class LorebookStore {
       .from(lorebooks)
       .where(and(eq(lorebooks.scopeType, 'chat'), eq(lorebooks.chatId, chatId), eq(lorebooks.enabled, 1)))
       .all();
-    for (const r of chatRows) lorebookIds.add(r.id);
+    for (const r of chatRows) addBinding(r.id, LOREBOOK_BINDING_KIND.chat);
 
-    if (lorebookIds.size === 0) return [];
+    if (bindingKindsByLorebookId.size === 0) return [];
 
-    // Batch-load lorebooks
-    const idArray = [...lorebookIds];
+    // Batch-load lorebooks in a stable order. This is the deterministic
+    // book-resolution order used if an ST strategy needs a first bound book.
+    const idArray = [...bindingKindsByLorebookId.keys()];
     const bookRows = await this.db
       .select()
       .from(lorebooks)
       .where(inArray(lorebooks.id, idArray))
+      .orderBy(asc(lorebooks.sortOrder), asc(lorebooks.name), asc(lorebooks.id))
       .all();
 
-    const result: Array<{ lorebook: Lorebook; entries: LoreEntry[] }> = [];
+    const result: ActiveLorebookSet[] = [];
 
     for (const bookRow of bookRows) {
       const entryRows = await this.db
@@ -1000,9 +1031,18 @@ export class LorebookStore {
         )
         .all();
 
+      const bindingKinds = bindingKindsByLorebookId.get(bookRow.id);
+      const bindingKind = bindingKinds?.has(LOREBOOK_BINDING_KIND.chat)
+        ? LOREBOOK_BINDING_KIND.chat
+        : bindingKinds?.has(LOREBOOK_BINDING_KIND.persona)
+          ? LOREBOOK_BINDING_KIND.persona
+          : bindingKinds?.has(LOREBOOK_BINDING_KIND.character)
+            ? LOREBOOK_BINDING_KIND.character
+            : LOREBOOK_BINDING_KIND.global;
       result.push({
         lorebook: this.mapLorebookRow(bookRow),
         entries: entryRows.map((r) => this.mapEntryRow(r)),
+        bindingKind,
       });
     }
 

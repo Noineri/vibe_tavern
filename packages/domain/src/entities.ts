@@ -363,6 +363,8 @@ export type ActiveLoreEntry = LoreEntry & {
   activationReason: LoreActivationReason;
   matchedKeys: string[];
   matchCount: number;
+  /** Resolved ST source-block order for final prompt insertion. */
+  insertionOrder: number;
 };
 
 /** P21 (overflowAlert): a lorebook whose token budget overflowed during a

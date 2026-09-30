@@ -1,4 +1,8 @@
-import type { StoreContainer } from "@vibe-tavern/db";
+import {
+	type StoreContainer,
+	type ActiveLorebookSet,
+	LOREBOOK_BINDING_KIND,
+} from "@vibe-tavern/db";
 import { countTokens } from "../../infrastructure/ai/tokenizer-service.js";
 import {
 	type ChatBranchId,
@@ -30,6 +34,58 @@ import {
 } from "./lore-activation-engine.js";
 import { executeScripts } from "../scripts-engine/script-sandbox.js";
 import { RegexHookService } from "../regex/regex-hook-service.js";
+
+const CHARACTER_STRATEGY = {
+	evenly: 0,
+	characterFirst: 1,
+	globalFirst: 2,
+} as const;
+
+function compareLoreEntriesByOrder(
+	a: ActiveLorebookSet["entries"][number],
+	b: ActiveLorebookSet["entries"][number],
+): number {
+	return b.priority - a.priority || a.sortOrder - b.sortOrder || a.id.localeCompare(b.id);
+}
+
+function resolveCharacterStrategy(lorebookSets: ActiveLorebookSet[]): number {
+	// Supervisor ruling: VT carries ST's global strategy as a per-book cached
+	// value. Mixed imports resolve it from the most chat-specific binding.
+	for (const bindingKind of [
+		LOREBOOK_BINDING_KIND.chat,
+		LOREBOOK_BINDING_KIND.persona,
+		LOREBOOK_BINDING_KIND.character,
+		LOREBOOK_BINDING_KIND.global,
+	]) {
+		const strategy = lorebookSets.find(set => set.bindingKind === bindingKind)?.lorebook.characterStrategy;
+		if (strategy != null) return strategy;
+	}
+	return CHARACTER_STRATEGY.evenly;
+}
+
+function orderActivatedLoreEntries(
+	lorebookSets: ActiveLorebookSet[],
+	activatedIds: Set<string>,
+): ActiveLorebookSet["entries"][number][] {
+	const entriesForBinding = (bindingKind: ActiveLorebookSet["bindingKind"]) => lorebookSets
+		.filter(set => set.bindingKind === bindingKind)
+		.flatMap(set => set.entries)
+		.filter(entry => activatedIds.has(entry.id))
+		.sort(compareLoreEntriesByOrder);
+	const chatEntries = entriesForBinding(LOREBOOK_BINDING_KIND.chat);
+	const personaEntries = entriesForBinding(LOREBOOK_BINDING_KIND.persona);
+	const characterEntries = entriesForBinding(LOREBOOK_BINDING_KIND.character);
+	const globalEntries = entriesForBinding(LOREBOOK_BINDING_KIND.global);
+	const strategy = resolveCharacterStrategy(lorebookSets);
+
+	const characterAndGlobal = strategy === CHARACTER_STRATEGY.characterFirst
+		? [...characterEntries, ...globalEntries]
+		: strategy === CHARACTER_STRATEGY.globalFirst
+			? [...globalEntries, ...characterEntries]
+			: [...characterEntries, ...globalEntries].sort(compareLoreEntriesByOrder);
+
+	return [...chatEntries, ...personaEntries, ...characterAndGlobal];
+}
 
 export class StaticPromptResolver implements PromptAssemblyResolver {
 	constructor(
@@ -264,10 +320,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		//    structured activation reason through for the prompt trace.
 		const reasonById = new Map(result.activatedEntries.map(e => [e.id, e]));
 		const activatedIds = new Set(result.activatedEntries.map(e => e.id));
-		const activeEntries: ActiveLoreEntry[] = lorebookSets
-			.flatMap(lb => lb.entries)
-			.filter(e => activatedIds.has(e.id))
-			.map(e => {
+		const activeEntries: ActiveLoreEntry[] = orderActivatedLoreEntries(lorebookSets, activatedIds)
+			.map((e, insertionOrder) => {
 				const detail = reasonById.get(e.id)!;
 				return {
 					id: brandId<LoreEntry['id']>(e.id),
@@ -310,6 +364,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				activationReason: detail.reason,
 				matchedKeys: detail.matchedKeys,
 				matchCount: detail.matchCount,
+				insertionOrder,
 			};
 		});
 

@@ -182,6 +182,8 @@ export interface PromptAssemblyContext {
     role?: string;
     /** User-defined display order within the same lorebook. Lower = earlier. */
     sortOrder?: number;
+    /** Resolver-derived ST source-block order for final prompt insertion. */
+    insertionOrder?: number;
   }>;
   memory?: {
     summary?: Array<{
