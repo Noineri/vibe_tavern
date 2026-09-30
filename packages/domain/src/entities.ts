@@ -308,6 +308,8 @@ export interface LoreEntry {
   caseSensitive: boolean | null;
   /** Tri-state (ST parity): null = inherit the book-level matchWholeWords default, true/false = explicit per-entry override. */
   matchWholeWords: boolean | null;
+  /** Plain keys that use the opt-in Russian case-forms compiler. Stored in entry metadata so the visible key arrays remain clean. */
+  caseFormsKeys?: string[];
   characterFilter: CharacterFilterEntry[];
   characterFilterExclude: boolean;
   matchSources: LoreMatchSource[];

@@ -13,7 +13,7 @@
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
-import { tag } from "@vibe-tavern/domain";
+import { compileRussianCaseFormsKey, tag } from "@vibe-tavern/domain";
 import type { LoreActivationReason } from "@vibe-tavern/domain";
 
 // Lorebook activation is high-frequency (runs on every message send) and the
@@ -93,6 +93,8 @@ export interface ActivationInput {
       caseSensitive: boolean | null;
       /** Tri-state (ST parity): null = inherit the book-level default (ActivationInput.lorebooks[].matchWholeWords), true/false = explicit. */
       matchWholeWords: boolean | null;
+      /** Plain keys using the metadata-backed Russian case-forms compiler. */
+      caseFormsKeys?: string[];
       characterFilter: Array<{ id: string | null; name: string }>;
       characterFilterExclude: boolean;
       matchSources: string[];
@@ -220,6 +222,8 @@ interface FlatEntry {
   /** Resolved per-scan form: the per-entry tri-state has already inherited the book-level default (see the flatten loop). */
   caseSensitive: boolean;
   matchWholeWords: boolean;
+  /** Keys compiled into the opt-in Russian case-forms regex at match time. */
+  caseFormsKeys: string[];
   characterFilter: Array<{ id: string | null; name: string }>;
   characterFilterExclude: boolean;
   matchSources: string[];
@@ -329,6 +333,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         // null against the global client setting; VT scopes it to the book).
         caseSensitive: entry.caseSensitive ?? lorebook.caseSensitive ?? false,
         matchWholeWords: entry.matchWholeWords ?? lorebook.matchWholeWords ?? false,
+        caseFormsKeys: entry.caseFormsKeys ?? [],
       });
     }
   }
@@ -789,9 +794,15 @@ function tryActivateEntry(ctx: {
   let matchedKeys: string[] = [];
   let secondaryMatches: string[] = [];
   if (!decoratorActive) {
-    const resolvedKeys = entry.keys.map(resolveMacros);
-    const resolvedSecondaryKeys = entry.secondaryKeys.map(resolveMacros);
-    matchedKeys = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
+    const resolvedKeys = entry.keys.map((key) => entry.caseFormsKeys.includes(key)
+      ? compileRussianCaseFormsKey(resolveMacros(key))
+      : resolveMacros(key));
+    const resolvedSecondaryKeys = entry.secondaryKeys.map((key) => entry.caseFormsKeys.includes(key)
+      ? compileRussianCaseFormsKey(resolveMacros(key))
+      : resolveMacros(key));
+    const plainKeyByMatcher = new Map(resolvedKeys.map((matcher, index) => [matcher, entry.keys[index]]));
+    matchedKeys = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords)
+      .map((matcher) => plainKeyByMatcher.get(matcher) ?? matcher);
     if (matchedKeys.length === 0) return reason("no key match");
 
     // 9. Secondary key logic
@@ -1011,8 +1022,12 @@ function scoreEntryKeysForGroup(
   scanText: string,
   resolveMacros: (text: string) => string,
 ): number {
-  const primaryMatches = matchKeys(entry.keys.map(resolveMacros), scanText, entry.caseSensitive, entry.matchWholeWords).length;
-  const secondaryMatches = matchKeys(entry.secondaryKeys.map(resolveMacros), scanText, entry.caseSensitive, entry.matchWholeWords).length;
+  const primaryMatches = matchKeys(entry.keys.map((key) => entry.caseFormsKeys.includes(key)
+    ? compileRussianCaseFormsKey(resolveMacros(key))
+    : resolveMacros(key)), scanText, entry.caseSensitive, entry.matchWholeWords).length;
+  const secondaryMatches = matchKeys(entry.secondaryKeys.map((key) => entry.caseFormsKeys.includes(key)
+    ? compileRussianCaseFormsKey(resolveMacros(key))
+    : resolveMacros(key)), scanText, entry.caseSensitive, entry.matchWholeWords).length;
   return computeGroupScore(entry.keys.length, primaryMatches, entry.secondaryKeys.length, secondaryMatches, entry.logic);
 }
 

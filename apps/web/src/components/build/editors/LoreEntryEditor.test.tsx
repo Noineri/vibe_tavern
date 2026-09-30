@@ -261,4 +261,16 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     expect(form.getValues("keys")).toEqual(["goblin", "ghost"]);
     expect(form.formState.isDirty).toBe(true);
   });
+
+  it("renders a case-forms chip on each key and toggles its persisted flag", () => {
+    const { form, getByRole } = renderEditor(makeEntry({ keys: ["dragon"], caseFormsKeys: [] }));
+    const caseForms = getByRole("checkbox", { name: "lore_case_forms" });
+    expect(caseForms.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(caseForms);
+    expect(form.getValues("caseFormsKeys")).toEqual(["dragon"]);
+    expect(caseForms.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(getByRole("button", { name: "remove_aria" }));
+    expect(form.getValues("keys")).toEqual([]);
+    expect(form.getValues("caseFormsKeys")).toEqual([]);
+  });
 });

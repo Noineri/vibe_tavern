@@ -166,15 +166,37 @@ export function LoreEntryEditor({
             {t("lore_entry_keys")}
           </FieldLabel>
           <div className="flex items-start gap-2">
-            <ControlledField name="keys">
-              {(field) => (
-                <ChipInput
-                  className="min-w-0 flex-1"
-                  values={field.value}
-                  onChange={field.onChange}
-                  mode="words"
-                  placeholder={t("lore_entry_keys_placeholder")}
-                />
+            <ControlledField name="caseFormsKeys">
+              {(caseFormsField) => (
+                <ControlledField name="keys">
+                  {(field) => {
+                    const caseFormsKeys = caseFormsField.value ?? [];
+                    return (
+                      <ChipInput
+                        className="min-w-0 flex-1"
+                        values={field.value}
+                        onChange={(keys) => {
+                          field.onChange(keys);
+                          caseFormsField.onChange(caseFormsKeys.filter((key) => keys.includes(key) || form.getValues("secondaryKeys").includes(key)));
+                        }}
+                        mode="words"
+                        placeholder={t("lore_entry_keys_placeholder")}
+                        renderChipAction={(key) => (
+                          <Checkbox
+                            checked={caseFormsKeys.includes(key)}
+                            onChange={(checked) => caseFormsField.onChange(
+                              checked
+                                ? [...new Set([...caseFormsKeys, key])]
+                                : caseFormsKeys.filter((caseKey) => caseKey !== key),
+                            )}
+                            label={t("lore_case_forms")}
+                            inline
+                          />
+                        )}
+                      />
+                    );
+                  }}
+                </ControlledField>
               )}
             </ControlledField>
             <LoreKeysAiPill />
@@ -344,13 +366,35 @@ export function LoreEntryEditor({
               <FieldLabel>
                 {t("lore_entry_secondary_keys")}
               </FieldLabel>
-              <ControlledField name="secondaryKeys">
-                {(field) => (
-                  <ChipInput
-                    values={field.value}
-                    onChange={field.onChange}
-                    mode="words"
-                  />
+              <ControlledField name="caseFormsKeys">
+                {(caseFormsField) => (
+                  <ControlledField name="secondaryKeys">
+                    {(field) => {
+                      const caseFormsKeys = caseFormsField.value ?? [];
+                      return (
+                        <ChipInput
+                          values={field.value}
+                          onChange={(keys) => {
+                            field.onChange(keys);
+                            caseFormsField.onChange(caseFormsKeys.filter((key) => keys.includes(key) || form.getValues("keys").includes(key)));
+                          }}
+                          mode="words"
+                          renderChipAction={(key) => (
+                            <Checkbox
+                              checked={caseFormsKeys.includes(key)}
+                              onChange={(checked) => caseFormsField.onChange(
+                                checked
+                                  ? [...new Set([...caseFormsKeys, key])]
+                                  : caseFormsKeys.filter((caseKey) => caseKey !== key),
+                              )}
+                              label={t("lore_case_forms")}
+                              inline
+                            />
+                          )}
+                        />
+                      );
+                    }}
+                  </ControlledField>
                 )}
               </ControlledField>
             </div>

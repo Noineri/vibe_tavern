@@ -362,6 +362,25 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
   // D2: the matching flags are tri-state exactly like useGroupScoring — null
   // (inherit the book default) and false (explicitly off) must survive the
   // store separately, and the book-level defaults must round-trip too.
+  test("caseFormsKeys round-trips through metadata and replaces only its own value", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    const entry = await store.createEntry(lb.id, {
+      keys: ["dragon"],
+      caseFormsKeys: ["dragon"],
+      metadata: { stUid: 7 },
+    });
+    expect(entry.caseFormsKeys).toEqual(["dragon"]);
+    expect(entry.metadata).toEqual({ stUid: 7, caseFormsKeys: ["dragon"] });
+
+    const updated = await store.updateEntry(entry.id, { caseFormsKeys: [] });
+    // Empty list = chip toggled off → the metadata key PRUNES (supervisor
+    // ruling) so a flagless entry's metadata stays byte-identical — the
+    // duplicateLorebook characterization pin above depends on that cleanliness.
+    expect(updated.caseFormsKeys).toEqual([]);
+    expect(updated.metadata).toEqual({ stUid: 7 });
+  });
+
   test("D2: entry caseSensitive / matchWholeWords tri-state round-trips (null vs false are distinct)", async () => {
     const store = await mkStore();
     const lb = await store.createLorebook({ name: "LB", scopeType: "global" });

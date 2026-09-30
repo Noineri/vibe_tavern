@@ -140,6 +140,19 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
     expect(capped.token_budget_cap).toBe(250);
   });
 
+  test("round-trips case forms as a compiled ST regex while retaining the plain key", () => {
+    const exported = exportLorebookToSt(
+      baseLorebook(),
+      [baseEntry({ keys: ["дракон"], metadata: { caseFormsKeys: ["дракон"] } })],
+    );
+    const exportedKey = (exported.entries as Record<string, { key: string[] }>)["0"].key[0];
+    expect(exportedKey).toMatch(/^\/\(\?<!\\p\{L\}\).*\/iu$/);
+
+    const reimported = importStLorebookJson(exported);
+    expect(reimported.entries[0].keys).toEqual(["дракон"]);
+    expect(reimported.entries[0].metadata.caseFormsKeys).toEqual(["дракон"]);
+  });
+
   test("round-trips caseSensitive / matchWholeWords tri-state — null exports as null, never false (D2)", () => {
     // ST's template defines these as nullable booleans (world-info.js:4035-4036), so null must remain inherit on re-import.
     const exported = exportLorebookToSt(

@@ -398,6 +398,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				scanDepthOverride: e.scanDepthOverride,
 				caseSensitive: e.caseSensitive,
 				matchWholeWords: e.matchWholeWords,
+				caseFormsKeys: e.caseFormsKeys,
 				characterFilter: e.characterFilter as LoreEntry['characterFilter'],
 				characterFilterExclude: e.characterFilterExclude,
 				matchSources: e.matchSources as LoreEntry['matchSources'],

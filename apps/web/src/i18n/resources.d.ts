@@ -1507,6 +1507,7 @@ export default interface Resources {
     "lore_book_match_whole_words": "Match Whole Words (book default)",
     "lore_book_match_whole_words_hint": "Default that entries inherit when their own Match Whole Words control is set to Inherit. Off also suits languages without spaces.",
     "lore_cancel_edit": "Cancel",
+    "lore_case_forms": "Case forms",
     "lore_case_sensitive": "Case Sensitive",
     "lore_char_filter_bind": "Unbound (name only) — click to link to a character",
     "lore_char_filter_empty": "No more characters to add",

@@ -90,6 +90,7 @@ Built on Radix Switch: `role="switch"`, `aria-checked`, focus-visible ring, Spac
 | `disabled` | `boolean?` | Disables interaction |
 | `id` | `string?` | For form association |
 | `className` | `string?` | Additional classes |
+| `inline` | `boolean?` | Uses a phrasing-content root for a checkbox nested in an inline chip |
 
 Mini-chip checkbox: tiny rounded pill indicator consistent with ToggleChips. Unchecked: subtle `s3` pill. Checked: accent border + bg with SVG checkmark.
 
@@ -394,6 +395,7 @@ JSON-array paste inserts every element at once in both modes.
 | `disabled` | `boolean?` | Disables editing |
 | `showPresets` | `boolean?` | Show the special-character shortcut buttons |
 | `tooltip` | `string?` | Info-icon tooltip content |
+| `renderChipAction` | `(value: string, index: number) => ReactNode?` | Optional control rendered within each existing chip |
 | `presetsLabel` | `string?` | Label for the presets tooltip trigger (default: `"?"`) |
 | `className` | `string?` | Extension appended AFTER the canon base |
 

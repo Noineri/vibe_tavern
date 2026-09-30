@@ -94,6 +94,8 @@ export interface CreateLoreEntryData {
   /** Tri-state (ST parity): null = inherit the book-level caseSensitive/matchWholeWords default, true/false = explicit. */
   caseSensitive?: boolean | null;
   matchWholeWords?: boolean | null;
+  /** Plain keys using the metadata-backed Russian case-forms compiler. */
+  caseFormsKeys?: string[];
   characterFilter?: CharacterFilterEntry[];
   characterFilterExclude?: boolean;
   matchSources?: string[];
@@ -243,6 +245,8 @@ export interface LoreEntry {
   /** Tri-state (ST parity): null = inherit the book-level caseSensitive/matchWholeWords default, true/false = explicit. */
   caseSensitive: boolean | null;
   matchWholeWords: boolean | null;
+  /** Always projected from metadata; optional for compatibility with old callers. */
+  caseFormsKeys?: string[];
   characterFilter: CharacterFilterEntry[];
   characterFilterExclude: boolean;
   matchSources: string[];
@@ -279,6 +283,7 @@ export interface LorebookLink {
 // a structural destructure, not a spec loop — type-safe and auto-exhaustive.
 
 type EntryCoerce = 'bool' | 'bool3' | 'json' | 'raw';
+type StoredEntryField = Exclude<keyof CreateLoreEntryData, 'caseFormsKeys'>;
 
 interface EntryFieldSpec {
   /** Drizzle column on `loreEntries`. */
@@ -289,7 +294,7 @@ interface EntryFieldSpec {
   readonly insertDefault: unknown;
 }
 
-const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldSpec } = {
+const ENTRY_FIELD_SPEC: { readonly [K in StoredEntryField]: EntryFieldSpec } = {
   title:                  { column: 'title',                  coerce: 'raw',  insertDefault: '' },
   content:                { column: 'content',                coerce: 'raw',  insertDefault: '' },
   keys:                   { column: 'keysJson',               coerce: 'json', insertDefault: [] },
@@ -346,11 +351,24 @@ function decodeEntryField(coerce: EntryCoerce, value: unknown): unknown {
 }
 
 /** Build the data-field payload for `createEntry`'s `.values()` (create path). */
+function mergeCaseFormsKeys(metadata: Record<string, unknown> | undefined, caseFormsKeys: string[] | undefined): Record<string, unknown> {
+  // undefined = no opinion: leave metadata untouched (a bare unrelated-field
+  // update must not fabricate or prune the key). A DEFINED list writes or
+  // prunes: non-empty writes the flag list, empty deletes a stale key — so an
+  // absent flag round-trips byte-identically while a toggled-off chip prunes.
+  if (caseFormsKeys === undefined) return metadata ?? {};
+  const next = { ...(metadata ?? {}) };
+  if (caseFormsKeys.length > 0) next.caseFormsKeys = caseFormsKeys;
+  else delete next.caseFormsKeys;
+  return next;
+}
+
 function buildEntryInsert(data: CreateLoreEntryData): Partial<typeof loreEntries.$inferInsert> {
   const out: Record<string, number | string | null> = {};
-  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[keyof CreateLoreEntryData, EntryFieldSpec]>) {
-    const value = data[domain] ?? spec.insertDefault;
-    out[spec.column] = encodeEntryField(spec.coerce, value);
+  const metadata = mergeCaseFormsKeys(data.metadata, data.caseFormsKeys);
+  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[StoredEntryField, EntryFieldSpec]>) {
+    const value = domain === 'metadata' ? metadata : data[domain];
+    out[spec.column] = encodeEntryField(spec.coerce, value ?? spec.insertDefault);
   }
   // Single concrete assertion at the DB boundary (the spec loop cannot assign
   // to specific keys of the Drizzle insert type per-iteration without it).
@@ -362,7 +380,7 @@ function buildEntryInsert(data: CreateLoreEntryData): Partial<typeof loreEntries
 /** Build the partial patch for `updateEntry` (only fields the caller provided). */
 function buildEntryPatch(data: UpdateLoreEntryData): Partial<typeof loreEntries.$inferInsert> {
   const out: Record<string, number | string | null> = {};
-  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[keyof CreateLoreEntryData, EntryFieldSpec]>) {
+  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[StoredEntryField, EntryFieldSpec]>) {
     const value = data[domain];
     if (value !== undefined) {
       out[spec.column] = encodeEntryField(spec.coerce, value);
@@ -428,10 +446,14 @@ function normalizeImportedEntryPosition(
  */
 function decodeEntryFields(row: typeof loreEntries.$inferSelect): Omit<LoreEntry, 'id' | 'lorebookId' | 'createdAt' | 'updatedAt'> {
   const out: Record<string, unknown> = {};
-  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[keyof CreateLoreEntryData, EntryFieldSpec]>) {
+  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[StoredEntryField, EntryFieldSpec]>) {
     out[domain] = decodeEntryField(spec.coerce, row[spec.column]);
   }
   const metadata = (out.metadata as Record<string, unknown>) ?? {};
+  const caseFormsKeys = metadata.caseFormsKeys;
+  out.caseFormsKeys = Array.isArray(caseFormsKeys)
+    ? caseFormsKeys.filter((key): key is string => typeof key === 'string')
+    : [];
   out.position = normalizeImportedEntryPosition(out.position as string, metadata);
   out.characterFilter = parseCharacterFilter(out.characterFilter);
   return out as Omit<LoreEntry, 'id' | 'lorebookId' | 'createdAt' | 'updatedAt'>;
@@ -737,7 +759,13 @@ export class LorebookStore {
 
   async updateEntry(id: string, data: UpdateLoreEntryData): Promise<LoreEntry> {
     const now = this.clock.now();
-    const values: Partial<typeof loreEntries.$inferInsert> = { updatedAt: now, ...buildEntryPatch(data) };
+    const current = data.caseFormsKeys === undefined
+      ? null
+      : await this.db.select({ metadataJson: loreEntries.metadataJson }).from(loreEntries).where(eq(loreEntries.id, id)).get();
+    const patchedData = current
+      ? { ...data, metadata: mergeCaseFormsKeys(JSON.parse(current.metadataJson), data.caseFormsKeys) }
+      : data;
+    const values: Partial<typeof loreEntries.$inferInsert> = { updatedAt: now, ...buildEntryPatch(patchedData) };
 
     const [row] = await this.db
       .update(loreEntries)

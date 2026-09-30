@@ -9,7 +9,7 @@ import type {
   LoreMatchSource,
   LoreEntryPosition,
 } from "@vibe-tavern/domain";
-import { brandId, ENTITY_ID_NAMESPACE, LORE_MATCH_SOURCE } from "@vibe-tavern/domain";
+import { brandId, compileRussianCaseFormsKey, ENTITY_ID_NAMESPACE, LORE_MATCH_SOURCE, unwrapRussianCaseFormsKey } from "@vibe-tavern/domain";
 
 import {
   asBoolean,
@@ -238,6 +238,16 @@ function mapMatchSources(entry: StLorebookEntryRecord): LoreMatchSource[] {
     .map(({ source }) => source);
 }
 
+function unwrapCaseFormsKeys(keys: string[]): { keys: string[]; caseFormsKeys: string[] } {
+  const caseFormsKeys: string[] = [];
+  const unwrapped = keys.map((key) => {
+    const original = unwrapRussianCaseFormsKey(key);
+    if (original !== null) caseFormsKeys.push(original);
+    return original ?? key;
+  });
+  return { keys: unwrapped, caseFormsKeys: [...new Set(caseFormsKeys)] };
+}
+
 function mapCharacterFilter(
   entry: StLorebookEntryRecord,
   resolver: ImportLorebookOptions["characterFilterAvatarResolver"],
@@ -404,11 +414,16 @@ export function importStLorebookJson(
   const warnings: string[] = [];
   const entryRecords = getEntryRecords(root);
   const entries: LoreEntry[] = entryRecords.map((entry, index) => {
-    const keys = asStringArray(entry.key);
+    const primaryKeyResult = unwrapCaseFormsKeys(asStringArray(entry.key));
     // ST's new-entry template defaults selective to true. Secondary keys are
     // ignored only when the source explicitly disables selective matching.
     const selective = entry.selective !== false;
-    const secondaryKeys = selective ? asStringArray(entry.keysecondary) : [];
+    const secondaryKeyResult = selective
+      ? unwrapCaseFormsKeys(asStringArray(entry.keysecondary))
+      : { keys: [], caseFormsKeys: [] };
+    const keys = primaryKeyResult.keys;
+    const secondaryKeys = secondaryKeyResult.keys;
+    const caseFormsKeys = [...new Set([...primaryKeyResult.caseFormsKeys, ...secondaryKeyResult.caseFormsKeys])];
     const hasSecondaryLogic = selective && secondaryKeys.length > 0;
     const logic = hasSecondaryLogic ? mapSelectiveLogic(entry.selectiveLogic) : "and_any";
     const recursionDelay = mapDelayUntilRecursion(entry.delayUntilRecursion);
@@ -473,6 +488,7 @@ export function importStLorebookJson(
       // the global setting).
       caseSensitive: entry.caseSensitive === true ? true : entry.caseSensitive === false ? false : null,
       matchWholeWords: entry.matchWholeWords === true ? true : entry.matchWholeWords === false ? false : null,
+      caseFormsKeys,
       excludeRecursion: asBoolean(entry.excludeRecursion, false),
       preventRecursion: asBoolean(entry.preventRecursion, false),
       delayUntilRecursion: recursionDelay.delayUntilRecursion,
@@ -513,6 +529,7 @@ export function importStLorebookJson(
         // ST's characterFilter object without a schema-only storage field.
         stCharacterFilterNames: characterFilter.names,
         stCharacterFilterTags: characterFilter.tags,
+        ...(caseFormsKeys.length > 0 ? { caseFormsKeys } : {}),
       },
     };
   });
@@ -578,6 +595,8 @@ interface StExportLoreEntry {
   readonly scanDepthOverride: number | null;
   readonly caseSensitive: boolean | null;
   readonly matchWholeWords: boolean | null;
+  /** Plain keys compiled to ST regexes on export; metadata is the legacy physical store. */
+  readonly caseFormsKeys?: readonly string[];
   readonly characterFilter: ReadonlyArray<{ name: string }>;
   readonly characterFilterExclude: boolean;
   readonly matchSources: readonly string[];
@@ -632,8 +651,12 @@ export function exportLorebookToSt(
     const e = entries[i];
     stEntries[String(i)] = {
       uid: stUidFromMetadata(e.metadata, i),
-      key: e.keys,
-      keysecondary: e.secondaryKeys,
+      key: e.keys.map((key) => (e.caseFormsKeys ?? asStringArray(e.metadata.caseFormsKeys)).includes(key)
+        ? compileRussianCaseFormsKey(key)
+        : key),
+      keysecondary: e.secondaryKeys.map((key) => (e.caseFormsKeys ?? asStringArray(e.metadata.caseFormsKeys)).includes(key)
+        ? compileRussianCaseFormsKey(key)
+        : key),
       comment: e.title,
       content: e.content,
       constant: e.constant,

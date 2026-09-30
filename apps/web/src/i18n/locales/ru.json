@@ -1520,6 +1520,7 @@
 	"lore_group_weight": "Вес группы",
 	"lore_constant": "Постоянная",
 	"lore_case_sensitive": "Чувствительность к регистру",
+	"lore_case_forms": "Формы слова",
 	"lore_match_whole_words": "Целые слова",
 	"lore_ignore_budget": "Игнорировать бюджет",
 	"ignore_budget_hint": "Если включено, эта запись всегда будет добавлена, даже если бюджет токенов лорбука превышен.",

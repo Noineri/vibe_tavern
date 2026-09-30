@@ -367,6 +367,7 @@ export function LorebookEditor({
       // Tri-state: new entries inherit the book-level defaults (ST parity).
       caseSensitive: null,
       matchWholeWords: null,
+      caseFormsKeys: [],
       characterFilter: [],
       characterFilterExclude: false,
       matchSources: [],

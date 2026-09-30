@@ -1514,6 +1514,7 @@
 	"lore_group_weight": "Group Weight",
 	"lore_constant": "Constant",
 	"lore_case_sensitive": "Case Sensitive",
+	"lore_case_forms": "Case forms",
 	"lore_match_whole_words": "Match Whole Words",
 	"lore_ignore_budget": "Ignore Budget",
 	"ignore_budget_hint": "If enabled, this entry is always included even when the lorebook token budget is exceeded.",
