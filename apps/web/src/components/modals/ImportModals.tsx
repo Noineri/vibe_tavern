@@ -527,7 +527,7 @@ function BusyLine(props: { label: string }) {
 }
 
 // Fixed import order (matches the scanner's phase sequence).
-const IMPORT_PHASES: ImportPhase[] = ["characters", "chats", "lorebooks", "presets", "formats", "samplerSets", "personas"];
+const IMPORT_PHASES: ImportPhase[] = ["characters", "chats", "personas", "lorebooks", "presets", "formats", "samplerSets"];
 
 /** Per-phase progress breakdown for a streaming ST directory import. Reuses
  *  the old bar visual (animated accent dots + width:% fill) but drives it from

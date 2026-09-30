@@ -599,9 +599,9 @@ describe("ST directory scanner — streaming progress events", () => {
 		// Every phase has exactly one `phase` start event, and it precedes that
 		// phase's `progress` events. Phases fire in fixed import order.
 		const phaseStarts = events.filter((e) => e.type === "phase").map((e) => e.phase);
-		// LS-5g adds the samplerSets phase between formats and personas (this
-		// fixture has no TextGen Settings/ folder, so it emits no progress events).
-		expect(phaseStarts).toEqual(["characters", "chats", "lorebooks", "presets", "formats", "samplerSets", "personas"]);
+		// P17 moves personas before lorebooks so their IDs exist for persona-owned
+		// lorebook FKs; this fixture has no persona files, but its phase remains visible.
+		expect(phaseStarts).toEqual(["characters", "chats", "personas", "lorebooks", "presets", "formats", "samplerSets"]);
 
 		// Granular counts: one progress per imported item, current strictly
 		// increasing, never exceeding the done count for that surface.
@@ -802,6 +802,99 @@ describe("ST directory scanner — ownership-aware lorebook import (L1)", () => 
 		// The orphan still imports its entries — only activation is withheld.
 		const orphanEntries = await env.stores.lorebooks.listEntries(orphan.id);
 		expect(orphanEntries.length).toBe(1);
+	});
+});
+
+// ── P17: ST directory lorebook bindings ─────────────────────────────────────
+//
+// ST keeps character-primary books on cards, character extras in
+// world_info.charLore, and persona books in persona descriptors. These pins
+// cover all four destination cases through the real directory import seam.
+
+async function buildP17BindingStDir(root: string): Promise<string> {
+	await mkdir(join(root, "characters"), { recursive: true });
+	await Bun.write(join(root, "characters", "BoundCharacter.json"), ownershipCard("Bound Character", "Primary Book"));
+
+	await mkdir(join(root, "worlds"), { recursive: true });
+	for (const world of ["Primary Book", "Extra Book", "Persona Book", "Missing Book", "Global Book"]) {
+		await Bun.write(join(root, "worlds", `${world}.json`), ownershipWorld(world));
+	}
+
+	await Bun.write(join(root, "settings.json"), JSON.stringify({
+		user_avatar: "bound-persona.png",
+		power_user: {
+			personas: { "bound-persona.png": "Bound Persona" },
+			persona_descriptions: {
+				"bound-persona.png": { description: "Persona binding fixture." },
+			},
+			default_persona: "bound-persona.png",
+			persona_description_lorebook: "Persona Book",
+		},
+		world_info_settings: {
+			world_info: {
+				globalSelect: ["Global Book"],
+				charLore: [
+					{ name: "BoundCharacter.json", extraBooks: ["Extra Book"] },
+					{ name: "MissingCharacter.png", extraBooks: ["Missing Book"] },
+				],
+			},
+		},
+	}));
+	return root;
+}
+
+describe("ST directory scanner — P17 ST lorebook bindings", () => {
+	let env: Env;
+
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	beforeEach(async () => { env = await createRuntime(); });
+	afterEach(async () => { await env.cleanup(); });
+
+	async function importBindings() {
+		const stDir = await buildP17BindingStDir(join(env.tmpDir, "st-p17-bindings"));
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+		const books = await env.stores.lorebooks.listAllLorebooks();
+		const characters = await env.stores.characters.listAll();
+		const personas = await env.stores.personas.listAll();
+		return { result, books, characters, personas };
+	}
+
+	it("binds a card primary world and charLore extraBooks to their imported character", async () => {
+		// ST basis: world-info.js:4369-4378 adds both card.extensions.world and charLore.extraBooks for this character.
+		const { books, characters } = await importBindings();
+		const character = characters.find((item) => item.name === "Bound Character");
+		expect(character).toBeTruthy();
+		for (const name of ["Primary Book", "Extra Book"]) {
+			const book = books.find((item) => item.name === name);
+			expect(book).toMatchObject({ scopeType: "entity", characterId: character!.id, personaId: null, enabled: true });
+		}
+	});
+
+	it("binds a persona_description_lorebook to its imported persona", async () => {
+		// ST basis: personas.js:907-914 loads descriptor.lorebook into persona_description_lorebook for the selected persona.
+		const { books, personas } = await importBindings();
+		const persona = personas.find((item) => item.name === "Bound Persona");
+		expect(persona).toBeTruthy();
+		expect(books.find((item) => item.name === "Persona Book")).toMatchObject({
+			scopeType: "entity", personaId: persona!.id, characterId: null, enabled: true,
+		});
+	});
+
+	it("warns and leaves a book global and disabled when its charLore character did not import", async () => {
+		// ST basis: world-info.js:4375-4378 looks up extras by the character avatar; there is no owner when that character is absent.
+		const { result, books } = await importBindings();
+		expect(result.errors.some((error) => error.message.includes("MissingCharacter.png") && error.message.includes("Missing Book"))).toBe(true);
+		expect(books.find((item) => item.name === "Missing Book")).toMatchObject({
+			scopeType: "global", characterId: null, personaId: null, enabled: false,
+		});
+	});
+
+	it("keeps a globally selected world global and enabled", async () => {
+		// ST basis: world-info.js:85 persists globalSelect and :4427 loads that global list independently of entity bindings.
+		const { books } = await importBindings();
+		expect(books.find((item) => item.name === "Global Book")).toMatchObject({
+			scopeType: "global", characterId: null, personaId: null, enabled: true,
+		});
 	});
 });
 
