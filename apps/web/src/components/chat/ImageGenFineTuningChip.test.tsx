@@ -1494,18 +1494,31 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     expect(range.getAttribute("min")).toBe("1");
     expect(range.getAttribute("max")).toBe("150");
     expect(range.getAttribute("step")).toBe("1");
-    const steps = within(adBody as HTMLElement).getByTestId("image-gen-ft-adetailer-steps") as HTMLInputElement;
-    expect(steps.getAttribute("placeholder")).toBe("31");
+    // CF13 canon (IMAGEGEN_ADETAILER_CELLS_REPORT): NumberInput cell — the
+    // unset state shows the effective base (31) as the VALUE; the testid sits
+    // on the wrapper div.
+    const stepsInput = within(adBody as HTMLElement).getByTestId("image-gen-ft-adetailer-steps").querySelector("input") as HTMLInputElement;
+    expect(stepsInput.value).toBe("31");
     await act(async () => {
       fireEvent.change(range, { target: { value: "17" } });
     });
     await waitFor(() => expect(upsertCalls.length).toBe(3));
     expect(upsertCalls[2].settings).toEqual({ steps: 31, adetailer: true, adetailerModel: "face_yolov8s.pt", adetailerSteps: 17 });
+    // Commit is on blur; blur with an empty box reverts and writes nothing
+    // (clear-to-undefined died with the TextInput cell — the same CF13
+    // ruling that killed it for the sampler cells).
     await act(async () => {
-      fireEvent.change(steps, { target: { value: "" } });
+      fireEvent.change(stepsInput, { target: { value: "19" } });
+      fireEvent.blur(stepsInput);
     });
     await waitFor(() => expect(upsertCalls.length).toBe(4));
-    expect(upsertCalls[3].settings).toEqual({ steps: 31, adetailer: true, adetailerModel: "face_yolov8s.pt", adetailerSteps: undefined });
+    expect(upsertCalls[3].settings).toEqual({ steps: 31, adetailer: true, adetailerModel: "face_yolov8s.pt", adetailerSteps: 19 });
+    const writesAfter = upsertCalls.length;
+    await act(async () => {
+      fireEvent.change(stepsInput, { target: { value: "" } });
+      fireEvent.blur(stepsInput);
+    });
+    expect(upsertCalls.length).toBe(writesAfter);
   });
 });
 

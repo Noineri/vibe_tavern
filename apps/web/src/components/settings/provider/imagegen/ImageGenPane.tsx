@@ -2600,18 +2600,18 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
                           }}
                           className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
                         />
-                        <div className="w-[60px] shrink-0">
-                          <TextInput
+                        <div className="w-[60px] shrink-0" data-testid="image-gen-adetailer-steps">
+                          <NumberInput
                             className="h-[30px] w-[60px]"
-                            value={params.adetailerSteps === undefined ? "" : String(params.adetailerSteps)}
-                            onChange={(e) => {
-                              const patch = adetailerControl.parseSteps(e.target.value);
+                            min={adetailerControl.stepsRange.min}
+                            max={adetailerControl.stepsRange.max}
+                            step={adetailerControl.stepsRange.step}
+                            value={params.adetailerSteps ?? adetailerBaseSteps}
+                            onChange={(n) => {
+                              const patch = adetailerControl.parseSteps(String(n));
                               if (patch !== null) setParam(patch);
                             }}
-                            placeholder={adetailerControl.stepsPlaceholder}
-                            inputMode="numeric"
-                            aria-label={t(adetailerControl.stepsLabelKey)}
-                            data-testid="image-gen-adetailer-steps"
+                            hideControls
                           />
                         </div>
                       </div>

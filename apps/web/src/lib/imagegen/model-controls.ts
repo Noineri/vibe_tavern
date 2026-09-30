@@ -181,8 +181,9 @@ export type AdetailerControlSpec =
       readonly modelLabelKey: "image_gen_adetailer_model";
       readonly stepsLabelKey: "image_gen_adetailer_steps_label";
       readonly stepsRange: ImageGenParamRange;
-      readonly stepsPlaceholder: string;
-      /** Empty clears the stored override; an integer commits it. */
+      /** Empty clears the stored override; an integer commits it. (The
+       * NumberInput cells never send "" — blur-empty reverts without a
+       * write — but the parse gate keeps the full contract.) */
       parseSteps(raw: string): { adetailerSteps: number | undefined } | null;
     }
   | {
@@ -217,7 +218,6 @@ export function buildAdetailerControl(input: {
       modelLabelKey: "image_gen_adetailer_model",
       stepsLabelKey: "image_gen_adetailer_steps_label",
       stepsRange: IMAGE_GEN_PARAM_RANGES.steps,
-      stepsPlaceholder: String(input.baseSteps),
       parseSteps,
     };
   }
@@ -238,7 +238,6 @@ export function buildAdetailerControl(input: {
     modelLabelKey: "image_gen_adetailer_model",
     stepsLabelKey: "image_gen_adetailer_steps_label",
     stepsRange: IMAGE_GEN_PARAM_RANGES.steps,
-    stepsPlaceholder: String(input.baseSteps),
     parseSteps,
   };
 }

@@ -271,7 +271,6 @@ describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-stat
       modelLabelKey: "image_gen_adetailer_model",
       stepsLabelKey: "image_gen_adetailer_steps_label",
       stepsRange: { min: 1, max: 150, step: 1 },
-      stepsPlaceholder: "37",
       parseSteps: expect.any(Function),
     });
     if (ready?.state === "ready") {
@@ -302,7 +301,6 @@ describe("model-controls — buildAdetailerControl (T7: the ONE dialect tri-stat
       modelLabelKey: "image_gen_adetailer_model",
       stepsLabelKey: "image_gen_adetailer_steps_label",
       stepsRange: { min: 1, max: 150, step: 1 },
-      stepsPlaceholder: "42",
       parseSteps: expect.any(Function),
     });
   });

@@ -1353,19 +1353,19 @@ function ImageGenModelSettingsAccordion({
                           disabled={disabled}
                           className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
                         />
-                        <div className="w-[60px] shrink-0">
-                          <TextInput
+                        <div className="w-[60px] shrink-0" data-testid="image-gen-ft-adetailer-steps">
+                          <NumberInput
                             className="h-[30px] w-[60px]"
-                            value={adetailerSteps === undefined ? "" : String(adetailerSteps)}
-                            onChange={(e) => {
-                              const patch = adetailerControl.parseSteps(e.target.value);
+                            min={adetailerControl.stepsRange.min}
+                            max={adetailerControl.stepsRange.max}
+                            step={adetailerControl.stepsRange.step}
+                            value={adetailerSteps ?? baseSteps}
+                            onChange={(n) => {
+                              const patch = adetailerControl.parseSteps(String(n));
                               if (patch !== null) commit(patch);
                             }}
-                            placeholder={adetailerControl.stepsPlaceholder}
-                            inputMode="numeric"
                             disabled={disabled}
-                            aria-label={t(adetailerControl.stepsLabelKey)}
-                            data-testid="image-gen-ft-adetailer-steps"
+                            hideControls
                           />
                         </div>
                       </div>
