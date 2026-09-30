@@ -91,6 +91,54 @@ describe("lorebook-import-service — enabled threading (L1a)", () => {
     expect(created.enabled).toBe(true);
   });
 
+  it("passes every parsed ST book setting to createLorebook", async () => {
+    // ST applies settings.json globals through its world-info setters (world-info.js:824-836).
+    const { stores, createLorebook } = makeStores();
+
+    await importLorebook(stores, null, {
+      format: "st",
+      data: {
+        ...ST_BOOK,
+        scan_depth: 99,
+        token_budget: 777,
+        recursive_scanning: false,
+        extensions: { token_budget_pct: 1, token_budget_cap: 2, max_recursion_steps: 3 },
+      },
+      mode: "new",
+      globalScanDepth: 7,
+      globalTokenBudgetPercent: 42,
+      globalTokenBudgetCap: 420,
+      globalRecursiveScanning: true,
+      globalMaxRecursionSteps: 7,
+      globalIncludeNames: false,
+      globalMinActivations: 3,
+      globalMinActivationsDepthMax: 33,
+      globalOverflowAlert: true,
+      globalCharacterStrategy: 2,
+      globalUseGroupScoring: true,
+      globalCaseSensitive: true,
+      globalMatchWholeWords: true,
+    });
+
+    const created = createLorebook.mock.calls[0][0] as Record<string, unknown>;
+    expect(created).toMatchObject({
+      scanDepth: 7,
+      tokenBudget: 777,
+      tokenBudgetPercent: 42,
+      tokenBudgetCap: 420,
+      recursiveScanning: true,
+      maxRecursionSteps: 7,
+      includeNames: false,
+      minActivations: 3,
+      minActivationsDepthMax: 33,
+      overflowAlert: true,
+      characterStrategy: 2,
+      useGroupScoring: true,
+      caseSensitive: true,
+      matchWholeWords: true,
+    });
+  });
+
   it("resolves native ST characterFilter avatar filenames against the character inventory (world-info.js:2125-2131)", async () => {
     const { stores, bulkCreateEntries, listAll } = makeStores();
     const result = await importLorebook(stores, null, {

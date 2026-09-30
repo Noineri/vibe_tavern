@@ -68,13 +68,55 @@ export interface StLorebookNormalized {
   description: string;
   scanDepth: number;
   tokenBudget: number;
-  tokenBudgetPercent: number | null;
+  tokenBudgetPercent: number;
   tokenBudgetCap: number;
   recursiveScanning: boolean;
-  maxRecursionSteps?: number;
-  includeNames?: boolean;
+  useGroupScoring: boolean;
+  caseSensitive: boolean;
+  matchWholeWords: boolean;
+  maxRecursionSteps: number;
+  includeNames: boolean;
+  minActivations: number;
+  minActivationsDepthMax: number;
+  overflowAlert: boolean;
+  characterStrategy: number;
   extensions: Record<string, unknown>;
 }
+
+/** ST's settings.json world-info globals, cached per imported VT book. */
+export interface StWorldInfoGlobalOptions {
+  globalScanDepth?: number;
+  globalTokenBudgetPercent?: number;
+  globalTokenBudgetCap?: number;
+  globalRecursiveScanning?: boolean;
+  globalUseGroupScoring?: boolean;
+  globalCaseSensitive?: boolean;
+  globalMatchWholeWords?: boolean;
+  globalMaxRecursionSteps?: number;
+  globalIncludeNames?: boolean;
+  globalMinActivations?: number;
+  globalMinActivationsDepthMax?: number;
+  globalOverflowAlert?: boolean;
+  globalCharacterStrategy?: number;
+}
+
+// ST's world-info globals are absent from standalone world files.
+// These exact defaults are declared at world-info.js:69-82.
+const ST_WORLD_INFO_DEFAULTS = {
+  scanDepth: 2,
+  tokenBudgetPercent: 25,
+  tokenBudgetCap: 0,
+  recursiveScanning: false,
+  useGroupScoring: false,
+  caseSensitive: false,
+  matchWholeWords: false,
+  maxRecursionSteps: 0,
+  includeNames: true,
+  minActivations: 0,
+  minActivationsDepthMax: 0,
+  overflowAlert: false,
+  characterStrategy: 1,
+} as const;
 
 export interface ImportedLorebookBundle {
   format: "st_lorebook_json";
@@ -84,7 +126,7 @@ export interface ImportedLorebookBundle {
   warnings: string[];
 }
 
-export interface ImportLorebookOptions {
+export interface ImportLorebookOptions extends StWorldInfoGlobalOptions {
   now?: string;
   /** Resolves an ST character-filter avatar filename to a local character. */
   characterFilterAvatarResolver?: (avatarFilename: string) => { id: string; name: string } | null;
@@ -92,17 +134,6 @@ export interface ImportLorebookOptions {
   scopeType?: LoreScopeType;
   defaultDepth?: number;
   fallbackName?: string;
-  /**
-   * ST's group-scoring switch (world_info_use_group_scoring) is GLOBAL client
-   * state, not part of any lorebook file — so it cannot ride the book payload.
-   * When the caller knows it (the ST directory import reads settings.json),
-   * it maps onto the imported book's useGroupScoring (owner decision,
-   * 2026-08-31). Absent → false. See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
-   */
-  globalUseGroupScoring?: boolean;
-  /** ST's world_info_case_sensitive / world_info_match_whole_words — same story as globalUseGroupScoring: global client state read from settings.json by the ST directory importer, mapped onto the imported book's caseSensitive / matchWholeWords defaults. Absent → false. */
-  globalCaseSensitive?: boolean;
-  globalMatchWholeWords?: boolean;
 }
 
 function mapSelectiveLogic(value: unknown): LoreLogic {
@@ -232,29 +263,36 @@ export function importStLorebookJson(
   const importedAt = normalizeTimestamp(root.create_date, fallbackNow);
   const name = asString(root.name).trim() || options.fallbackName || "Imported Lorebook";
 
+  const extensions = isRecord(root.extensions) ? root.extensions : {};
+  const extensionPercent = extensions.token_budget_pct;
+  const extensionCap = extensions.token_budget_cap;
+
   const normalized: StLorebookNormalized = {
     name,
     description: asString(root.description),
-    scanDepth: asNumber(root.scan_depth, 50),
+    // settings.json is authoritative for a directory import; file values keep
+    // supporting legacy/VT round trips when a global setting is unavailable.
+    scanDepth: options.globalScanDepth ?? asNumber(root.scan_depth, ST_WORLD_INFO_DEFAULTS.scanDepth),
     tokenBudget: asNumber(root.token_budget, 1000),
-    // ST stores budget as either a percentage (extensions.token_budget_pct)
-    // or a fixed cap (token_budget). Preserve the percentage when present.
-    tokenBudgetPercent: (() => {
-      const pct = (root.extensions as Record<string, unknown>)?.token_budget_pct;
-      return typeof pct === 'number' && pct >= 0 && pct <= 100 ? pct : null;
-    })(),
-    // VT round-trip twin of token_budget_pct: the percent-mode absolute cap
-    // (ST world_info_budget_cap is a client global, so the book-scoped value
-    // rides in extensions; ST itself ignores unknown extension keys).
-    tokenBudgetCap: (() => {
-      const cap = (root.extensions as Record<string, unknown>)?.token_budget_cap;
-      return typeof cap === 'number' && cap >= 0 ? Math.floor(cap) : 0;
-    })(),
-    recursiveScanning: asBoolean(root.recursive_scanning, false),
-    // ST global default is 0 = unlimited (world-info.js:82); a file-level
-    // extension override wins when present (N10).
-    maxRecursionSteps: asNumber((root.extensions as Record<string, unknown>)?.max_recursion_steps, 0),
-    extensions: isRecord(root.extensions) ? root.extensions : {},
+    tokenBudgetPercent: options.globalTokenBudgetPercent
+      ?? (typeof extensionPercent === "number" && extensionPercent >= 0 && extensionPercent <= 100
+        ? extensionPercent
+        : ST_WORLD_INFO_DEFAULTS.tokenBudgetPercent),
+    tokenBudgetCap: options.globalTokenBudgetCap
+      ?? (typeof extensionCap === "number" && extensionCap >= 0 ? Math.floor(extensionCap) : ST_WORLD_INFO_DEFAULTS.tokenBudgetCap),
+    recursiveScanning: options.globalRecursiveScanning
+      ?? asBoolean(root.recursive_scanning, ST_WORLD_INFO_DEFAULTS.recursiveScanning),
+    useGroupScoring: options.globalUseGroupScoring ?? ST_WORLD_INFO_DEFAULTS.useGroupScoring,
+    caseSensitive: options.globalCaseSensitive ?? ST_WORLD_INFO_DEFAULTS.caseSensitive,
+    matchWholeWords: options.globalMatchWholeWords ?? ST_WORLD_INFO_DEFAULTS.matchWholeWords,
+    maxRecursionSteps: options.globalMaxRecursionSteps
+      ?? asNumber(extensions.max_recursion_steps, ST_WORLD_INFO_DEFAULTS.maxRecursionSteps),
+    includeNames: options.globalIncludeNames ?? ST_WORLD_INFO_DEFAULTS.includeNames,
+    minActivations: options.globalMinActivations ?? ST_WORLD_INFO_DEFAULTS.minActivations,
+    minActivationsDepthMax: options.globalMinActivationsDepthMax ?? ST_WORLD_INFO_DEFAULTS.minActivationsDepthMax,
+    overflowAlert: options.globalOverflowAlert ?? ST_WORLD_INFO_DEFAULTS.overflowAlert,
+    characterStrategy: options.globalCharacterStrategy ?? ST_WORLD_INFO_DEFAULTS.characterStrategy,
+    extensions,
   };
 
   const lorebookId: LorebookId = brandId<LorebookId>(makeDeterministicId(
@@ -272,16 +310,15 @@ export function importStLorebookJson(
     tokenBudgetPercent: normalized.tokenBudgetPercent,
     tokenBudgetCap: normalized.tokenBudgetCap,
     recursiveScanning: normalized.recursiveScanning,
-    // Maps the ST global switch when the caller knows it; default false.
-    useGroupScoring: options.globalUseGroupScoring ?? false,
-    caseSensitive: options.globalCaseSensitive ?? false,
-    matchWholeWords: options.globalMatchWholeWords ?? false,
-    maxRecursionSteps: normalized.maxRecursionSteps ?? 0,
-    includeNames: false,
-    minActivations: 0,
-    minActivationsDepthMax: 0,
-    overflowAlert: false,
-    characterStrategy: 0,
+    useGroupScoring: normalized.useGroupScoring,
+    caseSensitive: normalized.caseSensitive,
+    matchWholeWords: normalized.matchWholeWords,
+    maxRecursionSteps: normalized.maxRecursionSteps,
+    includeNames: normalized.includeNames,
+    minActivations: normalized.minActivations,
+    minActivationsDepthMax: normalized.minActivationsDepthMax,
+    overflowAlert: normalized.overflowAlert,
+    characterStrategy: normalized.characterStrategy,
     sortOrder: 0,
     enabled: true,
     characterId: null,

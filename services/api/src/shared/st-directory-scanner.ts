@@ -715,32 +715,53 @@ export async function importSillyTavernDirectory(
 	const worldsDir = join(resolved, "worlds");
 	const worldsFiles = await scanOptionalGlob(worldsDir, "*.[jJ][sS][oO][nN]");
 
-	// ST's group-scoring switch is global client state (settings.json
-	// world_info_use_group_scoring), not part of any world file — map it onto
-	// every imported book (owner decision, 2026-08-31). Absent/unreadable
-	// settings → undefined → books default false.
+	// ST keeps world-info behavior in settings.json rather than the world
+	// files. Cache every setting per imported VT book (resweep P2); absent or
+	// unreadable settings remain undefined so the ST importer applies defaults.
 	// L1: the same settings.json carries the only true ST "works everywhere"
 	// state — world_info_settings.globalSelect (worlds the user explicitly
 	// selected as global). A worlds/ file selected there imports global+enabled;
 	// a file referenced by an imported card/ chat binds to that owner; a file
 	// referenced nowhere lands global+DISABLED (inert at the source stays inert).
+	let globalScanDepth: number | undefined;
+	let globalTokenBudgetPercent: number | undefined;
+	let globalTokenBudgetCap: number | undefined;
+	let globalRecursiveScanning: boolean | undefined;
 	let globalUseGroupScoring: boolean | undefined;
 	let globalCaseSensitive: boolean | undefined;
 	let globalMatchWholeWords: boolean | undefined;
+	let globalMaxRecursionSteps: number | undefined;
+	let globalIncludeNames: boolean | undefined;
+	let globalMinActivations: number | undefined;
+	let globalMinActivationsDepthMax: number | undefined;
+	let globalOverflowAlert: boolean | undefined;
+	let globalCharacterStrategy: number | undefined;
 	const globalSelectNames = new Set<string>();
 	try {
 		const settingsRaw: unknown = JSON.parse(await Bun.file(join(resolved, "settings.json")).text());
 		if (typeof settingsRaw === "object" && settingsRaw !== null) {
 			const record = settingsRaw as Record<string, unknown>;
-			const flag = record.world_info_use_group_scoring;
-			if (typeof flag === "boolean") globalUseGroupScoring = flag;
-			// D2 (ST parity): world_info_case_sensitive / world_info_match_whole_words
-			// are the globals that per-entry null inherits; same flat keys, same
-			// mapping onto the imported book's defaults.
-			const caseFlag = record.world_info_case_sensitive;
-			if (typeof caseFlag === "boolean") globalCaseSensitive = caseFlag;
-			const wholeFlag = record.world_info_match_whole_words;
-			if (typeof wholeFlag === "boolean") globalMatchWholeWords = wholeFlag;
+			const settingNumber = (field: string): number | undefined => {
+				const value = record[field];
+				return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+			};
+			const settingBoolean = (field: string): boolean | undefined => {
+				const value = record[field];
+				return typeof value === "boolean" ? value : undefined;
+			};
+			globalScanDepth = settingNumber("world_info_depth");
+			globalTokenBudgetPercent = settingNumber("world_info_budget");
+			globalTokenBudgetCap = settingNumber("world_info_budget_cap");
+			globalRecursiveScanning = settingBoolean("world_info_recursive");
+			globalUseGroupScoring = settingBoolean("world_info_use_group_scoring");
+			globalCaseSensitive = settingBoolean("world_info_case_sensitive");
+			globalMatchWholeWords = settingBoolean("world_info_match_whole_words");
+			globalMaxRecursionSteps = settingNumber("world_info_max_recursion_steps");
+			globalIncludeNames = settingBoolean("world_info_include_names");
+			globalMinActivations = settingNumber("world_info_min_activations");
+			globalMinActivationsDepthMax = settingNumber("world_info_min_activations_depth_max");
+			globalOverflowAlert = settingBoolean("world_info_overflow_alert");
+			globalCharacterStrategy = settingNumber("world_info_character_strategy");
 			const worldInfoSettings = record.world_info_settings;
 			if (typeof worldInfoSettings === "object" && worldInfoSettings !== null) {
 				const select = (worldInfoSettings as Record<string, unknown>).globalSelect;
@@ -807,9 +828,19 @@ export async function importSillyTavernDirectory(
 				characterId,
 				chatId,
 				fallbackName,
+				globalScanDepth,
+				globalTokenBudgetPercent,
+				globalTokenBudgetCap,
+				globalRecursiveScanning,
 				globalUseGroupScoring,
 				globalCaseSensitive,
 				globalMatchWholeWords,
+				globalMaxRecursionSteps,
+				globalIncludeNames,
+				globalMinActivations,
+				globalMinActivationsDepthMax,
+				globalOverflowAlert,
+				globalCharacterStrategy,
 				enabled,
 			});
 			result.lorebooks++;

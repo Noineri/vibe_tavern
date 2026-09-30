@@ -256,6 +256,60 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 	});
 });
 
+describe("ST directory scanner — imported world-info settings", () => {
+	let env: Env;
+
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	it("applies every settings.json world-info global to every imported world", async () => {
+		// ST loads these flat settings.json keys into its world-info globals (world-info.js:918-941).
+		env = await createRuntime();
+		const stDir = await buildStDir(join(env.tmpDir, "st-world-info-settings"));
+		await Bun.write(join(stDir, "worlds", "SecondWorld.json"), ownershipWorld("Second World"));
+		await Bun.write(join(stDir, "settings.json"), JSON.stringify({
+			world_info_depth: 7,
+			world_info_budget: 42,
+			world_info_budget_cap: 420,
+			world_info_recursive: true,
+			world_info_max_recursion_steps: 7,
+			world_info_include_names: false,
+			world_info_case_sensitive: true,
+			world_info_match_whole_words: true,
+			world_info_min_activations: 3,
+			world_info_min_activations_depth_max: 33,
+			world_info_overflow_alert: true,
+			world_info_character_strategy: 2,
+			world_info_use_group_scoring: true,
+		}));
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+		expect(result.errors).toEqual([]);
+		expect(result.lorebooks).toBe(2);
+
+		const imported = await env.stores.lorebooks.listAllLorebooks();
+		const books = imported.filter((book) => ["Test World", "Second World"].includes(book.name));
+		expect(books).toHaveLength(2);
+		for (const book of books) {
+			expect(book).toMatchObject({
+				scanDepth: 7,
+				tokenBudgetPercent: 42,
+				tokenBudgetCap: 420,
+				recursiveScanning: true,
+				maxRecursionSteps: 7,
+				includeNames: false,
+				caseSensitive: true,
+				matchWholeWords: true,
+				minActivations: 3,
+				minActivationsDepthMax: 33,
+				overflowAlert: true,
+				characterStrategy: 2,
+				useGroupScoring: true,
+			});
+		}
+	});
+});
+
 describe("ST directory scanner — Bun.Glob rewrite characterization", () => {
 	let globTmp = "";
 

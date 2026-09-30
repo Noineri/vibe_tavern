@@ -425,6 +425,23 @@ describe("importStLorebookJson", () => {
     expect((result.entries[0] as Record<string, unknown>).delayWindow).toBeUndefined();
   });
 
+  it("uses ST global defaults for omitted single-file book settings", () => {
+    // ST initializes these client globals at world-info.js:69-82; a lone world file has no settings.json.
+    const result = importStLorebookJson({ name: "ST defaults", entries: [] });
+    expect(result.lorebook.scanDepth).toBe(2);
+    expect(result.lorebook.tokenBudgetPercent).toBe(25);
+    expect(result.lorebook.tokenBudgetCap).toBe(0);
+    expect(result.lorebook.recursiveScanning).toBe(false);
+    expect(result.lorebook.maxRecursionSteps).toBe(0);
+    expect(result.lorebook.includeNames).toBe(true);
+    expect(result.lorebook.caseSensitive).toBe(false);
+    expect(result.lorebook.matchWholeWords).toBe(false);
+    expect(result.lorebook.minActivations).toBe(0);
+    expect(result.lorebook.minActivationsDepthMax).toBe(0);
+    expect(result.lorebook.overflowAlert).toBe(false);
+    expect(result.lorebook.characterStrategy).toBe(1);
+  });
+
   it("reads extensions.token_budget_cap into the book's percent-mode absolute cap (N5); absent → 0", () => {
     // ST's budget cap is a client global — the book-scoped value rides in
     // extensions (same channel as token_budget_pct); ST itself ignores it.

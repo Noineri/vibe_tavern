@@ -1,5 +1,6 @@
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { LoreScopeType } from "@vibe-tavern/domain";
+import type { StWorldInfoGlobalOptions } from "@vibe-tavern/import-export";
 
 export interface LorebookImportResult {
 	lorebookId: string;
@@ -47,12 +48,9 @@ function buildCharacterFilterAvatarResolver(
 async function parseLorebook(
 	format: string,
 	data: unknown,
-	options: {
+	options: StWorldInfoGlobalOptions & {
 		scopeType?: LoreScopeType;
 		fallbackName?: string;
-		globalUseGroupScoring?: boolean;
-		globalCaseSensitive?: boolean;
-		globalMatchWholeWords?: boolean;
 		characterFilterAvatarResolver?: CharacterFilterAvatarResolver;
 	},
 ) {
@@ -69,9 +67,7 @@ async function parseLorebook(
 	return importStLorebookJson(data as Record<string, unknown>, {
 		scopeType: options.scopeType,
 		fallbackName: options.fallbackName,
-		globalUseGroupScoring: options.globalUseGroupScoring,
-		globalCaseSensitive: options.globalCaseSensitive,
-		globalMatchWholeWords: options.globalMatchWholeWords,
+		...options,
 		characterFilterAvatarResolver: options.characterFilterAvatarResolver,
 	});
 }
@@ -79,7 +75,7 @@ async function parseLorebook(
 export async function importLorebook(
 	stores: StoreContainer,
 	lorebookId: string | null,
-	body: {
+	body: StWorldInfoGlobalOptions & {
 		format: string;
 		data: unknown;
 		mode: string;
@@ -88,9 +84,6 @@ export async function importLorebook(
 		personaId?: string;
 		chatId?: string;
 		fallbackName?: string;
-		globalUseGroupScoring?: boolean;
-		globalCaseSensitive?: boolean;
-		globalMatchWholeWords?: boolean;
 		enabled?: boolean;
 	},
 ): Promise<LorebookImportResult> {
@@ -100,11 +93,9 @@ export async function importLorebook(
 	// ghosts in the pure importer and therefore match nobody by accident.
 	const characterFilterAvatarResolver = buildCharacterFilterAvatarResolver(await stores.characters.listAll());
 	const parsed = await parseLorebook(body.format, body.data, {
+		...body,
 		scopeType: (body.scopeType as LoreScopeType | undefined) ?? "entity",
 		fallbackName: body.fallbackName,
-		globalUseGroupScoring: body.globalUseGroupScoring,
-		globalCaseSensitive: body.globalCaseSensitive,
-		globalMatchWholeWords: body.globalMatchWholeWords,
 		characterFilterAvatarResolver,
 	});
 
@@ -117,11 +108,19 @@ export async function importLorebook(
 			scopeType: (body.scopeType as LoreScopeType) ?? "entity",
 			scanDepth: parsed.lorebook.scanDepth,
 			tokenBudget: parsed.lorebook.tokenBudget,
+			tokenBudgetPercent: parsed.lorebook.tokenBudgetPercent,
 			tokenBudgetCap: parsed.lorebook.tokenBudgetCap,
 			recursiveScanning: parsed.lorebook.recursiveScanning,
 			useGroupScoring: parsed.lorebook.useGroupScoring,
 			caseSensitive: parsed.lorebook.caseSensitive,
 			matchWholeWords: parsed.lorebook.matchWholeWords,
+			maxRecursionSteps: parsed.lorebook.maxRecursionSteps,
+			includeNames: parsed.lorebook.includeNames,
+			minActivations: parsed.lorebook.minActivations,
+			minActivationsDepthMax: parsed.lorebook.minActivationsDepthMax,
+			overflowAlert: parsed.lorebook.overflowAlert,
+			characterStrategy: parsed.lorebook.characterStrategy,
+			sortOrder: parsed.lorebook.sortOrder,
 			characterId: body.characterId ?? null,
 			personaId: body.personaId ?? null,
 			chatId: body.chatId ?? null,
