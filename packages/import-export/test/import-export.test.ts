@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { importCharacterCardV3Json, flattenV2CompatFields, V2_TOPLEVEL_FIELDS, vtfContentToImportedBundle, type VtfMonolithImportInput } from "../src/cards/chara-card-v3.js";
 import { parseSillyTavernChat, serializeSillyTavernChat } from "../src/chats/st-chat.js";
-import { importStLorebookJson } from "../src/lorebooks/st-lorebook.js";
+import { importCharacterBookJson, importStLorebookJson } from "../src/lorebooks/st-lorebook.js";
 
 // ─── Character card V3 import ─────────────────────────────────────────────
 
@@ -159,6 +159,74 @@ describe("importCharacterCardV3Json", () => {
   it("sets character_book to null when absent", () => {
     const result = importCharacterCardV3Json(minimalCard);
     expect(result.character.characterBook).toBeNull();
+  });
+
+  it("converts an embedded character book through ST's card field map", () => {
+    // ST convertCharacterBook maps keys/secondary_keys/insertion_order and
+    // extensions before World Info consumes the result (world-info.js:5498-5547).
+    const result = importCharacterBookJson({
+      name: "Card Lore",
+      description: "Card description",
+      scan_depth: 9,
+      token_budget: 555,
+      recursive_scanning: true,
+      entries: [{
+        id: 7,
+        keys: ["primary"],
+        secondary_keys: ["secondary"],
+        comment: "Distinctive entry",
+        content: "Embedded content",
+        constant: true,
+        selective: true,
+        insertion_order: 321,
+        enabled: true,
+        extensions: {
+          position: 4,
+          depth: 11,
+          exclude_recursion: true,
+          prevent_recursion: true,
+          delay_until_recursion: 2,
+          case_sensitive: true,
+          match_whole_words: false,
+          group_weight: 77,
+        },
+      }, {
+        keys: ["defaulted"],
+        secondary_keys: ["dropped-by-card-default"],
+        content: "Defaulted card entry",
+      }],
+    });
+
+    expect(result.lorebook).toMatchObject({
+      name: "Card Lore",
+      description: "Card description",
+      scanDepth: 9,
+      tokenBudget: 555,
+      recursiveScanning: true,
+    });
+    expect(result.entries[0]).toMatchObject({
+      title: "Distinctive entry",
+      keys: ["primary"],
+      secondaryKeys: ["secondary"],
+      priority: 321,
+      position: "at_depth",
+      depth: 11,
+      excludeRecursion: true,
+      preventRecursion: true,
+      delayUntilRecursion: true,
+      recursionLevel: 2,
+      caseSensitive: true,
+      matchWholeWords: false,
+      groupWeight: 77,
+      enabled: true,
+    });
+    expect(result.entries[1]).toMatchObject({
+      priority: 100,
+      position: "after_char",
+      depth: 4,
+      enabled: false,
+      secondaryKeys: [],
+    });
   });
 
   it("uses provided now timestamp for createdAt", () => {

@@ -254,6 +254,78 @@ function mapCharacterFilter(
   };
 }
 
+/**
+ * Convert the Character Card V3 `character_book` shape into the World Info
+ * shape consumed by {@link importStLorebookJson}. This mirrors SillyTavern's
+ * `convertCharacterBook` (world-info.js:5498-5547) before reusing the shared
+ * ST world-file field mapper below.
+ */
+export function convertCharacterBook(input: Record<string, unknown>): Record<string, unknown> {
+  const entries = Array.isArray(input.entries) ? input.entries.filter(isRecord) : [];
+  return {
+    name: input.name,
+    description: input.description,
+    scan_depth: input.scan_depth,
+    token_budget: input.token_budget,
+    recursive_scanning: input.recursive_scanning,
+    entries: entries.map((entry, index) => {
+      const extensions = isRecord(entry.extensions) ? entry.extensions : {};
+      return {
+        uid: entry.id === undefined ? index : entry.id,
+        key: entry.keys,
+        keysecondary: entry.secondary_keys ?? [],
+        comment: entry.comment ?? "",
+        content: entry.content,
+        constant: entry.constant || false,
+        selective: entry.selective || false,
+        order: entry.insertion_order,
+        position: extensions.position ?? (entry.position === "before_char" ? 0 : 1),
+        excludeRecursion: extensions.exclude_recursion ?? false,
+        preventRecursion: extensions.prevent_recursion ?? false,
+        delayUntilRecursion: extensions.delay_until_recursion ?? false,
+        disable: !entry.enabled,
+        addMemo: Boolean(entry.comment),
+        displayIndex: extensions.display_index ?? index,
+        probability: extensions.probability ?? 100,
+        useProbability: extensions.useProbability ?? true,
+        depth: extensions.depth ?? 4,
+        selectiveLogic: extensions.selectiveLogic ?? 0,
+        outletName: extensions.outlet_name ?? "",
+        group: extensions.group ?? "",
+        groupOverride: extensions.group_override ?? false,
+        groupWeight: extensions.group_weight ?? 100,
+        scanDepth: extensions.scan_depth ?? null,
+        caseSensitive: extensions.case_sensitive ?? null,
+        matchWholeWords: extensions.match_whole_words ?? null,
+        useGroupScoring: extensions.use_group_scoring ?? null,
+        automationId: extensions.automation_id ?? "",
+        role: extensions.role ?? 0,
+        vectorized: extensions.vectorized ?? false,
+        sticky: extensions.sticky ?? null,
+        cooldown: extensions.cooldown ?? null,
+        delay: extensions.delay ?? null,
+        matchPersonaDescription: extensions.match_persona_description ?? false,
+        matchCharacterDescription: extensions.match_character_description ?? false,
+        matchCharacterPersonality: extensions.match_character_personality ?? false,
+        matchCharacterDepthPrompt: extensions.match_character_depth_prompt ?? false,
+        matchScenario: extensions.match_scenario ?? false,
+        matchCreatorNotes: extensions.match_creator_notes ?? false,
+        extensions,
+        triggers: extensions.triggers ?? [],
+        ignoreBudget: extensions.ignore_budget ?? false,
+      };
+    }),
+  };
+}
+
+/** Import an embedded Character Card V3 lorebook using ST's card converter. */
+export function importCharacterBookJson(
+  input: unknown,
+  options: ImportLorebookOptions = {},
+): ImportedLorebookBundle {
+  return importStLorebookJson(convertCharacterBook(isRecord(input) ? input : {}), options);
+}
+
 export function importStLorebookJson(
   input: string | Record<string, unknown>,
   options: ImportLorebookOptions = {},

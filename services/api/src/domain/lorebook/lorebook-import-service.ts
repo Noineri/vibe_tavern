@@ -54,10 +54,18 @@ async function parseLorebook(
 		characterFilterAvatarResolver?: CharacterFilterAvatarResolver;
 	},
 ) {
-	const { importStLorebookJson, importJanitorLorebookJson, isJanitorLorebookArray } = await import(
+	const { importCharacterBookJson, importStLorebookJson, importJanitorLorebookJson, isJanitorLorebookArray } = await import(
 		"@vibe-tavern/import-export"
 	);
 
+	if (format === "character_book") {
+		return importCharacterBookJson(data, {
+			scopeType: options.scopeType,
+			fallbackName: options.fallbackName,
+			...options,
+			characterFilterAvatarResolver: options.characterFilterAvatarResolver,
+		});
+	}
 	if (format === "janitor" || isJanitorLorebookArray(data)) {
 		return importJanitorLorebookJson(Array.isArray(data) ? data : (data as unknown[]), {
 			scopeType: options.scopeType,

@@ -10,6 +10,7 @@ export async function importJson(input: {
   monolithText?: string;
   chatId?: ChatId;
   skipExisting?: boolean;
+  importEmbeddedBook?: boolean;
   lean?: boolean;
 }): Promise<ImportJsonResponse> {
   const response = await client.api.import.json.$post({ json: input });
@@ -31,7 +32,7 @@ export interface BatchImportItemResult {
  * ImportModals Phase 1.
  */
 export async function importJsonBatch(input: {
-  items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: ChatId; skipExisting?: boolean }>;
+  items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: ChatId; skipExisting?: boolean; importEmbeddedBook?: boolean }>;
   lean?: boolean;
 }): Promise<{ results: BatchImportItemResult[] }> {
   const response = await client.api.import.batch.$post({ json: input });

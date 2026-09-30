@@ -8,7 +8,7 @@ import { downloadTextFile } from "../lib/download.js";
 import { uploadCharacterAvatar } from "../api/character-api.js";
 import type { AppSnapshot, AppCharacter, AppPersona, AppMessage, ChatListItem } from "../api/types.js";
 import type { BuildCharacterDraft } from "../components/build/BuildMode.js";
-import { useCharacterImport } from "./use-character-import.js";
+import { useCharacterImport, type CharacterImportOptions } from "./use-character-import.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useNavigationStore } from "../stores/navigation-store.js";
 import { useCharacterStore } from "../stores/character-store.js";
@@ -56,7 +56,7 @@ export interface CharacterControllerActions {
   handleDeletePersona: (personaId: string) => Promise<{ ok: boolean; error?: string }>;
   handleDuplicatePersona: (personaId: string) => Promise<void>;
   handleSetDefaultPersona: (personaId: string) => Promise<void>;
-  handleImportFiles: (files: FileList | File[]) => Promise<void>;
+  handleImportFiles: (files: FileList | File[], options?: CharacterImportOptions) => Promise<void>;
   handleImportDragOver: (event: DragEvent<HTMLLabelElement>) => void;
   handleImportDragLeave: () => void;
   handleImportDrop: (event: DragEvent<HTMLLabelElement>) => void;
@@ -274,12 +274,15 @@ export function useCharacterController(): CharacterControllerActions {
     }
   }
 
-  async function handleImportFiles(files: FileList | File[]): Promise<void> {
+  async function handleImportFiles(files: FileList | File[], options?: CharacterImportOptions): Promise<void> {
     const firstFile = Array.from(files)[0];
     if (!firstFile) return;
 
     try {
-      const imported = await importFile(firstFile, { chatId: getActiveChatId() ?? undefined });
+      const imported = await importFile(firstFile, {
+        chatId: getActiveChatId() ?? undefined,
+        importEmbeddedBook: options?.importEmbeddedBook,
+      });
 
       if (imported.snapshot) writeSnapshot(imported.activeChatId, imported.snapshot);
 

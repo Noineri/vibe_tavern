@@ -540,6 +540,19 @@ export async function importSillyTavernDirectory(
 				}
 			}
 
+			// Directory import has no per-card confirmation step, so embedded card
+			// lore imports automatically and is anchored to this character.
+			if (imported.character.characterBook) {
+				await importLorebook(deps.stores, null, {
+					format: "character_book",
+					data: imported.character.characterBook,
+					mode: "new",
+					scopeType: "entity",
+					characterId,
+					fallbackName: `${imported.character.name}'s Lorebook`,
+				});
+			}
+
 			// Create a chat for the character and seed first message
 			const chat = await deps.chatApp.createChat({
 				characterId: characterId as CharacterId,

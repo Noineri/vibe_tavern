@@ -84,8 +84,8 @@ const mockToastError = mocked(toastError);
 const PNG_FILE = new File(["x"], "card.png", { type: "image/png" });
 const MOCK_AVATAR_URL = "blob:mock-avatar-url";
 
-function previewFor(file: File, name: string, avatarUrl: string | null): CharacterPreview {
-  return { file, name, description: "desc", tags: ["tag1"], avatarUrl };
+function previewFor(file: File, name: string, avatarUrl: string | null, hasEmbeddedLorebook = false): CharacterPreview {
+  return { file, name, description: "desc", tags: ["tag1"], hasEmbeddedLorebook, avatarUrl };
 }
 
 function mockPreview(avatarUrl: string | null): CharacterPreview {
@@ -176,10 +176,27 @@ describe("CharacterImportMobile", () => {
     });
     fireEvent.click(getByText("add_to_library"));
     expect(onImportFiles).toHaveBeenCalledTimes(1);
-    expect(onImportFiles).toHaveBeenCalledWith([PNG_FILE]);
+    expect(onImportFiles).toHaveBeenCalledWith([PNG_FILE], { importEmbeddedBook: false });
     await waitFor(() => {
       expect(document.body.textContent).not.toContain("character_import_title");
     });
+  });
+
+  it("offers the embedded-lore choice and sends the enabled flag with the confirmed card", async () => {
+    // ST asks before importing card lore (world-info.js:5559-5574); the mobile
+    // preview uses the same Toggle control as the desktop preview.
+    mockParse.mockResolvedValue(previewFor(PNG_FILE, "Test Character", MOCK_AVATAR_URL, true));
+    const { getByRole, getByText, input } = renderWithInput();
+    pickFile(input, PNG_FILE);
+    await waitFor(() => {
+      expect(document.body.textContent).toContain("import_embedded_lorebook");
+    });
+    const toggle = getByRole("switch", { name: "import_embedded_lorebook" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(getByText("add_to_library"));
+    expect(onImportFiles).toHaveBeenCalledWith([PNG_FILE], { importEmbeddedBook: true });
   });
 
   it("cancel clears the modal without calling onImportFiles", async () => {
@@ -267,7 +284,7 @@ describe("CharacterImportMobile", () => {
     expect(document.body.textContent).not.toContain("First Character");
     fireEvent.click(getByText("add_to_library"));
     expect(onImportFiles).toHaveBeenCalledTimes(1);
-    expect(onImportFiles).toHaveBeenCalledWith([fileB]);
+    expect(onImportFiles).toHaveBeenCalledWith([fileB], { importEmbeddedBook: false });
   });
 
   it("revokes the avatar URL of a stale parse result immediately and never renders it", async () => {

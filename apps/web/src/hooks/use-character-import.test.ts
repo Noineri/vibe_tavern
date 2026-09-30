@@ -37,7 +37,7 @@ const uploadCharacterAvatar = mock((_id: string, _file: File, _full?: File) =>
 const uploadAsset = mock((_f: File) => Promise.resolve({ assetId: "asset-legacy" }));
 const fetchBootstrapAction = mock((_opts?: { silent?: boolean; skipSnapshotSync?: boolean }) =>
 	Promise.resolve());
-const importCharacterAction = mock((_input: { fileName: string; jsonText: string }) =>
+const importCharacterAction = mock((_input: { fileName: string; jsonText?: string; importEmbeddedBook?: boolean }) =>
 	Promise.resolve({
 		activeChatId: "chat-1",
 		snapshot: { character: { id: "char-imported", name: "Test", avatarExt: null } },
@@ -109,7 +109,7 @@ test("PNG import uploads via the folder route and skips legacy asset+PATCH", asy
 
   let imported: { snapshot?: { character?: { avatarExt?: string | null } } } | undefined;
   await act(async () => {
-    imported = await result.current.importFile(file);
+    imported = await result.current.importFile(file, { importEmbeddedBook: true });
   });
 
   // Folder route fired with the created character id + the PNG as BOTH crop
@@ -126,6 +126,7 @@ test("PNG import uploads via the folder route and skips legacy asset+PATCH", asy
   // Character created + a silent skip-sync bootstrap refresh.
   expect(importCharacterAction).toHaveBeenCalledTimes(1);
   expect(importCharacterAction.mock.calls[0][0].fileName).toBe("card.png");
+  expect(importCharacterAction.mock.calls[0][0].importEmbeddedBook).toBe(true);
   expect(fetchBootstrapAction).toHaveBeenCalledTimes(1);
   expect(fetchBootstrapAction.mock.calls[0][0]).toEqual({ silent: true, skipSnapshotSync: true });
 

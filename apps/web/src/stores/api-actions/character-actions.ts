@@ -84,6 +84,7 @@ export async function importCharacterAction(input: {
   jsonText?: string;
   monolithText?: string;
   chatId?: ChatId;
+  importEmbeddedBook?: boolean;
 }): Promise<ImportJsonResponse> {
   const result = await importJson(input);
   if (result.snapshot) {

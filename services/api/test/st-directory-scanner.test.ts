@@ -163,6 +163,52 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		expect(scan.persona!.count).toBe(1);
 	});
 
+	it("automatically imports an embedded card lorebook bound to its directory-imported character", async () => {
+		// Directory import has no single-card confirmation, so card lore imports
+		// automatically (ST only asks on its interactive card path: world-info.js:5559-5574).
+		const local = await createRuntime();
+		try {
+			const source = await buildStDir(join(local.tmpDir, "st-embedded-card-book"));
+			await Bun.write(
+				join(source, "characters", "TestChar.json"),
+				JSON.stringify({
+					spec: "chara_card_v3",
+					spec_version: "3.0",
+					data: {
+						name: "Test Char",
+						description: "probe",
+						character_book: {
+							name: "Embedded Card Book",
+							entries: [{
+								keys: ["embedded-key"],
+								content: "Embedded directory lore",
+								insertion_order: 321,
+								enabled: true,
+								extensions: { position: 4, depth: 11 },
+							}],
+						},
+					},
+				}),
+			);
+
+			const result = await local.runtime.importSillyTavernDirectory(source);
+			expect(result.errors).toEqual([]);
+			const character = (await local.stores.characters.listAll()).find((item) => item.name === "Test Char");
+			const book = (await local.stores.lorebooks.listAllLorebooks()).find((item) => item.name === "Embedded Card Book");
+			expect(character).toBeTruthy();
+			expect(book).toMatchObject({ scopeType: "entity", characterId: character!.id });
+			const entries = await local.stores.lorebooks.listEntries(book!.id);
+			expect(entries[0]).toMatchObject({
+				keys: ["embedded-key"],
+				priority: 321,
+				position: "at_depth",
+				depth: 11,
+			});
+		} finally {
+			await local.cleanup();
+		}
+	});
+
 	it("import WRITES all three surfaces — lorebook (gap-1), preset (gap-2), persona (gap-3)", async () => {
 		// Spy on assemblePrompt via the lifecycle deps (same technique as
 		// seed-imported-opening-trace.test.ts). The scanner runs through the REAL

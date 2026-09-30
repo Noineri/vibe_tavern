@@ -470,6 +470,7 @@
 	"no_description": "No description",
 	"ready_to_import": "Ready to import: {name}",
 	"add_to_library": "Add to library",
+	"import_embedded_lorebook": "Import embedded lorebook",
 	"importing": "Importing...",
 	"chat_import_title": "Import chat history",
 	"chat_import_sub": "Upload a SillyTavern JSONL history file.",

@@ -1399,6 +1399,7 @@ export default interface Resources {
     "import_detected_format": "SillyTavern Lorebook",
     "import_detected_format_janitor": "Janitor AI Lorebook",
     "import_drop_browse": "Drop JSON file here or browse",
+    "import_embedded_lorebook": "Import embedded lorebook",
     "import_entries_found": "entries found",
     "import_error_no_data": "No character data found in the file.",
     "import_error_read_card": "Could not read character card.",

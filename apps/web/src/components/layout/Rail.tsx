@@ -534,7 +534,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
       <CharacterImportMobile
         ref={characterImportRef}
         isImporting={character.isImporting}
-        onImportFiles={(files) => { void character.handleImportFiles(files); }}
+        onImportFiles={(files, options) => { void character.handleImportFiles(files, options); }}
       />
       <ChatImportMobile
         ref={chatImportRef}

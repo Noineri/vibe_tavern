@@ -14,13 +14,22 @@ import { test, expect, mock, describe } from "bun:test";
 import type { ImportExportModuleDeps } from "../src/runtime/session/session-runtime-import-export.js";
 import { importJsonBatch } from "../src/runtime/session/session-runtime-import-export.js";
 
-function makeCard(name: string) {
+function makeCard(name: string, withEmbeddedBook = false) {
 	return {
 		fileName: `${name}.json`,
 		jsonText: JSON.stringify({
 			spec: "chara_card_v2",
 			spec_version: "2.0",
-			data: { name, description: "stub" },
+			data: {
+				name,
+				description: "stub",
+				...(withEmbeddedBook ? {
+					character_book: {
+						name: `${name} Lore`,
+						entries: [{ keys: ["batch-key"], content: "Batch card lore", enabled: true }],
+					},
+				} : {}),
+			},
 		}),
 	};
 }
@@ -30,6 +39,8 @@ function makeDeps() {
 	const getSnapshot = mock((_chatId: unknown) =>
 		Promise.resolve({ chats: [], messages: [] }) as never,
 	);
+	const createLorebook = mock(async (_data: unknown) => ({ id: "lore_1" }));
+	const bulkCreateEntries = mock(async (_id: unknown, _entries: unknown) => 1);
 	const deps = {
 		stores: {
 			characters: {
@@ -39,7 +50,9 @@ function makeDeps() {
 				),
 				update: mock(() => Promise.resolve() as never),
 				resolveFolderName: mock((id: string) => Promise.resolve(id)),
+				listAll: mock(() => Promise.resolve([])),
 			},
+			lorebooks: { createLorebook, bulkCreateEntries },
 			content: {
 				writeEntity: mock(() => Promise.resolve("stub/path") as never),
 			},
@@ -60,7 +73,7 @@ function makeDeps() {
 		},
 		fileStore: { resolvePath: () => { throw new Error("should not be called"); } },
 	} as unknown as ImportExportModuleDeps;
-	return { deps, getSnapshot };
+	return { deps, getSnapshot, createLorebook, bulkCreateEntries };
 }
 
 describe("importJsonBatch — mass-import batch path (MASS_IMPORT Wave 2)", () => {
@@ -81,6 +94,20 @@ describe("importJsonBatch — mass-import batch path (MASS_IMPORT Wave 2)", () =
 			expect(r.activeChatId).toMatch(/^chat_char_/);
 		}
 		expect(out.results.map((r) => r.fileName).sort()).toEqual(["Alpha.json", "Beta.json", "Gamma.json"]);
+	});
+
+	test("bulk import automatically creates a character-bound embedded book", async () => {
+		// Bulk has no confirmation surface, unlike ST's single-card prompt
+		// (world-info.js:5559-5574), so it forces importEmbeddedBook on.
+		const { deps, createLorebook, bulkCreateEntries } = makeDeps();
+		await importJsonBatch(deps, { items: [makeCard("Embedded", true)] });
+		expect(createLorebook).toHaveBeenCalledTimes(1);
+		expect(bulkCreateEntries).toHaveBeenCalledTimes(1);
+		expect(createLorebook.mock.calls[0][0]).toMatchObject({
+			name: "Embedded Lore",
+			scopeType: "entity",
+			characterId: "char_Embedded",
+		});
 	});
 
 	test("partial failure: one bad card lands in results[].error; siblings still import", async () => {

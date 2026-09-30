@@ -9,6 +9,7 @@
  */
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
+import { Toggle } from "../../shared/Toggle.js";
 import {
   initial,
   truncate,
@@ -16,7 +17,15 @@ import {
   type ChatPreview,
 } from "./parse-import-file.js";
 
-export function CharacterImportPreview({ preview }: { preview: CharacterPreview }) {
+export function CharacterImportPreview({
+  preview,
+  importEmbeddedBook = false,
+  onImportEmbeddedBookChange,
+}: {
+  preview: CharacterPreview;
+  importEmbeddedBook?: boolean;
+  onImportEmbeddedBookChange?: (enabled: boolean) => void;
+}) {
   const { t } = useT();
   return (
     <div>
@@ -35,6 +44,16 @@ export function CharacterImportPreview({ preview }: { preview: CharacterPreview 
         </div>
       </div>
       <div className="mt-3 font-ui text-xs text-t3">{t("ready_to_import", { name: preview.file.name })}</div>
+      {preview.hasEmbeddedLorebook && onImportEmbeddedBookChange && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-border2 bg-s2 px-4 py-2.5">
+          <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{t("import_embedded_lorebook")}</span>
+          <Toggle
+            checked={importEmbeddedBook}
+            onChange={onImportEmbeddedBookChange}
+            aria-label={t("import_embedded_lorebook")}
+          />
+        </div>
+      )}
     </div>
   );
 }

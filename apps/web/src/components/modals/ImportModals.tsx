@@ -28,7 +28,9 @@ import { ImportModalFooter } from "./import/ImportModalFooter.js";
 interface ImportModalCommonProps {
   isImporting: boolean;
   onClose: () => void;
-  onImportFiles: (files: File[]) => void;
+  onImportFiles: (files: File[], options?: { importEmbeddedBook?: boolean }) => void;
+  /** Library imports can opt into the embedded-card-lore confirmation. */
+  showEmbeddedBookImport?: boolean;
 }
 
 // ─── ST Folder import sub-component ─────────────────────────────────────
@@ -335,6 +337,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
   const [drag, setDrag] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [preview, setPreview] = useState<CharacterPreview | null>(null);
+  const [importEmbeddedBook, setImportEmbeddedBook] = useState(false);
   const [stMode, setStMode] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -345,6 +348,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
   async function processFile(file?: File | null): Promise<void> {
     if (!file) return;
     setParsing(true);
+    setImportEmbeddedBook(false);
     setPreview((current) => {
       if (current?.avatarUrl) URL.revokeObjectURL(current.avatarUrl);
       return null;
@@ -360,7 +364,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
 
   function confirm(): void {
     if (!preview || input.isImporting) return;
-    input.onImportFiles([preview.file]);
+    input.onImportFiles([preview.file], { importEmbeddedBook });
     input.onClose();
   }
 
@@ -396,7 +400,11 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
         )}
         {parsing && <BusyLine label={t("analyzing_metadata")} />}
         {preview && !parsing && (
-          <CharacterImportPreview preview={preview} />
+          <CharacterImportPreview
+            preview={preview}
+            importEmbeddedBook={importEmbeddedBook}
+            onImportEmbeddedBookChange={input.showEmbeddedBookImport ? setImportEmbeddedBook : undefined}
+          />
         )}
       </div>
       <ImportModalFooter onClose={input.onClose} confirmLabel={t("add_to_library")} disabled={!preview || input.isImporting} busy={input.isImporting} onConfirm={confirm} />

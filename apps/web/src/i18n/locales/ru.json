@@ -474,6 +474,7 @@
 	"no_description": "Нет описания",
 	"ready_to_import": "Готово к импорту: {name}",
 	"add_to_library": "Добавить в библиотеку",
+	"import_embedded_lorebook": "Импортировать встроенный лорбук",
 	"importing": "Импорт...",
 	"chat_import_title": "Импорт истории чата",
 	"chat_import_sub": "Загрузите файл истории SillyTavern JSONL.",
