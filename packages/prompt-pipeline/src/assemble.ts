@@ -247,6 +247,7 @@ const phaseOneMacroEngine = createFullMacroEngine();
 
 function buildAssemblyVariableContext(context: PromptAssemblyContext): PromptVariableContext {
   return buildPromptVariableContext({
+    outlets: context.outletEntries ?? {},
     character: {
       name: context.character.name,
       description: context.character.description,

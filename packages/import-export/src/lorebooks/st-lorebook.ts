@@ -252,6 +252,13 @@ export function importStLorebookJson(
       warnings.push(`Lore entry ${externalId} has no primary keys and is not constant.`);
     }
 
+    // ST skips outlet-position entries without a name because no
+    // {{outlet::name}} macro can reference them (world-info.js:5121-5124).
+    // Keep this narrow warning here until step 21 reshapes the field map.
+    if (asNumber(entry.position, 0) === 7 && !asString(entry.outletName).trim()) {
+      warnings.push(`Lore entry ${externalId} has position 'outlet' but no outlet name.`);
+    }
+
     return {
       id: brandId<LoreEntryId>(makeDeterministicId(ENTITY_ID_NAMESPACE.loreEntryDeterministic, `${lorebookId}:${externalId}:${content}`)),
       lorebookId: lorebookId as LorebookId,

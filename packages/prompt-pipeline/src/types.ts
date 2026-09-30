@@ -168,6 +168,8 @@ export interface PromptAssemblyContext {
     /** Resolved system prompt (after fallback chain: preset override → default .md). */
     systemPrompt: string;
   };
+  /** Activated lore outlets for {{outlet::name}} macros. */
+  outletEntries?: Record<string, string>;
   lore?: Array<{
     id: string;
     title: string;

@@ -383,6 +383,10 @@ export interface OverflowedLorebook {
 export interface ActiveLoreEntriesResult {
   entries: ActiveLoreEntry[];
   overflowedLorebooks: OverflowedLorebook[];
+  /** Activated ST outlet entries, grouped by their outlet name and joined with
+   * a newline like ST's CUSTOM_WI_OUTLET extension prompts. They are excluded
+   * from the normal lore stream and are available to {{outlet::name}}. */
+  outletEntries: Record<string, string>;
 }
 
 export interface Script {

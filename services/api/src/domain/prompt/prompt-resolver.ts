@@ -41,6 +41,18 @@ const CHARACTER_STRATEGY = {
 	globalFirst: 2,
 } as const;
 
+/** Resolve only outlet macros after activation has collected every outlet.
+ * The first macro pass intentionally preserves these references while its
+ * outlet map is unavailable, avoiding a second full pass over P16-resolved
+ * lore content. */
+function resolveOutletMacros(
+	text: string,
+	macroEngine: ReturnType<typeof createFullMacroEngine>,
+	macroContext: ReturnType<typeof buildPromptVariableContext>,
+): string {
+	return text.replace(/\{\{outlet::[\s\S]*?\}\}/gi, (macro) => macroEngine.resolve(macro, macroContext));
+}
+
 function compareLoreEntriesByOrder(
 	a: ActiveLorebookSet["entries"][number],
 	b: ActiveLorebookSet["entries"][number],
@@ -174,7 +186,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		maxContextTokens?: number;
 	}): Promise<ActiveLoreEntriesResult> {
 		const chat = await this.stores.chats.getById(input.chatId);
-		if (!chat) return { entries: [], overflowedLorebooks: [] };
+		if (!chat) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 
 		// 1. Load lorebooks with entries for this chat
 		const lorebookSets = await this.stores.lorebooks.listAllActiveForChat(
@@ -183,7 +195,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			input.chatId,
 		);
 
-		if (lorebookSets.length === 0) return { entries: [], overflowedLorebooks: [] };
+		if (lorebookSets.length === 0) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 
 		// 2. Scan the assembly's effective branch messages. P13 deliberately keeps
 		// this separate from the prompt's history-limit window; see the assembly's
@@ -192,7 +204,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 
 		// 3. Load character name for macro resolution + character filter
 		const character = await this.stores.characters.getById(chat.characterId);
-		if (!character) return { entries: [], overflowedLorebooks: [] };
+		if (!character) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 
 		// 4. Build macro map
 		const allPersonas = await this.stores.personas.listAll();
@@ -244,6 +256,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				summary: chat.summary ?? "",
 			},
 			runtime: { contextBudget: input.maxContextTokens ?? null },
+			preserveOutletMacros: true,
 		});
 		const recentMessagesWithNames = recentMessages.map(message => ({
 			...message,
@@ -262,7 +275,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		// 5. Timed state belongs to the selected branch, not its parent chat:
 		// SillyTavern branches are separate chat files with independent metadata.
 		const branch = await this.stores.chats.getBranch(input.branchId);
-		if (!branch || branch.chatId !== chat.id) return { entries: [], overflowedLorebooks: [] };
+		if (!branch || branch.chatId !== chat.id) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 		const activationState = branch.loreActivationState as LoreActivationState;
 
 		// 6. Turn clock: the full branch count when the assembly provides it; the
@@ -316,8 +329,39 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			await this.stores.chats.updateLoreActivationState(branch.id, result.updatedState);
 		}
 
-		// 9. Map activated entries back to domain LoreEntry type, carrying the
-		//    structured activation reason through for the prompt trace.
+		// 9. Join each activated outlet in ST's final insertion order. ST's
+		//    outlet pushes ride the final sorted entries array (world-info.js
+		//    4496-4513) — chat book first, persona next, strategy blocks,
+		//    order-descending within blocks — then join with '\n' per outlet
+		//    (script.js:4615-4617). The engine emits outlets in its sticky-first
+		//    budget-queue order; that order must not leak into the joined text,
+		//    so each group re-sorts through the same step-19 ordering the normal
+		//    stream uses (a chat-book outlet leads even over a higher-priority
+		//    character-book entry).
+		const outletIds = new Set(
+			Object.values(result.outletEntries).flatMap(group => group.map(e => e.entryId)),
+		);
+		const orderedOutletStream = orderActivatedLoreEntries(
+			lorebookSets,
+			new Set([...result.activatedEntries.map(e => e.id), ...outletIds]),
+		);
+		const stOrderIndex = new Map(
+			orderedOutletStream.map((entry, index) => [entry.id, index] as const),
+		);
+		const outletEntries = Object.fromEntries(
+			Object.entries(result.outletEntries).map(([name, group]) => [
+				name,
+				group
+					.map(e => ({ content: e.content, index: stOrderIndex.get(e.entryId) ?? Number.MAX_SAFE_INTEGER }))
+					.sort((a, b) => a.index - b.index)
+					.map(e => e.content)
+					.join("\n"),
+			]),
+		);
+		const outletMacroContext = { ...macroContext, outlets: outletEntries, preserveOutletMacros: false };
+
+		// 10. Map activated entries back to domain LoreEntry type, carrying the
+		//     structured activation reason through for the prompt trace.
 		const reasonById = new Map(result.activatedEntries.map(e => [e.id, e]));
 		const activatedIds = new Set(result.activatedEntries.map(e => e.id));
 		const activeEntries: ActiveLoreEntry[] = orderActivatedLoreEntries(lorebookSets, activatedIds)
@@ -329,7 +373,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 					title: e.title,
 					// The engine commits macro-expanded content; keep the stored row
 					// raw while carrying its resolved prompt view through regex/assembly.
-					content: detail.content,
+					content: resolveOutletMacros(detail.content, macroEngine, outletMacroContext),
 					keys: e.keys,
 				secondaryKeys: e.secondaryKeys,
 				logic: e.logic as LoreEntry['logic'],
@@ -368,7 +412,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			};
 		});
 
-		// 10. WORLD_INFO regex hook (RX-9): the activation engine has already
+		// 11. WORLD_INFO regex hook (RX-9): the activation engine has already
 		//     macro-expanded this lore-only prompt view before recursion commits.
 		//     The hook therefore sees the same expanded content ST passes to its
 		//     WORLD_INFO regex scripts (world-info.js:4938-4939, 5085-5086). The
@@ -392,7 +436,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			alert: lorebookById.get(o.lorebookId)?.overflowAlert ?? false,
 		}));
 
-		return { entries, overflowedLorebooks };
+		return { entries, overflowedLorebooks, outletEntries };
 	}
 
 	async executeScripts(input: {

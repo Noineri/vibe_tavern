@@ -862,6 +862,22 @@ export function createFullMacroEngine(): MacroEngine {
   });
 
   engine.register({
+    name: "outlet",
+    description: "Activated lore outlet text: {{outlet::name}}.",
+    category: MacroCategory.Utility,
+    resolve: (args, context) => {
+      const name = args[0]?.trim() ?? "";
+      if (!name) return "";
+      // Lore activation resolves its own content before all outlet groups are
+      // known. Its scoped first pass preserves this macro for the resolver's
+      // outlet-only follow-up; every ordinary macro context follows ST and
+      // resolves a missing outlet to an empty string.
+      if (context.preserveOutletMacros) return `{{outlet::${args.join("::")}}}`;
+      return context.outlets?.[name] ?? "";
+    },
+  });
+
+  engine.register({
     name: "original",
     description: "The swapped-out original text (emitted once per pass).",
     category: MacroCategory.Utility,

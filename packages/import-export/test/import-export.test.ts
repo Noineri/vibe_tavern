@@ -529,6 +529,15 @@ describe("importStLorebookJson", () => {
     expect(result.warnings.some((w) => w.includes("no primary keys"))).toBe(true);
   });
 
+  it("warns that an outlet entry without a name cannot be referenced", () => {
+    const result = importStLorebookJson({
+      name: "Unnamed outlet",
+      entries: [{ uid: 7, key: ["open"], content: "dead outlet", position: 7, outletName: "" }],
+    });
+
+    expect(result.warnings).toContain("Lore entry 7 has position 'outlet' but no outlet name.");
+  });
+
   it("does not warn on constant entries without keys", () => {
     const lorebook = {
       name: "Constant",

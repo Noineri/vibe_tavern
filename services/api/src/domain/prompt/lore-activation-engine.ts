@@ -96,6 +96,8 @@ export interface ActivationInput {
       characterFilter: Array<{ id: string | null; name: string }>;
       characterFilterExclude: boolean;
       matchSources: string[];
+      /** Import-preserved ST fields, including stOutletName. */
+      metadata?: Record<string, unknown>;
       enabled: boolean;
       sortOrder: number;
     }>;
@@ -173,6 +175,12 @@ export interface ActivationResult {
    *  overflowed. Surfaces the overflowAlert toast + the prompt trace; the
    *  engine itself only reports, it never alerts. */
   overflowedBooks: Array<{ lorebookId: string; dropped: number }>;
+  /** Activated outlet entries grouped by their ST outletName, carrying the
+   * entry id so the resolver can re-order each group into ST's final insertion
+   * order (this engine emits them in its budget-queue order, which is NOT the
+   * insertion order). They never enter the normal prompt stream; the resolver
+   * joins each group for {{outlet::name}}. */
+  outletEntries: Record<string, Array<{ entryId: string; content: string }>>;
   /** Updated activation state (to persist back to chat) */
   updatedState: LoreActivationState;
 }
@@ -215,6 +223,8 @@ interface FlatEntry {
   characterFilter: Array<{ id: string | null; name: string }>;
   characterFilterExclude: boolean;
   matchSources: string[];
+  /** ST outlet name carried through the existing metadata payload. */
+  outletName: string | null;
   enabled: boolean;
   sortOrder: number;
   groupName: string;
@@ -313,6 +323,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         decorators,
         lorebookId: lorebook.id,
         includeNames: lorebook.includeNames,
+        outletName: outletNameFromMetadata(entry.metadata),
         // Tri-state resolution (ST parity): a per-entry null inherits the
         // book-level default (ST's world-info.js:269/347 resolves per-entry
         // null against the global client setting; VT scopes it to the book).
@@ -635,9 +646,17 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // Token budget per lorebook
   const budgeted = applyTokenBudget(activated, input.lorebooks, input.estimateTokenCount, input.maxContextTokens);
 
-  logger.debug("DONE: %d entries activated, %d after budget, %d after groups, %d books overflowed", activated.length, budgeted.kept.length, budgeted.kept.length, budgeted.overflow.length);
+  const outletEntries: Record<string, Array<{ entryId: string; content: string }>> = {};
+  const promptEntries = budgeted.kept.filter((entry) => {
+    if (entry.position !== "outlet") return true;
+    const outletName = flatById.get(entry.id)?.outletName;
+    if (outletName) (outletEntries[outletName] ??= []).push({ entryId: entry.id, content: entry.content });
+    return false;
+  });
 
-  return { activatedEntries: budgeted.kept, overflowedBooks: budgeted.overflow, updatedState };
+  logger.debug("DONE: %d entries activated, %d after budget, %d prompt entries, %d books overflowed", activated.length, budgeted.kept.length, promptEntries.length, budgeted.overflow.length);
+
+  return { activatedEntries: promptEntries, overflowedBooks: budgeted.overflow, outletEntries, updatedState };
 }
 
 // ─── Entry activation logic ─────────────────────────────────────────────────
@@ -808,6 +827,11 @@ function tryActivateEntry(ctx: {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function outletNameFromMetadata(metadata: Record<string, unknown> | undefined): string | null {
+  const outletName = metadata?.stOutletName;
+  return typeof outletName === "string" && outletName.trim() ? outletName.trim() : null;
+}
 
 function entryBaseDepth(entry: FlatEntry, scanDepths: Map<string, number>): number {
   return entry.scanDepthOverride ?? (scanDepths.get(entry.lorebookId) ?? 2);

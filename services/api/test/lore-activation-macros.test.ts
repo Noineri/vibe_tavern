@@ -108,7 +108,11 @@ function activatedIds(result: ReturnType<typeof resolveActivatedEntries>): strin
 const tmpDirs: string[] = [];
 const databases: Array<{ close(): void }> = [];
 
-async function makeResolverWorld(entryContent: string) {
+async function makeResolverWorld(
+  entryContent: string,
+  entryOptions: { position?: "outlet"; metadata?: Record<string, unknown>; priority?: number } = {},
+  chatOutlet: { content: string; priority: number } | null = null,
+) {
   const tmpDir = resolve(tmpdir(), `vt-lore-macros-${crypto.randomUUID().slice(0, 8)}`);
   tmpDirs.push(tmpDir);
   await mkdir(resolve(tmpDir, "data"), { recursive: true });
@@ -154,7 +158,24 @@ async function makeResolverWorld(entryContent: string) {
     title: "Archive",
     content: entryContent,
     keys: ["archive"],
+    ...entryOptions,
   });
+
+  if (chatOutlet) {
+    const chatBook = await stores.lorebooks.createLorebook({
+      name: "chat outlet lore",
+      scopeType: "chat",
+      chatId: chat.id,
+    });
+    await stores.lorebooks.createEntry(chatBook.id, {
+      title: "Chat outlet",
+      content: chatOutlet.content,
+      keys: ["archive"],
+      position: "outlet",
+      priority: chatOutlet.priority,
+      metadata: { stOutletName: "archive" },
+    });
+  }
 
   return {
     stores,
@@ -162,6 +183,7 @@ async function makeResolverWorld(entryContent: string) {
     chatId: brandId<ChatId>(chat.id),
     branchId: brandId<ChatBranchId>(chat.activeBranchId),
     characterId: character.id,
+    lorebookId: lorebook.id,
   };
 }
 
@@ -236,6 +258,93 @@ describe("lore activation engine — full macro resolution (P16)", () => {
 
     expect(prompt.layers.find((layer) => layer.id === "lore_resolved_lore")?.text).toContain("{{user}}");
     expect(prompt.layers.find((layer) => layer.id === "lore_plain_lore")?.text).toBe("Lore: Plain\nplain lore body");
+  });
+});
+
+describe("lore activation resolver — outlets (C2)", () => {
+  it("collects activated outlet entries outside normal lore and resolves them in ordinary lore", async () => {
+    const world = await makeResolverWorld("outlet body", {
+      position: "outlet",
+      metadata: { stOutletName: "archive" },
+    });
+    await world.stores.lorebooks.createEntry(world.lorebookId, {
+      title: "Consumer",
+      content: "Consumer sees: {{outlet::archive}}",
+      keys: ["archive"],
+    });
+
+    const result = await world.resolver.listActiveLoreEntries({
+      chatId: world.chatId,
+      branchId: world.branchId,
+      recentText: "open the archive",
+      scanMessages: [{ role: "user", content: "open the archive" }],
+    });
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]?.content).toBe("Consumer sees: outlet body");
+    expect(result.outletEntries).toEqual({ archive: "outlet body" });
+
+    const prompt = assemblePrompt({
+      identity: { chatId: "outlet_macro" },
+      character: { id: "character", name: "Keeper", description: "" },
+      outletEntries: result.outletEntries,
+      preset: { id: "preset", text: "Preset sees: {{outlet::archive}}" },
+      chat: { recentMessages: [] },
+    });
+    expect(prompt.layers.find((layer) => layer.id === "prompt_preset_system")?.text).toBe("Preset sees: outlet body");
+  });
+
+  it("joins each outlet's activated entries with newlines and leaves missing outlets empty", () => {
+    const result = resolveActivatedEntries(makeInput([
+      makeEntry("outlet_high", {
+        content: "first outlet entry",
+        keys: ["open"],
+        position: "outlet",
+        priority: 200,
+        metadata: { stOutletName: "archive" },
+      }),
+      makeEntry("outlet_low", {
+        content: "second outlet entry",
+        keys: ["open"],
+        position: "outlet",
+        priority: 100,
+        metadata: { stOutletName: "archive" },
+      }),
+      makeEntry("ordinary", { keys: ["open"], content: "ordinary lore" }),
+    ], "open"));
+
+    expect(activatedIds(result)).toEqual(["ordinary"]);
+    expect(result.outletEntries).toEqual({
+      archive: [
+        { entryId: "outlet_high", content: "first outlet entry" },
+        { entryId: "outlet_low", content: "second outlet entry" },
+      ],
+    });
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({ outlets: { archive: result.outletEntries.archive?.map(e => e.content).join("\n") ?? "" } });
+    expect(engine.resolve("{{outlet::archive}}", context)).toBe("first outlet entry\nsecond outlet entry");
+    expect(engine.resolve("{{outlet::missing}}", context)).toBe("");
+  });
+
+  it("joins multi-book outlets in ST insertion order: the chat book leads regardless of priority", async () => {
+    // The engine emits outlets in its sticky-first budget-queue order
+    // (priority-descending here), which would join character-first. ST's
+    // final entries array puts the chat book's block first (world-info.js
+    // 4496-4513), so the resolver must re-order before joining.
+    const world = await makeResolverWorld(
+      "character outlet",
+      { position: "outlet", metadata: { stOutletName: "archive" }, priority: 200 },
+      { content: "chat outlet", priority: 100 },
+    );
+
+    const result = await world.resolver.listActiveLoreEntries({
+      chatId: world.chatId,
+      branchId: world.branchId,
+      recentText: "open the archive",
+      scanMessages: [{ role: "user", content: "open the archive" }],
+    });
+
+    expect(result.outletEntries).toEqual({ archive: "chat outlet\ncharacter outlet" });
   });
 });
 

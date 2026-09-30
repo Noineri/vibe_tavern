@@ -711,6 +711,7 @@ export class PromptAssemblyService {
             promptOrder: promptPreset.promptOrder,
           }
         : null,
+      outletEntries: loreActivation.outletEntries,
       lore: activeLoreEntries.map((entry) => ({
         id: entry.id,
         title: entry.title,
