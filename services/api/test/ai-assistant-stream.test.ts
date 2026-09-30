@@ -18,7 +18,15 @@ async function deps(overrides: Partial<StreamDeps> = {}): Promise<StreamDeps> {
     getProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000, proxyMode: "inherit", proxyId: null }),
     getEffectiveProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000, proxyMode: "inherit", proxyId: null }),
     getPresetPromptData: async () => ({ aiAssistantPrompts: { chat_impersonate: "Impersonate the character.", md_import: "Import this markdown." }, scriptAiSystemPrompt: null }),
-    getChatMessages: async () => [],
+    buildChatImpersonationPipelineContext: async (input) => ({
+      context: {
+        identity: { chatId: input.chatId },
+        character: { id: "", name: "", description: "" },
+        persona: null,
+        lore: [],
+        chat: { recentMessages: [] },
+      },
+    }) as never,
     getMessageEditorChat: async () => null,
     getMessageEditorMessages: async () => [],
     getMessageEditorVariantsByBranch: async () => new Map(),
@@ -182,16 +190,65 @@ describe("AI assistant stream prompt preparation", () => {
   beforeEach(() => setTokenCountFn((text) => text.length));
   afterEach(() => setTokenCountFn(() => 0));
 
-  it("loads history only for chat_impersonate and includes it in the traced assembly", async () => {
-    const calls: Array<[string, number]> = [];
+  it("builds the impersonation context through the dry full-RP pipeline", async () => {
+    const calls: Array<{ chatId: string; contextBudget: number | null; responseReserve: number; recentMessageLimit: number; quietPrompt?: string }> = [];
     const result = await countAiAssistantTokens({
-      mode: "chat_impersonate", instruction: "Continue.", providerProfileId: "profile_1", enabledLayers: [], chatId: "chat_1", recentMessageCount: 7,
-    }, await deps({ getChatMessages: async (chatId, count) => {
-      calls.push([chatId, count]);
-      return [{ id: "msg_1", role: "user", content: "Hello" }, { id: "msg_2", role: "assistant", content: "Hi" }];
+      mode: "chat_impersonate", instruction: "Continue.", providerProfileId: "profile_1", enabledLayers: [], chatId: "chat_1", recentMessageCount: 7, draftText: "draft-only-key",
+    }, await deps({ buildChatImpersonationPipelineContext: async (input) => {
+      calls.push(input);
+      return {
+        context: {
+          identity: { chatId: input.chatId },
+          character: { id: "", name: "", description: "" },
+          persona: null,
+          lore: [],
+          chat: { recentMessages: [{ id: "msg_1", role: "user", content: "Hello" }, { id: "msg_2", role: "assistant", content: "Hi" }] },
+        },
+      } as never;
     } }));
-    expect(calls).toEqual([["chat_1", 7]]);
-    expect(result).toEqual({ tokens: 65, model: "model_1", layerCount: 3, messageCount: 3, activatedLoreCount: 0 });
+    expect(calls).toEqual([{
+      chatId: "chat_1",
+      model: "model_1",
+      contextBudget: null,
+      responseReserve: 2000,
+      recentMessageLimit: 7,
+      quietPrompt: "draft-only-key",
+    }]);
+    expect(result).toMatchObject({ model: "model_1", layerCount: 3, messageCount: 3, activatedLoreCount: 0 });
+    expect(result.tokens).toBeGreaterThan(0);
+  });
+
+  it("activates lore from an impersonation draft without mutating timed state", async () => {
+    const fixture = await createMessageEditorRuntime();
+    try {
+      const lorebook = await fixture.stores.lorebooks.createLorebook({
+        name: "Draft lore",
+        scopeType: "entity",
+        characterId: fixture.chat.characterId,
+      });
+      const entry = await fixture.stores.lorebooks.createEntry(lorebook.id, {
+        title: "Draft key",
+        content: "Draft lore content",
+        keys: ["draft-only-key"],
+        stickyWindow: 3,
+      });
+      const before = JSON.stringify((await fixture.stores.chats.getBranch(fixture.chat.activeBranchId))?.loreActivationState);
+      const result = await countAiAssistantTokens({
+        mode: "chat_impersonate",
+        instruction: "Continue.",
+        providerProfileId: fixture.profile.id,
+        model: "editor-model",
+        enabledLayers: [],
+        chatId: fixture.chat.id,
+        draftText: "draft-only-key",
+      }, createAiAssistantDeps(fixture.stores, fixture.runtime));
+
+      expect(result.activatedLoreCount).toBe(1);
+      expect(JSON.stringify((await fixture.stores.chats.getBranch(fixture.chat.activeBranchId))?.loreActivationState)).toBe(before);
+      expect(entry.id).toBeTruthy();
+    } finally {
+      await fixture.cleanup();
+    }
   });
 
   it("keeps md_import as a direct two-message path with no resolved context", async () => {

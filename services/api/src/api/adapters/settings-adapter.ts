@@ -15,6 +15,7 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 		...(typeof body.activePromptPresetId === "string" || body.activePromptPresetId === null ? { activePromptPresetId: body.activePromptPresetId } : {}),
 		...(typeof body.aiAssistantProviderId === "string" || body.aiAssistantProviderId === null ? { aiAssistantProviderId: body.aiAssistantProviderId } : {}),
 		...(typeof body.aiAssistantModelName === "string" || body.aiAssistantModelName === null ? { aiAssistantModelName: body.aiAssistantModelName } : {}),
+		...(typeof body.chatImpersonateEnhanceDraft === "boolean" ? { chatImpersonateEnhanceDraft: body.chatImpersonateEnhanceDraft } : {}),
 		// SUM-5: per-context secondary-model pairs — same string|null gate as the
 		// ai-assistant pair above them.
 		...(typeof body.summaryProviderId === "string" || body.summaryProviderId === null ? { summaryProviderId: body.summaryProviderId } : {}),

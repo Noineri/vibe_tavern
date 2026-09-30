@@ -137,4 +137,16 @@ describe("lore activation engine — injected-prompt scan sources (P15)", () => 
 
     expect(activatedIds(result)).toEqual(["persona_source"]);
   });
+
+  it("always scans the quiet prompt after global sources", () => {
+    const entry = makeEntry("quiet_prompt_source", {
+      keys: ["draft-only-key"],
+    });
+
+    const result = resolveActivatedEntries(makeInput([entry], {
+      quietPrompt: "draft-only-key",
+    }));
+
+    expect(activatedIds(result)).toEqual(["quiet_prompt_source"]);
+  });
 });

@@ -112,13 +112,15 @@ export function createAiAssistantDeps(stores: StoreContainer, sessionRuntime: Se
 				}));
 		},
 		logDebug: logSendDebug,
-		getChatMessages: async (chatId: string, count: number) => {
-			const chat = await stores.chats.getById(chatId);
-			if (!chat) return [];
-			const allMessages = await stores.messages.getMessages(chat.activeBranchId);
-			const sliced = allMessages.slice(-count);
-			return sliced.map((message) => ({ id: message.id, role: message.role, content: message.content }));
-		},
+		buildChatImpersonationPipelineContext: (input) => sessionRuntime.chatLifecycle.buildPipelineContext({
+			chatId: brandId<ChatId>(input.chatId),
+			model: input.model,
+			recentMessageLimit: input.recentMessageLimit,
+			contextBudget: input.contextBudget,
+			responseReserve: input.responseReserve,
+			dryRun: true,
+			...(input.quietPrompt ? { quietPrompt: input.quietPrompt } : {}),
+		}),
 		getMessageEditorChat: (chatId: string) => stores.chats.getById(chatId),
 		getMessageEditorMessages: (branchId: string) => stores.messages.getMessages(branchId),
 		getMessageEditorVariantsByBranch: (branchId: string) => stores.messages.getVariantsByBranch(branchId),

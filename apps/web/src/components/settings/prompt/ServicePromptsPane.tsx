@@ -59,6 +59,7 @@ const FIELD_LABEL_KEYS: Partial<Record<ServicePromptFieldKey, string>> = {
 	lore_entry: "ai_assistant_mode_lore_entry",
 	lore_keys: "ai_assistant_mode_lore_keys",
 	chat_impersonate: "ai_assistant_mode_chat_impersonate",
+	chat_impersonate_enhance: "promptManager.servicePrompts.field.chat_impersonate_enhance",
 	md_import: "promptManager.servicePrompts.field.md_import",
 	vision_describe: "ai_assistant_mode_vision_describe",
 	scene_schema: "ai_assistant_mode_scene_schema",

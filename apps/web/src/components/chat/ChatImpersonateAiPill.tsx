@@ -18,12 +18,14 @@ export function ChatImpersonateAiPill({
   activeChatId,
   characterId,
   personaId,
+  draft,
   setDraft,
   size,
 }: {
   activeChatId: string;
   characterId: string | null;
   personaId: string | null;
+  draft: string;
   setDraft: (value: string) => void;
   size?: "sm" | "md" | "lg";
 }) {
@@ -43,6 +45,7 @@ export function ChatImpersonateAiPill({
       ...s,
       providerId: bootstrapUiSettings.aiAssistantProviderId ?? "",
       modelName: bootstrapUiSettings.aiAssistantModelName ?? "",
+      enhanceDraft: bootstrapUiSettings.chatImpersonateEnhanceDraft,
     }));
   }, [settings.providerId, bootstrapUiSettings]);
 
@@ -70,6 +73,8 @@ export function ChatImpersonateAiPill({
         personaIds: personaId ? [personaId] : [],
         chatId: activeChatId,
         recentMessageCount: settings.recentMessageCount ?? 20,
+        draftText: draft,
+        enhanceDraft: settings.enhanceDraft ?? false,
       };
       let text = "";
       for await (const chunk of streamAiAssistant(request, { signal: abortRef.current.signal })) {
@@ -95,6 +100,7 @@ export function ChatImpersonateAiPill({
     void updateUiSettings({
       aiAssistantProviderId: s.providerId || null,
       aiAssistantModelName: s.modelName || null,
+      chatImpersonateEnhanceDraft: s.enhanceDraft ?? false,
     }).catch(() => {});
   };
 
@@ -107,6 +113,7 @@ export function ChatImpersonateAiPill({
       loading={loading}
       disabled={!activeChatId}
       showMessageCount
+      showEnhanceDraftToggle
       starTooltip={t("ai_pill_impersonate")}
       gearTooltip={t("ai_pill_impersonate_settings")}
       size={size}

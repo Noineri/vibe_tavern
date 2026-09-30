@@ -204,6 +204,7 @@ export function pickBootstrapChatId<T extends string>(
 					contextBudget: opts?.contextBudget ?? null,
 					responseReserve: opts?.responseReserve,
 					dryRun: opts?.dryRun,
+					...(opts?.quietPrompt ? { quietPrompt: opts.quietPrompt } : {}),
 					...(opts?.throughMessageId ? { throughMessageId: opts.throughMessageId } : {}),
 					...(opts?.excludeMessageIds ? { excludeMessageIds: opts.excludeMessageIds } : {}),
 				}),

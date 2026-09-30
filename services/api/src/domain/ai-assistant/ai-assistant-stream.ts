@@ -74,6 +74,16 @@ interface MessageEditorPipelineContextInput {
   readonly recentMessageLimit?: number;
 }
 
+interface ChatImpersonationPipelineContextInput {
+  readonly chatId: string;
+  readonly model: string;
+  readonly contextBudget: number | null;
+  readonly responseReserve: number;
+  readonly recentMessageLimit: number;
+  /** Current composer draft, scanned as the one-shot quiet prompt. */
+  readonly quietPrompt?: string;
+}
+
 export interface StreamDeps extends ContextResolverDeps {
   readonly db: AppDb;
   readonly resolveModel: (profile: { providerPreset: string; endpoint: string; apiKey: string | null }, model: string, fetch?: ProviderFetch) => LanguageModel;
@@ -85,8 +95,8 @@ export interface StreamDeps extends ContextResolverDeps {
     aiAssistantPrompts: Record<string, string> | null;
     scriptAiSystemPrompt: string | null;
   }>;
-  /** Resolve chat messages for chat_impersonate mode. */
-  readonly getChatMessages: (chatId: string, count: number) => Promise<Array<{ id: string; role: string; content: string }>>;
+  /** Build the full RP world for impersonation without persisting lore timed state. */
+  readonly buildChatImpersonationPipelineContext: (input: ChatImpersonationPipelineContextInput) => Promise<BuiltPipelineContext>;
   readonly getMessageEditorChat: (chatId: string) => Promise<{ id: string; activeBranchId: string } | null>;
   readonly getMessageEditorMessages: (branchId: string) => Promise<Message[]>;
   readonly getMessageEditorVariantsByBranch: (branchId: string) => Promise<Map<string, MessageVariant[]>>;
@@ -248,8 +258,12 @@ async function prepareAiAssistantRequest(
   }
 
   // 2. Resolve system prompt via service-prompt profiles
+  const promptField = request.mode === "chat_impersonate"
+    ? getChatImpersonatePromptKey(request)
+    : undefined;
   const { prompt: systemPrompt, source } = await resolveSystemPrompt(deps.db, request.mode, {
     promptFormat: request.promptFormat,
+    field: promptField,
   });
 
   deps.logDebug?.("api.ai-assistant.prompt-resolved", {
@@ -277,20 +291,47 @@ async function prepareAiAssistantRequest(
     };
   }
 
-  // 3. Resolve context bindings
+  // 3. chat_impersonate reuses the full RP world assembly so the draft is
+  // quiet-prompt scanned and activated lore reaches the persona writer.
+  if (request.mode === "chat_impersonate") {
+    if (!request.chatId) throw validation("A chat is required for impersonation.");
+    const effectiveProfile = await deps.getEffectiveProviderProfile(profile.id, modelName);
+    const built = await deps.buildChatImpersonationPipelineContext({
+      chatId: request.chatId,
+      model: modelName,
+      contextBudget: effectiveProfile.contextBudget,
+      responseReserve: effectiveProfile.maxTokens,
+      recentMessageLimit: request.recentMessageCount ?? 20,
+      ...(request.draftText?.trim() ? { quietPrompt: request.draftText } : {}),
+    });
+    const pipelineContext: PromptAssemblyContext = {
+      ...built.context,
+      aiAssistant: {
+        mode: request.mode,
+        // Activated lore is part of the full RP world for impersonation; the
+        // explicit character/persona settings retain their existing control.
+        enabledLayers: [...new Set([...request.enabledLayers, "lore"])],
+        existingContent: request.existingContent,
+        instruction: buildUserMessage(request, config),
+        systemPrompt,
+      },
+    };
+    setModelHint(modelName);
+    const assembly = getAiAssistantAssembler(request.mode).assemble(pipelineContext);
+    const messages = assembly.finalPayload.messages as Array<{
+      role: "system" | "user" | "assistant";
+      content: string;
+    }>;
+    return { config, profile: effectiveProfile, modelName, assembly, messages, doneMetadata: null };
+  }
+
+  // 4. Resolve context bindings for non-chat assistant modes.
   const resolvedContext: ResolvedContext = await resolveContext(deps, {
     characterIds: request.characterIds,
     personaIds: request.personaIds,
     loreEntryIds: request.loreEntryIds,
     lorebookIds: request.lorebookIds,
   });
-
-  // 4. Resolve chat history for chat_impersonate
-  let recentMessages: Array<{ id: string; role: string; content: string }> = [];
-  if (request.mode === "chat_impersonate" && request.chatId) {
-    const count = request.recentMessageCount ?? 20;
-    recentMessages = await deps.getChatMessages(request.chatId, count);
-  }
 
   // 5. Build user message (mode-specific)
   const userMessage = buildUserMessage(request, config);
@@ -312,7 +353,7 @@ async function prepareAiAssistantRequest(
       instruction: userMessage,
       systemPrompt,
     },
-    chat: { recentMessages: recentMessages.map((m) => ({ id: m.id, role: m.role as "system" | "user" | "assistant" | "tool", content: m.content })) },
+    chat: { recentMessages: [] },
   };
 
   setModelHint(modelName);
@@ -952,7 +993,13 @@ function tryParseJson(text: string): Record<string, unknown> | null {
 
 // ─── User message builder ────────────────────────────────────────────────────
 
-function buildUserMessage(
+export function getChatImpersonatePromptKey(request: AiAssistantStreamRequest): "chat_impersonate" | "chat_impersonate_enhance" {
+  return request.mode === "chat_impersonate" && request.enhanceDraft === true && Boolean(request.draftText?.trim())
+    ? "chat_impersonate_enhance"
+    : "chat_impersonate";
+}
+
+export function buildUserMessage(
   request: AiAssistantStreamRequest,
   config: ReturnType<typeof getModeConfig>,
 ): string {
@@ -1010,7 +1057,11 @@ function buildUserMessage(
     }
 
     case "chat_impersonate": {
-      return request.instruction || "Write a message as this persona would speak in the current conversation.";
+      const instruction = request.instruction || "Write a message as this persona would speak in the current conversation.";
+      const draft = request.draftText?.trim();
+      return draft
+        ? `${instruction}\n\nBuild on this draft as the persona would write it:\n\n${draft}`
+        : instruction;
     }
 
     case "md_import": {

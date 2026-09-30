@@ -129,6 +129,23 @@ describe("message editor prompt modes", () => {
   }
 });
 
+describe("chat impersonation enhancement prompt", () => {
+  it("resolves its independent editable service-prompt field", async () => {
+    const { db, profileStore, uiSettings } = await setupDb();
+    const defaultResult = await resolveSystemPrompt(db, "chat_impersonate", { field: "chat_impersonate_enhance" });
+    expect(defaultResult.source).toBe("default");
+    expect(defaultResult.prompt).toContain("Preserve the draft's meaning");
+
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Enhance Override",
+      overrides: { chat_impersonate_enhance: "CUSTOM ENHANCE PROMPT" },
+    });
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    expect(await resolveSystemPrompt(db, "chat_impersonate", { field: "chat_impersonate_enhance" }))
+      .toEqual({ prompt: "CUSTOM ENHANCE PROMPT", source: "override" });
+  });
+});
+
 describe("annotate prompt — macro-verbatim rule (TPE-19)", () => {
   it("the default annotate asset tells the model to copy {{...}} constructs byte-for-byte", async () => {
     const prompt = await getDefaultPromptForMode("message_tts_annotate");

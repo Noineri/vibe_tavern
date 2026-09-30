@@ -107,6 +107,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		authorsNote?: string;
 		/** Enabled summary texts, passed from prompt assembly (P15). */
 		summaries?: string[];
+		/** One-shot quiet-prompt text, passed from prompt assembly. */
+		quietPrompt?: string;
 		/** Turn clock override — the FULL branch count. Defaults to the scan
 		 * count only for direct test callers; production passes the branch total
 		 * so sticky/cooldown windows don't shift with prompt exclusions (P13). */
@@ -244,6 +246,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			creatorNotes: character.creatorNotes ?? undefined,
 			authorsNote: input.authorsNote,
 			summaries: input.summaries,
+			quietPrompt: input.quietPrompt,
 			activationState,
 			currentTurn,
 			dryRun: input.dryRun,

@@ -75,6 +75,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
               activeChatId={activeChatId}
               characterId={chatMeta?.character.id ?? null}
               personaId={activePersonaId}
+              draft={draft}
               setDraft={setDraft}
               size="lg"
             />

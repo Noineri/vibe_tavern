@@ -133,6 +133,8 @@ export interface ActivationInput {
   authorsNote?: string;
   /** Optional: enabled chat-summary texts for matchSources */
   summaries?: string[];
+  /** Optional one-shot quiet-prompt text, scanned after global sources. */
+  quietPrompt?: string;
   /** Current activation state from the selected branch (deserialized from loreActivationStateJson) */
   activationState: LoreActivationState;
   /** Evaluate activation without pruning or committing timed effects. */
@@ -870,6 +872,11 @@ function buildScanText(
   }
   if (sources.includes("summaries") && input.summaries?.length) {
     result += SCAN_JOINER + input.summaries.join(SCAN_JOINER);
+  }
+  // The quiet prompt is always scanned in ST (`setExtensionPrompt(..., true)`
+  // in public/script.js:4564), independently of an entry source chip.
+  if (input.quietPrompt) {
+    result += SCAN_JOINER + input.quietPrompt;
   }
   if (recurseBuffer.length > 0) {
     result += SCAN_JOINER + recurseBuffer.join(SCAN_JOINER);

@@ -100,6 +100,8 @@ export interface PromptAssemblyResolver {
     authorsNote?: string;
     /** Enabled summary texts from the same set injected into prompt memory. */
     summaries?: string[];
+    /** One-shot quiet-prompt text to scan after the global sources. */
+    quietPrompt?: string;
     /** Turn clock for sticky/cooldown windows — the FULL branch message count,
      * not the post-exclusion scan count (P13 changes scan input only; timed
      * windows must not shift when the prompt excludes messages). */
@@ -164,6 +166,8 @@ export interface AssemblePromptForChatInput {
   summary?: boolean;
   /** Resolve lore activation without changing its timed state. */
   dryRun?: boolean;
+  /** One-shot quiet-prompt text to scan after global sources without adding a chat message. */
+  quietPrompt?: string;
   /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): preceding chat-summaries
    *  (`summarizedFrom < from` chain, count-capped, oldest→newest) fed into the
    *  summary prompt as read-only continuity. Threaded into pipelineContext
@@ -592,6 +596,7 @@ export class PromptAssemblyService {
       // derive either value again in the resolver.
       authorsNote: promptPreset?.authorsNote,
       summaries: enabledSummaries.map((summary) => summary.content),
+      ...(input.quietPrompt ? { quietPrompt: input.quietPrompt } : {}),
       // Turn clock stays on the full branch — exclusions shape the scan input,
       // never the sticky/cooldown arithmetic.
       currentTurn: branchMessages.length,

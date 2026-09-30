@@ -206,6 +206,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
                 activeChatId={activeChatId}
                 characterId={chatMeta?.character.id ?? null}
                 personaId={activePersonaId}
+                draft={draft}
                 setDraft={setDraft}
               />
             )}

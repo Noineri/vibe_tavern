@@ -1206,6 +1206,8 @@ export const uiSettings = sqliteTable('ui_settings', {
   activePromptPresetId: text('active_prompt_preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
   aiAssistantProviderId: text('ai_assistant_provider_id'),
   aiAssistantModelName: text('ai_assistant_model_name'),
+  // Whether chat impersonation improves a non-empty composer draft.
+  chatImpersonateEnhanceDraft: integer('chat_impersonate_enhance_draft', { mode: 'boolean' }).notNull().default(false),
   // Secondary-model bindings per CONTEXT (SUM-5): summary generation and the
   // message AI editor stop sharing the ai-assistant pair — each context owns
   // its slot so picking a model in one place never leaks into another.

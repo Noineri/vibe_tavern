@@ -86,6 +86,7 @@ export interface ChatLifecycleRuntimeDeps {
 			contextBudget?: number | null;
 			responseReserve?: number;
 			dryRun?: boolean;
+			quietPrompt?: string;
 			throughMessageId?: import("@vibe-tavern/domain").MessageId;
 			excludeMessageIds?: import("@vibe-tavern/domain").MessageId[];
 		},
@@ -341,6 +342,7 @@ export class ChatLifecycleRuntime {
 		contextBudget?: number | null;
 		responseReserve?: number;
 		dryRun?: boolean;
+		quietPrompt?: string;
 		throughMessageId?: import("@vibe-tavern/domain").MessageId;
 		excludeMessageIds?: import("@vibe-tavern/domain").MessageId[];
 	}): Promise<BuiltPipelineContext> {
@@ -357,6 +359,7 @@ export class ChatLifecycleRuntime {
 				contextBudget: input.contextBudget ?? null,
 				responseReserve: input.responseReserve,
 				dryRun: input.dryRun,
+				...(input.quietPrompt ? { quietPrompt: input.quietPrompt } : {}),
 				...(input.throughMessageId ? { throughMessageId: input.throughMessageId } : {}),
 				...(input.excludeMessageIds ? { excludeMessageIds: input.excludeMessageIds } : {}),
 			},

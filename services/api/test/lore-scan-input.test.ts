@@ -233,4 +233,22 @@ describe("PromptAssemblyService lore scan input (P13)", () => {
     expect(scanInput?.authorsNote).toBe("effective-author-note");
     expect(scanInput?.summaries).toEqual(["included-summary"]);
   });
+
+  it("passes one-shot quiet-prompt text through the assembly seam", async () => {
+    let scanInput: Parameters<PromptAssemblyResolver["listActiveLoreEntries"]>[0] | null = null;
+    const service = makeService([], {
+      onScanMessages: () => {},
+      onLoreScanInput: (seen) => { scanInput = seen; },
+    });
+
+    await service.assembleForChat({
+      chatId: "chat_1" as ChatId,
+      model: "test-model",
+      quietPrompt: "draft-only-key",
+      dryRun: true,
+    });
+
+    expect(scanInput?.quietPrompt).toBe("draft-only-key");
+    expect(scanInput?.dryRun).toBe(true);
+  });
 });

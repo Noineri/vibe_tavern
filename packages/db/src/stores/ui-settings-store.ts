@@ -18,6 +18,8 @@ export interface UiSettings {
   activePromptPresetId: string | null;
   aiAssistantProviderId: string | null;
   aiAssistantModelName: string | null;
+  /** Whether chat impersonation improves a non-empty composer draft. */
+  chatImpersonateEnhanceDraft: boolean;
   /** Summary-generation model binding (SUM-4/SUM-5) — the Memory tab's
    *  pinned model, persisted per context instead of ephemeral useState. */
   summaryProviderId: string | null;
@@ -78,6 +80,7 @@ export interface UiSettingsUpdate {
   activePromptPresetId?: string | null;
   aiAssistantProviderId?: string | null;
   aiAssistantModelName?: string | null;
+  chatImpersonateEnhanceDraft?: boolean;
   summaryProviderId?: string | null;
   summaryModelName?: string | null;
   messageEditorProviderId?: string | null;
@@ -115,6 +118,7 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   activePromptPresetId: null,
   aiAssistantProviderId: null,
   aiAssistantModelName: null,
+  chatImpersonateEnhanceDraft: false,
   summaryProviderId: null,
   summaryModelName: null,
   messageEditorProviderId: null,
@@ -183,6 +187,7 @@ export class UiSettingsStore {
       activePromptPresetId: partial.activePromptPresetId ?? UI_SETTINGS_DEFAULTS.activePromptPresetId,
       aiAssistantProviderId: partial.aiAssistantProviderId ?? UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
       aiAssistantModelName: partial.aiAssistantModelName ?? UI_SETTINGS_DEFAULTS.aiAssistantModelName,
+      chatImpersonateEnhanceDraft: partial.chatImpersonateEnhanceDraft ?? UI_SETTINGS_DEFAULTS.chatImpersonateEnhanceDraft,
       summaryProviderId: partial.summaryProviderId ?? UI_SETTINGS_DEFAULTS.summaryProviderId,
       summaryModelName: partial.summaryModelName ?? UI_SETTINGS_DEFAULTS.summaryModelName,
       messageEditorProviderId: partial.messageEditorProviderId ?? UI_SETTINGS_DEFAULTS.messageEditorProviderId,
@@ -227,6 +232,7 @@ export class UiSettingsStore {
       activePromptPresetId: UI_SETTINGS_DEFAULTS.activePromptPresetId,
       aiAssistantProviderId: UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
       aiAssistantModelName: UI_SETTINGS_DEFAULTS.aiAssistantModelName,
+      chatImpersonateEnhanceDraft: UI_SETTINGS_DEFAULTS.chatImpersonateEnhanceDraft,
       summaryProviderId: UI_SETTINGS_DEFAULTS.summaryProviderId,
       summaryModelName: UI_SETTINGS_DEFAULTS.summaryModelName,
       messageEditorProviderId: UI_SETTINGS_DEFAULTS.messageEditorProviderId,
@@ -269,6 +275,7 @@ export class UiSettingsStore {
       activePromptPresetId: row.activePromptPresetId,
       aiAssistantProviderId: row.aiAssistantProviderId ?? null,
       aiAssistantModelName: row.aiAssistantModelName ?? null,
+      chatImpersonateEnhanceDraft: row.chatImpersonateEnhanceDraft,
       summaryProviderId: row.summaryProviderId ?? null,
       summaryModelName: row.summaryModelName ?? null,
       messageEditorProviderId: row.messageEditorProviderId ?? null,

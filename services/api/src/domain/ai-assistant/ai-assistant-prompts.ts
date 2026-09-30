@@ -18,6 +18,7 @@ import type { ServicePromptFieldKey } from "@vibe-tavern/domain";
 import { loadPromptAsset, resolvePromptAssetPath } from "../../shared/prompt-asset-loader.js";
 import { getModeConfig, getDefaultPromptFile } from "./ai-assistant-modes.js";
 import { getActiveServicePromptProfile } from "../service-prompts/service-prompt-resolver.js";
+import { getServicePromptAssetFile } from "../service-prompts/service-prompt-registry.js";
 
 // ─── Path resolution ─────────────────────────────────────────────────────────
 
@@ -67,10 +68,12 @@ export async function resolveSystemPrompt(
     /** For format-aware modes (scene_schema): select the default file. Ignored
      *  when a profile override is present (overrides are format-agnostic). */
     promptFormat?: "json" | "xml";
+    /** Alternate service-prompt field for a mode-specific variant. */
+    field?: ServicePromptFieldKey;
   },
 ): Promise<{ prompt: string; source: "override" | "default" }> {
   const { profile } = await getActiveServicePromptProfile(db);
-  const field = MODE_TO_FIELD[mode];
+  const field = options?.field ?? MODE_TO_FIELD[mode];
   if (field) {
     const raw = profile.overrides[field];
     const trimmed = typeof raw === "string" ? raw.trim() : "";
@@ -79,7 +82,10 @@ export async function resolveSystemPrompt(
     }
   }
 
-  // Default .md file (format-aware for scene_schema)
-  const defaultPrompt = await getDefaultPromptForMode(mode, options?.promptFormat);
+  // Alternate fields resolve through the service-prompt registry; standard
+  // mode fields retain scene_schema's format-aware default selection.
+  const defaultPrompt = options?.field
+    ? await loadPromptAsset(getServicePromptAssetFile(options.field))
+    : await getDefaultPromptForMode(mode, options?.promptFormat);
   return { prompt: defaultPrompt, source: "default" };
 }

@@ -54,6 +54,7 @@ export function wireUiSettings(): UiSettingsRecord {
 		activePromptPresetId: null,
 		aiAssistantProviderId: null,
 		aiAssistantModelName: null,
+		chatImpersonateEnhanceDraft: false,
 		summaryProviderId: null,
 		summaryModelName: null,
 		messageEditorProviderId: null,

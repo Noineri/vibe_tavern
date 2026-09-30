@@ -13,6 +13,7 @@ import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "./L
 import { TokenCounter } from "./TokenCounter.js";
 import { buildLineDiff, TextDiffPreview } from "./TextDiffPreview.js";
 import { NumberInput } from "./NumberInput.js";
+import { Toggle } from "./Toggle.js";
 import { cn } from "../../lib/cn.js";
 import { cleanAiCode } from "../../lib/ai-code-clean.js";
 import { describeMdImportValue, getMdImportFieldLabel, MD_IMPORT_FIELD_OPTIONS, mergeMdImportFields, type MdImportResult } from "../../lib/md-import-utils.js";
@@ -55,6 +56,7 @@ export interface AiAssistantModalProps {
   showAppendToggle?: boolean;
   showKeyTarget?: boolean;
   showMessageCount?: boolean;
+  showEnhanceDraftToggle?: boolean;
 }
 
 export function AiAssistantModal({
@@ -73,6 +75,7 @@ export function AiAssistantModal({
   showAppendToggle,
   showKeyTarget,
   showMessageCount,
+  showEnhanceDraftToggle,
 }: AiAssistantModalProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -90,6 +93,7 @@ export function AiAssistantModal({
   const [appendMode, setAppendMode] = useState(false);
   const [keyTarget, setKeyTarget] = useState<"primary" | "secondary" | "both">("both");
   const [recentMessageCount, setRecentMessageCount] = useState(20);
+  const [enhanceDraft, setEnhanceDraft] = useState(false);
 
   // Full specific
   const [prompt, setPrompt] = useState("");
@@ -172,6 +176,7 @@ export function AiAssistantModal({
       setAppendMode(settings.appendMode ?? false);
       setKeyTarget(settings.keyTarget ?? "both");
       setRecentMessageCount(settings.recentMessageCount ?? 20);
+      setEnhanceDraft(settings.enhanceDraft ?? false);
     } else if (mode === "full") {
       resetStreamState();
       setPrompt("");
@@ -207,6 +212,7 @@ export function AiAssistantModal({
         appendMode,
         keyTarget,
         recentMessageCount,
+        enhanceDraft,
       });
     }
     onClose();
@@ -488,6 +494,16 @@ export function AiAssistantModal({
                 <div className="mb-3">
                   <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_quickpill_recent_messages")}</label>
                   <NumberInput min={1} max={100} value={recentMessageCount} onChange={setRecentMessageCount} className="w-full" />
+                </div>
+              )}
+              {!isFull && showEnhanceDraftToggle && (
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{t("ai_pill_improve_draft")}</span>
+                  <Toggle
+                    checked={enhanceDraft}
+                    onChange={setEnhanceDraft}
+                    aria-label={t("ai_pill_improve_draft")}
+                  />
                 </div>
               )}
 
