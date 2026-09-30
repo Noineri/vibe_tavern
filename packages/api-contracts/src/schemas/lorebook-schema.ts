@@ -24,7 +24,7 @@ export const createLorebookSchema = z.object({
   minActivations: z.number().optional().default(0),
   minActivationsDepthMax: z.number().optional().default(0),
   overflowAlert: z.boolean().optional().default(false),
-  characterStrategy: z.number().optional().default(0),
+  characterStrategy: z.number().optional().default(1),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -82,7 +82,7 @@ const loreEntryCoreSchema = z.object({
   caseFormsKeys: z.array(z.string()).optional().default([]),
   characterFilter: z.array(characterFilterEntrySchema).optional().default([]),
   characterFilterExclude: z.boolean().optional().default(false),
-  matchSources: z.array(z.string()).optional().default([]),
+  matchSources: z.array(z.string()).optional().default(["chat_messages"]),
   enabled: z.boolean().optional().default(true),
   stickyWindow: z.number().optional().default(0),
   cooldownWindow: z.number().optional().default(0),
@@ -169,6 +169,18 @@ export const setLorebookLinksSchema = z.object({
 });
 
 // ─── Duplicate ────────────────────────────────────────────────────────────────
+
+export const lorebookExportWarningSchema = z.object({
+  kind: z.literal("chat_off_entry"),
+  entryTitle: z.string(),
+});
+
+export const lorebookExportResultSchema = z.object({
+  data: z.record(z.string(), z.unknown()),
+  warnings: z.array(lorebookExportWarningSchema),
+});
+
+export type LorebookExportResult = z.infer<typeof lorebookExportResultSchema>;
 
 export const duplicateLorebookSchema = z.object({
   name: z.string().optional(),

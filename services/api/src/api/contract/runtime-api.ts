@@ -31,7 +31,7 @@ import type { AutoSummaryConfig, InsightsConfig, ObjectiveMode, ObjectiveTaskSta
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
 import type { DicePendingState } from "../../domain/dice/dice-service.js";
-import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import type { LorebookExportResult, SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 // Re-export so existing imports from this module (the skill adapter) keep
 // resolving; the canonical wire type lives in api-contracts (single source).
 export type { SkillCatalogEntryDto };
@@ -325,7 +325,7 @@ export interface LorebookRuntimeApi {
 	updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) => Promise<Lorebook>;
 	deleteLorebook: (lorebookId: string) => Promise<void>;
 	duplicateLorebook: (lorebookId: string, overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null }) => Promise<{ lorebook: Lorebook; links: LorebookLink[] }>;
-	exportLorebook: (lorebookId: string) => Promise<Record<string, unknown>>;
+	exportLorebook: (lorebookId: string) => Promise<LorebookExportResult>;
 	getLorebookLinks: (lorebookId: string) => Promise<LorebookLink[]>;
 	setLorebookLinks: (lorebookId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<LorebookLink[]>;
 	importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string; enabled?: boolean }) => Promise<LorebookImportResult>;

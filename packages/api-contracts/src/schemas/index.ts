@@ -43,10 +43,13 @@ export {
   updateLoreEntrySchema,
   reorderLoreEntriesSchema,
   importLorebookSchema,
+  lorebookExportWarningSchema,
+  lorebookExportResultSchema,
   lorebookLinkSchema,
   setLorebookLinksSchema,
   duplicateLorebookSchema,
 } from "./lorebook-schema.js";
+export type { LorebookExportResult } from "./lorebook-schema.js";
 export {
   testProviderDraftSchema,
   saveProviderDraftSchema,

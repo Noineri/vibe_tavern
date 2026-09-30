@@ -92,6 +92,7 @@ describe("golden ST world-info parity probe (step 29)", () => {
     expect(e.excludeRecursion).toBe(true);
     expect(e.preventRecursion).toBe(true);
     expect(e.matchSources).toEqual([
+      LORE_MATCH_SOURCE.chatMessages,
       LORE_MATCH_SOURCE.personaDesc,
       LORE_MATCH_SOURCE.characterDesc,
       LORE_MATCH_SOURCE.characterPersonality,

@@ -46,8 +46,8 @@ The **Case forms** chip is an opt-in, per-key Russian adaptation.
 It compiles selected plain keys to an authored `iu` regex with Unicode letter boundaries, declension endings, fleeting-vowel handling, and interchangeable `e` and `yo` forms.
 The generated regex carries a marker so only that exact generated form is recognized as a chip again on import.
 
-`matchSources` defaults to chat messages when empty.
-Its entry-level chips can additionally select persona description, character description, personality, depth prompt, scenario, creator notes, Author's Note, and enabled summaries.
+New `matchSources` values default to `chat_messages`; legacy empty values retain the chat fallback as a migration guard.
+Its entry-level chips can select chat messages, persona description, character description, personality, depth prompt, scenario, creator notes, Author's Note, and enabled summaries.
 The one-shot quiet prompt is always scanned when present.
 
 ST positions `before_char`, `after_char`, `before_examples`, `after_examples`, `top_an`, `bottom_an`, and `at_depth` become ordinary prompt layers.

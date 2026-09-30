@@ -289,6 +289,7 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
   test("createEntry applies documented defaults when fields are omitted", async () => {
     const store = await mkStore();
     const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    expect(lb.characterStrategy).toBe(1);
 
     const created = await store.createEntry(lb.id, {
       title: "T",
@@ -304,7 +305,7 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect(read.role).toBe("system");
     expect(read.groupName).toBe("");
     expect(read.automationId).toBe("");
-    expect(read.matchSources).toEqual([]);
+    expect(read.matchSources).toEqual(["chat_messages"]);
     expect(read.characterFilter).toEqual([]);
     expect(read.metadata).toEqual({});
     // Numeric defaults

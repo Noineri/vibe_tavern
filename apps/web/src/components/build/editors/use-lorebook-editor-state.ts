@@ -86,7 +86,7 @@ const EMPTY_ENTRY_DRAFT: LoreEntryDraft = {
   caseFormsKeys: [],
   characterFilter: [],
   characterFilterExclude: false,
-  matchSources: [],
+  matchSources: ["chat_messages"],
   sortOrder: 0,
   automationId: "",
   createdAt: "",

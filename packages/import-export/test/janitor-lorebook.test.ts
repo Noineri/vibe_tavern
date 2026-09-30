@@ -100,7 +100,8 @@ describe("importJanitorLorebookJson", () => {
     expect(entry.position).toBe("in_prompt");
     expect(entry.ignoreBudget).toBe(false);
     expect(entry.stickyWindow).toBe(0);
-    expect(entry.matchSources).toEqual([]);
+    expect(entry.matchSources).toEqual(["chat_messages"]);
+    expect(result.lorebook.characterStrategy).toBe(1);
     expect(entry.characterFilter).toEqual([]);
     expect(entry.scanDepthOverride).toBeNull();
   });

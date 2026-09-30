@@ -233,9 +233,12 @@ const ST_MATCH_SOURCE_MAP = [
 ] as const;
 
 function mapMatchSources(entry: StLorebookEntryRecord): LoreMatchSource[] {
-  return ST_MATCH_SOURCE_MAP
-    .filter(({ field }) => entry[field] === true)
-    .map(({ source }) => source);
+  return [
+    LORE_MATCH_SOURCE.chatMessages,
+    ...ST_MATCH_SOURCE_MAP
+      .filter(({ field }) => entry[field] === true)
+      .map(({ source }) => source),
+  ];
 }
 
 function unwrapCaseFormsKeys(keys: string[]): { keys: string[]; caseFormsKeys: string[] } {
@@ -642,6 +645,16 @@ function stDelayUntilRecursion(entry: StExportLoreEntry): boolean | number {
   return entry.recursionLevel > 1 ? entry.recursionLevel : true;
 }
 
+export type StLorebookExportWarning = {
+  kind: "chat_off_entry";
+  entryTitle: string;
+};
+
+export interface StLorebookExportResult {
+  data: Record<string, unknown>;
+  warnings: StLorebookExportWarning[];
+}
+
 export function exportLorebookToSt(
   lorebook: StExportLorebook,
   entries: readonly StExportLoreEntry[],
@@ -712,5 +725,24 @@ export function exportLorebookToSt(
       ...((lorebook.extensions as Record<string, unknown>) ?? {}),
       max_recursion_steps: lorebook.maxRecursionSteps,
     },
+  };
+}
+
+/**
+ * Wrap the ST JSON in export diagnostics without adding VT-only metadata to
+ * the downloaded ST file. ST always scans chat messages, so a VT entry that
+ * turns chat off cannot round-trip that choice.
+ */
+export function exportLorebookToStWithWarnings(
+  lorebook: StExportLorebook,
+  entries: readonly StExportLoreEntry[],
+): StLorebookExportResult {
+  return {
+    data: exportLorebookToSt(lorebook, entries),
+    warnings: entries.flatMap((entry, index) => {
+      if (entry.matchSources.includes(LORE_MATCH_SOURCE.chatMessages)) return [];
+      const entryTitle = entry.title.trim() || entry.keys[0]?.trim() || `Entry ${index + 1}`;
+      return [{ kind: "chat_off_entry", entryTitle }];
+    }),
   };
 }

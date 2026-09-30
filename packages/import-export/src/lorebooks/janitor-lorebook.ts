@@ -6,7 +6,7 @@ import type {
   LorebookId,
   LoreScopeType,
 } from "@vibe-tavern/domain";
-import { brandId, ENTITY_ID_NAMESPACE } from "@vibe-tavern/domain";
+import { brandId, ENTITY_ID_NAMESPACE, LORE_MATCH_SOURCE } from "@vibe-tavern/domain";
 
 import {
   asBoolean,
@@ -148,7 +148,7 @@ export function importJanitorLorebookJson(
     minActivations: 0,
     minActivationsDepthMax: 0,
     overflowAlert: false,
-    characterStrategy: 0,
+    characterStrategy: 1,
     sortOrder: 0,
     enabled: true,
     characterId: null,
@@ -237,7 +237,7 @@ export function importJanitorLorebookJson(
       matchWholeWords: entry.matchWholeWords === true ? true : entry.matchWholeWords === false ? false : null,
       characterFilter: [],
       characterFilterExclude: false,
-      matchSources: [],
+      matchSources: [LORE_MATCH_SOURCE.chatMessages],
       enabled: asBoolean(entry.enabled, true),
       sortOrder: insertionOrder,
       automationId: "",

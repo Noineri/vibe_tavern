@@ -11,7 +11,7 @@
  *   - multiple chips can be selected at once (it is multi-select, not single)
  *   - `disabled` blocks every chip
  *
- * Sole consumer today: LoreEntryEditor character-filter picker.
+ * Consumers: LoreEntryEditor, DiceAssignment, and RegexPresetEditor.
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -90,5 +90,14 @@ describe("ToggleChips", () => {
 		);
 		fireEvent.click(getByText("Apple"));
 		expect(onChange).toHaveBeenLastCalledWith(["b", "c"]);
+	});
+
+	it("keeps the final selected chip when minSelected is set", () => {
+		const onChange = mock();
+		const { getByText } = render(
+			<ToggleChips selected={["a"]} options={opts} onChange={onChange} minSelected={1} />,
+		);
+		fireEvent.click(getByText("Apple"));
+		expect(onChange).not.toHaveBeenCalled();
 	});
 });

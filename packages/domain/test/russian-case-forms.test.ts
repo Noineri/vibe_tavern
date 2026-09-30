@@ -35,7 +35,8 @@ describe("Russian case-forms compiler", () => {
     expect(matches("большой", "большого")) .toBe(true);
     expect(matches("ель", "ели")) .toBe(true);
     expect(matches("лев", "льва")) .toBe(true);
-    expect(matches("лев", "левый")) .toBe(true);
+    expect(matches("лев", "левый")) .toBe(false);
+    expect(matches("кот", "котовый")) .toBe(false);
   });
 
   test("handles fleeting vowels and normalizes ё to е", () => {

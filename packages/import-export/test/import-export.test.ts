@@ -567,6 +567,7 @@ describe("importStLorebookJson", () => {
       }],
     });
     expect(result.entries[0].matchSources).toEqual([
+      "chat_messages",
       "persona_desc",
       "character_desc",
       "character_personality",

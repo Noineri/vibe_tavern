@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { exportLorebookToSt, importStLorebookJson } from "../src/lorebooks/st-lorebook.js";
+import { exportLorebookToSt, exportLorebookToStWithWarnings, importStLorebookJson } from "../src/lorebooks/st-lorebook.js";
 
 // Pull the param types off the function signature — the read-contract interfaces
 // are internal, so the tests stay decoupled from their names.
@@ -140,6 +140,23 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
     expect(capped.token_budget_cap).toBe(250);
   });
 
+  test("reports chat-off entries without adding VT metadata to the ST file", () => {
+    const result = exportLorebookToStWithWarnings(
+      baseLorebook(),
+      [
+        baseEntry({ title: "Description only", keys: ["a"], matchSources: ["character_desc"] }),
+        baseEntry({ title: "", keys: ["fallback key"], matchSources: ["chat_messages"] }),
+        baseEntry({ title: "", keys: [], matchSources: ["scenario"] }),
+      ],
+    );
+
+    expect(result.warnings).toEqual([
+      { kind: "chat_off_entry", entryTitle: "Description only" },
+      { kind: "chat_off_entry", entryTitle: "Entry 3" },
+    ]);
+    expect(Object.hasOwn(result.data, "warnings")).toBe(false);
+  });
+
   test("round-trips case forms as a compiled ST regex while retaining the plain key", () => {
     const exported = exportLorebookToSt(
       baseLorebook(),
@@ -250,6 +267,7 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
     expect(entry.characterFilter).toEqual([{ id: null, name: "alice.png" }, { id: null, name: "ghost.png" }]);
     expect(entry.characterFilterExclude).toBe(true);
     expect(entry.matchSources).toEqual([
+      "chat_messages",
       "persona_desc",
       "character_desc",
       "character_personality",

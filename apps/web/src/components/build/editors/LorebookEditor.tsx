@@ -322,8 +322,8 @@ export function LorebookEditor({
   // ── Export lorebook (ST format download) ──
   const handleExportLb = async (lorebookId: string) => {
     const lb = lorebooks.find((l) => l.id === lorebookId);
-    const data = await exportLorebookSt(lorebookId);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const result = await exportLorebookSt(lorebookId);
+    const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -332,6 +332,15 @@ export function LorebookEditor({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    for (const warning of result.warnings) {
+      switch (warning.kind) {
+        case "chat_off_entry":
+          toast.warning(t("lore_export_chat_disabled_warning", { name: warning.entryTitle }));
+          break;
+        default:
+          toast.warning(t("lore_export_unknown_warning"));
+      }
+    }
   };
 
   // ═══ Entry mutations ═══
@@ -370,7 +379,7 @@ export function LorebookEditor({
       caseFormsKeys: [],
       characterFilter: [],
       characterFilterExclude: false,
-      matchSources: [],
+      matchSources: ["chat_messages"],
     };
     void createLoreEntry(lorebookId, newEntry).then(async (created) => {
       if (created) {

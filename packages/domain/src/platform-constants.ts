@@ -300,6 +300,8 @@ export const LORE_MATCH_SOURCE = {
   personaDesc: "persona_desc",
   scenario: "scenario",
   creatorNotes: "creator_notes",
+  authorsNote: "authors_note",
+  summaries: "summaries",
 } as const;
 
 export type LoreMatchSource = typeof LORE_MATCH_SOURCE[keyof typeof LORE_MATCH_SOURCE];

@@ -118,12 +118,13 @@ Mini-chip checkbox: tiny rounded pill indicator consistent with ToggleChips. Unc
 | Prop | Type | Description |
 |------|------|-------------|
 | `selected` | `string[]` | Currently selected values |
-| `options` | `{ value: string, label: string }[]` | Available options |
+| `options` | `{ value: string, label: string, tooltip?: string }[]` | Available options, with an optional per-chip tooltip |
 | `onChange` | `(selected: string[]) => void` | Updated selection |
 | `disabled` | `boolean?` | Disables all chips |
+| `minSelected` | `number?` | Minimum selected chips; defaults to no selection guard |
 | `className` | `string?` | Additional classes on wrapper |
 
-Built on `@radix-ui/react-toggle-group` (`type="multiple"`): `aria-pressed` per chip, one Tab stop for the whole group, arrow-key navigation. Pills `px-3 py-1 text-[12px]`; selected = accent border + bg + text.
+Built on `@radix-ui/react-toggle-group` (`type="multiple"`): `aria-pressed` per chip, one Tab stop for the whole group, arrow-key navigation. Pills `px-3 py-1 text-[calc(var(--ui-fs)-2px)]`; selected = accent border + bg + text.
 
 **When to use:** Trigger/source lists, filter toggles, tag selection. NOT for single-select (use `SegmentedControl` or `DropdownSelect`).
 

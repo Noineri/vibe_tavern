@@ -232,12 +232,20 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     expect(form.getValues("matchWholeWords")).toBe(null); // untouched sibling
   });
 
-  it("renders the injected-prompt source chips with their dedicated labels", () => {
-    const { getByText } = renderEditor(makeEntry());
+  it("derives match-source chips from their scanned fields and keeps the final source selected", () => {
+    const { form, getByText } = renderEditor(makeEntry({ matchSources: ["chat_messages"] }));
     fireEvent.click(getByText(/lore_advanced_settings/));
-    expect(getByText("match_src_character_note")).toBeTruthy();
-    expect(getByText("match_src_authors_note")).toBeTruthy();
-    expect(getByText("match_src_summaries")).toBeTruthy();
+    expect(getByText("match_src_chat_messages")).toBeTruthy();
+    expect(getByText("char_desc_label")).toBeTruthy();
+    expect(getByText("char_personality_label")).toBeTruthy();
+    expect(getByText("character_depth_prompt")).toBeTruthy();
+    expect(getByText("persona_desc_placeholder")).toBeTruthy();
+    expect(getByText("scenario")).toBeTruthy();
+    expect(getByText("creator_notes")).toBeTruthy();
+    expect(getByText("authors_note_label")).toBeTruthy();
+    expect(getByText("memory_tab_summary")).toBeTruthy();
+    fireEvent.click(getByText("match_src_chat_messages"));
+    expect(form.getValues("matchSources")).toEqual(["chat_messages"]);
   });
 
   it("constant checkbox binds via ControlledField", () => {

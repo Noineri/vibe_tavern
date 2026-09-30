@@ -21,6 +21,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { useFormContext, useController, type FieldPath, type UseControllerReturn } from "react-hook-form";
+import { LORE_MATCH_SOURCE } from "@vibe-tavern/domain";
 import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FieldLabel } from "../fields/field-label.js";
@@ -48,6 +49,20 @@ import { ActivationTestPanel } from "./activation-test-panel.js";
 import { CharacterFilterPicker } from "./character-filter-picker.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
+
+// Match-source order is derived directly from the domain source of truth.
+// Every non-chat chip reuses the exact i18n key of the field it scans.
+const MATCH_SOURCE_LABEL_KEY = {
+  [LORE_MATCH_SOURCE.chatMessages]: "match_src_chat_messages",
+  [LORE_MATCH_SOURCE.characterDesc]: "char_desc_label",
+  [LORE_MATCH_SOURCE.characterPersonality]: "char_personality_label",
+  [LORE_MATCH_SOURCE.characterNote]: "character_depth_prompt",
+  [LORE_MATCH_SOURCE.personaDesc]: "persona_desc_placeholder",
+  [LORE_MATCH_SOURCE.scenario]: "scenario",
+  [LORE_MATCH_SOURCE.creatorNotes]: "creator_notes",
+  [LORE_MATCH_SOURCE.authorsNote]: "authors_note_label",
+  [LORE_MATCH_SOURCE.summaries]: "memory_tab_summary",
+} as const;
 
 interface LoreEntryEditorProps {
   entryId: string;
@@ -465,30 +480,26 @@ export function LoreEntryEditor({
 
             {/* ── Match sources ── */}
             <div className="mb-6">
-              <FieldLabel>
-                {t("lore_matchsources_section")}
-              </FieldLabel>
+              <CustomTooltip content={t("lore_matchsources_hint")} align="start">
+                <div>
+                  <FieldLabel>
+                    {t("lore_matchsources_section")}
+                  </FieldLabel>
+                </div>
+              </CustomTooltip>
               <ControlledField name="matchSources">
                 {(field) => (
                   <ToggleChips
                     selected={field.value}
-                    options={(
-                      [
-                        "chat_messages",
-                        "character_desc",
-                        "character_personality",
-                        "character_note",
-                        "persona_desc",
-                        "scenario",
-                        "creator_notes",
-                        "authors_note",
-                        "summaries",
-                      ] as const
-                    ).map((src) => ({
-                      value: src,
-                      label: tDynamic("match_src_" + src),
+                    options={Object.values(LORE_MATCH_SOURCE).map((source) => ({
+                      value: source,
+                      label: t(MATCH_SOURCE_LABEL_KEY[source]),
+                      tooltip: source === LORE_MATCH_SOURCE.creatorNotes
+                        ? t("lore_matchsources_creator_notes_hint")
+                        : undefined,
                     }))}
                     onChange={field.onChange}
+                    minSelected={1}
                   />
                 )}
               </ControlledField>

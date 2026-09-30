@@ -82,10 +82,7 @@ function inflectedWord(word: string): string {
     return render(normalized.slice(0, -2), ENDINGS.fleetingEts);
   }
   if (normalized.endsWith(`${RU.e}${RU.v}`)) {
-    return render(normalized.slice(0, -2), [
-      ...ENDINGS.fleetingEv,
-      ...ENDINGS.adjectiveHard.map((ending) => `${RU.e}${RU.v}${ending}`),
-    ]);
+    return render(normalized.slice(0, -2), ENDINGS.fleetingEv);
   }
   if (normalized.endsWith(RU.softSign)) {
     return render(normalized.slice(0, -1), ENDINGS.feminineSoft);
@@ -99,7 +96,7 @@ function inflectedWord(word: string): string {
   if (normalized.endsWith(RU.yShort)) {
     return render(normalized.slice(0, -1), ENDINGS.softStem);
   }
-  return render(normalized, [...ENDINGS.hardStem, ...ENDINGS.adjectiveHard]);
+  return render(normalized, ENDINGS.hardStem);
 }
 
 function encodeMarkerKey(key: string): string {

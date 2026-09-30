@@ -2,7 +2,7 @@ import type { LoreEntryRecord, LorebookRecord, LorebookLinkRecord } from "./type
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { z } from "zod";
-import { importLorebookSchema } from "@vibe-tavern/api-contracts";
+import { importLorebookSchema, type LorebookExportResult } from "@vibe-tavern/api-contracts";
 
 // ─── Lorebook CRUD ──────────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ export async function duplicateLorebook(lorebookId: string, overrides?: { name?:
   return unwrapRpc(response);
 }
 
-export async function exportLorebookSt(lorebookId: string): Promise<Record<string, unknown>> {
+export async function exportLorebookSt(lorebookId: string): Promise<LorebookExportResult> {
   const response = await client.api.lorebooks[":lorebookId"].export.$get({ param: { lorebookId } });
   return unwrapRpc(response);
 }

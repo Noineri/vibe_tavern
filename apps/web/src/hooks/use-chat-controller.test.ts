@@ -32,6 +32,17 @@ const continueMessageAction = mock();
 const realChatApi = await import("../api/chat-api.js");
 const realChatActions = await import("../stores/api-actions/chat-actions.js");
 const realLocaleHelpers = await import("../i18n/locale-helpers.js");
+const { default: i18next } = await import("i18next");
+const { default: en } = await import("../i18n/locales/en.json");
+const overflowToastI18n = i18next.createInstance();
+void overflowToastI18n.init({
+	lng: "en",
+	resources: { en: { translation: en } },
+	keySeparator: false,
+	nsSeparator: false,
+	interpolation: { prefix: "{", suffix: "}", escapeValue: false },
+	initAsync: false,
+});
 const realSonner = await import("sonner");
 // P21 (overflowAlert): the overflow warning toast. A delegating wrapper —
 // NOT Object.assign on the real toast singleton (that mutation would leak
@@ -63,10 +74,15 @@ mock.module("../stores/api-actions/chat-actions.js", () => {
 	return { ...realChatActions, sendChatMessageAction, continueMessageAction };
 });
 
-// getT() without initI18n — translations are irrelevant to state cleanup.
+// Most controller assertions use stable i18n keys; the overflow path calls
+// the real translation function to pin interpolation as rendered to users.
 mock.module("../i18n/locale-helpers.js", () => ({
 	...realLocaleHelpers,
-	getT: () => (key: string) => key,
+	getT: () => (key: string, options?: Record<string, unknown>) => (
+		key === "lore_overflow_toast"
+			? String(overflowToastI18n.t("lore_overflow_toast", options))
+			: key
+	),
 }));
 
 const { useChatController, diceSendBlockReason } = await import("./use-chat-controller.js");
@@ -983,7 +999,7 @@ describe("useChatController — lorebook overflow toast (P21, stream done path)"
       opts?.onDone?.();
       return Promise.resolve({
         finishReason: "stop",
-        lorebookOverflows: [{ name: "Мир драконов", dropped: 2 }, { name: "Город", dropped: 1 }],
+        lorebookOverflows: [{ name: "Dragon World", dropped: 2 }, { name: "City", dropped: 1 }],
       });
     });
     const { result } = renderHook(() => useChatController());
@@ -991,8 +1007,8 @@ describe("useChatController — lorebook overflow toast (P21, stream done path)"
     await act(async () => { await result.current.handleSend(); });
 
     expect(toastWarning).toHaveBeenCalledTimes(2);
-    expect(toastWarning.mock.calls[0][0]).toBe("lore_overflow_toast");
-    expect(toastWarning.mock.calls[1][0]).toBe("lore_overflow_toast");
+    expect(toastWarning.mock.calls[0][0]).toBe("Lorebook «Dragon World»: budget exhausted, 2 entries did not make it into the prompt");
+    expect(toastWarning.mock.calls[1][0]).toBe("Lorebook «City»: budget exhausted, 1 entries did not make it into the prompt");
   });
 
   test("no overflows on the finish payload ⇒ no warning", async () => {
