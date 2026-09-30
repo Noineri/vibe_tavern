@@ -6,7 +6,8 @@ import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createAiAssistantDeps } from "../src/domain/ai-assistant/ai-assistant-deps.js";
-import { countAiAssistantTokens, streamAiAssistant, type StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
+import { buildUserMessage, countAiAssistantTokens, streamAiAssistant, type StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
+import { getModeConfig } from "../src/domain/ai-assistant/ai-assistant-modes.js";
 import { createOllamaModel } from "../src/domain/providers/ollama-adapter.js";
 
 async function deps(overrides: Partial<StreamDeps> = {}): Promise<StreamDeps> {
@@ -189,6 +190,22 @@ describe("AI assistant stream abort", () => {
 describe("AI assistant stream prompt preparation", () => {
   beforeEach(() => setTokenCountFn((text) => text.length));
   afterEach(() => setTokenCountFn(() => 0));
+
+  it("threads lore-key entry content and existing key sets into the generator request", () => {
+    const message = buildUserMessage({
+      mode: "lore_keys",
+      instruction: "",
+      existingContent: "The Crown of Veyra belongs to the royal archive.",
+      providerProfileId: "profile_1",
+      enabledLayers: [],
+      existingKeys: ["Crown of Veyra"],
+      existingSecondaryKeys: ["royal archive"],
+      logic: "and_any",
+    }, getModeConfig("lore_keys"));
+    expect(message).toContain("The Crown of Veyra belongs to the royal archive.");
+    expect(message).toContain('Existing primary keys (do NOT duplicate): ["Crown of Veyra"]');
+    expect(message).toContain('Existing secondary keys (do NOT duplicate): ["royal archive"]');
+  });
 
   it("builds the impersonation context through the dry full-RP pipeline", async () => {
     const calls: Array<{ chatId: string; contextBudget: number | null; responseReserve: number; recentMessageLimit: number; quietPrompt?: string }> = [];

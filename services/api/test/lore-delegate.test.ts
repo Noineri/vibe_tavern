@@ -64,6 +64,11 @@ describe("parseLoreKeysJson (CTX-L2b)", () => {
 		expect(r.keys).toEqual(["a", "b"]);
 	});
 
+	it("accepts only key strings and cannot carry case-forms metadata", () => {
+		const r = parseLoreKeysJson('{"keys":["dragon",{"key":"dragon","caseForms":true}],"secondaryKeys":["cave"],"caseFormsKeys":["dragon"]}');
+		expect(r).toEqual({ keys: ["dragon"], secondaryKeys: ["cave"] });
+	});
+
 	it("throws on non-JSON", () => {
 		expect(() => parseLoreKeysJson("not json at all")).toThrow(/did not return a JSON object/);
 	});

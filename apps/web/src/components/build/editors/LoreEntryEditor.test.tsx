@@ -30,6 +30,13 @@ const realCharacterFilterPicker = await import("./character-filter-picker.js");
 const realLoreKeysAiPill = await import("./lore-keys-ai-pill.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 
+describe("parseGeneratedLoreKeys", () => {
+  it("accepts only string arrays and ignores case-forms metadata", () => {
+    expect(realLoreKeysAiPill.parseGeneratedLoreKeys('{"keys":["dragon",{"key":"dragon","caseForms":true}],"secondaryKeys":["cave"],"caseFormsKeys":["dragon"]}'))
+      .toEqual({ keys: ["dragon"], secondaryKeys: ["cave"] });
+  });
+});
+
 mock.module("../../../i18n/context.js", () => ({
 	...realI18nContext,
   useT: () => ({

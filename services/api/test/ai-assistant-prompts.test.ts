@@ -146,6 +146,18 @@ describe("chat impersonation enhancement prompt", () => {
   });
 });
 
+describe("lore-key generation prompt (P20)", () => {
+  it("grounds key language in the entry and gives non-ASCII short keys Unicode boundaries", async () => {
+    const prompt = await getDefaultPromptForMode("lore_keys");
+    expect(prompt).toContain("language used in the entry content and, when present, its existing keys");
+    expect(prompt).toContain("Do NOT derive key language from the chat language");
+    expect(prompt).toContain("NEVER use `\\b`");
+    expect(prompt).toContain("/(?<!\\p{L})\u0434\u0440\u0430\u043a\u043e\u043d(?!\\p{L})/iu");
+    expect(prompt).not.toContain("/\\b\u0434\u0440\u0430\u043a\u043e\u043d\\b/i");
+    expect(prompt).toContain("never a `caseFormsKeys`, `caseForms`, or other flag field");
+  });
+});
+
 describe("annotate prompt — macro-verbatim rule (TPE-19)", () => {
   it("the default annotate asset tells the model to copy {{...}} constructs byte-for-byte", async () => {
     const prompt = await getDefaultPromptForMode("message_tts_annotate");
