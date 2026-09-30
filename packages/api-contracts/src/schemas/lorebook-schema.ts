@@ -69,7 +69,7 @@ const loreEntryCoreSchema = z.object({
   ignoreBudget: z.boolean().optional().default(false),
   role: z.string().optional().default("system"),
   groupName: z.string().optional().default(""),
-  groupWeight: z.number().optional().default(1),
+  groupWeight: z.number().optional().default(100),
   prioritizeInclusion: z.boolean().optional().default(false),
   useGroupScoring: z.boolean().nullable().optional().default(null),
   excludeRecursion: z.boolean().optional().default(false),

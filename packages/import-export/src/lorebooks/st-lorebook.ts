@@ -9,7 +9,7 @@ import type {
   LoreMatchSource,
   LoreEntryPosition,
 } from "@vibe-tavern/domain";
-import { brandId, ENTITY_ID_NAMESPACE } from "@vibe-tavern/domain";
+import { brandId, ENTITY_ID_NAMESPACE, LORE_MATCH_SOURCE } from "@vibe-tavern/domain";
 
 import {
   asBoolean,
@@ -43,6 +43,8 @@ interface StLorebookEntryRecord extends Record<string, unknown> {
   useProbability?: unknown;
   role?: unknown;
   group?: unknown;
+  groupWeight?: unknown;
+  groupOverride?: unknown;
   addMemo?: unknown;
   excludeRecursion?: unknown;
   preventRecursion?: unknown;
@@ -50,6 +52,15 @@ interface StLorebookEntryRecord extends Record<string, unknown> {
   scanDepth?: unknown;
   automationId?: unknown;
   outletName?: unknown;
+  matchPersonaDescription?: unknown;
+  matchCharacterDescription?: unknown;
+  matchCharacterPersonality?: unknown;
+  matchCharacterDepthPrompt?: unknown;
+  matchScenario?: unknown;
+  matchCreatorNotes?: unknown;
+  characterFilter?: unknown;
+  character_filter?: unknown;
+  character_filter_exclude?: unknown;
 }
 
 export interface StLorebookNormalized {
@@ -75,6 +86,9 @@ export interface ImportedLorebookBundle {
 
 export interface ImportLorebookOptions {
   now?: string;
+  /** Resolves an ST character-filter avatar filename to a local character. */
+  characterFilterAvatarResolver?: (avatarFilename: string) => { id: string; name: string } | null;
+
   scopeType?: LoreScopeType;
   defaultDepth?: number;
   fallbackName?: string;
@@ -164,6 +178,47 @@ function getEntryRecords(root: Record<string, unknown>): StLorebookEntryRecord[]
   return [];
 }
 
+function mapStRole(value: unknown): LoreEntryRole {
+  if (value === 1 || value === "user") return "user";
+  if (value === 2 || value === "assistant") return "assistant";
+  return "system";
+}
+
+function mapDelayUntilRecursion(value: unknown): { delayUntilRecursion: boolean; recursionLevel: number } {
+  if (value === true) return { delayUntilRecursion: true, recursionLevel: 1 };
+  if (typeof value === "number" && Number.isFinite(value) && value !== 0) {
+    return { delayUntilRecursion: true, recursionLevel: value };
+  }
+  return { delayUntilRecursion: false, recursionLevel: 0 };
+}
+
+function mapMatchSources(entry: StLorebookEntryRecord): LoreMatchSource[] {
+  const flags = [
+    [entry.matchPersonaDescription, LORE_MATCH_SOURCE.personaDesc],
+    [entry.matchCharacterDescription, LORE_MATCH_SOURCE.characterDesc],
+    [entry.matchCharacterPersonality, LORE_MATCH_SOURCE.characterPersonality],
+    [entry.matchCharacterDepthPrompt, LORE_MATCH_SOURCE.characterNote],
+    [entry.matchScenario, LORE_MATCH_SOURCE.scenario],
+    [entry.matchCreatorNotes, LORE_MATCH_SOURCE.creatorNotes],
+  ] as const;
+  return flags.filter(([enabled]) => enabled === true).map(([, source]) => source);
+}
+
+function mapCharacterFilter(
+  entry: StLorebookEntryRecord,
+  resolver: ImportLorebookOptions["characterFilterAvatarResolver"],
+): { characterFilter: Array<{ id: string | null; name: string }>; characterFilterExclude: boolean; tags: string[] } {
+  const nativeFilter = isRecord(entry.characterFilter) ? entry.characterFilter : null;
+  const names = nativeFilter ? asStringArray(nativeFilter.names) : asStringArray(entry.character_filter);
+  return {
+    characterFilter: names.map((name) => resolver?.(name) ?? { id: null, name }),
+    characterFilterExclude: nativeFilter
+      ? asBoolean(nativeFilter.isExclude, false)
+      : asBoolean(entry.character_filter_exclude, false),
+    tags: nativeFilter ? asStringArray(nativeFilter.tags) : [],
+  };
+}
+
 export function importStLorebookJson(
   input: string | Record<string, unknown>,
   options: ImportLorebookOptions = {},
@@ -237,9 +292,14 @@ export function importStLorebookJson(
   const entryRecords = getEntryRecords(root);
   const entries: LoreEntry[] = entryRecords.map((entry, index) => {
     const keys = asStringArray(entry.key);
-    const secondaryKeys = asStringArray(entry.keysecondary);
-    const hasSecondaryLogic = asBoolean(entry.selective, false) && secondaryKeys.length > 0;
+    // ST's new-entry template defaults selective to true. Secondary keys are
+    // ignored only when the source explicitly disables selective matching.
+    const selective = entry.selective !== false;
+    const secondaryKeys = selective ? asStringArray(entry.keysecondary) : [];
+    const hasSecondaryLogic = selective && secondaryKeys.length > 0;
     const logic = hasSecondaryLogic ? mapSelectiveLogic(entry.selectiveLogic) : "and_any";
+    const recursionDelay = mapDelayUntilRecursion(entry.delayUntilRecursion);
+    const characterFilter = mapCharacterFilter(entry, options.characterFilterAvatarResolver);
     const externalId = String(entry.uid ?? index);
     const title = asString(entry.comment).trim() || `Entry ${externalId}`;
     const content = asString(entry.content);
@@ -257,6 +317,10 @@ export function importStLorebookJson(
     // Keep this narrow warning here until step 21 reshapes the field map.
     if (asNumber(entry.position, 0) === 7 && !asString(entry.outletName).trim()) {
       warnings.push(`Lore entry ${externalId} has position 'outlet' but no outlet name.`);
+    }
+
+    if (characterFilter.tags.length > 0) {
+      warnings.push(`Lore entry ${externalId} has character-filter tags that Vibe Tavern cannot import.`);
     }
 
     return {
@@ -277,12 +341,13 @@ export function importStLorebookJson(
       // resweep step 1, LOREBOOK_ST_PARITY_RESWEEP_2026-09).
       minChatMessages: asNumber(entry.delay, 0),
       constant: asBoolean(entry.constant, false),
-      probability: asNumber(entry.probability, 100),
+      // ST skips its probability roll entirely when useProbability is false.
+      probability: entry.useProbability === false ? 100 : asNumber(entry.probability, 100),
       ignoreBudget: asBoolean(entry.ignoreBudget, false),
-      role: (asString(entry.role) || "system") as LoreEntryRole,
+      role: mapStRole(entry.role),
       groupName: asString(entry.group),
-      groupWeight: 0,
-      prioritizeInclusion: false,
+      groupWeight: asNumber(entry.groupWeight, 100),
+      prioritizeInclusion: asBoolean(entry.groupOverride, false),
       // Tri-state preserve (ST parity): ST stores null (inherit the global
       // switch) / true / false — collapsing null to false would permanently
       // pin imported entries against the book default. See
@@ -297,12 +362,12 @@ export function importStLorebookJson(
       matchWholeWords: entry.matchWholeWords === true ? true : entry.matchWholeWords === false ? false : null,
       excludeRecursion: asBoolean(entry.excludeRecursion, false),
       preventRecursion: asBoolean(entry.preventRecursion, false),
-      delayUntilRecursion: asBoolean(entry.delayUntilRecursion, false),
-      recursionLevel: 0,
+      delayUntilRecursion: recursionDelay.delayUntilRecursion,
+      recursionLevel: recursionDelay.recursionLevel,
       scanDepthOverride: entry.scanDepth != null ? asNumber(entry.scanDepth, 0) : null,
-      characterFilter: asStringArray(entry.character_filter).map((name) => ({ id: null, name })),
-      characterFilterExclude: asBoolean(entry.character_filter_exclude, false),
-      matchSources: [] as LoreMatchSource[],
+      characterFilter: characterFilter.characterFilter,
+      characterFilterExclude: characterFilter.characterFilterExclude,
+      matchSources: mapMatchSources(entry),
       enabled: !asBoolean(entry.disable, false),
       // sortOrder is the DISPLAY/LIST position, not the ST activation priority.
       // ST `order` is a priority (higher = earlier in prompt); using it here
@@ -315,18 +380,18 @@ export function importStLorebookJson(
       metadata: {
         stUid: entry.uid ?? index,
         stComment: entry.comment ?? "",
-        stSelective: asBoolean(entry.selective, false),
+        stSelective: selective,
         stPosition: entry.position ?? 0,
         stConstant: asBoolean(entry.constant, false),
         stProbability: asNumber(entry.probability, 100),
         stIgnoreBudget: asBoolean(entry.ignoreBudget, false),
-        stUseProbability: asBoolean(entry.useProbability, false),
+        stUseProbability: entry.useProbability !== false,
         stRole: entry.role ?? null,
         stGroup: asString(entry.group),
         stAddMemo: asBoolean(entry.addMemo, false),
         stExcludeRecursion: asBoolean(entry.excludeRecursion, false),
         stPreventRecursion: asBoolean(entry.preventRecursion, false),
-        stDelayUntilRecursion: asBoolean(entry.delayUntilRecursion, false),
+        stDelayUntilRecursion: entry.delayUntilRecursion ?? false,
         stScanDepth: entry.scanDepth ?? null,
         stAutomationId: asString(entry.automationId),
         stOutletName: asString(entry.outletName),

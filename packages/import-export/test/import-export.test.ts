@@ -452,6 +452,108 @@ describe("importStLorebookJson", () => {
     expect(overridden.lorebook.maxRecursionSteps).toBe(4);
   });
 
+  it("defaults missing ST groupWeight to 100 (world-info.js:97)", () => {
+    const result = importStLorebookJson({
+      name: "Default weight",
+      entries: [{ key: ["a"], content: "A" }],
+    });
+    expect(result.entries[0].groupWeight).toBe(100);
+  });
+
+  it("maps ST groupOverride to prioritizeInclusion (world-info.js:4035)", () => {
+    const result = importStLorebookJson({
+      name: "Override group",
+      entries: [{ key: ["a"], content: "A", groupOverride: true }],
+    });
+    expect(result.entries[0].prioritizeInclusion).toBe(true);
+  });
+
+  it("maps ST match-source flags to their VT scan sources (world-info.js:4018-4023)", () => {
+    const result = importStLorebookJson({
+      name: "Match sources",
+      entries: [{
+        key: ["a"], content: "A",
+        matchPersonaDescription: true,
+        matchCharacterDescription: true,
+        matchCharacterPersonality: true,
+        matchCharacterDepthPrompt: true,
+        matchScenario: true,
+        matchCreatorNotes: true,
+      }],
+    });
+    expect(result.entries[0].matchSources).toEqual([
+      "persona_desc",
+      "character_desc",
+      "character_personality",
+      "character_note",
+      "scenario",
+      "creator_notes",
+    ]);
+  });
+
+  it("maps ST delayUntilRecursion true and numeric levels (world-info.js:3698-3721, 4748-4752)", () => {
+    const result = importStLorebookJson({
+      name: "Recursion delay",
+      entries: [
+        { key: ["true"], content: "True", delayUntilRecursion: true },
+        { key: ["three"], content: "Three", delayUntilRecursion: 3 },
+      ],
+    });
+    expect(result.entries.map((entry) => [entry.delayUntilRecursion, entry.recursionLevel])).toEqual([
+      [true, 1],
+      [true, 3],
+    ]);
+  });
+
+  it("makes useProbability:false deterministic at 100 probability (world-info.js:4911)", () => {
+    const result = importStLorebookJson({
+      name: "No probability roll",
+      entries: [{ key: ["a"], content: "A", probability: 15, useProbability: false }],
+    });
+    expect(result.entries[0].probability).toBe(100);
+  });
+
+  it("drops secondary keys only when ST selective is false and defaults missing selective to true (world-info.js:4009)", () => {
+    const result = importStLorebookJson({
+      name: "Selective defaults",
+      entries: [
+        { key: ["a"], keysecondary: ["dropped"], content: "False", selective: false, selectiveLogic: 2 },
+        { key: ["b"], keysecondary: ["kept"], content: "Missing", selectiveLogic: 2 },
+      ],
+    });
+    expect(result.entries[0].secondaryKeys).toEqual([]);
+    expect(result.entries[0].logic).toBe("and_any");
+    expect(result.entries[1].secondaryKeys).toEqual(["kept"]);
+    expect(result.entries[1].logic).toBe("not_any");
+  });
+
+  it("maps numeric ST at-depth roles to VT roles (world-info.js:4038)", () => {
+    const result = importStLorebookJson({
+      name: "At-depth roles",
+      entries: [
+        { key: ["system"], content: "System", role: 0 },
+        { key: ["user"], content: "User", role: 1 },
+        { key: ["assistant"], content: "Assistant", role: 2 },
+      ],
+    });
+    expect(result.entries.map((entry) => entry.role)).toEqual(["system", "user", "assistant"]);
+  });
+
+  it("imports native ST characterFilter names as ghosts and warns when dropping tags (world-info.js:2125-2131)", () => {
+    const result = importStLorebookJson({
+      name: "Character filter",
+      entries: [{
+        uid: 4,
+        key: ["a"],
+        content: "A",
+        characterFilter: { isExclude: true, names: ["Alice.png"], tags: ["fantasy"] },
+      }],
+    });
+    expect(result.entries[0].characterFilter).toEqual([{ id: null, name: "Alice.png" }]);
+    expect(result.entries[0].characterFilterExclude).toBe(true);
+    expect(result.warnings).toContain("Lore entry 4 has character-filter tags that Vibe Tavern cannot import.");
+  });
+
   it("maps selective logic values correctly", () => {
     const cases: Array<[number, string]> = [
       [0, "and_any"],

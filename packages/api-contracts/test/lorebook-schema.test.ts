@@ -141,6 +141,15 @@ describe("createLorebookSchema", () => {
   });
 });
 
+// --- createLoreEntrySchema --------------------------------------------------
+
+describe("createLoreEntrySchema", () => {
+  it("defaults groupWeight to SillyTavern's 100 (world-info.js:97)", () => {
+    const data = expectSuccessData(createLoreEntrySchema.safeParse({}));
+    expect(data.groupWeight).toBe(100);
+  });
+});
+
 // --- updateLorebookMetaSchema -----------------------------------------------
 
 describe("updateLorebookMetaSchema", () => {

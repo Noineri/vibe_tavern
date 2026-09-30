@@ -21,10 +21,40 @@ export interface LorebookImportResult {
  * to "st" — the most common path since the frontend auto-detects too, but
  * a direct API caller may not set it.
  */
+type CharacterFilterAvatarResolver = (avatarFilename: string) => { id: string; name: string } | null;
+
+function normalizeAvatarFilename(value: string): string {
+	const fileName = value.trim().split(/[\\/]/).pop() ?? "";
+	const extensionStart = fileName.lastIndexOf(".");
+	return (extensionStart > 0 ? fileName.slice(0, extensionStart) : fileName).toLowerCase();
+}
+
+function buildCharacterFilterAvatarResolver(
+	characters: ReadonlyArray<{ id: string; name: string; slug: string }>,
+): CharacterFilterAvatarResolver {
+	const charactersByAvatarStem = new Map<string, { id: string; name: string }>();
+	for (const character of characters) {
+		for (const alias of [character.name, character.slug]) {
+			const stem = normalizeAvatarFilename(alias);
+			if (stem && !charactersByAvatarStem.has(stem)) {
+				charactersByAvatarStem.set(stem, { id: character.id, name: character.name });
+			}
+		}
+	}
+	return (avatarFilename) => charactersByAvatarStem.get(normalizeAvatarFilename(avatarFilename)) ?? null;
+}
+
 async function parseLorebook(
 	format: string,
 	data: unknown,
-	options: { scopeType?: LoreScopeType; fallbackName?: string; globalUseGroupScoring?: boolean; globalCaseSensitive?: boolean; globalMatchWholeWords?: boolean },
+	options: {
+		scopeType?: LoreScopeType;
+		fallbackName?: string;
+		globalUseGroupScoring?: boolean;
+		globalCaseSensitive?: boolean;
+		globalMatchWholeWords?: boolean;
+		characterFilterAvatarResolver?: CharacterFilterAvatarResolver;
+	},
 ) {
 	const { importStLorebookJson, importJanitorLorebookJson, isJanitorLorebookArray } = await import(
 		"@vibe-tavern/import-export"
@@ -42,6 +72,7 @@ async function parseLorebook(
 		globalUseGroupScoring: options.globalUseGroupScoring,
 		globalCaseSensitive: options.globalCaseSensitive,
 		globalMatchWholeWords: options.globalMatchWholeWords,
+		characterFilterAvatarResolver: options.characterFilterAvatarResolver,
 	});
 }
 
@@ -63,12 +94,18 @@ export async function importLorebook(
 		enabled?: boolean;
 	},
 ): Promise<LorebookImportResult> {
+	// ST stores character-filter names as avatar filenames. The import service
+	// owns the character inventory, so it binds a filename stem to a local
+	// character ID when a name or slug matches; unresolved filenames remain
+	// ghosts in the pure importer and therefore match nobody by accident.
+	const characterFilterAvatarResolver = buildCharacterFilterAvatarResolver(await stores.characters.listAll());
 	const parsed = await parseLorebook(body.format, body.data, {
 		scopeType: (body.scopeType as LoreScopeType | undefined) ?? "entity",
 		fallbackName: body.fallbackName,
 		globalUseGroupScoring: body.globalUseGroupScoring,
 		globalCaseSensitive: body.globalCaseSensitive,
 		globalMatchWholeWords: body.globalMatchWholeWords,
+		characterFilterAvatarResolver,
 	});
 
 	let targetId = lorebookId;
