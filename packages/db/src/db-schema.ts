@@ -164,7 +164,6 @@ export const chats = sqliteTable('chats', {
   selectedGreetingIndex: integer('selected_greeting_index').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-  loreActivationStateJson: text('lore_activation_state_json').notNull().default('{}'),
   scriptStateJson: text('script_state_json').notNull().default('{}'),
   // Insights (INSIGHTS_PLAN): per-chat opt-in Objective Tracker + Scene Tracker.
   // Both features OFF by default; zero DOM and zero prompt-layer injection when off.
@@ -674,6 +673,7 @@ export const chatBranches = sqliteTable('chat_branches', {
   parentBranchId: text('parent_branch_id'),
   forkedFromMessageId: text('forked_from_message_id'),
   label: text('label').notNull(),
+  loreActivationStateJson: text('lore_activation_state_json').notNull().default('{}'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   chatIdIdx: index('idx_chat_branches_chat_id').on(table.chatId),

@@ -111,7 +111,7 @@ export class ChatApplicationService {
         id: branchId, chatId: chat.id, parentBranchId: null, forkedFromMessageId: null, label: "Root", createdAt: now,
       }).run();
       await this.chatStore.activateBranch(chat.id, branchId as ChatBranchId);
-      branch = { id: branchId, chatId: chat.id, parentBranchId: null, forkedFromMessageId: null, label: "Root", createdAt: now };
+      branch = { id: branchId, chatId: chat.id, parentBranchId: null, forkedFromMessageId: null, label: "Root", loreActivationState: {}, createdAt: now };
       resolvedBranchId = branchId;
     }
     if (!branch) {

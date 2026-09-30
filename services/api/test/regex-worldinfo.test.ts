@@ -315,6 +315,40 @@ describe("Lore activation include names — resolver message-name wiring (N1)", 
   });
 });
 
+describe("Lore activation state — branch isolation (P14)", () => {
+  it("does not leak a live sticky effect from one branch into another", async () => {
+    const world = await setup({ entryKeys: ["absent-key"] });
+    await world.stores.lorebooks.updateEntry(world.entryId, { stickyWindow: 2 });
+    await world.stores.chats.updateLoreActivationState(world.branchId, {
+      [world.entryId]: { activatedAtTurn: 0, lastMatchedAtTurn: 0 },
+    });
+
+    const source = (await world.stores.messages.getMessages(world.branchId))[0];
+    const fork = await world.stores.chats.forkBranch(world.chatId as string, source.id, "isolated branch");
+    const activeResult = await world.resolver.listActiveLoreEntries({
+      chatId: world.chatId,
+      branchId: brandId<ChatBranchId>(world.branchId),
+      recentText: SCAN_MESSAGE,
+      scanMessages: await scanMessages(world),
+      currentTurn: 1,
+    });
+    const forkMessages = (await world.stores.messages.getMessages(fork.id)).map(message => ({
+      role: message.role,
+      content: message.content,
+    }));
+    const forkResult = await world.resolver.listActiveLoreEntries({
+      chatId: world.chatId,
+      branchId: brandId<ChatBranchId>(fork.id),
+      recentText: SCAN_MESSAGE,
+      scanMessages: forkMessages,
+      currentTurn: 1,
+    });
+
+    expect(activeResult.entries.map(entry => entry.id)).toEqual([world.entryId]);
+    expect(forkResult.entries).toEqual([]);
+  });
+});
+
 describe("RX-9 WORLD_INFO — identity when nothing applies", () => {
   it("no presets at all: resolver output matches the entry content byte-for-byte", async () => {
     const world = await setup();

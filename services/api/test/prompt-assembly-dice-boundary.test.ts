@@ -61,7 +61,7 @@ function makeStoresWithDiceLeak(scripts: Script[]): StoreContainer {
   const chat = makeChat();
   return {
     chats: {
-      getById: async () => ({ ...chat, scriptState: {}, loreActivationState: {} }),
+      getById: async () => ({ ...chat, scriptState: {} }),
       updateScriptState: async () => {},
     },
     scripts: {

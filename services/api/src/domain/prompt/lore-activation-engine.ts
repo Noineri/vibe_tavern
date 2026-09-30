@@ -133,7 +133,7 @@ export interface ActivationInput {
   authorsNote?: string;
   /** Optional: enabled chat-summary texts for matchSources */
   summaries?: string[];
-  /** Current activation state from chat (deserialized from loreActivationStateJson) */
+  /** Current activation state from the selected branch (deserialized from loreActivationStateJson) */
   activationState: LoreActivationState;
   /** Current turn number (for time window calculations) */
   currentTurn: number;
@@ -274,6 +274,20 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   const resolveMacros = input.resolveMacros ?? ((text: string) => applyLegacyMacros(text, input.macroMap));
   const updatedState: LoreActivationState = { ...activationState };
 
+  // ST removes a timed effect whenever the chat has not advanced past its
+  // recorded start (world-info.js:626-630). This single sweep covers swipes
+  // and regenerations (same turn) plus message deletion (a smaller turn).
+  // VT has no equivalent to ST's protected timed-effect flag because it has
+  // no pin UI, so every timed state follows this removal rule.
+  for (const [entryId, state] of Object.entries(updatedState)) {
+    // A sticky-to-cooldown handoff keeps only lastMatchedAtTurn; it is the
+    // cooldown's recorded start after activatedAtTurn has been cleared.
+    const startedAtTurn = state.activatedAtTurn ?? state.lastMatchedAtTurn;
+    if (startedAtTurn != null && currentTurn <= startedAtTurn) {
+      delete updatedState[entryId];
+    }
+  }
+
   // Flatten all entries from all lorebooks
   const allEntries: FlatEntry[] = [];
   const scanDepths = new Map<string, number>(); // lorebookId → scanDepth
@@ -349,12 +363,13 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   const bookDefaults = new Map(input.lorebooks.map(lb => [lb.id, lb.useGroupScoring ?? false]));
 
   // LG-6 (ST parity): sticky-active ≙ a timed effect persisted from a PREVIOUS
-  // scan. Snapshot from the INPUT state before any pass writes: an entry that
-  // activates fresh THIS scan never sticky-dominates its group this scan (ST
-  // records timed effects only for scan survivors, after the whole scan).
+  // scan. Snapshot after the scan-start timed-state sweeps and before any pass
+  // writes: an entry that activates fresh THIS scan never sticky-dominates its
+  // group this scan (ST records timed effects only for scan survivors, after
+  // the whole scan).
   const stickyActiveIds = new Set(
     allEntries.flatMap(e => {
-      const state = activationState[e.id];
+      const state = updatedState[e.id];
       if (e.stickyWindow > 0 && state?.activatedAtTurn != null &&
         currentTurn - state.activatedAtTurn < e.stickyWindow) {
         return [e.id];
@@ -372,11 +387,12 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // anchor makes the observation one-shot: a cleared anchor cannot re-fire,
   // and the next real activation re-anchors a fresh window (ST
   // #setTimedEffectOfType is only-if-absent, so re-activation never extends a
-  // LIVE window — see commitActivationState). Runs over the input state
-  // BEFORE any pass, like ST's constructor-time checkTimedEffects, so it
-  // fires for every enabled entry regardless of later activation outcomes.
+  // LIVE window — see commitActivationState). Runs after the non-advance
+  // sweep and before any pass, like ST's constructor-time checkTimedEffects,
+  // so it fires for every enabled entry regardless of later activation
+  // outcomes.
   for (const e of allEntries) {
-    const sweepState = activationState[e.id];
+    const sweepState = updatedState[e.id];
     if (e.stickyWindow > 0 && sweepState?.activatedAtTurn != null &&
       currentTurn - sweepState.activatedAtTurn >= e.stickyWindow) {
       updatedState[e.id] = {

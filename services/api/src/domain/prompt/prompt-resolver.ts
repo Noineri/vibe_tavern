@@ -199,8 +199,11 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 					: undefined,
 		}));
 
-		// 5. Use activation state from typed Chat object (already parsed by mapRow)
-		const activationState = (chat.loreActivationState ?? {}) as LoreActivationState;
+		// 5. Timed state belongs to the selected branch, not its parent chat:
+		// SillyTavern branches are separate chat files with independent metadata.
+		const branch = await this.stores.chats.getBranch(input.branchId);
+		if (!branch || branch.chatId !== chat.id) return { entries: [], overflowedLorebooks: [] };
+		const activationState = branch.loreActivationState as LoreActivationState;
 
 		// 6. Turn clock: the full branch count when the assembly provides it; the
 		// scan count is only a fallback for direct callers (sticky/cooldown
@@ -245,8 +248,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			maxContextTokens: input.maxContextTokens,
 		});
 
-		// 8. Persist updated activation state
-		await this.stores.chats.updateLoreActivationState(chat.id, result.updatedState);
+		// 8. Persist updated activation state to the branch resolved above.
+		await this.stores.chats.updateLoreActivationState(branch.id, result.updatedState);
 
 		// 9. Map activated entries back to domain LoreEntry type, carrying the
 		//    structured activation reason through for the prompt trace.

@@ -64,9 +64,12 @@ function toVtInput(c: ParityCase): ActivationInput {
 	const stickyIds = new Set(c.entries.filter((e) => e.sticky).map((e) => e.id));
 	const activationState: ActivationInput["activationState"] = {};
 	for (const id of stickyIds) {
-		// Within stickyWindow (5) of currentTurn 1 → the entry stays active
-		// through VT's activation-level sticky check.
-		activationState[id] = { activatedAtTurn: 1, lastMatchedAtTurn: 1 };
+		// Anchored one turn BEFORE the scan (turn 0, scanning at turn 1): a
+		// same-turn anchor is a non-advance re-scan that the step-17 ST prune
+		// removes (world-info.js:626-630). These cases model a sticky that went
+		// live in a PREVIOUS scan and whose chat has advanced — within window 5
+		// it stays active through VT's activation-level sticky check.
+		activationState[id] = { activatedAtTurn: 0, lastMatchedAtTurn: 0 };
 	}
 	return {
 		lorebooks: [

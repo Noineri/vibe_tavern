@@ -119,7 +119,11 @@ describe("probability ordering (LG-11 characterization)", () => {
 		const sticky = makeEntry({ id: "s", stickyWindow: 5, content: "S".repeat(400), ignoreBudget: false });
 		const input = {
 			...makeInput([plain, sticky], ["storm"]),
-			activationState: { s: { activatedAtTurn: 1, lastMatchedAtTurn: 1 } },
+			// Anchor one turn back (activated turn 0, scanning turn 1): a same-turn
+			// anchor is a non-advance re-scan, which the step-17 ST prune removes
+			// (world-info.js:626-630) — the sticky must be live here, so the chat
+			// must have advanced past its activation.
+			activationState: { s: { activatedAtTurn: 0, lastMatchedAtTurn: 0 } },
 		};
 		input.lorebooks[0].tokenBudget = 150; // fits ONE ~100-token entry with headroom (ST `>=`: an exact landing is an overflow — N5)
 		const result = resolveActivatedEntries(input);
@@ -224,7 +228,10 @@ describe("inclusion groups — sticky × groups (LG-6 characterization)", () => 
 	// removed, ALL sticky members survive together — and only pass SURVIVORS
 	// write activation state (ST setTimedEffects runs after the scan).
 	const g = { groupName: "g", useGroupScoring: true, groupWeight: 0 };
-	const stickyState = { activatedAtTurn: 1, lastMatchedAtTurn: 1 };
+	// Anchor one turn back (see the LG-11 note): a same-turn anchor is a
+	// non-advance re-scan that the step-17 ST prune removes — these pins model
+	// a live sticky from a PREVIOUS scan, so the chat advanced past turn 0.
+	const stickyState = { activatedAtTurn: 0, lastMatchedAtTurn: 0 };
 
 	it("LG-6: a sticky-active constant dominates its group — the higher scorer is removed (D8)", () => {
 		const sSticky = makeEntry({ id: "s_sticky", ...g, keys: [] as string[], stickyWindow: 5 });
