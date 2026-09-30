@@ -135,6 +135,8 @@ export interface ActivationInput {
   summaries?: string[];
   /** Current activation state from the selected branch (deserialized from loreActivationStateJson) */
   activationState: LoreActivationState;
+  /** Evaluate activation without pruning or committing timed effects. */
+  dryRun?: boolean;
   /** Current turn number (for time window calculations) */
   currentTurn: number;
   /** Real token counter. Falls back to ceil(chars / 4) if not provided. */
@@ -274,17 +276,22 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   const resolveMacros = input.resolveMacros ?? ((text: string) => applyLegacyMacros(text, input.macroMap));
   const updatedState: LoreActivationState = { ...activationState };
 
-  // ST removes a timed effect whenever the chat has not advanced past its
-  // recorded start (world-info.js:626-630). This single sweep covers swipes
-  // and regenerations (same turn) plus message deletion (a smaller turn).
-  // VT has no equivalent to ST's protected timed-effect flag because it has
-  // no pin UI, so every timed state follows this removal rule.
-  for (const [entryId, state] of Object.entries(updatedState)) {
-    // A sticky-to-cooldown handoff keeps only lastMatchedAtTurn; it is the
-    // cooldown's recorded start after activatedAtTurn has been cleared.
-    const startedAtTurn = state.activatedAtTurn ?? state.lastMatchedAtTurn;
-    if (startedAtTurn != null && currentTurn <= startedAtTurn) {
-      delete updatedState[entryId];
+  // ST dry runs skip sticky/cooldown sweeps and commits (world-info.js:683-686,
+  // 731-735). The live state still participates in sticky/cooldown checks below, but neither
+  // the non-advance prune nor any later timed-state commit may mutate it.
+  if (!input.dryRun) {
+    // ST removes a timed effect whenever the chat has not advanced past its
+    // recorded start (world-info.js:626-630). This single sweep covers swipes
+    // and regenerations (same turn) plus message deletion (a smaller turn).
+    // VT has no equivalent to ST's protected timed-effect flag because it has
+    // no pin UI, so every timed state follows this removal rule.
+    for (const [entryId, state] of Object.entries(updatedState)) {
+      // A sticky-to-cooldown handoff keeps only lastMatchedAtTurn; it is the
+      // cooldown's recorded start after activatedAtTurn has been cleared.
+      const startedAtTurn = state.activatedAtTurn ?? state.lastMatchedAtTurn;
+      if (startedAtTurn != null && currentTurn <= startedAtTurn) {
+        delete updatedState[entryId];
+      }
     }
   }
 
@@ -391,15 +398,17 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // sweep and before any pass, like ST's constructor-time checkTimedEffects,
   // so it fires for every enabled entry regardless of later activation
   // outcomes.
-  for (const e of allEntries) {
-    const sweepState = updatedState[e.id];
-    if (e.stickyWindow > 0 && sweepState?.activatedAtTurn != null &&
-      currentTurn - sweepState.activatedAtTurn >= e.stickyWindow) {
-      updatedState[e.id] = {
-        ...sweepState,
-        activatedAtTurn: undefined,
-        lastMatchedAtTurn: e.cooldownWindow > 0 ? currentTurn : sweepState.lastMatchedAtTurn,
-      };
+  if (!input.dryRun) {
+    for (const e of allEntries) {
+      const sweepState = updatedState[e.id];
+      if (e.stickyWindow > 0 && sweepState?.activatedAtTurn != null &&
+        currentTurn - sweepState.activatedAtTurn >= e.stickyWindow) {
+        updatedState[e.id] = {
+          ...sweepState,
+          activatedAtTurn: undefined,
+          lastMatchedAtTurn: e.cooldownWindow > 0 ? currentTurn : sweepState.lastMatchedAtTurn,
+        };
+      }
     }
   }
 
@@ -467,7 +476,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       const committedSurvivor = { ...survivor, content: resolveMacros(survivor.content) };
       activated.push(committedSurvivor);
       const flat = flatById.get(survivor.id);
-      if (flat) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
+      if (flat && !input.dryRun) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
       if (!flat?.preventRecursion) {
         normalRecurseContents.push(committedSurvivor.content);
       }
@@ -572,7 +581,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         const committedSurvivor = { ...survivor, content: resolveMacros(survivor.content) };
         activated.push(committedSurvivor);
         const flat = flatById.get(survivor.id);
-        if (flat) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
+        if (flat && !input.dryRun) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
         if (!flat?.preventRecursion) {
           newRecurseContents.push(committedSurvivor.content);
         }

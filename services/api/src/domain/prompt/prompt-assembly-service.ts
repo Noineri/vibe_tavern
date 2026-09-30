@@ -104,6 +104,8 @@ export interface PromptAssemblyResolver {
      * not the post-exclusion scan count (P13 changes scan input only; timed
      * windows must not shift when the prompt excludes messages). */
     currentTurn?: number;
+    /** Resolve active entries without changing branch timed state. */
+    dryRun?: boolean;
     /** Max context tokens of the active model. Needed for percent-of-context
      * token-budget mode on lorebooks. Optional — when absent, percent-mode
      * lorebooks silently fall back to their fixed `tokenBudget`. */
@@ -160,6 +162,8 @@ export interface AssemblePromptForChatInput {
   responseReserve?: number;
   /** Summary preparation is source-loading policy, not a pipeline mode. */
   summary?: boolean;
+  /** Resolve lore activation without changing its timed state. */
+  dryRun?: boolean;
   /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): preceding chat-summaries
    *  (`summarizedFrom < from` chain, count-capped, oldest→newest) fed into the
    *  summary prompt as read-only continuity. Threaded into pipelineContext
@@ -591,6 +595,7 @@ export class PromptAssemblyService {
       // Turn clock stays on the full branch — exclusions shape the scan input,
       // never the sticky/cooldown arithmetic.
       currentTurn: branchMessages.length,
+      dryRun: input.dryRun,
       maxContextTokens: input.contextBudget ?? undefined,
     });
     const activeLoreEntries = loreActivation.entries;

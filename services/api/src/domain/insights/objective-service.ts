@@ -737,6 +737,7 @@ export class ObjectiveService {
           branchId,
           model,
           recentMessageLimit: cadenceState.contextWindow,
+          dryRun: true,
         });
         const checkedThroughCount = cadenceState.autoCheckEventCount;
         await this.checkCompletion({ chatId, profile, model, context: built.context });

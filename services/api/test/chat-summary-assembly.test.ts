@@ -65,7 +65,7 @@ describe("ChatLifecycleRuntime summary assembly", () => {
     expect(calls).toEqual([[
       "chat_1",
       "branch_1",
-      { model: "summary-model", recentMessageLimit: 24, contextBudget: 4096, summary: true },
+      { model: "summary-model", recentMessageLimit: 24, contextBudget: 4096, summary: true, dryRun: true },
     ]]);
   });
 
@@ -98,6 +98,7 @@ describe("ChatLifecycleRuntime summary assembly", () => {
         excludeMessageIds: ["msg_1", "msg_4"],
         contextBudget: 2048,
         summary: true,
+        dryRun: true,
       },
     ]]);
   });

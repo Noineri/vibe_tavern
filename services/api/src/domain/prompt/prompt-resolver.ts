@@ -111,6 +111,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		 * count only for direct test callers; production passes the branch total
 		 * so sticky/cooldown windows don't shift with prompt exclusions (P13). */
 		currentTurn?: number;
+		/** Resolve active entries without changing branch timed state. */
+		dryRun?: boolean;
 		maxContextTokens?: number;
 	}): Promise<ActiveLoreEntriesResult> {
 		const chat = await this.stores.chats.getById(input.chatId);
@@ -244,12 +246,16 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			summaries: input.summaries,
 			activationState,
 			currentTurn,
+			dryRun: input.dryRun,
 			estimateTokenCount: countTokens,
 			maxContextTokens: input.maxContextTokens,
 		});
 
-		// 8. Persist updated activation state to the branch resolved above.
-		await this.stores.chats.updateLoreActivationState(branch.id, result.updatedState);
+		// 8. Only live generation resolves persist timed state. Dry-run callers
+		// receive the same active-entry view without consuming sticky/cooldown.
+		if (!input.dryRun) {
+			await this.stores.chats.updateLoreActivationState(branch.id, result.updatedState);
+		}
 
 		// 9. Map activated entries back to domain LoreEntry type, carrying the
 		//    structured activation reason through for the prompt trace.

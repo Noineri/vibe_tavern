@@ -203,6 +203,7 @@ export function pickBootstrapChatId<T extends string>(
 					...(opts?.recentMessageLimit !== undefined ? { recentMessageLimit: opts.recentMessageLimit } : {}),
 					contextBudget: opts?.contextBudget ?? null,
 					responseReserve: opts?.responseReserve,
+					dryRun: opts?.dryRun,
 					...(opts?.throughMessageId ? { throughMessageId: opts.throughMessageId } : {}),
 					...(opts?.excludeMessageIds ? { excludeMessageIds: opts.excludeMessageIds } : {}),
 				}),
@@ -329,6 +330,7 @@ export function pickBootstrapChatId<T extends string>(
 				this.assemblePrompt(chatId, branchId, {
 					contextBudget: effectiveContextBudget(profile?.contextBudget ?? null, profile?.tokenPadding),
 					responseReserve: profile?.maxTokens ?? 0,
+					dryRun: true,
 				}),
 			);
 			return {
@@ -860,7 +862,7 @@ export function pickBootstrapChatId<T extends string>(
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
+		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; dryRun?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
 	) {
 		void await this.getActiveProviderProfile();
 		const strategy = await this.resolveChatModeStrategy(chatId);
@@ -904,6 +906,7 @@ export function pickBootstrapChatId<T extends string>(
 			excludeMessageIds: options?.excludeMessageIds,
 			recentMessageLimit: options?.recentMessageLimit,
 			summary: options?.summary,
+			dryRun: options?.dryRun,
 			contextBudget: options?.contextBudget ?? null,
 			responseReserve: options?.responseReserve,
 			presetId: options?.presetId,

@@ -137,6 +137,7 @@ export function createAiAssistantDeps(stores: StoreContainer, sessionRuntime: Se
 			model: input.model,
 			contextBudget: input.contextBudget,
 			responseReserve: input.responseReserve,
+			dryRun: true,
 			throughMessageId: brandId<MessageId>(input.throughMessageId),
 			excludeMessageIds: input.excludeMessageIds.map((id) => brandId<MessageId>(id)),
 			...(input.recentMessageLimit !== undefined ? { recentMessageLimit: input.recentMessageLimit } : {}),

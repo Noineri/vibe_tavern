@@ -438,6 +438,7 @@ export class InsightsAdapter {
 			chatId: brandId<ChatId>(chatId),
 			model,
 			recentMessageLimit: contextWindow,
+			dryRun: true,
 		});
 		return built.context;
 	}

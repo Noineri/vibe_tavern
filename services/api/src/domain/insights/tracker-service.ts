@@ -712,6 +712,7 @@ export class SceneTrackerService {
 			branchId: target.branchId,
 			model: resolved.model,
 			recentMessageLimit: config.contextWindow,
+			dryRun: true,
 			...(throughMessageId ? { throughMessageId } : {}),
 		});
 		return this.generateScene({
@@ -756,6 +757,7 @@ export class SceneTrackerService {
 			branchId: target.branchId,
 			model: resolved.model,
 			recentMessageLimit: draftConfig.contextWindow,
+			dryRun: true,
 		});
 		const instructionBase = await this.resolveSceneBase(draftConfig.generatePrompt);
 		const instruction = composeSceneInstruction(instructionBase, draftConfig.schema, continuity, draftConfig.rulesPrompt);
@@ -815,6 +817,7 @@ export class SceneTrackerService {
 			branchId: target.branchId,
 			model: resolved.model,
 			recentMessageLimit: config.contextWindow,
+			dryRun: true,
 		});
 		await this.generateScene({
 			target,
