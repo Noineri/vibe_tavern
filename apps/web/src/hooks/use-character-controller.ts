@@ -16,6 +16,7 @@ import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { exportCharaCardPng } from "../lib/png-writer.js";
 import { resolveEntityAvatarUrl } from "../lib/avatar.js";
 import { resolveChatRemovalMode } from "../lib/chat-removal-mode.js";
+import { pickNextChatAfterDelete } from "../lib/next-chat-pick.js";
 import {
   saveCharacterAction,
   createCharacterAction,
@@ -373,13 +374,11 @@ export function useCharacterController(): CharacterControllerActions {
     const targetChat = snapshot?.chats.find((c) => c.id === chatId);
     const characterId = targetChat?.characterId ?? snapshot?.character.id;
 
-    // Find next chat for the same character before deleting
+    // Find next chat for the same character before deleting (the pick itself
+    // lives in lib/next-chat-pick.ts — BUILD_MODE_F5_RESTORE_REPORT step 2).
     let nextChatId: string | null = null;
     if (snapshot && characterId) {
-      const remaining = snapshot.chats
-        .filter(c => c.id !== chatId && c.characterId === characterId)
-        .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
-      nextChatId = remaining[0]?.id ?? null;
+      nextChatId = pickNextChatAfterDelete(snapshot.chats, chatId, characterId, targetChat?.mode ?? null)?.id ?? null;
     }
     await deleteChatAction(chatId);
     // Switch to next chat or clear

@@ -10,6 +10,7 @@ import { ThemeTuner } from "./components/dev/ThemeTuner.js";
 import { VibeMdThemePreview } from "./components/build/editors/VibeMdThemePreview.js";
 import { ExperienceDetachedHost, isDetachedExperienceWindow } from "./components/experience/ExperienceDetachedWindow.js";
 import { clearMobileToken, extractTokenFromHash, saveMobileToken } from "./lib/mobile-token.js";
+import { initNavigationPersistence } from "./stores/navigation-persistence.js";
 // D5 (v1.2.1): last-resort boundary — a render throw anywhere in the app must
 // show the crash screen, never unmount the tree into a blank page.
 import { RootErrorBoundary } from "./components/shared/RootErrorBoundary.js";
@@ -23,6 +24,11 @@ if (typeof window !== "undefined") {
   const hashToken = extractTokenFromHash();
   if (hashToken) saveMobileToken(hashToken);
 }
+
+// F5 restore (BUILD_MODE_F5_RESTORE_REPORT A): persist play/build mode +
+// build tab to sessionStorage on every change; restored after the initial
+// bootstrap in useVibeTavernApp.load().
+initNavigationPersistence();
 
 // NOTE (2026-09-29 mobile outage): there is deliberately NO global fetch
 // patching here anymore. Mobile auth (Bearer injection) and the 401
