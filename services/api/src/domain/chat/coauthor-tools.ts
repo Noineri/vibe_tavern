@@ -103,6 +103,18 @@ const SECTION_TO_PROFILE_FIELD: Readonly<Record<string, SectionField>> = {
   EXAMPLES: "mesExample",
 };
 
+/** Inverse of {@link SECTION_TO_PROFILE_FIELD}: the H1 section name a field lives under. */
+const PROFILE_FIELD_TO_SECTION = Object.fromEntries(
+  Object.entries(SECTION_TO_PROFILE_FIELD).map(([section, field]) => [field, section]),
+) as Readonly<Record<SectionField, string>>;
+
+/** The whole-section write tool that populates each field (the edit_* tools' fallback). */
+const PROFILE_FIELD_TO_WRITE_TOOL: Readonly<Record<SectionField, string>> = {
+  description: "write_personality",
+  scenario: "write_scenario",
+  mesExample: "write_examples",
+};
+
 /** A known section whose content would be silently dropped by canonicalization. */
 interface LostSection {
   /** The heading exactly as the model wrote it, e.g. `## PERSONALITY`. */
@@ -283,6 +295,26 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
       logger.info("%s IN edits=%d summary=%s", toolName, edits.length, summary);
       const parsed = parseProfileMd(workingProfileMd);
       const currentBody = parsed.profile[field] ?? "";
+      // Models anchor `search` on the bare `# SECTION` heading they see in the
+      // rendered profile.md; the edit applies to the body only, so that can
+      // never match. Name the real fix instead of a generic "not found" — a
+      // model left guessing falls back to a whole-profile write_profile.
+      const section = PROFILE_FIELD_TO_SECTION[field];
+      if (currentBody.trim().length === 0) {
+        const writeTool = PROFILE_FIELD_TO_WRITE_TOOL[field];
+        const hint = !toolSet || toolSet[writeTool] === true
+          ? ` To populate it, call ${writeTool} with the full section content (no heading).`
+          : "";
+        logger.warn("%s REJECTED empty section %s", toolName, section);
+        throw new Error(`${toolName}: the ${section} section is empty, so there is no text for search to match.${hint}`);
+      }
+      const headingLine = new RegExp(`^#[ \\t]+${section}[ \\t]*$`, "m");
+      if (edits.some((e) => headingLine.test(e.search))) {
+        logger.warn("%s REJECTED heading in search %s", toolName, section);
+        throw new Error(
+          `${toolName}: search includes the "# ${section}" heading, which is not part of the section body — edits apply to the body text only. Remove the heading from search and replace.`,
+        );
+      }
       const newBody = applyExactEditsToBody(currentBody, edits, toolName);
       setSectionField(parsed.profile, field, newBody);
       const merged = serializeProfileMd(parsed);
@@ -503,7 +535,7 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
 
     edit_personality: tool({
       description:
-        "Apply exact SEARCH/REPLACE edits to the PERSONALITY section body only. Each `search` must match exactly once in the current PERSONALITY text; use this for targeted changes to existing prose. The other sections (SCENARIO, EXAMPLES) are preserved. Edits compose across calls within one turn.",
+        "Apply exact SEARCH/REPLACE edits to the PERSONALITY section body only. Each `search` must match exactly once in the current PERSONALITY text; use this for targeted changes to existing prose. The body excludes the `# PERSONALITY` heading — never put the heading in `search`; if PERSONALITY is empty, use write_personality instead. The other sections (SCENARIO, EXAMPLES) are preserved. Edits compose across calls within one turn.",
       inputSchema: coauthorSectionEditInputSchema,
       execute: async ({ edits, summary }): Promise<CoauthorToolOutput> =>
         runSectionExactEdit("description", "edit_personality", edits, summary),
@@ -511,7 +543,7 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
 
     edit_scenario: tool({
       description:
-        "Apply exact SEARCH/REPLACE edits to the SCENARIO section body only. Each `search` must match exactly once in the current SCENARIO text; use this for targeted changes. The other sections (PERSONALITY, EXAMPLES) are preserved. Edits compose across calls within one turn.",
+        "Apply exact SEARCH/REPLACE edits to the SCENARIO section body only. Each `search` must match exactly once in the current SCENARIO text; use this for targeted changes. The body excludes the `# SCENARIO` heading — never put the heading in `search`; if SCENARIO is empty, use write_scenario instead. The other sections (PERSONALITY, EXAMPLES) are preserved. Edits compose across calls within one turn.",
       inputSchema: coauthorSectionEditInputSchema,
       execute: async ({ edits, summary }): Promise<CoauthorToolOutput> =>
         runSectionExactEdit("scenario", "edit_scenario", edits, summary),
@@ -519,7 +551,7 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
 
     edit_examples: tool({
       description:
-        "Apply exact SEARCH/REPLACE edits to the EXAMPLES section body (example dialogue) only. Each `search` must match exactly once in the current EXAMPLES text; use this for targeted changes. The other sections (PERSONALITY, SCENARIO) are preserved. Edits compose across calls within one turn.",
+        "Apply exact SEARCH/REPLACE edits to the EXAMPLES section body (example dialogue) only. Each `search` must match exactly once in the current EXAMPLES text; use this for targeted changes. The body excludes the `# EXAMPLES` heading — never put the heading in `search`; if EXAMPLES is empty, use write_examples instead. The other sections (PERSONALITY, SCENARIO) are preserved. Edits compose across calls within one turn.",
       inputSchema: coauthorSectionEditInputSchema,
       execute: async ({ edits, summary }): Promise<CoauthorToolOutput> =>
         runSectionExactEdit("mesExample", "edit_examples", edits, summary),
