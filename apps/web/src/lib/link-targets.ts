@@ -69,6 +69,16 @@ export type ScriptLinkSource = Pick<ScriptRecord, "id" | "name" | "updatedAt">;
 /** Regex-preset fields the mapper reads (regex presets have no avatar). */
 export type RegexLinkSource = Pick<RegexPresetRecord, "id" | "name" | "updatedAt">;
 
+/** Prompt-preset fields the mapper reads (prompt presets have no avatar).
+ *  Structural, not a `Pick` of the DTO: the regex editors hold the list in a
+ *  plain `{ id, name, updatedAt? }` state — a branded-id `Pick` would not
+ *  fit it without casts. The API DTO (`PromptPresetDto`) fits as-is. */
+export interface PromptPresetLinkSource {
+	id: string;
+	name: string;
+	updatedAt?: string | null;
+}
+
 /** Map a character record to its LinkTarget (canonical avatar-field set —
  *  the shape TtsBindingFields/LorebookEditor build today). */
 export function characterToLinkTarget(c: CharacterLinkSource): LinkTarget {
@@ -113,4 +123,10 @@ export function scriptToLinkTarget(sc: ScriptLinkSource): LinkTarget {
 /** Map a regex preset record. No avatar → the name-initial dot. */
 export function regexToLinkTarget(rx: RegexLinkSource): LinkTarget {
   return { id: rx.id, name: rx.name, avatarAssetId: null, updatedAt: rx.updatedAt };
+}
+
+/** Map a prompt-preset row. No avatar → the name-initial dot; a missing
+ *  `updatedAt` normalizes to null (sorts last in the Wave-2 ordering). */
+export function promptPresetToLinkTarget(p: PromptPresetLinkSource): LinkTarget {
+  return { id: p.id, name: p.name, avatarAssetId: null, updatedAt: p.updatedAt ?? null };
 }

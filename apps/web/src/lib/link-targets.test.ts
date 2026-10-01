@@ -7,11 +7,13 @@ import {
 	lorebookToLinkTarget,
 	scriptToLinkTarget,
 	regexToLinkTarget,
+	promptPresetToLinkTarget,
 	type CharacterLinkSource,
 	type PersonaLinkSource,
 	type LorebookLinkSource,
 	type ScriptLinkSource,
 	type RegexLinkSource,
+	type PromptPresetLinkSource,
 } from "./link-targets.js";
 
 describe("lib/link-targets — the single record→LinkTarget source (LB-2A)", () => {
@@ -112,6 +114,28 @@ describe("lib/link-targets — the single record→LinkTarget source (LB-2A)", (
 			name: "Quote cleanup",
 			avatarAssetId: null,
 			updatedAt: "2026-10-01T11:20:00.000Z",
+		});
+	});
+
+	test("promptPresetToLinkTarget: no avatar, updatedAt passed through (LB-2D)", () => {
+		const p: PromptPresetLinkSource = { id: "ps_1", name: "Verbose", updatedAt: "2026-10-01T11:55:00.000Z" };
+		expect(promptPresetToLinkTarget(p)).toEqual({
+			id: "ps_1",
+			name: "Verbose",
+			avatarAssetId: null,
+			updatedAt: "2026-10-01T11:55:00.000Z",
+		});
+	});
+
+	test("promptPresetToLinkTarget: missing updatedAt normalizes to null (LB-2D)", () => {
+		// A state row that never carried the timestamp — the DTO always does,
+		// but the input type allows its absence; null sorts last, never NaN.
+		const p: PromptPresetLinkSource = { id: "ps_2", name: "Lean" };
+		expect(promptPresetToLinkTarget(p)).toEqual({
+			id: "ps_2",
+			name: "Lean",
+			avatarAssetId: null,
+			updatedAt: null,
 		});
 	});
 });

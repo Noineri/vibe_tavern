@@ -10,6 +10,7 @@ import { lblCls } from "../../lib/field-tokens.js";
 import { DropdownSelect } from "./DropdownSelect.js";
 import { Checkbox } from "./Checkbox.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "./LinkBindingPopover.js";
+import { characterToLinkTarget, lorebookToLinkTarget, personaToLinkTarget } from "../../lib/link-targets.js";
 import { TokenCounter } from "./TokenCounter.js";
 import { buildLineDiff, TextDiffPreview } from "./TextDiffPreview.js";
 import { NumberInput } from "./NumberInput.js";
@@ -221,31 +222,32 @@ export function AiAssistantModal({
   // --- Full Mode Context Link building ---
   const allCharacterContext = allCharacters.find(c => c.id === scopeContext?.characterId);
   const allPersonaContext = personas.find(p => p.id === scopeContext?.personaId);
+  // Pick each source ONCE — the active record when it IS the scoped one,
+  // else the all-list record — and map through the shared lib mappers
+  // (LB-2D). The last-resort literals keep today's shape; "Character" /
+  // "Persona" are PRE-EXISTING hardcoded fallback names (i18n out of scope
+  // here, logged in the plan).
+  const charSource =
+    activeCharacter && activeCharacter.id === scopeContext?.characterId ? activeCharacter : allCharacterContext;
+  const charTarget: LinkTarget | null =
+    scopeContext?.characterId == null
+      ? null
+      : charSource
+        ? characterToLinkTarget(charSource)
+        : { id: scopeContext.characterId, name: "Character", avatarAssetId: null };
 
-  const charTarget: LinkTarget | null = scopeContext?.characterId ? {
-    id: scopeContext.characterId,
-    name: activeCharacter?.id === scopeContext.characterId ? activeCharacter.name : allCharacterContext?.name ?? "Character",
-    avatarAssetId: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarAssetId ?? null : allCharacterContext?.avatarAssetId ?? null,
-    kind: "characters",
-    avatarExt: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarExt ?? null : allCharacterContext?.avatarExt ?? null,
-    avatarFullExt: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarFullExt ?? null : allCharacterContext?.avatarFullExt ?? null,
-    avatarFullAssetId: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarFullAssetId ?? null : allCharacterContext?.avatarFullAssetId ?? null,
-    updatedAt: activeCharacter?.id === scopeContext.characterId ? activeCharacter.updatedAt ?? null : allCharacterContext?.updatedAt ?? null,
-  } : null;
-
-  const persTarget: LinkTarget | null = scopeContext?.personaId ? {
-    id: scopeContext.personaId,
-    name: activePersona?.id === scopeContext.personaId ? activePersona.name : allPersonaContext?.name ?? "Persona",
-    avatarAssetId: activePersona?.id === scopeContext.personaId ? activePersona.avatarAssetId ?? null : allPersonaContext?.avatarAssetId ?? null,
-    kind: "personas",
-    avatarExt: activePersona?.id === scopeContext.personaId ? activePersona.avatarExt ?? null : allPersonaContext?.avatarExt ?? null,
-    avatarFullExt: activePersona?.id === scopeContext.personaId ? activePersona.avatarFullExt ?? null : allPersonaContext?.avatarFullExt ?? null,
-    updatedAt: activePersona?.id === scopeContext.personaId ? activePersona.updatedAt ?? null : allPersonaContext?.updatedAt ?? null,
-  } : null;
+  const persSource =
+    activePersona && activePersona.id === scopeContext?.personaId ? activePersona : allPersonaContext;
+  const persTarget: LinkTarget | null =
+    scopeContext?.personaId == null
+      ? null
+      : persSource
+        ? personaToLinkTarget(persSource)
+        : { id: scopeContext.personaId, name: "Persona", avatarAssetId: null };
 
   const lorebookContextTargets: LinkTarget[] = aiLorebooks
     .filter((lb) => lb.enabled)
-    .map((lb) => ({ id: lb.id, name: lb.name, avatarAssetId: null }));
+    .map(lorebookToLinkTarget);
   const availableLorebookIds = new Set(lorebookContextTargets.map((lb) => lb.id));
   const selectedLorebookIds = lorebookIds.filter((id) => availableLorebookIds.has(id));
 

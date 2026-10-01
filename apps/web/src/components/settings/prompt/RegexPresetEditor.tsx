@@ -11,6 +11,7 @@ import { NumberInput } from "../../shared/NumberInput.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { characterToLinkTarget, promptPresetToLinkTarget } from "../../../lib/link-targets.js";
 import { RegexAiAssistantModal } from "./RegexAiAssistantModal.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
@@ -166,7 +167,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
   const allCharacters = useAllCharacters();
   const macroContext = useMacroContext();
   const [bindLinks, setBindLinks] = useState<Array<{ targetType: "character" | "preset"; targetId: string }>>([]);
-  const [promptPresets, setPromptPresets] = useState<Array<{ id: string; name: string }>>([]);
+  const [promptPresets, setPromptPresets] = useState<Array<{ id: string; name: string; updatedAt?: string }>>([]);
   const presetId = preset?.id ?? null;
 
   useEffect(() => {
@@ -179,27 +180,17 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
       .then((rows) => { if (!cancelled) setBindLinks(rows.map((r) => ({ targetType: r.targetType, targetId: r.targetId }))); })
       .catch(() => { if (!cancelled) setBindLinks([]); });
     listPromptPresets()
-      .then((list) => { if (!cancelled) setPromptPresets(list.map((p) => ({ id: p.id, name: p.name }))); })
+      .then((list) => { if (!cancelled) setPromptPresets(list.map((p) => ({ id: p.id, name: p.name, updatedAt: p.updatedAt }))); })
       .catch(() => { if (!cancelled) setPromptPresets([]); });
     return () => { cancelled = true; };
   }, [presetId]);
 
   const characterTargets: LinkTarget[] = useMemo(
-    () =>
-      allCharacters.map((c) => ({
-        id: c.id,
-        name: c.name,
-        avatarAssetId: c.avatarAssetId,
-        kind: "characters" as const,
-        avatarExt: c.avatarExt,
-        avatarFullExt: c.avatarFullExt,
-        avatarFullAssetId: c.avatarFullAssetId,
-        updatedAt: c.updatedAt,
-      })),
+    () => allCharacters.map(characterToLinkTarget),
     [allCharacters],
   );
   const presetTargets: LinkTarget[] = useMemo(
-    () => promptPresets.map((p) => ({ id: p.id, name: p.name, avatarAssetId: null })),
+    () => promptPresets.map(promptPresetToLinkTarget),
     [promptPresets],
   );
 

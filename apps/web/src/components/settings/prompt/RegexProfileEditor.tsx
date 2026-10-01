@@ -3,6 +3,7 @@ import { useT } from "../../../i18n/context.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { characterToLinkTarget, promptPresetToLinkTarget } from "../../../lib/link-targets.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -56,7 +57,7 @@ export function RegexProfileEditor({
   // ── Bindings ──
   const allCharacters = useAllCharacters();
   const [bindLinks, setBindLinks] = useState<LinkBindingRecord[]>([]);
-  const [promptPresets, setPromptPresets] = useState<Array<{ id: string; name: string }>>([]);
+  const [promptPresets, setPromptPresets] = useState<Array<{ id: string; name: string; updatedAt?: string }>>([]);
 
   useEffect(() => {
     setBindLinks([]);
@@ -70,7 +71,7 @@ export function RegexProfileEditor({
       });
     listPromptPresets()
       .then((list) => {
-        if (!cancelled) setPromptPresets(list.map((p) => ({ id: p.id, name: p.name })));
+        if (!cancelled) setPromptPresets(list.map((p) => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })));
       })
       .catch(() => {
         if (!cancelled) setPromptPresets([]);
@@ -81,21 +82,11 @@ export function RegexProfileEditor({
   }, [profile.id]);
 
   const characterTargets: LinkTarget[] = useMemo(
-    () =>
-      allCharacters.map((c) => ({
-        id: c.id,
-        name: c.name,
-        avatarAssetId: c.avatarAssetId,
-        kind: "characters" as const,
-        avatarExt: c.avatarExt,
-        avatarFullExt: c.avatarFullExt,
-        avatarFullAssetId: c.avatarFullAssetId,
-        updatedAt: c.updatedAt,
-      })),
+    () => allCharacters.map(characterToLinkTarget),
     [allCharacters],
   );
   const presetTargets: LinkTarget[] = useMemo(
-    () => promptPresets.map((p) => ({ id: p.id, name: p.name, avatarAssetId: null })),
+    () => promptPresets.map(promptPresetToLinkTarget),
     [promptPresets],
   );
 
