@@ -1,5 +1,4 @@
 import { mkdir } from "node:fs/promises";
-import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
@@ -56,6 +55,7 @@ import { addRuntimeTeardown, runRuntimeTeardowns, setRuntimeShutdownHook } from 
 import { createLoadingHandler } from "./loading-placeholder.js";
 import { closeAllSocksBridges } from "../domain/providers/socks-bridge.js";
 import { serveErrorResponse } from "./serve-error.js";
+import { serveAssetFile } from "./static-conditional.js";
 
 export { apiNotReadyResponse } from "./loading-placeholder.js";
 export { serveErrorResponse } from "./serve-error.js";
@@ -375,35 +375,36 @@ export function resolveFrontendSource(config: {
 }
 
 /**
- * Bun `{dir}` routes for the built frontend's asset directories.
+ * Bun routes for the built frontend's asset directories.
  *
  * These run before `fetch`, so /assets/* and /fonts/* never reach Hono — and
- * that is the point: a `{dir}` route answers with an `ETag` + `Last-Modified`
- * and turns a reload into a 304, while hono's serveStatic sends no validator
- * at all (measured on the built bundle: 10.0 MB re-downloaded per page load).
+ * that is the point: they answer with an `ETag` + `Last-Modified` and turn a
+ * reload into a 304, while hono's serveStatic sends no validator at all
+ * (measured on the built bundle: 10.0 MB re-downloaded per page load).
  * Bypassing the middleware chain is a no-op for these paths — the origin guard
  * and mobile auth both explicitly skip everything outside /api.
  *
- * Two measured constraints shape this:
- *  - a `{dir}` 404 does NOT fall through to `fetch`, so these routes must not
- *    be registered when the binary also carries an embedded copy: a file that
- *    exists only inside the executable would 404 instead of being served.
- *  - `Bun.serve` THROWS at bind time when a `{dir}` path does not exist, so
- *    each directory is checked first. A directory removed later is a clean 404.
+ * The handlers resolve the file per request (`serveAssetFile`) rather than
+ * using Bun `{dir}` routes: a `{dir}` route holds the directory it opened at
+ * bind time, and the web build deletes and recreates it — after a rebuild
+ * every asset 404ed until a restart (owner-found 2026-10-01). Per-request
+ * resolution also makes a directory that is not built yet a plain 404.
+ *
+ * A route miss does NOT fall through to `fetch`, so these routes must not be
+ * registered when the binary also carries an embedded copy: a file that exists
+ * only inside the executable would 404 instead of being served.
  */
 export function resolveStaticDirRoutes(config: {
 	readonly staticEnabled: boolean;
 	readonly staticDir: string;
 	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
-}): Record<string, { dir: string }> {
+}): Record<string, (request: Request) => Response> {
 	if (!config.staticEnabled) return {};
 	if ((config.embeddedWebFiles?.size ?? 0) > 0) return {};
-	const routes: Record<string, { dir: string }> = {};
+	const routes: Record<string, (request: Request) => Response> = {};
 	for (const name of ["assets", "fonts"]) {
 		const dir = resolve(config.staticDir, name);
-		if (statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
-			routes[`/${name}/*`] = { dir };
-		}
+		routes[`/${name}/*`] = (request) => serveAssetFile(dir, `/${name}`, request);
 	}
 	return routes;
 }

@@ -209,8 +209,8 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 	// build ship a self-contained .exe while still allowing a hot-swappable
 	// web/ folder for rapid frontend patches without recompiling.
 	//
-	// /assets/* and /fonts/* from disk are served before Hono by Bun {dir}
-	// routes (server-runtime.ts), which validate with an ETag. What reaches
+	// /assets/* and /fonts/* from disk are served before Hono by Bun routes
+	// (server-runtime.ts → serveAssetFile), which validate with an ETag. What reaches
 	// here is the embedded copy and index.html — neither has a file on disk to
 	// validate, so both carry a weak ETag built from their own bytes.
 
