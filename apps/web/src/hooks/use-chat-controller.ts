@@ -10,7 +10,7 @@ import { useModalStore } from "../stores/modal-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
-import { isPartialSavedError, showProviderErrorToast } from "../lib/provider-error-toast.js";
+import { isTurnKeptOnServer, showProviderErrorToast } from "../lib/provider-error-toast.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { resolveCoauthorBinding } from "../lib/coauthor-provider-binding.js";
@@ -502,16 +502,16 @@ export function useChatController(): ChatControllerActions {
         toast.info(getT()("generation_cancelled"));
         return "cancelled";
       }
-      // A provider cut mid-reply: the server stored the user message and the
-      // partial reply (like a user Stop), so reload the chat to show it — a
-      // restored draft would invite a duplicate resend.
-      if (isPartialSavedError(error)) {
-        useChatStore.getState().setPendingContent(chatId, null);
-        await refreshChatSnapshotCache(chatId);
-        showProviderErrorToast(error, getT());
-        useChatStore.getState().setGenerationStatus(chatId, "failed");
-        return "failed";
-      }
+      // Stored server-side (user message / partial reply) → reload the chat; a restored draft
+      // beside an invisible stored message invited a duplicate resend (owner 2026-10-02).
+      const settleDraft = async (): Promise<void> => {
+        if (isTurnKeptOnServer(error)) {
+          useChatStore.getState().setPendingContent(chatId, null);
+          await refreshChatSnapshotCache(chatId);
+        } else {
+          restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
+        }
+      };
       // DICE-F3: a dice commit conflict (stale revision / unresolved choose)
       // resyncs the lane and keeps the draft — not a provider error.
       if (tryHandleDiceSendConflict(error, chatId, pendingUserContent, pendingAttachments)) {
@@ -534,7 +534,7 @@ export function useChatController(): ChatControllerActions {
             onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
           },
         });
-        restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
+        await settleDraft();
       } else if (gateErrorCode(error) === "voice_transcribe_unavailable") {
         toast.error(getT()("voice_transcribe_unavailable"), {
           description: getT()("voice_transcribe_unavailable_desc"),
@@ -543,9 +543,9 @@ export function useChatController(): ChatControllerActions {
             onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
           },
         });
-        restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
+        await settleDraft();
       } else {
-        restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
+        await settleDraft();
         showProviderErrorToast(error, getT());
       }
       useChatStore.getState().setGenerationStatus(chatId, "failed");

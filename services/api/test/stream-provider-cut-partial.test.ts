@@ -290,6 +290,26 @@ describe("provider cuts the stream mid-reply", () => {
     expect(await assistantMessages(chat)).toHaveLength(before);
   });
 
+  it("send announces the stored user message before streaming, so a client seeing an error after it knows the message is on the server", async () => {
+    const chat = await setup();
+    const orch = makeHarness(chat);
+
+    const events = await drain(orch.sendMessageStream({
+      chatId: chat.chatId as string,
+      content: "hello",
+      profile: TEST_PROFILE,
+      model: "test-model",
+    }));
+
+    const names = events.map((e) => e.event);
+    const savedAt = names.indexOf("user-message-saved");
+    expect(savedAt).toBeGreaterThanOrEqual(0);
+    expect(savedAt).toBeLessThan(names.indexOf("error"));
+    const msgs = await chat.stores.messages.getMessages(chat.branchId);
+    const user = msgs.find((m) => m.role === "user");
+    expect(JSON.parse(events[savedAt]!.data)).toEqual({ messageId: user!.id });
+  });
+
   it("reasoning only, no reply text: nothing is stored (the same empty-text rule as a user Stop)", async () => {
     const chat = await setup();
     const orch = makeHarness(chat);

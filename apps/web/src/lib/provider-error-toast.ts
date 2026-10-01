@@ -60,3 +60,10 @@ export function showProviderErrorToast(error: unknown, t: TFunc, fallbackKey: ke
 export function isPartialSavedError(error: unknown): boolean {
   return error instanceof ProviderStreamError && error.partialSaved;
 }
+
+/** The failed turn is (partly) stored server-side — the user message
+ *  (`user-message-saved` preceded the error) and/or a partial reply — so the
+ *  client reloads the chat instead of restoring the draft. */
+export function isTurnKeptOnServer(error: unknown): boolean {
+  return error instanceof ProviderStreamError && (error.partialSaved || error.userMessageSaved);
+}

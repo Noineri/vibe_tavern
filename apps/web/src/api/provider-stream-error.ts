@@ -24,11 +24,21 @@ export class ProviderStreamError extends Error {
 	 *  chat holds the user message and the partial reply, so the client
 	 *  reloads it instead of restoring the draft. */
 	readonly partialSaved: boolean;
-	constructor(message: string, category: ProviderErrorCategory, code?: string, partialSaved = false) {
+	/** The server had already stored the user message when the error came
+	 *  (the stream's `user-message-saved` event preceded it) — the client
+	 *  shows it by reloading the chat instead of restoring the draft. */
+	readonly userMessageSaved: boolean;
+	constructor(
+		message: string,
+		category: ProviderErrorCategory,
+		code?: string,
+		kept: { partialSaved?: boolean; userMessageSaved?: boolean } = {},
+	) {
 		super(message);
 		this.name = "ProviderStreamError";
 		this.category = category;
 		this.code = code;
-		this.partialSaved = partialSaved;
+		this.partialSaved = kept.partialSaved ?? false;
+		this.userMessageSaved = kept.userMessageSaved ?? false;
 	}
 }

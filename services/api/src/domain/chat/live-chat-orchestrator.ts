@@ -420,6 +420,10 @@ export class LiveChatOrchestrator {
       this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit),
     );
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
+    // Stored from here on: a later error leaves it in the chat — the client reloads, not restores the draft.
+    if (prepared.userMessage) {
+      yield { event: "user-message-saved", data: JSON.stringify({ messageId: prepared.userMessage.id }) };
+    }
     const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prepared.prompt.prefill ?? undefined);
     const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)
       ? async (descriptions: Array<{ attachmentId: string; description: string }>) => {
@@ -892,9 +896,7 @@ export class LiveChatOrchestrator {
     let reasoningStartMs: number | null = null;
     let reasoningDurationMs: number | null = null;
 
-    // The partial reply so far through `onAbort` — shared by a user Stop and
-    // a provider cut. onAbort stores only non-empty text; returns whether
-    // there was any.
+    // The partial reply so far via onAbort (user Stop + provider cut); onAbort stores only non-empty text.
     const savePartial = async (): Promise<boolean> => {
       const { mainContent, reasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
       await onAbort(mainContent, reasoning ?? "", reasoningStartMs ? Date.now() - reasoningStartMs : undefined, Date.now() - startedAt);
@@ -972,10 +974,8 @@ export class LiveChatOrchestrator {
 
       const message = extractProviderErrorMessage(err);
       const category = classifyProviderError(err);
-      // A provider that cuts the stream mid-reply: keep what already
-      // streamed, exactly as a user Stop does, instead of discarding a reply
-      // the user watched appear (owner 2026-10-02). `partialSaved` tells the
-      // client to reload the chat rather than restore the draft.
+      // A provider cut mid-reply keeps what streamed, like a Stop (owner 2026-10-02);
+      // `partialSaved` tells the client to reload the chat.
       const partialSaved = await savePartial();
       logSendDebug(`${debugLabel}.provider-error`, { chatId: input.chatId, message, category, partialSaved });
       if (!partialSaved) this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));

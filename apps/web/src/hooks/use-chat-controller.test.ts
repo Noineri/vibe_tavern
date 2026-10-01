@@ -585,7 +585,7 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     // text streamed before the cut — restoring the draft would invite a
     // duplicate resend; the chat refetch shows the kept partial reply.
     sendChatMessageStream.mockRejectedValueOnce(
-      new ProviderStreamError("upstream connection reset", "network", undefined, true),
+      new ProviderStreamError("upstream connection reset", "network", undefined, { partialSaved: true, userMessageSaved: true }),
     );
     const { result } = renderHook(() => useChatController());
 
@@ -598,7 +598,38 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     expect(toastError.mock.calls[0]![1]).toEqual({ description: "provider_error_partial_saved_desc" });
   });
 
-  test("provider error WITHOUT partialSaved ⇒ the draft is restored (unchanged behavior)", async () => {
+  test("provider error after the user message was stored ⇒ chat refetched, draft NOT restored (no invisible duplicate)", async () => {
+    // Owner 2026-10-02: the text came back into the input while the message
+    // was already stored (invisible until a reload) — a resend duplicated it.
+    sendChatMessageStream.mockRejectedValueOnce(
+      new ProviderStreamError("Invalid API key", "authentication", undefined, { userMessageSaved: true }),
+    );
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(fetchChat).toHaveBeenCalledWith(CHAT);
+    expect(useChatStore.getState().draft).toBe("");
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(toastError.mock.calls[0]![0]).toBe("Invalid API key");
+  });
+
+  test("vision gate after the user message was stored ⇒ its own toast, chat refetched, draft NOT restored", async () => {
+    // The vision gate runs in startStream — after prepareLiveTurn stored the
+    // user message — so it is the same invisible-duplicate case.
+    sendChatMessageStream.mockRejectedValueOnce(
+      new ProviderStreamError("no vision", "unknown", "vision_not_supported", { userMessageSaved: true }),
+    );
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(fetchChat).toHaveBeenCalledWith(CHAT);
+    expect(useChatStore.getState().draft).toBe("");
+    expect(toastError.mock.calls[0]![0]).toBe("vision_not_supported");
+  });
+
+  test("provider error before the user message was stored ⇒ the draft is restored (unchanged behavior)", async () => {
     sendChatMessageStream.mockRejectedValueOnce(new ProviderStreamError("boom", "unknown"));
     const { result } = renderHook(() => useChatController());
 

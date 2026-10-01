@@ -62,6 +62,7 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
   let usage: Record<string, number> | undefined;
   let metrics: unknown;
   let lorebookOverflows: Array<{ name: string; dropped: number }> | undefined;
+  let userMessageSaved = false;
 
   // Early exit if already aborted.
   if (opts.signal?.aborted) {
@@ -92,6 +93,12 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
       // Server-relayed cancel (the request abort was bounced back through the
       // orchestrator). Resolve as cancelled without throwing an error.
       if (ev.event === "abort") throw new AbortSentinel();
+      // The server stored the user message (send path) — an error after this
+      // point leaves it in the chat, so the error carries the fact.
+      if (ev.event === "user-message-saved") {
+        userMessageSaved = true;
+        return;
+      }
 
       const data = ev.data;
       if (!data || data === "[DONE]") return;
@@ -127,7 +134,7 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
         // carry their discriminator in `type` — fold it into the same slot so
         // the controller can branch on it.
         const code = typeof parsed.code === "string" ? parsed.code : typeof parsed.type === "string" ? parsed.type : undefined;
-        throw new ProviderStreamError(message, category, code, parsed.partialSaved === true);
+        throw new ProviderStreamError(message, category, code, { partialSaved: parsed.partialSaved === true, userMessageSaved });
       } else if (ev.event === "reasoning-delta") {
         if (parsed.delta !== undefined && opts.onReasoningChunk) {
           opts.onReasoningChunk(parsed.delta as string);

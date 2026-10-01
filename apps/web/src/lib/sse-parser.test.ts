@@ -71,6 +71,23 @@ describe("parseSSEStream", () => {
 		await expect(promise).rejects.toMatchObject({ message: "upstream connection reset", partialSaved: true });
 	});
 
+	it("an error after the user-message-saved event carries userMessageSaved", async () => {
+		const o = opts();
+		const promise = parseSSEStream({
+			response: sseResponse([
+				"event: user-message-saved\n",
+				'data: {"messageId":"m-1"}\n\n',
+				"event: error\n",
+				'data: {"message":"Invalid API key","category":"authentication"}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+		});
+		await expect(promise).rejects.toMatchObject({ userMessageSaved: true, partialSaved: false });
+		// The announcement is not text.
+		expect(o.onChunk).not.toHaveBeenCalled();
+	});
+
 	it("partialSaved is false on an ordinary error event", async () => {
 		const o = opts();
 		const promise = parseSSEStream({
@@ -78,7 +95,7 @@ describe("parseSSEStream", () => {
 			onStatus: o.onStatus,
 			onChunk: o.onChunk,
 		});
-		await expect(promise).rejects.toMatchObject({ partialSaved: false });
+		await expect(promise).rejects.toMatchObject({ partialSaved: false, userMessageSaved: false });
 	});
 
 	it("defaults the category to 'unknown' when the server omits it (backwards compat)", async () => {
