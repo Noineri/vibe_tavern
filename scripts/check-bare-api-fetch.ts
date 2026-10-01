@@ -1,5 +1,6 @@
 /**
  * check-bare-api-fetch — mechanical guard for the API seam (2026-09-29 mobile outage).
+ * forks: 1 — scripts/check-icon-button-labels.ts
  *
  * Every web→API request must go through `apiFetch` (apps/web/src/api/client.ts)
  * or a stream helper with `?token=` (appendTokenQuery). A bare `fetch("/api/…")`
