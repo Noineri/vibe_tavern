@@ -10,27 +10,14 @@ import * as Popover from "@radix-ui/react-popover";
 
 import { cn } from "../../lib/cn.js";
 import type { TFunc } from "../../i18n/locale-helpers.js";
+import type { LinkTarget } from "../../lib/link-targets.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { getModalPortal } from "./modal-helpers.js";
 import { resolveEntityAvatarUrl, avatarUrl } from "../../lib/avatar.js";
 
-export type LinkBindingTargetType = "character" | "persona" | "lorebook" | "script" | "preset" | "regex";
+export type { LinkTarget } from "../../lib/link-targets.js";
 
-export interface LinkTarget {
-  id: string;
-  name: string;
-  avatarAssetId: string | null;
-  /**
-   * Entity kind for folder-resident avatar resolution
-   * (resolveEntityAvatarUrl). Omitted for targets without a folder avatar
-   * (e.g. lorebooks) — falls back to legacy flat-asset URL.
-   */
-  kind?: "characters" | "personas";
-  avatarExt?: string | null;
-  avatarFullExt?: string | null;
-  avatarFullAssetId?: string | null;
-  updatedAt?: string | null;
-}
+export type LinkBindingTargetType = "character" | "persona" | "lorebook" | "script" | "preset" | "regex";
 
 export interface LinkBindingRecord {
   targetType: LinkBindingTargetType;
