@@ -36,6 +36,8 @@ describe("ImageGenChipSection — the chip's collapsible card shell (ICR-1)", ()
         variant="disclosure"
         title="LoRA"
         summary="Включено: 1"
+        titleTestId="sec-title"
+        summaryTestId="sec-summary"
         testIds={{ root: "sec-root", header: "sec-header", body: "sec-body" }}
       >
         <span>body cell</span>
@@ -57,6 +59,10 @@ describe("ImageGenChipSection — the chip's collapsible card shell (ICR-1)", ()
     expect(header.getAttribute("aria-expanded")).toBe("false");
     expect(within(header).getByText("LoRA")).toBeTruthy();
     expect(within(header).getByText("Включено: 1")).toBeTruthy();
+    // ICR-4 pass-through hooks: the title/summary testids land on their
+    // own elements (the hires-label and loras-count pins).
+    expect(view.getByTestId("sec-title").textContent).toBe("LoRA");
+    expect(view.getByTestId("sec-summary").textContent).toBe("Включено: 1");
     expect(header.className).toContain("min-h-9");
     expect(header.className).toContain("cursor-pointer");
 
@@ -98,7 +104,9 @@ describe("ImageGenChipSection — the chip's collapsible card shell (ICR-1)", ()
     const body = view.getByTestId("sec-body");
     expect(body.className).toContain("grid-cols-1");
     expect(body.className).toContain("@min-[480px]:grid-cols-2");
-    expect(body.className).toContain("px-3");
+    // ICR-3: the scroll region owns the body's horizontal inset — the
+    // section body carries NO padding of its own (no double inset).
+    expect(body.className).not.toContain("px-");
     expect(within(body).getByText("cell a")).toBeTruthy();
 
     act(() => {

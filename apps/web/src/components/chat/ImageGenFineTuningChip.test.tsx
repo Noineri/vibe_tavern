@@ -220,6 +220,7 @@ mock.module("../../hooks/use-mobile.js", () => ({
 
 const { ImageGenFineTuningChip } = await import("./ImageGenFineTuningChip.js");
 const { useImageGenChatStore } = await import("../../stores/image-gen-chat-store.js");
+const { useImageGenChipSectionsStore } = await import("../../stores/image-gen-chip-sections-store.js");
 const { TooltipProvider } = await import("../shared/Tooltip.js");
 const { act, cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 
@@ -312,6 +313,10 @@ afterEach(() => {
     activeProfileIdByChat: {},
     runningByChat: {},
   });
+  // ICR-4: the chip-sections store is the same module singleton — reset
+  // the remembered open/collapsed flags between tests (a test that opened
+  // LoRA must not leak it open into the next describe).
+  useImageGenChipSectionsStore.setState({ open: { loras: false, krea: false, samplers: false } });
   clipboardCalls.length = 0;
 });
 
@@ -920,6 +925,27 @@ describe("ImageGenFineTuningChip — LoRA section (CG-C3)", () => {
     expect(within(view.baseElement).queryByTestId("image-gen-ft-loras")).toBeNull();
   });
 
+  it("ICR-4: the section's open state lives in the chip-sections STORE — it survives closing and reopening the popover (the old local useState reset on every close)", async () => {
+    comfyProfile("chat-lr9");
+    seedLoras();
+    const view = await openSection("chat-lr9");
+    expect(useImageGenChipSectionsStore.getState().open.loras).toBe(true);
+
+    // Close the chip popover and reopen it: the section remembers it was
+    // open (the plan's acceptance line — remembered within the session).
+    openChip();
+    await waitFor(() =>
+      expect(within(view.baseElement).queryByTestId("image-gen-ft-loras-body")).toBeNull(),
+    );
+    openChip();
+    await waitFor(() =>
+      expect(within(view.baseElement).getByTestId("image-gen-ft-loras-body")).toBeTruthy(),
+    );
+    // Still the live picker — rows render without a second header click.
+    await waitFor(() => expect(rows(view).length).toBe(4));
+    expect(within(view.baseElement).getByTestId("image-gen-ft-loras-header").getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("family filter AUTO-PRESELECTS the effective model's family; «Неизвестно» and search narrow", async () => {
     comfyProfile("chat-lr1");
     seedLoras();
@@ -1119,12 +1145,16 @@ describe("ImageGenFineTuningChip — hires-fix block (FT-A6)", () => {
       denoisingStrength: 0.6,
     });
 
-    // Toggle off: collapsed again, but the knobs PERSIST in the draft
-    // (draft-level like every chip field — nothing is thrown away).
+    // Toggle off: the switch reads off and the body collapses (the shell
+    // test pins the collapse framer where it's deterministic; here the
+    // happy-dom exit frame freezes mid-flight — a transient frame, not a
+    // stable pin — so the chip-level pin is the resolved state: off + the
+    // knobs PERSIST in the draft, draft-level like every chip field).
     await act(async () => {
       fireEvent.click(within(view.baseElement).getByRole("switch", { name: "image_gen_hires_label" }));
     });
-    expect(within(view.baseElement).queryByTestId("image-gen-ft-hires-body")).toBeNull();
+    const offSwitch = within(view.baseElement).getByRole("switch", { name: "image_gen_hires_label" });
+    expect(offSwitch.getAttribute("aria-checked")).toBe("false");
     expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-hr1"]?.hires).toEqual({
       enabled: false,
       upscaler: "4x-UltraSharp",

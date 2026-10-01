@@ -57,6 +57,10 @@ export interface ImageGenChipSectionProps {
   toggleDisabled?: boolean;
   /** Toggle variant: the switch's accessible name (defaults to the title). */
   toggleAriaLabel?: string;
+  /** Optional test hook on the title element (the hires label pin). */
+  titleTestId?: string;
+  /** Optional test hook on the summary element (the loras count pin). */
+  summaryTestId?: string;
   /** Rendered under the header (the ADetailer «unavailable» hint). */
   hint?: ReactNode;
   testIds?: ImageGenChipSectionTestIds;
@@ -74,6 +78,8 @@ export function ImageGenChipSection({
   onCheckedChange,
   toggleDisabled,
   toggleAriaLabel,
+  titleTestId,
+  summaryTestId,
   hint,
   testIds,
   children,
@@ -82,9 +88,14 @@ export function ImageGenChipSection({
   const caret = <Icons.Caret direction={open ? "d" : "r"} />;
   const titleBlock = (
     <span className="flex min-w-0 flex-1 flex-col @min-[480px]:flex-row @min-[480px]:items-center @min-[480px]:gap-2.5">
-      <span className="break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1">{title}</span>
+      <span className="break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1" data-testid={titleTestId}>
+        {title}
+      </span>
       {summary !== undefined && (
-        <span className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t3 @min-[480px]:ml-auto">
+        <span
+          className="min-w-0 truncate font-ui text-[calc(var(--ui-fs)-3px)] text-t3 @min-[480px]:ml-auto"
+          data-testid={summaryTestId}
+        >
           {summary}
         </span>
       )}
@@ -119,11 +130,13 @@ export function ImageGenChipSection({
           />
         </div>
       )}
-      {hint !== undefined && <div className="px-3 pb-2 pt-0.5">{hint}</div>}
+      {hint !== undefined && <div className="pb-2 pt-0.5">{hint}</div>}
       <AnimatedDisclosure
         open={variant === "disclosure" ? open : checked}
         data-testid={testIds?.body}
-        className="grid grid-cols-1 gap-x-3 gap-y-2.5 px-3 pb-3 pt-1 @min-[480px]:grid-cols-2"
+        // ICR-3: the scroll region's px-3 is the body's ONLY horizontal
+        // inset — a section body must not double it (grid gaps stay).
+        className="grid grid-cols-1 gap-x-3 gap-y-2.5 pt-1 @min-[480px]:grid-cols-2"
       >
         {children}
       </AnimatedDisclosure>

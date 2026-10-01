@@ -12,6 +12,13 @@
  * the same dropdown. A search field narrows by name (79 loras on the
  * owner's install — the list scrolls in its own capped well).
  *
+ * ICR-4 (IMAGEGEN_CHIP_REDESIGN_PLAN): rendered inside the chip's section
+ * shell — a disclosure variant whose open state lives in the chip-sections
+ * STORE (remembers across chip openings within the session, owner-approved
+ * proposal 2; the old local useState reset on every popover close). The
+ * enabled-count rode the old header's inline span; it is now the shell's
+ * summary (same text source, same testid).
+ *
  * Gated upstream on `capabilities.supportsLoras` — this component never
  * fetches for an unsupported profile (the route 400s; the chip gates the
  * fetch the same way it gates samplers).
@@ -20,14 +27,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { Icons } from "../shared/icons.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { SearchInput } from "../shared/SearchInput.js";
 import { SliderField } from "../shared/SliderField.js";
 import { Toggle } from "../shared/Toggle.js";
 import { IMAGE_GEN_PARAM_RANGES } from "@vibe-tavern/domain";
 import { useT } from "../../i18n/context.js";
+import { lorasSummary } from "../../lib/imagegen/chip-section-summaries.js";
 import { EMPTY_IMAGE_GEN_DRAFT, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
+import { useImageGenChipSectionsStore } from "../../stores/image-gen-chip-sections-store.js";
+import { ImageGenChipSection } from "./image-gen-chip-section.js";
 import type { ImageGenLora } from "../../api/image-gen-api.js";
 
 /** The dropdown's sentinel ids (family names themselves are option ids). */
@@ -51,7 +60,8 @@ export function ImageGenLoraSection({ chatId, modelFamily, loras, failed, disabl
   const draft = useImageGenChatStore((s) => s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT);
   const setLoraEnabled = useImageGenChatStore((s) => s.setFineTuningLoraEnabled);
   const setLoraStrength = useImageGenChatStore((s) => s.setFineTuningLoraStrength);
-  const [open, setOpen] = useState(false);
+  const open = useImageGenChipSectionsStore((s) => s.open.loras);
+  const setOpen = useImageGenChipSectionsStore((s) => s.setOpen);
   const [familyFilter, setFamilyFilter] = useState<string>(FAMILY_ALL);
   const [filterTouched, setFilterTouched] = useState(false);
   const [search, setSearch] = useState("");
@@ -107,67 +117,56 @@ export function ImageGenLoraSection({ chatId, modelFamily, loras, failed, disabl
   }
 
   return (
-    <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-loras">
-      <button
-        type="button"
-        data-testid="image-gen-ft-loras-header"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full cursor-pointer items-center justify-between rounded-md px-1.5 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
-      >
-        <span>
-          {t("image_gen_loras_label")}
-          {enabledCount > 0 && (
-            <span className="ml-1.5 font-normal text-t3" data-testid="image-gen-ft-loras-count">
-              {t("image_gen_loras_enabled", { count: enabledCount })}
-            </span>
-          )}
+    <ImageGenChipSection
+      variant="disclosure"
+      title={t("image_gen_loras_label")}
+      summary={lorasSummary(enabledCount, t)}
+      summaryTestId="image-gen-ft-loras-count"
+      open={open}
+      onOpenChange={(value) => setOpen("loras", value)}
+      testIds={{ root: "image-gen-ft-loras", header: "image-gen-ft-loras-header", body: "image-gen-ft-loras-body" }}
+    >
+      {failed ? (
+        <span
+          className="px-1 py-2 text-[calc(var(--ui-fs)-3px)] text-danger @min-[480px]:col-span-2"
+          data-testid="image-gen-ft-loras-failed"
+        >
+          {t("image_gen_loras_failed")}
         </span>
-        <Icons.Caret direction={open ? "d" : "u"} />
-      </button>
+      ) : loras === null ? (
+        <div className="flex h-8 items-center justify-center @min-[480px]:col-span-2" data-testid="image-gen-ft-loras-loading">
+          <span className="text-[calc(var(--ui-fs)-3px)] text-t3">…</span>
+        </div>
+      ) : (
+        <>
+          {/* Family dropdown | search side by side at a comfortable
+              container width (grid cells); the list spans both columns. */}
+          <DropdownSelect
+            value={familyFilter}
+            options={[
+              { id: FAMILY_ALL, label: t("image_gen_loras_family_all") },
+              ...families.named.map((f) => ({ id: f, label: f })),
+              ...(families.hasUnknown
+                ? [{ id: FAMILY_UNKNOWN, label: t("image_gen_loras_family_unknown") }]
+                : []),
+            ]}
+            onChange={(id) => {
+              setFilterTouched(true);
+              setFamilyFilter(id);
+            }}
+            disabled={disabled}
+            triggerTestId="image-gen-ft-loras-family"
+          />
 
-      {open && (
-        <div className="flex flex-col gap-2 px-1.5" data-testid="image-gen-ft-loras-body">
-          {failed ? (
-            <span
-              className="px-1 py-2 text-[calc(var(--ui-fs)-3px)] text-danger"
-              data-testid="image-gen-ft-loras-failed"
-            >
-              {t("image_gen_loras_failed")}
-            </span>
-          ) : loras === null ? (
-            <div className="flex h-8 items-center justify-center" data-testid="image-gen-ft-loras-loading">
-              <span className="text-[calc(var(--ui-fs)-3px)] text-t3">…</span>
-            </div>
-          ) : (
-            <>
-              <DropdownSelect
-                value={familyFilter}
-                options={[
-                  { id: FAMILY_ALL, label: t("image_gen_loras_family_all") },
-                  ...families.named.map((f) => ({ id: f, label: f })),
-                  ...(families.hasUnknown
-                    ? [{ id: FAMILY_UNKNOWN, label: t("image_gen_loras_family_unknown") }]
-                    : []),
-                ]}
-                onChange={(id) => {
-                  setFilterTouched(true);
-                  setFamilyFilter(id);
-                }}
-                disabled={disabled}
-                triggerTestId="image-gen-ft-loras-family"
-              />
+          <SearchInput
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("image_gen_loras_search_placeholder")}
+            aria-label={t("image_gen_loras_search_placeholder")}
+            data-testid="image-gen-ft-loras-search"
+          />
 
-              <SearchInput
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t("image_gen_loras_search_placeholder")}
-                aria-label={t("image_gen_loras_search_placeholder")}
-                data-testid="image-gen-ft-loras-search"
-              />
-
-              <div className="flex max-h-56 flex-col gap-1 overflow-y-auto pr-0.5" data-testid="image-gen-ft-loras-list">
+          <div className="flex max-h-56 flex-col gap-1 overflow-y-auto pr-0.5 @min-[480px]:col-span-2" data-testid="image-gen-ft-loras-list">
                 {rows.length === 0 && (
                   <span
                     className="px-1 py-2 text-[calc(var(--ui-fs)-3px)] text-t4"
@@ -231,11 +230,9 @@ export function ImageGenLoraSection({ chatId, modelFamily, loras, failed, disabl
                     </div>
                   );
                 })}
-              </div>
-            </>
-          )}
-        </div>
+          </div>
+        </>
       )}
-    </div>
+    </ImageGenChipSection>
   );
 }
