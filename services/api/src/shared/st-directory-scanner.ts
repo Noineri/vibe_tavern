@@ -28,6 +28,7 @@ import {
 import type { ImportExportModuleDeps, ImportResult } from "../runtime/session/session-runtime-import-export.js";
 import { createPromptPreset } from "../runtime/session/session-runtime-presets.js";
 import { importLorebook } from "../domain/lorebook/lorebook-import-service.js";
+import { normalizeAvatarThumbnail } from "../domain/asset/avatar-thumbnail.js";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import type { CharacterId, ChatId, CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
@@ -505,35 +506,40 @@ export async function importSillyTavernDirectory(
 
 			// Save the avatar. ST card PNGs are uncropped by definition (ST does
 			// not crop on import), so the same bytes serve both slots:
-			//   1. {id}/avatar.png      — display avatar (gallery slots, chat
-			//                            bubbles, sidebar). Paired with
-			//                            setFolderAvatar() so avatarExt is set;
-			//                            without it the character renders with
-			//                            no portrait (the STN-1D bug).
-			//   2. {id}/avatar-full.png — the uncropped source. Paired with
-			//                            setFolderAvatarFull() so avatarFullExt
-			//                            is set, wiring the ST-imported card into
-			//                            the existing crop-confirm flow: the user
-			//                            can later re-crop the original art from
-			//                            {id}/avatar-full.png without needing the
-			//                            original PNG file. Mirrors the browser
-			//                            uploadCharacterAvatar(crop, full) shape.
+			//   1. {id}/avatar-full.png — the uncropped RAW source. Paired with
+			//                            setFolderAvatarFull() so avatarFullExt is
+			//                            set, wiring the ST-imported card into the
+			//                            existing crop-confirm flow: the user can
+			//                            later re-crop the original art without
+			//                            needing the original PNG file. Mirrors the
+			//                            browser uploadCharacterAvatar(crop, full)
+			//                            shape.
+			//   2. {id}/avatar.{ext}    — the display thumbnail (gallery slots,
+			//                            chat bubbles, sidebar), normalized to a
+			//                            ≤ 512 px webp by the LB-1B helper so the
+			//                            link-binding lists stay light. Paired with
+			//                            setFolderAvatar(ext) — the ext may be
+			//                            "webp". The full is written FIRST so a
+			//                            crash between writes never loses the
+			//                            original (plan non-negotiable).
 			// Browser ST-import calls uploadCharacterAvatar(file, file) — both
 			// slots — so it preserves the uncropped source too. AssetService
-			// lives in the HTTP adapter layer (unreachable from shared/), so we
-			// go through content + store directly.
+			// lives in the HTTP adapter layer (unreachable from shared/), so the
+			// pure helper is applied directly and storage goes through content +
+			// store.
 			if (ext === ".png" && pngBuffer) {
 				try {
 					// HUMAN_READABLE_FOLDERS: write into the character's resolved (slug) folder.
 					const folder = await deps.stores.characters.resolveFolderName(characterId);
 					await deps.stores.content.writeBinary(
-						STORAGE_FOLDERS.characters, folder, "avatar.png", pngBuffer,
-					);
-					await deps.stores.content.writeBinary(
 						STORAGE_FOLDERS.characters, folder, "avatar-full.png", pngBuffer,
 					);
-					await deps.stores.characters.setFolderAvatar(characterId, "png");
 					await deps.stores.characters.setFolderAvatarFull(characterId, "png");
+					const thumb = await normalizeAvatarThumbnail(pngBuffer, "png");
+					await deps.stores.content.writeBinary(
+						STORAGE_FOLDERS.characters, folder, `avatar.${thumb.ext}`, thumb.bytes,
+					);
+					await deps.stores.characters.setFolderAvatar(characterId, thumb.ext);
 				} catch {
 					// Avatar write failure is non-critical — the character is already
 					// in the DB; it just renders without a portrait.
@@ -759,14 +765,17 @@ export async function importSillyTavernDirectory(
 						if (avatarStat?.isFile()) {
 							try {
 								const avatarBuffer = new Uint8Array(await Bun.file(avatarFile).arrayBuffer());
-								await deps.stores.content.writeBinary(
-									STORAGE_FOLDERS.personas, created.id, "avatar.png", avatarBuffer,
-								);
+								// LB-1B: raw bytes → avatar-full (re-crop source), normalized
+								// ≤ 512 webp → avatar.{ext}; full first (crash safety).
 								await deps.stores.content.writeBinary(
 									STORAGE_FOLDERS.personas, created.id, "avatar-full.png", avatarBuffer,
 								);
-								await deps.stores.personas.setFolderAvatar(created.id, "png");
 								await deps.stores.personas.setFolderAvatarFull(created.id, "png");
+								const thumb = await normalizeAvatarThumbnail(avatarBuffer, "png");
+								await deps.stores.content.writeBinary(
+									STORAGE_FOLDERS.personas, created.id, `avatar.${thumb.ext}`, thumb.bytes,
+								);
+								await deps.stores.personas.setFolderAvatar(created.id, thumb.ext);
 							} catch {
 								// Avatar failure is non-critical — persona is already created.
 							}

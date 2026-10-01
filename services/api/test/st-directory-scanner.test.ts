@@ -32,6 +32,7 @@ import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { scanSillyTavernDirectory } from "../src/shared/st-directory-scanner.js";
+import { minimalPng } from "./image-bytes.js";
 
 // Bun.Glob returns platform-native separators in scan results (\ on win32,
 // / elsewhere) — g() builds expectations in the platform's shape.
@@ -514,6 +515,50 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 		// must NOT be written — nothing reads it.
 		const originalBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "original.png");
 		expect(originalBytes).toBeNull();
+	});
+
+	it("LB-1B: a real pixelated card stores a normalized avatar.webp + the RAW avatar-full.png", async () => {
+		env = await createRuntime();
+		const stDir = join(env.tmpDir, "st-png-real");
+		await mkdir(join(stDir, "characters"), { recursive: true });
+		// A REAL card image (proper zlib IDAT pixels, 600×600) carrying the
+		// chara tEXt chunk. The zero-CRC chunk builders are fine — the walker
+		// skips CRC and so does Bun's decoder; the older cards above carry no
+		// pixel data at all, so their normalization falls back to png bytes
+		// (those tests now pin the fallback path).
+		const card = (() => {
+			const png = minimalPng(600, 600, [30, 130, 200]);
+			const text = charaTextChunk("RealCard");
+			const iend = png.subarray(png.length - 12); // IEND is the last chunk
+			const out = new Uint8Array(png.length + text.length);
+			out.set(png.subarray(0, png.length - 12), 0);
+			out.set(text, png.length - 12);
+			out.set(iend, png.length - 12 + text.length);
+			return out;
+		})();
+		await Bun.write(join(stDir, "characters", "RealCard.png"), card);
+		await mkdir(join(stDir, "chats"), { recursive: true });
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+		expect(result.errors).toEqual([]);
+		expect(result.characters).toBe(1);
+
+		const chars = await env.stores.characters.listAll();
+		const imported = chars.find((c) => c.name === "RealCard");
+		expect(imported).toBeTruthy();
+		const dir = await env.stores.characters.resolveFolderName(imported!.id);
+
+		// The thumbnail slot normalized to webp; the full stays the RAW card.
+		expect(imported!.avatarExt).toBe("webp");
+		expect(imported!.avatarFullExt).toBe("png");
+		const thumbBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "avatar.webp");
+		expect(thumbBytes).not.toBeNull();
+		const meta = await new Bun.Image(new Uint8Array(thumbBytes!)).metadata();
+		expect(meta.format).toBe("webp");
+		expect(meta.width).toBe(512);
+		expect(meta.height).toBe(512);
+		const fullBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "avatar-full.png");
+		expect(new Uint8Array(fullBytes!)).toEqual(card);
 	});
 
 	it("multiple PNG cards import under bounded concurrency without loss", async () => {

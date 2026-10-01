@@ -8,6 +8,7 @@ import { AssetService } from "../src/domain/asset/asset-service.js";
 import { CharacterAdapter } from "../src/api/adapters/character-adapter.js";
 import { PersonaAdapter } from "../src/api/adapters/persona-adapter.js";
 import type { CharacterRuntimeApi, PersonaRuntimeApi } from "../src/api/contract/runtime-api.js";
+import { minimalPng } from "./image-bytes.js";
 
 const CHARS = STORAGE_FOLDERS.characters;
 const PERSONAS = STORAGE_FOLDERS.personas;
@@ -71,6 +72,59 @@ describe("C1 avatar adapter: character", () => {
 		const row = await stores.characters.getById(char.id);
 		expect(row?.avatarExt).toBe("png");
 		expect(row?.avatarFullExt).toBe("png");
+	});
+
+	test("LB-1B: uploading a large real PNG without full keeps the ORIGINAL in avatar-full and stores a 512 webp thumbnail", async () => {
+		const { dataRoot, stores, characters } = await setup();
+		const original = minimalPng(600, 600, [10, 200, 120]);
+		const char = await stores.characters.create({ name: "Big" });
+		const dir = await stores.characters.resolveFolderName(char.id);
+
+		const res = await characters.uploadCharacterAvatar(char.id, new File([original], "crop.png", { type: "image/png" }));
+		expect(res).toEqual({ avatarExt: "webp", avatarFullExt: "png" });
+
+		// Thumbnail slot: normalized ≤ 512 webp.
+		const thumbBytes = new Uint8Array(await Bun.file(join(dataRoot, CHARS, dir, "avatar.webp")).arrayBuffer());
+		const meta = await new Bun.Image(thumbBytes).metadata();
+		expect(meta.format).toBe("webp");
+		expect(meta.width).toBe(512);
+		expect(meta.height).toBe(512);
+
+		// Full slot: the ORIGINAL bytes, byte-for-byte — the card PNG export
+		// reads this slot (preferFull → /avatar/full), so exports keep full
+		// resolution even though the thumbnail was shrunk.
+		const fullBytes = new Uint8Array(await Bun.file(join(dataRoot, CHARS, dir, "avatar-full.png")).arrayBuffer());
+		expect(fullBytes).toEqual(original);
+
+		const row = await stores.characters.getById(char.id);
+		expect(row?.avatarExt).toBe("webp");
+		expect(row?.avatarFullExt).toBe("png");
+
+		// Serve contract: the full slot answers with the original PNG, the
+		// thumbnail slot with the shrunk webp (both content-types correct).
+		const fullRes = await characters.serveCharacterAvatarFull(char.id);
+		expect(fullRes!.headers.get("Content-Type")).toBe("image/png");
+		expect(new Uint8Array(await fullRes!.arrayBuffer())).toEqual(original);
+		const thumbRes = await characters.serveCharacterAvatar(char.id);
+		expect(thumbRes!.headers.get("Content-Type")).toBe("image/webp");
+		const servedMeta = await new Bun.Image(new Uint8Array(await thumbRes!.arrayBuffer())).metadata();
+		expect(servedMeta.width).toBe(512);
+	});
+
+	test("LB-1B: a re-upload that renames the leaf removes the stale avatar.{oldExt} file", async () => {
+		const { dataRoot, stores, characters } = await setup();
+		const char = await stores.characters.create({ name: "Swap" });
+		const dir = await stores.characters.resolveFolderName(char.id);
+
+		// Corrupt PNG → normalizer fallback → avatar.png.
+		await characters.uploadCharacterAvatar(char.id, new File([PNG], "a.png", { type: "image/png" }));
+		expect(await Bun.file(join(dataRoot, CHARS, dir, "avatar.png")).exists()).toBe(true);
+
+		// Real PNG → avatar.webp; the stale avatar.png is gone.
+		const res = await characters.uploadCharacterAvatar(char.id, new File([minimalPng(700, 500)], "b.png", { type: "image/png" }));
+		expect(res.avatarExt).toBe("webp");
+		expect(await Bun.file(join(dataRoot, CHARS, dir, "avatar.png")).exists()).toBe(false);
+		expect(await Bun.file(join(dataRoot, CHARS, dir, "avatar.webp")).exists()).toBe(true);
 	});
 
 	test("upload does NOT rewrite {id}/profile.md (point update only)", async () => {
@@ -143,6 +197,24 @@ describe("C1 avatar adapter: persona", () => {
 		const served = await personas.servePersonaAvatar(persona.id);
 		expect(served).not.toBeNull();
 		expect(new Uint8Array(await served!.arrayBuffer())).toEqual(PNG);
+	});
+
+	test("LB-1B: persona upload of a large real PNG without full preserves the original + a webp thumb", async () => {
+		const { dataRoot, stores, personas } = await setup();
+		const original = minimalPng(600, 600, [190, 40, 90]);
+		const persona = await stores.personas.create({ name: "BigUser" });
+
+		const res = await personas.uploadPersonaAvatar(persona.id, new File([original], "crop.png", { type: "image/png" }));
+		expect(res).toEqual({ avatarExt: "webp", avatarFullExt: "png" });
+
+		const thumbBytes = new Uint8Array(await Bun.file(join(dataRoot, PERSONAS, persona.id, "avatar.webp")).arrayBuffer());
+		expect((await new Bun.Image(thumbBytes).metadata()).width).toBe(512);
+		const fullBytes = new Uint8Array(await Bun.file(join(dataRoot, PERSONAS, persona.id, "avatar-full.png")).arrayBuffer());
+		expect(fullBytes).toEqual(original);
+
+		const row = await stores.personas.getById(persona.id);
+		expect(row?.avatarExt).toBe("webp");
+		expect(row?.avatarFullExt).toBe("png");
 	});
 
 	test("serve returns null when no avatar", async () => {
