@@ -24,7 +24,7 @@
     "apps/web/src/components/build/editors/ExperiencePlayground.tsx": 2260,
     "apps/web/src/components/build/editors/LorebookAccordion.tsx": 857,
     "apps/web/src/components/build/editors/LorebookEditor.tsx": 1057,
-    "apps/web/src/components/chat/ImageGenFineTuningChip.tsx": 1481,
+    "apps/web/src/components/chat/ImageGenFineTuningChip.tsx": 1463,
     "apps/web/src/components/chat/MessageAiEditorModal.tsx": 888,
     "apps/web/src/components/chat/MessageShell.tsx": 924,
     "apps/web/src/components/chat/NarrationPlaylist.tsx": 895,

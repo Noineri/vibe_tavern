@@ -218,6 +218,15 @@ mock.module("../../hooks/use-mobile.js", () => ({
   useIsMobile: () => mobileOverride,
 }));
 
+// The two-pane wide layout gates on `useIsWideViewport` — the same
+// capture-real/spread/override pattern (happy-dom computes no media queries).
+const realWide = await import("../../hooks/use-wide-viewport.js");
+let wideOverride = false;
+mock.module("../../hooks/use-wide-viewport.js", () => ({
+  ...realWide,
+  useIsWideViewport: () => wideOverride,
+}));
+
 const { ImageGenFineTuningChip } = await import("./ImageGenFineTuningChip.js");
 const { useImageGenChatStore } = await import("../../stores/image-gen-chat-store.js");
 const { useImageGenChipSectionsStore } = await import("../../stores/image-gen-chip-sections-store.js");
@@ -311,6 +320,7 @@ afterEach(() => {
   sidecarsCalls.length = 0;
   upsertCalls.length = 0;
   mobileOverride = false;
+  wideOverride = false;
   generateCalls.length = 0;
   draftPromptCalls.length = 0;
   draftPromptImplementation = async () => ({ prompt: "drafted prompt" });
@@ -1998,5 +2008,86 @@ describe("ImageGenFineTuningChip — ICR-3 body layout (the redesign's single co
     const clear = within(view.baseElement).getByTestId("image-gen-ft-clear");
     expect(clear.className).toContain("h-11");
     expect(body.contains(generate)).toBe(true);
+  });
+});
+
+describe("ImageGenFineTuningChip — wide two-pane layout (owner mockup chip-wide.html, 2026-10-01)", () => {
+  it("wide desktop with sections: left pane = base + prompts, right pane = the sections stack; each pane scrolls on its own, the footer pinned under both", async () => {
+    wideOverride = true;
+    profilesStore = [profile("wide1", "A1111 local", fullCaps(), "sdxl-base")];
+    modelsStore = { wide1: [{ id: "sdxl-base", label: "SDXL Base" }] };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-wide1" />);
+    act(() => armChat("chat-wide1"));
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-advanced-col")).toBeTruthy());
+
+    const body = within(view.baseElement).getByTestId("image-gen-ft-body");
+    const panes = within(view.baseElement).getByTestId("image-gen-ft-two-pane");
+    expect(panes.parentElement).toBe(body);
+    // The fixed 400px left column, a 1px divider, the right column takes the
+    // rest; the single row is bounded so each pane scrolls inside it.
+    expect(panes.className).toContain("grid-cols-[400px_1px_minmax(0,1fr)]");
+    expect(panes.className).toContain("grid-rows-[minmax(0,1fr)]");
+    expect(panes.className).toContain("min-h-0");
+    // No single scroll region in this layout.
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-scroll")).toBeNull();
+
+    const left = within(view.baseElement).getByTestId("image-gen-ft-pane-left");
+    const right = within(view.baseElement).getByTestId("image-gen-ft-pane-right");
+    for (const pane of [left, right]) {
+      expect(pane.parentElement).toBe(panes);
+      expect(pane.className).toContain("overflow-y-auto");
+      expect(pane.className).toContain("min-h-0");
+    }
+    // The right pane is its own container: the sections' two-column grids
+    // query the pane's width, not the whole popover's.
+    expect(right.className.split(" ")).toContain("@container");
+
+    // What to draw on the left, how to draw it on the right.
+    expect(left.contains(within(view.baseElement).getByTestId("image-gen-ft-profile-select"))).toBe(true);
+    expect(left.contains(within(view.baseElement).getByTestId("image-gen-ft-target-select"))).toBe(true);
+    expect(left.contains(within(view.baseElement).getByTestId("image-gen-ft-prompt"))).toBe(true);
+    expect(right.contains(within(view.baseElement).getByTestId("image-gen-ft-advanced-col"))).toBe(true);
+    expect(left.contains(within(view.baseElement).getByTestId("image-gen-ft-advanced-col"))).toBe(false);
+
+    // The footer is one strip under both panes.
+    const generate = within(view.baseElement).getByTestId("image-gen-ft-generate");
+    expect(panes.contains(generate)).toBe(false);
+    expect(generate.closest("div")?.parentElement).toBe(body);
+
+    // The popover grows only while the two panes are on screen: the marker
+    // the body carries drives the content's has-[…] width/height variants.
+    expect(panes.hasAttribute("data-ft-two-pane")).toBe(true);
+    const content = body.parentElement as HTMLElement;
+    expect(content.className).toContain("has-[[data-ft-two-pane]]:w-[min(960px,60vw)]");
+    expect(content.className).toContain(
+      "has-[[data-ft-two-pane]]:max-h-[min(85vh,var(--radix-popover-content-available-height))]",
+    );
+  });
+
+  it("wide desktop without sections (cloud no-caps profile): the approved single column — no empty right pane", async () => {
+    wideOverride = true;
+    profilesStore = [profile("wide2", "OpenRouter main", noCaps())];
+    modelsStore = { wide2: [{ id: "flux-1", label: "Flux 1" }] };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-wide2" />);
+    act(() => armChat("chat-wide2"));
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-model-select")).toBeTruthy());
+
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-two-pane")).toBeNull();
+    expect(within(view.baseElement).getByTestId("image-gen-ft-scroll")).toBeTruthy();
+  });
+
+  it("not wide: the approved single column, unchanged", async () => {
+    profilesStore = [profile("wide3", "A1111 local", fullCaps(), "sdxl-base")];
+    modelsStore = { wide3: [{ id: "sdxl-base", label: "SDXL Base" }] };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-wide3" />);
+    act(() => armChat("chat-wide3"));
+    openChip();
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-advanced-col")).toBeTruthy());
+
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-two-pane")).toBeNull();
+    const scroll = within(view.baseElement).getByTestId("image-gen-ft-scroll");
+    expect(scroll.contains(within(view.baseElement).getByTestId("image-gen-ft-advanced-col"))).toBe(true);
   });
 });

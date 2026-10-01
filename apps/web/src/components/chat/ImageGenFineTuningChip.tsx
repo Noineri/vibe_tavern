@@ -37,6 +37,8 @@
  * max-h-[80dvh] for the unbounded mobile sheet (the DiceTray caller rule).
  * Cloud dialects with no advanced content never get the
  * sections stack — no dead half-column.
+ * Wide desktop (chip-wide.html, 2026-10-01): two panes from a 1440px
+ * viewport when sections exist — the frame lives in image-gen-chip-body-layout.tsx.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -58,11 +60,13 @@ import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, b
 import { adetailerSummary, kreaSummary, samplersSummary } from "../../lib/imagegen/chip-section-summaries.js";
 import { useImageGenChipSectionsStore } from "../../stores/image-gen-chip-sections-store.js";
 import { ImageGenChipSection } from "./image-gen-chip-section.js";
+import { ImageGenChipBodyLayout } from "./image-gen-chip-body-layout.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
 import { formatListingSnapshotTime } from "../../lib/imagegen/listing-snapshot.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
+import { useIsWideViewport } from "../../hooks/use-wide-viewport.js";
 import { useT, type TFunc } from "../../i18n/context.js";
 import {
   listAllImageGenProfiles,
@@ -155,7 +159,10 @@ export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) 
             side="top"
             align="center"
             sideOffset={4}
-            className="glass-blur z-[220] flex max-h-[min(70vh,var(--radix-popover-content-available-height))] w-[clamp(300px,40vw,560px)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border2 bg-glass-bg p-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+            // The has-[…] pair is the wide two-pane size — keyed on the
+            // body's own marker, so the popover grows exactly when the body
+            // renders two panes (one decision, made in the body).
+            className="glass-blur z-[220] flex max-h-[min(70vh,var(--radix-popover-content-available-height))] w-[clamp(300px,40vw,560px)] max-w-[calc(100vw-2rem)] has-[[data-ft-two-pane]]:max-h-[min(85vh,var(--radix-popover-content-available-height))] has-[[data-ft-two-pane]]:w-[min(960px,60vw)] flex-col overflow-hidden rounded-lg border border-border2 bg-glass-bg p-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
             {body}
           </Popover.Content>
@@ -183,6 +190,7 @@ export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) 
 function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; onGenerateFired?: () => void }) {
   const { t, tDynamic } = useT();
   const isMobile = useIsMobile();
+  const isWide = useIsWideViewport();
   const activeProfileId = useImageGenChatStore((s) => s.activeProfileIdByChat[chatId]);
   const globalActiveId = useImageGenChatStore((s) => s.activeImageGenProfileId);
   const draft = useImageGenChatStore((s) => s.fineTuningDraftByChat[chatId] ?? EMPTY_IMAGE_GEN_DRAFT);
@@ -515,6 +523,9 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   // half-column for cloud dialects.
   const hasAdvanced =
     (effective !== null && draft.model !== undefined) || supportsLoras || supportsHiresFix;
+  // The wide two-pane layout (chip-wide.html): only with a right pane to
+  // fill — a cloud profile with no sections keeps the single column.
+  const twoPane = !isMobile && isWide && hasAdvanced;
 
   // ── Element variables (ICR-3): the SAME fields render in two sequences —
   // desktop base → prompts → sections, mobile prompts → divider → base →
@@ -695,8 +706,10 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
           value={draft.prompt}
           onChange={(e) => setFineTuningDraft(chatId, { prompt: e.target.value })}
           placeholder={t("image_gen_chip_prompt_placeholder")}
-          minRows={2}
-          maxRows={6}
+          // Two-pane: the left column has the height to spare — the
+          // prompt opens taller (rows, not px: the primitive owns height).
+          minRows={twoPane ? 8 : 2}
+          maxRows={twoPane ? 16 : 6}
           data-testid="image-gen-ft-prompt"
           aria-label={t("image_gen_chip_prompt_label")}
         />
@@ -722,8 +735,8 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
             value={draft.negative}
             onChange={(e) => setFineTuningDraft(chatId, { negative: e.target.value })}
             placeholder={t("image_gen_chip_negative_placeholder")}
-            minRows={2}
-            maxRows={4}
+            minRows={twoPane ? 4 : 2}
+            maxRows={twoPane ? 8 : 4}
             data-testid="image-gen-ft-negative"
             aria-label={t("image_gen_chip_negative_label")}
           />
@@ -848,47 +861,16 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
   );
 
   return (
-    <div
-      className="@container flex min-h-0 max-h-[80dvh] flex-1 flex-col"
-      data-testid="image-gen-ft-body"
-    >
-      {/* Scroll region (set-switch report C → ICR-3): the popover caps its
-          height at the space Radix actually has above the trigger; the body
-          rolls inside this region and the footer stays pinned below it (the
-          DiceTray 616–640 canon). The body root's max-h-[80dvh] is the same
-          cap's mobile twin — the sheet does not bound height, the caller
-          must (the DiceTray rule; inert on desktop where the popover caps
-          first). The scroll region's own px-3/pt-3 is the body's only inset. */}
-      <div
-        className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 pb-3 pt-3"
-        data-testid="image-gen-ft-scroll"
-      >
-        {isMobile ? (
-          <>
-            {promptsBlock}
-            <div className="my-0.5 h-px shrink-0 bg-border opacity-40" />
-            {baseFieldsMobile}
-          </>
-        ) : (
-          <>
-            {baseFieldsDesktop}
-            {promptsBlock}
-          </>
-        )}
-        {sectionsStack}
-      </div>
-      {isMobile ? (
-        <div className="flex shrink-0 gap-2.5 border-t border-border px-4 pb-4 pt-2.5">
-          {clearButton}
-          {generateButton}
-        </div>
-      ) : (
-        <div className="flex shrink-0 items-center justify-end gap-1.5 border-t border-border px-3 pt-2">
-          {clearButton}
-          {generateButton}
-        </div>
-      )}
-    </div>
+    <ImageGenChipBodyLayout
+      isMobile={isMobile}
+      twoPane={twoPane}
+      baseFieldsDesktop={baseFieldsDesktop}
+      baseFieldsMobile={baseFieldsMobile}
+      promptsBlock={promptsBlock}
+      sectionsStack={sectionsStack}
+      clearButton={clearButton}
+      generateButton={generateButton}
+    />
   );
 }
 
