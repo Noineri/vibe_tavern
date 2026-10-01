@@ -5,15 +5,19 @@
  * Clicking a pill unlinks it; clicking the dashed "+" opens a small popover
  * with available targets.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 
 import { cn } from "../../lib/cn.js";
 import type { TFunc } from "../../i18n/locale-helpers.js";
 import type { LinkBindingRecord, LinkBindingTargetType, LinkTarget } from "../../lib/link-targets.js";
+import { deriveLinkSections, type LinkSectionInput } from "../../lib/link-binding-sections.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { getModalPortal } from "./modal-helpers.js";
 import { resolveEntityAvatarUrl, avatarUrl } from "../../lib/avatar.js";
+import { SearchInput } from "./SearchInput.js";
+import { BottomSheet } from "./BottomSheet.js";
+import { MAX_VISIBLE_ITEMS } from "./popover-constants.js";
 
 export type { LinkBindingRecord, LinkBindingTargetType, LinkTarget } from "../../lib/link-targets.js";
 
@@ -75,6 +79,8 @@ function AvatarDot({ target, size = 18 }: { target: LinkTarget; size?: number })
           src={url}
           alt=""
           className="h-full w-full object-cover"
+          loading="lazy"
+          decoding="async"
         />
       ) : (
         <div
@@ -112,6 +118,25 @@ export function LinkBindingPopover({
   triggerLabel,
 }: LinkBindingPopoverProps) {
   const [open, setOpen] = useState(false);
+  // Variant-A picker state (LB-2C): live query, per-section expansion, and
+  // the links SNAPSHOT taken at open. The snapshot keeps the order stable
+  // while the picker is open (a chip never jumps under the cursor when
+  // clicked); the LIVE `links` prop still drives the active look, so the
+  // checkmark toggles instantly. The next open re-sorts.
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<Set<LinkBindingTargetType>>(() => new Set());
+  const [openLinks, setOpenLinks] = useState<LinkBindingRecord[]>([]);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      setOpen(next);
+      if (next) setOpenLinks(links);
+      setQuery("");
+      setExpanded(new Set());
+    },
+    [links],
+  );
 
   const charMap = new Map(characters.map((c) => [c.id, c]));
   const personaMap = new Map(personas.map((p) => [p.id, p]));
@@ -126,6 +151,37 @@ export function LinkBindingPopover({
   const scriptLinks = links.filter((l) => l.targetType === "script");
   const presetLinks = links.filter((l) => l.targetType === "preset");
   const regexLinks = links.filter((l) => l.targetType === "regex");
+
+  // Per-type LIVE bound-id sets (chip active marks) — Set lookups, never a
+  // per-chip `links.some`.
+  const liveBoundIds = new Map<LinkBindingTargetType, Set<string>>();
+  for (const l of links) {
+    const set = liveBoundIds.get(l.targetType) ?? new Set<string>();
+    set.add(l.targetId);
+    liveBoundIds.set(l.targetType, set);
+  }
+
+  // Sections in today's fixed order; the picker renders ONLY what
+  // deriveLinkSections returns — no second hand-written ordering/filtering
+  // anywhere (LB-2B is the one data source).
+  const sectionInputs: LinkSectionInput[] = [
+    { key: "character", targets: characters },
+    { key: "persona", targets: personas },
+    { key: "lorebook", targets: lorebooks },
+    { key: "script", targets: scripts },
+    { key: "preset", targets: presets },
+    { key: "regex", targets: regexes },
+  ];
+  const result = deriveLinkSections({
+    sections: sectionInputs,
+    links: open ? openLinks : links,
+    query,
+    expanded,
+    visibleLimit: MAX_VISIBLE_ITEMS,
+  });
+  // Header counts show ALL targets of the section, not the visible slice.
+  const countByKey = new Map(sectionInputs.map((s) => [s.key, s.targets.length]));
+  const hasAnyTargets = sectionInputs.some((s) => s.targets.length > 0);
 
   const toggle = useCallback(
     (targetType: LinkBindingTargetType, targetId: string) => {
@@ -150,6 +206,17 @@ export function LinkBindingPopover({
     : "h-[22px] text-[11px]";
   const pillAvatarSize = isMobile ? 22 : 18;
   const addLabel = tooltipLabel || t("lore_link_targets");
+
+  const sectionLabel = (key: LinkBindingTargetType): string => {
+    switch (key) {
+      case "character": return characterSectionLabel || t("scope_char");
+      case "persona": return personaSectionLabel || t("scope_persona");
+      case "lorebook": return lorebookSectionLabel || t("scope_lorebook");
+      case "script": return scriptSectionLabel || t("scope_script");
+      case "preset": return presetSectionLabel || t("scope_preset");
+      case "regex": return regexSectionLabel || t("scope_regex");
+    }
+  };
 
   const pill = (target: LinkTarget, type: LinkBindingTargetType) => (
     <CustomTooltip key={`${type}:${target.id}`} content={`${target.name} — ${t("lore_click_to_unlink")}`}>
@@ -188,6 +255,71 @@ export function LinkBindingPopover({
           <path d="M2.5 6L5 8.5L9.5 3.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
+    </div>
+  );
+  // ONE body element, rendered by both shells (desktop Radix popover /
+  // mobile BottomSheet) — the dual-mode canon (ImageGenFineTuningChip).
+  const body = (
+    <div className="flex min-h-0 flex-col">
+      {result.showSearch && (
+        <div className="shrink-0 border-b border-border px-3 py-2">
+          <SearchInput
+            ref={searchInputRef}
+            className="w-full"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("link_binding_search_placeholder")}
+            aria-label={t("link_binding_search_placeholder")}
+          />
+        </div>
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {result.sections.map((view, i) => (
+          <div
+            key={view.key}
+            className={cn("px-3 py-2.5", i < result.sections.length - 1 && "border-b border-border")}
+          >
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
+              {sectionLabel(view.key)} · {countByKey.get(view.key) ?? 0}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {view.items.map((target) =>
+                chip(target, view.key, liveBoundIds.get(view.key)?.has(target.id) ?? false),
+              )}
+              {view.hiddenCount > 0 && (
+                <button
+                  type="button"
+                  className="flex cursor-pointer items-center rounded-full border border-dashed border-border2 px-2.5 py-[2px] text-[12px] text-t3 transition-colors select-none hover:border-accent hover:text-accent-t"
+                  onClick={() => setExpanded((prev) => new Set(prev).add(view.key))}
+                >
+                  {t("link_binding_show_more", { n: view.hiddenCount })}
+                </button>
+              )}
+              {view.collapsible && (
+                <button
+                  type="button"
+                  className="flex cursor-pointer items-center rounded-full border border-dashed border-border2 px-2.5 py-[2px] text-[12px] text-t3 transition-colors select-none hover:border-accent hover:text-accent-t"
+                  onClick={() =>
+                    setExpanded((prev) => {
+                      const next = new Set(prev);
+                      next.delete(view.key);
+                      return next;
+                    })
+                  }
+                >
+                  {t("link_binding_show_less")}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        {result.noResults && (
+          <div className="px-3 py-4 text-center text-[12px] text-t3">{t("link_binding_no_results")}</div>
+        )}
+        {!hasAnyTargets && (
+          <div className="px-3 py-4 text-center text-[12px] text-t3">{emptyLabel || t("lore_link_empty")}</div>
+        )}
+      </div>
     </div>
   );
 
@@ -244,7 +376,7 @@ export function LinkBindingPopover({
             ))}
         </>
       )}
-      <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Root open={open} onOpenChange={handleOpenChange}>
         {triggerLabel ? (
           <Popover.Trigger asChild>
             <button
@@ -285,87 +417,34 @@ export function LinkBindingPopover({
             </Popover.Trigger>
           </CustomTooltip>
         )}
-        <Popover.Portal container={getModalPortal() ?? undefined}>
-          <Popover.Content
-            side="bottom"
-            align="start"
-            sideOffset={8}
-            className="glass-blur z-[220] min-w-[240px] max-w-[340px] rounded-lg border border-border bg-glass-bg shadow-theme-lg outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
-          >
-          {characters.length > 0 && (
-            <div className="border-b border-border px-3 py-2.5">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {characterSectionLabel || t("scope_char")}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {characters.map((c) => chip(c, "character", charLinks.some((l) => l.targetId === c.id)))}
-              </div>
-            </div>
-          )}
-
-          {personas.length > 0 && (
-            <div className="border-b border-border px-3 py-2.5">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {personaSectionLabel || t("scope_persona")}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {personas.map((p) => chip(p, "persona", personaLinks.some((l) => l.targetId === p.id)))}
-              </div>
-            </div>
-          )}
-
-          {lorebooks.length > 0 && (
-            <div className="px-3 py-2.5">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {lorebookSectionLabel || t("scope_lorebook")}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {lorebooks.map((lb) => chip(lb, "lorebook", lorebookLinks.some((l) => l.targetId === lb.id)))}
-              </div>
-            </div>
-          )}
-
-          {scripts.length > 0 && (
-            <div className="px-3 py-2.5">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {scriptSectionLabel || t("scope_script")}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {scripts.map((sc) => chip(sc, "script", scriptLinks.some((l) => l.targetId === sc.id)))}
-              </div>
-            </div>
-          )}
-
-          {presets.length > 0 && (
-            <div className="px-3 py-2.5">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {presetSectionLabel || t("scope_preset")}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {presets.map((p) => chip(p, "preset", presetLinks.some((l) => l.targetId === p.id)))}
-              </div>
-            </div>
-          )}
-
-          {regexes.length > 0 && (
-            <div className="px-3 py-2.5">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
-                {regexSectionLabel || t("scope_regex")}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {regexes.map((r) => chip(r, "regex", regexLinks.some((l) => l.targetId === r.id)))}
-              </div>
-            </div>
-          )}
-
-          {characters.length === 0 && personas.length === 0 && lorebooks.length === 0 && scripts.length === 0 && presets.length === 0 && regexes.length === 0 && (
-            <div className="px-3 py-4 text-center text-[12px] text-t3">
-              {emptyLabel || t("lore_link_empty")}
-            </div>
-          )}
-          </Popover.Content>
-        </Popover.Portal>
+        {!isMobile && (
+          <Popover.Portal container={getModalPortal() ?? undefined}>
+            <Popover.Content
+              side="bottom"
+              align="start"
+              sideOffset={8}
+              onOpenAutoFocus={(e) => {
+                // Focus the search row when it exists; otherwise keep Radix's
+                // default focus (first focusable item).
+                if (result.showSearch) {
+                  e.preventDefault();
+                  searchInputRef.current?.focus();
+                }
+              }}
+              className="glass-blur z-[220] flex min-w-[240px] max-w-[340px] max-h-[min(70vh,var(--radix-popover-content-available-height))] flex-col overflow-hidden rounded-lg border border-border bg-glass-bg shadow-theme-lg outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+            >
+              {body}
+            </Popover.Content>
+          </Popover.Portal>
+        )}
       </Popover.Root>
+      {open && isMobile && (
+        <BottomSheet open={true} onClose={() => handleOpenChange(false)} title={addLabel}>
+          {/* The sheet itself is unbounded — the body gets the mobile
+              content-height cap (the DiceTray/ImageGen mobile-sheet rule). */}
+          <div className="max-h-[80dvh]">{body}</div>
+        </BottomSheet>
+      )}
     </div>
   );
 }
