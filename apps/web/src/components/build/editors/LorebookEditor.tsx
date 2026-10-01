@@ -38,6 +38,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
 import type { Scope } from "./LorebookAccordion.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { characterToLinkTarget, personaToLinkTarget } from "../../../lib/link-targets.js";
 import { LoreEntryEditor } from "./LoreEntryEditor.js";
 import { LorebookImportModal } from "./LorebookImportModal.js";
 import { buildLorebookCreateBody } from "./lorebook-create-body.js";
@@ -219,25 +220,8 @@ export function LorebookEditor({
   // ── Reference data for link popover ──
   const allCharacters = useAllCharacters();
   const personas = useBootstrapStore((s) => s.personas) ?? [];
-  const linkCharacters: LinkTarget[] = allCharacters.map((c) => ({
-    id: c.id,
-    name: c.name,
-    avatarAssetId: c.avatarAssetId,
-    kind: "characters",
-    avatarExt: c.avatarExt,
-    avatarFullExt: c.avatarFullExt,
-    avatarFullAssetId: c.avatarFullAssetId,
-    updatedAt: c.updatedAt,
-  }));
-  const linkPersonas: LinkTarget[] = personas.map((p) => ({
-    id: p.id,
-    name: p.name,
-    avatarAssetId: p.avatarAssetId,
-    kind: "personas",
-    avatarExt: p.avatarExt,
-    avatarFullExt: p.avatarFullExt,
-    updatedAt: p.updatedAt,
-  }));
+  const linkCharacters: LinkTarget[] = allCharacters.map(characterToLinkTarget);
+  const linkPersonas: LinkTarget[] = personas.map(personaToLinkTarget);
 
   // ═══ Lorebook mutations ═══
 

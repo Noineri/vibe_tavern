@@ -39,6 +39,7 @@ import { DICE_ACTOR_TYPE, type ChatId, type DiceActorType } from "@vibe-tavern/d
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { EmptyState } from "../../shared/empty-state.js";
 import { LinkBindingPopover, type LinkTarget, type LinkBindingRecord } from "../../shared/LinkBindingPopover.js";
+import { scriptToLinkTarget } from "../../../lib/link-targets.js";
 import { ToggleChips } from "../../shared/ToggleChips.js";
 import { useT } from "../../../i18n/context.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
@@ -137,11 +138,7 @@ export function DiceAssignment({ chatId, diceMode, diceScriptIds, diceActorBindi
   // The set the user edits = the resolved effective set. LinkBindingPopover
   // needs LinkBindingRecord[]; only the "script" target type is used here.
   const displayedLinks: LinkBindingRecord[] = displayedIds.map((id) => ({ targetType: "script", targetId: id }));
-  const diceLinkTargets: LinkTarget[] = (allDiceScripts ?? []).map((s) => ({
-    id: s.id,
-    name: s.name,
-    avatarAssetId: null,
-  }));
+  const diceLinkTargets: LinkTarget[] = (allDiceScripts ?? []).map(scriptToLinkTarget);
 
   function openDiceCreate(template?: "fate_die") {
     useBuildNavigationStore.getState().requestDiceCreate({

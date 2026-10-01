@@ -19,6 +19,7 @@ import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
 import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { characterToLinkTarget, personaToLinkTarget } from "../../../lib/link-targets.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
@@ -194,14 +195,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   const [scriptLinks, setScriptLinksState] = useState<ScriptLinkRecord[]>([]);
   const allCharacters = useAllCharacters();
   const personas = useBootstrapStore((s) => s.personas) ?? [];
-  const linkCharacters: LinkTarget[] = allCharacters.map((c) => ({
-    id: c.id, name: c.name, avatarAssetId: c.avatarAssetId, kind: "characters",
-    avatarExt: c.avatarExt, avatarFullExt: c.avatarFullExt, avatarFullAssetId: c.avatarFullAssetId, updatedAt: c.updatedAt,
-  }));
-  const linkPersonas: LinkTarget[] = personas.map((p) => ({
-    id: p.id, name: p.name, avatarAssetId: p.avatarAssetId, kind: "personas",
-    avatarExt: p.avatarExt, avatarFullExt: p.avatarFullExt, updatedAt: p.updatedAt,
-  }));
+  const linkCharacters: LinkTarget[] = allCharacters.map(characterToLinkTarget);
+  const linkPersonas: LinkTarget[] = personas.map(personaToLinkTarget);
 
   useEffect(() => {
     if (!activeScriptId) { setScriptLinksState([]); return; }
