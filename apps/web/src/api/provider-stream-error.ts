@@ -42,3 +42,16 @@ export class ProviderStreamError extends Error {
 		this.userMessageSaved = kept.userMessageSaved ?? false;
 	}
 }
+
+/** Marks a NON-stream send error whose body said the server had already
+ *  stored the user message (`userMessageSaved`) — the twin of the stream
+ *  error's own `userMessageSaved` field. */
+export function markUserMessageSaved<E extends Error>(error: E): E {
+	return Object.assign(error, { userMessageSaved: true });
+}
+
+/** The failed send's user message is on the server — a marked non-stream
+ *  error or a {@link ProviderStreamError} whose stream announced it. */
+export function isUserMessageSavedError(error: unknown): boolean {
+	return error instanceof Error && (error as { userMessageSaved?: unknown }).userMessageSaved === true;
+}

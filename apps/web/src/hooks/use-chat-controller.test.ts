@@ -89,7 +89,7 @@ mock.module("../i18n/locale-helpers.js", () => ({
 }));
 
 const { useChatController, diceSendBlockReason } = await import("./use-chat-controller.js");
-const { ProviderStreamError } = await import("../api/provider-stream-error.js");
+const { ProviderStreamError, markUserMessageSaved } = await import("../api/provider-stream-error.js");
 const { DiceApiError } = await import("../api/dice-api.js");
 const { useDiceStore } = await import("../stores/dice-store.js");
 const { useChatStore } = await import("../stores/chat-store.js");
@@ -198,6 +198,30 @@ describe("useChatController — per-send prefill one-shot (LS-4b)", () => {
     // suite owns the send-action mock + the override store.
     sendChatMessageAction.mockClear();
     usePerSendPrefillStore.getState().clear();
+  });
+
+  test("non-stream: a send failure after the user message was stored ⇒ chat refetched, draft NOT restored", async () => {
+    // Owner 2026-10-02 («я отключаю стриминг»): the non-stream twin of the
+    // stream path's user-message-saved settle.
+    useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
+    sendChatMessageAction.mockRejectedValueOnce(markUserMessageSaved(new Error("Invalid API key")));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(fetchChat).toHaveBeenCalledWith(CHAT);
+    expect(useChatStore.getState().draft).toBe("");
+    expect(toastError.mock.calls[0]![0]).toBe("Invalid API key");
+  });
+
+  test("non-stream: a send failure with nothing stored ⇒ the draft is restored (unchanged)", async () => {
+    useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
+    sendChatMessageAction.mockRejectedValueOnce(new Error("Invalid API key"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(useChatStore.getState().draft).toBe("hello");
   });
 
   test("handleSend threads the armed override into the send body and clears it", async () => {

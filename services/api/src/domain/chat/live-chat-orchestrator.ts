@@ -13,6 +13,7 @@ import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-ta
 import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-in-response.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
+import { markUserMessageSaved } from "./user-message-saved.js";
 import { effectiveContextBudget, normalizeProviderType } from "@vibe-tavern/domain";
 import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
 import { resolveProtocol } from "../providers/protocol-registry.js";
@@ -191,7 +192,7 @@ export class LiveChatOrchestrator {
       });
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
-      throw err;
+      throw prepared.userMessage ? markUserMessageSaved(err) : err; // the client shows it, not restores the draft
     }
 
     // Extract thinking tags from content (some models embed <thinking> in text)
@@ -974,8 +975,7 @@ export class LiveChatOrchestrator {
 
       const message = extractProviderErrorMessage(err);
       const category = classifyProviderError(err);
-      // A provider cut mid-reply keeps what streamed, like a Stop (owner 2026-10-02);
-      // `partialSaved` tells the client to reload the chat.
+      // A provider cut mid-reply keeps what streamed, like a Stop; `partialSaved` → the client reloads the chat.
       const partialSaved = await savePartial();
       logSendDebug(`${debugLabel}.provider-error`, { chatId: input.chatId, message, category, partialSaved });
       if (!partialSaved) this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));

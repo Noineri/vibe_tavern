@@ -7,7 +7,7 @@
 import { toast } from "sonner";
 import type { TFunc } from "../i18n/locale-helpers.js";
 import type Resources from "../i18n/resources.js";
-import { ProviderStreamError } from "../api/provider-stream-error.js";
+import { isUserMessageSavedError, ProviderStreamError } from "../api/provider-stream-error.js";
 import { useModalStore } from "../stores/modal-store.js";
 
 // Categories where the failure is likely transient (retry after a short wait) —
@@ -65,5 +65,5 @@ export function isPartialSavedError(error: unknown): boolean {
  *  (`user-message-saved` preceded the error) and/or a partial reply — so the
  *  client reloads the chat instead of restoring the draft. */
 export function isTurnKeptOnServer(error: unknown): boolean {
-  return error instanceof ProviderStreamError && (error.partialSaved || error.userMessageSaved);
+  return isPartialSavedError(error) || isUserMessageSavedError(error);
 }

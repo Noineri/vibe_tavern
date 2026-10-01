@@ -15,6 +15,7 @@ import { ChatRuntime } from "../src/runtime/session/session-runtime-chat.js";
 import { ChatApplicationService } from "../src/domain/chat/chat-application-service.js";
 import type { ChatModeAssembleResult, ChatModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import { userMessageSavedFlag } from "../src/domain/chat/user-message-saved.js";
 import type { ProviderOrchestrator } from "../src/domain/providers/provider-orchestrator.js";
 import type { SessionSnapshot } from "../src/api/contract/session-types.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
@@ -38,8 +39,10 @@ import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider
 // Per-test stub state (reset in beforeEach): what streams before the cut.
 let deltasBeforeCut: Array<{ type: "text-delta"; delta: string } | { type: "reasoning-delta"; textDelta: string }> = [];
 
+// The non-streaming twin: the provider fails outright (no partial text in
+// this mode) after the user message was stored.
 const STUB_NONSTREAMING: typeof nonstreamingProviderExecute = async () => {
-  throw new Error("non-streaming path is not used here");
+  throw new Error("upstream connection reset");
 };
 const STUB_STREAM: typeof streamProviderExecutor = async () => {
   const cut = new Error("upstream connection reset");
@@ -308,6 +311,24 @@ describe("provider cuts the stream mid-reply", () => {
     const msgs = await chat.stores.messages.getMessages(chat.branchId);
     const user = msgs.find((m) => m.role === "user");
     expect(JSON.parse(events[savedAt]!.data)).toEqual({ messageId: user!.id });
+  });
+
+  it("non-stream send: a provider failure after the store keeps the user message and marks the error userMessageSaved", async () => {
+    const chat = await setup();
+    const orch = makeHarness(chat);
+
+    const failure = await orch.sendMessage({
+      chatId: chat.chatId as string,
+      content: "hello",
+      profile: TEST_PROFILE,
+      model: "test-model",
+    }).then(() => null, (err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(userMessageSavedFlag(failure)).toEqual({ userMessageSaved: true });
+    const msgs = await chat.stores.messages.getMessages(chat.branchId);
+    expect(msgs.filter((m) => m.role === "user").map((m) => m.content)).toEqual(["hello"]);
+    expect(msgs.filter((m) => m.role === "assistant")).toHaveLength(0);
   });
 
   it("reasoning only, no reply text: nothing is stored (the same empty-text rule as a user Stop)", async () => {

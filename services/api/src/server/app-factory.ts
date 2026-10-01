@@ -24,6 +24,7 @@ import {
 	normalizeExternalHost,
 } from "./request-origin-guard.js";
 import { weakEtag, withStaticValidator } from "./static-conditional.js";
+import { userMessageSavedFlag } from "../domain/chat/user-message-saved.js";
 
 export interface AppDeps {
 	runtime: RuntimeApi;
@@ -115,7 +116,7 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 			// map it to the same 502 the old providerError() DomainError yielded, and
 			// surface the category in error.details so the UI can react to it.
 			return c.json(
-				{ error: { kind: "Provider" as const, message: err.message, details: { category: err.category } } },
+				{ error: { kind: "Provider" as const, message: err.message, details: { category: err.category }, ...userMessageSavedFlag(err) } },
 				502,
 			);
 		}
@@ -168,7 +169,8 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 			return c.json({ error: { kind: "Validation" as const, message: err.message } }, 400);
 		}
 		if (isDomainError(err)) {
-			return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 422 | 500 | 502);
+			const json = domainErrorToJson(err);
+			return c.json({ ...json, error: { ...json.error, ...userMessageSavedFlag(err) } }, httpStatusForDomainError(err) as 400 | 401 | 404 | 409 | 422 | 500 | 502);
 		}
 		if (err instanceof HTTPException) {
 			// Framework-raised client errors (e.g. the json validator's
@@ -177,7 +179,7 @@ export async function createApp(deps: AppDeps): Promise<Hono> {
 		}
 		console.error("[unhandled]", err);
 		return c.json(
-			{ error: { kind: "Internal" as const, message: err instanceof Error ? err.message : "Unknown server error" } },
+			{ error: { kind: "Internal" as const, message: err instanceof Error ? err.message : "Unknown server error", ...userMessageSavedFlag(err) } },
 			500,
 		);
 	});

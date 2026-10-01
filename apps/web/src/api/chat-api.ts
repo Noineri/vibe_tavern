@@ -2,7 +2,8 @@ import type { ChatId, ChatMode, ObjectiveMode, ObjectiveTaskStatus, PromptTraceR
 import type { CoauthorApplyRequest, CoauthorCorrection, CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate, RegenerateOverride } from "@vibe-tavern/api-contracts";
 import type { AppSnapshot, ChatListItem, ChatSummaryRecord, AutoSummaryConfig, InsightsConfigPatch, InsightsCompletionPatchResponse, InsightsCompletionTarget, ScenePreviewResponse, SceneTargetResponse, SceneStatusResponse, SceneBackfillMode, SceneBackfillStatusResponse, ContextPreviewResponse, DiceMode } from "./types.js";
 import { client } from "./client.js";
-import { unwrapRpc, unwrapError, type RpcResponse } from "./unwrap.js";
+import { unwrapRpc, unwrapError, errorFromBody, type RpcErrorBody, type RpcResponse } from "./unwrap.js";
+import { markUserMessageSaved } from "./provider-stream-error.js";
 import { DiceApiError } from "./dice-api.js";
 import { sendStream, regenerateStream, generateReplyStream, continueStream, type StreamOpts } from "./stream.js";
 import type { attachmentSchema } from "@vibe-tavern/api-contracts";
@@ -140,20 +141,25 @@ export async function sendChatMessage(
  *  structured `error.details.code` (`stale_revision` / `unresolved_choose`) —
  *  surface it as a typed {@link DiceApiError} so the send path can refresh
  *  pending and KEEP the draft instead of erroring out. Every other failure
- *  delegates to the shared {@link unwrapError} unchanged (the body is consumed
- *  at most once on either path). DICE-F3. */
+ *  maps through the shared {@link errorFromBody} unchanged, marked when the
+ *  body says the user message was already stored (`userMessageSaved` — inside
+ *  `error`, or top-level on the typed 422 gates; owner 2026-10-02). The body
+ *  is read once. DICE-F3. */
 async function sendChatMessageError(response: RpcResponse): Promise<Error> {
+  const body = (await response.json().catch(() => null)) as
+    | (RpcErrorBody & { userMessageSaved?: unknown; error?: { userMessageSaved?: unknown } })
+    | null;
   if (response.status === 409) {
-    const body = (await response.json().catch(() => null)) as
-      | { error?: { message?: string; details?: { code?: string } } }
-      | null;
-    const code = body?.error?.details?.code;
+    const conflict = body?.error as { message?: string; details?: { code?: string } } | undefined;
+    const code = conflict?.details?.code;
     if (typeof code === "string") {
-      return new DiceApiError(response.status, body?.error?.message ?? "Dice commit conflict", code);
+      return new DiceApiError(response.status, conflict?.message ?? "Dice commit conflict", code);
     }
-    return new Error(body?.error?.message ?? `Request failed: ${response.status}`);
+    return new Error(conflict?.message ?? `Request failed: ${response.status}`);
   }
-  return unwrapError(response);
+  const error = errorFromBody(body, response.status);
+  const inner = typeof body?.error === "object" ? body.error : undefined;
+  return body?.userMessageSaved === true || inner?.userMessageSaved === true ? markUserMessageSaved(error) : error;
 }
 
 export async function regenerateChatMessage(

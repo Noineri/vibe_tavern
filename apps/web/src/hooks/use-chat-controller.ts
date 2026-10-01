@@ -10,7 +10,8 @@ import { useModalStore } from "../stores/modal-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
-import { isTurnKeptOnServer, showProviderErrorToast } from "../lib/provider-error-toast.js";
+import { showProviderErrorToast } from "../lib/provider-error-toast.js";
+import { restoreDraftAfterSendError, settleFailedSendDraft } from "../lib/failed-send-draft.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { resolveCoauthorBinding } from "../lib/coauthor-provider-binding.js";
@@ -41,19 +42,6 @@ import { DiceApiError } from "../api/dice-api.js";
 import type { DiceLaneState, DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
 import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
-
-function restoreDraftAfterSendError(content?: string | null, attachments?: Attachment[]): void {
-  const store = useChatStore.getState();
-  if (content != null && store.draft.length === 0) {
-    store.setDraft(content);
-  }
-  if (attachments?.length) {
-    const existingIds = new Set(useChatStore.getState().draftAttachments.map((att) => att.id));
-    attachments.forEach((att) => {
-      if (!existingIds.has(att.id)) store.addDraftAttachment(att);
-    });
-  }
-}
 
 // ─── Dice send gate (DICE-F3) ───────────────────────────────────────────
 // Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
@@ -502,16 +490,7 @@ export function useChatController(): ChatControllerActions {
         toast.info(getT()("generation_cancelled"));
         return "cancelled";
       }
-      // Stored server-side (user message / partial reply) → reload the chat; a restored draft
-      // beside an invisible stored message invited a duplicate resend (owner 2026-10-02).
-      const settleDraft = async (): Promise<void> => {
-        if (isTurnKeptOnServer(error)) {
-          useChatStore.getState().setPendingContent(chatId, null);
-          await refreshChatSnapshotCache(chatId);
-        } else {
-          restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
-        }
-      };
+      const settleDraft = () => settleFailedSendDraft(error, chatId, refreshChatSnapshotCache, pendingUserContent, pendingAttachments);
       // DICE-F3: a dice commit conflict (stale revision / unresolved choose)
       // resyncs the lane and keeps the draft — not a provider error.
       if (tryHandleDiceSendConflict(error, chatId, pendingUserContent, pendingAttachments)) {
@@ -699,7 +678,8 @@ export function useChatController(): ChatControllerActions {
         {
           pendingUserContent: draft,
           pendingAttachments: currentAttachments,
-          onError: (error) => {
+          onError: async (error) => {
+            const settleDraft = () => settleFailedSendDraft(error, activeChatId, refreshChatSnapshotCache, draft, currentAttachments);
             // DICE-F3: a dice commit conflict resyncs the lane and keeps the
             // draft — it is not a provider failure.
             if (tryHandleDiceSendConflict(error, activeChatId, draft, currentAttachments)) return;
@@ -715,7 +695,7 @@ export function useChatController(): ChatControllerActions {
                   onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
                 },
               });
-              restoreDraftAfterSendError(draft, currentAttachments);
+              await settleDraft();
             } else if (gateErrorCode(error) === "voice_transcribe_unavailable") {
               toast.error(getT()("voice_transcribe_unavailable"), {
                 description: getT()("voice_transcribe_unavailable_desc"),
@@ -724,9 +704,9 @@ export function useChatController(): ChatControllerActions {
                   onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
                 },
               });
-              restoreDraftAfterSendError(draft, currentAttachments);
+              await settleDraft();
             } else {
-              restoreDraftAfterSendError(draft, currentAttachments);
+              await settleDraft();
               showProviderErrorToast(error, getT());
             }
           },
