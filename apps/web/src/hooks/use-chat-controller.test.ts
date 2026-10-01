@@ -49,9 +49,12 @@ const realSonner = await import("sonner");
 // into every other file sharing this worker, R4): callable surface forwards
 // to the real toast, only `warning` is swapped for the test mock.
 const toastWarning = mock();
+// The provider-cut path's error toast is pinned the same way.
+const toastError = mock();
 const toastMock = new Proxy(realSonner.toast, {
 	get(target, prop) {
 		if (prop === "warning") return toastWarning;
+		if (prop === "error") return toastError;
 		return Reflect.get(target, prop, target);
 	},
 	apply(target, _thisArg, args) {
@@ -118,6 +121,7 @@ beforeEach(() => {
   continueMessageAction.mockReset();
   fetchChat.mockReset();
   toastWarning.mockClear();
+  toastError.mockClear();
   // ingestSnapshot preserves absent fields, so an empty snapshot is a safe
   // no-op refresh for the post-abort / post-error refetch.
   fetchChat.mockResolvedValue({});
@@ -574,6 +578,34 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     await act(async () => { await result.current.handleSend(); });
 
     expect(sendChatMessageStream).not.toHaveBeenCalled();
+  });
+
+  test("provider cut with partialSaved ⇒ chat refetched, draft NOT restored, toast says the partial reply was kept", async () => {
+    // The server already stored the user message (prepareLiveTurn) AND the
+    // text streamed before the cut — restoring the draft would invite a
+    // duplicate resend; the chat refetch shows the kept partial reply.
+    sendChatMessageStream.mockRejectedValueOnce(
+      new ProviderStreamError("upstream connection reset", "network", undefined, true),
+    );
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(fetchChat).toHaveBeenCalledWith(CHAT);
+    expect(useChatStore.getState().draft).toBe("");
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(toastError.mock.calls[0]![0]).toBe("upstream connection reset");
+    expect(toastError.mock.calls[0]![1]).toEqual({ description: "provider_error_partial_saved_desc" });
+  });
+
+  test("provider error WITHOUT partialSaved ⇒ the draft is restored (unchanged behavior)", async () => {
+    sendChatMessageStream.mockRejectedValueOnce(new ProviderStreamError("boom", "unknown"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(useChatStore.getState().draft).toBe("hi");
+    expect(toastError).toHaveBeenCalledTimes(1);
   });
 
   test("stream conflict (stale_revision) ⇒ refreshPending + draft KEPT", async () => {

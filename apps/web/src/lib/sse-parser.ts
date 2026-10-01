@@ -127,7 +127,7 @@ export async function parseSSEStream(opts: ParseSSEStreamOptions): Promise<{
         // carry their discriminator in `type` — fold it into the same slot so
         // the controller can branch on it.
         const code = typeof parsed.code === "string" ? parsed.code : typeof parsed.type === "string" ? parsed.type : undefined;
-        throw new ProviderStreamError(message, category, code);
+        throw new ProviderStreamError(message, category, code, parsed.partialSaved === true);
       } else if (ev.event === "reasoning-delta") {
         if (parsed.delta !== undefined && opts.onReasoningChunk) {
           opts.onReasoningChunk(parsed.delta as string);

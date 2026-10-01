@@ -10,6 +10,7 @@ import { useModalStore } from "../stores/modal-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
+import { isPartialSavedError, showProviderErrorToast } from "../lib/provider-error-toast.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { resolveCoauthorBinding } from "../lib/coauthor-provider-binding.js";
@@ -53,10 +54,6 @@ function restoreDraftAfterSendError(content?: string | null, attachments?: Attac
     });
   }
 }
-
-// Categories where the failure is likely transient (retry after a short wait) —
-// the message alone is enough; we just add a "try again" hint.
-const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network", "server_error"]);
 
 // ─── Dice send gate (DICE-F3) ───────────────────────────────────────────
 // Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
@@ -219,40 +216,6 @@ function tryHandleExperienceSendConflict(
   if (experienceConflictCode(error) === undefined) return false;
   restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
   return true;
-}
-
-/**
- * Shows a category-aware toast for a provider/LLM generation failure. Reads the
- * server-classified `category` from a {@link ProviderStreamError} and picks a
- * description + (for auth) an action that opens provider settings — so the user
- * gets actionable feedback instead of raw HTTP text. Mirrors the existing
- * VISION_NOT_SUPPORTED toast shape. Falls back to the raw message for
- * `unknown` (and for non-ProviderStreamError errors, e.g. network failures
- * before the request reached the server).
- */
-function showProviderErrorToast(error: unknown, t: TFunc, fallbackKey: keyof Resources["en"] = "message_send_failed"): void {
-  const message = error instanceof Error && error.message ? error.message : t(fallbackKey);
-  const category = error instanceof ProviderStreamError ? error.category : "unknown";
-
-  if (category === "authentication") {
-    toast.error(message, {
-      description: t("provider_error_auth_desc"),
-      action: {
-        label: t("open_provider_settings"),
-        onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
-      },
-    });
-    return;
-  }
-  if (TRANSIENT_PROVIDER_CATEGORIES.has(category)) {
-    toast.error(message, { description: t("provider_error_transient_desc") });
-    return;
-  }
-  if (category === "empty_response" || category === "parse_error") {
-    toast.error(message, { description: t("provider_error_empty_desc") });
-    return;
-  }
-  toast.error(message);
 }
 
 /** Outcome of a single generation attempt, surfaced to the queue pump (Q3). */
@@ -538,6 +501,16 @@ export function useChatController(): ChatControllerActions {
         }
         toast.info(getT()("generation_cancelled"));
         return "cancelled";
+      }
+      // A provider cut mid-reply: the server stored the user message and the
+      // partial reply (like a user Stop), so reload the chat to show it — a
+      // restored draft would invite a duplicate resend.
+      if (isPartialSavedError(error)) {
+        useChatStore.getState().setPendingContent(chatId, null);
+        await refreshChatSnapshotCache(chatId);
+        showProviderErrorToast(error, getT());
+        useChatStore.getState().setGenerationStatus(chatId, "failed");
+        return "failed";
       }
       // DICE-F3: a dice commit conflict (stale revision / unresolved choose)
       // resyncs the lane and keeps the draft — not a provider error.

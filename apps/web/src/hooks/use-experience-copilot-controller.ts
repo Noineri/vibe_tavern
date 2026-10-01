@@ -112,12 +112,12 @@ export interface ExperienceCopilotPendingAskAnswer {
 
 // Categories where the failure is likely transient (retry after a short wait) —
 // the message alone is enough; we just add a "try again" hint. Mirrors the RP
-// controller's `TRANSIENT_PROVIDER_CATEGORIES` set (see use-chat-controller.ts).
+// controller's `TRANSIENT_PROVIDER_CATEGORIES` set (see lib/provider-error-toast.ts).
 const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network", "server_error"]);
 
 /**
  * Category-aware provider-error toast. `showProviderErrorToast` in
- * use-chat-controller.ts is module-private, so this is its minimal replica
+ * lib/provider-error-toast.ts carries the RP modal action, so this is its minimal replica
  * (same category → description mapping), minus the `open_provider_settings`
  * modal action (which is tied to the RP `useModalStore`; the copilot shell owns
  * its own provider selection).

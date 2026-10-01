@@ -19,10 +19,16 @@ export class ProviderStreamError extends Error {
 	 *  the error payload (e.g. a dice commit conflict `stale_revision` /
 	 *  `unresolved_choose` — DICE-F3). Absent for ordinary provider failures. */
 	readonly code?: string;
-	constructor(message: string, category: ProviderErrorCategory, code?: string) {
+	/** The provider cut the stream mid-reply and the server KEPT the text
+	 *  streamed before the cut (`partialSaved` on the SSE error event) — the
+	 *  chat holds the user message and the partial reply, so the client
+	 *  reloads it instead of restoring the draft. */
+	readonly partialSaved: boolean;
+	constructor(message: string, category: ProviderErrorCategory, code?: string, partialSaved = false) {
 		super(message);
 		this.name = "ProviderStreamError";
 		this.category = category;
 		this.code = code;
+		this.partialSaved = partialSaved;
 	}
 }

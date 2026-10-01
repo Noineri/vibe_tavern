@@ -57,6 +57,30 @@ describe("parseSSEStream", () => {
 		expect(o.onStatus).toHaveBeenCalledWith("failed");
 	});
 
+	it("carries partialSaved when the server kept the text streamed before a provider cut", async () => {
+		const o = opts();
+		const promise = parseSSEStream({
+			response: sseResponse([
+				'data: {"delta":"The dragon"}\n\n',
+				"event: error\n",
+				'data: {"message":"upstream connection reset","category":"network","partialSaved":true}\n\n',
+			]),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+		});
+		await expect(promise).rejects.toMatchObject({ message: "upstream connection reset", partialSaved: true });
+	});
+
+	it("partialSaved is false on an ordinary error event", async () => {
+		const o = opts();
+		const promise = parseSSEStream({
+			response: sseResponse(["event: error\n", 'data: {"message":"Invalid API key","category":"authentication"}\n\n']),
+			onStatus: o.onStatus,
+			onChunk: o.onChunk,
+		});
+		await expect(promise).rejects.toMatchObject({ partialSaved: false });
+	});
+
 	it("defaults the category to 'unknown' when the server omits it (backwards compat)", async () => {
 		// Older / non-provider errors still send just { message }. The parser must
 		// not crash — it surfaces them as an unknown-category ProviderStreamError.

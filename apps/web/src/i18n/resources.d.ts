@@ -2206,6 +2206,7 @@ export default interface Resources {
     "provider_duplicate_failed": "Failed to duplicate provider profile.",
     "provider_error_auth_desc": "Your API key may be invalid, expired, or missing for this provider.",
     "provider_error_empty_desc": "The model returned no usable content. Try regenerating.",
+    "provider_error_partial_saved_desc": "The provider cut the reply off — the part received before that was saved.",
     "provider_error_transient_desc": "This is usually temporary — wait a moment and try again.",
     "provider_load_profile_failed": "Could not load saved profile.",
     "provider_name_url_required": "Provider name and base URL are required to save a profile.",

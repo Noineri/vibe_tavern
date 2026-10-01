@@ -892,18 +892,20 @@ export class LiveChatOrchestrator {
     let reasoningStartMs: number | null = null;
     let reasoningDurationMs: number | null = null;
 
+    // The partial reply so far through `onAbort` — shared by a user Stop and
+    // a provider cut. onAbort stores only non-empty text; returns whether
+    // there was any.
+    const savePartial = async (): Promise<boolean> => {
+      const { mainContent, reasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
+      await onAbort(mainContent, reasoning ?? "", reasoningStartMs ? Date.now() - reasoningStartMs : undefined, Date.now() - startedAt);
+      return mainContent.length > 0;
+    };
+
     // ── Collect stream chunks ──
     try {
       for await (const chunk of streamResult.stream) {
         if (signal?.aborted) {
-          const latencyMs = Date.now() - startedAt;
-          const { mainContent: abortText, reasoning: abortReasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
-          await onAbort(
-            abortText,
-            abortReasoning ?? "",
-            reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
-            latencyMs,
-          );
+          await savePartial();
           yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
           return;
         }
@@ -963,35 +965,26 @@ export class LiveChatOrchestrator {
       }
     } catch (err) {
       if (signal?.aborted) {
-        const latencyMs = Date.now() - startedAt;
-        const { mainContent: abortText, reasoning: abortReasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
-        await onAbort(
-          abortText,
-          abortReasoning ?? "",
-          reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
-          latencyMs,
-        );
+        await savePartial();
         yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
         return;
       }
 
       const message = extractProviderErrorMessage(err);
       const category = classifyProviderError(err);
-      logSendDebug(`${debugLabel}.provider-error`, { chatId: input.chatId, message, category });
-      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
-      yield { event: "error", data: JSON.stringify({ message, category }) };
+      // A provider that cuts the stream mid-reply: keep what already
+      // streamed, exactly as a user Stop does, instead of discarding a reply
+      // the user watched appear (owner 2026-10-02). `partialSaved` tells the
+      // client to reload the chat rather than restore the draft.
+      const partialSaved = await savePartial();
+      logSendDebug(`${debugLabel}.provider-error`, { chatId: input.chatId, message, category, partialSaved });
+      if (!partialSaved) this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
+      yield { event: "error", data: JSON.stringify(partialSaved ? { message, category, partialSaved } : { message, category }) };
       return;
     }
 
     if (signal?.aborted) {
-      const latencyMs = Date.now() - startedAt;
-      const { mainContent: abortText, reasoning: abortReasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
-      await onAbort(
-        abortText,
-        abortReasoning ?? "",
-        reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
-        latencyMs,
-      );
+      await savePartial();
       yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
       return;
     }
