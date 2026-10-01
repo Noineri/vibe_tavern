@@ -19,6 +19,8 @@
  *   VIBE_TAVERN_DATA_DIR   — user data dir (default: <root>/data)
  *   VIBE_TAVERN_HOST       — listen host (default: 0.0.0.0)
  *   VIBE_TAVERN_PORT       — listen port (default: 8787)
+ *   VIBE_TAVERN_QUOTA_POLLING — "0" skips the provider quota poller (set by
+ *                          scripts/test-instance.ts for snapshot instances)
  */
 
 import { resolve } from "node:path";

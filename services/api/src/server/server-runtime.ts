@@ -330,7 +330,14 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	});
 
 	addRuntimeTeardown(() => quotaService.stop());
-	await quotaService.start();
+	// Test instances (scripts/test-instance.ts) boot on a snapshot of the owner's
+	// provider profiles; polling would hit real vendor quota endpoints with them.
+	// A never-started service schedules nothing and ignores profile events.
+	if (process.env.VIBE_TAVERN_QUOTA_POLLING === "0") {
+		console.log(`${tag} Quota polling disabled (VIBE_TAVERN_QUOTA_POLLING=0).`);
+	} else {
+		await quotaService.start();
+	}
 
 	// Durable-effect reconciliation + the host timer loop. `reconcileUnknownEffects`
 	// folds `running` rows left by the previous process (crash or shutdown — the
