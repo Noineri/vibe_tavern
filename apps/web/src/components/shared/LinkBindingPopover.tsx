@@ -205,6 +205,16 @@ export function LinkBindingPopover({
     ? "h-7 text-[12px]"
     : "h-[22px] text-[11px]";
   const pillAvatarSize = isMobile ? 22 : 18;
+  // Picker body sizing: the mobile sheet gets thumb-sized chips (~34px tall,
+  // 8px gaps -> ~40px effective target, 14px text); desktop is unchanged.
+  const chipCls = isMobile
+    ? "h-[34px] gap-2 pl-1 pr-3 text-[14px]"
+    : "gap-1.5 pl-[3px] pr-2 py-[2px] text-[12px]";
+  const chipAvatarSize = isMobile ? 22 : 18;
+  const chipNameCls = isMobile ? "max-w-[160px]" : "max-w-[120px]";
+  const moreCls = isMobile ? "h-[34px] px-3 text-[14px]" : "px-2.5 py-[2px] text-[12px]";
+  const sectionHeadCls = isMobile ? "mb-2.5 text-[11px]" : "mb-2 text-[10px]";
+  const messageCls = isMobile ? "text-[14px]" : "text-[12px]";
   const addLabel = tooltipLabel || t("lore_link_targets");
 
   const sectionLabel = (key: LinkBindingTargetType): string => {
@@ -237,18 +247,19 @@ export function LinkBindingPopover({
     <div
       key={`${type}:${target.id}`}
       className={cn(
-        "flex cursor-pointer items-center gap-1.5 rounded-full border pl-[3px] pr-2 py-[2px] text-[12px] transition-all select-none",
+        "flex cursor-pointer items-center rounded-full border transition-all select-none",
+        chipCls,
         active
           ? "border-accent bg-accent/10 text-accent-t"
           : "border-border bg-surface text-t3 hover:border-border2 hover:text-t2",
       )}
       onClick={() => toggle(type, target.id)}
     >
-      <AvatarDot target={target} size={18} />
-      <span className="max-w-[120px] truncate">{target.name}</span>
+      <AvatarDot target={target} size={chipAvatarSize} />
+      <span className={cn("truncate", chipNameCls)}>{target.name}</span>
       {active && (
         <svg
-          width="10" height="10" viewBox="0 0 12 12"
+          width={isMobile ? 12 : 10} height={isMobile ? 12 : 10} viewBox="0 0 12 12"
           fill="none" stroke="currentColor" strokeWidth="2"
           className="shrink-0 ml-0.5"
         >
@@ -279,17 +290,17 @@ export function LinkBindingPopover({
             key={view.key}
             className={cn("px-3 py-2.5", i < result.sections.length - 1 && "border-b border-border")}
           >
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-t3">
+            <div className={cn("font-semibold uppercase tracking-wider text-t3", sectionHeadCls)}>
               {sectionLabel(view.key)} · {countByKey.get(view.key) ?? 0}
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className={cn("flex flex-wrap", isMobile ? "gap-2" : "gap-1.5")}>
               {view.items.map((target) =>
                 chip(target, view.key, liveBoundIds.get(view.key)?.has(target.id) ?? false),
               )}
               {view.hiddenCount > 0 && (
                 <button
                   type="button"
-                  className="flex cursor-pointer items-center rounded-full border border-dashed border-border2 px-2.5 py-[2px] text-[12px] text-t3 transition-colors select-none hover:border-accent hover:text-accent-t"
+                  className={cn("flex cursor-pointer items-center rounded-full border border-dashed border-border2 text-t3 transition-colors select-none hover:border-accent hover:text-accent-t", moreCls)}
                   onClick={() => setExpanded((prev) => new Set(prev).add(view.key))}
                 >
                   {t("link_binding_show_more", { n: view.hiddenCount })}
@@ -298,7 +309,7 @@ export function LinkBindingPopover({
               {view.collapsible && (
                 <button
                   type="button"
-                  className="flex cursor-pointer items-center rounded-full border border-dashed border-border2 px-2.5 py-[2px] text-[12px] text-t3 transition-colors select-none hover:border-accent hover:text-accent-t"
+                  className={cn("flex cursor-pointer items-center rounded-full border border-dashed border-border2 text-t3 transition-colors select-none hover:border-accent hover:text-accent-t", moreCls)}
                   onClick={() =>
                     setExpanded((prev) => {
                       const next = new Set(prev);
@@ -314,10 +325,10 @@ export function LinkBindingPopover({
           </div>
         ))}
         {result.noResults && (
-          <div className="px-3 py-4 text-center text-[12px] text-t3">{t("link_binding_no_results")}</div>
+          <div className={cn("px-3 py-4 text-center text-t3", messageCls)}>{t("link_binding_no_results")}</div>
         )}
         {!hasAnyTargets && (
-          <div className="px-3 py-4 text-center text-[12px] text-t3">{emptyLabel || t("lore_link_empty")}</div>
+          <div className={cn("px-3 py-4 text-center text-t3", messageCls)}>{emptyLabel || t("lore_link_empty")}</div>
         )}
       </div>
     </div>

@@ -490,6 +490,10 @@ describe("LinkBindingPopover — variant-A picker (LB-2C)", () => {
 		const cap = document.body.querySelector('[class*="max-h-[80dvh]"]');
 		if (!(cap instanceof HTMLElement)) throw new Error("no sheet cap");
 		expect(cap.className.split(" ")).toEqual(expect.arrayContaining(["flex", "flex-col", "min-h-0"]));
+		// Thumb-sized chips and the more/less pill on mobile (34px, 14px text).
+		for (const el of sectionChildren("scope_char · 11")) {
+			expect(el.className.split(" ")).toEqual(expect.arrayContaining(["h-[34px]", "text-[14px]"]));
+		}
 	});
 
 	it("avatar images load lazily (loading=lazy, decoding=async)", async () => {

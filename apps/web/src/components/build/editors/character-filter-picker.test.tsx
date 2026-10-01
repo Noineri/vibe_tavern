@@ -337,6 +337,9 @@ describe("CharacterFilterPicker — search / order / mobile (LB-3B)", () => {
 		// name — two occurrences pin that the SHEET (not just the field) mounted.
 		expect(within(document.body).getAllByText("lore_charfilter_section").length).toBe(2);
 		await waitFor(() => expect(searchInput() instanceof HTMLInputElement).toBe(true));
+		// Thumb-sized rows on mobile (44px target, 15px text).
+		const row = within(document.body).getByText("Cory").closest("button");
+		expect(row?.className.split(" ")).toEqual(expect.arrayContaining(["min-h-[44px]", "text-[15px]"]));
 		await act(async () => {
 			fireEvent.click(within(document.body).getByText("Cory"));
 		});

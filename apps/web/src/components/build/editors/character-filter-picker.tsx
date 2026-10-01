@@ -112,13 +112,18 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
           />
         </div>
       )}
-      {/* Only the item list scrolls; the search row never scrolls away. The
-       *  MAX_VISIBLE_ITEMS cap stays on the list wrapper. */}
-      <div className="overflow-y-auto" style={{ maxHeight: popoverMaxHeight("singleLine") }}>
+      {/* Only the item list scrolls; the search row never scrolls away.
+       *  Desktop keeps the MAX_VISIBLE_ITEMS cap on the list wrapper; the
+       *  mobile sheet uses the viewport-relative sheet cap instead
+       *  (popover-constants.ts) with thumb-sized 44px rows. */}
+      <div
+        className={cn("overflow-y-auto", isMobile && "max-h-[50vh] overscroll-contain")}
+        style={isMobile ? undefined : { maxHeight: popoverMaxHeight("singleLine") }}
+      >
         {candidates.length === 0 ? (
-          <div className="px-3 py-2 text-[12px] text-t3">{t("lore_char_filter_empty")}</div>
+          <div className={cn("px-3 py-2 text-t3", isMobile ? "text-[14px]" : "text-[12px]")}>{t("lore_char_filter_empty")}</div>
         ) : visibleCandidates.length === 0 ? (
-          <div className="px-3 py-2 text-[12px] text-t3">{t("link_binding_no_results")}</div>
+          <div className={cn("px-3 py-2 text-t3", isMobile ? "text-[14px]" : "text-[12px]")}>{t("link_binding_no_results")}</div>
         ) : (
           visibleCandidates.map((c) => {
             const url = resolveTargetAvatarUrl(c);
@@ -126,14 +131,17 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
               <button
                 type="button"
                 key={c.id}
-                className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[13px] text-t1 hover:bg-s2"
+                className={cn(
+                  "flex w-full cursor-pointer items-center text-left text-t1 hover:bg-s2",
+                  isMobile ? "min-h-[44px] gap-3 px-4 py-2 text-[15px]" : "gap-2 px-3 py-1.5 text-[13px]",
+                )}
                 onClick={() => pick(c.id, c.name)}
               >
-                <span className="h-5 w-5 shrink-0 overflow-hidden rounded-full bg-s3">
+                <span className={cn("shrink-0 overflow-hidden rounded-full bg-s3", isMobile ? "h-6 w-6" : "h-5 w-5")}>
                   {url ? (
                     <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                   ) : (
-                    <span className="flex h-full w-full items-center justify-center text-[10px] font-bold text-t3">
+                    <span className={cn("flex h-full w-full items-center justify-center font-bold text-t3", isMobile ? "text-[11px]" : "text-[10px]")}>
                       {c.name.charAt(0).toUpperCase()}
                     </span>
                   )}
