@@ -664,6 +664,8 @@ export default interface Resources {
     "drag_prompt_item_aria": "Drag prompt item",
     "drag_scroll_zoom": "drag · scroll to zoom",
     "drop_image_here": "Drop image here",
+    "dropdown_search_placeholder": "Search…",
+    "dropdown_select_placeholder": "Select…",
     "duplicate": "Duplicate",
     "duplicate_preset_btn": "Copy",
     "edit": "Edit",
