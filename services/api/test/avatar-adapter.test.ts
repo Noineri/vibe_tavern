@@ -127,6 +127,84 @@ describe("C1 avatar adapter: character", () => {
 		expect(await Bun.file(join(dataRoot, CHARS, dir, "avatar.webp")).exists()).toBe(true);
 	});
 
+	test("LB-1B follow-up: character upload deletes the stale avatar.png AFTER the store points at the new ext", async () => {
+		const { dataRoot, stores, characters } = await setup();
+		const prior = minimalPng(500, 500, [3, 7, 11]);
+		const char = await stores.characters.create({ name: "Order", avatarExt: "png" });
+		const dir = await stores.characters.resolveFolderName(char.id);
+		await stores.content.writeBinary(CHARS, dir, "avatar.png", prior);
+
+		// Instance-local patch (test-scoped container, nothing global): capture
+		// the DB avatarExt at the moment the stale avatar.png delete fires.
+		const avatarExtAtDelete: string[] = [];
+		const realDelete = stores.content.deleteBinary.bind(stores.content);
+		const realGet = stores.characters.getById.bind(stores.characters);
+		stores.content.deleteBinary = async (folder, entity, leaf) => {
+			if (leaf === "avatar.png") {
+				const row = await realGet(char.id);
+				avatarExtAtDelete.push(row?.avatarExt ?? "<null>");
+			}
+			return realDelete(folder, entity, leaf);
+		};
+
+		const res = await characters.uploadCharacterAvatar(char.id, new File([minimalPng(600, 600)], "c.png", { type: "image/png" }));
+		expect(res.avatarExt).toBe("webp");
+		// The store was updated BEFORE the file delete — a crash between the two
+		// can no longer leave a 404-ing avatar.
+		expect(avatarExtAtDelete).toEqual(["webp"]);
+		expect(await Bun.file(join(dataRoot, CHARS, dir, "avatar.png")).exists()).toBe(false);
+		expect(await Bun.file(join(dataRoot, CHARS, dir, "avatar.webp")).exists()).toBe(true);
+	});
+
+	test("LB-1B follow-up: gallery re-crop deletes the stale leaf AFTER the store update too", async () => {
+		const { dataRoot, stores, assetService, characters } = await setup();
+		const prior = minimalPng(500, 500, [13, 17, 19]);
+		const char = await stores.characters.create({ name: "Reorder", avatarExt: "png" });
+		const dir = await stores.characters.resolveFolderName(char.id);
+		await stores.content.writeBinary(CHARS, dir, "avatar.png", prior);
+		// Gallery source row carrying a big real PNG.
+		const rowId = stores.characterAssets.nextId();
+		const source = minimalPng(700, 700, [23, 29, 31]);
+		await assetService.writeGalleryImage(char.id, rowId, new File([source], "g.png", { type: "image/png" }));
+		await stores.characterAssets.create({ id: rowId, characterId: char.id, ext: "png", mimeType: "image/png", order: 0 });
+
+		const avatarExtAtDelete: string[] = [];
+		const realDelete = stores.content.deleteBinary.bind(stores.content);
+		const realGet = stores.characters.getById.bind(stores.characters);
+		stores.content.deleteBinary = async (folder, entity, leaf) => {
+			if (leaf === "avatar.png") {
+				const row = await realGet(char.id);
+				avatarExtAtDelete.push(row?.avatarExt ?? "<null>");
+			}
+			return realDelete(folder, entity, leaf);
+		};
+
+		await characters.setAvatarFromGallery(char.id, rowId, new File([minimalPng(600, 600)], "crop.png", { type: "image/png" }), "{}");
+		expect(avatarExtAtDelete).toEqual(["webp"]);
+		expect(await Bun.file(join(dataRoot, CHARS, dir, "avatar.png")).exists()).toBe(false);
+		expect(await Bun.file(join(dataRoot, CHARS, dir, "avatar.webp")).exists()).toBe(true);
+	});
+
+	test("LB-1B follow-up: a stale-delete failure is logged and never fails the upload", async () => {
+		const { dataRoot, stores, characters } = await setup();
+		const prior = minimalPng(400, 400, [37, 41, 43]);
+		const char = await stores.characters.create({ name: "Orphan", avatarExt: "png" });
+		const dir = await stores.characters.resolveFolderName(char.id);
+		await stores.content.writeBinary(CHARS, dir, "avatar.png", prior);
+
+		const realDelete = stores.content.deleteBinary.bind(stores.content);
+		stores.content.deleteBinary = async (folder, entity, leaf) => {
+			if (leaf === "avatar.png") throw new Error("disk on fire");
+			return realDelete(folder, entity, leaf);
+		};
+
+		const res = await characters.uploadCharacterAvatar(char.id, new File([minimalPng(600, 600)], "c.png", { type: "image/png" }));
+		// Upload succeeded, DB updated — the orphan avatar.png survives.
+		expect(res.avatarExt).toBe("webp");
+		expect((await stores.characters.getById(char.id))?.avatarExt).toBe("webp");
+		expect(await Bun.file(join(dataRoot, CHARS, dir, "avatar.png")).exists()).toBe(true);
+	});
+
 	test("upload does NOT rewrite {id}/profile.md (point update only)", async () => {
 		const { dataRoot, stores, characters } = await setup();
 		const char = await stores.characters.create({ name: "Aria", description: "original" });
@@ -215,6 +293,30 @@ describe("C1 avatar adapter: persona", () => {
 		const row = await stores.personas.getById(persona.id);
 		expect(row?.avatarExt).toBe("webp");
 		expect(row?.avatarFullExt).toBe("png");
+	});
+
+	test("LB-1B follow-up: persona upload deletes the stale avatar.png AFTER the store update", async () => {
+		const { dataRoot, stores, personas } = await setup();
+		const prior = minimalPng(500, 500, [47, 53, 59]);
+		const persona = await stores.personas.create({ name: "OrderUser", avatarExt: "png" });
+		await stores.content.writeBinary(PERSONAS, persona.id, "avatar.png", prior);
+
+		const avatarExtAtDelete: string[] = [];
+		const realDelete = stores.content.deleteBinary.bind(stores.content);
+		const realGet = stores.personas.getById.bind(stores.personas);
+		stores.content.deleteBinary = async (folder, entity, leaf) => {
+			if (leaf === "avatar.png") {
+				const row = await realGet(persona.id);
+				avatarExtAtDelete.push(row?.avatarExt ?? "<null>");
+			}
+			return realDelete(folder, entity, leaf);
+		};
+
+		const res = await personas.uploadPersonaAvatar(persona.id, new File([minimalPng(600, 600)], "c.png", { type: "image/png" }));
+		expect(res.avatarExt).toBe("webp");
+		expect(avatarExtAtDelete).toEqual(["webp"]);
+		expect(await Bun.file(join(dataRoot, PERSONAS, persona.id, "avatar.png")).exists()).toBe(false);
+		expect(await Bun.file(join(dataRoot, PERSONAS, persona.id, "avatar.webp")).exists()).toBe(true);
 	});
 
 	test("serve returns null when no avatar", async () => {

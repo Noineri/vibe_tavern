@@ -1,4 +1,4 @@
-import { STORAGE_FOLDERS, type StoreContainer } from "@vibe-tavern/db";
+import type { StoreContainer } from "@vibe-tavern/db";
 
 import { AssetService, extToMime } from "./asset-service.js";
 import { normalizeAvatarThumbnail } from "./avatar-thumbnail.js";
@@ -17,9 +17,11 @@ import { normalizeAvatarThumbnail } from "./avatar-thumbnail.js";
  *     `avatar-full.{ext}` + `setFolderAvatarFull` FIRST;
  *  2. write the normalized `avatar.webp`;
  *  3. `setFolderAvatar(id, ext)` (bumps `updatedAt` — the `?v=` cache-bust);
- *  4. delete the stale `avatar.{oldExt}` LAST (a crash before step 3 with the
- *     stale leaf already gone would leave a permanently 404-ing avatar; after
- *     step 3 a missed delete only leaves a harmless orphan leaf).
+ *  4. delete the stale `avatar.{oldExt}` LAST through the shared
+ *     AssetService leaf-delete (never throws — the one implementation the
+ *     upload adapters use too; a crash before step 3 with the stale leaf
+ *     already gone would leave a permanently 404-ing avatar, after step 3 a
+ *     missed delete only leaves a harmless orphan leaf).
  *
  * The entity record is re-read right before writing: if `avatarExt` changed
  * since the scan started (the user uploaded meanwhile), the entity is skipped.
@@ -50,7 +52,7 @@ interface EntityIo {
 	writeThumb(id: string, file: File): Promise<{ ext: string; changed: boolean; originalExt: string }>;
 	setAvatar(id: string, ext: string): Promise<void>;
 	setAvatarFull(id: string, ext: string): Promise<void>;
-	/** Delete the stale leaf LAST via the content-store delete API. */
+	/** Delete the stale leaf LAST via the shared AssetService delete. */
 	deleteLeaf(id: string, ext: string): Promise<void>;
 }
 
@@ -76,10 +78,7 @@ function characterIo(stores: StoreContainer, assetService: AssetService): Entity
 		writeThumb: (id, file) => assetService.writeCharacterAvatar(id, file),
 		setAvatar: (id, ext) => stores.characters.setFolderAvatar(id, ext),
 		setAvatarFull: (id, ext) => stores.characters.setFolderAvatarFull(id, ext),
-		deleteLeaf: async (id, ext) => {
-			const dir = await stores.characters.resolveFolderName(id);
-			await stores.content.deleteBinary(STORAGE_FOLDERS.characters, dir, `avatar.${ext}`);
-		},
+		deleteLeaf: (id, ext) => assetService.deleteCharacterAvatarLeaf(id, ext),
 	};
 }
 
@@ -105,10 +104,7 @@ function personaIo(stores: StoreContainer, assetService: AssetService): EntityIo
 		writeThumb: (id, file) => assetService.writePersonaAvatar(id, file),
 		setAvatar: (id, ext) => stores.personas.setFolderAvatar(id, ext),
 		setAvatarFull: (id, ext) => stores.personas.setFolderAvatarFull(id, ext),
-		deleteLeaf: async (id, ext) => {
-			// Persona folders stay opaque-id (see AssetService.resolveEntityId).
-			await stores.content.deleteBinary(STORAGE_FOLDERS.personas, id, `avatar.${ext}`);
-		},
+		deleteLeaf: (id, ext) => assetService.deletePersonaAvatarLeaf(id, ext),
 	};
 }
 

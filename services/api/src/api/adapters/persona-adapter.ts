@@ -111,8 +111,13 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 		const thumbFile = plan?.changed
 			? new File([new Uint8Array(plan.bytes)], "avatar.webp", { type: "image/webp" })
 			: crop;
-		const { ext } = await this.assetService.writePersonaAvatar(personaId, thumbFile, { staleExt: priorThumbExt });
+		const { ext } = await this.assetService.writePersonaAvatar(personaId, thumbFile);
 		await this.stores.personas.setFolderAvatar(personaId, ext);
+		// Stale leaf LAST (LB-1B follow-up) — after the store update, never
+		// throwing; see the character upload path for the crash-window rationale.
+		if (priorThumbExt && priorThumbExt !== ext) {
+			await this.assetService.deletePersonaAvatarLeaf(personaId, priorThumbExt);
+		}
 		return { avatarExt: ext, avatarFullExt };
 	};
 

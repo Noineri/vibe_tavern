@@ -59,14 +59,21 @@ describe("AssetService folder-resident avatars (B3)", () => {
 		expect(meta.height).toBe(512);
 	});
 
-	test("staleExt deletes the leftover avatar.{oldExt} when normalization renames the leaf (LB-1B)", async () => {
+	test("the write no longer deletes sibling leaves; deleteCharacterAvatarLeaf does it (LB-1B follow-up)", async () => {
 		const { dataRoot, service } = await setup();
 		// First write: corrupt PNG bytes → the normalizer falls back → avatar.png.
 		await service.writeCharacterAvatar("char_1", new File([PNG_BYTES], "a.png", { type: "image/png" }));
-		// Second write: a real PNG → avatar.webp; the stale avatar.png is removed.
-		await service.writeCharacterAvatar("char_1", new File([minimalPng(600, 600)], "b.png", { type: "image/png" }), { staleExt: "png" });
+		// Second write: a real PNG → avatar.webp. The write itself must NOT touch
+		// the stale leaf anymore (callers delete it AFTER the store update).
+		await service.writeCharacterAvatar("char_1", new File([minimalPng(600, 600)], "b.png", { type: "image/png" }));
+		expect(await Bun.file(join(dataRoot, CHARS, "char_1", "avatar.png")).exists()).toBe(true);
+		expect(await Bun.file(join(dataRoot, CHARS, "char_1", "avatar.webp")).exists()).toBe(true);
+		// The explicit leaf delete removes only the stale leaf (never throws;
+		// a missing leaf is a silent no-op).
+		await service.deleteCharacterAvatarLeaf("char_1", "png");
 		expect(await Bun.file(join(dataRoot, CHARS, "char_1", "avatar.png")).exists()).toBe(false);
 		expect(await Bun.file(join(dataRoot, CHARS, "char_1", "avatar.webp")).exists()).toBe(true);
+		await service.deleteCharacterAvatarLeaf("char_1", "png");
 	});
 
 	test("serveCharacterAvatar returns the bytes + Content-Type; null when missing", async () => {

@@ -69,6 +69,19 @@ describe("avatar thumbnail backfill (LB-1C)", () => {
 		const before = (await stores.characters.getById(id))!;
 		await Bun.sleep(2); // ISO-ms clock: guarantee a later timestamp
 
+		// Order pin (instance-local patch, test-scoped container): the stale
+		// avatar.png delete must fire AFTER the store moved to the new ext.
+		const avatarExtAtDelete: string[] = [];
+		const realDelete = stores.content.deleteBinary.bind(stores.content);
+		const realGet = stores.characters.getById.bind(stores.characters);
+		stores.content.deleteBinary = async (folder, entity, leaf) => {
+			if (leaf === "avatar.png") {
+				const row = await realGet(id);
+				avatarExtAtDelete.push(row?.avatarExt ?? "<null>");
+			}
+			return realDelete(folder, entity, leaf);
+		};
+
 		const counts = await runAvatarThumbnailBackfill(stores, assetService);
 		expect(counts.scanned).toBe(1);
 		expect(counts.normalized).toBe(1);
@@ -94,8 +107,10 @@ describe("avatar thumbnail backfill (LB-1C)", () => {
 		const full = await stores.content.readBinary(CHARS, dir, "avatar-full.png");
 		expect(new Uint8Array(full!)).toEqual(original);
 
-		// The stale leaf was deleted (content-store delete API).
+		// The stale leaf was deleted (shared AssetService leaf delete).
 		expect(await stores.content.readBinary(CHARS, dir, "avatar.png")).toBeNull();
+		// …and only after the DB pointed at the new ext.
+		expect(avatarExtAtDelete).toEqual(["webp"]);
 	});
 
 	test("entity with an existing full → the full is untouched", async () => {

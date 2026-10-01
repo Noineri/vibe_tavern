@@ -276,37 +276,60 @@ export class AssetService {
    * normalized to a ≤ 512 px webp thumbnail (LB-1B). Returns the stored ext
    * plus the normalizer's verdict: `changed`/`originalExt` let the adapter
    * preserve the original in avatar-full BEFORE overwriting the thumbnail.
-   * `staleExt` (the prior stored avatarExt) deletes a leftover avatar.{oldExt}
-   * when normalization renamed the leaf.
+   * Does NOT touch sibling leaves — stale-avatar cleanup is the caller's
+   * LAST step, via {@link deleteCharacterAvatarLeaf} after the store update
+   * (LB-1B follow-up: deleting inside this write raced the store update).
    */
   async writeCharacterAvatar(
     characterId: string,
     file: File,
-    opts?: { staleExt?: string | null },
   ): Promise<{ ext: string; changed: boolean; originalExt: string }> {
     const r = await this.writeFolderImage(STORAGE_FOLDERS.characters, characterId, "avatar", file, {
       normalizeThumbnail: true,
     });
-    if (opts?.staleExt && opts.staleExt !== r.ext) {
-      await this.deleteFolderImage(STORAGE_FOLDERS.characters, characterId, "avatar", opts.staleExt);
-    }
     return { ext: r.ext, changed: r.changed ?? false, originalExt: r.originalExt ?? r.ext };
   }
 
   /** Persona variant — {id}/avatar.{ext} under personas/, normalized the
-   *  same way (LB-1B). */
+   *  same way (LB-1B); stale cleanup via {@link deletePersonaAvatarLeaf}. */
   async writePersonaAvatar(
     personaId: string,
     file: File,
-    opts?: { staleExt?: string | null },
   ): Promise<{ ext: string; changed: boolean; originalExt: string }> {
     const r = await this.writeFolderImage(STORAGE_FOLDERS.personas, personaId, "avatar", file, {
       normalizeThumbnail: true,
     });
-    if (opts?.staleExt && opts.staleExt !== r.ext) {
-      await this.deleteFolderImage(STORAGE_FOLDERS.personas, personaId, "avatar", opts.staleExt);
-    }
     return { ext: r.ext, changed: r.changed ?? false, originalExt: r.originalExt ?? r.ext };
+  }
+
+  /** Delete a stale character avatar.{ext} leaf. Callers run this as the
+   *  LAST step of an avatar swap — AFTER setFolderAvatar has moved the DB to
+   *  the new ext: a crash before the store update with the file already gone
+   *  would leave a permanently 404-ing avatar, while a crash after it leaves
+   *  at worst this harmless orphan. Never throws: a failed delete is logged
+   *  and the upload/import continues (LB-1B follow-up). */
+  async deleteCharacterAvatarLeaf(characterId: string, ext: string): Promise<void> {
+    try {
+      await this.deleteFolderImage(STORAGE_FOLDERS.characters, characterId, "avatar", ext);
+    } catch (error) {
+      console.warn(
+        `[avatar] failed to delete stale avatar.${ext} for character ${characterId} (left as an orphan leaf):`,
+        error,
+      );
+    }
+  }
+
+  /** Persona variant of {@link deleteCharacterAvatarLeaf} — same ordering
+   *  contract, same never-throws policy. */
+  async deletePersonaAvatarLeaf(personaId: string, ext: string): Promise<void> {
+    try {
+      await this.deleteFolderImage(STORAGE_FOLDERS.personas, personaId, "avatar", ext);
+    } catch (error) {
+      console.warn(
+        `[avatar] failed to delete stale avatar.${ext} for persona ${personaId} (left as an orphan leaf):`,
+        error,
+      );
+    }
   }
 
   /** Serve a folder-resident character avatar. `ext` is the stored avatarExt. */

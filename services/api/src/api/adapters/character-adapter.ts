@@ -178,13 +178,18 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 		}
 		// Thumbnail (crop): written to {id}/avatar.{ext}, avatarExt set, legacy
 		// avatarAssetId cleared. Always present — the crop is the canonical
-		// small-slot image (chat bubbles, sidebar, top bar). A stale
-		// avatar.{priorExt} leaf is removed when normalization renamed it.
+		// small-slot image (chat bubbles, sidebar, top bar).
 		const thumbFile = plan?.changed
 			? new File([new Uint8Array(plan.bytes)], "avatar.webp", { type: "image/webp" })
 			: crop;
-		const { ext } = await this.assetService.writeCharacterAvatar(characterId, thumbFile, { staleExt: priorThumbExt });
+		const { ext } = await this.assetService.writeCharacterAvatar(characterId, thumbFile);
 		await this.stores.characters.setFolderAvatar(brandId<CharacterId>(characterId), ext);
+		// Stale leaf LAST (LB-1B follow-up): the DB already points at the new
+		// ext, so a crash here leaves at worst an orphan file — never a 404-ing
+		// avatar. The delete itself never throws.
+		if (priorThumbExt && priorThumbExt !== ext) {
+			await this.assetService.deleteCharacterAvatarLeaf(characterId, priorThumbExt);
+		}
 		// Direct upload: the avatar's bytes are NOT in the gallery, so clear
 		// avatarSourceAssetId. This ensures a later setAvatarFromGallery salvages
 		// this avatar (rather than skipping it as a gallery-derived duplicate).
@@ -351,8 +356,13 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			avatarFullExt = f.ext;
 		}
 
-		const { ext: avatarExt } = await this.assetService.writeCharacterAvatar(characterId, crop, { staleExt: priorThumbExt });
+		const { ext: avatarExt } = await this.assetService.writeCharacterAvatar(characterId, crop);
 		await this.stores.characters.setFolderAvatar(cid, avatarExt);
+		// Stale leaf LAST (LB-1B follow-up) — after the store update, never
+		// throwing; see the upload path for the crash-window rationale.
+		if (priorThumbExt && priorThumbExt !== avatarExt) {
+			await this.assetService.deleteCharacterAvatarLeaf(characterId, priorThumbExt);
+		}
 
 		// ── Store the crop geometry + record the source row on the character.
 		// avatarSourceAssetId = sourceAssetId marks this avatar as gallery-derived
