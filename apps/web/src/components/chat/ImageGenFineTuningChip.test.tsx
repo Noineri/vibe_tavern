@@ -687,6 +687,24 @@ describe("ImageGenFineTuningChip — target + resolution (FT-A2)", () => {
     expect(draft?.height).toBe(1216);
   });
 
+  it("ICR-6: an unset resolution reads the Auto label — not the raw «Select…» placeholder (DropdownSelect root fix 8ce47097, pinned at the chip boundary)", async () => {
+    profilesStore = [{ ...profile("p2", "Comfy local", fullCaps()), backend: "comfyui" }];
+    modelsStore = { p2: [{ id: "krea2ray", label: "Ray Krea" }] };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-t2c" />);
+    act(() => armChat("chat-t2c"));
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="image-gen-ft-chip"]').length).toBe(1));
+    openChip();
+    const trigger = await waitFor(() => {
+      const el = within(view.baseElement).getByTestId("image-gen-ft-resolution-select");
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // Fresh draft (mode Free, nothing picked) → the trigger carries the
+    // caller's defaultOption — the Auto label; a regression to the
+    // dropdown's own placeholder fails this pin.
+    expect(trigger.textContent).toContain("image_gen_size_auto");
+  });
+
   it("resolution: a bucket pick writes W/H, Auto clears, Custom reveals the steppers", async () => {
     profilesStore = [profile("p1", "A1111 local", fullCaps(), "sdxl-base")];
     modelsStore = { p1: [{ id: "sdxl-base", label: "SDXL Base" }] };
