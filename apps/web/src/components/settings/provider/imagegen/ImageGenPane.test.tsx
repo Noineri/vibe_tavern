@@ -2015,6 +2015,186 @@ describe("ImageGenPane — named set row in the advanced header (CF15c, LLM acco
     });
     restoreSets();
   });
+
+  // ── Set-switch leak (IMAGEGEN_SET_SWITCH_AND_CHIP_FIXES_REPORT, A) ──
+  // The owner-approved replace semantics: a set pick REPLACES every
+  // set-owned field — a key the new set does not carry is CLEARED (present
+  // with value undefined, so the hooks' `{...prev, ...values}` merge
+  // overwrites), never kept from the previous set. `seed` and the
+  // ADetailer detector model (`adetailerModel`) are NOT set-owned — they
+  // ride untouched.
+  it("set-switch (a): a pick on the UNBOUND arm clears the previous set's leftover fields — the payload's own fields land, seed/detector-model keys are never mentioned", async () => {
+    const applyBaseSamplerSet = mock((_setId: string | null, _payload?: Record<string, unknown>) => {});
+    const minimal = {
+      id: "set-minimal",
+      name: "Minimal",
+      sortOrder: 1,
+      payload: { steps: 8, cfgScale: 1, sampler: "euler", scheduler: "simple" },
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    } as ImageGenSamplerSet;
+    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [minimal]);
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          applyBaseSamplerSet,
+          form: makeForm({
+            defaultParams: {
+              workflowFamily: "qwen-image-2.1",
+              encoderName: "x",
+              vaeName: "y",
+              adetailer: true,
+              adetailerModel: "bbox/face_yolov8m.pt",
+              seed: 42,
+            },
+          }),
+        })}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
+    await pickOption(view, "image-gen-model-set-trigger", "Minimal");
+    await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
+    const values = applyBaseSamplerSet.mock.calls[0]![1] as Record<string, unknown>;
+    // The payload's own fields land on the arm.
+    expect(values.steps).toBe(8);
+    expect(values.cfgScale).toBe(1);
+    expect(values.sampler).toBe("euler");
+    expect(values.scheduler).toBe("simple");
+    // The set-owned keys the payload does NOT carry are CLEARED. toEqual
+    // ignores undefined-valued keys, so the clear is proven with hasOwn:
+    // the key must be PRESENT with value undefined (the merge overwrite).
+    for (const key of [
+      "workflowFamily",
+      "encoderName",
+      "vae",
+      "vaeName",
+      "hires",
+      "adetailer",
+      "cfgRescale",
+      "clipSkip",
+    ]) {
+      expect(Object.hasOwn(values, key)).toBe(true);
+      expect(values[key]).toBeUndefined();
+    }
+    // Kept keys are never mentioned at all.
+    expect(Object.hasOwn(values, "seed")).toBe(false);
+    expect(Object.hasOwn(values, "adetailerModel")).toBe(false);
+    restoreSets();
+  });
+
+  it("set-switch (b): the bound arm twin — setModelSamplerSetBinding receives the same replace-semantics values", async () => {
+    const setModelSamplerSetBinding = mock((_setId: string | null, _values?: Record<string, unknown>) => {});
+    const minimal = {
+      id: "set-minimal",
+      name: "Minimal",
+      sortOrder: 1,
+      payload: { steps: 8, cfgScale: 1, sampler: "euler", scheduler: "simple" },
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    } as ImageGenSamplerSet;
+    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [minimal]);
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          setModelSamplerSetBinding,
+          form: makeForm({ modelId: "m-alpha" }),
+          modelOverlay: {
+            workflowFamily: "qwen-image-2.1",
+            encoderName: "x",
+            vaeName: "y",
+            vae: "z",
+            adetailer: true,
+            adetailerModel: "bbox/face_yolov8m.pt",
+            seed: 42,
+          },
+          modelOverlaySetId: "set-previous",
+        })}
+      />,
+    );
+    await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
+    await pickOption(view, "image-gen-model-set-trigger", "Minimal");
+    await waitFor(() => expect(setModelSamplerSetBinding).toHaveBeenCalledTimes(1));
+    expect(setModelSamplerSetBinding.mock.calls[0]![0]).toBe("set-minimal");
+    const values = setModelSamplerSetBinding.mock.calls[0]![1] as Record<string, unknown>;
+    expect(values.steps).toBe(8);
+    expect(values.cfgScale).toBe(1);
+    expect(values.sampler).toBe("euler");
+    expect(values.scheduler).toBe("simple");
+    for (const key of [
+      "workflowFamily",
+      "encoderName",
+      "vae",
+      "vaeName",
+      "hires",
+      "adetailer",
+      "cfgRescale",
+      "clipSkip",
+    ]) {
+      expect(Object.hasOwn(values, key)).toBe(true);
+      expect(values[key]).toBeUndefined();
+    }
+    expect(Object.hasOwn(values, "seed")).toBe(false);
+    expect(Object.hasOwn(values, "adetailerModel")).toBe(false);
+    restoreSets();
+  });
+
+  it("set-switch (c): after a pick the dirty dot is OFF while the arm mirrors what was written; an owned-field nudge lights it; seed/detector-model changes never do", async () => {
+    const payload = {
+      steps: 25,
+      cfgScale: 1,
+      sampler: "euler",
+      scheduler: "simple",
+      adetailer: false,
+      workflowFamily: "qwen-image-2.1",
+    };
+    const dotSet = {
+      id: "set-dot",
+      name: "Dot Check",
+      sortOrder: 1,
+      payload,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    } as ImageGenSamplerSet;
+    const restoreSets = listSamplerSetsApi.mockImplementation(async () => [dotSet]);
+    const applyBaseSamplerSet = mock((_setId: string | null, _payload?: Record<string, unknown>) => {});
+    const imageGen = makeImageGen({ applyBaseSamplerSet });
+    // The pane's mocked hook never updates the form itself — the harness
+    // re-renders with EXACTLY what the real hook's merge would hold
+    // (`{...prev.defaultParams, ...values}`), the existing rerender pattern.
+    const pane = (form: NonNullable<ImageGenHook["form"]>) => (
+      <TooltipProvider delayDuration={200}>
+        <ImageGenPane imageGen={{ ...imageGen, form }} />
+      </TooltipProvider>
+    );
+    const view = render(pane(makeForm({})));
+    await waitFor(() => expect(view.getByTestId("image-gen-model-set-row")).toBeTruthy());
+    await pickOption(view, "image-gen-model-set-trigger", "Dot Check");
+    await waitFor(() => expect(applyBaseSamplerSet).toHaveBeenCalledTimes(1));
+    const written = applyBaseSamplerSet.mock.calls[0]![1] as Record<string, unknown>;
+
+    // The form synced to what was written (values + the set pointer the
+    // real hook records): the dot is OFF.
+    const syncedForm = (patch: Record<string, unknown>) =>
+      makeForm({ defaultParams: { ...written, ...patch }, defaultParamsSetId: "set-dot" });
+    view.rerender(pane(syncedForm({})));
+    await act(async () => {});
+    expect(view.queryByTestId("image-gen-set-dirty-dot")).toBeNull();
+
+    // A set-owned nudge lights it.
+    view.rerender(pane(syncedForm({ steps: 26 })));
+    await act(async () => {});
+    expect(view.getByTestId("image-gen-set-dirty-dot")).toBeTruthy();
+
+    // Kept keys never light it: a seed flip...
+    view.rerender(pane(syncedForm({ seed: 43 })));
+    await act(async () => {});
+    expect(view.queryByTestId("image-gen-set-dirty-dot")).toBeNull();
+    // ...and a detector-model flip.
+    view.rerender(pane(syncedForm({ adetailerModel: "bbox/face_yolov8m.pt" })));
+    await act(async () => {});
+    expect(view.queryByTestId("image-gen-set-dirty-dot")).toBeNull();
+    restoreSets();
+  });
 });
 
 describe("ImageGenPane — VAE field + hires section (IF-7b)", () => {

@@ -1024,35 +1024,72 @@ function readHiresBlockOf(
   return clean;
 }
 
-/** The set payload projection of an arm's params (IF-7b: beyond the five
- *  LS-5 scalars — scheduler, the swappable-slot VAE, and the hires block
- *  join; modeSizePresets stays the model layer's own surface, IG-CF14). */
-function setPayloadOf(overlay: Record<string, unknown>): ImageGenSamplerSet["payload"] {
-  const payload: ImageGenSamplerSet["payload"] = {};
-  if (typeof overlay.steps === "number") payload.steps = overlay.steps;
-  if (typeof overlay.cfgScale === "number") payload.cfgScale = overlay.cfgScale;
-  if (typeof overlay.sampler === "string") payload.sampler = overlay.sampler;
-  if (typeof overlay.seed === "number") payload.seed = overlay.seed;
-  if (typeof overlay.clipSkip === "number") payload.clipSkip = overlay.clipSkip;
-  if (typeof overlay.scheduler === "string") payload.scheduler = overlay.scheduler;
-  if (typeof overlay.encoderName === "string" && overlay.encoderName !== "") payload.encoderName = overlay.encoderName;
+/** The set-owned keys (IMAGEGEN_SET_SWITCH_AND_CHIP_FIXES_REPORT verdict,
+ *  owner 2026-10-01): a set pick REPLACES every key in this list — a key
+ *  the picked set does not carry is CLEARED (an explicit undefined through
+ *  the hooks' merge), never kept from the previous set. Deliberately NOT
+ *  here: `seed` (per-picture) and `adetailerModel` (owner ruling 2026-10-01:
+ *  not touched), plus sizes / the Krea block / LoRAs (other surfaces' own). */
+const SAMPLER_SET_RESET_KEYS = [
+  "steps",
+  "cfgScale",
+  "cfgRescale",
+  "sampler",
+  "clipSkip",
+  "scheduler",
+  "encoderName",
+  "workflowFamily",
+  "vae",
+  "vaeName",
+  "hires",
+  "adetailer",
+] as const;
+
+/** The set-owned projection of an arm's params — the ONE derivation both
+ *  the dirty dot and the save-into-set payload read: ONLY the reset keys,
+ *  in this fixed order (both comparison sides pass through the SAME
+ *  function, so key order and unprojected keys — seed, the detector model
+ *  — can never light the dot), with `vaeName` folded into the compact set
+ *  `vae` spelling exactly as setPayloadOf always did. */
+function setOwnedProjection(params: Record<string, unknown>): ImageGenSamplerSet["payload"] {
+  const projection: ImageGenSamplerSet["payload"] = {};
+  if (typeof params.steps === "number") projection.steps = params.steps;
+  if (typeof params.cfgScale === "number") projection.cfgScale = params.cfgScale;
+  if (typeof params.cfgRescale === "number") projection.cfgRescale = params.cfgRescale;
+  if (typeof params.sampler === "string") projection.sampler = params.sampler;
+  if (typeof params.clipSkip === "number") projection.clipSkip = params.clipSkip;
+  if (typeof params.scheduler === "string") projection.scheduler = params.scheduler;
+  if (typeof params.encoderName === "string" && params.encoderName !== "") projection.encoderName = params.encoderName;
   if (
-    typeof overlay.workflowFamily === "string" &&
-    (IMAGE_GEN_WORKFLOW_FAMILY_IDS as readonly string[]).includes(overlay.workflowFamily)
+    typeof params.workflowFamily === "string" &&
+    (IMAGE_GEN_WORKFLOW_FAMILY_IDS as readonly string[]).includes(params.workflowFamily)
   ) {
-    payload.workflowFamily = overlay.workflowFamily as ImageGenSamplerSet["payload"]["workflowFamily"];
+    projection.workflowFamily = params.workflowFamily as ImageGenSamplerSet["payload"]["workflowFamily"];
   }
   // Sampler-set `vae` is the compact wire field for both dialects: A1111
   // restores its swappable VAE directly, while Comfy restores it into the
   // DiT sidecar's `vaeName` (the adapter/request spelling).
-  const vae = typeof overlay.vaeName === "string" && overlay.vaeName !== ""
-    ? overlay.vaeName
-    : typeof overlay.vae === "string" && overlay.vae !== ""
-      ? overlay.vae
+  const vae = typeof params.vaeName === "string" && params.vaeName !== ""
+    ? params.vaeName
+    : typeof params.vae === "string" && params.vae !== ""
+      ? params.vae
       : undefined;
-  if (vae !== undefined) payload.vae = vae;
-  const hires = readHiresBlockOf(overlay);
-  if (hires !== undefined) payload.hires = hires;
+  if (vae !== undefined) projection.vae = vae;
+  const hires = readHiresBlockOf(params);
+  if (hires !== undefined) projection.hires = hires;
+  if (typeof params.adetailer === "boolean") projection.adetailer = params.adetailer;
+  return projection;
+}
+
+/** The set payload projection of an arm's params (IF-7b: beyond the five
+ *  LS-5 scalars — scheduler, the swappable-slot VAE, and the hires block
+ *  join; modeSizePresets stays the model layer's own surface, IG-CF14).
+ *  The set-owned projection (cfgRescale + adetailer ride along — the
+ *  set-switch report closed the gap, so the save-into-set action stores
+ *  them too) plus `seed`, the store-into-set extra. */
+function setPayloadOf(overlay: Record<string, unknown>): ImageGenSamplerSet["payload"] {
+  const payload = setOwnedProjection(overlay);
+  if (typeof overlay.seed === "number") payload.seed = overlay.seed;
   return payload;
 }
 
@@ -1208,7 +1245,12 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
   const isDirty = Boolean(
     selected &&
       appliedRef.current?.setId === selected.id &&
-      JSON.stringify(appliedRef.current.baseline) !== JSON.stringify(setPayloadOf(overlay)),
+      // Set-switch report: BOTH sides through the same set-owned projection
+      // — only the reset keys, one fixed order, seed and the detector model
+      // absent — so a kept key can never light the dot and the stored
+      // baseline's key order can never leak into the comparison.
+      JSON.stringify(setOwnedProjection(appliedRef.current.baseline)) !==
+        JSON.stringify(setOwnedProjection(overlay)),
   );
 
   const applySet = async (set: ImageGenSamplerSet) => {
@@ -1217,7 +1259,16 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
     // drift); a missing name skips the field + warns (the import-flow
     // toast canon), never silent garbage.
     const { payload, notes } = await adaptSetPayloadForTarget(imageGen, set.payload);
-    const values = samplerSetValuesForTarget(payload, imageGen.form?.backend);
+    // Replace semantics (set-switch report, owner 2026-10-01): every
+    // set-owned key the payload does not carry rides as an EXPLICIT
+    // undefined FIRST, so the hooks' `{...prev, ...values}` merge clears
+    // the previous set's leftover instead of keeping it. JSON.stringify
+    // drops the keys at save (the store replaces defaultParams/overlay
+    // wholesale); the generation ladder reads the cleared field as
+    // inherit-the-base (overlay.X ?? defaults.X).
+    const cleared: { [K in (typeof SAMPLER_SET_RESET_KEYS)[number]]?: undefined } = {};
+    for (const key of SAMPLER_SET_RESET_KEYS) cleared[key] = undefined;
+    const values = { ...cleared, ...samplerSetValuesForTarget(payload, imageGen.form?.backend) };
     if (bound) imageGen.setModelSamplerSetBinding(set.id, values);
     else imageGen.applyBaseSamplerSet(set.id, values);
     // The dirty-dot baseline is the ADAPTED payload — the arm now holds the
