@@ -441,8 +441,11 @@ export function LinkBindingPopover({
       {open && isMobile && (
         <BottomSheet open={true} onClose={() => handleOpenChange(false)} title={addLabel}>
           {/* The sheet itself is unbounded — the body gets the mobile
-              content-height cap (the DiceTray/ImageGen mobile-sheet rule). */}
-          <div className="max-h-[80dvh]">{body}</div>
+              content-height cap (the DiceTray/ImageGen mobile-sheet rule).
+              The cap is a flex column so the body's min-h-0 shrinks into it
+              and the chip list scrolls; a block cap let an expanded section
+              spill below the sheet. */}
+          <div className="flex max-h-[80dvh] min-h-0 flex-col">{body}</div>
         </BottomSheet>
       )}
     </div>

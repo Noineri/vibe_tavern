@@ -484,6 +484,12 @@ describe("LinkBindingPopover — variant-A picker (LB-2C)", () => {
 		await waitFor(() => expect(chipNames("scope_char · 11")).toContain("link_binding_show_more:4"));
 		// The desktop Radix content is NOT rendered on mobile.
 		expect(document.body.querySelector('[data-radix-popper-content-wrapper]')).toBeNull();
+		// The 80dvh sheet cap must be a flex column: a block wrapper caps only
+		// itself, the body grows past it and the chip list never scrolls — an
+		// expanded section spills below the sheet (under Android's nav bar).
+		const cap = document.body.querySelector('[class*="max-h-[80dvh]"]');
+		if (!(cap instanceof HTMLElement)) throw new Error("no sheet cap");
+		expect(cap.className.split(" ")).toEqual(expect.arrayContaining(["flex", "flex-col", "min-h-0"]));
 	});
 
 	it("avatar images load lazily (loading=lazy, decoding=async)", async () => {
