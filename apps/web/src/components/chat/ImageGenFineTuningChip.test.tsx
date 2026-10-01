@@ -264,13 +264,24 @@ async function pickOption(triggerId: string, label: string) {
   });
 }
 
-/** Open the chip and pick a concrete model — the model-settings body renders
- *  directly, so every settings field is reachable without a click. */
+/** Open the chip, pick a concrete model, and open the «Настройки
+ *  семплеров» section (ICR-5: its fields live behind the disclosure
+ *  now) — the store may already remember it open from an earlier test
+ *  render in this file, so the click is conditional). */
 async function openAccordion(chatId: string, modelLabel = "SDXL Base") {
   const view = renderChip(<ImageGenFineTuningChip chatId={chatId} />);
   openChip();
   await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-model-select")).toBeTruthy());
   await pickOption("image-gen-ft-model-select", modelLabel);
+  await waitFor(() =>
+    expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
+  );
+  const header = within(view.baseElement).getByTestId("image-gen-ft-model-settings-header");
+  if (header.getAttribute("aria-expanded") !== "true") {
+    await act(async () => {
+      header.click();
+    });
+  }
   await waitFor(() =>
     expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings-body")).toBeTruthy(),
   );
@@ -1254,11 +1265,15 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
 
     await pickOption("image-gen-ft-model-select", "SDXL Base");
     await waitFor(() =>
-      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings-body")).toBeTruthy(),
+      expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
     );
+    // ICR-5: the settings block is now a DISCLOSURE section — the header
+    // is a button, the body renders only while open (collapsed by default).
     const header = within(view.baseElement).getByTestId("image-gen-ft-model-settings-header");
-    expect(header.tagName).toBe("DIV");
-    expect(header.textContent).toBe("image_gen_model_settings");
+    expect(header.tagName).toBe("BUTTON");
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(header.textContent).toContain("image_gen_model_settings");
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-model-settings-body")).toBeNull();
   });
 
   it("overlay edits merge over the loaded row and persist through upsert (one truth, two surfaces)", async () => {
@@ -1268,8 +1283,9 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     armChat("chat-ms2");
 
     const view = await openAccordion("chat-ms2");
-    // The sampler trigger and scalar slider are directly reachable after the
-    // model pick; no model-settings toggle is required.
+    // The sampler trigger and scalar slider are reachable after opening the
+    // «Настройки семплеров» section (openAccordion clicks it — ICR-5's
+    // minimal interaction update; the assertions are unchanged).
     expect(within(view.baseElement).getByTestId("image-gen-ft-overlay-sampler")).toBeTruthy();
     // Loaded overlay shows through: the steps range sits at the stored 20.
     const range = within(view.baseElement).getByTestId("image-gen-range-overlay-steps") as HTMLInputElement;
@@ -1480,7 +1496,7 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
     expect(within(view2.baseElement).queryByTestId("image-gen-ft-adetailer")).toBeNull();
   });
 
-  it("ADetailer nests INSIDE the model-settings body; toggle + face model write the overlay", async () => {
+  it("ICR-5: ADetailer is its OWN section — the header's Toggle is the enable switch, the body follows it; toggle + face model write the overlay", async () => {
     profilesStore = [{ ...profile("ig2", "Forge", fullCaps()), backend: "a1111" }];
     modelsStore["ig2"] = [{ id: "sdxl-base", label: "SDXL Base" }];
     extensionsStore["ig2"] = ["adetailer", "sd-webui-controlnet"];
@@ -1493,26 +1509,27 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    // Nesting pin: the ADetailer header lives inside the directly rendered
-    // model-settings body, while retaining its own collapsible boundary.
+    // Own-section pin: the ADetailer header is NOT inside the samplers
+    // body anymore (the 2026-09-17 nesting ruling superseded by this plan).
     const parentBody = within(view.baseElement).getByTestId("image-gen-ft-model-settings-body");
-    expect(parentBody.contains(adHeader)).toBe(true);
+    expect(parentBody.contains(adHeader)).toBe(false);
+    // Collapsed while off: the body waits for the enable switch.
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer-body")).toBeNull();
 
+    // The header's Toggle IS the switch (its body follows checked — the
+    // toggle that used to live inside the body).
+    const toggle = within(view.baseElement).getByRole("switch", { name: "image_gen_adetailer" });
     await act(async () => {
-      adHeader.click();
+      fireEvent.click(toggle);
     });
+    await waitFor(() => expect(upsertCalls.length).toBe(1));
+    expect(upsertCalls[0].settings).toEqual({ steps: 31, adetailer: true });
     await waitFor(() =>
       expect(within(view.baseElement).getByTestId("image-gen-ft-adetailer-body")).toBeTruthy(),
     );
     const adBody = within(view.baseElement).getByTestId("image-gen-ft-adetailer-body");
     // Scoped: the chip body now carries its own hires switch (FT-A6) — the
     // ADetailer boundary is its OWN body, not the whole popover.
-    const toggle = within(adBody as HTMLElement).getByRole("switch");
-    await act(async () => {
-      fireEvent.click(toggle);
-    });
-    await waitFor(() => expect(upsertCalls.length).toBe(1));
-    expect(upsertCalls[0].settings).toEqual({ steps: 31, adetailer: true });
 
     // Toggle ON reveals the face-model dropdown; picking writes merged.
     await pickOption("image-gen-ft-adetailer-model", "face_yolov8s.pt");
@@ -1549,6 +1566,42 @@ describe("ImageGenFineTuningChip — model settings (IG-CF15 15d)", () => {
       fireEvent.blur(stepsInput);
     });
     expect(upsertCalls.length).toBe(writesAfter);
+  });
+
+  it("ICR-5: the sections render in the approved order — LoRA → Hires → ADetailer → Samplers (comfy arm); Krea 2 sits before Samplers (krea arm)", async () => {
+    // Comfy arm: every section a comfy profile can show at once. Krea 2 is
+    // krea-backend-only and can never coexist with ADetailer, so the full
+    // five-root chain is pinned transitively across the two arms (the
+    // strongest pin the capability gates allow).
+    profilesStore = [{ ...profile("ord1", "Comfy local", fullCaps()), backend: "comfyui" }];
+    modelsStore = { ord1: [{ id: "flux_ckpt", label: "Flux Checkpoint", template: "checkpoint" }] };
+    faceDetectorsStore = { ord1: ["bbox/face_yolov8m.pt"] };
+    lorasStore = { ord1: [{ name: "a.safetensors", family: null, triggerWords: [] }] };
+    armChat("chat-ord1");
+    const view = await openAccordion("chat-ord1", "Flux Checkpoint");
+    const comfyRoots = [
+      "image-gen-ft-loras",
+      "image-gen-ft-hires",
+      "image-gen-ft-adetailer",
+      "image-gen-ft-model-settings",
+    ].map((id) => within(view.baseElement).getByTestId(id));
+    for (let i = 1; i < comfyRoots.length; i++) {
+      // PRECEDING bit: the argument node comes EARLIER in document order.
+      expect(
+        comfyRoots[i].compareDocumentPosition(comfyRoots[i - 1]) & Node.DOCUMENT_POSITION_PRECEDING,
+      ).toBeTruthy();
+    }
+    cleanup();
+
+    // Krea arm: Krea 2 renders between (the absent) ADetailer and
+    // Samplers — pinned as "before Samplers".
+    profilesStore = [{ ...profile("ord2", "Krea cloud", noCaps(), "krea/krea-2/medium"), backend: "krea" }];
+    modelsStore = { ord2: [{ id: "krea/krea-2/medium", label: "Krea 2 Medium" }] };
+    armChat("chat-ord2");
+    const view2 = await openAccordion("chat-ord2", "Krea 2 Medium");
+    const kreaRoot = within(view2.baseElement).getByTestId("image-gen-ft-krea");
+    const samplersRoot = within(view2.baseElement).getByTestId("image-gen-ft-model-settings");
+    expect(samplersRoot.compareDocumentPosition(kreaRoot) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 });
 
@@ -1763,20 +1816,20 @@ describe("ImageGenFineTuningChip — comfyui ADetailer (IF-6)", () => {
     );
     expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer-missing")).toBeNull();
 
-    // Open the nested block, enable the toggle, and pin the LIVE picker
-    // vocabulary: a comfy-only entry is pickable (the a1111 static presets
-    // would not carry it — one code path per dialect); picking writes the
-    // merged overlay exactly like the a1111 twin.
+    // The header's Toggle is the enable switch (ICR-5 — the body follows
+    // checked); enable it and pin the LIVE picker vocabulary: a comfy-only
+    // entry is pickable (the a1111 static presets would not carry it — one
+    // code path per dialect); picking writes the merged overlay exactly
+    // like the a1111 twin.
     await act(async () => {
-      within(view.baseElement).getByTestId("image-gen-ft-adetailer-header").click();
+      fireEvent.click(
+        within(view.baseElement).getByRole("switch", { name: "image_gen_adetailer" }),
+      );
     });
     const adBody = await waitFor(() => {
       const el = within(view.baseElement).getByTestId("image-gen-ft-adetailer-body");
       expect(el).toBeTruthy();
       return el as HTMLElement;
-    });
-    await act(async () => {
-      fireEvent.click(within(adBody).getByRole("switch"));
     });
     await waitFor(() => expect(upsertCalls.length).toBe(1));
     expect(upsertCalls[0]!.settings).toEqual({ adetailer: true });
@@ -1790,7 +1843,7 @@ describe("ImageGenFineTuningChip — comfyui ADetailer (IF-6)", () => {
     expect(faceDetectorCalls).toEqual(["cfa"]);
   });
 
-  it("an ANSWERED empty chain renders the disabled label + install hint (the plan's honest-unavailable ruling)", async () => {
+  it("an ANSWERED empty chain renders the muted section with the install hint and a disabled switch (the plan's honest-unavailable ruling)", async () => {
     armComfyChat("chat-if6b", []);
     const view = await openAccordion("chat-if6b", "Flux Checkpoint");
     await waitFor(() =>
@@ -1799,7 +1852,13 @@ describe("ImageGenFineTuningChip — comfyui ADetailer (IF-6)", () => {
     expect(within(view.baseElement).getByTestId("image-gen-ft-adetailer").textContent).toContain(
       "image_gen_adetailer_missing_hint",
     );
-    expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer-header")).toBeNull();
+    // ICR-5: the unavailable state still renders the section header — with
+    // a MUTED title and a DISABLED switch; no body ever opens.
+    const header = within(view.baseElement).getByTestId("image-gen-ft-adetailer-header");
+    expect(header.textContent).toContain("image_gen_adetailer");
+    const switchEl = within(view.baseElement).getByRole("switch", { name: "image_gen_adetailer" });
+    expect(switchEl.hasAttribute("disabled")).toBe(true);
+    expect(within(view.baseElement).queryByTestId("image-gen-ft-adetailer-body")).toBeNull();
   });
 
   it("a FAILED probe hides the block entirely (the extensions precedent)", async () => {

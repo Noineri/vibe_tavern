@@ -55,6 +55,9 @@ import { TextInput } from "../shared/text-input.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { getModalPortal } from "../shared/modal-helpers.js";
 import { buildAdetailerControl, buildDitSidecarControls, buildKreaTwoControls, buildSamplerControl, buildScalarSliders, buildSchedulerControl, buildSeedField, isLocalDialectBackend, translateModelOptions, type ScalarSliderField, type ScalarSliderSpec } from "../../lib/imagegen/model-controls.js";
+import { adetailerSummary, kreaSummary, samplersSummary } from "../../lib/imagegen/chip-section-summaries.js";
+import { useImageGenChipSectionsStore } from "../../stores/image-gen-chip-sections-store.js";
+import { ImageGenChipSection } from "./image-gen-chip-section.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { cn } from "../../lib/cn.js";
 import { templateDisplayLabel } from "../../lib/imagegen/template-labels.js";
@@ -938,8 +941,12 @@ function ImageGenModelSettingsAccordion({
   disabled: boolean;
 }) {
   const { t } = useT();
-  const [adOpen, setAdOpen] = useState(false);
-  const [kreaOpen, setKreaOpen] = useState(false);
+  // ICR-5: the disclosure sections' open flags live in the chip-sections
+  // store (remembered across chip openings within the session); the local
+  // useState pair is gone. Toggle-variant sections (ADetailer) follow their
+  // own enabled value — not in the store.
+  const sectionsOpen = useImageGenChipSectionsStore((s) => s.open);
+  const setSectionOpen = useImageGenChipSectionsStore((s) => s.setOpen);
   const [overlay, setOverlay] = useState<ImageGenModelSettingsOverlayValue | null>(null);
   const [extensions, setExtensions] = useState<string[] | null>(null);
   // IF-6 (comfy dialect): null = probe pending or failed (block hidden);
@@ -1155,17 +1162,176 @@ function ImageGenModelSettingsAccordion({
   const ditVaeOptions = ditControls
     ? translateModelOptions(ditControls.vae.options(sidecars?.vaes, vaeName), t)
     : [];
+  const scalars = scalarSliders.filter((slider): slider is ScalarSliderSpec => slider !== undefined);
+  const stepsSlider = scalars.find((slider) => slider.field === "steps");
+  const cfgSlider = scalars.find((slider) => slider.field === "cfgScale");
 
+  // ICR-5 (IMAGEGEN_CHIP_REDESIGN_PLAN): the accordion's blocks became up
+  // to three sections in the owner-approved order — ADetailer, Krea 2, then
+  // «Настройки семплеров». The 2026-09-17 ruling that nested ADetailer
+  // INSIDE the model-settings body is superseded by that plan (ADetailer
+  // is its own section now); the state, probes and commits are unchanged.
   return (
-    <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-model-settings">
-      <div
-        data-testid="image-gen-ft-model-settings-header"
-        className="px-1.5 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2"
-      >
-        {t("image_gen_model_settings")}
-      </div>
+    <>
+      {/* ADetailer — NESTED inside the model-settings body until this plan
+          (owner 2026-09-17); now its own section, and the header's Toggle
+          IS the enable switch (the body follows it). T7 supplies the
+          dialect tri-state while this renderer preserves its write paths. */}
+      {adetailerControl?.state === "unavailable" ? (
+        <ImageGenChipSection
+          variant="toggle"
+          title={t(adetailerControl.labelKey)}
+          titleTone="muted"
+          checked={false}
+          onCheckedChange={() => {}}
+          toggleDisabled
+          hint={
+            <span
+              className="font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t3"
+              data-testid="image-gen-ft-adetailer-missing"
+            >
+              {t(adetailerControl.hintKey)}
+            </span>
+          }
+          testIds={{ root: "image-gen-ft-adetailer", header: "image-gen-ft-adetailer-header" }}
+        />
+      ) : adetailerControl?.state === "ready" ? (
+        <ImageGenChipSection
+          variant="toggle"
+          title={t(adetailerControl.labelKey)}
+          summary={adetailerSummary(
+            adetailer,
+            adetailerModel ?? adetailerControl.fallback,
+            adetailerSteps ?? baseSteps,
+            t,
+          )}
+          checked={adetailer}
+          onCheckedChange={(checked) => commit({ adetailer: checked })}
+          toggleDisabled={disabled}
+          testIds={{
+            root: "image-gen-ft-adetailer",
+            header: "image-gen-ft-adetailer-header",
+            body: "image-gen-ft-adetailer-body",
+          }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.modelLabelKey)}</span>
+            <DropdownSelect
+              value={adetailerModel ?? adetailerControl.fallback}
+              options={translateModelOptions(adetailerControl.options, t)}
+              onChange={(id) => commit({ adetailerModel: id })}
+              disabled={disabled}
+              triggerTestId="image-gen-ft-adetailer-model"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.stepsLabelKey)}</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                data-testid="image-gen-ft-range-adetailer-steps"
+                min={adetailerControl.stepsRange.min}
+                max={adetailerControl.stepsRange.max}
+                step={adetailerControl.stepsRange.step}
+                value={adetailerSteps ?? baseSteps}
+                onChange={(e) => {
+                  const patch = adetailerControl.parseSteps(e.target.value);
+                  if (patch !== null) commit(patch);
+                }}
+                disabled={disabled}
+                className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
+              />
+              <div className="w-[60px] shrink-0" data-testid="image-gen-ft-adetailer-steps">
+                <NumberInput
+                  className="h-[30px] w-[60px]"
+                  min={adetailerControl.stepsRange.min}
+                  max={adetailerControl.stepsRange.max}
+                  step={adetailerControl.stepsRange.step}
+                  value={adetailerSteps ?? baseSteps}
+                  onChange={(n) => {
+                    const patch = adetailerControl.parseSteps(String(n));
+                    if (patch !== null) commit(patch);
+                  }}
+                  disabled={disabled}
+                  hideControls
+                />
+              </div>
+            </div>
+          </div>
+        </ImageGenChipSection>
+      ) : null}
 
-      <div className="flex flex-col gap-2 px-1.5" data-testid="image-gen-ft-model-settings-body">
+      {/* Krea 2 generative controls (IF-11 → T6) rendered from the shared
+          descriptors (model-controls): the gate, defaults, ranges and the
+          commit merge are the builder's; this section is the chip's render
+          half, the pane's provider-modal section is the other. Placed
+          between ADetailer and Samplers (agent call — model-specific tuning
+          in the approved order that does not name it). */}
+      {kreaControls !== null && (
+        <ImageGenChipSection
+          variant="disclosure"
+          title={t("image_gen_krea_section")}
+          summary={kreaSummary(
+            overlay.krea?.creativity ?? kreaControls.creativity.default,
+            kreaControls.creativity.options,
+            t,
+          )}
+          open={sectionsOpen.krea}
+          onOpenChange={(value) => setSectionOpen("krea", value)}
+          testIds={{ root: "image-gen-ft-krea", header: "image-gen-ft-krea-header", body: "image-gen-ft-krea-body" }}
+        >
+          <div className="flex flex-col gap-1.5 @min-[480px]:col-span-2">
+            <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(kreaControls.creativity.labelKey)}</span>
+            <SegmentedControl
+              value={overlay.krea?.creativity ?? kreaControls.creativity.default}
+              options={kreaControls.creativity.options.map((option) => ({
+                value: option.value,
+                label: t(option.labelKey),
+              }))}
+              onChange={(value) => commit(kreaControls.creativity.commit(overlay.krea, value))}
+              disabled={disabled}
+              wrap
+              mobileFill
+              mobileSelect
+              ariaLabel={t(kreaControls.creativity.labelKey)}
+            />
+          </div>
+          {kreaControls.sliders.map((slider) => (
+            <SliderField
+              key={slider.field}
+              label={t(slider.labelKey)}
+              value={overlay.krea?.[slider.field] ?? slider.default}
+              min={slider.min}
+              max={slider.max}
+              step={slider.step}
+              onChange={(value) => commit(slider.commit(overlay.krea, value))}
+              disabled={disabled}
+              rangeTestId={`image-gen-range-krea-${slider.field}`}
+            />
+          ))}
+        </ImageGenChipSection>
+      )}
+
+      <ImageGenChipSection
+        variant="disclosure"
+        title={t("image_gen_model_settings")}
+        summary={samplersSummary(
+          {
+            ...(samplerControl ? { sampler } : {}),
+            ...(schedulerControl ? { scheduler } : {}),
+            ...(stepsSlider ? { steps: overlay.steps ?? stepsSlider.range.min } : {}),
+            ...(cfgSlider ? { cfgScale: overlay.cfgScale ?? cfgSlider.range.min } : {}),
+          },
+          t,
+        )}
+        open={sectionsOpen.samplers}
+        onOpenChange={(value) => setSectionOpen("samplers", value)}
+        testIds={{
+          root: "image-gen-ft-model-settings",
+          header: "image-gen-ft-model-settings-header",
+          body: "image-gen-ft-model-settings-body",
+        }}
+      >
           {samplerControl && (
             <div className="flex flex-col gap-1.5">
               <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(samplerControl.labelKey)}</span>
@@ -1235,14 +1401,14 @@ function ImageGenModelSettingsAccordion({
               </div>
               <span
                 data-testid="image-gen-ft-sidecar-hint"
-                className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4"
+                className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4 @min-[480px]:col-span-2"
               >
                 {t(ditControls.hint.labelKey, ditControls.hint.params)}
               </span>
               {sidecarsSnapshotAt !== null && (
                 <span
                   data-testid="image-gen-ft-sidecars-snapshot"
-                  className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4"
+                  className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4 @min-[480px]:col-span-2"
                 >
                   {t("image_gen_sidecars_snapshot", { time: formatListingSnapshotTime(sidecarsSnapshotAt) })}
                 </span>
@@ -1250,7 +1416,7 @@ function ImageGenModelSettingsAccordion({
               {sidecarsFailed && (
                 <span
                   data-testid="image-gen-ft-sidecars-failed"
-                  className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4"
+                  className="px-0.5 text-[calc(var(--ui-fs)-3px)] text-t4 @min-[480px]:col-span-2"
                 >
                   {t("image_gen_sidecars_failed")}
                 </span>
@@ -1258,7 +1424,7 @@ function ImageGenModelSettingsAccordion({
             </>
           )}
 
-          {scalarSliders.filter((slider): slider is ScalarSliderSpec => slider !== undefined).map((slider) => (
+          {scalars.map((slider) => (
             <SliderField
               key={slider.field}
               label={t(slider.labelKey)}
@@ -1273,7 +1439,7 @@ function ImageGenModelSettingsAccordion({
           ))}
 
           {seedControl && (
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 @min-[480px]:col-span-2">
               <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(seedControl.labelKey)}</span>
               <div className="relative">
                 <TextInput
@@ -1306,153 +1472,10 @@ function ImageGenModelSettingsAccordion({
           )}
 
           {saveError && (
-            <span className="text-[calc(var(--ui-fs)-3px)] text-danger">{t("image_gen_overlay_save_failed")}</span>
+            <span className="text-[calc(var(--ui-fs)-3px)] text-danger @min-[480px]:col-span-2">{t("image_gen_overlay_save_failed")}</span>
           )}
 
-          {/* Krea 2 generative controls (IF-11 → T6) — nested accordion (the
-              ADetailer idiom) rendered from the shared descriptors
-              (model-controls): the gate, defaults, ranges and the commit
-              merge are the builder's; this accordion is the chip's render
-              half, the pane's provider-modal section is the other. */}
-          {kreaControls !== null && (
-            <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-krea">
-              <button
-                type="button"
-                data-testid="image-gen-ft-krea-header"
-                aria-expanded={kreaOpen}
-                onClick={() => setKreaOpen((v) => !v)}
-                className="flex w-full cursor-pointer items-center justify-between rounded-md border border-border bg-s3 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
-              >
-                <span>{t("image_gen_krea_section")}</span>
-                <Icons.Caret direction={kreaOpen ? "d" : "u"} />
-              </button>
-              {kreaOpen && (
-                <div className="flex flex-col gap-2 px-0.5" data-testid="image-gen-ft-krea-body">
-                  <div className="flex flex-col gap-1.5">
-                    <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(kreaControls.creativity.labelKey)}</span>
-                    <SegmentedControl
-                      value={overlay.krea?.creativity ?? kreaControls.creativity.default}
-                      options={kreaControls.creativity.options.map((option) => ({
-                        value: option.value,
-                        label: t(option.labelKey),
-                      }))}
-                      onChange={(value) => commit(kreaControls.creativity.commit(overlay.krea, value))}
-                      disabled={disabled}
-                      wrap
-                      mobileFill
-                      mobileSelect
-                      ariaLabel={t(kreaControls.creativity.labelKey)}
-                    />
-                  </div>
-                  {kreaControls.sliders.map((slider) => (
-                    <SliderField
-                      key={slider.field}
-                      label={t(slider.labelKey)}
-                      value={overlay.krea?.[slider.field] ?? slider.default}
-                      min={slider.min}
-                      max={slider.max}
-                      step={slider.step}
-                      onChange={(value) => commit(slider.commit(overlay.krea, value))}
-                      disabled={disabled}
-                      rangeTestId={`image-gen-range-krea-${slider.field}`}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ADetailer — NESTED inside the model-settings body (owner
-              2026-09-17); T7 supplies the dialect tri-state while this
-              renderer preserves its accordion idiom. */}
-          {adetailerControl?.state === "unavailable" ? (
-            <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-adetailer">
-              <div className="flex w-full items-center justify-between rounded-md border border-border bg-s3 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3">
-                <span>{t(adetailerControl.labelKey)}</span>
-              </div>
-              <span
-                className="font-ui text-[calc(var(--ui-fs)-3px)] leading-snug text-t3"
-                data-testid="image-gen-ft-adetailer-missing"
-              >
-                {t(adetailerControl.hintKey)}
-              </span>
-            </div>
-          ) : adetailerControl?.state === "ready" && (
-            <div className="flex flex-col gap-1.5" data-testid="image-gen-ft-adetailer">
-              <button
-                type="button"
-                data-testid="image-gen-ft-adetailer-header"
-                aria-expanded={adOpen}
-                onClick={() => setAdOpen((v) => !v)}
-                className="flex w-full cursor-pointer items-center justify-between rounded-md border border-border bg-s3 px-2 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
-              >
-                <span>{t(adetailerControl.labelKey)}</span>
-                <Icons.Caret direction={adOpen ? "d" : "u"} />
-              </button>
-              {adOpen && (
-                <div className="flex flex-col gap-2 px-0.5" data-testid="image-gen-ft-adetailer-body">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t2">{t(adetailerControl.labelKey)}</span>
-                    <Toggle
-                      checked={adetailer}
-                      onChange={(checked) => commit({ adetailer: checked })}
-                      disabled={disabled}
-                      aria-label={t(adetailerControl.labelKey)}
-                    />
-                  </div>
-                  {adetailer && (
-                    <>
-                    <div className="flex flex-col gap-1.5">
-                      <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.modelLabelKey)}</span>
-                      <DropdownSelect
-                        value={adetailerModel ?? adetailerControl.fallback}
-                        options={translateModelOptions(adetailerControl.options, t)}
-                        onChange={(id) => commit({ adetailerModel: id })}
-                        disabled={disabled}
-                        triggerTestId="image-gen-ft-adetailer-model"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <span className={`${lblCls} !mb-0 font-ui text-t2`}>{t(adetailerControl.stepsLabelKey)}</span>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="range"
-                          data-testid="image-gen-ft-range-adetailer-steps"
-                          min={adetailerControl.stepsRange.min}
-                          max={adetailerControl.stepsRange.max}
-                          step={adetailerControl.stepsRange.step}
-                          value={adetailerSteps ?? baseSteps}
-                          onChange={(e) => {
-                            const patch = adetailerControl.parseSteps(e.target.value);
-                            if (patch !== null) commit(patch);
-                          }}
-                          disabled={disabled}
-                          className={cn("!h-[6px] !w-auto flex-1 !rounded-full !border-0 accent-accent p-0")}
-                        />
-                        <div className="w-[60px] shrink-0" data-testid="image-gen-ft-adetailer-steps">
-                          <NumberInput
-                            className="h-[30px] w-[60px]"
-                            min={adetailerControl.stepsRange.min}
-                            max={adetailerControl.stepsRange.max}
-                            step={adetailerControl.stepsRange.step}
-                            value={adetailerSteps ?? baseSteps}
-                            onChange={(n) => {
-                              const patch = adetailerControl.parseSteps(String(n));
-                              if (patch !== null) commit(patch);
-                            }}
-                            disabled={disabled}
-                            hideControls
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-      </div>
-    </div>
+      </ImageGenChipSection>
+    </>
   );
 }

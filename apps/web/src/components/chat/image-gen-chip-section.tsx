@@ -57,6 +57,9 @@ export interface ImageGenChipSectionProps {
   toggleDisabled?: boolean;
   /** Toggle variant: the switch's accessible name (defaults to the title). */
   toggleAriaLabel?: string;
+  /** Title tone: `muted` renders the title in text-t3 (the ADetailer
+   *  unavailable state — feature absence, not user state). */
+  titleTone?: "normal" | "muted";
   /** Optional test hook on the title element (the hires label pin). */
   titleTestId?: string;
   /** Optional test hook on the summary element (the loras count pin). */
@@ -64,8 +67,9 @@ export interface ImageGenChipSectionProps {
   /** Rendered under the header (the ADetailer «unavailable» hint). */
   hint?: ReactNode;
   testIds?: ImageGenChipSectionTestIds;
-  /** The section body (the two-column grid's cells). */
-  children: ReactNode;
+  /** The section body (the two-column grid's cells). Optional — the
+   *  unavailable toggle variant renders header + hint with no body. */
+  children?: ReactNode;
 }
 
 export function ImageGenChipSection({
@@ -78,6 +82,7 @@ export function ImageGenChipSection({
   onCheckedChange,
   toggleDisabled,
   toggleAriaLabel,
+  titleTone = "normal",
   titleTestId,
   summaryTestId,
   hint,
@@ -86,9 +91,13 @@ export function ImageGenChipSection({
 }: ImageGenChipSectionProps) {
   const isMobile = useIsMobile();
   const caret = <Icons.Caret direction={open ? "d" : "r"} />;
+  const titleToneClass = titleTone === "muted" ? "text-t3" : "text-t1";
   const titleBlock = (
     <span className="flex min-w-0 flex-1 flex-col @min-[480px]:flex-row @min-[480px]:items-center @min-[480px]:gap-2.5">
-      <span className="break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t1" data-testid={titleTestId}>
+      <span
+        className={`break-words font-ui text-[calc(var(--ui-fs)-2px)] font-medium ${titleToneClass}`}
+        data-testid={titleTestId}
+      >
         {title}
       </span>
       {summary !== undefined && (
