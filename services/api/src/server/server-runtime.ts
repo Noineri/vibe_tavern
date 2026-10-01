@@ -45,6 +45,7 @@ import { ExperienceTimerScheduler } from "../domain/interactive/experience-timer
 import { generateStructuredActionChoice } from "../domain/interactive/experience-model-effect-structured.js";
 import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
 import { migratePresetServicePrompts } from "../domain/service-prompts/preset-to-profile-migration.js";
+import { scheduleAvatarThumbnailBackfill } from "../domain/asset/avatar-thumbnail-backfill.js";
 import { ensureStockImageGenSamplerSets } from "../domain/imagegen/stock-sampler-set-seed.js";
 import { migrateGlobalImagePromptVariants } from "../domain/imagegen/global-variant-to-profile-migration.js";
 import type { RandomSource } from "@vibe-tavern/domain";
@@ -350,6 +351,13 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	experienceTimerScheduler.start();
 
 	console.log(`${tag} Application ready.`);
+
+	// LB-1C: normalize pre-existing avatar thumbnails in the background. Unlike
+	// the awaited one-time migrations above, this is deliberately fire-and-
+	// forget — the pass is idempotent (a second startup is a no-op) and must
+	// never delay server readiness; per-entity failures are logged, not fatal.
+	scheduleAvatarThumbnailBackfill(stores, assetService);
+
 	return app;
 }
 
