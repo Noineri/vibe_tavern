@@ -10,19 +10,12 @@ import * as Popover from "@radix-ui/react-popover";
 
 import { cn } from "../../lib/cn.js";
 import type { TFunc } from "../../i18n/locale-helpers.js";
-import type { LinkTarget } from "../../lib/link-targets.js";
+import type { LinkBindingRecord, LinkBindingTargetType, LinkTarget } from "../../lib/link-targets.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { getModalPortal } from "./modal-helpers.js";
 import { resolveEntityAvatarUrl, avatarUrl } from "../../lib/avatar.js";
 
-export type { LinkTarget } from "../../lib/link-targets.js";
-
-export type LinkBindingTargetType = "character" | "persona" | "lorebook" | "script" | "preset" | "regex";
-
-export interface LinkBindingRecord {
-  targetType: LinkBindingTargetType;
-  targetId: string;
-}
+export type { LinkBindingRecord, LinkBindingTargetType, LinkTarget } from "../../lib/link-targets.js";
 
 interface LinkBindingPopoverProps {
   links: LinkBindingRecord[];

@@ -7,7 +7,10 @@
  * CoauthorCharacterForm, DiceAssignment, LorebookEditor, ScriptEditor) reads
  * its targets through these mappers and only renders the result — a second
  * hand-written record→LinkTarget derivation anywhere is a defect from
- * copy #2. The mappers are pure: no store access, no I/O.
+ * copy #2. The mappers are pure: no store access, no I/O. The wire-level
+ * link record + target-type union live here too (moved from
+ * LinkBindingPopover in LB-2B so lib/link-binding-sections.ts — the section
+ * derivation — never imports from components/).
  *
  * Every target carries `updatedAt` (the `?v=` avatar cache-bust and the
  * Wave-2 «recently updated» ordering both depend on it).
@@ -34,6 +37,13 @@ export interface LinkTarget {
   avatarFullExt?: string | null;
   avatarFullAssetId?: string | null;
   updatedAt?: string | null;
+}
+
+export type LinkBindingTargetType = "character" | "persona" | "lorebook" | "script" | "preset" | "regex";
+
+export interface LinkBindingRecord {
+  targetType: LinkBindingTargetType;
+  targetId: string;
 }
 
 /** Character fields the mapper reads — structural, so any caller's
