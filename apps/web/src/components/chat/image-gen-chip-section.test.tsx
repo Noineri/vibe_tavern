@@ -104,9 +104,11 @@ describe("ImageGenChipSection — the chip's collapsible card shell (ICR-1)", ()
     const body = view.getByTestId("sec-body");
     expect(body.className).toContain("grid-cols-1");
     expect(body.className).toContain("@min-[480px]:grid-cols-2");
-    // ICR-3: the scroll region owns the body's horizontal inset — the
-    // section body carries NO padding of its own (no double inset).
-    expect(body.className).not.toContain("px-");
+    // The section is a bordered box: its body is inset like the header
+    // (px-3) and closes with pb-3, so controls never touch the border
+    // (owner-found 2026-10-01; the plan's item-1 spec).
+    expect(body.className.split(" ")).toContain("px-3");
+    expect(body.className.split(" ")).toContain("pb-3");
     expect(within(body).getByText("cell a")).toBeTruthy();
 
     act(() => {

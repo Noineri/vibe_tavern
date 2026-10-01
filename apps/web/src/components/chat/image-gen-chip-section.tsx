@@ -139,13 +139,14 @@ export function ImageGenChipSection({
           />
         </div>
       )}
-      {hint !== undefined && <div className="pb-2 pt-0.5">{hint}</div>}
+      {hint !== undefined && <div className="px-3 pb-2 pt-0.5">{hint}</div>}
       <AnimatedDisclosure
         open={variant === "disclosure" ? open : checked}
         data-testid={testIds?.body}
-        // ICR-3: the scroll region's px-3 is the body's ONLY horizontal
-        // inset — a section body must not double it (grid gaps stay).
-        className="grid grid-cols-1 gap-x-3 gap-y-2.5 pt-1 @min-[480px]:grid-cols-2"
+        // The section is a bordered box: its body carries the same px-3 as
+        // the header so controls never touch the border (owner-found
+        // 2026-10-01 — the scroll region's inset sits OUTSIDE the border).
+        className="grid grid-cols-1 gap-x-3 gap-y-2.5 px-3 pb-3 pt-1 @min-[480px]:grid-cols-2"
       >
         {children}
       </AnimatedDisclosure>

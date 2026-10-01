@@ -34,6 +34,7 @@
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { SliderField } from "../shared/SliderField.js";
 import { useT } from "../../i18n/context.js";
+import { lblCls } from "../../lib/field-tokens.js";
 import { buildHiresControl, translateModelOptions } from "../../lib/imagegen/model-controls.js";
 import { hiresSummary } from "../../lib/imagegen/chip-section-summaries.js";
 import { EMPTY_IMAGE_GEN_DRAFT, useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
@@ -76,7 +77,7 @@ export function ImageGenHiresSection({ chatId, upscalers, failed, disabled, supp
     >
       {/* Upscaler spans both columns; the failed note rides under it. */}
       <div className="flex flex-col gap-1.5 @min-[480px]:col-span-2">
-        <span className="font-ui text-[calc(var(--ui-fs)-3px)] text-t2">
+        <span className={`${lblCls} !mb-0 font-ui text-t2`}>
           {t(hiresControl.upscalerLabelKey)}
         </span>
         <DropdownSelect
