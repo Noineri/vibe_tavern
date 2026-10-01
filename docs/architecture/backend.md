@@ -2,6 +2,11 @@
 
 > **services/api** — Single Bun process serving HTTP API and static frontend. No microservices, no queues.
 
+## Architecture gates
+
+`bun run typecheck` runs a ratchet that blocks new `domain/` imports from `api/` or `runtime/`.
+Domain code must receive a narrow interface or shared package/domain dependency instead of reaching upward to `SessionRuntime`.
+
 ---
 
 ## Entry Points
