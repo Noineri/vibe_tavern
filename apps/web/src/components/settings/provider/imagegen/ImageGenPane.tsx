@@ -1613,6 +1613,13 @@ function ModelSamplerSetRow({ imageGen }: { imageGen: ImageGenHook }) {
 
 // ─── The pane ────────────────────────────────────────────────────────────────
 
+/** ADetailer probe retry budget (IMAGEGEN_SET_SWITCH_AND_CHIP_FIXES_REPORT
+ *  B, the owner-approved fix): a probe that fails (server still booting or
+ *  busy when the modal opened) gets ONE delayed retry — the row used to
+ *  stay hidden until a remount (the "adetailer disappeared" report).
+ *  Exported as the timing contract's test seam. */
+export const IMAGE_GEN_PROBE_RETRY_MS = 3000;
+
 export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   const { t } = useT();
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -1734,6 +1741,13 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot
     // vocabulary fill per profile; listImageGenUpscalers is a stable import.
   }, [guardProfileId, guardSupportsHires]);
+  // Set-switch report B: the profile's live connection status rides the
+  // ADetailer probe effects' deps — a status change (the status chip's
+  // re-check bringing an offline server back online) re-runs the probes
+  // instead of waiting for a remount. Computed as a guard-style value so
+  // it sits above the null guard with its siblings.
+  const guardLocalStatus: LocalConnectionStatus =
+    guardProfileId === null ? "unknown" : (imageGen.samplerStatusByProfile[guardProfileId] ?? "unknown");
   const [extensions, setExtensions] = useState<string[] | null>(null);
   useEffect(() => {
     if (!guardIsA1111 || guardProfileId === null) {
@@ -1741,25 +1755,37 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
       return;
     }
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     setExtensions(null);
     // fork #2 of 2 (counterpart: apps/web/src/components/chat/ImageGenFineTuningChip.tsx) — adetailer probe fetch; no shared source yet
-    void listImageGenExtensions(guardProfileId)
-      .then((names) => {
-        if (!cancelled) setExtensions(names ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setExtensions(null);
-      });
+    const probe = (allowRetry: boolean) => {
+      void listImageGenExtensions(guardProfileId)
+        .then((names) => {
+          if (!cancelled) setExtensions(names ?? []);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // Report B: one delayed retry — a probe that failed while the
+          // server was still coming up used to hide the row until a
+          // remount. Still null while the retry pends (hidden-while-unknown
+          // stays); the cleanup clears the timer on any dep change.
+          setExtensions(null);
+          if (allowRetry) retryTimer = setTimeout(() => probe(false), IMAGE_GEN_PROBE_RETRY_MS);
+        });
+    };
+    probe(true);
     return () => {
       cancelled = true;
+      clearTimeout(retryTimer);
     };
-  }, [guardIsA1111, guardProfileId]);
+  }, [guardIsA1111, guardProfileId, guardLocalStatus]);
   // Face-detector chain probe (IF-6) — the ComfyUI dialect's ADetailer
   // availability twin of the extensions probe above: null = pending/failed
-  // (row hidden, the failed-probe precedent); an ANSWERED empty list = the
-  // Impact Pack chain absent (row renders disabled + hint, the plan's
-  // honest-unavailable ruling); non-empty = the toggle lights up and the
-  // picker serves the DISCOVERED models.
+  // pending its ONE delayed retry (row hidden, the hidden-while-unknown
+  // rule); an ANSWERED empty list = the Impact Pack chain absent (row
+  // renders disabled + hint, the plan's honest-unavailable ruling);
+  // non-empty = the toggle lights up and the picker serves the DISCOVERED
+  // models.
   const guardIsComfy = form?.backend === IMAGE_GEN_BACKENDS.ComfyUI;
   const [faceDetectors, setFaceDetectors] = useState<string[] | null>(null);
   useEffect(() => {
@@ -1768,18 +1794,27 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
       return;
     }
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     setFaceDetectors(null);
-    void listImageGenFaceDetectors(guardProfileId)
-      .then((detectors) => {
-        if (!cancelled) setFaceDetectors(detectors ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setFaceDetectors(null);
-      });
+    const probe = (allowRetry: boolean) => {
+      void listImageGenFaceDetectors(guardProfileId)
+        .then((detectors) => {
+          if (!cancelled) setFaceDetectors(detectors ?? []);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // Report B: the extensions probe's retry twin — one delayed
+          // retry, hidden while pending, cleared by the cleanup.
+          setFaceDetectors(null);
+          if (allowRetry) retryTimer = setTimeout(() => probe(false), IMAGE_GEN_PROBE_RETRY_MS);
+        });
+    };
+    probe(true);
     return () => {
       cancelled = true;
+      clearTimeout(retryTimer);
     };
-  }, [guardIsComfy, guardProfileId]);
+  }, [guardIsComfy, guardProfileId, guardLocalStatus]);
   if (form === null || form.id === null) return null;
   const profileId = form.id;
   const models: ImageGenModelEntry[] = imageGen.modelsByProfile[profileId] ?? [];

@@ -205,7 +205,7 @@ mock.module("../../../../api/provider-api.js", () => ({
 }));
 
 const { act, cleanup, fireEvent, render: render_impl, waitFor, within } = await import("@testing-library/react");
-const { ImageGenPane } = await import("./ImageGenPane.js");
+const { ImageGenPane, IMAGE_GEN_PROBE_RETRY_MS } = await import("./ImageGenPane.js");
 const { useImageProfiles } = await import("../../../../hooks/use-image-profiles.js");
 const { IMAGE_GEN_BACKENDS, IMAGE_GENERATION_MODES, IMAGE_GEN_PARAM_RANGES } = await import("@vibe-tavern/domain");
 const { TooltipProvider } = await import("../../../shared/Tooltip.js");
@@ -219,6 +219,7 @@ function render(node: React.ReactElement): ReturnType<typeof render_impl> {
 }
 
 type ImageGenHook = ReturnType<typeof useImageProfiles>;
+type LocalConnectionStatus = import("../../../shared/LocalConnectionStatus.js").LocalConnectionStatus;
 
 /** All six v1 modes — the pane must render a row for EVERY one (domain
  *  order is the render order). */
@@ -2549,6 +2550,63 @@ describe("ImageGenPane — ADetailer row (CF15d, the chip's twin surface)", () =
     });
     expect(view.queryByTestId("image-gen-adetailer-row")).toBeNull();
     expect(view.queryByTestId("image-gen-adetailer-missing")).toBeNull();
+  });
+
+  it("comfy + FAILED probe (report B): ONE delayed retry — the second call resolves and the row appears WITHOUT a remount", async () => {
+    // The first probe fails (the modal opened while the server was still
+    // booting); the report's fix is a single delayed retry on the SAME
+    // mount. bun 1.4.2 has no mock.timers and jest fake timers freeze
+    // React's passive-effect scheduler under happy-dom, so the wait is the
+    // skill's resolved-state form: a bounded poll for the terminal state
+    // (the row appearing), not a bare sleep.
+    faceDetectorsValue = ["bbox/face_yolov8m.pt"];
+    listFaceDetectorsApi.mockImplementationOnce(() => Promise.reject(new Error("probe boom")));
+    const view = render(
+      <ImageGenPane
+        imageGen={makeImageGen({
+          form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, modelId: "m-alpha", endpoint: "http://127.0.0.1:8188" }),
+          modelOverlay: {},
+        })}
+      />,
+    );
+    await openAdvanced(view);
+    // First probe failed: the row stays hidden (hidden-while-unknown).
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(view.queryByTestId("image-gen-adetailer-row")).toBeNull();
+    // The retry fires after the exported budget — same mount, no remount,
+    // no status change.
+    await waitFor(
+      () => expect(view.getByTestId("image-gen-adetailer-row")).toBeTruthy(),
+      { timeout: IMAGE_GEN_PROBE_RETRY_MS + 2000, interval: 100 },
+    );
+    // The once-implementation replaces the base mock wholesale, so only
+    // the RETRY's call reaches the base impl's push — one recorded entry
+    // IS the second call; the first is proven by the failed-probe absence
+    // pinned above (and by the once-impl being consumed).
+    expect(faceDetectorCalls).toEqual(["ig1"]);
+  });
+
+  it("comfy (report B): a status flip offline -> online re-runs the face-detector probe without a remount", async () => {
+    faceDetectorsValue = ["bbox/face_yolov8m.pt"];
+    const base = makeImageGen({
+      form: makeForm({ backend: IMAGE_GEN_BACKENDS.ComfyUI, modelId: "m-alpha", endpoint: "http://127.0.0.1:8188" }),
+      modelOverlay: {},
+    });
+    const pane = (status: LocalConnectionStatus) => (
+      <TooltipProvider delayDuration={200}>
+        <ImageGenPane imageGen={{ ...base, samplerStatusByProfile: { ig1: status } }} />
+      </TooltipProvider>
+    );
+    const view = render(pane("offline"));
+    // Passive effects settle on a macrotask here — poll for the resolved
+    // state, never assume mount-time execution.
+    await waitFor(() => expect(faceDetectorCalls).toEqual(["ig1"]));
+    // The status chip's re-check brings the server online — the probe
+    // effect's status dep re-runs the fetch.
+    view.rerender(pane("online"));
+    await waitFor(() => expect(faceDetectorCalls).toEqual(["ig1", "ig1"]));
   });
 });
 
