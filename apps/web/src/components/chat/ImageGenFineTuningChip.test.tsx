@@ -1785,8 +1785,8 @@ describe("ImageGenFineTuningChip — comfyui ADetailer (IF-6)", () => {
   });
 });
 
-describe("ImageGenFineTuningChip — IF-5 two-column body", () => {
-  it("advanced content present: the body root is the container and the grid contract arms — base column holds the prompt pair, advanced column holds the tuning blocks, the footer spans both", async () => {
+describe("ImageGenFineTuningChip — ICR-3 body layout (the redesign's single column)", () => {
+  it("advanced content present: the base 2×2 grid → full-width prompts → sections stack, the footer pinned outside the scroll region", async () => {
     profilesStore = [profile("if5a", "A1111 local", fullCaps(), "sdxl-base")];
     modelsStore = { if5a: [{ id: "sdxl-base", label: "SDXL Base" }] };
     const view = renderChip(<ImageGenFineTuningChip chatId="chat-if5a" />);
@@ -1794,54 +1794,61 @@ describe("ImageGenFineTuningChip — IF-5 two-column body", () => {
     openChip();
     await waitFor(() => expect(within(view.baseElement).getByTestId("image-gen-ft-body")).toBeTruthy());
 
-    // Pick a concrete model → the settings block renders → the advanced
-    // column has its flagship block (hasAdvanced is true even before the
+    // Pick a concrete model → the settings block renders → the sections
+    // stack has its flagship block (hasAdvanced is true even before the
     // pick via supportsLoras, but the settings block needs the pick).
     await pickOption("image-gen-ft-model-select", "SDXL Base");
     await waitFor(() =>
       expect(within(view.baseElement).getByTestId("image-gen-ft-model-settings")).toBeTruthy(),
     );
 
-    // The body root is the Tailwind container (one root, both surfaces —
-    // desktop popover AND mobile sheet switch together).
+    // The body root is the Tailwind container (one root, both surfaces) and
+    // carries the mobile sheet cap (max-h-[80dvh]; inert on desktop where
+    // the popover caps first).
     const body = within(view.baseElement).getByTestId("image-gen-ft-body");
     expect(body.className).toContain("@container");
+    expect(body.className).toContain("max-h-[80dvh]");
 
-    // Report C: the scroll region is the body root's first child — the
-    // columns roll inside it, the footer is pinned outside below it.
+    // Report C: the scroll region is the body root's first child — the body
+    // rolls inside it, the footer is pinned outside below it. ICR-3: the
+    // scroll region's own px-3 is the body's only horizontal inset.
     const scroll = within(view.baseElement).getByTestId("image-gen-ft-scroll");
     expect(scroll.className).toContain("overflow-y-auto");
+    expect(scroll.className).toContain("px-3");
     expect(scroll.parentElement).toBe(body);
 
-    // The grid wrapper: two columns at a comfortable container width — now
-    // the scroll region's first child.
-    // happy-dom computes no container-query layout — the pin is the class
-    // contract the component owns; the geometry budget is paper-verified
-    // (IF-5 execution note, 2026-09-24).
+    // The desktop base grid: two columns at a comfortable container width —
+    // the scroll region's first child, holding the four base fields in
+    // reading order. happy-dom computes no container-query layout — the pin
+    // is the class contract the component owns.
     const grid = scroll.firstElementChild as HTMLElement;
-    expect(grid.className).toContain("@min-[480px]:grid");
     expect(grid.className).toContain("@min-[480px]:grid-cols-2");
+    expect(grid.contains(within(view.baseElement).getByTestId("image-gen-ft-profile-select"))).toBe(true);
+    expect(grid.contains(within(view.baseElement).getByTestId("image-gen-ft-target-select"))).toBe(true);
 
-    // Grouping: base column first (prompt pair inside), advanced column
-    // second (settings block inside) — every advanced block IS inside the
-    // scroll region; the footer buttons are NOT (they stay pinned below
-    // it, report C).
+    // Desktop order: base grid → prompts → sections stack (element
+    // variables in sequence, not CSS order — tab order is the DOM order).
+    const prompt = within(view.baseElement).getByTestId("image-gen-ft-prompt");
     const advanced = within(view.baseElement).getByTestId("image-gen-ft-advanced-col");
-    const base = grid.firstElementChild as HTMLElement;
-    expect(base).not.toBe(advanced);
-    expect(base.contains(within(view.baseElement).getByTestId("image-gen-ft-prompt"))).toBe(true);
+    // PRECEDING bit: the argument node comes EARLIER in document order.
+    expect(prompt.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(advanced.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(scroll.contains(advanced)).toBe(true);
     expect(advanced.contains(within(view.baseElement).getByTestId("image-gen-ft-model-settings"))).toBe(
       true,
     );
-    expect(scroll.contains(advanced)).toBe(true);
+
+    // The footer buttons are NOT in the scroll region — pinned below it
+    // with the border-top (ICR-3).
     expect(scroll.contains(within(view.baseElement).getByTestId("image-gen-ft-generate"))).toBe(false);
     expect(scroll.contains(within(view.baseElement).getByTestId("image-gen-ft-clear"))).toBe(false);
     const footerRow = within(view.baseElement).getByTestId("image-gen-ft-generate").closest("div");
     expect(footerRow?.className).toContain("shrink-0");
+    expect(footerRow?.className).toContain("border-t");
     expect(footerRow?.parentElement).toBe(body);
   });
 
-  it("no advanced content (cloud no-caps profile, nothing picked): the single column stays — no grid classes, no empty half column", async () => {
+  it("no advanced content (cloud no-caps profile, nothing picked): no sections stack, base + prompts only — the footer still pinned", async () => {
     profilesStore = [profile("if5b", "OpenRouter main", noCaps())];
     modelsStore = { if5b: [{ id: "flux-1", label: "Flux 1" }] };
     const view = renderChip(<ImageGenFineTuningChip chatId="chat-if5b" />);
@@ -1852,12 +1859,37 @@ describe("ImageGenFineTuningChip — IF-5 two-column body", () => {
 
     const body = within(view.baseElement).getByTestId("image-gen-ft-body");
     expect(body.className).toContain("@container");
-    // Report C: the scroll region still wraps the (single) column, and the
-    // footer stays pinned outside it even with no advanced content.
     const scroll = within(view.baseElement).getByTestId("image-gen-ft-scroll");
-    const grid = scroll.firstElementChild as HTMLElement;
-    expect(grid.className).not.toContain("@min-[480px]:grid");
     expect(within(view.baseElement).queryByTestId("image-gen-ft-advanced-col")).toBeNull();
     expect(scroll.contains(within(view.baseElement).getByTestId("image-gen-ft-generate"))).toBe(false);
+  });
+
+  it("mobile order (ICR-3): the sheet body starts with the PROMPT, then the divider, then the base block — thumb-sized full-width Generate footer", async () => {
+    mobileOverride = true;
+    profilesStore = [profile("if5c", "Comfy local", fullCaps(), "krea-model")];
+    modelsStore = { if5c: [{ id: "krea-model", label: "Krea 2 Turbo" }] };
+    const view = renderChip(<ImageGenFineTuningChip chatId="chat-if5c" />);
+    act(() => armChat("chat-if5c"));
+    openChip();
+    const body = await waitFor(() => {
+      const node = within(view.baseElement).getByTestId("image-gen-ft-body");
+      expect(node).toBeTruthy();
+      return node as HTMLElement;
+    });
+
+    // The prompt comes FIRST — before the profile trigger (the mockup's
+    // mobile layout; the same element variables, mobile sequence).
+    const prompt = within(view.baseElement).getByTestId("image-gen-ft-prompt");
+    const profileTrigger = within(view.baseElement).getByTestId("image-gen-ft-profile-select");
+    expect(profileTrigger.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+
+    // The footer is the mockup's thumb pair: h-11 buttons, full-width
+    // Generate.
+    const generate = within(view.baseElement).getByTestId("image-gen-ft-generate");
+    expect(generate.className).toContain("h-11");
+    expect(generate.className).toContain("flex-1");
+    const clear = within(view.baseElement).getByTestId("image-gen-ft-clear");
+    expect(clear.className).toContain("h-11");
+    expect(body.contains(generate)).toBe(true);
   });
 });
