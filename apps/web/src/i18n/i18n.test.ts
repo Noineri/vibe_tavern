@@ -91,3 +91,27 @@ describe("i18n interpolation delimiter hygiene", () => {
 		expect(String(i18next.t("local_connection_endpoint", { url: "a&b<c>'d\"e" }))).toBe("a&b<c>'d\"e");
 	});
 });
+
+describe("i18n count pluralization", () => {
+	async function makeInstance(lng: "en" | "ru") {
+		const inst = i18next.createInstance();
+		await inst.init({
+			lng,
+			resources: { en: { translation: en }, ru: { translation: ru } },
+			interpolation: { prefix: "{", suffix: "}" },
+		});
+		return inst;
+	}
+
+	it("branch_count agrees with its number (regression: rendered '1 branches' / '1 веток')", async () => {
+		const enInst = await makeInstance("en");
+		expect(String(enInst.t("branch_count", { count: 1 }))).toBe("1 branch");
+		expect(String(enInst.t("branch_count", { count: 3 }))).toBe("3 branches");
+
+		const ruInst = await makeInstance("ru");
+		expect(String(ruInst.t("branch_count", { count: 1 }))).toBe("1 ветка");
+		expect(String(ruInst.t("branch_count", { count: 3 }))).toBe("3 ветки");
+		expect(String(ruInst.t("branch_count", { count: 5 }))).toBe("5 веток");
+		expect(String(ruInst.t("branch_count", { count: 21 }))).toBe("21 ветка");
+	});
+});
