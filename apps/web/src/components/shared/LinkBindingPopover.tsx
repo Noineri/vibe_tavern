@@ -51,7 +51,7 @@ interface LinkBindingPopoverProps {
   triggerLabel?: string;
 }
 
-function resolveTargetAvatarUrl(target: LinkTarget): string | null {
+export function resolveTargetAvatarUrl(target: LinkTarget): string | null {
   if (target.kind) {
     return resolveEntityAvatarUrl({
       kind: target.kind,
