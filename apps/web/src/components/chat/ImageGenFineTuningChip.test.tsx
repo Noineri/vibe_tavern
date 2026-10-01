@@ -1807,17 +1807,25 @@ describe("ImageGenFineTuningChip — IF-5 two-column body", () => {
     const body = within(view.baseElement).getByTestId("image-gen-ft-body");
     expect(body.className).toContain("@container");
 
-    // The grid wrapper: two columns at a comfortable container width.
+    // Report C: the scroll region is the body root's first child — the
+    // columns roll inside it, the footer is pinned outside below it.
+    const scroll = within(view.baseElement).getByTestId("image-gen-ft-scroll");
+    expect(scroll.className).toContain("overflow-y-auto");
+    expect(scroll.parentElement).toBe(body);
+
+    // The grid wrapper: two columns at a comfortable container width — now
+    // the scroll region's first child.
     // happy-dom computes no container-query layout — the pin is the class
     // contract the component owns; the geometry budget is paper-verified
     // (IF-5 execution note, 2026-09-24).
-    const grid = body.firstElementChild as HTMLElement;
+    const grid = scroll.firstElementChild as HTMLElement;
     expect(grid.className).toContain("@min-[480px]:grid");
     expect(grid.className).toContain("@min-[480px]:grid-cols-2");
 
     // Grouping: base column first (prompt pair inside), advanced column
-    // second (settings block inside), footer last with the col-span (inert in
-    // single-column flex — no dead half-column without advanced content).
+    // second (settings block inside) — every advanced block IS inside the
+    // scroll region; the footer buttons are NOT (they stay pinned below
+    // it, report C).
     const advanced = within(view.baseElement).getByTestId("image-gen-ft-advanced-col");
     const base = grid.firstElementChild as HTMLElement;
     expect(base).not.toBe(advanced);
@@ -1825,8 +1833,12 @@ describe("ImageGenFineTuningChip — IF-5 two-column body", () => {
     expect(advanced.contains(within(view.baseElement).getByTestId("image-gen-ft-model-settings"))).toBe(
       true,
     );
+    expect(scroll.contains(advanced)).toBe(true);
+    expect(scroll.contains(within(view.baseElement).getByTestId("image-gen-ft-generate"))).toBe(false);
+    expect(scroll.contains(within(view.baseElement).getByTestId("image-gen-ft-clear"))).toBe(false);
     const footerRow = within(view.baseElement).getByTestId("image-gen-ft-generate").closest("div");
-    expect(footerRow?.className).toContain("@min-[480px]:col-span-2");
+    expect(footerRow?.className).toContain("shrink-0");
+    expect(footerRow?.parentElement).toBe(body);
   });
 
   it("no advanced content (cloud no-caps profile, nothing picked): the single column stays — no grid classes, no empty half column", async () => {
@@ -1840,8 +1852,12 @@ describe("ImageGenFineTuningChip — IF-5 two-column body", () => {
 
     const body = within(view.baseElement).getByTestId("image-gen-ft-body");
     expect(body.className).toContain("@container");
-    const grid = body.firstElementChild as HTMLElement;
+    // Report C: the scroll region still wraps the (single) column, and the
+    // footer stays pinned outside it even with no advanced content.
+    const scroll = within(view.baseElement).getByTestId("image-gen-ft-scroll");
+    const grid = scroll.firstElementChild as HTMLElement;
     expect(grid.className).not.toContain("@min-[480px]:grid");
     expect(within(view.baseElement).queryByTestId("image-gen-ft-advanced-col")).toBeNull();
+    expect(scroll.contains(within(view.baseElement).getByTestId("image-gen-ft-generate"))).toBe(false);
   });
 });

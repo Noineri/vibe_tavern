@@ -149,7 +149,7 @@ export function ImageGenFineTuningChip({ chatId }: ImageGenFineTuningChipProps) 
             side="top"
             align="center"
             sideOffset={4}
-            className="glass-blur z-[220] flex max-h-[70vh] w-[clamp(300px,40vw,560px)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border2 bg-glass-bg p-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+            className="glass-blur z-[220] flex max-h-[min(70vh,var(--radix-popover-content-available-height))] w-[clamp(300px,40vw,560px)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border2 bg-glass-bg p-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
             {body}
           </Popover.Content>
@@ -510,7 +510,15 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
     (effective !== null && draft.model !== undefined) || supportsLoras || supportsHiresFix;
 
   return (
-    <div className="@container flex flex-col gap-2.5 p-1" data-testid="image-gen-ft-body">
+    <div className="@container flex min-h-0 flex-1 flex-col gap-2.5 p-1" data-testid="image-gen-ft-body">
+      {/* Scroll region (set-switch report C): the popover caps its height at
+          the space Radix actually has above the trigger, the columns roll
+          inside this region, and the footer stays pinned below it — the
+          DiceTray 616–640 canon (fixed parts shrink-0, the scroll region
+          min-h-0 flex-1 overflow-y-auto). The mobile BottomSheet twin is
+          unbounded (see the report's execution log — the sheet does not cap
+          height; callers must, the DiceTray rule). */}
+      <div className="min-h-0 flex-1 overflow-y-auto" data-testid="image-gen-ft-scroll">
       <div
         className={cn(
           "flex flex-col gap-2.5",
@@ -775,39 +783,41 @@ function ImageGenFineTuningBody({ chatId, onGenerateFired }: { chatId: string; o
           </div>
         )}
 
-        {/* Footer (FT-A3): Clear + the immediate Generate button (i18n key
-            image_gen_chip_generate) — fires the
-            shared draft fold on the current chat (mode = the target selector,
-            anchor = the tail message) and closes the editor; the image lands
-            as a chat slot message exactly like the message-popover path. An
-            empty Free prompt resolves its saved template. The footer spans
-            BOTH columns in the IF-5 grid (`col-span-2` is inert in the
-            single-column flex). */}
-        <div className="flex items-center justify-end gap-1.5 px-1.5 @min-[480px]:col-span-2">
-          <button
-            type="button"
-            data-testid="image-gen-ft-clear"
-            className="cursor-pointer rounded-md px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2 hover:text-t1"
-            onClick={() => clearFineTuningDraft(chatId)}
-          >
-            {t("image_gen_chip_clear")}
-          </button>
-          <button
-            type="button"
-            data-testid="image-gen-ft-generate"
-            aria-disabled={generateDisabled}
-            disabled={generateDisabled}
-            onClick={fireGenerate}
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:cursor-default disabled:opacity-50"
-          >
-            {busy ? (
-              <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
-            ) : (
-              <Icons.sparkles />
-            )}
-            {t("image_gen_chip_generate")}
-          </button>
-        </div>
+      </div>
+      </div>
+
+      {/* Footer (FT-A3): Clear + the immediate Generate button (i18n key
+          image_gen_chip_generate) — fires the
+          shared draft fold on the current chat (mode = the target selector,
+          anchor = the tail message) and closes the editor; the image lands
+          as a chat slot message exactly like the message-popover path. An
+          empty Free prompt resolves its saved template. Pinned OUTSIDE the
+          scroll region (report C): the columns roll, the footer stays
+          visible at the bottom. */}
+      <div className="flex shrink-0 items-center justify-end gap-1.5 px-1.5">
+        <button
+          type="button"
+          data-testid="image-gen-ft-clear"
+          className="cursor-pointer rounded-md px-2 py-1 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:bg-s2 hover:text-t1"
+          onClick={() => clearFineTuningDraft(chatId)}
+        >
+          {t("image_gen_chip_clear")}
+        </button>
+        <button
+          type="button"
+          data-testid="image-gen-ft-generate"
+          aria-disabled={generateDisabled}
+          disabled={generateDisabled}
+          onClick={fireGenerate}
+          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-3 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-on-accent transition-[filter] duration-100 hover:brightness-110 disabled:cursor-default disabled:opacity-50"
+        >
+          {busy ? (
+            <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
+          ) : (
+            <Icons.sparkles />
+          )}
+          {t("image_gen_chip_generate")}
+        </button>
       </div>
     </div>
   );
