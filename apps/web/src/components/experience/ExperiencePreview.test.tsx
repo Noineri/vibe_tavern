@@ -14,10 +14,12 @@
  *      updates but no production handler fires).
  */
 import { describe, it, expect, afterEach } from "bun:test";
-import { render, fireEvent, act } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, fireEvent, act } = await import("@testing-library/react");
 
 // URL spy so the embedded ExperienceFrame does not make happy-dom navigate.
 const realCreate = URL.createObjectURL;

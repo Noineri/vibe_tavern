@@ -14,11 +14,13 @@
  *    auto-switch happens (no jarring jump on chat open).
  */
 import { describe, it, expect } from "bun:test";
-import { renderHook, act } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import { useCoauthorMobileTab } from "./CoauthorMode.js";
 
 useDomEnv();
+
+const { renderHook, act } = await import("@testing-library/react");
 
 describe("useCoauthorMobileTab", () => {
 	it("defaults to the Chat tab", () => {

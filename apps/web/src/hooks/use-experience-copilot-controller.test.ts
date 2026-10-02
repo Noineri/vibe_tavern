@@ -5,62 +5,128 @@
  * activities with the SAME shapes the persisted path
  * `extractPersistedExperienceCopilotActivities` produces), `pendingText`
  * accumulation, and the settle (done/cancelled/failed) → `onTurnSettled`
- * signal. `streamExperienceCopilot` is stubbed and its callbacks driven
- * manually, so the stream lifecycle is observable without a server.
+ * signal. The controller calls the real transport against a deterministic
+ * fetch/SSE router, so the stream lifecycle is observed at the HTTP boundary.
  */
-import { describe, test, expect, beforeEach, mock } from "bun:test";
-import { act, renderHook } from "@testing-library/react";
+import { afterAll, beforeEach, describe, test, expect, mock, spyOn } from "bun:test";
+
 import type { CopilotStreamOpts } from "../api/experience-copilot-api.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
 
-// --- transport + i18n + toast stubs (SAFE mock.module pattern) ---
+const { act, renderHook } = await import("@testing-library/react");
+
+// --- fetch-level transport router ---
+// The controller imports the real transport. These two spies configure the
+// router's SSE response and retain the prior assertions at the HTTP boundary.
 const streamExperienceCopilot = mock<typeof import("../api/experience-copilot-api.js")["streamExperienceCopilot"]>(
   () => Promise.resolve({ finishReason: "stop" }),
 );
 const answerCopilotAsk = mock<typeof import("../api/experience-copilot-api.js")["answerCopilotAsk"]>(
   () => Promise.resolve({ finishReason: "stop" }),
 );
-const toastError = mock();
-const toastInfo = mock();
+const { toast } = await import("sonner");
+const toastError = spyOn(toast, "error");
+const toastInfo = spyOn(toast, "info");
+const { i18next } = await import("../i18n/i18n.js");
+const translate = spyOn(i18next, "t").mockImplementation((key) => String(key));
 
-const realCopilotApi = await import("../api/experience-copilot-api.js");
-const realLocaleHelpers = await import("../i18n/locale-helpers.js");
+const FINISH_STOP = 'event: finish\ndata: {"finishReason":"stop"}\n\n';
+const sseResponse = (events: readonly string[]) =>
+  new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder();
+      for (const event of events) controller.enqueue(encoder.encode(event));
+      controller.close();
+    },
+  }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
 
-mock.module("../api/experience-copilot-api.js", () => ({
-  ...realCopilotApi,
-  streamExperienceCopilot,
-  answerCopilotAsk,
-}));
+const originalFetch = globalThis.fetch;
+let fetchBeforeController: typeof globalThis.fetch | null = null;
+let requestCount = 0;
+let holdStreamOpen = false;
+let releaseStream: (() => void) | null = null;
+let nextHttpError: { message: string; category?: string } | null = null;
 
-mock.module("../i18n/locale-helpers.js", () => ({
-  ...realLocaleHelpers,
-  getT: () => (key: string) => key,
-}));
+function sseEvent(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
 
-mock.module("sonner", () => ({
-  toast: {
-    error: toastError,
-    info: toastInfo,
-    success: mock(),
-    message: mock(),
-    warning: mock(),
-    loading: mock(),
-    custom: mock(),
-    promise: mock(),
-    dismiss: mock(),
-  },
-  Toaster: () => null,
-}));
+const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const url = new URL(String(input), "http://gateway.test");
+  if ((init?.method ?? "GET").toUpperCase() !== "POST" || !/\/api\/experience-copilot\/[^/]+\/stream$/.test(url.pathname)) {
+    return new Response(JSON.stringify({ error: { message: `Unhandled fetch: ${url.pathname}` } }), { status: 404 });
+  }
+  requestCount++;
+  const threadId = url.pathname.match(/\/api\/experience-copilot\/([^/]+)\/stream$/)?.[1] ?? "";
+  const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+  if (nextHttpError) {
+    const error = nextHttpError;
+    nextHttpError = null;
+    return new Response(JSON.stringify({ error: { message: error.message, details: { category: error.category ?? "unknown" } } }), { status: 400 });
+  }
+  if (holdStreamOpen) {
+    return new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("The user aborted a request.", "AbortError")), { once: true });
+    });
+  }
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const encoder = new TextEncoder();
+  const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(sseEvent(event, data)));
+  const opts: CopilotStreamOpts = {
+    signal: init?.signal ?? undefined,
+    onStatus: () => {},
+    onChunk: (delta) => send("text-delta", { delta }),
+    onReasoningChunk: (delta) => send("reasoning-delta", { delta }),
+    onToolCall: (info) => send("tool-call", info),
+    onToolInputStart: (info) => send("tool-input-start", info),
+    onToolInputDelta: (info) => send("tool-input-delta", info),
+    onToolResult: (info) => send("tool-result", info),
+  };
+  const completion = "answer" in body
+    ? answerCopilotAsk(threadId, body as Parameters<typeof answerCopilotAsk>[1], opts)
+    : streamExperienceCopilot(threadId, body as Parameters<typeof streamExperienceCopilot>[1], opts);
+  return new Response(new ReadableStream<Uint8Array>({
+    start(streamController) {
+      controller = streamController;
+      releaseStream = () => {
+        if (releaseStream === null) return;
+        controller.enqueue(encoder.encode(FINISH_STOP));
+        controller.close();
+        releaseStream = null;
+      };
+      void completion.then(
+        () => { if (!holdStreamOpen) releaseStream?.(); },
+        (error) => {
+          if (!holdStreamOpen) {
+            const provider = error instanceof ProviderStreamError;
+            controller.enqueue(encoder.encode(sseEvent("error", {
+              message: error instanceof Error ? error.message : "Provider request failed",
+              category: provider ? error.category : "unknown",
+            })));
+            controller.close();
+          }
+        },
+      );
+    },
+    cancel() { releaseStream = null; },
+  }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+});
 
 const { useExperienceCopilotController } = await import("./use-experience-copilot-controller.js");
 const { useExperienceCopilotTurnStore } = await import("../stores/experience-copilot-turn-store.js");
 const { ProviderStreamError } = await import("../api/provider-stream-error.js");
+const { extractPersistedExperienceCopilotActivities, wireToToolSource } = await import(
+  "../stores/experience-copilot-turn-store.js"
+);
 type CopilotTodoItem = import("@vibe-tavern/api-contracts").CopilotTodoItem;
 
 const THREAD = "thread-1";
 const PROVIDER = "provider-1";
+const routerFetch = Object.assign(fetchRouter, { preconnect: () => {} });
+
+describe("useExperienceCopilotController transport fixture", () => {
 
 /** Minimal controllable promise for driving the stubbed stream to completion. */
 function deferred<T>() {
@@ -73,23 +139,28 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-/** Stub that rejects with an AbortError-shaped error when the signal fires. */
-function rejectOnAbort(opts: { signal?: AbortSignal }): Promise<never> {
-  return new Promise((_resolve, reject) => {
-    opts?.signal?.addEventListener("abort", () => {
-      const err = new Error("The user aborted a request");
-      err.name = "AbortError";
-      reject(err);
-    });
-  });
-}
-
 beforeEach(() => {
+  if (fetchBeforeController === null) fetchBeforeController = globalThis.fetch;
+  globalThis.fetch = routerFetch;
+  requestCount = 0;
+  holdStreamOpen = false;
+  releaseStream = null;
+  nextHttpError = null;
   streamExperienceCopilot.mockReset();
   answerCopilotAsk.mockReset();
   toastError.mockClear();
   toastInfo.mockClear();
   useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+});
+
+afterAll(() => {
+  // A co-located DOM suite may have installed its own router in beforeAll.
+  // Restore the value present before this suite's first test, not a module-load
+  // snapshot that would clobber that suite's router.
+  if (globalThis.fetch === routerFetch) globalThis.fetch = fetchBeforeController ?? originalFetch;
+  translate.mockRestore();
+  toastError.mockRestore();
+  toastInfo.mockRestore();
 });
 
 describe("useExperienceCopilotController — handleSend stream lifecycle", () => {
@@ -308,7 +379,9 @@ describe("useExperienceCopilotController — guards", () => {
 describe("useExperienceCopilotController — cancel and error", () => {
   test("handleCancel aborts in-flight stream → cancelled toast, isSending false, settled", async () => {
     const onTurnSettled = mock();
-    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => rejectOnAbort(opts));
+    holdStreamOpen = true;
+    const held = deferred<{ finishReason: string }>();
+    streamExperienceCopilot.mockImplementation(() => held.promise);
 
     const { result } = renderHook(() =>
       useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
@@ -440,10 +513,6 @@ describe("feed wiring (TF-4)", () => {
 });
 
 // ─── TAG-7: todo/ask wiring ─────────────────────────────────────────────────
-
-const { extractPersistedExperienceCopilotActivities, wireToToolSource } = await import(
-  "../stores/experience-copilot-turn-store.js"
-);
 
 const TODO_ITEMS: CopilotTodoItem[] = [
   { title: "Draft the rules skeleton", status: "completed" },
@@ -812,7 +881,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
 
   test("a PRE-stream failure rolls the optimistic flip back (the row was never rewritten)", async () => {
     const onTurnSettled = mock();
-    answerCopilotAsk.mockImplementation(() => Promise.reject(new Error("validation 400")));
+    nextHttpError = { message: "validation 400" };
     const { result } = renderHook(() =>
       useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
@@ -864,4 +933,5 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
     });
     expect(result.current.pendingAskAnswer).toBeNull();
   });
+});
 });

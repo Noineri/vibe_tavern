@@ -39,7 +39,7 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ChangeEvent, ReactNode } from "react";
 import type { ExperienceSetupFieldDto } from "@vibe-tavern/api-contracts";
-import type { RenderResult } from "@testing-library/react";
+
 import type {
   ExperiencePlaygroundData,
   ExperienceTestRunData,
@@ -52,6 +52,8 @@ import { useExperienceVisualDraftStore } from "../../../stores/experience-author
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
+
+type RenderResult = import("@testing-library/react").RenderResult;
 
 /** A minimal real rules body that passes discovery (register + four mandatory
  *  methods + choose). The network is mocked, so the body is deterministic test

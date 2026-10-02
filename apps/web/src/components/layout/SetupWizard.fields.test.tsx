@@ -9,11 +9,13 @@
  */
 import { beforeEach, expect, mock, test } from "bun:test";
 import { createElement } from "react";
-import { fireEvent, render } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 
 useDomEnv();
+
+const { fireEvent, render } = await import("@testing-library/react");
 
 // TopBar.test.tsx safe pattern: capture real exports first, spread, override.
 const realI18nContext = await import("../../i18n/context.js");

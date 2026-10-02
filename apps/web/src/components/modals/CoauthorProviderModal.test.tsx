@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
-import { render, fireEvent, waitFor, within } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { ProviderProfileRecord as ClientProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
+
+const { render, fireEvent, waitFor, within } = await import("@testing-library/react");
 
 // Mock patchUiSettingsAction so saveBinding doesn't hit the network.
 const patchUiSettingsAction = mock(async (_patch: never) => ({}) as never);

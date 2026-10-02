@@ -26,11 +26,13 @@
  * test files that import LocaleProvider etc.
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
-import { render, fireEvent } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { ActionSheetItem } from "./ActionSheet.js";
 
 useDomEnv();
+
+const { render, fireEvent } = await import("@testing-library/react");
 
 const realI18nContext = await import("../../i18n/context.js");
 mock.module("../../i18n/context.js", () => {

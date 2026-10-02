@@ -24,11 +24,13 @@
  */
 import { describe, it, expect, mock, beforeAll, beforeEach } from "bun:test";
 import type { ReactNode } from "react";
-import { render, fireEvent, waitFor, within } from "@testing-library/react";
+
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ImportPreviewModalProps } from "./ImportPreviewModal.js";
 
 useDomEnv();
+
+const { render, fireEvent, waitFor, within } = await import("@testing-library/react");
 
 // useT must return a stable t() — the modal builds labels off it. Mocking at
 // the module level keeps the test locale-independent and avoids pulling the

@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import { SaveButton } from "./SaveBar.js";
 
 useDomEnv();
+
+const { cleanup, render, waitFor } = await import("@testing-library/react");
 afterEach(cleanup);
 
 describe("SaveButton feedback", () => {

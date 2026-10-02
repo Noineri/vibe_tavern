@@ -1,11 +1,13 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
-import { render, act } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 
 useDomEnv();
+
+const { render, act } = await import("@testing-library/react");
 
 const asChatId = (id: string): ChatId => id as ChatId;
 

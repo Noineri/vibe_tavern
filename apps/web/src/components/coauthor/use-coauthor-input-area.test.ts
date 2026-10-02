@@ -13,11 +13,13 @@
  * execution log). The hook path is environment-agnostic.
  */
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { renderHook, waitFor } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
+
+const { renderHook, waitFor } = await import("@testing-library/react");
 
 // Mock the two chat-actions the switch calls. `listCoauthorModulesAction` is
 // read by useModuleSwitch on mount; `setCoauthorModuleAction` is what

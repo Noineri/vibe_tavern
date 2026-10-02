@@ -1,6 +1,8 @@
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { act, render, waitFor } = await import("@testing-library/react");
 /**
  * ProviderModal per-model binding — follow-the-active-model (owner ruling
  * 2026-09-27) and the React #310 regression pin.
@@ -15,7 +17,7 @@ useDomEnv();
  * manual binding dropdown rendered nowhere).
  */
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { act, render, waitFor } from "@testing-library/react";
+
 import React from "react";
 import type { ReactNode } from "react";
 import type {

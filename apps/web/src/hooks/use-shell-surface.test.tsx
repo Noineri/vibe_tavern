@@ -21,12 +21,14 @@
  * See SURFACE_REGISTRY_REPORT.md fix-step 1b.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import { renderHook } from "@testing-library/react";
+
 import { useDomEnv } from "../../test/dom-env.js";
 import { mocked } from "../../test/mock-utils.js";
 import type { AppSnapshot } from "../api/types.js";
 
 useDomEnv();
+
+const { renderHook } = await import("@testing-library/react");
 
 const useIsMobile = mock(() => false);
 const realUseMobile = await import("./use-mobile.js");

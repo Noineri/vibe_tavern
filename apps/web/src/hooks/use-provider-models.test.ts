@@ -1,8 +1,10 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
+
+const { act, renderHook, waitFor } = await import("@testing-library/react");
 
 const realProviderApi = await import("../api/provider-api.js");
 const fetchModels = mock<typeof realProviderApi.fetchProviderProfileModels>(async (_profileId) => ({ models: [] }));

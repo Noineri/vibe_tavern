@@ -8,10 +8,12 @@
 
 import { describe, expect, mock, test, beforeEach } from "bun:test";
 import React from "react";
-import { render, act, cleanup } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, act, cleanup } = await import("@testing-library/react");
 
 const { default: userEvent } = await import("@testing-library/user-event");
 

@@ -10,11 +10,13 @@
  * CustomTooltip is mocked out to isolate from radix.
  */
 import { describe, it, expect, mock } from "bun:test";
-import { render, fireEvent } from "@testing-library/react";
+
 import { act, type ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, fireEvent } = await import("@testing-library/react");
 
 const realTooltip = await import("../../shared/Tooltip.js");
 mock.module("../../shared/Tooltip.js", () => ({

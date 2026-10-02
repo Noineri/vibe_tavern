@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeAll, mock } from "bun:test";
-import { render } from "@testing-library/react";
+
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render } = await import("@testing-library/react");
 
 // Mock the i18n context so `t` returns keys verbatim (stable labels). The
 // `...real` spread keeps every other export intact (AGENTS.md mock.module

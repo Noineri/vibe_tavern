@@ -1,10 +1,12 @@
 import { describe, test, expect, mock } from "bun:test";
-import { renderHook, waitFor } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { ToolCapableModel } from "./useToolCapableModels.js";
 import type { ProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
+
+const { renderHook, waitFor } = await import("@testing-library/react");
 
 // Register the module mock once before importing the subject, then program its
 // bound mock function in the live-fetch case below.

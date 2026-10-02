@@ -12,11 +12,13 @@
  * Runner: bun:test + happy-dom.
  */
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { render, fireEvent, waitFor } from "@testing-library/react";
+
 import { brandId, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, fireEvent, waitFor } = await import("@testing-library/react");
 
 const mocks = (() => {
   const tracker: SceneTrackerConfig = {

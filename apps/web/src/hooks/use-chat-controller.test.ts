@@ -13,13 +13,15 @@
  * the abort/error/success boundaries are observable without a server.
  */
 import { describe, test, expect, beforeEach, mock } from "bun:test";
-import { act, renderHook } from "@testing-library/react";
+
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import type { DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
 import type { ExperienceScopeState } from "../stores/experience-store.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
+
+const { act, renderHook } = await import("@testing-library/react");
 
 // --- chat-api stubs (the functions the non-stream path crosses) ---
 const regenerateChatMessage = mock();

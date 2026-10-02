@@ -24,10 +24,12 @@
  * first, only the specific fns are overridden).
  */
 import { test, expect, beforeEach, mock } from "bun:test";
-import { renderHook, act } from "@testing-library/react";
+
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
+
+const { renderHook, act } = await import("@testing-library/react");
 
 
 // ─── Mock fns (captured real modules are spread in to avoid cross-file leak) ─

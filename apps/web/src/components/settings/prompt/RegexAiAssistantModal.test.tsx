@@ -15,11 +15,13 @@
  * transport (requestRegexAssist) and the provider runner are mocked.
  */
 import { beforeAll, afterEach, describe, expect, it, mock } from "bun:test";
-import { render, fireEvent, act, waitFor } from "@testing-library/react";
+
 let userEvent: typeof import("@testing-library/user-event").default;
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, fireEvent, act, waitFor } = await import("@testing-library/react");
 
 // i18n passthrough: keys verbatim, interpolated values appended so counts are
 // assertable (`regexAssistant.removedCount` + the numeric value).

@@ -10,7 +10,7 @@
  * asserted — no HTTP, no other store machinery.
  */
 import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
-import { renderHook, act } from "@testing-library/react";
+
 import type { ExperienceEffectRow } from "@vibe-tavern/db";
 
 import { useDomEnv } from "../../test/dom-env.js";
@@ -18,6 +18,8 @@ import { useExperienceStore } from "../stores/experience-store.js";
 import { useExperienceTimerResync } from "./use-experience-timer-resync.js";
 
 useDomEnv();
+
+const { renderHook, act } = await import("@testing-library/react");
 
 function makeEffect(over: Partial<ExperienceEffectRow> = {}): ExperienceEffectRow {
   return {

@@ -11,12 +11,14 @@
  */
 import { describe, it, expect } from "bun:test";
 import { createElement } from "react";
-import { render } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import { SceneStateView } from "./SceneStateView.js";
 import type { SceneTrackerDsl } from "@vibe-tavern/domain";
 
 useDomEnv();
+
+const { render } = await import("@testing-library/react");
 
 /** Render helper — `as const` on the schema keeps `$type` literals narrow. */
 function r(
