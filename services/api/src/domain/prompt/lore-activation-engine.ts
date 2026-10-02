@@ -1,5 +1,6 @@
 /**
  * Lorebook activation engine — pure function module.
+ * Portions adapted from SillyTavern world-info.js (AGPL-3.0, see NOTICE); modified 2026-09-30.
  *
  * Takes lorebooks with entries, recent messages, activation state, and macro
  * context → returns activated entries + updated activation state.
@@ -12,7 +13,6 @@
  */
 
 // ─── Public types ────────────────────────────────────────────────────────────
-
 import { compileRussianCaseFormsKey, tag } from "@vibe-tavern/domain";
 import type { LoreActivationReason } from "@vibe-tavern/domain";
 
