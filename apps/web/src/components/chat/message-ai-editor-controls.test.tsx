@@ -22,15 +22,19 @@
  * gate and action-bar wiring are the code under test.
  */
 import { describe, test, expect, beforeAll, afterEach, beforeEach, mock } from "bun:test";
+import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 import type { ReactNode } from "react";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useChatStore } from "../../stores/chat-store.js";
 import { useMessageAiEditorStore } from "../../stores/message-ai-editor-store.js";
-import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../app-client.js";
+import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import { brandId, type ChatId, type MessageId, type MessageVariantId } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../test/dom-env.js";
 
-useDomEnv();
+// failOnNetwork: this file used to fire GET /api/tts/{profiles/all,links} and
+// GET /api/regex/resolve-active at the live API port on every test, so the
+// mocks below are load-bearing and a future one must not go missing quietly.
+useDomEnv({ failOnNetwork: true });
 
 const asChatId = (id: string): ChatId => id as ChatId;
 
@@ -61,6 +65,8 @@ const realChatController = await import("../../hooks/use-chat-controller.js");
 const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
 const realTooltip = await import("../shared/Tooltip.js");
+const realVoiceMapData = await import("../../lib/tts/voice-map-data.js");
+const realRegexApi = await import("../../api/regex-api.js");
 mock.module("../../hooks/use-chat-controller.js", () => ({
 	...realChatController,
   useChatController: () => STABLE_CONTROLLER,
@@ -86,6 +92,21 @@ mock.module("../shared/Tooltip.js", () => ({
 	...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => children,
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
+// The narration controls inside a message bubble call useVoiceMapData, whose
+// module-level loader fetches /api/tts/profiles/all + /api/tts/links on mount.
+// Unmocked, that is a real request to the live API port from a unit test.
+mock.module("../../lib/tts/voice-map-data.js", () => ({
+  ...realVoiceMapData,
+  useVoiceMapData: () => ({ data: null, refresh: async () => {} }),
+}));
+
+// MessageBlock resolves the active regex presets for its chat context on
+// mount (GET /api/regex/resolve-active). Same reason: no live API here.
+mock.module("../../api/regex-api.js", () => ({
+  ...realRegexApi,
+  resolveActiveRegexPresets: async () => [],
 }));
 
 let render: typeof import("@testing-library/react").render;
@@ -154,7 +175,7 @@ function seed(messages: AppMessage[], isCoauthorMode: boolean): AppSnapshot {
   return {
     chats: [{ id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp", messageCount: messages.length, updatedAt: "2026-01-01T00:00:00.000Z" }],
     allCharacters: [],
-    activeChat: { id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp" } as unknown as AppSnapshot["activeChat"],
+    activeChat: { id: "chat-1", title: "Chat", characterId: "c1", mode: isCoauthorMode ? "coauthor" : "rp", insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) } as unknown as AppSnapshot["activeChat"],
     activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
     branches: [],
     messages,

@@ -13,7 +13,7 @@
  */
 import { test, expect } from "bun:test";
 import { packMonolith, unpackMonolith } from "@vibe-tavern/db/codecs";
-import type { AppCharacter } from "../app-client.js";
+import type { AppCharacter } from "../api/types.js";
 import { appCharacterToVtfContent } from "./vtf-content.js";
 
 /** Minimal AppCharacter with the fields the projection reads. */

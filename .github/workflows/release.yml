@@ -98,8 +98,15 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
-      - run: bun install --frozen-lockfile
+          bun-version: "1.4.2"
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun run typecheck
       - run: bun run test
 
@@ -112,8 +119,15 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
-      - run: bun install --frozen-lockfile
+          bun-version: "1.4.2"
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun run test
 
   build-linux:
@@ -131,8 +145,15 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
-      - run: bun install --frozen-lockfile
+          bun-version: "1.4.2"
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun scripts/build-linux-dist.ts
       - name: Rename to release name
         run: |
@@ -204,8 +225,15 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
-      - run: bun install --frozen-lockfile
+          bun-version: "1.4.2"
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - run: bun run build:android-native
       - uses: actions/setup-java@v4
         with:
@@ -224,10 +252,13 @@ jobs:
           set -euo pipefail
           APK="mobile/android/app/build/outputs/apk/release/app-release.apk"
           NATIVE_SERVER="$RUNNER_TEMP/libvibetavern.so"
+          SECCOMP_SHIM="$RUNNER_TEMP/libseccompshim.so"
           WEB_INDEX="$RUNNER_TEMP/index.html"
           ! unzip -l "$APK" | grep -q 'assets/vibe-tavern-android-arm64.tgz'
           unzip -p "$APK" lib/arm64-v8a/libvibetavern.so > "$NATIVE_SERVER"
           test -s "$NATIVE_SERVER"
+          unzip -p "$APK" lib/arm64-v8a/libseccompshim.so > "$SECCOMP_SHIM"
+          test -s "$SECCOMP_SHIM"
           unzip -p "$APK" assets/payload/web/index.html > "$WEB_INDEX"
           test -s "$WEB_INDEX"
       - name: Verify APK signature
@@ -265,8 +296,15 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
-      - run: bun install --frozen-lockfile
+          bun-version: "1.4.2"
+      - name: Restore Bun package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile --prefer-offline
       - name: Install Inno Setup
         run: choco install innosetup --no-progress --yes
       - run: bun scripts/build-installer.ts

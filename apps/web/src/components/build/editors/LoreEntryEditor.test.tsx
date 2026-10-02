@@ -13,9 +13,11 @@
  * binding, not the children's rendering.
  */
 import { describe, it, expect, beforeAll, mock } from "bun:test";
+import { wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
 import { useForm, FormProvider, type UseFormReturn } from "react-hook-form";
-import type { LoreEntryRecord } from "../../../app-client.js";
+import type { LoreEntryRecord } from "../../../api/types.js";
+import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
@@ -27,6 +29,13 @@ const realActivationTestPanel = await import("./activation-test-panel.js");
 const realCharacterFilterPicker = await import("./character-filter-picker.js");
 const realLoreKeysAiPill = await import("./lore-keys-ai-pill.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
+
+describe("parseGeneratedLoreKeys", () => {
+  it("accepts only string arrays and ignores case-forms metadata", () => {
+    expect(realLoreKeysAiPill.parseGeneratedLoreKeys('{"keys":["dragon",{"key":"dragon","caseForms":true}],"secondaryKeys":["cave"],"caseFormsKeys":["dragon"]}'))
+      .toEqual({ keys: ["dragon"], secondaryKeys: ["cave"] });
+  });
+});
 
 mock.module("../../../i18n/context.js", () => ({
 	...realI18nContext,
@@ -77,6 +86,7 @@ beforeAll(async () => {
 
 function makeEntry(overrides: Partial<LoreEntryRecord> = {}): LoreEntryRecord {
   return {
+    ...wireLoreEntry(),
     id: "e1",
     lorebookId: "lb1",
     title: "Goblin",
@@ -89,7 +99,7 @@ function makeEntry(overrides: Partial<LoreEntryRecord> = {}): LoreEntryRecord {
     priority: 0,
     stickyWindow: 0,
     cooldownWindow: 0,
-    delayWindow: 0,
+    minChatMessages: 0,
     enabled: true,
     constant: false,
     probability: 100,
@@ -118,11 +128,11 @@ function renderEditor(entry: LoreEntryRecord) {
   // useForm is a hook — it must run inside a component. The harness creates
   // the form, provides it, and captures it via a holder so the test can read
   // getValues / formState after render.
-  const formHolder: { current: UseFormReturn<LoreEntryRecord> | null } = {
+  const formHolder: { current: UseFormReturn<LoreEntryDraft> | null } = {
     current: null,
   };
   function Harness() {
-    const form = useForm<LoreEntryRecord>({ defaultValues: entry });
+    const form = useForm<LoreEntryDraft>({ defaultValues: entry });
     formHolder.current = form;
     // RHF's formState is a proxy that only tracks/updates properties accessed
     // during render. Read isDirty here so the post-change assertion sees the
@@ -145,6 +155,23 @@ function renderEditor(entry: LoreEntryRecord) {
   }
   const result = render(<Harness />);
   return { form: formHolder.current!, ...result };
+}
+
+// Several tri-state SegmentedControls (case / whole-words / group scoring)
+// render identical option captions ("lore_tri_*"), so a plain
+// getByText(caption) is ambiguous. Scope the click to the control whose
+// FieldLabel is given: captions are looked up inside that control's wrapper.
+async function clickSegment(
+  getByText: (text: string) => HTMLElement,
+  labelText: string,
+  caption: string,
+): Promise<void> {
+  const scope = getByText(labelText).closest("div") as HTMLElement;
+  const target = [...scope.querySelectorAll("*")].find(
+    (el) => el.textContent === caption && el.children.length === 0,
+  );
+  if (!target) throw new Error(`segment "${caption}" not found near "${labelText}"`);
+  await userEvent.setup().click(target as HTMLElement);
 }
 
 describe("LoreEntryEditor (RHF field binding)", () => {
@@ -182,15 +209,43 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     fireEvent.click(getByText(/lore_advanced_settings/)); // open advanced
     // Inherit is the default for null — clicking through the cycle writes
     // true / false / null back into the form (the DB boundary is boolean|null).
-    await userEvent.setup().click(getByText("lore_group_scoring_on"));
+    await clickSegment(getByText, "lore_use_group_scoring", "lore_tri_on");
     expect(form.getValues("useGroupScoring")).toBe(true);
     expect(form.formState.isDirty).toBe(true); // null → true is a real change
-    await userEvent.setup().click(getByText("lore_group_scoring_off"));
+    await clickSegment(getByText, "lore_use_group_scoring", "lore_tri_off");
     expect(form.getValues("useGroupScoring")).toBe(false);
     // Cycling back to null returns to defaultValues — RHF rightly sees the
     // form as clean again (the DB write already happened via the autosave).
-    await userEvent.setup().click(getByText("lore_group_scoring_inherit"));
+    await clickSegment(getByText, "lore_use_group_scoring", "lore_tri_inherit");
     expect(form.getValues("useGroupScoring")).toBe(null);
+  });
+
+  it("matching flags are tri-state: inherit ↔ on ↔ off binds to the form (D2)", async () => {
+    const { form, getByText } = renderEditor(makeEntry({ caseSensitive: null, matchWholeWords: null }));
+    // The controls live in the always-visible activation-flags row.
+    await clickSegment(getByText, "lore_case_sensitive", "lore_tri_on");
+    expect(form.getValues("caseSensitive")).toBe(true);
+    await clickSegment(getByText, "lore_case_sensitive", "lore_tri_off");
+    expect(form.getValues("caseSensitive")).toBe(false);
+    await clickSegment(getByText, "lore_case_sensitive", "lore_tri_inherit");
+    expect(form.getValues("caseSensitive")).toBe(null);
+    expect(form.getValues("matchWholeWords")).toBe(null); // untouched sibling
+  });
+
+  it("derives match-source chips from their scanned fields and keeps the final source selected", () => {
+    const { form, getByText } = renderEditor(makeEntry({ matchSources: ["chat_messages"] }));
+    fireEvent.click(getByText(/lore_advanced_settings/));
+    expect(getByText("match_src_chat_messages")).toBeTruthy();
+    expect(getByText("char_desc_label")).toBeTruthy();
+    expect(getByText("char_personality_label")).toBeTruthy();
+    expect(getByText("character_depth_prompt")).toBeTruthy();
+    expect(getByText("persona_desc_placeholder")).toBeTruthy();
+    expect(getByText("scenario")).toBeTruthy();
+    expect(getByText("creator_notes")).toBeTruthy();
+    expect(getByText("authors_note_label")).toBeTruthy();
+    expect(getByText("memory_tab_summary")).toBeTruthy();
+    fireEvent.click(getByText("match_src_chat_messages"));
+    expect(form.getValues("matchSources")).toEqual(["chat_messages"]);
   });
 
   it("constant checkbox binds via ControlledField", () => {
@@ -220,5 +275,17 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     await userEvent.setup().type(keysInput, "ghost{Enter}");
     expect(form.getValues("keys")).toEqual(["goblin", "ghost"]);
     expect(form.formState.isDirty).toBe(true);
+  });
+
+  it("renders a case-forms chip on each key and toggles its persisted flag", () => {
+    const { form, getByRole } = renderEditor(makeEntry({ keys: ["dragon"], caseFormsKeys: [] }));
+    const caseForms = getByRole("checkbox", { name: "lore_case_forms" });
+    expect(caseForms.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(caseForms);
+    expect(form.getValues("caseFormsKeys")).toEqual(["dragon"]);
+    expect(caseForms.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(getByRole("button", { name: "remove_aria" }));
+    expect(form.getValues("keys")).toEqual([]);
+    expect(form.getValues("caseFormsKeys")).toEqual([]);
   });
 });

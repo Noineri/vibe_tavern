@@ -1,8 +1,9 @@
-import { brandId, type ChatId, type ChatBranchId, type MessageId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
-import type { LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord, DiceRollSnapshot } from "@vibe-tavern/domain";
+import { brandId, type CharacterId, type ChatId, type ChatBranchId, type MessageId, type PersonaId, type PromptPresetId, type PromptTraceRecordDto, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import type { ChatBranch, LoreEntry, Message, MessageVariant, Attachment, SceneTrackerRecord, DiceRollSnapshot } from "@vibe-tavern/domain";
 import { parseStoredAttachments } from "@vibe-tavern/domain";
-import type { PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
+import type { Chat as DbChat, ChatBranch as DbChatBranch, PromptTrace as DbPromptTrace, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
 import type {
+	ChatDto,
 	ClientProviderProfileRecord,
 	CachedProviderModelsRecord,
 	FavoriteProviderModelRecord,
@@ -35,6 +36,14 @@ export interface MessageDto extends Message {
   coauthorModuleId?: string | null;
   coauthorSkillId?: string | null;
   attachments?: Attachment[];
+  /** IG-CF10b: the message ROW's own attachment set, sent ONLY when the
+   *  selected-variant projection hides it (an image slot with a
+   *  variant-level set active). The client's optimistic swipe back to the
+   *  slot's base variant (null attachments) reads this instead of keeping
+   *  the previous variant's image on screen (owner defect 2026-09-29:
+   *  identical content on swipes 1 and 2 in the Karl test chat). Absent
+   *  otherwise — never a duplicate of `attachments`. */
+  messageLevelAttachments?: Attachment[];
   /** Message-bound Dice results (user messages only; absent on assistant
    *  messages and on user messages with no bound rolls). The immutable
    *  snapshot the message-meta badge and historical rendering read — never
@@ -66,6 +75,43 @@ export function mapPromptTraceRecord(trace: DbPromptTrace): PromptTraceRecordDto
   };
 }
 
+/** Store chat → wire chat. The store's server-internal JSON columns (lore activation, script state) stay on the server. */
+export function mapChatDto(chat: DbChat): ChatDto {
+  return {
+    id: brandId<ChatId>(chat.id),
+    characterId: brandId<CharacterId>(chat.characterId),
+    personaId: chat.personaId === null ? null : brandId<PersonaId>(chat.personaId),
+    title: chat.title,
+    summary: chat.summary,
+    messageHistoryLimit: chat.messageHistoryLimit,
+    autoSummaryConfig: chat.autoSummaryConfig,
+    insightsConfig: chat.insightsConfig,
+    insightsObjectiveState: chat.insightsObjectiveState,
+    status: chat.status,
+    mode: chat.mode,
+    selectedGreetingIndex: chat.selectedGreetingIndex,
+    activeBranchId: brandId<ChatBranchId>(chat.activeBranchId),
+    promptPresetId: chat.promptPresetId === null ? null : brandId<PromptPresetId>(chat.promptPresetId),
+    coauthorContextLinks: chat.coauthorContextLinks,
+    coauthorModuleId: chat.coauthorModuleId,
+    dynamicPrompt: chat.dynamicPrompt,
+    createdAt: chat.createdAt,
+    updatedAt: chat.updatedAt,
+  };
+}
+
+export function mapChatBranch(branch: DbChatBranch): ChatBranch {
+  return {
+    id: brandId<ChatBranchId>(branch.id),
+    chatId: brandId<ChatId>(branch.chatId),
+    parentBranchId: branch.parentBranchId === null ? null : brandId<ChatBranchId>(branch.parentBranchId),
+    forkedFromMessageId: branch.forkedFromMessageId === null ? null : brandId<MessageId>(branch.forkedFromMessageId),
+    label: branch.label,
+    createdAt: branch.createdAt,
+    ...(branch.messageCount === undefined ? {} : { messageCount: branch.messageCount }),
+  };
+}
+
 export function mapMessageDto(message: Message, variants: MessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto;
 export function mapMessageDto(message: DbMessage, variants: DbMessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto;
 export function mapMessageDto(message: Message | DbMessage, variants: MessageVariant[] | DbMessageVariant[], diceRolls?: DiceRollSnapshot[]): MessageDto {
@@ -75,7 +121,21 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
   // typed array keeps `selectedVariant.sceneTracker` correctly typed.
   const domainVariants = variants as MessageVariant[];
   const selectedVariant = domainVariants.find((variant) => variant.isSelected) ?? null;
-  const attachments = parseStoredAttachments('attachmentsJson' in message ? message.attachmentsJson : null);
+  // IG-18a merge point: an image-gen slot's variants carry their own
+  // attachments (regenerate-as-variant); the selected variant's set
+  // overrides the message row's. Null variant attachments (every text
+  // variant, and slot variant 0 for legacy slots) fall through to the
+  // message's attachmentsJson — bit-identical legacy projection.
+  const attachments = parseStoredAttachments(
+    selectedVariant?.attachmentsJson ?? ('attachmentsJson' in message ? message.attachmentsJson : null) ?? null,
+  );
+  // IG-CF10b: expose the row set when (and only when) the merge above hides
+  // it behind a variant-level set. On text messages and base-variant-selected
+  // slots `attachments` already IS the row set — no duplication on the wire.
+  const rowAttachments = parseStoredAttachments(
+    'attachmentsJson' in message ? message.attachmentsJson : null,
+  );
+  const rowSetHidden = selectedVariant?.attachmentsJson != null && rowAttachments != null;
   return {
     id: message.id as MessageId,
     chatId: message.chatId as ChatId,
@@ -94,6 +154,7 @@ export function mapMessageDto(message: Message | DbMessage, variants: MessageVar
     variants: domainVariants,
     selectedVariantIndex: selectedVariant?.variantIndex ?? null,
     ...(attachments ? { attachments } : {}),
+    ...(rowSetHidden ? { messageLevelAttachments: rowAttachments } : {}),
     ...(diceRolls && diceRolls.length > 0 ? { diceRolls } : {}),
   } satisfies MessageDto;
 }

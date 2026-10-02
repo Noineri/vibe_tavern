@@ -12,8 +12,8 @@ export class AiAssistantAdapter implements AiAssistantRuntimeApi {
 		private readonly sessionRuntime: SessionRuntime,
 	) {}
 
-	streamAiAssistant = async function* (this: AiAssistantAdapter, body: AiAssistantStreamRequest) {
-		yield* streamAiAssistant(body, createAiAssistantDeps(this.stores, this.sessionRuntime));
+	streamAiAssistant = async function* (this: AiAssistantAdapter, body: AiAssistantStreamRequest, signal?: AbortSignal) {
+		yield* streamAiAssistant(body, createAiAssistantDeps(this.stores, this.sessionRuntime), signal);
 	};
 
 	countAiAssistantTokens = (body: AiAssistantStreamRequest) =>

@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { cn } from "../../lib/cn.js";
+import { useT } from "../../i18n/context.js";
 import { Ic } from "./icons.js";
 import { getModalPortal } from "./modal-helpers.js";
 
@@ -78,8 +79,8 @@ export function DropdownSelect({
   value,
   options,
   groups,
-  placeholder = "Select…",
-  searchPlaceholder = "Search…",
+  placeholder,
+  searchPlaceholder,
   defaultOption,
   onChange,
   className,
@@ -92,6 +93,7 @@ export function DropdownSelect({
   side = "bottom",
   contentWidth,
 }: DropdownSelectProps) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const commandRef = useRef<HTMLDivElement>(null);
@@ -110,7 +112,13 @@ export function DropdownSelect({
   const [portalSession, setPortalSession] = useState<{ container: HTMLElement | null } | null>(null);
 
   const selected = (groups ? groups.flatMap((g) => g.options) : options).find((o) => o.id === value);
-  const display = selected?.label || value || placeholder;
+  // Empty value: a caller's own placeholder wins (sites that pass both a
+  // prompt like «Choose a script…» and a «None» row show the prompt); without
+  // one, the empty value IS the default choice — name it like the list's
+  // empty-id row does. The last resort is translated, never a hardcoded
+  // English default in a RU UI.
+  const display =
+    selected?.label || value || placeholder || defaultOption || t("dropdown_select_placeholder");
 
   const matches = (o: DropdownOption) =>
     // ReactNode labels have no searchable text — keep them visible rather
@@ -258,7 +266,7 @@ export function DropdownSelect({
             {searchable && (
               <div className="border-b border-border2 bg-s2 p-2">
                 <Command.Input
-                  placeholder={searchPlaceholder}
+                  placeholder={searchPlaceholder ?? t("dropdown_search_placeholder")}
                   value={search}
                   onValueChange={setSearch}
                   className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent"

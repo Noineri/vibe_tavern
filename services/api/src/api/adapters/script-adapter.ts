@@ -1,5 +1,6 @@
 import type { ScriptRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer, ExperienceVisualRow } from "@vibe-tavern/db";
+import type { ScriptKind } from "@vibe-tavern/domain";
 import { testScript, parseScriptImport } from "../../domain/scripts-engine/script-test-service.js";
 import { BUILTIN_EXPERIENCE_CATALOG } from "../../domain/interactive/builtin-experiences/index.js";
 
@@ -13,7 +14,7 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 	getScript = (scriptId: string) =>
 		this.stores.scripts.getById(scriptId);
 
-	createScript = (body: { name: string; description?: string; code?: string; scriptKind?: string; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) =>
+	createScript = (body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) =>
 		this.stores.scripts.create({
 			...body,
 			// Interactive rules are trusted executable code. Publicly authored
@@ -59,7 +60,7 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		return testScript(this.stores, { scriptId, ...rest, persona });
 	};
 
-	importScript = async (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => {
+	importScript = async (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => {
 		const { name, code } = parseScriptImport(body);
 		return this.stores.scripts.create({
 			name,

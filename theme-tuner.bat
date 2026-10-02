@@ -13,17 +13,22 @@ cd /d "%~dp0"
 echo Starting Vibe Tavern dev server (this takes a few seconds)...
 title Theme Tuner - dev server
 
-rem Free port 4173 if a stale tuner dev-server still holds it. Closing the
-rem dev-server window does NOT reliably kill bun's child server process on
-rem Windows (the close signal doesn't propagate to the detached Bun.serve
-rem process), so a previous run can orphan and keep the port. Kill it here so
-rem every launch is self-healing.
+rem Free port 4173 if a stale tuner dev-server still holds it. `--no-orphans`
+rem below makes bun exit when its parent window dies and kill its own
+rem descendants, which is measured to fix exactly this on POSIX; the Windows
+rem close-signal path is unverified, so this netstat/taskkill sweep stays as
+rem insurance and every launch remains self-healing.
 for /f "tokens=5" %%P in ('netstat -ano ^| findstr ":4173.*LISTENING"') do (
   taskkill /PID %%P /F >nul 2>&1
 )
 
-rem Launch dev:web in its own window so it keeps running after this script exits.
-start "Theme Tuner - dev server" cmd /k "bun run dev:web"
+rem Launch dev:web in its own window so it keeps running after this script
+rem exits. VIBE_TAVERN_OPEN_BROWSER=0 suppresses the dev server's own opener:
+rem this script opens the browser itself at the #theme-tuner hash below (the
+rem server's plain URL was a second, unwanted tab), and it keeps the browser
+rem out of the bun subtree that --no-orphans is allowed to kill.
+set "VIBE_TAVERN_OPEN_BROWSER=0"
+start "Theme Tuner - dev server" cmd /k "bun --no-orphans run dev:web"
 
 rem Give the dev server time to boot before opening the browser.
 timeout /t 5 /nobreak >nul

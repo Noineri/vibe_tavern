@@ -128,7 +128,9 @@ export function buildLoreLayers(input: {
       text: text.trim(),
       ...(loreEntry.role ? { role: loreEntry.role as "system" | "user" | "assistant" } : {}),
       ...(subPosition != null ? { subPosition } : {}),
-      ...(loreEntry.sortOrder != null ? { insertionOrder: loreEntry.sortOrder } : {}),
+      ...(loreEntry.insertionOrder != null
+        ? { insertionOrder: loreEntry.insertionOrder }
+        : loreEntry.sortOrder != null ? { insertionOrder: loreEntry.sortOrder } : {}),
     };
 
     if (worldInfoIdentifier) {

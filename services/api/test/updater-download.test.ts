@@ -3,11 +3,12 @@
  * mock release server.
  *
  * The unit half pins that the digest computed during the download equals a
- * digest taken over the same bytes, and that progress reporting kept its
- * shape. The pipeline half is the automated version of the plan's manual
- * verification checklist: happy path, corrupted archive, and a server that
- * dies mid-download — the last two must leave the install untouched and
- * surface as SOFT failures.
+ * digest taken over the same bytes, that progress reporting kept its shape,
+ * and that the bytes reach disk while the response is still open rather than
+ * being buffered whole. The pipeline half is the automated version of the
+ * plan's manual verification checklist: happy path, corrupted archive, and a
+ * server that dies mid-download — the last two must leave the install
+ * untouched and surface as SOFT failures.
  */
 
 import { createHash } from "node:crypto";
@@ -254,6 +255,69 @@ describe("downloadToPathWithProgress", () => {
 			downloadToPathWithProgress(`http://127.0.0.1:${server.port}/x`, join(root, "r.bin")),
 		).rejects.toThrow(/Download failed: HTTP 404/);
 	});
+
+	it("commits bytes to disk before the server has finished sending the body", async () => {
+		// The old implementation kept every chunk in an array, allocated a
+		// second full-size copy to concatenate them for `Bun.write`, and only
+		// then read the whole file back to hash it. Whether it buffers is
+		// observable without measuring memory: a buffering downloader writes
+		// nothing until the response has ended, so the fixture asks the
+		// filesystem what is already committed at the moment it is about to
+		// produce the last chunk.
+		//
+		// Neither side may hold the payload, or the fixture would be what is
+		// under test: the body is generated chunk-by-chunk on the fly and the
+		// expected digest accumulates over the same chunks without retaining
+		// them.
+		const CHUNK = 64 * 1024;
+		const CHUNKS = 512; // 32 MB — far past anything fetch buffers internally.
+		const dest = join(root, "streamed.bin");
+		const chunkAt = (i: number): Uint8Array => {
+			const c = new Uint8Array(CHUNK);
+			// Cheap non-constant filler so the bytes are not trivially uniform.
+			for (let j = 0; j < CHUNK; j += 977) c[j] = (i * 31 + j) & 0xff;
+			return c;
+		};
+
+		let bytesOnDiskBeforeLastChunk = -1;
+		const server = Bun.serve({
+			port: 0,
+			fetch: () => {
+				let next = 0;
+				return new Response(new ReadableStream<Uint8Array>({
+					// `pull` and not `start`: a `start` producer enqueues the
+					// whole body ahead of the socket, so the client could be
+					// arbitrarily far behind the fixture's own backlog. `pull`
+					// is driven by the response draining, like a real server.
+					async pull(controller) {
+						if (next === CHUNKS - 1) {
+							bytesOnDiskBeforeLastChunk = await stat(dest).then((s) => s.size, () => 0);
+						}
+						if (next >= CHUNKS) {
+							controller.close();
+							return;
+						}
+						controller.enqueue(chunkAt(next++));
+					},
+				}));
+			},
+		});
+		servers.push(server);
+
+		const expected = createHash("sha256");
+		for (let i = 0; i < CHUNKS; i++) expected.update(chunkAt(i));
+
+		const outcome = await downloadToPathWithProgress(`http://127.0.0.1:${server.port}/big.bin`, dest);
+
+		const payloadSize = CHUNK * CHUNKS;
+		expect(outcome.bytes).toBe(payloadSize);
+		expect(outcome.sha256).toBe(expected.digest("hex"));
+		expect((await stat(dest)).size).toBe(payloadSize);
+		// The pin: most of the archive was already on disk while the server
+		// still owed the client a chunk. A buffer-everything downloader
+		// reports 0 here — the file does not exist yet.
+		expect(bytesOnDiskBeforeLastChunk).toBeGreaterThan(payloadSize / 2);
+	});
 });
 
 // ─── full pipeline ──────────────────────────────────────────────────────────
@@ -383,109 +447,5 @@ describe("downloadAndSwap against a mock release server", () => {
 		expect(err).toBeInstanceOf(SoftUpdateError);
 		expect(err instanceof Error ? err.message : "").toMatch(/No checksum entry/);
 		expect(await readFile(join(installDir, binaryName), "utf8")).toBe("BINARY v1.0.0");
-	});
-
-	it("streams a 128 MB body to disk with memory growth unrelated to its size", async () => {
-		// The old implementation kept every chunk in an array, allocated a
-		// second full-size copy to concatenate them, and then read the whole
-		// file back to hash it — roughly 3x the artifact resident at once.
-		//
-		// Neither the server nor the test may hold the payload, or the
-		// measurement would be of the fixture rather than the downloader: the
-		// body is generated chunk-by-chunk on the fly, and the expected digest
-		// is accumulated over the same chunks without retaining them.
-		//
-		// A warm-up pass runs first because the very first download in a
-		// process pays one-time allocations that dwarf the steady-state cost
-		// (measured: 67 MB payload cold -> 62 MB RSS growth; 201 MB payload
-		// warm -> 17 MB). Measuring cold would test JIT warmup, not buffering.
-		const CHUNK = 64 * 1024;
-		const chunkAt = (i: number): Uint8Array => {
-			const c = new Uint8Array(CHUNK);
-			// Cheap non-constant filler so the bytes are not trivially uniform.
-			for (let j = 0; j < CHUNK; j += 977) c[j] = (i * 31 + j) & 0xff;
-			return c;
-		};
-
-		// `pull` and not `start`: a `start` producer enqueues the entire body
-		// ahead of the socket, so the fixture's own backlog — not the
-		// downloader — dominates RSS. On Bun 1.4 that backlog stays resident
-		// (measured in-process: ~195 MB growth for this 128 MB payload, versus
-		// ~33 MB when the same download runs against an out-of-process server).
-		// `pull` is called only as the response stream drains, which is also
-		// what a real HTTP server does.
-		const serveChunks = (count: number) =>
-			Bun.serve({
-				port: 0,
-				fetch: () => {
-					let next = 0;
-					return new Response(new ReadableStream<Uint8Array>({
-						pull(controller) {
-							if (next >= count) {
-								controller.close();
-								return;
-							}
-							controller.enqueue(chunkAt(next++));
-						},
-					}));
-				},
-			});
-
-		const warmup = serveChunks(256);
-		servers.push(warmup);
-		await downloadToPathWithProgress(`http://127.0.0.1:${warmup.port}/w.bin`, join(root, "warm.bin"));
-
-		const CHUNKS = 2048; // 128 MB
-		const expected = createHash("sha256");
-		for (let i = 0; i < CHUNKS; i++) expected.update(chunkAt(i));
-		const expectedDigest = expected.digest("hex");
-
-		const server = serveChunks(CHUNKS);
-		servers.push(server);
-
-		Bun.gc(true);
-		const before = process.memoryUsage().rss;
-		let peak = before;
-		const timer = setInterval(() => {
-			peak = Math.max(peak, process.memoryUsage().rss);
-		}, 5);
-
-		const outcome = await downloadToPathWithProgress(
-			`http://127.0.0.1:${server.port}/big.bin`,
-			join(root, "big.bin"),
-		);
-		clearInterval(timer);
-
-		const payloadSize = CHUNK * CHUNKS;
-		expect(outcome.bytes).toBe(payloadSize);
-		expect(outcome.sha256).toBe(expectedDigest);
-		expect((await stat(join(root, "big.bin"))).size).toBe(payloadSize);
-		// The old buffer-everything path needed >2x the payload here; the budget
-		// below (see the inline note) still fails loudly on such a regression.
-		//
-		// RSS is only a usable proxy for that on Linux. Windows reports the
-		// process working set, which counts the file-cache pages backing the
-		// 128 MB we just wrote to disk — measured 302 MB for this payload on a
-		// streaming implementation that is behaving correctly. Asserting a
-		// threshold there would be measuring the OS page cache, not the
-		// downloader. The rest of the test — that 128 MB streams to disk and
-		// hashes correctly in one pass — runs on both platforms.
-		if (process.platform !== "win32") {
-			// Half the payload still fails loudly on a buffer-everything regression:
-			// measured on Bun 1.4 with this backpressured fixture, reading the body
-			// through `arrayBuffer()` instead of streaming costs 140 MB on a 64 MB
-			// payload and 259 MB on a 128 MB one — both well over payload/2.
-			//
-			// Streaming stays flat instead of tracking the payload. Measured here
-			// after the warm-up pass: 9.8-12.4 MB across five consecutive runs. In a
-			// cold process without the warm-up the same download costs 31 MB at
-			// 64 MB, 37 MB at 128 MB and 41 MB at 256 MB — it plateaus rather than
-			// scaling, which is the property this test exists to pin.
-			//
-			// Bun 1.4's fetch response stream does hold more than 1.3.14 did (4-6 MB
-			// for the same cold download against an out-of-process server), but the
-			// amount is bounded and independent of the archive size.
-			expect(peak - before).toBeLessThan(payloadSize / 2);
-		}
 	});
 });

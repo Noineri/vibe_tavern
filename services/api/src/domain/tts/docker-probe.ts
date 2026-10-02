@@ -22,23 +22,25 @@ export type DockerVersionRunner = () => Promise<string | null>;
 export const DOCKER_PROBE_TIMEOUT_MS = 3000;
 
 async function runDockerVersion(): Promise<string | null> {
+	// The deadline is Bun.spawn's own, with SIGKILL: measured on Bun 1.4.2 the
+	// default SIGTERM is sent once and never escalated, so a wedged `docker`
+	// that ignores it would keep `proc.exited` pending forever — the exact
+	// hang this probe exists to bound.
 	const proc = Bun.spawn(["docker", "--version"], {
 		stdout: "pipe",
 		stderr: "pipe",
 		stdin: "ignore",
+		timeout: DOCKER_PROBE_TIMEOUT_MS,
+		killSignal: "SIGKILL",
 	});
-	const stdout = new Response(proc.stdout).text();
-	const timer = new Promise<"timeout">((resolve) => {
-		setTimeout(() => resolve("timeout"), DOCKER_PROBE_TIMEOUT_MS).unref();
-	});
-	const exit = await Promise.race([proc.exited, timer]);
-	if (exit === "timeout") {
-		proc.kill();
-		return null;
-	}
-	const code = typeof exit === "number" ? exit : 1;
-	if (code !== 0) return null;
-	const text = (await stdout).trim();
+	const [stdout, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		proc.exited,
+	]);
+	// A signal means the deadline fired; a killed `docker` says nothing about
+	// availability, so it degrades to "not available" like any other failure.
+	if (proc.signalCode !== null || exitCode !== 0) return null;
+	const text = stdout.trim();
 	return text.length > 0 ? text : null;
 }
 

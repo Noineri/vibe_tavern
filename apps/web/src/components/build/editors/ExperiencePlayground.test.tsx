@@ -36,6 +36,7 @@
  * mirrors ExperienceFrame.test.tsx (happy-dom must not navigate the iframe).
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ChangeEvent, ReactNode } from "react";
 import type { ExperienceSetupFieldDto } from "@vibe-tavern/api-contracts";
 import type { RenderResult } from "@testing-library/react";
@@ -63,6 +64,7 @@ const SEAM_CODE = "context.experience.register({ apiVersion: 1, manifest: { id: 
 const VISUAL_SOURCE = "<div id=\"game\">hello</div>\n<script>document.getElementById('game').textContent='v';</script>";
 
 const seamScript: ScriptRecord = {
+  ...wireScript(),
   id: "srv_seam",
   name: "Seam Rules",
   description: "",
@@ -207,7 +209,8 @@ function makeTestRunData(): ExperienceTestRunData {
           effects: [],
           console: [],
           steps: [],
-  } as ExperienceTestRunData;
+          seatLegality: { seats: [], turnOwners: [] },
+  };
 }
 
 /** XU-4: a create-only discover result (the absorbed tester's run shape): a
@@ -238,6 +241,7 @@ function makeDiscoverData(overrides: Partial<ExperienceTestRunData> = {}): Exper
     effects: [],
     console: [],
     steps: [],
+    seatLegality: { seats: [], turnOwners: [] },
     ...overrides,
   };
 }
@@ -772,6 +776,7 @@ describe("ExperiencePlayground", () => {
       effects: [],
       console: [],
       steps: [],
+      seatLegality: { seats: [], turnOwners: [] },
     }));
 
     // Start: initial state with reply + finish actions.
@@ -938,6 +943,7 @@ describe("ExperiencePlayground", () => {
       effects: [],
       console: [],
       steps: [],
+      seatLegality: { seats: [], turnOwners: [] },
     }));
 
     const { getByText, container } = renderPlayground(VALID_CODE);
@@ -1630,10 +1636,15 @@ describe("ExperiencePlayground — post-game strip (LB-6)", () => {
     fireEvent.click(utils.getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
 
-    expect(utils.queryByTestId("playground-postgame-strip")).toBeNull();
-    // The pre-existing header controls are still there (unchanged by LB-6).
-    expect(utils.getByText("experience_playground_restart")).toBeTruthy();
+    // Park on the post-start frame before asserting: the callCount wait above
+    // resolves at mock invocation, BEFORE the resolved start applies `session`,
+    // and the header buttons only render once session !== null (transient-frame
+    // race — CI flake 2026-09-13). Once restart is on screen, the same commit
+    // carries the reset button, and the strip absence is then meaningful
+    // (in the transient frame it was vacuously null).
+    expect(await utils.findByText("experience_playground_restart")).toBeTruthy();
     expect(utils.getByText("experience_playground_reset")).toBeTruthy();
+    expect(utils.queryByTestId("playground-postgame-strip")).toBeNull();
   });
 
   it("play-again: restarts with the SAME config and a fresh seed, landing on a live run", async () => {
@@ -1646,7 +1657,9 @@ describe("ExperiencePlayground — post-game strip (LB-6)", () => {
     fireEvent.click(utils.getByText("experience_playground_start"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(utils.getByText("experience_restart_play_again"));
+    // The strip renders only after the completed start lands (same
+    // transient-frame race as the "active" test above) — park before clicking.
+    fireEvent.click(await utils.findByText("experience_restart_play_again"));
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(2));
 
     type StartCall = {
@@ -1774,6 +1787,7 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
       effects: [],
       console: [],
       steps: [],
+      seatLegality: { seats: [], turnOwners: [] },
     };
   }
 

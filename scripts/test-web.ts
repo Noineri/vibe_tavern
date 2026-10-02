@@ -249,13 +249,17 @@ export function failingFiles(report: string): ReadonlyMap<string, FailingFile> {
 }
 
 /**
- * Bun 1.4.0 with `--parallel=N` + `--reporter=junit` can CROSS-ATTRIBUTE a
- * JUnit entry: the testcase NAME comes from one worker's file while the
- * failure MESSAGE (and its stack frame) comes from another (observed on PR #39,
- * runs 34664917488 / 34665657469 / 34668434046: gallery-api.test.ts entries
- * whose messages point into TtsProfileEditor/experience-sdk-diag — a chase
- * that cost four CI cycles before the pattern was named). bun's on-screen
- * tally is correct; the JUnit file path is not. When the failing message's
+ * `bun test --parallel=N` + `--reporter=junit` can CROSS-ATTRIBUTE a JUnit
+ * entry: the testcase NAME comes from one worker's file while the failure
+ * MESSAGE (and its stack frame) comes from another. Observed on Bun 1.4.0 (PR
+ * #39, runs 34664917488 / 34665657469 / 34668434046: gallery-api.test.ts
+ * entries whose messages point into TtsProfileEditor/experience-sdk-diag — a
+ * chase that cost four CI cycles before the pattern was named). The pin has
+ * since moved to 1.4.2 and it has not recurred, but nothing in the 1.4.1/1.4.2
+ * changelogs claims a fix and the failure is intermittent, so this stays: it is
+ * a diagnostic, not a workaround, and it costs nothing when the report is sane.
+ * bun's on-screen tally is correct; the JUnit file path is not. When the failing
+ * message's
  * first stack frame names a DIFFERENT test file than the JUnit `file=`
  * attribute, say so in the summary line — the stack is the thing to trust.
  */

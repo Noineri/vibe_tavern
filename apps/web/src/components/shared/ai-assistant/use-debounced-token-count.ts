@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { countAiAssistantTokens, type AiAssistantRequestBody } from "../../../app-client.js";
+import { countAiAssistantTokens } from "../../../api/ai-assistant-api.js";
+import type { AiAssistantRequestBody } from "../../../api/types.js";
 
 export interface AiTokenCount {
   tokens: number;

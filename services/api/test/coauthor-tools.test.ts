@@ -362,6 +362,44 @@ describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
       ctx,
     )).rejects.toThrow(/missing canonical profile context/);
   });
+
+  // COAUTHOR_EXAMPLES_EDIT_REPORT: the model anchored `search` on the bare
+  // `# EXAMPLES` heading of an empty section, got a generic "not found", and
+  // fell back to a whole-profile write_profile. The rejection must name the
+  // section write tool so the model self-corrects instead.
+  test("edit on an EMPTY section rejects and names the section write tool", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ mesExample: null }) });
+    await expect(tools.edit_examples.execute(
+      { edits: [{ search: "# EXAMPLES", replace: "# EXAMPLES\n<START>\n{{char}}: Hi." }], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/EXAMPLES section is empty.*write_examples/);
+  });
+
+  test("edit on an empty SCENARIO names write_scenario", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ scenario: null }) });
+    await expect(tools.edit_scenario.execute(
+      { edits: [{ search: "", replace: "A scene." }], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/SCENARIO section is empty.*write_scenario/);
+  });
+
+  test("empty-section rejection omits the write-tool hint when the module does not enable it", async () => {
+    const tools = buildCoauthorTools({ toolSet: { edit_examples: true }, profileMd: sampleProfileMd({ mesExample: null }) });
+    let message = "";
+    await tools.edit_examples.execute({ edits: [{ search: "# EXAMPLES", replace: "x" }], summary: "x" }, ctx).catch((err: Error) => {
+      message = err.message;
+    });
+    expect(message).toContain("EXAMPLES section is empty");
+    expect(message).not.toContain("write_examples");
+  });
+
+  test("a search that includes the section heading on a NON-empty section explains the heading is not part of the body", async () => {
+    const tools = buildCoauthorTools({ profileMd: sampleProfileMd({ mesExample: "Line one." }) });
+    await expect(tools.edit_examples.execute(
+      { edits: [{ search: "# EXAMPLES\nLine one.", replace: "# EXAMPLES\nLine one.\nLine two." }], summary: "x" },
+      ctx,
+    )).rejects.toThrow(/heading.*not part of the section body/);
+  });
 });
 
 describe("coauthor-tools: write_* whole-section writes (CED-2)", () => {

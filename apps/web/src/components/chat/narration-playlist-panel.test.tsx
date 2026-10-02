@@ -182,10 +182,12 @@ mock.module("../../lib/platform.js", () => ({
 
 let NarrationPlaylistPanel: typeof import("./NarrationPlaylistPanel.js").NarrationPlaylistPanel;
 let isFetchIncomplete: typeof import("./NarrationPlaylist.js").isFetchIncomplete;
+let scrollPlaylistListToMessage: typeof import("./NarrationPlaylist.js").scrollPlaylistListToMessage;
 beforeAll(async () => {
   ({ fireEvent, render, waitFor, act } = await import("@testing-library/react"));
   ({ NarrationPlaylistPanel } = await import("./NarrationPlaylistPanel.js"));
   ({ isFetchIncomplete } = await import("./NarrationPlaylist.js"));
+  ({ scrollPlaylistListToMessage } = await import("./NarrationPlaylist.js"));
 });
 
 function memoryCache(): NarrationSegmentCache & { size: () => number } {
@@ -2583,6 +2585,7 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
         });
       }
     };
+
     return {
       calls,
       cardScrollsInList,
@@ -2592,6 +2595,58 @@ describe("narration playlist advance auto-scroll (RD-7)", () => {
       },
     };
   }
+
+  it("scroll scheduled in one frame re-queries the card at paint time — a remount between the two never scrolls a detached node", () => {
+    // The rAF seam: scrollPlaylistListToMessage resolves the card
+    // synchronously but scrolls it on the NEXT animation frame. Holding
+    // the element across that boundary is the CI flake: a re-render can
+    // replace the card node (the advance edge and the panel opening land
+    // in the same frames), and the frame callback then scrolls a node no
+    // longer under the list — the visible card never moves and the
+    // at-scroll-time containment capture records a detached element.
+    // Deterministic here: capture the frame callback, swap the node
+    // before it fires, and demand the scroll target be the CURRENT card.
+    const list = document.createElement("ul");
+    list.setAttribute("data-testid", "playlist-row-list");
+    const stale = document.createElement("li");
+    stale.setAttribute("data-playlist-message-id", "m2");
+    list.appendChild(stale);
+    document.body.appendChild(list);
+
+    const frames: FrameRequestCallback[] = [];
+    const prevRaf = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+      frames.push(callback);
+      return frames.length;
+    };
+    const proto = HTMLElement.prototype as unknown as { scrollIntoView?: (options?: unknown) => void };
+    const prevScrollIntoView = proto.scrollIntoView;
+    const scrolled: Element[] = [];
+    proto.scrollIntoView = function (this: Element): void {
+      scrolled.push(this);
+    };
+    try {
+      expect(scrollPlaylistListToMessage(list, "m2")).toBe(true);
+      expect(scrolled).toHaveLength(0); // deferred to the frame
+
+      // Remount between schedule and paint: same id, new node.
+      const fresh = document.createElement("li");
+      fresh.setAttribute("data-playlist-message-id", "m2");
+      stale.remove();
+      list.appendChild(fresh);
+
+      for (const frame of frames.splice(0)) frame(0);
+
+      expect(scrolled).toHaveLength(1);
+      expect(scrolled[0]).toBe(fresh);
+      expect(scrolled[0].closest('[data-testid="playlist-row-list"]')).not.toBeNull();
+    } finally {
+      globalThis.requestAnimationFrame = prevRaf;
+      if (prevScrollIntoView === undefined) delete proto.scrollIntoView;
+      else proto.scrollIntoView = prevScrollIntoView;
+      list.remove();
+    }
+  });
 
   /** Minimal deferred player (mirrors the RD-5 helper without coupling
    *  across describe blocks): parks the current play until released. */

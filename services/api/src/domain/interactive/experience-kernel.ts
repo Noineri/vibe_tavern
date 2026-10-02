@@ -25,7 +25,7 @@
  * reduce/update); `chance` is an EPHEMERAL, non-recorded random source injected only
  * into `choose` and `flavor` — it lets a script pick a varied move or cosmetic
  * detail without consuming the deterministic cursor, so the journal of create+
- * reduce draws alone reproduces the stream on replay (Variant Б of the
+ * reduce draws alone reproduces the stream on replay (Variant B of the
  * choose-randomness design). `update` deliberately gets NO `chance`: a
  * realtime tick must replay bit-identically (round-commit verification re-runs
  * `update` from the session seed), so ticks draw from the deterministic cursor

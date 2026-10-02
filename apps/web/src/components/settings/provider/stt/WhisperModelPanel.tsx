@@ -9,9 +9,9 @@
  * trade-off is a USER choice rendered as roster cards with human metadata
  * (label, ~MB size, English-only badge, Default badge, one-line hint).
  *
- * States: idle → cards + [Скачать модель]; downloading → progress bar with
+ * States: idle → cards + [Download model]; downloading → progress bar with
  * live % and MB counters (aggregated per-file transformers events via
- * useWhisperModel); ready → check + active model + [Сменить модель];
+ * useWhisperModel); ready → check + active model + [Change model];
  * error → danger text + Retry (the stall-watchdog message rides the error
  * state). Download/Switch also PERSISTS the pick into the profile config
  * (the kokoro twin persists its variant choice; here the choice lives in
@@ -19,7 +19,8 @@
  * the kokoro twin (pre-approved, audit-scoped): no WebGPU gate / fallback
  * line (kokoro-only seams), no auto-preview effect (whisper has no preview
  * lane — dictation joins the in-flight load instead).
- */
+  * fork #1 of tts/KokoroModelPanel.tsx.
+*/
 
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -121,7 +122,7 @@ export function WhisperModelPanel({
   );
   // Dual-writer resync (differs from the kokoro twin — it has ONE picker):
   // the level-2 roster dropdown also writes config.model. Follow it while
-  // the user is NOT mid-choice here, so [Скачать модель] can never download
+  // the user is NOT mid-choice here, so [Download model] can never download
   // and persist a model the user already replaced in level 2.
   useEffect(() => {
     if (!choosing) {

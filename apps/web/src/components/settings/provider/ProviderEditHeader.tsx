@@ -1,4 +1,4 @@
-import type { ProviderProfileRecord, ProxyRecord } from '../../../app-client.js';
+import type { ProviderProfileRecord, ProxyRecord } from "../../../api/types.js";
 import { useT } from '../../../i18n/context.js';
 import { PROVIDER_PRESETS, getPresetGroup, getVisiblePresetGroups, getVisibleProviderPresets } from '../../../provider-presets.js';
 import type { FormState } from '../../modals/ProviderModal.js';

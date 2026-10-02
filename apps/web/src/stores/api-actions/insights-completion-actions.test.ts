@@ -1,12 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ChatId } from "@vibe-tavern/domain";
-import type {
-  AppMessage,
-  AppSnapshot,
-  InsightsCompletionPatchResponse,
-  InsightsCompletionTarget,
-  ObjectiveState,
-} from "../../app-client.js";
+import type { AppMessage, AppSnapshot, InsightsCompletionPatchResponse, InsightsCompletionTarget, ObjectiveState } from "../../api/types.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { useSceneGenerationStore } from "../scene-generation-store.js";
 
@@ -14,10 +8,10 @@ const mocks = {
   refreshInsightsCompletion: mock(),
 };
 
-const realAppClient = await import("../../app-client.js");
-mock.module("../../app-client.js", () => ({
-  ...realAppClient,
-  refreshInsightsCompletion: mocks.refreshInsightsCompletion,
+const realChatApi = await import("../../api/chat-api.js");
+mock.module("../../api/chat-api.js", () => ({
+	...realChatApi,
+	refreshInsightsCompletion: mocks.refreshInsightsCompletion,
 }));
 
 let cancelInsightsCompletionRefresh: typeof import("./insights-completion-actions.js").cancelInsightsCompletionRefresh;
@@ -37,8 +31,11 @@ const TARGET_A_VARIANT_A: InsightsCompletionTarget = { ...TARGET_A, variantId: V
 
 function objective(description: string): ObjectiveState {
   return {
+    mode: "route",
     objectiveDescription: description,
     tasks: [{ id: `task_${description}`, description, status: "active" }],
+    longTermGoal: null,
+    shortTermGoals: [],
     autoCheckFrequency: 1,
     autoCheckEventCount: 0,
     contextWindow: 10,

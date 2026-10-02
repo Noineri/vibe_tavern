@@ -29,12 +29,16 @@ export type ScriptId = Brand<"ScriptId">;
 export type RegexPresetId = Brand<"RegexPresetId">;
 export type RegexProfileId = Brand<"RegexProfileId">;
 export type ServicePromptProfileId = Brand<"ServicePromptProfileId">;
+// Image prompt profiles (IF-1a — fork of the service-prompt profile flow).
+export type ImagePromptProfileId = Brand<"ImagePromptProfileId">;
 export type DiceRollId = Brand<"DiceRollId">;
 export type DicePendingLaneId = Brand<"DicePendingLaneId">;
 // TTS voice profiles (TTS_PLAN TS-1).
 export type TtsProfileId = Brand<"TtsProfileId">;
 // STT (speech-to-text) profiles (STT_PLAN ST-1).
 export type SttProfileId = Brand<"SttProfileId">;
+// Image generation profiles (IMAGE_GENERATION_PLAN IG-1).
+export type ImageGenProfileId = Brand<"ImageGenProfileId">;
 
 // ─── Interactive Runtime (INTERACTIVE_RUNTIME_FOUNDATION_PLAN, Wave 1) ─────────
 export type ExperienceVisualId = Brand<"ExperienceVisualId">;

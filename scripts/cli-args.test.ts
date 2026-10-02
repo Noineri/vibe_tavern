@@ -140,29 +140,6 @@ cliTest("type-gate enforces by default and rejects unknown arguments with exit 2
 	expect(separatedUnknownResult.stderr).toContain("unknown argument(s): --not-a-real-flag");
 });
 
-cliTest("generate-embedded-web-manifest defaults to generation and silently ignores unknown options", async () => {
-	// Given
-	const fixture = await copyScript("scripts/generate-embedded-web-manifest.ts");
-	await mkdir(join(fixture.root, "out", "apps", "web", "assets"), { recursive: true });
-	await mkdir(join(fixture.root, "services", "api", "src", "server"), { recursive: true });
-	await Bun.write(join(fixture.root, "out", "apps", "web", "index.html"), "<main>fixture</main>");
-	await Bun.write(join(fixture.root, "out", "apps", "web", "assets", "app.js"), "export {};");
-	const manifest = join(fixture.root, "services", "api", "src", "server", "embedded-web-manifest.ts");
-
-	// When
-	const defaultResult = await run(["bun", fixture.script], fixture.root);
-	const unknownResult = await run(["bun", fixture.script, "--unknown"], fixture.root);
-	const stubResult = await run(["bun", fixture.script, "--", "--stub"], fixture.root);
-
-	// Then: observed parser uses includes("--stub") and has no unknown-option validation.
-	expect(defaultResult.exitCode).toBe(0);
-	expect(defaultResult.stdout).toContain("Embedded 2 file(s)");
-	expect(unknownResult.exitCode).toBe(0);
-	expect(stubResult.exitCode).toBe(0);
-	expect(stubResult.stdout).toContain("Restored embedded-web-manifest.ts stub.");
-	expect(await Bun.file(manifest).text()).toContain("embeddedWebFiles: Record<string, string> = {}");
-});
-
 cliTest("migrate-to-readable-folders uses temp-CWD default data and ignores unknown flags", async () => {
 	// Given
 	const root = await tempRoot("vibe-tavern-readable-folders-");

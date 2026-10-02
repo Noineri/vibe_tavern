@@ -25,7 +25,8 @@ export function SidebarImportModals({
       <CharacterImportModal
         isImporting={character.isImporting}
         onClose={() => setImportModal(null)}
-        onImportFiles={(files) => void character.handleImportFiles(files)}
+        showEmbeddedBookImport
+        onImportFiles={(files, options) => void character.handleImportFiles(files, options)}
       />
     );
   }

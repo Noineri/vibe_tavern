@@ -112,12 +112,12 @@ const ATTACHED_NOTE =
 
 /** A create-only test digest from a successful run. The feedback is the ok-path
  *  `ExperienceCopilotRunTestDigest` (`status`, `revision`, `legalActionTypes`,
- *  capped `stateSummary`, `consoleTail`) — plus `seatLegality` when the run
- *  carried a roster (per-seat matrix + turn owners). */
+ *  capped `stateSummary`, `consoleTail`) — plus `seatLegality` (per-seat matrix +
+ *  turn owners; empty seats when the run carried no roster). */
 export function buildRunTestDigest(result: ExperienceTestRunData): CopilotDigest {
   const matrix = result.seatLegality;
   const seatLines =
-    matrix !== undefined && matrix.seats.length > 0
+    matrix.seats.length > 0
       ? [
           `Turn: ${
             matrix.turnOwners.length > 0
@@ -144,7 +144,7 @@ export function buildRunTestDigest(result: ExperienceTestRunData): CopilotDigest
     legalActionTypes: result.projection.actions.map((a) => a.type),
     stateSummary: summarizeState(result.projection.state),
     consoleTail: consoleTail(result.console),
-    ...(matrix !== undefined ? { seatLegality: matrix } : {}),
+    seatLegality: matrix,
   };
   const legalTypes = result.projection.actions.map((a) => a.type);
   const lines = [

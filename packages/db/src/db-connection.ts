@@ -29,58 +29,78 @@ const openedDatabases = new Set<Database>();
  *  data dir (or an unrelated temp file) is never removed. */
 const TEST_TEMP_PREFIX = /^(vt-|coauthor-|vibe-tavern-)/i;
 
-async function rmWithRetry(target: string): Promise<void> {
+async function rmWithRetry(target: string): Promise<boolean> {
   // Two quick retries only. The grace delay in closeAllDbs already lets Windows
   // release WAL/SHM handles after sqlite.close(); a long per-dir backoff here
   // would multiply across hundreds of dirs and blow the afterAll hook timeout.
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await rm(target, { recursive: true, force: true });
-      return;
+      return true;
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException).code;
       if ((code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY') && attempt < 2) {
         await new Promise((r) => setTimeout(r, 30 * (attempt + 1)));
         continue;
       }
-      return;
+      return false;
     }
   }
+  return false;
 }
 
 /** Remove os.tmpdir() children that match a test prefix AND were created/touched
- *  during this run (mtime >= since). The mtime bound + prefix guard make this
- *  safe: it never touches dirs from before the run or with non-test names. */
-async function sweepTestTempDirs(since: number): Promise<void> {
+ * during this run (mtime >= since). The mtime bound + prefix guard make this
+ * safe: it never touches dirs from before the run or with non-test names.
+ *
+ * Returns how many matched dirs were LEFT BEHIND (rm failed or the deadline
+ * had already passed), so the caller can stop early instead of grinding more
+ * passes after the work is done or hopeless. */
+async function sweepTestTempDirs(since: number, deadline: number): Promise<number> {
   const tmp = String(tmpdir());
   let entries: string[];
   try {
     entries = await readdir(tmp);
   } catch {
-    return;
+    return 0;
   }
+  let leftover = 0;
   await Promise.all(
     entries
       .filter((name) => TEST_TEMP_PREFIX.test(name))
       .map(async (name) => {
         const full = join(tmp, name);
         try {
+          if (Date.now() >= deadline) {
+            leftover += 1;
+            return;
+          }
           const st = await stat(full);
           if (st.isDirectory() && st.mtimeMs >= since) {
-            await rmWithRetry(full);
+            const removed = await rmWithRetry(full);
+            if (!removed) leftover += 1;
           }
         } catch {
           /* skip unreadable entries */
         }
       }),
   );
+  return leftover;
 }
 
 /** Close every opened SQLite handle and sweep the run's temp dirs. Called once
- *  from a global afterAll registered via a `bunfig.toml [test] preload`. Pass
- *  `sweepSince` = the timestamp the preload captured at import (before tests) so
- *  only dirs created during THIS run are removed. Safe when empty; never throws. */
-export async function closeAllDbs(options?: { sweepSince?: number }): Promise<void> {
+ * from a global afterAll registered via a `bunfig.toml [test] preload`. Pass
+ * `sweepSince` = the timestamp the preload captured at import (before tests) so
+ * only dirs created during THIS run are removed. Safe when empty; never throws.
+ *
+ * The sweep is DEADLINE-BOUNDED (`sweepDeadlineMs`, default 25s): on a loaded
+ * windows runner — several suites sweeping %TEMP% concurrently, WAL/SHM handle
+ * release lagging, Defender re-scanning every removed file — an unbounded
+ * multi-pass sweep ran past its own 60s afterAll hook budget (CI run
+ * 34748163545: a phantom `(unnamed)` hook timeout at 73s). A bounded sweep
+ * that gives up and warns cannot blow the hook; leftover dirs on ephemeral CI
+ * runners die with the VM, and on dev machines the next run sweeps them. */
+export async function closeAllDbs(options?: { sweepSince?: number; sweepDeadlineMs?: number }): Promise<void> {
   for (const sqlite of openedDatabases) {
     try {
       sqlite.close();
@@ -92,14 +112,21 @@ export async function closeAllDbs(options?: { sweepSince?: number }): Promise<vo
   if (options?.sweepSince !== undefined) {
     // Windows releases bun:sqlite's WAL/SHM file handles ASYNCHRONOUSLY after
     // sqlite.close() returns — measured ~700-1200ms before the OS lets rm
-    // through. A single long sleep would do, but sweeping a few times with a
-    // short grace between each clears most dirs fast and catches stragglers
-    // without a per-dir backoff that would blow the afterAll hook timeout when
-    // hundreds of dirs are involved (Bun's rm ignores Node's maxRetries, so the
-    // retry has to be manual and bounded).
+    // through. One grace covering the measured window up front beats a short
+    // pre-pass sleep whose first sweep then mostly eats EBUSY retries.
+    const deadline = Date.now() + (options.sweepDeadlineMs ?? 25_000);
+    await new Promise((r) => setTimeout(r, 700));
+    // Retries stay bounded: a couple of short-grace passes catch stragglers
+    // (Bun's rm ignores Node's maxRetries, so the retry has to be manual and
+    // bounded). Clean early-exit keeps healthy runs at a single sweep.
     for (let pass = 0; pass < 4; pass++) {
+      const leftover = await sweepTestTempDirs(options.sweepSince, deadline);
+      if (leftover === 0) return;
+      if (Date.now() >= deadline) {
+        console.warn(`[db] test cleanup: sweep deadline hit with ${leftover} temp dir(s) left behind`);
+        return;
+      }
       await new Promise((r) => setTimeout(r, 200));
-      await sweepTestTempDirs(options.sweepSince);
     }
   }
 }

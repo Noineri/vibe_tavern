@@ -5,6 +5,7 @@ import type { Components, ContextProp } from "react-virtuoso";
 import { useChatStore, useIsSending } from "../../stores/chat-store.js";
 import { useMessageOrder } from "../../stores/index.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { TranslateErrorBoundary } from "../layout/TranslateErrorBoundary.js";
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
@@ -175,6 +176,15 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
   const resetKey = useSnapshotStore((state) =>
     `${state.activeChat?.id ?? ""}:${state.activeBranch?.id ?? ""}`,
   );
+  // IF-4b follow-up (owner 2026-09-22): while an image-gen run is in flight
+  // for THIS chat, growth (the progress row, the landing image) must not
+  // drag the pinned view to the bottom — the user may be swiping variants on
+  // earlier slots. Suppression is chat-scoped: a run in another chat never
+  // touches this list; text streaming never raises the flag.
+  const activeChatId = useSnapshotStore((state) => state.activeChat?.id ?? null);
+  const imageGenRunInFlight = useImageGenChatStore(
+    (state) => activeChatId !== null && state.runningByChat[activeChatId] !== undefined,
+  );
   const { virtualizedIds, stableTailIds, stableTailStartIndex } = useMemo(
     () => partitionMessageRenderWindow(displayIds),
     [displayIds],
@@ -185,7 +195,7 @@ export function MessageScroller({ displayIds, renderItem, bottomInset = 0 }: Mes
     onVirtualizedHeightChanged,
     pinned,
     scrollToBottom,
-  } = useStickToBottom(resetKey);
+  } = useStickToBottom(resetKey, imageGenRunInFlight);
   const context = useMemo<MessageScrollerContext>(() => ({
     renderItem,
     stableTailIds,

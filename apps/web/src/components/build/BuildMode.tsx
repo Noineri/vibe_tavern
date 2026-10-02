@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { buildCharacterDraftSchema, type BuildCharacterDraft } from "@vibe-tavern/api-contracts";
 import type { AssemblePromptResponse, PromptTraceRecordDto } from "@vibe-tavern/domain";
-import type { AppCharacter } from "../../app-client.js";
+import type { AppCharacter } from "../../api/types.js";
 import { cn } from "../../lib/cn.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { SearchInput } from "../shared/SearchInput.js";
@@ -204,18 +204,10 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
   const ctx = { characterId, chatId: activeChatId, personaId };
 
   function formatTokenCount(count: number): string {
-    const formatted = count.toLocaleString(locale);
-    if (locale === "ru") {
-      const mod10 = count % 10;
-      const mod100 = count % 100;
-      const label = mod10 === 1 && mod100 !== 11
-        ? "токен"
-        : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
-          ? "токена"
-          : "токенов";
-      return `${formatted} ${label}`;
-    }
-    return `${formatted} ${count === 1 ? "token" : "tokens"}`;
+    // CLDR plurals via i18next (t picks _one/_few/_many/_other by
+    // Intl.PluralRules for the active locale); the number is grouped
+    // separately via toLocaleString, so the keys hold the bare word.
+    return `${count.toLocaleString(locale)} ${t("token_count", { count })}`;
   }
 
   const activePanel = panels.find((p) => p.id === buildTab);
@@ -509,7 +501,7 @@ function BuildModeInner({ character, isSaving, buildTab, activeTrace, promptTrac
             into the scroll container's OWN padding region, which is inside the
             overflow clip rectangle — so it is NOT clipped. If the padding lived
             on this outer wrapper instead, the bar's negative top would escape
-            the scroll container and the top half (incl. Сохранить) would be
+            the scroll container and the top half (incl. the Save button) would be
             clipped, while a zero top would leave a gap between the bar and the
             header above. See CharacterForm.tsx sticky-bar doc comment. */}
         <div

@@ -1,3 +1,7 @@
+/**
+ * fork #1 of tts/TtsProfileList.tsx.
+ */
+
 import { useT } from "../../../../i18n/context.js";
 import { useMasterDetail, MasterDetailMobileDrillDown } from "../../../shared/MasterDetailModal.js";
 import type { SttProfileRecord } from "../../../../api/stt-api.js";

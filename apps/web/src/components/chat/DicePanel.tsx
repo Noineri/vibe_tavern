@@ -35,8 +35,8 @@ export function DicePanel({ docked = false }: DicePanelProps = {}): ReactNode {
   const persona = useSnapshotStore((state) => state.persona);
   const chatId = activeChat?.id ?? null;
   const branchId = activeBranch?.id ?? null;
-  const enabled = activeChat?.insightsConfig?.diceEnabled ?? false;
-  const mode: DiceMode = activeChat?.insightsConfig?.diceMode ?? "normal";
+  const enabled = activeChat?.insightsConfig.diceEnabled ?? false;
+  const mode: DiceMode = activeChat?.insightsConfig.diceMode ?? "normal";
   const definitions = useDiceDefinitions(enabled ? chatId : null, branchId);
   const lanes = useDiceLanes(enabled ? chatId : null, branchId);
   const rolling = useDiceRolling(enabled ? chatId : null, branchId);
@@ -69,7 +69,7 @@ export function DicePanel({ docked = false }: DicePanelProps = {}): ReactNode {
       lane={lane}
       character={character ? { id: character.id, name: character.name } : null}
       persona={persona ? { id: persona.id, name: persona.name } : null}
-      diceActorBindings={activeChat?.insightsConfig?.diceActorBindings ?? null}
+      diceActorBindings={activeChat?.insightsConfig.diceActorBindings ?? null}
       showTitle={!isMobile}
     />
   );

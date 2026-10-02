@@ -3,7 +3,8 @@ import type { StoreContainer } from "@vibe-tavern/db";
 import type { ObjectiveState } from "@vibe-tavern/domain";
 import { OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 import { InsightsAdapter } from "../src/api/adapters/insights-adapter.js";
-import { defaultObjectiveState, type ObjectiveService } from "../src/domain/insights/objective-service.js";
+import { defaultObjectiveState } from "@vibe-tavern/domain";
+import type { ObjectiveService } from "../src/domain/insights/objective-service.js";
 import type { SceneTrackerService, SceneTarget } from "../src/domain/insights/tracker-service.js";
 import type { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 
@@ -504,8 +505,9 @@ describe("InsightsAdapter Scene backfill routes (SCN-14)", () => {
 				capture.push({ method: "getBackfillStatus", chatId: chatId as string, arg: runId });
 				return { ...status, runId: runId as string };
 			},
-			cancelBackfill: (chatId: unknown, runId: unknown) => {
+			cancelBackfill: async (chatId: unknown, runId: unknown) => {
 				capture.push({ method: "cancelBackfill", chatId: chatId as string, arg: runId });
+				return { ...status, runId: runId as string, cancelRequested: true };
 			},
 			retryBackfill: async (chatId: unknown, runId: unknown) => {
 				capture.push({ method: "retryBackfill", chatId: chatId as string, arg: runId });
@@ -534,11 +536,11 @@ describe("InsightsAdapter Scene backfill routes (SCN-14)", () => {
 		expect(res.current).toEqual({ messageId: "msg_1", variantId: "var_1" });
 	});
 
-	it("cancel delegates to cancelBackfill and returns {runId, cancelled:true}", async () => {
+	it("cancel delegates to cancelBackfill and returns the run status the client keeps polling", async () => {
 		const capture: { method: string; chatId?: string; arg?: unknown }[] = [];
-		const res = adapter(capture).cancelSceneBackfill("chat_1", "sbr_9");
+		const res = await adapter(capture).cancelSceneBackfill("chat_1", "sbr_9");
 		expect(capture[0]).toEqual({ method: "cancelBackfill", chatId: "chat_1", arg: "sbr_9" });
-		expect(res).toEqual({ runId: "sbr_9", cancelled: true });
+		expect(res).toMatchObject({ runId: "sbr_9", status: "running", total: 3, cancelRequested: true });
 	});
 
 	it("retry delegates to retryBackfill with the branded chatId + runId", async () => {

@@ -70,7 +70,7 @@ import { DepthPromptField } from "../fields/DepthPromptField.js";
 import { createChatAction, switchChatAction, renameChatAction, deleteChatAction } from "../../../stores/api-actions/chat-actions.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { getModalPortal } from "../../shared/modal-helpers.js";
-import { listCoauthorChats } from "../../../app-client.js";
+import { listCoauthorChats } from "../../../api/chat-api.js";
 import { useChatStore } from "../../../stores/chat-store.js";
 
 export interface VibeMdViewProps {

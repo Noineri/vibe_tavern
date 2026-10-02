@@ -13,7 +13,7 @@
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
-import { tag } from "@vibe-tavern/domain";
+import { compileRussianCaseFormsKey, tag } from "@vibe-tavern/domain";
 import type { LoreActivationReason } from "@vibe-tavern/domain";
 
 // Lorebook activation is high-frequency (runs on every message send) and the
@@ -27,7 +27,6 @@ export interface LoreActivationState {
   [entryId: string]: {
     activatedAtTurn?: number;
     lastMatchedAtTurn?: number;
-    pendingDelayUntilTurn?: number;
   };
 }
 
@@ -38,12 +37,20 @@ export interface ActivationInput {
     id: string;
     /** Book-level group-scoring default for entries whose own flag is null (ST's global world_info_use_group_scoring, scoped to the book). See LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-4). */
     useGroupScoring?: boolean;
+    /** Book-level case-sensitive default for entries whose own flag is null (ST resolves per-entry null against its global world_info_case_sensitive; VT scopes that default to the book). */
+    caseSensitive?: boolean;
+    /** Book-level whole-words default for entries whose own flag is null — see caseSensitive above (ST world_info_match_whole_words). */
+    matchWholeWords?: boolean;
     scanDepth: number;
     tokenBudget: number;
     /** When non-null (0-100), override the fixed `tokenBudget` with a cap of
      * round(maxContextTokens * percent / 100). Matches SillyTavern's Context%
      * mode. See lorebook-st-parity-audit.md §1.4. */
     tokenBudgetPercent: number | null;
+    /** Absolute ceiling for the percent-mode budget (ST world_info_budget_cap,
+     * world-info.js:4626-4628, scoped to the book here). 0 = no cap; applies
+     * only in percent mode. Ignored when absent (legacy inputs). */
+    tokenBudgetCap?: number;
     recursiveScanning: boolean;
     maxRecursionSteps: number;
     includeNames: boolean;
@@ -61,7 +68,9 @@ export interface ActivationInput {
       priority: number;
       stickyWindow: number;
       cooldownWindow: number;
-      delayWindow: number;
+      /** Absolute chat-length gate (ST `delay`): fully suppressed while the
+       * current message count is below it. 0 = off. */
+      minChatMessages: number;
       constant: boolean;
       probability: number;
       ignoreBudget: boolean;
@@ -80,18 +89,34 @@ export interface ActivationInput {
       /** The recursion depth level at which a delay-until-recursion entry activates. */
       recursionLevel: number;
       scanDepthOverride: number | null;
-      caseSensitive: boolean;
-      matchWholeWords: boolean;
+      /** Tri-state (ST parity): null = inherit the book-level default (ActivationInput.lorebooks[].caseSensitive), true/false = explicit. */
+      caseSensitive: boolean | null;
+      /** Tri-state (ST parity): null = inherit the book-level default (ActivationInput.lorebooks[].matchWholeWords), true/false = explicit. */
+      matchWholeWords: boolean | null;
+      /** Plain keys using the metadata-backed Russian case-forms compiler. */
+      caseFormsKeys?: string[];
       characterFilter: Array<{ id: string | null; name: string }>;
       characterFilterExclude: boolean;
       matchSources: string[];
+      /** Import-preserved ST fields, including stOutletName. */
+      metadata?: Record<string, unknown>;
       enabled: boolean;
       sortOrder: number;
     }>;
   }>;
-  messages: Array<{ role: string; content: string }>;
-  /** Macro substitution map, e.g. { "{{user}}": "Alice", "{{char}}": "Bob" } */
+  messages: Array<{
+    role: string;
+    content: string;
+    /** Real speaker name when known; used only for ST-style scan prefixes. */
+    name?: string;
+  }>;
+  /** Legacy macro substitution map retained for direct engine callers. */
   macroMap: Record<string, string>;
+  /**
+   * Canonical full macro resolver bound by the prompt resolver. It keeps this
+   * engine synchronous and pure while reusing prompt-pipeline's vocabulary.
+   */
+  resolveMacros?: (text: string) => string;
   /** Character id for characterFilter matching (id-bound entries). */
   characterId: string;
   /** Character name for characterFilter matching (ghost name-fallback). */
@@ -108,8 +133,16 @@ export interface ActivationInput {
   scenario?: string;
   /** Optional: creator notes for matchSources */
   creatorNotes?: string;
-  /** Current activation state from chat (deserialized from loreActivationStateJson) */
+  /** Optional: effective preset Author's Note for matchSources */
+  authorsNote?: string;
+  /** Optional: enabled chat-summary texts for matchSources */
+  summaries?: string[];
+  /** Optional one-shot quiet-prompt text, scanned after global sources. */
+  quietPrompt?: string;
+  /** Current activation state from the selected branch (deserialized from loreActivationStateJson) */
   activationState: LoreActivationState;
+  /** Evaluate activation without pruning or committing timed effects. */
+  dryRun?: boolean;
   /** Current turn number (for time window calculations) */
   currentTurn: number;
   /** Real token counter. Falls back to ceil(chars / 4) if not provided. */
@@ -139,6 +172,17 @@ export interface ActivationResult {
     /** Structured reason this entry activated — surfaced in the prompt trace. */
     reason: LoreActivationReason;
   }>;
+  /** Books whose token budget overflowed this resolve (P21): per-book count
+   *  of entries dropped by the N5 overflow latch. Empty when no book
+   *  overflowed. Surfaces the overflowAlert toast + the prompt trace; the
+   *  engine itself only reports, it never alerts. */
+  overflowedBooks: Array<{ lorebookId: string; dropped: number }>;
+  /** Activated outlet entries grouped by their ST outletName, carrying the
+   * entry id so the resolver can re-order each group into ST's final insertion
+   * order (this engine emits them in its budget-queue order, which is NOT the
+   * insertion order). They never enter the normal prompt stream; the resolver
+   * joins each group for {{outlet::name}}. */
+  outletEntries: Record<string, Array<{ entryId: string; content: string }>>;
   /** Updated activation state (to persist back to chat) */
   updatedState: LoreActivationState;
 }
@@ -149,8 +193,13 @@ export interface ActivationResult {
 interface FlatEntry {
   id: string;
   lorebookId: string;
+  /** Whether this entry's source book prefixes real speaker names in scan text. */
+  includeNames: boolean;
   title: string;
+  /** Content after ST parseDecorators removes the leading decorator block. */
   content: string;
+  /** Known decorators extracted from the raw entry content. */
+  decorators: string[];
   keys: string[];
   secondaryKeys: string[];
   logic: string;
@@ -159,7 +208,8 @@ interface FlatEntry {
   priority: number;
   stickyWindow: number;
   cooldownWindow: number;
-  delayWindow: number;
+  /** Absolute chat-length gate (ST `delay`). 0 = off. */
+  minChatMessages: number;
   constant: boolean;
   probability: number;
   ignoreBudget: boolean;
@@ -169,11 +219,16 @@ interface FlatEntry {
   delayUntilRecursion: boolean;
   recursionLevel: number;
   scanDepthOverride: number | null;
+  /** Resolved per-scan form: the per-entry tri-state has already inherited the book-level default (see the flatten loop). */
   caseSensitive: boolean;
   matchWholeWords: boolean;
+  /** Keys compiled into the opt-in Russian case-forms regex at match time. */
+  caseFormsKeys: string[];
   characterFilter: Array<{ id: string | null; name: string }>;
   characterFilterExclude: boolean;
   matchSources: string[];
+  /** ST outlet name carried through the existing metadata payload. */
+  outletName: string | null;
   enabled: boolean;
   sortOrder: number;
   groupName: string;
@@ -183,11 +238,78 @@ interface FlatEntry {
   useGroupScoring: boolean | null;
 }
 
+/**
+ * Port of ST's parseDecorators (world-info.js 4540-4586).
+ *
+ * Its fallback and escaped-line behavior is intentionally non-obvious: keep
+ * this structurally close to the source so decorator extraction and stripped
+ * prompt/recursion content remain identical to ST.
+ */
+function parseDecorators(content: string): [string[], string] {
+  const isKnownDecorator = (data: string): boolean => {
+    if (data.startsWith("@@@")) {
+      data = data.substring(1);
+    }
+
+    return data.startsWith("@@activate") || data.startsWith("@@dont_activate");
+  };
+
+  if (content.startsWith("@@")) {
+    let newContent = content;
+    const lines = content.split("\n");
+    const decorators: string[] = [];
+    let fallbacked = false;
+
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      if (line.startsWith("@@")) {
+        if (line.startsWith("@@@") && !fallbacked) {
+          continue;
+        }
+
+        if (isKnownDecorator(line)) {
+          decorators.push(line.startsWith("@@@") ? line.substring(1) : line);
+          fallbacked = false;
+        } else {
+          fallbacked = true;
+        }
+      } else {
+        newContent = lines.slice(index).join("\n");
+        break;
+      }
+    }
+
+    return [decorators, newContent];
+  }
+
+  return [[], content];
+}
+
 // ─── Main function ───────────────────────────────────────────────────────────
 
 export function resolveActivatedEntries(input: ActivationInput): ActivationResult {
-  const { macroMap, characterId, characterName, currentTurn, activationState } = input;
+  const { characterId, characterName, currentTurn, activationState } = input;
+  const resolveMacros = input.resolveMacros ?? ((text: string) => applyLegacyMacros(text, input.macroMap));
   const updatedState: LoreActivationState = { ...activationState };
+
+  // ST dry runs skip sticky/cooldown sweeps and commits (world-info.js:683-686,
+  // 731-735). The live state still participates in sticky/cooldown checks below, but neither
+  // the non-advance prune nor any later timed-state commit may mutate it.
+  if (!input.dryRun) {
+    // ST removes a timed effect whenever the chat has not advanced past its
+    // recorded start (world-info.js:626-630). This single sweep covers swipes
+    // and regenerations (same turn) plus message deletion (a smaller turn).
+    // VT has no equivalent to ST's protected timed-effect flag because it has
+    // no pin UI, so every timed state follows this removal rule.
+    for (const [entryId, state] of Object.entries(updatedState)) {
+      // A sticky-to-cooldown handoff keeps only lastMatchedAtTurn; it is the
+      // cooldown's recorded start after activatedAtTurn has been cleared.
+      const startedAtTurn = state.activatedAtTurn ?? state.lastMatchedAtTurn;
+      if (startedAtTurn != null && currentTurn <= startedAtTurn) {
+        delete updatedState[entryId];
+      }
+    }
+  }
 
   // Flatten all entries from all lorebooks
   const allEntries: FlatEntry[] = [];
@@ -195,7 +317,24 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   for (const lorebook of input.lorebooks) {
     scanDepths.set(lorebook.id, lorebook.scanDepth);
     for (const entry of lorebook.entries) {
-      allEntries.push({ ...entry, lorebookId: lorebook.id });
+      // ST parses decorators before it substitutes committed content
+      // (world-info.js:4540-4586, 4938-4939). Both keys and content remain
+      // raw until their ST-equivalent phase: matching and commit respectively.
+      const [decorators, content] = parseDecorators(entry.content);
+      allEntries.push({
+        ...entry,
+        content,
+        decorators,
+        lorebookId: lorebook.id,
+        includeNames: lorebook.includeNames,
+        outletName: outletNameFromMetadata(entry.metadata),
+        // Tri-state resolution (ST parity): a per-entry null inherits the
+        // book-level default (ST's world-info.js:269/347 resolves per-entry
+        // null against the global client setting; VT scopes it to the book).
+        caseSensitive: entry.caseSensitive ?? lorebook.caseSensitive ?? false,
+        matchWholeWords: entry.matchWholeWords ?? lorebook.matchWholeWords ?? false,
+        caseFormsKeys: entry.caseFormsKeys ?? [],
+      });
     }
   }
 
@@ -211,7 +350,14 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
 
   // Check if any lorebook has recursive scanning enabled
   const anyRecursiveScanning = input.lorebooks.some(lb => lb.recursiveScanning);
-  const maxSteps = Math.max(1, ...input.lorebooks.map(lb => lb.maxRecursionSteps || 0));
+  // N10/P10 (ST parity, world-info.js 4655-4663): steps = 0 = unlimited;
+  // the cap counts EVERY scan pass INCLUDING the initial normal scan, so
+  // steps = N allows N−1 recursion passes. ST has one global cap; VT merges
+  // per-book — a book with 0 (no cap) lifts the cap for the whole resolve
+  // (named deviation: truncating an explicitly unlimited book would be the
+  // harder violation than letting a capped book's chain run long).
+  const anyUnlimitedSteps = input.lorebooks.some(lb => !(lb.maxRecursionSteps > 0));
+  const maxSteps = anyUnlimitedSteps ? 0 : Math.max(0, ...input.lorebooks.map(lb => lb.maxRecursionSteps || 0));
 
   // Track already activated entry ids to avoid duplicates
   const activatedIds = new Set<string>();
@@ -219,25 +365,36 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   const failedProbabilityIds = new Set<string>();
   const activated: ActivationResult['activatedEntries'] = [];
 
-  // Recursion buffer: text from activated entries (for recursive scanning)
-  let recurseBuffer = "";
+  // ST's recursion buffer is an array whose unit is one scan pass's joined
+  // activated content (world-info.js:369-374, 5020-5024). `buildScanText`
+  // places sentinels between those units.
+  const recurseBuffer: string[] = [];
 
   // ── Min activations setup ──────────────────────────────────────────────
   const minActivations = Math.max(0, ...input.lorebooks.map(lb => lb.minActivations || 0));
   const depthMax = Math.max(0, ...input.lorebooks.map(lb => lb.minActivationsDepthMax || 0));
   let depthSkew = 0;
+  // N9/P6: the widening cap is on the ABSOLUTE window depth, like ST's
+  // buffer.getDepth() (world-info.js 402-404 = global depth + skew). ST has
+  // one global base; VT entries carry per-book scanDepth with per-entry
+  // overrides, so the loop measures from the WIDEST base — widening stops
+  // once the deepest current window exceeds the cap (named deviation, same
+  // per-book shape as the N5 budget ruling).
+  const maxBaseDepth = allEntries.reduce(
+    (m, e) => Math.max(m, entryBaseDepth(e, scanDepths)), 0);
 
   // Book-level group-scoring defaults (per-lorebook, LG-2/LG-4) — consumed by
   // the per-pass inclusion-group pipeline below.
   const bookDefaults = new Map(input.lorebooks.map(lb => [lb.id, lb.useGroupScoring ?? false]));
 
   // LG-6 (ST parity): sticky-active ≙ a timed effect persisted from a PREVIOUS
-  // scan. Snapshot from the INPUT state before any pass writes: an entry that
-  // activates fresh THIS scan never sticky-dominates its group this scan (ST
-  // records timed effects only for scan survivors, after the whole scan).
+  // scan. Snapshot after the scan-start timed-state sweeps and before any pass
+  // writes: an entry that activates fresh THIS scan never sticky-dominates its
+  // group this scan (ST records timed effects only for scan survivors, after
+  // the whole scan).
   const stickyActiveIds = new Set(
     allEntries.flatMap(e => {
-      const state = activationState[e.id];
+      const state = updatedState[e.id];
       if (e.stickyWindow > 0 && state?.activatedAtTurn != null &&
         currentTurn - state.activatedAtTurn < e.stickyWindow) {
         return [e.id];
@@ -255,18 +412,21 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // anchor makes the observation one-shot: a cleared anchor cannot re-fire,
   // and the next real activation re-anchors a fresh window (ST
   // #setTimedEffectOfType is only-if-absent, so re-activation never extends a
-  // LIVE window — see commitActivationState). Runs over the input state
-  // BEFORE any pass, like ST's constructor-time checkTimedEffects, so it
-  // fires for every enabled entry regardless of later activation outcomes.
-  for (const e of allEntries) {
-    const sweepState = activationState[e.id];
-    if (e.stickyWindow > 0 && sweepState?.activatedAtTurn != null &&
-      currentTurn - sweepState.activatedAtTurn >= e.stickyWindow) {
-      updatedState[e.id] = {
-        ...sweepState,
-        activatedAtTurn: undefined,
-        lastMatchedAtTurn: e.cooldownWindow > 0 ? currentTurn : sweepState.lastMatchedAtTurn,
-      };
+  // LIVE window — see commitActivationState). Runs after the non-advance
+  // sweep and before any pass, like ST's constructor-time checkTimedEffects,
+  // so it fires for every enabled entry regardless of later activation
+  // outcomes.
+  if (!input.dryRun) {
+    for (const e of allEntries) {
+      const sweepState = updatedState[e.id];
+      if (e.stickyWindow > 0 && sweepState?.activatedAtTurn != null &&
+        currentTurn - sweepState.activatedAtTurn >= e.stickyWindow) {
+        updatedState[e.id] = {
+          ...sweepState,
+          activatedAtTurn: undefined,
+          lastMatchedAtTurn: e.cooldownWindow > 0 ? currentTurn : sweepState.lastMatchedAtTurn,
+        };
+      }
     }
   }
 
@@ -287,8 +447,8 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
 
       const result = tryActivateEntry({
-        entry, macroMap, characterId, characterName, currentTurn,
-        scanText: buildScanText(entry, input.messages, scanDepths, input),
+        entry, resolveMacros, characterId, characterName, currentTurn,
+        scanText: buildScanText(entry, input.messages, scanDepths, input, depthSkew),
         scanState: "normal",
         currentRecursionLevel: 0,
         updatedState, activatedIds,
@@ -307,6 +467,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
     passCandidates.sort((a, b) => Number(stickyActiveIds.has(b.id)) - Number(stickyActiveIds.has(a.id)));
     applyInclusionGroups(passCandidates, activated, allEntries, bookDefaults, stickyActiveIds);
     let normalActivated = 0;
+    const normalRecurseContents: string[] = [];
     for (const survivor of passCandidates) {
       // LG-11 (ST parity, verifyProbability 4909-4931): probability rolls
       // AFTER the group pipeline. Group losers never rolled. Sticky-active
@@ -327,38 +488,74 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
       }
       normalActivated++;
       activatedIds.add(survivor.id);
-      activated.push(survivor);
+      // ST substitutes content after this entry survives the probability gate
+      // (world-info.js:4938-4952). The same resolved string is the prompt
+      // payload and recursion source.
+      const committedSurvivor = { ...survivor, content: resolveMacros(survivor.content) };
+      activated.push(committedSurvivor);
       const flat = flatById.get(survivor.id);
-      if (flat) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
+      if (flat && !input.dryRun) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
       if (!flat?.preventRecursion) {
-        recurseBuffer += survivor.content + "\n";
+        normalRecurseContents.push(committedSurvivor.content);
       }
+    }
+    if (normalRecurseContents.length > 0) {
+      recurseBuffer.push(normalRecurseContents.join("\n"));
     }
 
     logger.debug("Pass done: %d activated, %d total", normalActivated, activated.length);
 
-    // Min activations retry
-    if (minActivations > 0 && activated.length < minActivations && depthSkew < depthMax) {
+    // Min activations retry — N9/P6 ST parity (world-info.js 4992-5003):
+    // widen while the count is unmet AND the absolute depth is within the
+    // cap (depthMax > 0 && depth > depthMax → stop) and within the chat
+    // (depth > chat.length → stop). The check runs AFTER the pass and
+    // BEFORE advancing, so depthMax admits a window one deeper than the cap
+    // (ST's arithmetic, pinned by test). depthMax 0 = no cap — the chat
+    // length is the only bound (owner ruling: 0 = unlimited widening).
+    // (ST also stops widening after a budget overflow; VT applies the
+    // budget per book at the END of the resolve, so that guard has no
+    // mid-loop equivalent — consequence of the N5 per-book model.)
+    const absoluteDepth = maxBaseDepth + depthSkew;
+    const overMax = (depthMax > 0 && absoluteDepth > depthMax) || (absoluteDepth > input.messages.length);
+    if (minActivations > 0 && activated.length < minActivations && !overMax) {
       depthSkew++;
-      logger.debug("Min activations not met (%d/%d), advancing depth to +%d", activated.length, minActivations, depthSkew);
+      logger.debug("Min activations not met (%d/%d), advancing depth to %d (abs %d)", activated.length, minActivations, depthSkew, absoluteDepth + 1);
       normalScanRetry = true;
     }
   }
 
   // ── Pass 2+: Recursive scans ─────────────────────────────────────────────
-  if (!anyRecursiveScanning || recurseBuffer.trim().length === 0) {
-    logger.debug("Recursive scanning skipped (enabled=%s, buffer=%d)", anyRecursiveScanning, recurseBuffer.trim().length);
-  } else {
-    logger.debug("Recursive scanning START — maxSteps=%d, delayLevels=%o", maxSteps, recursionDelayLevels);
-    let loopCount = 0;
-    let delayLevelIdx = 0;
-    let currentRecursionLevel = recursionDelayLevels[0] ?? 1;
+  const recurseBufferLength = recurseBuffer.join("").trim().length;
+  // ST presets the first distinct delay level before the normal pass
+  // (world-info.js:4644-4653). It remains current when normal activation
+  // seeds recursion; only the remaining levels are scheduled after a pass.
+  let currentRecursionLevel = recursionDelayLevels[0] ?? 0;
+  const remainingRecursionDelayLevels = recursionDelayLevels.slice(1);
+  let runRecursionPass = anyRecursiveScanning && recurseBufferLength > 0;
 
-    while (loopCount < maxSteps) {
+  // ST schedules an otherwise-empty RECURSION pass for each remaining delay
+  // level (world-info.js:5010-5013). This bookkeeping is independent of the
+  // recursive toggle and buffer contents, so level 2+ can match the ordinary
+  // scan text even when no entry has supplied recursion content.
+  if (!runRecursionPass && remainingRecursionDelayLevels.length > 0) {
+    currentRecursionLevel = remainingRecursionDelayLevels.shift()!;
+    runRecursionPass = true;
+  }
+
+  if (!runRecursionPass) {
+    logger.debug("Recursive scanning skipped (enabled=%s, buffer=%d, remainingDelayLevels=%d)", anyRecursiveScanning, recurseBufferLength, remainingRecursionDelayLevels.length);
+  } else {
+    logger.debug("Recursive scanning START — steps=%d (%s), delayLevels=%o", maxSteps, maxSteps === 0 ? "unlimited" : `${maxSteps - 1} recursion passes`, recursionDelayLevels);
+    let loopCount = 0;
+
+    // The initial normal scan consumed pass #1 of the budget (ST's `count`
+    // starts at the first pass); 0 = unlimited.
+    const maxRecursionPasses = maxSteps === 0 ? Number.POSITIVE_INFINITY : maxSteps - 1;
+    while (runRecursionPass && loopCount < maxRecursionPasses) {
       loopCount++;
-      logger.debug("  Recursion pass #%d — level=%d, buffer=%d chars", loopCount, currentRecursionLevel, recurseBuffer.length);
+      logger.debug("  Recursion pass #%d — level=%d, buffer=%d chars", loopCount, currentRecursionLevel, recurseBuffer.join("").length);
       let newActivations = 0;
-      let newRecurseText = "";
+      const newRecurseContents: string[] = [];
       const passCandidates: ActivationResult["activatedEntries"] = [];
 
       for (const entry of allEntries) {
@@ -366,9 +563,11 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         if (activatedIds.has(entry.id) || failedProbabilityIds.has(entry.id)) continue;
 
         const result = tryActivateEntry({
-          entry, macroMap, characterId, characterName, currentTurn,
-          // Recursion scan: combine original scan text with recurse buffer
-          scanText: buildScanText(entry, input.messages, scanDepths, input) + "\n" + recurseBuffer,
+          entry, resolveMacros, characterId, characterName, currentTurn,
+          // Recursion scan includes the (possibly widened — the skew is
+          // buffer state in ST, world-info.js 280/402, and survives into
+          // every later scan state) window plus each recursion-buffer unit.
+          scanText: buildScanText(entry, input.messages, scanDepths, input, depthSkew, recurseBuffer),
           scanState: "recursion",
           currentRecursionLevel,
           updatedState, activatedIds,
@@ -397,40 +596,35 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
         }
         newActivations++;
         activatedIds.add(survivor.id);
-        activated.push(survivor);
+        const committedSurvivor = { ...survivor, content: resolveMacros(survivor.content) };
+        activated.push(committedSurvivor);
         const flat = flatById.get(survivor.id);
-        if (flat) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
+        if (flat && !input.dryRun) commitActivationState(flat, survivor.reason.kind, currentTurn, updatedState);
         if (!flat?.preventRecursion) {
-          newRecurseText += survivor.content + "\n";
+          newRecurseContents.push(committedSurvivor.content);
         }
       }
 
       logger.debug("  Recursion pass #%d done: %d activated", loopCount, newActivations);
 
-      // Add new content to recurse buffer for next pass
-      if (newRecurseText) {
-        recurseBuffer += newRecurseText;
+      // ST adds one joined content unit per successful scan pass before the
+      // next recursion pass (world-info.js:5020-5024).
+      if (newRecurseContents.length > 0) {
+        recurseBuffer.push(newRecurseContents.join("\n"));
       }
 
-      // Advance delay-until-recursion level if available and no new activations
-      if (newActivations === 0) {
-        delayLevelIdx++;
-        if (delayLevelIdx < recursionDelayLevels.length) {
-          currentRecursionLevel = recursionDelayLevels[delayLevelIdx];
-          continue; // try again with next delay level
-        }
-        // No more delay levels and no new activations — stop
-        break;
+      // A regular recursion pass repeats the current level only when it has
+      // fresh recursion content. Otherwise ST advances the next remaining
+      // delay level, even with recursion disabled or an empty buffer
+      // (world-info.js:5010-5013).
+      if (anyRecursiveScanning && newRecurseContents.length > 0) {
+        continue;
       }
-    }
-  }
-
-  // ── Include names ────────────────────────────────────────────────────────
-  // Build lorebookId → includeNames map
-  const includeNamesMap = new Map(input.lorebooks.map(lb => [lb.id, lb.includeNames]));
-  for (const entry of activated) {
-    if (includeNamesMap.get(entry.lorebookId)) {
-      entry.content = `[${entry.title}] ${entry.content}`;
+      if (remainingRecursionDelayLevels.length > 0) {
+        currentRecursionLevel = remainingRecursionDelayLevels.shift()!;
+        continue;
+      }
+      runRecursionPass = false;
     }
   }
 
@@ -457,9 +651,17 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
   // Token budget per lorebook
   const budgeted = applyTokenBudget(activated, input.lorebooks, input.estimateTokenCount, input.maxContextTokens);
 
-  logger.debug("DONE: %d entries activated, %d after budget, %d after groups", activated.length, budgeted.length, budgeted.length);
+  const outletEntries: Record<string, Array<{ entryId: string; content: string }>> = {};
+  const promptEntries = budgeted.kept.filter((entry) => {
+    if (entry.position !== "outlet") return true;
+    const outletName = flatById.get(entry.id)?.outletName;
+    if (outletName) (outletEntries[outletName] ??= []).push({ entryId: entry.id, content: entry.content });
+    return false;
+  });
 
-  return { activatedEntries: budgeted, updatedState };
+  logger.debug("DONE: %d entries activated, %d after budget, %d prompt entries, %d books overflowed", activated.length, budgeted.kept.length, promptEntries.length, budgeted.overflow.length);
+
+  return { activatedEntries: promptEntries, overflowedBooks: budgeted.overflow, outletEntries, updatedState };
 }
 
 // ─── Entry activation logic ─────────────────────────────────────────────────
@@ -477,7 +679,7 @@ type ActivationOutcome =
 
 function tryActivateEntry(ctx: {
   entry: FlatEntry;
-  macroMap: Record<string, string>;
+  resolveMacros: (text: string) => string;
   characterId: string;
   characterName: string;
   currentTurn: number;
@@ -488,7 +690,7 @@ function tryActivateEntry(ctx: {
   activatedIds: Set<string>;
 
 }): ActivationOutcome {
-  const { entry, macroMap, characterId, characterName, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
+  const { entry, resolveMacros, characterId, characterName, currentTurn, scanText, scanState, currentRecursionLevel, updatedState, activatedIds } = ctx;
   const reason = (msg: string): ActivationOutcome => { logger.debug("  skip %s: %s | title=%s", entry.id, msg, entry.title); return { status: "skipped" }; };
 
   if (!entry.enabled) return reason("disabled");
@@ -506,6 +708,17 @@ function tryActivateEntry(ctx: {
     if (entry.characterFilterExclude ? matches : !matches) return reason("character filter");
   }
 
+  // 2. Absolute chat-length gate (ST `delay`). ST computes isDelay from
+  // chat.length via #checkDelayEffect and `continue`s on it BEFORE the
+  // cooldown, delay-until-recursion, decorator, constant and sticky gates
+  // (world-info.js ~4735-4790) — so an entry below its threshold is fully
+  // suppressed, constants and live sticky windows included. Stateless: like
+  // ST, it re-evaluates every scan against the current chat length (deleting
+  // messages re-suppresses the entry). 0 = off.
+  if (entry.minChatMessages > 0 && currentTurn < entry.minChatMessages) {
+    return reason("min chat messages not reached");
+  }
+
   // 3. Recursion-specific filters
   if (scanState === "recursion") {
     if (entry.excludeRecursion) return reason("exclude recursion");
@@ -514,7 +727,10 @@ function tryActivateEntry(ctx: {
       if (entryLevel > currentRecursionLevel) return reason("recursion level not reached");
     }
   } else {
-    if (entry.delayUntilRecursion && !entry.constant) {
+    // ST evaluates delayUntilRecursion before its constant gate
+    // (world-info.js:4748-4752, 4781-4784), so constants stay deferred on
+    // the normal pass unless a live sticky window exempts them.
+    if (entry.delayUntilRecursion) {
       const state = updatedState[entry.id];
       if (!(entry.stickyWindow > 0 && state?.activatedAtTurn != null &&
             currentTurn - state.activatedAtTurn < entry.stickyWindow)) {
@@ -523,16 +739,13 @@ function tryActivateEntry(ctx: {
     }
   }
 
-  // 3b. Decorators — @@activate / @@dont_activate at start of content
-  let decoratorActive = false;
-  const rawContent = entry.content.trimStart();
-  if (rawContent.startsWith("@@")) {
-    const firstLine = rawContent.split("\n")[0].trim();
-    if (firstLine === "@@activate" || firstLine === "@@@activate") {
-      decoratorActive = true;
-    } else if (firstLine === "@@dont_activate" || firstLine === "@@@dont_activate") {
-      return reason("@@dont_activate decorator");
-    }
+  // 3b. ST parseDecorators (world-info.js 4540-4586) reads every leading
+  // `@@` line before this scan. It preserves raw-start semantics (no trim),
+  // treats `@@@` as an escape until fallback, and gives @@activate precedence
+  // because ST checks it before @@dont_activate (4763-4771).
+  const decoratorActive = entry.decorators.includes("@@activate");
+  if (!decoratorActive && entry.decorators.includes("@@dont_activate")) {
+    return reason("@@dont_activate decorator");
   }
 
   // 4. Constant entries — always active
@@ -551,7 +764,7 @@ function tryActivateEntry(ctx: {
     logger.debug("  actv %s: constant | title=%s", entry.id, entry.title);
     // LG-6: the state write moved to the pass-survivor loop (see
     // commitActivationState) — group losers must not persist activation state.
-    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "constant" }, groupScore: scoreEntryKeysForGroup(entry, scanText, macroMap) };
+    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "constant" }, groupScore: scoreEntryKeysForGroup(entry, scanText, resolveMacros) };
   }
 
   // 5. Time windows — sticky check
@@ -577,21 +790,19 @@ function tryActivateEntry(ctx: {
     if (turnsSince < entry.cooldownWindow) return reason("cooldown");
   }
 
-  // 7. Delay check
-  if (entry.delayWindow > 0 && state?.pendingDelayUntilTurn != null) {
-    if (currentTurn < state.pendingDelayUntilTurn) return reason("delay pending");
-    // LG-6: state write moved to the pass-survivor loop.
-    return { status: "activated", matchCount: 0, matchedKeys: [], reason: { kind: "delay_fulfilled" }, groupScore: 0 };
-  }
-
   // 8. Key matching (skip if @@activate decorator forces activation)
   let matchedKeys: string[] = [];
   let secondaryMatches: string[] = [];
   if (!decoratorActive) {
-    const resolvedKeys = entry.keys.map(k => applyMacros(k, macroMap));
-    const resolvedSecondaryKeys = entry.secondaryKeys.map(k => applyMacros(k, macroMap));
-
-    matchedKeys = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords);
+    const resolvedKeys = entry.keys.map((key) => entry.caseFormsKeys.includes(key)
+      ? compileRussianCaseFormsKey(resolveMacros(key))
+      : resolveMacros(key));
+    const resolvedSecondaryKeys = entry.secondaryKeys.map((key) => entry.caseFormsKeys.includes(key)
+      ? compileRussianCaseFormsKey(resolveMacros(key))
+      : resolveMacros(key));
+    const plainKeyByMatcher = new Map(resolvedKeys.map((matcher, index) => [matcher, entry.keys[index]]));
+    matchedKeys = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords)
+      .map((matcher) => plainKeyByMatcher.get(matcher) ?? matcher);
     if (matchedKeys.length === 0) return reason("no key match");
 
     // 9. Secondary key logic
@@ -608,16 +819,6 @@ function tryActivateEntry(ctx: {
   // world-info.js 4909-4931): group losers never roll, a prob-failed WINNER
   // leaves its group empty, constants roll like everyone else, and
   // sticky-active auto-passes. The gate lives in the pass-survivor loops.
-
-  // 11. Delay — if delayWindow > 0 and this is first match, set pending
-  // LG-12: "never activated before" must ALSO hold for lastMatchedAtTurn —
-  // the expiry sweep clears activatedAtTurn, and a cleared anchor must not
-  // re-arm a delay that already ran (ST's delay is an absolute threshold,
-  // never re-armed). Both-null = genuinely first-ever match.
-  if (entry.delayWindow > 0 && state?.activatedAtTurn == null && state?.lastMatchedAtTurn == null) {
-    updatedState[entry.id] = { pendingDelayUntilTurn: currentTurn + entry.delayWindow };
-    return reason("delay window set");
-  }
 
   // 12. Activate
   logger.debug("  actv %s: key match | title=%s", entry.id, entry.title);
@@ -638,74 +839,134 @@ function tryActivateEntry(ctx: {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function outletNameFromMetadata(metadata: Record<string, unknown> | undefined): string | null {
+  const outletName = metadata?.stOutletName;
+  return typeof outletName === "string" && outletName.trim() ? outletName.trim() : null;
+}
+
+function entryBaseDepth(entry: FlatEntry, scanDepths: Map<string, number>): number {
+  return entry.scanDepthOverride ?? (scanDepths.get(entry.lorebookId) ?? 2);
+}
+
+const SCAN_SENTINEL = "\x01";
+const SCAN_JOINER = `\n${SCAN_SENTINEL}`;
+
 function buildScanText(
   entry: FlatEntry,
-  messages: Array<{ role: string; content: string }>,
+  messages: ActivationInput["messages"],
   scanDepths: Map<string, number>,
   input: ActivationInput,
   depthSkew = 0,
+  recurseBuffer: readonly string[] = [],
 ): string {
-  const scanDepth = (entry.scanDepthOverride ?? (scanDepths.get(entry.lorebookId) ?? 2)) + depthSkew;
-  const effectiveMessages = messages.slice(-scanDepth);
-  const parts: string[] = [];
+  const scanDepth = entryBaseDepth(entry, scanDepths) + depthSkew;
+  // Array#slice(-0) is equivalent to slice(0), which scans the full chat.
+  // ST's buffer has no chat-message units at depth 0 (world-info.js:279-297).
+  const effectiveMessages = scanDepth === 0 ? [] : messages.slice(-scanDepth);
   const sources = entry.matchSources.length > 0 ? entry.matchSources : ["chat_messages"];
+
+  // Port of ST's WorldInfoBuffer.get construction (world-info.js:278-325):
+  // start with a sentinel, then separate every scanned message, selected
+  // global source, and recursion-buffer unit with `\n\x01`. `\x01` is not
+  // matched by JS `\s`, so regex keys cannot cross those seams. ST's message
+  // text itself is assembled by chatForWI (public/script.js:4563-4572), which
+  // supplies the optional speaker prefix below.
+  let result = SCAN_SENTINEL;
   if (sources.includes("chat_messages")) {
-    parts.push(effectiveMessages.map(m => m.content).join("\n"));
-  }
-  if (sources.includes("character_desc") && input.characterDescription) {
-    parts.push(input.characterDescription);
+    result += effectiveMessages.map(m =>
+      entry.includeNames && m.name ? `${m.name}: ${m.content}` : m.content,
+    ).join(SCAN_JOINER);
   }
   if (sources.includes("persona_desc") && input.personaDescription) {
-    parts.push(input.personaDescription);
+    result += SCAN_JOINER + input.personaDescription;
+  }
+  if (sources.includes("character_desc") && input.characterDescription) {
+    result += SCAN_JOINER + input.characterDescription;
   }
   if (sources.includes("character_personality") && input.characterPersonality) {
-    parts.push(input.characterPersonality);
+    result += SCAN_JOINER + input.characterPersonality;
   }
   if (sources.includes("character_note") && input.characterNote) {
-    parts.push(input.characterNote);
+    result += SCAN_JOINER + input.characterNote;
   }
   if (sources.includes("scenario") && input.scenario) {
-    parts.push(input.scenario);
+    result += SCAN_JOINER + input.scenario;
   }
   if (sources.includes("creator_notes") && input.creatorNotes) {
-    parts.push(input.creatorNotes);
+    result += SCAN_JOINER + input.creatorNotes;
   }
-  return parts.join("\n");
+  // ST appends prompt injections after its selected global sources
+  // (world-info.js:317-320). ST gates Author's Note and the character depth
+  // prompt with allowWIScan, default false (authors-note.js:295-305, 375-392;
+  // script.js:4415-4430). VT has no global switch: selecting a source chip is
+  // the per-entry, default-off gate. Persona remains separately selectable and
+  // has no such global gate, matching ST's hardcoded scan=true at depth
+  // (script.js:3155-3166).
+  if (sources.includes("authors_note") && input.authorsNote) {
+    result += SCAN_JOINER + input.authorsNote;
+  }
+  if (sources.includes("summaries") && input.summaries?.length) {
+    result += SCAN_JOINER + input.summaries.join(SCAN_JOINER);
+  }
+  // The quiet prompt is always scanned in ST (`setExtensionPrompt(..., true)`
+  // in public/script.js:4564), independently of an entry source chip.
+  if (input.quietPrompt) {
+    result += SCAN_JOINER + input.quietPrompt;
+  }
+  if (recurseBuffer.length > 0) {
+    result += SCAN_JOINER + recurseBuffer.join(SCAN_JOINER);
+  }
+  return result;
 }
 
-function applyMacros(key: string, macroMap: Record<string, string>): string {
-  let result = key;
+function applyLegacyMacros(text: string, macroMap: Record<string, string>): string {
+  let result = text;
   for (const [macro, value] of Object.entries(macroMap)) {
     result = result.replaceAll(macro, value);
   }
-  // Also resolve case-insensitive {{USER}}, {{CHAR}}, etc.
-  result = result.replace(/\{\{(\w+)\}\}/gi, (_match, name: string) => {
-    const lower = name.toLowerCase();
-    const resolved = macroMap[`{{${lower}}}`];
+  // Compatibility fallback for direct engine callers that still supply only
+  // the old user/char map; production binds the full macro engine above.
+  return result.replace(/\{\{(\w+)\}\}/gi, (_match, name: string) => {
+    const resolved = macroMap[`{{${name.toLowerCase()}}}`];
     return resolved ?? `{{${name}}}`;
   });
-  return result;
 }
 
 function matchKeys(keys: string[], text: string, caseSensitive: boolean, wholeWords: boolean): string[] {
   const matched: string[] = [];
   for (const key of keys) {
     if (!key) continue;
-    // Regex pattern: /pattern/flags
+    // Regex pattern: /pattern/flags — ST runs regex keys with EXACTLY the
+    // authored flags (parseRegexFromString, world-info.js:2846) and the regex
+    // channel overrides the entry's caseSensitive / matchWholeWords options
+    // (world-info.js:337: "override all the other options"). A flagless regex
+    // is therefore case-SENSITIVE even when the entry resolves
+    // case-insensitive (resweep N3 — no auto-`i` fallback).
     const regexMatch = key.match(/^\/(.+)\/([gimsuy]*)$/s);
     if (regexMatch) {
       try {
-        const regex = new RegExp(regexMatch[1], regexMatch[2] || (caseSensitive ? "" : "i"));
+        const regex = new RegExp(regexMatch[1], regexMatch[2]);
         if (regex.test(text)) matched.push(key);
       } catch {
         // Invalid regex — skip
       }
       continue;
     }
-    // Plain string match
+    // Plain string match — ST dialect (world-info.js 345-366):
+    // case-insensitivity rides the i flag (ST lowercases both strings in
+    // #transformString — equivalent surface); whole words = ST's
+    // punctuation-inclusive boundary `(?:^|\W)(key)(?:$|\W)` (JS \W is
+    // ASCII-defined, so Cyrillic letters count as \W: a Russian key matches
+    // across spaces/punctuation AND over-matches inside longer word forms,
+    // exactly ST — the fix for the over-match is the opt-in case-forms flag,
+    // never a dialect change, resweep P5); a multi-word key degrades to a
+    // plain substring (`haystack.includes(key)` in ST) — no phrase boundary.
     const flags = caseSensitive ? "" : "i";
     const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = wholeWords ? `\\b${escaped}\\b` : escaped;
+    let pattern = escaped;
+    if (wholeWords && key.split(/\s+/).length === 1) {
+      pattern = `(?:^|\\W)(${escaped})(?:$|\\W)`;
+    }
     try {
       if (new RegExp(pattern, flags).test(text)) matched.push(key);
     } catch {
@@ -756,11 +1017,17 @@ function computeGroupScore(
 /** Score an entry's keys against the scan text WITHOUT any activation gate —
  *  used for constants (always active, but their group score is their real key
  *  matches, per ST where scoring runs over every activated entry). */
-function scoreEntryKeysForGroup(entry: FlatEntry, scanText: string, macroMap: Record<string, string>): number {
-  const resolvedKeys = entry.keys.map(k => applyMacros(k, macroMap));
-  const resolvedSecondaryKeys = entry.secondaryKeys.map(k => applyMacros(k, macroMap));
-  const primaryMatches = matchKeys(resolvedKeys, scanText, entry.caseSensitive, entry.matchWholeWords).length;
-  const secondaryMatches = matchKeys(resolvedSecondaryKeys, scanText, entry.caseSensitive, entry.matchWholeWords).length;
+function scoreEntryKeysForGroup(
+  entry: FlatEntry,
+  scanText: string,
+  resolveMacros: (text: string) => string,
+): number {
+  const primaryMatches = matchKeys(entry.keys.map((key) => entry.caseFormsKeys.includes(key)
+    ? compileRussianCaseFormsKey(resolveMacros(key))
+    : resolveMacros(key)), scanText, entry.caseSensitive, entry.matchWholeWords).length;
+  const secondaryMatches = matchKeys(entry.secondaryKeys.map((key) => entry.caseFormsKeys.includes(key)
+    ? compileRussianCaseFormsKey(resolveMacros(key))
+    : resolveMacros(key)), scanText, entry.caseSensitive, entry.matchWholeWords).length;
   return computeGroupScore(entry.keys.length, primaryMatches, entry.secondaryKeys.length, secondaryMatches, entry.logic);
 }
 
@@ -798,9 +1065,7 @@ function toActivatedEntry(
  * sticky window would auto-activate on every later scan within the window
  * despite never reaching the prompt. Writes now happen in the survivor loop,
  * preserving each activation path's original write shape: constant/sticky
- * merge over the existing state; key-match/decorator/delay-fulfilled replace
- * it. The delay-pending SETUP write stays inside tryActivateEntry
- * (delay-pending entries never become group candidates).
+ * merge over the existing state; key-match/decorator replace it.
  */
 function commitActivationState(
   entry: FlatEntry,
@@ -836,7 +1101,7 @@ function commitActivationState(
       // lives; the sweep's handoff re-anchors it at the sticky end instead.
       updatedState[entry.id] = { ...state, lastMatchedAtTurn: state?.lastMatchedAtTurn ?? currentTurn };
       break;
-    default: // key_match / decorator / delay_fulfilled — full replace
+    default: // key_match / decorator — full replace
       // Reachable only when no sticky is alive and no cooldown is alive (the
       // gates above), so both anchors are genuinely absent or expired — a
       // fresh dual anchor matches ST's only-if-absent set exactly.
@@ -1023,26 +1288,63 @@ function applyTokenBudget(
   lorebooks: ActivationInput["lorebooks"],
   estimateTokenCount?: (text: string) => number,
   maxContextTokens?: number,
-): ActivationResult["activatedEntries"] {
+): { kept: ActivationResult["activatedEntries"]; overflow: ActivationResult["overflowedBooks"] } {
   const count = estimateTokenCount ?? ((text: string) => Math.ceil(text.length / 4));
-  // Resolve each lorebook's effective budget: percent mode overrides fixed.
+  // Resolve each lorebook's effective budget. Percent mode: ST parity —
+  // budget = round(% of context) with a floor of 1 (world-info.js:4624), then
+  // an optional absolute cap clamps it DOWN (world-info.js:4626-4628;
+  // cap > budget → budget = cap, cap is never a raise). Fixed mode: the
+  // literal tokenBudget, unchanged.
   const budgetPerLorebook = new Map<string, number>();
   for (const lb of lorebooks) {
     if (lb.tokenBudgetPercent != null && typeof maxContextTokens === 'number' && maxContextTokens > 0) {
-      budgetPerLorebook.set(lb.id, Math.round(maxContextTokens * lb.tokenBudgetPercent / 100));
+      const pctBudget = Math.round(maxContextTokens * lb.tokenBudgetPercent / 100) || 1;
+      const cap = lb.tokenBudgetCap ?? 0;
+      budgetPerLorebook.set(lb.id, cap > 0 && pctBudget > cap ? cap : pctBudget);
     } else {
       budgetPerLorebook.set(lb.id, lb.tokenBudget);
     }
   }
   const used = new Map<string, number>();
-  return entries.filter(e => {
+  // N5 stop-after-first-overflow latch, per book: once a book's budget
+  // overflows, that book's later non-ignoreBudget entries are dropped WITHOUT
+  // a fit check — ST world-info.js:4902-4947 sets token_budget_overflowed on
+  // the first overflow and skips every later non-ignore entry; there is no
+  // best-effort fill that lets a later, smaller entry into the leftover.
+  // (ST's `break` when no ignoreBudget entries remain is a list-wide
+  // optimization; per-book skipping here is the same semantics because books
+  // are independent.) ignoreBudget entries bypass the budget entirely and
+  // stay eligible after the latch. Overflow itself is `>=` (ST world-info.js
+  // 4942: cumulative-after-add reaching the budget exactly is an overflow —
+  // the entry that lands exactly on the limit is dropped).
+  const overflowed = new Set<string>();
+  // P21: per-book count of entries the latch dropped — the overflowAlert
+  // channel (id + dropped count). Counted here, one place, next to the
+  // dropping itself.
+  const droppedCount = new Map<string, number>();
+  const drop = (lorebookId: string) => droppedCount.set(lorebookId, (droppedCount.get(lorebookId) ?? 0) + 1);
+  const kept = entries.filter(e => {
     if (e.ignoreBudget) return true;
     const budget = budgetPerLorebook.get(e.lorebookId);
     if (budget == null) return true;
+    if (overflowed.has(e.lorebookId)) {
+      drop(e.lorebookId);
+      return false;
+    }
     const current = used.get(e.lorebookId) ?? 0;
     const cost = count(e.content);
-    if (current + cost > budget) return false;
+    if (current + cost >= budget) {
+      overflowed.add(e.lorebookId);
+      drop(e.lorebookId);
+      return false;
+    }
     used.set(e.lorebookId, current + cost);
     return true;
   });
+  return {
+    kept,
+    overflow: Array.from(droppedCount.entries())
+      .map(([lorebookId, dropped]) => ({ lorebookId, dropped }))
+      .sort((a, b) => a.lorebookId.localeCompare(b.lorebookId)),
+  };
 }

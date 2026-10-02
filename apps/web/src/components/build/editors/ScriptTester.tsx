@@ -4,7 +4,7 @@ import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { codeQuoteCls } from "../../../lib/field-tokens.js";
-import { testScript } from "../../../app-client.js";
+import { testScript } from "../../../api/script-api.js";
 import type { PromptScriptTestResult } from "@vibe-tavern/api-contracts";
 
 /**

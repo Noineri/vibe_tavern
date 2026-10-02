@@ -11,21 +11,37 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useFormContext } from "react-hook-form";
+import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import { toast } from "sonner";
 
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { AiQuickPill, type AiQuickSettings } from "../../shared/AiQuickPill.js";
 import { useT } from "../../../i18n/context.js";
-import {
-  streamAiAssistant,
-  updateUiSettings,
-  type AiAssistantRequestBody,
-  type LoreEntryRecord,
-} from "../../../app-client.js";
+import { streamAiAssistant } from "../../../api/ai-assistant-api.js";
+import { updateUiSettings } from "../../../api/settings-api.js";
+import type { AiAssistantRequestBody } from "../../../api/types.js";
+
+export interface GeneratedLoreKeys {
+  keys: string[];
+  secondaryKeys: string[];
+}
+
+/** Parse the generator's fixed two-array response without admitting metadata. */
+export function parseGeneratedLoreKeys(raw: string): GeneratedLoreKeys {
+  const parsed: unknown = JSON.parse(raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim());
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Key generator returned a non-object JSON response");
+  }
+  const record = parsed as Record<string, unknown>;
+  const strings = (value: unknown): string[] => Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+  return { keys: strings(record.keys), secondaryKeys: strings(record.secondaryKeys) };
+}
 
 export function LoreKeysAiPill() {
   const { t } = useT();
-  const form = useFormContext<LoreEntryRecord>();
+  const form = useFormContext<LoreEntryDraft>();
   // content gates the generate button (render-time read) — watch keeps it live.
   const content = form.watch("content");
   const [settings, setSettings] = useState<AiQuickSettings>({
@@ -79,9 +95,8 @@ export function LoreKeysAiPill() {
         if (chunk.type === "error" && chunk.error) throw new Error(chunk.error);
         if (chunk.type === "done") break;
       }
-      // Parse JSON response
-      const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-      const parsed = JSON.parse(cleaned) as { keys?: string[]; secondaryKeys?: string[] };
+      // Parse the fixed key-array response; case-form metadata is never accepted.
+      const parsed = parseGeneratedLoreKeys(raw);
       const target = settings.keyTarget ?? "both";
       // Safety net: never touch the key set the user did NOT request, even if
       // the model returned one. The backend prompt asks for the matching shape,

@@ -1,0 +1,1 @@
+Format the final prompt as short natural language — this family prefers readable description over tag soup. One compact block: subject and visible identity, pose and expression, clothing, setting, lighting. If tags fit a detail better, use a short tag cluster; end with masterpiece, best quality only if the task asks for quality boosters. No anime vocabulary, no score tags.

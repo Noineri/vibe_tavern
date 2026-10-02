@@ -12,7 +12,7 @@ import { useT } from "../../../../i18n/context.js";
 /**
  * CD-6: the copilot editor pane's content area in review mode — the inline-diff
  * document (green hunks + accept buttons, CD-5) plus the review bar
- * («принять все / N ханков / отменить все непринятые / отменить все»).
+ * ("accept all / N hunks / cancel all unaccepted / cancel all").
  *
  * The panel is PROPS-DRIVEN and stateless by design: the accept-selection
  * state lives in the shell (it must survive buffer-tab switches, which remount
@@ -149,7 +149,7 @@ export function applyHunksToBuffer(
  * RV-3 conflict path (reverse of {@link applyHunksToBuffer}): roll ACCEPTED
  * hunks back off the CURRENT buffer by locating each hunk's ADDED lines as a
  * contiguous whole-line run and splicing its REMOVED lines back in. Used by
- * «Отменить все» when the buffer has drifted since the accept — the clean
+ * "Cancel all" when the buffer has drifted since the accept — the clean
  * path rebuilds from the snapshot base instead. A hunk whose added lines no
  * longer appear contiguously (a pure deletion — no added anchor — or an
  * external edit under it) is skipped and stays in the round's skipped list;

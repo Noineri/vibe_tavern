@@ -25,7 +25,7 @@
  * mobile can't drift on character sort/filter/tag-pool.
  */
 import { useMemo } from "react";
-import type { ChatListItem } from "../../../app-client.js";
+import type { ChatListItem } from "../../../api/types.js";
 import { buildCharacterTabs } from "../../../lib/character-tabs.js";
 import { filterAndSortList } from "../../../lib/list-filter.js";
 import { useNavigationStore } from "../../../stores/index.js";

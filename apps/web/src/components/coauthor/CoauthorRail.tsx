@@ -30,7 +30,7 @@ import { useCharacterStore } from "../../stores/character-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useChatController } from "../../hooks/use-chat-controller.js";
 import { useLastNonNull } from "../../hooks/use-last-non-null.js";
-import type { ChatListItem } from "../../app-client.js";
+import type { ChatListItem } from "../../api/types.js";
 
 
 
@@ -409,7 +409,7 @@ export function CoauthorRail({ hidden }: { hidden?: boolean }) {
       <CharacterImportMobile
         ref={characterImportRef}
         isImporting={character.isImporting}
-        onImportFiles={(files) => { void character.handleImportFiles(files); }}
+        onImportFiles={(files, options) => { void character.handleImportFiles(files, options); }}
       />
     </>
   );

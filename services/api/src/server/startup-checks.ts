@@ -13,7 +13,7 @@ export interface StartupFileCheckOptions {
 	readonly requireStatic?: boolean;
 	/** When non-empty, the frontend is embedded in the .exe and the web/
 	 *  directory on disk is neither required nor checked. */
-	readonly embeddedWebFiles?: Record<string, string>;
+	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
 }
 
 function formatSize(bytes: number): string {
@@ -120,9 +120,9 @@ export async function runStartupFileChecks(options: StartupFileCheckOptions): Pr
 	const promptPath = await resolvePromptPathForMode("script");
 	ok = await checkFile("AI assistant script prompt", promptPath) && ok;
 
-	if (options.embeddedWebFiles && Object.keys(options.embeddedWebFiles).length > 0) {
+	const embeddedCount = options.embeddedWebFiles?.size ?? 0;
+	if (embeddedCount > 0) {
 		// Frontend is baked into the executable — no on-disk web/ folder needed.
-		const embeddedCount = Object.keys(options.embeddedWebFiles).length;
 		console.log(`[startup-check] ✅ web bundle: ${embeddedCount} file(s) embedded in the executable.`);
 	} else if (options.staticDir) {
 		const staticRequired = options.requireStatic ?? false;

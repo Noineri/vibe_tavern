@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { parseStPersonas, type StPersonaEntry } from "@vibe-tavern/import-export";
 import { toast } from "sonner";
-import { createPersona, uploadPersonaAvatar } from "../app-client.js";
+import { createPersona, uploadPersonaAvatar } from "../api/persona-api.js";
 import { fetchBootstrapAction, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
 import { cn } from "../lib/cn.js";
 import { useT } from "../i18n/context.js";

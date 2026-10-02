@@ -6,6 +6,7 @@ import { useT } from "../../i18n/context.js";
 import { normalizeLocale } from "../../i18n/registry.js";
 import { Icons } from "../shared/icons.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
+import { apiFetch } from "../../api/client.js";
 import { resolveAssistantPrefillSupport } from "@vibe-tavern/domain";
 import { type ThemeMode } from "../../themes/registry.js";
 import { useChatStore, useNavigationStore, useCharacterStore, useProviderStore, useModalStore, useIsSending } from "../../stores/index.js";
@@ -43,8 +44,8 @@ import { CoauthorModuleModal } from "../coauthor/CoauthorModuleModal.js";
 import { CoauthorSkillModal } from "../coauthor/CoauthorSkillModal.js";
 import { AvatarPanel } from "../settings/popovers/AvatarPanel.js";
 import type { TweaksSettings } from "../../lib/local-storage.js";
-import type { ProxyRecord } from "../../app-client.js";
-import { deleteProxy, getDefaultProxy, listProxies, saveProxy, setDefaultProxy, updateProxy } from "../../app-client.js";
+import type { ProxyRecord } from "../../api/types.js";
+import { deleteProxy, getDefaultProxy, listProxies, saveProxy, setDefaultProxy, updateProxy } from "../../api/proxy-api.js";
 
 interface AppShellProps {
   tweaksSettings: TweaksSettings;
@@ -127,6 +128,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
       toast.error(error instanceof Error ? error.message : t("request_failed"));
     });
   }, []);
+
   const updateCheck = useUpdateCheck(buildConfig.APP_VERSION);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -214,7 +216,7 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
   const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
   // LS-10: the generation-format surface moved to the provider settings (the
-  // format block under the Чат/Текст switch) — the prompt-manager tab and its
+  // format block under the Chat/Text switch) — the prompt-manager tab and its
   // AppShell activation gate retired. No tc* derivations remain here.
 
   // Shell dispatch via the chat-mode registry (SURFACE_REGISTRY step 2):
@@ -371,10 +373,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
             onOpenMobileAccess={async () => {
               // Ensure a token exists before opening the modal
               try {
-                const resp = await fetch("/api/settings/mobile-access");
+                const resp = await apiFetch("/api/settings/mobile-access");
                 if (resp.ok) {
                   const data = await resp.json();
-                  if (!data.token) await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
+                  if (!data.token) await apiFetch("/api/settings/mobile-access/regenerate", { method: "POST" });
                 }
               } catch { /* ignore */ }
               setMobileAccessOpen(true);
@@ -393,10 +395,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
         setSetting={handleSetTweak}
         onOpenMobileAccess={async () => {
           try {
-            const resp = await fetch("/api/settings/mobile-access");
+            const resp = await apiFetch("/api/settings/mobile-access");
             if (resp.ok) {
               const data = await resp.json();
-              if (!data.token) await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
+              if (!data.token) await apiFetch("/api/settings/mobile-access/regenerate", { method: "POST" });
             }
           } catch { /* ignore */ }
           setMobileAccessOpen(true);

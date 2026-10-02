@@ -230,7 +230,7 @@ export const diceCheckDescriptorSchema = z.object({
   id: nonEmptyString,
   label: boundedLabel,
   notation: nonEmptyString,
-  actors: z.array(diceActorTypeSchema).min(1),
+  actors: z.array(diceActorTypeSchema).min(1).readonly(),
   resolution: diceResolutionSchema,
   faceShape: diceFaceShapeSchema,
   /** Optional short rule help shown in the composer tray (F8). Absent when the

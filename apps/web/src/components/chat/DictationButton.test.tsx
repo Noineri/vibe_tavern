@@ -5,6 +5,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import React from "react";
 import { render, act, waitFor } from "@testing-library/react";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -114,6 +115,7 @@ function uiSettings(overrides: Record<string, unknown> = {}): ReturnType<typeof 
 
 function makeUiSettings() {
   return {
+    ...wireUiSettings(),
     id: "ui",
     theme: "dark",
     chatFontSize: 17,

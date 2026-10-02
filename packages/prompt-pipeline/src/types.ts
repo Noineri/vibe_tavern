@@ -168,10 +168,14 @@ export interface PromptAssemblyContext {
     /** Resolved system prompt (after fallback chain: preset override → default .md). */
     systemPrompt: string;
   };
+  /** Activated lore outlets for {{outlet::name}} macros. */
+  outletEntries?: Record<string, string>;
   lore?: Array<{
     id: string;
     title: string;
     content: string;
+    /** True when StaticPromptResolver already applied the full macro engine. */
+    macrosResolved?: boolean;
     priority: number;
     position?: string;
     /** Injection depth for at_depth position. Defaults to 4. */
@@ -180,6 +184,8 @@ export interface PromptAssemblyContext {
     role?: string;
     /** User-defined display order within the same lorebook. Lower = earlier. */
     sortOrder?: number;
+    /** Resolver-derived ST source-block order for final prompt insertion. */
+    insertionOrder?: number;
   }>;
   memory?: {
     summary?: Array<{

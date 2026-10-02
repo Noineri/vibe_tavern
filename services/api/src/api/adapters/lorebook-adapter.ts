@@ -1,7 +1,7 @@
 import type { LorebookRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer, CreateLoreEntryData, UpdateLoreEntryData } from "@vibe-tavern/db";
 import { importLorebook } from "../../domain/lorebook/lorebook-import-service.js";
-import { exportLorebookToSt } from "@vibe-tavern/import-export";
+import { exportLorebookToStWithWarnings } from "@vibe-tavern/import-export";
 
 export class LorebookAdapter implements LorebookRuntimeApi {
 	constructor(private readonly stores: StoreContainer) {}
@@ -31,9 +31,10 @@ export class LorebookAdapter implements LorebookRuntimeApi {
 		if (!lorebook) throw new Error(`Lorebook '${lorebookId}' not found`);
 		const entries = await this.stores.lorebooks.listEntries(lorebookId);
 		// Pure serializer lives next to its inverse (importStLorebookJson) in the
-		// import-export package; the store stays DB-only. exportLorebookToSt takes
-		// a structural read contract so store entities pass through without casting.
-		return exportLorebookToSt(lorebook, entries);
+		// import-export package; the store stays DB-only. Its structural read
+		// contract accepts store entities without casting and returns any named
+		// ST-export deviations alongside the download data.
+		return exportLorebookToStWithWarnings(lorebook, entries);
 	};
 
 	getLorebookLinks = (lorebookId: string) =>

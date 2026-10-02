@@ -9,17 +9,20 @@
  * defaults to 1, injectPrompt to "".
  */
 import { describe, it, expect } from "bun:test";
+import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 import { resolveObjectiveTaskContext } from "../src/domain/prompt/prompt-assembly-service.js";
 
+// The resolver receives the chat store's normalized columns; build them the
+// same way from raw stored JSON.
 function state(overrides: Record<string, unknown> = {}) {
-  return { ...overrides };
+  return normalizeObjectiveState({ ...overrides });
 }
 
 describe("resolveObjectiveTaskContext (INS-3)", () => {
   it("returns null when the objective toggle is off", () => {
     expect(
       resolveObjectiveTaskContext({
-        insightsConfig: { objectiveEnabled: false },
+        insightsConfig: normalizeInsightsConfig({ objectiveEnabled: false }),
         insightsObjectiveState: state({ tasks: [{ id: "t1", description: "Do thing", status: "pending" }] }),
       }),
     ).toBeNull();
@@ -28,7 +31,7 @@ describe("resolveObjectiveTaskContext (INS-3)", () => {
   it("returns null when no state has been generated (empty object)", () => {
     expect(
       resolveObjectiveTaskContext({
-        insightsConfig: { objectiveEnabled: true },
+        insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true }),
         insightsObjectiveState: state(),
       }),
     ).toBeNull();
@@ -37,7 +40,7 @@ describe("resolveObjectiveTaskContext (INS-3)", () => {
   it("returns null when the task list is empty", () => {
     expect(
       resolveObjectiveTaskContext({
-        insightsConfig: { objectiveEnabled: true },
+        insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true }),
         insightsObjectiveState: state({ tasks: [] }),
       }),
     ).toBeNull();
@@ -46,7 +49,7 @@ describe("resolveObjectiveTaskContext (INS-3)", () => {
   it("returns null when every task is completed or abandoned", () => {
     expect(
       resolveObjectiveTaskContext({
-        insightsConfig: { objectiveEnabled: true },
+        insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true }),
         insightsObjectiveState: state({
           tasks: [
             { id: "t1", description: "Done", status: "completed" },
@@ -59,7 +62,7 @@ describe("resolveObjectiveTaskContext (INS-3)", () => {
 
   it("returns the first pending task when none is active (default post-generate state)", () => {
     const result = resolveObjectiveTaskContext({
-      insightsConfig: { objectiveEnabled: true },
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true }),
       insightsObjectiveState: state({
         tasks: [
           { id: "t1", description: "First", status: "completed" },
@@ -73,7 +76,7 @@ describe("resolveObjectiveTaskContext (INS-3)", () => {
 
   it("prefers an 'active' task over an earlier 'pending' one", () => {
     const result = resolveObjectiveTaskContext({
-      insightsConfig: { objectiveEnabled: true },
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true }),
       insightsObjectiveState: state({
         tasks: [
           { id: "t1", description: "Pending earlier", status: "pending" },
@@ -86,7 +89,7 @@ describe("resolveObjectiveTaskContext (INS-3)", () => {
 
   it("respects injectionDepth and injectPrompt from the state", () => {
     const result = resolveObjectiveTaskContext({
-      insightsConfig: { objectiveEnabled: true },
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true }),
       insightsObjectiveState: state({
         injectionDepth: 3,
         injectPrompt: "Stay on target.",
@@ -98,7 +101,7 @@ describe("resolveObjectiveTaskContext (INS-3)", () => {
 
   it("defaults injectionDepth to 1 and injectPrompt to '' when the state omits them", () => {
     const result = resolveObjectiveTaskContext({
-      insightsConfig: { objectiveEnabled: true },
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true }),
       insightsObjectiveState: state({
         tasks: [{ id: "t1", description: "Plain task", status: "pending" }],
       }),

@@ -25,6 +25,7 @@
  * row types stay backend-side and import these types back.
  */
 
+import type { AutoSummaryConfig, Chat, InsightsConfig, ObjectiveState, SceneBackfillErrorEntry, SceneBackfillMode, SceneBackfillRunStatus, SceneBackfillSummary, SceneTrackerConfig } from "@vibe-tavern/domain";
 import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, GenerationMode, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderGenerationFormat, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
@@ -296,6 +297,53 @@ export interface ChatListItem {
 	/** ISO timestamp of the most recent message in the active branch; falls back to `updatedAt` when the branch is empty. Drives the "recent" sort for chats and characters. */
 	lastMessageAt: string;
 	updatedAt: string;
+}
+
+/** Character entry in the sidebar / build-mode character list. */
+export interface CharacterListEntry {
+	id: string;
+	name: string;
+	subtitle: string;
+	tags: string[];
+	avatarAssetId: string | null;
+	avatarFullAssetId: string | null;
+	avatarCropJson: string | null;
+	avatarExt: string | null;
+	avatarFullExt: string | null;
+	/** Bumped on every avatar upload; used as the `?v=` cache-buster. */
+	updatedAt: string;
+}
+
+/**
+ * Scene history-backfill run status. `processed` is the durable cursor;
+ * `current` is the item generating right now (in-memory only, null after a
+ * restart until the run reattaches).
+ */
+export interface SceneBackfillStatus {
+	runId: string;
+	chatId: string;
+	mode: SceneBackfillMode;
+	status: SceneBackfillRunStatus;
+	total: number;
+	processed: number;
+	current: { messageId: string; variantId: string } | null;
+	errors: SceneBackfillErrorEntry[];
+	summary: SceneBackfillSummary | null;
+	cancelRequested: boolean;
+}
+
+export type { AutoSummaryConfig, InsightsConfig };
+
+/**
+ * Active chat as sent to the client. The JSON-column fields are normalized by
+ * the chat store on read, so every field is present with its default.
+ */
+export interface ChatDto extends Chat {
+	summary: string;
+	messageHistoryLimit: number;
+	autoSummaryConfig: AutoSummaryConfig;
+	insightsConfig: InsightsConfig;
+	insightsObjectiveState: ObjectiveState;
 }
 
 // ─── Runtime / self-update ─────────────────────────────────────────────

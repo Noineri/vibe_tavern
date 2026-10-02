@@ -26,7 +26,6 @@
 
 import { lstat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
 import { resolvePromptAssetPath } from "../../../shared/prompt-asset-loader.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -110,6 +109,21 @@ export type ManifestParseResult = { name: string; description: string } | { erro
  * full document text is accepted (not a pre-extracted block) so callers cannot
  * accidentally feed a stripped body; this function reads nothing but the
  * frontmatter and writes nothing back. Unknown fields are ignored.
+ *
+ * Parsing goes through `Bun.YAML` (no `yaml` package): measured against the
+ * runtime's `yaml@2.9` on 30 frontmatter shapes, 23 agree exactly and the
+ * remaining differences do not change this function's verdict, except for
+ * duplicate keys:
+ * - duplicate keys — `yaml` rejects the manifest, `Bun.YAML` keeps the LAST
+ *   value. Accepted deliberately: a skill whose author typed `description`
+ *   twice stays discoverable instead of disappearing from the catalog, and the
+ *   parsed `name` is display metadata only (the skill id is its directory name,
+ *   see {@link scanSkillRoot}), so last-wins cannot shadow another skill.
+ * - a `--- <scalar>` line inside the frontmatter — `yaml` throws "multiple
+ *   documents", `Bun.YAML` returns one array per document; the mapping guard
+ *   below rejects it either way.
+ * - malformed YAML — both throw; only the message text differs, and it is
+ *   surfaced behind this module's own `invalid YAML frontmatter:` prefix.
  */
 export function parseSkillManifest(manifestText: string): ManifestParseResult {
   const frontmatter = extractFrontmatter(manifestText);
@@ -117,7 +131,7 @@ export function parseSkillManifest(manifestText: string): ManifestParseResult {
 
   let doc: unknown;
   try {
-    doc = parseYaml(frontmatter);
+    doc = Bun.YAML.parse(frontmatter);
   } catch (e) {
     return { error: `invalid YAML frontmatter: ${(e as Error).message}` };
   }

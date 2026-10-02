@@ -18,11 +18,12 @@
  * header affordance text is the always-present primary assertion.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
-import type { AppCharacter } from "../../app-client.js";
+import type { AppCharacter } from "../../api/types.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
@@ -37,7 +38,8 @@ const realTooltip = await import("../shared/Tooltip.js");
 const realLorebookApi = await import("../../api/lorebook-api.js");
 const realPersonaApi = await import("../../api/persona-api.js");
 const realScriptApi = await import("../../api/script-api.js");
-const realAppClient = await import("../../app-client.js");
+const realCharacterApi = await import("../../api/character-api.js");
+const realRegexApi = await import("../../api/regex-api.js");
 const realChatStore = await import("../../stores/chat-store.js");
 
 /** Shared Checkbox exposes its state via aria-checked (role="checkbox"), not input.checked. */
@@ -64,44 +66,40 @@ mock.module("../shared/Tooltip.js", () => ({
 	CustomTooltip: ({ children }: { children: React.ReactNode }) => children,
 	TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
-// The picker fetches the lorebook / persona / script lists on mount; stub
-// them empty so the test never hits the network. CE-C1 generalized the
-// picker from lorebook-only to all four entity kinds.
+// The picker fetches the lorebook / persona / script lists on mount (CE-C1),
+// and BoundResourcesField reads + writes character bindings (CE-C2/C3); stub
+// them empty/no-op so the form renders without hitting the network. Reals are
+// spread first so every other export stays intact.
 mock.module("../../api/lorebook-api.js", () => ({
 	...realLorebookApi,
 	listAllLorebooks: () => Promise.resolve([]),
+	getLorebookLinks: () => Promise.resolve([]),
+	setLorebookLinks: () => Promise.resolve([]),
+}));
+mock.module("../../api/character-api.js", () => ({
+	...realCharacterApi,
+	listCharacterLorebooks: () => Promise.resolve([]),
+	listCharacterScripts: () => Promise.resolve([]),
 }));
 mock.module("../../api/persona-api.js", () => ({
 	...realPersonaApi,
 	listPersonas: () => Promise.resolve([]),
+	listPersonaLorebooks: () => Promise.resolve([]),
+	listPersonaScripts: () => Promise.resolve([]),
 }));
 mock.module("../../api/script-api.js", () => ({
 	...realScriptApi,
 	listAllScripts: () => Promise.resolve([]),
+	getScriptLinks: () => Promise.resolve([]),
+	setScriptLinks: () => Promise.resolve([]),
 }));
-
-// CE-C2/C3: BoundResourcesField (rendered inside the form) reads + writes
-// character lorebook/script bindings via app-client. Mock those binding
-// functions to empty/no-op so the field renders without hitting the network.
-// Spread the real module first (preserves every other app-client export,
-// including the AppCharacter TYPE the form itself imports).
-mock.module("../../app-client.js", () => ({
-		...realAppClient,
-		listAllLorebooks: () => Promise.resolve([]),
-		listCharacterLorebooks: () => Promise.resolve([]),
-		listPersonaLorebooks: () => Promise.resolve([]),
-		getLorebookLinks: () => Promise.resolve([]),
-		setLorebookLinks: () => Promise.resolve([]),
-		listAllScripts: () => Promise.resolve([]),
-		listCharacterScripts: () => Promise.resolve([]),
-		listPersonaScripts: () => Promise.resolve([]),
-		getScriptLinks: () => Promise.resolve([]),
-		setScriptLinks: () => Promise.resolve([]),
-		// RX-12: regex binding functions — same empty/no-op treatment so the
-		// field's regex group renders without the network.
-		listAllRegexPresets: () => Promise.resolve([]),
-		getRegexLinks: () => Promise.resolve([]),
-		setRegexLinks: () => Promise.resolve([]),
+mock.module("../../api/regex-api.js", () => ({
+	...realRegexApi,
+	// RX-12: regex binding functions — same empty/no-op treatment so the
+	// field's regex group renders without the network.
+	listAllRegexPresets: () => Promise.resolve([]),
+	getRegexLinks: () => Promise.resolve([]),
+	setRegexLinks: () => Promise.resolve([]),
 }));
 
 // chat-store: spread the REAL module first (preserves every other export for
@@ -124,6 +122,7 @@ beforeAll(async () => {
 
 function makeCharacter(over: Partial<AppCharacter> = {}): AppCharacter {
 	return {
+		...wireCharacter(),
 		id: "char_test",
 		name: "Kira",
 		description: "A reserved arachnid weaver.",

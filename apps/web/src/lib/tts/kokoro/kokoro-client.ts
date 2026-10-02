@@ -43,7 +43,7 @@ export type WorkerFactory = () => WorkerLike;
 /** Stall watchdog: max silence (no progress event, no completion) during a
  *  model load before we give up with an actionable error. The model comes
  *  from huggingface.co — a blackholed connection otherwise hangs the load
- *  promise FOREVER with zero feedback ("Послушать виснет"). Progress events
+ *  promise FOREVER with zero feedback ("Listen hangs"). Progress events
  *  reset the timer, so a slow-but-alive download never trips it. */
 export const KOKORO_LOAD_STALL_MS = 30_000;
 

@@ -1,0 +1,1 @@
+ALTER TABLE `ui_settings` ADD `chat_impersonate_enhance_draft` integer DEFAULT false NOT NULL;

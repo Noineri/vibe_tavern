@@ -31,14 +31,29 @@ function readMetrics(element: HTMLElement): ScrollMetrics {
  * ResizeObserver. This lets the pinned position settle before paint for
  * streaming text, disclosure animations, image loads, font changes, and future
  * row content without component-specific coordination.
+ *
+ *  IF-4b follow-up (owner 2026-09-22): `suppressFollow` — while an image-gen
+ *  run is in flight for this chat, content growth must NOT drag the pinned
+ *  view to the bottom (the user swipes variants on earlier slots while a
+ *  later one generates). A suppressed reconcile leaves the scroll position
+ *  alone; when growth pushes the bottom out of reach the pin DROPS
+ *  (isAtBottom re-eval), so the floating "to the end" button appears instead
+ *  of a yank. The explicit `scrollToBottom()` still follows (a direct user
+ *  action), and text streaming is unaffected — the caller only raises the
+ *  flag for image-gen runs.
  */
-export function useStickToBottom(resetKey: string): StickToBottom {
+export function useStickToBottom(resetKey: string, suppressFollow: boolean = false): StickToBottom {
   const scrollerElementRef = useRef<HTMLElement | null>(null);
   const stableTailObserverRef = useRef<ResizeObserver | null>(null);
   const viewportObserverRef = useRef<ResizeObserver | null>(null);
   const pinnedRef = useRef(true);
   const userScrollIntentRef = useRef(false);
   const [pinned, setPinnedState] = useState(true);
+  // Latest-flag mirror: the observers close over reconcileAfterLayoutChange,
+  // so a changing suppressFollow must not churn them (the ref is read at
+  // reconcile time).
+  const suppressFollowRef = useRef(suppressFollow);
+  suppressFollowRef.current = suppressFollow;
 
   const setPinned = useCallback((next: boolean) => {
     if (pinnedRef.current === next) return;
@@ -56,7 +71,11 @@ export function useStickToBottom(resetKey: string): StickToBottom {
     const element = scrollerElementRef.current;
     if (!element) return;
     if (pinnedRef.current) {
-      followBottom();
+      // Suppressed: leave the position alone; re-evaluate the pin so an
+      // out-of-reach bottom surfaces the "to the end" button instead of a
+      // silent stale pin (the next unsuppressed reconcile follows again).
+      if (!suppressFollowRef.current) followBottom();
+      else setPinned(isAtBottom(readMetrics(element)));
       return;
     }
     setPinned(isAtBottom(readMetrics(element)));

@@ -240,6 +240,15 @@ class ServerService : Service() {
         environment["BUN_OPTIONS"] = "--no-orphans"
         environment["HOME"] = filesDir.absolutePath
         environment["TMPDIR"] = cacheDir.absolutePath
+        // Android's seccomp filter kills the server on syscalls Bun uses: close_range at
+        // startup on Android 10-12 (issue #47) and openat2 in Bun.serve {dir} routes on
+        // every version. The shim turns those traps into ENOSYS. Removal trigger: AD-026.
+        val seccompShim = File(applicationInfo.nativeLibraryDir, "libseccompshim.so")
+        if (seccompShim.exists()) {
+            environment["LD_PRELOAD"] = seccompShim.absolutePath
+        } else {
+            logWriter.writeLine("warning: libseccompshim.so missing; starting without the seccomp shim")
+        }
 
         // Do not move this start() into a helper thread: runServer() remains parked on waitFor().
         val process = try {

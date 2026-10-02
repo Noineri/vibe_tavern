@@ -16,7 +16,7 @@
  *               context, and prompt overrides under /api/experience/…
  */
 import { client } from "./client.js";
-import type { RpcResponse } from "./unwrap.js";
+import type { RpcBody, RpcResponse } from "./unwrap.js";
 import type {
   ExperienceActionDescriptor,
   ExperienceActionRequest,
@@ -86,8 +86,8 @@ export class ExperienceApiError extends Error {
  *  preserving status + `details.code` + the full details record. A non-JSON or
  *  non-standard error body still yields an `ExperienceApiError` with a fallback
  *  message — an experience failure never collapses to a plain `Error`. */
-async function unwrapExperience<T>(response: RpcResponse): Promise<T> {
-  if (response.ok) return response.json() as Promise<T>;
+async function unwrapExperience<R extends RpcResponse>(response: R): Promise<RpcBody<R>> {
+  if (response.ok) return response.json() as Promise<RpcBody<R>>;
   const body = (await response.json().catch(() => null)) as
     | { error?: string | { message?: string; details?: Record<string, unknown> & { code?: string } } }
     | null;
@@ -103,7 +103,7 @@ async function unwrapExperience<T>(response: RpcResponse): Promise<T> {
  *  (the config-driven setup source; lazily created server-side). */
 export async function getExperienceConfig(chatId: string): Promise<ExperienceChatConfigRow> {
   const response = await client.api.chats[":chatId"].experience.config.$get({ param: { chatId } });
-  return unwrapExperience<ExperienceChatConfigRow>(response);
+  return unwrapExperience(response);
 }
 
 /** PUT /api/chats/:chatId/experience/config — partial patch; returns the row. */
@@ -112,7 +112,7 @@ export async function updateExperienceConfig(
   body: ExperienceConfigUpdateRequest,
 ): Promise<ExperienceChatConfigRow> {
   const response = await client.api.chats[":chatId"].experience.config.$put({ param: { chatId }, json: body });
-  return unwrapExperience<ExperienceChatConfigRow>(response);
+  return unwrapExperience(response);
 }
 
 // ─── Visual resources ────────────────────────────────────────────────────────
@@ -120,19 +120,19 @@ export async function updateExperienceConfig(
 /** GET /api/experience/visuals — list visuals by scope (+ optional owner). */
 export async function listExperienceVisuals(query: ExperienceVisualsQuery): Promise<ExperienceVisualRow[]> {
   const response = await client.api.experience.visuals.$get({ query });
-  return unwrapExperience<ExperienceVisualRow[]>(response);
+  return unwrapExperience(response);
 }
 
 /** GET /api/experience/visuals/:id — one visual, or null when missing. */
 export async function getExperienceVisual(id: string): Promise<ExperienceVisualRow | null> {
   const response = await client.api.experience.visuals[":id"].$get({ param: { id } });
-  return unwrapExperience<ExperienceVisualRow | null>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/visuals — create a visual resource. */
 export async function createExperienceVisual(body: ExperienceVisualCreateRequest): Promise<ExperienceVisualRow> {
   const response = await client.api.experience.visuals.$post({ json: body });
-  return unwrapExperience<ExperienceVisualRow>(response);
+  return unwrapExperience(response);
 }
 
 /** PATCH /api/experience/visuals/:id — patch a visual (a source edit changes
@@ -142,14 +142,14 @@ export async function updateExperienceVisual(
   body: ExperienceVisualUpdateRequest,
 ): Promise<ExperienceVisualRow> {
   const response = await client.api.experience.visuals[":id"].$patch({ param: { id }, json: body });
-  return unwrapExperience<ExperienceVisualRow>(response);
+  return unwrapExperience(response);
 }
 
 /** DELETE /api/experience/visuals/:id — remove a visual (active sessions pin
  *  an immutable source snapshot, so they are unaffected). */
 export async function deleteExperienceVisual(id: string): Promise<void> {
   const response = await client.api.experience.visuals[":id"].$delete({ param: { id } });
-  await unwrapExperience<unknown>(response);
+  await unwrapExperience(response);
 }
 
 // ─── Session lifecycle ───────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ export async function startExperienceSession(
   body: ExperienceStartRequest,
 ): Promise<ExperienceSessionResponse> {
   const response = await client.api.chats[":chatId"].experience.sessions.$post({ param: { chatId }, json: body });
-  return unwrapExperience<ExperienceSessionResponse>(response);
+  return unwrapExperience(response);
 }
 
 /** GET /api/chats/:chatId/experience/session?branchId=… — branch-scoped
@@ -172,7 +172,7 @@ export async function getActiveExperienceSession(chatId: string, branchId: strin
     param: { chatId },
     query: { branchId },
   });
-  return unwrapExperience<ExperienceSessionResponse>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/sessions/:sessionId/restart — restart as a NEW match on
@@ -185,14 +185,14 @@ export async function restartExperienceSession(
   body: ExperienceRestartRequest,
 ): Promise<ExperienceSessionResponse> {
   const response = await client.api.experience.sessions[":sessionId"].restart.$post({ param: { sessionId }, json: body });
-  return unwrapExperience<ExperienceSessionResponse>(response);
+  return unwrapExperience(response);
 }
 
 /** GET /api/experience/sessions/:sessionId — session metadata + the projected
  *  view for the human viewer. */
 export async function getExperienceSession(sessionId: string): Promise<ExperienceSessionResponse> {
   const response = await client.api.experience.sessions[":sessionId"].$get({ param: { sessionId } });
-  return unwrapExperience<ExperienceSessionResponse>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/sessions/:sessionId/end — canonical explicit user
@@ -204,7 +204,7 @@ export async function endExperienceSession(
   body: ExperienceFinishRequest,
 ): Promise<ExperienceQueuedAttachmentResponse> {
   const response = await client.api.experience.sessions[":sessionId"].end.$post({ param: { sessionId }, json: body });
-  return unwrapExperience<ExperienceQueuedAttachmentResponse>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/sessions/:sessionId/actions — submit one action
@@ -220,7 +220,7 @@ export async function submitExperienceAction(
     { param: { sessionId }, json: body },
     { init: { signal: options?.signal } },
   );
-  return unwrapExperience<ExperienceActionResponse>(response);
+  return unwrapExperience(response);
 }
 
 // ─── Per-viewer projection reads ─────────────────────────────────────────────
@@ -232,7 +232,7 @@ export async function getExperienceView(sessionId: string, participantId?: strin
     param: { sessionId },
     query: { participantId },
   });
-  return unwrapExperience<ExperienceProjection>(response);
+  return unwrapExperience(response);
 }
 
 /** GET /api/experience/sessions/:sessionId/actions — legal action descriptors
@@ -245,7 +245,7 @@ export async function getExperienceActions(
     param: { sessionId },
     query: { participantId },
   });
-  return unwrapExperience<ExperienceActionDescriptor[]>(response);
+  return unwrapExperience(response);
 }
 
 // ─── Queued attachment + reports (IR-70A) ────────────────────────────────────
@@ -255,7 +255,7 @@ export async function getExperienceActions(
  *  checkpoint), or null when none is queued. */
 export async function getExperienceQueuedAttachment(sessionId: string): Promise<ExperienceQueuedAttachmentResponse> {
   const response = await client.api.experience.sessions[":sessionId"].attachment.$get({ param: { sessionId } });
-  return unwrapExperience<ExperienceQueuedAttachmentResponse>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/sessions/:sessionId/reports/queue — explicit Queue /
@@ -268,14 +268,14 @@ export async function queueExperienceReport(
     param: { sessionId },
     json: body,
   });
-  return unwrapExperience<ExperienceQueuedAttachmentView>(response);
+  return unwrapExperience(response);
 }
 
 /** GET /api/experience/sessions/:sessionId/reports/status — privacy-safe
  *  server report status + validated-public-event count. */
 export async function getExperienceReportStatus(sessionId: string): Promise<ExperienceReportStatus> {
   const response = await client.api.experience.sessions[":sessionId"].reports.status.$get({ param: { sessionId } });
-  return unwrapExperience<ExperienceReportStatus>(response);
+  return unwrapExperience(response);
 }
 
 // ─── Replay ──────────────────────────────────────────────────────────────────
@@ -287,7 +287,7 @@ export async function undoExperienceSession(
   body: ExperienceUndoRequest,
 ): Promise<ExperienceActionResponse> {
   const response = await client.api.experience.sessions[":sessionId"].undo.$post({ param: { sessionId }, json: body });
-  return unwrapExperience<ExperienceActionResponse>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/sessions/:sessionId/recalculate — preview a
@@ -300,7 +300,7 @@ export async function previewExperienceRecalculation(
     param: { sessionId },
     json: body,
   });
-  return unwrapExperience<ExperienceRecalculationPreview>(response);
+  return unwrapExperience(response);
 }
 
 // ─── Effects ─────────────────────────────────────────────────────────────────
@@ -309,7 +309,7 @@ export async function previewExperienceRecalculation(
  *  effect rows (read-only). */
 export async function getExperienceEffects(sessionId: string): Promise<ExperienceEffectRow[]> {
   const response = await client.api.experience.sessions[":sessionId"].effects.$get({ param: { sessionId } });
-  return unwrapExperience<ExperienceEffectRow[]>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/effects/:effectId/run — run one pending model effect
@@ -323,7 +323,7 @@ export async function runExperienceEffect(
     { param: { effectId } },
     { init: { signal: options?.signal } },
   );
-  return unwrapExperience<ExperienceEffectRunResponse>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/effects/:effectId/retry — return a failed/cancelled/
@@ -332,7 +332,7 @@ export async function runExperienceEffect(
  *  (missing) / 409 (not retryable) reject as ExperienceApiError. */
 export async function retryExperienceEffect(effectId: string): Promise<ExperienceEffectRow> {
   const response = await client.api.experience.effects[":effectId"].retry.$post({ param: { effectId } });
-  return unwrapExperience<ExperienceEffectRow>(response);
+  return unwrapExperience(response);
 }
 
 // ─── Context capture + status (IR-70D) ───────────────────────────────────────
@@ -349,7 +349,7 @@ export async function captureExperienceContext(
     { param: { sessionId }, json: body },
     { init: { signal: options?.signal } },
   );
-  return unwrapExperience<ExperienceContextStatusDto>(response);
+  return unwrapExperience(response);
 }
 
 /** GET /api/experience/sessions/:sessionId/context/status — privacy-safe
@@ -357,7 +357,7 @@ export async function captureExperienceContext(
  *  the IR-70D `branchFrontierRevision`), or null when never captured. */
 export async function getExperienceContextStatus(sessionId: string): Promise<ExperienceContextStatusDto | null> {
   const response = await client.api.experience.sessions[":sessionId"].context.status.$get({ param: { sessionId } });
-  return unwrapExperience<ExperienceContextStatusDto | null>(response);
+  return unwrapExperience(response);
 }
 
 // ─── Prompt overrides (IR-70D) ───────────────────────────────────────────────
@@ -369,7 +369,7 @@ export async function getExperiencePromptOverrides(sessionId: string): Promise<E
   const response = await client.api.experience.sessions[":sessionId"]["prompt-overrides"].$get({
     param: { sessionId },
   });
-  return unwrapExperience<ExperiencePromptOverridesResponse>(response);
+  return unwrapExperience(response);
 }
 
 /** PUT /api/experience/sessions/:sessionId/prompt-overrides/global — write the
@@ -382,7 +382,7 @@ export async function updateExperienceGlobalOverride(
     param: { sessionId },
     json: body,
   });
-  return unwrapExperience<ExperiencePromptOverridesResponse>(response);
+  return unwrapExperience(response);
 }
 
 /** PUT /api/experience/sessions/:sessionId/prompt-overrides/character — write
@@ -397,7 +397,7 @@ export async function updateExperienceCharacterOverride(
     param: { sessionId },
     json: body,
   });
-  return unwrapExperience<ExperiencePromptOverridesResponse>(response);
+  return unwrapExperience(response);
 }
 
 // ─── Stateless unsaved-source tester (Wave 8 / IR-81B backend, IR-81D client) ─
@@ -411,7 +411,7 @@ export async function updateExperienceCharacterOverride(
  *  vm_error + kind) and the captured console in `details.console`. */
 export async function runExperienceTest(body: ExperienceTestRunRequest): Promise<ExperienceTestRunData> {
   const response = await client.api.experience.test.run.$post({ json: body });
-  return unwrapExperience<ExperienceTestRunData>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/test/simulate — discover + create, then run a bounded
@@ -420,7 +420,7 @@ export async function runExperienceTest(body: ExperienceTestRunRequest): Promise
  *  or a host bound; the typed stop reason is returned as data. */
 export async function simulateExperienceTest(body: ExperienceTestSimulateRequest): Promise<ExperienceTestSimulateData> {
   const response = await client.api.experience.test.simulate.$post({ json: body });
-  return unwrapExperience<ExperienceTestSimulateData>(response);
+  return unwrapExperience(response);
 }
 
 // ─── Interactive playground session driver (Wave 8 / IR-84A backend, IR-84B client) ─
@@ -434,7 +434,7 @@ export async function simulateExperienceTest(body: ExperienceTestSimulateRequest
  *  kind, …) and the captured console in `details.console`. */
 export async function startExperiencePlayground(body: ExperiencePlaygroundStartRequest): Promise<ExperiencePlaygroundData> {
   const response = await client.api.experience.playground.start.$post({ json: body });
-  return unwrapExperience<ExperiencePlaygroundData>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/playground/advance — apply ONE human action to the
@@ -445,7 +445,7 @@ export async function startExperiencePlayground(body: ExperiencePlaygroundStartR
  *  stale_revision + currentRevision, session_not_found, vm_error + kind. */
 export async function advanceExperiencePlayground(body: ExperiencePlaygroundAdvanceRequest): Promise<ExperiencePlaygroundData> {
   const response = await client.api.experience.playground.advance.$post({ json: body });
-  return unwrapExperience<ExperiencePlaygroundData>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/playground/timer — execute ONE timer beat for the
@@ -458,7 +458,7 @@ export async function runExperiencePlaygroundTimer(
   body: { readonly playgroundSessionId: string },
 ): Promise<ExperiencePlaygroundData> {
   const response = await client.api.experience.playground.timer.$post({ json: body });
-  return unwrapExperience<ExperiencePlaygroundData>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/round-model — the SESSION-LESS realtime model-seat
@@ -472,7 +472,7 @@ export async function runExperienceRoundModel(
   body: ExperienceRoundModelRequest,
 ): Promise<ExperienceRoundModelResponseDto> {
   const response = await client.api.experience["round-model"].$post({ json: body });
-  return unwrapExperience<ExperienceRoundModelResponseDto>(response);
+  return unwrapExperience(response);
 }
 
 /** GET /api/experience/sessions/:sessionId/round/config — the realtime round's
@@ -484,7 +484,7 @@ export async function getExperienceRoundConfig(
   sessionId: string,
 ): Promise<ExperienceRoundConfigResponseDto> {
   const response = await client.api.experience.sessions[":sessionId"].round.config.$get({ param: { sessionId } });
-  return unwrapExperience<ExperienceRoundConfigResponseDto>(response);
+  return unwrapExperience(response);
 }
 
 /** POST /api/experience/sessions/:sessionId/round/commit — the live realtime
@@ -498,5 +498,5 @@ export async function commitExperienceRound(
   body: ExperienceRoundCommitRequestDto,
 ): Promise<ExperienceQueuedAttachmentResponse> {
   const response = await client.api.experience.sessions[":sessionId"].round.commit.$post({ param: { sessionId }, json: body });
-  return unwrapExperience<ExperienceQueuedAttachmentResponse>(response);
+  return unwrapExperience(response);
 }

@@ -8,6 +8,9 @@ import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 import {
   computeSceneSchemaHash,
   createDefaultSceneTrackerConfig,
+  defaultObjectiveState,
+  normalizeInsightsConfig,
+  normalizeObjectiveState,
   normalizeSceneTrackerConfig,
   type SceneTrackerConfig,
   type SceneTrackerDsl,
@@ -836,12 +839,19 @@ describe("ChatStore — insights config (INS-1b)", () => {
 
   test("a new chat defaults to both insights toggles off", async () => {
     const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
-    expect(chat.insightsConfig).toEqual({ objectiveEnabled: false, trackerEnabled: false });
+    expect(chat.insightsConfig).toEqual({
+      objectiveEnabled: false,
+      trackerEnabled: false,
+      diceEnabled: false,
+      diceMode: "normal",
+      diceScriptIds: null,
+      diceActorBindings: null,
+    });
   });
 
   test("updateInsightsConfig round-trips and persists across getById", async () => {
     const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
-    const updated = await store.updateInsightsConfig(chat.id, { insightsConfig: { objectiveEnabled: true } });
+    const updated = await store.updateInsightsConfig(chat.id, { insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true }) });
     expect(updated.insightsConfig.objectiveEnabled).toBe(true);
     // Reload from the DB — persistence, not just the in-memory return value.
     const reloaded = await store.getById(chat.id);
@@ -850,14 +860,14 @@ describe("ChatStore — insights config (INS-1b)", () => {
 
   test("updateInsightsConfig writes the given config (replace at the store layer; merge is the adapter's job)", async () => {
     const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
-    await store.updateInsightsConfig(chat.id, { insightsConfig: { objectiveEnabled: true, trackerEnabled: true } });
+    await store.updateInsightsConfig(chat.id, { insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: true }) });
     // The store writes EXACTLY what it is given — it does not merge with prior
     // values. Partial-merge (preserve unmentioned keys) is the adapter's job
     // (it spreads ...chat.insightsConfig before ...body), mirroring
     // updateMemorySettings. So a store-level write replaces wholesale:
-    await store.updateInsightsConfig(chat.id, { insightsConfig: { objectiveEnabled: false } });
+    await store.updateInsightsConfig(chat.id, { insightsConfig: normalizeInsightsConfig({ objectiveEnabled: false }) });
     const reloaded = await store.getById(chat.id);
-    expect(reloaded?.insightsConfig).toEqual({ objectiveEnabled: false });
+    expect(reloaded?.insightsConfig).toEqual(normalizeInsightsConfig({ objectiveEnabled: false }));
   });
 });
 
@@ -914,8 +924,8 @@ describe("ChatStore — scene tracker config (SCN-2)", () => {
   test("a PATCH preserves Objective toggles and never touches the Objective state column", async () => {
     const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
     // Turn both toggles on and write some Objective state.
-    await store.updateInsightsConfig(chat.id, { insightsConfig: { objectiveEnabled: true, trackerEnabled: true } });
-    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "goal", tasks: [] } });
+    await store.updateInsightsConfig(chat.id, { insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: true }) });
+    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: normalizeObjectiveState({ objectiveDescription: "goal", tasks: [] }) });
 
     await store.updateSceneTrackerConfig(chat.id, { contextWindow: 9 });
 
@@ -923,7 +933,7 @@ describe("ChatStore — scene tracker config (SCN-2)", () => {
     expect(reloaded?.insightsConfig.objectiveEnabled).toBe(true);
     expect(reloaded?.insightsConfig.trackerEnabled).toBe(true);
     // Objective state column is untouched by the tracker PATCH.
-    expect(reloaded?.insightsObjectiveState).toEqual({ objectiveDescription: "goal", tasks: [] });
+    expect(reloaded?.insightsObjectiveState).toEqual(normalizeObjectiveState({ objectiveDescription: "goal", tasks: [] }));
     // And the tracker itself was written.
     expect(normalizeSceneTrackerConfig(reloaded?.insightsConfig.tracker).contextWindow).toBe(9);
   });
@@ -941,10 +951,11 @@ describe("ChatStore — scene tracker config (SCN-2)", () => {
 
   test("normalization recovers defaults from a corrupt/partial stored tracker before merging", async () => {
     const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
-    // Inject a malformed tracker (bogus scalar, unknown enum, missing fields) directly.
-    await store.updateInsightsConfig(chat.id, {
-      insightsConfig: { objectiveEnabled: true, trackerEnabled: true, tracker: { contextWindow: "oops", autoMode: "weird" } },
-    });
+    // Inject a malformed tracker (bogus scalar, unknown enum, missing fields) into the raw column.
+    db.update(schema.chats)
+      .set({ insightsConfigJson: JSON.stringify({ objectiveEnabled: true, trackerEnabled: true, tracker: { contextWindow: "oops", autoMode: "weird" } }) })
+      .where(eq(schema.chats.id, chat.id))
+      .run();
     // The store normalizes the existing value first, then applies the PATCH.
     const updated = await store.updateSceneTrackerConfig(chat.id, { injectLastN: 4 });
     const tracker = normalizeSceneTrackerConfig(updated.insightsConfig.tracker);
@@ -972,7 +983,30 @@ describe("ChatStore — objective state (INS-3)", () => {
 
   test("a new chat defaults to an empty objective state", async () => {
     const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
-    expect(chat.insightsObjectiveState).toEqual({});
+    expect(chat.insightsObjectiveState).toEqual(defaultObjectiveState());
+  });
+
+  test("corrupt or legacy JSON columns read back as complete defaults", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    db.update(schema.chats)
+      .set({
+        autoSummaryConfigJson: "not json",
+        insightsConfigJson: "[1,2]",
+        insightsObjectiveStateJson: JSON.stringify({ contextWindow: 3.8, tasks: [{ id: "t1", description: "x", status: "done" }] }),
+      })
+      .where(eq(schema.chats.id, chat.id))
+      .run();
+    const reloaded = await store.getById(chat.id);
+    expect(reloaded?.autoSummaryConfig).toEqual({
+      enabled: false,
+      everyN: 20,
+      useChatModel: true,
+      excludeSummarized: true,
+      includePriorSummaries: true,
+      maxPriorSummaries: 10,
+    });
+    expect(reloaded?.insightsConfig).toEqual(normalizeInsightsConfig({}));
+    expect(reloaded?.insightsObjectiveState).toEqual({ ...defaultObjectiveState(), contextWindow: 3 });
   });
 
   test("updateInsightsObjectiveState round-trips and persists across getById", async () => {
@@ -987,20 +1021,23 @@ describe("ChatStore — objective state (INS-3)", () => {
       checkPrompt: "",
       injectPrompt: "",
     };
-    const updated = await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: state });
-    expect(updated.insightsObjectiveState).toEqual(state);
+    const updated = await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: normalizeObjectiveState(state) });
+    expect(updated.insightsObjectiveState).toEqual(normalizeObjectiveState(state));
+    expect(updated.insightsObjectiveState.tasks).toEqual(state.tasks);
     const reloaded = await store.getById(chat.id);
-    expect(reloaded?.insightsObjectiveState).toEqual(state);
+    expect(reloaded?.insightsObjectiveState).toEqual(normalizeObjectiveState(state));
   });
 
   test("updateInsightsObjectiveState replaces wholesale (the service computes the full next state)", async () => {
     const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
-    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "A", tasks: [], autoCheckFrequency: 0, autoCheckEventCount: 4, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "" } });
+    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: normalizeObjectiveState({ objectiveDescription: "A", tasks: [], autoCheckFrequency: 0, autoCheckEventCount: 4, injectionDepth: 1, generatePrompt: "", checkPrompt: "", injectPrompt: "", model: "old" }) });
     // A second write REPLACES (the service always writes the computed full
     // state) — old keys do not linger.
-    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: { objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, autoCheckEventCount: 1, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" } });
+    const next = normalizeObjectiveState({ objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, autoCheckEventCount: 1, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" });
+    await store.updateInsightsObjectiveState(chat.id, { insightsObjectiveState: next });
     const reloaded = await store.getById(chat.id);
-    expect(reloaded?.insightsObjectiveState).toEqual({ objectiveDescription: "B", tasks: [], autoCheckFrequency: 5, autoCheckEventCount: 1, injectionDepth: 2, generatePrompt: "g", checkPrompt: "c", injectPrompt: "i" });
+    expect(reloaded?.insightsObjectiveState).toEqual(next);
+    expect(reloaded?.insightsObjectiveState.model).toBeNull();
   });
 });
 

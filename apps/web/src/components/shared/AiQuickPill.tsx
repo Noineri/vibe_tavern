@@ -34,6 +34,8 @@ export interface AiQuickPillProps {
   showKeyTarget?: boolean;
   /** Whether to show recentMessageCount input (for chat_impersonate). */
   showMessageCount?: boolean;
+  /** Whether to show the draft-improvement toggle (for chat_impersonate). */
+  showEnhanceDraftToggle?: boolean;
   /** Tooltip for the star button. */
   starTooltip?: string;
   /** Tooltip for the gear button. */
@@ -51,6 +53,8 @@ export interface AiQuickSettings {
   keyTarget?: "primary" | "secondary" | "both";
   /** chat_impersonate: how many recent messages to send. */
   recentMessageCount?: number;
+  /** chat_impersonate: improve a non-empty composer draft. */
+  enhanceDraft?: boolean;
 }
 
 // ── Pill component ─────────────────────────────────────────────────────
@@ -65,6 +69,7 @@ export function AiQuickPill({
   showAppendToggle,
   showKeyTarget,
   showMessageCount,
+  showEnhanceDraftToggle,
   starTooltip,
   gearTooltip,
   size = "sm",
@@ -134,6 +139,7 @@ export function AiQuickPill({
         showAppendToggle={showAppendToggle}
         showKeyTarget={showKeyTarget}
         showMessageCount={showMessageCount}
+        showEnhanceDraftToggle={showEnhanceDraftToggle}
       />
     </>
   );

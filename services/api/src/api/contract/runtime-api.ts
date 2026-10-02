@@ -1,3 +1,4 @@
+import type { ScriptKind } from "@vibe-tavern/domain";
 import type { AiAssistantStreamChunk } from "../../domain/ai-assistant/reasoning-split.js";
 import type { AiAssistantStreamRequest } from "../../domain/ai-assistant/ai-assistant-stream.js";
 import type { PersonaRecord } from "../../domain/persona/persona-runtime.js";
@@ -26,11 +27,11 @@ import type {
 	SummaryResponse,
 	CharacterVersionResponse,
 } from "./session-types.js";
-import type { ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, RegexLink, RegexProfile, RegexProfileLink, RegexPreset, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { AutoSummaryConfig, InsightsConfig, ObjectiveMode, ObjectiveTaskStatus, PromptTraceRecordDto, PromptPresetDto, PronounForms, RegexLink, RegexProfile, RegexProfileLink, RegexPreset, SceneTrackerConfig, SceneTrackerConfigPatch, CoauthorContextLink, MessageVariantId, DiceActorType, DiceMode, DiceRollSnapshot, ProviderProxyMode } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
 import type { DicePendingState } from "../../domain/dice/dice-service.js";
-import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import type { LorebookExportResult, SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 // Re-export so existing imports from this module (the skill adapter) keep
 // resolving; the canonical wire type lives in api-contracts (single source).
 export type { SkillCatalogEntryDto };
@@ -170,6 +171,8 @@ export interface ChatRuntimeApi {
 	editMessage: (chatId: string, messageId: string, content: string, expectedVariantId?: MessageVariantId) => Promise<MessageResponse>;
 	deleteMessage: (chatId: string, messageId: string) => Promise<MessageResponse>;
 	updateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: boolean }>;
+	updateAttachmentIncludeInPrompt: (chatId: string, messageId: string, attachmentId: string, includeInPrompt: boolean) => Promise<{ ok: boolean }>;
+	updateAttachmentPrompt: (chatId: string, messageId: string, attachmentId: string, prompt: string) => Promise<{ ok: boolean }>;
 	deleteAttachment: (chatId: string, messageId: string, attachmentId: string) => Promise<{ ok: boolean }>;
 	regenerateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string) => Promise<{ description: string }>;
 
@@ -193,8 +196,8 @@ export interface ChatRuntimeApi {
 	deleteChatSummaryRecord: (chatId: string, summaryId: string) => Promise<{ ok: boolean; snapshot: SummaryResponse }>;
 	reorderChatSummaries: (chatId: string, body: { orderedIds: string[] }) => Promise<ChatSummary[]>;
 	generateChatSummary: (chatId: string, body: { providerProfileId: string; model?: string; summarizedFrom: number; summarizedTo: number; targetSummaryId?: string; label?: string; includeInContext?: boolean; excludeSummarized?: boolean; temperature?: number; maxOutputTokens?: number; contextBudget?: number }, signal?: AbortSignal) => Promise<GenerateChatSummaryResult>;
-	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => Promise<ConfigPatchResponse>;
-	updateInsightsConfig: (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: string; tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
+	updateMemorySettings: (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: Partial<AutoSummaryConfig> }) => Promise<ConfigPatchResponse>;
+	updateInsightsConfig: (chatId: string, body: { insightsConfig?: Partial<Omit<InsightsConfig, "tracker">> & { tracker?: SceneTrackerConfigPatch } }) => Promise<ConfigPatchResponse>;
 	summarizeChat: (chatId: string, body: { providerProfileId: string; model?: string; maxMessages: number }, signal?: AbortSignal) => Promise<SummarizeChatResult>;
 	saveChatSummary: (chatId: string, body: { summary: string }) => Promise<SummarizeChatResult>;
 	updateDynamicPrompt: (chatId: string, body: { content: string }) => Promise<ConfigPatchResponse>;
@@ -322,7 +325,7 @@ export interface LorebookRuntimeApi {
 	updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) => Promise<Lorebook>;
 	deleteLorebook: (lorebookId: string) => Promise<void>;
 	duplicateLorebook: (lorebookId: string, overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null }) => Promise<{ lorebook: Lorebook; links: LorebookLink[] }>;
-	exportLorebook: (lorebookId: string) => Promise<Record<string, unknown>>;
+	exportLorebook: (lorebookId: string) => Promise<LorebookExportResult>;
 	getLorebookLinks: (lorebookId: string) => Promise<LorebookLink[]>;
 	setLorebookLinks: (lorebookId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<LorebookLink[]>;
 	importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string; enabled?: boolean }) => Promise<LorebookImportResult>;
@@ -342,12 +345,12 @@ export interface ScriptRuntimeApi {
 	listAllScripts: () => Promise<Script[]>;
 	listScripts: (scopeType: string, ownerId?: string) => Promise<Script[]>;
 	getScript: (scriptId: string) => Promise<Script | null>;
-	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: string; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
+	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
 	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null; copilotProfileId?: string | null }) => Promise<Script>;
 	setScriptScope: (scriptId: string, scopeType: 'global' | 'entity' | 'chat', ownerId: string | null) => Promise<Script>;
 	deleteScript: (scriptId: string) => Promise<void>;
 	testScript: (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
-	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
+	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
 	getScriptLinks: (scriptId: string) => Promise<ScriptLink[]>;
 	setScriptLinks: (scriptId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<ScriptLink[]>;
 	/** List the visuals bound to a script (its equal-peer "skin" set; BE-5 junction). */
@@ -510,8 +513,8 @@ export interface AssetRuntimeApi {
 // ─── AI Assistant ────────────────────────────────────────────────────
 
 export interface AiAssistantRuntimeApi {
-	streamAiAssistant: (body: AiAssistantStreamRequest) => AsyncIterable<AiAssistantStreamChunk>;
-	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }>;
+	streamAiAssistant: (body: AiAssistantStreamRequest, signal?: AbortSignal) => AsyncIterable<AiAssistantStreamChunk>;
+	countAiAssistantTokens: (body: AiAssistantStreamRequest) => Promise<import("@vibe-tavern/api-contracts").AiAssistantTokenCount>;
 	regexAssist: (body: import("@vibe-tavern/api-contracts").RegexAssistRequest) => Promise<import("@vibe-tavern/api-contracts").RegexAssistResponse>;
 }
 
@@ -600,7 +603,7 @@ export interface InsightsRuntimeApi {
 	// ─── Scene Tracker history backfill (SCENE_TRACKER_PLAN SCN-14) ───────────
 	startSceneBackfill: (chatId: string, mode: string) => Promise<SceneBackfillStatusResponse>;
 	getSceneBackfillStatus: (chatId: string, runId: string) => Promise<SceneBackfillStatusResponse>;
-	cancelSceneBackfill: (chatId: string, runId: string) => { runId: string; cancelled: true };
+	cancelSceneBackfill: (chatId: string, runId: string) => Promise<SceneBackfillStatusResponse>;
 	retrySceneBackfill: (chatId: string, runId: string) => Promise<SceneBackfillStatusResponse>;
 }
 
@@ -982,6 +985,32 @@ export interface ServicePromptRuntimeApi {
   reorderServicePromptProfiles: (updates: Array<{ id: string; sortOrder: number }>) => Promise<ServicePromptProfileListResponse>;
 }
 
+/** Image prompt profile CRUD (IF-1b — IMAGEGEN_FOLLOWUP_REPORT): a fork of
+ *  the service-prompt profile surface with the field axis swapped to
+ *  (rowKey|family) cells and the detail response carrying the
+ *  profile-scoped template catalog (tier-resolved cells + canon quality +
+ *  assist). Same default-guard semantics (read-only "default"). */
+export interface ImagePromptProfileRuntimeApi {
+  listImagePromptProfiles: () => Promise<import("@vibe-tavern/api-contracts").ImagePromptProfileListResponse>;
+  getImagePromptProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImagePromptProfileDetailResponse | null>;
+  createImagePromptProfile: (
+    body: import("@vibe-tavern/api-contracts").CreateImagePromptProfileRequest,
+  ) => Promise<import("@vibe-tavern/api-contracts").ImagePromptProfileValue>;
+  updateImagePromptProfile: (
+    id: string,
+    body: import("@vibe-tavern/api-contracts").UpdateImagePromptProfileRequest,
+  ) => Promise<
+    | { status: "ok"; profile: import("@vibe-tavern/api-contracts").ImagePromptProfileValue }
+    | { status: "not-found" }
+    | { status: "forbidden" }
+  >;
+  deleteImagePromptProfile: (id: string) => Promise<{ status: "ok" } | { status: "not-found" } | { status: "forbidden" }>;
+  setActiveImagePromptProfile: (profileId: string | null) => Promise<{ status: "ok" } | { status: "not-found" }>;
+  reorderImagePromptProfiles: (
+    updates: Array<{ id: string; sortOrder: number }>,
+  ) => Promise<import("@vibe-tavern/api-contracts").ImagePromptProfileListResponse>;
+}
+
 /** Copilot profile CRUD (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). The
  *  built-in "Experience Authoring" seed (id "builtin") is READ-ONLY — update /
  *  delete reject it with a 400. */
@@ -1049,9 +1078,195 @@ export interface SttRuntimeApi {
 	draftListSttModels: (body: import("@vibe-tavern/api-contracts").DraftSttModelsInput) => Promise<import("@vibe-tavern/api-contracts").SttModelInfoValue[] | null>;
 }
 
+/** Image-gen profiles + generation routes (IMAGE_GENERATION_PLAN IG-8) —
+ *  the STT route twin plus the generate/gallery arms: profile CRUD with the
+ *  hasStoredApiKey projection, probe/models/samplers through the backend
+ *  registry (imported for their registration side effects in the adapter),
+ *  one-shot generation that persists bytes as flat attachments and appends
+ *  the image message slot, and the gallery-promotion mirror. */
+/** IF-20: a saved profile's listing — live, or the last-good snapshot
+ *  (`snapshotAt` = its ISO fetch time) when the live fetch failed. */
+export interface ImageGenListing<T> {
+	data: T;
+	snapshotAt?: string;
+}
+
+export interface ImageGenRuntimeApi {
+	listImageGenProfiles: () => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue[]>;
+	getImageGenProfile: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue | null>;
+	createImageGenProfile: (body: import("@vibe-tavern/api-contracts").CreateImageGenProfileInput) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue>;
+	updateImageGenProfile: (id: string, body: import("@vibe-tavern/api-contracts").UpdateImageGenProfileInput) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue | null>;
+	deleteImageGenProfile: (id: string) => Promise<void>;
+	/** MR-12: move the GLOBAL active-profile pointer (the TTS/STT
+	 *  `setDefault` twin). Null = unknown profile (route → 404). */
+	setImageGenDefault: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue | null>;
+	/** Probe a saved profile's endpoint/credential. Null = unknown profile
+	 *  (route → 404); failures arrive as `{ok:false}` data, never thrown. */
+	probeImageGenProfile: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenProbeResultValue | null>;
+	/** Model catalog for a saved profile (picker data source): live, or the
+	 *  last-good snapshot flagged with `snapshotAt` when the live fetch
+	 *  failed (IF-20). Null = unknown profile (route → 404). */
+	listImageGenProfileModels: (id: string, signal?: AbortSignal) => Promise<ImageGenListing<import("@vibe-tavern/api-contracts").ImageGenModelInfoValue[]> | null>;
+	/** Samplers for a saved profile — capability-gated (A1111-compat only in
+	 *  v1). Null = unknown profile (route → 404); `[]`-with-ok-probe is NOT
+	 *  used here — a backend without the surface returns null too (route →
+	 *  400 "sampler listing not supported", the STT null contract). */
+	listImageGenProfileSamplers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerInfoValue[] | null>;
+	/** Scheduler (schedule type) listing for a saved profile — A1111-dialect
+	 *  gate (PG-3, the extensions-arm twin): null = unknown profile or
+	 *  unsupported backend (route → 404/400, the samplers ladder). */
+	listImageGenProfileSchedulers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenSchedulerInfoValue[] | null>;
+	/** DiT sidecar (text encoder + VAE) listing for a saved profile —
+	 *  comfyui-dialect gate (CG-B1, the schedulers twin): null = unknown
+	 *  profile or unsupported backend (route → 404/400). Live, or the
+	 *  last-good snapshot flagged with `snapshotAt` (IF-20). */
+	listImageGenProfileDitSidecars: (id: string, signal?: AbortSignal) => Promise<ImageGenListing<import("@vibe-tavern/api-contracts").ImageGenDitSidecarsValue> | null>;
+	/** LoRA list for a saved profile (dialect-gated: ComfyUI CG-C2, the
+	 *  sidecars twin; A1111 with FT-A4). Null = unknown profile or
+	 *  unsupported backend (route → 404/400, the samplers ladder). */
+	listImageGenProfileLoras: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenLoraInfoValue[] | null>;
+	listImageGenProfileUpscalers: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenUpscalerInfoValue[] | null>;
+	listImageGenProfileVae: (id: string, signal?: AbortSignal) => Promise<string[] | null>;
+	/** Face-detector model list for a saved profile (comfyui-dialect gate,
+	 *  IF-6 — the Impact Pack chain probe): null = unknown profile or
+	 *  unsupported backend (route → 404/400); an EMPTY array = the dialect
+	 *  is right but the chain is absent (the honest unavailable signal). */
+	listImageGenProfileFaceDetectors: (id: string, signal?: AbortSignal) => Promise<string[] | null>;
+	/** Live progress snapshot for a saved profile — capability-gated
+	 *  (supportsLiveProgress, A1111 dialect in v1). Null = unknown profile
+	 *  or unsupported backend (route → 404/400, the samplers ladder). */
+	getImageGenProfileProgress: (id: string, signal?: AbortSignal) => Promise<import("@vibe-tavern/api-contracts").ImageGenProgressInfoValue | null>;
+	/** Ask the profile's local instance to cancel its current job
+	 *  (`POST /sdapi/v1/interrupt`, capability-gated as above). Null =
+	 *  unknown profile or unsupported backend; `true` = interrupt sent. */
+	interruptImageGenProfile: (id: string, signal?: AbortSignal) => Promise<boolean | null>;
+	listImageGenProfileExtensions: (id: string, signal?: AbortSignal) => Promise<string[] | null>;
+	/** Shared fetch-by-endpoint model listing over the TRANSIENT draft config
+	 *  (the STT draft twin): the form's current config plus optional
+	 *  `profileId` for stored-key resolution (endpoint-guarded). Null = the
+	 *  backend exposes no model list (route → 400). */
+	draftListImageGenModels: (body: import("@vibe-tavern/api-contracts").DraftImageGenModelsInput) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelInfoValue[] | null>;
+	/** FT-B2: use the image profile's configured LLM assist to write an
+	 * editable prompt only. No image backend or chat message is touched. */
+	draftImageGenPrompt: (
+		chatId: string,
+		body: import("@vibe-tavern/api-contracts").DraftImageGenPromptInput,
+		signal?: AbortSignal,
+	) => Promise<import("@vibe-tavern/api-contracts").DraftImageGenPromptResponseValue>;
+	/** One-shot generation: resolve the profile + chat, merge the per-mode
+	 *  size presets and default params with the request overrides, generate
+	 *  through the backend adapter, persist the image bytes as flat
+	 *  attachments, and append the image message slot to the chat's active
+	 *  branch. Throws typed ImageGenNotFoundError (profile/chat) and
+	 *  ImageGenValidationError (unknown anchor) for the route ladder. */
+	generateImageGen: (
+		chatId: string,
+		body: import("@vibe-tavern/api-contracts").GenerateImageGenInput,
+		signal?: AbortSignal,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenGenerateResponseValue>;
+	/** Copy a flat attachment into the character's media gallery (server-side
+	 *  copy; the message's attachment stays immutable). Throws
+	 *  ImageGenNotFoundError for a missing asset/character (route → 404). */
+	promoteImageGenAttachmentToGallery: (
+		assetId: string,
+		characterId: string,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenGalleryPromoteResponseValue>;
+	/** Starred models of a saved profile (IG-12b — the LLM model-favorites
+	 *  mechanic; deviations named on the domain type). Null = unknown
+	 *  profile (route → 404). */
+	listImageGenModelFavorites: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelFavoriteValue[] | null>;
+	/** Star (or refresh a star's label) — idempotent on (profile, model). */
+	addImageGenModelFavorite: (
+		id: string,
+		body: import("@vibe-tavern/api-contracts").FavoriteImageGenModelInput,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelFavoriteValue | null>;
+	/** Un-star a model. Null = unknown profile (route → 404). */
+	removeImageGenModelFavorite: (id: string, modelId: string) => Promise<void | null>;
+	/** Per-model image-field overlay rows of a profile (IG-12b — the LLM
+	 *  per-model settings mechanic). Null = unknown profile (route → 404). */
+	listImageGenModelSettings: (id: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelSettingsValue[] | null>;
+	/** One model's overlay — null = no bound settings (inherit base) OR
+	 *  unknown profile (the route distinguishes via a profile read, the
+	 *  samplers-route ladder). */
+	getImageGenModelSettings: (id: string, modelId: string) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelSettingsValue | null>;
+	/** Upsert a model's overlay — idempotent on (profile, model). The
+	 *  optional `samplerSetId` rides the same upsert: absent = keep the
+	 *  stored pointer, null = clear, string = set (IG-CF15). */
+	upsertImageGenModelSettings: (
+		id: string,
+		modelId: string,
+		overlay: import("@vibe-tavern/api-contracts").ImageGenModelSettingsOverlayValue,
+		samplerSetId?: string | null,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenModelSettingsValue | null>;
+	/** Delete a model's overlay (revert to profile base). Null = unknown
+	 *  profile (route → 404). */
+	deleteImageGenModelSettings: (id: string, modelId: string) => Promise<void | null>;
+
+	// ── Image prompt families (IPT-3 — the registry read model; the
+	//    per-cell template routes were RETIRED by IF-1e: templates live in
+	//    image prompt profiles now — see ImagePromptProfileRuntimeApi) ──
+	/** The families registry read model (grammar + authoring flags +
+	 *  addendum availability — the pane's dropdown data source). */
+	listPromptFamilies: () => Promise<import("@vibe-tavern/api-contracts").ImagePromptFamiliesValue>;
+
+	// ── Profile family (IPT-3 — the family-override writer + the
+	//    authoritative detection ladder) ──
+	/** Set (a family id) or clear (null) the profile's manual family pin —
+	 *  the ONLY family-override writer (create stays unpinned; PATCH
+	 *  family keys strip). Clearing resumes the auto path; the stored
+	 *  detection (if any) survives the pin and re-anchors after a clear.
+	 *  Returns the updated wire profile; null = unknown profile (route →
+	 *  404). */
+	setImageGenProfileFamily: (
+		id: string,
+		family: import("@vibe-tavern/api-contracts").ImagePromptFamilyValue | null,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenProfileValue | null>;
+	/** Run authoritative family detection against the profile's CURRENT
+	 *  model; on success persists familyDetected + familyDetectedForModel
+	 *  (the exact model id the detection ran against) and returns the
+	 *  typed family + sourceLabel. A no-answer is DATA (ok:false + the
+	 *  ordered tried[] ladder) — never a thrown error, never a guess;
+	 *  backend transport failures degrade into tried[] reasons (the
+	 *  probe's failures-as-data contract). Throws a validation
+	 *  DomainError when neither the explicit `model` nor the profile's
+	 *  saved modelId is set. Null = unknown profile (route → 404). The
+	 *  optional `model` names the model the detection inspects — the
+	 *  client sends the DISPLAYED model so a freshly picked unsaved
+	 *  model is detectable on the spot (the save-first gate is gone,
+	 *  owner correction 2026-09-25); the persisted anchor is that exact
+	 *  model either way. */
+	detectImageGenProfileFamily: (
+		id: string,
+		signal?: AbortSignal,
+		model?: string,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenFamilyDetectionResultValue | null>;
+
+	// ── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin;
+	//    a GLOBAL library, no profile scoping) ──
+	listImageGenSamplerSets: () => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerSetList>;
+	/** IF-10: the learned per-(backend, model) prompt caps — advisory
+	 *  counter/budget data, never a send gate. */
+	listImageGenPromptCaps: () => Promise<import("@vibe-tavern/api-contracts").ImageGenPromptCapList>;
+	createImageGenSamplerSet: (
+		input: import("@vibe-tavern/api-contracts").ImageGenSamplerSetCreate,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerSet>;
+	updateImageGenSamplerSet: (
+		setId: string,
+		input: import("@vibe-tavern/api-contracts").ImageGenSamplerSetUpdate,
+	) => Promise<import("@vibe-tavern/api-contracts").ImageGenSamplerSet>;
+	deleteImageGenSamplerSet: (setId: string) => Promise<void>;
+	/** Point import (upload button): name + RAW parsed JSON — VT-native set
+	 *  JSON only (no ST TextGen target for image-gen); empty/foreign shapes
+	 *  fail loudly. */
+	importImageGenSamplerSet: (
+		input: import("@vibe-tavern/api-contracts").ImageGenSamplerSetImport,
+	) => Promise<{ set: import("@vibe-tavern/api-contracts").ImageGenSamplerSet; notes: string[] }>;
+}
+
 export interface RuntimeApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	servicePrompts: ServicePromptRuntimeApi;
+	imagePromptProfiles: ImagePromptProfileRuntimeApi;
 	chat: ChatRuntimeApi;
 	character: CharacterRuntimeApi & CharacterAssetRuntimeApi;
 	persona: PersonaRuntimeApi;
@@ -1060,6 +1275,7 @@ export interface RuntimeApi {
 	regex: RegexRuntimeApi;
 	tts: TtsRuntimeApi;
 	stt: SttRuntimeApi;
+	imageGen: ImageGenRuntimeApi;
 	provider: ProviderRuntimeApi;
 	proxy: ProxyRuntimeApi;
 	preset: PresetRuntimeApi;

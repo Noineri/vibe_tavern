@@ -356,6 +356,51 @@ export class ChatAdapter implements ChatRuntimeApi {
 	};
 
 	/**
+	 * Set the per-image "include in prompt" opt-in on a generated-image slot
+	 * attachment (IMAGE_GENERATION_PLAN IG-18). Enabling requires a textual
+	 * identity for the slot: a filled vision description OR the CF6-stamped
+	 * generation prompt (IG-CF9, owner 2026-09-16: `description ??
+	 * provenance.prompt` — the prompt satisfies the gate, so an opt-in costs
+	 * zero AI calls; assembly backfills the description from it when needed).
+	 * Without either, the non-vision RP path would still fail with
+	 * VisionNotSupportedError. Restricted to image-gen slots: ordinary user
+	 * uploads keep their always-included semantics.
+	 */
+	updateAttachmentIncludeInPrompt = async (chatId: string, messageId: string, attachmentId: string, includeInPrompt: boolean) => {
+		// MR-4: the merged-set lookup (message row + variant rows — the DTO
+		// merge's write-path twin) replaces the message-row-only read; a
+		// swiped-to regenerate slot validates like the original one.
+		const att = await this.sessionRuntime.chatApp.findAttachment(messageId, attachmentId);
+		if (!att) throw notFound("Attachment not found.");
+		if (att.imageGen === undefined) {
+			throw validation("Only generated image slots have an include-in-prompt toggle.");
+		}
+		if (includeInPrompt && !att.description?.trim() && !att.imageGen.prompt?.trim()) {
+			throw validation("Describe the image before including it in the prompt.");
+		}
+		await this.sessionRuntime.chatApp.updateSingleAttachmentIncludeInPrompt(messageId, attachmentId, includeInPrompt);
+		return { ok: true };
+	};
+
+	/** MR-9: rewrite the generation prompt on a generated-image slot (the
+	 *  accordion editor's save, owner 2026-09-18). Slots only; the new text
+	 *  must be non-empty — the CF9 include gate reads `description ??
+	 *  provenance.prompt` and the assembly's description backfill depends on
+	 *  it. MR-4: variant-row slots resolve exactly like message-row ones. */
+	updateAttachmentPrompt = async (chatId: string, messageId: string, attachmentId: string, prompt: string) => {
+		const att = await this.sessionRuntime.chatApp.findAttachment(messageId, attachmentId);
+		if (!att) throw notFound("Attachment not found.");
+		if (att.imageGen === undefined) {
+			throw validation("Only generated image slots have an editable prompt.");
+		}
+		if (!prompt.trim()) {
+			throw validation("The generation prompt cannot be empty.");
+		}
+		await this.sessionRuntime.chatApp.updateSingleAttachmentPrompt(messageId, attachmentId, prompt);
+		return { ok: true };
+	};
+
+	/**
 	 * Force re-describe a single attachment via the configured vision model,
 	 * ignoring any existing (possibly hand-edited) description. Uses the SAME
 	 * vision resolution path as send: active profile's visionModel + the
@@ -363,10 +408,9 @@ export class ChatAdapter implements ChatRuntimeApi {
 	 * button so the auto-describe cache (skip-if-described) stays non-destructive.
 	 */
 	regenerateAttachmentDescription = async (chatId: string, messageId: string, attachmentId: string): Promise<{ description: string }> => {
-		const message = await this.stores.messages.getMessageById(messageId);
-		if (!message?.attachmentsJson) throw validation("Message has no attachments.");
-		const attachments = parseStoredAttachments(message.attachmentsJson);
-		const att = attachments?.find((a) => a.id === attachmentId);
+		// MR-4: the same merged-set lookup — variant-row attachments describe
+		// exactly like message-row ones.
+		const att = await this.sessionRuntime.chatApp.findAttachment(messageId, attachmentId);
 		if (!att) throw notFound("Attachment not found.");
 		if (att.type !== "image" && att.type !== "video") {
 			throw validation("Only image or video attachments can be described.");
@@ -479,7 +523,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		signal?: AbortSignal,
 	) => this.chatSummaryService.generateChatSummary({ chatId, ...body, signal });
 
-	updateMemorySettings = async (chatId: string, body: { messageHistoryLimit?: number; autoSummaryConfig?: { enabled?: boolean; everyN?: number; useChatModel?: boolean; providerProfileId?: string; model?: string } }) => {
+	updateMemorySettings: ChatRuntimeApi["updateMemorySettings"] = async (chatId, body) => {
 		const chat = await this.stores.chats.getById(chatId);
 		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
 		const autoSummaryConfig = body.autoSummaryConfig
@@ -495,7 +539,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return this.sessionRuntime.buildConfigPatchResponse(brandId<ChatId>(chatId), { activeChat: true });
 	};
 
-	updateInsightsConfig = async (chatId: string, body: { insightsConfig?: { objectiveEnabled?: boolean; trackerEnabled?: boolean; diceEnabled?: boolean; diceMode?: string; diceScriptIds?: string[] | null; diceActorBindings?: Record<string, ("persona" | "character")[]> | null; tracker?: SceneTrackerConfigPatch } }) => {
+	updateInsightsConfig: ChatRuntimeApi["updateInsightsConfig"] = async (chatId, body) => {
 		const existing = await this.stores.chats.getById(chatId);
 		if (!existing) throw notFound("Chat", `Chat '${chatId}' was not found.`);
 		const patch = body.insightsConfig;

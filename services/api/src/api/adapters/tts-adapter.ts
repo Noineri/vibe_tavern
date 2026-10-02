@@ -1,3 +1,7 @@
+/**
+ * forks: 1 — api/adapters/stt-adapter.ts.
+ */
+
 import type { ClientTtsProfileRecord } from "@vibe-tavern/api-contracts";
 import type { DraftTtsPreviewInput, DraftTtsVoicesInput, GenerateTtsInput } from "@vibe-tavern/api-contracts";
 import type { CreateTtsProfileData, UpdateTtsProfileData } from "@vibe-tavern/db";

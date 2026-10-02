@@ -1,9 +1,9 @@
 /**
  * The ONE home of field style tokens for the whole app (owner ruling
- * 2026-09-10: «у нас нет причин держать два разных поля ввода... надо чтобы
- * они выглядели одинавоко во всем приложении + функционировали так же»).
+ * 2026-09-10: no reason to keep two different input fields... they should
+ * look the same across the app and behave the same way).
  *
- * Reference shape: the LLM provider form (owner: «не ттс. ЛЛМ.») — fixed
+ * Reference shape: the LLM provider form (owner: not TTS — the LLM one) — fixed
  * height, 6px radius, `px-[13px]`, size from the `ui-fs` ladder, focus
  * transition. Supersedes `build/fields/field-styles.ts` and
  * `settings/provider/form-field-classes.ts` (both retired).
@@ -39,8 +39,8 @@ export const composerCls =
 	"max-h-[40vh] min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 pr-1 font-body text-[15px] leading-[1.4] text-t1 outline-none placeholder:text-t4 overflow-y-auto";
 
 /** Display canon for command/code quotes in help content (curl examples,
- *  DSL snippets, disabled default texts). Owner 2026-09-10: «давай для них
- *  тоже свой канон сделаем». This is a READ-ONLY display, not a field: mono,
+ *  DSL snippets, disabled default texts). Owner 2026-09-10: let's make
+ *  a canon for those too. This is a READ-ONLY display, not a field: mono,
  *  wrapped, breakable. Content-specific ceilings (`max-h-* overflow-auto`)
  *  are local extensions at the call site. */
 export const codeQuoteCls =

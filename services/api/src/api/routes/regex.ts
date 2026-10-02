@@ -19,7 +19,9 @@ export function createRegexRoutes(runtime: RegexRuntimeApi) {
     })
     .patch("/api/regex/presets/:id", zValidator("json", schemas.updateRegexPresetSchema), async (c) => {
       const body = c.req.valid("json");
-      return c.json(await runtime.updateRegexPreset(c.req.param("id"), body));
+      const preset = await runtime.updateRegexPreset(c.req.param("id"), body);
+      if (!preset) return c.json({ error: "Regex preset not found" }, 404);
+      return c.json(preset);
     })
     .delete("/api/regex/presets/:id", async (c) => {
       await runtime.deleteRegexPreset(c.req.param("id"));

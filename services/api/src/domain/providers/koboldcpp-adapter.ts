@@ -40,6 +40,7 @@ import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter, ProbeInput, ListModelsInput, TokenizeInput, CompletionFormatHandoff } from "./protocol-types.js";
 import { serializeCompletionPrompt, DEFAULT_COMPLETION_TEMPLATE, templateStopMarkers, unionStopSequences, type CompletionFormatTemplate } from "./completion-prompt.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
+import { readProviderErrorBody } from "../../infrastructure/ai/provider-error-body.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -83,17 +84,6 @@ function makeFinishReason(reason: LanguageModelV3FinishReason["unified"]): Langu
 }
 interface KoboldGenerateResponse {
   results: Array<{ text: string }>;
-}
-
-/** KoboldCPP SSE token event. */
-interface KoboldStreamTokenEvent {
-  token: string;
-}
-
-/** KoboldCPP SSE done event. */
-interface KoboldStreamDoneEvent {
-  text: string;
-  done: boolean;
 }
 
 export interface KoboldCppAdapterOptions {
@@ -241,8 +231,9 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
       // sequence — stream-start first, a text-start before the first delta,
       // and a matching text-end before finish ("text part 0 not found" was
       // the recorder rejecting bare deltas). Flags persist across pull calls.
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+      // `textStream()` decodes UTF-8 and joins characters split across chunk
+      // boundaries, so only SSE line reassembly is left to do here.
+      const reader = response.textStream().getReader();
       let buffer = "";
       let streamStarted = false;
       let textOpened = false;
@@ -294,7 +285,7 @@ export function createKoboldCppModel(options: KoboldCppAdapterOptions): Language
                 return;
               }
 
-              buffer += decoder.decode(value, { stream: true });
+              buffer += value;
               const lines = buffer.split("\n");
               buffer = lines.pop() ?? "";
 
@@ -458,8 +449,8 @@ export async function tokenizeKoboldCpp(input: TokenizeInput): Promise<number> {
       signal: controller.signal,
     });
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      throw new Error(`KoboldCPP tokencount failed (${response.status})${errorText ? `: ${errorText.slice(0, 200)}` : ""}`);
+      const errorText = await readProviderErrorBody(response);
+      throw new Error(`KoboldCPP tokencount failed (${response.status})${errorText ? `: ${errorText}` : ""}`);
     }
     const payload = (await response.json()) as KoboldTokenCountResponse;
     const ids = Array.isArray(payload.ids) ? (payload.ids as unknown[]).length : null;
@@ -535,10 +526,10 @@ export async function testKoboldCppChat(input: ProviderConnectionInput): Promise
     clearTimeout(timer);
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
+      const errorText = await readProviderErrorBody(response);
       return {
         success: false,
-        error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+        error: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`,
       };
     }
 

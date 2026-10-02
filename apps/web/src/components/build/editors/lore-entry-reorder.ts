@@ -13,7 +13,7 @@
  * entry, an updated `position` if it crossed visual sections.
  */
 
-import type { LoreEntryRecord } from "../../../app-client.js";
+import type { LoreEntryRecord } from "../../../api/types.js";
 
 // ── Position config ──────────────────────────────────────────────────────
 

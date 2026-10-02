@@ -6,7 +6,8 @@
  * is the single source of truth for per-backend capability flags and factory
  * lookup. Mirrors the TTS backend contract and the providers
  * protocol-registry pattern.
- */
+  * fork #1 of domain/tts/tts-backend.ts.
+*/
 
 import type { SttProfileConfig } from "@vibe-tavern/domain";
 

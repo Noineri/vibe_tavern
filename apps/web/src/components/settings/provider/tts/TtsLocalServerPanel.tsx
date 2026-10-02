@@ -1,3 +1,7 @@
+/**
+ * forks: 1 — stt/SttLocalServerPanel.tsx.
+ */
+
 import { useState } from "react";
 
 import { TTS_BACKEND } from "@vibe-tavern/domain";
@@ -17,7 +21,6 @@ import type { TtsHelpStep, TtsOsKind } from "../../../../lib/tts/quickstarts.js"
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { useGuideChecklist } from "../../../../hooks/use-guide-checklist.js";
 import { GuideCommandRow } from "../GuideCommandRow.js";
-import { useDockerStatus } from "./use-docker-status.js";
 import { useTtsDiscovery } from "./use-tts-discovery.js";
 import { configString, updateConfigField } from "./tts-form-helpers.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
@@ -32,7 +35,6 @@ function kindLabel(kind: string): string {
 export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm">; form: NonNullable<TtsHook["form"]> }) {
   const { t, tDynamic } = useT();
   const discovery = useTtsDiscovery();
-  const docker = useDockerStatus();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -51,6 +53,13 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
   if (form.backend !== TTS_BACKEND.OpenAiCompatible) return null;
 
   const currentEndpoint = configString(form.config, "endpoint");
+
+  // IG-CF12c/12e (owner 2026-09-22): the local-connection chip (with its
+  // honest endpoint ping + the docker detail line) MOVED OUT of the card —
+  // it now renders in TtsProfileEditor between the card and the level-2
+  // sections (TtsLocalConnectionChip), in both header modes. The panel
+  // keeps only what belongs to first-connection setup: the quickstart
+  // preset cards + the setup-help accordion.
 
   const worstCode = discovery.notFoundCodes !== null ? worstDiagnostic(discovery.notFoundCodes) : null;
   const diagKey = worstCode !== null ? diagnosticI18nKey(worstCode) : null;
@@ -72,27 +81,6 @@ export function TtsLocalServerPanel({ tts, form }: { tts: Pick<TtsHook, "setForm
 
   return (
     <div data-testid="tts-local-server-panel" className="flex flex-col gap-4">
-      {/* Honest docker availability (D8): probed server-side once. The cards
-          below always show the non-docker variant too, so neither state is a
-          dead end. */}
-      <div data-testid="tts-docker-status" className="flex items-center gap-2 font-ui text-[11px] text-t3">
-        {docker.error !== null ? (
-          t("tts_docker_status_unknown")
-        ) : docker.status === null ? (
-          t("tts_docker_status_probing")
-        ) : docker.status.available ? (
-          <>
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            {t("tts_docker_status_ok", { version: docker.status.version ?? "" })}
-          </>
-        ) : (
-          <>
-            <span className="h-1.5 w-1.5 rounded-full bg-danger" />
-            {t("tts_docker_status_missing")}
-          </>
-        )}
-      </div>
-
       {/* Setup help accordion — disclosure block forked verbatim from
           ProviderSamplerPanel.tsx (advOpen + caret rotate-90 chrome). */}
       <div className="overflow-hidden rounded-lg border border-border2" data-testid="tts-setup-help-accordion">

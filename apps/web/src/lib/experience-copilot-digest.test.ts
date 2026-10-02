@@ -61,6 +61,7 @@ function makeRunData(overrides: Partial<ExperienceTestRunData> = {}): Experience
     effects: [],
     console: [],
     steps: [],
+    seatLegality: { seats: [], turnOwners: [] },
     ...overrides,
   };
 }
@@ -109,6 +110,7 @@ describe("buildRunTestDigest", () => {
       legalActionTypes: ["score", "pass"],
       stateSummary: JSON.stringify({ round: 1 }),
       consoleTail: [],
+      seatLegality: { seats: [], turnOwners: [] },
     });
   });
 

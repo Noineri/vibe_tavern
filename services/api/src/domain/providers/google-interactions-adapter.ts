@@ -33,6 +33,7 @@ import {
 	probeGoogleConnection,
 	listGoogleModels,
 } from "./google-adapter.js";
+import { readProviderErrorBody } from "../../infrastructure/ai/provider-error-body.js";
 
 /**
  * Test chat against the Interactions surface itself. Must NOT reuse
@@ -64,10 +65,10 @@ export async function testGoogleInteractionsChat(input: ProviderConnectionInput)
 		clearTimeout(timer);
 
 		if (!response.ok) {
-			const errorText = await response.text().catch(() => "");
+			const errorText = await readProviderErrorBody(response);
 			return {
 				success: false,
-				error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+				error: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`,
 			};
 		}
 

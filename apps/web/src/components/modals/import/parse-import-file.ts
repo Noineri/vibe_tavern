@@ -19,6 +19,7 @@ export interface CharacterPreview {
   name: string;
   description: string;
   tags: string[];
+  hasEmbeddedLorebook: boolean;
   avatarUrl: string | null;
 }
 
@@ -90,6 +91,7 @@ function vtfContentToCardRaw(content: VtfCharacterContent): Record<string, unkno
       depth_prompt_depth: content.depthPromptDepth,
       depth_prompt_role: content.depthPromptRole,
       system_prompt: content.systemPrompt,
+      character_book: content.extensions.character_book,
       tags: content.tags,
     },
   };
@@ -132,7 +134,8 @@ function normalizeCharacterPreview(raw: unknown, file: File): Omit<CharacterPrev
   const name = stringValue(data.name) || stringValue(obj.name) || stringValue(data.char_name) || stringValue(obj.char_name) || file.name.replace(/\.[^/.]+$/, "");
   const description = stringValue(data.description) || stringValue(data.personality) || stringValue(data.char_persona) || stringValue(obj.description) || "";
   const tags = arrayOfStrings(data.tags) ?? arrayOfStrings(obj.tags) ?? [];
-  return { name, description, tags };
+  const hasEmbeddedLorebook = isRecord(data.character_book) || isRecord(obj.character_book);
+  return { name, description, tags, hasEmbeddedLorebook };
 }
 
 function parseChatPreview(file: File, text: string): ChatPreview {
@@ -161,7 +164,11 @@ function parseChatPreview(file: File, text: string): ChatPreview {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return isRecord(value) ? value : {};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function stringValue(value: unknown): string {

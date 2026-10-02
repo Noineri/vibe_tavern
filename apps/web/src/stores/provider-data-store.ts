@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { MODEL_FAVORITE_SCOPE, type ModelFavoriteScope } from "@vibe-tavern/domain";
-import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../app-client.js";
+import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../api/types.js";
 
 export interface ProviderDataState {
   profiles: ProviderProfileRecord[];

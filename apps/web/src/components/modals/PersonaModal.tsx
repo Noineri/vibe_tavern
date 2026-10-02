@@ -16,7 +16,7 @@ import { useStPersonaImport } from "../../hooks/use-st-persona-import.js";
 import { useRevealOnCreate } from "../../hooks/use-reveal-on-create.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 
-import { uploadPersonaAvatar, exportPersona } from "../../app-client.js";
+import { uploadPersonaAvatar, exportPersona } from "../../api/persona-api.js";
 import { promoteSourceAsFull } from "../build/editors/thumbnail-crop.js";
 import { useT } from "../../i18n/context.js";
 import { useModalStore } from "../../stores/modal-store.js";

@@ -1,4 +1,8 @@
-import type { StoreContainer } from "@vibe-tavern/db";
+import {
+	type StoreContainer,
+	type ActiveLorebookSet,
+	LOREBOOK_BINDING_KIND,
+} from "@vibe-tavern/db";
 import { countTokens } from "../../infrastructure/ai/tokenizer-service.js";
 import {
 	type ChatBranchId,
@@ -6,12 +10,14 @@ import {
 	type CharacterId,
 	type LoreEntry,
 	type ActiveLoreEntry,
+	type ActiveLoreEntriesResult,
 	type RetrievedMemoryHit,
 	type CustomInjection,
 	type GenerationFormat,
 	type PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
+import { buildPromptVariableContext, createFullMacroEngine } from "@vibe-tavern/prompt-pipeline";
 import { notFound } from "../../shared/errors.js";
 import {
 	type CharacterRecord,
@@ -28,6 +34,70 @@ import {
 } from "./lore-activation-engine.js";
 import { executeScripts } from "../scripts-engine/script-sandbox.js";
 import { RegexHookService } from "../regex/regex-hook-service.js";
+
+const CHARACTER_STRATEGY = {
+	evenly: 0,
+	characterFirst: 1,
+	globalFirst: 2,
+} as const;
+
+/** Resolve only outlet macros after activation has collected every outlet.
+ * The first macro pass intentionally preserves these references while its
+ * outlet map is unavailable, avoiding a second full pass over P16-resolved
+ * lore content. */
+function resolveOutletMacros(
+	text: string,
+	macroEngine: ReturnType<typeof createFullMacroEngine>,
+	macroContext: ReturnType<typeof buildPromptVariableContext>,
+): string {
+	return text.replace(/\{\{outlet::[\s\S]*?\}\}/gi, (macro) => macroEngine.resolve(macro, macroContext));
+}
+
+function compareLoreEntriesByOrder(
+	a: ActiveLorebookSet["entries"][number],
+	b: ActiveLorebookSet["entries"][number],
+): number {
+	return b.priority - a.priority || a.sortOrder - b.sortOrder || a.id.localeCompare(b.id);
+}
+
+function resolveCharacterStrategy(lorebookSets: ActiveLorebookSet[]): number {
+	// Supervisor ruling: VT carries ST's global strategy as a per-book cached
+	// value. Mixed imports resolve it from the most chat-specific binding.
+	for (const bindingKind of [
+		LOREBOOK_BINDING_KIND.chat,
+		LOREBOOK_BINDING_KIND.persona,
+		LOREBOOK_BINDING_KIND.character,
+		LOREBOOK_BINDING_KIND.global,
+	]) {
+		const strategy = lorebookSets.find(set => set.bindingKind === bindingKind)?.lorebook.characterStrategy;
+		if (strategy != null) return strategy;
+	}
+	return CHARACTER_STRATEGY.evenly;
+}
+
+function orderActivatedLoreEntries(
+	lorebookSets: ActiveLorebookSet[],
+	activatedIds: Set<string>,
+): ActiveLorebookSet["entries"][number][] {
+	const entriesForBinding = (bindingKind: ActiveLorebookSet["bindingKind"]) => lorebookSets
+		.filter(set => set.bindingKind === bindingKind)
+		.flatMap(set => set.entries)
+		.filter(entry => activatedIds.has(entry.id))
+		.sort(compareLoreEntriesByOrder);
+	const chatEntries = entriesForBinding(LOREBOOK_BINDING_KIND.chat);
+	const personaEntries = entriesForBinding(LOREBOOK_BINDING_KIND.persona);
+	const characterEntries = entriesForBinding(LOREBOOK_BINDING_KIND.character);
+	const globalEntries = entriesForBinding(LOREBOOK_BINDING_KIND.global);
+	const strategy = resolveCharacterStrategy(lorebookSets);
+
+	const characterAndGlobal = strategy === CHARACTER_STRATEGY.characterFirst
+		? [...characterEntries, ...globalEntries]
+		: strategy === CHARACTER_STRATEGY.globalFirst
+			? [...globalEntries, ...characterEntries]
+			: [...characterEntries, ...globalEntries].sort(compareLoreEntriesByOrder);
+
+	return [...chatEntries, ...personaEntries, ...characterAndGlobal];
+}
 
 export class StaticPromptResolver implements PromptAssemblyResolver {
 	constructor(
@@ -100,10 +170,23 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		chatId: ChatId;
 		branchId: ChatBranchId;
 		recentText: string;
+		scanMessages: Array<{ role: string; content: string }>;
+		/** Effective preset Author's Note, passed from prompt assembly (P15). */
+		authorsNote?: string;
+		/** Enabled summary texts, passed from prompt assembly (P15). */
+		summaries?: string[];
+		/** One-shot quiet-prompt text, passed from prompt assembly. */
+		quietPrompt?: string;
+		/** Turn clock override — the FULL branch count. Defaults to the scan
+		 * count only for direct test callers; production passes the branch total
+		 * so sticky/cooldown windows don't shift with prompt exclusions (P13). */
+		currentTurn?: number;
+		/** Resolve active entries without changing branch timed state. */
+		dryRun?: boolean;
 		maxContextTokens?: number;
-	}): Promise<ActiveLoreEntry[]> {
+	}): Promise<ActiveLoreEntriesResult> {
 		const chat = await this.stores.chats.getById(input.chatId);
-		if (!chat) return [];
+		if (!chat) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 
 		// 1. Load lorebooks with entries for this chat
 		const lorebookSets = await this.stores.lorebooks.listAllActiveForChat(
@@ -112,18 +195,16 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			input.chatId,
 		);
 
-		if (lorebookSets.length === 0) return [];
+		if (lorebookSets.length === 0) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 
-		// 2. Load messages for scan depth
-		const messages = await this.stores.messages.getMessages(input.branchId);
-		const recentMessages = messages.map(m => ({
-			role: m.role,
-			content: m.content,
-		}));
+		// 2. Scan the assembly's effective branch messages. P13 deliberately keeps
+		// this separate from the prompt's history-limit window; see the assembly's
+		// ST coreChat rationale (public/script.js:4437–4440).
+		const recentMessages = input.scanMessages;
 
 		// 3. Load character name for macro resolution + character filter
 		const character = await this.stores.characters.getById(chat.characterId);
-		if (!character) return [];
+		if (!character) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 
 		// 4. Build macro map
 		const allPersonas = await this.stores.personas.listAll();
@@ -133,12 +214,75 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			'{{user}}': persona?.name ?? 'User',
 			'{{char}}': character.name,
 		};
+		// P16: lore keys/content share the pipeline's full macro vocabulary. A
+		// fresh synchronous engine is bound for this activation resolve, so the
+		// pure lore engine receives only text→text substitution and stays free of
+		// prompt-context construction or I/O.
+		const macroEngine = createFullMacroEngine();
+		const macroContext = buildPromptVariableContext({
+			character: {
+				name: character.name,
+				description: character.description,
+				personality: character.personalitySummary,
+				scenario: character.defaultScenario,
+				firstMessage: character.firstMessage,
+				alternateGreetings: character.alternateGreetings,
+				mesExample: character.mesExample,
+				postHistoryInstructions: character.postHistoryInstructions,
+				creatorNotes: character.creatorNotes,
+				depthPrompt: character.depthPrompt,
+				depthPromptDepth: character.depthPromptDepth,
+				depthPromptRole: character.depthPromptRole,
+				systemPrompt: character.systemPrompt,
+			},
+			persona: persona ? {
+				name: persona.name,
+				description: persona.description,
+				pronouns: persona.pronouns,
+				pronounForms: persona.pronounForms,
+			} : undefined,
+			chat: {
+				messages: recentMessages.map((message, index) => ({
+					id: `lore_scan_${index}`,
+					role: message.role,
+					content: message.content,
+				})),
+				lastMessage: recentMessages.at(-1)?.content ?? null,
+				lastUserMessage: recentMessages.findLast(message => message.role === "user")?.content ?? null,
+				lastCharMessage: recentMessages.findLast(message => message.role === "assistant")?.content ?? null,
+			},
+			prompt: {
+				authorsNote: input.authorsNote ?? null,
+				summary: chat.summary ?? "",
+			},
+			runtime: { contextBudget: input.maxContextTokens ?? null },
+			preserveOutletMacros: true,
+		});
+		const recentMessagesWithNames = recentMessages.map(message => ({
+			...message,
+			// ST scans `${name}: ${message}` when includeNames is enabled
+			// (public/script.js 4563-4572); ST's name1 defaults to "User", so the
+			// persona-less fallback mirrors both ST and the macroMap above.
+			// System/tool messages have no real speaker name — engine keeps them
+			// unprefixed.
+			name: message.role === "assistant"
+				? character.name
+				: message.role === "user"
+					? persona?.name ?? "User"
+					: undefined,
+		}));
 
-		// 5. Use activation state from typed Chat object (already parsed by mapRow)
-		const activationState = (chat.loreActivationState ?? {}) as LoreActivationState;
+		// 5. Timed state belongs to the selected branch, not its parent chat:
+		// SillyTavern branches are separate chat files with independent metadata.
+		const branch = await this.stores.chats.getBranch(input.branchId);
+		if (!branch || branch.chatId !== chat.id) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
+		const activationState = branch.loreActivationState as LoreActivationState;
 
-		// 6. Estimate current turn from message count
-		const currentTurn = messages.length;
+		// 6. Turn clock: the full branch count when the assembly provides it; the
+		// scan count is only a fallback for direct callers (sticky/cooldown
+		// windows must not shift when the prompt excludes messages — P13 keeps
+		// exclusions scoped to the scan input).
+		const currentTurn = input.currentTurn ?? recentMessages.length;
 
 		// 7. Run activation engine
 		const result = resolveActivatedEntries({
@@ -147,16 +291,20 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				scanDepth: lb.lorebook.scanDepth,
 				tokenBudget: lb.lorebook.tokenBudget,
 				tokenBudgetPercent: lb.lorebook.tokenBudgetPercent,
+				tokenBudgetCap: lb.lorebook.tokenBudgetCap,
 				recursiveScanning: lb.lorebook.recursiveScanning,
 				useGroupScoring: lb.lorebook.useGroupScoring,
+				caseSensitive: lb.lorebook.caseSensitive,
+				matchWholeWords: lb.lorebook.matchWholeWords,
 				maxRecursionSteps: lb.lorebook.maxRecursionSteps,
 				includeNames: lb.lorebook.includeNames,
 				minActivations: lb.lorebook.minActivations,
 				minActivationsDepthMax: lb.lorebook.minActivationsDepthMax,
 				entries: lb.entries,
 			})),
-			messages: recentMessages,
+			messages: recentMessagesWithNames,
 			macroMap,
+			resolveMacros: (text) => macroEngine.resolve(text, macroContext),
 			characterId: character.id,
 			characterName: character.name,
 			characterDescription: character.description,
@@ -165,29 +313,67 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			characterNote: character.depthPrompt ?? undefined,
 			scenario: character.defaultScenario ?? undefined,
 			creatorNotes: character.creatorNotes ?? undefined,
+			authorsNote: input.authorsNote,
+			summaries: input.summaries,
+			quietPrompt: input.quietPrompt,
 			activationState,
 			currentTurn,
+			dryRun: input.dryRun,
 			estimateTokenCount: countTokens,
 			maxContextTokens: input.maxContextTokens,
 		});
 
-		// 8. Persist updated activation state
-		await this.stores.chats.updateLoreActivationState(chat.id, result.updatedState);
+		// 8. Only live generation resolves persist timed state. Dry-run callers
+		// receive the same active-entry view without consuming sticky/cooldown.
+		if (!input.dryRun) {
+			await this.stores.chats.updateLoreActivationState(branch.id, result.updatedState);
+		}
 
-		// 9. Map activated entries back to domain LoreEntry type, carrying the
-		//    structured activation reason through for the prompt trace.
+		// 9. Join each activated outlet in ST's final insertion order. ST's
+		//    outlet pushes ride the final sorted entries array (world-info.js
+		//    4496-4513) — chat book first, persona next, strategy blocks,
+		//    order-descending within blocks — then join with '\n' per outlet
+		//    (script.js:4615-4617). The engine emits outlets in its sticky-first
+		//    budget-queue order; that order must not leak into the joined text,
+		//    so each group re-sorts through the same step-19 ordering the normal
+		//    stream uses (a chat-book outlet leads even over a higher-priority
+		//    character-book entry).
+		const outletIds = new Set(
+			Object.values(result.outletEntries).flatMap(group => group.map(e => e.entryId)),
+		);
+		const orderedOutletStream = orderActivatedLoreEntries(
+			lorebookSets,
+			new Set([...result.activatedEntries.map(e => e.id), ...outletIds]),
+		);
+		const stOrderIndex = new Map(
+			orderedOutletStream.map((entry, index) => [entry.id, index] as const),
+		);
+		const outletEntries = Object.fromEntries(
+			Object.entries(result.outletEntries).map(([name, group]) => [
+				name,
+				group
+					.map(e => ({ content: e.content, index: stOrderIndex.get(e.entryId) ?? Number.MAX_SAFE_INTEGER }))
+					.sort((a, b) => a.index - b.index)
+					.map(e => e.content)
+					.join("\n"),
+			]),
+		);
+		const outletMacroContext = { ...macroContext, outlets: outletEntries, preserveOutletMacros: false };
+
+		// 10. Map activated entries back to domain LoreEntry type, carrying the
+		//     structured activation reason through for the prompt trace.
 		const reasonById = new Map(result.activatedEntries.map(e => [e.id, e]));
 		const activatedIds = new Set(result.activatedEntries.map(e => e.id));
-		const activeEntries: ActiveLoreEntry[] = lorebookSets
-			.flatMap(lb => lb.entries)
-			.filter(e => activatedIds.has(e.id))
-			.map(e => {
+		const activeEntries: ActiveLoreEntry[] = orderActivatedLoreEntries(lorebookSets, activatedIds)
+			.map((e, insertionOrder) => {
 				const detail = reasonById.get(e.id)!;
 				return {
 					id: brandId<LoreEntry['id']>(e.id),
 					lorebookId: brandId<LoreEntry['lorebookId']>(e.lorebookId),
 					title: e.title,
-					content: e.content,
+					// The engine commits macro-expanded content; keep the stored row
+					// raw while carrying its resolved prompt view through regex/assembly.
+					content: resolveOutletMacros(detail.content, macroEngine, outletMacroContext),
 					keys: e.keys,
 				secondaryKeys: e.secondaryKeys,
 				logic: e.logic as LoreEntry['logic'],
@@ -196,7 +382,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				priority: e.priority,
 				stickyWindow: e.stickyWindow,
 				cooldownWindow: e.cooldownWindow,
-				delayWindow: e.delayWindow,
+				minChatMessages: e.minChatMessages,
 				constant: e.constant,
 				probability: e.probability,
 				ignoreBudget: e.ignoreBudget,
@@ -212,6 +398,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				scanDepthOverride: e.scanDepthOverride,
 				caseSensitive: e.caseSensitive,
 				matchWholeWords: e.matchWholeWords,
+				caseFormsKeys: e.caseFormsKeys,
 				characterFilter: e.characterFilter as LoreEntry['characterFilter'],
 				characterFilterExclude: e.characterFilterExclude,
 				matchSources: e.matchSources as LoreEntry['matchSources'],
@@ -222,18 +409,35 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 				activationReason: detail.reason,
 				matchedKeys: detail.matchedKeys,
 				matchCount: detail.matchCount,
+				insertionOrder,
 			};
 		});
 
-		// 10. WORLD_INFO regex hook (RX-9): transform activated entry CONTENT in
-		//     the prompt view only — the lorebook row is shared content and is
-		//     never rewritten. The macroMap built above is reused as the engine's
-		//     macro source (no second context is built).
-		return this.regexHooks.transformWorldInfo(input.chatId, activeEntries, {
+		// 11. WORLD_INFO regex hook (RX-9): the activation engine has already
+		//     macro-expanded this lore-only prompt view before recursion commits.
+		//     The hook therefore sees the same expanded content ST passes to its
+		//     WORLD_INFO regex scripts (world-info.js:4938-4939, 5085-5086). The
+		//     lorebook row remains raw and is never rewritten.
+		const entries = await this.regexHooks.transformWorldInfo(input.chatId, activeEntries, {
 			characterId: chat.characterId,
 			presetId: chat.promptPresetId ?? null,
 			macroMap,
 		});
+
+		// P21 (overflowAlert): enrich the engine's per-book overflow report with
+		// the book's name + its overflowAlert flag — the single place that has
+		// both (the engine knows only ids; the flag is a per-book setting, not
+		// engine logic). The trace keeps the full list; the live-turn finish
+		// event filters to alert-on books (see appendAssistantReply).
+		const lorebookById = new Map(lorebookSets.map(set => [set.lorebook.id, set.lorebook]));
+		const overflowedLorebooks = result.overflowedBooks.map(o => ({
+			lorebookId: o.lorebookId,
+			name: lorebookById.get(o.lorebookId)?.name ?? o.lorebookId,
+			dropped: o.dropped,
+			alert: lorebookById.get(o.lorebookId)?.overflowAlert ?? false,
+		}));
+
+		return { entries, overflowedLorebooks, outletEntries };
 	}
 
 	async executeScripts(input: {

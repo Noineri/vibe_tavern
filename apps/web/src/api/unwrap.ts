@@ -7,11 +7,17 @@ export interface RpcErrorBody {
   error?: string | { message?: string; code?: string; details?: { category?: ProviderErrorCategory } };
 }
 
-export async function unwrapRpc<T>(response: RpcResponse): Promise<T> {
+/** Success body of a Hono RPC response: error-status variants are dropped. */
+export type RpcBody<R> = R extends { ok: false } ? never : R extends { json(): Promise<infer T> } ? T : never;
+
+/** Success body of an RPC endpoint method, e.g. `RpcData<typeof client.api.scripts.all.$get>`. */
+export type RpcData<F extends (...args: never[]) => Promise<RpcResponse>> = RpcBody<Awaited<ReturnType<F>>>;
+
+export async function unwrapRpc<R extends RpcResponse>(response: R): Promise<RpcBody<R>> {
   if (!response.ok) {
     throw await unwrapError(response);
   }
-  return response.json() as Promise<T>;
+  return response.json() as Promise<RpcBody<R>>;
 }
 
 /** Sentinel for a 422 vision_not_supported body (top-level `type` — the
@@ -23,7 +29,12 @@ const TYPED_ERROR_SENTINELS: Record<string, string> = {
 };
 
 export async function unwrapError(response: RpcResponse): Promise<Error> {
-  const errorBody = await response.json().catch(() => null) as RpcErrorBody | null;
+  return errorFromBody(await response.json().catch(() => null) as RpcErrorBody | null, response.status);
+}
+
+/** The {@link unwrapError} mapping over an already-read body — for callers
+ *  that need other fields of the same body (it can be read only once). */
+export function errorFromBody(errorBody: RpcErrorBody | null, status: number): Error {
   const error = errorBody?.error;
   if (error && typeof error === "object" && error.code === "VISION_NOT_SUPPORTED") {
     return new Error("VISION_NOT_SUPPORTED");
@@ -34,6 +45,6 @@ export async function unwrapError(response: RpcResponse): Promise<Error> {
   if (typeof typed === "string" && typed in TYPED_ERROR_SENTINELS) {
     return new Error(TYPED_ERROR_SENTINELS[typed]);
   }
-  const message = typeof error === "string" ? error : error?.message || `Request failed: ${response.status}`;
+  const message = typeof error === "string" ? error : error?.message || `Request failed: ${status}`;
   return new Error(message);
 }

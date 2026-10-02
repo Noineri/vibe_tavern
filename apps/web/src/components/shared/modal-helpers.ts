@@ -29,17 +29,17 @@ export function registerOverlayPortal(node: HTMLElement): () => void {
  *  the ref cleanup (exactly the bug this hardening follows) can leave
  *  disconnected nodes in the stack; walk from the top, pruning them, so a
  *  stale detached anchor can never become a portal target again. */
-export function getTopmostOverlayPortal(): HTMLElement | null {
+export function getTopmostOverlayPortal(exclude: HTMLElement | null = null): HTMLElement | null {
   for (let i = overlayPortalStack.length - 1; i >= 0; i--) {
     const node = overlayPortalStack[i];
-    if (node.isConnected) return node;
-    overlayPortalStack.splice(i, 1);
+    if (!node.isConnected) overlayPortalStack.splice(i, 1);
+    else if (node !== exclude) return node;
   }
   return null;
 }
 
-export function getModalPortal(): HTMLElement | null {
-  return getTopmostOverlayPortal() ?? document.getElementById("modal-portal");
+export function getModalPortal(exclude: HTMLElement | null = null): HTMLElement | null {
+  return getTopmostOverlayPortal(exclude) ?? document.getElementById("modal-portal");
 }
 
 /** The application-level modal host — stable per call, independent of the

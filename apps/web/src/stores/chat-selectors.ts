@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { AppCharacter, AppMessage, AppPersona } from "../app-client.js";
+import type { AppCharacter, AppMessage, AppPersona } from "../api/types.js";
 import { replaceUiMacros } from "../lib/macros.js";
 import { countTokens } from "../utils/tokenizer.js";
 import type { MacroContext } from "./snapshot-store.js";

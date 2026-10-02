@@ -1,28 +1,5 @@
-import {
-  activateProviderProfile,
-  addFavoriteProviderModel,
-  deleteProviderProfile,
-  fetchModelsByEndpoint,
-  fetchProviderProfile,
-  fetchProviderProfileModels,
-  getProviderModelSettings,
-  listFavoriteProviderModels,
-  listProviderModelSettings,
-  listProviderProfiles,
-  removeFavoriteProviderModel,
-  saveProviderProfile,
-  testProfileChat,
-  testProviderChat,
-  testProviderDraft,
-  testProviderProfile,
-  updateProviderProfile,
-  upsertProviderModelSettings,
-  reorderProviderProfiles,
-  type FavoriteProviderModelRecord,
-  type ProviderModelSettingsRecord,
-  type ProviderProfileRecord,
-  type TestChatResponse,
-} from "../../app-client.js";
+import { activateProviderProfile, addFavoriteProviderModel, deleteProviderProfile, fetchModelsByEndpoint, fetchProviderProfile, fetchProviderProfileModels, getProviderModelSettings, listFavoriteProviderModels, listProviderModelSettings, listProviderProfiles, removeFavoriteProviderModel, saveProviderProfile, testProfileChat, testProviderChat, testProviderDraft, testProviderProfile, updateProviderProfile, upsertProviderModelSettings, reorderProviderProfiles } from "../../api/provider-api.js";
+import type { FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderProfileRecord, TestChatResponse } from "../../api/types.js";
 import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, ProviderProbeResponse, ProviderProxyMode } from "@vibe-tavern/domain";
 import { useProviderDataStore } from "../provider-data-store.js";
 

@@ -1,15 +1,7 @@
+import type { AiAssistantStreamChunk } from "@vibe-tavern/api-contracts";
 import { REASONING_END_MARKER, REASONING_START_MARKER } from "../providers/openai-reasoning-fetch.js";
 
-export interface AiAssistantStreamChunk {
-  type: "text" | "reasoning" | "partial_json" | "error" | "done";
-  text?: string;
-  json?: Record<string, unknown>;
-  error?: string;
-  /** Present only for message editor completions; consumed later as merge provenance. */
-  modelId?: string;
-  promptPresetId?: string | null;
-  finishReason?: string;
-}
+export type { AiAssistantStreamChunk };
 
 export interface ReasoningSplitState {
   buffer: string;

@@ -11,7 +11,7 @@
  * updated. Result: the standalone/npm/linux/windows/android artifacts shipped
  * without ANY copilot prompt (base.md, user-flow.md, skills) — the loader fell
  * through its candidate ladder and the copilot ran prompt-less (owner-reported:
- * "копайлота какие-то промпты не доходят"). One copier, every packager: any
+ * some copilot prompts never made it to the packaged app). One copier, every packager: any
  * future nested prompt tree is included automatically.
  *
  * Semantics: copy every flat `.md` file and every subdirectory EXCEPT

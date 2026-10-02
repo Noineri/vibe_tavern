@@ -62,7 +62,7 @@ export function QueueManager(): ReactNode {
   const done = jobs.filter((j) => j.status === "done").length;
   // Counter-only label: the spinning regen icon conveys "generating", so a
   // trailing noun is redundant — and a noun after a Russian counter ("0/6
-  // генерация…") is grammatically wrong without plural-form logic. Keeping
+  // generating…") is grammatically wrong without plural-form logic. Keeping
   // the pill locale-agnostic (done/total only) sidesteps both issues.
   const pillLabel = jobs.length < 1 ? "" : `${done}/${total}`;
 
@@ -187,7 +187,7 @@ function ManagerHeader({ jobs, onClose }: { jobs: QueueJob[]; onClose: () => voi
   const hasPending = jobs.some((j) => j.status === "pending");
   // Two rows: title + count + clear on top, a full-width "Add current" CTA
   // below. Cramming all three into one w-80 row wraps under Russian strings
-  // ("Добавить текущие" + "Очистить очередь" + title ≈ 48 chars > 320px); the
+  // ("Add current" + "Clear queue" + title ≈ 48 chars > 320px); the
   // primary CTA also deserves its own row. Each row stays single-line.
   return (
     <div className="border-b border-border">

@@ -170,8 +170,8 @@ const CONTROLLER_LABEL_KEY = {
   [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_model",
 } as const;
 
-/** Short parens role for the «За кого вы играете» seat dropdown (LB-1 polish):
- *  «Имя (короткая роль)». Only this short DropdownSelect uses it; the roster
+/** Short parens role for the "Who are you playing as" seat dropdown (LB-1 polish):
+ *  "Name (short role)". Only this short DropdownSelect uses it; the roster
  *  editor and the setup-summary line keep the full CONTROLLER_LABEL_KEY. */
 const SHORT_ROLE_KEY = {
   [EXPERIENCE_CONTROLLER.human]: "experience_playground_role_short_human",
@@ -425,8 +425,8 @@ function RealtimeLoopDiagSection(props: {
  *  the retired InteractiveTester (XU-4); renders only when the run carried a
  *  roster AND the server supplied the matrix (older builds omit it). */
 function SeatLegalityBlock({ matrix, completed }: { matrix: ExperienceSeatLegalityMatrix; completed: boolean }) {
-  if (matrix.seats.length === 0) return null;
   const { t } = useT();
+  if (matrix.seats.length === 0) return null;
   return (
     <div className={blockCls} style={{ padding: 10 }}>
       <div className={blockLabelCls}>{t("experience_tester_seat_legality")}</div>
@@ -525,9 +525,7 @@ function TestRunResultBlock({ result }: { result: ExperienceTestRunData }) {
         )}
       </div>
 
-      {result.seatLegality !== undefined && (
-        <SeatLegalityBlock matrix={result.seatLegality} completed={result.status === "completed"} />
-      )}
+      <SeatLegalityBlock matrix={result.seatLegality} completed={result.status === "completed"} />
 
       {result.events.length > 0 && (
         <div className={blockCls} style={{ padding: 10 }}>
@@ -716,8 +714,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const [setupFields, setSetupFields] = useState<SetupField[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   /** LOBBY-A: the collapsed "advanced" disclosure over the raw settings JSON
-   *  (technical users; verbatim: «жсон для технических пользователей под
-   *  аккордеон прятать»). Local only — never persisted. */
+   *  (technical users; verbatim: hide the JSON for technical users under
+   *  an accordion). Local only — never persisted. */
   const [settingsJsonOpen, setSettingsJsonOpen] = useState(false);
   /** LOBBY-A: settings became the user's explicit choice (a form edit or a
    *  textarea edit) — or the config was restored. Persisting no longer
@@ -1736,8 +1734,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
             {/* LOBBY-A: the package's declared setup fields render as a real
                 form (author defaults seeded into the JSON). The raw JSON
                 textarea is ALWAYS under a collapsed "advanced" disclosure
-                (verbatim: «жсон для технических пользователей под аккордеон
-                прятать») — never the default view, fields or not. */}
+                (verbatim: hide the JSON for technical users under an
+                accordion) — never the default view, fields or not. */}
             {setupFormAvailable && (
               <div className="mt-1.5 flex flex-col gap-2.5" data-testid="playground-setup-form">
                 {setupFields.map((field) => (
@@ -1767,7 +1765,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
             )}
             {/* The raw JSON is ALWAYS under the collapsed "advanced"
                 disclosure — with or without declared fields (verbatim quote:
-                «жсон для технических пользователей под аккордеон прятать»);
+                "hide the JSON for technical users under an accordion");
                 a non-technical user never faces a raw textarea by default. */}
             <div className="mt-1.5">
               <button
@@ -1903,8 +1901,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
 
               {/* LB-6 (EXPERIENCE_ENGINE_LOBBY_REPORT): the post-game strip — a
                   DISTINCT prominent completed-state surface next to the status
-                  line. «Играть снова» restarts with the SAME settings/seats/roster
-                  and a fresh seed (handleRestart); «Изменить настройки» tears
+                  line. "Play again" restarts with the SAME settings/seats/roster
+                  and a fresh seed (handleRestart); "Change settings" tears
                   the run down to the expanded setup state (handleReset). The
                   header restart/reset buttons stay (pre/post-game utility).
                   RM-9: turn-only — a realtime round's end surface is the

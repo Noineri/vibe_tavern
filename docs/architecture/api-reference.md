@@ -573,7 +573,6 @@ Create a lorebook.
   "name": "World Lore",
   "scopeType": "entity",
   "characterId": "char_1",
-  "scanDepth": 50,
   "tokenBudget": 2048,
   "recursiveScanning": false
 }

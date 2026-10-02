@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { wireUiSettings, wireCharacter } from "../../../test/wire-fixtures.js";
 import type { ChatId, CharacterId } from "@vibe-tavern/domain";
-import type { AppSnapshot } from "../../app-client.js";
+import type { AppSnapshot } from "../../api/types.js";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";
 import { syncBootstrapSnapshotForActiveChat, patchUiSettingsAction, useBootstrapStore } from "./bootstrap-actions.js";
@@ -33,7 +34,6 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
       characterId: "char-1",
       personaId: "persona-1",
       promptPresetId: null,
-      toolProfileId: null,
       activeBranchId: "branch-1",
       selectedGreetingIndex: 0,
       status: "active",
@@ -55,6 +55,7 @@ function snapshot(id: string, personaName = "Persona"): AppSnapshot {
     summaries: [],
     promptTrace: null,
     character: {
+      ...wireCharacter(),
       id: "char-1",
       name: "Character",
       avatarExt: null,
@@ -183,6 +184,7 @@ describe("syncBootstrapSnapshotForActiveChat", () => {
 
 describe("patchUiSettingsAction", () => {
   const baseSettings = {
+    ...wireUiSettings(),
     id: "default",
     theme: "dark",
     chatFontSize: 15,

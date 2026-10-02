@@ -14,14 +14,17 @@ export const createLorebookSchema = z.object({
   scanDepth: z.number().optional().default(10),
   tokenBudget: z.number().optional().default(2048),
   tokenBudgetPercent: z.number().int().min(0).max(100).nullable().optional().default(null),
+  tokenBudgetCap: z.number().int().min(0).optional().default(0),
   recursiveScanning: z.boolean().optional().default(false),
   useGroupScoring: z.boolean().optional().default(false),
-  maxRecursionSteps: z.number().optional().default(5),
-  includeNames: z.boolean().optional().default(false),
+  caseSensitive: z.boolean().optional().default(false),
+  matchWholeWords: z.boolean().optional().default(false),
+  maxRecursionSteps: z.number().optional().default(0),
+  includeNames: z.boolean().optional().default(true),
   minActivations: z.number().optional().default(0),
   minActivationsDepthMax: z.number().optional().default(0),
   overflowAlert: z.boolean().optional().default(false),
-  characterStrategy: z.number().optional().default(0),
+  characterStrategy: z.number().optional().default(1),
   enabled: z.boolean().optional().default(true),
 });
 
@@ -31,8 +34,11 @@ export const updateLorebookMetaSchema = z.object({
   scanDepth: z.number().optional(),
   tokenBudget: z.number().optional(),
   tokenBudgetPercent: z.number().int().min(0).max(100).nullable().optional(),
+  tokenBudgetCap: z.number().int().min(0).optional(),
   recursiveScanning: z.boolean().optional(),
   useGroupScoring: z.boolean().optional(),
+  caseSensitive: z.boolean().optional(),
+  matchWholeWords: z.boolean().optional(),
   maxRecursionSteps: z.number().optional(),
   includeNames: z.boolean().optional(),
   minActivations: z.number().optional(),
@@ -63,7 +69,7 @@ const loreEntryCoreSchema = z.object({
   ignoreBudget: z.boolean().optional().default(false),
   role: z.string().optional().default("system"),
   groupName: z.string().optional().default(""),
-  groupWeight: z.number().optional().default(1),
+  groupWeight: z.number().optional().default(100),
   prioritizeInclusion: z.boolean().optional().default(false),
   useGroupScoring: z.boolean().nullable().optional().default(null),
   excludeRecursion: z.boolean().optional().default(false),
@@ -71,15 +77,16 @@ const loreEntryCoreSchema = z.object({
   delayUntilRecursion: z.boolean().optional().default(false),
   recursionLevel: z.number().optional().default(0),
   scanDepthOverride: z.number().nullable().optional().default(null),
-  caseSensitive: z.boolean().optional().default(false),
-  matchWholeWords: z.boolean().optional().default(false),
+  caseSensitive: z.boolean().nullable().optional().default(null),
+  matchWholeWords: z.boolean().nullable().optional().default(null),
+  caseFormsKeys: z.array(z.string()).optional().default([]),
   characterFilter: z.array(characterFilterEntrySchema).optional().default([]),
   characterFilterExclude: z.boolean().optional().default(false),
-  matchSources: z.array(z.string()).optional().default([]),
+  matchSources: z.array(z.string()).optional().default(["chat_messages"]),
   enabled: z.boolean().optional().default(true),
   stickyWindow: z.number().optional().default(0),
   cooldownWindow: z.number().optional().default(0),
-  delayWindow: z.number().optional().default(0),
+  minChatMessages: z.number().optional().default(0),
 });
 
 export const createLoreEntrySchema = loreEntryCoreSchema;
@@ -108,15 +115,16 @@ const loreEntryUpdateSchema = z.object({
   delayUntilRecursion: z.boolean().optional(),
   recursionLevel: z.number().optional(),
   scanDepthOverride: z.number().nullable().optional(),
-  caseSensitive: z.boolean().optional(),
-  matchWholeWords: z.boolean().optional(),
+  caseSensitive: z.boolean().nullable().optional(),
+  matchWholeWords: z.boolean().nullable().optional(),
+  caseFormsKeys: z.array(z.string()).optional(),
   characterFilter: z.array(characterFilterEntrySchema).optional(),
   characterFilterExclude: z.boolean().optional(),
   matchSources: z.array(z.string()).optional(),
   enabled: z.boolean().optional(),
   stickyWindow: z.number().optional(),
   cooldownWindow: z.number().optional(),
-  delayWindow: z.number().optional(),
+  minChatMessages: z.number().optional(),
 });
 
 export const updateLoreEntrySchema = loreEntryUpdateSchema;
@@ -161,6 +169,18 @@ export const setLorebookLinksSchema = z.object({
 });
 
 // ─── Duplicate ────────────────────────────────────────────────────────────────
+
+export const lorebookExportWarningSchema = z.object({
+  kind: z.literal("chat_off_entry"),
+  entryTitle: z.string(),
+});
+
+export const lorebookExportResultSchema = z.object({
+  data: z.record(z.string(), z.unknown()),
+  warnings: z.array(lorebookExportWarningSchema),
+});
+
+export type LorebookExportResult = z.infer<typeof lorebookExportResultSchema>;
 
 export const duplicateLorebookSchema = z.object({
   name: z.string().optional(),

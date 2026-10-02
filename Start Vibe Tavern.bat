@@ -73,9 +73,19 @@ echo Starting server...
 echo Press Ctrl+C to stop.
 echo.
 
-powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue; if ($conn) { $pid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port %VIBE_TAVERN_PORT% is already in use by PID' $pid; exit 10 } else { exit 0 }"
+rem If the port is busy, offer to kill the stale holder instead of falling
+rem silently — the deliberate restart UX (owner ruling 2026-09-19: the
+rem launcher must offer to kill the stale holder instead of dying
+rem silently, as it always did — see IMAGEGEN_MAINTENANCE_REPORT).
+rem Repaired, not
+rem removed: the original assigned to $pid — a READ-ONLY automatic
+rem PowerShell variable — so the assignment threw VariableNotWritable and
+rem both the reported and the offered-to-kill PID were powershell.exe
+rem itself, never the zombie; $ownerPid is writable and carries the real
+rem OwningProcess.
+powershell.exe -NoProfile -Command "$conn = Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue; if ($conn) { $ownerPid = $conn[0].OwningProcess; Write-Host ''; Write-Host 'Port %VIBE_TAVERN_PORT% is already in use by PID' $ownerPid; exit 10 } else { exit 0 }"
 if %ERRORLEVEL%==10 (
-    powershell.exe -NoProfile -Command "$pid = (Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $pid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $pid -Force; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
+    powershell.exe -NoProfile -Command "$ownerPid = (Get-NetTCPConnection -LocalPort %VIBE_TAVERN_PORT% -ErrorAction SilentlyContinue)[0].OwningProcess; Write-Host 'Kill PID' $ownerPid '? [Y/n]'; $a = Read-Host; if ($a -eq '' -or $a -eq 'Y' -or $a -eq 'y') { Stop-Process -Id $ownerPid -Force; Start-Sleep -Milliseconds 500; Write-Host 'Killed.'; exit 0 } else { Write-Host 'Cancelled.'; exit 1 }"
     if errorlevel 1 (
         pause
         exit /b 1
@@ -93,7 +103,7 @@ echo Logging to !LOG_FILE!
 echo.
 
 rem ── Run bun with live output + log to file ──
-powershell.exe -NoProfile -Command "& bun services/api/src/server/prod-server.ts 2>&1 | Tee-Object -FilePath '!LOG_FILE!' -Append; exit $LASTEXITCODE"
+powershell.exe -NoProfile -Command "& bun --no-env-file services/api/src/server/prod-server.ts 2>&1 | Tee-Object -FilePath '!LOG_FILE!' -Append; exit $LASTEXITCODE"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.

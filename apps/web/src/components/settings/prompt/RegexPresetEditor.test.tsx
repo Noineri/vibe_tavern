@@ -53,10 +53,11 @@ beforeAll(async () => {
 });
 
 import type { RegexPresetRecord } from "../../../api/types.js";
+import { brandId, type RegexPresetId } from "@vibe-tavern/domain";
 
 function baseRecord(overrides: Partial<RegexPresetRecord> = {}): RegexPresetRecord {
   return {
-    id: "r1",
+    id: brandId<RegexPresetId>("r1"),
     name: "Test regex",
     findRegex: "/foo/g",
     replaceString: "bar",
@@ -72,8 +73,8 @@ function baseRecord(overrides: Partial<RegexPresetRecord> = {}): RegexPresetReco
     isGlobal: false,
     sortOrder: 0,
     profileId: null,
-    createdAt: 0,
-    updatedAt: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -302,7 +303,7 @@ describe("RegexPresetEditor — R-7 redesign", () => {
     getRegexLinksMock.mockResolvedValue([{ regexPresetId: "r1", targetType: "preset", targetId: "pp1" }]);
     listPromptPresetsMock.mockResolvedValue([{ id: "pp1", name: "Deep RP" }]);
     const second = render(
-      <RegexPresetEditor preset={baseRecord({ id: "r1" })} draft={regexDraftFromRecord(baseRecord())} onDraftChange={mock()} />,
+      <RegexPresetEditor preset={baseRecord({ id: brandId<RegexPresetId>("r1") })} draft={regexDraftFromRecord(baseRecord())} onDraftChange={mock()} />,
     );
     expect(await second.findByText("Deep RP")).toBeTruthy();
     await new Promise((r) => setTimeout(r, 50)); // let the links state settle
@@ -344,7 +345,7 @@ describe("RegexPresetEditor — not-applied badge under the name", () => {
     // Bind mode with one resolvable link → applies.
     getRegexLinksMock.mockResolvedValue([{ regexPresetId: "r1", targetType: "preset", targetId: "pp1" }]);
     listPromptPresetsMock.mockResolvedValue([{ id: "pp1", name: "Deep RP" }]);
-    record = baseRecord({ id: "r1", isGlobal: false });
+    record = baseRecord({ id: brandId<RegexPresetId>("r1"), isGlobal: false });
     const third = render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
     expect(await third.findByText("Deep RP")).toBeTruthy();
     await new Promise((r) => setTimeout(r, 50));

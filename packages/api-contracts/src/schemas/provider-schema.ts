@@ -150,6 +150,10 @@ export const modelSettingsOverlaySchema = z.object({
   showReasoning: z.boolean().optional(),
   streamResponse: z.boolean().optional(),
   customSamplers: z.boolean().optional(),
+  /** Per-model sampler-set pointer (owner ruling 2026-09-27 — the LLM twin of
+   *  the imagegen overlay's IG-CF15 field): which named set this model last
+   * applied. Absent = inherit the profile base pointer; null = no set. */
+  samplerSetId: z.string().nullable().optional(),
 });
 
 /** Body for PUT /api/providers/:id/model-settings/:modelId — the overlay directly

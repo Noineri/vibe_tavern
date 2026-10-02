@@ -1,6 +1,8 @@
 import { isIP } from "node:net";
 import type { MiddlewareHandler } from "hono";
 
+import { IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER } from "@vibe-tavern/api-contracts";
+
 // ── Types ───────────────────────────────────────────────────────────────
 
 export interface OriginGuardOptions {
@@ -111,6 +113,8 @@ export function isTrustedHost(rawHost: string, allowedHost?: string): boolean {
 
 const CORS_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 const CORS_HEADERS = "Content-Type, Authorization";
+/** Custom response headers a split-deployment frontend must be able to read. */
+const CORS_EXPOSE_HEADERS = IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER;
 
 /** Fail-closed browser-origin boundary for the local API.
  *
@@ -194,6 +198,7 @@ export function createOriginGuardMiddleware(options: OriginGuardOptions): Middle
 			await next();
 			c.header("Access-Control-Allow-Origin", origin);
 			c.header("Access-Control-Allow-Headers", CORS_HEADERS);
+			c.header("Access-Control-Expose-Headers", CORS_EXPOSE_HEADERS);
 			c.header("Vary", "Origin", { append: true });
 			return;
 		}

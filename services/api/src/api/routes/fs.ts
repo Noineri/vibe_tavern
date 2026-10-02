@@ -57,58 +57,50 @@ interface DialogRunResult {
 	/** The dialog's textual output: the selected path on success, or empty on cancel. */
 	stdout: string;
 	exitCode: number | null;
+	/**
+	 * Set when the process died from a signal - for this module that means the
+	 * deadline below fired, since nothing else signals the picker. A timeout
+	 * kill surfaces as `signalCode: "SIGKILL"` with `exitCode: 137`, so the
+	 * exit code alone cannot separate "killed" from "cancelled".
+	 */
+	signalCode: NodeJS.Signals | null;
 }
 
 /**
- * Spawn a subprocess and race it against a hard timeout. On timeout, kill the
- * subprocess and resolve `"timeout"`. We use async `Bun.spawn` (not
- * `spawnSync`) deliberately: the dialog blocks on user interaction, which
- * would block the entire event loop under `spawnSync` — unacceptable for a
- * server that must keep serving other requests while the picker is open.
+ * Spawn a dialog subprocess under a hard deadline.
+ *
+ * We use async `Bun.spawn` (not `spawnSync`) deliberately: the dialog blocks on
+ * user interaction, which would block the entire event loop under `spawnSync` —
+ * unacceptable for a server that must keep serving other requests while the
+ * picker is open.
+ *
+ * `timeout` + `killSignal` replace a hand-rolled setTimeout/kill/`settled`
+ * race. `killSignal: "SIGKILL"` is load-bearing, not decoration: measured on
+ * Bun 1.4.2, the default SIGTERM is sent once and never escalated, so a child
+ * that ignores it keeps running and `proc.exited` never settles — the request
+ * would hang where the old code resolved at the deadline (probe: a
+ * SIGTERM-ignoring child was still alive 2.5s after a 400ms timeout; with
+ * SIGKILL it exited in 402ms).
+ *
+ * `Bun.spawn` throws synchronously when the command is missing, which rejects
+ * this promise — the callers surface a real `{error}` rather than a silent
+ * `{cancelled}`.
+ *
+ * Exported so the deadline and the cancel path can be pinned against real
+ * subprocesses; the OS pickers themselves need a human to click.
  */
-function runDialogWithTimeout(cmd: string[], ms: number): Promise<DialogRunResult | "timeout"> {
-	return new Promise((resolve, reject) => {
-		let settled = false;
-		let proc: ReturnType<typeof Bun.spawn>;
-		try {
-			proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
-		} catch (e) {
-			// spawn itself failed synchronously (command missing, etc.) —
-			// reject so the caller surfaces a real {error} rather than a
-			// silent {cancelled}.
-			reject(e instanceof Error ? e : new Error(String(e)));
-			return;
-		}
-
-		const timer = setTimeout(() => {
-			if (settled) return;
-			settled = true;
-			try {
-				proc.kill();
-			} catch {
-				// already dead — nothing to kill.
-			}
-			resolve("timeout");
-		}, ms);
-
-		const stdoutStream = proc.stdout;
-		const stdoutPromise = stdoutStream instanceof ReadableStream
-			? new Response(stdoutStream).text()
-			: Promise.resolve("");
-		Promise.all([stdoutPromise, proc.exited])
-			.then(([stdout, exitCode]) => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(timer);
-				resolve({ stdout, exitCode });
-			})
-			.catch((e) => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(timer);
-				reject(e instanceof Error ? e : new Error(String(e)));
-			});
+export async function runDialog(cmd: string[], ms: number): Promise<DialogRunResult> {
+	const proc = Bun.spawn(cmd, {
+		stdout: "pipe",
+		stderr: "pipe",
+		timeout: ms,
+		killSignal: "SIGKILL",
 	});
+	const [stdout, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		proc.exited,
+	]);
+	return { stdout, exitCode, signalCode: proc.signalCode };
 }
 
 // ── Platform commands ──────────────────────────────────────────────────────
@@ -234,7 +226,7 @@ async function openNativeFolderDialog(platform: string = process.platform): Prom
 		}
 		const cmd = windowsCmd(outFile);
 		try {
-			const run = await runDialogWithTimeout(cmd, NATIVE_DIALOG_TIMEOUT_MS);
+			const run = await runDialog(cmd, NATIVE_DIALOG_TIMEOUT_MS);
 			let fileContent = "";
 			try {
 				fileContent = await Bun.file(outFile).text();
@@ -255,7 +247,7 @@ async function openNativeFolderDialog(platform: string = process.platform): Prom
 	if (platform === "darwin") {
 		// macOS: direct osascript; stdout carries the POSIX path.
 		try {
-			const run = await runDialogWithTimeout(MACOS_CMD("Select folder"), NATIVE_DIALOG_TIMEOUT_MS);
+			const run = await runDialog(MACOS_CMD("Select folder"), NATIVE_DIALOG_TIMEOUT_MS);
 			return mapDialogResult(run);
 		} catch (e) {
 			return { error: e instanceof Error ? e.message : String(e) };
@@ -269,7 +261,7 @@ async function openNativeFolderDialog(platform: string = process.platform): Prom
 		// No zenity/kdialog installed → frontend falls back to manual path entry.
 		if (!tool) return { available: false };
 		try {
-			const run = await runDialogWithTimeout(linuxCmd(tool, "Select folder"), NATIVE_DIALOG_TIMEOUT_MS);
+			const run = await runDialog(linuxCmd(tool, "Select folder"), NATIVE_DIALOG_TIMEOUT_MS);
 			return mapDialogResult(run);
 		} catch (e) {
 			return { error: e instanceof Error ? e.message : String(e) };
@@ -281,7 +273,7 @@ async function openNativeFolderDialog(platform: string = process.platform): Prom
 }
 
 /**
- * Map a finished (or timed-out) dialog subprocess into the response union.
+ * Map a finished (or killed) dialog subprocess into the response union.
  * Pure — extracted so the cancel/success/timeout logic is testable without
  * spawning a real OS dialog.
  *
@@ -293,11 +285,12 @@ async function openNativeFolderDialog(platform: string = process.platform): Prom
  * @param fileContent Windows only: contents of the temp result file. Empty
  *   means the user cancelled (the script writes only on OK).
  */
-export function mapDialogResult(run: DialogRunResult | "timeout", fileContent?: string): NativeDialogResult {
-	if (run === "timeout") {
-		// Treat an idle picker the same as the user walking away — cancel.
-		return { cancelled: true };
-	}
+export function mapDialogResult(run: DialogRunResult, fileContent?: string): NativeDialogResult {
+	// Killed by the deadline in runDialog: treat an idle picker the same as the
+	// user walking away. Checked BEFORE stdout because a killed picker still
+	// hands back whatever it had already printed (measured), and half-written
+	// output is not a selection.
+	if (run.signalCode !== null) return { cancelled: true };
 
 	// Prefer the Windows temp-file result when provided (it's authoritative —
 	// `start` detaches stdout). Fall back to stdout for macOS / direct spawns.

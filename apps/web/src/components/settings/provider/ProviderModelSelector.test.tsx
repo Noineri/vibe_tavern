@@ -79,6 +79,35 @@ function baseProps(over: Partial<Props> = {}): Props {
   };
 }
 
+describe("ProviderModelSelector local status chip (IG-CF12b)", () => {
+  it("isLocalProvider: the shared primitive renders with the state class + the mb-2.5 placement the extraction moved to the caller", () => {
+    const view = render(
+      <ProviderModelSelector
+        {...baseProps({ isLocalProvider: true, localEndpoint: "http://127.0.0.1:11434", localConnectionStatus: "online" })}
+      />,
+    );
+    const label = view.getByText("local_connection_online");
+    // Two divs up: the status row wrapper (CF-12d) sits between the label
+    // and the chip body that carries the state class + placement margin.
+    const chip = label.closest("div")!.parentElement!;
+    expect(chip.className).toContain("border-success/30");
+    expect(chip.className).toContain("mb-2.5");
+    view.unmount();
+  });
+
+  it("showRefreshButton=false: no mini re-check button inside the chip (the gating moved into the onRefresh presence)", () => {
+    const view = render(
+      <ProviderModelSelector
+        {...baseProps({ isLocalProvider: true, showRefreshButton: false })}
+      />,
+    );
+    const label = view.getByText("local_connection_unknown");
+    const chip = label.closest("div")!.parentElement!;
+    expect(chip.querySelector("button")).toBeNull();
+    view.unmount();
+  });
+});
+
 describe("ProviderModelSelector refresh button height (W1 step 5)", () => {
   beforeEach(() => {
     isMobileValue = false;

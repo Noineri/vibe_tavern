@@ -22,6 +22,7 @@ import {
   type LinkTarget,
 } from "../../../shared/LinkBindingPopover.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
+import { characterToLinkTarget, personaToLinkTarget } from "../../../../lib/link-targets.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { useAllCharacters } from "../../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../../stores/api-actions/bootstrap-actions.js";
@@ -46,28 +47,8 @@ export function TtsBindingFields({ tts, form }: { tts: TtsHook; form: NonNullabl
   const allCharacters = useAllCharacters();
   const personas = useBootstrapStore((s) => s.personas) ?? [];
 
-  // Canonical LinkTarget mapping (verbatim from LorebookEditor — avatar
-  // resolution fields, kind, updatedAt cache-bust).
-  const linkCharacters: LinkTarget[] = allCharacters.map((c) => ({
-    id: c.id,
-    name: c.name,
-    avatarAssetId: c.avatarAssetId,
-    kind: "characters",
-    avatarExt: c.avatarExt,
-    avatarFullExt: c.avatarFullExt,
-    avatarFullAssetId: c.avatarFullAssetId,
-    updatedAt: c.updatedAt,
-  }));
-  const linkPersonas: LinkTarget[] = personas.map((p) => ({
-    id: p.id,
-    name: p.name,
-    avatarAssetId: p.avatarAssetId,
-    kind: "personas",
-    avatarExt: p.avatarExt,
-    avatarFullExt: p.avatarFullExt,
-    avatarFullAssetId: p.avatarFullAssetId,
-    updatedAt: p.updatedAt,
-  }));
+  const linkCharacters: LinkTarget[] = allCharacters.map(characterToLinkTarget);
+  const linkPersonas: LinkTarget[] = personas.map(personaToLinkTarget);
 
   // The parent gates rendering on form.id !== null; keep the guard here too
   // (defensively — hooks stay above it, so order is stable either way).

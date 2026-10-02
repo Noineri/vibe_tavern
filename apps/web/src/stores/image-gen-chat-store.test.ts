@@ -1,0 +1,422 @@
+import { describe, expect, it, mock, afterEach } from "bun:test";
+
+import type { GenerateImageGenInput, ImageGenGenerateResponseValue } from "@vibe-tavern/api-contracts";
+
+// Real-module seam (the ImageGenPane.test family): api + chat-actions + sonner
+// mocked with the `...real` spread — only what the run-orchestration path
+// touches is overridden.
+const realImageGenApi = await import("../api/image-gen-api.js");
+const realChatActions = await import("./api-actions/chat-actions.js");
+const realSonner = await import("sonner");
+
+type GenerateCall = [string, GenerateImageGenInput, AbortSignal | undefined];
+
+const generateCalls: GenerateCall[] = [];
+const refreshCalls: string[] = [];
+const toastErrors: string[] = [];
+/** PG-2 interrupt calls (profileId per call). */
+const interruptCalls: string[] = [];
+
+/** Parked generate double (the fetch-abort twin): resolves/rejects on demand
+ *  and rejects with a DOMException AbortError when the caller aborts —
+ *  exactly what a real aborted fetch does. */
+function parkedGenerate(signal?: AbortSignal): {
+  promise: Promise<ImageGenGenerateResponseValue>;
+  resolve: () => void;
+  reject(error: unknown): void;
+} {
+  let settle!: { resolve: () => void; reject(error: unknown): void };
+  const promise = new Promise<ImageGenGenerateResponseValue>((res, rej) => {
+    settle = {
+      resolve: () => res(makeResponse()),
+      reject: rej,
+    };
+  });
+  if (signal !== undefined) {
+    signal.addEventListener("abort", () => {
+      settle.reject(new DOMException("The operation was aborted.", "AbortError"));
+    });
+  }
+  return { promise, ...settle };
+}
+
+function makeResponse(): ImageGenGenerateResponseValue {
+  return {
+    messageId: "slot-1",
+    mode: "portrait",
+    profileId: "p1",
+    attachments: [],
+  };
+}
+
+mock.module("../api/image-gen-api.js", () => ({
+  ...realImageGenApi,
+  generateImageGen: (chatId: string, input: GenerateImageGenInput, signal?: AbortSignal) => {
+    const parked = parkedGenerate(signal);
+    generateCalls.push([chatId, input, signal]);
+    pendingByChat.set(chatId, parked);
+    return parked.promise;
+  },
+  interruptImageGenProfile: (id: string) => {
+    interruptCalls.push(id);
+    return Promise.resolve();
+  },
+}));
+
+mock.module("./api-actions/chat-actions.js", () => ({
+  ...realChatActions,
+  fetchChatAction: (chatId: { __brand?: string } | string) => {
+    refreshCalls.push(String(chatId));
+    return Promise.resolve();
+  },
+}));
+
+mock.module("sonner", () => ({
+  ...realSonner,
+  toast: { ...realSonner.toast, error: (message: string) => toastErrors.push(message) },
+}));
+
+const pendingByChat = new Map<string, ReturnType<typeof parkedGenerate>>();
+
+const { useImageGenChatStore, resolveEffectiveImageGenProfile } = await import("./image-gen-chat-store.js");
+
+function input(mode: string, anchorMessageId = "m1"): GenerateImageGenInput {
+  return { profileId: "p1", mode: mode as GenerateImageGenInput["mode"], anchorMessageId };
+}
+
+afterEach(() => {
+  generateCalls.length = 0;
+  refreshCalls.length = 0;
+  toastErrors.length = 0;
+  interruptCalls.length = 0;
+  // The store is a module singleton shared across files in this worker —
+  // leave every IG-17 draft map pristine for the next test/file.
+  useImageGenChatStore.setState({ fineTuningDraftByChat: {} });
+});
+
+describe("image-gen chat store (IG-16)", () => {
+  it("fires the client generate call with the chat, the payload, and the abort signal", async () => {
+    const run = useImageGenChatStore.getState().runGeneration("chat-a", input("portrait"));
+    await Promise.resolve(); // let the call start
+    expect(generateCalls.length).toBe(1);
+    const [chatId, body, signal] = generateCalls[0];
+    expect(chatId).toBe("chat-a");
+    expect(body.profileId).toBe("p1");
+    expect(body.mode).toBe("portrait");
+    expect(body.anchorMessageId).toBe("m1");
+    expect(signal).toBeDefined();
+    expect(signal!.aborted).toBe(false);
+    expect(useImageGenChatStore.getState().runningByChat["chat-a"]).toEqual({
+      mode: "portrait",
+      anchorMessageId: "m1",
+      profileId: "p1",
+      liveProgress: false,
+    });
+    pendingByChat.get("chat-a")!.resolve();
+    await run;
+    expect(useImageGenChatStore.getState().runningByChat["chat-a"]).toBeUndefined();
+  });
+
+  it("success refreshes the chat through fetchChatAction", async () => {
+    const run = useImageGenChatStore.getState().runGeneration("chat-b", input("character", "m2"));
+    await Promise.resolve();
+    pendingByChat.get("chat-b")!.resolve();
+    await run;
+    expect(refreshCalls.length).toBe(1);
+  });
+
+  it("guard: one in-flight generation per chat — a second start is a no-op", async () => {
+    const first = useImageGenChatStore.getState().runGeneration("chat-c", input("portrait"));
+    await Promise.resolve();
+    void useImageGenChatStore.getState().runGeneration("chat-c", input("scene-background"));
+    await Promise.resolve();
+    expect(generateCalls.length).toBe(1);
+    pendingByChat.get("chat-c")!.resolve();
+    await first;
+  });
+
+  it("Stop aborts the controller — the run settles silently (no toast) and returns to idle", async () => {
+    const run = useImageGenChatStore.getState().runGeneration("chat-d", input("portrait"));
+    await Promise.resolve();
+    const signal = generateCalls[0][2]!;
+    useImageGenChatStore.getState().abortGeneration("chat-d");
+    expect(signal.aborted).toBe(true);
+    await run;
+    expect(useImageGenChatStore.getState().runningByChat["chat-d"]).toBeUndefined();
+    expect(toastErrors.length).toBe(0);
+  });
+
+  it("failure clears the run and toasts the normalized message; another chat's run is untouched", async () => {
+    const failing = useImageGenChatStore.getState().runGeneration("chat-e", input("portrait"));
+    const other = useImageGenChatStore.getState().runGeneration("chat-f", input("portrait"));
+    await Promise.resolve();
+    pendingByChat.get("chat-e")!.reject(new Error("Image-gen generate failed: 502 LLM assist failed: upstream"));
+    await failing.catch(() => {});
+    expect(toastErrors).toEqual(["Image-gen generate failed: 502 LLM assist failed: upstream"]);
+    expect(useImageGenChatStore.getState().runningByChat["chat-e"]).toBeUndefined();
+    // The other chat's run survives (per-chat isolation).
+    expect(useImageGenChatStore.getState().runningByChat["chat-f"]).toBeDefined();
+    pendingByChat.get("chat-f")!.resolve();
+    await other;
+  });
+
+  it("fine-tuning + profile state is per-chat and independent", () => {
+    useImageGenChatStore.getState().setFineTuning("chat-g", true);
+    useImageGenChatStore.getState().setActiveProfile("chat-g", "p2");
+    expect(useImageGenChatStore.getState().fineTuningByChat["chat-g"]).toBe(true);
+    expect(useImageGenChatStore.getState().fineTuningByChat["chat-h"]).toBeUndefined();
+    expect(useImageGenChatStore.getState().activeProfileIdByChat["chat-g"]).toBe("p2");
+    expect(useImageGenChatStore.getState().activeProfileIdByChat["chat-h"]).toBeUndefined();
+  });
+});
+
+describe("image-gen chat store — MR-5 global active profile", () => {
+  afterEach(() => {
+    useImageGenChatStore.setState({ activeImageGenProfileId: null, activeProfileIdByChat: {} });
+  });
+
+  it("setActiveImageGenProfile flips the global pointer", () => {
+    expect(useImageGenChatStore.getState().activeImageGenProfileId).toBeNull();
+    useImageGenChatStore.getState().setActiveImageGenProfile("p9");
+    expect(useImageGenChatStore.getState().activeImageGenProfileId).toBe("p9");
+  });
+
+  it("resolveEffectiveImageGenProfile: chat pick wins → global active → server default → first row → null", () => {
+    const rows = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    // Chat pick overrides everything.
+    expect(resolveEffectiveImageGenProfile(rows, "b", "c")?.id).toBe("b");
+    // No chat pick → the global active.
+    expect(resolveEffectiveImageGenProfile(rows, undefined, "c")?.id).toBe("c");
+    // Neither → the first row (the last resort, never silent "just a");
+    expect(resolveEffectiveImageGenProfile(rows, undefined, null)?.id).toBe("a");
+    // A dangling pointer (deleted profile) degrades to the first row.
+    expect(resolveEffectiveImageGenProfile(rows, undefined, "gone")?.id).toBe("a");
+    expect(resolveEffectiveImageGenProfile(rows, "gone", "c")?.id).toBe("c");
+    // Empty roster → null.
+    expect(resolveEffectiveImageGenProfile([], undefined, null)).toBeNull();
+    expect(resolveEffectiveImageGenProfile(null, "x", "y")).toBeNull();
+  });
+
+  it("resolveEffectiveImageGenProfile MR-12: the server-persisted isDefault row is the hydration arm", () => {
+    // After a reload the session pointer is null — the isDefault row (the
+    // server flag that survived the restart) answers "who is active".
+    const rows = [{ id: "a", isDefault: true }, { id: "b" }, { id: "c" }];
+    expect(resolveEffectiveImageGenProfile(rows, undefined, null)?.id).toBe("a");
+    // A session pointer still outranks the server flag (the in-session
+    // pick wins until reload) — and so does the chat pick.
+    expect(resolveEffectiveImageGenProfile(rows, undefined, "b")?.id).toBe("b");
+    expect(resolveEffectiveImageGenProfile(rows, "c", null)?.id).toBe("c");
+    // A dangling session pointer degrades to the server default, not the
+    // first row (the flag is the surviving truth).
+    expect(resolveEffectiveImageGenProfile(rows, undefined, "gone")?.id).toBe("a");
+    // No flag anywhere → the first row stays the dead-battery fallback
+    // (the owner's pre-MR-12 cloud row — the exact reported reset).
+    expect(resolveEffectiveImageGenProfile([{ id: "a" }, { id: "b" }], undefined, null)?.id).toBe("a");
+  });
+});
+
+describe("image-gen chat store — profile changes clear stale model picks", () => {
+  afterEach(() => {
+    useImageGenChatStore.setState({ activeImageGenProfileId: null, activeProfileIdByChat: {} });
+  });
+
+  it("a changed chat profile clears only that draft's model; an unchanged effective profile keeps it", () => {
+    const store = useImageGenChatStore.getState();
+    store.setActiveImageGenProfile("p1");
+    store.setFineTuningDraft("chat-switched", {
+      prompt: "keep this prompt",
+      negative: "keep this negative",
+      model: "old-profile-model",
+      loras: [{ name: "keep.safetensors", strength: 0.8 }],
+    });
+    store.setFineTuningDraft("chat-same", { model: "global-profile-model" });
+    store.setFineTuningDraft("chat-other", { model: "other-profile-model" });
+
+    store.setActiveProfile("chat-switched", "p2");
+    store.setActiveProfile("chat-same", "p1");
+
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-switched"]).toEqual({
+      prompt: "keep this prompt",
+      negative: "keep this negative",
+      model: undefined,
+      loras: [{ name: "keep.safetensors", strength: 0.8 }],
+    });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-same"]?.model).toBe("global-profile-model");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-other"]?.model).toBe("other-profile-model");
+  });
+
+  it("a changed global profile clears follower models and keeps explicit-profile drafts", () => {
+    const store = useImageGenChatStore.getState();
+    store.setActiveImageGenProfile("p1");
+    store.setActiveProfile("chat-explicit", "p1");
+    store.setFineTuningDraft("chat-follower", {
+      prompt: "keep this prompt",
+      negative: "keep this negative",
+      model: "old-global-model",
+      loras: [{ name: "keep.safetensors", strength: 0.8 }],
+      hires: { enabled: true, upscaler: "keep-upscaler" },
+    });
+    store.setFineTuningDraft("chat-explicit", { model: "explicit-profile-model" });
+
+    store.setActiveImageGenProfile("p2");
+
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-follower"]).toEqual({
+      prompt: "keep this prompt",
+      negative: "keep this negative",
+      model: undefined,
+      loras: [{ name: "keep.safetensors", strength: 0.8 }],
+      hires: { enabled: true, upscaler: "keep-upscaler" },
+    });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-explicit"]?.model).toBe(
+      "explicit-profile-model",
+    );
+  });
+});
+
+describe("image-gen chat store — fine-tuning draft (IG-17)", () => {
+  it("starts pristine; setFineTuningDraft patches from EMPTY and keeps the rest", () => {
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-i"]).toBeUndefined();
+    useImageGenChatStore.getState().setFineTuningDraft("chat-i", { prompt: "a castle at dawn" });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-i"]).toEqual({
+      prompt: "a castle at dawn",
+      negative: "",
+    });
+    // A second patch keeps the earlier fields (partial-update semantics;
+    // FT-A1: the draft's sampler field is gone — model rides instead).
+    useImageGenChatStore.getState().setFineTuningDraft("chat-i", { model: "pony-v6" });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-i"]).toEqual({
+      prompt: "a castle at dawn",
+      negative: "",
+      model: "pony-v6",
+    });
+  });
+
+  it("clearFineTuningDraft resets the chat to pristine (undefined)", () => {
+    useImageGenChatStore.getState().setFineTuningDraft("chat-j", { prompt: "x", model: "m-1" });
+    useImageGenChatStore.getState().clearFineTuningDraft("chat-j");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-j"]).toBeUndefined();
+  });
+
+  it("drafts are isolated across chats", () => {
+    useImageGenChatStore.getState().setFineTuningDraft("chat-k", { prompt: "one" });
+    useImageGenChatStore.getState().setFineTuningDraft("chat-l", { negative: "blur" });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-k"]?.prompt).toBe("one");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-k"]?.negative).toBe("");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l"]?.prompt).toBe("");
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l"]?.negative).toBe("blur");
+  });
+
+  // ── CG-C3: lora picks in the draft ─────────────────────────────
+
+  it("CG-C3: enable appends {name, strength: 1} in order; disable removes; emptied stays []", () => {
+    const s = useImageGenChatStore.getState();
+    s.setFineTuningLoraEnabled("chat-l1", "niji.safetensors", true);
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l1"]?.loras).toEqual([
+      { name: "niji.safetensors", strength: 1 },
+    ]);
+    s.setFineTuningLoraEnabled("chat-l1", "arden.safetensors", true);
+    // Entry order = chain order — the second enable docks at the END.
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l1"]?.loras).toEqual([
+      { name: "niji.safetensors", strength: 1 },
+      { name: "arden.safetensors", strength: 1 },
+    ]);
+    s.setFineTuningLoraEnabled("chat-l1", "niji.safetensors", false);
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l1"]?.loras).toEqual([
+      { name: "arden.safetensors", strength: 1 },
+    ]);
+    s.setFineTuningLoraEnabled("chat-l1", "arden.safetensors", false);
+    // An emptied chain stays an EMPTY ARRAY (the fold sends nothing for []).
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l1"]?.loras).toEqual([]);
+  });
+
+  it("CG-C3: strength updates one enabled entry in place; unknown names are a no-op", () => {
+    const s = useImageGenChatStore.getState();
+    s.setFineTuningLoraEnabled("chat-l2", "a.safetensors", true);
+    s.setFineTuningLoraEnabled("chat-l2", "b.safetensors", true);
+    s.setFineTuningLoraStrength("chat-l2", "a.safetensors", 1.2);
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l2"]?.loras).toEqual([
+      { name: "a.safetensors", strength: 1.2 },
+      { name: "b.safetensors", strength: 1 },
+    ]);
+    // Not enabled → the write is dropped (the slider only renders enabled).
+    s.setFineTuningLoraStrength("chat-l2", "ghost.safetensors", 2);
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-l2"]?.loras).toEqual([
+      { name: "a.safetensors", strength: 1.2 },
+      { name: "b.safetensors", strength: 1 },
+    ]);
+  });
+
+  // ── FT-A6: the hires block in the draft ───────────────────────
+
+  it("FT-A6: the hires patch merges into the block; toggle-off KEEPS the knobs; undefined clears back to unset", () => {
+    const s = useImageGenChatStore.getState();
+    // From pristine: the toggle creates the block.
+    s.setFineTuningHires("chat-h1", { enabled: true });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-h1"]?.hires).toEqual({
+      enabled: true,
+    });
+    // Knob patches merge — only the touched knob lands.
+    s.setFineTuningHires("chat-h1", { upscaler: "4x-UltraSharp" });
+    s.setFineTuningHires("chat-h1", { steps: 18 });
+    s.setFineTuningHires("chat-h1", { denoisingStrength: 0.6 });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-h1"]?.hires).toEqual({
+      enabled: true,
+      upscaler: "4x-UltraSharp",
+      steps: 18,
+      denoisingStrength: 0.6,
+    });
+    // Toggle-off collapses but PRESERVES the knobs (draft-level persistence).
+    s.setFineTuningHires("chat-h1", { enabled: false });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-h1"]?.hires).toEqual({
+      enabled: false,
+      upscaler: "4x-UltraSharp",
+      steps: 18,
+      denoisingStrength: 0.6,
+    });
+    // An undefined patch value clears the knob back to unset (the wire's
+    // «only SET knobs ride» semantics).
+    s.setFineTuningHires("chat-h1", { upscaler: undefined });
+    expect(useImageGenChatStore.getState().fineTuningDraftByChat["chat-h1"]?.hires).toEqual({
+      enabled: false,
+      steps: 18,
+      denoisingStrength: 0.6,
+    });
+  });
+
+  // ── PG-2: run metadata + server-side interrupt ─────────────────────
+
+  it("PG-2: the run state carries the profileId and the start-time liveProgress snapshot", async () => {
+    const run = useImageGenChatStore.getState().runGeneration("chat-m", input("portrait"), {
+      liveProgress: true,
+    });
+    await Promise.resolve(); // let the call start
+    expect(useImageGenChatStore.getState().runningByChat["chat-m"]).toEqual({
+      mode: "portrait",
+      anchorMessageId: "m1",
+      profileId: "p1",
+      liveProgress: true,
+    });
+    pendingByChat.get("chat-m")!.resolve();
+    await run;
+  });
+
+  it("PG-2: Stop on a live-progress run ALSO interrupts the server-side job", async () => {
+    const run = useImageGenChatStore.getState().runGeneration("chat-n", input("portrait"), {
+      liveProgress: true,
+    });
+    await Promise.resolve(); // let the call start
+    useImageGenChatStore.getState().abortGeneration("chat-n");
+    await run;
+    expect(interruptCalls).toEqual(["p1"]);
+    // The user-cancel stays silent (no toast over the abort path).
+    expect(toastErrors).toEqual([]);
+  });
+
+  it("PG-2: Stop on a cloud run (no live progress) never interrupts", async () => {
+    const run = useImageGenChatStore.getState().runGeneration("chat-o", input("portrait"));
+    await Promise.resolve(); // let the call start
+    useImageGenChatStore.getState().abortGeneration("chat-o");
+    await run;
+    expect(interruptCalls).toEqual([]);
+  });
+});

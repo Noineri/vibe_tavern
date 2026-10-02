@@ -1,5 +1,6 @@
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { LoreScopeType } from "@vibe-tavern/domain";
+import type { StWorldInfoGlobalOptions } from "@vibe-tavern/import-export";
 
 export interface LorebookImportResult {
 	lorebookId: string;
@@ -21,15 +22,50 @@ export interface LorebookImportResult {
  * to "st" — the most common path since the frontend auto-detects too, but
  * a direct API caller may not set it.
  */
+type CharacterFilterAvatarResolver = (avatarFilename: string) => { id: string; name: string } | null;
+
+function normalizeAvatarFilename(value: string): string {
+	const fileName = value.trim().split(/[\\/]/).pop() ?? "";
+	const extensionStart = fileName.lastIndexOf(".");
+	return (extensionStart > 0 ? fileName.slice(0, extensionStart) : fileName).toLowerCase();
+}
+
+function buildCharacterFilterAvatarResolver(
+	characters: ReadonlyArray<{ id: string; name: string; slug: string }>,
+): CharacterFilterAvatarResolver {
+	const charactersByAvatarStem = new Map<string, { id: string; name: string }>();
+	for (const character of characters) {
+		for (const alias of [character.name, character.slug]) {
+			const stem = normalizeAvatarFilename(alias);
+			if (stem && !charactersByAvatarStem.has(stem)) {
+				charactersByAvatarStem.set(stem, { id: character.id, name: character.name });
+			}
+		}
+	}
+	return (avatarFilename) => charactersByAvatarStem.get(normalizeAvatarFilename(avatarFilename)) ?? null;
+}
+
 async function parseLorebook(
 	format: string,
 	data: unknown,
-	options: { scopeType?: LoreScopeType; fallbackName?: string; globalUseGroupScoring?: boolean },
+	options: StWorldInfoGlobalOptions & {
+		scopeType?: LoreScopeType;
+		fallbackName?: string;
+		characterFilterAvatarResolver?: CharacterFilterAvatarResolver;
+	},
 ) {
-	const { importStLorebookJson, importJanitorLorebookJson, isJanitorLorebookArray } = await import(
+	const { importCharacterBookJson, importStLorebookJson, importJanitorLorebookJson, isJanitorLorebookArray } = await import(
 		"@vibe-tavern/import-export"
 	);
 
+	if (format === "character_book") {
+		return importCharacterBookJson(data, {
+			scopeType: options.scopeType,
+			fallbackName: options.fallbackName,
+			...options,
+			characterFilterAvatarResolver: options.characterFilterAvatarResolver,
+		});
+	}
 	if (format === "janitor" || isJanitorLorebookArray(data)) {
 		return importJanitorLorebookJson(Array.isArray(data) ? data : (data as unknown[]), {
 			scopeType: options.scopeType,
@@ -39,14 +75,15 @@ async function parseLorebook(
 	return importStLorebookJson(data as Record<string, unknown>, {
 		scopeType: options.scopeType,
 		fallbackName: options.fallbackName,
-		globalUseGroupScoring: options.globalUseGroupScoring,
+		...options,
+		characterFilterAvatarResolver: options.characterFilterAvatarResolver,
 	});
 }
 
 export async function importLorebook(
 	stores: StoreContainer,
 	lorebookId: string | null,
-	body: {
+	body: StWorldInfoGlobalOptions & {
 		format: string;
 		data: unknown;
 		mode: string;
@@ -55,14 +92,19 @@ export async function importLorebook(
 		personaId?: string;
 		chatId?: string;
 		fallbackName?: string;
-		globalUseGroupScoring?: boolean;
 		enabled?: boolean;
 	},
 ): Promise<LorebookImportResult> {
+	// ST stores character-filter names as avatar filenames. The import service
+	// owns the character inventory, so it binds a filename stem to a local
+	// character ID when a name or slug matches; unresolved filenames remain
+	// ghosts in the pure importer and therefore match nobody by accident.
+	const characterFilterAvatarResolver = buildCharacterFilterAvatarResolver(await stores.characters.listAll());
 	const parsed = await parseLorebook(body.format, body.data, {
+		...body,
 		scopeType: (body.scopeType as LoreScopeType | undefined) ?? "entity",
 		fallbackName: body.fallbackName,
-		globalUseGroupScoring: body.globalUseGroupScoring,
+		characterFilterAvatarResolver,
 	});
 
 	let targetId = lorebookId;
@@ -74,8 +116,19 @@ export async function importLorebook(
 			scopeType: (body.scopeType as LoreScopeType) ?? "entity",
 			scanDepth: parsed.lorebook.scanDepth,
 			tokenBudget: parsed.lorebook.tokenBudget,
+			tokenBudgetPercent: parsed.lorebook.tokenBudgetPercent,
+			tokenBudgetCap: parsed.lorebook.tokenBudgetCap,
 			recursiveScanning: parsed.lorebook.recursiveScanning,
 			useGroupScoring: parsed.lorebook.useGroupScoring,
+			caseSensitive: parsed.lorebook.caseSensitive,
+			matchWholeWords: parsed.lorebook.matchWholeWords,
+			maxRecursionSteps: parsed.lorebook.maxRecursionSteps,
+			includeNames: parsed.lorebook.includeNames,
+			minActivations: parsed.lorebook.minActivations,
+			minActivationsDepthMax: parsed.lorebook.minActivationsDepthMax,
+			overflowAlert: parsed.lorebook.overflowAlert,
+			characterStrategy: parsed.lorebook.characterStrategy,
+			sortOrder: parsed.lorebook.sortOrder,
 			characterId: body.characterId ?? null,
 			personaId: body.personaId ?? null,
 			chatId: body.chatId ?? null,
@@ -104,7 +157,7 @@ export async function importLorebook(
 		priority: entry.priority,
 		stickyWindow: entry.stickyWindow,
 		cooldownWindow: entry.cooldownWindow,
-		delayWindow: entry.delayWindow,
+		minChatMessages: entry.minChatMessages,
 		constant: entry.constant,
 		probability: entry.probability,
 		role: entry.role,

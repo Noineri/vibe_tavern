@@ -13,6 +13,14 @@ async function setup(): Promise<{ adapter: SettingsAdapter; stores: StoreContain
 	return { adapter, stores };
 }
 
+describe("SettingsAdapter — chat impersonation draft enhancement", () => {
+	test("persists a boolean enhancement toggle and ignores non-boolean input", async () => {
+		const { adapter } = await setup();
+		expect((await adapter.updateUiSettings({ chatImpersonateEnhanceDraft: true })).chatImpersonateEnhanceDraft).toBe(true);
+		expect((await adapter.updateUiSettings({ chatImpersonateEnhanceDraft: "true" as never })).chatImpersonateEnhanceDraft).toBe(true);
+	});
+});
+
 describe("SettingsAdapter — per-context secondary-model pairs (SUM-5)", () => {
 	test("persists the summary and message-editor pairs, gated string|null", async () => {
 		const { adapter } = await setup();

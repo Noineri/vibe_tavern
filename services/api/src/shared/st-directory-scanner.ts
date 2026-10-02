@@ -28,6 +28,7 @@ import {
 import type { ImportExportModuleDeps, ImportResult } from "../runtime/session/session-runtime-import-export.js";
 import { createPromptPreset } from "../runtime/session/session-runtime-presets.js";
 import { importLorebook } from "../domain/lorebook/lorebook-import-service.js";
+import { normalizeAvatarThumbnail } from "../domain/asset/avatar-thumbnail.js";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import type { CharacterId, ChatId, CustomInjection, PromptOrderEntry } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
@@ -446,7 +447,7 @@ export async function importSillyTavernDirectory(
 	// Returns a discriminated outcome so the collect pass stays deterministic
 	// (file order preserved for lastActiveChatId / name map).
 	type CharImportOutcome =
-		| { kind: "ok"; nameLower: string; slug: string; characterId: string; chatId: ChatId; worldName: string | null }
+		| { kind: "ok"; fileName: string; nameLower: string; slug: string; characterId: string; chatId: ChatId; worldName: string | null }
 		| { kind: "skipped" }
 		| { kind: "error"; file: string; message: string };
 
@@ -505,39 +506,57 @@ export async function importSillyTavernDirectory(
 
 			// Save the avatar. ST card PNGs are uncropped by definition (ST does
 			// not crop on import), so the same bytes serve both slots:
-			//   1. {id}/avatar.png      — display avatar (gallery slots, chat
-			//                            bubbles, sidebar). Paired with
-			//                            setFolderAvatar() so avatarExt is set;
-			//                            without it the character renders with
-			//                            no portrait (the STN-1D bug).
-			//   2. {id}/avatar-full.png — the uncropped source. Paired with
-			//                            setFolderAvatarFull() so avatarFullExt
-			//                            is set, wiring the ST-imported card into
-			//                            the existing crop-confirm flow: the user
-			//                            can later re-crop the original art from
-			//                            {id}/avatar-full.png without needing the
-			//                            original PNG file. Mirrors the browser
-			//                            uploadCharacterAvatar(crop, full) shape.
+			//   1. {id}/avatar-full.png — the uncropped RAW source. Paired with
+			//                            setFolderAvatarFull() so avatarFullExt is
+			//                            set, wiring the ST-imported card into the
+			//                            existing crop-confirm flow: the user can
+			//                            later re-crop the original art without
+			//                            needing the original PNG file. Mirrors the
+			//                            browser uploadCharacterAvatar(crop, full)
+			//                            shape.
+			//   2. {id}/avatar.{ext}    — the display thumbnail (gallery slots,
+			//                            chat bubbles, sidebar), normalized to a
+			//                            ≤ 512 px webp by the LB-1B helper so the
+			//                            link-binding lists stay light. Paired with
+			//                            setFolderAvatar(ext) — the ext may be
+			//                            "webp". The full is written FIRST so a
+			//                            crash between writes never loses the
+			//                            original (plan non-negotiable).
 			// Browser ST-import calls uploadCharacterAvatar(file, file) — both
 			// slots — so it preserves the uncropped source too. AssetService
-			// lives in the HTTP adapter layer (unreachable from shared/), so we
-			// go through content + store directly.
+			// lives in the HTTP adapter layer (unreachable from shared/), so the
+			// pure helper is applied directly and storage goes through content +
+			// store.
 			if (ext === ".png" && pngBuffer) {
 				try {
 					// HUMAN_READABLE_FOLDERS: write into the character's resolved (slug) folder.
 					const folder = await deps.stores.characters.resolveFolderName(characterId);
 					await deps.stores.content.writeBinary(
-						STORAGE_FOLDERS.characters, folder, "avatar.png", pngBuffer,
-					);
-					await deps.stores.content.writeBinary(
 						STORAGE_FOLDERS.characters, folder, "avatar-full.png", pngBuffer,
 					);
-					await deps.stores.characters.setFolderAvatar(characterId, "png");
 					await deps.stores.characters.setFolderAvatarFull(characterId, "png");
+					const thumb = await normalizeAvatarThumbnail(pngBuffer, "png");
+					await deps.stores.content.writeBinary(
+						STORAGE_FOLDERS.characters, folder, `avatar.${thumb.ext}`, thumb.bytes,
+					);
+					await deps.stores.characters.setFolderAvatar(characterId, thumb.ext);
 				} catch {
 					// Avatar write failure is non-critical — the character is already
 					// in the DB; it just renders without a portrait.
 				}
+			}
+
+			// Directory import has no per-card confirmation step, so embedded card
+			// lore imports automatically and is anchored to this character.
+			if (imported.character.characterBook) {
+				await importLorebook(deps.stores, null, {
+					format: "character_book",
+					data: imported.character.characterBook,
+					mode: "new",
+					scopeType: "entity",
+					characterId,
+					fallbackName: `${imported.character.name}'s Lorebook`,
+				});
 			}
 
 			// Create a chat for the character and seed first message
@@ -570,7 +589,7 @@ export async function importSillyTavernDirectory(
 			const extWorld = imported.character.extensions.world;
 			const worldName = typeof extWorld === "string" && extWorld.trim() ? extWorld.trim() : null;
 
-			return { kind: "ok", nameLower, slug, characterId, chatId: chat.id as ChatId, worldName };
+			return { kind: "ok", fileName, nameLower, slug, characterId, chatId: chat.id as ChatId, worldName };
 		} catch (err) {
 			return {
 				kind: "error",
@@ -605,19 +624,18 @@ export async function importSillyTavernDirectory(
 
 	// Collect in original file order so lastActiveChatId is the last card by
 	// readdir order that successfully imported (matches pre-parallel behavior).
-	// L1: worldName → characterId ownership map for the lorebook phase (first
-	// card in file order wins a contested world — deterministic by construction).
-	const cardWorldToCharacterId = new Map<string, CharacterId>();
+	// ST can bind one world to multiple cards, so the first matching owner is
+	// stored as the VT book's home FK and further owners become junction links.
+	const cardWorldToCharacterIds = new Map<string, CharacterId[]>();
+	const characterIdByAvatarName = new Map<string, CharacterId>();
 	for (const o of outcomes) {
 		if (o.kind === "ok") {
 			result.characters++;
 			nameToCharacterId.set(o.nameLower, o.characterId as CharacterId);
 			nameToCharacterId.set(o.slug, o.characterId as CharacterId);
+			characterIdByAvatarName.set(o.fileName.toLowerCase(), o.characterId as CharacterId);
 			result.lastActiveChatId = o.chatId;
-			if (o.worldName) {
-				const key = o.worldName.toLowerCase();
-				if (!cardWorldToCharacterId.has(key)) cardWorldToCharacterId.set(key, o.characterId as CharacterId);
-			}
+			if (o.worldName) addBindingOwner(cardWorldToCharacterIds, o.worldName, o.characterId as CharacterId);
 		} else if (o.kind === "error") {
 			result.errors.push({ file: o.file, stage: "import", message: o.message });
 		}
@@ -709,40 +727,145 @@ export async function importSillyTavernDirectory(
 + ` | createChat=${(chatCreateMs / 1000).toFixed(2)}s messages=${(chatMsgMs / 1000).toFixed(2)}s`
 + ` avg/msg=${chatMsgCount > 0 ? (chatMsgMs / chatMsgCount).toFixed(1) : 0}ms`);
 
+	// ── Import personas (settings.json + User Avatars/) ──
+	// Personas must land before worlds so a persona-owned lorebook receives a
+	// real FK rather than an invalid reference. The parsed settings are reused
+	// by the following lorebook phase for every ST binding structure.
+	await onProgress?.({ type: "phase", phase: "personas" });
+	const personasPhaseStart = performance.now();
+	const settingsPath = join(resolved, "settings.json");
+	const settingsFiles = await scanOptionalGlob(resolved, "settings.json");
+	const settingsStat = settingsFiles.includes("settings.json")
+		? await Bun.file(settingsPath).stat().catch(() => null)
+		: null;
+	let settingsRaw: unknown = null;
+	const personaBookToPersonaIds = new Map<string, string[]>();
+	if (settingsStat?.isFile()) {
+		try {
+			settingsRaw = JSON.parse(await Bun.file(settingsPath).text());
+			const personaEntries = parseStPersonas(settingsRaw);
+			for (const pe of personaEntries) {
+				try {
+					const created = await deps.stores.personas.create({
+						name: pe.name,
+						description: pe.description,
+						pronouns: null,
+						pronounForms: null,
+						defaultForNewChats: pe.isDefault,
+					});
+					result.personas++;
+					await onProgress?.({ type: "progress", phase: "personas", current: result.personas });
+
+					const personaBookName = getStPersonaLorebookName(settingsRaw, pe.key);
+					if (personaBookName) addBindingOwner(personaBookToPersonaIds, personaBookName, created.id);
+
+					if (pe.avatarRelativePath) {
+						const avatarFile = join(resolved, pe.avatarRelativePath);
+						const avatarStat = await Bun.file(avatarFile).stat().catch(() => null);
+						if (avatarStat?.isFile()) {
+							try {
+								const avatarBuffer = new Uint8Array(await Bun.file(avatarFile).arrayBuffer());
+								// LB-1B: raw bytes → avatar-full (re-crop source), normalized
+								// ≤ 512 webp → avatar.{ext}; full first (crash safety).
+								await deps.stores.content.writeBinary(
+									STORAGE_FOLDERS.personas, created.id, "avatar-full.png", avatarBuffer,
+								);
+								await deps.stores.personas.setFolderAvatarFull(created.id, "png");
+								const thumb = await normalizeAvatarThumbnail(avatarBuffer, "png");
+								await deps.stores.content.writeBinary(
+									STORAGE_FOLDERS.personas, created.id, `avatar.${thumb.ext}`, thumb.bytes,
+								);
+								await deps.stores.personas.setFolderAvatar(created.id, thumb.ext);
+							} catch {
+								// Avatar failure is non-critical — persona is already created.
+							}
+						}
+					}
+				} catch (err) {
+					result.errors.push({
+						file: `persona: ${pe.name}`,
+						stage: "import",
+						message: err instanceof Error ? err.message : String(err),
+					});
+				}
+			}
+		} catch (err) {
+			result.errors.push({
+				file: settingsPath,
+				stage: "import",
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+	console.log(`${ti()} personas: ${((performance.now() - personasPhaseStart) / 1000).toFixed(2)}s (${result.personas} imported)`);
+
 	// ── Import lorebooks (worlds/) ──
 	await onProgress?.({ type: "phase", phase: "lorebooks" });
 	const lorePhaseStart = performance.now();
 	const worldsDir = join(resolved, "worlds");
 	const worldsFiles = await scanOptionalGlob(worldsDir, "*.[jJ][sS][oO][nN]");
 
-	// ST's group-scoring switch is global client state (settings.json
-	// world_info_use_group_scoring), not part of any world file — map it onto
-	// every imported book (owner decision, 2026-08-31). Absent/unreadable
-	// settings → undefined → books default false.
+	// ST keeps world-info behavior in settings.json rather than the world
+	// files. Cache every setting per imported VT book (resweep P2); absent or
+	// unreadable settings remain undefined so the ST importer applies defaults.
 	// L1: the same settings.json carries the only true ST "works everywhere"
 	// state — world_info_settings.globalSelect (worlds the user explicitly
 	// selected as global). A worlds/ file selected there imports global+enabled;
 	// a file referenced by an imported card/ chat binds to that owner; a file
 	// referenced nowhere lands global+DISABLED (inert at the source stays inert).
+	let globalScanDepth: number | undefined;
+	let globalTokenBudgetPercent: number | undefined;
+	let globalTokenBudgetCap: number | undefined;
+	let globalRecursiveScanning: boolean | undefined;
 	let globalUseGroupScoring: boolean | undefined;
+	let globalCaseSensitive: boolean | undefined;
+	let globalMatchWholeWords: boolean | undefined;
+	let globalMaxRecursionSteps: number | undefined;
+	let globalIncludeNames: boolean | undefined;
+	let globalMinActivations: number | undefined;
+	let globalMinActivationsDepthMax: number | undefined;
+	let globalOverflowAlert: boolean | undefined;
+	let globalCharacterStrategy: number | undefined;
 	const globalSelectNames = new Set<string>();
-	try {
-		const settingsRaw: unknown = JSON.parse(await Bun.file(join(resolved, "settings.json")).text());
-		if (typeof settingsRaw === "object" && settingsRaw !== null) {
-			const record = settingsRaw as Record<string, unknown>;
-			const flag = record.world_info_use_group_scoring;
-			if (typeof flag === "boolean") globalUseGroupScoring = flag;
-			const worldInfoSettings = record.world_info_settings;
-			if (typeof worldInfoSettings === "object" && worldInfoSettings !== null) {
-				const select = (worldInfoSettings as Record<string, unknown>).globalSelect;
-				if (Array.isArray(select)) {
-					for (const name of select) {
-						if (typeof name === "string" && name.trim()) globalSelectNames.add(name.trim().toLowerCase());
-					}
-				}
+	const missingCharacterOwnersByBookName = new Map<string, string[]>();
+	const settingsRecord = asRecord(settingsRaw);
+	if (settingsRecord) {
+		const settingNumber = (field: string): number | undefined => {
+			const value = settingsRecord[field];
+			return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+		};
+		const settingBoolean = (field: string): boolean | undefined => {
+			const value = settingsRecord[field];
+			return typeof value === "boolean" ? value : undefined;
+		};
+		globalScanDepth = settingNumber("world_info_depth");
+		globalTokenBudgetPercent = settingNumber("world_info_budget");
+		globalTokenBudgetCap = settingNumber("world_info_budget_cap");
+		globalRecursiveScanning = settingBoolean("world_info_recursive");
+		globalUseGroupScoring = settingBoolean("world_info_use_group_scoring");
+		globalCaseSensitive = settingBoolean("world_info_case_sensitive");
+		globalMatchWholeWords = settingBoolean("world_info_match_whole_words");
+		globalMaxRecursionSteps = settingNumber("world_info_max_recursion_steps");
+		globalIncludeNames = settingBoolean("world_info_include_names");
+		globalMinActivations = settingNumber("world_info_min_activations");
+		globalMinActivationsDepthMax = settingNumber("world_info_min_activations_depth_max");
+		globalOverflowAlert = settingBoolean("world_info_overflow_alert");
+		globalCharacterStrategy = settingNumber("world_info_character_strategy");
+		const worldInfoSettings = getStWorldInfoSettings(settingsRecord);
+		const select = worldInfoSettings?.globalSelect;
+		if (Array.isArray(select)) {
+			for (const name of select) {
+				if (typeof name === "string" && name.trim()) globalSelectNames.add(name.trim().toLowerCase());
 			}
 		}
-	} catch { /* no settings.json next to worlds/ — leave undefined */ }
+	}
+	for (const charLore of getStCharacterLoreEntries(settingsRaw)) {
+		const characterId = characterIdByAvatarName.get(charLore.characterAvatarName.toLowerCase());
+		for (const bookName of charLore.extraBookNames) {
+			if (characterId) addBindingOwner(cardWorldToCharacterIds, bookName, characterId);
+			else addBindingOwner(missingCharacterOwnersByBookName, bookName, charLore.characterAvatarName);
+		}
+	}
 
 	for (const relativePath of worldsFiles) {
 		const fileName = basename(relativePath);
@@ -765,42 +888,79 @@ export async function importSillyTavernDirectory(
 					if (normalized && normalized !== candidates[0]) candidates.push(normalized);
 				}
 			}
-			// Precedence: globalSelect (strongest explicit signal) > card > chat > none.
+			// globalSelect remains the strongest explicit signal. Otherwise keep
+			// every entity owner: the first is the book's home FK and additional
+			// ST references become junction links, which listAllActiveForChat reads.
+			const personaOwnerIds = getBindingOwners(personaBookToPersonaIds, candidates);
+			const characterOwnerIds = getBindingOwners(cardWorldToCharacterIds, candidates);
 			let scopeType = "global";
 			let characterId: string | undefined;
+			let personaId: string | undefined;
 			let chatId: string | undefined;
 			let enabled = false;
 			if (candidates.some((c) => globalSelectNames.has(c))) {
 				enabled = true;
+			} else if (personaOwnerIds.length > 0) {
+				scopeType = "entity";
+				personaId = personaOwnerIds[0];
+				enabled = true;
+			} else if (characterOwnerIds.length > 0) {
+				scopeType = "entity";
+				characterId = characterOwnerIds[0];
+				enabled = true;
 			} else {
-				const cardOwner = candidates.map((c) => cardWorldToCharacterId.get(c)).find((v) => v !== undefined);
-				if (cardOwner !== undefined) {
-					scopeType = "entity";
-					characterId = cardOwner;
+				const chatOwner = candidates.map((c) => chatWorldToChatId.get(c)).find((v) => v !== undefined);
+				if (chatOwner !== undefined) {
+					scopeType = "chat";
+					chatId = chatOwner;
 					enabled = true;
-				} else {
-					const chatOwner = candidates.map((c) => chatWorldToChatId.get(c)).find((v) => v !== undefined);
-					if (chatOwner !== undefined) {
-						scopeType = "chat";
-						chatId = chatOwner;
-						enabled = true;
-					}
 				}
 			}
 			// STN-1D: REAL lorebook write (was a TODO no-op that just counted).
 			// importLorebook parses + creates the lorebook + bulk-inserts
 			// entries in one call.
-			await importLorebook(deps.stores, null, {
+			const importedLorebook = await importLorebook(deps.stores, null, {
 				format: "st",
 				data: parsed,
 				mode: "new",
 				scopeType,
 				characterId,
+				personaId,
 				chatId,
 				fallbackName,
+				globalScanDepth,
+				globalTokenBudgetPercent,
+				globalTokenBudgetCap,
+				globalRecursiveScanning,
 				globalUseGroupScoring,
+				globalCaseSensitive,
+				globalMatchWholeWords,
+				globalMaxRecursionSteps,
+				globalIncludeNames,
+				globalMinActivations,
+				globalMinActivationsDepthMax,
+				globalOverflowAlert,
+				globalCharacterStrategy,
 				enabled,
 			});
+			if (scopeType === "entity") {
+				for (const ownerId of personaOwnerIds) {
+					if (ownerId !== personaId) await deps.stores.lorebooks.addLink(importedLorebook.lorebookId, "persona", ownerId);
+				}
+				for (const ownerId of characterOwnerIds) {
+					if (ownerId !== characterId) await deps.stores.lorebooks.addLink(importedLorebook.lorebookId, "character", ownerId);
+				}
+			}
+			if (!enabled) {
+				const missingCharacterOwners = getBindingOwners(missingCharacterOwnersByBookName, candidates);
+				if (missingCharacterOwners.length > 0) {
+					result.errors.push({
+						file: settingsPath,
+						stage: "import",
+						message: `Lorebook '${fallbackName}' could not bind to skipped character(s) ${missingCharacterOwners.join(", ")}; imported as disabled global.`,
+					});
+				}
+			}
 			result.lorebooks++;
 			await onProgress?.({ type: "progress", phase: "lorebooks", current: result.lorebooks });
 		} catch (err) {
@@ -1010,76 +1170,6 @@ export async function importSillyTavernDirectory(
 	}
 	console.log(`${ti()} samplerSets: ${((performance.now() - samplerSetsPhaseStart) / 1000).toFixed(2)}s (${result.samplerSets} imported)`);
 
-	// ── Import personas (settings.json + User Avatars/) ──
-	await onProgress?.({ type: "phase", phase: "personas" });
-	const personasPhaseStart = performance.now();
-	// Mirrors browser Phase 0: parseStPersonas → create each, best-effort avatar.
-	const settingsPath = join(resolved, "settings.json");
-	const settingsFiles = await scanOptionalGlob(resolved, "settings.json");
-	const settingsStat = settingsFiles.includes("settings.json")
-		? await Bun.file(settingsPath).stat().catch(() => null)
-		: null;
-	if (settingsStat?.isFile()) {
-		try {
-			const content = await Bun.file(settingsPath).text();
-			const parsed: unknown = JSON.parse(content);
-			const personaEntries = parseStPersonas(parsed);
-			for (const pe of personaEntries) {
-				try {
-					const created = await deps.stores.personas.create({
-						name: pe.name,
-						description: pe.description,
-						pronouns: null,
-						pronounForms: null,
-						defaultForNewChats: pe.isDefault,
-					});
-					result.personas++;
-					await onProgress?.({ type: "progress", phase: "personas", current: result.personas });
-
-					// Best-effort avatar upload from User Avatars/<key>. ST avatars are
-					// PNG by convention and uncropped, so the same bytes are written to
-					// both avatar.png (display) and avatar-full.png (uncropped source
-					// for the crop-confirm flow), mirroring the character-avatar write
-					// above and the browser uploadPersonaAvatar(crop, full) shape.
-					// AssetService lives in the HTTP adapter layer (unreachable from
-					// shared/), so we go through content + store directly.
-					if (pe.avatarRelativePath) {
-						const avatarFile = join(resolved, pe.avatarRelativePath);
-						const avatarStat = await Bun.file(avatarFile).stat().catch(() => null);
-						if (avatarStat?.isFile()) {
-							try {
-								const avatarBuffer = new Uint8Array(await Bun.file(avatarFile).arrayBuffer());
-								await deps.stores.content.writeBinary(
-									STORAGE_FOLDERS.personas, created.id, "avatar.png", avatarBuffer,
-								);
-								await deps.stores.content.writeBinary(
-									STORAGE_FOLDERS.personas, created.id, "avatar-full.png", avatarBuffer,
-								);
-								await deps.stores.personas.setFolderAvatar(created.id, "png");
-								await deps.stores.personas.setFolderAvatarFull(created.id, "png");
-							} catch {
-								// Avatar failure is non-critical — persona is already created.
-							}
-						}
-					}
-				} catch (err) {
-					result.errors.push({
-						file: `persona: ${pe.name}`,
-						stage: "import",
-						message: err instanceof Error ? err.message : String(err),
-					});
-				}
-			}
-		} catch (err) {
-			result.errors.push({
-				file: settingsPath,
-				stage: "import",
-				message: err instanceof Error ? err.message : String(err),
-			});
-		}
-	}
-	console.log(`${ti()} personas: ${((performance.now() - personasPhaseStart) / 1000).toFixed(2)}s (${result.personas} imported)`);
-
 	console.log(
 		`${ti()} DONE — total ${((performance.now() - T0) / 1000).toFixed(2)}s |`
 		+ ` chars=${result.characters} chats=${result.chats} lore=${result.lorebooks}`
@@ -1091,6 +1181,81 @@ export async function importSillyTavernDirectory(
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+	return value !== null && typeof value === "object" && !Array.isArray(value)
+		? value as Record<string, unknown>
+		: null;
+}
+
+function addBindingOwner<T>(ownersByBookName: Map<string, T[]>, bookName: string, ownerId: T): void {
+	const key = bookName.trim().toLowerCase();
+	if (!key) return;
+	const owners = ownersByBookName.get(key) ?? [];
+	if (!owners.includes(ownerId)) owners.push(ownerId);
+	ownersByBookName.set(key, owners);
+}
+
+function getBindingOwners<T>(ownersByBookName: ReadonlyMap<string, readonly T[]>, bookNameCandidates: readonly string[]): T[] {
+	const owners: T[] = [];
+	for (const candidate of bookNameCandidates) {
+		for (const owner of ownersByBookName.get(candidate) ?? []) {
+			if (!owners.includes(owner)) owners.push(owner);
+		}
+	}
+	return owners;
+}
+
+function getStWorldInfoSettings(settings: Record<string, unknown>): Record<string, unknown> | null {
+	const worldInfoSettings = asRecord(settings.world_info_settings);
+	return asRecord(worldInfoSettings?.world_info) ?? worldInfoSettings;
+}
+
+function getStPersonaLorebookName(settingsJson: unknown, personaAvatarName: string): string | null {
+	const settings = asRecord(settingsJson);
+	if (!settings) return null;
+	const powerUser = asRecord(settings.power_user);
+	const topLevelPersonas = asRecord(settings.personas);
+	const hasTopLevelPersonas = topLevelPersonas !== null && Object.keys(topLevelPersonas).length > 0;
+	const descriptions = hasTopLevelPersonas
+		? asRecord(settings.persona_descriptions)
+		: asRecord(powerUser?.persona_descriptions);
+	const descriptor = asRecord(descriptions?.[personaAvatarName]);
+	const descriptorLorebook = descriptor?.lorebook;
+	if (typeof descriptorLorebook === "string" && descriptorLorebook.trim()) return descriptorLorebook.trim();
+
+	// ST copies the selected persona descriptor into this current-value field
+	// (personas.js:907-914). It is the compatibility fallback for older settings
+	// that retain the field but have no lorebook member on the descriptor.
+	const currentAvatarName = settings.user_avatar;
+	const currentLorebook = powerUser?.persona_description_lorebook;
+	if (
+		currentAvatarName === personaAvatarName
+		&& typeof currentLorebook === "string"
+		&& currentLorebook.trim()
+	) return currentLorebook.trim();
+	return null;
+}
+
+function getStCharacterLoreEntries(settingsJson: unknown): Array<{ characterAvatarName: string; extraBookNames: string[] }> {
+	const settings = asRecord(settingsJson);
+	const worldInfo = settings ? getStWorldInfoSettings(settings) : null;
+	const charLore = worldInfo?.charLore;
+	if (!Array.isArray(charLore)) return [];
+
+	const entries: Array<{ characterAvatarName: string; extraBookNames: string[] }> = [];
+	for (const rawEntry of charLore) {
+		const entry = asRecord(rawEntry);
+		if (!entry) continue;
+		const characterAvatarName = entry.name;
+		if (typeof characterAvatarName !== "string" || !characterAvatarName.trim()) continue;
+		const extraBookNames = Array.isArray(entry.extraBooks)
+			? entry.extraBooks.filter((bookName): bookName is string => typeof bookName === "string" && bookName.trim().length > 0).map((bookName) => bookName.trim())
+			: [];
+		if (extraBookNames.length > 0) entries.push({ characterAvatarName: characterAvatarName.trim(), extraBookNames });
+	}
+	return entries;
+}
 
 async function scanOptionalGlob(cwd: string, pattern: string): Promise<string[]> {
 	try {
@@ -1143,6 +1308,36 @@ async function readCharacterFile(filePath: string): Promise<{ raw: Record<string
 	return { raw: null };
 }
 
+function decodePngItxtChunk(
+	chunkData: Uint8Array,
+	decoder: TextDecoder,
+): { keyword: string; text: string } | null {
+	const keywordEnd = chunkData.indexOf(0);
+	if (keywordEnd === -1 || keywordEnd + 3 > chunkData.length) return null;
+
+	const compressionFlag = chunkData[keywordEnd + 1];
+	const compressionMethod = chunkData[keywordEnd + 2];
+	if ((compressionFlag !== 0 && compressionFlag !== 1) || compressionMethod !== 0) return null;
+
+	const languageEnd = chunkData.indexOf(0, keywordEnd + 3);
+	if (languageEnd === -1) return null;
+	const translatedKeywordEnd = chunkData.indexOf(0, languageEnd + 1);
+	if (translatedKeywordEnd === -1) return null;
+
+	const keyword = decoder.decode(chunkData.slice(0, keywordEnd));
+	const textBytes = chunkData.slice(translatedKeywordEnd + 1);
+	if (compressionFlag === 0) {
+		return { keyword, text: decoder.decode(textBytes) };
+	}
+
+	try {
+		return { keyword, text: decoder.decode(Bun.inflateSync(textBytes)) };
+	} catch {
+		// A malformed metadata chunk must not hide a valid card chunk later in the PNG.
+		return null;
+	}
+}
+
 /**
  * Extract character JSON from PNG tEXt/iTXt chunks.
  * Mirrors the frontend png-reader.ts logic but runs server-side with Bun.
@@ -1151,6 +1346,7 @@ async function readCharacterFile(filePath: string): Promise<{ raw: Record<string
  */
 function parsePngCharacterCard(uint8: Uint8Array): Record<string, unknown> | null {
 	const view = new DataView(uint8.buffer, uint8.byteOffset, uint8.byteLength);
+	const decoder = new TextDecoder();
 
 	// Check PNG signature
 	if (view.getUint32(0) !== 0x89504E47 || view.getUint32(4) !== 0x0D0A1A0A) {
@@ -1170,11 +1366,16 @@ function parsePngCharacterCard(uint8: Uint8Array): Record<string, unknown> | nul
 			const chunkData = uint8.slice(dataStart, dataEnd);
 			const nullIndex = chunkData.indexOf(0);
 			if (nullIndex !== -1) {
-				const keyword = new TextDecoder().decode(chunkData.slice(0, nullIndex));
+				const keyword = decoder.decode(chunkData.slice(0, nullIndex));
 				if (keyword === "ccv3" || keyword === "chara") {
-					const text = new TextDecoder().decode(chunkData.slice(nullIndex + 1));
+					const text = decoder.decode(chunkData.slice(nullIndex + 1));
 					return decodeCardText(text);
 				}
+			}
+		} else if (type === "iTXt") {
+			const metadata = decodePngItxtChunk(uint8.slice(dataStart, dataEnd), decoder);
+			if (metadata && (metadata.keyword === "ccv3" || metadata.keyword === "chara")) {
+				return decodeCardText(metadata.text);
 			}
 		}
 

@@ -1,4 +1,6 @@
 import { beforeEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
+import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from "react";
 
@@ -184,7 +186,7 @@ async function loadModules() {
 // invariant: what matters is the subscription graph, not message realism.
 // ---------------------------------------------------------------------------
 
-import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../app-client.js";
+import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
 import type { ObjectiveState } from "../../api/types.js";
 import type { ChatId, ChatBranchId } from "@vibe-tavern/domain";
 
@@ -193,6 +195,7 @@ const asBranchId = (id: string): ChatBranchId => id as ChatBranchId;
 
 function makeCharacter(id: string, name = `Char ${id}`): AppCharacter {
   return {
+    ...wireCharacter(),
     id, name, avatarExt: null, avatarFullExt: null, description: "", scenario: "",
     systemPrompt: "", subtitle: "", firstMessage: null, mesExample: null,
     mesExampleMode: "always", mesExampleDepth: 4, alternateGreetings: [],
@@ -256,8 +259,8 @@ function seed(messages: AppMessage[], persona: AppPersona | null = null, objecti
       id: "chat-1",
       title: "Chat 1",
       characterId: "c1",
-      insightsConfig: { objectiveEnabled: objectiveState !== undefined, trackerEnabled: false },
-      insightsObjectiveState: objectiveState,
+      insightsConfig: normalizeInsightsConfig({ objectiveEnabled: objectiveState !== undefined }),
+      insightsObjectiveState: objectiveState ?? normalizeObjectiveState({}),
     } as unknown as AppSnapshot["activeChat"],
     activeBranch: { id: "b1", chatId: "chat-1", label: "main" } as unknown as AppSnapshot["activeBranch"],
     branches: [],
@@ -399,8 +402,11 @@ describe("MessageBlock — render isolation invariant", () => {
   test("Objective headers are chat-global live views without subscribing to unrelated chat fields", async () => {
     const { snapshotStore, chatStore } = await loadModules();
     const objectiveState: ObjectiveState = {
+      mode: "route",
       objectiveDescription: "Escape the citadel",
       tasks: [{ id: "t1", description: "Reach the gate", status: "active" }],
+      longTermGoal: null,
+      shortTermGoals: [],
       autoCheckFrequency: 3,
       autoCheckEventCount: 0,
       contextWindow: 10,

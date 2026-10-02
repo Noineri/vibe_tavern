@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
-import type { ChatId } from "@vibe-tavern/domain";
+import { defaultObjectiveState, type ChatId } from "@vibe-tavern/domain";
 import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
@@ -57,25 +57,9 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
 
   // `activeChat` is guaranteed by the parent (InsightsPanel guards no-chat), but
   // defend in case this is ever mounted standalone — never crash on a missing chat.
-  const raw = activeChat?.insightsObjectiveState;
-  // Backward compatibility: existing chats may carry an ObjectiveState written
-  // before the secondary-model fields existed. Merge defaults instead of
-  // casting the raw JSON wholesale; otherwise an absent `useChatModel` would
-  // render as false and incorrectly suggest a separate model was configured.
-  const state: ObjectiveState = raw && typeof raw === "object" && Array.isArray(raw.tasks)
-    ? {
-        ...EMPTY_STATE,
-        ...raw,
-        mode: raw.mode === "goals" ? "goals" : "route",
-        longTermGoal: raw.longTermGoal && typeof raw.longTermGoal === "object" ? raw.longTermGoal : null,
-        shortTermGoals: Array.isArray(raw.shortTermGoals) ? raw.shortTermGoals : [],
-        useChatModel: typeof raw.useChatModel === "boolean" ? raw.useChatModel : true,
-        providerProfileId: typeof raw.providerProfileId === "string" ? raw.providerProfileId : null,
-        model: typeof raw.model === "string" ? raw.model : null,
-      }
-    : EMPTY_STATE;
-  const mode = state.mode ?? "route";
-  const shortTermGoals = state.shortTermGoals ?? [];
+  // The server normalizes the stored state, so a present one is complete.
+  const state = activeChat?.insightsObjectiveState ?? EMPTY_STATE;
+  const { mode, shortTermGoals } = state;
   const hasCheckTarget = (mode === "goals" ? shortTermGoals : state.tasks)
     .some((item) => item.status === "active" || item.status === "pending");
 
@@ -149,7 +133,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
           />
         </div>
       ) : (
-        <LongTermGoalEditor chatId={chatId} goal={state.longTermGoal ?? null} />
+        <LongTermGoalEditor chatId={chatId} goal={state.longTermGoal} />
       )}
 
       {/* Generate / Check */}
@@ -204,23 +188,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
   );
 }
 
-const EMPTY_STATE: ObjectiveState = {
-  mode: "route",
-  objectiveDescription: "",
-  tasks: [],
-  longTermGoal: null,
-  shortTermGoals: [],
-  autoCheckFrequency: 0,
-  autoCheckEventCount: 0,
-  contextWindow: 5,
-  injectionDepth: 1,
-  generatePrompt: "",
-  checkPrompt: "",
-  injectPrompt: "",
-  useChatModel: true,
-  providerProfileId: null,
-  model: null,
-};
+const EMPTY_STATE: ObjectiveState = defaultObjectiveState();
 
 // ─── Goals mode (one long-term + flat independent short-term list) ──────
 

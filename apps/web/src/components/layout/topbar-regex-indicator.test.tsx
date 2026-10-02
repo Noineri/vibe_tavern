@@ -179,7 +179,7 @@ async function mountTopBar() {
       updatedAt: "2026-01-01T00:00:00.000Z",
     },
     persona: null,
-  } as unknown as import("../../app-client.js").AppSnapshot);
+  } as unknown as import("../../api/types.js").AppSnapshot);
   useChatStore.getState().setActiveChatId("chat-1" as import("@vibe-tavern/domain").ChatId);
   const utils = render(<TopBar />);
   // Flush the async preset fetch so the indicator settles.

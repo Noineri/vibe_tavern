@@ -1,22 +1,13 @@
 import { useEffect, useState } from "react";
-import {
-  brandId,
-  type RegexPreset,
-  type RegexPresetId,
-  type RegexProfileId,
-  type RegexPlacement,
-  type RegexSubstituteMode,
-} from "@vibe-tavern/domain";
+import type { RegexPreset } from "@vibe-tavern/domain";
 import { resolveActiveRegexPresets } from "../api/regex-api.js";
-import type { RegexPresetRecord } from "../api/types.js";
 
 /**
  * Active regex presets for one chat context (RX-13 display seam).
  *
  * Loads the same 3-source union the server prompt seam uses (global +
  * character-bound + preset-bound — `GET /api/regex/resolve-active`) and maps
- * the wire records into domain `RegexPreset`s at the API boundary (branded id,
- * numeric-union fields) so the pure engine functions take them directly.
+ * domain `RegexPreset`s the pure engine functions take directly.
  *
  * Caching: a module-level Map keyed by `characterId|presetId` — every mounted
  * MessageBlock subscribes to the same entry, so a chat with N blocks issues
@@ -45,19 +36,6 @@ export function invalidateActiveRegexPresets(): void {
   for (const listener of listeners) listener();
 }
 
-/** API-boundary mapping: wire record → domain preset the engine consumes. */
-function recordToDomainPreset(record: RegexPresetRecord): RegexPreset {
-  return {
-    ...record,
-    id: brandId<RegexPresetId>(record.id),
-    substituteRegex: record.substituteRegex as RegexSubstituteMode,
-    placement: record.placement as RegexPlacement[],
-    profileId: record.profileId ? brandId<RegexProfileId>(record.profileId) : null,
-    createdAt: String(record.createdAt),
-    updatedAt: String(record.updatedAt),
-  };
-}
-
 /** Shared empty result — reference-stable so setState bails out (no render)
  *  when a fetch degrades to "no presets"; also cached so N mounted blocks
  *  share one failed request instead of N. Cleared by invalidation. */
@@ -69,11 +47,10 @@ function loadKey(key: string, characterId: string, presetId: string | null): Pro
   const existing = inflight.get(key);
   if (existing) return existing;
   const request = resolveActiveRegexPresets({ characterId, ...(presetId ? { presetId } : {}) })
-    .then((records) => {
-      const mapped = records.map(recordToDomainPreset);
-      cache.set(key, mapped.length > 0 ? mapped : EMPTY_PRESETS);
+    .then((presets) => {
+      cache.set(key, presets.length > 0 ? presets : EMPTY_PRESETS);
       inflight.delete(key);
-      return mapped;
+      return presets;
     })
     .catch(() => {
       inflight.delete(key);

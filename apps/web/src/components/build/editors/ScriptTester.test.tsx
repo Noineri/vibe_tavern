@@ -41,7 +41,7 @@ const testScript = mock(() => Promise.resolve({
 	errors: [],
 }));
 const realI18nContext = await import("../../../i18n/context.js");
-const realAppClient = await import("../../../app-client.js");
+const realScriptApi = await import("../../../api/script-api.js");
 const realAutoTextarea = await import("../../shared/auto-textarea.js");
 
 // ── Module-boundary mocks (hoisted above the ScriptTester import) ────────
@@ -59,9 +59,9 @@ mock.module("../../../i18n/context.js", () => ({
 }));
 
 // testScript RPC — the single side effect of the panel.
-mock.module("../../../app-client.js", () => ({
-	...realAppClient,
- testScript,
+mock.module("../../../api/script-api.js", () => ({
+	...realScriptApi,
+	testScript,
 }));
 
 // AutoTextarea sizes via scrollHeight in a useLayoutEffect; in happy-dom that

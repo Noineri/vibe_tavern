@@ -6,7 +6,8 @@
  * narration-mode block and the LLM footer's default-proxy control. Lives as
  * its own unit so the controls↔hook wiring is testable without mounting the
  * whole ProviderModal.
- */
+  * fork #1 of tts/TtsAudioFooter.tsx.
+*/
 
 import { useState } from "react";
 

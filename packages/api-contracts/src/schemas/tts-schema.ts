@@ -158,7 +158,7 @@ export const draftTtsVoicesSchema = z.object({
 });
 export type DraftTtsVoicesInput = z.infer<typeof draftTtsVoicesSchema>;
 
-/** One short synthesis from an unsaved form config — the "Прослушать голос"
+/** One short synthesis from an unsaved form config — the "Listen to voice"
  *  path for server backends BEFORE saving (mirrors the LLM branch's
  *  test-draft pattern). Same transient-key semantics as
  *  {@link draftTtsVoicesSchema}. */

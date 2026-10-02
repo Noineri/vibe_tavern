@@ -5,7 +5,8 @@
  * gemini, elevenlabs) implements this interface; the registry (tts-registry.ts)
  * is the single source of truth for per-backend capability flags and factory
  * lookup. Mirrors the providers protocol-registry pattern.
- */
+  * forks: 1 — domain/stt/stt-backend.ts.
+*/
 
 import type { TtsProfileConfig } from "@vibe-tavern/domain";
 

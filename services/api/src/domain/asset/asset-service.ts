@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 import type { ContentStore, StorageFolder } from "@vibe-tavern/db";
 import { IMAGE_EXTENSIONS, STORAGE_FOLDERS } from "@vibe-tavern/db";
 
+import { normalizeAvatarThumbnail } from "./avatar-thumbnail.js";
+
 const MIME_TO_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -58,6 +60,13 @@ export function extToMime(ext: string): string {
   return EXT_TO_MIME[ext.toLowerCase()] ?? "application/octet-stream";
 }
 
+/** Stored-ext lookup for a folder-image upload mime (the writeFolderImage
+ *  table). Null when the mime is not an allowed image type — adapters use
+ *  this to pre-check uploads before any bytes are written (LB-1B). */
+export function mimeToExt(mime: string): string | null {
+  return MIME_TO_EXT[mime] ?? null;
+}
+
 export class AssetService {
   /**
    * Optional ContentStore for folder-resident avatars
@@ -103,30 +112,33 @@ export class AssetService {
     return { assetId, url: `/api/assets/${assetId}` };
   }
 
+  /**
+   * Serve a flat attachment (or a legacy flat avatar) by id. The URL carries no
+   * extension, so each known ext is stat'ed until one names a non-empty file.
+   *
+   * The body is the BunFile itself, which is what makes Range requests work:
+   * Bun answers `Range:` on a file body with 206 + content-range + accept-ranges
+   * and streams from the fd instead of holding the whole file in the heap for
+   * every request. If the file is deleted between the stat and the send (the
+   * delete→fetch race with {@link cleanup}), the send fails with ENOENT and the
+   * Bun.serve error hook turns it into a 404 — see server/serve-error.ts.
+   */
   async serve(assetId: string): Promise<Response | null> {
     // Prevent path traversal
     if (assetId.includes("/") || assetId.includes("\\") || assetId.includes("..")) {
       return null;
     }
     for (const ext of Object.keys(EXT_TO_MIME)) {
-      const filePath = resolve(this.assetsDir, `${assetId}.${ext}`);
-      try {
-        const bunFile = Bun.file(filePath);
-        // Eagerly read the file to avoid TOCTOU race with cleanup() unlink:
-        // new Response(Bun.file()) is lazy — the file is opened when the response
-        // is sent, which can race with a pending unlink() from a concurrent delete.
-        const buffer = new Uint8Array(await bunFile.arrayBuffer());
-        if (buffer.length > 0) {
-          return new Response(buffer, {
-            headers: {
-              "Content-Type": EXT_TO_MIME[ext],
-              "Cache-Control": "public, max-age=31536000",
-            },
-          });
-        }
-      } catch {
-        // try next extension
-      }
+      const file = Bun.file(resolve(this.assetsDir, `${assetId}.${ext}`));
+      // Missing or unreadable candidate — try the next extension.
+      const stat = await file.stat().catch(() => null);
+      if (!stat?.isFile() || stat.size === 0) continue;
+      return new Response(file, {
+        headers: {
+          "Content-Type": EXT_TO_MIME[ext],
+          "Cache-Control": "public, max-age=31536000",
+        },
+      });
     }
     return null;
   }
@@ -188,7 +200,8 @@ export class AssetService {
     entityId: string,
     leafBase: string,
     file: File,
-  ): Promise<{ ext: string; mimeType: string }> {
+    opts?: { normalizeThumbnail?: boolean },
+  ): Promise<{ ext: string; mimeType: string; changed?: boolean; originalExt?: string }> {
     const mime = file.type;
     if (!ALLOWED_MIMES.has(mime)) {
       throw new Error(`Unsupported image type: ${mime}. Allowed: jpeg, png, gif, webp.`);
@@ -197,12 +210,25 @@ export class AssetService {
     if (buffer.length > MAX_IMAGE_SIZE) {
       throw new Error(`Image too large: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB. Maximum: 20 MB.`);
     }
-    const ext = MIME_TO_EXT[mime];
+    const originalExt = MIME_TO_EXT[mime]!;
+    // LB-1B: avatar thumbnails (leafBase "avatar") pass through the normalizer —
+    // ≤ 512 px webp, GIF/animated-webp/error passthrough (see avatar-thumbnail.ts).
+    // Gallery rows and avatar-full (the uncropped original) never normalize.
+    const normalized = opts?.normalizeThumbnail
+      ? await normalizeAvatarThumbnail(buffer, originalExt)
+      : null;
+    const ext = normalized?.ext ?? originalExt;
     const f = await this.resolveEntityId(folder, entityId);
-    await this.requireContentStore().writeBinary(folder, f, `${leafBase}.${ext}`, buffer);
-    return { ext, mimeType: mime };
+    await this.requireContentStore().writeBinary(folder, f, `${leafBase}.${ext}`, normalized?.bytes ?? buffer);
+    // Extra verdict fields only on the normalized (avatar) path — gallery
+    // rows and avatar-full keep the exact historical shape.
+    return opts?.normalizeThumbnail
+      ? { ext, mimeType: mime, changed: normalized!.changed, originalExt }
+      : { ext, mimeType: mime };
   }
 
+  /** Serve a folder-resident image (avatar, gallery row) by its stored ext.
+   *  Same BunFile body as {@link serve}: Range-capable, streamed from the fd. */
   private async serveFolderImage(
     folder: StorageFolder,
     entityId: string,
@@ -211,15 +237,11 @@ export class AssetService {
   ): Promise<Response | null> {
     if (!this.contentStore) return null;
     const f = await this.resolveEntityId(folder, entityId);
-    const buf = await this.contentStore.readBinary(folder, f, `${leafBase}.${ext}`);
-    if (!buf) return null;
-    const mime = EXT_TO_MIME[ext] ?? "application/octet-stream";
-    // Copy Buffer bytes into a fresh ArrayBuffer-backed Uint8Array so the value
-    // satisfies Response's BodyInit (a Buffer/Buffer-backed view does not).
-    const body = new Uint8Array(buf);
-    return new Response(body, {
+    const file = Bun.file(this.contentStore.entityLeafPath(folder, f, `${leafBase}.${ext}`));
+    if (!(await file.exists())) return null;
+    return new Response(file, {
       headers: {
-        "Content-Type": mime,
+        "Content-Type": EXT_TO_MIME[ext] ?? "application/octet-stream",
         "Cache-Control": "public, max-age=31536000",
       },
     });
@@ -250,18 +272,64 @@ export class AssetService {
   // ─── Avatars (leafBase = "avatar") ──────────────────────────────────
 
   /**
-   * Write avatar bytes into the character folder at {id}/avatar.{ext}.
-   * Returns the ext so the caller stores it in `avatarExt`.
+   * Write avatar bytes into the character folder at {id}/avatar.{ext},
+   * normalized to a ≤ 512 px webp thumbnail (LB-1B). Returns the stored ext
+   * plus the normalizer's verdict: `changed`/`originalExt` let the adapter
+   * preserve the original in avatar-full BEFORE overwriting the thumbnail.
+   * Does NOT touch sibling leaves — stale-avatar cleanup is the caller's
+   * LAST step, via {@link deleteCharacterAvatarLeaf} after the store update
+   * (LB-1B follow-up: deleting inside this write raced the store update).
    */
-  async writeCharacterAvatar(characterId: string, file: File): Promise<{ ext: string }> {
-    const r = await this.writeFolderImage(STORAGE_FOLDERS.characters, characterId, "avatar", file);
-    return { ext: r.ext };
+  async writeCharacterAvatar(
+    characterId: string,
+    file: File,
+  ): Promise<{ ext: string; changed: boolean; originalExt: string }> {
+    const r = await this.writeFolderImage(STORAGE_FOLDERS.characters, characterId, "avatar", file, {
+      normalizeThumbnail: true,
+    });
+    return { ext: r.ext, changed: r.changed ?? false, originalExt: r.originalExt ?? r.ext };
   }
 
-  /** Persona variant — {id}/avatar.{ext} under personas/. */
-  async writePersonaAvatar(personaId: string, file: File): Promise<{ ext: string }> {
-    const r = await this.writeFolderImage(STORAGE_FOLDERS.personas, personaId, "avatar", file);
-    return { ext: r.ext };
+  /** Persona variant — {id}/avatar.{ext} under personas/, normalized the
+   *  same way (LB-1B); stale cleanup via {@link deletePersonaAvatarLeaf}. */
+  async writePersonaAvatar(
+    personaId: string,
+    file: File,
+  ): Promise<{ ext: string; changed: boolean; originalExt: string }> {
+    const r = await this.writeFolderImage(STORAGE_FOLDERS.personas, personaId, "avatar", file, {
+      normalizeThumbnail: true,
+    });
+    return { ext: r.ext, changed: r.changed ?? false, originalExt: r.originalExt ?? r.ext };
+  }
+
+  /** Delete a stale character avatar.{ext} leaf. Callers run this as the
+   *  LAST step of an avatar swap — AFTER setFolderAvatar has moved the DB to
+   *  the new ext: a crash before the store update with the file already gone
+   *  would leave a permanently 404-ing avatar, while a crash after it leaves
+   *  at worst this harmless orphan. Never throws: a failed delete is logged
+   *  and the upload/import continues (LB-1B follow-up). */
+  async deleteCharacterAvatarLeaf(characterId: string, ext: string): Promise<void> {
+    try {
+      await this.deleteFolderImage(STORAGE_FOLDERS.characters, characterId, "avatar", ext);
+    } catch (error) {
+      console.warn(
+        `[avatar] failed to delete stale avatar.${ext} for character ${characterId} (left as an orphan leaf):`,
+        error,
+      );
+    }
+  }
+
+  /** Persona variant of {@link deleteCharacterAvatarLeaf} — same ordering
+   *  contract, same never-throws policy. */
+  async deletePersonaAvatarLeaf(personaId: string, ext: string): Promise<void> {
+    try {
+      await this.deleteFolderImage(STORAGE_FOLDERS.personas, personaId, "avatar", ext);
+    } catch (error) {
+      console.warn(
+        `[avatar] failed to delete stale avatar.${ext} for persona ${personaId} (left as an orphan leaf):`,
+        error,
+      );
+    }
   }
 
   /** Serve a folder-resident character avatar. `ext` is the stored avatarExt. */

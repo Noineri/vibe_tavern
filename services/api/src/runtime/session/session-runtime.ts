@@ -30,6 +30,8 @@ import { findUnsafeMacros } from "../../domain/coauthor/macro-subset.js";
 import { createContextSearchSession } from "../../domain/context/context-search-service.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import {
+	mapChatBranch,
+	mapChatDto,
 	mapMessageDto,
 	mapPromptTraceRecord,
 } from "./session-runtime-dto.js";
@@ -201,6 +203,8 @@ export function pickBootstrapChatId<T extends string>(
 					...(opts?.recentMessageLimit !== undefined ? { recentMessageLimit: opts.recentMessageLimit } : {}),
 					contextBudget: opts?.contextBudget ?? null,
 					responseReserve: opts?.responseReserve,
+					dryRun: opts?.dryRun,
+					...(opts?.quietPrompt ? { quietPrompt: opts.quietPrompt } : {}),
 					...(opts?.throughMessageId ? { throughMessageId: opts.throughMessageId } : {}),
 					...(opts?.excludeMessageIds ? { excludeMessageIds: opts.excludeMessageIds } : {}),
 				}),
@@ -248,6 +252,7 @@ export function pickBootstrapChatId<T extends string>(
 				avatarFullAssetId: c.avatarFullAssetId,
 				avatarCropJson: c.avatarCropJson,
 				avatarExt: c.avatarExt,
+				avatarFullExt: c.avatarFullExt,
 				updatedAt: c.updatedAt,
 			})),
 			promptPresets: promptPresets.map((p) => this.mapPresetToDto(p)),
@@ -292,8 +297,8 @@ export function pickBootstrapChatId<T extends string>(
 		return {
 			chats,
 			allCharacters,
-			activeChat: chat,
-			activeBranch: branch,
+			activeChat: mapChatDto(chat),
+			activeBranch: mapChatBranch(branch),
 			branches,
 			messages: messagesWithVariants,
 			summaries,
@@ -326,6 +331,7 @@ export function pickBootstrapChatId<T extends string>(
 				this.assemblePrompt(chatId, branchId, {
 					contextBudget: effectiveContextBudget(profile?.contextBudget ?? null, profile?.tokenPadding),
 					responseReserve: profile?.maxTokens ?? 0,
+					dryRun: true,
 				}),
 			);
 			return {
@@ -394,7 +400,7 @@ export function pickBootstrapChatId<T extends string>(
 			messages: await this.buildMessagesWithVariants(messages, branchId),
 		};
 		if (opts?.activeChat) {
-			response.activeChat = chat;
+			response.activeChat = mapChatDto(chat);
 		}
 		return response;
 	}
@@ -426,7 +432,7 @@ export function pickBootstrapChatId<T extends string>(
 		logger.info("response chat=%s branch=%s messages=%d totalMs=%d timings=%o", chatId, branchId, messages.length, Math.round(performance.now() - startedAt), timings);
 		return {
 			messages: messagesWithVariants,
-			activeBranch: branch,
+			activeBranch: mapChatBranch(branch),
 			branches,
 			summaries,
 			chats,
@@ -458,8 +464,8 @@ export function pickBootstrapChatId<T extends string>(
 		]);
 		const response: ChatSwitchResponse = {
 			messages: messagesWithVariants,
-			activeChat: chat,
-			activeBranch: branch,
+			activeChat: mapChatDto(chat),
+			activeBranch: mapChatBranch(branch),
 			branches,
 			summaries,
 			character,
@@ -490,8 +496,8 @@ export function pickBootstrapChatId<T extends string>(
 		return {
 			chats,
 			messages: messagesWithVariants,
-			activeChat: chat,
-			activeBranch: branch,
+			activeChat: mapChatDto(chat),
+			activeBranch: mapChatBranch(branch),
 			branches,
 			summaries,
 			character,
@@ -516,7 +522,7 @@ export function pickBootstrapChatId<T extends string>(
 			response.character = await this.resolver.getCharacter(chat.characterId);
 		}
 		if (opts?.activeChat) {
-			response.activeChat = chat;
+			response.activeChat = mapChatDto(chat);
 		}
 		return response;
 	}
@@ -561,7 +567,7 @@ export function pickBootstrapChatId<T extends string>(
 	private async fetchBranchesWithCounts(chatId: ChatId): Promise<SessionSnapshot["branches"]> {
 		const branches = await this.stores.chats.getBranches(chatId);
 		const counts = await this.stores.chats.getBranchMessageCounts(chatId);
-		return branches.map((b) => ({ ...b, messageCount: counts.get(b.id) ?? 0 }));
+		return branches.map((b) => mapChatBranch({ ...b, messageCount: counts.get(b.id) ?? 0 }));
 	}
 
 	/** Ranged summaries for a branch, mapped to the wire shape. */
@@ -646,7 +652,7 @@ export function pickBootstrapChatId<T extends string>(
 		return await importExportModule.mirrorPromptTrace(this.importExportDeps, traceId);
 	}
 
-	async importJson(input: { fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean; lean?: boolean }): Promise<ImportResult> {
+	async importJson(input: { fileName: string; jsonText?: string; monolithText?: string; chatId?: string; skipExisting?: boolean; lean?: boolean; importEmbeddedBook?: boolean }): Promise<ImportResult> {
 		return importExportModule.importJson(this.importExportDeps, input);
 	}
 
@@ -857,7 +863,7 @@ export function pickBootstrapChatId<T extends string>(
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
+		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; dryRun?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
 	) {
 		void await this.getActiveProviderProfile();
 		const strategy = await this.resolveChatModeStrategy(chatId);
@@ -901,6 +907,7 @@ export function pickBootstrapChatId<T extends string>(
 			excludeMessageIds: options?.excludeMessageIds,
 			recentMessageLimit: options?.recentMessageLimit,
 			summary: options?.summary,
+			dryRun: options?.dryRun,
 			contextBudget: options?.contextBudget ?? null,
 			responseReserve: options?.responseReserve,
 			presetId: options?.presetId,
@@ -1162,7 +1169,7 @@ export function pickBootstrapChatId<T extends string>(
 		};
 	}
 
-	private async getAllCharacterEntries(): Promise<Array<{ id: string; name: string; subtitle: string; tags: string[]; avatarAssetId: string | null; avatarFullAssetId: string | null; avatarCropJson: string | null; avatarExt: string | null; updatedAt: string }>> {
+	private async getAllCharacterEntries(): Promise<SessionSnapshot["allCharacters"]> {
 		const characters = await this.stores.characters.listAll();
 		return characters.map((c) => ({
 			id: c.id,
@@ -1173,6 +1180,7 @@ export function pickBootstrapChatId<T extends string>(
 			avatarFullAssetId: c.avatarFullAssetId,
 			avatarCropJson: c.avatarCropJson,
 			avatarExt: c.avatarExt,
+			avatarFullExt: c.avatarFullExt,
 			updatedAt: c.updatedAt,
 		}));
 	}

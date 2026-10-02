@@ -42,7 +42,7 @@ async function buildPatternFixture(root: string): Promise<void> {
   ]);
 }
 
-describe("Bun.Glob semantics on Bun 1.4.0", () => {
+describe("Bun.Glob semantics on Bun 1.4.2", () => {
   let tempRoot = "";
 
   beforeEach(async () => {

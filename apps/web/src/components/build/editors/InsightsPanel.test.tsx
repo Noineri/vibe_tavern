@@ -180,7 +180,7 @@ mock.module("../../shared/Tooltip.js", () => ({
 }));
 
 // TrackerConfig renders the shared AiAssistantModal (scene_schema generator).
-// Stub it so this panel-level test doesn't pull the modal's snapshot/app-client deps.
+// Stub it so this panel-level test doesn't pull the modal's snapshot/api deps.
 mock.module("../../shared/AiAssistantModal.js", () => ({
   ...realAiAssistantModal,
   AiAssistantModal: () => null,
@@ -410,6 +410,28 @@ describe("InsightsPanel (INS-2)", () => {
     expect(mocks.updateInsightsConfigAction).toHaveBeenCalledWith("chat_9", {
       insightsConfig: { diceScriptIds: null },
     });
+  });
+
+  it("Reset to automatic applies optimistically: a pending null overlays the stored local set", async () => {
+    mocks.activeChat = {
+      id: "chat_9",
+      insightsConfig: { objectiveEnabled: false, trackerEnabled: false, diceEnabled: true, diceMode: "normal", diceScriptIds: ["s1"] },
+    };
+    mocks.updateInsightsConfigAction.mockImplementation(() => new Promise<void>(() => {}));
+    mocks.listAllScripts.mockResolvedValue([
+      { id: "s1", name: "Fate Die", description: "", code: "", scriptKind: "dice", scopeType: "entity", characterId: null, personaId: "persona_1", chatId: null, enabled: true, sortOrder: 0 },
+    ]);
+    mocks.getDiceDefinitions.mockResolvedValue({
+      scripts: [
+        { scriptId: "s1", scriptLabel: "Fate Die", scriptRevision: 1, checks: [] },
+      ],
+    });
+
+    const { findByText, queryByText } = render(<InsightsPanel />);
+    fireEvent.click(await findByText("insights_dice_reset_auto"));
+    // The PATCH never resolves; the chat already follows automatic, so the
+    // reset affordance for a local set is gone.
+    expect(queryByText("insights_dice_reset_auto")).toBeNull();
   });
 
   // ── Unified editor: actor chips in every row (no override/inherit modes) ──

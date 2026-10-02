@@ -41,7 +41,7 @@ const BUN = process.execPath;
  * all over a previous 15s budget while every actual test passed. That was
  * historically the only lever (the old numeric form `afterAll(fn, ms)` never
  * worked), but as of bun 1.3.13 the object form does: each preload hook now
- * carries its own explicit `{ timeout: 60_000 }` (covers direct `bun test`
+ * carries its own explicit `{ timeout: 180_000 }` (covers direct `bun test`
  * runs in a workspace, which don't pass --timeout and would otherwise burst
  * bun's 5s hook default with a phantom `(unnamed)` failure). This global
  * budget remains for the TESTS themselves under CI contention.
@@ -67,9 +67,9 @@ export function createTestSuites(): readonly TestSuite[] {
 		{
 			// One `bun test --parallel=8` run under --isolate — the timeout and the
 			// zero-test guard live in scripts/test-web.ts.
-			// 160+ of its 162 files are React components and stores; exactly two touch
-			// `node:fs`/`node:path`/`process.platform`, so it buys no Windows coverage
-			// for the ~83s it costs there.
+			// All but two of its 336 files are React components and stores; exactly two
+			// touch `node:fs`/`node:path`/`process.platform`, so it buys no Windows
+			// coverage for the ~83s it costs there.
 			name: "web",
 			cwd: join(ROOT, "apps", "web"),
 			command: [BUN, "run", "test"],
@@ -115,6 +115,43 @@ export function createTestSuites(): readonly TestSuite[] {
 
 const TEST_SUITES = createTestSuites();
 
+/** Host desktop-proxy variables dropped from every spawned suite's
+ *  environment. Bun's fetch reads HTTP(S)_PROXY / NO_PROXY at process start
+ *  and honors them EVEN when tests inject an explicit per-request `proxy`
+ *  option — on a developer machine running a system proxy (HTTP_PROXY=http://
+ *  127.0.0.1:… + NO_PROXY=localhost,127.0.0.1), the loopback mock targets of
+ *  the proxy-traversal suites bypassed their per-test mock proxies, failing
+ *  3 tests locally while CI (no proxy env) stayed green. Test processes must
+ *  pin VT's proxy semantics, not inherit the desktop setup — same rationale
+ *  as the FORCE_COLOR/NO_COLOR overrides below. (In-file env mutation cannot
+ *  fix this: the values are captured before any test file's code runs;
+ *  verified 2026-09-14.) */
+const HOST_PROXY_ENV_KEYS = [
+	"HTTP_PROXY",
+	"HTTPS_PROXY",
+	"NO_PROXY",
+	"http_proxy",
+	"https_proxy",
+	"no_proxy",
+] as const;
+
+/** Suite spawn environment: the host env minus the desktop proxy variables
+ *  (see HOST_PROXY_ENV_KEYS), plus the per-suite temp and color overrides. */
+function suiteSpawnEnv(suiteTempRoot: string): Record<string, string> {
+	const env: Record<string, string> = {};
+	for (const [key, value] of Object.entries(Bun.env)) {
+		if (value === undefined) continue;
+		if ((HOST_PROXY_ENV_KEYS as readonly string[]).includes(key)) continue;
+		env[key] = value;
+	}
+	env.TEMP = suiteTempRoot;
+	env.TMP = suiteTempRoot;
+	env.TMPDIR = suiteTempRoot;
+	env.FORCE_COLOR = "0";
+	env.NO_COLOR = "1";
+	return env;
+}
+
 async function runTestSuite(suite: TestSuite, tempRoot: string): Promise<TestSuiteResult> {
 	const startedAt = performance.now();
 	// PER-SUITE temp dir, deliberately not shared: suites run several at a time,
@@ -132,14 +169,7 @@ async function runTestSuite(suite: TestSuite, tempRoot: string): Promise<TestSui
 			cwd: suite.cwd,
 			stdout: "pipe",
 			stderr: "pipe",
-			env: {
-				...Bun.env,
-				TEMP: suiteTempRoot,
-				TMP: suiteTempRoot,
-				TMPDIR: suiteTempRoot,
-				FORCE_COLOR: "0",
-				NO_COLOR: "1",
-			},
+			env: suiteSpawnEnv(suiteTempRoot),
 		});
 		const [exitCode, stdout, stderr] = await Promise.all([
 			process.exited,

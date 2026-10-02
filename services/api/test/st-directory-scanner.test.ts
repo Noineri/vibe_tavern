@@ -32,6 +32,7 @@ import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { scanSillyTavernDirectory } from "../src/shared/st-directory-scanner.js";
+import { minimalPng } from "./image-bytes.js";
 
 // Bun.Glob returns platform-native separators in scan results (\ on win32,
 // / elsewhere) — g() builds expectations in the platform's shape.
@@ -107,6 +108,9 @@ async function buildStDir(root: string) {
 		join(root, "settings.json"),
 		JSON.stringify({
 			world_info_use_group_scoring: true,
+			// D2: the globals that per-entry null case/whole-words inherit.
+			world_info_case_sensitive: true,
+			world_info_match_whole_words: true,
 			power_user: {
 				personas: { "default.png": "Test User" },
 				persona_descriptions: { "default.png": { description: "A test persona." } },
@@ -160,6 +164,52 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		expect(scan.persona!.count).toBe(1);
 	});
 
+	it("automatically imports an embedded card lorebook bound to its directory-imported character", async () => {
+		// Directory import has no single-card confirmation, so card lore imports
+		// automatically (ST only asks on its interactive card path: world-info.js:5559-5574).
+		const local = await createRuntime();
+		try {
+			const source = await buildStDir(join(local.tmpDir, "st-embedded-card-book"));
+			await Bun.write(
+				join(source, "characters", "TestChar.json"),
+				JSON.stringify({
+					spec: "chara_card_v3",
+					spec_version: "3.0",
+					data: {
+						name: "Test Char",
+						description: "probe",
+						character_book: {
+							name: "Embedded Card Book",
+							entries: [{
+								keys: ["embedded-key"],
+								content: "Embedded directory lore",
+								insertion_order: 321,
+								enabled: true,
+								extensions: { position: 4, depth: 11 },
+							}],
+						},
+					},
+				}),
+			);
+
+			const result = await local.runtime.importSillyTavernDirectory(source);
+			expect(result.errors).toEqual([]);
+			const character = (await local.stores.characters.listAll()).find((item) => item.name === "Test Char");
+			const book = (await local.stores.lorebooks.listAllLorebooks()).find((item) => item.name === "Embedded Card Book");
+			expect(character).toBeTruthy();
+			expect(book).toMatchObject({ scopeType: "entity", characterId: character!.id });
+			const entries = await local.stores.lorebooks.listEntries(book!.id);
+			expect(entries[0]).toMatchObject({
+				keys: ["embedded-key"],
+				priority: 321,
+				position: "at_depth",
+				depth: 11,
+			});
+		} finally {
+			await local.cleanup();
+		}
+	});
+
 	it("import WRITES all three surfaces — lorebook (gap-1), preset (gap-2), persona (gap-3)", async () => {
 		// Spy on assemblePrompt via the lifecycle deps (same technique as
 		// seed-imported-opening-trace.test.ts). The scanner runs through the REAL
@@ -207,6 +257,9 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		// LG-8 amendment: ST's GLOBAL group-scoring switch (settings.json
 		// world_info_use_group_scoring: true above) maps onto the imported book.
 		expect(loreAfter[0]?.useGroupScoring).toBe(true);
+		// D2: same mapping for the matching globals.
+		expect(loreAfter[0]?.caseSensitive).toBe(true);
+		expect(loreAfter[0]?.matchWholeWords).toBe(true);
 		expect(loreAfter.length).toBe(loreBefore + 1);
 		const importedLore = loreAfter.find((lb) => lb.name === "Test World");
 		expect(importedLore).toBeTruthy();
@@ -247,6 +300,60 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 		const importedPersona = personaAfter.find((p) => p.name === "Test User");
 		expect(importedPersona).toBeTruthy();
 		expect(importedPersona!.description).toBe("A test persona.");
+	});
+});
+
+describe("ST directory scanner — imported world-info settings", () => {
+	let env: Env;
+
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	afterAll(async () => { if (env) await env.cleanup(); });
+
+	it("applies every settings.json world-info global to every imported world", async () => {
+		// ST loads these flat settings.json keys into its world-info globals (world-info.js:918-941).
+		env = await createRuntime();
+		const stDir = await buildStDir(join(env.tmpDir, "st-world-info-settings"));
+		await Bun.write(join(stDir, "worlds", "SecondWorld.json"), ownershipWorld("Second World"));
+		await Bun.write(join(stDir, "settings.json"), JSON.stringify({
+			world_info_depth: 7,
+			world_info_budget: 42,
+			world_info_budget_cap: 420,
+			world_info_recursive: true,
+			world_info_max_recursion_steps: 7,
+			world_info_include_names: false,
+			world_info_case_sensitive: true,
+			world_info_match_whole_words: true,
+			world_info_min_activations: 3,
+			world_info_min_activations_depth_max: 33,
+			world_info_overflow_alert: true,
+			world_info_character_strategy: 2,
+			world_info_use_group_scoring: true,
+		}));
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+		expect(result.errors).toEqual([]);
+		expect(result.lorebooks).toBe(2);
+
+		const imported = await env.stores.lorebooks.listAllLorebooks();
+		const books = imported.filter((book) => ["Test World", "Second World"].includes(book.name));
+		expect(books).toHaveLength(2);
+		for (const book of books) {
+			expect(book).toMatchObject({
+				scanDepth: 7,
+				tokenBudgetPercent: 42,
+				tokenBudgetCap: 420,
+				recursiveScanning: true,
+				maxRecursionSteps: 7,
+				includeNames: false,
+				caseSensitive: true,
+				matchWholeWords: true,
+				minActivations: 3,
+				minActivationsDepthMax: 33,
+				overflowAlert: true,
+				characterStrategy: 2,
+				useGroupScoring: true,
+			});
+		}
 	});
 });
 
@@ -305,20 +412,61 @@ function pngChunk(type: string, data: Uint8Array): Uint8Array {
 	return out;
 }
 
+function characterCardText(cardName: string): Uint8Array<ArrayBuffer> {
+	return new TextEncoder().encode(
+		btoa(JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: cardName, description: "probe", first_mes: "Hi." } })),
+	);
+}
+
+function concatBytes(...parts: readonly Uint8Array[]): Uint8Array {
+	const out = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+	let offset = 0;
+	for (const part of parts) {
+		out.set(part, offset);
+		offset += part.length;
+	}
+	return out;
+}
+
+function makePng(...metadataChunks: readonly Uint8Array[]): Uint8Array {
+	const signature = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+	const ihdr = pngChunk("IHDR", new Uint8Array([0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0]));
+	const iend = pngChunk("IEND", new Uint8Array(0));
+	return concatBytes(signature, ihdr, ...metadataChunks, iend);
+}
+
+function charaTextChunk(cardName: string): Uint8Array {
+	return pngChunk("tEXt", concatBytes(new TextEncoder().encode("chara\0"), characterCardText(cardName)));
+}
+
+function charaItxtChunk(cardName: string, compressed: boolean): Uint8Array {
+	const text = characterCardText(cardName);
+	return pngChunk(
+		"iTXt",
+		concatBytes(
+			new TextEncoder().encode("chara\0"),
+			new Uint8Array([compressed ? 1 : 0, 0]),
+			new TextEncoder().encode("en\0Character\0"),
+			compressed ? Bun.deflateSync(text) : text,
+		),
+	);
+}
+
+function malformedCompressedItxtChunk(): Uint8Array {
+	return pngChunk(
+		"iTXt",
+		concatBytes(
+			new TextEncoder().encode("chara\0"),
+			new Uint8Array([1, 0]),
+			new TextEncoder().encode("\0\0"),
+			new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+		),
+	);
+}
+
 /** Synthesize a minimal valid PNG carrying a base64 `chara` tEXt chunk. */
 function makeCharaPng(cardName: string): Uint8Array {
-	const sig = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-	const ihdr = pngChunk("IHDR", new Uint8Array([0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0]));
-	const charaText = new TextEncoder().encode(
-		"chara\0" + btoa(JSON.stringify({ spec: "chara_card_v2", spec_version: "2.0", data: { name: cardName, description: "probe", first_mes: "Hi." } })),
-	);
-	const text = pngChunk("tEXt", charaText);
-	const iend = pngChunk("IEND", new Uint8Array(0));
-	const total = sig.length + ihdr.length + text.length + iend.length;
-	const out = new Uint8Array(total);
-	let o = 0;
-	for (const part of [sig, ihdr, text, iend]) { out.set(part, o); o += part.length; }
-	return out;
+	return makePng(charaTextChunk(cardName));
 }
 
 /** Build a minimal ST dir containing PNG cards with the given names. */
@@ -369,6 +517,50 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 		expect(originalBytes).toBeNull();
 	});
 
+	it("LB-1B: a real pixelated card stores a normalized avatar.webp + the RAW avatar-full.png", async () => {
+		env = await createRuntime();
+		const stDir = join(env.tmpDir, "st-png-real");
+		await mkdir(join(stDir, "characters"), { recursive: true });
+		// A REAL card image (proper zlib IDAT pixels, 600×600) carrying the
+		// chara tEXt chunk. The zero-CRC chunk builders are fine — the walker
+		// skips CRC and so does Bun's decoder; the older cards above carry no
+		// pixel data at all, so their normalization falls back to png bytes
+		// (those tests now pin the fallback path).
+		const card = (() => {
+			const png = minimalPng(600, 600, [30, 130, 200]);
+			const text = charaTextChunk("RealCard");
+			const iend = png.subarray(png.length - 12); // IEND is the last chunk
+			const out = new Uint8Array(png.length + text.length);
+			out.set(png.subarray(0, png.length - 12), 0);
+			out.set(text, png.length - 12);
+			out.set(iend, png.length - 12 + text.length);
+			return out;
+		})();
+		await Bun.write(join(stDir, "characters", "RealCard.png"), card);
+		await mkdir(join(stDir, "chats"), { recursive: true });
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+		expect(result.errors).toEqual([]);
+		expect(result.characters).toBe(1);
+
+		const chars = await env.stores.characters.listAll();
+		const imported = chars.find((c) => c.name === "RealCard");
+		expect(imported).toBeTruthy();
+		const dir = await env.stores.characters.resolveFolderName(imported!.id);
+
+		// The thumbnail slot normalized to webp; the full stays the RAW card.
+		expect(imported!.avatarExt).toBe("webp");
+		expect(imported!.avatarFullExt).toBe("png");
+		const thumbBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "avatar.webp");
+		expect(thumbBytes).not.toBeNull();
+		const meta = await new Bun.Image(new Uint8Array(thumbBytes!)).metadata();
+		expect(meta.format).toBe("webp");
+		expect(meta.width).toBe(512);
+		expect(meta.height).toBe(512);
+		const fullBytes = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, dir, "avatar-full.png");
+		expect(new Uint8Array(fullBytes!)).toEqual(card);
+	});
+
 	it("multiple PNG cards import under bounded concurrency without loss", async () => {
 		// Reuse the same env from the single-card test (its runtime is clean for
 		// a fresh dir). Build a second dir with 3 distinct cards.
@@ -396,6 +588,56 @@ describe("ST directory scanner — PNG card avatar-full wiring + parallelism", (
 			const full = await env.stores.content.readBinary(STORAGE_FOLDERS.characters, cdir, "avatar-full.png");
 			expect(full, `avatar-full.png for ${name}`).not.toBeNull();
 		}
+	});
+});
+
+describe("ST directory scanner — PNG iTXt character cards", () => {
+	let env: Env;
+
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	beforeEach(async () => {
+		env = await createRuntime();
+	});
+	afterEach(async () => {
+		await env.cleanup();
+	});
+
+	async function writeCard(fileName: string, png: Uint8Array): Promise<string> {
+		const stDir = join(env.tmpDir, fileName);
+		await mkdir(join(stDir, "characters"), { recursive: true });
+		await mkdir(join(stDir, "chats"), { recursive: true });
+		await Bun.write(join(stDir, "characters", `${fileName}.png`), png);
+		return stDir;
+	}
+
+	it("previews an uncompressed iTXt character card", async () => {
+		const stDir = await writeCard("itxt-plain", makePng(charaItxtChunk("iTXt Plain", false)));
+
+		const scan = await env.runtime.scanSillyTavernDirectory(stDir);
+
+		expect(scan.errors).toEqual([]);
+		expect(scan.characters.map((card) => card.name)).toEqual(["iTXt Plain"]);
+	});
+
+	it("imports a zlib-compressed iTXt character card", async () => {
+		const stDir = await writeCard("itxt-compressed", makePng(charaItxtChunk("iTXt Compressed", true)));
+
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+
+		expect(result.errors).toEqual([]);
+		expect(result.characters).toBe(1);
+		const imported = (await env.stores.characters.listAll()).find((card) => card.name === "iTXt Compressed");
+		expect(imported).toBeTruthy();
+	});
+
+	it("skips malformed compressed iTXt and reads a later valid tEXt card", async () => {
+		const png = makePng(malformedCompressedItxtChunk(), charaTextChunk("tEXt Fallback"));
+		const stDir = await writeCard("itxt-malformed", png);
+
+		const scan = await env.runtime.scanSillyTavernDirectory(stDir);
+
+		expect(scan.errors).toEqual([]);
+		expect(scan.characters.map((card) => card.name)).toEqual(["tEXt Fallback"]);
 	});
 });
 
@@ -448,9 +690,9 @@ describe("ST directory scanner — streaming progress events", () => {
 		// Every phase has exactly one `phase` start event, and it precedes that
 		// phase's `progress` events. Phases fire in fixed import order.
 		const phaseStarts = events.filter((e) => e.type === "phase").map((e) => e.phase);
-		// LS-5g adds the samplerSets phase between formats and personas (this
-		// fixture has no TextGen Settings/ folder, so it emits no progress events).
-		expect(phaseStarts).toEqual(["characters", "chats", "lorebooks", "presets", "formats", "samplerSets", "personas"]);
+		// P17 moves personas before lorebooks so their IDs exist for persona-owned
+		// lorebook FKs; this fixture has no persona files, but its phase remains visible.
+		expect(phaseStarts).toEqual(["characters", "chats", "personas", "lorebooks", "presets", "formats", "samplerSets"]);
 
 		// Granular counts: one progress per imported item, current strictly
 		// increasing, never exceeding the done count for that surface.
@@ -651,6 +893,99 @@ describe("ST directory scanner — ownership-aware lorebook import (L1)", () => 
 		// The orphan still imports its entries — only activation is withheld.
 		const orphanEntries = await env.stores.lorebooks.listEntries(orphan.id);
 		expect(orphanEntries.length).toBe(1);
+	});
+});
+
+// ── P17: ST directory lorebook bindings ─────────────────────────────────────
+//
+// ST keeps character-primary books on cards, character extras in
+// world_info.charLore, and persona books in persona descriptors. These pins
+// cover all four destination cases through the real directory import seam.
+
+async function buildP17BindingStDir(root: string): Promise<string> {
+	await mkdir(join(root, "characters"), { recursive: true });
+	await Bun.write(join(root, "characters", "BoundCharacter.json"), ownershipCard("Bound Character", "Primary Book"));
+
+	await mkdir(join(root, "worlds"), { recursive: true });
+	for (const world of ["Primary Book", "Extra Book", "Persona Book", "Missing Book", "Global Book"]) {
+		await Bun.write(join(root, "worlds", `${world}.json`), ownershipWorld(world));
+	}
+
+	await Bun.write(join(root, "settings.json"), JSON.stringify({
+		user_avatar: "bound-persona.png",
+		power_user: {
+			personas: { "bound-persona.png": "Bound Persona" },
+			persona_descriptions: {
+				"bound-persona.png": { description: "Persona binding fixture." },
+			},
+			default_persona: "bound-persona.png",
+			persona_description_lorebook: "Persona Book",
+		},
+		world_info_settings: {
+			world_info: {
+				globalSelect: ["Global Book"],
+				charLore: [
+					{ name: "BoundCharacter.json", extraBooks: ["Extra Book"] },
+					{ name: "MissingCharacter.png", extraBooks: ["Missing Book"] },
+				],
+			},
+		},
+	}));
+	return root;
+}
+
+describe("ST directory scanner — P17 ST lorebook bindings", () => {
+	let env: Env;
+
+	beforeAll(() => setTokenCountFn((text: string) => text.length));
+	beforeEach(async () => { env = await createRuntime(); });
+	afterEach(async () => { await env.cleanup(); });
+
+	async function importBindings() {
+		const stDir = await buildP17BindingStDir(join(env.tmpDir, "st-p17-bindings"));
+		const result = await env.runtime.importSillyTavernDirectory(stDir);
+		const books = await env.stores.lorebooks.listAllLorebooks();
+		const characters = await env.stores.characters.listAll();
+		const personas = await env.stores.personas.listAll();
+		return { result, books, characters, personas };
+	}
+
+	it("binds a card primary world and charLore extraBooks to their imported character", async () => {
+		// ST basis: world-info.js:4369-4378 adds both card.extensions.world and charLore.extraBooks for this character.
+		const { books, characters } = await importBindings();
+		const character = characters.find((item) => item.name === "Bound Character");
+		expect(character).toBeTruthy();
+		for (const name of ["Primary Book", "Extra Book"]) {
+			const book = books.find((item) => item.name === name);
+			expect(book).toMatchObject({ scopeType: "entity", characterId: character!.id, personaId: null, enabled: true });
+		}
+	});
+
+	it("binds a persona_description_lorebook to its imported persona", async () => {
+		// ST basis: personas.js:907-914 loads descriptor.lorebook into persona_description_lorebook for the selected persona.
+		const { books, personas } = await importBindings();
+		const persona = personas.find((item) => item.name === "Bound Persona");
+		expect(persona).toBeTruthy();
+		expect(books.find((item) => item.name === "Persona Book")).toMatchObject({
+			scopeType: "entity", personaId: persona!.id, characterId: null, enabled: true,
+		});
+	});
+
+	it("warns and leaves a book global and disabled when its charLore character did not import", async () => {
+		// ST basis: world-info.js:4375-4378 looks up extras by the character avatar; there is no owner when that character is absent.
+		const { result, books } = await importBindings();
+		expect(result.errors.some((error) => error.message.includes("MissingCharacter.png") && error.message.includes("Missing Book"))).toBe(true);
+		expect(books.find((item) => item.name === "Missing Book")).toMatchObject({
+			scopeType: "global", characterId: null, personaId: null, enabled: false,
+		});
+	});
+
+	it("keeps a globally selected world global and enabled", async () => {
+		// ST basis: world-info.js:85 persists globalSelect and :4427 loads that global list independently of entity bindings.
+		const { books } = await importBindings();
+		expect(books.find((item) => item.name === "Global Book")).toMatchObject({
+			scopeType: "global", characterId: null, personaId: null, enabled: true,
+		});
 	});
 });
 

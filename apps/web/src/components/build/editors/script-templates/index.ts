@@ -3,24 +3,24 @@
  *
  * Each template's body lives in its own `.js` file (editor support: syntax
  * highlighting, linting, formatting — none of which exist for code embedded in
- * TS template strings). The `?raw` suffix imports the file content as a
- * plain string at build time; the ambient `*?raw` declaration in
- * `src/bun-env.d.ts` declares the module shape so the import typechecks.
+ * TS template strings). The `type: "text"` import attribute is Bun's native
+ * way to import a file's content as a string - the bundler picks the text
+ * loader from the attribute, and `bun-types` types it as `string`.
  * Precedent: `ThemeTuner.tsx` imports theme CSS the same way.
  *
  * Keys mirror the i18n keys (`script_template_<key>` in
  * `apps/web/src/i18n/locales/*.json`); the UI renders the localized name and
  * falls back to `name` here when a locale is missing the key.
  */
-import relationshipCode from "./relationship.js?raw";
-import eventsCode from "./events.js?raw";
-import memoryCode from "./memory.js?raw";
-import lorebookCode from "./lorebook.js?raw";
-import advancedLoreCode from "./advanced-lore.js?raw";
-import hpCode from "./hp.js?raw";
-import diceCode from "./dice.js?raw";
-import randomCode from "./random.js?raw";
-import fateDieCode from "./fate-die.js?raw";
+import relationshipCode from "./relationship.js" with { type: "text" };
+import eventsCode from "./events.js" with { type: "text" };
+import memoryCode from "./memory.js" with { type: "text" };
+import lorebookCode from "./lorebook.js" with { type: "text" };
+import advancedLoreCode from "./advanced-lore.js" with { type: "text" };
+import hpCode from "./hp.js" with { type: "text" };
+import diceCode from "./dice.js" with { type: "text" };
+import randomCode from "./random.js" with { type: "text" };
+import fateDieCode from "./fate-die.js" with { type: "text" };
 
 export interface ScriptTemplate {
   /** Fallback label (used when the i18n key `script_template_<key>` is absent). */

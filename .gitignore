@@ -65,6 +65,9 @@ vibe_tavern_plan/
 # Runtime token cache
 .tokensave
 
+# Fly Tribunal dev source data (Codex MCNS exports — never tracked)
+.fly-data/
+
 # Test temp directories
 services/api/tmp-test-*/
 scripts/seed-test-data.ts

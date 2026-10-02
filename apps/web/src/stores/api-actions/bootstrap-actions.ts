@@ -1,5 +1,7 @@
-import { bootstrapApp, fetchChat, listPersonas, updateUiSettings } from "../../app-client.js";
-import type { AppSnapshot, AppCharacterEntry, PersonaRecord, UiSettingsRecord } from "../../app-client.js";
+import { bootstrapApp, updateUiSettings } from "../../api/settings-api.js";
+import { fetchChat } from "../../api/chat-api.js";
+import { listPersonas } from "../../api/persona-api.js";
+import type { AppSnapshot, AppCharacterEntry, PersonaRecord, UiSettingsRecord } from "../../api/types.js";
 import type { ChatId, PromptPresetDto } from "@vibe-tavern/domain";
 import { useChatStore } from "../chat-store.js";
 import { useSnapshotStore } from "../snapshot-store.js";

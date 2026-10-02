@@ -4,7 +4,8 @@ import { brandId, type CharacterId, type ChatId, type CharacterVersion } from "@
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { AssetService } from "../../domain/asset/asset-service.js";
-import { extToMime } from "../../domain/asset/asset-service.js";
+import { extToMime, mimeToExt } from "../../domain/asset/asset-service.js";
+import { normalizeAvatarThumbnail } from "../../domain/asset/avatar-thumbnail.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { validation } from "../../shared/errors.js";
 import { describeAttachments, resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
@@ -147,20 +148,47 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 	};
 
 	uploadCharacterAvatar = async (characterId: string, crop: File, full?: File): Promise<{ avatarExt: string; avatarFullExt: string | null }> => {
-		// Thumbnail (crop): written to {id}/avatar.{ext}, avatarExt set, legacy
-		// avatarAssetId cleared. Always present — the crop is the canonical
-		// small-slot image (chat bubbles, sidebar, top bar).
-		const { ext } = await this.assetService.writeCharacterAvatar(characterId, crop);
-		await this.stores.characters.setFolderAvatar(brandId<CharacterId>(characterId), ext);
+		const cid = brandId<CharacterId>(characterId);
+		const priorThumbExt = (await this.stores.characters.getById(cid))?.avatarExt ?? null;
+		// LB-1B: the thumbnail normalizes to ≤ 512 webp, so the ORIGINAL crop
+		// bytes must land in avatar-full BEFORE the thumbnail is overwritten
+		// (the original is never lost — plan non-negotiable). The verdict is
+		// computed up front with the pure helper; the already-normalized bytes
+		// are then written through the service, whose own helper pass sees
+		// webp ≤ 512 → unchanged, so the encode runs once.
+		const cropExt = mimeToExt(crop.type);
+		const plan = cropExt
+			? await normalizeAvatarThumbnail(new Uint8Array(await crop.arrayBuffer()), cropExt)
+			: null;
 		// Full (uncropped original): optional. Written to {id}/avatar-full.{ext}
 		// when provided (crop-confirm flow passes the unmodified source). When
-		// omitted (single-image upload, ST import) no full is stored and large
-		// slots fall back to the thumbnail avatar.{ext}.
+		// omitted (single-image upload, ST import) and the thumbnail will be
+		// re-encoded, the ORIGINAL crop bytes become the full so large slots and
+		// card export keep full resolution.
 		let avatarFullExt: string | null = null;
 		if (full) {
 			const f = await this.assetService.writeCharacterAvatarFull(characterId, full);
 			await this.stores.characters.setFolderAvatarFull(brandId<CharacterId>(characterId), f.ext);
 			avatarFullExt = f.ext;
+		} else if (plan?.changed) {
+			const originalFile = new File([new Uint8Array(await crop.arrayBuffer())], `avatar-full.${cropExt}`, { type: crop.type });
+			const f = await this.assetService.writeCharacterAvatarFull(characterId, originalFile);
+			await this.stores.characters.setFolderAvatarFull(brandId<CharacterId>(characterId), f.ext);
+			avatarFullExt = f.ext;
+		}
+		// Thumbnail (crop): written to {id}/avatar.{ext}, avatarExt set, legacy
+		// avatarAssetId cleared. Always present — the crop is the canonical
+		// small-slot image (chat bubbles, sidebar, top bar).
+		const thumbFile = plan?.changed
+			? new File([new Uint8Array(plan.bytes)], "avatar.webp", { type: "image/webp" })
+			: crop;
+		const { ext } = await this.assetService.writeCharacterAvatar(characterId, thumbFile);
+		await this.stores.characters.setFolderAvatar(brandId<CharacterId>(characterId), ext);
+		// Stale leaf LAST (LB-1B follow-up): the DB already points at the new
+		// ext, so a crash here leaves at worst an orphan file — never a 404-ing
+		// avatar. The delete itself never throws.
+		if (priorThumbExt && priorThumbExt !== ext) {
+			await this.assetService.deleteCharacterAvatarLeaf(characterId, priorThumbExt);
 		}
 		// Direct upload: the avatar's bytes are NOT in the gallery, so clear
 		// avatarSourceAssetId. This ensures a later setAvatarFromGallery salvages
@@ -315,10 +343,10 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			}
 		}
 
-		// ── Write the new crop thumbnail + the source image as the avatar full.
-		const { ext: avatarExt } = await this.assetService.writeCharacterAvatar(characterId, crop);
-		await this.stores.characters.setFolderAvatar(cid, avatarExt);
-
+		// ── Write the source image as the avatar full, THEN the crop thumbnail.
+		// LB-1B: the thumbnail normalizes to ≤ 512 webp, so the full (the raw
+		// gallery source) is written first — a crash between the two writes can
+		// never leave a shrunken avatar without its original.
 		const sourceBuffer = await this.assetService.loadGalleryImageBuffer(characterId, sourceAssetId, sourceRow.ext);
 		let avatarFullExt: string | null = null;
 		if (sourceBuffer) {
@@ -326,6 +354,14 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			const f = await this.assetService.writeCharacterAvatarFull(characterId, fullFile);
 			await this.stores.characters.setFolderAvatarFull(cid, f.ext);
 			avatarFullExt = f.ext;
+		}
+
+		const { ext: avatarExt } = await this.assetService.writeCharacterAvatar(characterId, crop);
+		await this.stores.characters.setFolderAvatar(cid, avatarExt);
+		// Stale leaf LAST (LB-1B follow-up) — after the store update, never
+		// throwing; see the upload path for the crash-window rationale.
+		if (priorThumbExt && priorThumbExt !== avatarExt) {
+			await this.assetService.deleteCharacterAvatarLeaf(characterId, priorThumbExt);
 		}
 
 		// ── Store the crop geometry + record the source row on the character.

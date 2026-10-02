@@ -458,9 +458,10 @@ describe("SceneTrackerService backfill — cancellation (SCN-14)", () => {
 		const { service, started, release } = blockingService(handle);
 		const status = await service.startBackfill(CHAT, SCENE_BACKFILL_MODE.rebuild);
 		await started; // item v1 generation is in flight
-		service.cancelBackfill(CHAT, status.runId);
+		const cancelled = service.cancelBackfill(CHAT, status.runId);
 		// Releasing would normally persist, but the abort discards before commit.
 		release(VALID_REPLY);
+		expect(await cancelled).toMatchObject({ runId: status.runId, total: 3, processed: 0, cancelRequested: true });
 		const terminal = await awaitTerminal(service, status.runId);
 		expect(terminal.status).toBe("cancelled");
 		expect(terminal.processed).toBe(0); // the active item did not advance the cursor

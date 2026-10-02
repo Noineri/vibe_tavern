@@ -1,0 +1,4 @@
+solo, portrait, looking_at_viewer, simple_background
+soft_lighting, front_facing
+
+Character description: {{description}}

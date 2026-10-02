@@ -1,0 +1,4 @@
+solo, selfie, outstretched_arm, foreshortening_(perspective), looking_at_viewer, smartphone, casual
+blurry_background, depth_of_field, natural_lighting
+
+Character description: {{description}}

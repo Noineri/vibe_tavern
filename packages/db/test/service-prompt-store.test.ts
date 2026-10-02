@@ -129,7 +129,7 @@ describe('ServicePromptProfileStore', () => {
         id: 'sp_manual_unknown',
         name: 'ManualUnknown',
         isDefault: 0,
-        overrides: JSON.stringify({ bogus: 'x', script: 'ok' }),
+        overrides: JSON.stringify({ bogus: 'x', image_portrait: 'retired', script: 'ok' }),
         createdAt: fixedClock.now(),
         updatedAt: fixedClock.now(),
       })
@@ -137,6 +137,7 @@ describe('ServicePromptProfileStore', () => {
     const loadedUnknown = await store.getServicePromptProfile('sp_manual_unknown');
     expect(loadedUnknown!.overrides).toEqual({ script: 'ok' });
     expect(loadedUnknown!.overrides).not.toHaveProperty('bogus');
+    expect(loadedUnknown!.overrides).not.toHaveProperty('image_portrait');
   });
 
   test('activeServicePromptProfileId round-trips through ui-settings store (null default)', async () => {

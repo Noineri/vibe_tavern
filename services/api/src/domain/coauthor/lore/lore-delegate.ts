@@ -191,7 +191,9 @@ export function parseLoreKeysJson(raw: string): { keys: string[]; secondaryKeys:
 		throw new Error("ai_generate_lore_keys: the assistant returned malformed JSON");
 	}
 	const asStrings = (v: unknown): string[] =>
-		Array.isArray(v) ? v.map((x) => String(x).trim()).filter((s) => s.length > 0) : [];
+		Array.isArray(v)
+			? v.filter((value): value is string => typeof value === "string").map((value) => value.trim()).filter((value) => value.length > 0)
+			: [];
 	if (!obj || typeof obj !== "object") {
 		throw new Error("ai_generate_lore_keys: the assistant returned a non-object JSON");
 	}

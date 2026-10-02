@@ -105,8 +105,16 @@ describe("snapshotDatabase", () => {
 	 * environmental failure gets a clean second and third shot, while a real
 	 * regression fails deterministically on every attempt. Green runs are
 	 * unaffected — the option only engages on failure.
+	 *
+	 * The retry only helps while an attempt FAILS inside its own budget. The
+	 * runner's 45s per-test timeout (scripts/test.ts) is shorter than that
+	 * 107s stall: bun then abandons the attempt without cancelling it, starts
+	 * the retry, and the orphaned attempt's late assertion surfaces as an
+	 * "Unhandled error between tests" that fails the suite with 0 failed tests
+	 * (2026-09-13, run 34762983055). The timeout therefore sits above the worst
+	 * stall observed, so a slow attempt finishes — pass or fail — as itself.
 	 */
-	const FLAKY_RUNNER_RETRIES = { retry: 2 } as const;
+	const FLAKY_RUNNER_RETRIES = { retry: 2, timeout: 180_000 } as const;
 
 	/**
 	 * Assert a snapshot succeeded, in a way that says why when it did not.

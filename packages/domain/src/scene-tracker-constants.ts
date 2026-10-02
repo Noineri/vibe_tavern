@@ -39,7 +39,7 @@ export const SCENE_TRACKER_LIMITS = {
   maxArrayItems: 64,
   /** Maximum length of a generated string leaf. */
   maxStringLength: 4000,
-  /** Maximum length of a node `label` (renderer-only display name, e.g. «Здоровье»). */
+  /** Maximum length of a node `label` (renderer-only display name, e.g. "Health"). */
   maxLabelLength: 60,
 } as const;
 
@@ -101,6 +101,17 @@ export const SCENE_BACKFILL_MODE = {
 } as const;
 
 export type SceneBackfillMode = (typeof SCENE_BACKFILL_MODE)[keyof typeof SCENE_BACKFILL_MODE];
+
+/** Lifecycle of a Scene history backfill run. */
+export const SCENE_BACKFILL_STATUS = {
+  pending: "pending",
+  running: "running",
+  completed: "completed",
+  cancelled: "cancelled",
+  failed: "failed",
+} as const;
+
+export type SceneBackfillRunStatus = (typeof SCENE_BACKFILL_STATUS)[keyof typeof SCENE_BACKFILL_STATUS];
 
 /**
  * How the validated `sceneState` block is serialized for main-model injection.
@@ -269,7 +280,7 @@ function sampleSceneNode(node: SceneTrackerSchemaNode, depth: number): unknown {
  * affect data identity: the schema hash is computed over this projection (so
  * adding / changing / removing a label never invalidates existing records), and
  * the generation-prompt schema description is built from it (the model sees
- * stable machine keys like `health`, never the human «Здоровье»). A no-op when
+ * stable machine keys like `health`, never the human "Health"). A no-op when
  * no labels are present, so label-less schemas hash and validate identically.
  */
 export function stripLabels(dsl: SceneTrackerDsl): SceneTrackerDsl {

@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import type { ChatId } from "@vibe-tavern/domain";
-import { uploadCharacterAvatar } from "../app-client.js";
+import { uploadCharacterAvatar } from "../api/character-api.js";
 import { extractPngMetadata, parseCharacterMetadata, extractVtmdMonolith } from "../lib/png-reader.js";
 import { getT } from "../i18n/locale-helpers.js";
 import { importCharacterAction } from "../stores/api-actions/character-actions.js";
@@ -8,6 +8,7 @@ import { fetchBootstrapAction } from "../stores/api-actions/bootstrap-actions.js
 
 export interface CharacterImportOptions {
   chatId?: ChatId;
+  importEmbeddedBook?: boolean;
 }
 
 export function useCharacterImport() {
@@ -65,6 +66,7 @@ export function useCharacterImport() {
         jsonText,
         monolithText,
         chatId: options?.chatId,
+        importEmbeddedBook: options?.importEmbeddedBook,
       });
 
       // Upload the PNG as the character's folder-resident avatar

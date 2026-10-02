@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
+import { wireScript } from "../../test/wire-fixtures.js";
 import type { ExperienceVisualRow, ScriptRecord } from "../api/types.js";
 import {
   isScriptDraftDirty,
@@ -11,6 +12,7 @@ import {
 } from "./experience-authoring-store.js";
 
 const script: ScriptRecord = {
+  ...wireScript(),
   id: "script_1",
   name: "Script",
   description: "",

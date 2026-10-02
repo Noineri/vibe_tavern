@@ -40,6 +40,8 @@ function makeDeps() {
   const getSnapshot = mock((_chatId: unknown) =>
     Promise.resolve({ chats: [], messages: [] }) as never,
   );
+  const createLorebook = mock(async (_data: unknown) => ({ id: "lore_test_123" }));
+  const bulkCreateEntries = mock(async (_id: unknown, _entries: unknown) => 1);
   const deps = {
     stores: {
       characters: {
@@ -49,7 +51,9 @@ function makeDeps() {
         ),
         update: mock((_id: string, _patch: unknown) => Promise.resolve() as never),
         resolveFolderName: mock((id: string) => Promise.resolve(id)),
+        listAll: mock(() => Promise.resolve([])),
       },
+      lorebooks: { createLorebook, bulkCreateEntries },
       content: {
         writeEntity: mock((_folder: unknown, _id: string, _data: unknown) =>
           Promise.resolve("stub/path") as never,
@@ -80,7 +84,7 @@ function makeDeps() {
       resolvePath: () => { throw new Error("fileStore should not be called by importJson"); },
     },
   } as unknown as ImportExportModuleDeps;
-  return { deps, getSnapshot };
+  return { deps, getSnapshot, createLorebook, bulkCreateEntries };
 }
 
 describe("importJson — lean mass-import path (MASS_IMPORT Wave 1)", () => {
@@ -104,6 +108,42 @@ describe("importJson — lean mass-import path (MASS_IMPORT Wave 1)", () => {
     expect(result.imported.kind).toBe("character");
     expect(result.imported.name).toBe("Lean Test Char");
     expect(result.imported.fileName).toBe("card.png");
+  });
+
+  test("single-card import only creates its embedded book when explicitly requested", async () => {
+    // ST asks before importing embedded card lore (world-info.js:5559-5574).
+    const cardWithBook = {
+      ...V2_CARD,
+      data: {
+        ...V2_CARD.data,
+        character_book: {
+          name: "Embedded",
+          entries: [{ keys: ["lore"], content: "Card lore", enabled: true }],
+        },
+      },
+    };
+    const withoutFlag = makeDeps();
+    await importJson(withoutFlag.deps, {
+      fileName: "card.json",
+      jsonText: JSON.stringify(cardWithBook),
+      lean: true,
+    });
+    expect(withoutFlag.createLorebook).toHaveBeenCalledTimes(0);
+
+    const withFlag = makeDeps();
+    await importJson(withFlag.deps, {
+      fileName: "card.json",
+      jsonText: JSON.stringify(cardWithBook),
+      importEmbeddedBook: true,
+      lean: true,
+    });
+    expect(withFlag.createLorebook).toHaveBeenCalledTimes(1);
+    expect(withFlag.bulkCreateEntries).toHaveBeenCalledTimes(1);
+    expect(withFlag.createLorebook.mock.calls[0][0]).toMatchObject({
+      scopeType: "entity",
+      characterId: "char_test_123",
+      name: "Embedded",
+    });
   });
 
   test("no lean flag keeps the full path byte-identical: getSnapshot called once, snapshot present", async () => {

@@ -67,13 +67,15 @@ describe("Coauthor Module Registry — CED-2 paired write_* tool scopes", () => 
     expect(def.write_scenario).toBe(true);
     expect(def.write_examples).toBe(true);
 
-    // Revision Workshop (profile-editor): PERSONALITY/SCENARIO writes only (mirrors
-    // its edit_* scope); must NOT reach EXAMPLES.
+    // Revision Workshop (profile-editor): all three section edit+write tools —
+    // revising the card includes aligning EXAMPLES (owner, 2026-10-01,
+    // COAUTHOR_EXAMPLES_EDIT_REPORT); greetings stay out of scope.
     const editor = byId.get("profile-editor")!;
     expect(editor.write_personality).toBe(true);
     expect(editor.write_scenario).toBe(true);
-    expect(editor.write_examples).toBeUndefined();
-    expect(editor.edit_examples).toBeUndefined();
+    expect(editor.write_examples).toBe(true);
+    expect(editor.edit_examples).toBe(true);
+    expect(editor.edit_greeting).toBeUndefined();
 
     // Dialogue Studio (dialogue-writer): EXAMPLES write only; must NOT reach PERSONALITY/SCENARIO.
     const dialogue = byId.get("dialogue-writer")!;

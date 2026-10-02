@@ -6,7 +6,8 @@ import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createAiAssistantDeps } from "../src/domain/ai-assistant/ai-assistant-deps.js";
-import { countAiAssistantTokens, streamAiAssistant, type StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
+import { buildUserMessage, countAiAssistantTokens, streamAiAssistant, type StreamDeps } from "../src/domain/ai-assistant/ai-assistant-stream.js";
+import { getModeConfig } from "../src/domain/ai-assistant/ai-assistant-modes.js";
 import { createOllamaModel } from "../src/domain/providers/ollama-adapter.js";
 
 async function deps(overrides: Partial<StreamDeps> = {}): Promise<StreamDeps> {
@@ -15,10 +16,18 @@ async function deps(overrides: Partial<StreamDeps> = {}): Promise<StreamDeps> {
     getPersonaById: async () => null,
     getLoreEntryById: async () => null,
     resolveModel: () => ({}) as never,
-    getProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000 }),
-    getEffectiveProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000 }),
+    getProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000, proxyMode: "inherit", proxyId: null }),
+    getEffectiveProviderProfile: async () => ({ id: "profile_1", providerPreset: "openai", endpoint: "", apiKey: "key", defaultModel: "model_1", contextBudget: null, maxTokens: 2000, proxyMode: "inherit", proxyId: null }),
     getPresetPromptData: async () => ({ aiAssistantPrompts: { chat_impersonate: "Impersonate the character.", md_import: "Import this markdown." }, scriptAiSystemPrompt: null }),
-    getChatMessages: async () => [],
+    buildChatImpersonationPipelineContext: async (input) => ({
+      context: {
+        identity: { chatId: input.chatId },
+        character: { id: "", name: "", description: "" },
+        persona: null,
+        lore: [],
+        chat: { recentMessages: [] },
+      },
+    }) as never,
     getMessageEditorChat: async () => null,
     getMessageEditorMessages: async () => [],
     getMessageEditorVariantsByBranch: async () => new Map(),
@@ -84,20 +93,179 @@ async function createMessageEditorRuntime() {
   return { runtime, stores, chat, profile, chatPreset, cleanup };
 }
 
+describe("AI assistant stream abort", () => {
+  beforeEach(() => setTokenCountFn((text) => text.length));
+  afterEach(() => setTokenCountFn(() => 0));
+
+  /** NDJSON body whose lines arrive one per `delayMs` — aborts must stop the
+   *  consumer mid-stream instead of draining all lines. Enqueueing into a
+   *  cancelled stream throws; that is the normal shutdown path, not an error. */
+  function slowNdjson(lines: string[], delayMs: number): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
+    let index = 0;
+    return new ReadableStream({
+      async pull(controller) {
+        if (index >= lines.length) {
+          controller.close();
+          return;
+        }
+        await Bun.sleep(delayMs);
+        try {
+          controller.enqueue(encoder.encode(lines[index++]));
+        } catch {
+          // Stream cancelled by the consumer — stop producing.
+        }
+      },
+    });
+  }
+
+  function contentLines(count: number): string[] {
+    const lines = Array.from({ length: count }, (_, i) => `${JSON.stringify({ message: { role: "assistant", content: `part-${i} ` }, done: false })}\n`);
+    lines.push(`${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, done_reason: "stop" })}\n`);
+    return lines;
+  }
+
+  async function stubFetchRecordingSignal(lines: string[], delayMs: number): Promise<{ signal: () => AbortSignal | null | undefined; restore: () => void }> {
+    let recorded: AbortSignal | null | undefined;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_input: unknown, init?: RequestInit) => {
+      recorded = init?.signal ?? null;
+      return new Response(slowNdjson(lines, delayMs), { headers: { "Content-Type": "application/x-ndjson" } });
+    };
+    return { signal: () => recorded, restore: () => { globalThis.fetch = originalFetch; } };
+  }
+
+  it("threads the caller's signal into the provider fetch and stops the md_import stream quietly on abort", async () => {
+    const LINES = 8;
+    const recorder = await stubFetchRecordingSignal(contentLines(LINES), 15);
+    const controller = new AbortController();
+    let textChunks = 0;
+    const chunks: string[] = [];
+    try {
+      const request = {
+        mode: "md_import" as const, instruction: "Import this card.", existingContent: "# Imported card", providerProfileId: "profile_1", enabledLayers: ["character_base"],
+      };
+      for await (const chunk of streamAiAssistant(request, await deps({ resolveModel: (_profile, model) => createOllamaModel({ baseURL: "http://ai-assistant.test", modelId: model }) }), controller.signal)) {
+        chunks.push(chunk.type);
+        if (chunk.type === "text") {
+          textChunks++;
+          if (textChunks === 1) controller.abort();
+        }
+      }
+    } finally {
+      recorder.restore();
+    }
+    expect(recorder.signal()).toBeDefined();
+    expect(recorder.signal()?.aborted).toBe(true);
+    expect(chunks).not.toContain("error");
+    expect(textChunks).toBeLessThan(LINES);
+  });
+
+  it("stops the normal streaming branch quietly on abort (no error chunk)", async () => {
+    const LINES = 8;
+    const recorder = await stubFetchRecordingSignal(contentLines(LINES), 15);
+    const controller = new AbortController();
+    let textChunks = 0;
+    const chunks: string[] = [];
+    try {
+      const request = {
+        mode: "chat_impersonate" as const, instruction: "Continue.", providerProfileId: "profile_1", enabledLayers: [], chatId: "chat_1",
+      };
+      for await (const chunk of streamAiAssistant(request, await deps({ resolveModel: (_profile, model) => createOllamaModel({ baseURL: "http://ai-assistant.test", modelId: model }) }), controller.signal)) {
+        chunks.push(chunk.type);
+        if (chunk.type === "text") {
+          textChunks++;
+          if (textChunks === 1) controller.abort();
+        }
+      }
+    } finally {
+      recorder.restore();
+    }
+    expect(recorder.signal()?.aborted).toBe(true);
+    expect(chunks).not.toContain("error");
+    expect(textChunks).toBeLessThan(LINES);
+  });
+});
+
 describe("AI assistant stream prompt preparation", () => {
   beforeEach(() => setTokenCountFn((text) => text.length));
   afterEach(() => setTokenCountFn(() => 0));
 
-  it("loads history only for chat_impersonate and includes it in the traced assembly", async () => {
-    const calls: Array<[string, number]> = [];
+  it("threads lore-key entry content and existing key sets into the generator request", () => {
+    const message = buildUserMessage({
+      mode: "lore_keys",
+      instruction: "",
+      existingContent: "The Crown of Veyra belongs to the royal archive.",
+      providerProfileId: "profile_1",
+      enabledLayers: [],
+      existingKeys: ["Crown of Veyra"],
+      existingSecondaryKeys: ["royal archive"],
+      logic: "and_any",
+    }, getModeConfig("lore_keys"));
+    expect(message).toContain("The Crown of Veyra belongs to the royal archive.");
+    expect(message).toContain('Existing primary keys (do NOT duplicate): ["Crown of Veyra"]');
+    expect(message).toContain('Existing secondary keys (do NOT duplicate): ["royal archive"]');
+  });
+
+  it("builds the impersonation context through the dry full-RP pipeline", async () => {
+    const calls: Array<{ chatId: string; contextBudget: number | null; responseReserve: number; recentMessageLimit: number; quietPrompt?: string }> = [];
     const result = await countAiAssistantTokens({
-      mode: "chat_impersonate", instruction: "Continue.", providerProfileId: "profile_1", enabledLayers: [], chatId: "chat_1", recentMessageCount: 7,
-    }, await deps({ getChatMessages: async (chatId, count) => {
-      calls.push([chatId, count]);
-      return [{ id: "msg_1", role: "user", content: "Hello" }, { id: "msg_2", role: "assistant", content: "Hi" }];
+      mode: "chat_impersonate", instruction: "Continue.", providerProfileId: "profile_1", enabledLayers: [], chatId: "chat_1", recentMessageCount: 7, draftText: "draft-only-key",
+    }, await deps({ buildChatImpersonationPipelineContext: async (input) => {
+      calls.push(input);
+      return {
+        context: {
+          identity: { chatId: input.chatId },
+          character: { id: "", name: "", description: "" },
+          persona: null,
+          lore: [],
+          chat: { recentMessages: [{ id: "msg_1", role: "user", content: "Hello" }, { id: "msg_2", role: "assistant", content: "Hi" }] },
+        },
+      } as never;
     } }));
-    expect(calls).toEqual([["chat_1", 7]]);
-    expect(result).toEqual({ tokens: 65, model: "model_1", layerCount: 3, messageCount: 3, activatedLoreCount: 0 });
+    expect(calls).toEqual([{
+      chatId: "chat_1",
+      model: "model_1",
+      contextBudget: null,
+      responseReserve: 2000,
+      recentMessageLimit: 7,
+      quietPrompt: "draft-only-key",
+    }]);
+    expect(result).toMatchObject({ model: "model_1", layerCount: 3, messageCount: 3, activatedLoreCount: 0 });
+    expect(result.tokens).toBeGreaterThan(0);
+  });
+
+  it("activates lore from an impersonation draft without mutating timed state", async () => {
+    const fixture = await createMessageEditorRuntime();
+    try {
+      const lorebook = await fixture.stores.lorebooks.createLorebook({
+        name: "Draft lore",
+        scopeType: "entity",
+        characterId: fixture.chat.characterId,
+      });
+      const entry = await fixture.stores.lorebooks.createEntry(lorebook.id, {
+        title: "Draft key",
+        content: "Draft lore content",
+        keys: ["draft-only-key"],
+        stickyWindow: 3,
+      });
+      const before = JSON.stringify((await fixture.stores.chats.getBranch(fixture.chat.activeBranchId))?.loreActivationState);
+      const result = await countAiAssistantTokens({
+        mode: "chat_impersonate",
+        instruction: "Continue.",
+        providerProfileId: fixture.profile.id,
+        model: "editor-model",
+        enabledLayers: [],
+        chatId: fixture.chat.id,
+        draftText: "draft-only-key",
+      }, createAiAssistantDeps(fixture.stores, fixture.runtime));
+
+      expect(result.activatedLoreCount).toBe(1);
+      expect(JSON.stringify((await fixture.stores.chats.getBranch(fixture.chat.activeBranchId))?.loreActivationState)).toBe(before);
+      expect(entry.id).toBeTruthy();
+    } finally {
+      await fixture.cleanup();
+    }
   });
 
   it("keeps md_import as a direct two-message path with no resolved context", async () => {

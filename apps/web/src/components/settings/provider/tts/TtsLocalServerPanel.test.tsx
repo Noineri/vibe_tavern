@@ -9,7 +9,7 @@ import { __setTtsDiscoveryDepsForTests } from "./use-tts-discovery.js";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 import type { DiscoveredServer, ProbeOutcome } from "@vibe-tavern/domain";
 
-const { render, act, cleanup, fireEvent, waitFor, within } = await import("@testing-library/react");
+const { render, act, cleanup, fireEvent, within } = await import("@testing-library/react");
 
 // Track setForm calls
 let lastFormPatch: Record<string, unknown> | null = null;
@@ -101,24 +101,16 @@ mock.module("../../../../i18n/context.js", () => ({
   ...realI18n,
   useT: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
-      params && "version" in params ? `${key}:${String(params.version)}` : key,
+      params && "version" in params
+        ? `${key}:${String(params.version)}`
+        : params && "url" in params
+          ? `${key}:${String(params.url)}`
+          : key,
     tDynamic: (key: string) => key,
     locale: "en",
     setLocale: () => {},
     ready: true,
   }),
-}));
-
-// Docker probe (D8): deterministic states per test — default mirrors the
-// honest "not found" shape so no test ever depends on a real fetch.
-let dockerStatusNext: { available: boolean; version: string | null } | Error = { available: false, version: null };
-const realTtsApi = await import("../../../../api/tts-api.js");
-mock.module("../../../../api/tts-api.js", () => ({
-  ...realTtsApi,
-  fetchLocalDockerStatus: async () => {
-    if (dockerStatusNext instanceof Error) throw dockerStatusNext;
-    return dockerStatusNext;
-  },
 }));
 
 const { TtsLocalServerPanel } = await import("./TtsLocalServerPanel.js");
@@ -143,35 +135,23 @@ afterEach(() => {
   cleanup();
 });
 
-describe("TtsLocalServerPanel", () => {
-  test("docker status line: available with version (D8)", async () => {
-    dockerStatusNext = { available: true, version: "27.3.1" };
+describe("TtsLocalServerPanel — the status chip moved out (IG-CF12e)", () => {
+  test("the panel no longer renders the chip — it lives outside the card now", async () => {
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
-    const status = await waitFor(() => view.getByTestId("tts-docker-status"));
-    expect(status.textContent).toContain("tts_docker_status_ok");
-    expect(status.textContent).toContain("27.3.1");
+    expect(view.queryByTestId("tts-docker-status")).toBeNull();
     cleanup();
   });
 
-  test("docker status line: transport failure → unknown, panel stays usable", async () => {
-    dockerStatusNext = new Error("route unreachable");
-    const tts = makeTtsHook({});
-    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
-    const status = await waitFor(() => view.getByTestId("tts-docker-status"));
-    expect(status.textContent).toContain("tts_docker_status_unknown");
-    expect(view.getByTestId("tts-discover-btn")).toBeTruthy();
-    cleanup();
-    dockerStatusNext = { available: false, version: null };
-  });
-
-  test("renders null for non-openai backend (kokoro)", () => {
+  test("renders null for non-openai backend (kokoro)", async () => {
     const tts = makeTtsHook({ form: { ...ttsHookBase.form, backend: TTS_BACKEND.Kokoro } });
     const panelProps = { tts, form: tts.form };
     const { container } = render(React.createElement(TtsLocalServerPanel, panelProps));
     expect(container.innerHTML).toBe("");
   });
+});
 
+describe("TtsLocalServerPanel", () => {
   test("setup help accordion: closed by default, reference steps hidden", async () => {
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
@@ -341,7 +321,8 @@ describe("TtsLocalServerPanel", () => {
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
     expect(view.queryByTestId("tts-help-step-choose")).toBeNull();
     expect(view.getByTestId("tts-discover-btn")).toBeTruthy();
-    expect(view.getByTestId("tts-docker-status")).toBeTruthy();
+    // IG-CF12e: the chip moved out of the panel (TtsLocalConnectionChip).
+    expect(view.queryByTestId("tts-docker-status")).toBeNull();
     cleanup();
   });
 

@@ -43,13 +43,13 @@ export interface SttTranscribeResult {
 
 export async function listAllSttProfiles(): Promise<SttProfileRecord[]> {
   const response = await client.api.stt.profiles.all.$get();
-  return unwrapRpc<SttProfileRecord[]>(response);
+  return unwrapRpc(response);
 }
 
 export async function getSttProfile(id: string): Promise<SttProfileRecord | null> {
   const response = await client.api.stt.profiles[":id"].$get({ param: { id } });
   if (response.status === 404) return null;
-  return unwrapRpc<SttProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function createSttProfile(body: {
@@ -63,7 +63,7 @@ export async function createSttProfile(body: {
   isDefault?: boolean;
 }): Promise<SttProfileRecord> {
   const response = await client.api.stt.profiles.$post({ json: body as never });
-  return unwrapRpc<SttProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function updateSttProfile(
@@ -80,7 +80,7 @@ export async function updateSttProfile(
   }>,
 ): Promise<SttProfileRecord> {
   const response = await client.api.stt.profiles[":id"].$patch({ param: { id }, json: body as never });
-  return unwrapRpc<SttProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function deleteSttProfile(id: string): Promise<void> {
@@ -90,13 +90,13 @@ export async function deleteSttProfile(id: string): Promise<void> {
 
 export async function setSttDefault(id: string): Promise<SttProfileRecord> {
   const response = await client.api.stt.profiles[":id"].default.$put({ param: { id } });
-  return unwrapRpc<SttProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 export async function getDefaultSttProfile(): Promise<SttProfileRecord | null> {
   const response = await client.api.stt.profiles.default.$get();
   if (response.status === 404) return null;
-  return unwrapRpc<SttProfileRecord>(response);
+  return unwrapRpc(response);
 }
 
 // ─── Transcription (raw fetch, mobile-token aware) ───────────────────────────

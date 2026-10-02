@@ -25,7 +25,7 @@ import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { TextInput } from "../shared/text-input.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { lblCls } from "../../lib/field-tokens.js";
-import { updatePersona, createPersona, uploadPersonaAvatar } from "../../app-client.js";
+import { updatePersona, createPersona, uploadPersonaAvatar } from "../../api/persona-api.js";
 import { toast } from "sonner";
 import { readCardRaw } from "../modals/import/parse-import-file.js";
 
@@ -166,7 +166,7 @@ function ProviderStep({
     frequencyPenalty: existingProfile?.frequencyPenalty ?? 0,
     presencePenalty: existingProfile?.presencePenalty ?? 0,
     repetitionPenalty: existingProfile?.repetitionPenalty ?? 1,
-    maxTokens: existingProfile?.maxTokens ?? 512,
+    maxTokens: existingProfile?.maxTokens ?? 2000,
     contextBudget: existingProfile?.contextBudget ?? 16000,
     pinContextBudget: existingProfile?.pinContextBudget ?? false,
     tokenPadding: existingProfile?.tokenPadding ?? 0,

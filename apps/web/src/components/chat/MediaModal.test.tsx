@@ -12,7 +12,6 @@
 import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { useGalleryStore } from "../../stores/gallery-store.js";
-import type React from "react";
 
 useDomEnv();
 
@@ -100,12 +99,14 @@ function t(x: number, y: number) {
 
 /** Two-finger touch event at the given client coordinates. */
 function touch2(x1: number, y1: number, x2: number, y2: number) {
-  return { touches: [t(x1, y1), t(x2, y2)] } as unknown as React.TouchEvent;
+  const touches = [t(x1, y1), t(x2, y2)];
+  return { touches, changedTouches: touches };
 }
 
 /** Single-finger touch event. */
 function touch1(x: number, y: number) {
-  return { touches: [t(x, y)] } as unknown as React.TouchEvent;
+  const touches = [t(x, y)];
+  return { touches, changedTouches: touches };
 }
 
 describe("MediaModal lightbox — one-finger pan parity (avatar-panel canon)", () => {
@@ -115,7 +116,7 @@ describe("MediaModal lightbox — one-finger pan parity (avatar-panel canon)", (
     await act(async () => {
       fireEvent.touchStart(img, touch2(100, 200, 200, 200));
       fireEvent.touchMove(img, touch2(50, 200, 250, 200));
-      fireEvent.touchEnd(img, { touches: [] } as unknown as React.TouchEvent);
+      fireEvent.touchEnd(img, { ...touch2(50, 200, 250, 200), touches: [] });
     });
     expect(img.style.transform).toMatch(/scale\(2/);
   });
@@ -127,14 +128,14 @@ describe("MediaModal lightbox — one-finger pan parity (avatar-panel canon)", (
       // Zoom in first (pinch spread ×1.5).
       fireEvent.touchStart(img, touch2(100, 200, 200, 200));
       fireEvent.touchMove(img, touch2(75, 200, 225, 200));
-      fireEvent.touchEnd(img, { touches: [] } as unknown as React.TouchEvent);
+      fireEvent.touchEnd(img, { ...touch2(75, 200, 225, 200), touches: [] });
     });
     const before = img.style.transform;
     await act(async () => {
       // One finger down, drag right by 60px.
       fireEvent.touchStart(img, touch1(150, 200));
       fireEvent.touchMove(img, touch1(210, 200));
-      fireEvent.touchEnd(img, { touches: [] } as unknown as React.TouchEvent);
+      fireEvent.touchEnd(img, { ...touch1(210, 200), touches: [] });
     });
     // The translate component must have grown by the drag delta (≈60px).
     expect(img.style.transform).not.toBe(before);
@@ -149,7 +150,7 @@ describe("MediaModal lightbox — one-finger pan parity (avatar-panel canon)", (
     // Tap the image area without movement (no pan, no zoom change).
     await act(async () => {
       fireEvent.touchStart(img, touch1(150, 200));
-      fireEvent.touchEnd(img, { touches: [] } as unknown as React.TouchEvent);
+      fireEvent.touchEnd(img, { ...touch1(150, 200), touches: [] });
     });
     // The send bar remains a live tap target after gesture wiring.
     const sendBtn = [...document.querySelectorAll("button")]

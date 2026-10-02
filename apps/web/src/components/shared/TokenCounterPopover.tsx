@@ -18,7 +18,7 @@ import { CustomTooltip } from "./Tooltip.js";
  *
  * The primitive owns the trigger span (the `permanent+dyn / size` counter,
  * color-coded by `tokenState`), the popover chrome, and the shared content
- * sections (header, "Постоянные" sub-header, "Временные" section, response
+ * sections (header, "Permanent" sub-header, "Temporary" section, response
  * budget + total available rows, the three-segment usage bar). The one part
  * that DIFFERS between RP and co-author is the set of permanent-context rows
  * (RP: system/character/persona/lore/memory/tools; co-author:
@@ -30,7 +30,7 @@ import { CustomTooltip } from "./Tooltip.js";
  * deliberately shows a leaner status row).
  */
 
-/** One line in the "Постоянные" (permanent context) section. */
+/** One line in the "Permanent" (permanent context) section. */
 export interface TokenCounterItem {
 	/** Already-translated label (e.g. `t("context_system")`). */
 	label: ReactNode;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createInsightsRoutes } from "../src/api/routes/insights.js";
 import type { InsightsRuntimeApi } from "../src/api/contract/runtime-api.js";
-import { defaultObjectiveState } from "../src/domain/insights/objective-service.js";
+import { defaultObjectiveState } from "@vibe-tavern/domain";
 
 const SCENE_TARGET = { branchId: "branch_1", messageId: "msg_1", variantId: "var_1" };
 
@@ -273,9 +273,9 @@ describe("Insights Scene backfill routes (SCN-14)", () => {
         capture.push({ method: "getSceneBackfillStatus", chatId, arg: runId });
         return { ...status, runId };
       },
-      cancelSceneBackfill: (chatId: string, runId: string) => {
+      cancelSceneBackfill: async (chatId: string, runId: string) => {
         capture.push({ method: "cancelSceneBackfill", chatId, arg: runId });
-        return { runId, cancelled: true as const };
+        return { ...status, runId, cancelRequested: true };
       },
       retrySceneBackfill: async (chatId: string, runId: string) => {
         capture.push({ method: "retrySceneBackfill", chatId, arg: runId });

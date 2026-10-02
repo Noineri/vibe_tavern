@@ -100,9 +100,28 @@ describe("importJanitorLorebookJson", () => {
     expect(entry.position).toBe("in_prompt");
     expect(entry.ignoreBudget).toBe(false);
     expect(entry.stickyWindow).toBe(0);
-    expect(entry.matchSources).toEqual([]);
+    expect(entry.matchSources).toEqual(["chat_messages"]);
+    expect(result.lorebook.characterStrategy).toBe(1);
     expect(entry.characterFilter).toEqual([]);
     expect(entry.scanDepthOverride).toBeNull();
+  });
+
+  it("decodes case_sensitive / matchWholeWords tri-state: absent → null, explicit boolean kept (D2)", () => {
+    // Old VT exports always wrote booleans — those stay pinned (explicit).
+    // Entries that never carried the flags import as null = inherit the book
+    // default, not as an explicit false.
+    const explicit = importJanitorLorebookJson(
+      [janitorEntry({ case_sensitive: false, matchWholeWords: false })],
+      { fallbackName: "Explicit" },
+    );
+    expect(explicit.entries[0].caseSensitive).toBe(false);
+    expect(explicit.entries[0].matchWholeWords).toBe(false);
+    const absent = importJanitorLorebookJson(
+      [janitorEntry({ name: "NoFlags", case_sensitive: undefined, matchWholeWords: undefined })],
+      { fallbackName: "Absent" },
+    );
+    expect(absent.entries[0].caseSensitive).toBeNull();
+    expect(absent.entries[0].matchWholeWords).toBeNull();
   });
 
   it("maps inclusionGroupRaw → groupName (Janitor's name for ST's group)", () => {

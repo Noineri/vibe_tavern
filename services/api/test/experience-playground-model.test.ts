@@ -203,18 +203,18 @@ describe("createPlaygroundModelDeps — executor boundary", () => {
 		expect(result.code).toBe("no_provider");
 	});
 
-	test("provider requiring API key with empty key returns no_api_key", async () => {
+	test("keyless provider profile proceeds to execute — the endpoint answers for itself (owner ruling 2026-09-27: internal features never pre-gate provider profiles)", async () => {
 		const profile = makeProfile({ apiKey: "" });
 		const deps = createPlaygroundModelDeps({
 			providerProfiles: mockProviderProfiles(profile) as ProviderProfileService,
-			execute: async () => ({ text: "x" }),
+			execute: async () => ({ text: "resolved via keyless gateway" }),
 		});
 
 		const result = await deps.resolveModelReply(textInput());
 
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.code).toBe("no_api_key");
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.text).toBe("resolved via keyless gateway");
 	});
 
 	test("malformed effect request returns invalid_output", async () => {

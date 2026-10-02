@@ -102,8 +102,10 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       write_profile: true,
       edit_personality: true,
       edit_scenario: true,
+      edit_examples: true,
       write_personality: true,
       write_scenario: true,
+      write_examples: true,
       // CE-D2: indexed two-step context search.
       search_context: true,
       read_context_item: true,

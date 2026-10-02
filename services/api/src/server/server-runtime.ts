@@ -45,6 +45,9 @@ import { ExperienceTimerScheduler } from "../domain/interactive/experience-timer
 import { generateStructuredActionChoice } from "../domain/interactive/experience-model-effect-structured.js";
 import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
 import { migratePresetServicePrompts } from "../domain/service-prompts/preset-to-profile-migration.js";
+import { scheduleAvatarThumbnailBackfill } from "../domain/asset/avatar-thumbnail-backfill.js";
+import { ensureStockImageGenSamplerSets } from "../domain/imagegen/stock-sampler-set-seed.js";
+import { migrateGlobalImagePromptVariants } from "../domain/imagegen/global-variant-to-profile-migration.js";
 import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
@@ -52,8 +55,11 @@ import { createApp } from "./app-factory.js";
 import { addRuntimeTeardown, runRuntimeTeardowns, setRuntimeShutdownHook } from "./runtime-shutdown.js";
 import { createLoadingHandler } from "./loading-placeholder.js";
 import { closeAllSocksBridges } from "../domain/providers/socks-bridge.js";
+import { serveErrorResponse } from "./serve-error.js";
+import { serveAssetFile } from "./static-conditional.js";
 
 export { apiNotReadyResponse } from "./loading-placeholder.js";
+export { serveErrorResponse } from "./serve-error.js";
 import { runStartupFileChecks } from "./startup-checks.js";
 
 /**
@@ -73,10 +79,11 @@ export interface RuntimeAppConfig {
 	readonly staticDir?: string;
 	readonly logsDir?: string;
 	readonly extraDataDirs?: readonly string[];
-	/** Embedded frontend files baked into the standalone .exe. When non-empty,
-	 *  the SPA is served from the binary itself; no on-disk web/ folder is
-	 *  required. Sourced from embedded-web-manifest.ts. */
-	readonly embeddedWebFiles?: Record<string, string>;
+	/** Frontend files baked into the standalone binary, keyed by the URL
+	 *  pathname each answers. When non-empty, the SPA is served from the binary
+	 *  itself; no on-disk web/ folder is required. Sourced from
+	 *  embedded-web-assets.ts. */
+	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
 }
 
 export interface ServerRuntimeConfig {
@@ -93,7 +100,7 @@ export interface ServerRuntimeConfig {
 	readonly checkPortBeforeListen?: boolean;
 	readonly shutdownSignals?: readonly NodeJS.Signals[];
 	readonly missingFrontendMessage: string;
-	readonly embeddedWebFiles?: Record<string, string>;
+	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
 }
 
 export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> {
@@ -137,6 +144,21 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		if (spMigration.skippedInvalidJson.length > 0) {
 			console.warn(`${tag} Service-prompt migration: skipped invalid aiAssistantPrompts JSON in: [${spMigration.skippedInvalidJson.join(", ")}].`);
 		}
+	}
+
+	// IF-1a: one-time snapshot of the global image-prompt variant rows into an
+	// "Imported" image prompt profile, made active (non-destructive; the old
+	// table is untouched). Marker-guarded — a single settings read afterwards.
+	const igMigration = await migrateGlobalImagePromptVariants(stores);
+	if (igMigration.ran && igMigration.createdProfileId) {
+		console.log(`${tag} Image-prompt migration: ${igMigration.cellCount} cell(s) carried into profile "Imported" (now active).`);
+	}
+
+	// IF-7b: one-time stock sampler-set seed — four built-in preset rows as
+	// ordinary editable rows. Marker-guarded; deletes after the seed stick.
+	const stockSets = await ensureStockImageGenSamplerSets(stores);
+	if (stockSets.created) {
+		console.log(`${tag} Stock sampler sets: ${stockSets.present} built-in preset row(s) seeded.`);
 	}
 
 	// Built-in experiences (BE-4): ensure app-owned interactive experiences
@@ -309,7 +331,14 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	});
 
 	addRuntimeTeardown(() => quotaService.stop());
-	await quotaService.start();
+	// Test instances (scripts/test-instance.ts) boot on a snapshot of the owner's
+	// provider profiles; polling would hit real vendor quota endpoints with them.
+	// A never-started service schedules nothing and ignores profile events.
+	if (process.env.VIBE_TAVERN_QUOTA_POLLING === "0") {
+		console.log(`${tag} Quota polling disabled (VIBE_TAVERN_QUOTA_POLLING=0).`);
+	} else {
+		await quotaService.start();
+	}
 
 	// Durable-effect reconciliation + the host timer loop. `reconcileUnknownEffects`
 	// folds `running` rows left by the previous process (crash or shutdown — the
@@ -322,7 +351,70 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	experienceTimerScheduler.start();
 
 	console.log(`${tag} Application ready.`);
+
+	// LB-1C: normalize pre-existing avatar thumbnails in the background. Unlike
+	// the awaited one-time migrations above, this is deliberately fire-and-
+	// forget — the pass is idempotent (a second startup is a no-op) and must
+	// never delay server readiness; per-entity failures are logged, not fatal.
+	scheduleAvatarThumbnailBackfill(stores, assetService);
+
 	return app;
+}
+
+/**
+ * Where this process gets the frontend from, and whether it has one at all.
+ *
+ * The single-file build serves the SPA out of the executable, so an absent
+ * web/ directory is not an API-only run there. Deciding on `staticEnabled`
+ * alone told the user of a freshly extracted .exe that their frontend was
+ * missing — and skipped the browser launch — while the binary was serving it.
+ */
+export function resolveFrontendSource(config: {
+	readonly staticEnabled: boolean;
+	readonly staticDir: string;
+	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
+}): { readonly available: boolean; readonly label: string } {
+	if (config.staticEnabled) return { available: true, label: config.staticDir };
+	const embeddedCount = config.embeddedWebFiles?.size ?? 0;
+	if (embeddedCount > 0) {
+		return { available: true, label: `(embedded in the executable — ${embeddedCount} file(s))` };
+	}
+	return { available: false, label: "(not built — API-only mode)" };
+}
+
+/**
+ * Bun routes for the built frontend's asset directories.
+ *
+ * These run before `fetch`, so /assets/* and /fonts/* never reach Hono — and
+ * that is the point: they answer with an `ETag` + `Last-Modified` and turn a
+ * reload into a 304, while hono's serveStatic sends no validator at all
+ * (measured on the built bundle: 10.0 MB re-downloaded per page load).
+ * Bypassing the middleware chain is a no-op for these paths — the origin guard
+ * and mobile auth both explicitly skip everything outside /api.
+ *
+ * The handlers resolve the file per request (`serveAssetFile`) rather than
+ * using Bun `{dir}` routes: a `{dir}` route holds the directory it opened at
+ * bind time, and the web build deletes and recreates it — after a rebuild
+ * every asset 404ed until a restart (owner-found 2026-10-01). Per-request
+ * resolution also makes a directory that is not built yet a plain 404.
+ *
+ * A route miss does NOT fall through to `fetch`, so these routes must not be
+ * registered when the binary also carries an embedded copy: a file that exists
+ * only inside the executable would 404 instead of being served.
+ */
+export function resolveStaticDirRoutes(config: {
+	readonly staticEnabled: boolean;
+	readonly staticDir: string;
+	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
+}): Record<string, (request: Request) => Response> {
+	if (!config.staticEnabled) return {};
+	if ((config.embeddedWebFiles?.size ?? 0) > 0) return {};
+	const routes: Record<string, (request: Request) => Response> = {};
+	for (const name of ["assets", "fonts"]) {
+		const dir = resolve(config.staticDir, name);
+		routes[`/${name}/*`] = (request) => serveAssetFile(dir, `/${name}`, request);
+	}
+	return routes;
 }
 
 export async function startServerRuntime(config: ServerRuntimeConfig): Promise<void> {
@@ -332,7 +424,8 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	console.log(`${tag} Starting Vibe Tavern...`);
 	if (config.rootDir) console.log(`${tag} Root: ${config.rootDir}`);
 	console.log(`${tag} Data: ${config.dataDir}`);
-	console.log(`${tag} Static: ${config.staticEnabled ? config.staticDir : "(not built — API-only mode)"}`);
+	const frontend = resolveFrontendSource(config);
+	console.log(`${tag} Static: ${frontend.label}`);
 	console.log(`${tag} Host: ${config.host}:${config.port}`);
 
 	// ─── Early bind ───────────────────────────────────────────────────
@@ -372,7 +465,9 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 	) => Response | Promise<Response> = createLoadingHandler({ alegreyaFont });
 
 	const server = Bun.serve({
+		routes: resolveStaticDirRoutes(config),
 		fetch: (req, s) => fetchHandler(req, s),
+		error: (err) => serveErrorResponse(tag, err),
 		port: config.port,
 		hostname: config.host,
 		idleTimeout: 255,
@@ -390,7 +485,7 @@ export async function startServerRuntime(config: ServerRuntimeConfig): Promise<v
 
 	openBrowserOrPrintMessage({
 		mode: config.mode,
-		staticEnabled: config.staticEnabled,
+		frontendAvailable: frontend.available,
 		port: config.port,
 		missingFrontendMessage: config.missingFrontendMessage,
 	});
@@ -596,12 +691,12 @@ const STARTUP_ERROR_HTML = `<!DOCTYPE html>
 
 function openBrowserOrPrintMessage(options: {
 	readonly mode: ServerRuntimeConfig["mode"];
-	readonly staticEnabled: boolean;
+	readonly frontendAvailable: boolean;
 	readonly port: number;
 	readonly missingFrontendMessage: string;
 }): void {
 	const tag = `[${options.mode}]`;
-	if (options.staticEnabled && process.env.VIBE_TAVERN_OPEN_BROWSER !== "0") {
+	if (options.frontendAvailable && process.env.VIBE_TAVERN_OPEN_BROWSER !== "0") {
 		const browserUrl = `http://127.0.0.1:${options.port}`;
 		console.log(`${tag} Opening browser at ${browserUrl}`);
 		const args =
@@ -609,7 +704,7 @@ function openBrowserOrPrintMessage(options: {
 			: process.platform === "darwin" ? ["open", browserUrl]
 			: ["xdg-open", browserUrl];
 		Bun.spawn(args, { stdout: "ignore", stderr: "ignore", stdin: "ignore", detached: true });
-	} else if (options.staticEnabled) {
+	} else if (options.frontendAvailable) {
 		console.log(`${tag} Open http://127.0.0.1:${options.port} in your browser.`);
 	} else {
 		console.log(`${tag} ${options.missingFrontendMessage}`);

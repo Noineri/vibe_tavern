@@ -3,6 +3,8 @@ import { brandId, type PersonaId, type ChatId, type PronounForms } from "@vibe-t
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { AssetService } from "../../domain/asset/asset-service.js";
+import { extToMime, mimeToExt } from "../../domain/asset/asset-service.js";
+import { normalizeAvatarThumbnail } from "../../domain/asset/avatar-thumbnail.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { validation, notFound } from "../../shared/errors.js";
 import { describeAttachments, resolveVisionDescribePrompt } from "../../infrastructure/ai/vision-gate.js";
@@ -87,13 +89,34 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 		this.sessionRuntime.persona.setDefault(personaId);
 
 	uploadPersonaAvatar = async (personaId: string, crop: File, full?: File): Promise<{ avatarExt: string; avatarFullExt: string | null }> => {
-		const { ext } = await this.assetService.writePersonaAvatar(personaId, crop);
-		await this.stores.personas.setFolderAvatar(personaId, ext);
+		const priorThumbExt = (await this.stores.personas.getById(personaId))?.avatarExt ?? null;
+		// LB-1B: mirror of the character upload — the original crop bytes land
+		// in avatar-full BEFORE the normalized (≤ 512 webp) thumbnail write, so
+		// the original is never lost even without a dedicated full.
+		const cropExt = mimeToExt(crop.type);
+		const plan = cropExt
+			? await normalizeAvatarThumbnail(new Uint8Array(await crop.arrayBuffer()), cropExt)
+			: null;
 		let avatarFullExt: string | null = null;
 		if (full) {
 			const f = await this.assetService.writePersonaAvatarFull(personaId, full);
 			await this.stores.personas.setFolderAvatarFull(personaId, f.ext);
 			avatarFullExt = f.ext;
+		} else if (plan?.changed) {
+			const originalFile = new File([new Uint8Array(await crop.arrayBuffer())], `avatar-full.${cropExt}`, { type: crop.type });
+			const f = await this.assetService.writePersonaAvatarFull(personaId, originalFile);
+			await this.stores.personas.setFolderAvatarFull(personaId, f.ext);
+			avatarFullExt = f.ext;
+		}
+		const thumbFile = plan?.changed
+			? new File([new Uint8Array(plan.bytes)], "avatar.webp", { type: "image/webp" })
+			: crop;
+		const { ext } = await this.assetService.writePersonaAvatar(personaId, thumbFile);
+		await this.stores.personas.setFolderAvatar(personaId, ext);
+		// Stale leaf LAST (LB-1B follow-up) — after the store update, never
+		// throwing; see the character upload path for the crash-window rationale.
+		if (priorThumbExt && priorThumbExt !== ext) {
+			await this.assetService.deletePersonaAvatarLeaf(personaId, priorThumbExt);
 		}
 		return { avatarExt: ext, avatarFullExt };
 	};
@@ -288,18 +311,37 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 			includeAvatarInPrompt: p.includeAvatarInPrompt,
 			defaultForNewChats: p.defaultForNewChats,
 		});
-		// Restore avatars from base64.
-		if (p.avatarThumb) {
-			const bytes = Buffer.from(p.avatarThumb.bytesBase64, "base64");
-			const blob = new Blob([new Uint8Array(bytes)]);
-			const file = new File([blob], `avatar.${p.avatarThumb.ext}`, { type: "application/octet-stream" });
-			const { ext } = await this.assetService.writePersonaAvatar(rec.id, file);
+		// Restore avatars from base64. LB-1B: the thumbnail slot normalizes to
+		// ≤ 512 webp; when no dedicated full arrives with the export and the
+		// thumbnail will be re-encoded, the ORIGINAL thumb bytes are preserved
+		// in avatar-full BEFORE the thumbnail write. (The legacy
+		// application/octet-stream File type made writePersonaAvatar reject
+		// every VT persona import that carried an avatar — the type is now
+		// derived from the stored ext; found + fixed in LB-1B.)
+		const thumb = p.avatarThumb
+			? {
+					bytes: new Uint8Array(Buffer.from(p.avatarThumb.bytesBase64, "base64")),
+				ext: p.avatarThumb.ext,
+				mimeType: extToMime(p.avatarThumb.ext),
+			}
+			: null;
+		const thumbPlan = thumb ? await normalizeAvatarThumbnail(thumb.bytes, thumb.ext) : null;
+		if (thumb && thumbPlan?.changed && !p.avatarFull) {
+			const fullFile = new File([thumb.bytes], `avatar-full.${thumb.ext}`, { type: thumb.mimeType });
+			const f = await this.assetService.writePersonaAvatarFull(rec.id, fullFile);
+			await this.stores.personas.setFolderAvatarFull(rec.id, f.ext);
+		}
+		if (thumb && thumbPlan) {
+			const thumbFile = thumbPlan.changed
+				? new File([new Uint8Array(thumbPlan.bytes)], "avatar.webp", { type: "image/webp" })
+				: new File([thumb.bytes], `avatar.${thumb.ext}`, { type: thumb.mimeType });
+			const { ext } = await this.assetService.writePersonaAvatar(rec.id, thumbFile);
 			await this.stores.personas.setFolderAvatar(rec.id, ext);
 		}
 		if (p.avatarFull) {
 			const bytes = Buffer.from(p.avatarFull.bytesBase64, "base64");
 			const blob = new Blob([new Uint8Array(bytes)]);
-			const file = new File([blob], `avatar-full.${p.avatarFull.ext}`, { type: "application/octet-stream" });
+			const file = new File([blob], `avatar-full.${p.avatarFull.ext}`, { type: extToMime(p.avatarFull.ext) });
 			const f = await this.assetService.writePersonaAvatarFull(rec.id, file);
 			await this.stores.personas.setFolderAvatarFull(rec.id, f.ext);
 		}

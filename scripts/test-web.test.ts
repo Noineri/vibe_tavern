@@ -140,7 +140,7 @@ test("counts failing test cases per file with names and messages, ignoring passe
 });
 
 test("junitCrossAttribution flags a junit file that disagrees with the failing stack frame", () => {
-	// Bun 1.4.0 --parallel junit cross-attribution (PR #39, runs 34664917488 /
+	// --parallel junit cross-attribution, observed on Bun 1.4.0 (PR #39, runs 34664917488 /
 	// 34668434046): the testcase name+file come from one worker while the failure
 	// message (and its stack frame) come from another — a four-CI-cycle chase
 	// before the pattern was named. The stack is the thing to trust.

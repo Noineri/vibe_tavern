@@ -22,7 +22,7 @@
  * they are global and shared across both surfaces.
  */
 import { useMemo } from "react";
-import type { ChatListItem } from "../../../app-client.js";
+import type { ChatListItem } from "../../../api/types.js";
 import { filterAndSortList } from "../../../lib/list-filter.js";
 import { useNavigationStore } from "../../../stores/index.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";

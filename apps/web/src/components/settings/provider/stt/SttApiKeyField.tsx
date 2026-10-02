@@ -1,3 +1,7 @@
+/**
+ * fork #1 of tts/TtsApiKeyField.tsx.
+ */
+
 import { useT } from "../../../../i18n/context.js";
 import { MaskedConnectionKeyField } from "../../../shared/masked-connection-key-field.js";
 

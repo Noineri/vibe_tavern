@@ -7,10 +7,17 @@ export * from "./attachment.js";
 // `</script>` broke the frame document (first live render, 2026-08-21). Import
 // the builtins via the explicit subpath `@vibe-tavern/domain/builtins`.
 export * from "./character-asset.js";
+export * from "./chat-json-config.js";
 export * from "./chat-notification.js";
 export * from "./coauthor-transport-capabilities.js";
 export * from "./dice.js";
 export * from "./entities.js";
+export * from "./imagegen-capabilities.js";
+export * from "./imagegen-sizes.js";
+export * from "./imagegen-sampler-aliases.js";
+export * from "./imagegen-stock-sets.js";
+export * from "./imagegen-workflow-families.js";
+export * from "./image-prompt-families.js";
 export * from "./event-bus.js";
 export * from "./extract-thinking-tags.js";
 export * from "./generation-format.js";
@@ -28,6 +35,7 @@ export * from "./provider-profile.js";
 export * from "./provider-quota.js";
 export * from "./proxy-profile.js";
 export * from "./provider-support.js";
+export * from "./russian-case-forms.js";
 export * from "./sampler-params.js";
 export * from "./scene-tracker-constants.js";
 export * from "./service-prompts.js";

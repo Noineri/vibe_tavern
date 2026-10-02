@@ -24,6 +24,7 @@
 | `<ChipInput>` | Custom tag input | `ChipInput.tsx` | Tag/chip input, chips inside the box; `mode="tokens"` (Shift+Enter commits) / `mode="words"` (Enter commits) |
 | `<MaskedConnectionKeyField>` | forked API-key fields | `masked-connection-key-field.tsx` | Masked key input + show/hide toggle + stored-key status (STT/TTS) |
 | `<NumberInput>` | `<input type="number">` | `NumberInput.tsx` | Numeric input with +/- stepper controls |
+| `<SliderField>` | hand-rolled range rows | `SliderField.tsx` | Bounded numeric setting: `lblCls` label + range + synced `NumberInput`; optional `onCommit` = persist on release (drag ticks stay local) |
 | `<CodeEditor>` | `<textarea>` for code | `CodeEditor.tsx` | CodeMirror 6 wrapper |
 | `<CustomTooltip>` | `title="..."` | `Tooltip.tsx` | Dark tooltip with arrow |
 | `<OverflowTooltip>` | `title="..."` on names | `OverflowTooltip.tsx` | Truncating text that tooltips only when it overflows |
@@ -89,6 +90,7 @@ Built on Radix Switch: `role="switch"`, `aria-checked`, focus-visible ring, Spac
 | `disabled` | `boolean?` | Disables interaction |
 | `id` | `string?` | For form association |
 | `className` | `string?` | Additional classes |
+| `inline` | `boolean?` | Uses a phrasing-content root for a checkbox nested in an inline chip |
 
 Mini-chip checkbox: tiny rounded pill indicator consistent with ToggleChips. Unchecked: subtle `s3` pill. Checked: accent border + bg with SVG checkmark.
 
@@ -116,12 +118,13 @@ Mini-chip checkbox: tiny rounded pill indicator consistent with ToggleChips. Unc
 | Prop | Type | Description |
 |------|------|-------------|
 | `selected` | `string[]` | Currently selected values |
-| `options` | `{ value: string, label: string }[]` | Available options |
+| `options` | `{ value: string, label: string, tooltip?: string }[]` | Available options, with an optional per-chip tooltip |
 | `onChange` | `(selected: string[]) => void` | Updated selection |
 | `disabled` | `boolean?` | Disables all chips |
+| `minSelected` | `number?` | Minimum selected chips; defaults to no selection guard |
 | `className` | `string?` | Additional classes on wrapper |
 
-Built on `@radix-ui/react-toggle-group` (`type="multiple"`): `aria-pressed` per chip, one Tab stop for the whole group, arrow-key navigation. Pills `px-3 py-1 text-[12px]`; selected = accent border + bg + text.
+Built on `@radix-ui/react-toggle-group` (`type="multiple"`): `aria-pressed` per chip, one Tab stop for the whole group, arrow-key navigation. Pills `px-3 py-1 text-[calc(var(--ui-fs)-2px)]`; selected = accent border + bg + text.
 
 **When to use:** Trigger/source lists, filter toggles, tag selection. NOT for single-select (use `SegmentedControl` or `DropdownSelect`).
 
@@ -154,6 +157,7 @@ Generic over `T extends string` — values keep their literal union type through
 | `disabled` | `boolean?` | Disables interaction |
 | `compact` | `boolean?` | Smaller size for tight spaces (11px text, less padding) |
 | `dense` | `boolean?` | Even shorter on mobile than `compact` (28px vs 36px touch height), identical desktop sizing — narrowly scoped for in-card controls like the canvas role selector |
+| `ariaLabel` | `string?` | Accessible name for the radiogroup — for controls whose meaning lives outside their segment labels (e.g. a mode switch); most call sites are self-describing |
 | `className` | `string?` | Additional classes |
 
 All options visible at once — one click to select; `role="radiogroup"` + `aria-checked`. Active segment: `bg-s2` + accent text + shadow on `bg-s3` track.
@@ -392,6 +396,7 @@ JSON-array paste inserts every element at once in both modes.
 | `disabled` | `boolean?` | Disables editing |
 | `showPresets` | `boolean?` | Show the special-character shortcut buttons |
 | `tooltip` | `string?` | Info-icon tooltip content |
+| `renderChipAction` | `(value: string, index: number) => ReactNode?` | Optional control rendered within each existing chip |
 | `presetsLabel` | `string?` | Label for the presets tooltip trigger (default: `"?"`) |
 | `className` | `string?` | Extension appended AFTER the canon base |
 
@@ -529,7 +534,7 @@ Use for entity names/labels in sidebars and lists where truncation is expected b
 
 State is shared via context: `useMasterDetail()` returns `{ isMobile, isDetailOpen, openDetail, closeDetail }`. Call it inside a `MasterDetailModal` to drive the mobile transition (e.g. showing a back button when `isDetailOpen`).
 
-Consumers: `ProviderModal` (provider profiles), `PromptManagerModal` (prompt presets), `PersonaModal` (personas), `ContextMemoryModal`, coauthor module/skill modals. Canonical structure: header/title/subtitle/dirty-dot/headerActions + master list (scrollable rows with `border-l-2` + active dot, dashed "+ New" docked at the list bottom — never in headerActions) + stable footer with `border-t`.
+Consumers: `ProviderModal` (provider profiles), `PromptManagerModal` (prompt presets / regex presets / service prompt profiles / image prompt profiles — one master-detail per tab; image prompt profiles live in `ImagePromptTemplatesPane`, a fork of the service-prompt profile flow whose detail side is mode rows × family dropdowns, kept SEPARATE from service-prompt profiles and LLM presets), `PersonaModal` (personas), `ContextMemoryModal`, coauthor module/skill modals. Canonical structure: header/title/subtitle/dirty-dot/headerActions + master list (scrollable rows with `border-l-2` + active dot, dashed "+ New" docked at the list bottom — never in headerActions) + stable footer with `border-t`.
 
 ---
 

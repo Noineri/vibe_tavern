@@ -1,17 +1,8 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
-import type {
-  AppSnapshot,
-  AppMessage,
-  AppCharacter,
-  AppPersona,
-  AppCharacterEntry,
-  ChatListItem,
-  InsightsCompletionPatchResponse,
-  SceneTargetResponse,
-} from "../app-client.js";
-import type { ChatBranch, PromptTraceRecordDto, PronounForms } from "@vibe-tavern/domain";
+import type { AppSnapshot, AppMessage, AppCharacter, AppPersona, AppCharacterEntry, ChatListItem, InsightsCompletionPatchResponse, SceneTargetResponse } from "../api/types.js";
+import { parseStoredAttachments, type ChatBranch, type PromptTraceRecordDto, type PronounForms } from "@vibe-tavern/domain";
 
 // ── Macro context (derived from character + persona) ──────────────────
 
@@ -197,6 +188,34 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return true;
 }
 
+/**
+ * IG-CF10: resolve the message-level attachment shadow for an incoming wire
+ * message (see `AppMessage.messageLevelAttachments`).
+ *
+ * The server DTO merge (session-runtime-dto.ts, IG-18a) projects the
+ * SELECTED variant's attachmentsJson over the message row's set, so the row
+ * set is visible on the wire exactly when the selected variant carries none
+ * (`attachmentsJson == null`, or no variants at all) — capture it fresh then
+ * (this also heals row edits: description/include/delete flows persist to
+ * the row and arrive via snapshot ingest). Otherwise the row set arrives as
+ * the explicit `messageLevelAttachments` field (IG-CF10b, 2026-09-29 owner
+ * defect: without it, a chat loaded with a variant selected had NO source
+ * for the row set, and swiping back to the base variant kept the previous
+ * variant's image on screen — identical content on swipes 1 and 2). When
+ * neither is known (older server payloads) the previously captured set is
+ * kept, so it survives wholesale message replacement (post-regen refresh
+ * lands with the new variant selected). When neither is known at all the
+ * shadow stays absent.
+ */
+function withMessageLevelShadow(prev: AppMessage | undefined, msg: AppMessage): AppMessage {
+  const selected = msg.variants.find((variant) => variant.isSelected) ?? null;
+  const shadow =
+    msg.messageLevelAttachments ??
+    (selected?.attachmentsJson == null ? msg.attachments : prev?.messageLevelAttachments);
+  if (shadow === undefined || msg.messageLevelAttachments === shadow) return msg;
+  return { ...msg, messageLevelAttachments: shadow };
+}
+
 function sameStringArray(a: string[], b: string[]): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
@@ -251,8 +270,12 @@ export const useSnapshotStore = create<SnapshotStore>()(
             if (!nextMessageIds.has(id)) delete draft.messagesById[id];
           }
           for (const msg of snapshot.messages) {
-            if (!deepEqual(draft.messagesById[msg.id], msg)) {
-              draft.messagesById[msg.id] = msg;
+            // IG-CF10: stamp the message-level attachment shadow BEFORE the
+            // dedup comparison — a re-ingested identical snapshot keeps both
+            // its reference (Wave B2) and its shadow.
+            const stamped = withMessageLevelShadow(draft.messagesById[msg.id], msg);
+            if (!deepEqual(draft.messagesById[msg.id], stamped)) {
+              draft.messagesById[msg.id] = stamped;
             }
           }
           const nextOrder = snapshot.messages.map((m) => m.id);
@@ -339,7 +362,11 @@ export const useSnapshotStore = create<SnapshotStore>()(
           }
         }
         if (patch.message && !deepEqual(draft.messagesById[target.messageId], patch.message)) {
-          draft.messagesById[target.messageId] = patch.message;
+          // IG-CF10: wholesale patch replacement must not drop the shadow.
+          draft.messagesById[target.messageId] = withMessageLevelShadow(
+            draft.messagesById[target.messageId],
+            patch.message,
+          );
         }
       });
       return true;
@@ -366,7 +393,11 @@ export const useSnapshotStore = create<SnapshotStore>()(
       }
       set((draft) => {
         if (!deepEqual(draft.messagesById[target.messageId], message)) {
-          draft.messagesById[target.messageId] = message;
+          // IG-CF10: wholesale patch replacement must not drop the shadow.
+          draft.messagesById[target.messageId] = withMessageLevelShadow(
+            draft.messagesById[target.messageId],
+            message,
+          );
         }
       });
       return true;
@@ -407,6 +438,19 @@ export const useSnapshotStore = create<SnapshotStore>()(
             // Swap the active Scene record locally — every variant already
             // carries its own record via the DTO, so selecting needs no fetch.
             existing.sceneTracker = variant.sceneTracker ?? null;
+            // IG-CF10: mirror the server DTO merge (session-runtime-dto.ts,
+            // IG-18a) locally — swipe is optimistic-only (selectVariantAction
+            // persists without re-syncing), so the selected variant's set
+            // must swap here or the image stays the previous variant's. A
+            // null-carrying (legacy/text) variant falls back to the
+            // message-level set captured at ingest. When that set was never
+            // visible on the wire the current set is kept (unknowable corner
+            // — today's behavior, never a stale-by-overwrite).
+            if (variant.attachmentsJson != null) {
+              existing.attachments = parseStoredAttachments(variant.attachmentsJson);
+            } else if (existing.messageLevelAttachments !== undefined) {
+              existing.attachments = existing.messageLevelAttachments;
+            }
           }
         }
         draft.swipeDirection = direction;

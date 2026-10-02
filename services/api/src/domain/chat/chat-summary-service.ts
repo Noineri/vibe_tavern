@@ -8,7 +8,6 @@ import { notFound, validation } from "../../shared/errors.js";
 import { BackgroundTaskLocks } from "../../shared/background-task-locks.js";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import {
-	providerRequiresApiKey,
 	resolveEffectiveSummaryProfile,
 } from "./summary-generation-seam.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
@@ -55,7 +54,7 @@ export interface SummarizeChatResult {
 
 export interface GenerateChatSummaryResult {
   summary: string;
-  chatSummary: Awaited<ReturnType<StoreContainer['chatSummaries']['getById']>>;
+  chatSummary: Awaited<ReturnType<StoreContainer['chatSummaries']['create']>>;
   snapshot: SummaryResponse;
 }
 
@@ -81,9 +80,6 @@ export class ChatSummaryService {
     const profile = await this.providerProfiles.getProviderProfile(providerProfileId);
     if (!profile) {
       throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
-    }
-    if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
-      throw validation("Selected provider has no saved API key.");
     }
     const model = input.model?.trim() || profile.defaultModel?.trim();
     if (!model) {
@@ -143,9 +139,6 @@ export class ChatSummaryService {
     const profile = await this.providerProfiles.getProviderProfile(providerProfileId);
     if (!profile) {
       throw notFound("ProviderProfile", `Provider profile '${providerProfileId}' was not found.`);
-    }
-    if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
-      throw validation("Selected provider has no saved API key.");
     }
     const model = input.model?.trim() || profile.defaultModel?.trim();
     if (!model) {
@@ -223,7 +216,7 @@ export class ChatSummaryService {
   async triggerAutoSummary(chatIdValue: string): Promise<void> {
     const chat = await this.stores.chats.getById(chatIdValue);
     if (!chat) return;
-    const config = normalizeAutoSummaryConfig(chat.autoSummaryConfig);
+    const config = chat.autoSummaryConfig;
     if (!config.enabled) return;
 
     const lockKey = `${chat.id}:${chat.activeBranchId}`;
@@ -305,35 +298,6 @@ export class ChatSummaryService {
 function normalizeRangePoint(value: number, minimum: number): number {
   if (!Number.isFinite(value)) return minimum;
   return Math.max(minimum, Math.floor(value));
-}
-
-function normalizeAutoSummaryConfig(raw: Record<string, unknown>): {
-  enabled: boolean;
-  everyN: number;
-  useChatModel: boolean;
-  excludeSummarized: boolean;
-  includePriorSummaries: boolean;
-  maxPriorSummaries: number;
-  providerProfileId?: string;
-  model?: string;
-} {
-  const everyN = typeof raw.everyN === "number" && Number.isFinite(raw.everyN)
-    ? Math.max(1, Math.floor(raw.everyN))
-    : 20;
-  const maxPriorSummaries = typeof raw.maxPriorSummaries === "number" && Number.isFinite(raw.maxPriorSummaries)
-    ? Math.max(0, Math.min(100, Math.floor(raw.maxPriorSummaries)))
-    : 10;
-  return {
-    enabled: raw.enabled === true,
-    everyN,
-    useChatModel: raw.useChatModel !== false,
-    excludeSummarized: raw.excludeSummarized !== false,
-    // SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): default ON + 10 most-recent priors.
-    includePriorSummaries: raw.includePriorSummaries !== false,
-    maxPriorSummaries,
-    providerProfileId: typeof raw.providerProfileId === "string" ? raw.providerProfileId : undefined,
-    model: typeof raw.model === "string" ? raw.model : undefined,
-  };
 }
 
 function normalizeMaxMessages(value: number): number {

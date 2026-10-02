@@ -10,7 +10,7 @@
  * separate flat `assetId` (see CHARACTER_FOLDER_STORAGE).
  */
 import type { CharacterAsset } from "@vibe-tavern/domain";
-import { getGatewayBaseUrl, getMobileToken } from "./client.js";
+import { apiFetch, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { appendTokenQuery } from "../lib/mobile-token.js";
 
 /** Absolute serve URL for a gallery image (`/api/characters/:id/assets/:rowId`).
@@ -73,7 +73,7 @@ export async function listCharacterAssets(characterId: string): Promise<Characte
 export async function uploadCharacterAsset(characterId: string, file: File): Promise<CharacterAsset> {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(`${getGatewayBaseUrl()}/api/characters/${characterId}/assets`, {
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/characters/${characterId}/assets`, {
     method: "POST",
     headers: authHeaders(),
     body: formData,

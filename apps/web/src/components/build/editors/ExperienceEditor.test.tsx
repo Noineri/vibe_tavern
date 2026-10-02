@@ -32,6 +32,7 @@
  * mock.module() is process-global).
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
 import type { ExperienceTestRunData, ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 import { getVisualStarter, VISUAL_STARTERS } from "../../experience/starters/index.js";
@@ -73,10 +74,12 @@ function makeTestRunData(): ExperienceTestRunData {
     effects: [],
     console: [],
     steps: [],
+    seatLegality: { seats: [], turnOwners: [] },
   };
 }
 
 const baseScript: ScriptRecord = {
+  ...wireScript(),
   id: "srv_1",
   name: "Existing Rules",
   description: "",

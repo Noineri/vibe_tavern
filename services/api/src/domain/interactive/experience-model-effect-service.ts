@@ -61,7 +61,7 @@ import {
 } from "@vibe-tavern/prompt-pipeline";
 
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
-import { providerRequiresApiKey, resolveEffectiveSummaryProfile } from "../chat/summary-generation-seam.js";
+import { resolveEffectiveSummaryProfile } from "../chat/summary-generation-seam.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 import type { ExperienceContextService } from "./experience-context-service.js";
 import type { ExperienceProjection, ExperienceSessionView } from "./experience-service.js";
@@ -197,10 +197,6 @@ export class ExperienceModelEffectService {
 		if (!model) {
 			await this.deps.stores.experiences.failEffect(effectId, "no_model");
 			return ok({ effectId, status: "failed", error: "no_model" });
-		}
-		if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
-			await this.deps.stores.experiences.failEffect(effectId, "no_api_key");
-			return ok({ effectId, status: "failed", error: "no_api_key" });
 		}
 		const effectiveProfile = await resolveEffectiveSummaryProfile(profile, model, this.deps.providerProfiles);
 

@@ -62,7 +62,7 @@ import {
   INTERACTIVE_SCHEMA_MAX_STATE_BYTES,
   INTERACTIVE_SCHEMA_MAX_PAYLOAD_BYTES,
   jsonBoundsError,
-} from "@vibe-tavern/api-contracts";
+} from "@vibe-tavern/api-contracts/interactive";
 import {
   experienceHelpers,
   validatePayloadSchemaDefinition,

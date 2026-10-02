@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
-import type { AssemblePromptResponse, ChatBranchId, ChatId } from "@vibe-tavern/domain";
+import { normalizeInsightsConfig, normalizeObjectiveState, type AssemblePromptResponse, type ChatBranchId, type ChatId } from "@vibe-tavern/domain";
 import { PromptAssemblyService, type PromptAssemblyResolver } from "../src/domain/prompt/prompt-assembly-service.js";
 import { ChatLifecycleRuntime, type ChatLifecycleRuntimeDeps } from "../src/runtime/session/session-runtime-chat-lifecycle.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
@@ -18,6 +18,8 @@ let capturedAssembleRangedArgs: { contextBudget?: number | null } | null = null;
 const chat = {
   id: "chat_1",
   activeBranchId: "branch_1",
+  insightsConfig: normalizeInsightsConfig({}),
+  insightsObjectiveState: normalizeObjectiveState({}),
 };
 
 function assembled(prompt: AssemblePromptResponse = {
@@ -63,7 +65,7 @@ describe("ChatLifecycleRuntime summary assembly", () => {
     expect(calls).toEqual([[
       "chat_1",
       "branch_1",
-      { model: "summary-model", recentMessageLimit: 24, contextBudget: 4096, summary: true },
+      { model: "summary-model", recentMessageLimit: 24, contextBudget: 4096, summary: true, dryRun: true },
     ]]);
   });
 
@@ -96,6 +98,7 @@ describe("ChatLifecycleRuntime summary assembly", () => {
         excludeMessageIds: ["msg_1", "msg_4"],
         contextBudget: 2048,
         summary: true,
+        dryRun: true,
       },
     ]]);
   });
@@ -371,7 +374,7 @@ describe("PromptAssemblyService summary preparation", () => {
     let scriptCalled = false;
     const stores = {
       chats: {
-        getById: async () => ({ id: "chat_1", characterId: "char_1", personaId: "persona_1", promptPresetId: "preset_1", activeBranchId: "branch_1", messageHistoryLimit: 0 }),
+        getById: async () => ({ id: "chat_1", characterId: "char_1", personaId: "persona_1", promptPresetId: "preset_1", activeBranchId: "branch_1", messageHistoryLimit: 0, insightsConfig: normalizeInsightsConfig({}), insightsObjectiveState: normalizeObjectiveState({}) }),
         getBranches: async () => [{ id: "branch_1" }],
       },
       messages: { getMessages: async () => messages },
@@ -385,7 +388,7 @@ describe("PromptAssemblyService summary preparation", () => {
       getCharacter: async () => ({ id: "char_1", name: "Nora", description: "character words that are excluded from the summary output", personality: null, scenario: null }),
       getPersona: async () => ({ id: "persona_1", name: "Alex", description: "persona words that are excluded from the summary output" }),
       getPromptPreset: async () => ({ id: "preset_1", name: "P", text: "preset words that are excluded from the summary output", summary: "Summarize this history.", jailbreak: "jailbreak words that are excluded from the summary output", tools: "", prefill: "", authorsNote: "", authorsNoteDepth: 0 }),
-      listActiveLoreEntries: async () => [{ id: "lore_1", title: "Lore", content: "lore words that are excluded from the summary output", priority: 1 }],
+      listActiveLoreEntries: async () => ({ entries: [{ id: "lore_1", title: "Lore", content: "lore words that are excluded from the summary output", priority: 1 }], overflowedLorebooks: [] }),
       listRetrievedMemories: async () => [],
       executeScripts: async () => {
         scriptCalled = true;

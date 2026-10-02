@@ -175,6 +175,33 @@ export function validateSavePatch(patch: ProviderSavePatch): string | null {
 }
 
 /**
+ * The identity-only base patch for OVERLAY-mode saves (bindPerModel ON + a
+ * bound model): what still goes to the profile BASE while the sampler/context
+ * fields (and, since the 2026-09-27 owner ruling, the sampler-set POINTER)
+ * route to the model's overlay (computeOverlayPatch). The base's own sampler
+ * columns and its base set pointer stay put — the base pointer remains the
+ * binding-off / non-favorite fallback.
+ *
+ * Deliberately EXCLUDES: every sampler field, maxTokens/contextBudget, the set
+ * pointer, and the LS-10 generation format block stays INCLUDED (profile-level
+ * chrome that must survive overlay saves).
+ */
+export function computeBindingIdentityPatch(patch: ProviderSavePatch): Partial<ProviderSavePatch> {
+  return {
+    name: patch.name,
+    providerPreset: patch.providerPreset,
+    endpoint: patch.endpoint,
+    apiKey: patch.apiKey,
+    defaultModel: patch.defaultModel,
+    visionModel: patch.visionModel,
+    bindPerModel: patch.bindPerModel,
+    proxyMode: patch.proxyMode,
+    proxyId: patch.proxyId,
+    generationFormat: patch.generationFormat,
+  };
+}
+
+/**
  * Build the per-model overlay payload from a form in overlay-edit mode.
  *
  * Emits a {@link ModelSettingsOverlay}: the sampler/context field set that a
@@ -234,6 +261,10 @@ export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
     showReasoning: form.showReasoning,
     streamResponse: form.streamResponse,
     customSamplers: form.customSamplers,
+    // Per-model sampler-set pointer (owner ruling 2026-09-27, IG-CF15 LLM twin):
+    // the set this model last applied is THIS model's provenance, not the
+    // profile's. Absent/null = inherit the base pointer.
+    samplerSetId: form.samplerSetId ?? null,
   };
   return overlay;
 }

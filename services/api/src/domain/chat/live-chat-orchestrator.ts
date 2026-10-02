@@ -13,6 +13,7 @@ import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-ta
 import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-in-response.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
+import { markUserMessageSaved } from "./user-message-saved.js";
 import { effectiveContextBudget, normalizeProviderType } from "@vibe-tavern/domain";
 import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
 import { resolveProtocol } from "../providers/protocol-registry.js";
@@ -191,7 +192,7 @@ export class LiveChatOrchestrator {
       });
     } catch (err) {
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
-      throw err;
+      throw prepared.userMessage ? markUserMessageSaved(err) : err; // the client shows it, not restores the draft
     }
 
     // Extract thinking tags from content (some models embed <thinking> in text)
@@ -420,6 +421,10 @@ export class LiveChatOrchestrator {
       this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit),
     );
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
+    // Stored from here on: a later error leaves it in the chat — the client reloads, not restores the draft.
+    if (prepared.userMessage) {
+      yield { event: "user-message-saved", data: JSON.stringify({ messageId: prepared.userMessage.id }) };
+    }
     const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prepared.prompt.prefill ?? undefined);
     const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)
       ? async (descriptions: Array<{ attachmentId: string; description: string }>) => {
@@ -467,7 +472,7 @@ export class LiveChatOrchestrator {
         });
         logSendDebug("live.send-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
         this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
-        return appended.response;
+        return { ...appended.response, lorebookOverflows: appended.overflowAlerts };
       },
     });
   }
@@ -534,7 +539,7 @@ export class LiveChatOrchestrator {
         });
         logSendDebug("live.generateReply-stream.done", { chatId: input.chatId, latencyMs, replyLength: text.length });
         this.notifyAssistantAppended(input.chatId, appended.branchId, appended.messageId);
-        return appended.response;
+        return { ...appended.response, lorebookOverflows: appended.overflowAlerts };
       },
     });
   }
@@ -609,7 +614,7 @@ export class LiveChatOrchestrator {
           toolResults,
         });
         logSendDebug("live.regenerate-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
-        return snapshot;
+        return { ...snapshot, lorebookOverflows: snapshot.overflowAlerts };
       },
     });
   }
@@ -762,7 +767,7 @@ export class LiveChatOrchestrator {
           toolResults,
         });
         logSendDebug("live.continue-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
-        return snapshot;
+        return { ...snapshot, lorebookOverflows: snapshot.overflowAlerts };
       },
     });
   }
@@ -867,7 +872,12 @@ export class LiveChatOrchestrator {
     omitMessageCountInFinish?: boolean;
     prefill?: string;
     onAbort: (text: string, reasoning: string, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<void>;
-    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number, toolCalls?: ExtractedToolCall[], toolResults?: ExtractedToolResult[]) => Promise<MessageResponse>;
+    /** P21: the final return carries the wire snapshot PLUS the lorebook
+     *  overflow-alert channel (alert-on books that overflowed this turn) —
+     *  drainStream forwards it on the `finish` SSE event so the client can
+     *  toast without a refetch. Intersection type: existing `snapshot.messages`
+     *  consumers are unchanged. */
+    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number, toolCalls?: ExtractedToolCall[], toolResults?: ExtractedToolResult[]) => Promise<MessageResponse & { lorebookOverflows?: Array<{ name: string; dropped: number }> }>;
   }): AsyncGenerator<{ event: string; data: string }> {
     const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish, prefill } = input;
     // ── CA-17/CANARY: loop observability. Counts every tool interaction so a
@@ -887,18 +897,18 @@ export class LiveChatOrchestrator {
     let reasoningStartMs: number | null = null;
     let reasoningDurationMs: number | null = null;
 
+    // The partial reply so far via onAbort (user Stop + provider cut); onAbort stores only non-empty text.
+    const savePartial = async (): Promise<boolean> => {
+      const { mainContent, reasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
+      await onAbort(mainContent, reasoning ?? "", reasoningStartMs ? Date.now() - reasoningStartMs : undefined, Date.now() - startedAt);
+      return mainContent.length > 0;
+    };
+
     // ── Collect stream chunks ──
     try {
       for await (const chunk of streamResult.stream) {
         if (signal?.aborted) {
-          const latencyMs = Date.now() - startedAt;
-          const { mainContent: abortText, reasoning: abortReasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
-          await onAbort(
-            abortText,
-            abortReasoning ?? "",
-            reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
-            latencyMs,
-          );
+          await savePartial();
           yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
           return;
         }
@@ -958,35 +968,23 @@ export class LiveChatOrchestrator {
       }
     } catch (err) {
       if (signal?.aborted) {
-        const latencyMs = Date.now() - startedAt;
-        const { mainContent: abortText, reasoning: abortReasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
-        await onAbort(
-          abortText,
-          abortReasoning ?? "",
-          reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
-          latencyMs,
-        );
+        await savePartial();
         yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
         return;
       }
 
       const message = extractProviderErrorMessage(err);
       const category = classifyProviderError(err);
-      logSendDebug(`${debugLabel}.provider-error`, { chatId: input.chatId, message, category });
-      this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
-      yield { event: "error", data: JSON.stringify({ message, category }) };
+      // A provider cut mid-reply keeps what streamed, like a Stop; `partialSaved` → the client reloads the chat.
+      const partialSaved = await savePartial();
+      logSendDebug(`${debugLabel}.provider-error`, { chatId: input.chatId, message, category, partialSaved });
+      if (!partialSaved) this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
+      yield { event: "error", data: JSON.stringify(partialSaved ? { message, category, partialSaved } : { message, category }) };
       return;
     }
 
     if (signal?.aborted) {
-      const latencyMs = Date.now() - startedAt;
-      const { mainContent: abortText, reasoning: abortReasoning } = extractThinkingTags(textAccumulator, reasoningAccumulator);
-      await onAbort(
-        abortText,
-        abortReasoning ?? "",
-        reasoningStartMs ? Date.now() - reasoningStartMs : undefined,
-        latencyMs,
-      );
+      await savePartial();
       yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
       return;
     }
@@ -1050,6 +1048,11 @@ export class LiveChatOrchestrator {
     };
     if (!omitMessageCountInFinish) {
       finishData.messageCount = snapshot.messages.length;
+    }
+    // P21 (overflowAlert): the per-book overflow notices ride the finish
+    // event (same channel as usage) — the client toasts them once per turn.
+    if (snapshot.lorebookOverflows?.length) {
+      finishData.lorebookOverflows = snapshot.lorebookOverflows;
     }
     yield { event: "finish", data: JSON.stringify(finishData) };
   }

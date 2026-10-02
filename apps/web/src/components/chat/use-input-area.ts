@@ -26,7 +26,7 @@ import { useChatStore, useProviderStore, useIsSending } from "../../stores/index
 import { useDiceLanes, useDiceStore } from "../../stores/dice-store.js";
 import { useActiveTrace, useChatMeta, useActiveStreamingMessageId } from "../../stores/chat-selectors.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
-import { uploadAsset } from "../../app-client.js";
+import { uploadAsset } from "../../api/asset-api.js";
 
 export function useInputArea() {
   const { t } = useT();
@@ -187,8 +187,8 @@ export function useInputArea() {
   // Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
   // is nothing bindable, diceBlockReason is null and canSend is byte-identical
   // to before. Dice can only ever subtract from canSend, never add.
-  const diceEnabled = chatMeta?.activeChat?.insightsConfig?.diceEnabled ?? false;
-  const diceMode = chatMeta?.activeChat?.insightsConfig?.diceMode ?? "normal";
+  const diceEnabled = chatMeta?.activeChat?.insightsConfig.diceEnabled ?? false;
+  const diceMode = chatMeta?.activeChat?.insightsConfig.diceMode ?? "normal";
   const activeBranchId = chatMeta?.activeBranch?.id ?? null;
   const activeCharacterId = chatMeta?.activeChat?.characterId ?? null;
   // Establish the pending-lane scope for dice-enabled chats so the gate (and the

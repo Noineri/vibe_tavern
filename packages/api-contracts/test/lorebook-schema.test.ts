@@ -5,6 +5,7 @@ import {
   createLorebookSchema,
   duplicateLorebookSchema,
   importLorebookSchema,
+  lorebookExportResultSchema,
   lorebookLinkSchema,
   reorderLoreEntriesSchema,
   setLorebookLinksSchema,
@@ -108,6 +109,7 @@ describe("createLorebookSchema", () => {
     expect(data.enabled).toBe(true);
     expect(data.tokenBudget).toBe(2048);
     expect(data.recursiveScanning).toBe(false);
+    expect(data.characterStrategy).toBe(1);
     // LG-2: book-level group-scoring default mirrors ST's global switch (off).
     expect(data.useGroupScoring).toBe(false);
   });
@@ -138,6 +140,27 @@ describe("createLorebookSchema", () => {
     const base = validCreateLorebook();
     expectReject(createLorebookSchema.safeParse({ ...base, scanDepth: "50" }));
     expectReject(createLorebookSchema.safeParse({ ...base, enabled: "yes" }));
+  });
+});
+
+// --- createLoreEntrySchema --------------------------------------------------
+
+describe("createLoreEntrySchema", () => {
+  it("defaults groupWeight to SillyTavern's 100 (world-info.js:97)", () => {
+    const data = expectSuccessData(createLoreEntrySchema.safeParse({}));
+    expect(data.groupWeight).toBe(100);
+    expect(data.matchSources).toEqual(["chat_messages"]);
+  });
+});
+
+// --- export lorebook ----------------------------------------------------------
+
+describe("lorebookExportResultSchema", () => {
+  it("carries the download JSON separately from typed export warnings", () => {
+    expect(lorebookExportResultSchema.safeParse({
+      data: { entries: {} },
+      warnings: [{ kind: "chat_off_entry", entryTitle: "Description only" }],
+    }).success).toBe(true);
   });
 });
 

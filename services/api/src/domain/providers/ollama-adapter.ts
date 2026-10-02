@@ -36,6 +36,7 @@ import {
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter, ProbeInput, ListModelsInput, TokenizeInput } from "./protocol-types.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
+import { readProviderErrorBody } from "../../infrastructure/ai/provider-error-body.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -281,68 +282,103 @@ export function createOllamaModel(options: OllamaAdapterOptions): LanguageModelV
       // Ollama streaming is NDJSON: one JSON object per line.
       // Each chunk: {"message":{"role":"assistant","content":"token"},"done":false}
       // Final chunk: {"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":N,"eval_count":N}
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+      // `textStream()` decodes UTF-8 and joins characters split across chunk
+      // boundaries, so only line reassembly is left to do here.
+      const reader = response.textStream().getReader();
       let buffer = "";
+      // The ai@7 streamText recorder rejects bare deltas with "text part 0 not
+      // found" and that error part aborts the whole chat
+      // (`infrastructure/ai/stream-helpers.ts` throws on it), so the full
+      // protocol sequence is mandatory: stream-start, text-start before the
+      // first delta, text-end before finish. Flags persist across pull calls.
+      let streamStarted = false;
+      let textOpened = false;
+
+      const closeTextAndFinish = (
+        controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
+        chunk: OllamaChatResponse | null,
+      ): void => {
+        if (textOpened) {
+          textOpened = false;
+          controller.enqueue({ type: "text-end", id: "0" });
+        }
+        controller.enqueue({
+          type: "finish",
+          finishReason: chunk?.done_reason === "length"
+            ? makeFinishReason("length", chunk.done_reason)
+            : makeFinishReason("stop", chunk?.done_reason),
+          usage: makeUsage(chunk?.prompt_eval_count, chunk?.eval_count),
+        });
+      };
+
+      /** Emits the line's parts; returns true when it ended the stream. */
+      const consumeLine = (
+        controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
+        line: string,
+      ): boolean => {
+        const trimmed = line.trim();
+        if (!trimmed) return false;
+
+        let chunk: OllamaChatResponse;
+        try {
+          chunk = JSON.parse(trimmed);
+        } catch {
+          return false;
+        }
+
+        if (chunk.done) {
+          closeTextAndFinish(controller, chunk);
+          return true;
+        }
+
+        const token = chunk.message?.content;
+        if (token) {
+          if (!textOpened) {
+            textOpened = true;
+            controller.enqueue({ type: "text-start", id: "0" });
+          }
+          controller.enqueue({ type: "text-delta", id: "0", delta: token });
+        }
+        return false;
+      };
 
       const stream = new ReadableStream<LanguageModelV3StreamPart>({
         async pull(controller) {
           try {
+            if (!streamStarted) {
+              streamStarted = true;
+              controller.enqueue({ type: "stream-start", warnings: [] });
+            }
             while (true) {
               const { done, value } = await reader.read();
               if (done) {
-                controller.enqueue({
-                  type: "finish",
-                  finishReason: makeFinishReason("stop"),
-                  usage: makeUsage(),
-                });
+                // A body that ends without a trailing newline leaves its last
+                // object — the one carrying done_reason and the token counts —
+                // in the buffer. Dropping it reported a bare stop with zero usage.
+                const tail = buffer;
+                buffer = "";
+                if (!consumeLine(controller, tail)) closeTextAndFinish(controller, null);
                 controller.close();
                 return;
               }
 
-              buffer += decoder.decode(value, { stream: true });
+              buffer += value;
               // NDJSON: split by newlines, each line is a complete JSON object
               const lines = buffer.split("\n");
               buffer = lines.pop() ?? "";
 
               for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed) continue;
-
-                let chunk: OllamaChatResponse;
-                try {
-                  chunk = JSON.parse(trimmed);
-                } catch {
-                  continue;
-                }
-
-                if (chunk.done) {
-                  // Final chunk — emit finish with usage stats
-                  const finishReason = chunk.done_reason === "length"
-                    ? makeFinishReason("length", chunk.done_reason)
-                    : makeFinishReason("stop", chunk.done_reason);
-
-                  controller.enqueue({
-                    type: "finish",
-                    finishReason,
-                    usage: makeUsage(chunk.prompt_eval_count, chunk.eval_count),
-                  });
+                if (consumeLine(controller, line)) {
                   controller.close();
                   return;
-                }
-
-                // Token chunk
-                const token = chunk.message?.content;
-                if (token) {
-                  controller.enqueue({
-                    type: "text-delta",
-                    id: "0",
-                    delta: token,
-                  });
                 }
               }
             }
           } catch (err) {
+            if (textOpened) {
+              textOpened = false;
+              controller.enqueue({ type: "text-end", id: "0" });
+            }
             if (callOptions.abortSignal?.aborted) {
               controller.enqueue({
                 type: "finish",
@@ -441,10 +477,10 @@ export async function testOllamaChat(input: ProviderConnectionInput): Promise<Te
     clearTimeout(timer);
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
+      const errorText = await readProviderErrorBody(response);
       return {
         success: false,
-        error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+        error: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`,
       };
     }
 
@@ -611,8 +647,8 @@ export async function tokenizeOllama(input: TokenizeInput): Promise<number> {
       signal: controller.signal,
     });
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      throw new Error(`Ollama tokenize failed (${response.status})${errorText ? `: ${errorText.slice(0, 200)}` : ""}`);
+      const errorText = await readProviderErrorBody(response);
+      throw new Error(`Ollama tokenize failed (${response.status})${errorText ? `: ${errorText}` : ""}`);
     }
     const payload = (await response.json()) as OllamaTokenizeResponse;
     if (!Array.isArray(payload.tokens)) {

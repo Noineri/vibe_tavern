@@ -6,6 +6,7 @@ import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { useNavigationStore, useProviderStore, useChatStore } from "../stores/index.js";
 import { useBootstrapStore, fetchBootstrapAction, fetchPersonasAction } from "../stores/api-actions/bootstrap-actions.js";
+import { restoreNavigationSession } from "../stores/navigation-persistence.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import {
   readSavedTheme,
@@ -84,6 +85,12 @@ export function useVibeTavernApp() {
         fetchBootstrapAction(),
         fetchPersonasAction(),
       ]);
+
+      // F5 restore (BUILD_MODE_F5_RESTORE_REPORT A): only after the INITIAL
+      // bootstrap (silent re-bootstraps from imports/edits must not fight live
+      // navigation), and only with an active chat — build without a character
+      // has nothing to edit, so a chat-less session stays on play.
+      restoreNavigationSession(useChatStore.getState().activeChatId !== null);
     } catch (err) {
       // If 401 and we have a stored token, it's invalid — clear it
       if (err instanceof Error && (err.message.includes("401") || err.message.includes("Unauthorized"))) {

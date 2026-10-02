@@ -3,27 +3,22 @@ import { toast } from "sonner";
 import type { Attachment, ChatBranchId, ChatId } from "@vibe-tavern/domain";
 import { getT, type TFunc } from "../i18n/locale-helpers.js";
 import type Resources from "../i18n/resources.js";
-import {
-  generateReplyStream,
-  continueChatMessageStream,
-  regenerateChatMessageStream,
-  sendChatMessageStream,
-  type AppMessage,
-  type AppSnapshot,
-  type ChatGenerationStatus,
-} from "../app-client.js";
+import { generateReplyStream, continueChatMessageStream, regenerateChatMessageStream, sendChatMessageStream } from "../api/chat-api.js";
+import type { AppMessage, AppSnapshot, ChatGenerationStatus } from "../api/types.js";
 import { useChatStore } from "../stores/chat-store.js";
 import { useModalStore } from "../stores/modal-store.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import { StreamingReveal } from "../lib/streaming-reveal.js";
+import { showProviderErrorToast } from "../lib/provider-error-toast.js";
+import { restoreDraftAfterSendError, settleFailedSendDraft } from "../lib/failed-send-draft.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
 import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
 import { resolveCoauthorBinding } from "../lib/coauthor-provider-binding.js";
 import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
-import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema } from "@vibe-tavern/api-contracts";
+import { coauthorToolOutputSchema, coauthorSkillReadOutputSchema, coauthorLoreBundleOutputSchema, coauthorSearchOutputSchema, coauthorContextReadOutputSchema, type RegenerateOverride } from "@vibe-tavern/api-contracts";
 import {
   fetchChatAction,
   sendChatMessageAction,
@@ -47,23 +42,6 @@ import { DiceApiError } from "../api/dice-api.js";
 import type { DiceLaneState, DiceSendCommitIntent, ExperienceSendCommitIntent } from "../api/types.js";
 import { findCurrentInsightsCompletionTarget, startInsightsCompletionRefreshFromSnapshot } from "../stores/api-actions/insights-completion-actions.js";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
-
-function restoreDraftAfterSendError(content?: string | null, attachments?: Attachment[]): void {
-  const store = useChatStore.getState();
-  if (content != null && store.draft.length === 0) {
-    store.setDraft(content);
-  }
-  if (attachments?.length) {
-    const existingIds = new Set(useChatStore.getState().draftAttachments.map((att) => att.id));
-    attachments.forEach((att) => {
-      if (!existingIds.has(att.id)) store.addDraftAttachment(att);
-    });
-  }
-}
-
-// Categories where the failure is likely transient (retry after a short wait) —
-// the message alone is enough; we just add a "try again" hint.
-const TRANSIENT_PROVIDER_CATEGORIES = new Set(["rate_limit", "timeout", "network", "server_error"]);
 
 // ─── Dice send gate (DICE-F3) ───────────────────────────────────────────
 // Subtractive-only: when Dice is disabled, the lane is absent/empty, or there
@@ -147,7 +125,7 @@ function readDiceSendState(): { commitIntent: DiceSendCommitIntent | undefined; 
   const branchId = snapshot.activeBranch?.id ?? null;
   const insights = snapshot.activeChat?.insightsConfig;
   if (!insights?.diceEnabled || !chatId || !branchId) return { commitIntent: undefined, blockReason: null };
-  const diceMode = insights.diceMode ?? "normal";
+  const diceMode = insights.diceMode;
   const lane = useDiceStore.getState().byScope[`${chatId}|${branchId}`]?.lanes?.[diceMode] ?? null;
   const blockReason = diceSendBlockReason(lane, snapshot.persona?.id ?? null, snapshot.activeChat?.characterId ?? null);
   if (blockReason) return { commitIntent: undefined, blockReason };
@@ -228,40 +206,6 @@ function tryHandleExperienceSendConflict(
   return true;
 }
 
-/**
- * Shows a category-aware toast for a provider/LLM generation failure. Reads the
- * server-classified `category` from a {@link ProviderStreamError} and picks a
- * description + (for auth) an action that opens provider settings — so the user
- * gets actionable feedback instead of raw HTTP text. Mirrors the existing
- * VISION_NOT_SUPPORTED toast shape. Falls back to the raw message for
- * `unknown` (and for non-ProviderStreamError errors, e.g. network failures
- * before the request reached the server).
- */
-function showProviderErrorToast(error: unknown, t: TFunc, fallbackKey: keyof Resources["en"] = "message_send_failed"): void {
-  const message = error instanceof Error && error.message ? error.message : t(fallbackKey);
-  const category = error instanceof ProviderStreamError ? error.category : "unknown";
-
-  if (category === "authentication") {
-    toast.error(message, {
-      description: t("provider_error_auth_desc"),
-      action: {
-        label: t("open_provider_settings"),
-        onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
-      },
-    });
-    return;
-  }
-  if (TRANSIENT_PROVIDER_CATEGORIES.has(category)) {
-    toast.error(message, { description: t("provider_error_transient_desc") });
-    return;
-  }
-  if (category === "empty_response" || category === "parse_error") {
-    toast.error(message, { description: t("provider_error_empty_desc") });
-    return;
-  }
-  toast.error(message);
-}
-
 /** Outcome of a single generation attempt, surfaced to the queue pump (Q3). */
 export type StreamOutcome = "done" | "cancelled" | "failed";
 
@@ -296,7 +240,7 @@ export interface ChatControllerActions {
   runRegenerateJob: (
     chatId: ChatId,
     messageId: string,
-    override?: { model?: string; promptPresetId?: string },
+    override?: RegenerateOverride,
   ) => Promise<StreamOutcome>;
 }
 
@@ -379,7 +323,7 @@ export function useChatController(): ChatControllerActions {
       onToolInputStart?: (info: { toolCallId: string; toolName: string }) => void;
       onToolInputDelta?: (info: { toolCallId: string; delta: string }) => void;
       onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
-    }) => Promise<{ finishReason: string; usage?: Record<string, number> }>,
+    }) => Promise<{ finishReason: string; usage?: Record<string, number>; metrics?: unknown; lorebookOverflows?: Array<{ name: string; dropped: number }> }>,
     pendingUserContent?: string | null,
     pendingAttachments?: import("@vibe-tavern/domain").Attachment[],
     /**
@@ -406,7 +350,7 @@ export function useChatController(): ChatControllerActions {
 
     try {
       let collected = "";
-      await streamFn({
+      const streamResult = await streamFn({
         signal: controller.signal,
         onStatus: (status) => useChatStore.getState().setGenerationStatus(chatId, status),
         onChunk: (delta) => {
@@ -525,6 +469,14 @@ export function useChatController(): ChatControllerActions {
       // Fresh send/generate paths emit message.appended and start insight work;
       // regenerate targets an existing message and intentionally does not.
       if (!streamingMessageId) startInsightsCompletionRefreshFromSnapshot(chatId, snapshot);
+      // P21 (overflowAlert): alert-on books that overflowed this turn ride the
+      // finish SSE event (server filters on the per-book overflowAlert flag —
+      // the flag lives in the DB, this page has no lorebook list). One warning
+      // per book, once per turn. Named deviation: ST toasts dry runs too; VT
+      // carries the notice on live generations only.
+      for (const overflow of streamResult?.lorebookOverflows ?? []) {
+        toast.warning(getT()("lore_overflow_toast", { name: overflow.name, n: overflow.dropped }));
+      }
       return "done";
     } catch (error) {
       if (controller.signal.aborted) {
@@ -538,6 +490,7 @@ export function useChatController(): ChatControllerActions {
         toast.info(getT()("generation_cancelled"));
         return "cancelled";
       }
+      const settleDraft = () => settleFailedSendDraft(error, chatId, refreshChatSnapshotCache, pendingUserContent, pendingAttachments);
       // DICE-F3: a dice commit conflict (stale revision / unresolved choose)
       // resyncs the lane and keeps the draft — not a provider error.
       if (tryHandleDiceSendConflict(error, chatId, pendingUserContent, pendingAttachments)) {
@@ -560,7 +513,7 @@ export function useChatController(): ChatControllerActions {
             onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
           },
         });
-        restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
+        await settleDraft();
       } else if (gateErrorCode(error) === "voice_transcribe_unavailable") {
         toast.error(getT()("voice_transcribe_unavailable"), {
           description: getT()("voice_transcribe_unavailable_desc"),
@@ -569,9 +522,9 @@ export function useChatController(): ChatControllerActions {
             onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
           },
         });
-        restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
+        await settleDraft();
       } else {
-        restoreDraftAfterSendError(pendingUserContent, pendingAttachments);
+        await settleDraft();
         showProviderErrorToast(error, getT());
       }
       useChatStore.getState().setGenerationStatus(chatId, "failed");
@@ -725,7 +678,8 @@ export function useChatController(): ChatControllerActions {
         {
           pendingUserContent: draft,
           pendingAttachments: currentAttachments,
-          onError: (error) => {
+          onError: async (error) => {
+            const settleDraft = () => settleFailedSendDraft(error, activeChatId, refreshChatSnapshotCache, draft, currentAttachments);
             // DICE-F3: a dice commit conflict resyncs the lane and keeps the
             // draft — it is not a provider failure.
             if (tryHandleDiceSendConflict(error, activeChatId, draft, currentAttachments)) return;
@@ -741,7 +695,7 @@ export function useChatController(): ChatControllerActions {
                   onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
                 },
               });
-              restoreDraftAfterSendError(draft, currentAttachments);
+              await settleDraft();
             } else if (gateErrorCode(error) === "voice_transcribe_unavailable") {
               toast.error(getT()("voice_transcribe_unavailable"), {
                 description: getT()("voice_transcribe_unavailable_desc"),
@@ -750,9 +704,9 @@ export function useChatController(): ChatControllerActions {
                   onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
                 },
               });
-              restoreDraftAfterSendError(draft, currentAttachments);
+              await settleDraft();
             } else {
-              restoreDraftAfterSendError(draft, currentAttachments);
+              await settleDraft();
               showProviderErrorToast(error, getT());
             }
           },
@@ -1028,7 +982,7 @@ export function useChatController(): ChatControllerActions {
     async (
       chatId: ChatId,
       messageId: string,
-      override?: { model?: string; promptPresetId?: string },
+      override?: RegenerateOverride,
     ): Promise<StreamOutcome> => {
       useChatStore.getState().setMessageActionId(messageId);
       try {

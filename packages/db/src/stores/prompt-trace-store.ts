@@ -1,6 +1,6 @@
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { promptTraces, promptTraceChunks, promptTraceChunkRefs } from '../db-schema.js';
-import type { ActivatedLoreDetail, ProviderResponseTrace } from '@vibe-tavern/domain';
+import type { ActivatedLoreDetail, OverflowedLorebook, ProviderResponseTrace } from '@vibe-tavern/domain';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { deflateTraceValue, inflateTraceValue, type TraceChunk } from '../trace-chunking.js';
@@ -23,6 +23,7 @@ export interface PromptTrace {
   finalPayload: Record<string, unknown>;
   activatedLoreEntries: string[];
   activatedLoreDetail: ActivatedLoreDetail[];
+  overflowedLorebooks?: OverflowedLorebook[];
   retrievedMemories: Array<Record<string, unknown>>;
   scriptInjections: Array<Record<string, unknown>>;
   latencyMs: number;
@@ -56,6 +57,7 @@ export interface SaveTraceData {
   finalPayload?: Record<string, unknown>;
   activatedLoreEntries: string[];
   activatedLoreDetail: ActivatedLoreDetail[];
+  overflowedLorebooks?: OverflowedLorebook[];
   retrievedMemories: Array<Record<string, unknown>>;
   scriptInjections: Array<Record<string, unknown>>;
   latencyMs: number;
@@ -142,6 +144,7 @@ export class PromptTraceStore {
           finalPayloadJson: JSON.stringify(final.skeleton),
           activatedLoreEntriesJson: JSON.stringify(data.activatedLoreEntries),
           activatedLoreDetailJson: JSON.stringify(data.activatedLoreDetail ?? []),
+          overflowedLorebooksJson: JSON.stringify(data.overflowedLorebooks ?? []),
           retrievedMemoriesJson: JSON.stringify(data.retrievedMemories),
           scriptInjectionsJson: JSON.stringify(data.scriptInjections),
           prefill: data.prefill ?? null,
@@ -265,6 +268,7 @@ export class PromptTraceStore {
       finalPayload: inflateTraceValue(JSON.parse(row.finalPayloadJson), lookup),
       activatedLoreEntries: JSON.parse(row.activatedLoreEntriesJson),
       activatedLoreDetail: row.activatedLoreDetailJson ? JSON.parse(row.activatedLoreDetailJson) : [],
+      overflowedLorebooks: row.overflowedLorebooksJson ? JSON.parse(row.overflowedLorebooksJson) : [],
       retrievedMemories: JSON.parse(row.retrievedMemoriesJson),
       scriptInjections: JSON.parse(row.scriptInjectionsJson),
       latencyMs: row.latencyMs,

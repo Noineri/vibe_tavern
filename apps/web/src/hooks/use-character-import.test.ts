@@ -35,28 +35,21 @@ useDomEnv();
 const uploadCharacterAvatar = mock((_id: string, _file: File, _full?: File) =>
 	Promise.resolve({ avatarExt: ".png", avatarFullExt: ".png" }));
 const uploadAsset = mock((_f: File) => Promise.resolve({ assetId: "asset-legacy" }));
-const updateCharacterAvatar = mock((_cid: string, _chatId: unknown, _aid: string) =>
-	Promise.resolve({} as never));
 const fetchBootstrapAction = mock((_opts?: { silent?: boolean; skipSnapshotSync?: boolean }) =>
 	Promise.resolve());
-const importCharacterAction = mock((_input: { fileName: string; jsonText: string }) =>
+const importCharacterAction = mock((_input: { fileName: string; jsonText?: string; importEmbeddedBook?: boolean }) =>
 	Promise.resolve({
 		activeChatId: "chat-1",
 		snapshot: { character: { id: "char-imported", name: "Test", avatarExt: null } },
 		imported: { kind: "character", name: "Test", fileName: "card.png", warningCount: 0, warnings: [] },
 	} as never));
 
-const realAppClient = await import("../app-client.js");
+const realCharacterApi = await import("../api/character-api.js");
+const realAssetApi = await import("../api/asset-api.js");
 const realCharacterActions = await import("../stores/api-actions/character-actions.js");
 const realBootstrapActions = await import("../stores/api-actions/bootstrap-actions.js");
-mock.module("../app-client.js", () => {
-	return {
-		...realAppClient,
-		uploadCharacterAvatar,
-    uploadAsset,
-    updateCharacterAvatar,
-	};
-});
+mock.module("../api/character-api.js", () => ({ ...realCharacterApi, uploadCharacterAvatar }));
+mock.module("../api/asset-api.js", () => ({ ...realAssetApi, uploadAsset }));
 mock.module("../stores/api-actions/character-actions.js", () => {
 	return {
 		...realCharacterActions,
@@ -106,7 +99,6 @@ function makeCharaPng(): File {
 beforeEach(() => {
   uploadCharacterAvatar.mockClear();
   uploadAsset.mockClear();
-  updateCharacterAvatar.mockClear();
   fetchBootstrapAction.mockClear();
   importCharacterAction.mockClear();
 });
@@ -117,7 +109,7 @@ test("PNG import uploads via the folder route and skips legacy asset+PATCH", asy
 
   let imported: { snapshot?: { character?: { avatarExt?: string | null } } } | undefined;
   await act(async () => {
-    imported = await result.current.importFile(file);
+    imported = await result.current.importFile(file, { importEmbeddedBook: true });
   });
 
   // Folder route fired with the created character id + the PNG as BOTH crop
@@ -130,11 +122,11 @@ test("PNG import uploads via the folder route and skips legacy asset+PATCH", asy
 
   // Legacy path must NOT have been touched.
   expect(uploadAsset).not.toHaveBeenCalled();
-  expect(updateCharacterAvatar).not.toHaveBeenCalled();
 
   // Character created + a silent skip-sync bootstrap refresh.
   expect(importCharacterAction).toHaveBeenCalledTimes(1);
   expect(importCharacterAction.mock.calls[0][0].fileName).toBe("card.png");
+  expect(importCharacterAction.mock.calls[0][0].importEmbeddedBook).toBe(true);
   expect(fetchBootstrapAction).toHaveBeenCalledTimes(1);
   expect(fetchBootstrapAction.mock.calls[0][0]).toEqual({ silent: true, skipSnapshotSync: true });
 
@@ -156,7 +148,6 @@ test("non-PNG (jsonl) import does not trigger any avatar upload", async () => {
   expect(importCharacterAction).toHaveBeenCalledTimes(1);
   expect(uploadCharacterAvatar).not.toHaveBeenCalled();
   expect(uploadAsset).not.toHaveBeenCalled();
-  expect(updateCharacterAvatar).not.toHaveBeenCalled();
   // No avatar upload means no avatar-driven bootstrap refresh.
   expect(fetchBootstrapAction).not.toHaveBeenCalled();
 });

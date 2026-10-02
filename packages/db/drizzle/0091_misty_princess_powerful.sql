@@ -1,0 +1,1 @@
+ALTER TABLE `lore_entries` ADD `min_chat_messages` integer DEFAULT 0 NOT NULL;

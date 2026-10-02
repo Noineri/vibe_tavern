@@ -15,6 +15,7 @@ import { join, resolve } from "node:path";
 import { pathExists } from "./_fs.js";
 import { copyPromptAssets } from "./_prompt-assets.js";
 import { VERSION as PACKAGE_VERSION } from "./_version.js";
+import { SERVER_COMPILE_CLI_FLAGS } from "./_server-compile.js";
 
 const VERSION = process.env.VIBE_TAVERN_BUILD_VERSION?.trim() || PACKAGE_VERSION;
 const ROOT = resolve(import.meta.dir, "..");
@@ -127,6 +128,7 @@ async function main() {
 			"--compile",
 			"--target=bun-linux-arm64-android",
 			"--minify",
+			...SERVER_COMPILE_CLI_FLAGS,
 			"--define",
 			`VIBE_TAVERN_VERSION=\"${VERSION}\"`,
 			"--define",

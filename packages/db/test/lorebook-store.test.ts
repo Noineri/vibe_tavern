@@ -238,7 +238,7 @@ const FULL_ENTRY: CreateLoreEntryData = {
   priority: 42,
   stickyWindow: 3,
   cooldownWindow: 5,
-  delayWindow: 2,
+  minChatMessages: 2,
   constant: true,
   probability: 77,
   ignoreBudget: true,
@@ -289,6 +289,7 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
   test("createEntry applies documented defaults when fields are omitted", async () => {
     const store = await mkStore();
     const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    expect(lb.characterStrategy).toBe(1);
 
     const created = await store.createEntry(lb.id, {
       title: "T",
@@ -304,7 +305,7 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect(read.role).toBe("system");
     expect(read.groupName).toBe("");
     expect(read.automationId).toBe("");
-    expect(read.matchSources).toEqual([]);
+    expect(read.matchSources).toEqual(["chat_messages"]);
     expect(read.characterFilter).toEqual([]);
     expect(read.metadata).toEqual({});
     // Numeric defaults
@@ -312,7 +313,7 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect(read.priority).toBe(100);
     expect(read.stickyWindow).toBe(0);
     expect(read.cooldownWindow).toBe(0);
-    expect(read.delayWindow).toBe(0);
+    expect(read.minChatMessages).toBe(0);
     expect(read.probability).toBe(100);
     expect(read.groupWeight).toBe(100);
     expect(read.recursionLevel).toBe(0);
@@ -326,8 +327,10 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect(read.excludeRecursion).toBe(false);
     expect(read.preventRecursion).toBe(false);
     expect(read.delayUntilRecursion).toBe(false);
-    expect(read.caseSensitive).toBe(false);
-    expect(read.matchWholeWords).toBe(false);
+    // Tri-state (D2): matching flags default to null = inherit the book-level
+    // default, not false (was false before the book-level default existed).
+    expect(read.caseSensitive).toBe(null);
+    expect(read.matchWholeWords).toBe(null);
     expect(read.characterFilterExclude).toBe(false);
     expect(read.enabled).toBe(true);
     // Nullable
@@ -355,6 +358,86 @@ describe("LorebookStore entry field round-trip (characterization)", () => {
     expect((await store.getEntry(e.id))!.useGroupScoring).toBe(null);
     await store.updateEntry(e.id, { useGroupScoring: true });
     expect((await store.getEntry(e.id))!.useGroupScoring).toBe(true);
+  });
+
+  // D2: the matching flags are tri-state exactly like useGroupScoring — null
+  // (inherit the book default) and false (explicitly off) must survive the
+  // store separately, and the book-level defaults must round-trip too.
+  test("caseFormsKeys round-trips through metadata and replaces only its own value", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    const entry = await store.createEntry(lb.id, {
+      keys: ["dragon"],
+      caseFormsKeys: ["dragon"],
+      metadata: { stUid: 7 },
+    });
+    expect(entry.caseFormsKeys).toEqual(["dragon"]);
+    expect(entry.metadata).toEqual({ stUid: 7, caseFormsKeys: ["dragon"] });
+
+    const updated = await store.updateEntry(entry.id, { caseFormsKeys: [] });
+    // Empty list = chip toggled off → the metadata key PRUNES (supervisor
+    // ruling) so a flagless entry's metadata stays byte-identical — the
+    // duplicateLorebook characterization pin above depends on that cleanliness.
+    expect(updated.caseFormsKeys).toEqual([]);
+    expect(updated.metadata).toEqual({ stUid: 7 });
+  });
+
+  test("D2: entry caseSensitive / matchWholeWords tri-state round-trips (null vs false are distinct)", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    const e = await store.createEntry(lb.id, { title: "inherit" });
+    expect((await store.getEntry(e.id))!.caseSensitive).toBe(null);
+    expect((await store.getEntry(e.id))!.matchWholeWords).toBe(null);
+    await store.updateEntry(e.id, { caseSensitive: false, matchWholeWords: false });
+    expect((await store.getEntry(e.id))!.caseSensitive).toBe(false);
+    expect((await store.getEntry(e.id))!.matchWholeWords).toBe(false);
+    await store.updateEntry(e.id, { caseSensitive: null, matchWholeWords: null });
+    expect((await store.getEntry(e.id))!.caseSensitive).toBe(null);
+    expect((await store.getEntry(e.id))!.matchWholeWords).toBe(null);
+    await store.updateEntry(e.id, { caseSensitive: true, matchWholeWords: true });
+    expect((await store.getEntry(e.id))!.caseSensitive).toBe(true);
+    expect((await store.getEntry(e.id))!.matchWholeWords).toBe(true);
+  });
+
+  test("N5: book tokenBudgetCap round-trips (default 0 = no cap, update persists)", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    expect(lb.tokenBudgetCap).toBe(0);
+    await store.updateLorebook(lb.id, { tokenBudgetCap: 250 });
+    expect((await store.getLorebook(lb.id))!.tokenBudgetCap).toBe(250);
+    // Clone carries the cap too (a cloned book must keep its budget model).
+    const cloned = await store.duplicateLorebook(lb.id, { name: "LB copy" });
+    expect(cloned.lorebook.tokenBudgetCap).toBe(250);
+  });
+
+  test("N10: maxRecursionSteps defaults to 0 = unlimited (ST default, world-info.js:82), update persists", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    expect(lb.maxRecursionSteps).toBe(0);
+    await store.updateLorebook(lb.id, { maxRecursionSteps: 3 });
+    expect((await store.getLorebook(lb.id))!.maxRecursionSteps).toBe(3);
+    const cloned = await store.duplicateLorebook(lb.id, { name: "LB copy" });
+    expect(cloned.lorebook.maxRecursionSteps).toBe(3);
+  });
+
+  test("N1: includeNames defaults to on and round-trips", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    expect(lb.includeNames).toBe(true);
+    expect((await store.getLorebook(lb.id))!.includeNames).toBe(true);
+    await store.updateLorebook(lb.id, { includeNames: false });
+    expect((await store.getLorebook(lb.id))!.includeNames).toBe(false);
+  });
+
+  test("D2: book-level caseSensitive / matchWholeWords defaults round-trip (default false, update flips)", async () => {
+    const store = await mkStore();
+    const lb = await store.createLorebook({ name: "LB", scopeType: "global" });
+    expect(lb.caseSensitive).toBe(false);
+    expect(lb.matchWholeWords).toBe(false);
+    await store.updateLorebook(lb.id, { caseSensitive: true, matchWholeWords: true });
+    const read = (await store.getLorebook(lb.id))!;
+    expect(read.caseSensitive).toBe(true);
+    expect(read.matchWholeWords).toBe(true);
   });
 
   test("duplicateLorebook preserves every entry field (LoreEntry→CreateLoreEntryData projection)", async () => {

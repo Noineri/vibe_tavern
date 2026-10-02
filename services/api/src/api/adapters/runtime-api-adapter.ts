@@ -17,6 +17,7 @@ import { RegexAdapter } from "./regex-adapter.js";
 import { TtsAdapter } from "./tts-adapter.js";
 import { NarrationLibraryService } from "../../domain/tts/narration-library.js";
 import { SttAdapter } from "./stt-adapter.js";
+import { ImageGenAdapter } from "./image-gen-adapter.js";
 import { ProviderAdapter } from "./provider-adapter.js";
 import { ProxyAdapter } from "./proxy-adapter.js";
 import { PresetAdapter } from "./preset-adapter.js";
@@ -34,6 +35,7 @@ import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
 import { SamplerSetAdapter } from "./sampler-set-adapter.js";
 import { FormatTemplateAdapter } from "./format-template-adapter.js";
 import { ServicePromptAdapter } from "./service-prompt-adapter.js";
+import { ImagePromptProfileAdapter } from "./image-prompt-profile-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
 import { ExperienceAdapter } from "./experience-adapter.js";
 import { ExperienceCopilotAdapter } from "./experience-copilot-adapter.js";
@@ -57,6 +59,7 @@ import type { ExperienceContextService } from "../../domain/interactive/experien
 export class RuntimeApiAdapter implements RuntimeApi {
 	readonly bootstrap: RuntimeApi["bootstrap"];
 	readonly servicePrompts: ServicePromptAdapter;
+	readonly imagePromptProfiles: ImagePromptProfileAdapter;
 	readonly chat: ChatAdapter;
 	readonly character: CharacterAdapter;
 	readonly persona: PersonaAdapter;
@@ -65,6 +68,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly regex: RegexAdapter;
 	readonly tts: TtsAdapter;
 	readonly stt: SttAdapter;
+	readonly imageGen: ImageGenAdapter;
 	readonly provider: ProviderAdapter;
 	readonly proxy: ProxyAdapter;
 	readonly preset: PresetAdapter;
@@ -111,6 +115,11 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		// stays acyclic (no cross-imports, constructor injection only).
 		const sttAdapter = new SttAdapter(stores);
 		this.stt = sttAdapter;
+		// IG-8 + IG-15: image-gen profiles + generation, with the LLM-assist
+		// quiet-call seam wired to the provider profile service. The fetch seam
+		// stays unset in production — the backends' global-fetch default applies
+		// (the same seam can carry the proxy-aware provider fetch later, per-backend).
+		this.imageGen = new ImageGenAdapter(stores, assetService, undefined, { providerProfiles: providerProfileService });
 		this.chat = new ChatAdapter(
 			stores, sessionRuntime, liveChatOrchestrator,
 			chatSummaryService, providerProfileService, assetService,
@@ -121,6 +130,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.lorebook = new LorebookAdapter(stores);
 		this.script = new ScriptAdapter(stores);
 		this.servicePrompts = new ServicePromptAdapter(stores);
+		this.imagePromptProfiles = new ImagePromptProfileAdapter(stores);
 		this.regex = new RegexAdapter(stores);
 		// TPE-18c: the narration library writes into the character's EXISTING
 		// assets folder — same folder resolver the AssetService uses, so

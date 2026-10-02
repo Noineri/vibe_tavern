@@ -44,7 +44,6 @@ function makeChat(): Chat {
     mode: "rp",
     activeBranchId: "branch_1" as Chat["activeBranchId"],
     promptPresetId: "preset_1" as Chat["promptPresetId"],
-    toolProfileId: "tools_1" as Chat["toolProfileId"],
     selectedGreetingIndex: 0,
     coauthorContextLinks: [],
     coauthorModuleId: null,
@@ -62,7 +61,7 @@ function makeStoresWithDiceLeak(scripts: Script[]): StoreContainer {
   const chat = makeChat();
   return {
     chats: {
-      getById: async () => ({ ...chat, scriptState: {}, loreActivationState: {} }),
+      getById: async () => ({ ...chat, scriptState: {} }),
       updateScriptState: async () => {},
     },
     scripts: {

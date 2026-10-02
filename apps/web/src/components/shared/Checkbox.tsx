@@ -8,6 +8,8 @@ interface CheckboxProps extends Omit<React.HTMLAttributes<HTMLElement>, "onChang
   id?: string;
   className?: string;
   label?: React.ReactNode;
+  /** Render a phrasing-content root for use inside inline text/chip controls. */
+  inline?: boolean;
 }
 
 /**
@@ -24,7 +26,7 @@ interface CheckboxProps extends Omit<React.HTMLAttributes<HTMLElement>, "onChang
  * trigger handler and our toggle handler run.
  */
 export const Checkbox = forwardRef<HTMLButtonElement | HTMLDivElement, CheckboxProps>(
-  function Checkbox({ checked, onChange, disabled, id, className, label, onClick, ...rest }, ref) {
+  function Checkbox({ checked, onChange, disabled, id, className, label, inline = false, onClick, ...rest }, ref) {
     const handleClick: React.MouseEventHandler<HTMLElement> = (e) => {
       onClick?.(e);
       if (e.defaultPrevented) return;
@@ -91,27 +93,43 @@ export const Checkbox = forwardRef<HTMLButtonElement | HTMLDivElement, CheckboxP
       );
     }
 
+    const labelContent = typeof label === "string" ? (
+      <span className="text-[13px]">{label}</span>
+    ) : (
+      label
+    );
+    const sharedProps = {
+      role: "checkbox",
+      "aria-checked": checked,
+      tabIndex: 0,
+      onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
+        if (!disabled && (event.key === " " || event.key === "Enter")) {
+          event.preventDefault();
+          onChange(!checked);
+        }
+      },
+      onClick: handleClick,
+      ...rest,
+      className: cn(
+        "flex cursor-pointer items-center gap-2 select-none transition-colors",
+        disabled ? "opacity-40 pointer-events-none" : "text-t2 hover:text-t1",
+        className,
+      ),
+    };
+
+    if (inline) {
+      return (
+        <span ref={ref as React.Ref<HTMLSpanElement>} {...sharedProps}>
+          {chip}
+          {labelContent}
+        </span>
+      );
+    }
+
     return (
-      <div
-        ref={ref as React.Ref<HTMLDivElement>}
-        role="checkbox"
-        aria-checked={checked}
-        tabIndex={0}
-        onKeyDown={e => { if (!disabled && (e.key === " " || e.key === "Enter")) { e.preventDefault(); onChange(!checked); } }}
-        onClick={handleClick}
-        {...rest}
-        className={cn(
-          "flex cursor-pointer items-center gap-2 select-none transition-colors",
-          disabled ? "opacity-40 pointer-events-none" : "text-t2 hover:text-t1",
-          className,
-        )}
-      >
+      <div ref={ref as React.Ref<HTMLDivElement>} {...sharedProps}>
         {chip}
-        {typeof label === "string" ? (
-          <span className="text-[13px]">{label}</span>
-        ) : (
-          label
-        )}
+        {labelContent}
       </div>
     );
   },

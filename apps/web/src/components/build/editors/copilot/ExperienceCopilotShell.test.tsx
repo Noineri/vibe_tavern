@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { wireUiSettings } from "../../../../../test/wire-fixtures.js";
 import type { ReactElement, ReactNode } from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { ExperienceCopilotContextLink, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
@@ -262,6 +263,7 @@ const TEST_RUN_DATA: Awaited<ReturnType<typeof import("../../../../api/experienc
   effects: [],
   console: [],
   steps: [],
+  seatLegality: { seats: [], turnOwners: [] },
 };
 const PLAYGROUND_DATA: Awaited<ReturnType<typeof import("../../../../api/experience-api.js").startExperiencePlayground>> = {
   playgroundSessionId: "pg-shell-1",
@@ -990,6 +992,7 @@ describe("ExperienceCopilotShell — provider binding persistence", () => {
       allCharacters: [],
       promptPresets: [],
       uiSettings: {
+        ...wireUiSettings(),
         id: "default",
         theme: "coffee",
         chatFontSize: 15,

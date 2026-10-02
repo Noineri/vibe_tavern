@@ -36,7 +36,7 @@ export type {
 } from './chat-store.js';
 
 export { MessageStore } from './message-store.js';
-export type { Message, MessageVariant, AddMessageInput } from './message-store.js';
+export type { Message, MessageVariant, AddMessageInput, SceneBackfillRun } from './message-store.js';
 
 export { PromptTraceStore } from './prompt-trace-store.js';
 export type { PromptTrace, SaveTraceData } from './prompt-trace-store.js';
@@ -48,7 +48,7 @@ export type {
   UpdateChatSummaryData,
 } from './chat-summary-store.js';
 
-export { LorebookStore } from './lorebook-store.js';
+export { LorebookStore, LOREBOOK_BINDING_KIND } from './lorebook-store.js';
 export type {
   CreateLorebookData,
   UpdateLorebookData,
@@ -57,6 +57,8 @@ export type {
   Lorebook as LorebookRow,
   LoreEntry as LoreEntryRow,
   LorebookLink,
+  ActiveLorebookSet,
+  LorebookBindingKind,
   CoauthorLoreDraftBundle,
 } from './lorebook-store.js';
 
@@ -82,6 +84,8 @@ export type { CreateTtsProfileData, UpdateTtsProfileData } from './tts-store.js'
 
 export { SttStore } from './stt-store.js';
 export type { CreateSttProfileData, UpdateSttProfileData } from './stt-store.js';
+export { ImageGenStore } from './image-gen-store.js';
+export type { CreateImageGenProfileData, UpdateImageGenProfileData } from './image-gen-store.js';
 
 export { CoauthorModuleStore } from './coauthor-module-store.js';
 export type {
@@ -92,6 +96,23 @@ export type {
 
 export { CopilotProfileStore } from './copilot-profile-store.js';
 export { SamplerSetStore } from './sampler-set-store.js';
+export { ImageGenSamplerSetStore } from './image-gen-sampler-set-store.js';
+export type { ImageGenSamplerSetRow, CreateImageGenSamplerSetData, UpdateImageGenSamplerSetData } from './image-gen-sampler-set-store.js';
+export { ImageGenPromptCapStore } from './image-gen-prompt-cap-store.js';
+export { ImageGenListingSnapshotStore, IMAGE_GEN_LISTING_SNAPSHOT_KINDS } from './image-gen-listing-snapshot-store.js';
+export type { ImageGenListingSnapshot, ImageGenListingSnapshotKind } from './image-gen-listing-snapshot-store.js';
+export type { ImageGenPromptCapRow } from './image-gen-prompt-cap-store.js';
+
+export { ImagePromptVariantStore } from './image-prompt-variant-store.js';
+export type { ImagePromptVariantKey, ImagePromptVariantRow, ImagePromptVariantUpsertData } from './image-prompt-variant-store.js';
+
+export { ImagePromptProfileStore } from './image-prompt-profile-store.js';
+export type {
+  ImagePromptProfile,
+  CreateImagePromptProfileData,
+  UpdateImagePromptProfileData,
+  ImagePromptOverridesInput,
+} from './image-prompt-profile-store.js';
 export type {
   SamplerSetRow,
   SamplerSetPayload,

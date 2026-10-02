@@ -12,26 +12,34 @@
  * `experience-frame-runtime.test.ts` keeps it honest: it re-runs this script
  * in `--check` mode (subprocess) and byte-compares. Regenerate after touching
  * the port, the loop host, the entry, or any of their imports (domain helpers /
- * contracts schemas), after Bun upgrades (the minifier's output can shift), and
- * after ANY DEPENDENCY CHANGE that touches bun.lock (bun add / bun install
- * re-resolutions): a shifted dependency graph changes the minified bytes even
- * with zero source edits, so the freshness test FAILING right after a package
- * update is EXPECTED — the fix is a regeneration, not a debug:
+ * contracts schemas), after a Bun upgrade (the minifier's output can shift),
+ * and after a version bump of a package the entry actually pulls in (`zod` is
+ * the big one — the artifact carried the whole Zod runtime until a bump made
+ * it tree-shake, which is how it ended up 347 674 bytes against a 149 793-byte
+ * fresh build on the v1.2.2 tag). Lockfile churn on its own does NOT shift the
+ * bytes: five commits that rewrote bun.lock (overrides, entry pruning, a
+ * workspace-local dependency move) left the artifact byte-identical. So a
+ * freshness failure right after `bun install` is plausible but not automatic —
+ * read the byte counts the `--check` failure prints before assuming it is
+ * noise. The fix either way:
  *
  *   bun run gen:experience-frame-runtime
  *
  * `--check` mode: build in memory and compare against the committed artifact
- * WITHOUT writing; exit 0 on a byte-match, exit 1 with the regeneration
- * instruction on drift or a build failure. This is the mode CI uses — the
- * freshness check MUST run the bundler through this script (a subprocess, i.e.
- * the RUNTIME module resolver) rather than an in-test `Bun.build` call: the
- * bundler dereferences workspace symlinks and resolves bare imports from the
- * real package path, which cannot see `node_modules/.bun/node_modules` and so
- * fails to resolve `zod`/`@vibe-tavern/domain` from `packages/api-contracts`
- * on fresh CI installs (oven-sh/bun#31957); the runtime resolver handles that
- * layout fine. Running the generator as a subprocess is also the only way to
- * guarantee the freshness check uses EXACTLY the generator's build options —
- * an in-test duplicate of the config can silently drift.
+ * WITHOUT writing; exit 0 on a byte-match, exit 1 with the sizes and the
+ * regeneration instruction on drift or a build failure. This is the mode CI
+ * uses. The check MUST run the bundler through this script so that it can
+ * never drift from the generator's build options — there is exactly one copy
+ * of the bundle config, and an in-test duplicate would silently rot. That is
+ * the whole reason for the subprocess today. It used to have a second one:
+ * on earlier Bun versions `Bun.build` dereferenced workspace symlinks and
+ * resolved bare imports from the real package path, so `zod` /
+ * `@vibe-tavern/domain` went missing on fresh isolated installs
+ * (oven-sh/bun#31957) — that no longer reproduces on 1.4.2. Measured on a
+ * clean `bun install --frozen-lockfile` worktree (isolated layout:
+ * `node_modules/.bun` plus per-package symlinks, no hoisted `zod`): an
+ * in-process `Bun.build` with these options produced bytes identical to the
+ * committed artifact.
  */
 import { join, resolve } from "node:path";
 
@@ -41,16 +49,17 @@ const ENTRY = join(WEB_DIR, "src", "lib", "experience-frame-runtime.entry.ts");
 const OUT_PATH = join(WEB_DIR, "src", "generated", "experience-frame-runtime.source.ts");
 
 const HEADER = [
-  "/**",
-  " * GENERATED FILE — do not edit by hand (REALTIME_EXPERIENCE_MODE_PLAN, RM-4).",
-  " * The realtime frame runtime IIFE (kernel port + loop host + boot), built by",
-  " * `bun run gen:experience-frame-runtime` from experience-frame-runtime.entry.ts.",
- " * Guarded by experience-frame-runtime.test.ts: it re-bundles and byte-compares.",
- " * Regenerate after touching the entry's import graph, after a Bun upgrade, or",
- " * after any dependency change (bun.lock) — the freshness test WILL fail on",
- " * package updates until this file is regenerated:",
- " *   bun run gen:experience-frame-runtime",
- " */",
+	"/**",
+	" * GENERATED FILE — do not edit by hand (REALTIME_EXPERIENCE_MODE_PLAN, RM-4).",
+	" * The realtime frame runtime IIFE (kernel port + loop host + boot), built by",
+	" * `bun run gen:experience-frame-runtime` from experience-frame-runtime.entry.ts.",
+	" * Guarded by experience-frame-runtime.test.ts: it re-bundles and byte-compares.",
+	" * Regenerate after touching the entry's import graph, after a Bun upgrade, or",
+	" * after a version bump of a package the entry pulls in (zod, workspace ones).",
+	" * Plain lockfile churn does not shift these bytes; the --check failure prints",
+	" * both sizes so you can tell a graph change from minifier renaming:",
+	" *   bun run gen:experience-frame-runtime",
+	" */",
 ].join("\n");
 
 async function buildRuntimeSource(): Promise<string> {
@@ -79,10 +88,18 @@ async function check(): Promise<void> {
 		process.exit(1);
 	}
 	if (js !== EXPERIENCE_FRAME_RUNTIME_SOURCE) {
+		let divergesAt = 0;
+		while (
+			divergesAt < js.length &&
+			divergesAt < EXPERIENCE_FRAME_RUNTIME_SOURCE.length &&
+			js[divergesAt] === EXPERIENCE_FRAME_RUNTIME_SOURCE[divergesAt]
+		)
+			divergesAt++;
 		console.error(
-			"experience-frame-runtime.source.ts is STALE: the committed IIFE does not match a fresh build of experience-frame-runtime.entry.ts. " +
-				"A dependency change (bun.lock) is the most common cause — the test failing right after a package update is EXPECTED. " +
-				"Regenerate with: bun run gen:experience-frame-runtime",
+			"experience-frame-runtime.source.ts is STALE: the committed IIFE does not match a fresh build of experience-frame-runtime.entry.ts.\n" +
+				`  committed: ${EXPERIENCE_FRAME_RUNTIME_SOURCE.length} bytes, fresh build: ${js.length} bytes, first divergence at byte ${divergesAt}.\n` +
+				"  A size delta of more than a few hundred bytes means the entry's import graph changed (source edit, or a version bump of zod / a workspace package it pulls in); a same-size or near-size delta is usually minifier renaming after a Bun upgrade. Either way the fix is a regeneration, not a debug:\n" +
+				"  bun run gen:experience-frame-runtime",
 		);
 		process.exit(1);
 	}

@@ -15,7 +15,7 @@ import {
 /**
  * CD-2: the copilot editor's unified review state — per-turn buffer snapshots
  * (checkpoints), the aggregated live proposal over the two buffers, draft-level
- * revert («Отменить изменения»), and manual-edit conflict flags.
+ * revert ("Undo changes"), and manual-edit conflict flags.
  *
  * WHERE THE STATE LIVES: the snapshots live in the per-thread review-round
  * store (`experience-copilot-review-store.ts`), NOT in this hook's React

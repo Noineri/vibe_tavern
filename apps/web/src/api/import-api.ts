@@ -1,10 +1,8 @@
 import { createParser } from "eventsource-parser";
 import type { ImportJsonResponse } from "./types.js";
 import type { ChatId } from "@vibe-tavern/domain";
-import { client } from "./client.js";
+import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
-import { normalizeSnapshot } from "./normalize.js";
-import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 
 export async function importJson(input: {
   fileName: string;
@@ -12,12 +10,11 @@ export async function importJson(input: {
   monolithText?: string;
   chatId?: ChatId;
   skipExisting?: boolean;
+  importEmbeddedBook?: boolean;
   lean?: boolean;
 }): Promise<ImportJsonResponse> {
   const response = await client.api.import.json.$post({ json: input });
-  const data = await unwrapRpc<ImportJsonResponse>(response);
-  // Snapshot is absent on the lean mass-import path — only normalize when present.
-  return data.snapshot ? { ...data, snapshot: normalizeSnapshot(data.snapshot) } : data;
+  return unwrapRpc(response);
 }
 
 export interface BatchImportItemResult {
@@ -35,11 +32,11 @@ export interface BatchImportItemResult {
  * ImportModals Phase 1.
  */
 export async function importJsonBatch(input: {
-  items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: ChatId; skipExisting?: boolean }>;
+  items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: ChatId; skipExisting?: boolean; importEmbeddedBook?: boolean }>;
   lean?: boolean;
 }): Promise<{ results: BatchImportItemResult[] }> {
   const response = await client.api.import.batch.$post({ json: input });
-  return unwrapRpc<{ results: BatchImportItemResult[] }>(response);
+  return unwrapRpc(response);
 }
 
 // ─── SillyTavern directory import (backend-driven; ST_NATIVE_DIALOG_IMPORT_PLAN) ──
@@ -157,7 +154,7 @@ export async function openNativeDialog(): Promise<NativeDialogResult> {
   const token = getMobileToken();
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetch(`${getGatewayBaseUrl()}/api/fs/native-dialog`, {
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/fs/native-dialog`, {
     method: "POST",
     headers,
     signal: AbortSignal.timeout(5 * 60 * 1000),
@@ -168,13 +165,13 @@ export async function openNativeDialog(): Promise<NativeDialogResult> {
 /** Scan a SillyTavern directory on the backend (read-only preview). */
 export async function scanStDirectory(path: string): Promise<StScanResult> {
   const response = await client.api.import["st-scan"].$post({ json: { path } });
-  return unwrapRpc<StScanResult>(response);
+  return unwrapRpc(response);
 }
 
 /** Import a SillyTavern directory on the backend (writes all five surfaces). */
 export async function importStDirectory(path: string): Promise<StImportResult> {
   const response = await client.api.import["st-directory"].$post({ json: { path } });
-  return unwrapRpc<StImportResult>(response);
+  return unwrapRpc(response);
 }
 
 // ─── Streaming import (live progress bar) ─────────────────────────────────
@@ -208,7 +205,7 @@ export async function importStDirectoryStream(
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(`${getGatewayBaseUrl()}/api/import/st-directory/stream`, {
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/import/st-directory/stream`, {
     method: "POST",
     headers: { ...headers, "Content-Type": "application/json" },
     body: JSON.stringify({ path }),

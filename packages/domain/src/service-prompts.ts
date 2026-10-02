@@ -1,5 +1,5 @@
 /**
- * Registry of the app's base "service" (служебные) system prompts.
+ * Registry of the app's base "service" (service prompts) system prompts.
  *
  * This module drives the Service Prompt Profiles feature (dedicated
  * tab, independent from prompt presets, globally active profile).
@@ -23,6 +23,7 @@ export const SERVICE_PROMPT_FIELDS = {
   lore_entry: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   lore_keys: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   chat_impersonate: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
+  chat_impersonate_enhance: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   md_import: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   vision_describe: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   scene_schema: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
@@ -55,6 +56,7 @@ export const SERVICE_PROMPT_FIELD_KEYS = [
   "lore_entry",
   "lore_keys",
   "chat_impersonate",
+  "chat_impersonate_enhance",
   "md_import",
   "vision_describe",
   "scene_schema",

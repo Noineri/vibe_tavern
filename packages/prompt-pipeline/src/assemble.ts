@@ -247,6 +247,7 @@ const phaseOneMacroEngine = createFullMacroEngine();
 
 function buildAssemblyVariableContext(context: PromptAssemblyContext): PromptVariableContext {
   return buildPromptVariableContext({
+    outlets: context.outletEntries ?? {},
     character: {
       name: context.character.name,
       description: context.character.description,
@@ -358,7 +359,11 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     lore: context.lore?.map((entry) => ({
       ...entry,
       title: applyMacros(entry.title, variableContext),
-      content: applyMacros(entry.content, variableContext),
+      // P16 boundary: activated lore from StaticPromptResolver has already
+      // passed through the full macro engine before WORLD_INFO regex hooks.
+      // Other lore producers (for example, AI Assistant context) retain the
+      // pipeline-owned expansion path.
+      content: entry.macrosResolved ? entry.content : applyMacros(entry.content, variableContext),
     })),
     memory: {
       summary: context.memory?.summary?.map((s) => ({
@@ -1299,7 +1304,13 @@ function finalizeAssembly(
     })),
     ...historyMessages,
   ];
-  const finalMessages = context.preset?.mergeConsecutiveRoles
+  // Simple mode merges same-role messages unconditionally: strict chat templates
+  // (e.g. the Qwen3.5-family Jinja shipped with recent llama.cpp GGUFs) reject any
+  // system message beyond the first, and per-layer system messages 400 there
+  // (issue #44). Advanced mode keeps the explicit per-preset toggle.
+  const isAdvancedMode = context.preset?.advancedMode === true;
+  const shouldMergeRoles = isAdvancedMode ? context.preset?.mergeConsecutiveRoles === true : true;
+  const finalMessages = shouldMergeRoles
     ? mergeConsecutiveRoleMessages(messages)
     : messages;
 

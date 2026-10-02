@@ -19,13 +19,13 @@ import { unwrapRpc, unwrapError } from "./unwrap.js";
 /** `GET /api/sampler-sets` — the library in store order. */
 export async function listSamplerSets(): Promise<SamplerSetList> {
 	const response = await client.api["sampler-sets"].$get();
-	return unwrapRpc<SamplerSetList>(response);
+	return unwrapRpc(response);
 }
 
 /** `POST /api/sampler-sets` — create from the panel's current values (the «+» flow). */
 export async function createSamplerSet(input: SamplerSetCreate): Promise<SamplerSet> {
 	const response = await client.api["sampler-sets"].$post({ json: input });
-	return unwrapRpc<SamplerSet>(response);
+	return unwrapRpc(response);
 }
 
 /** `PATCH /api/sampler-sets/:setId` — partial update: rename (pencil morph)
@@ -38,7 +38,7 @@ export async function updateSamplerSet(
 		param: { setId },
 		json: input,
 	});
-	return unwrapRpc<SamplerSet>(response);
+	return unwrapRpc(response);
 }
 
 /** `DELETE /api/sampler-sets/:setId` — delete a set (dangling
@@ -56,5 +56,5 @@ export async function importSamplerSet(
 	input: SamplerSetImport,
 ): Promise<{ set: SamplerSet; notes: string[] }> {
 	const response = await client.api["sampler-sets"].import.$post({ json: input });
-	return unwrapRpc<{ set: SamplerSet; notes: string[] }>(response);
+	return unwrapRpc(response);
 }

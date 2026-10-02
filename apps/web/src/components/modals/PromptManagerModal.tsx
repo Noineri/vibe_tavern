@@ -13,7 +13,9 @@ import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.
 import { serializeStPreset, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { ServicePromptsPane } from "../settings/prompt/ServicePromptsPane.js";
+import { ImagePromptTemplatesPane } from "../settings/prompt/ImagePromptTemplatesPane.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import {
   loadPromptCanvasLoreEntries,
@@ -86,7 +88,7 @@ export async function importStandaloneRegexText(
   return created;
 }
 
-type PromptManagerTab = "presets" | "regex" | "service";
+type PromptManagerTab = "presets" | "regex" | "service" | "images";
 
 export type DraftData = {
   name: string;
@@ -364,6 +366,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   // first Regex-tab activation.
   const [activeTab, setActiveTab] = useState<PromptManagerTab>("presets");
   const [serviceDirty, setServiceDirty] = useState(false);
+  const [imagesDirty, setImagesDirty] = useState(false);
   const [regexPresets, setRegexPresets] = useState<RegexPresetRecord[]>([]);
   const [regexLoadState, setRegexLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [activeRegexPresetId, setActiveRegexPresetId] = useState<string | null>(null);
@@ -374,7 +377,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [regexConfirmDeleteOpen, setRegexConfirmDeleteOpen] = useState(false);
   const [profileConfirmDeleteId, setProfileConfirmDeleteId] = useState<string | null>(null);
   const regexImportInputRef = useRef<HTMLInputElement>(null);
-  // R-7 list badge («Не применяется»): link counts for non-global presets —
+  // R-7 list badge ("Not applied"): link counts for non-global presets —
   // a bind-mode preset with zero links applies in no chat. Fetched lazily per
   // unknown id; undefined = not loaded yet (badge withheld until known), so
   // rows never flash a false «unbound» while links load.
@@ -450,7 +453,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     }
   }, [regexProfiles, regexProfileLinkCounts]);
 
-  /** R-7 «Активен» instant toggle: patch ONLY `disabled` server-side right
+  /** R-7 "Active" instant toggle: patch ONLY `disabled` server-side right
    *  away — never blocked by a dirty draft (the unsaved-changes indicator
    *  keeps carrying the draft≠saved story). List row and draft follow the
    *  patch optimistically; a failure reverts both and toasts. */
@@ -882,7 +885,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   if (!isOpen) return null;
 
   const handleClose = () => {
-    if (dirty || regexDirty || serviceDirty) {
+    if (dirty || regexDirty || serviceDirty || imagesDirty) {
       setConfirmCloseOpen(true);
     } else {
       onClose();
@@ -1119,6 +1122,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             setDirty(false);
             setRegexDirty(false);
             setServiceDirty(false);
+            setImagesDirty(false);
             setSaveState("idle");
             setRegexSaveState("idle");
             setConfirmCloseOpen(false);
@@ -1190,13 +1194,40 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         onClose={handleClose}
       >
         {(slots) => (
-          <MasterDetailModal
+          <ImagePromptTemplatesPane
+            active={activeTab === "images"}
+            renderRowDrillDown={(_rowId, selectRow) => (
+              <MasterDetailMobileDrillDown onSelect={selectRow} className="py-1" />
+            )}
+            onDirtyChange={(nextDirty) => {
+              if (nextDirty || activeTab === "images") setImagesDirty(nextDirty);
+            }}
+            onClose={handleClose}
+          >
+            {(imageSlots) => (
+              <MasterDetailModal
             isOpen={true}
         onClose={handleClose}
         title={t("prompt_manager_title")}
         subtitle={t("prompt_manager_sub")}
-        detailTitle={activeTab === "presets" ? t("prompt_manager_title") : activeTab === "regex" ? t("promptManager.regex.tabLabel") : t("promptManager.servicePrompts.tabLabel")}
-        dirty={activeTab === "service" ? slots.dirty : activeTab === "regex" ? regexDirty : dirty}
+        detailTitle={
+          activeTab === "presets"
+            ? t("prompt_manager_title")
+            : activeTab === "regex"
+              ? t("promptManager.regex.tabLabel")
+              : activeTab === "images"
+                ? t("promptManager.servicePrompts.tabLabelImages")
+                : t("promptManager.servicePrompts.tabLabel")
+        }
+        dirty={
+          activeTab === "service"
+            ? slots.dirty
+            : activeTab === "images"
+              ? imageSlots.dirty
+              : activeTab === "regex"
+                ? regexDirty
+                : dirty
+        }
         masterClassName="flex w-[240px] shrink-0 flex-col border-r border-border"
         detailClassName="p-3 sm:p-5"
         mobileDetailClassName="p-3 scrollbar-hide"
@@ -1206,12 +1237,15 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             { value: "presets", label: t("promptManager.tabPresets") },
             { value: "regex", label: t("promptManager.regex.tabLabel") },
             { value: "service", label: t("promptManager.servicePrompts.tabLabel") },
+            { value: "images", label: t("promptManager.servicePrompts.tabLabelImages") },
           ],
           active: activeTab,
           onChange: (v) => setActiveTab(v),
         }}
         masterContent={
-          activeTab === "service"
+          activeTab === "images"
+            ? imageSlots.master
+            : activeTab === "service"
             ? slots.master
             : activeTab === "regex"
             ? () => (
@@ -1282,7 +1316,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               )
         }
         detailContent={
-          activeTab === "service"
+          activeTab === "images"
+            ? imageSlots.detail
+            : activeTab === "service"
             ? slots.detail
             : activeTab === "regex"
               ? (
@@ -1315,41 +1351,27 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             ) : null
           ) : (
           <>
-            <div className={cn("mt-4 flex shrink-0 gap-3", isMobile ? "flex-col px-2" : "mx-5 flex-row items-center justify-between")}>
-              <div>
-                <div className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
-                  {advancedMode ? t("preset_advanced_mode") : t("preset_simple_mode")}
-                </div>
-                <div className="mt-0.5 font-ui text-[11px] text-t4">
-                  {advancedMode ? t("preset_advanced_mode_hint") : t("preset_simple_mode_hint")}
-                </div>
-              </div>
-              <div className={cn("inline-flex shrink-0 gap-0 rounded-md border border-border bg-s3 p-0.5", isMobile && "self-start")} role="radiogroup" aria-label={t("preset_editor_mode")}>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={!advancedMode}
-                  className={cn(
-                    "cursor-pointer select-none rounded-[5px] px-2.5 py-1 font-ui text-[11px] transition-all duration-150",
-                    !advancedMode ? "bg-s2 font-medium text-accent shadow-sm" : "text-t2 hover:text-t1",
-                  )}
-                  onClick={() => { if (advancedMode) updateDraft("advancedMode", false); }}
-                >
-                  {t("preset_simple_mode_short")}
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={advancedMode}
-                  className={cn(
-                    "cursor-pointer select-none rounded-[5px] px-2.5 py-1 font-ui text-[11px] transition-all duration-150",
-                    advancedMode ? "bg-s2 font-medium text-accent shadow-sm" : "text-t2 hover:text-t1",
-                  )}
-                  onClick={() => { if (!advancedMode) updateDraft("advancedMode", true); }}
-                >
-                  {t("preset_advanced_mode_short")}
-                </button>
-              </div>
+            {/* The accordion-era header block (mode title + hint lines +
+                merge note — the shell of the old expandable accordion, kept
+                alive by the 2026-06-02 segmented swap) is GONE by owner
+                ruling 2026-09-19: the title duplicated the control's state,
+                the advanced hint duplicated the canvas's own header, and the
+                merge note described behavior the pane itself makes obvious.
+                What remains is the canon SegmentedControl alone, right-
+                aligned on desktop, full-width touch target on mobile. */}
+            <div className={cn("mt-4 flex shrink-0", isMobile ? "px-2" : "mx-5 justify-end")}>
+              <SegmentedControl
+                value={advancedMode ? "advanced" : "simple"}
+                options={[
+                  { value: "simple", label: t("preset_simple_mode_short") },
+                  { value: "advanced", label: t("preset_advanced_mode_short") },
+                ]}
+                onChange={(next) => {
+                  if ((next === "advanced") !== advancedMode) updateDraft("advancedMode", next === "advanced");
+                }}
+                ariaLabel={t("preset_editor_mode")}
+                mobileFill
+              />
             </div>
 
             {advancedMode && (
@@ -1387,7 +1409,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
           )
         }
         footer={
-          activeTab === "service"
+          activeTab === "images"
+            ? imageSlots.footer
+            : activeTab === "service"
             ? slots.footer
             : activeTab === "regex"
               ? (
@@ -1438,7 +1462,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             />
           )
         }
-          />
+              />
+            )}
+          </ImagePromptTemplatesPane>
         )}
       </ServicePromptsPane>
     </>

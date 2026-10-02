@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
-import {
-  streamAiAssistant,
-  updateUiSettings,
-  type AiAssistantRequestBody,
-} from "../../../app-client.js";
+import { streamAiAssistant } from "../../../api/ai-assistant-api.js";
+import { updateUiSettings } from "../../../api/settings-api.js";
+import type { AiAssistantRequestBody } from "../../../api/types.js";
 
 /** SUM-5: the secondary-model contexts that own a ui_settings persistence
  *  pair. "summary" is consumed by the Memory tab directly (it is not an

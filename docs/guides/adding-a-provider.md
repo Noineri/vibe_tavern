@@ -182,6 +182,8 @@ const protocols: Record<ProviderType, ProtocolAdapter> = {
 
 If the protocol has a **native (non-SDK)** request shape like KoboldCPP or Ollama, keep its native model wrapper in this same `vertex-adapter.ts` module and call it from `resolveModel`. See `ollama-adapter.ts` / `koboldcpp-adapter.ts` for the pattern; do not split a single protocol's adapter description across files.
 
+A native `doStream` must emit the **full** `LanguageModelV3` protocol sequence: `stream-start`, then `text-start` before the first `text-delta`, then `text-end` before `finish`. ai@7's `streamText` recorder answers bare deltas with `text part 0 not found`, and `infrastructure/ai/stream-helpers.ts` turns that error part into a failed chat — so a missing frame breaks every streamed reply, not just the trace. Read the body with `response.textStream()`: it decodes UTF-8 and joins characters split across chunk boundaries, leaving only line reassembly (NDJSON for Ollama, SSE for KoboldCPP) to the adapter. Pin both with a `streamText` test, not only raw-part assertions.
+
 ### Step 4 — Sampler set
 
 Pick or add a `SAMPLER_SETS` entry (`packages/domain/src/sampler-params.ts`) and reference it via `adapter.capabilities.samplers`. Then wire the type in `resolveSamplerSet`:
@@ -248,6 +250,7 @@ The `textCompletion` flag is present on every adapter (default `false` everywher
 ## Common mistakes
 
 - **Adding a `PROVIDER_TYPE` without a `protocols` entry** — TypeScript will error because the `protocols: Record<ProviderType, ProtocolAdapter>` is exhaustive. This is intentional; do not silence it.
+- **Using `createOpenAI(...)` for an OpenAI-compat aggregator or local server** — `createOpenAI` defaults to the **Responses API** (sends `input` + `max_output_tokens`, expects `output`/`output_text`), which aggregators serve unreliably; symptoms are nondeterministic and misleading: "Invalid JSON response", truncated 1–20-token replies, finishReason "other". Always use `createOpenAICompatible({ name, apiKey, baseURL })` from `@ai-sdk/openai-compatible` — it forces **Chat Completions** (`messages` + `max_tokens` → `choices[].message.content`), which every aggregator serves stably. Production routing already does this (`protocol-registry.ts`); the trap bites throwaway scripts reaching for `createOpenAI` out of habit. Diagnosis trick: pass a custom `fetch` to the provider and inspect the request body keys (`input` = Responses API vs `messages` = Chat Completions).
 - **Putting vendor HTTP logic in `provider-gateway.ts`** — the gateway is a thin delegator. Per-protocol HTTP belongs in that protocol's `*-adapter.ts` module; vendor `/models` quirks belong in `vendor-registry.ts`.
 - **Reinventing URL normalisation / headers / timeouts** — reuse `provider-transport.ts` helpers and the `PROBE_TIMEOUT_MS` / `MODEL_LIST_TIMEOUT_MS` / `TEST_CHAT_TIMEOUT_MS` constants.
 - **Hardcoding a sampler surface in the UI** — sampler visibility is driven by `resolveSamplerCapabilities` → `SAMPLER_SETS`. Add the set, don't special-case the component.

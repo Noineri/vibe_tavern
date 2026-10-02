@@ -13,7 +13,7 @@ import { annotateHunkLines, type LineSegment } from "../../../../lib/intra-line-
  * UNACCEPTED hunk renders in place — its added lines get the green diff
  * highlight (`--success-dim`, the same token the chat diff preview uses), and
  * a block widget above the hunk carries the struck-through ghost of the lines
- * it would remove plus the hunk's «принять» button. Accepted hunks render as
+ * it would remove plus the hunk's "Accept" button. Accepted hunks render as
  * plain text (their lines are already part of the buffer via
  * `mergeSelectedHunks`). This is a review surface, not a merge editor: the
  * ghost lines are read-only context, never editable text.

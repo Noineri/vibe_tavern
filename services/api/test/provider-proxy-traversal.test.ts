@@ -49,6 +49,9 @@ function reachesProxiedTarget(hit: ProxyHit): boolean {
 
 interface Fixture {
 	readonly directTargetUrl: string;
+	/** Paths the provider target served on its own socket — non-empty only when
+	 *  a request reached it WITHOUT crossing the proxy. */
+	readonly directTargetHits: string[];
 	readonly proxyUrl: string;
 	readonly proxyHits: ProxyHit[];
 	readonly httpsProxyUrl: string;
@@ -117,7 +120,15 @@ function ollamaStreamResponse(): Response {
 function startFixture(): Fixture {
 	const proxyHits: ProxyHit[] = [];
 	const httpsProxyHits: ProxyHit[] = [];
-	const directTarget = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: providerResponse });
+	const directTargetHits: string[] = [];
+	const directTarget = Bun.serve({
+		hostname: "127.0.0.1",
+		port: 0,
+		fetch(request) {
+			directTargetHits.push(new URL(request.url).pathname);
+			return providerResponse(request);
+		},
+	});
 	const proxy = Bun.serve({
 		hostname: "127.0.0.1",
 		port: 0,
@@ -127,6 +138,14 @@ function startFixture(): Fixture {
 				url: request.url,
 				proxyAuthorization: request.headers.get("proxy-authorization"),
 			});
+			// A provider that answers a 302 toward a loopback URL — the shape that
+			// would escape the tunnel if Bun dropped the proxy on the second hop.
+			if (new URL(request.url).pathname === "/redirect-to-loopback") {
+				return new Response(null, {
+					status: 302,
+					headers: { location: `http://127.0.0.1:${directTarget.port}/models` },
+				});
+			}
 			return providerResponse(request);
 		},
 	});
@@ -148,6 +167,7 @@ function startFixture(): Fixture {
 	});
 	return {
 		directTargetUrl: `http://127.0.0.1:${directTarget.port}`,
+		directTargetHits,
 		proxyUrl: `http://127.0.0.1:${proxy.port}`,
 		proxyHits,
 		httpsProxyUrl: `https://127.0.0.1:${httpsProxy.port}`,
@@ -222,6 +242,7 @@ describe("provider proxy traversal", () => {
 		resetProviderFetchFactory();
 		fixture.proxyHits.length = 0;
 		fixture.httpsProxyHits.length = 0;
+		fixture.directTargetHits.length = 0;
 	});
 
 	for (const providerType of protocols) {
@@ -250,6 +271,41 @@ describe("provider proxy traversal", () => {
 			expect(fixture.proxyHits).toHaveLength(0);
 		});
 	}
+
+	// A loopback provider (Ollama, llama.cpp, a local gateway) with an explicit
+	// proxy selected is the configuration where a silent no_proxy-style bypass
+	// would be invisible: the request still succeeds, it just leaves the tunnel
+	// the user asked for. Both host spellings are pinned because a bypass rule
+	// can key on the literal IP or on the name.
+	for (const [label, hostOf] of [
+		["ip literal", (url: string) => url],
+		["localhost name", (url: string) => url.replace("127.0.0.1", "localhost")],
+	] as const) {
+		it(`an explicit proxy still carries a loopback provider target (${label})`, async () => {
+			const fetch = await proxiedFetch(fixture);
+			const baseUrl = hostOf(fixture.directTargetUrl);
+			const models = await listProviderModels({ baseUrl, apiKey: "key", providerType: "openai", fetch });
+			expect(models.length).toBeGreaterThan(0);
+			expect(fixture.proxyHits).toHaveLength(1);
+			expect(fixture.proxyHits[0]?.url).toBe(`${baseUrl}/models`);
+			// The canned proxy answers on the target's behalf, so the provider
+			// socket stays silent unless the request went around the proxy.
+			expect(fixture.directTargetHits).toHaveLength(0);
+		});
+	}
+
+	it("an HTTP(S)-proxied request that follows a redirect stays on the proxy for both hops", async () => {
+		const fetch = await proxiedFetch(fixture);
+		const response = await fetch(`${PROXIED_TARGET}/redirect-to-loopback`);
+		expect(response.status).toBe(200);
+		expect(response.redirected).toBe(true);
+		expect(new URL(response.url).host).toBe(new URL(fixture.directTargetUrl).host);
+		expect(fixture.proxyHits.map((hit) => hit.url)).toEqual([
+			`${PROXIED_TARGET}/redirect-to-loopback`,
+			`${fixture.directTargetUrl}/models`,
+		]);
+		expect(fixture.directTargetHits).toHaveLength(0);
+	});
 
 	it("inherit uses the current global default and direct bypasses it", async () => {
 		setProviderFetchFactory(createProviderFetchFactory(lookupFor(fixture.proxyUrl)));

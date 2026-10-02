@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Brain, Crop, FileText, Flame, Grip, Images, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause } from 'lucide-react';
+import { Globe, Brain, Crop, Dices, FileText, Flame, Grip, Images, Repeat, Send, Settings, Sparkles, Star, Volume2, VolumeX, Square, AudioLines, Play, Pause } from 'lucide-react';
 
 // Props forwarded so call sites passing `className` (e.g. "h-5 w-5 text-t3")
 // actually apply — the previous `() => <svg/>` no-arg shape silently dropped
@@ -24,8 +24,14 @@ export const Ic = {
   edit:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11.5 2.5l2 2L5 13l-2.5.5L3 11z"/></svg>,
   lock:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.25 7V4.75a2.75 2.75 0 0 1 5.5 0V7"/></svg>,
   grip: (props?: { className?: string }) => <Grip size={18} strokeWidth={2.25} {...props} />,
+  dices: (props?: { className?: string }) => <Dices size={13} strokeWidth={1.5} {...props} />,
   branch:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><path d="M4 6v4"/><path d="M12 6v2.5A1.5 1.5 0 0 1 10.5 10H4"/></svg>,
   regen:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M13.5 8A5.5 5.5 0 1 1 10 3H13.5"/><polyline points="10,3 13.5,3 13.5,6.5"/></svg>,
+  // Media-player "repeat the same thing again" loop (two arrowheads, rounded
+  // rectangle) — deliberately distinct from `regen`'s single circular arrow:
+  // MR-10's repeat-with-this-prompt arm sits BESIDE the AI regen in the slot
+  // controls row and must read apart at a glance (owner 2026-09-18).
+  repeat: (props?: { className?: string }) => <Repeat size={13} strokeWidth={2} {...props} />,
   caret:(d:string)=><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.9" style={{transform:d==='l'?'rotate(180deg)':d==='d'?'rotate(90deg)':d==='u'?'rotate(270deg)':undefined}}><polyline points="6 3 11 8 6 13"/></svg>,
   // Lucide `Settings` — a real cog gear. Was a hand-drawn circle + 8 rays
   // that read as a phone-brightness sun (v1.2.1 mobile defect D7: users
@@ -69,6 +75,10 @@ export const Ic = {
   crown:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12l1-7 3.5 3L8 4l1.5 4L13 5l1 7H2z"/><line x1="2" y1="13" x2="14" y2="13"/></svg>,
   floppy:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="12" height="12" rx="1"/><rect x="5" y="2" width="6" height="4" rx="0.5"/><rect x="4.5" y="9" width="7" height="5" rx="0.5"/></svg>,
   eye:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></svg>,
+  // The eye's exact twin + a diagonal slash — the include-in-prompt toggle's
+  // OFF state (owner ruling 2026-09-18, verbatim in the plan repo); same
+  // stroke weight so on/off read as one glyph ± the slash at row size.
+  eyeOff:()=><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/><line x1="2" y1="14" x2="14" y2="2"/></svg>,
   chat:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H5l-3 3V4z"/></svg>,
   plug:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2v4M6 2v4M5 6h6M6 6v3.5a2.5 2.5 0 0 0 5 0V6"/><path d="M8.5 12v2M6 13h5"/></svg>,
   expand:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 5 1 1 5 1"/><polyline points="11 1 15 1 15 5"/><polyline points="15 11 15 15 11 15"/><polyline points="5 15 1 15 1 11"/></svg>,
@@ -113,11 +123,14 @@ export const Ic = {
   // conventional "how much of an allowance is left" glyph; used by the chat
   // toolbar's provider-quota flyout.
   quota:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="8" cy="8" r="6" strokeOpacity="0.3"/><path d="M8 2a6 6 0 0 1 4.24 10.24"/></svg>,
-  // Counterclockwise curved arrow — the copilot editor's «Отменить изменения»
+  // Counterclockwise curved arrow — the copilot editor's "Undo changes"
   // (revert to turn-start snapshot). Lucide undo-2 geometry scaled to 16.
   undo:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9.33 2.67 6 6 2.67"/><path d="M2.67 6h7a3.67 3.67 0 0 1 0 7.33H7.33"/></svg>,
+  // Two opposing horizontal arrows — "swap" (swap W↔H) in the
+  // IG per-mode size rows (IG-CF14). Lucide arrow-left-right at 16.
+  swap:()=><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12.67 4.67 15.33 7.33"/><path d="M3.5 7.33h11.83"/><path d="M12.67 10 15.33 7.33"/><path d="M3.33 11.33 0.67 8.67"/><path d="M12.5 8.67H0.67"/><path d="M3.33 6 0.67 8.67"/></svg>,
   // Fast-forward «>>» — the Continue-generation action (LS-4a): two right
-  // triangles, the owner's «перемотка» glyph, stroke-outline to match the
+  // triangles, the owner's "fast-forward" glyph, stroke-outline to match the
   // action-row icon language (copy/edit/regen).
   fastForward:()=><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M2.5 3.5v9L9 8z"/><path d="M8.5 3.5v9L15 8z"/></svg>,
   // Lucide `Volume2` — speaker for TTS narration; stroke 2 for toolbar legibility.

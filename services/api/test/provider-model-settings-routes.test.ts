@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createProviderRoutes } from "../src/api/routes/provider.js";
 import type { ProviderRuntimeApi } from "../src/api/contract/runtime-api.js";
+import type { ProviderModelSettingsRecord } from "@vibe-tavern/api-contracts";
 
 /**
  * Route-level integration tests for the per-model settings overlay endpoints.
@@ -101,6 +102,23 @@ describe("provider model-settings overlay routes", () => {
     });
     expect(capturedSettings).toEqual({ temperature: 0.5 });
     expect((capturedSettings as Record<string, unknown>).name).toBeUndefined();
+  });
+
+  test("PUT keeps the per-model sampler-set pointer (samplerSetId rides the overlay — IG-CF15 LLM twin)", async () => {
+    let capturedSettings: unknown = null;
+    const runtime = mockRuntime({
+      upsertProviderModelSettings: async (_p, _m, settings) => {
+        capturedSettings = settings;
+        return { id: "x", providerProfileId: "p", modelId: "m", settings: settings as unknown as ProviderModelSettingsRecord["settings"], createdAt: "t", updatedAt: "t" };
+      },
+    });
+    const app = createProviderRoutes(runtime);
+    await app.request("/api/providers/prov_1/model-settings/gpt-4o", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ temperature: 0.7, samplerSetId: "sset_1" }),
+    });
+    expect(capturedSettings).toEqual({ temperature: 0.7, samplerSetId: "sset_1" });
   });
 
   test("PUT with invalid bias (>100) → 400 (zod rejects)", async () => {

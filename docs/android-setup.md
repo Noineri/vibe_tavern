@@ -5,6 +5,8 @@ Vibe Tavern for Android is one native ARM64 launcher APK for Android 10 and late
 ## Before you install
 
 - Use an ARM64 phone or tablet running Android 10 or later.
+  Android 12 and later are verified on real devices.
+  Android 10 and 11 rely on the same compatibility layer, but it was checked only against Android's published system-call rules, not on a device — if the server does not start there, please send the server log (see [Troubleshooting](#the-server-exits-with-code-159)).
 - Download the Android APK from [GitHub Releases](https://github.com/Noineri/vibe_tavern/releases).
 - Keep enough free device storage for the APK to extract its bundled server files and for your chats and media.
 - Back up or export data you cannot lose before uninstalling the native launcher: its chats, settings, provider keys, and assets are private app data and Android removes them when the app is uninstalled.
@@ -47,6 +49,29 @@ When an update is available:
 
 Official releases keep package ID `com.vibetavern.launcher` and the permanent release signing identity, so they install over the existing official launcher and retain native app-private data. An old launcher built with a different historical/debug signing key cannot update in place; uninstall that old launcher once and install the official APK. Export any native data first if it matters to you.
 
+## Alternative: the npm package in Termux
+
+If the native launcher does not work on your device, you can run Vibe Tavern as the npm package inside [Termux](https://termux.dev) instead.
+This path does not use the APK at all.
+
+1. Install Termux from F-Droid or its GitHub releases.
+2. In Termux, install Bun from Termux's own repository:
+
+```sh
+pkg install bun
+```
+
+3. Install Vibe Tavern:
+
+```sh
+bun install -g vibe-tavern
+```
+
+4. Start it with `vibe-tavern`, then open `http://127.0.0.1:8787` in your browser.
+
+Use Termux's `bun` package, not the installer from bun.sh: Termux's build is patched for Android's system-call restrictions, and the upstream Linux build is not.
+Keep Termux in your recent-apps list while you use the browser UI; the battery advice above applies to Termux as well.
+
 ## Migrating from the old launcher only
 
 This section is only for people who previously used the old Termux-based launcher. Clean native installs never need Termux and should skip this section.
@@ -74,6 +99,13 @@ If the launcher says another server is ready on port 8787, it will not stop that
 ### The server does not become ready
 
 Wait for bundled-file extraction to finish, then copy the server log with **Copy server log** and inspect its last lines. **Open in Browser** only works after the local API reports ready; a browser response alone is not enough. Try starting again after addressing the reported error.
+
+### The server exits with code 159
+
+Code 159 means Android's system-call filter stopped the server.
+The launcher ships a compatibility layer for this; its lines in the server log start with `seccomp-shim:`, for example `seccomp-shim: syscall 437 trapped, returning ENOSYS` — such lines are expected and harmless: each one means the server handled a restricted call instead of stopping.
+If the server still exits with code 159, copy the server log with **Copy server log** and attach it to a [GitHub issue](https://github.com/Noineri/vibe_tavern/issues) together with your Android version.
+Until it is fixed, the [npm package in Termux](#alternative-the-npm-package-in-termux) is a working alternative.
 
 ### The browser UI lags, hangs, or stops saving after switching apps
 

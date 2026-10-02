@@ -1,3 +1,7 @@
+/**
+ * fork #1 of tts/TtsBaseCard.tsx.
+ */
+
 import { useT } from "../../../../i18n/context.js";
 import { STT_BACKENDS } from "@vibe-tavern/domain";
 import { Icons } from "../../../shared/icons.js";

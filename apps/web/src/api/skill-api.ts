@@ -16,21 +16,20 @@ import type {
   SkillCatalogEntryDto,
   SkillImportResult,
 } from "@vibe-tavern/api-contracts";
-import { client } from "./client.js";
-import { getGatewayBaseUrl, getMobileToken } from "./client.js";
+import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 
 /** `GET /api/coauthor/skills` — merged metadata-only catalog (built-in + user). */
 export async function listCoauthorSkills(): Promise<SkillCatalog> {
   const response = await client.api.coauthor.skills.$get();
-  return unwrapRpc<SkillCatalog>(response);
+  return unwrapRpc(response);
 }
 
 /** `GET /api/coauthor/skills/:id` — one catalog entry, or `null` if absent. */
 export async function readCoauthorSkill(id: string): Promise<SkillCatalogEntryDto | null> {
   const response = await client.api.coauthor.skills[":id"].$get({ param: { id } });
   if (response.status === 404) return null;
-  return unwrapRpc<SkillCatalogEntryDto>(response);
+  return unwrapRpc(response);
 }
 
 /**
@@ -42,7 +41,7 @@ export async function readCoauthorSkill(id: string): Promise<SkillCatalogEntryDt
 export async function deleteCoauthorSkill(id: string): Promise<{ id: string }> {
   const response = await client.api.coauthor.skills[":id"].$delete({ param: { id } });
   if (!response.ok) throw await unwrapError(response);
-  return unwrapRpc<{ id: string }>(response);
+  return unwrapRpc(response);
 }
 
 /**
@@ -63,7 +62,7 @@ export async function importCoauthorSkills(files: File[]): Promise<SkillImportRe
     formData.append(relativePath, file);
   }
   const token = getMobileToken();
-  const response = await fetch(`${getGatewayBaseUrl()}/api/coauthor/skills/import`, {
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/coauthor/skills/import`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData,

@@ -171,6 +171,23 @@ describe("parseSkillManifest", () => {
     const res = parseSkillManifest("---\njustastring\n---\n# X\n");
     expect("error" in res).toBe(true);
   });
+
+  test("resolves a duplicate frontmatter key to its last value", () => {
+    // Bun.YAML keeps the last of duplicate keys where the `yaml` package
+    // rejected the whole document. Deliberate: a manifest with a typo'd
+    // duplicate stays discoverable, and `name` is display metadata — the
+    // skill id is the directory name, so last-wins shadows nothing.
+    const res = parseSkillManifest("---\nname: first\nname: second\ndescription: one\ndescription: two\n---\n# X\n");
+    expect(res).toEqual({ name: "second", description: "two" });
+  });
+
+  test("rejects a frontmatter that opens a second YAML document", () => {
+    // A `--- <scalar>` line does not close the fence (only a bare `---` does),
+    // so the frontmatter is a two-document stream: it must never yield a skill.
+    const res = parseSkillManifest("---\nname: foo\n--- second\n---\n# X\n");
+    expect("error" in res).toBe(true);
+    if ("error" in res) expect(res.error).toContain("not a YAML mapping");
+  });
 });
 
 // ─── scanSkillRoot ───────────────────────────────────────────────────────────

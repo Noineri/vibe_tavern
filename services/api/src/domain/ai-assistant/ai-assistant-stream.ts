@@ -34,6 +34,7 @@ import {
   type AiAssistantStreamChunk,
 } from "./reasoning-split.js";
 import type { AppDb } from "@vibe-tavern/db";
+import type { AiAssistantRequest, AiAssistantTokenCount } from "@vibe-tavern/api-contracts";
 import type { BuiltPipelineContext } from "../prompt/prompt-assembly-service.js";
 import { notFound, validation } from "../../shared/errors.js";
 import {
@@ -44,63 +45,8 @@ import {
 
 // ─── Request / response types ────────────────────────────────────────────────
 
-export interface AiAssistantStreamRequest {
-  /** Which assistant mode to use. */
-  mode: AiAssistantMode;
-  /** User's instruction / prompt text. */
-  instruction: string;
-  /** Current field content being edited/refined. */
-  existingContent?: string;
-  /** Provider profile ID to use. */
-  providerProfileId: string;
-  /** Model name override (optional, uses profile default). */
-  model?: string;
-
-  // Context bindings (full mode)
-  /** Context layers the user toggled on. */
-  enabledLayers: string[];
-  /** Characters to attach as context. */
-  characterIds?: string[];
-  /** Personas to attach as context. */
-  personaIds?: string[];
-  /** Lore entries to attach as context. */
-  loreEntryIds?: string[];
-  /** Whole lorebooks to attach as context; backend expands enabled entries. */
-  lorebookIds?: string[];
-
-  // Chat impersonate mode extras
-  /** Active chat ID (for chat_impersonate to resolve chat history). */
-  chatId?: string;
-  /** How many recent messages to include (chat_impersonate). Default: 20. */
-  recentMessageCount?: number;
-
-  // Message editor mode extras
-  /** Canonical target message in the chat's active branch. */
-  targetMessageId?: string;
-  /** Immutable canonical variants selected as editor sources. */
-  sourceVariantIds?: string[];
-
-  // Lore keys mode extras
-  /** Existing primary keys on the entry (for de-duplication). */
-  existingKeys?: string[];
-  /** Existing secondary keys on the entry. */
-  existingSecondaryKeys?: string[];
-  /** Entry's activation logic mode. */
-  logic?: string;
-  /** Which key set to generate. Default `"both"`. */
-  keyTarget?: "primary" | "secondary" | "both";
-
-  // MD import extras
-  /** Max output tokens for structured generation (md_import). Default: 10000. */
-  maxOutputTokens?: number;
-  /** Override temperature for this request. Per-mode defaults used if omitted. */
-  temperature?: number;
-
-  // Scene schema extras
-  /** Selected Scene prompt format — selects the scene_schema default prompt file
-   *  (json/xml) so the generated schema obeys XML-safe key rules when needed. */
-  promptFormat?: "json" | "xml";
-}
+/** Request body, validated at the route by `aiAssistantRequestSchema`. */
+export type AiAssistantStreamRequest = AiAssistantRequest;
 
 interface AiAssistantProviderProfile {
   readonly id: string;
@@ -128,6 +74,16 @@ interface MessageEditorPipelineContextInput {
   readonly recentMessageLimit?: number;
 }
 
+interface ChatImpersonationPipelineContextInput {
+  readonly chatId: string;
+  readonly model: string;
+  readonly contextBudget: number | null;
+  readonly responseReserve: number;
+  readonly recentMessageLimit: number;
+  /** Current composer draft, scanned as the one-shot quiet prompt. */
+  readonly quietPrompt?: string;
+}
+
 export interface StreamDeps extends ContextResolverDeps {
   readonly db: AppDb;
   readonly resolveModel: (profile: { providerPreset: string; endpoint: string; apiKey: string | null }, model: string, fetch?: ProviderFetch) => LanguageModel;
@@ -139,8 +95,8 @@ export interface StreamDeps extends ContextResolverDeps {
     aiAssistantPrompts: Record<string, string> | null;
     scriptAiSystemPrompt: string | null;
   }>;
-  /** Resolve chat messages for chat_impersonate mode. */
-  readonly getChatMessages: (chatId: string, count: number) => Promise<Array<{ id: string; role: string; content: string }>>;
+  /** Build the full RP world for impersonation without persisting lore timed state. */
+  readonly buildChatImpersonationPipelineContext: (input: ChatImpersonationPipelineContextInput) => Promise<BuiltPipelineContext>;
   readonly getMessageEditorChat: (chatId: string) => Promise<{ id: string; activeBranchId: string } | null>;
   readonly getMessageEditorMessages: (branchId: string) => Promise<Message[]>;
   readonly getMessageEditorVariantsByBranch: (branchId: string) => Promise<Map<string, MessageVariant[]>>;
@@ -302,8 +258,12 @@ async function prepareAiAssistantRequest(
   }
 
   // 2. Resolve system prompt via service-prompt profiles
+  const promptField = request.mode === "chat_impersonate"
+    ? getChatImpersonatePromptKey(request)
+    : undefined;
   const { prompt: systemPrompt, source } = await resolveSystemPrompt(deps.db, request.mode, {
     promptFormat: request.promptFormat,
+    field: promptField,
   });
 
   deps.logDebug?.("api.ai-assistant.prompt-resolved", {
@@ -331,20 +291,47 @@ async function prepareAiAssistantRequest(
     };
   }
 
-  // 3. Resolve context bindings
+  // 3. chat_impersonate reuses the full RP world assembly so the draft is
+  // quiet-prompt scanned and activated lore reaches the persona writer.
+  if (request.mode === "chat_impersonate") {
+    if (!request.chatId) throw validation("A chat is required for impersonation.");
+    const effectiveProfile = await deps.getEffectiveProviderProfile(profile.id, modelName);
+    const built = await deps.buildChatImpersonationPipelineContext({
+      chatId: request.chatId,
+      model: modelName,
+      contextBudget: effectiveProfile.contextBudget,
+      responseReserve: effectiveProfile.maxTokens,
+      recentMessageLimit: request.recentMessageCount ?? 20,
+      ...(request.draftText?.trim() ? { quietPrompt: request.draftText } : {}),
+    });
+    const pipelineContext: PromptAssemblyContext = {
+      ...built.context,
+      aiAssistant: {
+        mode: request.mode,
+        // Activated lore is part of the full RP world for impersonation; the
+        // explicit character/persona settings retain their existing control.
+        enabledLayers: [...new Set([...request.enabledLayers, "lore"])],
+        existingContent: request.existingContent,
+        instruction: buildUserMessage(request, config),
+        systemPrompt,
+      },
+    };
+    setModelHint(modelName);
+    const assembly = getAiAssistantAssembler(request.mode).assemble(pipelineContext);
+    const messages = assembly.finalPayload.messages as Array<{
+      role: "system" | "user" | "assistant";
+      content: string;
+    }>;
+    return { config, profile: effectiveProfile, modelName, assembly, messages, doneMetadata: null };
+  }
+
+  // 4. Resolve context bindings for non-chat assistant modes.
   const resolvedContext: ResolvedContext = await resolveContext(deps, {
     characterIds: request.characterIds,
     personaIds: request.personaIds,
     loreEntryIds: request.loreEntryIds,
     lorebookIds: request.lorebookIds,
   });
-
-  // 4. Resolve chat history for chat_impersonate
-  let recentMessages: Array<{ id: string; role: string; content: string }> = [];
-  if (request.mode === "chat_impersonate" && request.chatId) {
-    const count = request.recentMessageCount ?? 20;
-    recentMessages = await deps.getChatMessages(request.chatId, count);
-  }
 
   // 5. Build user message (mode-specific)
   const userMessage = buildUserMessage(request, config);
@@ -366,7 +353,7 @@ async function prepareAiAssistantRequest(
       instruction: userMessage,
       systemPrompt,
     },
-    chat: { recentMessages: recentMessages.map((m) => ({ id: m.id, role: m.role as "system" | "user" | "assistant" | "tool", content: m.content })) },
+    chat: { recentMessages: [] },
   };
 
   setModelHint(modelName);
@@ -390,7 +377,7 @@ async function prepareAiAssistantRequest(
 export async function countAiAssistantTokens(
   request: AiAssistantStreamRequest,
   deps: StreamDeps,
-): Promise<{ tokens: number; model: string; layerCount: number; messageCount: number; activatedLoreCount: number }> {
+): Promise<AiAssistantTokenCount> {
   const prepared = await prepareAiAssistantRequest(request, deps);
   if (prepared.assembly) {
     return {
@@ -420,6 +407,7 @@ export async function countAiAssistantTokens(
 export async function* streamAiAssistant(
   request: AiAssistantStreamRequest,
   deps: StreamDeps,
+  signal?: AbortSignal,
 ): AsyncGenerator<AiAssistantStreamChunk> {
   try {
     const prepared = await prepareAiAssistantRequest(request, deps);
@@ -444,6 +432,7 @@ export async function* streamAiAssistant(
           allowSystemInMessages: true,
           temperature: request.temperature ?? 0,
           maxOutputTokens: request.maxOutputTokens ?? 6000,
+          abortSignal: signal,
         });
 
         const mdReasoningState: ReasoningSplitState = {
@@ -476,6 +465,11 @@ export async function* streamAiAssistant(
           }
         }
 
+        // The SDK ends textStream silently on abort (no exception), so an
+        // aborted turn reaches this point with a truncated fullText — parsing
+        // it would fabricate a parse error for a consumer that is gone.
+        if (signal?.aborted) return;
+
         const parsed = mergeMdImportWithSourceSections(
           extractMdImportObjectFromText(fullText),
           request.existingContent ?? "",
@@ -490,6 +484,9 @@ export async function* streamAiAssistant(
           yield { type: "error", error: "Model returned output, but no importable fields could be parsed. See raw output above." };
         }
       } catch (err) {
+        // The consumer is gone (client hit Stop / closed the modal) — an error
+        // event on a dead stream is noise; stop quietly, as the chat SSE routes do.
+        if (signal?.aborted) return;
         const msg = err instanceof Error ? err.message : String(err);
         deps.logDebug?.("api.ai-assistant.md-import.error", { error: msg });
         yield { type: "error", error: msg };
@@ -506,6 +503,7 @@ export async function* streamAiAssistant(
       allowSystemInMessages: true,
       temperature: request.temperature ?? 0.3,
       maxOutputTokens: request.maxOutputTokens ?? undefined,
+      abortSignal: signal,
     });
 
     const splitState: ReasoningSplitState = {
@@ -553,15 +551,20 @@ export async function* streamAiAssistant(
       }
     }
     if (prepared.doneMetadata) {
+      if (signal?.aborted) return;
       yield {
         type: "done",
         ...prepared.doneMetadata,
         finishReason: await result.finishReason,
       };
     } else {
+      if (signal?.aborted) return;
       yield { type: "done" };
     }
   } catch (err) {
+    // Same quiet-exit rule as the md_import branch above: after a caller abort
+    // there is nobody left to receive an error event.
+    if (signal?.aborted) return;
     const message = err instanceof Error ? err.message : String(err);
     yield { type: "error", error: message };
   }
@@ -990,7 +993,13 @@ function tryParseJson(text: string): Record<string, unknown> | null {
 
 // ─── User message builder ────────────────────────────────────────────────────
 
-function buildUserMessage(
+export function getChatImpersonatePromptKey(request: AiAssistantStreamRequest): "chat_impersonate" | "chat_impersonate_enhance" {
+  return request.mode === "chat_impersonate" && request.enhanceDraft === true && Boolean(request.draftText?.trim())
+    ? "chat_impersonate_enhance"
+    : "chat_impersonate";
+}
+
+export function buildUserMessage(
   request: AiAssistantStreamRequest,
   config: ReturnType<typeof getModeConfig>,
 ): string {
@@ -1048,7 +1057,11 @@ function buildUserMessage(
     }
 
     case "chat_impersonate": {
-      return request.instruction || "Write a message as this persona would speak in the current conversation.";
+      const instruction = request.instruction || "Write a message as this persona would speak in the current conversation.";
+      const draft = request.draftText?.trim();
+      return draft
+        ? `${instruction}\n\nBuild on this draft as the persona would write it:\n\n${draft}`
+        : instruction;
     }
 
     case "md_import": {

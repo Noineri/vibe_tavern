@@ -284,4 +284,41 @@ describe("ProviderModal — category tabs (TS-7a)", () => {
     // The key assertion: switching to Audio hides the dirty-dependent UI (footer actions are also suppressed).
     expect(view.baseElement.innerHTML).not.toContain("data-testid=\"default-proxy-control\"");
   });
+
+  it("shows the fourth image category tab label alongside the existing three", async () => {
+    useModalStore.setState({ isProviderModalOpen: true, providerModalOrigin: null });
+    const view = renderModal(baseProps());
+    // All four category labels render in the tab strip (IG-9).
+    expect(within(view.baseElement).getByText("providers_category_llm")).toBeTruthy();
+    expect(within(view.baseElement).getByText("providers_category_audio")).toBeTruthy();
+    expect(within(view.baseElement).getByText("providers_category_stt")).toBeTruthy();
+    expect(within(view.baseElement).getByText("providers_category_image")).toBeTruthy();
+    // LLM master list still visible on the default tab
+    expect(within(view.baseElement).getByText("Alpha")).toBeTruthy();
+  });
+
+  it("clicking Image switches to the image-gen placeholder section, hides the provider list and the LLM footer; LLM restores it", async () => {
+    useModalStore.setState({ isProviderModalOpen: true, providerModalOrigin: null });
+    const view = renderModal(baseProps());
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    const imageRadio = within(view.baseElement).getByRole("radio", { name: "providers_category_image" });
+    await user.click(imageRadio);
+    await waitFor(() => {
+      expect(within(view.baseElement).getByTestId("image-gen-section")).toBeTruthy();
+    });
+    // Provider list hidden on the Image tab
+    expect(within(view.baseElement).queryByText("Alpha")).toBeNull();
+    // Detail shows the section placeholder
+    expect(within(view.baseElement).getAllByText("image_gen_section_placeholder").length).toBeGreaterThanOrEqual(1);
+    // The LLM footer (default-proxy control) must not leak onto the Image tab
+    expect(view.baseElement.innerHTML).not.toContain("data-testid=\"default-proxy-control\"");
+    // Back to LLM restores the provider list
+    const llmRadio = within(view.baseElement).getByRole("radio", { name: "providers_category_llm" });
+    await user.click(llmRadio);
+    await waitFor(() => {
+      expect(within(view.baseElement).getByText("Alpha")).toBeTruthy();
+    });
+    expect(within(view.baseElement).queryByTestId("image-gen-section")).toBeNull();
+  });
 });

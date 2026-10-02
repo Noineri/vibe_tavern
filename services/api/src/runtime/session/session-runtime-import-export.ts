@@ -19,6 +19,7 @@ import {
 import type { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
 import { notFound, validation } from "../../shared/errors.js";
 import type { CharacterRecord } from "../../domain/character/character-runtime.js";
+import { importLorebook } from "../../domain/lorebook/lorebook-import-service.js";
 
 export interface ImportExportResolver {
 	getCharacter(characterId: string): Promise<CharacterRecord>;
@@ -256,6 +257,8 @@ export async function importJson(
 		chatId?: string;
 		skipExisting?: boolean;
 		lean?: boolean;
+		/** User-approved on a single card; forced by bulk import. */
+		importEmbeddedBook?: boolean;
 	},
 ): Promise<ImportResult> {
 	const jsonText = input.jsonText?.trim() ?? "";
@@ -399,6 +402,17 @@ export async function importJson(
 			}
 			}
 
+		if (input.importEmbeddedBook && imported.character.characterBook) {
+			await importLorebook(deps.stores, null, {
+				format: "character_book",
+				data: imported.character.characterBook,
+				mode: "new",
+				scopeType: "entity",
+				characterId,
+				fallbackName: `${imported.character.name}'s Lorebook`,
+			});
+		}
+
 		const chat = await deps.chatApp.createChat({
 			characterId: characterId as CharacterId,
 			personaId: await deps.resolveDefaultPersonaId(),
@@ -525,6 +539,7 @@ export interface BatchImportItem {
 	monolithText?: string;
 	chatId?: string;
 	skipExisting?: boolean;
+	importEmbeddedBook?: boolean;
 }
 
 export interface BatchImportResult {
@@ -560,7 +575,7 @@ export async function importJsonBatch(
 	for (const item of input.items) {
 		const cardStart = (typeof Bun !== "undefined" ? Bun.nanoseconds() : Date.now() * 1e6);
 		try {
-			const r = await importJson(deps, { ...item, lean });
+			const r = await importJson(deps, { ...item, lean, importEmbeddedBook: true });
 			const cardMs = ((typeof Bun !== "undefined" ? Bun.nanoseconds() : Date.now() * 1e6) - cardStart) / 1e6;
 			if (cardMs > 50) slowCards.push(`${item.fileName}=${cardMs.toFixed(0)}ms`);
 			results.push({

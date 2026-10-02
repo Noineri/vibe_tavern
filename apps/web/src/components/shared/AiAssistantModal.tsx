@@ -10,9 +10,11 @@ import { lblCls } from "../../lib/field-tokens.js";
 import { DropdownSelect } from "./DropdownSelect.js";
 import { Checkbox } from "./Checkbox.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "./LinkBindingPopover.js";
+import { characterToLinkTarget, lorebookToLinkTarget, personaToLinkTarget } from "../../lib/link-targets.js";
 import { TokenCounter } from "./TokenCounter.js";
 import { buildLineDiff, TextDiffPreview } from "./TextDiffPreview.js";
 import { NumberInput } from "./NumberInput.js";
+import { Toggle } from "./Toggle.js";
 import { cn } from "../../lib/cn.js";
 import { cleanAiCode } from "../../lib/ai-code-clean.js";
 import { describeMdImportValue, getMdImportFieldLabel, MD_IMPORT_FIELD_OPTIONS, mergeMdImportFields, type MdImportResult } from "../../lib/md-import-utils.js";
@@ -27,11 +29,8 @@ import { AiAssistantPanel } from "./ai-assistant/AiAssistantPanel.js";
 import { AiGenParamsRow } from "./ai-assistant/AiGenParamsRow.js";
 import { useAiAssistantRunner } from "./ai-assistant/use-ai-assistant-runner.js";
 import { useDebouncedTokenCount } from "./ai-assistant/use-debounced-token-count.js";
-import {
-  listAllLorebooks,
-  type AiAssistantRequestBody,
-  type LorebookRecord,
-} from "../../app-client.js";
+import { listAllLorebooks } from "../../api/lorebook-api.js";
+import type { AiAssistantRequestBody, LorebookRecord } from "../../api/types.js";
 
 export interface AiAssistantModalProps {
   mode: "full" | "quickpill";
@@ -58,6 +57,7 @@ export interface AiAssistantModalProps {
   showAppendToggle?: boolean;
   showKeyTarget?: boolean;
   showMessageCount?: boolean;
+  showEnhanceDraftToggle?: boolean;
 }
 
 export function AiAssistantModal({
@@ -76,6 +76,7 @@ export function AiAssistantModal({
   showAppendToggle,
   showKeyTarget,
   showMessageCount,
+  showEnhanceDraftToggle,
 }: AiAssistantModalProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -93,6 +94,7 @@ export function AiAssistantModal({
   const [appendMode, setAppendMode] = useState(false);
   const [keyTarget, setKeyTarget] = useState<"primary" | "secondary" | "both">("both");
   const [recentMessageCount, setRecentMessageCount] = useState(20);
+  const [enhanceDraft, setEnhanceDraft] = useState(false);
 
   // Full specific
   const [prompt, setPrompt] = useState("");
@@ -175,6 +177,7 @@ export function AiAssistantModal({
       setAppendMode(settings.appendMode ?? false);
       setKeyTarget(settings.keyTarget ?? "both");
       setRecentMessageCount(settings.recentMessageCount ?? 20);
+      setEnhanceDraft(settings.enhanceDraft ?? false);
     } else if (mode === "full") {
       resetStreamState();
       setPrompt("");
@@ -210,6 +213,7 @@ export function AiAssistantModal({
         appendMode,
         keyTarget,
         recentMessageCount,
+        enhanceDraft,
       });
     }
     onClose();
@@ -218,31 +222,32 @@ export function AiAssistantModal({
   // --- Full Mode Context Link building ---
   const allCharacterContext = allCharacters.find(c => c.id === scopeContext?.characterId);
   const allPersonaContext = personas.find(p => p.id === scopeContext?.personaId);
+  // Pick each source ONCE — the active record when it IS the scoped one,
+  // else the all-list record — and map through the shared lib mappers
+  // (LB-2D). The last-resort literals keep today's shape; "Character" /
+  // "Persona" are PRE-EXISTING hardcoded fallback names (i18n out of scope
+  // here, logged in the plan).
+  const charSource =
+    activeCharacter && activeCharacter.id === scopeContext?.characterId ? activeCharacter : allCharacterContext;
+  const charTarget: LinkTarget | null =
+    scopeContext?.characterId == null
+      ? null
+      : charSource
+        ? characterToLinkTarget(charSource)
+        : { id: scopeContext.characterId, name: "Character", avatarAssetId: null };
 
-  const charTarget: LinkTarget | null = scopeContext?.characterId ? {
-    id: scopeContext.characterId,
-    name: activeCharacter?.id === scopeContext.characterId ? activeCharacter.name : allCharacterContext?.name ?? "Character",
-    avatarAssetId: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarAssetId ?? null : allCharacterContext?.avatarAssetId ?? null,
-    kind: "characters",
-    avatarExt: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarExt ?? null : allCharacterContext?.avatarExt ?? null,
-    avatarFullExt: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarFullExt ?? null : allCharacterContext?.avatarFullExt ?? null,
-    avatarFullAssetId: activeCharacter?.id === scopeContext.characterId ? activeCharacter.avatarFullAssetId ?? null : allCharacterContext?.avatarFullAssetId ?? null,
-    updatedAt: activeCharacter?.id === scopeContext.characterId ? activeCharacter.updatedAt ?? null : allCharacterContext?.updatedAt ?? null,
-  } : null;
-
-  const persTarget: LinkTarget | null = scopeContext?.personaId ? {
-    id: scopeContext.personaId,
-    name: activePersona?.id === scopeContext.personaId ? activePersona.name : allPersonaContext?.name ?? "Persona",
-    avatarAssetId: activePersona?.id === scopeContext.personaId ? activePersona.avatarAssetId ?? null : allPersonaContext?.avatarAssetId ?? null,
-    kind: "personas",
-    avatarExt: activePersona?.id === scopeContext.personaId ? activePersona.avatarExt ?? null : allPersonaContext?.avatarExt ?? null,
-    avatarFullExt: activePersona?.id === scopeContext.personaId ? activePersona.avatarFullExt ?? null : allPersonaContext?.avatarFullExt ?? null,
-    updatedAt: activePersona?.id === scopeContext.personaId ? activePersona.updatedAt ?? null : allPersonaContext?.updatedAt ?? null,
-  } : null;
+  const persSource =
+    activePersona && activePersona.id === scopeContext?.personaId ? activePersona : allPersonaContext;
+  const persTarget: LinkTarget | null =
+    scopeContext?.personaId == null
+      ? null
+      : persSource
+        ? personaToLinkTarget(persSource)
+        : { id: scopeContext.personaId, name: "Persona", avatarAssetId: null };
 
   const lorebookContextTargets: LinkTarget[] = aiLorebooks
     .filter((lb) => lb.enabled)
-    .map((lb) => ({ id: lb.id, name: lb.name, avatarAssetId: null }));
+    .map(lorebookToLinkTarget);
   const availableLorebookIds = new Set(lorebookContextTargets.map((lb) => lb.id));
   const selectedLorebookIds = lorebookIds.filter((id) => availableLorebookIds.has(id));
 
@@ -491,6 +496,16 @@ export function AiAssistantModal({
                 <div className="mb-3">
                   <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("ai_quickpill_recent_messages")}</label>
                   <NumberInput min={1} max={100} value={recentMessageCount} onChange={setRecentMessageCount} className="w-full" />
+                </div>
+              )}
+              {!isFull && showEnhanceDraftToggle && (
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{t("ai_pill_improve_draft")}</span>
+                  <Toggle
+                    checked={enhanceDraft}
+                    onChange={setEnhanceDraft}
+                    aria-label={t("ai_pill_improve_draft")}
+                  />
                 </div>
               )}
 

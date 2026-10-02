@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useState, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Drawer } from "@base-ui/react/drawer";
 import { getModalPortal, registerOverlayPortal } from "./modal-helpers.js";
 
@@ -62,13 +62,13 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
   // never again", whole app dead to pointer input until reload. The fix:
   // freeze the container in a session captured in the COMMIT phase only.
   const [portalSession, setPortalSession] = useState<PortalSession | null>(null);
+  const portalAnchor = useRef<HTMLDivElement | null>(null);
 
   // Capture the container once per open transition. Render-phase capture
   // (refs mutated during render) is unsafe under React 19 concurrent
   // rendering — a render may be abandoned after mutating. The layout effect
-  // runs after commit, and the anchor is gated on the session existing, so at
-  // capture time the overlay stack cannot contain this sheet's anchor yet —
-  // self-targeting is structurally impossible.
+  // runs after commit. On reopen, the previous session lets the anchor mount
+  // before this effect, so exclude our own anchor when resolving the parent.
   //
   // Deliberately NO state update on the closing edge: the session (and its
   // container) is kept through the exit transition so the exiting drawer is
@@ -80,7 +80,7 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
   // `document.body` before the fresh capture lands.
   useLayoutEffect(() => {
     if (!open) return;
-    setPortalSession({ container: getModalPortal() ?? document.body });
+    setPortalSession({ container: getModalPortal(portalAnchor.current) ?? document.body });
   }, [open]);
 
   const sessionActive = portalSession !== null;
@@ -93,8 +93,15 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
   // (unregister on unmount). `{open && ...}` gating keeps a closed sheet off
   // the overlay stack.
   const portalAnchorRef = useCallback(
-    (node: HTMLDivElement | null): (() => void) | undefined =>
-      node === null ? undefined : registerOverlayPortal(node),
+    (node: HTMLDivElement | null): (() => void) | undefined => {
+      portalAnchor.current = node;
+      if (node === null) return undefined;
+      const unregister = registerOverlayPortal(node);
+      return () => {
+        unregister();
+        if (portalAnchor.current === node) portalAnchor.current = null;
+      };
+    },
     [],
   );
   return (

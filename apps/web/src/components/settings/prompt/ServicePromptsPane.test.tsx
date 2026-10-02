@@ -147,7 +147,7 @@ describe("ServicePromptsPane", () => {
 		expect(getByText("promptManager.servicePrompts.liveBadge")).toBeTruthy();
 	});
 
-	test("detail of non-Default renders all 22 fields grouped (accordions)", async () => {
+	test("detail of non-Default renders all fields grouped (accordions)", async () => {
 		const def = makeDefaultProfile();
 		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1, overrides: { summary: "hello" } });
 		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
@@ -418,6 +418,30 @@ describe("ServicePromptsPane", () => {
 		const mlAuto = footer.querySelector(".ml-auto");
 		expect(mlAuto).toBeTruthy();
 		expect(mlAuto?.textContent).toContain("save_btn");
+	});
+
+	// IPT-6 retirement boundary: the service-profile editor owns text prompts
+	// only. Image templates live in ImagePromptTemplatesPane and must not remain
+	// reachable through this registry-driven surface.
+	test("service surface renders only the four text families and no legacy image fields", async () => {
+		const def = makeDefaultProfile();
+		const p2 = makeProfile({ id: "p2", name: "Alpha", sortOrder: 1 });
+		listMock.mockResolvedValue({ profiles: [def, p2], activeProfileId: null });
+		getDetailMock.mockImplementation(async (id: string) => {
+			if (id === "default") return { profile: def, resolved: makeResolved() };
+			return { profile: p2, resolved: makeResolved() };
+		});
+
+		const { getByTestId } = render(<Harness active={true} />);
+		await waitFor(() => expect(getByTestId("service-row-p2")).toBeTruthy());
+		await act(async () => { fireEvent.click(getByTestId("service-row-p2")); });
+		await waitFor(() => expect(getDetailMock.mock.calls.some((c) => c[0] === "p2")).toBe(true));
+		const detail = getByTestId("detail");
+		expect(SERVICE_PROMPT_FIELD_KEYS.some((key) => key.startsWith("image_"))).toBe(false);
+		expect(detail.textContent).not.toContain("promptManager.servicePrompts.family.images");
+		expect(detail.textContent).not.toContain("promptManager.servicePrompts.field.image_portrait");
+		await openAllFamilies(detail);
+		expect(detail.querySelectorAll("textarea").length).toBe(SERVICE_PROMPT_FIELD_KEYS.length);
 	});
 
 	// Pins the dirty-guard: switching rows with unsaved edits must open the

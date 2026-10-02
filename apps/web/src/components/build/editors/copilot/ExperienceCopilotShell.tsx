@@ -121,18 +121,18 @@ export interface ExperienceCopilotShellProps {
    *  button's profile modal highlight + assignment (CP-8/CP-9). */
   assignedProfileId?: string | null;
   /** E6 (MOBILE_DEFECTS_ROUND_2): back-navigation affordance for the mobile
-   *  tab-bar row (a ← chevron left of [Чат][Правка]). The editor's top bar
+   *  tab-bar row (a ← chevron left of [Chat][Edit]). The editor's top bar
    *  (which used to carry the back button) is desktop-only now, so without
    *  this leaving the editor from the Chat tab requires a detour through
-   *  Правка. Optional — desktop never passes it, mobile-only by design. */
+   *  the Edit tab. Optional — desktop never passes it, mobile-only by design. */
   onBack?: () => void;
   /** E6: management cluster (name / trust / save / duplicate / delete) that
-   *  moved OUT of the (now desktop-only) top bar INTO the mobile Правка tab.
+   *  moved OUT of the (now desktop-only) top bar INTO the mobile Edit tab.
    *  Rendered at the top of the edit pane, above the editor toolbar.
    *  Optional — desktop never passes it. */
   editTabHeader?: ReactNode;
   /** E6: the draft needs saving (dirty or save failed) — surfaces as a badge
-   *  dot on the Правка tab while the user is on Чат, with a one-shot pulse
+   *  dot on the Edit tab while the user is on Chat, with a one-shot pulse
    *  on the clean→dirty edge. Mirrors the co-author Doc-tab primitive (CA-14)
    *  but deliberately WITHOUT auto-switch — the user just chose to Apply,
    *  yanking them to the edit tab would be noise. */
@@ -144,7 +144,7 @@ type MobileTab = "chat" | "edit";
 /** Stable empty fallback for the turn-store selector (a fresh `[]` per call
  *  would break useShallow's reference equality and re-render every keystroke). */
 const EMPTY_ACTIVITIES: readonly ExperienceCopilotToolActivity[] = [];
-/** E6: how long the Правка-tab pulse plays after the clean→dirty edge.
+/** E6: how long the Edit-tab pulse plays after the clean→dirty edge.
  *  Matches the CSS animation total (~2 × 1.1s), same as DOC_PULSE_MS in
  *  CoauthorMode. */
 const EDIT_TAB_PULSE_MS = 2200;
@@ -713,7 +713,7 @@ export function ExperienceCopilotShell({
     acceptHunks(visualReview, acceptedVisualHunks, pending, visualSource, setAcceptedVisualHunks, onVisualChange);
   }, [visualReview, acceptedVisualHunks, visualSource, onVisualChange, acceptHunks]);
 
-  // RV-3: «Отменить все непринятые» — dismiss the PENDING hunks of THIS
+  // RV-3: "Cancel all unaccepted" — dismiss the PENDING hunks of THIS
   // buffer only (accepted hunks stay accepted, the other buffer and the text
   // are untouched). The round resolves once nothing is pending.
   const dismissPendingRules = useCallback(() => {
@@ -739,7 +739,7 @@ export function ExperienceCopilotShell({
     state.setDismissedHunks(threadId, "visual", [...new Set([...current.dismissedVisual, ...pending])]);
   }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, threadId]);
 
-  // RV-3: «Отменить все» — kill the whole round for THIS buffer: every hunk
+  // RV-3: "Cancel all" — kill the whole round for THIS buffer: every hunk
   // (pending AND accepted) leaves the round (dismissed), and the hunks already
   // accepted into the buffer are rolled back — from the snapshot base on the
   // clean path, or by reverse-splicing their added lines off the drifted
@@ -895,10 +895,10 @@ export function ExperienceCopilotShell({
     }
   }, [hasProposal, isMobile]);
 
-  // ── E6: Правка-tab dirty badge + one-shot pulse ───────────────────────
+  // ── E6: Edit-tab dirty badge + one-shot pulse ───────────────────────
   // Ref-guarded clean→dirty edge (same shape as the proposal edge above and
   // co-author's useCoauthorMobileTab, CA-14): the dot appears while dirty and
-  // the user is on Чат; the pulse plays once per edge. NO auto-switch —
+  // the user is on Chat; the pulse plays once per edge. NO auto-switch —
   // unlike the proposal edge (where review is a mandatory step), an Apply
   // the user just chose doesn't justify yanking them off the chat tab.
   const [editTabPulse, setEditTabPulse] = useState(false);
@@ -1270,7 +1270,7 @@ export function ExperienceCopilotShell({
     /* 4a mobile fix: every flex item down this chain carries min-w-0 —
        without it a content-driven min-content width inside the chat pane
        (e.g. a wide tool-result card) inflates the whole column and pushes
-       the Чат/Правка tablist off-screen (844px blow-out). The desktop branch
+       the Chat/Edit tablist off-screen (844px blow-out). The desktop branch
        below already pins widths (w-[440px] / min-w-0). */
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1311,7 +1311,7 @@ export function ExperienceCopilotShell({
           </div>
           <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", activeTab !== "edit" && "hidden")} data-testid="copilot-pane-edit">
             {/* E6: the management cluster that moved out of the desktop-only
-                top bar renders at the top of the mobile Правка tab. */}
+                top bar renders at the top of the mobile Edit tab. */}
             {editTabHeader && (
               <div className="flex shrink-0 flex-col border-b border-border bg-surface" data-testid="copilot-edit-tab-header">
                 {editTabHeader}

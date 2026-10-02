@@ -116,6 +116,48 @@ describe("mapMessageDto", () => {
     expect(result.diceRolls).toBeUndefined();
     expect("diceRolls" in result).toBe(false);
   });
+
+  // ── messageLevelAttachments (IG-CF10b: row set exposed when hidden) ──
+
+  const rowAtt = { id: "att-row", assetId: "asset-row", type: "image", name: "row.png", mimeType: "image/png" };
+  const v1Att = { id: "att-v1", assetId: "asset-v1", type: "image", name: "v1.png", mimeType: "image/png" };
+
+  it("exposes the row set as messageLevelAttachments when the selected variant hides it (IG-CF10b)", () => {
+    const message = { id: "slot", role: "assistant", content: "", attachmentsJson: JSON.stringify([rowAtt]) };
+    const variants = [
+      { variantIndex: 0, isSelected: false, attachmentsJson: null },
+      { variantIndex: 1, isSelected: true, attachmentsJson: JSON.stringify([v1Att]) },
+    ];
+    const result = mapMessageDto(message, variants);
+    // The merged projection still shows the selected variant's set...
+    expect(result.attachments).toEqual([v1Att]);
+    // ...and the hidden row set rides along for client-side swipes to the
+    // base variant (owner defect 2026-09-29: identical content on swipes
+    // 1 and 2 — the client had no source for the row set).
+    expect(result.messageLevelAttachments).toEqual([rowAtt]);
+  });
+
+  it("omits messageLevelAttachments when the merge already equals the row set (no duplication)", () => {
+    // Base variant selected (null attachmentsJson) — `attachments` IS the
+    // row set; a separate field would double the payload for nothing.
+    const message = { id: "slot", role: "assistant", content: "", attachmentsJson: JSON.stringify([rowAtt]) };
+    const variants = [
+      { variantIndex: 0, isSelected: true, attachmentsJson: null },
+    ];
+    const result = mapMessageDto(message, variants);
+    expect(result.attachments).toEqual([rowAtt]);
+    expect("messageLevelAttachments" in result).toBe(false);
+  });
+
+  it("omits messageLevelAttachments for text messages with no row set", () => {
+    const message = { id: "m1", role: "assistant", content: "plain text", attachmentsJson: null };
+    const variants = [
+      { variantIndex: 0, isSelected: true, attachmentsJson: null },
+    ];
+    const result = mapMessageDto(message, variants);
+    expect(result.attachments).toBeUndefined();
+    expect("messageLevelAttachments" in result).toBe(false);
+  });
 });
 
 // ─── entryMatchesRecentText ──────────────────────────────────────────────
@@ -134,7 +176,7 @@ describe("entryMatchesRecentText", () => {
     priority: 100,
     stickyWindow: 0,
     cooldownWindow: 0,
-    delayWindow: 0,
+    minChatMessages: 0,
     enabled: true,
     metadata: {},
   };

@@ -179,10 +179,10 @@ export interface ExperienceModalProps {
   /** Privileged QUIET end (pos 2 quiet close): ends the session WITHOUT any
    *  public report card. Shown as a secondary option inside the same finish
    *  confirmation overlay (trusted chrome, NOT the frame). When both finish &
-   *  quiet are provided the overlay offers «Завершить» (with report) and
-   *  «Завершить без отчёта» (quiet). */
+   *  quiet are provided the overlay offers "Finish" (with report) and
+   *  "Finish without report" (quiet). */
   readonly onEndSessionQuiet?: () => void;
-  /** Privileged in-session settings entry (lobby Б4). When provided, a
+  /** Privileged in-session settings entry (lobby B4). When provided, a
    *  Settings button is shown in the chrome; clicking it opens a system
    *  confirmation that lives OUTSIDE the sandboxed frame (same trust rule as
    *  finish — a compromised visual must not be able to trigger a privileged

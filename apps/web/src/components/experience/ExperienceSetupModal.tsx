@@ -41,7 +41,6 @@ import {
 import {
   INTERACTIVE_SCHEMA_MAX_LABEL,
   INTERACTIVE_SCHEMA_MAX_PARTICIPANTS,
-  type ExperienceDefinitionDto,
 } from "@vibe-tavern/api-contracts";
 import { Modal } from "../shared/Modal.js";
 import { DropdownSelect } from "../shared/DropdownSelect.js";
@@ -67,7 +66,7 @@ import {
   updateExperienceCharacterOverride,
   updateExperienceGlobalOverride,
 } from "../../api/experience-api.js";
-import { testScript } from "../../api/script-api.js";
+import { testScript, type DiscoveredExperienceDefinition } from "../../api/script-api.js";
 import {
   FieldError,
   SetupFieldRow,
@@ -126,7 +125,7 @@ export interface ExperienceSetupModalProps {
    *  `none`) and prompt overrides are settled, so IR-73B can launch the frame.
    *  The modal does NOT auto-close — the parent controls `open`. */
   readonly onReady?: (session: ExperienceSessionResponse) => void;
-  /** RESTART mode (lobby LB-5 / Б3+Б4): the source session whose frozen
+  /** RESTART mode (lobby LB-5 / B3+B4): the source session whose frozen
    *  snapshots prefill the form. When non-null, Start becomes a restart —
    *  the server finishes the source match and creates a NEW session under
    *  a fresh seed; `initialSettings`/`participants` overlay the authored
@@ -258,7 +257,7 @@ export function ExperienceSetupModal({
   type DiscoveryState =
     | { status: "idle" }
     | { status: "loading" }
-    | { status: "ok"; definition: ExperienceDefinitionDto }
+    | { status: "ok"; definition: DiscoveredExperienceDefinition }
     | { status: "error"; message: string | null };
   const [discovery, setDiscovery] = useState<DiscoveryState>({ status: "idle" });
 

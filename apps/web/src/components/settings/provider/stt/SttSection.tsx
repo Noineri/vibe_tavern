@@ -1,3 +1,7 @@
+/**
+ * fork #1 of TtsSection.tsx (provider master column).
+ */
+
 import { useT } from "../../../../i18n/context.js";
 import { SttProfileList } from "./SttProfileList.js";
 import type { useSttProfiles } from "./use-stt-profiles.js";

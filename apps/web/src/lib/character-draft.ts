@@ -18,7 +18,7 @@
  */
 
 import type { BuildCharacterDraft } from "@vibe-tavern/api-contracts";
-import type { AppCharacter } from "../app-client.js";
+import type { AppCharacter } from "../api/types.js";
 
 /** Seed a `BuildCharacterDraft` from a snapshot character (form default values). */
 export function characterDefaults(character: AppCharacter): BuildCharacterDraft {

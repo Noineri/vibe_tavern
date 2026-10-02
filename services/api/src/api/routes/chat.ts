@@ -6,9 +6,9 @@ import { streamSSE } from "hono/streaming";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import * as schemas from "@vibe-tavern/api-contracts";
 import { DiceBindError, ExperienceBindError } from "@vibe-tavern/db";
-import { readOptionalJson } from "./helpers.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
+import { userMessageSavedFlag } from "../../domain/chat/user-message-saved.js";
 
 type ChatStreamEvent = { event: string; data: string };
 type RouteAbortBridge = ReturnType<typeof createRouteAbortBridge>;
@@ -163,15 +163,11 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
       const body = c.req.valid("json");
       return c.json(await runtime.renameBranch(c.req.param("chatId"), c.req.param("branchId"), body.label));
     })
-    .post("/api/chats/:chatId/messages/:messageId/regenerate", async (c) => {
+    .post("/api/chats/:chatId/messages/:messageId/regenerate", zValidator("json", schemas.regenerateOverrideSchema), async (c) => {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");
-      // Validate the optional override body via the shared schema. readOptionalJson
-      // tolerates an empty/missing body (legacy single-flight regenerate sends
-      // no body), and regenerateOverrideSchema.parse shape-validates when present.
-      // zValidator("json", ...) is intentionally avoided here because it 400s on
-      // the empty body the hono RPC client sends for the non-stream regenerate.
-      const override = schemas.regenerateOverrideSchema.parse(await readOptionalJson(c.req.raw));
+      // A request without a JSON content type validates as `{}` (no override).
+      const override = c.req.valid("json");
       const regenStartMs = Date.now();
       logSendDebug("api.route.regenerate.start", { chatId, messageId });
       try {
@@ -188,10 +184,10 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         throw err;
       }
     })
-    .post("/api/chats/:chatId/messages/:messageId/regenerate/stream", async (c) => {
+    .post("/api/chats/:chatId/messages/:messageId/regenerate/stream", zValidator("json", schemas.regenerateOverrideSchema), async (c) => {
       const chatId = c.req.param("chatId");
       const messageId = c.req.param("messageId");
-      const override = schemas.regenerateOverrideSchema.parse(await readOptionalJson(c.req.raw));
+      const override = c.req.valid("json");
       logSendDebug("api.route.regenerate-stream.start", { chatId, messageId });
       const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.regenerate-stream", { chatId, messageId });
       const gen = runtime.regenerateMessageStream(chatId, messageId, override, abortBridge.signal);
@@ -261,6 +257,24 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         body.description ?? "",
       ));
     })
+    .patch("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/include-in-prompt", async (c) => {
+      const body = await c.req.json<{ includeInPrompt: boolean }>().catch(() => ({ includeInPrompt: false }));
+      return c.json(await runtime.updateAttachmentIncludeInPrompt(
+        c.req.param("chatId"),
+        c.req.param("messageId"),
+        c.req.param("attachmentId"),
+        body.includeInPrompt === true,
+      ));
+    })
+    .patch("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId/prompt", async (c) => {
+      const body = await c.req.json<{ prompt: string }>().catch(() => ({ prompt: "" }));
+      return c.json(await runtime.updateAttachmentPrompt(
+        c.req.param("chatId"),
+        c.req.param("messageId"),
+        c.req.param("attachmentId"),
+        body.prompt ?? "",
+      ));
+    })
     .delete("/api/chats/:chatId/messages/:messageId/attachments/:attachmentId", async (c) => {
       return c.json(await runtime.deleteAttachment(
         c.req.param("chatId"),
@@ -286,10 +300,10 @@ export function createChatRoutes(runtime: ChatRuntimeApi) {
         return c.json(await runtime.sendMessage(chatId, body, c.req.raw.signal));
       } catch (err) {
         if (err instanceof (await import("../../infrastructure/ai/vision-gate.js")).VisionNotSupportedError) {
-          return c.json({ type: "vision_not_supported", message: err.message, attachments: err.attachmentNames }, 422);
+          return c.json({ type: "vision_not_supported", message: err.message, attachments: err.attachmentNames, ...userMessageSavedFlag(err) }, 422);
         }
         if (err instanceof (await import("../../infrastructure/ai/stt-gate.js")).VoiceTranscribeUnavailableError) {
-          return c.json({ type: "voice_transcribe_unavailable", message: err.message, attachments: err.attachmentNames }, 422);
+          return c.json({ type: "voice_transcribe_unavailable", message: err.message, attachments: err.attachmentNames, ...userMessageSavedFlag(err) }, 422);
         }
         throw err;
       }

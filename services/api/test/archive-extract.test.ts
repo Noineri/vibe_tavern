@@ -293,12 +293,13 @@ describe("extractArchive — .zip", () => {
 	});
 
 	it("streams an incompressible entry across many source chunks", async () => {
-		// Regression guard for the inflater choice. Highly-compressible data
-		// shrinks to a few KB and is handed over in ONE ondata call, so it
-		// exercises none of the streaming path — that is why an earlier
-		// all-'x' fixture passed while real release zips died partway through
-		// with "strm.flush is not a function" (fflate's AsyncUnzipInflate runs
-		// in a Blob Worker whose shim is incompatible with Bun).
+		// Regression guard for the streaming path itself. Highly-compressible
+		// data shrinks to a few KB and is handed over in ONE ondata call, so it
+		// exercises none of that path — that is why an earlier all-'x' fixture
+		// passed while real release zips died partway through. (The historical
+		// failure was "strm.flush is not a function" from fflate's Blob-Worker
+		// AsyncUnzipInflate; that Bun gap is fixed as of 1.4.2, but the
+		// single-chunk blind spot this case covers is independent of it.)
 		//
 		// Random bytes cannot be compressed, so the archive stays multi-megabyte
 		// and createReadStream delivers it in many chunks, forcing repeated
@@ -324,7 +325,16 @@ describe("extractArchive — .zip", () => {
 		expect(await read("after.txt")).toBe("still here");
 	});
 
-	it("reads a .zip produced by the system zip tool", async () => {
+	// CI evidence (run 34752093986, test-windows): Compress-Archive's cold
+	// start — powershell.exe + .NET types load — ran past the suite's global
+	// 45s per-test budget on a throttled 2-core runner. The test's cost is
+	// bounded by that external process, not by our code; the backslash and
+	// traversal contracts it historically covered are pinned deterministically
+	// above, so this fixture only proves cross-tool interop and gets a
+	// Windows-only budget sized for the tool, not the suite.
+	it(
+		"reads a .zip produced by the system zip tool",
+		async () => {
 		const src = join(root, "zsrc");
 		await mkdir(join(src, "web"), { recursive: true });
 		await writeFile(join(src, "vibe-tavern.exe"), "MZ");
@@ -356,7 +366,10 @@ describe("extractArchive — .zip", () => {
 
 		expect(await read("vibe-tavern.exe")).toBe("MZ");
 		expect(await read("web/index.html")).toBe("<html/>");
-	});
+		},
+		// undefined → the suite's global --timeout (45s) applies on Linux,
+		// where `zip` is a native millisecond binary.
+		IS_WINDOWS ? 180_000 : undefined);
 });
 
 describe("extractArchive — dispatch", () => {
