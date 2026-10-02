@@ -69,7 +69,10 @@ export function initI18n(lng: Locale = DEFAULT_LOCALE): void {
 		keySeparator: false,
 		nsSeparator: false,
 		// Preserve the existing "{var}" interpolation syntax verbatim.
-		interpolation: { prefix: "{", suffix: "}" },
+		// escapeValue:false — React owns HTML escaping (it escapes rendered
+		// text itself); i18next's default escaper would leak literal entities
+		// into the UI (a URL's / became &#x2F; in the local-status endpoint).
+		interpolation: { prefix: "{", suffix: "}", escapeValue: false },
 		// Synchronous init — `i18next.t` is usable the instant init returns,
 		// which is what `getT()` relies on for pre-React-mount store actions.
 		initAsync: false,

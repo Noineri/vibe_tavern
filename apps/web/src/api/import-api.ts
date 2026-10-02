@@ -1,9 +1,8 @@
 import { createParser } from "eventsource-parser";
 import type { ImportJsonResponse } from "./types.js";
 import type { ChatId } from "@vibe-tavern/domain";
-import { client } from "./client.js";
+import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
-import { getGatewayBaseUrl, getMobileToken } from "./client.js";
 
 export async function importJson(input: {
   fileName: string;
@@ -11,6 +10,7 @@ export async function importJson(input: {
   monolithText?: string;
   chatId?: ChatId;
   skipExisting?: boolean;
+  importEmbeddedBook?: boolean;
   lean?: boolean;
 }): Promise<ImportJsonResponse> {
   const response = await client.api.import.json.$post({ json: input });
@@ -32,7 +32,7 @@ export interface BatchImportItemResult {
  * ImportModals Phase 1.
  */
 export async function importJsonBatch(input: {
-  items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: ChatId; skipExisting?: boolean }>;
+  items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: ChatId; skipExisting?: boolean; importEmbeddedBook?: boolean }>;
   lean?: boolean;
 }): Promise<{ results: BatchImportItemResult[] }> {
   const response = await client.api.import.batch.$post({ json: input });
@@ -154,7 +154,7 @@ export async function openNativeDialog(): Promise<NativeDialogResult> {
   const token = getMobileToken();
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetch(`${getGatewayBaseUrl()}/api/fs/native-dialog`, {
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/fs/native-dialog`, {
     method: "POST",
     headers,
     signal: AbortSignal.timeout(5 * 60 * 1000),
@@ -205,7 +205,7 @@ export async function importStDirectoryStream(
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(`${getGatewayBaseUrl()}/api/import/st-directory/stream`, {
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/import/st-directory/stream`, {
     method: "POST",
     headers: { ...headers, "Content-Type": "application/json" },
     body: JSON.stringify({ path }),

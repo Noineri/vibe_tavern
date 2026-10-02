@@ -19,6 +19,8 @@
  *   VIBE_TAVERN_DATA_DIR   — user data dir (default: <root>/data)
  *   VIBE_TAVERN_HOST       — listen host (default: 0.0.0.0)
  *   VIBE_TAVERN_PORT       — listen port (default: 8787)
+ *   VIBE_TAVERN_QUOTA_POLLING — "0" skips the provider quota poller (set by
+ *                          scripts/test-instance.ts for snapshot instances)
  */
 
 import { resolve } from "node:path";
@@ -49,7 +51,7 @@ startServerRuntime({
 	host: process.env.VIBE_TAVERN_HOST ?? "0.0.0.0",
 	port: Number(process.env.VIBE_TAVERN_PORT ?? "8787"),
 	checkPortBeforeListen: true,
-	shutdownSignals: ["SIGINT", "SIGTERM"],
+	shutdownSignals: ["SIGINT", "SIGTERM", "SIGHUP"],
 	missingFrontendMessage: 'Frontend not built. Run "bun run build:web" first, or use dev mode.',
 }).catch((err) => {
 	console.error("[prod] Fatal error:", err);

@@ -118,6 +118,7 @@ All paths can be overridden via environment variables:
 | `VIBE_TAVERN_HOST` | `127.0.0.1` | Listen host |
 | `VIBE_TAVERN_PORT` | `8787` | Listen port |
 | `VIBE_TAVERN_OPEN_BROWSER` | `1` | Set to `0` to suppress auto-open |
+| `VIBE_TAVERN_QUOTA_POLLING` | *(unset)* | Set to `0` to skip the provider quota poller (used by `bun run test-instance`, see `docs/guides/running-a-test-instance.md`) |
 | `VIBE_TAVERN_ALLOWED_ORIGINS` | *(unset)* | Comma-separated exact origins allowed for intentional split frontend/API deployments (wildcards/paths/credentials are rejected — fail-closed). See "Cross-origin policy" below |
 | `VIBE_TAVERN_EXTERNAL_HOST` | *(unset)* | One external hostname admitted by the API Host validation (scheme/port stripped). Needed only when the app is served behind a domain name that is not an IP literal |
 

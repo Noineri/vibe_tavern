@@ -101,24 +101,16 @@ mock.module("../../../../i18n/context.js", () => ({
   ...realI18n,
   useT: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
-      params && "version" in params ? `${key}:${String(params.version)}` : key,
+      params && "version" in params
+        ? `${key}:${String(params.version)}`
+        : params && "url" in params
+          ? `${key}:${String(params.url)}`
+          : key,
     tDynamic: (key: string) => key,
     locale: "en",
     setLocale: () => {},
     ready: true,
   }),
-}));
-
-// Docker probe (D8): deterministic states per test — default mirrors the
-// honest "not found" shape so no test ever depends on a real fetch.
-let dockerStatusNext: { available: boolean; version: string | null } | Error = { available: false, version: null };
-const realTtsApi = await import("../../../../api/tts-api.js");
-mock.module("../../../../api/tts-api.js", () => ({
-  ...realTtsApi,
-  fetchLocalDockerStatus: async () => {
-    if (dockerStatusNext instanceof Error) throw dockerStatusNext;
-    return dockerStatusNext;
-  },
 }));
 
 const { TtsLocalServerPanel } = await import("./TtsLocalServerPanel.js");
@@ -143,52 +135,23 @@ afterEach(() => {
   cleanup();
 });
 
-describe("TtsLocalServerPanel", () => {
-  test("docker status line: available with version (D8)", async () => {
-    dockerStatusNext = { available: true, version: "27.3.1" };
+describe("TtsLocalServerPanel — the status chip moved out (IG-CF12e)", () => {
+  test("the panel no longer renders the chip — it lives outside the card now", async () => {
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
-    // The mount-effect probe settles AFTER render's act scope closes
-    // (fetcher promise resolves on a later microtask). Drain it inside
-    // act — otherwise its setState lands outside act (warning) and the
-    // status text below is read in the "probing" state (CI flake race).
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    const status = view.getByTestId("tts-docker-status");
-    expect(status.textContent).toContain("tts_docker_status_ok");
-    expect(status.textContent).toContain("27.3.1");
+    expect(view.queryByTestId("tts-docker-status")).toBeNull();
     cleanup();
   });
 
-  test("docker status line: transport failure → unknown, panel stays usable", async () => {
-    dockerStatusNext = new Error("route unreachable");
-    const tts = makeTtsHook({});
-    const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
-    // Same settle-inside-act drain: the rejection microtask commits
-    // setError only after render returns; asserting before it lands
-    // observed "probing" under runner load (stress repro, suite run 3).
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    expect(view.getByTestId("tts-docker-status").textContent).toContain("tts_docker_status_unknown");
-    expect(view.getByTestId("tts-discover-btn")).toBeTruthy();
-    cleanup();
-    dockerStatusNext = { available: false, version: null };
-  });
   test("renders null for non-openai backend (kokoro)", async () => {
     const tts = makeTtsHook({ form: { ...ttsHookBase.form, backend: TTS_BACKEND.Kokoro } });
     const panelProps = { tts, form: tts.form };
     const { container } = render(React.createElement(TtsLocalServerPanel, panelProps));
     expect(container.innerHTML).toBe("");
-    // The panel renders null but useDockerStatus still mounts its probe;
-    // without a settle drain its microtask setState lands on the mounted
-    // component outside act once the sync body ends (act warning).
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
   });
+});
 
+describe("TtsLocalServerPanel", () => {
   test("setup help accordion: closed by default, reference steps hidden", async () => {
     const tts = makeTtsHook({});
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
@@ -358,7 +321,8 @@ describe("TtsLocalServerPanel", () => {
     const view = render(React.createElement(TtsLocalServerPanel, { tts, form: tts.form }));
     expect(view.queryByTestId("tts-help-step-choose")).toBeNull();
     expect(view.getByTestId("tts-discover-btn")).toBeTruthy();
-    expect(view.getByTestId("tts-docker-status")).toBeTruthy();
+    // IG-CF12e: the chip moved out of the panel (TtsLocalConnectionChip).
+    expect(view.queryByTestId("tts-docker-status")).toBeNull();
     cleanup();
   });
 

@@ -5,6 +5,8 @@ import {
   composeVoiceTranscript,
   parseStoredAttachments,
   splitVoiceTranscript,
+  withImageGenPromptFallback,
+  type Attachment,
 } from '../src/attachment.js';
 
 // STT_PLAN ST-1: audio attachments. `classifyAttachment` is the MIME → type
@@ -95,5 +97,66 @@ describe('voice transcript + tone line (STT_PLAN ST-7)', () => {
 
   test('split: an empty tone payload degrades to null', () => {
     expect(splitVoiceTranscript('words\n[Voice tone: ]')).toEqual({ transcript: 'words', tone: null });
+  });
+});
+
+describe('image-gen slot prompt textual fallback (IMAGE_GENERATION_PLAN IG-CF9)', () => {
+  function slot(overrides: Partial<Attachment> = {}): Attachment {
+    return {
+      id: 'slot_att_1',
+      assetId: 'asset_slot_1',
+      type: 'image',
+      name: 'slot1.png',
+      mimeType: 'image/png',
+      sizeBytes: 12,
+      description: null,
+      includeInPrompt: true,
+      imageGen: { mode: 'portrait', profileId: 'prof1', prompt: 'a lighthouse at dusk', params: {} },
+      ...overrides,
+    };
+  }
+
+  test('(a) included slot with empty description + provenance.prompt → description backfilled with the prompt text', () => {
+    const out = withImageGenPromptFallback([slot()]);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.description).toBe('a lighthouse at dusk');
+  });
+
+  test('(b) slot WITH an existing description → untouched (same reference)', () => {
+    const input = slot({ description: 'a vision description' });
+    const out = withImageGenPromptFallback([input]);
+    expect(out[0]).toBe(input);
+    expect(out[0]?.description).toBe('a vision description');
+  });
+
+  test('(c) non-slot attachment with empty description → untouched (same reference)', () => {
+    const plain: Attachment = {
+      id: 'plain_1',
+      assetId: 'asset_plain_1',
+      type: 'image',
+      name: 'plain1.png',
+      mimeType: 'image/png',
+      sizeBytes: 4,
+      description: null,
+    };
+    const out = withImageGenPromptFallback([plain]);
+    expect(out[0]).toBe(plain);
+    expect(out[0]?.description).toBeNull();
+  });
+
+  test('(d) slot whose provenance has NO prompt (legacy) → untouched (same reference)', () => {
+    const legacy = slot({ imageGen: { mode: 'portrait', profileId: 'prof1', params: {} } });
+    const out = withImageGenPromptFallback([legacy]);
+    expect(out[0]).toBe(legacy);
+    expect(out[0]?.description).toBeNull();
+  });
+
+  test('(e) input array is not mutated', () => {
+    const input = slot();
+    const arr = [input];
+    const out = withImageGenPromptFallback(arr);
+    expect(out).not.toBe(arr);
+    expect(input.description).toBeNull();
+    expect(out[0]?.description).toBe('a lighthouse at dusk');
   });
 });

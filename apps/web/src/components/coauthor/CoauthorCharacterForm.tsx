@@ -65,6 +65,12 @@ import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useT } from "../../i18n/context.js";
 import { LinkBindingPopover, type LinkTarget } from "../shared/LinkBindingPopover.js";
+import {
+	characterToLinkTarget,
+	personaToLinkTarget,
+	lorebookToLinkTarget,
+	scriptToLinkTarget,
+} from "../../lib/link-targets.js";
 import { GeneratingScrim } from "../shared/generation-feedback.js";
 import { SaveButton } from "../shared/SaveBar.js";
 import { BoundResourcesField } from "../shared/BoundResourcesField.js";
@@ -143,37 +149,19 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
     return () => { cancelled = true; };
   }, []);
   const characterTargets: LinkTarget[] = useMemo(
-    () => allCharacters.map((c) => ({
-      id: c.id,
-      name: c.name,
-      avatarAssetId: c.avatarAssetId,
-      kind: "characters" as const,
-      avatarExt: c.avatarExt,
-      avatarFullExt: c.avatarFullExt,
-      avatarFullAssetId: c.avatarFullAssetId,
-      updatedAt: c.updatedAt,
-    })),
+    () => allCharacters.map(characterToLinkTarget),
     [allCharacters],
   );
   const personaTargets: LinkTarget[] = useMemo(
-    () => allPersonas.map((p) => ({
-      id: p.id,
-      name: p.name,
-      avatarAssetId: p.avatarAssetId,
-      kind: "personas" as const,
-      avatarExt: p.avatarExt,
-      avatarFullExt: p.avatarFullExt,
-      avatarFullAssetId: p.avatarFullAssetId,
-      updatedAt: p.updatedAt,
-    })),
+    () => allPersonas.map(personaToLinkTarget),
     [allPersonas],
   );
   const lorebookTargets: LinkTarget[] = useMemo(
-    () => allLorebooks.filter((lb) => lb.enabled).map((lb) => ({ id: lb.id, name: lb.name, avatarAssetId: null })),
+    () => allLorebooks.filter((lb) => lb.enabled).map(lorebookToLinkTarget),
     [allLorebooks],
   );
   const scriptTargets: LinkTarget[] = useMemo(
-    () => allScripts.filter((sc) => sc.enabled).map((sc) => ({ id: sc.id, name: sc.name, avatarAssetId: null })),
+    () => allScripts.filter((sc) => sc.enabled).map(scriptToLinkTarget),
     [allScripts],
   );
   const handleSetContextLinks = (next: { targetType: "character" | "persona" | "lorebook" | "script"; targetId: string }[]) => {

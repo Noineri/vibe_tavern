@@ -516,7 +516,7 @@ export class ExperienceStore {
 
   /**
    * Quiet end of an ACTIVE session (lobby report, pending queue pos 2:
-   * «закрыть модалку так, чтобы ничего не отправлялось в чат»). Releases the
+   * close the modal so nothing gets sent to the chat). Releases the
    * host-owned active slot WITHOUT any public artifact: no `experience_finished`
    * system step is inserted and no terminal attachment is frozen. Instead the
    * transaction DELETES every still-unbound attachment row for the session (a

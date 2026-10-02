@@ -558,7 +558,7 @@ describe("assembleCoauthorPrompt", () => {
       expect([...names].some((n) => /search_replace/i.test(n))).toBe(false);
     });
 
-    test("profile-editor module exposes only PERSONALITY/SCENARIO edit+write (no EXAMPLES, no greetings)", async () => {
+    test("profile-editor module exposes all section edit+write tools (incl. EXAMPLES), no greetings", async () => {
       const loaders = makeLoaders({ chat: { id: "chat_test", coauthorModuleId: "profile-editor" } as never });
       const result = await assembleCoauthorPrompt(makeInput(loaders));
       const names = new Set(Object.keys(result.tools));
@@ -566,8 +566,8 @@ describe("assembleCoauthorPrompt", () => {
       expect(names.has("write_personality")).toBe(true);
       expect(names.has("edit_scenario")).toBe(true);
       expect(names.has("write_scenario")).toBe(true);
-      expect(names.has("edit_examples")).toBe(false);
-      expect(names.has("write_examples")).toBe(false);
+      expect(names.has("edit_examples")).toBe(true);
+      expect(names.has("write_examples")).toBe(true);
       expect(names.has("edit_greeting")).toBe(false);
     });
 

@@ -13,6 +13,14 @@ export interface SliderFieldProps {
   ariaLabel?: string;
   rangeTestId?: string;
   numberTestId?: string;
+  /** Commit-on-release for persist-per-call surfaces: the range fires
+   *  onChange per drag tick (fast visual state), then onCommit ONCE when the
+   *  drag/keypress ends — persist here, not in onChange. The NumberInput half
+   * is already commit-shaped (it commits on blur); its blur fires onCommit
+   * too. Mirrors NumberInput's commit-on-blur boundary (exemplars:
+   *  ImageGenPane/TtsProfileEditor write fast state and persist at a coarse
+   *  boundary). */
+  onCommit?: (value: number) => void;
 }
 
 export function SliderField({
@@ -26,6 +34,7 @@ export function SliderField({
   ariaLabel,
   rangeTestId,
   numberTestId,
+  onCommit,
 }: SliderFieldProps) {
   const val = value ?? min;
 
@@ -45,6 +54,8 @@ export function SliderField({
           step={step}
           value={val}
           onChange={handleRangeChange}
+          onPointerUp={onCommit ? () => onCommit(val) : undefined}
+          onKeyUp={onCommit ? () => onCommit(val) : undefined}
           disabled={disabled}
           aria-label={ariaLabel ?? label}
           data-testid={rangeTestId}
@@ -58,6 +69,7 @@ export function SliderField({
             step={step}
             value={val}
             onChange={onChange}
+            onBlur={onCommit ? () => onCommit(val) : undefined}
             disabled={disabled}
             hideControls
           />

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { ChatId } from "@vibe-tavern/domain";
+import type { RegenerateOverride } from "@vibe-tavern/api-contracts";
 import { useChatStore } from "../stores/chat-store.js";
 import {
   useGenerationQueueStore,
@@ -37,7 +38,7 @@ import type { StreamOutcome } from "./use-chat-controller.js";
 export type RunJobFn = (
   chatId: ChatId,
   messageId: string,
-  override?: { model?: string; promptPresetId?: string },
+  override?: RegenerateOverride,
 ) => Promise<StreamOutcome>;
 
 // ── Module-level runner registration + pump registry ────────────────────

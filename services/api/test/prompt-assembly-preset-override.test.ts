@@ -76,7 +76,7 @@ function makeResolver(): { resolver: PromptAssemblyResolver; calls: string[] } {
         promptOrder: [],
       };
     },
-    listActiveLoreEntries: async () => [],
+    listActiveLoreEntries: async () => ({ entries: [], overflowedLorebooks: [] }),
     listRetrievedMemories: async () => [],
     getToolInstructions: () => null,
     executeScripts: async (input: { characterRecord: { personality: string | null; scenario: string | null } }) => ({

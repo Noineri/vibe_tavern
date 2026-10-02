@@ -154,34 +154,35 @@ describe("static frontend responses", () => {
 });
 
 describe("asset directory routes", () => {
-	test("serves the built asset directories that exist", async () => {
-		const staticDir = await webDirWith({
-			"index.html": "<main>app</main>",
-			"assets/app.js": "export const x = 1;",
-			"fonts/Inter.ttf": "ttf",
+	function serveRoutes(staticDir: string): ReturnType<typeof Bun.serve> {
+		return Bun.serve({
+			port: 0,
+			hostname: "127.0.0.1",
+			routes: resolveStaticDirRoutes({ staticEnabled: true, staticDir }),
+			fetch: () => new Response("reached the app", { status: 418 }),
 		});
+	}
 
-		const routes = resolveStaticDirRoutes({ staticEnabled: true, staticDir });
-
-		expect(Object.keys(routes).sort()).toEqual(["/assets/*", "/fonts/*"]);
-		expect(routes["/assets/*"]).toEqual({ dir: join(staticDir, "assets") });
-	});
-
-	test("skips a directory that is not there — Bun.serve throws on a missing dir route", async () => {
+	test("routes both asset prefixes, even one whose directory is not built yet", async () => {
 		const staticDir = await webDirWith({ "index.html": "<main>app</main>", "assets/app.js": "x" });
 
 		const routes = resolveStaticDirRoutes({ staticEnabled: true, staticDir });
 
-		expect(Object.keys(routes)).toEqual(["/assets/*"]);
-		// Proof of the constraint the skip exists for.
-		expect(() =>
-			Bun.serve({
-				port: 0,
-				hostname: "127.0.0.1",
-				routes: { "/fonts/*": { dir: join(staticDir, "fonts") } },
-				fetch: () => new Response("fallback"),
-			}),
-		).toThrow();
+		expect(Object.keys(routes).sort()).toEqual(["/assets/*", "/fonts/*"]);
+		// The routes resolve per request, so a missing directory is just a 404
+		// now and a served file once it appears — no bind-time throw to dodge.
+		const server = serveRoutes(staticDir);
+		try {
+			const base = `http://127.0.0.1:${server.port}`;
+			expect((await fetch(`${base}/fonts/Inter.ttf`)).status).toBe(404);
+			await mkdir(join(staticDir, "fonts"), { recursive: true });
+			await Bun.write(join(staticDir, "fonts", "Inter.ttf"), "ttf");
+			const font = await fetch(`${base}/fonts/Inter.ttf`);
+			expect(font.status).toBe(200);
+			expect(await font.text()).toBe("ttf");
+		} finally {
+			server.stop(true);
+		}
 	});
 
 	test("declines to route when the binary carries an embedded frontend", async () => {
@@ -195,8 +196,8 @@ describe("asset directory routes", () => {
 			}),
 		});
 
-		// A {dir} 404 does not fall through to fetch, so a chunk that ships only
-		// inside the executable would 404 instead of being served.
+		// A route miss does not fall through to fetch, so a chunk that ships
+		// only inside the executable would 404 instead of being served.
 		expect(routes).toEqual({});
 	});
 
@@ -206,14 +207,9 @@ describe("asset directory routes", () => {
 		expect(resolveStaticDirRoutes({ staticEnabled: false, staticDir })).toEqual({});
 	});
 
-	test("Bun answers those routes with a validator, and a miss never reaches the app", async () => {
+	test("the routes answer with a validator, and a miss never reaches the app", async () => {
 		const staticDir = await webDirWith({ "index.html": "<main>app</main>", "assets/app.js": "export const x = 1;" });
-		const server = Bun.serve({
-			port: 0,
-			hostname: "127.0.0.1",
-			routes: resolveStaticDirRoutes({ staticEnabled: true, staticDir }),
-			fetch: () => new Response("reached the app", { status: 418 }),
-		});
+		const server = serveRoutes(staticDir);
 		try {
 			const base = `http://127.0.0.1:${server.port}`;
 
@@ -222,6 +218,7 @@ describe("asset directory routes", () => {
 			expect(full.status).toBe(200);
 			expect(etag).not.toBeNull();
 			expect(full.headers.get("last-modified")).not.toBeNull();
+			expect(full.headers.get("content-type")).toContain("javascript");
 			expect(await full.text()).toBe("export const x = 1;");
 
 			const revalidated = await fetch(`${base}/assets/app.js`, {
@@ -230,14 +227,68 @@ describe("asset directory routes", () => {
 			expect(revalidated.status).toBe(304);
 			expect(await revalidated.text()).toBe("");
 
+			const ranged = await fetch(`${base}/assets/app.js`, { headers: { Range: "bytes=0-5" } });
+			expect(ranged.status).toBe(206);
+			expect(await ranged.text()).toBe("export");
+
 			// This is the constraint that keeps the SPA fallback in the app: the
-			// directory route answers its own misses.
+			// asset routes answer their own misses.
 			const missing = await fetch(`${base}/assets/gone.js`);
 			expect(missing.status).toBe(404);
 
 			// A path outside the routed prefixes still reaches the app.
 			const app = await fetch(`${base}/chats/chat_1`);
 			expect(app.status).toBe(418);
+		} finally {
+			server.stop(true);
+		}
+	});
+
+	test("a web rebuild under a running server is served without a restart", async () => {
+		// The build deletes and recreates out/apps/web. A Bun `{dir}` route
+		// holds the original directory, so after a rebuild every asset — old
+		// names and new — 404ed until the server was restarted, while the
+		// per-request index.html already pointed at the new hashed names
+		// (owner-found 2026-10-01: the loading page hung on two 404s).
+		const staticDir = await webDirWith({ "index.html": "<main>app</main>", "assets/app-old.js": "old" });
+		const server = serveRoutes(staticDir);
+		try {
+			const base = `http://127.0.0.1:${server.port}`;
+			const before = await fetch(`${base}/assets/app-old.js`);
+			const staleEtag = before.headers.get("etag");
+			expect(before.status).toBe(200);
+
+			await rm(join(staticDir, "assets"), { recursive: true, force: true });
+			await mkdir(join(staticDir, "assets"), { recursive: true });
+			await Bun.write(join(staticDir, "assets", "app-new.js"), "new");
+			await Bun.write(join(staticDir, "assets", "app-old.js"), "rebuilt");
+
+			const fresh = await fetch(`${base}/assets/app-new.js`);
+			expect(fresh.status).toBe(200);
+			expect(await fresh.text()).toBe("new");
+
+			// A stable-named file (the TTS/STT workers) changed under the same
+			// name: the browser's stale validator must not earn a 304.
+			const rebuilt = await fetch(`${base}/assets/app-old.js`, {
+				headers: { "If-None-Match": staleEtag ?? "" },
+			});
+			expect(rebuilt.status).toBe(200);
+			expect(await rebuilt.text()).toBe("rebuilt");
+		} finally {
+			server.stop(true);
+		}
+	});
+
+	test("a path that escapes the asset directory is a 404", async () => {
+		const staticDir = await webDirWith({ "index.html": "<main>app</main>", "assets/app.js": "x", "secret.txt": "s" });
+		const server = serveRoutes(staticDir);
+		try {
+			const base = `http://127.0.0.1:${server.port}`;
+			for (const path of ["/assets/%2e%2e/secret.txt", "/assets/..%2fsecret.txt", "/assets/..%5csecret.txt", "/assets/"]) {
+				const response = await fetch(`${base}${path}`);
+				expect(response.status === 404 || response.status === 418).toBe(true);
+				expect(await response.text()).not.toBe("s");
+			}
 		} finally {
 			server.stop(true);
 		}

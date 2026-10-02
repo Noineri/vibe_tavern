@@ -1,3 +1,7 @@
+/**
+ * fork #1 of tts/use-tts-discovery.ts.
+ */
+
 import { useCallback, useState } from "react";
 
 import { diagnoseOutcome, type DiscoveredServer, type DiscoveryDiagnosticCode, type ProbeOutcome } from "@vibe-tavern/domain";

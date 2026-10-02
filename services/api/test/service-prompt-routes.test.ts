@@ -78,7 +78,7 @@ describe("SP-6 service prompt routes (real adapter + in-memory DB)", () => {
     expect(body2.profiles.filter((p) => p.id === "default")).toHaveLength(1);
   });
 
-  test("POST create then GET detail: resolved map covers all 22 fields", async () => {
+  test("POST create then GET detail: resolved map covers all SERVICE_PROMPT_FIELD_KEYS fields", async () => {
     const { app } = await setupAdapter();
 
     const created = await app.request("/api/service-prompts/profiles", {
@@ -97,7 +97,7 @@ describe("SP-6 service prompt routes (real adapter + in-memory DB)", () => {
       profile: { id: string; overrides: Record<string, string> };
       resolved: Record<string, { override: string | null; default: string }>;
     };
-    // All 22 keys present
+    // Every field key present
     expect(Object.keys(detailBody.resolved)).toHaveLength(SERVICE_PROMPT_FIELD_KEYS.length);
     for (const key of SERVICE_PROMPT_FIELD_KEYS) {
       expect(detailBody.resolved[key]).toBeDefined();
@@ -277,7 +277,7 @@ describe("SP-6 service prompt routes (real adapter + in-memory DB)", () => {
     expect(res.status).toBe(404);
   });
 
-  test("POST validation: empty name → 400; unknown override key → 400", async () => {
+  test("POST validation: empty name, unknown keys, and retired image overrides → 400", async () => {
     const { app } = await setupAdapter();
     const emptyName = await app.request("/api/service-prompts/profiles", {
       method: "POST",
@@ -292,5 +292,12 @@ describe("SP-6 service prompt routes (real adapter + in-memory DB)", () => {
       body: JSON.stringify({ name: "Bad", overrides: { not_a_field: "x" } }),
     });
     expect(badKey.status).toBe(400);
+
+    const retiredImageKey = await app.request("/api/service-prompts/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Legacy", overrides: { image_portrait: "retired" } }),
+    });
+    expect(retiredImageKey.status).toBe(400);
   });
 });

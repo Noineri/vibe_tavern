@@ -36,6 +36,7 @@ import {
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter, ProbeInput, ListModelsInput, TokenizeInput } from "./protocol-types.js";
 import type { ProviderFetch } from "./provider-fetch-factory.js";
+import { readProviderErrorBody } from "../../infrastructure/ai/provider-error-body.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -476,10 +477,10 @@ export async function testOllamaChat(input: ProviderConnectionInput): Promise<Te
     clearTimeout(timer);
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
+      const errorText = await readProviderErrorBody(response);
       return {
         success: false,
-        error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+        error: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`,
       };
     }
 
@@ -646,8 +647,8 @@ export async function tokenizeOllama(input: TokenizeInput): Promise<number> {
       signal: controller.signal,
     });
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      throw new Error(`Ollama tokenize failed (${response.status})${errorText ? `: ${errorText.slice(0, 200)}` : ""}`);
+      const errorText = await readProviderErrorBody(response);
+      throw new Error(`Ollama tokenize failed (${response.status})${errorText ? `: ${errorText}` : ""}`);
     }
     const payload = (await response.json()) as OllamaTokenizeResponse;
     if (!Array.isArray(payload.tokens)) {

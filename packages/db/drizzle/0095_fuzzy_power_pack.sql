@@ -1,0 +1,1 @@
+ALTER TABLE `prompt_traces` ADD `overflowed_lorebooks_json` text DEFAULT '[]' NOT NULL;

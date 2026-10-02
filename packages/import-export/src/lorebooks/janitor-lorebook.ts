@@ -6,7 +6,7 @@ import type {
   LorebookId,
   LoreScopeType,
 } from "@vibe-tavern/domain";
-import { brandId, ENTITY_ID_NAMESPACE } from "@vibe-tavern/domain";
+import { brandId, ENTITY_ID_NAMESPACE, LORE_MATCH_SOURCE } from "@vibe-tavern/domain";
 
 import {
   asBoolean,
@@ -134,17 +134,21 @@ export function importJanitorLorebookJson(
     scanDepth: 10,
     tokenBudget: 1000,
     tokenBudgetPercent: null,
+    tokenBudgetCap: 0,
     recursiveScanning: false,
     // ST's group-scoring switch is global (client settings), not per-book —
     // nothing to import; imported books keep the VT default (false).
     // See LOREBOOK_GROUP_SCORING_PARITY_REPORT (D9).
     useGroupScoring: false,
-    maxRecursionSteps: 5,
+    // Janitor cards carry no case/whole-words globals either — VT defaults.
+    caseSensitive: false,
+    matchWholeWords: false,
+    maxRecursionSteps: 0,
     includeNames: false,
     minActivations: 0,
     minActivationsDepthMax: 0,
     overflowAlert: false,
-    characterStrategy: 0,
+    characterStrategy: 1,
     sortOrder: 0,
     enabled: true,
     characterId: null,
@@ -207,10 +211,10 @@ export function importJanitorLorebookJson(
       position: "in_prompt",
       depth: asNumber(entry.depth, 4),
       priority,
-      // Janitor does not expose sticky/cooldown/delay windows.
+      // Janitor does not expose sticky/cooldown windows or a chat-length delay gate.
       stickyWindow: 0,
       cooldownWindow: 0,
-      delayWindow: 0,
+      minChatMessages: 0,
       constant: asBoolean(entry.constant, false),
       probability: asNumber(entry.probability, 100),
       ignoreBudget: false,
@@ -225,11 +229,15 @@ export function importJanitorLorebookJson(
       delayUntilRecursion: false,
       recursionLevel: 0,
       scanDepthOverride: null,
-      caseSensitive: asBoolean(entry.case_sensitive, false),
-      matchWholeWords: asBoolean(entry.matchWholeWords, false),
+      // Tri-state (ST parity, D2): an explicit boolean in the file is kept as
+      // the per-entry override; absent/non-boolean → null = inherit the book
+      // default. Old VT exports always wrote booleans — they stay pinned,
+      // behavior unchanged.
+      caseSensitive: entry.case_sensitive === true ? true : entry.case_sensitive === false ? false : null,
+      matchWholeWords: entry.matchWholeWords === true ? true : entry.matchWholeWords === false ? false : null,
       characterFilter: [],
       characterFilterExclude: false,
-      matchSources: [],
+      matchSources: [LORE_MATCH_SOURCE.chatMessages],
       enabled: asBoolean(entry.enabled, true),
       sortOrder: insertionOrder,
       automationId: "",

@@ -143,8 +143,8 @@ export function showMessageInChat(messageId: string): boolean {
 }
 
 /** RD-7: scroll the playlist's own list so the given message's card is
- *  visible (owner: «и при переходе к следующему сообщению прокручивать
- *  до него»). Container-scoped by construction: the card is queried
+ *  visible (owner: also scroll to it when moving to the next message).
+ *  Container-scoped by construction: the card is queried
  *  inside the list element and `block: "nearest"` only moves ancestors
  *  that actually clip the card — the open popover is in-viewport, so
  *  the page/chat never scrolls, only the `overflow-y-auto` list does.
@@ -373,14 +373,14 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
         re-voice-all as text buttons). Two lines because one line cannot
         hold it: popover w-[26rem] (416px) minus px-3 padding minus the
         w-10 volume rail ≈ 344px of bar width; a single line would need
-        play 28 + stop 28 + rate ~44 + save-all ~110 (RU «Сохранить всё»)
-        + re-voice-all ~130 (RU «Переозвучить всё») + toggle ~130 +
+        play 28 + stop 28 + rate ~44 + save-all ~110 (RU "Save all")
+        + re-voice-all ~130 (RU "Re-voice all") + toggle ~130 +
         gaps ~36 ≈ 500px. Transport line ≈ 28+28+44+130+gaps ≈ 250px <
         340px ✓. Bulk line: two text buttons at natural width (authored
         strings are never truncated; labels wrap instead). */}
       <div className="border-t border-border2 px-3 py-2">
         <div className="flex items-center gap-1.5">
-          {/* RD-5: unified bar play-pause (owner's «плей-пауза») — lane
+          {/* RD-5: unified bar play-pause (owner's "play-pause") — lane
             playing → pause; lane parked → resume; idle → start the
             first card. Replaces the old pause-only toggle: one surface,
             the same lane pause/resume path, no duplicate affordance. */}
@@ -466,7 +466,7 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
             </button>
           </CustomTooltip>
           {/* RD-5: re-voice-all — tooltip + shared destructive confirm
-            (owner: «на переозвучку повесить конфирм»). Opens the
+            (owner: add a confirm to re-voice). Opens the
             confirm with the ids snapshotted here; disabled with no
             cache rows or while the lane is live (same settled-only
             rule as row re-voice). */}
@@ -502,7 +502,7 @@ export function NarrationPlaylist(input: NarrationPlaylistProps): ReactNode {
       )}
       {/* FS-5's horizontal volume block (label + range + percent box) is
         GONE — RD-4 replaces it with the right-edge vertical rail below
-        (owner: «без ввода цифр вообще»). The footer keeps only the
+        (owner: no number entry at all). The footer keeps only the
         transport row (stop/pause/rate/continuous); the bar reshuffle is
         RD-5's unit. */}
       </div>
@@ -543,16 +543,16 @@ function PlaylistRow(input: {
   const { t } = useT();
   const { row } = input;
   const live = row.live !== null;
-  // RD-6: row-level re-voice confirm (owner: «на переозвучку повесить
-  // конфирм») — local pending flag; the shared modal fires the
+  // RD-6: row-level re-voice confirm (owner: add a confirm to re-voice)
+  // — local pending flag; the shared modal fires the
   // existing input.onRevoice (FS-6 drop+fresh chain), cancel leaves
   // the cache untouched. Two modal instances, not one shared: the
   // RD-5 bulk modal's pending state (string[] | null) and
   // count-parameterized copy are settled code — merging them into a
   // union state would churn RD-5 for zero behavioral gain.
   const [revoicePending, setRevoicePending] = useState(false);
-  // RD-9: row-level drop-file confirm (owner: «на убрать так и не
-  // сделал конфирм») — same shared modal pattern as the RD-6
+  // RD-9: row-level drop-file confirm (owner: never got around to
+  // adding the remove confirm) — same shared modal pattern as the RD-6
   // re-voice confirm; cancel leaves the library file in place.
   const [dropPending, setDropPending] = useState(false);
   // RD-2: this row owns the lane's transport icon — pause only while
@@ -567,8 +567,8 @@ function PlaylistRow(input: {
   const progress = row.live && row.live.total > 0
     ? Math.min(100, Math.round((row.live.received / row.live.total) * 100))
     : null;
-  // RD-8: the row is a dividerless four-zone card (owner: «без
-  // разделителя, так чище» — RD-1's border-t rules are gone; zones are
+  // RD-8: the row is a dividerless four-zone card (owner: no divider,
+  // cleaner that way — RD-1's border-t rules are gone; zones are
   // one block now). Player composition: a round transport button docks
   // at the LEFT edge, the content zones flow to its right. Magnifier
   // stays docked right of the snippet (a locate action tied to the
@@ -581,7 +581,7 @@ function PlaylistRow(input: {
   // strings anywhere (RU runs 20–30% longer): labels/badges size to
   // content, and only the snippet (unbounded user data in a density
   // list) clamps.
-  // Playing highlight (owner: «с подсветкой карточки»): the card whose
+  // Playing highlight (owner: highlight the card): the card whose
   // narration is PLAYING gets the app's active-item language
   // (DiceTray twin: border-accent/50 + bg-accent-dim) — state-driven,
   // never hover. Live-but-not-playing keeps the plain accent-dim wash.
@@ -598,11 +598,11 @@ function PlaylistRow(input: {
         {/* RD-9 left column — the row's transport: round play on top
           (RD-8 surface, RD-2 semantics), stop directly under it.
           Stop shows while the lane is live for this row
-          (generating/playing/paused are all «в процессе», owner) —
+          (generating/playing/paused are all "in progress", owner) —
           position change only, the RD-3 single path is untouched. */}
         <div data-testid="playlist-row-zone-transport" className="flex shrink-0 flex-col items-center gap-1.5">
-        {/* RD-8: round transport button, left edge (owner: «круглый
-          слева от карточки», variant-2 look). Same RD-2 semantics —
+        {/* RD-8: round transport button, left edge (owner: round,
+          left of the card, variant-2 look). Same RD-2 semantics —
           only the surface changed: playing → pause icon on an accent
           fill; paused → play icon in an accent outline (marks the exact
           row the parked lane will resume from); idle → neutral fill
@@ -676,7 +676,7 @@ function PlaylistRow(input: {
           {/* FS-7: in-cache badge — settled rows whose index keys are
             live (RD-9 cache honesty: `hasCache`, never flags alone).
             Partial rows keep the badge (their keys are the resumable
-            prefix by construction). No fixed widths (RU «В кэше»). */}
+            prefix by construction). No fixed widths (RU "In cache"). */}
           {!live && !row.inLibrary && (row.hasCache || row.partial) && (
             <span
               data-testid="playlist-row-cache-badge"
@@ -685,13 +685,13 @@ function PlaylistRow(input: {
               {t("narration_playlist_in_cache")}
             </span>
           )}
-          {/* RD-9: post-drop state (owner: «может, сделать еще одно
-            состояние бейджа? например "удалена"») — settled,
+          {/* RD-9: post-drop state (owner: maybe one more badge state,
+            e.g. "deleted") — settled,
             non-partial, keyless. Uniquely the row whose library file
             was dropped after the save evicted its cache: audio-less
             until re-narrated. Neutral terminal tone (border2/t3), not
             the accent the live badges wear. Legacy rows with stale
-            keys (dropped pre-fix) keep «В кэше» until re-voiced. */}
+            keys (dropped pre-fix) keep "In cache" until re-voiced. */}
           {!live && !row.inLibrary && !row.partial && !row.hasCache && (
             <span
               data-testid="playlist-row-deleted-badge"
@@ -702,7 +702,7 @@ function PlaylistRow(input: {
           )}
           {/* RD-9: the generation line renders ONLY while chunks are
             still landing (isFetchIncomplete). Complete rows — live or
-            settled — show no fetch line at all: «Получено n из n» on a
+            settled — show no fetch line at all: "Received n of n" on a
             finished recording is the noise the owner cut. Badges above
             stay in both states. */}
           {isFetchIncomplete(row.live) && (
@@ -740,7 +740,7 @@ function PlaylistRow(input: {
       )}
         {/* FS-3: partial rows carry an explicit continue-generation
           button — a full-width text control at the bottom of the
-          center stack (w-full, wrapping: RU «Продолжить генерацию» never
+          center stack (w-full, wrapping: RU "Continue generation" never
           truncates). Re-running the narration resumes from cache (TPE-16:
           only missing segments synthesize) and a genuine completion clears
           the partial flag. */}
@@ -764,8 +764,8 @@ function PlaylistRow(input: {
           (save/show-file, drop/re-voice, drop-cache). Same buttons and
           handlers as before (FS-6 boundary kept: library rows omit
           re-voice, cache-only rows omit reveal) — arrangement only.
-          RD-9: save shows ONLY with a live cache (owner: «и прятать
-          кнопку сейва» — post-drop rows have nothing to save); re-voice
+          RD-9: save shows ONLY with a live cache (owner: and hide the
+          save button — post-drop rows have nothing to save); re-voice
           stays for cache rows AND the post-drop state (dropCachedRow on
           empty keys removes the entry, the fresh narration follows). */}
         <div data-testid="playlist-row-zone-actions" className="flex shrink-0 flex-col items-center gap-1.5">

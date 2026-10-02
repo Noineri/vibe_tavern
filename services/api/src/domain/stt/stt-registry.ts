@@ -13,7 +13,8 @@
  * below (STT_BACKEND_CAPABILITIES) covers the FULL v1 roster, including the
  * client-side whisper-browser, as pure data — UI code renders capability
  * surfaces from it without a server round-trip.
- */
+  * fork #1 of domain/tts/tts-registry.ts.
+*/
 
 import { STT_BACKENDS, STT_BACKEND_EMOTION_CAPABILITY } from "@vibe-tavern/domain";
 import type { SttBackendType, SttProfileConfig } from "@vibe-tavern/domain";

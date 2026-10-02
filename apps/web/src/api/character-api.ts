@@ -1,6 +1,6 @@
 import type { ChatId } from "@vibe-tavern/domain";
 import type { AppSnapshot, AppCharacterVersion, ImportJsonResponse, LorebookRecord, ScriptRecord } from "./types.js";
-import { client, getGatewayBaseUrl, getMobileToken } from "./client.js";
+import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 
 export async function updateCharacter(
@@ -123,7 +123,7 @@ export async function uploadCharacterAvatar(characterId: string, crop: File, ful
   if (full) formData.append("full", full);
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
-  const response = await fetch(`${baseUrl}/api/characters/${characterId}/avatar`, {
+  const response = await apiFetch(`${baseUrl}/api/characters/${characterId}/avatar`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData,
@@ -153,7 +153,7 @@ export async function setAvatarFromGallery(
   formData.append("cropJson", cropJson);
   const baseUrl = getGatewayBaseUrl();
   const token = getMobileToken();
-  const response = await fetch(`${baseUrl}/api/characters/${characterId}/avatar/from-gallery`, {
+  const response = await apiFetch(`${baseUrl}/api/characters/${characterId}/avatar/from-gallery`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData,

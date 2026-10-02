@@ -38,6 +38,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
 import type { Scope } from "./LorebookAccordion.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { characterToLinkTarget, personaToLinkTarget } from "../../../lib/link-targets.js";
 import { LoreEntryEditor } from "./LoreEntryEditor.js";
 import { LorebookImportModal } from "./LorebookImportModal.js";
 import { buildLorebookCreateBody } from "./lorebook-create-body.js";
@@ -219,25 +220,8 @@ export function LorebookEditor({
   // ── Reference data for link popover ──
   const allCharacters = useAllCharacters();
   const personas = useBootstrapStore((s) => s.personas) ?? [];
-  const linkCharacters: LinkTarget[] = allCharacters.map((c) => ({
-    id: c.id,
-    name: c.name,
-    avatarAssetId: c.avatarAssetId,
-    kind: "characters",
-    avatarExt: c.avatarExt,
-    avatarFullExt: c.avatarFullExt,
-    avatarFullAssetId: c.avatarFullAssetId,
-    updatedAt: c.updatedAt,
-  }));
-  const linkPersonas: LinkTarget[] = personas.map((p) => ({
-    id: p.id,
-    name: p.name,
-    avatarAssetId: p.avatarAssetId,
-    kind: "personas",
-    avatarExt: p.avatarExt,
-    avatarFullExt: p.avatarFullExt,
-    updatedAt: p.updatedAt,
-  }));
+  const linkCharacters: LinkTarget[] = allCharacters.map(characterToLinkTarget);
+  const linkPersonas: LinkTarget[] = personas.map(personaToLinkTarget);
 
   // ═══ Lorebook mutations ═══
 
@@ -322,8 +306,8 @@ export function LorebookEditor({
   // ── Export lorebook (ST format download) ──
   const handleExportLb = async (lorebookId: string) => {
     const lb = lorebooks.find((l) => l.id === lorebookId);
-    const data = await exportLorebookSt(lorebookId);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const result = await exportLorebookSt(lorebookId);
+    const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -332,6 +316,15 @@ export function LorebookEditor({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    for (const warning of result.warnings) {
+      switch (warning.kind) {
+        case "chat_off_entry":
+          toast.warning(t("lore_export_chat_disabled_warning", { name: warning.entryTitle }));
+          break;
+        default:
+          toast.warning(t("lore_export_unknown_warning"));
+      }
+    }
   };
 
   // ═══ Entry mutations ═══
@@ -348,7 +341,7 @@ export function LorebookEditor({
       priority: 10,
       stickyWindow: 0,
       cooldownWindow: 0,
-      delayWindow: 0,
+      minChatMessages: 0,
       enabled: true,
       constant: false,
       probability: 100,
@@ -364,11 +357,13 @@ export function LorebookEditor({
       delayUntilRecursion: false,
       recursionLevel: 0,
       scanDepthOverride: null,
-      caseSensitive: false,
-      matchWholeWords: false,
+      // Tri-state: new entries inherit the book-level defaults (ST parity).
+      caseSensitive: null,
+      matchWholeWords: null,
+      caseFormsKeys: [],
       characterFilter: [],
       characterFilterExclude: false,
-      matchSources: [],
+      matchSources: ["chat_messages"],
     };
     void createLoreEntry(lorebookId, newEntry).then(async (created) => {
       if (created) {

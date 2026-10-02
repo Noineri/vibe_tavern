@@ -3,8 +3,8 @@ import { z } from "zod";
 /**
  * Optional per-request override for message regeneration.
  *
- * Sent in the body of `POST .../regenerate` and `.../regenerate/stream`. Both
- * fields are optional and the whole body is optional, so an empty body (the
+ * Sent in the body of `POST .../regenerate` and `.../regenerate/stream`. Every
+ * field is optional and the whole body is optional, so an empty body (the
  * legacy single-flight regenerate) validates unchanged and resolves via the
  * active profile's `defaultModel` + the chat's `promptPresetId` cascade —
  * byte-identical to pre-queue behavior.

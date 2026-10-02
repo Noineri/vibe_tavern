@@ -43,8 +43,11 @@ export interface CreateLorebookData {
   scanDepth?: number;
   tokenBudget?: number;
   tokenBudgetPercent?: number | null;
+  tokenBudgetCap?: number;
   recursiveScanning?: boolean;
   useGroupScoring?: boolean;
+  caseSensitive?: boolean;
+  matchWholeWords?: boolean;
   maxRecursionSteps?: number;
   includeNames?: boolean;
   minActivations?: number;
@@ -72,7 +75,8 @@ export interface CreateLoreEntryData {
   priority?: number;
   stickyWindow?: number;
   cooldownWindow?: number;
-  delayWindow?: number;
+  /** Absolute chat-length gate (ST `delay`). 0 = off. */
+  minChatMessages?: number;
   constant?: boolean;
   probability?: number;
   ignoreBudget?: boolean;
@@ -87,8 +91,11 @@ export interface CreateLoreEntryData {
   delayUntilRecursion?: boolean;
   recursionLevel?: number;
   scanDepthOverride?: number | null;
-  caseSensitive?: boolean;
-  matchWholeWords?: boolean;
+  /** Tri-state (ST parity): null = inherit the book-level caseSensitive/matchWholeWords default, true/false = explicit. */
+  caseSensitive?: boolean | null;
+  matchWholeWords?: boolean | null;
+  /** Plain keys using the metadata-backed Russian case-forms compiler. */
+  caseFormsKeys?: string[];
   characterFilter?: CharacterFilterEntry[];
   characterFilterExclude?: boolean;
   matchSources?: string[];
@@ -127,6 +134,8 @@ export interface CoauthorLoreDraftBundle {
     tokenBudget?: number;
     recursiveScanning?: boolean;
     useGroupScoring?: boolean;
+    caseSensitive?: boolean;
+    matchWholeWords?: boolean;
     /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
     mode?: 'create' | 'edit';
   }>;
@@ -164,8 +173,11 @@ export interface Lorebook {
   scanDepth: number;
   tokenBudget: number;
   tokenBudgetPercent: number | null;
+  tokenBudgetCap: number;
   recursiveScanning: boolean;
   useGroupScoring: boolean;
+  caseSensitive: boolean;
+  matchWholeWords: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
   minActivations: number;
@@ -185,6 +197,22 @@ export interface Lorebook {
 /**
  * Store-level LoreEntry — domain LoreEntry projected from a DB row.
  */
+export const LOREBOOK_BINDING_KIND = {
+  chat: 'chat',
+  persona: 'persona',
+  character: 'character',
+  global: 'global',
+} as const;
+
+export type LorebookBindingKind = typeof LOREBOOK_BINDING_KIND[keyof typeof LOREBOOK_BINDING_KIND];
+
+/** One enabled lorebook resolved for a chat, with its most specific binding. */
+export interface ActiveLorebookSet {
+  lorebook: Lorebook;
+  entries: LoreEntry[];
+  bindingKind: LorebookBindingKind;
+}
+
 export interface LoreEntry {
   id: string;
   lorebookId: string;
@@ -198,7 +226,8 @@ export interface LoreEntry {
   priority: number;
   stickyWindow: number;
   cooldownWindow: number;
-  delayWindow: number;
+  /** Absolute chat-length gate (ST `delay`). 0 = off. */
+  minChatMessages: number;
   constant: boolean;
   probability: number;
   ignoreBudget: boolean;
@@ -206,15 +235,18 @@ export interface LoreEntry {
   groupName: string;
   groupWeight: number;
   prioritizeInclusion: boolean;
-  /** Tri-state (ST parity): null = inherit the book default, true/false = explicit. */
+  /** Tri-state (ST parity): null = inherit the book-level default, true/false = explicit. */
   useGroupScoring: boolean | null;
   excludeRecursion: boolean;
   preventRecursion: boolean;
   delayUntilRecursion: boolean;
   recursionLevel: number;
   scanDepthOverride: number | null;
-  caseSensitive: boolean;
-  matchWholeWords: boolean;
+  /** Tri-state (ST parity): null = inherit the book-level caseSensitive/matchWholeWords default, true/false = explicit. */
+  caseSensitive: boolean | null;
+  matchWholeWords: boolean | null;
+  /** Always projected from metadata; optional for compatibility with old callers. */
+  caseFormsKeys?: string[];
   characterFilter: CharacterFilterEntry[];
   characterFilterExclude: boolean;
   matchSources: string[];
@@ -251,6 +283,7 @@ export interface LorebookLink {
 // a structural destructure, not a spec loop — type-safe and auto-exhaustive.
 
 type EntryCoerce = 'bool' | 'bool3' | 'json' | 'raw';
+type StoredEntryField = Exclude<keyof CreateLoreEntryData, 'caseFormsKeys'>;
 
 interface EntryFieldSpec {
   /** Drizzle column on `loreEntries`. */
@@ -261,7 +294,7 @@ interface EntryFieldSpec {
   readonly insertDefault: unknown;
 }
 
-const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldSpec } = {
+const ENTRY_FIELD_SPEC: { readonly [K in StoredEntryField]: EntryFieldSpec } = {
   title:                  { column: 'title',                  coerce: 'raw',  insertDefault: '' },
   content:                { column: 'content',                coerce: 'raw',  insertDefault: '' },
   keys:                   { column: 'keysJson',               coerce: 'json', insertDefault: [] },
@@ -272,7 +305,7 @@ const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldS
   priority:               { column: 'priority',               coerce: 'raw',  insertDefault: 100 },
   stickyWindow:           { column: 'stickyWindow',           coerce: 'raw',  insertDefault: 0 },
   cooldownWindow:         { column: 'cooldownWindow',         coerce: 'raw',  insertDefault: 0 },
-  delayWindow:            { column: 'delayWindow',            coerce: 'raw',  insertDefault: 0 },
+  minChatMessages:        { column: 'minChatMessages',        coerce: 'raw',  insertDefault: 0 },
   constant:               { column: 'constant',               coerce: 'bool', insertDefault: false },
   probability:            { column: 'probability',            coerce: 'raw',  insertDefault: 100 },
   ignoreBudget:           { column: 'ignoreBudget',           coerce: 'bool', insertDefault: false },
@@ -286,11 +319,11 @@ const ENTRY_FIELD_SPEC: { readonly [K in keyof CreateLoreEntryData]: EntryFieldS
   delayUntilRecursion:    { column: 'delayUntilRecursion',    coerce: 'bool', insertDefault: false },
   recursionLevel:         { column: 'recursionLevel',         coerce: 'raw',  insertDefault: 0 },
   scanDepthOverride:      { column: 'scanDepthOverride',      coerce: 'raw',  insertDefault: null },
-  caseSensitive:          { column: 'caseSensitive',          coerce: 'bool', insertDefault: false },
-  matchWholeWords:        { column: 'matchWholeWords',        coerce: 'bool', insertDefault: false },
+  caseSensitive:          { column: 'caseSensitive',          coerce: 'bool3', insertDefault: null },
+  matchWholeWords:        { column: 'matchWholeWords',        coerce: 'bool3', insertDefault: null },
   characterFilter:        { column: 'characterFilterJson',    coerce: 'json', insertDefault: [] },
   characterFilterExclude: { column: 'characterFilterExclude', coerce: 'bool', insertDefault: false },
-  matchSources:           { column: 'matchSourcesJson',       coerce: 'json', insertDefault: [] },
+  matchSources:           { column: 'matchSourcesJson',       coerce: 'json', insertDefault: ['chat_messages'] },
   enabled:                { column: 'enabled',                coerce: 'bool', insertDefault: true },
   sortOrder:              { column: 'sortOrder',              coerce: 'raw',  insertDefault: 0 },
   automationId:           { column: 'automationId',           coerce: 'raw',  insertDefault: '' },
@@ -318,11 +351,24 @@ function decodeEntryField(coerce: EntryCoerce, value: unknown): unknown {
 }
 
 /** Build the data-field payload for `createEntry`'s `.values()` (create path). */
+function mergeCaseFormsKeys(metadata: Record<string, unknown> | undefined, caseFormsKeys: string[] | undefined): Record<string, unknown> {
+  // undefined = no opinion: leave metadata untouched (a bare unrelated-field
+  // update must not fabricate or prune the key). A DEFINED list writes or
+  // prunes: non-empty writes the flag list, empty deletes a stale key — so an
+  // absent flag round-trips byte-identically while a toggled-off chip prunes.
+  if (caseFormsKeys === undefined) return metadata ?? {};
+  const next = { ...(metadata ?? {}) };
+  if (caseFormsKeys.length > 0) next.caseFormsKeys = caseFormsKeys;
+  else delete next.caseFormsKeys;
+  return next;
+}
+
 function buildEntryInsert(data: CreateLoreEntryData): Partial<typeof loreEntries.$inferInsert> {
   const out: Record<string, number | string | null> = {};
-  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[keyof CreateLoreEntryData, EntryFieldSpec]>) {
-    const value = data[domain] ?? spec.insertDefault;
-    out[spec.column] = encodeEntryField(spec.coerce, value);
+  const metadata = mergeCaseFormsKeys(data.metadata, data.caseFormsKeys);
+  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[StoredEntryField, EntryFieldSpec]>) {
+    const value = domain === 'metadata' ? metadata : data[domain];
+    out[spec.column] = encodeEntryField(spec.coerce, value ?? spec.insertDefault);
   }
   // Single concrete assertion at the DB boundary (the spec loop cannot assign
   // to specific keys of the Drizzle insert type per-iteration without it).
@@ -334,7 +380,7 @@ function buildEntryInsert(data: CreateLoreEntryData): Partial<typeof loreEntries
 /** Build the partial patch for `updateEntry` (only fields the caller provided). */
 function buildEntryPatch(data: UpdateLoreEntryData): Partial<typeof loreEntries.$inferInsert> {
   const out: Record<string, number | string | null> = {};
-  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[keyof CreateLoreEntryData, EntryFieldSpec]>) {
+  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[StoredEntryField, EntryFieldSpec]>) {
     const value = data[domain];
     if (value !== undefined) {
       out[spec.column] = encodeEntryField(spec.coerce, value);
@@ -400,10 +446,14 @@ function normalizeImportedEntryPosition(
  */
 function decodeEntryFields(row: typeof loreEntries.$inferSelect): Omit<LoreEntry, 'id' | 'lorebookId' | 'createdAt' | 'updatedAt'> {
   const out: Record<string, unknown> = {};
-  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[keyof CreateLoreEntryData, EntryFieldSpec]>) {
+  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[StoredEntryField, EntryFieldSpec]>) {
     out[domain] = decodeEntryField(spec.coerce, row[spec.column]);
   }
   const metadata = (out.metadata as Record<string, unknown>) ?? {};
+  const caseFormsKeys = metadata.caseFormsKeys;
+  out.caseFormsKeys = Array.isArray(caseFormsKeys)
+    ? caseFormsKeys.filter((key): key is string => typeof key === 'string')
+    : [];
   out.position = normalizeImportedEntryPosition(out.position as string, metadata);
   out.characterFilter = parseCharacterFilter(out.characterFilter);
   return out as Omit<LoreEntry, 'id' | 'lorebookId' | 'createdAt' | 'updatedAt'>;
@@ -532,14 +582,18 @@ export class LorebookStore {
         scanDepth: data.scanDepth ?? 10,
         tokenBudget: data.tokenBudget ?? 1000,
         tokenBudgetPercent: data.tokenBudgetPercent ?? null,
+        tokenBudgetCap: data.tokenBudgetCap ?? 0,
         recursiveScanning: (data.recursiveScanning ?? false) ? 1 : 0,
         useGroupScoring: (data.useGroupScoring ?? false) ? 1 : 0,
-        maxRecursionSteps: data.maxRecursionSteps ?? 5,
-        includeNames: data.includeNames ? 1 : 0,
+        caseSensitive: (data.caseSensitive ?? false) ? 1 : 0,
+        matchWholeWords: (data.matchWholeWords ?? false) ? 1 : 0,
+        maxRecursionSteps: data.maxRecursionSteps ?? 0,
+        // ST's global default is on; native VT books inherit that default.
+        includeNames: data.includeNames === false ? 0 : 1,
         minActivations: data.minActivations ?? 0,
         minActivationsDepthMax: data.minActivationsDepthMax ?? 0,
         overflowAlert: data.overflowAlert ? 1 : 0,
-        characterStrategy: data.characterStrategy ?? 0,
+        characterStrategy: data.characterStrategy ?? 1,
         sortOrder: data.sortOrder ?? 0,
         enabled: (data.enabled ?? true) ? 1 : 0,
         characterId: data.characterId ?? null,
@@ -568,8 +622,11 @@ export class LorebookStore {
     if (data.scanDepth !== undefined) values.scanDepth = data.scanDepth;
     if (data.tokenBudget !== undefined) values.tokenBudget = data.tokenBudget;
     if (data.tokenBudgetPercent !== undefined) values.tokenBudgetPercent = data.tokenBudgetPercent;
+    if (data.tokenBudgetCap !== undefined) values.tokenBudgetCap = data.tokenBudgetCap;
     if (data.recursiveScanning !== undefined) values.recursiveScanning = data.recursiveScanning ? 1 : 0;
     if (data.useGroupScoring !== undefined) values.useGroupScoring = data.useGroupScoring ? 1 : 0;
+    if (data.caseSensitive !== undefined) values.caseSensitive = data.caseSensitive ? 1 : 0;
+    if (data.matchWholeWords !== undefined) values.matchWholeWords = data.matchWholeWords ? 1 : 0;
     if (data.maxRecursionSteps !== undefined) values.maxRecursionSteps = data.maxRecursionSteps;
     if (data.includeNames !== undefined) values.includeNames = data.includeNames ? 1 : 0;
     if (data.minActivations !== undefined) values.minActivations = data.minActivations;
@@ -702,7 +759,13 @@ export class LorebookStore {
 
   async updateEntry(id: string, data: UpdateLoreEntryData): Promise<LoreEntry> {
     const now = this.clock.now();
-    const values: Partial<typeof loreEntries.$inferInsert> = { updatedAt: now, ...buildEntryPatch(data) };
+    const current = data.caseFormsKeys === undefined
+      ? null
+      : await this.db.select({ metadataJson: loreEntries.metadataJson }).from(loreEntries).where(eq(loreEntries.id, id)).get();
+    const patchedData = current
+      ? { ...data, metadata: mergeCaseFormsKeys(JSON.parse(current.metadataJson), data.caseFormsKeys) }
+      : data;
+    const values: Partial<typeof loreEntries.$inferInsert> = { updatedAt: now, ...buildEntryPatch(patchedData) };
 
     const [row] = await this.db
       .update(loreEntries)
@@ -794,12 +857,14 @@ export class LorebookStore {
             tokenBudgetPercent: null,
             recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
             useGroupScoring: (lb.useGroupScoring ?? false) ? 1 : 0,
-            maxRecursionSteps: 5,
+            caseSensitive: (lb.caseSensitive ?? false) ? 1 : 0,
+            matchWholeWords: (lb.matchWholeWords ?? false) ? 1 : 0,
+            maxRecursionSteps: 0,
             includeNames: 0,
             minActivations: 0,
             minActivationsDepthMax: 0,
             overflowAlert: 0,
-            characterStrategy: 0,
+            characterStrategy: 1,
             sortOrder: 0,
             enabled: lb.enabled ? 1 : 0,
             characterId: entityScoped ? characterId : null,
@@ -820,6 +885,8 @@ export class LorebookStore {
               tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
               recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
               useGroupScoring: (lb.useGroupScoring ?? false) ? 1 : 0,
+              caseSensitive: (lb.caseSensitive ?? false) ? 1 : 0,
+              matchWholeWords: (lb.matchWholeWords ?? false) ? 1 : 0,
               enabled: lb.enabled ? 1 : 0,
               characterId: entityScoped ? characterId : null,
               updatedAt: now,
@@ -890,9 +957,15 @@ export class LorebookStore {
     characterId: string,
     personaId: string | null,
     chatId: string,
-  ): Promise<Array<{ lorebook: Lorebook; entries: LoreEntry[] }>> {
-    // Build lorebook ID set from multiple sources
-    const lorebookIds = new Set<string>();
+  ): Promise<ActiveLorebookSet[]> {
+    // One book can match through several bindings. Preserve every matching
+    // source, then select its most specific kind after loading the rows.
+    const bindingKindsByLorebookId = new Map<string, Set<LorebookBindingKind>>();
+    const addBinding = (lorebookId: string, bindingKind: LorebookBindingKind): void => {
+      const bindingKinds = bindingKindsByLorebookId.get(lorebookId) ?? new Set<LorebookBindingKind>();
+      bindingKinds.add(bindingKind);
+      bindingKindsByLorebookId.set(lorebookId, bindingKinds);
+    };
 
     // 1. Global lorebooks
     const globalRows = await this.db
@@ -900,7 +973,7 @@ export class LorebookStore {
       .from(lorebooks)
       .where(and(eq(lorebooks.scopeType, 'global'), eq(lorebooks.enabled, 1)))
       .all();
-    for (const r of globalRows) lorebookIds.add(r.id);
+    for (const r of globalRows) addBinding(r.id, LOREBOOK_BINDING_KIND.global);
 
     // 2. Entity-scoped lorebooks: FK-owned (home scope) AND junction-linked.
     //    The resolver consults BOTH — the previous junction-only query silently
@@ -915,11 +988,18 @@ export class LorebookStore {
       ? and(eq(lorebooks.scopeType, 'entity'), or(eq(lorebooks.characterId, characterId), eq(lorebooks.personaId, personaId)), eq(lorebooks.enabled, 1))
       : and(eq(lorebooks.scopeType, 'entity'), eq(lorebooks.characterId, characterId), eq(lorebooks.enabled, 1));
     const entityFkRows = await this.db
-      .select({ id: lorebooks.id })
+      .select({ id: lorebooks.id, characterId: lorebooks.characterId, personaId: lorebooks.personaId })
       .from(lorebooks)
       .where(entityFkCondition)
       .all();
-    for (const r of entityFkRows) lorebookIds.add(r.id);
+    for (const r of entityFkRows) {
+      addBinding(
+        r.id,
+        personaId && r.personaId === personaId
+          ? LOREBOOK_BINDING_KIND.persona
+          : LOREBOOK_BINDING_KIND.character,
+      );
+    }
     const charLinks = await this.db
       .select({ lorebookId: lorebookLinks.lorebookId })
       .from(lorebookLinks)
@@ -929,7 +1009,7 @@ export class LorebookStore {
       ))
       .where(and(eq(lorebookLinks.targetType, 'character'), eq(lorebookLinks.targetId, characterId)))
       .all();
-    for (const r of charLinks) lorebookIds.add(r.lorebookId);
+    for (const r of charLinks) addBinding(r.lorebookId, LOREBOOK_BINDING_KIND.character);
 
     // 3. Persona junction links (target-typed, unchanged by the collapse).
     if (personaId) {
@@ -942,7 +1022,7 @@ export class LorebookStore {
         ))
         .where(and(eq(lorebookLinks.targetType, 'persona'), eq(lorebookLinks.targetId, personaId)))
         .all();
-      for (const r of personaLinks) lorebookIds.add(r.lorebookId);
+      for (const r of personaLinks) addBinding(r.lorebookId, LOREBOOK_BINDING_KIND.persona);
     }
 
     // 4. Chat-scoped lorebooks (direct FK — not via links)
@@ -951,19 +1031,21 @@ export class LorebookStore {
       .from(lorebooks)
       .where(and(eq(lorebooks.scopeType, 'chat'), eq(lorebooks.chatId, chatId), eq(lorebooks.enabled, 1)))
       .all();
-    for (const r of chatRows) lorebookIds.add(r.id);
+    for (const r of chatRows) addBinding(r.id, LOREBOOK_BINDING_KIND.chat);
 
-    if (lorebookIds.size === 0) return [];
+    if (bindingKindsByLorebookId.size === 0) return [];
 
-    // Batch-load lorebooks
-    const idArray = [...lorebookIds];
+    // Batch-load lorebooks in a stable order. This is the deterministic
+    // book-resolution order used if an ST strategy needs a first bound book.
+    const idArray = [...bindingKindsByLorebookId.keys()];
     const bookRows = await this.db
       .select()
       .from(lorebooks)
       .where(inArray(lorebooks.id, idArray))
+      .orderBy(asc(lorebooks.sortOrder), asc(lorebooks.name), asc(lorebooks.id))
       .all();
 
-    const result: Array<{ lorebook: Lorebook; entries: LoreEntry[] }> = [];
+    const result: ActiveLorebookSet[] = [];
 
     for (const bookRow of bookRows) {
       const entryRows = await this.db
@@ -977,9 +1059,18 @@ export class LorebookStore {
         )
         .all();
 
+      const bindingKinds = bindingKindsByLorebookId.get(bookRow.id);
+      const bindingKind = bindingKinds?.has(LOREBOOK_BINDING_KIND.chat)
+        ? LOREBOOK_BINDING_KIND.chat
+        : bindingKinds?.has(LOREBOOK_BINDING_KIND.persona)
+          ? LOREBOOK_BINDING_KIND.persona
+          : bindingKinds?.has(LOREBOOK_BINDING_KIND.character)
+            ? LOREBOOK_BINDING_KIND.character
+            : LOREBOOK_BINDING_KIND.global;
       result.push({
         lorebook: this.mapLorebookRow(bookRow),
         entries: entryRows.map((r) => this.mapEntryRow(r)),
+        bindingKind,
       });
     }
 
@@ -1110,8 +1201,11 @@ export class LorebookStore {
       scanDepth: source.scanDepth,
       tokenBudget: source.tokenBudget,
       tokenBudgetPercent: source.tokenBudgetPercent ?? null,
+      tokenBudgetCap: source.tokenBudgetCap ?? 0,
       recursiveScanning: source.recursiveScanning,
       useGroupScoring: source.useGroupScoring ?? false,
+      caseSensitive: source.caseSensitive ?? false,
+      matchWholeWords: source.matchWholeWords ?? false,
       maxRecursionSteps: source.maxRecursionSteps,
       includeNames: source.includeNames,
       minActivations: source.minActivations,
@@ -1171,8 +1265,11 @@ export class LorebookStore {
       scanDepth: row.scanDepth,
       tokenBudget: row.tokenBudget,
       tokenBudgetPercent: row.tokenBudgetPercent,
+      tokenBudgetCap: row.tokenBudgetCap,
       recursiveScanning: row.recursiveScanning === 1,
       useGroupScoring: row.useGroupScoring === 1,
+      caseSensitive: row.caseSensitive === 1,
+      matchWholeWords: row.matchWholeWords === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
       minActivations: row.minActivations,
@@ -1197,7 +1294,7 @@ export class LorebookStore {
         priority: e.priority,
         stickyWindow: e.stickyWindow,
         cooldownWindow: e.cooldownWindow,
-        delayWindow: e.delayWindow,
+        minChatMessages: e.minChatMessages,
         constant: e.constant === 1,
         probability: e.probability,
         ignoreBudget: e.ignoreBudget ?? false,
@@ -1210,8 +1307,8 @@ export class LorebookStore {
         delayUntilRecursion: e.delayUntilRecursion === 1,
         recursionLevel: e.recursionLevel,
         scanDepthOverride: e.scanDepthOverride,
-        caseSensitive: e.caseSensitive === 1,
-        matchWholeWords: e.matchWholeWords === 1,
+        caseSensitive: e.caseSensitive === null ? null : e.caseSensitive === 1,
+        matchWholeWords: e.matchWholeWords === null ? null : e.matchWholeWords === 1,
         characterFilter: parseCharacterFilter(JSON.parse(e.characterFilterJson)),
         characterFilterExclude: e.characterFilterExclude === 1,
         matchSources: JSON.parse(e.matchSourcesJson),
@@ -1235,8 +1332,11 @@ export class LorebookStore {
       scanDepth: row.scanDepth,
       tokenBudget: row.tokenBudget,
       tokenBudgetPercent: row.tokenBudgetPercent,
+      tokenBudgetCap: row.tokenBudgetCap,
       recursiveScanning: row.recursiveScanning === 1,
       useGroupScoring: row.useGroupScoring === 1,
+      caseSensitive: row.caseSensitive === 1,
+      matchWholeWords: row.matchWholeWords === 1,
       maxRecursionSteps: row.maxRecursionSteps,
       includeNames: row.includeNames === 1,
       minActivations: row.minActivations,

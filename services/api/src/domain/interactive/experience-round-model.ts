@@ -23,7 +23,7 @@ import {
 	type ExperienceContextInput,
 } from "@vibe-tavern/prompt-pipeline";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
-import { providerRequiresApiKey, resolveEffectiveSummaryProfile } from "../chat/summary-generation-seam.js";
+import { resolveEffectiveSummaryProfile } from "../chat/summary-generation-seam.js";
 import type { ProviderProfileService } from "../providers/provider-profile-service.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -157,12 +157,7 @@ export function createRoundModelDeps(deps: ExperienceRoundModelDeps): {
 				return { ok: false, error: { code: "no_provider", message: `Provider profile '${input.providerProfileId}' not found`, status: 422 } };
 			}
 
-			// 3. API-key policy check (mirrors the durable service).
-			if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
-				return { ok: false, error: { code: "no_api_key", message: `Provider '${profile.name}' requires an API key`, status: 422 } };
-			}
-
-			// 4. Resolve the effective profile (per-model settings overlay).
+			// 3. Resolve the effective profile (per-model settings overlay).
 			const effectiveProfile = await resolveEffectiveSummaryProfile(profile, input.modelId, providerProfiles);
 
 			// 5. Build the prompt (host protocol + author instruction + prompt payload).

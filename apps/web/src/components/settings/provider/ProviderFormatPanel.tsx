@@ -33,7 +33,7 @@ import type { FormState } from "../../modals/ProviderModal.js";
 /**
  * The provider-side generation format block (LOCAL_SUPPORT_PLAN LS-10, owner
  * redesign 2026-09-09 audit 3): a 1:1 clone of the sampler-set pattern —
- * ONE accordion «Формат генерации» whose header carries the template row
+ * ONE accordion "Generation format" whose header carries the template row
  * (dropdown + icon actions + morph rename + confirm delete) and the manual
  * toggle switch (the customSamplers analog):
  *

@@ -58,6 +58,7 @@ import type {
   TtsProbeResult,
 } from "../tts-backend.js";
 import { registerTtsBackend } from "../tts-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const SYNTHESIS_PATH = "/v1/speech";
 const VOICES_PATH = "/v1/voices";
@@ -67,9 +68,6 @@ const SERVICE = "polly";
 /** Fixed house output format (mp3 family) — see file header. */
 const OUTPUT_FORMAT = "mp3";
 const OUTPUT_MIME = "audio/mpeg";
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** Documented engine values (SynthesizeSpeech Engine enum). */
 const ENGINES = ["standard", "neural", "long-form", "generative"] as const;
@@ -328,20 +326,9 @@ function signedFetchInit(
   };
 }
 
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
-
 async function expectOk(response: Response, operation: string): Promise<void> {
   if (response.ok) return;
-  const excerpt = await readErrorExcerpt(response);
+  const excerpt = await readProviderErrorBody(response);
   throw new PollyTtsError(
     `Polly ${operation} failed with HTTP ${response.status}: ${excerpt || "(empty body)"}`,
     { status: response.status },
@@ -444,7 +431,7 @@ export class PollyTtsBackend implements TtsBackend {
       });
       const response = await fetch(url, init);
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         return { ok: false, detail: `${response.status} ${excerpt || "(empty body)"}`.trim() };
       }
       return { ok: true, detail: "voice list reachable" };

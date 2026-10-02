@@ -2,7 +2,7 @@ import type { LoreEntryRecord, LorebookRecord, LorebookLinkRecord } from "./type
 import { client } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 import { z } from "zod";
-import { importLorebookSchema } from "@vibe-tavern/api-contracts";
+import { importLorebookSchema, type LorebookExportResult } from "@vibe-tavern/api-contracts";
 
 // ─── Lorebook CRUD ──────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ export async function createLorebook(body: { name: string; description?: string;
   return unwrapRpc(response);
 }
 
-export async function updateLorebookMeta(lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean; useGroupScoring?: boolean; enabled?: boolean; scopeType?: string }): Promise<LorebookRecord> {
+export async function updateLorebookMeta(lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; tokenBudgetCap?: number; recursiveScanning?: boolean; useGroupScoring?: boolean; caseSensitive?: boolean; matchWholeWords?: boolean; enabled?: boolean; scopeType?: string; maxRecursionSteps?: number; minActivations?: number; minActivationsDepthMax?: number; overflowAlert?: boolean }): Promise<LorebookRecord> {
   const response = await client.api.lorebooks[":lorebookId"].$patch({ param: { lorebookId }, json: body });
   return unwrapRpc(response);
 }
@@ -35,7 +35,7 @@ export async function duplicateLorebook(lorebookId: string, overrides?: { name?:
   return unwrapRpc(response);
 }
 
-export async function exportLorebookSt(lorebookId: string): Promise<Record<string, unknown>> {
+export async function exportLorebookSt(lorebookId: string): Promise<LorebookExportResult> {
   const response = await client.api.lorebooks[":lorebookId"].export.$get({ param: { lorebookId } });
   return unwrapRpc(response);
 }

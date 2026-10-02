@@ -31,6 +31,15 @@ fun buildConfigString(value: String): String =
 android {
     namespace = "com.vibetavern.launcher"
     compileSdk = 35
+    // Builds libseccompshim.so (src/main/cpp, AD-026). jniLibs/ is gitignored
+    // and holds only the generated server binary, so the shim is built here.
+    ndkVersion = "30.0.16248370"
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
+    }
 
     defaultConfig {
         applicationId = "com.vibetavern.launcher"

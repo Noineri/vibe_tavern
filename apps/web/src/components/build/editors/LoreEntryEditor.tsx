@@ -21,6 +21,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { useFormContext, useController, type FieldPath, type UseControllerReturn } from "react-hook-form";
+import { LORE_MATCH_SOURCE } from "@vibe-tavern/domain";
 import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FieldLabel } from "../fields/field-label.js";
@@ -48,6 +49,20 @@ import { ActivationTestPanel } from "./activation-test-panel.js";
 import { CharacterFilterPicker } from "./character-filter-picker.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
+
+// Match-source order is derived directly from the domain source of truth.
+// Every non-chat chip reuses the exact i18n key of the field it scans.
+const MATCH_SOURCE_LABEL_KEY = {
+  [LORE_MATCH_SOURCE.chatMessages]: "match_src_chat_messages",
+  [LORE_MATCH_SOURCE.characterDesc]: "char_desc_label",
+  [LORE_MATCH_SOURCE.characterPersonality]: "char_personality_label",
+  [LORE_MATCH_SOURCE.characterNote]: "character_depth_prompt",
+  [LORE_MATCH_SOURCE.personaDesc]: "persona_desc_placeholder",
+  [LORE_MATCH_SOURCE.scenario]: "scenario",
+  [LORE_MATCH_SOURCE.creatorNotes]: "creator_notes",
+  [LORE_MATCH_SOURCE.authorsNote]: "authors_note_label",
+  [LORE_MATCH_SOURCE.summaries]: "memory_tab_summary",
+} as const;
 
 interface LoreEntryEditorProps {
   entryId: string;
@@ -166,15 +181,37 @@ export function LoreEntryEditor({
             {t("lore_entry_keys")}
           </FieldLabel>
           <div className="flex items-start gap-2">
-            <ControlledField name="keys">
-              {(field) => (
-                <ChipInput
-                  className="min-w-0 flex-1"
-                  values={field.value}
-                  onChange={field.onChange}
-                  mode="words"
-                  placeholder={t("lore_entry_keys_placeholder")}
-                />
+            <ControlledField name="caseFormsKeys">
+              {(caseFormsField) => (
+                <ControlledField name="keys">
+                  {(field) => {
+                    const caseFormsKeys = caseFormsField.value ?? [];
+                    return (
+                      <ChipInput
+                        className="min-w-0 flex-1"
+                        values={field.value}
+                        onChange={(keys) => {
+                          field.onChange(keys);
+                          caseFormsField.onChange(caseFormsKeys.filter((key) => keys.includes(key) || form.getValues("secondaryKeys").includes(key)));
+                        }}
+                        mode="words"
+                        placeholder={t("lore_entry_keys_placeholder")}
+                        renderChipAction={(key) => (
+                          <Checkbox
+                            checked={caseFormsKeys.includes(key)}
+                            onChange={(checked) => caseFormsField.onChange(
+                              checked
+                                ? [...new Set([...caseFormsKeys, key])]
+                                : caseFormsKeys.filter((caseKey) => caseKey !== key),
+                            )}
+                            label={t("lore_case_forms")}
+                            inline
+                          />
+                        )}
+                      />
+                    );
+                  }}
+                </ControlledField>
               )}
             </ControlledField>
             <LoreKeysAiPill />
@@ -191,18 +228,42 @@ export function LoreEntryEditor({
             </ControlledField>
           </CustomTooltip>
           <CustomTooltip content={t("case_sensitive_hint")} align="start">
-            <ControlledField name="caseSensitive">
-              {(field) => (
-                <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_case_sensitive")} />
-              )}
-            </ControlledField>
+            <div>
+              <FieldLabel>{t("lore_case_sensitive")}</FieldLabel>
+              <ControlledField name="caseSensitive">
+                {(field) => (
+                  <SegmentedControl
+                    compact
+                    value={field.value == null ? "inherit" : field.value ? "on" : "off"}
+                    options={[
+                      { value: "inherit", label: t("lore_tri_inherit") },
+                      { value: "on", label: t("lore_tri_on") },
+                      { value: "off", label: t("lore_tri_off") },
+                    ]}
+                    onChange={(v) => field.onChange(v === "inherit" ? null : v === "on")}
+                  />
+                )}
+              </ControlledField>
+            </div>
           </CustomTooltip>
           <CustomTooltip content={t("match_whole_words_hint")} align="start">
-            <ControlledField name="matchWholeWords">
-              {(field) => (
-                <Checkbox checked={field.value} onChange={field.onChange} label={t("lore_match_whole_words")} />
-              )}
-            </ControlledField>
+            <div>
+              <FieldLabel>{t("lore_match_whole_words")}</FieldLabel>
+              <ControlledField name="matchWholeWords">
+                {(field) => (
+                  <SegmentedControl
+                    compact
+                    value={field.value == null ? "inherit" : field.value ? "on" : "off"}
+                    options={[
+                      { value: "inherit", label: t("lore_tri_inherit") },
+                      { value: "on", label: t("lore_tri_on") },
+                      { value: "off", label: t("lore_tri_off") },
+                    ]}
+                    onChange={(v) => field.onChange(v === "inherit" ? null : v === "on")}
+                  />
+                )}
+              </ControlledField>
+            </div>
           </CustomTooltip>
           <CustomTooltip content={t("ignore_budget_hint")} align="start">
             <ControlledField name="ignoreBudget">
@@ -251,7 +312,7 @@ export function LoreEntryEditor({
 
         <ActivationTestPanel lorebookId={lorebookId} isMobile={isMobile} t={t} />
 
-        {/* ── Advanced settings toggle ── */}
+        {/* ── Advanced settings toggle ── forks: 2 — LorebookAccordion book settings + search */}
         <button type="button"
           className="flex items-center gap-1.5 text-[13px] font-medium text-accent-t transition-all hover:text-accent"
           onClick={() => setAdvancedOpen((v) => !v)}
@@ -320,13 +381,35 @@ export function LoreEntryEditor({
               <FieldLabel>
                 {t("lore_entry_secondary_keys")}
               </FieldLabel>
-              <ControlledField name="secondaryKeys">
-                {(field) => (
-                  <ChipInput
-                    values={field.value}
-                    onChange={field.onChange}
-                    mode="words"
-                  />
+              <ControlledField name="caseFormsKeys">
+                {(caseFormsField) => (
+                  <ControlledField name="secondaryKeys">
+                    {(field) => {
+                      const caseFormsKeys = caseFormsField.value ?? [];
+                      return (
+                        <ChipInput
+                          values={field.value}
+                          onChange={(keys) => {
+                            field.onChange(keys);
+                            caseFormsField.onChange(caseFormsKeys.filter((key) => keys.includes(key) || form.getValues("keys").includes(key)));
+                          }}
+                          mode="words"
+                          renderChipAction={(key) => (
+                            <Checkbox
+                              checked={caseFormsKeys.includes(key)}
+                              onChange={(checked) => caseFormsField.onChange(
+                                checked
+                                  ? [...new Set([...caseFormsKeys, key])]
+                                  : caseFormsKeys.filter((caseKey) => caseKey !== key),
+                              )}
+                              label={t("lore_case_forms")}
+                              inline
+                            />
+                          )}
+                        />
+                      );
+                    }}
+                  </ControlledField>
                 )}
               </ControlledField>
             </div>
@@ -397,28 +480,26 @@ export function LoreEntryEditor({
 
             {/* ── Match sources ── */}
             <div className="mb-6">
-              <FieldLabel>
-                {t("lore_matchsources_section")}
-              </FieldLabel>
+              <CustomTooltip content={t("lore_matchsources_hint")} align="start">
+                <div>
+                  <FieldLabel>
+                    {t("lore_matchsources_section")}
+                  </FieldLabel>
+                </div>
+              </CustomTooltip>
               <ControlledField name="matchSources">
                 {(field) => (
                   <ToggleChips
                     selected={field.value}
-                    options={(
-                      [
-                        "chat_messages",
-                        "character_desc",
-                        "character_personality",
-                        "character_note",
-                        "persona_desc",
-                        "scenario",
-                        "creator_notes",
-                      ] as const
-                    ).map((src) => ({
-                      value: src,
-                      label: tDynamic("match_src_" + src),
+                    options={Object.values(LORE_MATCH_SOURCE).map((source) => ({
+                      value: source,
+                      label: t(MATCH_SOURCE_LABEL_KEY[source]),
+                      tooltip: source === LORE_MATCH_SOURCE.creatorNotes
+                        ? t("lore_matchsources_creator_notes_hint")
+                        : undefined,
                     }))}
                     onChange={field.onChange}
+                    minSelected={1}
                   />
                 )}
               </ControlledField>
@@ -520,9 +601,9 @@ export function LoreEntryEditor({
                           compact
                           value={field.value == null ? "inherit" : field.value ? "on" : "off"}
                           options={[
-                            { value: "inherit", label: t("lore_group_scoring_inherit") },
-                            { value: "on", label: t("lore_group_scoring_on") },
-                            { value: "off", label: t("lore_group_scoring_off") },
+                            { value: "inherit", label: t("lore_tri_inherit") },
+                            { value: "on", label: t("lore_tri_on") },
+                            { value: "off", label: t("lore_tri_off") },
                           ]}
                           onChange={(v) => field.onChange(v === "inherit" ? null : v === "on")}
                         />
@@ -590,12 +671,12 @@ export function LoreEntryEditor({
                     </ControlledField>
                   </div>
                 </CustomTooltip>
-                <CustomTooltip content={t("delay_hint")}>
+                <CustomTooltip content={t("min_chat_messages_hint")}>
                   <div>
                     <FieldLabel>
-                      {t("lore_delay_window")}
+                      {t("lore_min_chat_messages")}
                     </FieldLabel>
-                    <ControlledField name="delayWindow">
+                    <ControlledField name="minChatMessages">
                       {(field) => (
                         <NumberInput min={0} value={field.value} onChange={field.onChange} />
                       )}

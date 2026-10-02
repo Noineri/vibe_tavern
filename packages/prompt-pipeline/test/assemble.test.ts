@@ -332,7 +332,7 @@ describe("assemblePrompt", () => {
       expect(loreIndex).toBeLessThan(ids.indexOf("persona"));
     });
 
-    it("orders ST world info entries by per-entry insertion order, not input lorebook order", () => {
+    it("preserves resolver-derived ST source-block insertion order over display order", () => {
       const result = assemblePrompt(baseContext({
         preset: {
           id: "preset_1",
@@ -347,9 +347,9 @@ describe("assemblePrompt", () => {
           ],
         },
         lore: [
-          { id: "book_b_late", title: "Late", content: "Late lore.", priority: 999, sortOrder: 200, position: "after_char" },
-          { id: "book_a_early", title: "Early", content: "Early lore.", priority: 1, sortOrder: 10, position: "after_char" },
-          { id: "book_c_middle", title: "Middle", content: "Middle lore.", priority: 500, sortOrder: 100, position: "after_char" },
+          { id: "book_b_late", title: "Late", content: "Late lore.", priority: 999, sortOrder: 10, insertionOrder: 2, position: "after_char" },
+          { id: "book_a_early", title: "Early", content: "Early lore.", priority: 1, sortOrder: 200, insertionOrder: 0, position: "after_char" },
+          { id: "book_c_middle", title: "Middle", content: "Middle lore.", priority: 500, sortOrder: 100, insertionOrder: 1, position: "after_char" },
         ],
       }));
 

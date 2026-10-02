@@ -140,7 +140,6 @@ import type { AppCharacter, AppMessage, AppSnapshot } from "../../api/types.js";
 import type { ChatId } from "@vibe-tavern/domain";
 
 const CHAT = "chat-1" as ChatId;
-
 function makeCharacter(id: string): AppCharacter {
   return {
     ...wireCharacter(),

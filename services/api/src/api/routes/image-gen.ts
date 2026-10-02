@@ -1,0 +1,544 @@
+/**
+ * @module routes/image-gen
+ *
+ * Image-gen profile CRUD + probe/models/samplers + generate + gallery
+ * promotion routes (IMAGE_GENERATION_PLAN IG-8). Mirrors routes/stt.ts: the
+ * same envelope shapes and the same error ladder — profile misses surface as
+ * 404, config/validation problems as 400, and normalized upstream failures as
+ * 400 (4xx upstream) or 502 (5xx/transport). The locked route list
+ * (IMAGE_GENERATION_DESIGN "API / routes"):
+ *   GET    /api/image-gen/profiles/all
+ *   GET    /api/image-gen/profiles/:id
+ *   POST   /api/image-gen/profiles
+ *   PATCH  /api/image-gen/profiles/:id
+ *   DELETE /api/image-gen/profiles/:id
+ *   PUT    /api/image-gen/profiles/:id/default       (global active pointer, MR-12)
+ *   POST   /api/image-gen/profiles/:id/probe
+ *   GET    /api/image-gen/profiles/:id/models
+ *   GET    /api/image-gen/profiles/:id/samplers        (capability-gated)
+ *   GET    /api/image-gen/profiles/:id/schedulers       (dialect-gated: A1111 + ComfyUI, PG-3/CG-A3)
+ *   GET    /api/image-gen/profiles/:id/sidecars         (dialect-gated: ComfyUI, CG-B1 — DiT encoder/VAE folders)
+ *   GET    /api/image-gen/profiles/:id/loras            (dialect-gated: ComfyUI CG-C2 / A1111 FT-A4 — family-resolved lora list)
+ *   GET    /api/image-gen/profiles/:id/upscalers         (dialect-gated: A1111 + ComfyUI — the hr_upscaler vocabulary)
+ *   GET    /api/image-gen/profiles/:id/face-detectors    (comfyui-dialect: the Impact Pack chain probe, IF-6)
+ *   GET    /api/image-gen/profiles/:id/progress        (capability-gated, PG-2)
+ *   POST   /api/image-gen/profiles/:id/interrupt       (capability-gated, PG-2)
+ *   POST   /api/image-gen/draft/models                 (shared fetch-by-endpoint)
+ *   POST   /api/chats/:chatId/image-gen/prompt-draft   (LLM prompt text only)
+ *   POST   /api/chats/:chatId/image-gen/generate       (image message slot)
+ *   POST   /api/image-gen/attachments/:assetId/promote-to-gallery
+ *   GET    /api/image-gen/profiles/:id/model-favorites  (IG-12b)
+ *   POST   /api/image-gen/profiles/:id/model-favorites
+ *   DELETE /api/image-gen/profiles/:id/model-favorites
+ *   GET    /api/image-gen/profiles/:id/model-settings   (IG-12b)
+ *   GET    /api/image-gen/profiles/:id/model-settings/:modelId
+ *   PUT    /api/image-gen/profiles/:id/model-settings/:modelId
+ *   DELETE /api/image-gen/profiles/:id/model-settings/:modelId
+ *   GET    /api/image-gen/prompt-families               (IPT-3 — registry read model)
+ *   PUT    /api/image-gen/profiles/:id/family           (IPT-3 — the manual pin set/clear)
+ *   POST   /api/image-gen/profiles/:id/detect-family    (IPT-3 — authoritative detection ladder)
+ */
+
+import { Hono } from "hono";
+import { zValidator } from "@hono/zod-validator";
+import * as schemas from "@vibe-tavern/api-contracts";
+
+import type { ImageGenRuntimeApi } from "../contract/runtime-api.js";
+import { ImageGenNotFoundError, ImageGenTimeoutError, ImageGenValidationError } from "../adapters/image-gen-adapter.js";
+import { ProviderExecutionError } from "../../infrastructure/ai/provider-execution-types.js";
+import { ImageGenBackendNotRegisteredError, ImageGenUnknownBackendError } from "../../domain/imagegen/imagegen-registry.js";
+import {
+  OpenRouterImageGenConfigError,
+  OpenRouterImageGenError,
+  OpenRouterImageGenSizeError,
+} from "../../domain/imagegen/backends/openrouter.js";
+import {
+  OpenAiImagesConfigError,
+  OpenAiImagesError,
+  OpenAiImagesSizeError,
+} from "../../domain/imagegen/backends/openai-images.js";
+import {
+  A1111ImageGenConfigError,
+  A1111ImageGenError,
+  A1111ImageGenSizeError,
+} from "../../domain/imagegen/backends/a1111.js";
+import {
+  ComfyImageGenConfigError,
+  ComfyImageGenError,
+  ComfyImageGenSizeError,
+} from "../../domain/imagegen/backends/comfyui.js";
+
+/** Upstream failures with an HTTP status: a 4xx upstream is the caller's
+ *  problem (400), anything else is gateway-class (502) — the STT ladder. */
+function upstreamStatus(status: number | undefined): 400 | 502 {
+  return status !== undefined && status >= 400 && status < 500 ? 400 : 502;
+}
+
+/** Map a thrown backend error onto the route ladder (the STT draft-route
+ *  convention): config/size problems are the caller's (400), upstream
+ *  failures gateway-class (502, or 400 for a 4xx upstream). Null = not a
+ *  backend error — rethrow for Hono's 500 fallback. Shared by the
+ *  profile-bound models/samplers routes and the draft/generate routes. */
+function backendErrorResponse(error: unknown): { body: { error: string }; status: 400 | 502 } | null {
+  if (
+    error instanceof OpenRouterImageGenConfigError ||
+    error instanceof OpenAiImagesConfigError ||
+    error instanceof A1111ImageGenConfigError ||
+    error instanceof ComfyImageGenConfigError ||
+    error instanceof OpenRouterImageGenSizeError ||
+    error instanceof OpenAiImagesSizeError ||
+    error instanceof A1111ImageGenSizeError ||
+    error instanceof ComfyImageGenSizeError
+  ) {
+    return { body: { error: error.message }, status: 400 };
+  }
+  if (
+    error instanceof OpenRouterImageGenError ||
+    error instanceof OpenAiImagesError ||
+    error instanceof A1111ImageGenError ||
+    error instanceof ComfyImageGenError
+  ) {
+    return { body: { error: error.message }, status: upstreamStatus(error.status) };
+  }
+  return null;
+}
+
+export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
+  return new Hono()
+    // ── Profile CRUD ──────────────────────────────────────────────────────
+    .get("/api/image-gen/profiles/all", async (c) => {
+      return c.json(await runtime.listImageGenProfiles());
+    })
+    .get("/api/image-gen/profiles/:id", async (c) => {
+      const profile = await runtime.getImageGenProfile(c.req.param("id"));
+      if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(profile);
+    })
+    .post("/api/image-gen/profiles", zValidator("json", schemas.createImageGenProfileSchema), async (c) => {
+      const body = c.req.valid("json");
+      return c.json(await runtime.createImageGenProfile(body), 201);
+    })
+    .patch("/api/image-gen/profiles/:id", zValidator("json", schemas.updateImageGenProfileSchema), async (c) => {
+      const body = c.req.valid("json");
+      const updated = await runtime.updateImageGenProfile(c.req.param("id"), body);
+      if (!updated) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(updated);
+    })
+    .delete("/api/image-gen/profiles/:id", async (c) => {
+      await runtime.deleteImageGenProfile(c.req.param("id"));
+      return c.json({ ok: true });
+    })
+    // ── Global active pointer (MR-12, the STT PUT-default twin) ────────
+    .put("/api/image-gen/profiles/:id/default", async (c) => {
+      const updated = await runtime.setImageGenDefault(c.req.param("id"));
+      if (!updated) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(updated);
+    })
+    // ── Probe (probe-only validation — no test-generate, owner) ──────────
+    .post("/api/image-gen/profiles/:id/probe", async (c) => {
+      const result = await runtime.probeImageGenProfile(c.req.param("id"), c.req.raw.signal);
+      if (!result) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(result);
+    })
+    // ── Live model discovery (picker data source) ─────────────────────────
+    .get("/api/image-gen/profiles/:id/models", async (c) => {
+      try {
+        const models = await runtime.listImageGenProfileModels(c.req.param("id"), c.req.raw.signal);
+        if (models === null) return c.json({ error: "Image-gen profile not found" }, 404);
+        // IF-20: a snapshot answer keeps the live body shape; the header says so.
+        if (models.snapshotAt !== undefined) c.header(schemas.IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER, models.snapshotAt);
+        return c.json(models.data);
+      } catch (error) {
+        // The saved-profile twin of the draft route's ladder (the STT
+        // convention): a picker data source maps upstream failures, never 500s.
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Extensions (A1111-dialect feature detection — the ADetailer probe) ──
+    .get("/api/image-gen/profiles/:id/extensions", async (c) => {
+      try {
+        const extensions = await runtime.listImageGenProfileExtensions(c.req.param("id"), c.req.raw.signal);
+        if (extensions === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "extension listing not supported" }, 400);
+        }
+        return c.json(extensions);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Samplers (capability-gated) ───────────────────────────────────────
+    .get("/api/image-gen/profiles/:id/samplers", async (c) => {
+      try {
+        const samplers = await runtime.listImageGenProfileSamplers(c.req.param("id"), c.req.raw.signal);
+        if (samplers === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "sampler listing not supported" }, 400);
+        }
+        return c.json(samplers);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Schedulers / schedule type (dialect-gated, PG-3) ─────────────
+    .get("/api/image-gen/profiles/:id/schedulers", async (c) => {
+      try {
+        const schedulers = await runtime.listImageGenProfileSchedulers(c.req.param("id"), c.req.raw.signal);
+        if (schedulers === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "scheduler listing not supported" }, 400);
+        }
+        return c.json(schedulers);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── DiT sidecars (dialect-gated, CG-B1) ──────────────────────────
+    .get("/api/image-gen/profiles/:id/sidecars", async (c) => {
+      try {
+        const sidecars = await runtime.listImageGenProfileDitSidecars(c.req.param("id"), c.req.raw.signal);
+        if (sidecars === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "DiT sidecar listing not supported" }, 400);
+        }
+        if (sidecars.snapshotAt !== undefined) c.header(schemas.IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER, sidecars.snapshotAt);
+        return c.json(sidecars.data);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── LoRAs (dialect-gated, CG-C2) ───────────────────────────────
+    .get("/api/image-gen/profiles/:id/loras", async (c) => {
+      try {
+        const loras = await runtime.listImageGenProfileLoras(c.req.param("id"), c.req.raw.signal);
+        if (loras === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "LoRA listing not supported" }, 400);
+        }
+        return c.json(loras);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Face detectors (comfyui-dialect Impact Pack chain probe, IF-6) ──
+    .get("/api/image-gen/profiles/:id/face-detectors", async (c) => {
+      try {
+        const detectors = await runtime.listImageGenProfileFaceDetectors(c.req.param("id"), c.req.raw.signal);
+        if (detectors === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "face detector listing not supported" }, 400);
+        }
+        return c.json(detectors);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Upscalers (dialect-gated, FT-A4) ───────────────────────────
+    .get("/api/image-gen/profiles/:id/upscalers", async (c) => {
+      try {
+        const upscalers = await runtime.listImageGenProfileUpscalers(c.req.param("id"), c.req.raw.signal);
+        if (upscalers === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "Upscaler listing not supported" }, 400);
+        }
+        return c.json(upscalers);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── VAE list (dialect-gated, IF-7b) ──────────────────────────────
+    .get("/api/image-gen/profiles/:id/vaes", async (c) => {
+      try {
+        const vaes = await runtime.listImageGenProfileVae(c.req.param("id"), c.req.raw.signal);
+        if (vaes === null) {
+          // Unknown profile vs unsupported backend are indistinguishable from
+          // null alone — resolve the profile to pick the right status.
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "VAE listing not supported" }, 400);
+        }
+        return c.json(vaes);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Live progress (capability-gated, PG-2) ───────────────────────
+    .get("/api/image-gen/profiles/:id/progress", async (c) => {
+      try {
+        const snapshot = await runtime.getImageGenProfileProgress(c.req.param("id"), c.req.raw.signal);
+        if (snapshot === null) {
+          // Unknown profile vs unsupported backend (the samplers ladder).
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "live progress not supported" }, 400);
+        }
+        return c.json(snapshot);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Interrupt (capability-gated, PG-2) ─────────────────────────────
+    .post("/api/image-gen/profiles/:id/interrupt", async (c) => {
+      try {
+        const sent = await runtime.interruptImageGenProfile(c.req.param("id"), c.req.raw.signal);
+        if (sent === null) {
+          const profile = await runtime.getImageGenProfile(c.req.param("id"));
+          if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+          return c.json({ error: "interrupt not supported" }, 400);
+        }
+        return c.body(null, 204);
+      } catch (error) {
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Shared fetch-by-endpoint model listing (draft twin) ───────────────
+    .post("/api/image-gen/draft/models", zValidator("json", schemas.draftImageGenModelsSchema), async (c) => {
+      const body = c.req.valid("json");
+      try {
+        const models = await runtime.draftListImageGenModels(body);
+        if (models === null) return c.json({ error: "model listing not supported" }, 400);
+        return c.json(models);
+      } catch (error) {
+        if (error instanceof ImageGenUnknownBackendError || error instanceof ImageGenBackendNotRegisteredError) {
+          return c.json({ error: error.message }, 400);
+        }
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Prompt draft (FT-B2: LLM text only, never image generation) ───────
+    .post(
+      "/api/chats/:chatId/image-gen/prompt-draft",
+      zValidator("json", schemas.draftImageGenPromptSchema),
+      async (c) => {
+        try {
+          return c.json(await runtime.draftImageGenPrompt(c.req.param("chatId"), c.req.valid("json"), c.req.raw.signal));
+        } catch (error) {
+          if (error instanceof ImageGenNotFoundError) {
+            return c.json({ error: error.message }, 404);
+          }
+          if (error instanceof ImageGenValidationError) {
+            return c.json({ error: error.message }, 400);
+          }
+          if (error instanceof ProviderExecutionError) {
+            return c.json({ error: `LLM assist failed: ${error.message}` }, 502);
+          }
+          throw error;
+        }
+      },
+    )
+    // ── Generate (image message slot) ─────────────────────────────────────
+    .post(
+      "/api/chats/:chatId/image-gen/generate",
+      zValidator("json", schemas.generateImageGenSchema),
+      async (c) => {
+        const body = c.req.valid("json");
+        try {
+          // The route's abort signal IS the generation signal (the
+          // ai-assistant abort contract; no timeout constants ship in code).
+          return c.json(await runtime.generateImageGen(c.req.param("chatId"), body, c.req.raw.signal));
+        } catch (error) {
+          if (error instanceof ImageGenNotFoundError) {
+            return c.json({ error: error.message }, 404);
+          }
+          if (error instanceof ImageGenValidationError) {
+            return c.json({ error: error.message }, 400);
+          }
+          if (error instanceof ImageGenUnknownBackendError || error instanceof ImageGenBackendNotRegisteredError) {
+            return c.json({ error: error.message }, 400);
+          }
+          if (error instanceof ImageGenTimeoutError) {
+            return c.json({ error: error.message }, 504);
+          }
+          // IG-15: the LLM-assist quiet call failed upstream — the executor
+          // already normalized the message at its boundary; surface it with
+          // the route's `{error: string}` shape (same status the app-level
+          // handler uses for ProviderExecutionError).
+          if (error instanceof ProviderExecutionError) {
+            return c.json({ error: `LLM assist failed: ${error.message}` }, 502);
+          }
+          const mapped = backendErrorResponse(error);
+          if (mapped) return c.json(mapped.body, mapped.status);
+          throw error;
+        }
+      },
+    )
+    // ── Gallery promotion (attachment → character gallery) ────────────────
+    .post(
+      "/api/image-gen/attachments/:assetId/promote-to-gallery",
+      zValidator("json", schemas.promoteImageGenAttachmentSchema),
+      async (c) => {
+        try {
+          const body = c.req.valid("json");
+          return c.json(
+            await runtime.promoteImageGenAttachmentToGallery(c.req.param("assetId"), body.characterId),
+            201,
+          );
+        } catch (error) {
+          if (error instanceof ImageGenNotFoundError) {
+            return c.json({ error: error.message }, 404);
+          }
+          // Gallery writes share the asset-service upload gates (mime/size) —
+          // a rejection there is a caller problem, not a 500.
+          if (error instanceof Error && /Unsupported attachment type|Attachment too large/.test(error.message)) {
+            return c.json({ error: error.message }, 400);
+          }
+          throw error;
+        }
+      },
+    )
+    // ── Model favorites (IG-12b — the provider model-favorites twin) ────
+    .get("/api/image-gen/profiles/:id/model-favorites", async (c) => {
+      const rows = await runtime.listImageGenModelFavorites(c.req.param("id"));
+      if (rows === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(rows);
+    })
+    .post("/api/image-gen/profiles/:id/model-favorites", zValidator("json", schemas.favoriteImageGenModelSchema), async (c) => {
+      const row = await runtime.addImageGenModelFavorite(c.req.param("id"), c.req.valid("json"));
+      if (row === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(row, 201);
+    })
+    .delete("/api/image-gen/profiles/:id/model-favorites", zValidator("json", schemas.favoriteImageGenModelSchema.pick({ modelId: true })), async (c) => {
+      const removed = await runtime.removeImageGenModelFavorite(c.req.param("id"), c.req.valid("json").modelId);
+      if (removed === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json({ ok: true });
+    })
+    // ── Per-model settings overlay (IG-12b — the provider twin split) ──
+    .get("/api/image-gen/profiles/:id/model-settings", async (c) => {
+      const rows = await runtime.listImageGenModelSettings(c.req.param("id"));
+      if (rows === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(rows);
+    })
+    .get("/api/image-gen/profiles/:id/model-settings/:modelId", async (c) => {
+      // Null alone cannot distinguish "unknown profile" from "model has no
+      // overlay yet" — resolve the profile to pick the status (the samplers
+      // ladder).
+      const row = await runtime.getImageGenModelSettings(c.req.param("id"), c.req.param("modelId"));
+      if (row === null) {
+        const profile = await runtime.getImageGenProfile(c.req.param("id"));
+        if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);
+        return c.json(null);
+      }
+      return c.json(row);
+    })
+    .put("/api/image-gen/profiles/:id/model-settings/:modelId", zValidator("json", schemas.upsertImageGenModelSettingsSchema), async (c) => {
+      const body = c.req.valid("json");
+      const row = await runtime.upsertImageGenModelSettings(
+        c.req.param("id"),
+        c.req.param("modelId"),
+        body.settings,
+        body.samplerSetId,
+      );
+      if (row === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(row);
+    })
+    .delete("/api/image-gen/profiles/:id/model-settings/:modelId", async (c) => {
+      const removed = await runtime.deleteImageGenModelSettings(c.req.param("id"), c.req.param("modelId"));
+      if (removed === null) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json({ ok: true });
+    })
+    .get("/api/image-gen/prompt-families", async (c) => {
+      return c.json(await runtime.listPromptFamilies());
+    })
+    // ── Profile family (IPT-3 — the family-override writer + the detection
+    //    ladder; familySource stays a derived read-model field, create
+    //    stays unpinned, and this pair is the sole family writer) ──
+    .put("/api/image-gen/profiles/:id/family", zValidator("json", schemas.setImageGenProfileFamilySchema), async (c) => {
+      const updated = await runtime.setImageGenProfileFamily(c.req.param("id"), c.req.valid("json").family);
+      if (!updated) return c.json({ error: "Image-gen profile not found" }, 404);
+      return c.json(updated);
+    })
+    .post("/api/image-gen/profiles/:id/detect-family", async (c) => {
+      // Probe-style contract: a detection no-answer is DATA (ok:false + the
+      // ordered tried[] ladder), backend failures degrade into tried[]
+      // reasons inside the adapter — this route maps only the request-level
+      // ladder (unknown profile → 404, no-model/config problems → 400 via
+      // the shared backend-error mapping, the models-route twin).
+      try {
+        const result = await runtime.detectImageGenProfileFamily(
+          c.req.param("id"),
+          c.req.raw.signal,
+          // IF-8a: the optional query model names the DISPLAYED model —
+          // detection runs against it without a profile save round-trip.
+          c.req.query("model") ?? undefined,
+        );
+        if (result === null) return c.json({ error: "Image-gen profile not found" }, 404);
+        return c.json(result);
+      } catch (error) {
+        if (error instanceof ImageGenNotFoundError) {
+          return c.json({ error: error.message }, 404);
+        }
+        const mapped = backendErrorResponse(error);
+        if (mapped) return c.json(mapped.body, mapped.status);
+        throw error;
+      }
+    })
+    // ── Named image-gen sampler sets (IG-CF15 — the sampler_sets LS-5 twin;
+    //    a GLOBAL library, no profile scoping) ──
+    .get("/api/image-gen/sampler-sets", async (c) => {
+      return c.json(await runtime.listImageGenSamplerSets());
+    })
+    // ── Learned prompt caps (IF-10) — advisory per-(backend, model) char
+    //    caps taught by prompt_too_long rejections; global, tiny, no
+    //    scoping (the chip picks its row by backend + effective model). ──
+    .get("/api/image-gen/prompt-caps", async (c) => {
+      return c.json(await runtime.listImageGenPromptCaps());
+    })
+    .post("/api/image-gen/sampler-sets/import", zValidator("json", schemas.importImageGenSamplerSetSchema), async (c) => {
+      return c.json(await runtime.importImageGenSamplerSet(c.req.valid("json")));
+    })
+    .post("/api/image-gen/sampler-sets", zValidator("json", schemas.createImageGenSamplerSetSchema), async (c) => {
+      return c.json(await runtime.createImageGenSamplerSet(c.req.valid("json")));
+    })
+    .patch("/api/image-gen/sampler-sets/:setId", zValidator("json", schemas.updateImageGenSamplerSetSchema), async (c) => {
+      return c.json(await runtime.updateImageGenSamplerSet(c.req.param("setId"), c.req.valid("json")));
+    })
+    .delete("/api/image-gen/sampler-sets/:setId", async (c) => {
+      await runtime.deleteImageGenSamplerSet(c.req.param("setId"));
+      return c.json({ ok: true });
+    });
+}

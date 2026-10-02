@@ -16,6 +16,7 @@ The maintained Android distribution is one native ARM64 launcher APK for Android
 - `android/app/src/main/java/com/vibetavern/launcher/MainActivity.kt` — launcher controls, payload extraction, browser handoff, updater, diagnostics, battery guidance, and legacy-only migration entry.
 - `android/app/src/main/java/com/vibetavern/launcher/LegacyMigration.kt` — safe import of a user-selected archive from an old launcher installation.
 - `android/app/src/main/java/com/vibetavern/launcher/ReleaseUpdate.kt` and `ApkUpdateManager.kt` — GitHub Releases discovery, approved download, validation, and Android installer handoff.
+- `android/app/src/main/cpp/` — `libseccompshim.so`, built by Gradle through CMake with the pinned NDK and preloaded into the server by `ServerService` so Android seccomp traps (`close_range` on 10–12, `openat2` on every version) become `ENOSYS` instead of killing it (see AD-026 in `docs/architecture/decisions.md`).
 - `android/scripts/serve-local-update.ts` — debug-only same-LAN APK updater fixture.
 - `legacy-termux/` — frozen, unsupported archive; it is not part of a current build, test, CI, or release path.
 

@@ -46,7 +46,6 @@ import type { ProviderProfileService } from "../providers/provider-profile-servi
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import { withSummaryPromptAsFinalUserMessage } from "../chat/chat-summary-service.js";
 import {
-	providerRequiresApiKey,
 	resolveEffectiveSummaryProfile,
 } from "../chat/summary-generation-seam.js";
 import { notFound, unprocessable, validation, cancelled } from "../../shared/errors.js";
@@ -375,9 +374,6 @@ export class ExperienceContextService {
 				"No provider available for compact-summary generation.",
 				{ code: "no_provider" },
 			);
-		}
-		if (providerRequiresApiKey(profile.providerPreset) && !profile.apiKey?.trim()) {
-			throw validation("Selected provider has no saved API key.");
 		}
 		const model = input.model?.trim() || profile.defaultModel?.trim();
 		if (!model) {

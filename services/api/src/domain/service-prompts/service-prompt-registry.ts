@@ -17,6 +17,7 @@ export const SERVICE_PROMPT_ASSET_FILES: Record<ServicePromptFieldKey, string> =
   lore_entry: "lore-entry-ai-prompt.md",
   lore_keys: "lore-keys-ai-prompt.md",
   chat_impersonate: "chat-impersonate-ai-prompt.md",
+  chat_impersonate_enhance: "chat-impersonate-enhance-ai-prompt.md",
   md_import: "md-import-prompt.md",
   vision_describe: "vision-describe-ai-prompt.md",
   scene_schema: "scene-schema-json.md",

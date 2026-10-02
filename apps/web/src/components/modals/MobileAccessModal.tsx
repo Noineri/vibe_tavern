@@ -3,6 +3,7 @@ import { Modal } from "../shared/Modal.js";
 import { useT } from "../../i18n/context.js";
 import { Icons } from "../shared/icons.js";
 import QRCode from "qrcode";
+import { apiFetch } from "../../api/client.js";
 
 interface IPResult {
   address: string;
@@ -32,7 +33,7 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
 
   const fetchInfo = useCallback(async () => {
     try {
-      const resp = await fetch("/api/settings/mobile-access");
+      const resp = await apiFetch("/api/settings/mobile-access");
       if (resp.ok) {
         const data = await resp.json();
         setInfo(data);
@@ -59,13 +60,13 @@ export function MobileAccessModal({ open, onClose, onDisabled }: MobileAccessMod
 
   const handleRegenerate = async () => {
     if (!window.confirm(t("mobile_access_regenerate_confirm"))) return;
-    await fetch("/api/settings/mobile-access/regenerate", { method: "POST" });
+    await apiFetch("/api/settings/mobile-access/regenerate", { method: "POST" });
     await fetchInfo();
   };
 
   const handleDisable = async () => {
     if (!window.confirm(t("mobile_access_disable_confirm"))) return;
-    await fetch("/api/settings/mobile-access", { method: "DELETE" });
+    await apiFetch("/api/settings/mobile-access", { method: "DELETE" });
     onDisabled();
     onClose();
   };

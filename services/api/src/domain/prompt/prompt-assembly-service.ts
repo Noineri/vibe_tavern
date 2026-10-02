@@ -1,4 +1,4 @@
-import { brandId, parseStoredAttachments, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS, normalizeSceneTrackerConfig, resolveEffectiveGenerationFormat, CUSTOM_TEMPLATE_SELECTION_PREFIX, GENERATION_FORMAT_MODE, log, type ProviderGenerationFormat } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, filterPromptVisibleAttachments, withImageGenPromptFallback, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS, normalizeSceneTrackerConfig, resolveEffectiveGenerationFormat, CUSTOM_TEMPLATE_SELECTION_PREFIX, GENERATION_FORMAT_MODE, log, type ProviderGenerationFormat } from "@vibe-tavern/domain";
 import type {
   AssemblePromptResponse,
   CustomInjection,
@@ -17,6 +17,8 @@ import type {
   PromptTraceId,
   RetrievedMemoryHit,
   ActiveLoreEntry,
+  ActiveLoreEntriesResult,
+  OverflowedLorebook,
   ActivatedLoreDetail,
   InsightsConfig,
   ObjectiveState,
@@ -92,11 +94,25 @@ export interface PromptAssemblyResolver {
     chatId: ChatId;
     branchId: ChatBranchId;
     recentText: string;
+    /** Assembly-derived branch messages to scan for lore activation. */
+    scanMessages: Array<{ role: string; content: string }>;
+    /** Effective preset Author's Note, resolved by this assembly. */
+    authorsNote?: string;
+    /** Enabled summary texts from the same set injected into prompt memory. */
+    summaries?: string[];
+    /** One-shot quiet-prompt text to scan after the global sources. */
+    quietPrompt?: string;
+    /** Turn clock for sticky/cooldown windows — the FULL branch message count,
+     * not the post-exclusion scan count (P13 changes scan input only; timed
+     * windows must not shift when the prompt excludes messages). */
+    currentTurn?: number;
+    /** Resolve active entries without changing branch timed state. */
+    dryRun?: boolean;
     /** Max context tokens of the active model. Needed for percent-of-context
      * token-budget mode on lorebooks. Optional — when absent, percent-mode
      * lorebooks silently fall back to their fixed `tokenBudget`. */
     maxContextTokens?: number;
-  }): Promise<ActiveLoreEntry[]>;
+  }): Promise<ActiveLoreEntriesResult>;
   listRetrievedMemories(input: {
     chatId: ChatId;
     branchId: ChatBranchId;
@@ -148,6 +164,10 @@ export interface AssemblePromptForChatInput {
   responseReserve?: number;
   /** Summary preparation is source-loading policy, not a pipeline mode. */
   summary?: boolean;
+  /** Resolve lore activation without changing its timed state. */
+  dryRun?: boolean;
+  /** One-shot quiet-prompt text to scan after global sources without adding a chat message. */
+  quietPrompt?: string;
   /** SUMMARY_PRIOR_CONTEXT_PLAN (SPC-3): preceding chat-summaries
    *  (`summarizedFrom < from` chain, count-capped, oldest→newest) fed into the
    *  summary prompt as read-only continuity. Threaded into pipelineContext
@@ -242,6 +262,11 @@ export interface BuiltPipelineContext {
   promptPresetId: string | null;
   promptPresetName: string | null;
   activeLoreEntries: ActiveLoreEntry[];
+  /** P21: books whose budget overflowed during this resolve (name + dropped
+   *  count + alert flag). Carried into the live-turn trace draft only — the
+   *  context-preview path ignores it (a toast there would fire without a
+   *  generation; named deviation from ST, which toasts dry runs too). */
+  overflowedLorebooks: OverflowedLorebook[];
   retrievedMemories: RetrievedMemoryHit[];
   scriptResult: Awaited<ReturnType<PromptAssemblyResolver["executeScripts"]>>;
   recentMessageCount: number;
@@ -334,6 +359,9 @@ export class PromptAssemblyService {
         },
         activatedLoreEntries: result.activatedLoreEntries.map((id) => brandId<LoreEntryId>(id)),
         activatedLoreDetail,
+        // P21: full overflow list (alert-off books included) — evidence in the
+        // trace; the finish-event toast channel filters to alert-on.
+        overflowedLorebooks: built.overflowedLorebooks,
         scriptInjections,
         retrievedMemories: built.retrievedMemories.map((memory) => ({
           id: memory.id,
@@ -543,19 +571,39 @@ export class PromptAssemblyService {
         id: message.id as MessageId,
         role: message.role as 'system' | 'user' | 'assistant' | 'tool',
         content: message.content,
-        ...(message.attachmentsJson ? { attachments: parseStoredAttachments(message.attachmentsJson) ?? [] } : {}),
+        ...(message.attachmentsJson ? { attachments: withImageGenPromptFallback(filterPromptVisibleAttachments(parseStoredAttachments(message.attachmentsJson) ?? [])) } : {}),
         ...(rolls?.length ? { diceRolls: rolls.map(storeRollToSnapshot) } : {}),
         ...(reports.length ? { experienceReports: reports } : {}),
       };
     });
 
     const recentText = recentMessages.map((message) => message.content).join("\n");
-    const activeLoreEntries = await this.resolver.listActiveLoreEntries({
+    // P13: lore scans the post-exclusion set before the history-limit window,
+    // matching ST's coreChat construction (public/script.js:4437–4440): hidden
+    // messages are removed and the swipe target is dropped before WI scanning.
+    // `ensureLastUser` also preserves the normal chat-mode final-user safeguard;
+    // `windowedMessages` must not narrow the scan beyond the lorebook scan depth.
+    const loreActivation = await this.resolver.listActiveLoreEntries({
       chatId: chat.id as ChatId,
       branchId,
       recentText,
+      scanMessages: ensureLastUser.map((message) => ({
+        role: message.role,
+        content: message.content,
+      })),
+      // P15: one assembly-derived source feeds both prompt injection and lore
+      // scanning. The entry's source chip is the default-off scan gate; do not
+      // derive either value again in the resolver.
+      authorsNote: promptPreset?.authorsNote,
+      summaries: enabledSummaries.map((summary) => summary.content),
+      ...(input.quietPrompt ? { quietPrompt: input.quietPrompt } : {}),
+      // Turn clock stays on the full branch — exclusions shape the scan input,
+      // never the sticky/cooldown arithmetic.
+      currentTurn: branchMessages.length,
+      dryRun: input.dryRun,
       maxContextTokens: input.contextBudget ?? undefined,
     });
+    const activeLoreEntries = loreActivation.entries;
     const retrievedMemories = await this.resolver.listRetrievedMemories({
       chatId: chat.id as ChatId,
       branchId,
@@ -663,15 +711,21 @@ export class PromptAssemblyService {
             promptOrder: promptPreset.promptOrder,
           }
         : null,
+      outletEntries: loreActivation.outletEntries,
       lore: activeLoreEntries.map((entry) => ({
         id: entry.id,
         title: entry.title,
+        // P16 boundary: StaticPromptResolver macro-expands activated lore
+        // before the WORLD_INFO regex hook. Pipeline assembly must preserve
+        // that resolved text rather than invoking a competing second pass.
+        macrosResolved: true,
         content: entry.content,
         priority: entry.priority,
         position: entry.position,
         depth: entry.depth,
         role: entry.role,
         sortOrder: entry.sortOrder,
+        insertionOrder: entry.insertionOrder,
       })),
       memory: {
         summary: enabledSummaries.length > 0
@@ -717,6 +771,7 @@ export class PromptAssemblyService {
       chatPromptPresetId: chat.promptPresetId ?? null,
       promptPresetId: promptPresetId ?? null,
       promptPresetName: promptPreset?.name ?? null,
+      overflowedLorebooks: loreActivation.overflowedLorebooks,
       activeLoreEntries,
       retrievedMemories,
       scriptResult,

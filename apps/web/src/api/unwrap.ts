@@ -29,7 +29,12 @@ const TYPED_ERROR_SENTINELS: Record<string, string> = {
 };
 
 export async function unwrapError(response: RpcResponse): Promise<Error> {
-  const errorBody = await response.json().catch(() => null) as RpcErrorBody | null;
+  return errorFromBody(await response.json().catch(() => null) as RpcErrorBody | null, response.status);
+}
+
+/** The {@link unwrapError} mapping over an already-read body — for callers
+ *  that need other fields of the same body (it can be read only once). */
+export function errorFromBody(errorBody: RpcErrorBody | null, status: number): Error {
   const error = errorBody?.error;
   if (error && typeof error === "object" && error.code === "VISION_NOT_SUPPORTED") {
     return new Error("VISION_NOT_SUPPORTED");
@@ -40,6 +45,6 @@ export async function unwrapError(response: RpcResponse): Promise<Error> {
   if (typeof typed === "string" && typed in TYPED_ERROR_SENTINELS) {
     return new Error(TYPED_ERROR_SENTINELS[typed]);
   }
-  const message = typeof error === "string" ? error : error?.message || `Request failed: ${response.status}`;
+  const message = typeof error === "string" ? error : error?.message || `Request failed: ${status}`;
   return new Error(message);
 }

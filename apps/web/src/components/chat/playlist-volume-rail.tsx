@@ -6,14 +6,14 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 
 /** RD-4: vertical volume rail — the owner's paint-concept right edge.
  *  Replaces the FS-5 horizontal footer block (label + range + percent
- *  number box) outright: «кнопка отключения звука + вертикальный
- *  слайдер громкости, без ввода цифр вообще».
+ *  number box) outright: "mute button + vertical volume slider,
+ *  no number entry at all".
  *
  *  Value contract: INTERNAL value stays 0..1 (the persisted
  *  vt.tts.narration-volume format is unchanged — same onChange path as
  *  the old slider, so the store clamps/persists/forwards to the lane).
  *  The percent value appears ABOVE the thumb WHILE DRAGGING (owner:
- *  «отображать проценты над слайдером в момент движения») and never
+ *  "show percentages above the slider while dragging" and never
  *  otherwise — no input field, no persistent or read-only number.
  *  Keyboard focus counts as interacting too (same flag): arrow-key
  *  adjusters need the feedback a dragger gets.

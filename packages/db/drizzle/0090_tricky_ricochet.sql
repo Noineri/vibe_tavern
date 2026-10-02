@@ -1,0 +1,1 @@
+ALTER TABLE `lore_entries` DROP COLUMN `delay_window`;

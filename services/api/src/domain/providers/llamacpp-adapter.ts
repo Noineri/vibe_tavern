@@ -19,6 +19,7 @@ import {
 	testOpenAiCompatChat,
 	listOpenAiCompatModels,
 } from "./openai-compat-adapter.js";
+import { readProviderErrorBody } from "../../infrastructure/ai/provider-error-body.js";
 
 // ─── Model list + server context (LS-7) ──────────────────────────────────
 
@@ -108,8 +109,8 @@ export async function tokenizeLlamaCpp(input: TokenizeInput): Promise<number> {
 			signal: controller.signal,
 		});
 		if (!response.ok) {
-			const errorText = await response.text().catch(() => "");
-			throw new Error(`llama.cpp tokenize failed (${response.status})${errorText ? `: ${errorText.slice(0, 200)}` : ""}`);
+			const errorText = await readProviderErrorBody(response);
+			throw new Error(`llama.cpp tokenize failed (${response.status})${errorText ? `: ${errorText}` : ""}`);
 		}
 		const payload = (await response.json()) as LlamaCppTokenizeResponse;
 		if (!Array.isArray(payload.tokens)) {

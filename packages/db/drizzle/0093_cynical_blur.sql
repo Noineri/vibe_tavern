@@ -1,0 +1,1 @@
+ALTER TABLE `lorebooks` ADD `token_budget_cap` integer DEFAULT 0 NOT NULL;

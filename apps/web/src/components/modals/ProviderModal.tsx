@@ -38,6 +38,10 @@ import { SttSection } from "../settings/provider/stt/SttSection.js";
 import { SttProfileEditor } from "../settings/provider/stt/SttProfileEditor.js";
 import { SttFooter } from "../settings/provider/stt/SttFooter.js";
 import { useSttProfiles } from "../settings/provider/stt/use-stt-profiles.js";
+import { ImageGenSection } from "../settings/provider/imagegen/ImageGenSection.js";
+import { ImageGenProfileEditor } from "../settings/provider/imagegen/ImageGenProfileEditor.js";
+import { ImageGenFooter } from "../settings/provider/imagegen/ImageGenFooter.js";
+import { useImageProfiles } from "../../hooks/use-image-profiles.js";
 
 export interface FormState {
   id: string;
@@ -108,7 +112,7 @@ export interface FormState {
    *  routes to a model overlay. null = "no set". */
   samplerSetId: string | null;
   /** LS-10: the provider-side generation format (the format block under the
-   *  Чат/Текст switch). Null = unset — the active preset's format keeps
+   *  Chat/Text switch). Null = unset — the active preset's format keeps
    *  applying as the fallback source (supervisor decision (c)). */
   generationFormat: ProviderGenerationFormat | null;
 }
@@ -124,7 +128,7 @@ interface ModelOption {
 
 type HeaderMode = "edit" | "view";
 
-export type ProviderCategoryTab = "llm" | "audio" | "stt";
+export type ProviderCategoryTab = "llm" | "audio" | "stt" | "image";
 
 interface ProviderModalProps {
   providerProfiles: ProviderProfileRecord[];
@@ -266,6 +270,7 @@ export function ProviderModal({
   const [activeCategory, setActiveCategory] = useState<ProviderCategoryTab>("llm");
   const tts = useTtsProfiles();
   const stt = useSttProfiles();
+  const imageGen = useImageProfiles();
 
   // ── Header mode: edit vs view ──
   const [isNew, setIsNew] = useState(false);
@@ -344,6 +349,159 @@ export function ProviderModal({
     // Intentionally depend on scalar form fields only: autoSaveField updates form.visionModel,
     // which makes this effect stop after the first selection.
   }, [isOpen, form?.id, form?.visionModel, models]);
+
+  // ── Per-model binding: re-hydrate form for the ACTIVE model ──
+  // Owner ruling 2026-09-27: the editor FOLLOWS the profile's active model
+  // (there is no manual binding dropdown anymore). A favorited model shows
+  // and edits ITS overlay (fetched and merged over the PERSISTED base); a
+  // non-favorite (or binding OFF) shows and edits the base. The base comes
+  // from providerProfiles (always current — autoSaveField persists
+  // identity/sampler on every change when NOT in overlay mode). In overlay
+  // mode, sampler edits route to the overlay via the save routing, so
+  // switching models reads the clean persisted base, not a stale form
+  // snapshot. `followKey` guards the async gap: a faster model switch re-keys
+  // the follow and a stale hydrate aborts instead of overwriting the fresh one.
+  const bindingFollowKeyRef = useRef<string>("");
+  const hydrateForActiveModel = async (modelId: string | null, followKey: string) => {
+    if (!form) return;
+    const baseProfile = providerProfiles.find((p) => p.id === form.id);
+    if (!baseProfile) return;
+    let overlay = null;
+    if (modelId != null) {
+      try {
+        overlay = await getProviderModelSettingsAction(form.id, modelId);
+      } catch {
+        // Network/API error — fall through with null overlay (base passthrough).
+        overlay = null;
+      }
+    }
+    // Manual field-wise merge: overlay value if present, else base profile value.
+    // (Cannot use domain's resolveEffectiveSettings directly — web
+    // ProviderProfileRecord omits apiKey for security, so it isn't structurally
+    // assignable to StoredProviderProfileRecord.)
+    const ov = overlay?.settings ?? null;
+    // A faster model switch may have re-keyed the follow while the overlay
+    // fetch was in flight — a stale hydrate must never overwrite the fresh one.
+    if (bindingFollowKeyRef.current !== followKey) return;
+    const pick = <K extends keyof typeof effectiveFields>(k: K): (typeof effectiveFields)[K] =>
+      (ov && ov[k] != null ? ov[k] : effectiveFields[k]) as (typeof effectiveFields)[K];
+    const effectiveFields = {
+      temperature: baseProfile.temperature,
+      topP: baseProfile.topP,
+      minP: baseProfile.minP,
+      topK: baseProfile.topK,
+      topA: baseProfile.topA,
+      typicalP: baseProfile.typicalP,
+      tfsZ: baseProfile.tfsZ,
+      adaptiveTarget: baseProfile.adaptiveTarget,
+      adaptiveDecay: baseProfile.adaptiveDecay,
+      dynatempRange: baseProfile.dynatempRange,
+      dynatempExponent: baseProfile.dynatempExponent,
+      topNSigma: baseProfile.topNSigma,
+      smoothingFactor: baseProfile.smoothingFactor,
+      repeatLastN: baseProfile.repeatLastN,
+      dryPenaltyLastN: baseProfile.dryPenaltyLastN,
+      mirostat: baseProfile.mirostat,
+      mirostatTau: baseProfile.mirostatTau,
+      mirostatEta: baseProfile.mirostatEta,
+      dryMultiplier: baseProfile.dryMultiplier,
+      dryBase: baseProfile.dryBase,
+      dryAllowedLength: baseProfile.dryAllowedLength,
+      drySequenceBreakers: baseProfile.drySequenceBreakers,
+      xtcThreshold: baseProfile.xtcThreshold,
+      xtcProbability: baseProfile.xtcProbability,
+      frequencyPenalty: baseProfile.frequencyPenalty,
+      presencePenalty: baseProfile.presencePenalty,
+      repetitionPenalty: baseProfile.repetitionPenalty,
+      maxTokens: baseProfile.maxTokens,
+      contextBudget: baseProfile.contextBudget,
+      pinContextBudget: baseProfile.pinContextBudget,
+      stopSequences: baseProfile.stopSequences,
+      bannedStrings: baseProfile.bannedStrings,
+      logitBias: baseProfile.logitBias,
+      seed: baseProfile.seed,
+      reasoningEffort: baseProfile.reasoningEffort,
+      showReasoning: baseProfile.showReasoning,
+      streamResponse: baseProfile.streamResponse,
+      customSamplers: baseProfile.customSamplers,
+    };
+    setForm((f) => {
+      if (!f) return f;
+      const next: FormState = {
+        ...f,
+        editingModelId: modelId,
+        temperature: pick("temperature"),
+        topP: pick("topP"),
+        minP: pick("minP"),
+        topK: pick("topK"),
+        topA: pick("topA"),
+        typicalP: pick("typicalP") ?? 1,
+        tfsZ: pick("tfsZ") ?? 1,
+        adaptiveTarget: pick("adaptiveTarget") ?? -1,
+        adaptiveDecay: pick("adaptiveDecay") ?? 0.9,
+        dynatempRange: pick("dynatempRange") ?? 0,
+        dynatempExponent: pick("dynatempExponent") ?? 1,
+        topNSigma: pick("topNSigma") ?? 0,
+        smoothingFactor: pick("smoothingFactor") ?? 0,
+        repeatLastN: pick("repeatLastN") ?? 0,
+        dryPenaltyLastN: pick("dryPenaltyLastN") ?? -1,
+        mirostat: pick("mirostat") ?? 0,
+        mirostatTau: pick("mirostatTau") ?? 5,
+        mirostatEta: pick("mirostatEta") ?? 0.1,
+        dryMultiplier: pick("dryMultiplier") ?? 0,
+        dryBase: pick("dryBase") ?? 1.75,
+        dryAllowedLength: pick("dryAllowedLength") ?? 2,
+        drySequenceBreakers: pick("drySequenceBreakers") ?? [],
+        xtcThreshold: pick("xtcThreshold") ?? 0.1,
+        xtcProbability: pick("xtcProbability") ?? 0,
+        frequencyPenalty: pick("frequencyPenalty"),
+        presencePenalty: pick("presencePenalty"),
+        repetitionPenalty: pick("repetitionPenalty"),
+        maxTokens: pick("maxTokens"),
+        contextBudget: pick("contextBudget") ?? 16000,
+        pinContextBudget: pick("pinContextBudget") ?? false,
+        // Token padding (LS-1d) is profile-level — never overridden by the
+        // per-model overlay — so it reads straight from the base profile.
+        tokenPadding: baseProfile.tokenPadding,
+        stopSequences: pick("stopSequences"),
+        bannedStrings: pick("bannedStrings") ?? [],
+        logitBias: pick("logitBias") ?? [],
+        seed: pick("seed") ?? null,
+        reasoningEffort: pick("reasoningEffort"),
+        showReasoning: pick("showReasoning"),
+        streamResponse: pick("streamResponse"),
+        customSamplers: pick("customSamplers"),
+        // Per-model set pointer (IG-CF15 twin): the overlay's pointer when the
+        // model carries one, else the base pointer (binding-off fallback).
+        samplerSetId: (ov?.samplerSetId ?? baseProfile.samplerSetId) ?? null,
+      };
+      latestFormRef.current = next;
+      return next;
+    });
+    setDirty(true);
+  };
+
+  // ── Follow-the-active-model (owner ruling 2026-09-27) ──
+  // With binding ON the settings below the toggle always mirror the ACTIVE
+  // model: favorited → its overlay, non-favorite → base. The follow runs on
+  // open, on model switch, and on toggle flips — there is no manual binding
+  // dropdown anymore. The followKey ref keeps one hydrate per (profile,
+  // model, binding) state; unrelated re-renders and the hydrate's own setForm
+  // never re-trigger it.
+  useEffect(() => {
+    if (!form || !form.id) return;
+    const favorites = favoriteModelsByProfile[form.id] ?? [];
+    const activeModel = form.model.trim();
+    const target = form.bindPerModel && activeModel !== "" && favorites.some((f) => f.modelId === activeModel)
+      ? activeModel
+      : null;
+    const followKey = `${form.id}::${form.bindPerModel ? target : "off"}`;
+    if (bindingFollowKeyRef.current === followKey) return;
+    bindingFollowKeyRef.current = followKey;
+    if (target !== form.editingModelId) {
+      void hydrateForActiveModel(target, followKey);
+    }
+  }, [form, favoriteModelsByProfile, hydrateForActiveModel]);
 
   if (!isOpen) return null;
 
@@ -499,131 +657,14 @@ export function ProviderModal({
     if (
       (dirty && activeCategory === "llm") ||
       (tts.dirty && activeCategory === "audio") ||
-      (stt.dirty && activeCategory === "stt")
+      (stt.dirty && activeCategory === "stt") ||
+      (imageGen.dirty && activeCategory === "image")
     ) {
       setCloseTarget(target);
       setConfirmClose(true);
     } else completeClose(target);
   };
   const handleClose = () => requestClose("close");
-
-  // ── Per-model binding: re-hydrate form when the user picks a model to edit ──
-  // Fetch the model's overlay and merge it over the PERSISTED base profile, so
-  // the sampler panel shows that model's effective settings. The base comes from
-  // providerProfiles (always current — autoSaveField persists identity/sampler
-  // on every change when NOT in overlay mode). In overlay mode, sampler edits
-  // route to the overlay via Wave 4's save routing, so switching models reads
-  // the clean persisted base, not a stale form snapshot.
-  const handleSelectBindingModel = async (modelId: string) => {
-    if (!form) return;
-    const baseProfile = providerProfiles.find((p) => p.id === form.id);
-    if (!baseProfile) return;
-    let overlay = null;
-    try {
-      overlay = await getProviderModelSettingsAction(form.id, modelId);
-    } catch {
-      // Network/API error — fall through with null overlay (base passthrough).
-      overlay = null;
-    }
-    // Manual field-wise merge: overlay value if present, else base profile value.
-    // (Cannot use domain's resolveEffectiveSettings directly — web
-    // ProviderProfileRecord omits apiKey for security, so it isn't structurally
-    // assignable to StoredProviderProfileRecord.)
-    const ov = overlay?.settings ?? null;
-    const pick = <K extends keyof typeof effectiveFields>(k: K): (typeof effectiveFields)[K] =>
-      (ov && ov[k] != null ? ov[k] : effectiveFields[k]) as (typeof effectiveFields)[K];
-    const effectiveFields = {
-      temperature: baseProfile.temperature,
-      topP: baseProfile.topP,
-      minP: baseProfile.minP,
-      topK: baseProfile.topK,
-      topA: baseProfile.topA,
-      typicalP: baseProfile.typicalP,
-      tfsZ: baseProfile.tfsZ,
-      adaptiveTarget: baseProfile.adaptiveTarget,
-      adaptiveDecay: baseProfile.adaptiveDecay,
-      dynatempRange: baseProfile.dynatempRange,
-      dynatempExponent: baseProfile.dynatempExponent,
-      topNSigma: baseProfile.topNSigma,
-      smoothingFactor: baseProfile.smoothingFactor,
-      repeatLastN: baseProfile.repeatLastN,
-      dryPenaltyLastN: baseProfile.dryPenaltyLastN,
-      mirostat: baseProfile.mirostat,
-      mirostatTau: baseProfile.mirostatTau,
-      mirostatEta: baseProfile.mirostatEta,
-      dryMultiplier: baseProfile.dryMultiplier,
-      dryBase: baseProfile.dryBase,
-      dryAllowedLength: baseProfile.dryAllowedLength,
-      drySequenceBreakers: baseProfile.drySequenceBreakers,
-      xtcThreshold: baseProfile.xtcThreshold,
-      xtcProbability: baseProfile.xtcProbability,
-      frequencyPenalty: baseProfile.frequencyPenalty,
-      presencePenalty: baseProfile.presencePenalty,
-      repetitionPenalty: baseProfile.repetitionPenalty,
-      maxTokens: baseProfile.maxTokens,
-      contextBudget: baseProfile.contextBudget,
-      pinContextBudget: baseProfile.pinContextBudget,
-      stopSequences: baseProfile.stopSequences,
-      bannedStrings: baseProfile.bannedStrings,
-      logitBias: baseProfile.logitBias,
-      seed: baseProfile.seed,
-      reasoningEffort: baseProfile.reasoningEffort,
-      showReasoning: baseProfile.showReasoning,
-      streamResponse: baseProfile.streamResponse,
-      customSamplers: baseProfile.customSamplers,
-    };
-    setForm((f) => {
-      if (!f) return f;
-      const next: FormState = {
-        ...f,
-        editingModelId: modelId,
-        temperature: pick("temperature"),
-        topP: pick("topP"),
-        minP: pick("minP"),
-        topK: pick("topK"),
-        topA: pick("topA"),
-        typicalP: pick("typicalP") ?? 1,
-        tfsZ: pick("tfsZ") ?? 1,
-        adaptiveTarget: pick("adaptiveTarget") ?? -1,
-        adaptiveDecay: pick("adaptiveDecay") ?? 0.9,
-        dynatempRange: pick("dynatempRange") ?? 0,
-        dynatempExponent: pick("dynatempExponent") ?? 1,
-        topNSigma: pick("topNSigma") ?? 0,
-        smoothingFactor: pick("smoothingFactor") ?? 0,
-        repeatLastN: pick("repeatLastN") ?? 0,
-        dryPenaltyLastN: pick("dryPenaltyLastN") ?? -1,
-        mirostat: pick("mirostat") ?? 0,
-        mirostatTau: pick("mirostatTau") ?? 5,
-        mirostatEta: pick("mirostatEta") ?? 0.1,
-        dryMultiplier: pick("dryMultiplier") ?? 0,
-        dryBase: pick("dryBase") ?? 1.75,
-        dryAllowedLength: pick("dryAllowedLength") ?? 2,
-        drySequenceBreakers: pick("drySequenceBreakers") ?? [],
-        xtcThreshold: pick("xtcThreshold") ?? 0.1,
-        xtcProbability: pick("xtcProbability") ?? 0,
-        frequencyPenalty: pick("frequencyPenalty"),
-        presencePenalty: pick("presencePenalty"),
-        repetitionPenalty: pick("repetitionPenalty"),
-        maxTokens: pick("maxTokens"),
-        contextBudget: pick("contextBudget") ?? 16000,
-        pinContextBudget: pick("pinContextBudget") ?? false,
-        // Token padding (LS-1d) is profile-level — never overridden by the
-        // per-model overlay — so it reads straight from the base profile.
-        tokenPadding: baseProfile.tokenPadding,
-        stopSequences: pick("stopSequences"),
-        bannedStrings: pick("bannedStrings") ?? [],
-        logitBias: pick("logitBias") ?? [],
-        seed: pick("seed") ?? null,
-        reasoningEffort: pick("reasoningEffort"),
-        showReasoning: pick("showReasoning"),
-        streamResponse: pick("streamResponse"),
-        customSamplers: pick("customSamplers"),
-      };
-      latestFormRef.current = next;
-      return next;
-    });
-    setDirty(true);
-  };
 
   // ── Test connection ──
   const handleTestConnection = async () => {
@@ -731,16 +772,21 @@ export function ProviderModal({
               ? stt.form
                 ? stt.form.name || t("stt_profile_new_title")
                 : t("stt_section_title")
-              : form?.name ?? t("provider_settings_title")
+              : activeCategory === "image"
+                ? imageGen.form
+                  ? imageGen.form.name || t("image_gen_profile_new_title")
+                  : t("image_gen_section_title")
+                : form?.name ?? t("provider_settings_title")
         }
         dirty={
-          activeCategory === "audio" ? tts.dirty : activeCategory === "stt" ? stt.dirty : dirty
+          activeCategory === "audio" ? tts.dirty : activeCategory === "stt" ? stt.dirty : activeCategory === "image" ? imageGen.dirty : dirty
         }
         tabs={{
           items: [
             { value: "llm", label: t("providers_category_llm") },
             { value: "audio", label: t("providers_category_audio") },
             { value: "stt", label: t("providers_category_stt") },
+            { value: "image", label: t("providers_category_image") },
           ],
           active: activeCategory,
           onChange: (v) => setActiveCategory(v),
@@ -750,7 +796,9 @@ export function ProviderModal({
         headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
         headerActions={providerModalOrigin === "coauthor" ? <button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => requestClose("return")}>{t("back")}</button> : undefined}
         masterContent={() =>
-          activeCategory === "stt" ? (
+          activeCategory === "image" ? (
+            <ImageGenSection imageGen={imageGen} />
+          ) : activeCategory === "stt" ? (
             <SttSection stt={stt} />
           ) : activeCategory === "audio" ? (
             <TtsSection tts={tts} />
@@ -773,7 +821,15 @@ export function ProviderModal({
           )
         }
         detailContent={
-          activeCategory === "stt" ? (
+          activeCategory === "image" ? (
+            imageGen.form ? (
+              <ImageGenProfileEditor imageGen={imageGen} />
+            ) : (
+              <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">
+                {t("image_gen_section_placeholder")}
+              </div>
+            )
+          ) : activeCategory === "stt" ? (
             stt.form ? (
               <SttProfileEditor stt={stt} />
             ) : (
@@ -890,7 +946,6 @@ export function ProviderModal({
                     form={form}
                     favorites={favoriteModelsByProfile[form.id] ?? []}
                     updateForm={autoSaveField}
-                    onSelectBindingModel={handleSelectBindingModel}
                   />
 
                   <ProviderSamplerPanel form={form} updateForm={lazyAutoSaveField} capabilities={capabilities} />
@@ -902,7 +957,9 @@ export function ProviderModal({
           )
         }
         footer={
-          activeCategory === "stt" ? (
+          activeCategory === "image" ? (
+            <ImageGenFooter imageGen={imageGen} />
+          ) : activeCategory === "stt" ? (
             <SttFooter stt={stt} />
           ) : activeCategory === "audio" ? (
             <TtsAudioFooter tts={tts} />

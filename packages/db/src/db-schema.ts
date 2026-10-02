@@ -13,7 +13,7 @@ import type {
   ScriptKind,
 } from '@vibe-tavern/domain';
 import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
 
 // ─── characters ────────────────────────────────────────────────────────────────
 
@@ -164,7 +164,6 @@ export const chats = sqliteTable('chats', {
   selectedGreetingIndex: integer('selected_greeting_index').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-  loreActivationStateJson: text('lore_activation_state_json').notNull().default('{}'),
   scriptStateJson: text('script_state_json').notNull().default('{}'),
   // Insights (INSIGHTS_PLAN): per-chat opt-in Objective Tracker + Scene Tracker.
   // Both features OFF by default; zero DOM and zero prompt-layer injection when off.
@@ -254,18 +253,27 @@ export const lorebooks = sqliteTable('lorebooks', {
   // Matches SillyTavern's dual Context% / Budget Cap modes. See
   // lorebook-st-parity-audit.md §1.4.
   tokenBudgetPercent: integer('token_budget_percent'),
+  // Absolute ceiling for percent mode (ST's world_info_budget_cap, scoped to
+  // the book). 0 = no cap. Applies only when token_budget_percent is set —
+  // fixed mode is already absolute.
+  tokenBudgetCap: integer('token_budget_cap').notNull().default(0),
   recursiveScanning: integer('recursive_scanning').notNull().default(0),
   // Book-level default for entry.useGroupScoring (ST's global
   // world_info_use_group_scoring switch, scoped to the book). Effective
   // per-entry flag: entry.useGroupScoring ?? book.useGroupScoring.
   // See LOREBOOK_GROUP_SCORING_PARITY_REPORT (LG-2).
   useGroupScoring: integer('use_group_scoring').notNull().default(0),
-  maxRecursionSteps: integer('max_recursion_steps').notNull().default(5),
-  includeNames: integer('include_names').notNull().default(0),
+  // Book-level defaults for entry.caseSensitive / entry.matchWholeWords when
+  // the entry is set to Inherit (ST resolves per-entry null against its
+  // global world-info settings; VT scopes that default to the book).
+  caseSensitive: integer('case_sensitive').notNull().default(0),
+  matchWholeWords: integer('match_whole_words').notNull().default(0),
+  maxRecursionSteps: integer('max_recursion_steps').notNull().default(0),
+  includeNames: integer('include_names').notNull().default(1),
   minActivations: integer('min_activations').notNull().default(0),
   minActivationsDepthMax: integer('min_activations_depth_max').notNull().default(0),
   overflowAlert: integer('overflow_alert').notNull().default(0),
-  characterStrategy: integer('character_strategy').notNull().default(0),
+  characterStrategy: integer('character_strategy').notNull().default(1),
   sortOrder: integer('sort_order').notNull().default(0),
   characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
   personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
@@ -298,7 +306,9 @@ export const loreEntries = sqliteTable('lore_entries', {
   priority: integer('priority').notNull().default(100),
   stickyWindow: integer('sticky_window').notNull().default(0),
   cooldownWindow: integer('cooldown_window').notNull().default(0),
-  delayWindow: integer('delay_window').notNull().default(0),
+  // Absolute chat-length gate (ST `delay`); replaces the removed VT-only
+  // delay_window column (LOREBOOK_ST_PARITY_RESWEEP_2026-09, step 1).
+  minChatMessages: integer('min_chat_messages').notNull().default(0),
   constant: integer('constant').notNull().default(0),
   probability: integer('probability').notNull().default(100),
   ignoreBudget: integer('ignore_budget').notNull().default(0),
@@ -315,12 +325,14 @@ export const loreEntries = sqliteTable('lore_entries', {
   delayUntilRecursion: integer('delay_until_recursion').notNull().default(0),
   recursionLevel: integer('recursion_level').notNull().default(0),
   scanDepthOverride: integer('scan_depth_override'),
-  caseSensitive: integer('case_sensitive').notNull().default(0),
-  matchWholeWords: integer('match_whole_words').notNull().default(0),
+  // Tri-state (ST parity): null = inherit the book-level caseSensitive /
+  // matchWholeWords default, true/false = explicit per-entry override.
+  caseSensitive: integer('case_sensitive'),
+  matchWholeWords: integer('match_whole_words'),
   characterFilterJson: text('character_filter_json').notNull().default('[]'),
   characterFilterExclude: integer('character_filter_exclude').notNull().default(0),
   triggersJson: text('triggers_json').notNull().default('[]'),
-  matchSourcesJson: text('match_sources_json').notNull().default('[]'),
+  matchSourcesJson: text('match_sources_json').notNull().default('["chat_messages"]'),
   enabled: integer('enabled').notNull().default(1),
   sortOrder: integer('sort_order').notNull().default(0),
   automationId: text('automation_id').notNull().default(''),
@@ -661,6 +673,7 @@ export const chatBranches = sqliteTable('chat_branches', {
   parentBranchId: text('parent_branch_id'),
   forkedFromMessageId: text('forked_from_message_id'),
   label: text('label').notNull(),
+  loreActivationStateJson: text('lore_activation_state_json').notNull().default('{}'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   chatIdIdx: index('idx_chat_branches_chat_id').on(table.chatId),
@@ -706,6 +719,60 @@ export const chatSummaries = sqliteTable('chat_summaries', {
   chatBranchIdx: index('idx_chat_summaries_chat_branch').on(table.chatId, table.branchId),
 }));
 
+// The two Fly Tribunal tables below stay in the schema on this branch even
+// though the feature itself lives on `feat/fly-tribunal` (owner 2026-09-29):
+// migrations 0086/0087 are committed and never edited, and dropping the
+// definitions would make the next `db:generate` emit a DROP migration. No
+// store reads or writes them here.
+
+// ─── flyTribunalSettings ───────────────────────────────────────────────────────
+//
+// One typed, feature-owned settings row for Fly Tribunal (FLY_TRIBUNAL_PLAN
+// FT-4). This deliberately is NOT a JSON dumping-ground column on the shared
+// `ui_settings` row: the tribunal owns its own stable wire fields and defaults.
+// FlyTribunalSettingsStore selects first before replacing, so this table stays a
+// singleton (the store owns that invariant).
+export const flyTribunalSettings = sqliteTable('fly_tribunal_settings', {
+  id: text('id').primaryKey(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+  reactionTier: text('reaction_tier').notNull().default('indication'),
+  regenCap: integer('regen_cap').notNull().default(2),
+  sensitivity: text('sensitivity').notNull().default('normal'),
+  autoSwipeConfidence: text('auto_swipe_confidence').notNull().default('high'),
+  trainingEnabled: integer('training_enabled', { mode: 'boolean' }).notNull().default(true),
+  trainingSpeed: text('training_speed').notNull().default('normal'),
+  /** Null = infinity (no precedent decay). */
+  precedentLifetimeDays: integer('precedent_lifetime_days'),
+  /** JSON array of `{detected}`-bearing user-editable hint templates. */
+  hintsJson: text('hints_json').notNull().default('[]'),
+  memoryScope: text('memory_scope').notNull().default('chat'),
+  updatedAt: text('updated_at').notNull(),
+});
+
+// ─── flyTribunalMemory ─────────────────────────────────────────────────────────
+//
+// Slow associative learning state for Fly Tribunal (FLY_TRIBUNAL_PLAN FT-3).
+// `chat_id` null means the one global memory; a non-null chat id means that
+// chat's isolated memory and cascades away with the chat. SQLite permits
+// multiple NULLs in a unique index, so the FlyTribunalStore select-first
+// global-write path owns the one-global-row invariant.
+export const flyTribunalMemory = sqliteTable('fly_tribunal_memory', {
+  id: text('id').primaryKey(),
+  chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  /** Gzipped sparse weight deltas, decoded from/encoded to the base64 API wire value. */
+  weights: blob('weights', { mode: 'buffer' }),
+  precedentCount: integer('precedent_count').notNull().default(0),
+  /** Version of the sparse-delta encoding, not the connectome format version. */
+  schemaVersion: integer('schema_version').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  chatIdUnique: uniqueIndex('idx_fly_tribunal_memory_chat_id').on(table.chatId),
+  precedentCountNonnegative: check(
+    'fly_tribunal_memory_precedent_count_nonnegative',
+    sql`${table.precedentCount} >= 0`,
+  ),
+}));
+
 // ─── messageVariants ───────────────────────────────────────────────────────────
 
 export const messageVariants = sqliteTable('message_variants', {
@@ -746,6 +813,13 @@ export const messageVariants = sqliteTable('message_variants', {
   // authored side-data on edit proved awful UX). Owned by the immutable
   // variant id, same as scene_tracker_json.
   ttsAnnotation: text('tts_annotation'),
+  // IG-18a (IMAGE_GENERATION_PLAN): image-gen slot variants carry their
+  // image attachments HERE (the message row keeps the FIRST generation's
+  // attachments for legacy slots; the DTO layer merges — selected variant's
+  // attachments override the message's). Null = this variant carries none
+  // (every text variant; slots created before IG-18a). Raw JSON column,
+  // parsed with the messages table's parseStoredAttachments discipline.
+  attachmentsJson: text('attachments_json'),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
   uniqueVariant: uniqueIndex('idx_message_variants_unique').on(table.messageId, table.variantIndex),
@@ -1077,6 +1151,9 @@ export const promptTraces = sqliteTable('prompt_traces', {
   activatedLoreEntriesJson: text('activated_lore_entries_json').notNull().default('[]'),
   /** Per-entry activation reasons (JSON ActivatedLoreDetail[]). Nullable for traces saved before this column existed. */
   activatedLoreDetailJson: text('activated_lore_detail_json'),
+  /** P21: books whose budget overflowed (JSON OverflowedLorebook[]). Default
+   *  '[]' — absent on previews and traces saved before the column existed. */
+  overflowedLorebooksJson: text('overflowed_lorebooks_json').notNull().default('[]'),
   retrievedMemoriesJson: text('retrieved_memories_json').notNull().default('[]'),
   scriptInjectionsJson: text('script_injections_json').notNull().default('[]'),
   prefill: text('prefill'),
@@ -1129,6 +1206,8 @@ export const uiSettings = sqliteTable('ui_settings', {
   activePromptPresetId: text('active_prompt_preset_id').references(() => promptPresets.id, { onDelete: 'set null' }),
   aiAssistantProviderId: text('ai_assistant_provider_id'),
   aiAssistantModelName: text('ai_assistant_model_name'),
+  // Whether chat impersonation improves a non-empty composer draft.
+  chatImpersonateEnhanceDraft: integer('chat_impersonate_enhance_draft', { mode: 'boolean' }).notNull().default(false),
   // Secondary-model bindings per CONTEXT (SUM-5): summary generation and the
   // message AI editor stop sharing the ai-assistant pair — each context owns
   // its slot so picking a model in one place never leaks into another.
@@ -1167,11 +1246,33 @@ export const uiSettings = sqliteTable('ui_settings', {
   // → Default profile (id "default") is used. No DB-level FK — mirrors
   // coauthor/copilot bindings.
   activeServicePromptProfileId: text('active_service_prompt_profile_id'),
+  // Image prompt profiles (IF-1a) — same pointer semantics as the service
+  // prompt profile pointer above, for the separately-living image prompt
+  // profile collection. Null/dangling → Default (id "default").
+  activeImagePromptProfileId: text('active_image_prompt_profile_id'),
+  // One-time marker (IF-1a): the global-variant → image-profile migration
+  // has completed (existing image_prompt_variants rows were snapshotted into
+  // an "Imported" profile and it was made active — nothing is lost). False on
+  // fresh and pre-IF-1a installs; written once by the startup hook, never reset.
+  imagePromptVariantsMigrated: integer('image_prompt_variants_migrated', { mode: 'boolean' }).notNull().default(false),
   // One-time marker (SP-7): the preset→profile service-prompt migration has
   // completed. False on fresh installs (migration runs, finds nothing, flips
   // to true) and on pre-SP-7 upgrades (migration snapshots preset overrides
   // into named profiles). Written once by the startup hook, never reset.
   servicePromptPresetMigrated: integer('service_prompt_preset_migrated', { mode: 'boolean' }).notNull().default(false),
+  /** One-time stock sampler-set seed marker (IF-7b): flips when the four
+   *  built-in preset rows were created — deletes AFTER that stick (the
+   *  seed never resurrects rows; the preset-to-profile marker
+   *  convention). */
+  stockImageGenSamplerSetsSeeded: integer('stock_image_gen_sampler_sets_seeded', { mode: 'boolean' }).notNull().default(false),
+  /** One-time fleet workflow sampler-set seed marker (IF-12a): separate
+   * from IF-7b so upgrades receive these six rows once while later deletes
+   * still stick. */
+  stockImageGenFleetSamplerSetsSeeded: integer('stock_image_gen_fleet_sampler_sets_seeded', { mode: 'boolean' }).notNull().default(false),
+  /** One-time backfill marker (IF-19b): the Krea 2 / Anima stock rows
+   * seeded before they carried a base workflow receive their
+   * `workflowFamily` once; a later user edit of that field sticks. */
+  stockImageGenSetWorkflowFamiliesBackfilled: integer('stock_image_gen_set_workflow_families_backfilled', { mode: 'boolean' }).notNull().default(false),
   // STT scenario pointers (STT_PLAN ST-1): the profile used by dictation
   // (mic → transcript) and by voice-message transcription respectively; may
   // point at the same profile. Null → the isDefault fallback profile / no
@@ -1704,4 +1805,220 @@ export const builtinExperienceDismissals = sqliteTable('builtin_experience_dismi
   builtinId: text('builtin_id').primaryKey(),
   visualStableKey: text('visual_stable_key').notNull(),
   dismissedAt: text('dismissed_at').notNull(),
+});
+
+// ─── imageGenProfiles (IMAGE_GENERATION_PLAN IG-2) ─────────────────────
+//
+// Named image-generation profiles (design IMAGE_GENERATION_DESIGN) — the
+// Providers-modal "image" category. Standalone entity, same rule as
+// ttsProfiles/sttProfiles (NOT providerProfiles). Columns map 1:1 onto the
+// `ImageGenProfile` domain interface: `backend` is the IMAGE_GEN_BACKENDS
+// protocol slug (selects the server adapter; the frontend preset table maps
+// its presets onto these slugs), `preset_id` is the UI-side preset slug kept
+// for form round-tripping (nullable — Custom has none).
+//
+// IG-1 key rule (ST-1 applied): the API key lives in the typed `api_key`
+// column — never inside JSON blobs; writes strip defensively, the wire layer
+// reports `hasStoredApiKey`. The three JSON columns carry NO secret:
+// default_params_json (ImageGenDefaultParams — all fields optional, the
+// hardcoded-parameters ban means no code ships values), mode_size_presets_json
+// (per-mode width/height), capabilities_json (adapter capability snapshot).
+//
+// No `is_default` pointer: unlike TTS/STT there is no generation-pipeline
+// fallback here — the "active" image-gen profile is a chat-level consumer
+// concern (fine-tuning chip / generation flow), not a store invariant.
+export const imageGenProfiles = sqliteTable('image_gen_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  backend: text('backend').notNull(),  // IMAGE_GEN_BACKENDS slug
+  presetId: text('preset_id'),
+  endpoint: text('endpoint').notNull(),
+  apiKey: text('api_key'),
+  modelId: text('model_id'),
+  defaultParamsJson: text('default_params_json').notNull().default('{}'),
+  // IF-7a: the sampler set the base defaultParams were last applied from
+  // (the image_gen_model_settings.sampler_set_id twin at profile level —
+  // provenance for the always-visible sets row while unbound).
+  defaultParamsSetId: text('default_params_set_id'),
+  modeSizePresetsJson: text('mode_size_presets_json').notNull().default('{}'),
+  userSizesJson: text('user_sizes_json'),
+  llmAssistEnabled: integer('llm_assist_enabled', { mode: 'boolean' }).notNull().default(false),
+  llmProviderProfileId: text('llm_provider_profile_id'),
+  llmModelId: text('llm_model_id'),
+  // IPT-2 (IMAGE_PROMPT_TEMPLATES_PLAN): the profile's prompt-family
+  // state. family_override = the manual pin (authoritative when set);
+  // family_detected + family_detected_for_model = the last auto-detection
+  // and the model it ran against (a current-model mismatch marks it stale
+  // — freshness is judged by the consumer, never the row itself). The
+  // derived read-model field familySource is NOT a column: it is computed
+  // at read (override → manual, detected → auto, neither → none) so it
+  // cannot drift from the columns it summarizes.
+  familyOverride: text('family_override'),
+  familyDetected: text('family_detected'),
+  familyDetectedForModel: text('family_detected_for_model'),
+  // IPT-2: the quality layer joins the prompt ONLY when explicitly on.
+  qualityLayerEnabled: integer('quality_layer_enabled', { mode: 'boolean' }).notNull().default(false),
+  capabilitiesJson: text('capabilities_json').notNull().default('{}'),
+  // MR-12: the GLOBAL active-profile pointer (the tts/stt `isDefault`
+  // twin; at most one row, store-maintained via `setDefault`).
+  isDefault: integer('is_default').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  defaultIdx: index('idx_image_gen_profiles_default').on(table.isDefault),
+  backendIdx: index('idx_image_gen_profiles_backend').on(table.backend),
+}));
+
+// ─── imageGenLinks ────────────────────────────────────────────────────
+//
+// Character-scoped image-gen profile binding (design: a profile may be global
+// or tailored to specific characters) — junction instance of the TTS
+// voice-map pattern (composite PK per profile+target pair, FK cascade on
+// profile delete). No `mode` column: unlike the voice map there is no
+// disable-per-target semantics in the image-gen design.
+export const imageGenLinks = sqliteTable('image_gen_links', {
+  imageGenProfileId: text('image_gen_profile_id').notNull().references(() => imageGenProfiles.id, { onDelete: 'cascade' }),
+  targetType: text('target_type').notNull(),  // IMAGE_GEN_TARGET_TYPE slug
+  targetId: text('target_id').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.imageGenProfileId, table.targetType, table.targetId] }),
+  targetIdx: index('idx_image_gen_links_target').on(table.targetType, table.targetId),
+  profileIdx: index('idx_image_gen_links_profile').on(table.imageGenProfileId),
+}));
+
+// ─── imageGenModelFavorites (IMAGE_GENERATION_PLAN IG-12b) ────────────────
+//
+// Starred image models per profile — the LLM provider_model_favorites
+// mechanic cloned for image profiles (design: "the image analog composes
+// both"). Deviations from the provider twin are named in the domain type
+// doc: no `scope` (single consumption surface), no `context_length` (no
+// context concept); `label` keeps the catalog display-name enrichment.
+export const imageGenModelFavorites = sqliteTable('image_gen_model_favorites', {
+  id: text('id').primaryKey(),
+  imageGenProfileId: text('image_gen_profile_id').notNull().references(() => imageGenProfiles.id, { onDelete: 'cascade' }),
+  modelId: text('model_id').notNull(),
+  label: text('label'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({
+  profileModelUnique: uniqueIndex('idx_image_gen_model_favorites_unique').on(table.imageGenProfileId, table.modelId),
+}));
+
+// ─── imageGenModelSettings ────────────────────────────────────────────────────
+// Per-model image-field overlay (IG-12b, the LLM provider_model_settings
+// mechanic): applied when the profile's selected model matches `modelId`,
+// merged over the profile base. Absent fields in the JSON = inherit the
+// profile base. Rows survive un-starring a model (favorites are bookmarks;
+// overlays are config — the provider-twin comment verbatim).
+export const imageGenModelSettings = sqliteTable('image_gen_model_settings', {
+  id: text('id').primaryKey(),
+  imageGenProfileId: text('image_gen_profile_id').notNull().references(() => imageGenProfiles.id, { onDelete: 'cascade' }),
+  modelId: text('model_id').notNull(),
+  /** Stringified ImageGenModelSettingsOverlay JSON. */
+  settingsJson: text('settings_json').notNull(),
+  /** The applied image-gen sampler set's id (IG-CF15, the LLM
+   *  provider_profiles.sampler_set_id twin): provenance for the pane's set
+   *  row, not a live link (copy-on-select — see ImageGenSamplerSetStore).
+   *  Deliberately FK-less, same as the LLM column: drizzle-kit emits no ON
+   *  DELETE on ALTER ADD COLUMN, and runtime FK enforcement would make set
+   *  deletion throw instead of clearing; the clearing is app-level
+   *  (ImageGenStore.clearSamplerSetReferences, LS-5e twin). */
+  samplerSetId: text('sampler_set_id'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  profileModelUnique: uniqueIndex('idx_image_gen_model_settings_unique').on(table.imageGenProfileId, table.modelId),
+}));
+
+// ─── imageGenSamplerSets ──────────────────────────────────────────────────────
+// Named image-gen sampler sets (IG-CF15, the sampler_sets LS-5a twin): a
+// global library of inert sampler value bundles the image-gen per-model
+// layer applies copy-on-select. Payload = the five scalar generation params
+// (ImageGenSamplerSetPayload — no modeSizePresets: sizes are the model
+// layer's own surface, IG-CF14). Same named-library precedent as
+// sampler_sets: no links, no enabled flag.
+export const imageGenSamplerSets = sqliteTable('image_gen_sampler_sets', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  /** Stringified ImageGenSamplerSetPayload JSON. */
+  payloadJson: text('payload_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+// IF-10: learned provider prompt caps. Providers (nanogpt observed) enforce
+// per-model character limits on the image prompt that NO listing surface
+// exposes — the cap is discoverable only from a `prompt_too_long` rejection
+// (the message names the number). The learned row is advisory (never a
+// send-block) and self-healing: a later SUCCESS with a longer composed
+// prompt deletes the row (the provider raised the limit), a new rejection
+// re-teaches it with the fresh number.
+export const imageGenPromptCaps = sqliteTable('image_gen_prompt_caps', {
+  backend: text('backend').notNull(),
+  modelId: text('model_id').notNull(),
+  maxPromptChars: integer('max_prompt_chars').notNull(),
+  learnedAt: text('learned_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.backend, table.modelId] }),
+}));
+
+// IF-20: last-good listing snapshots. Every successful live listing (the
+// model catalog, the ComfyUI DiT sidecar folders) overwrites its row; the
+// adapter serves the row — flagged stale — only when the live fetch fails,
+// so a restarting server no longer empties the pickers. `kind` is an
+// IMAGE_GEN_LISTING_SNAPSHOT_KINDS value; `payloadJson` is the listing as
+// the live route returned it. Rows cascade with the profile and are cleared
+// when its endpoint/backend changes (another server's files).
+export const imageGenListingSnapshots = sqliteTable('image_gen_listing_snapshots', {
+  imageGenProfileId: text('image_gen_profile_id').notNull().references(() => imageGenProfiles.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  fetchedAt: text('fetched_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.imageGenProfileId, table.kind] }),
+}));
+
+// ─── imagePromptVariants ─────────────────────────────────────────────────────
+// User-customized image prompt variants (IPT Wave 1 — IMAGE_PROMPT_TEMPLATES
+// plan): OVERRIDES-ONLY storage. One row per (rowKey, family) the user has
+// actually customized — the canon text lives in the authored assets
+// (services/api/assets/image-*), and ABSENCE of a row means "use canon"
+// (reset deletes the row; there is no tombstone). No profile machinery:
+// the family pin/detection columns live on the image-gen profile (Wave 2),
+// not here. `rowKey` is a generation-mode slug, or the literal "negative"
+// for the shared negative row; `family` is a domain IMAGE_PROMPT_FAMILIES id.
+export const imagePromptVariants = sqliteTable('image_prompt_variants', {
+  id: text('id').primaryKey(),
+  rowKey: text('row_key').notNull(),
+  family: text('family').notNull(),
+  /** The user's own template/body text (upsert replaces it in full). */
+  body: text('body').notNull(),
+  /** The user's own quality-layer text when customized; null = canon. */
+  qualityText: text('quality_text'),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  rowKeyFamilyUnique: uniqueIndex('idx_image_prompt_variants_unique').on(table.rowKey, table.family),
+}));
+
+// ─── imagePromptProfiles ─────────────────────────────────────────────────────
+//
+// Independently living image prompt profiles (IF-1a — the IPT-1 rework of
+// IMAGEGEN_FOLLOWUP_REPORT): a deliberate FORK of the service-prompt profile
+// machinery (same columns, same store semantics — default row id "default"
+// self-healed by ImagePromptProfileStore.ensureDefault(), read-only default,
+// sortOrder for drag-reorder), kept as a SEPARATE collection from
+// service_prompt_profiles and LLM presets (owner ruling 2026-09: kept as
+// separate collections — see reports/IMAGEGEN_FOLLOWUP_REPORT.md).
+// Overrides persist as JSON keyed by cell: "<rowKey>|<family>" →
+// { body, qualityText? } (rowKey = generation-mode slug | "negative").
+// Canon text still lives in authored assets; an absent cell = canon.
+export const imagePromptProfiles = sqliteTable('image_prompt_profiles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  isDefault: integer('is_default').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
+  overrides: text('overrides').notNull().default('{}'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
 });

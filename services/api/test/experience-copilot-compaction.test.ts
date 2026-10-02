@@ -360,11 +360,11 @@ describe("ExperienceCopilotCompactionService — manual compact (CM-5)", () => {
     expect((error as Error).message).toBe("upstream 502");
   });
 
-  it("a loopback endpoint without a saved API key passes the key check (local gateway injects credentials)", async () => {
-    // Regression: a self-hosted gateway profile (e.g. http://127.0.0.1:8090/v1,
-    // openaiCompat preset, empty apiKey) was rejected with "Selected provider
-    // has no saved API key" even though generation through it works fine — the
-    // gateway adds auth itself. Only non-loopback endpoints require a key.
+  it("a keyless provider profile compacts — no VT-side key preflight (owner ruling: internal features never gate provider profiles)", async () => {
+    // A gateway profile (openaiCompat preset, empty apiKey, non-loopback
+    // endpoint included) runs compaction without rejection — the endpoint
+    // answers for itself if it actually wants credentials. The pre-gate and
+    // its loopback exemption were removed 2026-09-27.
     const profiles = makeProviderProfiles();
     const profile = {
       id: "prov_local",

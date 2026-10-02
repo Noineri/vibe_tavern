@@ -1,10 +1,13 @@
+import { statSync } from "node:fs";
+import { resolve, sep } from "node:path";
+
 /**
  * Conditional requests for the static responses this process builds itself.
  *
- * Bun's `{dir}` routes attach an `ETag`/`Last-Modified` to files on disk and
- * answer `If-None-Match` with a 304. The two static paths that have no file on
- * disk to validate — the frontend baked into the single-file binary, and the
- * index.html read into memory at startup — have to do it here. Without it no
+ * Every static source is tagged here: the built asset directories on disk
+ * (validated by size + mtime — `serveAssetFile`), and the two sources with no
+ * file on disk to validate — the frontend baked into the single-file binary,
+ * and index.html (hashed over their bytes — `weakEtag`). Without it no
  * conditional request can ever succeed: measured on the built bundle, a page
  * load pulls 10.0 MB over 5 requests, all of it again on every reload.
  *
@@ -53,5 +56,42 @@ export function withStaticValidator(
 	const response = build();
 	response.headers.set("ETag", etag);
 	response.headers.set("Cache-Control", STATIC_CACHE_CONTROL);
+	return response;
+}
+
+/** A file's validator from its metadata: hashing a 10 MB chunk on every
+ *  request would cost more than the bytes it saves. Size + mtime changes on
+ *  every rewrite, including a stable-named file rebuilt in place. */
+function fileEtag(size: number, mtimeMs: number): string {
+	return `W/"${size.toString(16)}-${Math.trunc(mtimeMs).toString(16)}"`;
+}
+
+/**
+ * Serve `<dir>/<rest of the path after prefix>` with a validator, resolving
+ * the file on EVERY request. A Bun `{dir}` route did this natively but holds
+ * the directory it opened at startup: the web build deletes and recreates
+ * out/apps/web, so after a rebuild every asset 404ed until a restart while
+ * index.html (read per request) already named the new chunks. Range requests
+ * stay Bun's — a `Bun.file` body answers them with a 206 itself.
+ */
+export function serveAssetFile(dir: string, prefix: string, request: Request): Response {
+	const notFound = (): Response => new Response("Not Found", { status: 404 });
+	const pathname = new URL(request.url).pathname;
+	if (!pathname.startsWith(`${prefix}/`)) return notFound();
+	let relative: string;
+	try {
+		relative = decodeURIComponent(pathname.slice(prefix.length + 1));
+	} catch {
+		return notFound(); // malformed percent-encoding names no file
+	}
+	const root = resolve(dir);
+	const filePath = resolve(root, relative);
+	if (!filePath.startsWith(root + sep)) return notFound();
+	const stats = statSync(filePath, { throwIfNoEntry: false });
+	if (!stats?.isFile()) return notFound();
+	const response = withStaticValidator(request, fileEtag(stats.size, stats.mtimeMs), () =>
+		new Response(Bun.file(filePath)),
+	);
+	response.headers.set("Last-Modified", stats.mtime.toUTCString());
 	return response;
 }

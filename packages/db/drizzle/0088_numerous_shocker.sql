@@ -1,0 +1,1 @@
+ALTER TABLE `ui_settings` ADD `stock_image_gen_set_workflow_families_backfilled` integer DEFAULT false NOT NULL;

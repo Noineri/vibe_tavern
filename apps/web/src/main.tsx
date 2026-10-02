@@ -10,43 +10,32 @@ import { ThemeTuner } from "./components/dev/ThemeTuner.js";
 import { VibeMdThemePreview } from "./components/build/editors/VibeMdThemePreview.js";
 import { ExperienceDetachedHost, isDetachedExperienceWindow } from "./components/experience/ExperienceDetachedWindow.js";
 import { clearMobileToken, extractTokenFromHash, saveMobileToken } from "./lib/mobile-token.js";
+import { initNavigationPersistence } from "./stores/navigation-persistence.js";
 // D5 (v1.2.1): last-resort boundary — a render throw anywhere in the app must
 // show the crash screen, never unmount the tree into a blank page.
 import { RootErrorBoundary } from "./components/shared/RootErrorBoundary.js";
-import { useSessionStore } from "./stores/session-store.js";
 import "./styles.css";
 
 // Extract the mobile token from the URL hash BEFORE React mounts. Child
 // components (AppShell → providers/personas fetches) fire useEffects before
 // the parent App's useEffect, so saving the token inside useVibeTavernApp's
-// load() is too late — those early calls go out without a token and 401,
-// which the wrapper below turns into a false "session revoked".
+// load() is too late — those early calls go out without a token and 401.
 if (typeof window !== "undefined") {
   const hashToken = extractTokenFromHash();
   if (hashToken) saveMobileToken(hashToken);
 }
 
-// Wrap global fetch so a 401 on /api/* from a non-trusted client surfaces a
-// "session revoked" screen instead of a silent mid-session failure. Cleared
-// token + flagged state survive a reload so the mobile lands on the
-// access-required screen rather than retrying with a dead token.
-const originalFetch = globalThis.fetch;
-globalThis.fetch = new Proxy(originalFetch, {
-  async apply(target, thisArg, args) {
-    const response = await Reflect.apply(target, thisArg, args) as Response;
-    if (response.status === 401) {
-      const [input] = args as [RequestInfo | URL, RequestInit?];
-      const url = typeof input === "string" ? input
-        : input instanceof URL ? input.href
-        : input.url;
-      if (url.includes("/api/")) {
-        clearMobileToken();
-        useSessionStore.getState().markRevoked();
-      }
-    }
-    return response;
-  },
-});
+// F5 restore (BUILD_MODE_F5_RESTORE_REPORT A): persist play/build mode +
+// build tab to sessionStorage on every change; restored after the initial
+// bootstrap in useVibeTavernApp.load().
+initNavigationPersistence();
+
+// NOTE (2026-09-29 mobile outage): there is deliberately NO global fetch
+// patching here anymore. Mobile auth (Bearer injection) and the 401
+// "session revoked" watch both live in ONE seam — apiFetch in api/client.ts —
+// and every same-origin /api call must go through it; scripts/check-bare-api-fetch.ts
+// blocks a bare `fetch("/api/…")` from ever landing again (that bug class
+// bricked LAN/mobile clients while desktop loopback stayed green).
 
 function detectLocale(): Locale {
   // 1. Explicit user choice (saved in TweaksPanel) takes priority

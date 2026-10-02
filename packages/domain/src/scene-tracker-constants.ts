@@ -39,7 +39,7 @@ export const SCENE_TRACKER_LIMITS = {
   maxArrayItems: 64,
   /** Maximum length of a generated string leaf. */
   maxStringLength: 4000,
-  /** Maximum length of a node `label` (renderer-only display name, e.g. «Здоровье»). */
+  /** Maximum length of a node `label` (renderer-only display name, e.g. "Health"). */
   maxLabelLength: 60,
 } as const;
 
@@ -280,7 +280,7 @@ function sampleSceneNode(node: SceneTrackerSchemaNode, depth: number): unknown {
  * affect data identity: the schema hash is computed over this projection (so
  * adding / changing / removing a label never invalidates existing records), and
  * the generation-prompt schema description is built from it (the model sees
- * stable machine keys like `health`, never the human «Здоровье»). A no-op when
+ * stable machine keys like `health`, never the human "Health"). A no-op when
  * no labels are present, so label-less schemas hash and validate identically.
  */
 export function stripLabels(dsl: SceneTrackerDsl): SceneTrackerDsl {

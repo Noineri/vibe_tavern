@@ -1,5 +1,4 @@
 import { mkdir } from "node:fs/promises";
-import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Hono } from "hono";
 import { EventBus } from "@vibe-tavern/domain";
@@ -46,6 +45,9 @@ import { ExperienceTimerScheduler } from "../domain/interactive/experience-timer
 import { generateStructuredActionChoice } from "../domain/interactive/experience-model-effect-structured.js";
 import { seedBuiltinExperiences } from "../domain/interactive/builtin-experiences/seed-service.js";
 import { migratePresetServicePrompts } from "../domain/service-prompts/preset-to-profile-migration.js";
+import { scheduleAvatarThumbnailBackfill } from "../domain/asset/avatar-thumbnail-backfill.js";
+import { ensureStockImageGenSamplerSets } from "../domain/imagegen/stock-sampler-set-seed.js";
+import { migrateGlobalImagePromptVariants } from "../domain/imagegen/global-variant-to-profile-migration.js";
 import type { RandomSource } from "@vibe-tavern/domain";
 import { resolveBuiltinSkillsRoot, resolveUserSkillsRoot } from "../domain/coauthor/skills/skill-scanner.js";
 import { configureLogDir } from "../shared/send-debug-log.js";
@@ -54,6 +56,7 @@ import { addRuntimeTeardown, runRuntimeTeardowns, setRuntimeShutdownHook } from 
 import { createLoadingHandler } from "./loading-placeholder.js";
 import { closeAllSocksBridges } from "../domain/providers/socks-bridge.js";
 import { serveErrorResponse } from "./serve-error.js";
+import { serveAssetFile } from "./static-conditional.js";
 
 export { apiNotReadyResponse } from "./loading-placeholder.js";
 export { serveErrorResponse } from "./serve-error.js";
@@ -141,6 +144,21 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 		if (spMigration.skippedInvalidJson.length > 0) {
 			console.warn(`${tag} Service-prompt migration: skipped invalid aiAssistantPrompts JSON in: [${spMigration.skippedInvalidJson.join(", ")}].`);
 		}
+	}
+
+	// IF-1a: one-time snapshot of the global image-prompt variant rows into an
+	// "Imported" image prompt profile, made active (non-destructive; the old
+	// table is untouched). Marker-guarded — a single settings read afterwards.
+	const igMigration = await migrateGlobalImagePromptVariants(stores);
+	if (igMigration.ran && igMigration.createdProfileId) {
+		console.log(`${tag} Image-prompt migration: ${igMigration.cellCount} cell(s) carried into profile "Imported" (now active).`);
+	}
+
+	// IF-7b: one-time stock sampler-set seed — four built-in preset rows as
+	// ordinary editable rows. Marker-guarded; deletes after the seed stick.
+	const stockSets = await ensureStockImageGenSamplerSets(stores);
+	if (stockSets.created) {
+		console.log(`${tag} Stock sampler sets: ${stockSets.present} built-in preset row(s) seeded.`);
 	}
 
 	// Built-in experiences (BE-4): ensure app-owned interactive experiences
@@ -313,7 +331,14 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	});
 
 	addRuntimeTeardown(() => quotaService.stop());
-	await quotaService.start();
+	// Test instances (scripts/test-instance.ts) boot on a snapshot of the owner's
+	// provider profiles; polling would hit real vendor quota endpoints with them.
+	// A never-started service schedules nothing and ignores profile events.
+	if (process.env.VIBE_TAVERN_QUOTA_POLLING === "0") {
+		console.log(`${tag} Quota polling disabled (VIBE_TAVERN_QUOTA_POLLING=0).`);
+	} else {
+		await quotaService.start();
+	}
 
 	// Durable-effect reconciliation + the host timer loop. `reconcileUnknownEffects`
 	// folds `running` rows left by the previous process (crash or shutdown — the
@@ -326,6 +351,13 @@ export async function createRuntimeApp(config: RuntimeAppConfig): Promise<Hono> 
 	experienceTimerScheduler.start();
 
 	console.log(`${tag} Application ready.`);
+
+	// LB-1C: normalize pre-existing avatar thumbnails in the background. Unlike
+	// the awaited one-time migrations above, this is deliberately fire-and-
+	// forget — the pass is idempotent (a second startup is a no-op) and must
+	// never delay server readiness; per-entity failures are logged, not fatal.
+	scheduleAvatarThumbnailBackfill(stores, assetService);
+
 	return app;
 }
 
@@ -351,35 +383,36 @@ export function resolveFrontendSource(config: {
 }
 
 /**
- * Bun `{dir}` routes for the built frontend's asset directories.
+ * Bun routes for the built frontend's asset directories.
  *
  * These run before `fetch`, so /assets/* and /fonts/* never reach Hono — and
- * that is the point: a `{dir}` route answers with an `ETag` + `Last-Modified`
- * and turns a reload into a 304, while hono's serveStatic sends no validator
- * at all (measured on the built bundle: 10.0 MB re-downloaded per page load).
+ * that is the point: they answer with an `ETag` + `Last-Modified` and turn a
+ * reload into a 304, while hono's serveStatic sends no validator at all
+ * (measured on the built bundle: 10.0 MB re-downloaded per page load).
  * Bypassing the middleware chain is a no-op for these paths — the origin guard
  * and mobile auth both explicitly skip everything outside /api.
  *
- * Two measured constraints shape this:
- *  - a `{dir}` 404 does NOT fall through to `fetch`, so these routes must not
- *    be registered when the binary also carries an embedded copy: a file that
- *    exists only inside the executable would 404 instead of being served.
- *  - `Bun.serve` THROWS at bind time when a `{dir}` path does not exist, so
- *    each directory is checked first. A directory removed later is a clean 404.
+ * The handlers resolve the file per request (`serveAssetFile`) rather than
+ * using Bun `{dir}` routes: a `{dir}` route holds the directory it opened at
+ * bind time, and the web build deletes and recreates it — after a rebuild
+ * every asset 404ed until a restart (owner-found 2026-10-01). Per-request
+ * resolution also makes a directory that is not built yet a plain 404.
+ *
+ * A route miss does NOT fall through to `fetch`, so these routes must not be
+ * registered when the binary also carries an embedded copy: a file that exists
+ * only inside the executable would 404 instead of being served.
  */
 export function resolveStaticDirRoutes(config: {
 	readonly staticEnabled: boolean;
 	readonly staticDir: string;
 	readonly embeddedWebFiles?: ReadonlyMap<string, Blob>;
-}): Record<string, { dir: string }> {
+}): Record<string, (request: Request) => Response> {
 	if (!config.staticEnabled) return {};
 	if ((config.embeddedWebFiles?.size ?? 0) > 0) return {};
-	const routes: Record<string, { dir: string }> = {};
+	const routes: Record<string, (request: Request) => Response> = {};
 	for (const name of ["assets", "fonts"]) {
 		const dir = resolve(config.staticDir, name);
-		if (statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
-			routes[`/${name}/*`] = { dir };
-		}
+		routes[`/${name}/*`] = (request) => serveAssetFile(dir, `/${name}`, request);
 	}
 	return routes;
 }

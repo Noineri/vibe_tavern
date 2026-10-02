@@ -1,0 +1,472 @@
+/**
+ * ImageGenSlotControls (IG-CF6, IMAGE_GENERATION_PLAN): the slot's action-row
+ * controls — the IG-18/IG-18a tile's logic relocated (the tile became the
+ * shared ImageBlock; the controls replaced the text action row). Boundary
+ * pins carried over verbatim from ImageGenSlotTile.test.tsx: regenerate
+ * payload at the store seam, promote at the API seam (success + normalized
+ * failure), the include-in-prompt ladder (describe-first for prompt-less
+ * slots; a CF6-stamped prompt satisfies the gate with zero AI calls, IG-CF9
+ * flip with rollback), and the desktop/mobile shape split.
+ */
+
+import { afterEach, describe, expect, it, mock } from "bun:test";
+import React from "react";
+import { useDomEnv } from "../../../test/dom-env.js";
+
+useDomEnv();
+
+// ── Mock seams (tier T1, `...real` spread — the leak-safe pattern) ──────────
+
+const realI18n = await import("../../i18n/context.js");
+mock.module("../../i18n/context.js", () => ({
+  ...realI18n,
+  useT: () => ({
+    t: (key: string) => key,
+    tDynamic: (key: string) => key,
+    locale: "en",
+    setLocale: () => {},
+    ready: true,
+  }),
+}));
+
+const realImageGenApi = await import("../../api/image-gen-api.js");
+const realChatApi = await import("../../api/chat-api.js");
+const realSonner = await import("sonner");
+
+const promoteCalls: Array<[string, string]> = [];
+const describeCalls: Array<[string, string, string]> = [];
+const includeCalls: Array<[string, string, string, boolean]> = [];
+const runGenerationCalls: Array<[
+  string,
+  { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string; prompt?: string },
+  ImageGenRunMeta | undefined,
+]> = [];
+const toastSuccess: string[] = [];
+const toastError: string[] = [];
+let describeShouldFail: Error | null = null;
+let promoteShouldFail: Error | null = null;
+/** Click-time profile lookup seam (the PG-2 meta fix): controllable list +
+ *  failure switch — the component derives liveProgress from it. */
+let profilesList: ImageGenProfileRecord[] = [];
+let profilesShouldFail: Error | null = null;
+
+const realChatStore = await import("../../stores/image-gen-chat-store.js");
+// Spy the REAL store's runGeneration (the component reads runningByChat via
+// the selector and fires runGeneration via getState — both hit this store).
+realChatStore.useImageGenChatStore.setState({
+  runGeneration: (
+    chatId: string,
+    input: { profileId: string; mode: string; anchorMessageId?: string; targetMessageId?: string; prompt?: string },
+    meta?: ImageGenRunMeta,
+  ) => {
+    runGenerationCalls.push([chatId, input, meta]);
+    return Promise.resolve();
+  },
+});
+mock.module("../../stores/image-gen-chat-store.js", () => ({
+  ...realChatStore,
+}));
+
+mock.module("../../api/image-gen-api.js", () => ({
+  ...realImageGenApi,
+  listAllImageGenProfiles: () => {
+    if (profilesShouldFail) return Promise.reject(profilesShouldFail);
+    return Promise.resolve([...profilesList]);
+  },
+  promoteImageGenAttachmentToGallery: (assetId: string, characterId: string) => {
+    if (promoteShouldFail) return Promise.reject(promoteShouldFail);
+    promoteCalls.push([assetId, characterId]);
+    return Promise.resolve({ assetRowId: "row1", characterId, ext: "png", mimeType: "image/png", order: 0 });
+  },
+}));
+
+mock.module("../../api/chat-api.js", () => ({
+  ...realChatApi,
+  regenerateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string) => {
+    describeCalls.push([chatId, messageId, attachmentId]);
+    if (describeShouldFail) return Promise.reject(describeShouldFail);
+    return Promise.resolve({ description: "A painted portrait." });
+  },
+  updateAttachmentIncludeInPrompt: (
+    chatId: string,
+    messageId: string,
+    attachmentId: string,
+    includePrompt: boolean,
+  ) => {
+    includeCalls.push([chatId, messageId, attachmentId, includePrompt]);
+    return Promise.resolve({ ok: true });
+  },
+}));
+
+mock.module("sonner", () => ({
+  ...realSonner,
+  toast: {
+    success: (m: string) => {
+      toastSuccess.push(m);
+    },
+    error: (m: string) => {
+      toastError.push(m);
+    },
+  },
+}));
+
+const { ImageGenSlotControls } = await import("./ImageGenSlotControls.js");
+const { render, fireEvent, waitFor, cleanup } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../shared/Tooltip.js");
+
+/** CustomTooltip requires a TooltipProvider ancestor (the app mounts one at
+ *  the shell level); isolated renders wrap themselves. */
+function renderControls(ui: React.ReactElement) {
+  return render(<TooltipProvider>{ui}</TooltipProvider>);
+}
+const { useSnapshotStore } = await import("../../stores/snapshot-store.js");
+const realDom = await import("react-dom");
+mock.module("react-dom", () => ({ ...realDom }));
+const { flushSync } = await import("react-dom");
+
+import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, type Attachment, type ImageGenBackendType } from "@vibe-tavern/domain";
+import type { ImageGenProfileRecord } from "../../api/image-gen-api.js";
+import type { ImageGenRunMeta } from "../../stores/image-gen-chat-store.js";
+
+/** Typed minimal record for the click-time lookup seam — only id/backend
+ *  matter to the component; the rest satisfies the wire type. */
+function profileRecord(id: string, backend: ImageGenBackendType): ImageGenProfileRecord {
+  return {
+    id,
+    name: `Profile ${id}`,
+    backend,
+    endpoint: "http://127.0.0.1:8188",
+    hasStoredApiKey: false,
+    autoKeyProviderName: null,
+    defaultParams: {},
+    defaultParamsSetId: null,
+    modeSizePresets: {},
+    llmAssistEnabled: false,
+    familySource: "none",
+    qualityLayerEnabled: false,
+    capabilities: { ...IMAGE_GEN_BACKEND_CAPABILITIES[backend] },
+    isDefault: false,
+    sortOrder: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function slotAtt(overrides?: Partial<Attachment>): Attachment {
+  return {
+    id: "att-1",
+    assetId: "asset-1",
+    type: "image",
+    name: "imagegen-asset-1",
+    mimeType: "image/png",
+    sizeBytes: 12,
+    description: null,
+    imageGen: { mode: "portrait", profileId: "p1", params: {} },
+    ...overrides,
+  };
+}
+
+/** Minimal seeded message for the optimistic-update seam. */
+type SeededMessage = { id: string; attachments: Array<Attachment> };
+function seedMessage(id: string, attachments: Array<Attachment>) {
+  useSnapshotStore.setState({
+    messagesById: {
+      ...useSnapshotStore.getState().messagesById,
+      [id]: { id, attachments } as SeededMessage as never,
+    },
+  });
+}
+
+afterEach(() => {
+  cleanup();
+  useSnapshotStore.setState({ messagesById: {} });
+  promoteCalls.length = 0;
+  describeCalls.length = 0;
+  includeCalls.length = 0;
+  runGenerationCalls.length = 0;
+  profilesList = [];
+  profilesShouldFail = null;
+  toastSuccess.length = 0;
+  toastError.length = 0;
+  describeShouldFail = null;
+  promoteShouldFail = null;
+  realChatStore.useImageGenChatStore.setState({ runningByChat: {}, activeImageGenProfileId: null, activeProfileIdByChat: {} });
+});
+
+describe("ImageGenSlotControls — regenerate-as-variant (IG-18a)", () => {
+  it("fires runGeneration with the provenance + targetMessageId + the PG-2 live-progress meta", async () => {
+    profilesList = [profileRecord("p1", IMAGE_GEN_BACKENDS.ComfyUI)];
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() =>
+      expect(runGenerationCalls).toEqual([
+        ["chat-1", { profileId: "p1", mode: "portrait", anchorMessageId: "m1", targetMessageId: "m1" }, { liveProgress: true }],
+      ]),
+    );
+  });
+
+  it("static-table truth beats the stored mirror: a pre-capability mirror still polls (2026-09-18 pin)", async () => {
+    // A profile saved BEFORE its backend gained supportsLiveProgress
+    // carries a stale-false mirror; the run meta must derive from the
+    // registry's CURRENT truth (otherwise swipe runs silently lose the
+    // progress row AND server-side Stop forever).
+    const stale = profileRecord("p1", IMAGE_GEN_BACKENDS.ComfyUI);
+    stale.capabilities = { ...stale.capabilities, supportsLiveProgress: false };
+    profilesList = [stale];
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => expect(runGenerationCalls[0]?.[2]).toEqual({ liveProgress: true }));
+  });
+
+  it("cloud backend rides liveProgress false (the plain waiting chip)", async () => {
+    profilesList = [profileRecord("p1", IMAGE_GEN_BACKENDS.OpenRouter)];
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => expect(runGenerationCalls[0]?.[2]).toEqual({ liveProgress: false }));
+  });
+
+  it("profile list failure fails closed but never blocks the run", async () => {
+    profilesShouldFail = new Error("list endpoint down");
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => {
+      expect(runGenerationCalls).toHaveLength(1);
+      expect(runGenerationCalls[0]?.[2]).toEqual({ liveProgress: false });
+    });
+  });
+
+  it("without a chatId the button is not rendered (tests mount row-less)", async () => {
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" />);
+    await view.findByTestId("image-gen-slot-include");
+    expect(view.queryByTestId("image-gen-slot-regenerate")).toBeNull();
+  });
+
+  it("disabled while a generation is in-flight (one-per-chat guard)", async () => {
+    realChatStore.useImageGenChatStore.setState({
+      runningByChat: { "chat-1": { mode: "portrait", anchorMessageId: "m1", profileId: "p1", liveProgress: false } },
+    });
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    const btn = await view.findByTestId("image-gen-slot-regenerate");
+    expect(btn.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(btn);
+    expect(runGenerationCalls).toHaveLength(0);
+  });
+
+  it("MR-10: the repeat arm fires with the slot's current prompt VERBATIM (the IG-14 caller-prompt contract — assist never fires server-side)", async () => {
+    profilesList = [profileRecord("p1", IMAGE_GEN_BACKENDS.ComfyUI)];
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p1", params: {}, prompt: "  the edited knight portrait  " } });
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate-same-prompt"));
+    await waitFor(() =>
+      expect(runGenerationCalls).toEqual([
+        [
+          "chat-1",
+          { profileId: "p1", mode: "portrait", anchorMessageId: "m1", targetMessageId: "m1", prompt: "the edited knight portrait" },
+          { liveProgress: true },
+        ],
+      ]),
+    );
+  });
+
+  it("MR-10: the repeat arm stays hidden for legacy slots without a stamped prompt (nothing to repeat)", async () => {
+    profilesList = [profileRecord("p1", IMAGE_GEN_BACKENDS.ComfyUI)];
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    await view.findByTestId("image-gen-slot-regenerate");
+    expect(view.queryByTestId("image-gen-slot-regenerate-same-prompt")).toBeNull();
+  });
+
+  it("MR-10: the repeat arm obeys the same one-per-chat guard (disabled while running)", async () => {
+    realChatStore.useImageGenChatStore.setState({
+      runningByChat: { "chat-1": { mode: "portrait", anchorMessageId: "m1", profileId: "p1", liveProgress: false } },
+    });
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p1", params: {}, prompt: "a prompt" } });
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    const btn = await view.findByTestId("image-gen-slot-regenerate-same-prompt");
+    expect(btn.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(btn);
+    expect(runGenerationCalls).toHaveLength(0);
+  });
+
+  // MR-12 (owner ruling 2026-09-19): regeneration rides the SAME resolved
+  //  active chain as every other start — chat pick → global active → server
+  //  default → birth profile. The exact reported case: after a restart the
+  //  session pointer is null, the comfy row carries the server flag, and a
+  //  slot born on the cloud profile must regenerate on Comfy.
+  it("MR-12: server isDefault redirects regen off the birth profile (mode/prompt stay provenance)", async () => {
+    profilesList = [
+      profileRecord("p-cloud", IMAGE_GEN_BACKENDS.OpenRouter),
+      profileRecord("p-comfy", IMAGE_GEN_BACKENDS.ComfyUI),
+    ];
+    profilesList[1].isDefault = true;
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p-cloud", params: {} } });
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() =>
+      expect(runGenerationCalls).toEqual([
+        ["chat-1", { profileId: "p-comfy", mode: "portrait", anchorMessageId: "m1", targetMessageId: "m1" }, { liveProgress: true }],
+      ]),
+    );
+  });
+
+  it("MR-12: a session global pointer outranks the server flag; a chat pick outranks both", async () => {
+    profilesList = [
+      profileRecord("p-cloud", IMAGE_GEN_BACKENDS.OpenRouter),
+      profileRecord("p-comfy", IMAGE_GEN_BACKENDS.ComfyUI),
+      profileRecord("p-forge", IMAGE_GEN_BACKENDS.A1111),
+    ];
+    profilesList[1].isDefault = true;
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p-cloud", params: {} } });
+
+    // Global session pointer wins over the flag.
+    realChatStore.useImageGenChatStore.setState({ activeImageGenProfileId: "p-forge" });
+    let view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => expect(runGenerationCalls[0]?.[1].profileId).toBe("p-forge"));
+    view.unmount();
+
+    // The per-chat pick outranks the global pointer.
+    runGenerationCalls.length = 0;
+    realChatStore.useImageGenChatStore.setState({ activeProfileIdByChat: { "chat-1": "p-comfy" } });
+    view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => expect(runGenerationCalls[0]?.[1].profileId).toBe("p-comfy"));
+    view.unmount();
+
+    // A dangling global pointer degrades to the server default (not the
+    // birth profile): the flag is the surviving truth.
+    runGenerationCalls.length = 0;
+    realChatStore.useImageGenChatStore.setState({ activeImageGenProfileId: "gone", activeProfileIdByChat: {} });
+    view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" chatId="chat-1" />);
+    fireEvent.click(await view.findByTestId("image-gen-slot-regenerate"));
+    await waitFor(() => expect(runGenerationCalls[0]?.[1].profileId).toBe("p-comfy"));
+    view.unmount();
+  });
+});
+
+describe("ImageGenSlotControls — gallery promote (IG-18 slice C)", () => {
+  it("calls the promote seam with the slot's assetId + the chat's character, toasts success", async () => {
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" characterId="char1" />);
+    fireEvent.click(view.getByTestId("image-gen-slot-promote"));
+    await waitFor(() => expect(promoteCalls).toEqual([["asset-1", "char1"]]));
+    await waitFor(() => expect(toastSuccess).toEqual(["image_gen_slot_promoted"]));
+  });
+
+  it("failure toasts the server's normalized message", async () => {
+    promoteShouldFail = new Error("No gallery quota");
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" characterId="char1" />);
+    fireEvent.click(view.getByTestId("image-gen-slot-promote"));
+    await waitFor(() => expect(toastError).toEqual(["No gallery quota"]));
+  });
+
+  it("without a character the promote button is hidden", () => {
+    const view = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" />);
+    expect(view.queryByTestId("image-gen-slot-promote")).toBeNull();
+  });
+});
+
+describe("ImageGenSlotControls — include-in-prompt toggle (IG-18 slice D)", () => {
+  it("defaults OFF (aria-pressed false); with a description present, enabling flips the flag without describing", async () => {
+    const att = slotAtt({ description: "Existing description." });
+    seedMessage("m1", [att]);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
+    const btn = view.getByTestId("image-gen-slot-include");
+    expect(btn.getAttribute("aria-pressed")).toBe("false");
+    // OFF rest state (owner ruling 2026-09-19): quiet chrome + SLASHED eye icon
+    expect(btn.className).toContain("text-t3");
+    expect(btn.querySelector("svg line")).not.toBeNull();
+
+    fireEvent.click(btn);
+    await waitFor(() => expect(includeCalls).toEqual([["_", "m1", "att-1", true]]));
+    expect(describeCalls.length).toBe(0);
+    // ON pressed state: accent chip + open eye (no slash). The component is
+    // props-driven — in the app the parent re-renders it from the flipped
+    // store, so mirror that with rerender on the stored attachment.
+    const storedAtt = useSnapshotStore.getState().messagesById["m1"]?.attachments?.[0];
+    view.rerender(
+      <TooltipProvider>
+        <ImageGenSlotControls attachments={[storedAtt ?? att]} messageId="m1" characterId="char1" />
+      </TooltipProvider>,
+    );
+    const btnOn = view.getByTestId("image-gen-slot-include");
+    expect(btnOn.getAttribute("aria-pressed")).toBe("true");
+    expect(btnOn.className).toContain("bg-accent/10");
+    expect(btnOn.className).toContain("text-accent-t");
+    expect(btnOn.className).not.toContain("hover:bg-s3");
+    expect(btnOn.querySelector("svg line")).toBeNull();
+    const stored = useSnapshotStore.getState().messagesById["m1"];
+    flushSync(() => {});
+    expect(stored?.attachments?.[0]?.includeInPrompt).toBe(true);
+  });
+
+  it("prompt-stamped slot (IG-CF9): enabling skips vision-describe entirely — zero AI calls, straight include", async () => {
+    const att = slotAtt({ imageGen: { mode: "portrait", profileId: "p1", params: {}, prompt: "a painted knight portrait, oil on canvas" } });
+    seedMessage("m1", [att]);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
+    fireEvent.click(view.getByTestId("image-gen-slot-include"));
+
+    await waitFor(() => expect(includeCalls).toEqual([["_", "m1", "att-1", true]]));
+    expect(describeCalls.length).toBe(0);
+    const stored = useSnapshotStore.getState().messagesById["m1"];
+    flushSync(() => {});
+    expect(stored?.attachments?.[0]?.includeInPrompt).toBe(true);
+    // The stamped prompt is NOT written into the description client-side —
+    // the assembly-time fallback (withImageGenPromptFallback) owns that.
+    expect(stored?.attachments?.[0]?.description).toBeNull();
+  });
+
+  it("enabling without a description runs vision-describe first, persists the description, then flips", async () => {
+    const att = slotAtt();
+    seedMessage("m1", [att]);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
+    fireEvent.click(view.getByTestId("image-gen-slot-include"));
+
+    await waitFor(() => expect(describeCalls).toEqual([["_", "m1", "att-1"]]));
+    await waitFor(() => expect(includeCalls).toEqual([["_", "m1", "att-1", true]]));
+    const stored = useSnapshotStore.getState().messagesById["m1"];
+    expect(stored?.attachments?.[0]?.description).toBe("A painted portrait.");
+    expect(stored?.attachments?.[0]?.includeInPrompt).toBe(true);
+  });
+
+  it("describe failure keeps the flag off and toasts the error", async () => {
+    describeShouldFail = new Error("No vision model configured");
+    const att = slotAtt();
+    seedMessage("m1", [att]);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
+    fireEvent.click(view.getByTestId("image-gen-slot-include"));
+
+    await waitFor(() => expect(toastError).toEqual(["No vision model configured"]));
+    expect(includeCalls.length).toBe(0);
+    const stored = useSnapshotStore.getState().messagesById["m1"];
+    expect(stored?.attachments?.[0]?.includeInPrompt).toBeUndefined();
+  });
+
+  it("disabling flips the flag off without describing", async () => {
+    const att = slotAtt({ description: "d", includeInPrompt: true });
+    seedMessage("m1", [att]);
+    const view = renderControls(<ImageGenSlotControls attachments={[att]} messageId="m1" characterId="char1" />);
+    expect(view.getByTestId("image-gen-slot-include").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(view.getByTestId("image-gen-slot-include"));
+    await waitFor(() => expect(includeCalls).toEqual([["_", "m1", "att-1", false]]));
+    expect(describeCalls.length).toBe(0);
+  });
+});
+
+describe("ImageGenSlotControls — desktop/mobile shape (IG-CF6)", () => {
+  it("buttons-only on both surfaces — the mode label lives in the slot meta line above the row (C-B), never in it", async () => {
+    // NOTE: two live renders in one test — this RTL setup binds the returned
+    // queries to document.body (NOT the per-render container), so negatives
+    // and positives here query through `container` explicitly.
+    const desktop = renderControls(<ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" />);
+    // C-B: the provenance mode label moved to MessageBlock's meta line —
+    // the controls row (desktop AND mobile) renders no text label anymore.
+    expect(desktop.container.querySelector('[data-testid="image-gen-slot-mode"]')).toBeNull();
+
+    const mobile = renderControls(
+      <ImageGenSlotControls attachments={[slotAtt()]} messageId="m1" chatId="chat-1" mobile />,
+    );
+    expect(mobile.container.querySelector('[data-testid="image-gen-slot-mode"]')).toBeNull();
+    // 44px touch targets in the mobile action row (compact h-6 on desktop).
+    expect(mobile.container.querySelector('[data-testid="image-gen-slot-regenerate"]')?.className).toContain("h-11");
+    expect(desktop.container.querySelector('[data-testid="image-gen-slot-regenerate"]')?.className).toContain("h-6");
+  });
+});

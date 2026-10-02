@@ -101,6 +101,13 @@ describe("importJsonSchema", () => {
     expectReject(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", chatId: null }));
   });
 
+  it("preserves the explicit embedded-card-lore import choice", () => {
+    const result = importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", importEmbeddedBook: true });
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error("unreachable");
+    expect(result.data.importEmbeddedBook).toBe(true);
+  });
+
   it("rejects a non-boolean skipExisting when provided", () => {
     expectReject(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", skipExisting: "yes" }));
   });

@@ -301,6 +301,8 @@ describe("origin guard — explicitly allowed cross-origin", () => {
 		expect(res.status).toBe(200);
 		expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://localhost:4173");
 		expect(res.headers.get("Vary")).toBe("Origin");
+		// IF-20: a split frontend must be able to read the listing-snapshot flag.
+		expect(res.headers.get("Access-Control-Expose-Headers")).toContain("X-VT-Listing-Snapshot-At");
 	});
 
 	test("allowed origin preflight → 204 + CORS headers", async () => {

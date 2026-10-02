@@ -18,6 +18,8 @@ export interface UiSettings {
   activePromptPresetId: string | null;
   aiAssistantProviderId: string | null;
   aiAssistantModelName: string | null;
+  /** Whether chat impersonation improves a non-empty composer draft. */
+  chatImpersonateEnhanceDraft: boolean;
   /** Summary-generation model binding (SUM-4/SUM-5) — the Memory tab's
    *  pinned model, persisted per context instead of ephemeral useState. */
   summaryProviderId: string | null;
@@ -45,8 +47,20 @@ export interface UiSettings {
   copilotProviderId: string | null;
   copilotModelName: string | null;
   activeServicePromptProfileId: string | null;
+  /** Image prompt profiles (IF-1a) — same semantics as the service prompt
+   *  pointer above, separate collection. Null/dangling → Default ("default"). */
+  activeImagePromptProfileId: string | null;
+  /** One-time global-variant → image-profile migration marker (IF-1a). */
+  imagePromptVariantsMigrated: boolean;
   /** One-time preset→profile migration marker (SP-7) — see db-schema comment. */
   servicePromptPresetMigrated: boolean;
+  /** One-time stock sampler-set seed marker (IF-7b) — see db-schema
+   *  comment. */
+  stockImageGenSamplerSetsSeeded: boolean;
+  /** One-time fleet workflow sampler-set seed marker (IF-12a). */
+  stockImageGenFleetSamplerSetsSeeded: boolean;
+  /** One-time stock-row base-workflow backfill marker (IF-19b). */
+  stockImageGenSetWorkflowFamiliesBackfilled: boolean;
   /** STT scenario pointers (STT_PLAN ST-1): dictation + voice-message
    *  transcription profile ids; may point at the same profile. Null → the
    *  isDefault fallback / no transcription. */
@@ -66,6 +80,7 @@ export interface UiSettingsUpdate {
   activePromptPresetId?: string | null;
   aiAssistantProviderId?: string | null;
   aiAssistantModelName?: string | null;
+  chatImpersonateEnhanceDraft?: boolean;
   summaryProviderId?: string | null;
   summaryModelName?: string | null;
   messageEditorProviderId?: string | null;
@@ -81,7 +96,12 @@ export interface UiSettingsUpdate {
   copilotProviderId?: string | null;
   copilotModelName?: string | null;
   activeServicePromptProfileId?: string | null;
+  activeImagePromptProfileId?: string | null;
+  imagePromptVariantsMigrated?: boolean;
   servicePromptPresetMigrated?: boolean;
+  stockImageGenSamplerSetsSeeded?: boolean;
+  stockImageGenFleetSamplerSetsSeeded?: boolean;
+  stockImageGenSetWorkflowFamiliesBackfilled?: boolean;
   activeDictationProfileId?: string | null;
   activeVoiceMessageProfileId?: string | null;
 }
@@ -98,6 +118,7 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   activePromptPresetId: null,
   aiAssistantProviderId: null,
   aiAssistantModelName: null,
+  chatImpersonateEnhanceDraft: false,
   summaryProviderId: null,
   summaryModelName: null,
   messageEditorProviderId: null,
@@ -113,7 +134,12 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   copilotProviderId: null,
   copilotModelName: null,
   activeServicePromptProfileId: null,
+  activeImagePromptProfileId: null,
+  imagePromptVariantsMigrated: false,
   servicePromptPresetMigrated: false,
+  stockImageGenSamplerSetsSeeded: false,
+  stockImageGenFleetSamplerSetsSeeded: false,
+  stockImageGenSetWorkflowFamiliesBackfilled: false,
   activeDictationProfileId: null,
   activeVoiceMessageProfileId: null,
 };
@@ -161,6 +187,7 @@ export class UiSettingsStore {
       activePromptPresetId: partial.activePromptPresetId ?? UI_SETTINGS_DEFAULTS.activePromptPresetId,
       aiAssistantProviderId: partial.aiAssistantProviderId ?? UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
       aiAssistantModelName: partial.aiAssistantModelName ?? UI_SETTINGS_DEFAULTS.aiAssistantModelName,
+      chatImpersonateEnhanceDraft: partial.chatImpersonateEnhanceDraft ?? UI_SETTINGS_DEFAULTS.chatImpersonateEnhanceDraft,
       summaryProviderId: partial.summaryProviderId ?? UI_SETTINGS_DEFAULTS.summaryProviderId,
       summaryModelName: partial.summaryModelName ?? UI_SETTINGS_DEFAULTS.summaryModelName,
       messageEditorProviderId: partial.messageEditorProviderId ?? UI_SETTINGS_DEFAULTS.messageEditorProviderId,
@@ -176,7 +203,12 @@ export class UiSettingsStore {
       copilotProviderId: partial.copilotProviderId ?? UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: partial.copilotModelName ?? UI_SETTINGS_DEFAULTS.copilotModelName,
       activeServicePromptProfileId: partial.activeServicePromptProfileId ?? UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
+      activeImagePromptProfileId: partial.activeImagePromptProfileId ?? UI_SETTINGS_DEFAULTS.activeImagePromptProfileId,
+      imagePromptVariantsMigrated: partial.imagePromptVariantsMigrated ?? UI_SETTINGS_DEFAULTS.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: partial.servicePromptPresetMigrated ?? UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
+      stockImageGenSamplerSetsSeeded: partial.stockImageGenSamplerSetsSeeded ?? UI_SETTINGS_DEFAULTS.stockImageGenSamplerSetsSeeded,
+      stockImageGenFleetSamplerSetsSeeded: partial.stockImageGenFleetSamplerSetsSeeded ?? UI_SETTINGS_DEFAULTS.stockImageGenFleetSamplerSetsSeeded,
+      stockImageGenSetWorkflowFamiliesBackfilled: partial.stockImageGenSetWorkflowFamiliesBackfilled ?? UI_SETTINGS_DEFAULTS.stockImageGenSetWorkflowFamiliesBackfilled,
       activeDictationProfileId: partial.activeDictationProfileId ?? UI_SETTINGS_DEFAULTS.activeDictationProfileId,
       activeVoiceMessageProfileId: partial.activeVoiceMessageProfileId ?? UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
@@ -200,6 +232,7 @@ export class UiSettingsStore {
       activePromptPresetId: UI_SETTINGS_DEFAULTS.activePromptPresetId,
       aiAssistantProviderId: UI_SETTINGS_DEFAULTS.aiAssistantProviderId,
       aiAssistantModelName: UI_SETTINGS_DEFAULTS.aiAssistantModelName,
+      chatImpersonateEnhanceDraft: UI_SETTINGS_DEFAULTS.chatImpersonateEnhanceDraft,
       summaryProviderId: UI_SETTINGS_DEFAULTS.summaryProviderId,
       summaryModelName: UI_SETTINGS_DEFAULTS.summaryModelName,
       messageEditorProviderId: UI_SETTINGS_DEFAULTS.messageEditorProviderId,
@@ -215,7 +248,12 @@ export class UiSettingsStore {
       copilotProviderId: UI_SETTINGS_DEFAULTS.copilotProviderId,
       copilotModelName: UI_SETTINGS_DEFAULTS.copilotModelName,
       activeServicePromptProfileId: UI_SETTINGS_DEFAULTS.activeServicePromptProfileId,
+      activeImagePromptProfileId: UI_SETTINGS_DEFAULTS.activeImagePromptProfileId,
+      imagePromptVariantsMigrated: UI_SETTINGS_DEFAULTS.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: UI_SETTINGS_DEFAULTS.servicePromptPresetMigrated,
+      stockImageGenSamplerSetsSeeded: UI_SETTINGS_DEFAULTS.stockImageGenSamplerSetsSeeded,
+      stockImageGenFleetSamplerSetsSeeded: UI_SETTINGS_DEFAULTS.stockImageGenFleetSamplerSetsSeeded,
+      stockImageGenSetWorkflowFamiliesBackfilled: UI_SETTINGS_DEFAULTS.stockImageGenSetWorkflowFamiliesBackfilled,
       activeDictationProfileId: UI_SETTINGS_DEFAULTS.activeDictationProfileId,
       activeVoiceMessageProfileId: UI_SETTINGS_DEFAULTS.activeVoiceMessageProfileId,
       updatedAt: this.clock.now(),
@@ -237,6 +275,7 @@ export class UiSettingsStore {
       activePromptPresetId: row.activePromptPresetId,
       aiAssistantProviderId: row.aiAssistantProviderId ?? null,
       aiAssistantModelName: row.aiAssistantModelName ?? null,
+      chatImpersonateEnhanceDraft: row.chatImpersonateEnhanceDraft,
       summaryProviderId: row.summaryProviderId ?? null,
       summaryModelName: row.summaryModelName ?? null,
       messageEditorProviderId: row.messageEditorProviderId ?? null,
@@ -252,7 +291,12 @@ export class UiSettingsStore {
       copilotProviderId: row.copilotProviderId ?? null,
       copilotModelName: row.copilotModelName ?? null,
       activeServicePromptProfileId: row.activeServicePromptProfileId ?? null,
+      activeImagePromptProfileId: row.activeImagePromptProfileId ?? null,
+      imagePromptVariantsMigrated: row.imagePromptVariantsMigrated,
       servicePromptPresetMigrated: row.servicePromptPresetMigrated,
+      stockImageGenSamplerSetsSeeded: row.stockImageGenSamplerSetsSeeded,
+      stockImageGenFleetSamplerSetsSeeded: row.stockImageGenFleetSamplerSetsSeeded,
+      stockImageGenSetWorkflowFamiliesBackfilled: row.stockImageGenSetWorkflowFamiliesBackfilled,
       activeDictationProfileId: row.activeDictationProfileId ?? null,
       activeVoiceMessageProfileId: row.activeVoiceMessageProfileId ?? null,
       updatedAt: row.updatedAt,

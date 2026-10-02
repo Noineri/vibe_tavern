@@ -1,3 +1,7 @@
+/**
+ * forks: 1 — stt/SttApiKeyField.tsx.
+ */
+
 import { useT } from "../../../../i18n/context.js";
 import { MaskedConnectionKeyField } from "../../../shared/masked-connection-key-field.js";
 

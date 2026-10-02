@@ -1,3 +1,7 @@
+/**
+ * forks: 2 — SttSection.tsx; ImageGenSection.tsx.
+ */
+
 import { useT } from "../../../../i18n/context.js";
 import { TtsProfileList } from "./TtsProfileList.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";

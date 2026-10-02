@@ -72,9 +72,9 @@ export function createLorebookRoutes(runtime: LorebookRuntimeApi) {
       return c.json(await runtime.duplicateLorebook(c.req.param("lorebookId"), body), 201);
     })
     .get("/api/lorebooks/:lorebookId/export", async (c) => {
-      const data = await runtime.exportLorebook(c.req.param("lorebookId"));
-      const name = (data as Record<string, unknown>).name ?? "lorebook";
-      return c.json(data, 200, {
+      const result = await runtime.exportLorebook(c.req.param("lorebookId"));
+      const name = result.data.name ?? "lorebook";
+      return c.json(result, 200, {
         "Content-Disposition": `attachment; filename="${String(name).replace(/[^a-zA-Z0-9_-]/g, '_')}.json"`,
       });
     })

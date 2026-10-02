@@ -120,16 +120,24 @@ afterAll(async () => {
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true }).catch(() => {})));
 });
 
+async function scanMessages(world: TestWorld): Promise<Array<{ role: string; content: string }>> {
+  return (await world.stores.messages.getMessages(world.branchId)).map((message) => ({
+    role: message.role,
+    content: message.content,
+  }));
+}
+
 async function listActive(world: TestWorld): Promise<ActiveLoreEntry[]> {
-  const entries = await world.resolver.listActiveLoreEntries({
+  const result = await world.resolver.listActiveLoreEntries({
     chatId: world.chatId,
     branchId: brandId<ChatBranchId>(world.branchId),
     recentText: SCAN_MESSAGE,
+    scanMessages: await scanMessages(world),
   });
   // The scan message contains the entry key — the entry MUST activate for
   // these tests to exercise the transform path at all.
-  expect(entries.length).toBeGreaterThan(0);
-  return entries;
+  expect(result.entries.length).toBeGreaterThan(0);
+  return result.entries;
 }
 
 /** Full field set minus store-generated columns (CreateRegexPresetData). */
@@ -268,6 +276,76 @@ describe("RX-9 WORLD_INFO — macro source wiring", () => {
 
     const entries = await listActive(world);
     expect(entries[0].content).toBe("THE cellar is damp");
+  });
+});
+
+describe("Lore activation include names — resolver message-name wiring (N1)", () => {
+  it("supplies the effective persona name for user messages and character name for assistant messages", async () => {
+    const world = await setup();
+    const persona = await world.stores.personas.getDefault();
+    expect(persona).not.toBeNull();
+    await world.stores.lorebooks.updateLorebook(world.lorebookId, { includeNames: true });
+    await world.stores.lorebooks.updateEntry(world.entryId, {
+      title: "persona speaker key",
+      keys: [`${persona!.name}:`],
+    });
+    await world.stores.lorebooks.createEntry(world.lorebookId, {
+      title: "character speaker key",
+      content: "Character speaker matched.",
+      keys: ["LoreProbe:"],
+    });
+    await world.stores.messages.addMessage({
+      chatId: world.chatId as string,
+      branchId: world.branchId,
+      role: "assistant",
+      authorType: "character",
+      content: "I answer from the character side.",
+    });
+
+    const result = await world.resolver.listActiveLoreEntries({
+      chatId: world.chatId,
+      branchId: brandId<ChatBranchId>(world.branchId),
+      recentText: SCAN_MESSAGE,
+      scanMessages: await scanMessages(world),
+    });
+    expect(result.entries.map((entry) => entry.title).sort()).toEqual([
+      "character speaker key",
+      "persona speaker key",
+    ]);
+  });
+});
+
+describe("Lore activation state — branch isolation (P14)", () => {
+  it("does not leak a live sticky effect from one branch into another", async () => {
+    const world = await setup({ entryKeys: ["absent-key"] });
+    await world.stores.lorebooks.updateEntry(world.entryId, { stickyWindow: 2 });
+    await world.stores.chats.updateLoreActivationState(world.branchId, {
+      [world.entryId]: { activatedAtTurn: 0, lastMatchedAtTurn: 0 },
+    });
+
+    const source = (await world.stores.messages.getMessages(world.branchId))[0];
+    const fork = await world.stores.chats.forkBranch(world.chatId as string, source.id, "isolated branch");
+    const activeResult = await world.resolver.listActiveLoreEntries({
+      chatId: world.chatId,
+      branchId: brandId<ChatBranchId>(world.branchId),
+      recentText: SCAN_MESSAGE,
+      scanMessages: await scanMessages(world),
+      currentTurn: 1,
+    });
+    const forkMessages = (await world.stores.messages.getMessages(fork.id)).map(message => ({
+      role: message.role,
+      content: message.content,
+    }));
+    const forkResult = await world.resolver.listActiveLoreEntries({
+      chatId: world.chatId,
+      branchId: brandId<ChatBranchId>(fork.id),
+      recentText: SCAN_MESSAGE,
+      scanMessages: forkMessages,
+      currentTurn: 1,
+    });
+
+    expect(activeResult.entries.map(entry => entry.id)).toEqual([world.entryId]);
+    expect(forkResult.entries).toEqual([]);
   });
 });
 

@@ -1,6 +1,6 @@
 /**
  * Static validator for experience visual sources (UX 2026-08-16 remark 6:
- * «сделать валидатор визуала для копайлота»).
+ * make a visual validator for the copilot).
  *
  * A visual source is self-contained HTML/CSS/JS that only executes inside the
  * sandboxed ExperienceFrame (opaque origin, no network — see ExperienceFrame).

@@ -5,6 +5,7 @@
 // `mimeType` is the actual content type used for provider-specific formatting.
 
 import { log } from "./logger.js";
+import type { ImageGenerationMode } from "./entities.js";
 
 /** Determines how the prompt pipeline processes this attachment. */
 export type AttachmentType = "image" | "file" | "video" | "audio";
@@ -41,6 +42,84 @@ export interface Attachment {
   purpose?: AudioPurpose;
   /** Audio-only: clip length in milliseconds (voice-message bubble UI). */
   durationMs?: number;
+  /** Image-gen-slot only (IMAGE_GENERATION_PLAN IG-18; design: "per-image
+   *  'include in prompt' opt-in (default off — pure illustration)"). Absent =
+   *  OFF — the assembly drops the slot's attachment from the RP prompt
+   *  entirely (see {@link filterPromptVisibleAttachments}). Enabling requires
+   *  a vision description (server-enforced) so the non-vision executor path
+   *  always has text to send. Ordinary user uploads never carry this flag
+   *  and keep their always-included behavior. */
+  includeInPrompt?: boolean;
+  /** Image-gen-only: slot provenance (IMAGE_GENERATION_PLAN IG-14, design:
+   *  "a message carrying a single image attachment + provenance metadata:
+   *  mode, profileId, model, effective params, seed") — exactly the design
+   *  fields, no more. Rides the attachment entry the same way audio carries
+   *  `purpose`/`durationMs`; regeneration (IG-18) reads it to rebuild a
+   *  request. Absent on ordinary uploads. */
+  imageGen?: ImageGenSlotProvenance;
+}
+
+/** Provenance stamped on every attachment of an image-gen slot message
+ *  (IG-14). `params` = the effective values actually SENT to the backend
+ *  (request overrides > per-mode size preset > profile default params; only
+ *  fields the request carried — no invented values, the owner's constants
+ *  ban); `seed` = the seed the backend REPORTED using (actuals differ from
+ *  the requested `params.seed` when the vendor resolves its own). */
+export interface ImageGenSlotProvenance {
+  /** The generation-mode recipe the slot was built from. */
+  mode: ImageGenerationMode;
+  /** The image-gen profile used (regeneration target). */
+  profileId: string;
+  /** Effective model id (override > profile; absent = vendor default). */
+  model?: string;  /** The FINAL assembled image prompt (IG-CF6): the exact text sent to the
+   *  backend — template + macros + chip edits + assist all resolved. Stamped
+   *  at generation time so the slot can show what was asked (owner
+   *  2026-09-15: "the model's prompt is nowhere visible; it should also be
+   *  displayed in the image slot"). Absent on legacy slots
+   *  generated before CF6 — free-form JSON inside attachmentsJson, no
+   *  migration. */
+  prompt?: string;
+  /** C-A (owner 2026-09-19, ruling recorded in the plan repo): the assist
+   *  LLM model that AUTHORED the prompt — a deliberately unaccented note
+   *  (the authoring model is stated plainly, without emphasis) —
+   *  stamped only when the IG-15 assist actually fired for the run (lazy:
+   *  free-mode and verbatim chip-edit runs never stamp it). Absent = the
+   *  prompt is template/user text (or a legacy pre-C-A slot). Rendered as a
+   *  quiet suffix on the MR-8 accordion header. */
+  promptBy?: string;
+  /** Effective generation params sent with the request. */
+  params: {
+    width?: number;
+    height?: number;
+    steps?: number;
+    cfgScale?: number;
+    cfgRescale?: number;
+    sampler?: string;
+    /** Schedule type (PG-3, A1111 dialect) — recorded when sent so a
+     *  regenerated slot reproduces the same schedule. */
+    scheduler?: string;
+    /** Text-encoder file (CG-A2, ComfyUI DiT template) — recorded when
+     *  sent so a regenerated slot reproduces the same sidecar. */
+    encoderName?: string;
+    /** VAE file (CG-A2, ComfyUI DiT template) — recorded when sent. */
+    vaeName?: string;
+    /** VAE override for swappable-slot dialects (IF-7b) — recorded when
+     *  sent so a regenerated slot reproduces the same VAE. */
+    vae?: string;
+    /** Workflow template the backend RESOLVED for the generation (CG-A2,
+     *  ComfyUI: "checkpoint" | "krea2-dit") — the adapter picks it by
+     *  model auto-detect, so it is recorded from the RESULT, not the
+     *  request. Absent on other backends and legacy slots. */
+    template?: string;
+    /** Enabled LoRAs of the run (CG-C2, capability-gated backends) —
+     *  name + strength as sent, so a regenerated variant reproduces the
+     *  same stack. Absent when the run carried none. */
+    loras?: Array<{ name: string; strength: number }>;
+    seed?: number;
+    clipSkip?: number;
+  };
+  /** Backend-reported actual seed (A1111 resolves -1; cloud vendors omit). */
+  seed?: number;
 }
 
 // ─── Voice transcript + tone line (STT_PLAN ST-7) ─────────────────────────────
@@ -162,3 +241,44 @@ export function parseStoredAttachments(raw: string | null | undefined): Attachme
       : { ...(a as object), id: crypto.randomUUID() } as Attachment,
   );
 }
+
+/** Prompt-visibility filter for message attachments (IG-18): generated image
+ * slots are pure illustration by default — the attachment is dropped from
+ * the assembled prompt unless the per-image opt-in is ON. Everything else
+ * (user uploads, voice notes, files) keeps its existing behavior. Without
+ * this gate a slot in history would ride the executor's multimodal path
+ * unconditionally: pixels for vision primaries, and a hard
+ * VisionNotSupportedError on every later RP turn for non-vision primaries
+ * (the slot's image is undescribed — the describe step covers only the
+ * current user message's attachments). */
+export function filterPromptVisibleAttachments(attachments: Attachment[]): Attachment[] {
+  return attachments.filter((a) => a.imageGen === undefined || a.includeInPrompt === true);
+}
+
+/** Textual fallback for included image-gen slots (IMAGE_GENERATION_PLAN
+ *  IG-CF9): when a slot IS included in the prompt (`includeInPrompt === true`
+ *  — the explicit per-slot eye button, no auto-describing), its textual
+ *  representation falls back to its OWN generation prompt (`description ??
+ *  provenance.prompt`). Zero AI calls, semantically honest (the image is
+ *  described by what was asked).
+ *
+ *  Apply AFTER {@link filterPromptVisibleAttachments} at assembly (the
+ *  filter is the include gate; this function backfills text only). The
+ *  backfilled description rides the EXISTING described-image text path
+ *  (`[Image attachment: name]\nImage description: …`) with zero
+ *  special-casing: on a non-vision primary the vision gate sends the prompt
+ *  text instead of throwing VisionNotSupportedError, and on a vision primary
+ *  the gate ignores the description and sends pixels as usual. Legacy slots
+ *  without `prompt` are unaffected — they keep today's behavior. Pure: never
+ *  mutates its input (untouched items keep their reference; backfilled items
+ *  are shallow copies). */
+export function withImageGenPromptFallback(attachments: Attachment[]): Attachment[] {
+  return attachments.map((a) => {
+    if (a.imageGen === undefined) return a;
+    if (a.description?.trim()) return a;
+    const prompt = a.imageGen.prompt;
+    if (prompt === undefined || prompt.trim() === "") return a;
+    return { ...a, description: prompt };
+  });
+}
+

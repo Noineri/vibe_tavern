@@ -16,7 +16,12 @@ import type { ReactNode } from "react";
 import React from "react";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { SERVICE_PROMPT_FIELD_KEYS, type ServicePromptFieldKey } from "@vibe-tavern/domain";
-import type { ServicePromptProfile } from "@vibe-tavern/api-contracts";
+import type {
+  ImagePromptFamilyInfoValue,
+  ImagePromptTemplateRowKeyValue,
+  ImagePromptProfileDetailResponse,
+  ServicePromptProfile,
+} from "@vibe-tavern/api-contracts";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
 import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
 import type { DraftData } from "./PromptManagerModal.js";
@@ -62,6 +67,9 @@ const setRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<Retur
 const realServiceApi = await import("../../api/service-prompt-api.js");
 const listServiceProfilesMock = mock(realServiceApi.listServicePromptProfiles);
 const getServiceDetailMock = mock(realServiceApi.getServicePromptProfileDetail);
+const realImageGenApi = await import("../../api/image-gen-api.js");
+const listImagePromptTemplatesMock = mock(async () => makeImagePromptTemplates());
+const listImagePromptFamiliesMock = mock(realImageGenApi.listImagePromptFamilies);
 const realDownload = await import("../../lib/download.js");
 const downloadTextFileMock = mock(realDownload.downloadTextFile);
 
@@ -113,6 +121,19 @@ mock.module("../../api/service-prompt-api.js", () => {
     getServicePromptProfileDetail: getServiceDetailMock,
   };
 });
+mock.module("../../api/image-gen-api.js", () => ({
+  ...realImageGenApi,
+  listImagePromptTemplates: listImagePromptTemplatesMock,
+  listImagePromptFamilies: listImagePromptFamiliesMock,
+}));
+const realImageProfileApi = await import("../../api/image-prompt-profile-api.js");
+const listImagePromptProfilesMock = mock(realImageProfileApi.listImagePromptProfiles);
+const getImagePromptProfileDetailMock = mock(realImageProfileApi.getImagePromptProfileDetail);
+mock.module("../../api/image-prompt-profile-api.js", () => ({
+  ...realImageProfileApi,
+  listImagePromptProfiles: listImagePromptProfilesMock,
+  getImagePromptProfileDetail: getImagePromptProfileDetailMock,
+}));
 mock.module("../../lib/download.js", () => ({
   ...realDownload,
   downloadTextFile: downloadTextFileMock,
@@ -159,9 +180,71 @@ afterEach(async () => {
   setRegexProfileLinksMock.mockResolvedValue([]);
   listServiceProfilesMock.mockReset();
   getServiceDetailMock.mockReset();
+  listImagePromptTemplatesMock.mockReset();
+  listImagePromptTemplatesMock.mockResolvedValue(makeImagePromptTemplates());
+  listImagePromptFamiliesMock.mockReset();
+  listImagePromptFamiliesMock.mockResolvedValue({ families: imagePromptFamilies });
+  listImagePromptProfilesMock.mockReset();
+  listImagePromptProfilesMock.mockResolvedValue(makeImagePromptProfileList());
+  getImagePromptProfileDetailMock.mockReset();
+  getImagePromptProfileDetailMock.mockImplementation(async (id: string) => makeImagePromptProfileDetail(id));
   downloadTextFileMock.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
+
+const imagePromptFamilies: ImagePromptFamilyInfoValue[] = [
+  { id: "prose", grammar: "prose", ownTemplates: true, ownNegative: true, ownQuality: false, hasAssistAddendum: false },
+  { id: "pony", grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: true, hasAssistAddendum: true },
+];
+
+const imagePromptRows: ImagePromptTemplateRowKeyValue[] = [
+  "scene-background",
+  "portrait",
+  "character",
+  "user-persona",
+  "scene-illustration",
+  "free",
+  "selfie",
+  "avatar",
+  "negative",
+];
+
+function makeImagePromptTemplates(): ImagePromptProfileDetailResponse["catalog"] {
+  return {
+    cells: imagePromptRows.flatMap((rowKey) => imagePromptFamilies.map((family) => ({
+      rowKey,
+      family: family.id,
+      canonText: `canon ${rowKey} ${family.id}`,
+      canonSource: family.id === "prose" ? "family-canon" as const : "prose-canon" as const,
+      customText: null,
+      qualityText: null,
+      isCustomized: false,
+    }))),
+    qualityCanon: { pony: "canon quality pony" },
+    assist: { core: "assist core", addenda: { pony: "pony addendum" } },
+  };
+}
+
+/** IF-1d: the images tab loads through the image prompt PROFILE api — a
+ *  read-only Default plus one live non-default profile (the editor surface). */
+function makeImagePromptProfileList() {
+  return {
+    profiles: [
+      { id: "default", name: "Default", isDefault: true, sortOrder: 0, overrides: {}, createdAt: "", updatedAt: "" },
+      { id: "ipp1", name: "My Profile", isDefault: false, sortOrder: 1, overrides: {}, createdAt: "", updatedAt: "" },
+    ],
+    activeProfileId: "ipp1",
+  };
+}
+
+function makeImagePromptProfileDetail(id: string) {
+  const templates = makeImagePromptTemplates();
+  const isDefault = id === "default";
+  return {
+    profile: { id, name: isDefault ? "Default" : "My Profile", isDefault, sortOrder: isDefault ? 0 : 1, overrides: {}, createdAt: "", updatedAt: "" },
+    catalog: templates,
+  };
+}
 
 function baseDraft(): DraftData {
   return {
@@ -273,7 +356,7 @@ describe("PromptManagerModal — character save boundary", () => {
     });
   });
 
-  test("shows the automatic same-role merge note in simple mode and hides it in advanced mode", async () => {
+  test("the accordion-era header block is gone; the canon SegmentedControl alone carries the mode", async () => {
     useModalStore.setState({ isPromptManagerOpen: true });
 
     const simplePreset: PromptPresetDto = { ...advancedPreset(), advancedMode: false };
@@ -288,13 +371,43 @@ describe("PromptManagerModal — character save boundary", () => {
         onReorder={mock(async () => true)}
       />,
     );
+    const q = within(view.baseElement);
 
+    // Owner 2026-09-19: the mode TITLE duplicated the control's selected
+    // segment, the advanced HINT duplicated the canvas's own header, and the
+    // simple-mode MERGE NOTE described assembly behavior implicitly — the
+    // whole accordion shell is deleted; the segmented control is the only
+    // mode surface. (The switch itself still works: Radix radios.)
     await waitFor(() => {
-      expect(within(view.baseElement).getByText("preset_simple_mode_merge_note")).toBeTruthy();
+      expect(q.getByRole("radio", { name: "preset_simple_mode_short" })).toBeTruthy();
     });
+    for (const legacy of [
+      "preset_simple_mode",
+      "preset_advanced_mode",
+      "preset_simple_mode_hint",
+      "preset_advanced_mode_hint",
+      "preset_simple_mode_merge_note",
+      "prompt_section_chat",
+    ]) {
+      expect(q.queryByText(legacy), `legacy header text "${legacy}"`).toBeNull();
+    }
 
-    fireEvent.click(within(view.baseElement).getByRole("radio", { name: "preset_advanced_mode_short" }));
-    expect(within(view.baseElement).queryByText("preset_simple_mode_merge_note")).toBeNull();
+    // Simple: chat fields render, canvas does not.
+    expect(q.getByText("system_prompt")).toBeTruthy();
+    expect(q.queryByTestId("prompt-canvas-header")).toBeNull();
+
+    // Switch to advanced: the canvas (with its OWN header hint — the single
+    // explanation surface now) appears and the control reflects the mode.
+    // (The simple fields' disappearance is PromptFields' own pinned contract
+    // — "renders nothing when hideChatPrompts is set" — not re-pinned here;
+    // canvas cards legitimately reuse field labels like system_prompt.)
+    fireEvent.click(q.getByRole("radio", { name: "preset_advanced_mode_short" }));
+    await waitFor(() => {
+      expect(q.getByTestId("prompt-canvas-header")).toBeTruthy();
+      expect(q.getByText("preset_prompt_order_canvas_hint")).toBeTruthy();
+    });
+    expect(q.getByRole("radio", { name: "preset_advanced_mode_short" }).getAttribute("aria-checked")).toBe("true");
+    expect(q.getByRole("radio", { name: "preset_simple_mode_short" }).getAttribute("aria-checked")).toBe("false");
   });
 
   test("loads active-chat lore summaries into the expandable anchor card", async () => {
@@ -1073,7 +1186,7 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     return map;
   }
 
-  test("three tab labels render", async () => {
+  test("four tab labels render", async () => {
     useModalStore.setState({ isPromptManagerOpen: true });
     const view = render(
       <PromptManagerModal
@@ -1089,6 +1202,7 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
     expect(within(view.baseElement).getByText("promptManager.tabPresets")).toBeTruthy();
     expect(within(view.baseElement).getByText("promptManager.regex.tabLabel")).toBeTruthy();
     expect(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabel")).toBeTruthy();
+    expect(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabelImages")).toBeTruthy();
   });
 
   test("service tab stays lazy: no service fetch until switched", async () => {
@@ -1179,6 +1293,67 @@ describe("PromptManagerModal — service prompts tab (SP-9)", () => {
       const tas = view.baseElement.querySelectorAll("textarea");
       expect(tas.length).toBeGreaterThan(0);
     });
+  });
+
+  test("images tab stays lazy until switched, then renders template rows without service-profile chrome", async () => {
+    listImagePromptTemplatesMock.mockResolvedValue(makeImagePromptTemplates());
+    listImagePromptFamiliesMock.mockResolvedValue({ families: imagePromptFamilies });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+
+    expect(listImagePromptProfilesMock).not.toHaveBeenCalled();
+    expect(listServiceProfilesMock).not.toHaveBeenCalled();
+    fireEvent.click(within(view.baseElement).getByText("promptManager.servicePrompts.tabLabelImages"));
+    await waitFor(() => expect(listImagePromptProfilesMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(within(view.baseElement).getByTestId("image-prompt-template-row-assist")).toBeTruthy());
+    expect(listServiceProfilesMock).not.toHaveBeenCalled();
+    expect(view.baseElement.querySelectorAll("[data-testid^='image-prompt-template-row-']").length).toBe(10);
+    expect(view.baseElement.querySelector("[data-testid^='service-row-']")).toBeNull();
+    // The drill-down seam now fires per PROFILE row (the master list) — two
+    // profiles here, two drill nodes.
+    expect(within(view.baseElement).getAllByText("drill").length).toBe(2);
+  });
+
+  test("images tab quality draft participates in the modal close guard", async () => {
+    listImagePromptTemplatesMock.mockResolvedValue(makeImagePromptTemplates());
+    listImagePromptFamiliesMock.mockResolvedValue({ families: imagePromptFamilies });
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    const q = within(view.baseElement);
+    fireEvent.click(q.getByText("promptManager.servicePrompts.tabLabelImages"));
+    await waitFor(() => expect(q.getByTestId("image-prompt-template-row-portrait")).toBeTruthy());
+    const portraitRow = q.getByTestId("image-prompt-template-row-portrait");
+    fireEvent.click(portraitRow.querySelector("button")!);
+    fireEvent.click(q.getByTestId("image-prompt-template-family-portrait"));
+    await waitFor(() => expect(q.getAllByText("imagePromptTemplates.family.pony").length).toBeGreaterThan(0));
+    fireEvent.click(q.getAllByText("imagePromptTemplates.family.pony").at(-1)!);
+    fireEvent.click(await waitFor(() => q.getByRole("switch", { name: "imagePromptTemplates.customQualityToggle" })));
+    fireEvent.click(q.getByText("promptManager.tabPresets"));
+    await waitFor(() => expect(q.queryByTestId("image-prompt-template-row-portrait")).toBeNull());
+
+    const closeBtn = q.getAllByText("close")[0]!;
+    fireEvent.click(closeBtn);
+    await waitFor(() => expect(q.getByText("unsaved_changes_title")).toBeTruthy());
   });
 });
 

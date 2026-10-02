@@ -36,8 +36,8 @@ import { ImportPreviewModal } from "./ImportPreviewModal.js";
 export interface CharacterImportMobileProps {
   /** True while the backend is ingesting the confirmed file; disables confirm. */
   isImporting: boolean;
-  /** Called with `[file]` when the user confirms the preview. */
-  onImportFiles: (files: File[]) => void;
+  /** Called with `[file]` and the embedded-lore choice when the user confirms. */
+  onImportFiles: (files: File[], options?: { importEmbeddedBook?: boolean }) => void;
 }
 
 export interface CharacterImportMobileHandle {
@@ -49,6 +49,7 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
   function CharacterImportMobile({ isImporting, onImportFiles }, ref) {
     const { t } = useT();
     const [preview, setPreview] = useState<CharacterPreview | null>(null);
+    const [importEmbeddedBook, setImportEmbeddedBook] = useState(false);
     // Monotonic pick generation: only the latest selection may commit its
     // parse result. `mountedRef` additionally blocks commits after unmount.
     const pickIdRef = useRef(0);
@@ -74,6 +75,7 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
         // old avatar URL when the state transitions to null. If parsing throws,
         // no new preview is set and no modal opens (per spec).
         const pickId = ++pickIdRef.current;
+        setImportEmbeddedBook(false);
         setPreview(null);
         try {
           const parsed = await parseCharacterFile(file);
@@ -101,7 +103,7 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
 
     function handleConfirm(): void {
       if (!preview || isImporting) return;
-      onImportFiles([preview.file]);
+      onImportFiles([preview.file], { importEmbeddedBook });
       // Clearing transitions the URL to undefined → effect cleanup revokes.
       setPreview(null);
     }
@@ -118,7 +120,13 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
             title={t("character_import_title")}
             subtitle={t("character_import_sub")}
             confirmLabel={t("add_to_library")}
-            preview={<CharacterImportPreview preview={preview} />}
+            preview={
+              <CharacterImportPreview
+                preview={preview}
+                importEmbeddedBook={importEmbeddedBook}
+                onImportEmbeddedBookChange={setImportEmbeddedBook}
+              />
+            }
             isImporting={isImporting}
             onConfirm={handleConfirm}
             onClose={handleClose}

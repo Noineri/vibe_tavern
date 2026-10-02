@@ -19,6 +19,7 @@ mock.module("../../../../i18n/context.js", () => ({
 
 const { render, act, cleanup } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
+
 const { SttLocalServerPanel } = await import("./SttLocalServerPanel.js");
 const { __setSttDiscoveryDepsForTests } = await import("./use-stt-discovery.js");
 const { STT_BACKENDS } = await import("@vibe-tavern/domain");
@@ -184,5 +185,12 @@ describe("SttLocalServerPanel", () => {
     });
     expect(view.queryByTestId("stt-help-use-speaches")).toBeNull();
     expect(view.getByTestId("stt-help-wire-mismatch").textContent).toBe("stt_local_wire_needs_compat");
+  });
+});
+
+describe("SttLocalServerPanel — the status chip moved out (IG-CF12e)", () => {
+  test("the panel no longer renders the chip — it lives outside the card now", () => {
+    const view = renderPanel(openaiForm(), mock(() => {}));
+    expect(view.queryByTestId("stt-local-status")).toBeNull();
   });
 });

@@ -12,21 +12,15 @@ import { lblCls } from "../../../lib/field-tokens.js";
 
 type TextDraftKey = Exclude<keyof DraftData, "authorsNoteDepth" | "authorsNotePosition" | "authorsNoteRole">;
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-t4">{title}</span>
-      <div className="h-px flex-1 bg-border" />
-    </div>
-  );
-}
-
 /**
  * Chat-level prompt fields of a preset (system / jailbreak / prefill /
  * author's note). The former "Service Prompts" section (summary + AI-assistant
- * mode overrides) moved to the dedicated «Служебные» tab (ServicePromptsPane,
+ * mode overrides) moved to the dedicated service-prompts tab (ServicePromptsPane,
  * SP-8/SP-9); the service-related draft fields stay in the preset DTO only as
- * migration source data (SP-7).
+ * migration source data (SP-7). The "Chat prompts" section header is gone
+ * (owner ruling 2026-09-19): it existed to separate this section from the
+ * service prompts, which now live in their own tab — with the sibling gone,
+ * a lone section header over the only remaining section was pure noise.
  */
 type DraftData = {
   system: string;
@@ -84,8 +78,6 @@ export function PromptFields({ draft, onUpdateField, prefillSupported, hideChatP
     <div className="flex min-w-0 flex-col gap-6 scroll-smooth">
       {!hideChatPrompts && (
         <>
-          <SectionHeader title={t("prompt_section_chat")} />
-
           <FieldSection label={t("system_prompt")} labelClassName={cn(lblCls, "!text-accent")} token={draft?.system ?? ""}>
             {ta("system", t("system_prompt_placeholder"), 12)}
           </FieldSection>

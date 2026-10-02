@@ -19,6 +19,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { LinkBindingPopover, type LinkTarget } from "./LinkBindingPopover.js";
+import { lorebookToLinkTarget, scriptToLinkTarget, regexToLinkTarget } from "../../lib/link-targets.js";
 import { useT } from "../../i18n/context.js";
 import { getLorebookLinks, listAllLorebooks, setLorebookLinks } from "../../api/lorebook-api.js";
 import { listCharacterLorebooks, listCharacterScripts } from "../../api/character-api.js";
@@ -45,19 +46,6 @@ interface BoundResourcesFieldProps {
 }
 
 /**
- * Map a lorebook record to the LinkTarget shape LinkBindingPopover expects.
- * Lorebooks have no avatar, so they fall back to the name-initial dot inside
- * LinkBindingPopover's AvatarDot (avatarAssetId null → initial).
- */
-function lorebookToTarget(lb: LorebookRecord): LinkTarget {
-  return { id: lb.id, name: lb.name, avatarAssetId: null };
-}
-
-/**
- * Map a script record to the LinkTarget shape. Scripts have no avatar, so they
- * fall back to the name-initial dot (same as lorebooks).
- */
-/**
  * MUI step 13 (owner 2026-09-11): application-scope (global) scripts run
  * everywhere unconditionally — a character/persona link is never consulted
  * for them, so entity-side pickers must not offer them. Mirrors the
@@ -65,18 +53,6 @@ function lorebookToTarget(lb: LorebookRecord): LinkTarget {
  */
 export function isScriptOfferableForEntityLink(sc: Pick<ScriptRecord, "scopeType">): boolean {
   return sc.scopeType !== "global";
-}
-
-function scriptToTarget(sc: ScriptRecord): LinkTarget {
-  return { id: sc.id, name: sc.name, avatarAssetId: null };
-}
-
-/**
- * Map a regex preset record to the LinkTarget shape. Regex presets have no
- * avatar, so they fall back to the name-initial dot (same as lorebooks).
- */
-function regexToTarget(rx: RegexPresetRecord): LinkTarget {
-  return { id: rx.id, name: rx.name, avatarAssetId: null };
 }
 
 export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCaption, scriptCaption }: BoundResourcesFieldProps) {
@@ -141,12 +117,12 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
     void refresh();
   }, [refresh]);
 
-  const targets = allLorebooks.map(lorebookToTarget);
+  const targets = allLorebooks.map(lorebookToLinkTarget);
   // MUI step 13: global scripts are not OFFERED here. Legacy links made before
   // this rule still render as pills and can be removed; only new offers stop.
   const scriptTargets = allScripts
     .filter(isScriptOfferableForEntityLink)
-    .map(scriptToTarget);
+    .map(scriptToLinkTarget);
   // LinkBindingPopover is told the persona's bound lorebooks as pseudo-links of
   // targetType 'lorebook'. The pill row + the popover's lorebook section both
   // derive from this list and the `lorebooks` prop.
@@ -332,7 +308,7 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
             links={regexLinks}
             characters={[]}
             personas={[]}
-            regexes={allRegexPresets.map(regexToTarget)}
+            regexes={allRegexPresets.map(regexToLinkTarget)}
             onSetLinks={(newLinks) => {
               void handleSetRegexLinks(newLinks as { targetType: "regex"; targetId: string }[]);
             }}

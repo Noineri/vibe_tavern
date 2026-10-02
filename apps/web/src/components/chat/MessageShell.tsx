@@ -6,6 +6,7 @@ import { Icons } from "../shared/icons.js";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { ActionSheet, type ActionSheetItem } from "../shared/ActionSheet.js";
 import { AssistantContextHeader } from "./AssistantContextHeader.js";
+import { ImageGenMessageMenu } from "./ImageGenMessageMenu.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import {
@@ -138,6 +139,23 @@ export interface MessageShellProps {
   actions: MessageShellActions;
   /** Whether this message is currently being narrated (TTS). */
   narrating?: boolean;
+  /** IG-CF6 (IMAGE_GENERATION_PLAN): this message is a PURE image-gen slot
+   *  (empty content + every attachment a generated image). The text action
+   *  rows are REPLACED by `slotControls` + the swipe carousel (delete/trash
+   *  stays — inline on desktop, the mobile three-dot sheet reduced to
+   *  Delete), and the metadata bar (timestamp + token count) is suppressed:
+   *  the slot's content is the image, not text. */
+  imageSlot?: boolean;
+  /** IG-CF6: the slot's own controls (regenerate-as-variant /
+   *  promote-to-gallery / include-in-prompt) rendered in place of the text
+   *  actions, desktop + mobile. */
+  slotControls?: ReactNode;
+  /** C-B (owner 2026-09-19): the slot's quiet meta line — mode display name
+   *  + generation model — rendered at the text message's metadata-bar
+   *  position, ABOVE both action rows (desktop and mobile alike: the line
+   *  is full-width and wraps, so the old mobile no-room constraint of the
+   *  in-row label does not apply). */
+  slotMeta?: ReactNode;
 }
 
 const msgWrap = "relative group py-2.5";
@@ -175,11 +193,26 @@ export function MessageShell(props: MessageShellProps) {
     children,
     actions,
     narrating = false,
+    imageSlot = false,
+    slotControls,
+    slotMeta,
   } = props;
 
   const { t, tDynamic } = useT();
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // IG-16: the image-generation menu rides both action rows (desktop +
+  // mobile) on every message — any message can anchor a generation, and the
+  // in-flight Stop morph lives on the same triggers.
+  const imageMenu = (
+    <ImageGenMessageMenu
+      chatId={chatId}
+      messageId={messageId}
+      variant={isMobile ? "mobile" : "desktop"}
+      disabled={isBusy}
+    />
+  );
 
   // Build slot context
   const slotCtx: MessageSlotContext = {
@@ -301,13 +334,22 @@ export function MessageShell(props: MessageShellProps) {
           {/* F12 — Mobile message actions: shared bottom sheet instead of a
               bespoke getBoundingClientRect popover. Items mirror the old
               inline rows (Copy/Edit/Delete); the copy row swaps its icon +
-              label to the "copied" state via the `copied` prop. */}
+              label to the "copied" state via the `copied` prop.
+              IG-CF6: a pure image slot reduces the sheet to Delete — the
+              sheet's other items are text-message controls. */}
           {isMobile && (
             <ActionSheet
               open={mobileMenuOpen}
               onClose={() => setMobileMenuOpen(false)}
               title={t("message_actions_title")}
-              items={[
+              items={(imageSlot ? [
+                {
+                  icon: <Icons.Trash />,
+                  label: deleteLabel,
+                  danger: true,
+                  action: actions.onDelete,
+                },
+              ] : [
                 ...(actions.onNarrate
                   ? [
                       {
@@ -346,7 +388,7 @@ export function MessageShell(props: MessageShellProps) {
                   danger: true,
                   action: actions.onDelete,
                 },
-              ] satisfies ActionSheetItem[]}
+              ]) satisfies ActionSheetItem[]}
             />
           )}
 
@@ -379,12 +421,41 @@ export function MessageShell(props: MessageShellProps) {
           ))}
 
           {/* ── Metadata ── */}
+          {/* IG-CF6: no token meta on a pure image slot — the metadata bar's
+              token count + model badges are text-message provenance for a
+              message whose content is the image. C-B (owner ruling
+              2026-09-19: hoist the meta line above the action rows,
+              mirroring the text message — see
+              reports/IMAGEGEN_MAINTENANCE_REPORT.md): the
+              slot instead carries its OWN quiet meta line — mode display
+              name + generation model — at the exact position the text
+              message's metadata bar occupies, above both action rows. */}
           {!isEditing && !isGenerating && (
-            <MessageMetadata metaCtx={metaCtx} />
+            imageSlot ? (
+              slotMeta && (
+                <div data-testid="image-gen-slot-meta" className="mt-1 flex flex-wrap items-center gap-2 font-ui text-[calc(var(--ui-fs)-4px)] text-t3/50">
+                  {slotMeta}
+                </div>
+              )
+            ) : (
+              <MessageMetadata metaCtx={metaCtx} />
+            )
           )}
 
           {/* ── Desktop Actions ── */}
           {!isEditing && !isGenerating && !isMobile && (
+            imageSlot ? (
+              <DesktopSlotMessageActions
+                canSwitchVariant={canSwitchVariant}
+                isBusy={isBusy}
+                isGreeting={isGreeting}
+                variantCount={variantCount}
+                variantControls={desktopVariantControls}
+                onDelete={actions.onDelete}
+              >
+                {slotControls}
+              </DesktopSlotMessageActions>
+            ) : (
             <DesktopMessageActions
               aiEditTooltip={tDynamic("message_ai_editor_tooltip")}
               aiAnnotateTooltip={tDynamic("message_ai_editor_mode_annotate")}
@@ -402,6 +473,7 @@ export function MessageShell(props: MessageShellProps) {
               editLabel={editLabel}
               continueTooltip={continueLabel}
               hiddenVariantControls={!!variantControlsOverlay}
+              imageMenu={imageMenu}
               isBusy={isBusy}
               isBranching={isBranching}
               isGreeting={isGreeting}
@@ -426,10 +498,19 @@ export function MessageShell(props: MessageShellProps) {
               onResend={actions.onResend}
               variantControls={desktopVariantControls}
             />
+            )
           )}
 
           {/* ── Mobile Actions ── */}
           {isMobile && !isEditing && !isGenerating && (
+            imageSlot ? (
+              <MobileSlotMessageActions
+                canSwitchVariant={canSwitchVariant}
+                variantControls={mobileVariantControls}
+              >
+                {slotControls}
+              </MobileSlotMessageActions>
+            ) : (
             <MobileMessageActions
               aiEditTooltip={tDynamic("message_ai_editor_tooltip")}
               canAiEdit={canAiEdit}
@@ -443,6 +524,7 @@ export function MessageShell(props: MessageShellProps) {
               isBusy={isBusy}
               isBranching={isBranching}
               isGreeting={isGreeting}
+              imageMenu={imageMenu}
               isUser={isUser}
               regenLabel={regenLabel}
               resendLabel={resendLabel}
@@ -459,6 +541,7 @@ export function MessageShell(props: MessageShellProps) {
               onResend={actions.onResend}
               variantControls={mobileVariantControls}
             />
+            )
           )}
 
           {/* ── Slot: attachment_area ── */}
@@ -537,6 +620,8 @@ function DesktopMessageActions(props: {
   copyLabel: string;
   editLabel: string;
   hiddenVariantControls: boolean;
+  /** IG-16: the image-generation menu (trigger + popover + Stop morph). */
+  imageMenu: ReactNode;
   isBusy: boolean;
   isBranching: boolean;
   isGreeting: boolean;
@@ -565,6 +650,7 @@ function DesktopMessageActions(props: {
     aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
     branchLabel, canBranch, canRegenerate, canResend, canContinue, continueTooltip, canSwitchVariant,
     copied, copiedLabel, copyLabel, editLabel, hiddenVariantControls,
+    imageMenu,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControlsRef, variantCount,
     variantControls,
@@ -588,8 +674,8 @@ function DesktopMessageActions(props: {
 
       {/* LS-4a: Continue — icon-only, directly next to Edit, last AI reply
           only (canContinue is gated upstream in MessageBlock), tooltip on
-          hover per the owner spec («перемотка >>, без подписи, подсветка
-          тултипом»). */}
+          hover per the owner spec (fast-forward >>, no caption, tooltip
+          highlight). */}
       {canContinue && onContinue && (
         <CustomTooltip content={continueTooltip ?? ""}>
           <button
@@ -655,10 +741,19 @@ function DesktopMessageActions(props: {
       {canBranch && <span className={desktopActionClass} aria-busy={isBranching} onClick={() => { if (!isBusy) onBranch(); }}>{isBranching ? <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" /> : <Icons.Branch />}{branchLabel}</span>}
       {canRegenerate && <span className={desktopActionClass} onClick={() => { if (!isBusy) onRegenerate(); }}><Icons.Regen />{regenLabel}</span>}
 
+      {/* IG-16: image generation menu (icon+caret popover; Stop while running). */}
+      {imageMenu}
+
       {!isUser && !isGreeting && variantCount > 1 && canSwitchVariant && variantControls}
 
+      {/* Pre-CF6 affordance: the generic per-message delete. The IG-CF6
+          worker initially tagged it image-slot-delete, which broke the
+          slot-shaped gate tests on text messages — the generic delete is
+          part of the TEXT surface, not slot chrome. The SLOT row's delete
+          keeps image-slot-delete. */}
       {!isGreeting && (
         <span
+          data-testid="message-delete"
           className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
           onClick={() => { if (!isBusy) onDelete(); }}
         ><Icons.Trash /></span>
@@ -681,6 +776,8 @@ function MobileMessageActions(props: {
   canRegenerate: boolean;
   canResend: boolean;
   canSwitchVariant: boolean;
+  /** IG-16: the image-generation menu (icon button + sheet + Stop morph). */
+  imageMenu: ReactNode;
   isBusy: boolean;
   isBranching: boolean;
   isGreeting: boolean;
@@ -703,6 +800,7 @@ function MobileMessageActions(props: {
   const {
     aiEditTooltip, canAiEdit, aiAnnotateTooltip, canAiAnnotate,
     branchLabel, canBranch, canRegenerate, canResend, canSwitchVariant,
+    imageMenu,
     isBusy, isBranching, isGreeting, isUser, regenLabel, resendLabel,
     variantControls,
     onAiEdit, onAiAnnotate, onBranch, onNarrate, narrating, narrateTooltip, narrateStopTooltip, onRegenerate, onResend,
@@ -721,6 +819,8 @@ function MobileMessageActions(props: {
         {!isUser && !isGreeting && canSwitchVariant && variantControls}
       </div>
       <div className="flex justify-end gap-1">
+        {/* IG-16: image generation menu (icon button + sheet; Stop while running). */}
+        {imageMenu}
         {onNarrate && (
           <button type="button" aria-label={narrating ? narrateStopTooltip : narrateTooltip} data-testid="mobile-narrate-btn" className={cn("flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg active:bg-s2 [&_svg]:h-5 [&_svg]:w-5", narrating ? "text-accent animate-pulse" : "text-t3")} onClick={() => { if (!isBusy) onNarrate(); }} title={narrating ? narrateStopTooltip : narrateTooltip}>
             {narrating ? <Icons.stopSquare /> : <Icons.speaker />}
@@ -748,6 +848,65 @@ function MobileMessageActions(props: {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// IG-CF6: Slot Message Actions — the image-slot replacement for the text
+// action rows. Same row chrome as the text twins (hover reveal on desktop,
+// 44px-grid on mobile): the slot's controls + the swipe carousel (variant
+// controls) + delete. No Copy/Edit/Continue/Narrate/AI-edit/Branch/
+// text-Regenerate/image-menu — those are text-message controls aimed at an
+// empty message (owner review 2026-09-15).
+// ────────────────────────────────────────────────────────────────────────────
+
+function DesktopSlotMessageActions(props: {
+  children: ReactNode;
+  canSwitchVariant: boolean;
+  isBusy: boolean;
+  isGreeting: boolean;
+  variantCount: number;
+  variantControls?: ReactNode;
+  onDelete: () => void;
+}) {
+  const { children, canSwitchVariant, isBusy, isGreeting, variantCount, variantControls, onDelete } = props;
+  return (
+    <div className="relative flex items-center gap-px mt-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+      {children}
+
+      {/* Swipe carousel — the text row's variant-controls slot, unchanged. */}
+      {!isGreeting && variantCount > 1 && canSwitchVariant && variantControls}
+
+      {/* Delete/trash stays so a slot can be removed (same absolute-right
+          shape as the text row). */}
+      {!isGreeting && (
+        <span
+          data-testid="image-slot-delete"
+          className="absolute right-0 flex cursor-pointer items-center gap-1 rounded px-[7px] py-[3px] font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors duration-100 hover:bg-s2 hover:text-t2"
+          onClick={() => { if (!isBusy) onDelete(); }}
+        ><Icons.Trash /></span>
+      )}
+    </div>
+  );
+}
+
+function MobileSlotMessageActions(props: {
+  children: ReactNode;
+  canSwitchVariant: boolean;
+  variantControls?: ReactNode;
+}) {
+  const { children, canSwitchVariant, variantControls } = props;
+  // Same 44px/1fr/auto grid as the text row; the left cell (Branch) is empty
+  // — a slot has no branch affordance. Delete lives in the header three-dot
+  // sheet (reduced to Delete-only for slots), not inline.
+  return (
+    <div className="mt-2 grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2">
+      <div className="flex justify-start" />
+      <div className="flex min-w-0 justify-center">
+        {canSwitchVariant && variantControls}
+      </div>
+      <div className="flex justify-end gap-1">{children}</div>
     </div>
   );
 }

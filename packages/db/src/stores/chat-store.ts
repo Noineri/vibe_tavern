@@ -22,7 +22,7 @@ import {
 /**
  * Store-level Chat — domain Chat projected from a DB row.
  * Uses plain `string` IDs (brands are applied at the API boundary).
- * Includes DB-specific denormalized fields (summary, loreActivationState, scriptState, etc.).
+ * Includes DB-specific denormalized fields (summary, scriptState, etc.).
  */
 export interface Chat {
   id: string;
@@ -42,7 +42,6 @@ export interface Chat {
   selectedGreetingIndex: number;
   activeBranchId: string;
   promptPresetId: string | null;
-  loreActivationState: Record<string, unknown>;
   scriptState: Record<string, Record<string, unknown>>;
   /** Co-author only (CE-C1): entities pinned to this chat as read-only
    *  Level-1 editor context (right-panel picker). Typed (character/persona/
@@ -64,6 +63,8 @@ export interface ChatBranch {
   parentBranchId: string | null;
   forkedFromMessageId: string | null;
   label: string;
+  /** Timed lore activation state belongs to this branch's independent history. */
+  loreActivationState: Record<string, unknown>;
   createdAt: string;
   messageCount?: number;
 }
@@ -425,10 +426,14 @@ export class ChatStore {
     const chat = await this.getById(chatId);
     if (!chat) return null;
 
+    return this.getBranch(chat.activeBranchId);
+  }
+
+  async getBranch(branchId: string): Promise<ChatBranch | null> {
     const row = await this.db
       .select()
       .from(chatBranches)
-      .where(eq(chatBranches.id, chat.activeBranchId))
+      .where(eq(chatBranches.id, branchId))
       .get();
     return row ? this.mapRowBranch(row) : null;
   }
@@ -751,6 +756,7 @@ export class ChatStore {
               toolCallId: null,
               sceneTrackerJson: null,
               ttsAnnotation: null,
+              attachmentsJson: null,
               createdAt: this.clock.now(),
             }).run();
             currentVariants = [{
@@ -770,6 +776,7 @@ export class ChatStore {
               toolCallId: null,
               sceneTrackerJson: null,
               ttsAnnotation: null,
+              attachmentsJson: null,
               createdAt: this.clock.now(),
             }];
             changed = true;
@@ -804,6 +811,7 @@ export class ChatStore {
               toolCallId: null,
               sceneTrackerJson: null,
               ttsAnnotation: null,
+              attachmentsJson: null,
               createdAt: now,
             }))).run();
             currentVariants = [
@@ -825,6 +833,7 @@ export class ChatStore {
                 toolCallId: null,
                 sceneTrackerJson: null,
                 ttsAnnotation: null,
+                attachmentsJson: null,
                 createdAt: now,
               })),
             ];
@@ -870,11 +879,11 @@ export class ChatStore {
 
   // ─── Lore/Script state persistence ───────────────────────────────────────
 
-  async updateLoreActivationState(chatId: string, state: Record<string, unknown>): Promise<void> {
+  async updateLoreActivationState(branchId: string, state: Record<string, unknown>): Promise<void> {
     await this.db
-      .update(chats)
+      .update(chatBranches)
       .set({ loreActivationStateJson: JSON.stringify(state) })
-      .where(eq(chats.id, chatId))
+      .where(eq(chatBranches.id, branchId))
       .run();
   }
 
@@ -906,7 +915,6 @@ export class ChatStore {
       selectedGreetingIndex: row.selectedGreetingIndex,
       activeBranchId: row.activeBranchId,
       promptPresetId: row.promptPresetId,
-      loreActivationState: safeParseJson(row.loreActivationStateJson),
       scriptState: safeParseScriptState(row.scriptStateJson),
       coauthorContextLinks: parseContextLinks(row.coauthorContextLinksJson),
       coauthorModuleId: row.coauthorModuleId,
@@ -923,6 +931,7 @@ export class ChatStore {
       parentBranchId: row.parentBranchId,
       forkedFromMessageId: row.forkedFromMessageId,
       label: row.label,
+      loreActivationState: safeParseJson(row.loreActivationStateJson),
       createdAt: row.createdAt,
     };
   }

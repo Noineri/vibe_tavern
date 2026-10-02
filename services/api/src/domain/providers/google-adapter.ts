@@ -25,6 +25,7 @@ import {
 } from "./provider-transport.js";
 import { PROVIDER_TYPE, SAMPLER_SETS } from "@vibe-tavern/domain";
 import type { ProtocolAdapter, ProbeInput, ListModelsInput } from "./protocol-types.js";
+import { readProviderErrorBody } from "../../infrastructure/ai/provider-error-body.js";
 
 export async function probeGoogleConnection(input: ProbeInput): Promise<ProviderProbeResult> {
 	const baseUrl = (input.baseUrl || "").replace(/\/+$/, "");
@@ -86,10 +87,10 @@ export async function testGoogleChat(input: ProviderConnectionInput): Promise<Te
 		clearTimeout(timer);
 
 		if (!response.ok) {
-			const errorText = await response.text().catch(() => "");
+			const errorText = await readProviderErrorBody(response);
 			return {
 				success: false,
-				error: `${response.status} ${response.statusText}${errorText ? `: ${errorText.slice(0, 200)}` : ""}`,
+				error: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`,
 			};
 		}
 

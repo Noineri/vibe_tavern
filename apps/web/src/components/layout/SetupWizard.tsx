@@ -166,7 +166,7 @@ function ProviderStep({
     frequencyPenalty: existingProfile?.frequencyPenalty ?? 0,
     presencePenalty: existingProfile?.presencePenalty ?? 0,
     repetitionPenalty: existingProfile?.repetitionPenalty ?? 1,
-    maxTokens: existingProfile?.maxTokens ?? 512,
+    maxTokens: existingProfile?.maxTokens ?? 2000,
     contextBudget: existingProfile?.contextBudget ?? 16000,
     pinContextBudget: existingProfile?.pinContextBudget ?? false,
     tokenPadding: existingProfile?.tokenPadding ?? 0,

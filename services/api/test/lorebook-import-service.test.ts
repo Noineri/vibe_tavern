@@ -41,7 +41,9 @@ const ST_BOOK = {
 function makeStores() {
   const createLorebook = mock(async (data: Record<string, unknown>) => ({ id: "lb_1", ...data }));
   const bulkCreateEntries = mock(async (_lorebookId: string, _entries: unknown[]) => 1);
+  const listAll = mock(async () => [{ id: "char_alice", name: "Alice", slug: "alice" }]);
   const stores = {
+    characters: { listAll },
     lorebooks: {
       createLorebook,
       bulkCreateEntries,
@@ -49,7 +51,7 @@ function makeStores() {
       deleteAllEntries: async (_id: string) => {},
     },
   } as unknown as StoreContainer;
-  return { stores, createLorebook, bulkCreateEntries };
+  return { stores, createLorebook, bulkCreateEntries, listAll };
 }
 
 describe("lorebook-import-service — enabled threading (L1a)", () => {
@@ -87,6 +89,80 @@ describe("lorebook-import-service — enabled threading (L1a)", () => {
     expect(createLorebook).toHaveBeenCalledTimes(1);
     const created = createLorebook.mock.calls[0][0] as Record<string, unknown>;
     expect(created.enabled).toBe(true);
+  });
+
+  it("passes every parsed ST book setting to createLorebook", async () => {
+    // ST applies settings.json globals through its world-info setters (world-info.js:824-836).
+    const { stores, createLorebook } = makeStores();
+
+    await importLorebook(stores, null, {
+      format: "st",
+      data: {
+        ...ST_BOOK,
+        scan_depth: 99,
+        token_budget: 777,
+        recursive_scanning: false,
+        extensions: { token_budget_pct: 1, token_budget_cap: 2, max_recursion_steps: 3 },
+      },
+      mode: "new",
+      globalScanDepth: 7,
+      globalTokenBudgetPercent: 42,
+      globalTokenBudgetCap: 420,
+      globalRecursiveScanning: true,
+      globalMaxRecursionSteps: 7,
+      globalIncludeNames: false,
+      globalMinActivations: 3,
+      globalMinActivationsDepthMax: 33,
+      globalOverflowAlert: true,
+      globalCharacterStrategy: 2,
+      globalUseGroupScoring: true,
+      globalCaseSensitive: true,
+      globalMatchWholeWords: true,
+    });
+
+    const created = createLorebook.mock.calls[0][0] as Record<string, unknown>;
+    expect(created).toMatchObject({
+      scanDepth: 7,
+      tokenBudget: 777,
+      tokenBudgetPercent: 42,
+      tokenBudgetCap: 420,
+      recursiveScanning: true,
+      maxRecursionSteps: 7,
+      includeNames: false,
+      minActivations: 3,
+      minActivationsDepthMax: 33,
+      overflowAlert: true,
+      characterStrategy: 2,
+      useGroupScoring: true,
+      caseSensitive: true,
+      matchWholeWords: true,
+    });
+  });
+
+  it("resolves native ST characterFilter avatar filenames against the character inventory (world-info.js:2125-2131)", async () => {
+    const { stores, bulkCreateEntries, listAll } = makeStores();
+    const result = await importLorebook(stores, null, {
+      format: "st",
+      data: {
+        name: "Filtered",
+        entries: {
+          "0": {
+            key: ["greeting"], content: "Hello",
+            characterFilter: { isExclude: true, names: ["Alice.png", "Missing.png"], tags: ["unused-tag"] },
+          },
+        },
+      },
+      mode: "new",
+    });
+
+    expect(result.warnings).toContain("Lore entry 0 has character-filter tags that Vibe Tavern cannot import.");
+    expect(listAll).toHaveBeenCalledTimes(1);
+    const entries = bulkCreateEntries.mock.calls[0][1] as Array<Record<string, unknown>>;
+    expect(entries[0].characterFilter).toEqual([
+      { id: "char_alice", name: "Alice" },
+      { id: null, name: "Missing.png" },
+    ]);
+    expect(entries[0].characterFilterExclude).toBe(true);
   });
 
   it("merge into an existing book ignores enabled (no creation, no toggle flip)", async () => {

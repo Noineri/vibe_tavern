@@ -1,0 +1,1 @@
+ALTER TABLE `image_gen_profiles` ADD `user_sizes_json` text;

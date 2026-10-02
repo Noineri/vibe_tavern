@@ -23,10 +23,14 @@ import type {
   RetrievedMemoryHitId,
   ScriptId,
   SttProfileId,
+  ImageGenProfileId,
   SummaryMemorySnapshotId,
   ToolProfileId,
   TtsProfileId,
 } from "./ids.js";
+
+import type { ImagePromptFamilyId } from "./image-prompt-families.js";
+import type { ImageGenWorkflowFamilyId } from "./imagegen-workflow-families.js";
 
 import type {
   CardFormat,
@@ -200,6 +204,7 @@ export interface Persona {
 export const LOREBOOK_DEFAULTS = {
   scanDepth: 10,
   tokenBudget: 1000,
+  tokenBudgetCap: 0,
   recursiveScanning: false,
 } as const;
 
@@ -212,9 +217,15 @@ export interface Lorebook {
   tokenBudget: number;
   /** Null = fixed token-budget mode (use tokenBudget). 0-100 = percent of model context. See lorebook-st-parity-audit.md §1.4. */
   tokenBudgetPercent: number | null;
+  /** Absolute ceiling for percent mode (ST's world_info_budget_cap, scoped to the book). 0 = no cap; applies only when tokenBudgetPercent is set. Fixed mode is already absolute. */
+  tokenBudgetCap: number;
   recursiveScanning: boolean;
   /** Book-level default for entry.useGroupScoring (ST's global switch, scoped to the book). Effective flag: entry.useGroupScoring ?? book.useGroupScoring. See LOREBOOK_GROUP_SCORING_PARITY_REPORT. */
   useGroupScoring: boolean;
+  /** Book-level default for entry.caseSensitive when the entry is set to Inherit (ST resolves per-entry null against its global world-info setting; VT scopes that default to the book). Effective flag: entry.caseSensitive ?? book.caseSensitive. */
+  caseSensitive: boolean;
+  /** Book-level default for entry.matchWholeWords when the entry is set to Inherit — see caseSensitive above. */
+  matchWholeWords: boolean;
   maxRecursionSteps: number;
   includeNames: boolean;
   minActivations: number;
@@ -251,8 +262,10 @@ export interface CharacterFilterEntry {
  *
  * `keys` are activation triggers; `secondaryKeys` provide additional conditions
  * combined via `logic`.
- * `stickyWindow`, `cooldownWindow`, and `delayWindow` control time-based
- * activation behaviour (Phase 2).
+ * `stickyWindow` and `cooldownWindow` control time-based activation
+ * behaviour (Phase 2). `minChatMessages` is an absolute chat-length gate
+ * (ST parity, the old VT-only `delayWindow` mechanic was removed —
+ * LOREBOOK_ST_PARITY_RESWEEP_2026-09, owner ruling 2026-09-24).
  */
 export interface LoreEntry {
   id: LoreEntryId;
@@ -268,7 +281,11 @@ export interface LoreEntry {
   // Time windows
   stickyWindow: number;
   cooldownWindow: number;
-  delayWindow: number;
+  /** Absolute chat-length gate (ST `delay`): while the current message count
+   * is below this value the entry is fully suppressed — constants, sticky
+   * windows and @@activate decorators included, exactly ST's `isDelay`
+   * continue (world-info.js #checkDelayEffect). 0 = off. */
+  minChatMessages: number;
   // Extended ST fields
   constant: boolean;
   probability: number;
@@ -287,8 +304,12 @@ export interface LoreEntry {
   recursionLevel: number;
   scanDepthOverride: number | null;
   // Matching
-  caseSensitive: boolean;
-  matchWholeWords: boolean;
+  /** Tri-state (ST parity): null = inherit the book-level caseSensitive default, true/false = explicit per-entry override. */
+  caseSensitive: boolean | null;
+  /** Tri-state (ST parity): null = inherit the book-level matchWholeWords default, true/false = explicit per-entry override. */
+  matchWholeWords: boolean | null;
+  /** Plain keys that use the opt-in Russian case-forms compiler. Stored in entry metadata so the visible key arrays remain clean. */
+  caseFormsKeys?: string[];
   characterFilter: CharacterFilterEntry[];
   characterFilterExclude: boolean;
   matchSources: LoreMatchSource[];
@@ -314,7 +335,9 @@ export type LoreActivationReason =
   | { kind: "constant" }
   /** Previously activated, still inside its `stickyWindow` (step 5). */
   | { kind: "sticky"; turnsSinceActivation: number; window: number }
-  /** `delayWindow` elapsed — first-match pending now fulfilled (step 7). */
+  /** LEGACY — the `delayWindow` mechanic was removed (resweep step 1,
+   * 2026-09-29); the engine no longer produces this reason. Kept in the union
+   * so prompt traces persisted before the removal still render in the trace UI. */
   | { kind: "delay_fulfilled" }
   /** `@@activate` decorator forced activation without a key match (step 8/12). */
   | { kind: "decorator" }
@@ -342,7 +365,31 @@ export type ActiveLoreEntry = LoreEntry & {
   activationReason: LoreActivationReason;
   matchedKeys: string[];
   matchCount: number;
+  /** Resolved ST source-block order for final prompt insertion. */
+  insertionOrder: number;
 };
+
+/** P21 (overflowAlert): a lorebook whose token budget overflowed during a
+ *  resolve. `dropped` = entries removed by the N5 latch; `alert` = the book's
+ *  overflowAlert setting at resolve time (the live-turn finish event filters
+ *  on it server-side; the trace keeps the full list). */
+export interface OverflowedLorebook {
+  lorebookId: string;
+  name: string;
+  dropped: number;
+  alert: boolean;
+}
+
+/** Result of PromptAssemblyResolver.listActiveLoreEntries (P21 widened the
+ *  plain ActiveLoreEntry[] return with the per-book overflow report). */
+export interface ActiveLoreEntriesResult {
+  entries: ActiveLoreEntry[];
+  overflowedLorebooks: OverflowedLorebook[];
+  /** Activated ST outlet entries, grouped by their outlet name and joined with
+   * a newline like ST's CUSTOM_WI_OUTLET extension prompts. They are excluded
+   * from the normal lore stream and are available to {{outlet::name}}. */
+  outletEntries: Record<string, string>;
+}
 
 export interface Script {
   id: ScriptId;
@@ -1025,7 +1072,511 @@ export interface SttProfile {
   updatedAt: Timestamp;
 }
 
-// ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────────
+// ─── Image generation entities (IMAGE_GENERATION_PLAN IG-1) ─────────────
+//
+// Standalone image-gen profiles — the Providers-modal "image" category
+// (design IMAGE_GENERATION_DESIGN). Same standalone-entity rule as
+// ttsProfiles/sttProfiles: NOT providerProfiles (LLM-specific). The
+// `backend` discriminator selects the server-side adapter protocol from the
+// IMAGE_GEN_BACKENDS roster (the frontend preset table maps its presets onto
+// these slugs); `presetId` is the UI-side preset slug kept for round-tripping
+// the editor form (absent for Custom).
+
+/** v1 image-gen adapter protocol roster (owner-locked scope): OpenRouter
+ *  (chat-completions transport), the OpenAI-images protocol (serves Custom
+ *  cloud endpoints + the PE-1 cloud family, see
+ *  backends/openai-images-family.ts), and the A1111-compatible local
+ *  dialect (owner's Forge-Neo). Further providers arrive in later
+ *  owner-approved batches. */
+export const IMAGE_GEN_BACKENDS = {
+  OpenRouter: "openrouter",
+  OpenAiImages: "openai-images",
+  A1111: "a1111",
+  ComfyUI: "comfyui",
+  TogetherAi: "togetherai",
+  SiliconFlow: "siliconflow",
+  NanoGpt: "nanogpt",
+  ElectronHub: "electronhub",
+  Pollinations: "pollinations",
+  DeepInfra: "deepinfra",
+  Recraft: "recraft",
+  Zai: "zai",
+  MiniMax: "minimax",
+  Volcengine: "volcengine",
+  Dashscope: "dashscope",
+  Nim: "nim",
+  Chutes: "chutes",
+  Hf: "hf",
+  Google: "google",
+  Stability: "stability",
+  Ideogram: "ideogram",
+  Cloudflare: "cloudflare",
+  Aihorde: "aihorde",
+  Bfl: "bfl",
+  Fal: "fal",
+  Replicate: "replicate",
+  Leonardo: "leonardo",
+  Luma: "luma",
+  Novita: "novita",
+  Krea: "krea",
+} as const;
+export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
+
+/** The generation-mode recipes (design taxonomy adapted from ST's): each
+ *  mode binds an Images-tab template + a per-mode size preset. Modes are
+ *  recipes only — no special delivery mechanism.
+ *
+ *  IPT (IMAGE_PROMPT_TEMPLATES_PLAN Wave 0): Selfie and Avatar joined as
+ *  COMPLEMENTS, never replacements (owner 2026-09-19) — the six v1 modes
+ *  keep their identities and the community button vocabulary maps onto
+ *  them: face close-up = portrait, verbatim = free, scenario =
+ *  scene-illustration (anchored on the greeting, MR-13; the RU labels
+ *  live in i18n, not here). The two new modes append here;
+ *  their menu complement positions (selfie after portrait, avatar after
+ *  character) are the FRONTEND list order, wired at IPT Wave 5.
+ *
+ *  IF-3 (IMAGEGEN_FOLLOWUP_REPORT): the avatar slot is now the REACTION
+ *  mode (RU label «Реакция» rides i18n) — a close-up emotional reaction
+ *  at the anchored moment. The `avatar` SLUG deliberately stays: it is
+ *  persisted in `modeSizePresets` and stored attachments, and a slug
+ *  rename would orphan that data for zero user value. */
+export const IMAGE_GENERATION_MODES = {
+  SceneBackground: "scene-background",
+  Portrait: "portrait",
+  Character: "character",
+  UserPersona: "user-persona",
+  SceneIllustration: "scene-illustration",
+  Free: "free",
+  Selfie: "selfie",
+  Avatar: "avatar",
+} as const;
+export type ImageGenerationMode = (typeof IMAGE_GENERATION_MODES)[keyof typeof IMAGE_GENERATION_MODES];
+
+/** How a backend constrains output sizes: a closed vendor-set (cloud vendors
+ *  with fixed size enums — values are `"WxH"` strings) or free width/height
+ *  (local backends). Decides the editor's size UI shape. */
+export type ImageGenSizeSupport =
+  | { kind: "vendor-set"; sizes: string[] }
+  | { kind: "free" };
+
+/** A closed numeric range for one image-gen advanced slider param
+ *  (IMAGE_GENERATION_PLAN IG-CF5): the min/max/step triple the editor's
+ *  slider+number pair renders from. */
+export interface ImageGenParamRange {
+  min: number;
+  max: number;
+  step: number;
+}
+
+/** Per-backend slider-range overrides for the advanced numeric params
+ *  (IMAGE_GENERATION_PLAN IG-CF5). EVERY member optional: an absent member
+ *  (or an absent/empty `paramRanges` outright) falls back to the global
+ *  {@link IMAGE_GEN_PARAM_RANGES} defaults in `imagegen-capabilities.ts`.
+ *  No vendor exports machine-readable limits today — the mechanism ships
+ *  now, values arrive in a future batch. */
+export interface ImageGenParamRanges {
+  steps?: ImageGenParamRange;
+  cfgScale?: ImageGenParamRange;
+  cfgRescale?: ImageGenParamRange;
+  clipSkip?: ImageGenParamRange;
+}
+
+/** Adapter capability mirror, snapshotted onto the profile so the editor UI
+ *  renders provider-gated controls without a live registry round-trip.
+ *  `supportsImg2img`/`supportsInpaint` are RESERVED schema fields (design:
+ *  img2img is deferred beyond v1) — adapters stamp false, no UI reads them. */
+export interface ImageGenCapabilityFlags {
+  supportsNegativePrompt: boolean;
+  supportsSamplers: boolean;
+  supportsSeed: boolean;
+  sizeSupport: ImageGenSizeSupport;
+  /** Preset flag: the backend needs no API key (free/keyless cloud). */
+  noApiKey: boolean;
+  /** Local live-progress streaming (GET /progress on A1111-compat). */
+  supportsLiveProgress: boolean;
+  /** Execution locality (owner 2026-09-14): LOCAL backends (self-hosted
+   *  servers) have NO generation timeout — explicit cancel only; cloud
+   *  backends time out at IMAGE_GENERATION_CLOUD_TIMEOUT_MS. */
+  localExecution: boolean;
+  /** Reserved for later batches — unused in v1. */
+  supportsImg2img: boolean;
+  /** Reserved for later batches — unused in v1. */
+  supportsInpaint: boolean;
+  /** LoRA selection (CG-C2 / FINE_TUNING_CHIP_REBUILD FT-A4): the backend
+   *  owns a LoRA list source and a payload mechanism — ComfyUI
+   *  (LoraLoader nodes) and the A1111 dialect (<lora:> tags, FT-A4);
+   *  future cloud fine-tune adapters flip it and bring their own
+   *  wire. OPTIONAL by design: absent = false, so the flag can graduate
+   *  per backend without touching every row (owner 2026-09-17:
+   *  capability-gated, never local-hardcoded). */
+  supportsLoras?: boolean;
+  /** Advanced scalar controls (steps / CFG scale / CLIP skip): each backend
+   *  exposes only the request fields it actually wires. OPTIONAL by design:
+   *  absent = false, so capability-gated controls never local-hardcode a
+   *  vendor surface (owner precedent 2026-09-17). */
+  supportsSteps?: boolean;
+  supportsCfgScale?: boolean;
+  supportsClipSkip?: boolean;
+  /** Hires-fix second pass (FT-A4): the backend exposes a hires surface —
+   *  the A1111 dialect (enable_hr + hr_* processing fields) today. The
+   *  OPTIONAL-by-design twin of supportsLoras: absent = false, existing
+   *  profile snapshots stay inert until re-saved. */
+  supportsHiresFix?: boolean;
+  /** Per-backend advanced-slider ranges (IG-CF5) — optional by design:
+   *  absent or partially empty falls back to the global
+   *  `IMAGE_GEN_PARAM_RANGES` defaults (see {@link ImageGenParamRanges}). */
+  paramRanges?: ImageGenParamRanges;
+}
+
+/** Profile-level default generation params. EVERY field optional by design
+ *  (owner's hardcoded-parameters ban, 2026-09-07): no value ships as code —
+ *  empty means "send nothing, use the vendor default". */
+/** Hires-fix block shared by the set payload, the profile base params,
+ *  and the per-model overlay (IF-7b): `enabled` decides whether the block
+ *  rides the generation request at all — the chip-draft rung's
+ *  presence-semantics twin for STORED blocks. Stock sets ship the block
+ *  CONFIGURED but disabled (owner: opt-in by the user, never
+ *  auto-enabled). */
+export interface ImageGenHiresBlock {
+  enabled: boolean;
+  upscaler?: string;
+  steps?: number;
+  scale?: number;
+  denoisingStrength?: number;
+}
+
+export interface ImageGenDefaultParams {
+  /** Sampling steps (local backends). */
+  steps?: number;
+  /** CFG scale (local backends). */
+  cfgScale?: number;
+  /** CFG-rescale multiplier (local dialects only; 0/absent = disabled). */
+  cfgRescale?: number;
+  /** Sampler name (samplers-capable backends only). */
+  sampler?: string;
+  /** Fixed seed; absent = vendor-random. */
+  seed?: number;
+  /** CLIP skip (A1111-compat dialect). */
+  clipSkip?: number;
+  /** Schedule type — the A1111-dialect sampler schedule (PG-3): rides the
+   *  txt2img payload per request; absent = the server's own default
+   *  (empty = vendor default, the CF5 no-silent-defaults rule). NOT part
+   *  of the sampler-set payload (the set concept stays the five LS-5
+   *  scalars). */
+  scheduler?: string;
+  /** Text-encoder file for the ComfyUI DiT template (CG-A2, comfyui
+   *  dialect only): the CLIPLoader sidecar of a bare diffusion model.
+   *  Absent = adapter-side canonical resolution against the live folder. */
+  encoderName?: string;
+  /** VAE file for the ComfyUI DiT template (CG-A2, comfyui dialect only):
+   *  the VAELoader sidecar. Absent = adapter-side canonical resolution. */
+  vaeName?: string;
+  /** Manual ComfyUI base-workflow selection carried by a sampler-set pick.
+   * A1111 ignores it. */
+  workflowFamily?: ImageGenWorkflowFamilyId;
+  /** VAE override for dialects with a SWAPPABLE VAE slot (IF-7b): A1111 →
+   *  `override_settings.sd_vae`, ComfyUI checkpoint template → the
+   *  VAELoader swap replacing the bundled third output. DiT-family
+   *  templates keep their family-fixed VAE (`vaeName` above) — this field
+   *  never applies there. Absent = the dialect's own default. */
+  vae?: string;
+  /** Hires-fix second pass on the profile base (IF-7b): `enabled` gates
+   *  the request rung — a configured-but-disabled block ships nothing.
+   *  The chip-draft override outranks both stored rungs at generation. */
+  hires?: ImageGenHiresBlock;
+  /** ADetailer / face-detailer second pass on the profile base — BOTH
+   *  local dialects (A1111: the extension toggle; ComfyUI: the IF-6
+   *  FaceDetailer chain). `false`/absent ships nothing; `true` enables
+   *  the face-fix rung. The pane row renders in BOTH bind arms (the bind
+   *  toggle routes writes, it never hides controls). */
+  adetailer?: boolean;
+  /** Detector model of the face-fix rung — absent = the dialect's own
+   *  default (A1111: the extension's bundled lightweight detector;
+   *  ComfyUI: the live-probed detector list's pick). */
+  adetailerModel?: string;
+  /** Explicit detail-pass steps; absent inherits the base generation steps. */
+  adetailerSteps?: number;
+  /** Krea K2 params — the BASE rung of the two-rung ladder (the per-model
+   *  overlay's `krea` block rides on top; absent overlay fields inherit
+   *  these). Only the krea dialect reads the block; other backends ignore
+   *  it. Owner ruling: the pane's Krea 2 section is NOT gated behind the
+   *  per-model bind toggle — the controls write the ACTIVE arm (the base
+   *  when unbound, the overlay when bound), like every other scalar. */
+  krea?: ImageGenKreaParams;
+}
+
+/** Per-mode width/height preset on the profile. Optional members — an unset
+ *  mode simply sends no size (vendor default) or, for Free mode, whatever the
+ *  request overrides carry. */
+export interface ImageGenModeSizePreset {
+  width?: number;
+  height?: number;
+}
+
+/** User-added vendor-size entry (IG-20a): extends a vendor-set size table
+ *  with a pair the VENDOR announced but our static table lacks (owner
+ *  2026-09-14: the user enters what the vendor communicated until our table
+ *  catches up — the grid never invents values). `ratio` is required by
+ *  ratio-wire backends (OpenRouter's wire accepts only aspect-ratio strings;
+ *  its pixel grids do NOT reduce to them — 864×1184 is "3:4" upstream but
+ *  reduces to "27:37") and ignored by pixel-wire backends (the OpenAI-images
+ *  family sends "WxH" verbatim). */
+export interface ImageGenUserSizeEntry {
+  width: number;
+  height: number;
+  ratio?: string;
+}
+
+/** Size presets keyed by generation mode — only modes the user configured
+ *  carry entries. */
+export type ImageGenModeSizePresets = Partial<Record<ImageGenerationMode, ImageGenModeSizePreset>>;
+
+/** One named image-gen profile (backend protocol + config + defaults +
+ *  per-mode sizes + LLM-assist choice). */
+export interface ImageGenProfile {
+  id: ImageGenProfileId;
+  /** Human-readable profile name ("Forge — local"). */
+  name: string;
+  /** Adapter protocol discriminator (see {@link IMAGE_GEN_BACKENDS}). */
+  backend: ImageGenBackendType;
+  /** UI preset slug from the frontend preset table (round-trips the editor
+   *  form); absent for Custom profiles. */
+  presetId?: string;
+  /** Base URL the adapter talks to (preset baseUrl on preset picks; bare
+   *  endpoint for Custom/local). */
+  endpoint: string;
+  /** Write-only API key (ST-1 typed-column rule): never serialized to the
+   *  client (the wire record reports `hasStoredApiKey` instead). Absent for
+   *  keyless backends (noApiKey). */
+  apiKey?: string;
+  /** Selected model (level-2 outer setting; a fresh connection may save
+   *  without one — the STT P8 pattern). */
+  modelId?: string;
+  /** Default generation params — all optional, no code defaults. */
+  defaultParams: ImageGenDefaultParams;
+  /** IF-7a: the sampler set the BASE params were last applied from — the
+   *  profile-level twin of the overlay row's `samplerSetId` (provenance
+   *  only; copy-on-select, never a live link). Absent/null = no set. */
+  defaultParamsSetId?: string | null;
+  /** Per-mode size presets (width/height). */
+  modeSizePresets: ImageGenModeSizePresets;
+  /** User-added vendor-size entries (IG-20a) — extend the vendor-set grid
+   *  until our static table catches up; absent/empty = table only. */
+  userSizes?: ImageGenUserSizeEntry[];
+  /** LLM-assisted image-prompt writing (owner decision 7.3): explicit
+   *  per-profile toggle; when on, the quiet pre-pass writes the image prompt
+   *  using this LLM provider profile + model (saved on the profile). */
+  llmAssistEnabled: boolean;
+  llmProviderProfileId?: string;
+  llmModelId?: string;
+  /** IPT-2 (IMAGE_PROMPT_TEMPLATES_PLAN): the manually pinned prompt
+   *  family — authoritative when set; absent = the auto path applies. */
+  familyOverride?: ImagePromptFamilyId;
+  /** IPT-2: the last auto-detection result; absent = never detected.
+   *  Freshness is judged by the consumer against `familyDetectedForModel`
+   *  (a model swap marks a stale detection unusable — the assembly falls
+   *  back to prose). */
+  familyDetected?: ImagePromptFamilyId;
+  /** IPT-2: the model id the detection ran against (stale marker for
+   *  `familyDetected`). */
+  familyDetectedForModel?: string;
+  /** IPT-2: how the family currently resolves — DERIVED at read
+   *  (override → manual, detected → auto, neither → none), never stored:
+   *  a stored value would silently go stale on model swaps. */
+  familySource: ImageGenFamilySource;
+  /** IPT-2: profile-level quality-layer toggle — the tag-dialect quality
+   *  block joins the prompt ONLY when explicitly on (default false). */
+  qualityLayerEnabled: boolean;
+  /** Capability snapshot mirrored from the adapter at save time. */
+  capabilities: ImageGenCapabilityFlags;
+  /** MR-12 (the TTS/STT `isDefault` twin, owner report 2026-09-19): the
+   *  GLOBAL active-profile pointer persisted server-side — at most one row,
+   *  store-maintained. Deviation from the twins, named: the wire's create/
+   *  PATCH paths canNOT flip it (no UI producer exists); the ONLY mutation
+   *  path is the store's `setDefault` behind the dedicated route — so the
+   *  exclusivity invariant cannot be raced through the CRUD surface. */
+  isDefault: boolean;
+  /** Stable list ordering in the editor. */
+  sortOrder: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** Link-target vocabulary for the image-gen profile junction (design: a
+ *  profile may be global or tailored to specific characters). The targetType
+ *  column keeps the TTS voice-map junction shape so widening later (e.g.
+ *  personas) is additive. */
+export const IMAGE_GEN_TARGET_TYPE = {
+  Character: "character",
+} as const;
+export type ImageGenTargetType = (typeof IMAGE_GEN_TARGET_TYPE)[keyof typeof IMAGE_GEN_TARGET_TYPE];
+
+/** IPT-2: how a profile's prompt family currently resolves. The value is
+ *  derived from the profile's family columns at read time (see
+ *  `ImageGenProfile.familySource`) — it is never a stored field. */
+export const IMAGE_GEN_FAMILY_SOURCES = {
+  /** Nothing pinned and nothing detected: the profile resolves to the
+   *  universal default family (prose). */
+  None: "none",
+  /** An auto-detection result is present (its freshness vs the current
+   *  modelId is judged separately via familyDetectedForModel). */
+  Auto: "auto",
+  /** A manual pin is present — authoritative. */
+  Manual: "manual",
+} as const;
+export type ImageGenFamilySource = (typeof IMAGE_GEN_FAMILY_SOURCES)[keyof typeof IMAGE_GEN_FAMILY_SOURCES];
+
+/** Character-scoped image-gen profile binding (`image_gen_links` junction —
+ *  the TTS voice-map pattern). */
+export interface ImageGenProfileLink {
+  imageGenProfileId: ImageGenProfileId;
+  targetType: ImageGenTargetType;
+  targetId: string;
+}
+
+/** Per-model settings overlay for an image-gen profile (IG-12b, the LLM
+ *  `ModelSettingsOverlay` mechanic composed with image fields per the
+ *  design): applied when the profile's selected model matches the overlay's
+ *  modelId, merged OVER the profile base. EVERY field optional — absent
+ *  means "inherit the profile base" (the provider-twin semantics, no code
+ *  defaults per the hardcoded-parameters ban). */
+export interface ImageGenModelSettingsOverlay {
+  steps?: number;
+  cfgScale?: number;
+  cfgRescale?: number;
+  sampler?: string;
+  /** Schedule type (PG-3) — the sampler's schedule on the A1111 dialect;
+   *  the overlay twin of `ImageGenDefaultParams.scheduler`. */
+  scheduler?: string;
+  /** Text-encoder file for the ComfyUI DiT template (CG-A2) — the overlay
+   *  twin of `ImageGenDefaultParams.encoderName`. */
+  encoderName?: string;
+  /** VAE file for the ComfyUI DiT template (CG-A2) — the overlay twin of
+   *  `ImageGenDefaultParams.vaeName`. */
+  vaeName?: string;
+  /** Manual ComfyUI base-workflow selection — the overlay twin of
+   * `ImageGenDefaultParams.workflowFamily`; A1111 ignores it. */
+  workflowFamily?: ImageGenWorkflowFamilyId;
+  /** VAE override for swappable-slot dialects (IF-7b) — the overlay twin
+   *  of `ImageGenDefaultParams.vae`. */
+  vae?: string;
+  /** Hires-fix second pass on the per-model overlay (IF-7b) — the overlay
+   *  twin of `ImageGenDefaultParams.hires`. */
+  hires?: ImageGenHiresBlock;
+  seed?: number;
+  clipSkip?: number;
+  /** ADetailer face-fix switch (IG-CF15/PG-4 v1, A1111-family only):
+   *  true = the generation for this model sends the ADetailer
+   *  alwayson script with the face-model preset. The availability probe
+   *  (server extensions) gates the UI, not the stored flag. */
+  adetailer?: boolean;
+  /** Face-model preset for ADetailer (one of IMAGE_GEN_ADETAILER_FACE_MODELS;
+   *  absent = the default entry). Ignored unless `adetailer` is true. */
+  adetailerModel?: string;
+  /** Explicit detail-pass steps; absent inherits the profile base steps. */
+  adetailerSteps?: number;
+  /** Krea K2 params (IF-11) — the OVERLAY rung of the two-rung ladder:
+   *  creativity (prompt-expansion mode; absent = inherit the profile
+   *  base, then the VT policy default "raw") + the generative sliders
+   *  (absent = inherit, then unsent vendor-neutral 0). Only krea-2
+   *  models read it (the backend filters per the model's own schema). */
+  krea?: ImageGenKreaParams;
+  /** Per-mode size presets for this model (the same shape as the profile's;
+   *  a mode absent here falls back to the profile's own preset). */
+  modeSizePresets?: ImageGenModeSizePresets;
+}
+
+/** Krea per-model params (IF-11) — the domain twin of
+ *  `imageGenKreaParamsSchema` (api-contracts). Sliders are integers
+ *  −100..100 with 0 neutral; validation lives on the wire schema, the
+ *  domain type stays structural. */
+export interface ImageGenKreaParams {
+  creativity?: "raw" | "low" | "medium" | "high";
+  intensity?: number;
+  complexity?: number;
+  movement?: number;
+}
+
+/** Starred model row (IG-12b, the LLM model-favorites mechanic). DEVIATION
+ *  from the provider twin, named: no `scope` (image-gen has ONE consumption
+ *  surface — the pane picker and later the chat fine-tuning chip — while the
+ *  LLM scope exists to separate rp/coauthor/copilot surfaces) and no
+ *  `contextLength` (no context concept for image models). `label` keeps the
+ *  display-name enrichment from the fetched catalog. */
+export interface ImageGenModelFavorite {
+  id: string;
+  imageGenProfileId: ImageGenProfileId;
+  modelId: string;
+  label: string | null;
+  createdAt: Timestamp;
+}
+
+/** Write input for starring a model (label optional — the picker may star an
+ *  offline/manual-entry model with no catalog row). */
+export interface ImageGenModelFavoriteData {
+  modelId: string;
+  label?: string;
+}
+
+/** Persisted per-model overlay row (`image_gen_model_settings`). */
+export interface ImageGenModelSettings {
+  id: string;
+  imageGenProfileId: ImageGenProfileId;
+  modelId: string;
+  settings: ImageGenModelSettingsOverlay;
+  /** The applied sampler set's id (IG-CF15, the LLM `samplerSetId` twin on
+   *  provider profiles): provenance for the pane's set row (dropdown
+   *  pre-selection + dirty dot), NOT a live link — applying a set copies the
+   *  values in (copy-on-select); editing the set later never rewrites this
+   *  row. Cleared when that set is deleted. */
+  samplerSetId: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** Sampler-set payload for image-gen (IG-CF15, the LLM
+ *  `SamplerSetPayload` twin). The generation params a set can carry —
+ *  `modeSizePresets` deliberately NOT here (the owner's set concept is
+ *  "sampler settings"; sizes are the profile/model layer's own surface,
+ *  IG-CF14). An inert template: applying copies the values into the target
+ *  overlay; no value ships as code. IF-7b grew the payload beyond the five
+ *  LS-5 scalars: `scheduler` (Krea presets need it), a `vae` name (owner
+ *  2026-09-25: presets carry the encoders/VAE the model needs — applies
+ *  only where the target dialect has a swappable VAE slot), and a
+ *  configured-but-disabled `hires` block (the owner's opt-in ruling). */
+export interface ImageGenSamplerSetPayload {
+  steps?: number;
+  cfgScale?: number;
+  cfgRescale?: number;
+  sampler?: string;
+  seed?: number;
+  clipSkip?: number;
+  scheduler?: string;
+  /** Text-encoder pin carried with a manual ComfyUI workflow selection. */
+  encoderName?: string;
+  /** Manual ComfyUI base-workflow selection; A1111 ignores it. */
+  workflowFamily?: ImageGenWorkflowFamilyId;
+  vae?: string;
+  hires?: ImageGenHiresBlock;
+  /** Face-fix second pass (ADetailer / FaceDetailer) — configured,
+   *  opt-in only: a set ships `adetailer: false` and the user flips it;
+   *  the detector model stays unset (the dialect's own default fills it,
+   *  no hardcoded names). Both LOCAL dialects consume the pair. */
+  adetailer?: boolean;
+  adetailerModel?: string;
+}
+
+/** Persisted named image-gen sampler set row (`image_gen_sampler_sets`). */
+export interface ImageGenSamplerSet {
+  id: string;
+  name: string;
+  sortOrder: number;
+  payload: ImageGenSamplerSetPayload;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// ─── Dice system entities (DICE_SYSTEM_BACKEND_PLAN, Wave B1) ──────────────
 //
 // The pure notation/rolling/arith-validators live in `dice.ts`; these are the
 // immutable, message-bindable entity shapes the API/DB layers use. A completed
@@ -1711,6 +2262,12 @@ export interface MessageVariant {
    *  Null/undefined = not annotated; narration then reads the content itself.
    *  A persisted fact: content edits do NOT clear it. */
   ttsAnnotation?: string | null;
+  /** IG-18a: image-gen slot variants carry their image attachments here
+   * (raw JSON column, the messages table's attachmentsJson discipline —
+   * parse with parseStoredAttachments). Null = this variant carries none;
+   * the DTO layer merges (selected variant overrides the message's
+   * attachments), so ordinary text variants stay null forever. */
+  attachmentsJson?: string | null;
 }
 
 export interface SummaryMemorySnapshot {
@@ -1811,6 +2368,10 @@ export interface PromptTrace {
   activatedLoreEntries: LoreEntryId[];
   /** Per-entry activation reasons parallel to `activatedLoreEntries`. */
   activatedLoreDetail: ActivatedLoreDetail[];
+  /** P21: books whose budget overflowed on this generation (full list,
+   *  alert-off included). Absent on previews and traces persisted before
+   *  the column existed. */
+  overflowedLorebooks?: OverflowedLorebook[];
   scriptInjections: Array<{
     scriptId: string;
     scriptName: string;

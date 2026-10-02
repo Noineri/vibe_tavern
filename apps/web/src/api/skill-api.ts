@@ -16,8 +16,7 @@ import type {
   SkillCatalogEntryDto,
   SkillImportResult,
 } from "@vibe-tavern/api-contracts";
-import { client } from "./client.js";
-import { getGatewayBaseUrl, getMobileToken } from "./client.js";
+import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
 
 /** `GET /api/coauthor/skills` — merged metadata-only catalog (built-in + user). */
@@ -63,7 +62,7 @@ export async function importCoauthorSkills(files: File[]): Promise<SkillImportRe
     formData.append(relativePath, file);
   }
   const token = getMobileToken();
-  const response = await fetch(`${getGatewayBaseUrl()}/api/coauthor/skills/import`, {
+  const response = await apiFetch(`${getGatewayBaseUrl()}/api/coauthor/skills/import`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData,

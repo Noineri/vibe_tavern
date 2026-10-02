@@ -15,7 +15,7 @@ export async function bootstrapApp(): Promise<{
   return unwrapRpc(await client.api.bootstrap.$get());
 }
 
-export async function updateUiSettings(input: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "summaryProviderId" | "summaryModelName" | "messageEditorProviderId" | "messageEditorModelName" | "coauthorProviderId" | "coauthorModelName" | "coauthorMaxTokens" | "coauthorContextBudget" | "copilotProviderId" | "copilotModelName" | "githubStarred" | "nextStarPromptAt" | "starPromptDeferrals" | "activeDictationProfileId">>): Promise<UiSettingsRecord> {
+export async function updateUiSettings(input: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "chatImpersonateEnhanceDraft" | "summaryProviderId" | "summaryModelName" | "messageEditorProviderId" | "messageEditorModelName" | "coauthorProviderId" | "coauthorModelName" | "coauthorMaxTokens" | "coauthorContextBudget" | "copilotProviderId" | "copilotModelName" | "githubStarred" | "nextStarPromptAt" | "starPromptDeferrals" | "activeDictationProfileId">>): Promise<UiSettingsRecord> {
   const response = await client.api.settings.ui.$patch({ json: input });
   return unwrapRpc(response);
 }

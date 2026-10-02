@@ -43,10 +43,13 @@ export {
   updateLoreEntrySchema,
   reorderLoreEntriesSchema,
   importLorebookSchema,
+  lorebookExportWarningSchema,
+  lorebookExportResultSchema,
   lorebookLinkSchema,
   setLorebookLinksSchema,
   duplicateLorebookSchema,
 } from "./lorebook-schema.js";
+export type { LorebookExportResult } from "./lorebook-schema.js";
 export {
   testProviderDraftSchema,
   saveProviderDraftSchema,
@@ -186,6 +189,8 @@ export { ttsBackendSchema, ttsTargetTypeSchema, ttsProfileConfigSchema, ttsProfi
 export type { TtsBackendValue, TtsTargetTypeValue, TtsProfileValue, CreateTtsProfileInput, UpdateTtsProfileInput, SetTtsLinksInput, GenerateTtsInput, DraftTtsVoicesInput, DraftTtsPreviewInput, DraftTtsModelsInput, LocalDockerStatus, RevealNarrationInput } from "./tts-schema.js";
 export { sttBackendSchema, sttProfileConfigSchema, sttProfileSchema, createSttProfileSchema, updateSttProfileSchema, sttModelInfoSchema, draftSttModelsSchema } from "./stt-schema.js";
 export type { SttBackendValue, SttProfileConfigValue, SttProfileValue, CreateSttProfileInput, UpdateSttProfileInput, SttModelInfoValue, DraftSttModelsInput } from "./stt-schema.js";
+export { imageGenBackendSchema, imageGenKreaParamsSchema, imageGenerationModeSchema, imageGenSizeSupportSchema, imageGenCapabilityFlagsSchema, imageGenDefaultParamsSchema, imageGenModeSizePresetSchema, imageGenModeSizePresetsSchema, imageGenUserSizeEntrySchema, imageGenProfileSchema, createImageGenProfileSchema, updateImageGenProfileSchema, imageGenProbeResultSchema, imageGenModelInfoSchema, imageGenSamplerInfoSchema, imageGenSchedulerInfoSchema, imageGenDitSidecarsSchema, IMAGE_GEN_LISTING_SNAPSHOT_AT_HEADER, imageGenLoraInfoSchema, imageGenUpscalerInfoSchema, imageGenProgressInfoSchema, draftImageGenModelsSchema, imageGenGenerateOverridesSchema, generateImageGenSchema, draftImageGenPromptSchema, draftImageGenPromptResponseSchema, imageGenGeneratedAttachmentSchema, imageGenGenerateResponseSchema, promoteImageGenAttachmentSchema, imageGenGalleryPromoteResponseSchema, favoriteImageGenModelSchema, imageGenModelFavoriteSchema, imageGenModelSettingsOverlaySchema, imageGenModelSettingsSchema, upsertImageGenModelSettingsSchema, imageGenSamplerSetPayloadSchema, imageGenSamplerSetSchema, imageGenSamplerSetListSchema, createImageGenSamplerSetSchema, updateImageGenSamplerSetSchema, importImageGenSamplerSetSchema, imageGenPromptCapSchema, imageGenPromptCapListSchema, imagePromptTemplateRowKeySchema, imagePromptCanonSourceSchema, imagePromptTemplateCellSchema, imagePromptFamilyInfoSchema, imagePromptFamiliesSchema, setImageGenProfileFamilySchema, imageGenFamilyDetectionSourceSchema, imageGenFamilyDetectionAttemptSchema, imageGenFamilyDetectionResultSchema } from "./image-gen-schema.js";
+export type { ImageGenBackendValue, ImageGenerationModeValue, ImageGenSizeSupportValue, ImageGenCapabilityFlagsValue, ImageGenDefaultParamsValue, ImageGenModeSizePresetValue, ImageGenModeSizePresetsValue, ImageGenUserSizeEntryValue, ImageGenProfileValue, CreateImageGenProfileInput, UpdateImageGenProfileInput, ImageGenProbeResultValue, ImageGenModelInfoValue, ImageGenSamplerInfoValue, ImageGenSchedulerInfoValue, ImageGenDitSidecarsValue, ImageGenLoraInfoValue, ImageGenUpscalerInfoValue, ImageGenProgressInfoValue, DraftImageGenModelsInput, ImageGenGenerateOverridesValue, GenerateImageGenInput, DraftImageGenPromptInput, DraftImageGenPromptResponseValue, ImageGenGeneratedAttachmentValue, ImageGenGenerateResponseValue, PromoteImageGenAttachmentInput, ImageGenGalleryPromoteResponseValue, FavoriteImageGenModelInput, ImageGenModelFavoriteValue, ImageGenModelSettingsOverlayValue, ImageGenModelSettingsValue, UpsertImageGenModelSettingsValue, ImageGenSamplerSetPayloadValue, ImageGenSamplerSet, ImageGenSamplerSetList, ImageGenSamplerSetCreate, ImageGenSamplerSetUpdate, ImageGenSamplerSetImport, ImageGenPromptCap, ImageGenPromptCapList, ImagePromptTemplateRowKeyValue, ImagePromptCanonSourceValue, ImagePromptTemplateCellValue, ImagePromptFamilyInfoValue, ImagePromptFamiliesValue, ImagePromptFamilyValue, SetImageGenProfileFamilyInput, ImageGenFamilyDetectionSourceValue, ImageGenFamilyDetectionAttemptValue, ImageGenFamilyDetectionResultValue } from "./image-gen-schema.js";
 
 export {
   coauthorModuleSchema,
@@ -407,6 +412,31 @@ export type {
   SetActiveServicePromptProfileRequest,
   ReorderServicePromptProfilesRequest,
 } from "./service-prompt-schema.js";
+
+export {
+  imagePromptCellKeySchema,
+  imagePromptCellOverrideSchema,
+  imagePromptProfileOverridesSchema,
+  imagePromptProfileSchema,
+  createImagePromptProfileRequestSchema,
+  updateImagePromptProfileRequestSchema,
+  imagePromptProfileListResponseSchema,
+  imagePromptProfileDetailResponseSchema,
+  setActiveImagePromptProfileRequestSchema,
+  reorderImagePromptProfilesSchema,
+} from "./image-prompt-profile-schema.js";
+export type {
+  ImagePromptCellKeyValue,
+  ImagePromptCellOverrideValue,
+  ImagePromptProfileOverridesValue,
+  ImagePromptProfileValue,
+  CreateImagePromptProfileRequest,
+  UpdateImagePromptProfileRequest,
+  ImagePromptProfileListResponse,
+  ImagePromptProfileDetailResponse,
+  SetActiveImagePromptProfileRequest,
+  ReorderImagePromptProfilesRequest,
+} from "./image-prompt-profile-schema.js";
 
 export {
   regexAssistArchetypeSchema,

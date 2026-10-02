@@ -54,6 +54,12 @@ export interface MessageVariant {
    *  Null = not annotated — narration reads the content itself. A persisted
    *  fact like the Scene record: content edits do NOT clear it. */
   ttsAnnotation: string | null;
+  /** IG-18a: image-gen slot variants carry their image attachments here
+   * (raw JSON string, parsed at the DTO boundary with
+   * parseStoredAttachments). Null = this variant carries none — every text
+   * variant, and slot variant 0 for legacy slots (those fall through to the
+   * message row's attachments at the DTO merge point). */
+  attachmentsJson: string | null;
 }
 
 /**
@@ -561,6 +567,19 @@ export class MessageStore {
       .run();
   }
 
+  /** MR-4 (IG-18a write-path gap): persist an attachment-set edit onto a
+   *  VARIANT row — the updateMessageAttachments twin for regenerate-as-
+   *  variant slot attachments (include-in-prompt / description / remove
+   *  all route through here). The variants table has no updatedAt column
+   *  (immutable-by-id discipline, same as scene_tracker_json). */
+  async updateVariantAttachments(variantId: string, attachmentsJson: string | null): Promise<void> {
+    await this.db
+      .update(messageVariants)
+      .set({ attachmentsJson })
+      .where(eq(messageVariants.id, variantId))
+      .run();
+  }
+
   async editMessage(id: string, content: string, expectedVariantId?: string): Promise<Message> {
     const now = this.clock.now();
 
@@ -652,6 +671,7 @@ export class MessageStore {
     toolCallId?: string | null,
     coauthorModuleId?: string | null,
     coauthorSkillId?: string | null,
+    attachmentsJson?: string | null,
   ): Promise<MessageVariant> {
     // Find max variantIndex
     const lastVariant = await this.db
@@ -693,6 +713,7 @@ export class MessageStore {
           toolCallId: toolCallId ?? null,
           coauthorModuleId: coauthorModuleId ?? null,
           coauthorSkillId: coauthorSkillId ?? null,
+          attachmentsJson: attachmentsJson ?? null,
           createdAt: now,
         })
         .run();
@@ -1055,6 +1076,7 @@ export class MessageStore {
       toolCallId: row.toolCallId,
       sceneTracker: row.sceneTrackerJson ? JSON.parse(row.sceneTrackerJson) : null,
       ttsAnnotation: row.ttsAnnotation ?? null,
+      attachmentsJson: row.attachmentsJson ?? null,
       createdAt: row.createdAt,
     };
   }

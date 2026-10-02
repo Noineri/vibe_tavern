@@ -2,13 +2,13 @@
  * CopilotTodoPanel (TAG-8) — the pinned, expandable step-plan panel in the
  * copilot chat tab, mounted DIRECTLY BELOW `ExperienceContextMeter` in
  * `ExperienceCopilotShell`. It is the ONLY renderer of the model's todo plan
- * («управляет только модель»): strictly read-only UI — no status cycling, no
+ * ("controls only the model"): strictly read-only UI — no status cycling, no
  * editing, no user affordances of any kind.
  *
  * Data: `items` is a CONTROLLED prop derived by the shell from the turn
  * store's session-scoped `todoByThread[threadId]` (TAG-7; seeded from the
  * thread wire on mount/switch, live-updated by `todo` tool calls). Lifetime =
- * the copilot session («время жизни туду должно быть на всю сессию») — the
+ * the copilot session ("todos should live for the whole session") — the
  * panel reappears after reloads because the store is re-seeded from the
  * thread row; `clearTurn` deliberately never touches it.
  *
@@ -17,15 +17,15 @@
  * not session data, so nothing is persisted.
  *
  * Visual language is borrowed from the RP objective tracker
- * (`components/chat/message-slots/objective-zone.tsx`, quote д «можно взять
- * иконки от трекера целей»): the NodeGlyph circle per status (active = accent
+ * (`components/chat/message-slots/objective-zone.tsx`, quote: "can we take
+ * the icons from the goal tracker"): the NodeGlyph circle per status (active = accent
  * ring + filled dot — here PULSING as the "current goal" live indicator;
  * completed = success + check; abandoned/pending = muted ring, abandoned with
  * close), `Ic.target` header, the inline Chevron. The collapsed format is the
- * verbatim «"Текущая цельнейм (кружок)"/(число оставшихся целей)»:
+ * verbatim "current goal name (circle)" / (number of remaining goals):
  * [glyph] current-title · N, where N counts the REMAINING goals
  * (pending + active — abandoned is given up, not remaining). The expanded
- * list is the full ordered plan («"текущая цельнейм" "следующие цельнейм"»).
+ * list is the full ordered plan ("current goal name" / "next goal names").
  */
 import { useState } from "react";
 import type { CopilotTodoItem } from "@vibe-tavern/api-contracts";
@@ -49,7 +49,7 @@ function pickCurrent(items: readonly CopilotTodoItem[]): CopilotTodoItem | null 
   return items.find((i) => i.status === "active") ?? items.find((i) => i.status === "pending") ?? null;
 }
 
-/** Remaining goals (verbatim «число оставшихся целей»): pending + active.
+/** Remaining goals (the "number of remaining goals" label): pending + active.
  *  Abandoned is given up, not remaining; completed is done. */
 function countRemaining(items: readonly CopilotTodoItem[]): number {
   return items.filter((i) => i.status === "pending" || i.status === "active").length;
@@ -115,7 +115,7 @@ export function CopilotTodoPanel({ items }: CopilotTodoPanelProps) {
   const remaining = countRemaining(items);
   const summaryStatus: TodoStatus = current?.status ?? "completed";
 
-  // ── Collapsed: one-line summary «"Текущая цельнейм (кружок)" / N» — click
+  // ── Collapsed: one-line summary "Current goal name (circle)" / N — click
   // anywhere to expand (objective-zone's collapsed pattern). ──
   if (!open) {
     return (

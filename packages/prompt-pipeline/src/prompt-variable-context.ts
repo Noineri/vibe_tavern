@@ -125,6 +125,11 @@ export interface PromptVariableStoreContext {
 }
 
 export interface PromptVariableContext {
+  /** Activated lore outlet text, keyed by ST's outletName. */
+  outlets: Record<string, string> | undefined;
+  /** Internal activation-pass scope: preserve outlet macros until all active
+   * outlets have been collected, rather than treating them as missing. */
+  preserveOutletMacros: boolean;
   names: NamesContext;
   character: CharacterPromptContext;
   persona: PersonaPromptContext;
@@ -136,6 +141,10 @@ export interface PromptVariableContext {
 }
 
 export interface BuildPromptVariableContextInput {
+  /** Activated lore outlet text for {{outlet::name}} macro resolution. */
+  outlets?: Record<string, string>;
+  /** Internal activation-pass scope; normal prompt assembly leaves this off. */
+  preserveOutletMacros?: boolean;
   names?: Partial<NamesContext>;
   character?: Partial<CharacterPromptContext>;
   persona?: Partial<PersonaPromptContext>;
@@ -172,6 +181,8 @@ export function buildPromptVariableContext(input: BuildPromptVariableContextInpu
   const charName = input.names?.charName ?? input.character?.name ?? "";
 
   return {
+    outlets: input.outlets,
+    preserveOutletMacros: input.preserveOutletMacros ?? false,
     names: {
       userName,
       charName,

@@ -135,6 +135,19 @@
 @layer components {
   /* Required padding for the shared build-field class; utility classes may still override it. */
   .field-input-pad { padding: 6px 10px; }
+
+  /* ImageBlock orientation buckets (MR-7, owner spec 2026-09-18): landscape
+     stretches to the full message-container width; portrait and square take
+     half (two tiles share a row through the row's 12px gap). The height is
+     ratio-true (the img carries CSS aspect-ratio), and a tall image's height
+     never exceeds ~70% of the viewport — the WIDTH is the min of the bucket
+     and 70vh × ratio, so the tile shrinks instead of growing past the cap.
+     The per-tile ratio rides the `--tile-ratio` custom property (defaults to
+     a square 1 until the bitmap decodes). Lives here — not as an inline
+     style — because nested min() belongs in authored CSS, and the DOM style
+     attribute must stay parseable by every consumer. */
+  .image-tile-landscape { width: min(100%, calc(70vh * var(--tile-ratio, 1))); max-width: 100%; }
+  .image-tile-portrait { width: min(calc(50% - 6px), calc(70vh * var(--tile-ratio, 1))); max-width: 100%; }
 }
 
 /* ── Image outline — neutral 1px separator that adapts to theme lightness ──
@@ -218,9 +231,6 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
 /* ── Links ── */
 .md-link{color:var(--accent-t);text-decoration:underline;text-underline-offset:2px;text-decoration-color:color-mix(in srgb, var(--accent-t) 40%, transparent);transition:text-decoration-color .15s,color .15s}
 .md-link:hover{color:var(--accent);text-decoration-color:var(--accent)}
-
-/* ── Images ── */
-.md-img{max-width:100%;height:auto;border-radius:var(--r);margin:.4em 0;display:block}
 
 /* ── Task-list checkboxes ── */
 .md-task-check{display:inline-block;width:13px;height:13px;border:1.5px solid var(--t3);border-radius:3px;margin-right:5px;vertical-align:-.15em;flex-shrink:0;position:relative}
@@ -364,12 +374,14 @@ html,body{height:100%;background:var(--page-bg, var(--bg));color:var(--t1);overf
    shared SliderField (settings keep it untouched). Rail = theme surface
    token var(--s3) — the same pair the fetch mini-bar already uses
    (s3 rail / accent fill) — so every theme stays coherent; never a
-   hardcoded translucent white (owner: «полупрозрачный не везде впишется
-   в темы»). Fill = accent with a hard stop exactly at the value via the
+   hardcoded translucent white (owner ruling: translucent white does not
+   fit every theme — verbatim quote in
+   reports/LEGACY_CYRILLIC_CLEANUP_REPORT.md ledger). Fill = accent with a
+   hard stop exactly at the value via the
    --p custom property (set inline per render; Firefox paints the fill via
    ::-moz-range-progress instead). Density: volume 4px rail / 12px thumb,
    seek (--seek) 3px / 10px. Thumb = solid accent dot + 1px theme-token
-   outline (owner: «лучше с обводкой»). */
+   outline (owner ruling: prefer an outline — same ledger). */
 .playlist-slider{-webkit-appearance:none;appearance:none;background:transparent;height:28px;margin:0;cursor:grab}
 @media (pointer:coarse){.playlist-slider{height:44px}}
 .playlist-slider::-webkit-slider-runnable-track{height:4px;border-radius:9999px;background:linear-gradient(to right,var(--accent) 0 var(--p,50%),var(--s3) var(--p,50%) 100%)}
@@ -494,6 +506,13 @@ select option{padding:2px 6px}
 
 /* ── Responsive ── */
 @media(max-width:768px){
+  /* C-C (owner 2026-09-19): portrait/square tiles go FULL-WIDTH on phones.
+     The desktop half-width pairing exists to save vertical space — a trade
+     that makes no sense on a narrow screen (the owner: no point economizing
+     height there; the screen is narrow, not short). The 70vh cap stays for
+     extreme ratios. This unlayered block beats the @layer components bucket
+     rule by cascade rules (same specificity, unlayered wins). */
+  .image-tile-portrait{width:min(100%,calc(70vh * var(--tile-ratio,1)))}
   .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:200;transform:translateX(-100%);transition:transform .2s ease}
   .sidebar.mobile-open{transform:translateX(0)}
   .mobile-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199}

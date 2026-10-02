@@ -5,7 +5,8 @@
  * tabs precedent): the detail editor owns NO inline save/delete; the stable
  * footer does. Lives as its own unit so the controls↔hook wiring is testable
  * without mounting the whole ProviderModal.
- */
+  * forks: 1 — stt/SttFooter.tsx.
+*/
 
 import { useState } from "react";
 

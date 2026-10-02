@@ -41,6 +41,7 @@ import type {
   SttTranscribeResult,
 } from "../stt-backend.js";
 import { registerSttBackend } from "../stt-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const INTERACTIONS_URL =
   "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -48,9 +49,6 @@ const MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
 const TRANSCRIBE_TIMEOUT_MS = 30_000;
 const PROBE_TIMEOUT_MS = 5_000;
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** HTTP / transport failure of a transcription or probe request. */
 export class GeminiSttError extends Error {
@@ -113,17 +111,6 @@ function normalizeMime(mime: string): string {
 }
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
-
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
 
 /** Wrap a transport-level failure (DNS, refused connection, timeout) in the
  *  adapter's typed error so callers get one error surface. */
@@ -333,7 +320,7 @@ export const geminiSttFactory: SttBackendFactory = (config) => {
       );
 
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new GeminiSttError(
           `Gemini STT transcription failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -353,7 +340,7 @@ export const geminiSttFactory: SttBackendFactory = (config) => {
         signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
       });
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         throw new GeminiSttError(
           `Gemini STT model list failed with HTTP ${response.status}${excerpt ? `: ${excerpt}` : ""}`,
           { status: response.status },
@@ -370,7 +357,7 @@ export const geminiSttFactory: SttBackendFactory = (config) => {
           signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
         });
         if (!response.ok) {
-          const excerpt = await readErrorExcerpt(response);
+          const excerpt = await readProviderErrorBody(response);
           return { ok: false, detail: `${response.status}${excerpt ? `: ${excerpt.slice(0, 120)}` : ""}` };
         }
         const parsed: unknown = await response.json().catch(() => null);

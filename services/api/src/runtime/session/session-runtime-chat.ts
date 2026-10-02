@@ -38,6 +38,11 @@ export interface AppendedAssistantReply {
   response: MessageResponse;
   branchId: ChatBranchId;
   messageId: MessageId;
+  /** P21 (overflowAlert): alert-on books that overflowed this turn
+   *  ({ name, dropped }). Computed from the consumed pending prompt trace;
+   *  undefined when nothing overflowed or no trace was pending. The finish
+   *  SSE event carries it so the client can toast without a refetch. */
+  overflowAlerts?: Array<{ name: string; dropped: number }>;
 }
 
 interface PendingPromptTraceTurn {
@@ -288,6 +293,7 @@ export class ChatRuntime {
         finalPayload: pending.draft.finalPayload,
         activatedLoreEntries: pending.draft.activatedLoreEntries,
         activatedLoreDetail: pending.draft.activatedLoreDetail,
+        overflowedLorebooks: pending.draft.overflowedLorebooks,
         retrievedMemories: pending.draft.retrievedMemories ?? [],
         scriptInjections: pending.draft.scriptInjections ?? [],
         latencyMs,
@@ -309,7 +315,19 @@ export class ChatRuntime {
       latestTraceLayers: response.promptTrace?.layers?.length ?? 0,
       personaLayerSourceId: response.promptTrace?.layers?.find((l: { sourceType: string }) => l.sourceType === "persona")?.sourceId ?? null,
     });
-    return { response, branchId, messageId: assistantMessage.id as MessageId };
+    // P21: the alert-on overflow subset rides on the internal append result →
+    // the orchestrator's finish SSE event (server-side filter — the flag
+    // lives in the DB; the chat page has no lorebook list loaded).
+    const overflowAlerts = (pending?.draft.overflowedLorebooks ?? [])
+      .filter(o => o.alert)
+      .map(o => ({ name: o.name, dropped: o.dropped }));
+
+    return {
+      response,
+      branchId,
+      messageId: assistantMessage.id as MessageId,
+      ...(overflowAlerts.length > 0 ? { overflowAlerts } : {}),
+    };
   }
 
   async appendMessageVariant(
@@ -324,7 +342,7 @@ export class ChatRuntime {
       toolCalls?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolCall[];
       toolResults?: import("../../infrastructure/ai/provider-execution-types.js").ExtractedToolResult[];
     },
-  ): Promise<MessageResponse> {
+  ): Promise<MessageResponse & { overflowAlerts?: Array<{ name: string; dropped: number }> }> {
     const { chats, messages, traces, buildMessageResponse } = this.deps;
     const trimmed = input.content.trim();
     if (!trimmed) {
@@ -364,6 +382,7 @@ export class ChatRuntime {
         finalPayload: pending.draft.finalPayload,
         activatedLoreEntries: pending.draft.activatedLoreEntries,
         activatedLoreDetail: pending.draft.activatedLoreDetail,
+        overflowedLorebooks: pending.draft.overflowedLorebooks,
         retrievedMemories: pending.draft.retrievedMemories ?? [],
         scriptInjections: pending.draft.scriptInjections ?? [],
         latencyMs: input.latencyMs,
@@ -373,9 +392,15 @@ export class ChatRuntime {
         providerResponse: pending.draft.providerResponse,
       });
     }
-    return await buildMessageResponse(chatId);
+    // P21: same alert-on overflow channel as appendAssistantReply — variant
+    // turns (regenerate/continue) are turns too. The intersection type keeps
+    // every existing `snapshot.messages` consumer unchanged.
+    const overflowAlerts = (pending?.draft.overflowedLorebooks ?? [])
+      .filter(o => o.alert)
+      .map(o => ({ name: o.name, dropped: o.dropped }));
+    const response = await buildMessageResponse(chatId);
+    return overflowAlerts.length > 0 ? { ...response, overflowAlerts } : response;
   }
-
 
   async addEditorVariant(
     chatId: ChatId,

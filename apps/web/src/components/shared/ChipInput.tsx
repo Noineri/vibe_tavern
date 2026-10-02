@@ -131,6 +131,8 @@ interface ChipInputProps {
   showPresets?: boolean;
   /** Tooltip content for the info icon */
   tooltip?: string;
+  /** Optional control rendered inside each existing value chip. */
+  renderChipAction?: (value: string, index: number) => React.ReactNode;
   /** Label for the presets tooltip trigger (defaults to "?") */
   presetsLabel?: string;
   className?: string;
@@ -144,6 +146,7 @@ export function ChipInput({
   disabled = false,
   showPresets = false,
   tooltip,
+  renderChipAction,
   presetsLabel,
   className,
 }: ChipInputProps) {
@@ -306,6 +309,11 @@ export function ChipInput({
             )}
           >
             {renderChipContent(val)}
+            {renderChipAction && (
+              <span onClick={(event) => event.stopPropagation()}>
+                {renderChipAction(val, i)}
+              </span>
+            )}
             {!disabled && (
               <button
                 type="button"

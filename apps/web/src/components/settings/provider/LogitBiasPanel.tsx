@@ -16,6 +16,7 @@ import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { TextInput } from "../../shared/text-input.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
+import { apiFetch } from "../../../api/client.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -161,7 +162,7 @@ export function LogitBiasPanel({ entries, onChange, disabled, supported, model }
     if (!textInput.trim()) return;
     setLoading(true);
     try {
-      const resp = await fetch("/api/tokenize", {
+      const resp = await apiFetch("/api/tokenize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: textInput, model: model || undefined }),

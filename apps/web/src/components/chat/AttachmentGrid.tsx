@@ -1,5 +1,7 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { splitVoiceTranscript, type Attachment } from "@vibe-tavern/domain";
+import { ImageBlock, type ImageBlockImage } from "./ImageBlock.js";
 import { useKeyDown } from "../../hooks/use-key-down.js";
 import { getGatewayBaseUrl } from "../../gateway-client.js";
 import { cn } from "../../lib/cn.js";
@@ -73,10 +75,81 @@ function VoiceBubble({ att }: { att: Attachment }) {
   );
 }
 
-export function AttachmentGrid({ attachments, messageId }: { attachments?: Attachment[]; messageId?: string }) {
+export function AttachmentGrid({
+  attachments,
+  messageId,
+  variantIndex,
+}: {
+  attachments?: Attachment[];
+  messageId?: string;
+  /** IF-4(a): the message's selected variant index. Present on the assistant
+   *  body path — the slot-image row then animates variant switches with the
+   *  text body's slide idiom (AnimatePresence + motion.div keyed by the
+   *  index, `direction * 40px` + fade, spring 400/35, first mount still).
+   *  Absent on surfaces with no variant machinery (user messages, pending
+   *  bubbles) — the row renders plain, byte-identical to before. */
+  variantIndex?: number;
+}) {
+  const { t } = useT();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
+  // Variant slide direction, derived locally from index movement (the text
+  // body's phantom-render guard: a growing index slides from the right).
+  const prevVariantIndexRef = useRef<number | null>(variantIndex ?? null);
+  const slideDirectionRef = useRef(1);
+  const hasMountedRef = useRef(false);
+  if (variantIndex !== undefined && variantIndex !== prevVariantIndexRef.current) {
+    if (prevVariantIndexRef.current !== null) {
+      slideDirectionRef.current = variantIndex > prevVariantIndexRef.current ? 1 : -1;
+    }
+    prevVariantIndexRef.current = variantIndex;
+  }
+  const slideDirection = slideDirectionRef.current;
+  const shouldAnimateVariant = hasMountedRef.current;
+  useEffect(() => {
+    hasMountedRef.current = true;
+  }, []);
+
   if (!attachments || attachments.length === 0) return null;
+
+  // IG-CF6: generated-image attachments render through the shared ImageBlock
+  // (justified gallery-pattern row + generation-prompt caption), OUTSIDE this
+  // h-24 attachment-preview grid — the slot's image is the message's CONTENT,
+  // not an attachment-to-text. All imageGen attachments share ONE justified
+  // row (the gallery mechanism); ordinary attachments keep the grid below.
+  // MR-9: each slot carries its prompt SAVER — the accordion editor persists
+  // through the prompt-write route (variant-aware on the server) with an
+  // optimistic canonical-data update, the Lightbox-description pattern.
+  const editPromptFor = (att: Attachment): ((next: string) => Promise<boolean>) => {
+    return async (next: string) => {
+      if (!messageId || !att.id) return false;
+      try {
+        const { updateAttachmentPrompt } = await import("../../api/chat-api.js");
+        await updateAttachmentPrompt("_", messageId, att.id, next);
+      } catch (err) {
+        console.error("Failed to update generation prompt:", err);
+        toast.error(t("image_block_prompt_save_failed"));
+        return false;
+      }
+      const nextAttachments = attachments.map((a) =>
+        a.id === att.id && a.imageGen !== undefined
+          ? { ...a, imageGen: { ...a.imageGen, prompt: next } }
+          : a,
+      );
+      useSnapshotStore.getState().updateMessage(messageId, { attachments: nextAttachments });
+      return true;
+    };
+  };
+
+  const slotImages: ImageBlockImage[] = attachments
+    .filter((att) => att.imageGen !== undefined)
+    .map((att) => ({
+      src: `${getGatewayBaseUrl()}/api/assets/${att.assetId}`,
+      alt: att.name || "Generated image",
+      ...(att.imageGen?.prompt ? { caption: att.imageGen.prompt } : {}),
+      ...(att.imageGen?.promptBy ? { captionAuthor: att.imageGen.promptBy } : {}),
+      ...(messageId && att.id ? { onEditPrompt: editPromptFor(att) } : {}),
+    }));
 
   return (
     <>
@@ -84,7 +157,7 @@ export function AttachmentGrid({ attachments, messageId }: { attachments?: Attac
         {attachments.map((att, idx) =>
           att.type === "audio" ? (
             <VoiceBubble key={att.id || att.assetId} att={att} />
-          ) : (
+          ) : att.imageGen !== undefined ? null : (
           <button
             key={att.id || att.assetId}
             type="button"
@@ -114,6 +187,30 @@ export function AttachmentGrid({ attachments, messageId }: { attachments?: Attac
           )
         )}
       </div>
+
+      {slotImages.length > 0 &&
+        (variantIndex === undefined ? (
+          <ImageBlock images={slotImages} className="mt-2.5" />
+        ) : (
+          // IF-4(a): the text body's exact swap idiom — relative
+          // overflow-hidden clips the incoming tile, AnimatePresence keys the
+          // remount to the variant index, and the first mount stays still
+          // (`initial={false}` until the post-mount flag flips). Height never
+          // animates, so the message list's bottom-pinning sees no layout
+          // shift from the swap itself.
+          <div className="relative overflow-hidden">
+            <AnimatePresence initial={false}>
+              <motion.div
+                key={`v-${variantIndex}`}
+                initial={shouldAnimateVariant ? { x: slideDirection * 40, opacity: 0 } : false}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 400, damping: 35 }}
+              >
+                <ImageBlock images={slotImages} className="mt-2.5" />
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        ))}
 
       {lightboxIndex !== null && (
         <Lightbox

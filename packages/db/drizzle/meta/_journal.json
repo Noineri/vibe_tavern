@@ -512,6 +512,202 @@
       "when": 1789008926804,
       "tag": "0072_light_grey_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1789357278128,
+      "tag": "0073_strange_masked_marvel",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1789407189728,
+      "tag": "0074_powerful_turbo",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1789444540494,
+      "tag": "0075_cynical_skullbuster",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "6",
+      "when": 1789535125274,
+      "tag": "0076_messy_sentry",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "6",
+      "when": 1789612705712,
+      "tag": "0077_oval_thunderball",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1789917890185,
+      "tag": "0078_wakeful_mentallo",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "6",
+      "when": 1790000763711,
+      "tag": "0079_wealthy_overlord",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "6",
+      "when": 1790007884005,
+      "tag": "0080_bizarre_miss_america",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1790098826485,
+      "tag": "0081_messy_chronomancer",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1790233584701,
+      "tag": "0082_dapper_vin_gonzales",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1790244690296,
+      "tag": "0083_faithful_leader",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "6",
+      "when": 1790325003970,
+      "tag": "0084_remarkable_invaders",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "6",
+      "when": 1790439876558,
+      "tag": "0085_slim_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "6",
+      "when": 1790463449341,
+      "tag": "0086_crazy_layla_miller",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "6",
+      "when": 1790464616885,
+      "tag": "0087_uneven_madame_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "6",
+      "when": 1790692103019,
+      "tag": "0088_numerous_shocker",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "6",
+      "when": 1790692880193,
+      "tag": "0089_blue_boomer",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "6",
+      "when": 1790698137179,
+      "tag": "0090_tricky_ricochet",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "6",
+      "when": 1790698148890,
+      "tag": "0091_misty_princess_powerful",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "6",
+      "when": 1790700759294,
+      "tag": "0092_superb_the_professor",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "6",
+      "when": 1790702049813,
+      "tag": "0093_cynical_blur",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "6",
+      "when": 1790704220834,
+      "tag": "0094_slim_mercury",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "6",
+      "when": 1790706556870,
+      "tag": "0095_fuzzy_power_pack",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "6",
+      "when": 1790717969048,
+      "tag": "0096_long_johnny_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "6",
+      "when": 1790725823039,
+      "tag": "0097_dazzling_war_machine",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "6",
+      "when": 1790729371518,
+      "tag": "0098_cool_prima",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "6",
+      "when": 1790789087765,
+      "tag": "0099_bitter_medusa",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "6",
+      "when": 1790789106046,
+      "tag": "0100_skinny_jamie_braddock",
+      "breakpoints": true
     }
   ]
 }

@@ -9,8 +9,17 @@
  * lifted RHF form via `useFormContext` (the form→entries mirror in
  * useLorebookEditorState keeps the master list live + re-arms the debounced
  * autosave); pulls the character list from the snapshot store itself.
+ *
+ * LB-3B: the candidate list is searchable on large libraries and ordered by
+ * recently edited. One data source (AGENTS.md §3): records become LinkTargets
+ * through `lib/link-targets.ts` and order/filter through
+ * `lib/link-binding-sections.ts` (`orderLinkTargets` with an empty bound set —
+ * already-added characters are excluded from the list — = updatedAt desc, then
+ * name, then id; `matchesLinkQuery` for the search). Dual-mode canon
+ * (ImageGenFineTuningChip / LinkBindingPopover): ONE body element rendered by
+ * both shells — the Radix popover on desktop, a BottomSheet on mobile.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFormContext, useController } from "react-hook-form";
 import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import * as Popover from "@radix-ui/react-popover";
@@ -21,7 +30,13 @@ import { Checkbox } from "../../shared/Checkbox.js";
 import { cn } from "../../../lib/cn.js";
 import { resolveEntityAvatarUrl } from "../../../lib/avatar.js";
 import { getModalPortal } from "../../shared/modal-helpers.js";
-import { popoverMaxHeight } from "../../shared/popover-constants.js";
+import { MAX_VISIBLE_ITEMS, popoverMaxHeight } from "../../shared/popover-constants.js";
+import { SearchInput } from "../../shared/SearchInput.js";
+import { BottomSheet } from "../../shared/BottomSheet.js";
+import { resolveTargetAvatarUrl } from "../../shared/LinkBindingPopover.js";
+import { characterToLinkTarget } from "../../../lib/link-targets.js";
+import { matchesLinkQuery, orderLinkTargets } from "../../../lib/link-binding-sections.js";
+import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useT, type TFunc } from "../../../i18n/context.js";
 
 export function CharacterFilterPicker({ t }: { t: TFunc }) {
@@ -36,7 +51,109 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
     name: "characterFilterExclude",
   });
   const allCharacters = useAllCharacters();
+  const isMobile = useIsMobile();
   const [charFilterPicker, setCharFilterPicker] = useState<"add" | number | null>(null);
+  const [query, setQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Query is per-open state: reset whenever the picker closes (add or ghost).
+  useEffect(() => { if (charFilterPicker === null) setQuery(""); }, [charFilterPicker]);
+
+  // Candidates = characters not yet in the filter, as LinkTargets through the
+  // ONE mapper, ordered by recently updated (bound set is empty BY
+  // CONSTRUCTION — bound characters are excluded above).
+  const candidates = orderLinkTargets(
+    allCharacters
+      .filter((c) => !characterFilter.some((f) => f.id === c.id))
+      .map(characterToLinkTarget),
+    new Set<string>(),
+  );
+  const showSearch = candidates.length > MAX_VISIBLE_ITEMS;
+  const visibleCandidates = query.trim()
+    ? candidates.filter((c) => matchesLinkQuery(c.name, query))
+    : candidates;
+
+  // Focus the search row when it exists — desktop only (no keyboard pop on
+  // phones); otherwise keep Radix's default focus.
+  const handleOpenAutoFocus = (e: Event) => {
+    if (showSearch && !isMobile) {
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    }
+  };
+
+  const pick = (id: string, name: string) => {
+    const mode = charFilterPicker;
+    if (mode === null) return;
+    const next = [...characterFilter];
+    if (mode === "add") {
+      next.push({ id, name });
+    } else {
+      // Bind the ghost at this index to the chosen character.
+      next[mode] = { id, name };
+    }
+    form.setValue("characterFilter", next, { shouldDirty: true });
+    setCharFilterPicker(null);
+  };
+
+  // ONE body, rendered by both shells (desktop Radix popover / mobile
+  // BottomSheet) — the dual-mode canon.
+  const body = (
+    <>
+      {showSearch && (
+        <div className="shrink-0 border-b border-border px-3 py-2">
+          <SearchInput
+            ref={searchInputRef}
+            className="w-full"
+            placeholder={t("link_binding_search_placeholder")}
+            aria-label={t("link_binding_search_placeholder")}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+      )}
+      {/* Only the item list scrolls; the search row never scrolls away.
+       *  Desktop keeps the MAX_VISIBLE_ITEMS cap on the list wrapper; the
+       *  mobile sheet uses the viewport-relative sheet cap instead
+       *  (popover-constants.ts) with thumb-sized 44px rows. */}
+      <div
+        className={cn("overflow-y-auto", isMobile && "max-h-[50vh] overscroll-contain")}
+        style={isMobile ? undefined : { maxHeight: popoverMaxHeight("singleLine") }}
+      >
+        {candidates.length === 0 ? (
+          <div className={cn("px-3 py-2 text-t3", isMobile ? "text-[14px]" : "text-[12px]")}>{t("lore_char_filter_empty")}</div>
+        ) : visibleCandidates.length === 0 ? (
+          <div className={cn("px-3 py-2 text-t3", isMobile ? "text-[14px]" : "text-[12px]")}>{t("link_binding_no_results")}</div>
+        ) : (
+          visibleCandidates.map((c) => {
+            const url = resolveTargetAvatarUrl(c);
+            return (
+              <button
+                type="button"
+                key={c.id}
+                className={cn(
+                  "flex w-full cursor-pointer items-center text-left text-t1 hover:bg-s2",
+                  isMobile ? "min-h-[44px] gap-3 px-4 py-2 text-[15px]" : "gap-2 px-3 py-1.5 text-[13px]",
+                )}
+                onClick={() => pick(c.id, c.name)}
+              >
+                <span className={cn("shrink-0 overflow-hidden rounded-full bg-s3", isMobile ? "h-6 w-6" : "h-5 w-5")}>
+                  {url ? (
+                    <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
+                  ) : (
+                    <span className={cn("flex h-full w-full items-center justify-center font-bold text-t3", isMobile ? "text-[11px]" : "text-[10px]")}>
+                      {c.name.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </span>
+                <span className="truncate">{c.name}</span>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </>
+  );
 
   return (
     <div className="mb-6 pb-6 border-b border-border/50">
@@ -77,7 +194,7 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
                 >
                   <span className="h-4 w-4 shrink-0 overflow-hidden rounded-full bg-s3">
                     {avatarUrl ? (
-                      <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                      <img src={avatarUrl} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                     ) : (
                       <span className="flex h-full w-full items-center justify-center text-[8px] font-bold text-t3">
                         {f.name.charAt(0).toUpperCase()}
@@ -113,65 +230,29 @@ export function CharacterFilterPicker({ t }: { t: TFunc }) {
             </button>
           </div>
         </Popover.Anchor>
-        <Popover.Portal container={getModalPortal() ?? undefined}>
-          <Popover.Content
-            side="bottom"
-            align="start"
-            sideOffset={4}
-            className="glass-blur z-[220] w-full overflow-y-auto rounded-lg border border-border2 bg-glass-bg py-1 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
-            style={{ maxHeight: popoverMaxHeight("singleLine") }}
-          >
-            {charFilterPicker !== null && (
-              allCharacters.filter((c) => !characterFilter.some((f) => f.id === c.id)).length === 0 ? (
-                <div className="px-3 py-2 text-[12px] text-t3">{t("lore_char_filter_empty")}</div>
-              ) : (
-                allCharacters
-                  .filter((c) => !characterFilter.some((f) => f.id === c.id))
-                  .map((c) => {
-                    const url = resolveEntityAvatarUrl({
-                      kind: "characters",
-                      id: c.id,
-                      avatarExt: c.avatarExt,
-                      avatarAssetId: c.avatarAssetId,
-                      avatarFullExt: c.avatarFullExt,
-                      avatarFullAssetId: c.avatarFullAssetId,
-                      updatedAt: c.updatedAt,
-                    });
-                    return (
-                      <button
-                        type="button"
-                        key={c.id}
-                        className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[13px] text-t1 hover:bg-s2"
-                        onClick={() => {
-                          const next = [...characterFilter];
-                          if (charFilterPicker === "add") {
-                            next.push({ id: c.id, name: c.name });
-                          } else {
-                            // Bind the ghost at this index to the chosen character.
-                            next[charFilterPicker] = { id: c.id, name: c.name };
-                          }
-                          form.setValue("characterFilter", next, { shouldDirty: true });
-                          setCharFilterPicker(null);
-                        }}
-                      >
-                        <span className="h-5 w-5 shrink-0 overflow-hidden rounded-full bg-s3">
-                          {url ? (
-                            <img src={url} alt="" className="h-full w-full object-cover" />
-                          ) : (
-                            <span className="flex h-full w-full items-center justify-center text-[10px] font-bold text-t3">
-                              {c.name.charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                        </span>
-                        <span className="truncate">{c.name}</span>
-                      </button>
-                    );
-                  })
-              )
-            )}
-          </Popover.Content>
-        </Popover.Portal>
+        {charFilterPicker !== null && !isMobile && (
+          <Popover.Portal container={getModalPortal() ?? undefined}>
+            <Popover.Content
+              side="bottom"
+              align="start"
+              sideOffset={4}
+              onOpenAutoFocus={handleOpenAutoFocus}
+              className="glass-blur z-[220] w-full flex flex-col overflow-hidden rounded-lg border border-border2 bg-glass-bg shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+            >
+              {body}
+            </Popover.Content>
+          </Popover.Portal>
+        )}
       </Popover.Root>
+      {charFilterPicker !== null && isMobile && (
+        <BottomSheet
+          open={true}
+          onClose={() => setCharFilterPicker(null)}
+          title={t("lore_charfilter_section")}
+        >
+          <div className="max-h-[80dvh]">{body}</div>
+        </BottomSheet>
+      )}
       <div className="mt-2">
         <Checkbox
           checked={excludeField.value}

@@ -125,7 +125,7 @@ export interface ExperienceSetupModalProps {
    *  `none`) and prompt overrides are settled, so IR-73B can launch the frame.
    *  The modal does NOT auto-close — the parent controls `open`. */
   readonly onReady?: (session: ExperienceSessionResponse) => void;
-  /** RESTART mode (lobby LB-5 / Б3+Б4): the source session whose frozen
+  /** RESTART mode (lobby LB-5 / B3+B4): the source session whose frozen
    *  snapshots prefill the form. When non-null, Start becomes a restart —
    *  the server finishes the source match and creates a NEW session under
    *  a fresh seed; `initialSettings`/`participants` overlay the authored

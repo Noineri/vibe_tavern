@@ -5,6 +5,11 @@ import type { SwipeDirection, VariantPickerItem } from "./types.js";
 
 type VariantControlsProps = {
   isBusy: boolean;
+  /** IF-4(b): when true, the arrows ignore `isBusy` — image slots switch
+   *  variants freely while ANOTHER slot generates (owner 2026-09-22: the
+   *  busy lock is for text swipes; a generating sibling must not freeze
+   *  this slot's carousel). Text rows keep the default (false) gate. */
+  swipeWhileBusy?: boolean;
   /** Bare message id — used as the ephemeral star store key. */
   messageId: string;
   selectedVariantIndex: number;
@@ -28,11 +33,12 @@ type VariantControlsProps = {
  *  to this message's star list so unrelated messages' toggles never re-render
  *  this row. */
 export function VariantControls(props: VariantControlsProps) {
-  const { controlsRef, hidden = false, isBusy, messageId, selectedVariantIndex, variantCount, items, mobile = false, overlay = false, onSelectVariant } = props;
+  const { controlsRef, hidden = false, isBusy, swipeWhileBusy = false, messageId, selectedVariantIndex, variantCount, items, mobile = false, overlay = false, onSelectVariant } = props;
   const showJump = variantCount > 6 && items && items.length > 0 && !overlay;
 
-  const canGoPrevious = !isBusy && selectedVariantIndex > 0;
-  const canGoNext = !isBusy && selectedVariantIndex < variantCount - 1;
+  const swipeLocked = isBusy && !swipeWhileBusy;
+  const canGoPrevious = !swipeLocked && selectedVariantIndex > 0;
+  const canGoNext = !swipeLocked && selectedVariantIndex < variantCount - 1;
   const selectPrevious = () => { if (canGoPrevious) onSelectVariant(selectedVariantIndex - 1, -1); };
   const selectNext = () => { if (canGoNext) onSelectVariant(selectedVariantIndex + 1, 1); };
 

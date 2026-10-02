@@ -395,7 +395,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
                                   className="mt-1 flex min-h-[44px] items-center gap-1.5 rounded-md px-1 text-[calc(var(--ui-fs)-3px)] text-t4 active:bg-s3 active:text-t2 transition-colors"
                                   onClick={(e) => { e.stopPropagation(); setBranchesOpen(branchesOpen === ch.id ? null : ch.id); }}
                                 >
-                                  <Ic.branch /> {activeChatBranches.length} {t("branches")}
+                                  <Ic.branch /> {t("branch_count", { count: activeChatBranches.length })}
                                 </button>
                                 {branchesOpen === ch.id && (
                                   <div className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-border/30 pl-2">
@@ -534,7 +534,7 @@ export function Rail({ hidden }: { hidden?: boolean }) {
       <CharacterImportMobile
         ref={characterImportRef}
         isImporting={character.isImporting}
-        onImportFiles={(files) => { void character.handleImportFiles(files); }}
+        onImportFiles={(files, options) => { void character.handleImportFiles(files, options); }}
       />
       <ChatImportMobile
         ref={chatImportRef}

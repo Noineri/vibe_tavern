@@ -108,10 +108,11 @@ describe("service-prompt resolver", () => {
     expect(preview).not.toBe("OVERRIDE SUMMARY");
   });
 
-  test("registry: keys === SERVICE_PROMPT_FIELD_KEYS and every mapped file exists on disk", async () => {
+  test("registry: keys === SERVICE_PROMPT_FIELD_KEYS, excludes retired image rows, and every mapped file exists on disk", async () => {
     const registryKeys = Object.keys(SERVICE_PROMPT_ASSET_FILES).sort();
     const domainKeys = [...SERVICE_PROMPT_FIELD_KEYS].sort();
     expect(registryKeys).toEqual(domainKeys);
+    expect(domainKeys.some((key) => key.startsWith("image_"))).toBe(false);
 
     // Every mapped file must exist under services/api/assets/
     for (const key of SERVICE_PROMPT_FIELD_KEYS as readonly ServicePromptFieldKey[]) {

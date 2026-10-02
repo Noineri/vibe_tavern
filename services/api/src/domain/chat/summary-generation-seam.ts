@@ -29,34 +29,6 @@ export interface SummaryProfileOverlayLookup {
 }
 
 /**
- * Provider presets whose APIs do not require a saved API key (local / BYOK
- * servers). A summary generation is allowed for these even with no stored key.
- */
-export const API_KEY_OPTIONAL_PROVIDER_PRESETS = new Set([
-	PROVIDER_TYPE.ollama,
-	PROVIDER_TYPE.llamaCpp,
-	PROVIDER_TYPE.koboldCpp,
-	"vllm",
-	"ooba",
-	"tabby",
-	"aphrodite",
-	"lmstudio",
-]);
-
-/** Whether a provider preset requires a saved API key before it can be used. */
-export function providerRequiresApiKey(providerPreset: string): boolean {
-	const preset = providerPreset.trim();
-	if (API_KEY_OPTIONAL_PROVIDER_PRESETS.has(preset)) return false;
-
-	const providerType = normalizeProviderType(preset);
-	return (
-		providerType === PROVIDER_TYPE.openaiCompat ||
-		providerType === PROVIDER_TYPE.anthropic ||
-		providerType === PROVIDER_TYPE.google
-	);
-}
-
-/**
  * Resolve the EFFECTIVE profile for summarization: merge the active model's
  * overlay (when binding is ON) so a bound model's per-model contextBudget /
  * samplers reach the summary generation. `model` is the resolved summary model.

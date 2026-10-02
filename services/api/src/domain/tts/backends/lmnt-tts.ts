@@ -52,6 +52,7 @@ import type {
   TtsProbeResult,
 } from "../tts-backend.js";
 import { registerTtsBackend } from "../tts-registry.js";
+import { readProviderErrorBody } from "../../../infrastructure/ai/provider-error-body.js";
 
 const LMNT_BASE_URL = "https://api.lmnt.com";
 
@@ -70,9 +71,6 @@ const MIN_TEMPERATURE = 0;
  *  attachments, 1–20 files, 250 MB total (we always send exactly one). */
 const CLONE_FORMATS = ["wav", "mp3", "mp4", "m4a", "webm"];
 const CLONE_MAX_SIZE_MB = 250;
-
-/** Error body excerpt length included in HTTP-failure messages. */
-const ERROR_BODY_EXCERPT_LENGTH = 200;
 
 /** Voices listing scope: the editor wants system built-ins AND the user's
  *  clones in one list ("all" documented owner value). */
@@ -133,20 +131,9 @@ function authHeaders(apiKey: string): Record<string, string> {
   return { "X-API-Key": apiKey };
 }
 
-async function readErrorExcerpt(response: Response): Promise<string> {
-  try {
-    const text = await response.text();
-    return text.length > ERROR_BODY_EXCERPT_LENGTH
-      ? `${text.slice(0, ERROR_BODY_EXCERPT_LENGTH)}…`
-      : text;
-  } catch {
-    return "(unreadable error body)";
-  }
-}
-
 async function expectOk(response: Response, operation: string): Promise<void> {
   if (response.ok) return;
-  const excerpt = await readErrorExcerpt(response);
+  const excerpt = await readProviderErrorBody(response);
   throw new LmntTtsError(
     `LMNT ${operation} failed with HTTP ${response.status}: ${excerpt || "(empty body)"}`,
     { status: response.status },
@@ -217,7 +204,7 @@ export class LmntTtsBackend implements TtsBackend {
       url.searchParams.set("owner", "me");
       const response = await fetch(url, { headers: authHeaders(this.cfg.apiKey) });
       if (!response.ok) {
-        const excerpt = await readErrorExcerpt(response);
+        const excerpt = await readProviderErrorBody(response);
         return { ok: false, detail: `${response.status} ${excerpt || "(empty body)"}`.trim() };
       }
       return { ok: true, detail: "voice list reachable" };

@@ -1,3 +1,7 @@
+/**
+ * fork #1 of tts/TtsLocalServerPanel.tsx.
+ */
+
 import { useState } from "react";
 
 import { STT_BACKENDS } from "@vibe-tavern/domain";
@@ -45,6 +49,12 @@ export function SttLocalServerPanel({ form, stt }: { form: SttProfileForm; stt: 
   const isCompat = form.backend === STT_BACKENDS.OpenAiCompat;
 
   const currentEndpoint = configString(form.config, "endpoint");
+
+  // IG-CF12c/12e (owner 2026-09-22): the local-connection chip MOVED OUT of
+  // the card — it now renders in SttProfileEditor between the card and the
+  // level-2 sections (SttLocalConnectionChip), in both header modes. The
+  // panel keeps only what belongs to first-connection setup: the honest
+  // port-scan block + the setup-help accordion.
 
   const worstCode = discovery.notFoundCodes !== null ? worstDiagnostic(discovery.notFoundCodes) : null;
   const diagKey = worstCode !== null ? diagnosticI18nKey(worstCode) : null;

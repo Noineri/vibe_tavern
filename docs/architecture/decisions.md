@@ -613,3 +613,27 @@ The decision rule was GO only if realistic production work produced a p95 event-
 **Trade-off:** Tokenization continues to occupy the main thread for each synchronous call, but the measured cost does not justify Worker lifecycle, messaging, and architecture complexity.
 
 **Revisit trigger:** Re-run the worker-need benchmark if supported model context windows grow substantially or a heavier tokenizer family is added.
+
+---
+
+## AD-026: Seccomp SIGSYS Shim Preloaded into the Android Server
+
+**Context:** The native Android APK runs the server as a bun-compiled executable (`libvibetavern.so`) that inherits the app's seccomp-bpf filter. Android answers syscalls outside its app allowlist with `SECCOMP_RET_TRAP`: the call is skipped and SIGSYS kills the process before any errno is returned. Bun 1.4.x calls `close_range(2)` first thing in `bun_initialize_process()`, and the Android 10–12 allowlist lacks it (it appears in Android 13). The server therefore died at startup with exit 159 and an empty server.log on Android 10–12 (GitHub issue #47); the tombstone reads `seccomp prevented call to disallowed arm64 system call 436`. Separately, the `Bun.serve` `{ dir }` routes for `/assets/*` and `/fonts/*` (`resolveStaticDirRoutes`, BUN14-25) open files through `openat2(2)` (Bun's `DirectoryRoute`), which no Android release up to 16 allows — without a fix the server dies on the first asset request on every Android version.
+
+**Options considered:**
+
+| Approach | Problem |
+|----------|---------|
+| Declare Android 13+ only | Drops a supported range the docs promise; the cause is one syscall with an existing fallback in Bun. |
+| Pin Bun 1.3.14 for the Android build | 1.3.14 has no startup `close_range`, but the codebase was migrated to 1.4.x behavior; BUN14-3 (`d80f542d`) removed a workaround for a 1.3.14 socks-bridge hang, so the pin reintroduces a known defect. |
+| Build Bun from source with Termux-style patches | A Bun fork with a JavaScriptCore/NDK build per version; Termux's patched package is tied to Termux's prefix and cannot be reused. |
+| Patch the `svc` instructions in the compiled binary | Misses calls routed through bionic's `syscall()` (which is how `close_range` is called). |
+| **Preload a SIGSYS handler** | Chosen. |
+
+**Decision:** `mobile/android/app/src/main/cpp/seccomp_shim.c`, built by Gradle through CMake, is loaded into the server via `LD_PRELOAD` (`ServerService.launchServer()`). Its constructor installs a `SA_SIGINFO` SIGSYS handler; for `si_code == SYS_SECCOMP` it writes `-ENOSYS` into the return register and resumes, so Bun's ENOSYS fallback runs. Each distinct trapped syscall number is logged once to server.log. The launcher preloads it on every Android version: `openat2` traps on all of them. This is the same mechanism as the upstream Bun PR `oven-sh/bun#39775`.
+
+**Evidence:** On a real Android 12 device (SDK 31), v1.3.0 died with SIGSYS on syscall 436; with the shim the server reached `Application ready`, only 436 was trapped, and chat, image upload and stop/start worked. A build of the next release with the shim traps 436 then 437 (`openat2`, once — Bun caches its unavailability and falls back to `openat`) on Android 12, and 437 alone on Android 14; both serve the UI normally. Android 10 and 11 were not device-tested; their policy additionally traps `statx`/`pidfd_open` (10) and `pidfd_send_signal` (10–11), all of which have ENOSYS fallbacks in Bun.
+
+**Constraints:** The shim stays C against bionic's headers — bionic pads `uc_sigmask` to 128 bytes before `uc_mcontext`, and hand-rolled `ucontext_t` layouts write to the wrong offset. The handler only calls async-signal-safe functions. A SIGSYS sent with `kill(2)` keeps its default meaning. Bun replaces the handler if JS registers `process.on("SIGSYS")`, and spawned children lose it before their own `close_range`; the server registers no SIGSYS listener and spawns nothing on Android in normal operation.
+
+**Revisit trigger:** Delete the shim, its CMake/Gradle wiring and the `LD_PRELOAD` line once a stable Bun ships the SIGSYS→ENOSYS handler (`oven-sh/bun#39775`) and the repo bumps to it.

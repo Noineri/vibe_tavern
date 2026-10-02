@@ -217,7 +217,7 @@ Lore entries use SillyTavern position strings that map to pipeline positions:
 | `top_an` | `in_prompt` | 15 |
 | `bottom_an` | `in_prompt` | 25 |
 | `at_depth` | `in_chat` | — (uses `depth` field) |
-| `outlet` | `hidden_system` | — |
+| `outlet` | Special activation output | Removed from ordinary lore layers and exposed as newline-joined `{{outlet::name}}` content after budget filtering. |
 
 > For the full lorebook system — activation engine, budget & priority semantics, ST parity audit, and trace integration — see [Lorebooks](lorebooks.md).
 >

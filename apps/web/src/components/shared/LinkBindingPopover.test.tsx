@@ -16,7 +16,7 @@ import type { ComponentProps, ReactNode } from "react";
 import type { LinkTarget } from "./LinkBindingPopover.js";
 
 useDomEnv();
-const { render, fireEvent, within } = await import("@testing-library/react");
+const { render, fireEvent, within, act, waitFor } = await import("@testing-library/react");
 
 let LinkBindingPopover: typeof import("./LinkBindingPopover.js").LinkBindingPopover;
 let TooltipProvider: typeof import("./Tooltip.js").TooltipProvider;
@@ -234,5 +234,281 @@ describe("LinkBindingPopover — responsive resource row", () => {
 		fireEvent.click(chip);
 		expect(onSetLinks).toHaveBeenCalled();
 		expect(onSetLinks).toHaveBeenLastCalledWith([{ targetType: "lorebook", targetId: "lb1" }]);
+	});
+});
+
+// ── Variant-A picker (LB-2C) ────────────────────────────────────────────────
+// The picker body (search + collapsed sections + «show N more») renders from
+// deriveLinkSections; these tests open the popover the way the ImageGen
+// FineTuning chip harness does (pointerDown + click — Radix mounts the
+// portal content in happy-dom, contrary to the old skip note above) and
+// assert behavior on the desktop shell plus the mobile BottomSheet fork.
+// `t` here interpolates {count} so the «show N more» chip is addressable.
+const tNum = (k: string, opts?: Record<string, unknown>) =>
+	opts && typeof opts.n === "number" ? `${k}:${opts.n}` : k;
+
+function makeTargetAt(id: string, name: string, updatedAt: string): LinkTarget {
+	return { id, name, avatarAssetId: null, updatedAt };
+}
+
+/** 11 characters: `bound` (newest, pre-linked) + u10..u1 by recency desc. */
+function elevenCharacters(): LinkTarget[] {
+	const targets = [
+		makeTargetAt("bound", "Bound One", "2026-10-11T00:00:00.000Z"),
+	];
+	for (let i = 10; i >= 1; i--) {
+		targets.push(makeTargetAt(`u${i}`, `Char ${String(i).padStart(2, "0")}`, `2026-10-${String(i).padStart(2, "0")}T00:00:00.000Z`));
+	}
+	return targets;
+}
+
+function openDesktopPicker(): void {
+	const trigger = document.body.querySelector('button[aria-label="lore_link_targets"]');
+	if (!(trigger instanceof HTMLElement)) throw new Error("no add trigger");
+	act(() => {
+		fireEvent.pointerDown(trigger);
+		fireEvent.click(trigger);
+	});
+}
+
+/** Chip-cloud children of the section whose header text is exactly `header`. */
+function sectionChildren(header: string): HTMLElement[] {
+	const el = Array.from(document.body.querySelectorAll("div")).find(
+		(d) => d.childElementCount === 0 && d.textContent === header,
+	);
+	if (!el) throw new Error(`no section header ${header}`);
+	const cloud = el.parentElement?.children[1];
+	if (!cloud) throw new Error(`no chip cloud under ${header}`);
+	return Array.from(cloud.children) as HTMLElement[];
+}
+
+function chipNames(header: string): string[] {
+	// Chips carry the avatar initial (leaf div) + a name span; the more/less
+	// buttons hold plain text — read the span when present.
+	return sectionChildren(header).map(
+		(c) => c.querySelector("span")?.textContent ?? c.textContent ?? "",
+	);
+}
+
+describe("LinkBindingPopover — variant-A picker (LB-2C)", () => {
+	const pickerBase = {
+		onSetLinks: () => {},
+		t: tNum,
+		isMobile: false,
+		showPills: false,
+		links: [{ targetType: "character" as const, targetId: "bound" }],
+		characters: elevenCharacters(),
+		personas: [] as LinkTarget[],
+	};
+
+	it("collapsed: bound chip first, then 6 unbound by recency, then «4 more»", async () => {
+		renderRow({ ...pickerBase });
+		openDesktopPicker();
+		await waitFor(() => expect(chipNames("scope_char · 11")).toBeTruthy());
+		expect(chipNames("scope_char · 11")).toEqual([
+			"Bound One", // bound first
+			"Char 10", "Char 09", "Char 08", "Char 07", "Char 06", "Char 05", // 6 newest unbound
+			"link_binding_show_more:4", // u4..u1 hidden
+		]);
+	});
+
+	it("«show more» expands to everything + «show less»; «show less» collapses again", async () => {
+		renderRow({ ...pickerBase });
+		openDesktopPicker();
+		await waitFor(() => expect(chipNames("scope_char · 11")).toContain("link_binding_show_more:4"));
+		await act(async () => {
+			fireEvent.click(within(document.body).getByText("link_binding_show_more:4"));
+		});
+		await waitFor(() =>
+			expect(chipNames("scope_char · 11")).toEqual([
+				"Bound One",
+				"Char 10", "Char 09", "Char 08", "Char 07", "Char 06", "Char 05",
+				"Char 04", "Char 03", "Char 02", "Char 01",
+				"link_binding_show_less",
+			]),
+		);
+		await act(async () => {
+			fireEvent.click(within(document.body).getByText("link_binding_show_less"));
+		});
+		await waitFor(() =>
+			expect(chipNames("scope_char · 11")).toEqual([
+				"Bound One",
+				"Char 10", "Char 09", "Char 08", "Char 07", "Char 06", "Char 05",
+				"link_binding_show_more:4",
+			]),
+		);
+	});
+
+	it("search row appears only above the MAX_VISIBLE_ITEMS threshold", async () => {
+		const six = {
+			...pickerBase,
+			links: [],
+			characters: [1, 2, 3, 4, 5, 6].map((i) => makeTargetAt(`c${i}`, `C${i}`, `2026-10-0${i}T00:00:00.000Z`)),
+		};
+		renderRow(six);
+		openDesktopPicker();
+		await waitFor(() => expect(chipNames("scope_char · 6")).toHaveLength(6));
+		expect(document.body.querySelector('input[aria-label="link_binding_search_placeholder"]')).toBeNull();
+	});
+
+	it("typing filters across sections, hides empty ones, «Nothing found» on no match", async () => {
+		renderRow({
+			...pickerBase,
+			links: [],
+			characters: [
+				makeTargetAt("a1", "Anna", "2026-10-07T00:00:00.000Z"),
+				makeTargetAt("b1", "Boris", "2026-10-06T00:00:00.000Z"),
+				makeTargetAt("c1", "Clara", "2026-10-05T00:00:00.000Z"),
+				makeTargetAt("d1", "Dmitri", "2026-10-04T00:00:00.000Z"),
+				makeTargetAt("e1", "Elena", "2026-10-03T00:00:00.000Z"),
+				makeTargetAt("f1", "Fedor", "2026-10-02T00:00:00.000Z"),
+			],
+			lorebooks: [makeTargetAt("lb1", "Anna's lore", "2026-10-01T00:00:00.000Z")],
+			scripts: [makeTargetAt("sc1", "Dice Roller", "2026-10-01T00:00:00.000Z")],
+		});
+		openDesktopPicker();
+		const input = await waitFor(() =>
+			document.body.querySelector('input[aria-label="link_binding_search_placeholder"]'),
+		);
+		expect(input).toBeTruthy();
+		await act(async () => {
+			fireEvent.change(input as HTMLElement, { target: { value: "an" } });
+		});
+		// Characters section keeps only Anna (header still counts ALL targets);
+		// the lorebook match shows; the script section (no match) is omitted.
+		expect(chipNames("scope_char · 6")).toEqual(["Anna"]);
+		expect(chipNames("scope_lorebook · 1")).toEqual(["Anna's lore"]);
+		const headers = Array.from(document.body.querySelectorAll("div"))
+			.filter((d) => d.childElementCount === 0 && d.textContent?.startsWith("scope_script"));
+		expect(headers).toHaveLength(0);
+		// No match anywhere → the no-results line, every section omitted.
+		await act(async () => {
+			fireEvent.change(input as HTMLElement, { target: { value: "zzz" } });
+		});
+		await waitFor(() =>
+			expect(within(document.body).getByText("link_binding_no_results")).toBeTruthy(),
+		);
+		expect(() => chipNames("scope_char · 6")).toThrow("no section header");
+	});
+
+	it("clicking an unbound chip links it; the visible order stays frozen while open", async () => {
+		const onSetLinks = mock();
+		const view = renderRow({ ...pickerBase, onSetLinks });
+		openDesktopPicker();
+		await waitFor(() => expect(chipNames("scope_char · 11")).toContain("Char 07"));
+		const before = chipNames("scope_char · 11");
+		await act(async () => {
+			fireEvent.click(within(document.body).getByText("Char 07"));
+		});
+		expect(onSetLinks).toHaveBeenCalledTimes(1);
+		expect(onSetLinks).toHaveBeenLastCalledWith([
+			{ targetType: "character", targetId: "bound" },
+			{ targetType: "character", targetId: "u7" },
+		]);
+		// The parent applies the new links → live active marks, SAME order
+		// (openLinks snapshot still drives the derivation until close). The
+		// bare element keeps RTL's auto-applied wrapper — a hand-wrapped
+		// TooltipProvider would nest inside it and REMOUNT the component
+		// (state reset, popover closes).
+		view.rerender(
+			<LinkBindingPopover
+				{...pickerBase}
+				onSetLinks={onSetLinks}
+				links={[
+					{ targetType: "character", targetId: "bound" },
+					{ targetType: "character", targetId: "u7" },
+				]}
+			/>,
+		);
+		expect(chipNames("scope_char · 11")).toEqual(before);
+		// The newly bound chip got its LIVE active look (accent border).
+		const active = sectionChildren("scope_char · 11").find(
+			(c) => c.querySelector("span")?.textContent === "Char 07",
+		);
+		expect(active?.className).toContain("border-accent");
+	});
+
+	it("close + reopen resets query and expansion", async () => {
+		renderRow({ ...pickerBase });
+		openDesktopPicker();
+		// Expand first (empty query)…
+		await act(async () => {
+			fireEvent.click(within(document.body).getByText("link_binding_show_more:4"));
+		});
+		await waitFor(() => expect(within(document.body).getByText("link_binding_show_less")).toBeTruthy());
+		// …then dirty the query (it hides every section — irrelevant here, the
+		// point is only that reopen starts clean).
+		const input = await waitFor(() =>
+			document.body.querySelector('input[aria-label="link_binding_search_placeholder"]'),
+		);
+		await act(async () => {
+			fireEvent.change(input as HTMLElement, { target: { value: "an" } });
+		});
+		// Close via Escape (Radix outside/escape handling).
+		await act(async () => {
+			fireEvent.keyDown(document.body, { key: "Escape" });
+		});
+		await waitFor(() =>
+			expect(within(document.body).queryByText("link_binding_show_less")).toBeNull(),
+		);
+		// Reopen: query empty, section collapsed again.
+		openDesktopPicker();
+		const input2 = await waitFor(() =>
+			document.body.querySelector('input[aria-label="link_binding_search_placeholder"]'),
+		);
+		expect((input2 as HTMLInputElement).value).toBe("");
+		await waitFor(() =>
+			expect(chipNames("scope_char · 11")).toEqual([
+				"Bound One",
+				"Char 10", "Char 09", "Char 08", "Char 07", "Char 06", "Char 05",
+				"link_binding_show_more:4",
+			]),
+		);
+	});
+
+	it("mobile: the same body renders in a BottomSheet, not the desktop popover", async () => {
+		renderRow({ ...pickerBase, isMobile: true });
+		const trigger = document.body.querySelector('button[aria-label="lore_link_targets"]');
+		if (!(trigger instanceof HTMLElement)) throw new Error("no trigger");
+		await act(async () => {
+			fireEvent.pointerDown(trigger);
+			fireEvent.click(trigger);
+		});
+		// Sheet title + the shared body: search row and the chip cloud.
+		await waitFor(() => expect(within(document.body).getByText("lore_link_targets")).toBeTruthy());
+		await waitFor(() =>
+			expect(
+				document.body.querySelector('input[aria-label="link_binding_search_placeholder"]'),
+			).toBeTruthy(),
+		);
+		await waitFor(() => expect(chipNames("scope_char · 11")).toContain("link_binding_show_more:4"));
+		// The desktop Radix content is NOT rendered on mobile.
+		expect(document.body.querySelector('[data-radix-popper-content-wrapper]')).toBeNull();
+		// The 80dvh sheet cap must be a flex column: a block wrapper caps only
+		// itself, the body grows past it and the chip list never scrolls — an
+		// expanded section spills below the sheet (under Android's nav bar).
+		const cap = document.body.querySelector('[class*="max-h-[80dvh]"]');
+		if (!(cap instanceof HTMLElement)) throw new Error("no sheet cap");
+		expect(cap.className.split(" ")).toEqual(expect.arrayContaining(["flex", "flex-col", "min-h-0"]));
+		// Thumb-sized chips and the more/less pill on mobile (34px, 14px text).
+		for (const el of sectionChildren("scope_char · 11")) {
+			expect(el.className.split(" ")).toEqual(expect.arrayContaining(["h-[34px]", "text-[14px]"]));
+		}
+	});
+
+	it("avatar images load lazily (loading=lazy, decoding=async)", async () => {
+		renderRow({
+			...pickerBase,
+			links: [],
+			characters: [{ id: "a1", name: "Anna", avatarAssetId: "asset-1" }],
+		});
+		openDesktopPicker();
+		const img = await waitFor(() => {
+			const el = document.body.querySelector("img");
+			expect(el).toBeTruthy();
+			return el as HTMLImageElement;
+		});
+		expect(img.getAttribute("loading")).toBe("lazy");
+		expect(img.getAttribute("decoding")).toBe("async");
 	});
 });

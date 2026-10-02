@@ -32,6 +32,39 @@ const continueMessageAction = mock();
 const realChatApi = await import("../api/chat-api.js");
 const realChatActions = await import("../stores/api-actions/chat-actions.js");
 const realLocaleHelpers = await import("../i18n/locale-helpers.js");
+const { default: i18next } = await import("i18next");
+const { default: en } = await import("../i18n/locales/en.json");
+const overflowToastI18n = i18next.createInstance();
+void overflowToastI18n.init({
+	lng: "en",
+	resources: { en: { translation: en } },
+	keySeparator: false,
+	nsSeparator: false,
+	interpolation: { prefix: "{", suffix: "}", escapeValue: false },
+	initAsync: false,
+});
+const realSonner = await import("sonner");
+// P21 (overflowAlert): the overflow warning toast. A delegating wrapper —
+// NOT Object.assign on the real toast singleton (that mutation would leak
+// into every other file sharing this worker, R4): callable surface forwards
+// to the real toast, only `warning` is swapped for the test mock.
+const toastWarning = mock();
+// The provider-cut path's error toast is pinned the same way.
+const toastError = mock();
+const toastMock = new Proxy(realSonner.toast, {
+	get(target, prop) {
+		if (prop === "warning") return toastWarning;
+		if (prop === "error") return toastError;
+		return Reflect.get(target, prop, target);
+	},
+	apply(target, _thisArg, args) {
+		return Reflect.apply(target, target, args);
+	},
+}) as typeof realSonner.toast;
+mock.module("sonner", () => ({
+	...realSonner,
+	toast: toastMock,
+}));
 mock.module("../api/chat-api.js", () => {
 	return { ...realChatApi, regenerateChatMessage, sendChatMessageStream, fetchChat };
 });
@@ -44,14 +77,19 @@ mock.module("../stores/api-actions/chat-actions.js", () => {
 	return { ...realChatActions, sendChatMessageAction, continueMessageAction };
 });
 
-// getT() without initI18n — translations are irrelevant to state cleanup.
+// Most controller assertions use stable i18n keys; the overflow path calls
+// the real translation function to pin interpolation as rendered to users.
 mock.module("../i18n/locale-helpers.js", () => ({
 	...realLocaleHelpers,
-	getT: () => (key: string) => key,
+	getT: () => (key: string, options?: Record<string, unknown>) => (
+		key === "lore_overflow_toast"
+			? String(overflowToastI18n.t("lore_overflow_toast", options))
+			: key
+	),
 }));
 
 const { useChatController, diceSendBlockReason } = await import("./use-chat-controller.js");
-const { ProviderStreamError } = await import("../api/provider-stream-error.js");
+const { ProviderStreamError, markUserMessageSaved } = await import("../api/provider-stream-error.js");
 const { DiceApiError } = await import("../api/dice-api.js");
 const { useDiceStore } = await import("../stores/dice-store.js");
 const { useChatStore } = await import("../stores/chat-store.js");
@@ -82,6 +120,8 @@ beforeEach(() => {
   sendChatMessageStream.mockReset();
   continueMessageAction.mockReset();
   fetchChat.mockReset();
+  toastWarning.mockClear();
+  toastError.mockClear();
   // ingestSnapshot preserves absent fields, so an empty snapshot is a safe
   // no-op refresh for the post-abort / post-error refetch.
   fetchChat.mockResolvedValue({});
@@ -158,6 +198,30 @@ describe("useChatController — per-send prefill one-shot (LS-4b)", () => {
     // suite owns the send-action mock + the override store.
     sendChatMessageAction.mockClear();
     usePerSendPrefillStore.getState().clear();
+  });
+
+  test("non-stream: a send failure after the user message was stored ⇒ chat refetched, draft NOT restored", async () => {
+    // Owner 2026-10-02 («я отключаю стриминг»): the non-stream twin of the
+    // stream path's user-message-saved settle.
+    useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
+    sendChatMessageAction.mockRejectedValueOnce(markUserMessageSaved(new Error("Invalid API key")));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(fetchChat).toHaveBeenCalledWith(CHAT);
+    expect(useChatStore.getState().draft).toBe("");
+    expect(toastError.mock.calls[0]![0]).toBe("Invalid API key");
+  });
+
+  test("non-stream: a send failure with nothing stored ⇒ the draft is restored (unchanged)", async () => {
+    useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
+    sendChatMessageAction.mockRejectedValueOnce(new Error("Invalid API key"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(useChatStore.getState().draft).toBe("hello");
   });
 
   test("handleSend threads the armed override into the send body and clears it", async () => {
@@ -377,6 +441,22 @@ describe("diceSendBlockReason (DICE-F3 pure send gate)", () => {
   });
 });
 
+/** Seed a minimal RP snapshot (chat/branch/persona + insights config) —
+ *  shared by the dice-send and P21 suites so the partial-shape casts live
+ *  here ONCE (hygiene `as never` budget is a ratchet). */
+function seedRpSnapshot(over: { characterId?: string; personaId?: string; diceEnabled?: boolean } = {}) {
+  useSnapshotStore.setState({
+    activeChat: {
+      id: CHAT,
+      characterId: over.characterId ?? "char-1",
+      mode: "rp",
+      insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: over.diceEnabled ?? false, diceMode: "normal" },
+    } as never,
+    activeBranch: { id: "br-1" } as never,
+    persona: { id: over.personaId ?? "per-1" } as never,
+  });
+}
+
 describe("useChatController — handleSend dice send (DICE-F3, stream path)", () => {
   // Stubbed once per file so conflict tests can assert it fired; cleared in
   // beforeEach. `tryHandleDiceSendConflict` calls it fire-and-forget.
@@ -395,16 +475,7 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     useProviderDataStore.setState({ profiles: [{ id: "p1", isActive: true, defaultModel: "m" } as never] });
     // `readDiceSendState` reads chatId / branchId / insights / persona /
     // characterId straight from the snapshot, so seed them all here.
-    useSnapshotStore.setState({
-      activeChat: {
-        id: CHAT,
-        characterId: DICE_CHAR,
-        mode: "rp",
-        insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: true, diceMode: "normal" },
-      } as never,
-      activeBranch: { id: BRANCH } as never,
-      persona: { id: DICE_PER } as never,
-    });
+    seedRpSnapshot({ characterId: DICE_CHAR, personaId: DICE_PER, diceEnabled: true });
     useChatStore.setState({ activeChatId: CHAT, draft: "hi", generations: {}, messageActionId: null });
     useDiceStore.setState({ byScope: {}, refreshPending: refreshPending as never });
     // IR-73D: clear experience scope and override refreshAttachment with the
@@ -500,14 +571,7 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
   });
 
   test("Dice OFF ⇒ byte-identical send body (no dice fields)", async () => {
-    useSnapshotStore.setState({
-      activeChat: {
-        id: CHAT, characterId: DICE_CHAR, mode: "rp",
-        insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: false, diceMode: "normal" },
-      } as never,
-      activeBranch: { id: BRANCH } as never,
-      persona: { id: DICE_PER } as never,
-    });
+    seedRpSnapshot({ characterId: DICE_CHAR, personaId: DICE_PER, diceEnabled: false });
     sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
       opts?.onDone?.();
       return Promise.resolve();
@@ -538,6 +602,65 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     await act(async () => { await result.current.handleSend(); });
 
     expect(sendChatMessageStream).not.toHaveBeenCalled();
+  });
+
+  test("provider cut with partialSaved ⇒ chat refetched, draft NOT restored, toast says the partial reply was kept", async () => {
+    // The server already stored the user message (prepareLiveTurn) AND the
+    // text streamed before the cut — restoring the draft would invite a
+    // duplicate resend; the chat refetch shows the kept partial reply.
+    sendChatMessageStream.mockRejectedValueOnce(
+      new ProviderStreamError("upstream connection reset", "network", undefined, { partialSaved: true, userMessageSaved: true }),
+    );
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(fetchChat).toHaveBeenCalledWith(CHAT);
+    expect(useChatStore.getState().draft).toBe("");
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(toastError.mock.calls[0]![0]).toBe("upstream connection reset");
+    expect(toastError.mock.calls[0]![1]).toEqual({ description: "provider_error_partial_saved_desc" });
+  });
+
+  test("provider error after the user message was stored ⇒ chat refetched, draft NOT restored (no invisible duplicate)", async () => {
+    // Owner 2026-10-02: the text came back into the input while the message
+    // was already stored (invisible until a reload) — a resend duplicated it.
+    sendChatMessageStream.mockRejectedValueOnce(
+      new ProviderStreamError("Invalid API key", "authentication", undefined, { userMessageSaved: true }),
+    );
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(fetchChat).toHaveBeenCalledWith(CHAT);
+    expect(useChatStore.getState().draft).toBe("");
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(toastError.mock.calls[0]![0]).toBe("Invalid API key");
+  });
+
+  test("vision gate after the user message was stored ⇒ its own toast, chat refetched, draft NOT restored", async () => {
+    // The vision gate runs in startStream — after prepareLiveTurn stored the
+    // user message — so it is the same invisible-duplicate case.
+    sendChatMessageStream.mockRejectedValueOnce(
+      new ProviderStreamError("no vision", "unknown", "vision_not_supported", { userMessageSaved: true }),
+    );
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(fetchChat).toHaveBeenCalledWith(CHAT);
+    expect(useChatStore.getState().draft).toBe("");
+    expect(toastError.mock.calls[0]![0]).toBe("vision_not_supported");
+  });
+
+  test("provider error before the user message was stored ⇒ the draft is restored (unchanged behavior)", async () => {
+    sendChatMessageStream.mockRejectedValueOnce(new ProviderStreamError("boom", "unknown"));
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(useChatStore.getState().draft).toBe("hi");
+    expect(toastError).toHaveBeenCalledTimes(1);
   });
 
   test("stream conflict (stale_revision) ⇒ refreshPending + draft KEPT", async () => {
@@ -598,14 +721,7 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
 
   test("non-stream: Dice OFF ⇒ no diceCommit arg (undefined, byte-identical)", async () => {
     useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: false } }));
-    useSnapshotStore.setState({
-      activeChat: {
-        id: CHAT, characterId: DICE_CHAR, mode: "rp",
-        insightsConfig: { objectiveEnabled: true, trackerEnabled: true, diceEnabled: false, diceMode: "normal" },
-      } as never,
-      activeBranch: { id: BRANCH } as never,
-      persona: { id: DICE_PER } as never,
-    });
+    seedRpSnapshot({ characterId: DICE_CHAR, personaId: DICE_PER, diceEnabled: false });
     sendChatMessageAction.mockResolvedValue({});
     const { result } = renderHook(() => useChatController());
 
@@ -953,5 +1069,44 @@ describe("useChatController — handleSend dice send (DICE-F3, stream path)", ()
     expect(body.experienceQueueRevision).toBeUndefined();
     expect(body.experienceSessionRevision).toBeUndefined();
     expect(refreshAttachment).not.toHaveBeenCalled();
+  });
+});
+
+describe("useChatController — lorebook overflow toast (P21, stream done path)", () => {
+  beforeEach(() => {
+    sendChatMessageStream.mockReset();
+    useProviderStore.setState((s) => ({ connection: { ...s.connection, streamResponse: true } }));
+    useProviderDataStore.setState({ profiles: [{ id: "p1", isActive: true, defaultModel: "m" } as never] });
+    seedRpSnapshot();
+    useChatStore.setState({ activeChatId: CHAT, draft: "hi", generations: {}, messageActionId: null });
+  });
+
+  test("overflows on the finish payload ⇒ one toast.warning per book", async () => {
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve({
+        finishReason: "stop",
+        lorebookOverflows: [{ name: "Dragon World", dropped: 2 }, { name: "City", dropped: 1 }],
+      });
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(toastWarning).toHaveBeenCalledTimes(2);
+    expect(toastWarning.mock.calls[0][0]).toBe("Lorebook «Dragon World»: budget exhausted, 2 entries did not make it into the prompt");
+    expect(toastWarning.mock.calls[1][0]).toBe("Lorebook «City»: budget exhausted, 1 entries did not make it into the prompt");
+  });
+
+  test("no overflows on the finish payload ⇒ no warning", async () => {
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
+      opts?.onDone?.();
+      return Promise.resolve({ finishReason: "stop" });
+    });
+    const { result } = renderHook(() => useChatController());
+
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(toastWarning).not.toHaveBeenCalled();
   });
 });

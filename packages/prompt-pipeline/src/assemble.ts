@@ -247,6 +247,7 @@ const phaseOneMacroEngine = createFullMacroEngine();
 
 function buildAssemblyVariableContext(context: PromptAssemblyContext): PromptVariableContext {
   return buildPromptVariableContext({
+    outlets: context.outletEntries ?? {},
     character: {
       name: context.character.name,
       description: context.character.description,
@@ -358,7 +359,11 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     lore: context.lore?.map((entry) => ({
       ...entry,
       title: applyMacros(entry.title, variableContext),
-      content: applyMacros(entry.content, variableContext),
+      // P16 boundary: activated lore from StaticPromptResolver has already
+      // passed through the full macro engine before WORLD_INFO regex hooks.
+      // Other lore producers (for example, AI Assistant context) retain the
+      // pipeline-owned expansion path.
+      content: entry.macrosResolved ? entry.content : applyMacros(entry.content, variableContext),
     })),
     memory: {
       summary: context.memory?.summary?.map((s) => ({

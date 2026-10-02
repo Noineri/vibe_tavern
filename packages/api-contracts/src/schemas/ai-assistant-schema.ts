@@ -38,6 +38,10 @@ export const aiAssistantRequestSchema = z.object({
   chatId: z.string().optional(),
   /** chat_impersonate: how many recent messages to include (server default 20). */
   recentMessageCount: z.number().optional(),
+  /** chat_impersonate: current composer text to seed and lore-scan. */
+  draftText: z.string().optional(),
+  /** chat_impersonate: use the draft-improvement service prompt when a draft exists. */
+  enhanceDraft: z.boolean().optional(),
   /** message_edit/message_merge: canonical target message in the chat's active branch. */
   targetMessageId: z.string().optional(),
   /** message_edit/message_merge: immutable variant ids selected as editor sources. */

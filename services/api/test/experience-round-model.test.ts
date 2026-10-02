@@ -157,17 +157,17 @@ describe("createRoundModelDeps — executor boundary", () => {
 		expect(result.error.status).toBe(422);
 	});
 
-	test("API-key-required profile with empty key is no_api_key", async () => {
-		const { execute } = makeExecuteSpy("x");
+	test("keyless profile proceeds to execute — the endpoint answers for itself (no VT-side key preflight)", async () => {
+		const { spy, execute } = makeExecuteSpy("reply via keyless gateway");
 		const deps = createRoundModelDeps({
 			providerProfiles: mockProviderProfiles(makeProfile({ apiKey: "" })) as ProviderProfileService,
 			execute,
 		});
 		const result = await deps.run(input());
 
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("no_api_key");
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(spy.calls.length).toBe(1);
 	});
 
 	test("executor throw is provider_error (500), never escapes", async () => {

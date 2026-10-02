@@ -19,7 +19,7 @@ import { Icons } from "../shared/icons.js";
 import { AutoTextarea } from "../shared/auto-textarea.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { useT } from "../../i18n/context.js";
-import { brandId, REGEX_PLACEMENT, resolveAssistantPrefillSupport, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, REGEX_PLACEMENT, resolveAssistantPrefillSupport, type ChatId, type RegexPreset } from "@vibe-tavern/domain";
 import {
   applyRegexLayer,
   createValueEscapingMacroSource,
@@ -37,6 +37,7 @@ import { useChatController } from "../../hooks/use-chat-controller.js";
 import { replaceUiMacros } from "../../lib/macros.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { MessageShell, type MessageShellAuthorInfo } from "./MessageShell.js";
+import { ImageGenSlotControls } from "./ImageGenSlotControls.js";
 import { useMessageNarration } from "./use-message-narration.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
 import { StreamingMarkdown } from "./StreamingMarkdown.js";
@@ -279,19 +280,6 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     !pendingUserMessageContent &&
     isLastAssistant;
 
-  const canBranch = !isGreeting && !isCoauthorMode;
-  const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
-  // LS-4a: same last-message gate as regenerate (owner: Continue lives on the
-  // LAST AI reply) + the shared prefill capability gate. Coauthor chats are
-  // excluded alongside the other row actions.
-  const canContinue = canRegenerate && canContinueByCapability;
-  const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
-  const canSwitchVariant = isLast && !isCoauthorMode;
-  const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
-  // TPE-14: the inverse gate — "prepare for narration" is offered on
-  // greetings only (the editor opens directly in annotate mode).
-  const canAiAnnotate = isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
-
   // Server sets message.content = selected variant's content at load time,
   // but client-side switching only changes selectedVariantIndex.
   // Read the actual variant text directly.
@@ -305,6 +293,61 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
   // transformed — a partial stream would double-apply partial matches; the
   // settled render picks the transform up the moment streaming ends.
   const renderContent = regexDisplayContent ?? activeContent;
+
+  // ── IG-CF6 (IMAGE_GENERATION_PLAN): pure image-slot detection ──
+  // IG-14 made the slot an assistant message for the variant machinery, but
+  // an empty-content message whose every attachment is a generated image is
+  // a DIFFERENT MESSAGE KIND, not a text message: it renders as an image
+  // (AttachmentGrid → ImageBlock) with the slot's own controls replacing the
+  // text action row (owner review 2026-09-15). Any text content or any
+  // non-imageGen attachment disqualifies — that message is a text message
+  // (with images attached) and keeps the full text surface.
+  const slotAttachments = msg.attachments ?? [];
+  const isPureImageSlot =
+    msg.role === "assistant" &&
+    !(renderContent ?? "").trim() &&
+    slotAttachments.length > 0 &&
+    slotAttachments.every((a) => a.imageGen !== undefined);
+
+  const canBranch = !isGreeting && !isCoauthorMode;
+  const canRegenerate = !isGreeting && isLastAssistant && !isCoauthorMode;
+  // LS-4a: same last-message gate as regenerate (owner: Continue lives on the
+  // LAST AI reply) + the shared prefill capability gate. Coauthor chats are
+  // excluded alongside the other row actions.
+  const canContinue = canRegenerate && canContinueByCapability;
+  const canResend = isLast && msg.role === "user" && !pendingUserMessageContent;
+  const canSwitchVariant = (isLast || isPureImageSlot) && !isCoauthorMode;
+
+  // ── IG-CF11 (mobile swipe zone): a pure image slot's variant panels carry
+  // no text, so the mobile carousel's Markdown panels collapsed to ~0 height —
+  // the swipe gesture had no surface (owner defect 2026-09-29: on phones only
+  // the chevron buttons worked). On mobile the carousel now renders the image
+  // per panel. The per-position set resolution mirrors the store's
+  // selectVariant EXACTLY (variant's own set → row-set shadow → current set),
+  // so a panel's preview is always what the store resolves when the swipe
+  // lands there — never a stale-by-guess image.
+  const mobileImageSlotCarousel = isMobile && isPureImageSlot && variantCount > 1 && canSwitchVariant;
+  const carouselPanelAttachments = mobileImageSlotCarousel
+    ? variants.map((v) =>
+        v.attachmentsJson != null
+          ? parseStoredAttachments(v.attachmentsJson)
+          : (msg.messageLevelAttachments ?? msg.attachments))
+    : undefined;
+  const renderImagePanel =
+    carouselPanelAttachments
+      ? (position: number) => {
+          const atts = carouselPanelAttachments[position];
+          if (!atts || atts.length === 0) return null;
+          // No `variantIndex`: the IF-4a slide idiom must not animate inside
+          // a panel — the carousel track already owns the swipe motion.
+          return <AttachmentGrid attachments={atts} messageId={msg.id} />;
+        }
+      : undefined;
+  const canAiEdit = !isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
+  // TPE-14: the inverse gate — "prepare for narration" is offered on
+  // greetings only (the editor opens directly in annotate mode).
+  const canAiAnnotate = isGreeting && !isCoauthorMode && msg.role === "assistant" && !!selectedVariant;
+
   // TPE-1 (AN-1): narration prefers the selected variant's TTS annotation —
   // it's the content plus inserted expressive tags, authored FOR narration,
   // so it's used verbatim (the tag-preservation wrapper downstream keeps the
@@ -359,6 +402,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       controlsRef={variantControlsRef}
       hidden={!!variantControlsOverlay}
       isBusy={isBusy}
+      swipeWhileBusy={isPureImageSlot}
       messageId={msg.id}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
@@ -372,6 +416,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
     <VariantControls
       mobile
       isBusy={isBusy}
+      swipeWhileBusy={isPureImageSlot}
       messageId={msg.id}
       selectedVariantIndex={selectedVariantIndex}
       variantCount={variantCount}
@@ -446,6 +491,7 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
           selectedVariantIndex={selectedVariantIndex}
           variants={variants}
           onSelectVariant={handleSelectVariant}
+          renderPanel={renderImagePanel}
         />
       ) : (
         <div className="relative overflow-hidden">
@@ -458,12 +504,20 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
               translate="yes"
               className="font-body text-[length:var(--mfs)] leading-[1.65] text-msg-t1 [&_em]:italic [&_em]:text-msg-t2"
             >
-              <Markdown text={renderContent} />
+              {/* IG-CF6: a pure image slot has no text body — the empty
+                  Markdown shell renders nothing and only adds a stray
+                  zero-content block above the image. */}
+              {!isPureImageSlot && <Markdown text={renderContent} />}
             </motion.div>
           </AnimatePresence>
         </div>
       )}
-      <AttachmentGrid attachments={msg.attachments} messageId={msg.id} />
+      {/* IG-CF11: the mobile image-slot carousel renders the image panels
+          itself — a second AttachmentGrid below would duplicate the current
+          variant's image. */}
+      {!mobileImageSlotCarousel && (
+        <AttachmentGrid attachments={msg.attachments} messageId={msg.id} variantIndex={selectedVariantIndex} />
+      )}
       {isGenerating && <GenerationDots label={t("generating_response")} />}
     </div>
   );
@@ -591,6 +645,33 @@ export const MessageBlock = memo(function MessageBlock(input: MessageBlockProps)
       desktopVariantControls={desktopVariantControls}
       mobileVariantControls={mobileVariantControls}
       narrating={narrationHook.narrating}
+      imageSlot={isPureImageSlot}
+      slotMeta={
+        isPureImageSlot && slotAttachments[0]?.imageGen !== undefined ? (
+          <>
+            {/* C-B: the mode's display name (t(`image_gen_mode_${mode}`))
+             * + the generation model — the same quiet chrome as the text
+             * message's metadata bar. The testid rides the mode span (the
+             * label's old home was the controls row). Model ids are user
+             * data: `break-all` is the overflow contract for extreme ids
+             * (the line wraps, never truncates mid-token). */}
+            <span data-testid="image-gen-slot-mode">{t(`image_gen_mode_${slotAttachments[0].imageGen.mode}`)}</span>
+            {slotAttachments[0].imageGen.model && (
+              <span data-testid="image-gen-slot-model" className="break-all">{slotAttachments[0].imageGen.model}</span>
+            )}
+          </>
+        ) : undefined
+      }
+      slotControls={
+        isPureImageSlot ? (
+          <ImageGenSlotControls
+            attachments={slotAttachments}
+            messageId={msg.id}
+            characterId={activeCharacterId}
+            chatId={authorInfo.activeChatId}
+          />
+        ) : undefined
+      }
       actions={{
         onCopy: async () => {
           const result = await copyText(msg.displayContent);

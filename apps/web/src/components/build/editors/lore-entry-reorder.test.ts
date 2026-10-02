@@ -40,7 +40,7 @@ function entry(id: string, position: string, sortOrder: number): LoreEntryRecord
 		priority: 100,
 		stickyWindow: 0,
 		cooldownWindow: 0,
-		delayWindow: 0,
+		minChatMessages: 0,
 		enabled: true,
 		constant: false,
 		probability: 100,

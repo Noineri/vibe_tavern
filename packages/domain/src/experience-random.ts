@@ -109,7 +109,7 @@ export function createDeterministicRandom(seed: number): DeterministicRandom {
  * The same shape as {@link DeterministicRandom}, but backed by `Math.random` —
  * non-recorded, non-reproducible. Injected as `context.chance` into `choose`
  * and `flavor` so a script can make a varied move or cosmetic detail without
- * disturbing the deterministic cursor (Variant Б).
+ * disturbing the deterministic cursor (Variant B).
  */
 export type EphemeralRandom = DeterministicRandom;
 

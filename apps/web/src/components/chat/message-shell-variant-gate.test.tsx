@@ -2,6 +2,7 @@ import { describe, test, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { normalizeInsightsConfig, normalizeObjectiveState } from "@vibe-tavern/domain";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import type { ReactNode } from "react";
 
 useDomEnv();
 
@@ -60,6 +61,7 @@ const STABLE_CONTROLLER = {
 
 const realChatController = await import("../../hooks/use-chat-controller.js");
 const realI18nContext = await import("../../i18n/context.js");
+const realTooltip = await import("../shared/Tooltip.js");
 mock.module("../../hooks/use-chat-controller.js", () => ({
 	...realChatController,
   useChatController: () => STABLE_CONTROLLER,
@@ -68,6 +70,14 @@ mock.module("../../hooks/use-chat-controller.js", () => ({
 mock.module("../../i18n/context.js", () => ({
 	...realI18nContext,
   useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: NOOP, ready: true }),
+}));
+
+// ImageBlock's image chrome rides CustomTooltip (needs the app-level
+// TooltipProvider) — same passthrough boundary as message-block-image-slot.
+mock.module("../shared/Tooltip.js", () => ({
+	...realTooltip,
+  CustomTooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 // ---------------------------------------------------------------------------
@@ -120,7 +130,7 @@ async function loadModules() {
 // ---------------------------------------------------------------------------
 
 import type { AppCharacter, AppMessage, AppSnapshot, AppPersona } from "../../api/types.js";
-import type { ChatId } from "@vibe-tavern/domain";
+import type { Attachment, ChatId } from "@vibe-tavern/domain";
 
 const asChatId = (id: string): ChatId => id as ChatId;
 
@@ -271,5 +281,125 @@ describe("Mobile content swipe carousel — gated to last message", () => {
 
     // Positive control: the swipe carousel track renders for the last message.
     expect(container.innerHTML).toContain("w-[300%]");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// IG-CF11 (owner defect 2026-09-29): a pure image slot's mobile carousel had
+// NO swipe surface — the Markdown panels render nothing for empty-content
+// variants, so the track collapsed to ~0 height and a finger swipe over the
+// image did nothing (only the chevron buttons switched variants). The fix:
+// on mobile the carousel panels carry each variant's IMAGE; the standalone
+// AttachmentGrid below is suppressed for that path (else the current variant's
+// image renders twice). Sentinel: `[data-testid=image-block-img]` src counts.
+// ---------------------------------------------------------------------------
+
+describe("Mobile image-slot carousel — panels carry the image (IG-CF11)", () => {
+  const slotAtt = (id: string, assetId: string): Attachment => ({
+    id, assetId, type: "image", name: `gen-${assetId}`, mimeType: "image/png", sizeBytes: 1, description: null,
+    imageGen: { mode: "portrait", profileId: "p1", params: {}, prompt: "p" },
+  });
+
+  /** Pure image slot, 3 variants, loaded with variant 1 selected (its own set
+   *  on `attachments`, the row set shadowed per IG-CF10b). */
+  function makeImageSlot(withRowShadow: boolean): AppMessage {
+    const row = slotAtt("a-row", "asset-row");
+    const v1 = slotAtt("a-1", "asset-1");
+    const v2 = slotAtt("a-2", "asset-2");
+    return {
+      id: "m2", role: "assistant", content: "",
+      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+      attachments: [v1],
+      ...(withRowShadow ? { messageLevelAttachments: [row] } : {}),
+      variants: [
+        { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false, attachmentsJson: null },
+        { variantIndex: 1, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true, attachmentsJson: JSON.stringify([v1]) },
+        { variantIndex: 2, content: "", reasoning: null, reasoningDurationMs: null, isSelected: false, attachmentsJson: JSON.stringify([v2]) },
+      ],
+      selectedVariantIndex: 1, modelId: null,
+    } as unknown as AppMessage;
+  }
+
+  function imageSrcs(container: HTMLElement): string[] {
+    return [...container.querySelectorAll('[data-testid="image-block-img"]')].map((el) => el.getAttribute("src") ?? "");
+  }
+
+  test("multi-variant slot: one image PER PANEL (row set / v1 / v2), no duplicate grid below", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(
+      seed([makeAssistantMessage("m1"), makeImageSlot(true)]),
+    );
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+
+    const { container } = render(
+      <MessageBlock messageId="m2" index={1} isFirstAssistant={false} isLast={true} prevRole="assistant" />,
+    );
+    await act(async () => { await Promise.resolve(); });
+
+    // The swipe track renders AT ALL for the slot (the pre-fix bug: it existed
+    // but its empty panels gave it zero height — no swipe surface).
+    expect(container.innerHTML).toContain("w-[300%]");
+    // One image per panel: v0 → the row-set shadow, v1 → its own set,
+    // v2 → its own set. Exactly one of each — the standalone grid below must
+    // NOT add a second copy of the current variant's image.
+    const srcs = imageSrcs(container);
+    expect(srcs.length).toBe(3);
+    expect(srcs.filter((s) => s.includes("asset-row")).length).toBe(1);
+    expect(srcs.filter((s) => s.includes("asset-1")).length).toBe(1);
+    expect(srcs.filter((s) => s.includes("asset-2")).length).toBe(1);
+    // The current panel's neighbors are non-interactive (neighbor images must
+    // not open the lightbox/menus; the drag lives on the track).
+    const neighborPanels = container.querySelectorAll(".pointer-events-none");
+    expect(neighborPanels.length).toBe(2);
+  });
+
+  test("legacy payload (no row-set shadow): the v0 panel mirrors the store's keep-current resolution", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(
+      seed([makeAssistantMessage("m1"), makeImageSlot(false)]),
+    );
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+
+    const { container } = render(
+      <MessageBlock messageId="m2" index={1} isFirstAssistant={false} isLast={true} prevRole="assistant" />,
+    );
+    await act(async () => { await Promise.resolve(); });
+
+    // The row set was never visible on the wire (pre-CF10b payload): the store
+    // resolves a null-attachmentsJson variant to the CURRENT set — the v0
+    // panel previews exactly that (asset-1 on both the v0 and v1 panels), so
+    // the preview never lies about what the swipe will land on.
+    const srcs = imageSrcs(container);
+    expect(srcs.length).toBe(3);
+    expect(srcs.filter((s) => s.includes("asset-1")).length).toBe(2);
+    expect(srcs.filter((s) => s.includes("asset-2")).length).toBe(1);
+  });
+
+  test("single-variant slot (no carousel): the standalone grid renders exactly one image", async () => {
+    const { MessageBlock, snapshotStore, chatStore } = await loadModules();
+    const only = slotAtt("a-row", "asset-row");
+    const slot = {
+      id: "m2", role: "assistant", content: "",
+      createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+      attachments: [only],
+      variants: [
+        { variantIndex: 0, content: "", reasoning: null, reasoningDurationMs: null, isSelected: true, attachmentsJson: null },
+      ],
+      selectedVariantIndex: 0, modelId: null,
+    } as unknown as AppMessage;
+    snapshotStore.useSnapshotStore.getState().ingestSnapshot(seed([makeAssistantMessage("m1"), slot]));
+    chatStore.useChatStore.getState().setActiveChatId(asChatId(CHAT));
+
+    const { container } = render(
+      <MessageBlock messageId="m2" index={1} isFirstAssistant={false} isLast={true} prevRole="assistant" />,
+    );
+    await act(async () => { await Promise.resolve(); });
+
+    // variantCount === 1 → no carousel; the plain grid path must render the
+    // image exactly once (the suppression must not eat the no-carousel case).
+    expect(container.innerHTML).not.toContain("w-[300%]");
+    const srcs = imageSrcs(container);
+    expect(srcs.length).toBe(1);
+    expect(srcs[0].includes("asset-row")).toBe(true);
   });
 });

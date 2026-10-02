@@ -65,7 +65,7 @@ describe("ChatLifecycleRuntime summary assembly", () => {
     expect(calls).toEqual([[
       "chat_1",
       "branch_1",
-      { model: "summary-model", recentMessageLimit: 24, contextBudget: 4096, summary: true },
+      { model: "summary-model", recentMessageLimit: 24, contextBudget: 4096, summary: true, dryRun: true },
     ]]);
   });
 
@@ -98,6 +98,7 @@ describe("ChatLifecycleRuntime summary assembly", () => {
         excludeMessageIds: ["msg_1", "msg_4"],
         contextBudget: 2048,
         summary: true,
+        dryRun: true,
       },
     ]]);
   });
@@ -387,7 +388,7 @@ describe("PromptAssemblyService summary preparation", () => {
       getCharacter: async () => ({ id: "char_1", name: "Nora", description: "character words that are excluded from the summary output", personality: null, scenario: null }),
       getPersona: async () => ({ id: "persona_1", name: "Alex", description: "persona words that are excluded from the summary output" }),
       getPromptPreset: async () => ({ id: "preset_1", name: "P", text: "preset words that are excluded from the summary output", summary: "Summarize this history.", jailbreak: "jailbreak words that are excluded from the summary output", tools: "", prefill: "", authorsNote: "", authorsNoteDepth: 0 }),
-      listActiveLoreEntries: async () => [{ id: "lore_1", title: "Lore", content: "lore words that are excluded from the summary output", priority: 1 }],
+      listActiveLoreEntries: async () => ({ entries: [{ id: "lore_1", title: "Lore", content: "lore words that are excluded from the summary output", priority: 1 }], overflowedLorebooks: [] }),
       listRetrievedMemories: async () => [],
       executeScripts: async () => {
         scriptCalled = true;

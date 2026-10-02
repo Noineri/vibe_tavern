@@ -16,7 +16,8 @@
  *
  * `describeAttachments` (the parallel/first describe step) lives here too; the
  * executor calls it and persists descriptions before/assembling each turn.
- */
+  * forks: 1 — infrastructure/ai/stt-gate.ts.
+*/
 
 import type { Attachment } from "@vibe-tavern/domain";
 import type { ImagePart, TextPart } from "ai";

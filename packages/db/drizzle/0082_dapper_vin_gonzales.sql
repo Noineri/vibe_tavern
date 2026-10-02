@@ -1,0 +1,1 @@
+ALTER TABLE `image_gen_profiles` ADD `default_params_set_id` text;

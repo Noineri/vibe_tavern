@@ -2,6 +2,11 @@
 
 > **services/api** — Single Bun process serving HTTP API and static frontend. No microservices, no queues.
 
+## Architecture gates
+
+`bun run typecheck` runs a ratchet that blocks new `domain/` imports from `api/` or `runtime/`.
+Domain code must receive a narrow interface or shared package/domain dependency instead of reaching upward to `SessionRuntime`.
+
 ---
 
 ## Entry Points
@@ -296,15 +301,17 @@ Each entry is evaluated against:
 |-----------|-------------|
 | **Keys** | Primary + secondary keyword matching. Secondary-key logic: `and_any` (≥1 matches), `and_all` (all match), `not_any` (none match), `not_all` (not all match). |
 | **Scan depth** | How many recent messages to scan (per-lorebook, per-entry override) |
-| **Probability** | Random chance check (0–100). Constant entries bypass this. |
-| **Cooldown/Delay/Sticky** | Turn-based timing windows. Cooldown prevents re-activation. Delay skips first N turns. Sticky keeps active for N turns. |
-| **Group weights** | Entries in same group compete by weight. |
-| **Character filters** | Activate only for specific characters (or exclude). |
-| **Match sources** | Where to look (entry-level, defaults to `chat_messages` only): `chat_messages`, `character_desc`, `character_personality`, `character_note` (author's note / depth prompt), `persona_desc`, `scenario`, `creator_notes`. |
-| **Recursion** | Entries can activate other entries via `recursiveScanning`. |
-| **Macro resolution** | Keys are resolved against `{{user}}`, `{{char}}`, etc. before matching. |
+| **Probability** | Random chance check after inclusion-group resolution, including constants; a live sticky entry auto-passes. |
+| **Cooldown / sticky / minimum chat messages** | Cooldown prevents re-activation, sticky keeps an entry active, and `minChatMessages` is ST's absolute message-count gate. |
+| **Group weights** | Entries in the same group compete by weight after the optional group-scoring filter. |
+| **Character filters** | Activate only for specific characters, or exclude them. |
+| **Match sources** | Empty sources scan chat messages; chips can additionally scan character/persona sources, Author's Note, and enabled summaries. |
+| **Recursion** | Entries can activate other entries through recursion, including delay-until-recursion levels. |
+| **Macro resolution** | Keys use the full macro engine before matching, and surviving content is macro-expanded before recursion and the World Info regex hook. |
 
-Activation state (`LoreActivationState`) is stored as JSON on the `chats` table, tracking per-entry activation turn numbers.
+Activation state (`LoreActivationState`) is stored as JSON on the selected `chat_branches` row, tracking per-entry activation turn numbers.
+Context previews, summaries, and one-shots are dry runs, so they read but do not prune, commit, or persist that state.
+See [Lorebooks](lorebooks.md) for scan construction, budget latching, insertion order, outlets, and import/export behavior.
 
 ---
 

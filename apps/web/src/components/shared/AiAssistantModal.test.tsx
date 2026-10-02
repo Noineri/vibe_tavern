@@ -580,20 +580,24 @@ describe("AiAssistantModal — quickpill settings sync", () => {
         mode="quickpill"
         isOpen={true}
         onClose={onClose}
-        settings={{ providerId: "prov-1", modelName: "model-a", appendMode: false, keyTarget: "both", recentMessageCount: 20 }}
+        settings={{ providerId: "prov-1", modelName: "model-a", appendMode: false, keyTarget: "both", recentMessageCount: 20, enhanceDraft: false }}
         onSettingsChange={onSettingsChange}
         showAppendToggle={true}
         showKeyTarget={true}
         showMessageCount={true}
+        showEnhanceDraftToggle={true}
       />,
     );
 
+    const enhanceToggle = document.body.querySelector('[role="switch"]');
+    if (!enhanceToggle) throw new Error("Draft enhancement toggle was not rendered.");
+    await act(async () => { fireEvent.click(enhanceToggle); });
     const doneBtn = screen.getByText("done_btn");
     await act(async () => { fireEvent.click(doneBtn); });
 
     expect(onSettingsChange).toHaveBeenCalledTimes(1);
     expect(onSettingsChange).toHaveBeenCalledWith(
-      expect.objectContaining({ providerId: "prov-1", modelName: "model-a", appendMode: false, keyTarget: "both", recentMessageCount: 20 }),
+      expect.objectContaining({ providerId: "prov-1", modelName: "model-a", appendMode: false, keyTarget: "both", recentMessageCount: 20, enhanceDraft: true }),
     );
     expect(onClose).toHaveBeenCalledTimes(1);
   });

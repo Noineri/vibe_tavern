@@ -23,7 +23,7 @@ interface PersonaListRowProps {
  * owner's ruled spec (defect D-2, 2026-09-07, Option A): LEFT column =
  * avatar (88px, default-persona star PR-8) with the explicit "use for chat"
  * button docked BELOW it (two-line wrap inside the avatar column,
- * «Выбрать для / чата», 11px desktop / 10px mobile, column 88px / 76px
+ * "Select for / chat", 11px desktop / 10px mobile, column 88px / 76px
  * mobile); RIGHT column = ONE metadata line (name left, token counter,
  * pronouns right) above the description, which lives ONLY in this column
  * (never wraps under the avatar) — clamp-6 desktop / clamp-4 mobile,
@@ -91,7 +91,7 @@ export function PersonaListRow({
         {/* Explicit activation — ProviderViewHeader make-active pattern:
             accent border + accent-dim fill, hover fills solid; the active
             persona renders it pressed and disabled. Owner-approved Option A:
-            two-line wrap inside the avatar column («Выбрать для / чата»),
+            two-line wrap inside the avatar column ("Select for / chat"),
             11px desktop / 10px mobile — the RU label cannot fit one line at
             readable size in 88px, and widening the column would eat the
             description gain. */}

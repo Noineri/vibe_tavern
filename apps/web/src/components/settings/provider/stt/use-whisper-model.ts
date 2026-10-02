@@ -2,9 +2,12 @@
  * Whisper model download hook (audit P5) — a VERBATIM STRUCTURAL CLONE of
  * `use-kokoro-model.ts` (the TTS reference), trimmed to the whisper seams.
  *
+ * forks: 0 on this branch (the Fly Tribunal brain-download hook forks it on
+ * feat/fly-tribunal).
+ *
  * First browser-tier use pulls the ONNX weights (~42–250 MB by roster
  * entry) from huggingface.co via transformers.js. Hiding that inside the
- * dictation button reads as a hang ("жму и висит"); this hook fronts it as
+ * dictation button reads as a hang ("press and it hangs"); this hook fronts it as
  * a deliberate panel action with live progress: per-file transformers
  * progress events aggregate into an overall loaded/total byte counter.
  *

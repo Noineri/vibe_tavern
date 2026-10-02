@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { importCharacterCardV3Json, flattenV2CompatFields, V2_TOPLEVEL_FIELDS, vtfContentToImportedBundle, type VtfMonolithImportInput } from "../src/cards/chara-card-v3.js";
 import { parseSillyTavernChat, serializeSillyTavernChat } from "../src/chats/st-chat.js";
-import { importStLorebookJson } from "../src/lorebooks/st-lorebook.js";
+import { importCharacterBookJson, importStLorebookJson } from "../src/lorebooks/st-lorebook.js";
 
 // ─── Character card V3 import ─────────────────────────────────────────────
 
@@ -159,6 +159,74 @@ describe("importCharacterCardV3Json", () => {
   it("sets character_book to null when absent", () => {
     const result = importCharacterCardV3Json(minimalCard);
     expect(result.character.characterBook).toBeNull();
+  });
+
+  it("converts an embedded character book through ST's card field map", () => {
+    // ST convertCharacterBook maps keys/secondary_keys/insertion_order and
+    // extensions before World Info consumes the result (world-info.js:5498-5547).
+    const result = importCharacterBookJson({
+      name: "Card Lore",
+      description: "Card description",
+      scan_depth: 9,
+      token_budget: 555,
+      recursive_scanning: true,
+      entries: [{
+        id: 7,
+        keys: ["primary"],
+        secondary_keys: ["secondary"],
+        comment: "Distinctive entry",
+        content: "Embedded content",
+        constant: true,
+        selective: true,
+        insertion_order: 321,
+        enabled: true,
+        extensions: {
+          position: 4,
+          depth: 11,
+          exclude_recursion: true,
+          prevent_recursion: true,
+          delay_until_recursion: 2,
+          case_sensitive: true,
+          match_whole_words: false,
+          group_weight: 77,
+        },
+      }, {
+        keys: ["defaulted"],
+        secondary_keys: ["dropped-by-card-default"],
+        content: "Defaulted card entry",
+      }],
+    });
+
+    expect(result.lorebook).toMatchObject({
+      name: "Card Lore",
+      description: "Card description",
+      scanDepth: 9,
+      tokenBudget: 555,
+      recursiveScanning: true,
+    });
+    expect(result.entries[0]).toMatchObject({
+      title: "Distinctive entry",
+      keys: ["primary"],
+      secondaryKeys: ["secondary"],
+      priority: 321,
+      position: "at_depth",
+      depth: 11,
+      excludeRecursion: true,
+      preventRecursion: true,
+      delayUntilRecursion: true,
+      recursionLevel: 2,
+      caseSensitive: true,
+      matchWholeWords: false,
+      groupWeight: 77,
+      enabled: true,
+    });
+    expect(result.entries[1]).toMatchObject({
+      priority: 100,
+      position: "after_char",
+      depth: 4,
+      enabled: false,
+      secondaryKeys: [],
+    });
   });
 
   it("uses provided now timestamp for createdAt", () => {
@@ -410,6 +478,168 @@ describe("importStLorebookJson", () => {
     expect(result.entries).toHaveLength(2);
   });
 
+  it("maps ST `delay` (absolute chat-length gate) to VT `minChatMessages` 1:1", () => {
+    // ST `delay` suppresses the entry until the chat has N messages — the
+    // old VT `delayWindow` (match-armed, never re-arming) is removed.
+    const lorebook = {
+      name: "Delay Gate",
+      entries: [{
+        keys: ["dragon"], content: "Delayed lore.", delay: 30,
+        extensions: { position: 0 },
+      }],
+    };
+    const result = importStLorebookJson(lorebook);
+    expect(result.entries[0].minChatMessages).toBe(30);
+    expect((result.entries[0] as Record<string, unknown>).delayWindow).toBeUndefined();
+  });
+
+  it("uses ST global defaults for omitted single-file book settings", () => {
+    // ST initializes these client globals at world-info.js:69-82; a lone world file has no settings.json.
+    const result = importStLorebookJson({ name: "ST defaults", entries: [] });
+    expect(result.lorebook.scanDepth).toBe(2);
+    expect(result.lorebook.tokenBudgetPercent).toBe(25);
+    expect(result.lorebook.tokenBudgetCap).toBe(0);
+    expect(result.lorebook.recursiveScanning).toBe(false);
+    expect(result.lorebook.maxRecursionSteps).toBe(0);
+    expect(result.lorebook.includeNames).toBe(true);
+    expect(result.lorebook.caseSensitive).toBe(false);
+    expect(result.lorebook.matchWholeWords).toBe(false);
+    expect(result.lorebook.minActivations).toBe(0);
+    expect(result.lorebook.minActivationsDepthMax).toBe(0);
+    expect(result.lorebook.overflowAlert).toBe(false);
+    expect(result.lorebook.characterStrategy).toBe(1);
+  });
+
+  it("reads extensions.token_budget_cap into the book's percent-mode absolute cap (N5); absent → 0", () => {
+    // ST's budget cap is a client global — the book-scoped value rides in
+    // extensions (same channel as token_budget_pct); ST itself ignores it.
+    const capped = importStLorebookJson({
+      name: "Capped",
+      entries: [],
+      extensions: { token_budget_pct: 5, token_budget_cap: 250 },
+    });
+    expect(capped.lorebook.tokenBudgetCap).toBe(250);
+    const absent = importStLorebookJson({ name: "NoCap", entries: [] });
+    expect(absent.lorebook.tokenBudgetCap).toBe(0);
+  });
+
+  it("defaults maxRecursionSteps to 0 = unlimited (ST global default); extensions override wins (N10)", () => {
+    // ST's max_recursion_steps is a client global defaulting to 0/unlimited
+    // (world-info.js:82); native world files carry it only as an extension
+    // override. Absent → 0 (was 5 pre-N10); present → verbatim.
+    const absent = importStLorebookJson({ name: "Unlimited", entries: [] });
+    expect(absent.lorebook.maxRecursionSteps).toBe(0);
+    const overridden = importStLorebookJson({
+      name: "Capped",
+      entries: [],
+      extensions: { max_recursion_steps: 4 },
+    });
+    expect(overridden.lorebook.maxRecursionSteps).toBe(4);
+  });
+
+  it("defaults missing ST groupWeight to 100 (world-info.js:97)", () => {
+    const result = importStLorebookJson({
+      name: "Default weight",
+      entries: [{ key: ["a"], content: "A" }],
+    });
+    expect(result.entries[0].groupWeight).toBe(100);
+  });
+
+  it("maps ST groupOverride to prioritizeInclusion (world-info.js:4035)", () => {
+    const result = importStLorebookJson({
+      name: "Override group",
+      entries: [{ key: ["a"], content: "A", groupOverride: true }],
+    });
+    expect(result.entries[0].prioritizeInclusion).toBe(true);
+  });
+
+  it("maps ST match-source flags to their VT scan sources (world-info.js:4018-4023)", () => {
+    const result = importStLorebookJson({
+      name: "Match sources",
+      entries: [{
+        key: ["a"], content: "A",
+        matchPersonaDescription: true,
+        matchCharacterDescription: true,
+        matchCharacterPersonality: true,
+        matchCharacterDepthPrompt: true,
+        matchScenario: true,
+        matchCreatorNotes: true,
+      }],
+    });
+    expect(result.entries[0].matchSources).toEqual([
+      "chat_messages",
+      "persona_desc",
+      "character_desc",
+      "character_personality",
+      "character_note",
+      "scenario",
+      "creator_notes",
+    ]);
+  });
+
+  it("maps ST delayUntilRecursion true and numeric levels (world-info.js:3698-3721, 4748-4752)", () => {
+    const result = importStLorebookJson({
+      name: "Recursion delay",
+      entries: [
+        { key: ["true"], content: "True", delayUntilRecursion: true },
+        { key: ["three"], content: "Three", delayUntilRecursion: 3 },
+      ],
+    });
+    expect(result.entries.map((entry) => [entry.delayUntilRecursion, entry.recursionLevel])).toEqual([
+      [true, 1],
+      [true, 3],
+    ]);
+  });
+
+  it("makes useProbability:false deterministic at 100 probability (world-info.js:4911)", () => {
+    const result = importStLorebookJson({
+      name: "No probability roll",
+      entries: [{ key: ["a"], content: "A", probability: 15, useProbability: false }],
+    });
+    expect(result.entries[0].probability).toBe(100);
+  });
+
+  it("drops secondary keys only when ST selective is false and defaults missing selective to true (world-info.js:4009)", () => {
+    const result = importStLorebookJson({
+      name: "Selective defaults",
+      entries: [
+        { key: ["a"], keysecondary: ["dropped"], content: "False", selective: false, selectiveLogic: 2 },
+        { key: ["b"], keysecondary: ["kept"], content: "Missing", selectiveLogic: 2 },
+      ],
+    });
+    expect(result.entries[0].secondaryKeys).toEqual([]);
+    expect(result.entries[0].logic).toBe("and_any");
+    expect(result.entries[1].secondaryKeys).toEqual(["kept"]);
+    expect(result.entries[1].logic).toBe("not_any");
+  });
+
+  it("maps numeric ST at-depth roles to VT roles (world-info.js:4038)", () => {
+    const result = importStLorebookJson({
+      name: "At-depth roles",
+      entries: [
+        { key: ["system"], content: "System", role: 0 },
+        { key: ["user"], content: "User", role: 1 },
+        { key: ["assistant"], content: "Assistant", role: 2 },
+      ],
+    });
+    expect(result.entries.map((entry) => entry.role)).toEqual(["system", "user", "assistant"]);
+  });
+
+  it("imports native ST characterFilter names as ghosts and warns when dropping tags (world-info.js:2125-2131)", () => {
+    const result = importStLorebookJson({
+      name: "Character filter",
+      entries: [{
+        uid: 4,
+        key: ["a"],
+        content: "A",
+        characterFilter: { isExclude: true, names: ["Alice.png"], tags: ["fantasy"] },
+      }],
+    });
+    expect(result.entries[0].characterFilter).toEqual([{ id: null, name: "Alice.png" }]);
+    expect(result.entries[0].characterFilterExclude).toBe(true);
+    expect(result.warnings).toContain("Lore entry 4 has character-filter tags that Vibe Tavern cannot import.");
+  });
+
   it("maps selective logic values correctly", () => {
     const cases: Array<[number, string]> = [
       [0, "and_any"],
@@ -487,6 +717,15 @@ describe("importStLorebookJson", () => {
     expect(result.warnings.some((w) => w.includes("no primary keys"))).toBe(true);
   });
 
+  it("warns that an outlet entry without a name cannot be referenced", () => {
+    const result = importStLorebookJson({
+      name: "Unnamed outlet",
+      entries: [{ uid: 7, key: ["open"], content: "dead outlet", position: 7, outletName: "" }],
+    });
+
+    expect(result.warnings).toContain("Lore entry 7 has position 'outlet' but no outlet name.");
+  });
+
   it("does not warn on constant entries without keys", () => {
     const lorebook = {
       name: "Constant",
@@ -515,6 +754,35 @@ describe("importStLorebookJson", () => {
     };
     const result = importStLorebookJson(lorebook);
     expect(result.entries.map((e) => e.useGroupScoring)).toEqual([true, false, null]);
+  });
+
+  it("preserves per-entry caseSensitive / matchWholeWords tri-state on import (D2)", () => {
+    // ST stores null (inherit the global switch) / true / false
+    // (world-info.js:4033-4034 `boolean?` defaults). The old importer
+    // hardcoded false/false — an ST user with global whole-words ON got
+    // substring matching in VT. Null must survive as null.
+    const lorebook = {
+      name: "Matching Tri-state",
+      entries: [
+        { key: ["cs"], content: "Case on", caseSensitive: true },
+        { key: ["ww"], content: "Words on", matchWholeWords: true },
+        { key: ["both"], content: "Both off explicitly", caseSensitive: false, matchWholeWords: false },
+        { key: ["inherit"], content: "Inherits both", extensions: { position: 0 } },
+      ],
+    };
+    const result = importStLorebookJson(lorebook);
+    expect(result.entries.map((e) => e.caseSensitive)).toEqual([true, null, false, null]);
+    expect(result.entries.map((e) => e.matchWholeWords)).toEqual([null, true, false, null]);
+  });
+
+  it("maps the ST global case/whole-words switches onto the book defaults when the caller knows them (D2)", () => {
+    // Same story as globalUseGroupScoring: world_info_case_sensitive /
+    // world_info_match_whole_words are global client state read from
+    // settings.json by the ST directory importer; absent → false.
+    expect(importStLorebookJson(minimalLorebook).lorebook.caseSensitive).toBe(false);
+    expect(importStLorebookJson(minimalLorebook).lorebook.matchWholeWords).toBe(false);
+    expect(importStLorebookJson(minimalLorebook, { globalCaseSensitive: true, globalMatchWholeWords: true }).lorebook.caseSensitive).toBe(true);
+    expect(importStLorebookJson(minimalLorebook, { globalCaseSensitive: true, globalMatchWholeWords: true }).lorebook.matchWholeWords).toBe(true);
   });
 
   it("imports books with useGroupScoring defaulting to false (D9: ST's switch is global, not in files)", () => {

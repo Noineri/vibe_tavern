@@ -9,7 +9,9 @@ import { createScriptRoutes } from "./script.js";
 import { createRegexRoutes } from "./regex.js";
 import { createTtsRoutes } from "./tts.js";
 import { createSttRoutes } from "./stt.js";
+import { createImageGenRoutes } from "./image-gen.js";
 import { createServicePromptRoutes } from "./service-prompts.js";
+import { createImagePromptProfileRoutes } from "./image-prompt-profiles.js";
 import { createProviderRoutes } from "./provider.js";
 import { createProxyRoutes } from "./proxy.js";
 import { createPresetRoutes } from "./preset.js";
@@ -40,9 +42,11 @@ export function createApiRouter(runtime: RuntimeApi) {
     .route("/", createLorebookRoutes(runtime.lorebook))
     .route("/", createScriptRoutes(runtime.script))
     .route("/", createServicePromptRoutes(runtime.servicePrompts))
+    .route("/", createImagePromptProfileRoutes(runtime.imagePromptProfiles))
     .route("/", createRegexRoutes(runtime.regex))
     .route("/", createTtsRoutes(runtime.tts))
     .route("/", createSttRoutes(runtime.stt))
+    .route("/", createImageGenRoutes(runtime.imageGen))
     .route("/", createProviderRoutes(runtime.provider))
     .route("/", createProxyRoutes(runtime.proxy))
     .route("/", createPresetRoutes(runtime.preset))

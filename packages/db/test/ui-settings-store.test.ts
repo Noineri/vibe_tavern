@@ -27,6 +27,16 @@ async function mkSettingsStore() {
 	};
 }
 
+describe("UiSettingsStore — chat impersonation draft enhancement", () => {
+	test("defaults off and persists the enhancement toggle", async () => {
+		const { settings } = await mkSettingsStore();
+		expect((await settings.get()).chatImpersonateEnhanceDraft).toBe(false);
+
+		await settings.update({ chatImpersonateEnhanceDraft: true });
+		expect((await settings.get()).chatImpersonateEnhanceDraft).toBe(true);
+	});
+});
+
 describe("UiSettingsStore — per-context secondary-model pairs (SUM-5)", () => {
 	test("defaults are null for the summary and message-editor pairs", async () => {
 		const { settings } = await mkSettingsStore();

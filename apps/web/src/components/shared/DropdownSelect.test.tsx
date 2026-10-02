@@ -117,3 +117,38 @@ describe("DropdownSelect triggerDetail", () => {
 		expect(container.querySelector("button")!.textContent).toContain("Добавлять");
 	});
 });
+
+// Trigger label fallback chain (2026-10-01, owner-found: the fine-tuning
+// chip's resolution trigger read the English «Select…» in the RU UI). An
+// empty value with a `defaultOption` IS the default choice — the trigger must
+// name it, exactly like the list's empty-id row does. The placeholder is the
+// last resort and comes from i18n (outside a LocaleProvider `t` echoes the
+// key, which is what these assertions pin).
+describe("DropdownSelect trigger label", () => {
+	it("empty value + defaultOption → the trigger shows the default option", () => {
+		const { container } = render(
+			<DropdownSelect value="" defaultOption="Auto" options={threeOptions} onChange={() => {}} />,
+		);
+		expect(container.querySelector("button")!.textContent).toBe("Auto");
+	});
+
+	it("empty value without defaultOption → the translated placeholder, never a hardcoded English one", () => {
+		const { container } = render(<DropdownSelect value="" options={threeOptions} onChange={() => {}} />);
+		expect(container.querySelector("button")!.textContent).toBe("dropdown_select_placeholder");
+	});
+
+	it("a caller-provided placeholder wins over both the default option and the generic placeholder", () => {
+		const { container } = render(
+			<DropdownSelect value="" placeholder="Pick one" defaultOption="None" options={threeOptions} onChange={() => {}} />,
+		);
+		expect(container.querySelector("button")!.textContent).toBe("Pick one");
+	});
+
+	it("a listed value shows its label; an unlisted non-empty value shows itself", () => {
+		const listed = render(<DropdownSelect value="b" defaultOption="Auto" options={threeOptions} onChange={() => {}} />);
+		expect(listed.container.querySelector("button")!.textContent).toBe("Banana");
+		listed.unmount();
+		const unlisted = render(<DropdownSelect value="zzz" defaultOption="Auto" options={threeOptions} onChange={() => {}} />);
+		expect(unlisted.container.querySelector("button")!.textContent).toBe("zzz");
+	});
+});

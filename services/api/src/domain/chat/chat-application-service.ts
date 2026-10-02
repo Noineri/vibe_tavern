@@ -111,7 +111,7 @@ export class ChatApplicationService {
         id: branchId, chatId: chat.id, parentBranchId: null, forkedFromMessageId: null, label: "Root", createdAt: now,
       }).run();
       await this.chatStore.activateBranch(chat.id, branchId as ChatBranchId);
-      branch = { id: branchId, chatId: chat.id, parentBranchId: null, forkedFromMessageId: null, label: "Root", createdAt: now };
+      branch = { id: branchId, chatId: chat.id, parentBranchId: null, forkedFromMessageId: null, label: "Root", loreActivationState: {}, createdAt: now };
       resolvedBranchId = branchId;
     }
     if (!branch) {
@@ -175,6 +175,64 @@ export class ChatApplicationService {
     return mapDbMessage(message);
   }
 
+  /** MR-4 (IG-18a write-path gap): the row that OWNS an attachment id —
+   *  the message row's set or one of its variant rows' sets.
+   *  regenerate-as-variant stores slot attachments on VARIANT rows while the
+   *  read path merges (session-runtime-dto: selected variant's set overrides
+   *  the message's) — the write path must resolve the same way. Search order:
+   *  selected variant first (the wire-visible set), then the message row,
+   *  then the remaining variants — attachment ids are unique UUIDs, so the
+   *  order is a deterministic tiebreak, not a correctness rule. */
+  private async resolveAttachmentOwner(
+    messageId: string,
+    attachmentId: string,
+  ): Promise<
+    | { kind: "message"; attachments: Attachment[]; index: number }
+    | { kind: "variant"; variantId: string; attachments: Attachment[]; index: number }
+    | null
+  > {
+    const variants = await this.messageStore.getVariants(messageId);
+    const selected = variants.find((variant) => variant.isSelected);
+    if (selected) {
+      const list = parseStoredAttachments(selected.attachmentsJson) ?? [];
+      const index = list.findIndex((att) => att.id === attachmentId);
+      if (index !== -1) return { kind: "variant", variantId: selected.id, attachments: list, index };
+    }
+    const message = await this.messageStore.getMessageById(messageId);
+    if (message) {
+      const rowAttachments = parseStoredAttachments(message.attachmentsJson) ?? [];
+      const index = rowAttachments.findIndex((att) => att.id === attachmentId);
+      if (index !== -1) return { kind: "message", attachments: rowAttachments, index };
+    }
+    for (const variant of variants) {
+      if (variant.id === selected?.id) continue;
+      const list = parseStoredAttachments(variant.attachmentsJson) ?? [];
+      const index = list.findIndex((att) => att.id === attachmentId);
+      if (index !== -1) return { kind: "variant", variantId: variant.id, attachments: list, index };
+    }
+    return null;
+  }
+
+  /** MR-4: merged-set attachment lookup (the write-path twin of the DTO
+   *  merge) — used by the adapter's route gates so an attachment living on
+   *  a variant row validates exactly like a message-row one. */
+  async findAttachment(messageId: string, attachmentId: string): Promise<Attachment | null> {
+    const owner = await this.resolveAttachmentOwner(messageId, attachmentId);
+    return owner === null ? null : owner.attachments[owner.index];
+  }
+
+  /** Persist an attachment-set edit onto the row that owns it (MR-4). */
+  private async persistAttachmentSet(
+    messageId: string,
+    owner: { kind: "message"; attachments: Attachment[] } | { kind: "variant"; variantId: string; attachments: Attachment[] },
+  ): Promise<void> {
+    if (owner.kind === "variant") {
+      await this.messageStore.updateVariantAttachments(owner.variantId, owner.attachments.length > 0 ? JSON.stringify(owner.attachments) : null);
+      return;
+    }
+    await this.messageStore.updateMessageAttachments(messageId, owner.attachments.length > 0 ? JSON.stringify(owner.attachments) : null);
+  }
+
   async updateAttachmentDescriptions(messageId: string, currentAttachments: Attachment[], descriptions: Array<{ attachmentId: string; description: string }>): Promise<void> {
     const descMap = new Map(descriptions.map(d => [d.attachmentId, d.description]));
     const updated = currentAttachments.map(att => {
@@ -185,16 +243,54 @@ export class ChatApplicationService {
   }
 
   async updateSingleAttachmentDescription(messageId: string, attachmentIdOrAttachments: string | Attachment[], descriptionOrAttachmentId?: string, description?: string): Promise<void> {
-    // Overload: (messageId, attachmentId, description) — reads from DB
+    // Overload: (messageId, attachmentId, description) — resolves the OWNING
+    // row (MR-4: variant rows included; regenerate-as-variant describes land
+    // where the attachment lives, not on the message row).
     if (typeof attachmentIdOrAttachments === 'string') {
-      const message = await this.messageStore.getMessageById(messageId);
-      if (!message) return;
-      const currentAttachments: Attachment[] = parseStoredAttachments(message.attachmentsJson) ?? [];
-      await this.updateAttachmentDescriptions(messageId, currentAttachments, [{ attachmentId: attachmentIdOrAttachments, description: descriptionOrAttachmentId ?? '' }]);
+      const owner = await this.resolveAttachmentOwner(messageId, attachmentIdOrAttachments);
+      if (!owner) return;
+      const updated = owner.attachments.map((att, index) =>
+        index === owner.index ? { ...att, description: descriptionOrAttachmentId ?? '' } : att,
+      );
+      await this.persistAttachmentSet(messageId, { ...owner, attachments: updated });
       return;
     }
     // Overload: (messageId, currentAttachments, attachmentId, description)
     await this.updateAttachmentDescriptions(messageId, attachmentIdOrAttachments, [{ attachmentId: descriptionOrAttachmentId!, description: description! }]);
+  }
+
+  /**
+   * Set the per-image "include in prompt" flag on a generated-image slot
+   * attachment (IMAGE_GENERATION_PLAN IG-18). Persistence only — the caller
+   * (ChatAdapter) validates the slot semantics. Absent flag = OFF.
+   */
+  async updateSingleAttachmentIncludeInPrompt(messageId: string, attachmentId: string, includeInPrompt: boolean): Promise<void> {
+    // MR-4: variant-aware — the flag lands on the row that owns the
+    // attachment (message row OR variant row; regenerate-as-variant slots).
+    const owner = await this.resolveAttachmentOwner(messageId, attachmentId);
+    if (!owner) return;
+    const updated = owner.attachments.map((att, index) =>
+      index === owner.index ? { ...att, includeInPrompt } : att,
+    );
+    await this.persistAttachmentSet(messageId, { ...owner, attachments: updated });
+  }
+
+  /**
+   * Rewrite a generated-image slot's generation prompt (MR-9, owner
+   * ruling 2026-09-18, verbatim in the plan repo — the accordion editor's
+   * save). The prompt is the CF6-stamped provenance field the caption shows
+   * and the CF9 include gate reads (`description ?? provenance.prompt`).
+   * MR-4: variant-aware — the write lands on the row that owns the
+   * attachment; plain attachments in the same set are untouched.
+   */
+  async updateSingleAttachmentPrompt(messageId: string, attachmentId: string, prompt: string): Promise<void> {
+    const owner = await this.resolveAttachmentOwner(messageId, attachmentId);
+    if (!owner) return;
+    const updated = owner.attachments.map((att, index) => {
+      if (index !== owner.index || att.imageGen === undefined) return att;
+      return { ...att, imageGen: { ...att.imageGen, prompt } };
+    });
+    await this.persistAttachmentSet(messageId, { ...owner, attachments: updated });
   }
 
   /**
@@ -205,13 +301,13 @@ export class ChatApplicationService {
    * found (so optimistic UI retries are safe and DELETE is idempotent).
    */
   async removeAttachment(messageId: string, attachmentId: string): Promise<Attachment | null> {
-    const message = await this.messageStore.getMessageById(messageId);
-    if (!message) return null;
-    const current: Attachment[] = parseStoredAttachments(message.attachmentsJson) ?? [];
-    const removed = current.find((a) => a.id === attachmentId) ?? null;
-    if (!removed) return null;
-    const remaining = current.filter((a) => a.id !== attachmentId);
-    await this.messageStore.updateMessageAttachments(messageId, remaining.length > 0 ? JSON.stringify(remaining) : null);
+    // MR-4: variant-aware — the removal lands on the owning row (message OR
+    // variant); idempotent null when the id is nowhere on the message.
+    const owner = await this.resolveAttachmentOwner(messageId, attachmentId);
+    if (!owner) return null;
+    const removed = owner.attachments[owner.index];
+    const remaining = owner.attachments.filter((_att, index) => index !== owner.index);
+    await this.persistAttachmentSet(messageId, { ...owner, attachments: remaining });
     return removed;
   }
 

@@ -1,3 +1,7 @@
+/**
+ * fork #1 of tts/TtsModelPicker.tsx.
+ */
+
 import { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
@@ -87,10 +91,15 @@ export function SttModelPicker({
   return (
     <div className="my-4">
       <div className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1">{label}</div>
-      <div className="flex items-end gap-3">
-        <div className="flex-1">
-          <label className={`${labelCls} mb-[6px]`}>{t("selected_model_label")}</label>
-          <div className="relative">
+      <div className="flex-1 min-w-0">
+        <label className={`${labelCls} mb-[6px]`}>{t("selected_model_label")}</label>
+        {/* The refresh button rides the DROPDOWN's row (not a sibling of the
+            whole field column): the custom-model hint renders below the row,
+            so its appearance can no longer drop the button to a different
+            height (owner 2026-09-22; same fix in the LLM/TTS/image-gen model
+            pickers). */}
+        <div className="flex items-end gap-3">
+          <div className="relative min-w-0 flex-1">
               <Popover.Root open={open} onOpenChange={setOpen}>
                 <Popover.Trigger asChild>
                   <button
@@ -176,11 +185,7 @@ export function SttModelPicker({
                   </Popover.Content>
                 </Popover.Portal>
               </Popover.Root>
-              {!selectedModel && value && (
-                <div className="mt-2 font-ui text-[12px] font-medium text-accent">{t("custom_model", { name: value })}</div>
-              )}
           </div>
-        </div>
         {onRefresh !== undefined && (
           <button
             type="button"
@@ -207,6 +212,10 @@ export function SttModelPicker({
             )}
             {!isMobile && <> {t("refresh_models")}</>}
           </button>
+        )}
+        </div>
+        {!selectedModel && value && (
+          <div className="mt-2 font-ui text-[12px] font-medium text-accent">{t("custom_model", { name: value })}</div>
         )}
       </div>
       {fetchError && (

@@ -8,6 +8,7 @@ import { fetchBootstrapAction } from "../stores/api-actions/bootstrap-actions.js
 
 export interface CharacterImportOptions {
   chatId?: ChatId;
+  importEmbeddedBook?: boolean;
 }
 
 export function useCharacterImport() {
@@ -65,6 +66,7 @@ export function useCharacterImport() {
         jsonText,
         monolithText,
         chatId: options?.chatId,
+        importEmbeddedBook: options?.importEmbeddedBook,
       });
 
       // Upload the PNG as the character's folder-resident avatar

@@ -3,7 +3,7 @@ import type { GenerationFormat } from "@vibe-tavern/domain";
 /**
  * LS-10 live-preview builder: turns a manual GenerationFormat into the
  * HIGHLIGHTED SEGMENTS of an assembled example prompt — the newbie-teaching
- * view the owner designed («нубик учится на глазах, не читая документацию»).
+ * view the owner designed (a beginner learns by watching, not by reading docs).
  *
  * The segment assembly MIRRORS the backend serialization seam's semantics
  * (services/api completion-prompt.ts): the minimal (LS-2) template renders

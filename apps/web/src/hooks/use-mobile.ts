@@ -1,3 +1,4 @@
+// forks: 1 — use-wide-viewport.ts (min-width query, no UA fallback)
 import { useSyncExternalStore } from 'react';
 
 const MOBILE_MQ = '(max-width: 768px)';
