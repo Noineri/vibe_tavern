@@ -1,4 +1,4 @@
-import type { ModelSettingsOverlay, StoredProviderProfileRecord } from "./provider-profile.js";
+import { GENERATION_MODE, type ModelSettingsOverlay, type StoredProviderProfileRecord } from "./provider-profile.js";
 
 /**
  * Generation-field defaults a brand-new RP provider profile starts from
@@ -115,9 +115,10 @@ export function resolveCoauthorGenerationSettings(
 
 /**
  * Build the generation-ready Co-Author profile from connection identity and
- * its independent generation set. Per-model RP bindings and token padding are
- * intentionally disabled: neither has a Co-Author storage field, and reading
- * either from the connection profile would reintroduce RP inheritance.
+ * its independent generation set. Per-model RP bindings, token padding, and
+ * completion mode are intentionally disabled: none has a Co-Author storage
+ * field, and reading any of them from the connection profile would reintroduce
+ * RP inheritance.
  */
 export function resolveCoauthorGenerationProfile(
   profile: StoredProviderProfileRecord,
@@ -128,6 +129,7 @@ export function resolveCoauthorGenerationProfile(
     ...profile,
     ...resolveCoauthorGenerationSettings(stored),
     defaultModel: model,
+    generationMode: GENERATION_MODE.chat,
     bindPerModel: false,
     tokenPadding: 0,
   };

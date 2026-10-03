@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import {
   COAUTHOR_GENERATION_DEFAULTS,
+  GENERATION_MODE,
   resolveEffectiveSettings,
   type ModelSettingsOverlay,
   type StoredProviderProfileRecord,
@@ -200,6 +201,7 @@ describe("CG-2: Co-Author generation boundary", () => {
     endpoint: "https://coauthor.example/v1",
     apiKey: "coauthor-key",
     defaultModel: "coauthor-default",
+    generationMode: GENERATION_MODE.completion,
     bindPerModel: true,
     tokenPadding: 999,
     contextBudget: 8_000,
@@ -237,6 +239,7 @@ describe("CG-2: Co-Author generation boundary", () => {
     expect(effective.endpoint).toBe("https://coauthor.example/v1");
     expect(effective.apiKey).toBe("coauthor-key");
     expect(effective.defaultModel).toBe("coauthor-model");
+    expect(effective.generationMode).toBe(GENERATION_MODE.chat);
     expect(effective.temperature).toBe(0.23);
     expect(effective.maxTokens).toBe(1_200);
     expect(effective.contextBudget).toBe(24_000);
