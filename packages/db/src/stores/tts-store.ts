@@ -229,6 +229,21 @@ export class TtsStore {
     return this.getById(id);
   }
 
+  /** Apply a complete manual order atomically, then return the canonical list. */
+  async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<TtsProfile[]> {
+    const now = this.clock.now();
+    this.db.transaction((tx) => {
+      for (const update of updates) {
+        tx
+          .update(ttsProfiles)
+          .set({ sortOrder: update.sortOrder, updatedAt: now })
+          .where(eq(ttsProfiles.id, update.id))
+          .run();
+      }
+    });
+    return this.listAll();
+  }
+
   // ─── Link management (voice map; mirrors RegexStore link methods) ──────────
 
   /**

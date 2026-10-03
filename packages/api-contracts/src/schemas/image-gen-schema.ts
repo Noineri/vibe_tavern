@@ -295,6 +295,14 @@ export const imageGenProfileSchema = z.object({
 });
 export type ImageGenProfileValue = z.infer<typeof imageGenProfileSchema>;
 
+/** Complete manual-order update for the image-generation profile list. */
+export const reorderImageGenProfilesSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});
+
 // ─── Create / update ─────────────────────────────────────────────────────────
 
 export const createImageGenProfileSchema = z.object({

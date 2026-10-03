@@ -287,6 +287,9 @@ export class SttAdapter implements SttRuntimeApi {
   listSttProfiles = async () =>
     await this.decorateAutoKey((await this.stores.stt.listAll()).map(toClientSttProfile));
 
+  reorderSttProfiles: SttRuntimeApi["reorderSttProfiles"] = async (updates) =>
+    await this.decorateAutoKey((await this.stores.stt.reorder(updates)).map(toClientSttProfile));
+
   getSttProfile = async (id: string) => {
     const profile = await this.stores.stt.getById(id);
     return profile ? (await this.decorateAutoKey([toClientSttProfile(profile)]))[0] : null;

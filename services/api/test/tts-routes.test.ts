@@ -5,6 +5,8 @@ import { createDb } from "@vibe-tavern/db";
 import { ProviderStore, TtsStore } from "@vibe-tavern/db";
 
 import { createTtsRoutes } from "../src/api/routes/tts.js";
+import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { createApp } from "../src/server/app-factory.js";
 import { openAiCompatTtsFactory } from "../src/domain/tts/backends/openai-tts.js";
 import { __setDockerProbeRunnerForTests } from "../src/domain/tts/docker-probe.js";
 import { __setDiscoveryFetchForTests } from "../src/api/adapters/tts-adapter.js";
@@ -71,6 +73,26 @@ function stubBackend(overrides: Partial<TtsBackend> = {}): TtsBackend {
 }
 
 describe("TTS routes — CRUD", () => {
+  test("PATCH /api/tts/profiles/reorder requires mobile bearer auth before the route", async () => {
+    let reorderCalled = false;
+    const app = await createApp({
+      runtime: {
+        tts: {
+          reorderTtsProfiles: async () => {
+            reorderCalled = true;
+            return [];
+          },
+        },
+      } as unknown as RuntimeApi,
+      mobileAccessToken: "test-token",
+      enforceMobileAuth: true,
+    });
+
+    const response = await app.request("/api/tts/profiles/reorder", { method: "PATCH" });
+    expect(response.status).toBe(401);
+    expect(reorderCalled).toBe(false);
+  });
+
   test("POST /api/tts/profiles → 201, GET :id round-trip, GET all", async () => {
     const { app } = await makeApp();
 
@@ -133,6 +155,37 @@ describe("TTS routes — CRUD", () => {
     const getB = (await (await app.request(`/api/tts/profiles/${b.id}`)).json()) as { isDefault: boolean };
     expect(getA.isDefault).toBe(false);
     expect(getB.isDefault).toBe(true);
+  });
+
+  test("PATCH /api/tts/profiles/reorder validates its body and returns the reordered profiles", async () => {
+    const { app } = await makeApp();
+    const create = async (name: string) => {
+      const response = await app.request("/api/tts/profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, backend: "kokoro" }),
+      });
+      return await response.json() as { id: string };
+    };
+    const first = await create("First");
+    const second = await create("Second");
+    const beforeMalformed = await (await app.request("/api/tts/profiles/all")).json();
+
+    const malformed = await app.request("/api/tts/profiles/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: first.id }] }),
+    });
+    expect(malformed.status).toBe(400);
+    expect(await (await app.request("/api/tts/profiles/all")).json()).toEqual(beforeMalformed);
+
+    const reordered = await app.request("/api/tts/profiles/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: first.id, sortOrder: 1 }, { id: second.id, sortOrder: 0 }] }),
+    });
+    expect(reordered.status).toBe(200);
+    expect(((await reordered.json()) as Array<{ id: string }>).map((profile) => profile.id)).toEqual([second.id, first.id]);
   });
 
   test("PUT links → round-trip link list", async () => {
