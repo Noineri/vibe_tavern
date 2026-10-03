@@ -21,6 +21,7 @@ import type { AiInstructionTemplate } from "@vibe-tavern/api-contracts";
 const realApi = await import("../../api/ai-instruction-template-api.js");
 const realI18nContext = await import("../../i18n/context.js");
 const realMobileHook = await import("../../hooks/use-mobile.js");
+const { RpcError } = await import("../../api/unwrap.js");
 
 const listMock = mock(() => Promise.resolve<AiInstructionTemplate[]>([]));
 const createMock = mock((input: { name: string; text: string }) =>
@@ -48,11 +49,12 @@ mock.module("../../i18n/context.js", () => ({
 	}),
 }));
 
-// Desktop popover path by default (the mobile sheet halves share the same
-// body component — the dual-mode canon pins one body, two shells).
+// Both halves of the dual-mode canon share the body; the flag switches the
+// shell (desktop popover / mobile sheet) and the row icon hit-area.
+let isMobile = false;
 mock.module("../../hooks/use-mobile.js", () => ({
 	...realMobileHook,
-	useIsMobile: () => false,
+	useIsMobile: () => isMobile,
 }));
 
 let AiInstructionField: typeof import("./ai-instruction-field.js").AiInstructionField;
@@ -89,6 +91,7 @@ async function openMenu() {
 }
 
 beforeEach(() => {
+	isMobile = false;
 	listMock.mockReset();
 	listMock.mockResolvedValue([TPL_SHORTEN, TPL_DEPATHOS]);
 	createMock.mockReset();
@@ -174,6 +177,92 @@ describe("AiInstructionField — rename and delete", () => {
 
 		await waitFor(() => expect(deleteMock).toHaveBeenCalledTimes(1));
 		expect(deleteMock).toHaveBeenCalledWith("aitpl_0001");
+	});
+});
+
+describe("AiInstructionField — trigger and popover chrome (follow-up review)", () => {
+	it("renders the label without the ▾ glyph plus the shared caret icon", async () => {
+		render(<FieldHarness initial="" />);
+		const trigger = await body().findByText("message_ai_editor_templates_button");
+		// No text chevron: the label text node is exactly the key; the caret is an svg.
+		expect(trigger.textContent).toBe("message_ai_editor_templates_button");
+		expect(trigger.querySelector("svg")).toBeTruthy();
+	});
+
+	it("opens the popover with the house canon chrome (fade/zoom animations, border-border2)", async () => {
+		render(<FieldHarness initial="" />);
+		await openMenu();
+		const content = document.querySelector("[data-radix-popper-content-wrapper]")?.firstElementChild;
+		if (!(content instanceof HTMLElement)) throw new Error("popover content not found");
+		expect(content.className).toContain("data-[state=open]:animate-in");
+		expect(content.className).toContain("data-[state=open]:fade-in-0");
+		expect(content.className).toContain("data-[state=open]:zoom-in-95");
+		expect(content.className).toContain("data-[state=closed]:animate-out");
+		expect(content.className).toContain("border-border2");
+		expect(content.className).toContain("py-2");
+	});
+
+	it("mobile sheet: row icon buttons carry the 44px touch floor (h-11 w-11)", async () => {
+		isMobile = true;
+		render(<FieldHarness initial="" />);
+		await openMenu();
+		const renameButtons = await body().findAllByLabelText("message_ai_editor_templates_rename");
+		for (const btn of renameButtons) {
+			expect(btn.className).toContain("h-11");
+			expect(btn.className).toContain("w-11");
+		}
+		const deleteButtons = await body().findAllByLabelText("message_ai_editor_templates_delete");
+		for (const btn of deleteButtons) {
+			expect(btn.className).toContain("h-11");
+			expect(btn.className).toContain("w-11");
+		}
+	});
+});
+
+describe("AiInstructionField — save current with a duplicate first line", () => {
+	it("auto-numbers: existing «Сократить» → creates «Сократить (2)»", async () => {
+		render(<FieldHarness initial="" />);
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		fireEvent.change(textarea, { target: { value: "Сократить\nи по делу" } });
+
+		await openMenu();
+		await act(async () => { fireEvent.click(await body().findByText("message_ai_editor_templates_save_current")); });
+
+		await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+		expect(createMock).toHaveBeenCalledWith({ name: "Сократить (2)", text: "Сократить\nи по делу" });
+	});
+
+	it("keeps counting: «(2)» also taken → creates «(3)»", async () => {
+		listMock.mockResolvedValue([
+			TPL_SHORTEN,
+			makeTemplate("aitpl_0003", "Сократить (2)", "x", 1),
+		]);
+		render(<FieldHarness initial="" />);
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		fireEvent.change(textarea, { target: { value: "Сократить" } });
+
+		await openMenu();
+		await act(async () => { fireEvent.click(await body().findByText("message_ai_editor_templates_save_current")); });
+
+		await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+		expect(createMock).toHaveBeenCalledWith({ name: "Сократить (3)", text: "Сократить" });
+	});
+
+	it("a 409 race (name taken after our snapshot) retries once with the next free number", async () => {
+		// The local snapshot does NOT contain the name (that is what makes it a
+		// race): freeName picks it plain, the server 409s, the retry takes «(2)».
+		listMock.mockResolvedValue([TPL_SHORTEN]);
+		createMock.mockRejectedValueOnce(new RpcError("Name already exists", 409));
+		render(<FieldHarness initial="" />);
+		const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+		fireEvent.change(textarea, { target: { value: "Без пафоса" } });
+
+		await openMenu();
+		await act(async () => { fireEvent.click(await body().findByText("message_ai_editor_templates_save_current")); });
+
+		await waitFor(() => expect(createMock).toHaveBeenCalledTimes(2));
+		expect(createMock).toHaveBeenNthCalledWith(1, { name: "Без пафоса", text: "Без пафоса" });
+		expect(createMock).toHaveBeenNthCalledWith(2, { name: "Без пафоса (2)", text: "Без пафоса" });
 	});
 });
 

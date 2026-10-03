@@ -1,20 +1,27 @@
 /**
- * «Шаблоны ▾» — the instruction-template menu for the message AI editor
- * (AI_EDITOR_INSTRUCTION_TEMPLATES step 3).
+ * «Шаблоны» — the instruction-template menu for the message AI editor
+ * (AI_EDITOR_INSTRUCTION_TEMPLATES step 3; chrome polished to the house
+ * popover canon in the follow-up review).
  *
  * Dual-mode by viewport, both on shared primitives (the ImageGenFineTuningChip
  * canon): desktop = Radix Popover anchored under the button (portal into the
- * host modal via getModalPortal); mobile = BottomSheet with the SAME body.
+ * host modal via getModalPortal; content chrome = the QuickSwitchPopover /
+ * ToolbarSelect canon string verbatim — border-border2, py-2 rhythm, the
+ * fade/zoom in-out animations — plus this menu's own width); mobile =
+ * BottomSheet with the SAME body (row icon buttons grow to the 44px touch
+ * floor there; 32px squares on desktop).
  *
  * Body top-to-bottom: the template list (click a name → insert → close),
  * per-row inline rename (`InlineRenameInput`) and delete
  * (`DestructiveConfirmModal`, «Удалить шаблон?»), the empty state, and the
  * footer «Сохранить текущую как шаблон» (name = first line of the
- * instruction, trimmed; disabled while the field is empty). Data comes from
+ * instruction, trimmed; disabled while the field is empty — a name clash
+ * auto-numbers «name (2)», «name (3)», … inside the hook). Data comes from
  * the ONE shared source (use-ai-instruction-templates.ts); this component
  * only renders it. Names ellipsize in the row only (OverflowTooltip shows
  * the full name; the rename field edits it). The list scrolls past
- * MAX_VISIBLE_ITEMS rows (popover-constants rule).
+ * MAX_VISIBLE_ITEMS rows (popover-constants rule). The trigger chevron is
+ * the shared caret icon (the dropdown-trigger canon), not a text glyph.
  */
 import { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
@@ -33,6 +40,12 @@ import type { AiInstructionTemplate } from "@vibe-tavern/api-contracts";
 /** The compact label-row action canon (the AI-generate button family). */
 const triggerBtnCls =
   "flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1";
+
+/** The trigger's dropdown caret — same icon and size the other dropdown-style
+ *  triggers use (ExperienceCopilotInputArea, ExperienceSessionSwitcher). */
+function TriggerCaret() {
+  return <Icons.Caret direction="d" className="h-3 w-3 shrink-0 text-t3" />;
+}
 
 interface AiInstructionTemplatesButtonProps {
   /** The live instruction field text (save-current + its disabled gate). */
@@ -63,6 +76,8 @@ export function AiInstructionTemplatesButton({ instruction, onInsert }: AiInstru
     const trimmed = instruction.trim();
     if (!trimmed) return;
     const firstLine = trimmed.split("\n")[0] ?? trimmed;
+    // Name clashes auto-number inside the hook («name (2)», …) — save-current
+    // never fails on a duplicate first line.
     await source.createTemplate(firstLine, trimmed);
   };
 
@@ -89,6 +104,7 @@ export function AiInstructionTemplatesButton({ instruction, onInsert }: AiInstru
       templates={source.templates}
       loading={source.loading}
       renaming={renaming}
+      touch={isMobile}
       canSaveCurrent={instruction.trim().length > 0}
       onPick={(tpl) => insertAndClose(tpl.text)}
       onStartRename={(tpl) => setRenaming({ id: tpl.id, draft: tpl.name })}
@@ -115,6 +131,7 @@ export function AiInstructionTemplatesButton({ instruction, onInsert }: AiInstru
       <>
         <button type="button" className={triggerBtnCls} onClick={() => setOpen(true)}>
           {t("message_ai_editor_templates_button")}
+          <TriggerCaret />
         </button>
         <BottomSheet open={open} onClose={() => setOpen(false)} title={t("message_ai_editor_templates_title")}>
           {body}
@@ -130,6 +147,7 @@ export function AiInstructionTemplatesButton({ instruction, onInsert }: AiInstru
         <Popover.Trigger asChild>
           <button type="button" className={triggerBtnCls}>
             {t("message_ai_editor_templates_button")}
+            <TriggerCaret />
           </button>
         </Popover.Trigger>
         <Popover.Portal container={getModalPortal() ?? document.body}>
@@ -137,7 +155,7 @@ export function AiInstructionTemplatesButton({ instruction, onInsert }: AiInstru
             side="bottom"
             align="end"
             sideOffset={4}
-            className="glass-blur z-[220] min-w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-glass-bg p-1.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none"
+            className="glass-blur z-[220] min-w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border2 bg-glass-bg py-2 px-1.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
           >
             {body}
           </Popover.Content>
@@ -152,6 +170,9 @@ interface TemplateMenuBodyProps {
   templates: AiInstructionTemplate[];
   loading: boolean;
   renaming: { id: string; draft: string } | null;
+  /** Mobile sheet rendering: row icon buttons grow to the 44px touch floor
+   *  (h-11 w-11); desktop popover keeps the 32px squares (h-8 w-8). */
+  touch: boolean;
   canSaveCurrent: boolean;
   onPick: (tpl: AiInstructionTemplate) => void;
   onStartRename: (tpl: AiInstructionTemplate) => void;
@@ -166,7 +187,8 @@ interface TemplateMenuBodyProps {
  *  sheet — one body, two shells (the dual-mode canon). */
 function TemplateMenuBody(props: TemplateMenuBodyProps) {
   const { t } = useT();
-  const { templates, loading, renaming } = props;
+  const { templates, loading, renaming, touch } = props;
+  const iconBtnCls = `flex ${touch ? "h-11 w-11" : "h-8 w-8"} shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors`;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -206,7 +228,7 @@ function TemplateMenuBody(props: TemplateMenuBodyProps) {
               )}
               <button
                 type="button"
-                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors hover:bg-s2 hover:text-t1"
+                className={`${iconBtnCls} hover:bg-s2 hover:text-t1`}
                 onClick={() => props.onStartRename(tpl)}
                 aria-label={t("message_ai_editor_templates_rename")}
                 disabled={renaming !== null}
@@ -215,7 +237,7 @@ function TemplateMenuBody(props: TemplateMenuBodyProps) {
               </button>
               <button
                 type="button"
-                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-t3 transition-colors hover:bg-s2 hover:text-danger-text"
+                className={`${iconBtnCls} hover:bg-s2 hover:text-danger-text`}
                 onClick={() => props.onRequestDelete(tpl)}
                 aria-label={t("message_ai_editor_templates_delete")}
                 disabled={renaming !== null}

@@ -1695,7 +1695,7 @@ export default interface Resources {
     "message_ai_editor_stale_body": "The chat has changed since you opened this editor. Apply your edits to a fresh snapshot or close.",
     "message_ai_editor_stale_source": "Source message no longer exists",
     "message_ai_editor_stale_title": "Chat updated",
-    "message_ai_editor_templates_button": "Templates ▾",
+    "message_ai_editor_templates_button": "Templates",
     "message_ai_editor_templates_delete": "Delete template",
     "message_ai_editor_templates_delete_body": "Template \"{name}\" will be deleted.",
     "message_ai_editor_templates_delete_confirm": "Delete",

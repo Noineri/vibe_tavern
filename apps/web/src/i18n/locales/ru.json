@@ -2167,7 +2167,7 @@
 	"message_ai_editor_sources_empty": "Отметьте сообщения звёздами, чтобы использовать их как источники для объединения",
 	"message_ai_editor_unstar_source": "Убрать из источников",
 	"message_ai_editor_toggle_source": "Включить вариант #{n} в объединение",
-	"message_ai_editor_templates_button": "Шаблоны ▾",
+	"message_ai_editor_templates_button": "Шаблоны",
 	"message_ai_editor_templates_title": "Шаблоны",
 	"message_ai_editor_templates_empty": "Пока нет шаблонов. Напишите инструкцию и сохраните её.",
 	"message_ai_editor_templates_loading": "Загрузка шаблонов…",

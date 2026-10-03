@@ -2145,7 +2145,7 @@
 	"message_ai_editor_sources_empty": "Star messages to use as merge sources",
 	"message_ai_editor_unstar_source": "Remove from sources",
 	"message_ai_editor_toggle_source": "Include variant #{n} in merge",
-	"message_ai_editor_templates_button": "Templates ▾",
+	"message_ai_editor_templates_button": "Templates",
 	"message_ai_editor_templates_title": "Templates",
 	"message_ai_editor_templates_empty": "No templates yet. Write an instruction and save it.",
 	"message_ai_editor_templates_loading": "Loading templates…",

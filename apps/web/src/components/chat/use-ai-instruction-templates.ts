@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { AiInstructionTemplate } from "@vibe-tavern/api-contracts";
+import { RpcError } from "../../api/unwrap.js";
 import {
 	createAiInstructionTemplate,
 	deleteAiInstructionTemplate,
@@ -23,10 +24,27 @@ export interface AiInstructionTemplatesSource {
 	templates: AiInstructionTemplate[];
 	loading: boolean;
 	/** Insert-side helpers run against this list; create/rename/delete keep
-	 *  it in sync so the popover re-renders immediately. */
-	createTemplate: (name: string, text: string) => Promise<boolean>;
+	 *  it in sync so the popover re-renders immediately.
+	 *
+	 *  `baseName` is the BASE name (save-current passes the first line): when
+	 *  it is already taken the create auto-numbers — «name (2)», «name (3)», …
+	 *  the first free slot — so «save current» never fails on a clash; a 409
+	 *  race (name taken after our snapshot) retries once with the next free
+	 *  number. Rename keeps the plain 409 → toast (a deliberately typed name
+	 *  should surface its collision). */
+	createTemplate: (baseName: string, text: string) => Promise<boolean>;
 	renameTemplate: (id: string, name: string) => Promise<boolean>;
 	deleteTemplate: (id: string) => Promise<boolean>;
+}
+
+/** First free name for a create: `base`, then «base (2)», «base (3)», … —
+ *  case-insensitive, the adapter's collision rule (lowercase probe). */
+function freeName(base: string, taken: ReadonlySet<string>): string {
+	if (!taken.has(base.toLowerCase())) return base;
+	for (let n = 2; ; n++) {
+		const candidate = `${base} (${n})`;
+		if (!taken.has(candidate.toLowerCase())) return candidate;
+	}
 }
 
 export function useAiInstructionTemplates(open: boolean): AiInstructionTemplatesSource {
@@ -35,6 +53,12 @@ export function useAiInstructionTemplates(open: boolean): AiInstructionTemplates
 	/** Lazily load ONCE per mount while open — reopening reuses the list and
 	 *  mutations keep it fresh, so there is no refetch churn per popover open. */
 	const loadedRef = useRef(false);
+	/** Latest list for async callbacks (the createTemplate closure predates
+	 *  later list updates — the store-reads-in-callbacks rule). */
+	const templatesRef = useRef<AiInstructionTemplate[]>([]);
+	templatesRef.current = templates;
+
+	const takenNames = () => new Set(templatesRef.current.map((tpl) => tpl.name.toLowerCase()));
 
 	useEffect(() => {
 		if (!open || loadedRef.current) return;
@@ -46,12 +70,28 @@ export function useAiInstructionTemplates(open: boolean): AiInstructionTemplates
 			.finally(() => setLoading(false));
 	}, [open]);
 
-	const createTemplate = useCallback(async (name: string, text: string): Promise<boolean> => {
+	const createTemplate = useCallback(async (baseName: string, text: string): Promise<boolean> => {
+		const name = freeName(baseName, takenNames());
 		try {
 			const created = await createAiInstructionTemplate({ name, text });
 			setTemplates((prev) => [...prev, created]);
 			return true;
 		} catch (err: unknown) {
+			// 409 = the name was taken AFTER our list snapshot (another surface
+			// created it) — retry ONCE with the next free number; any other
+			// failure stays the plain toast.
+			if (err instanceof RpcError && err.status === 409) {
+				const raced = takenNames();
+				raced.add(name.toLowerCase());
+				try {
+					const created = await createAiInstructionTemplate({ name: freeName(baseName, raced), text });
+					setTemplates((prev) => [...prev, created]);
+					return true;
+				} catch (retryErr: unknown) {
+					toast.error(retryErr instanceof Error ? retryErr.message : String(retryErr));
+					return false;
+				}
+			}
 			toast.error(err instanceof Error ? err.message : String(err));
 			return false;
 		}
