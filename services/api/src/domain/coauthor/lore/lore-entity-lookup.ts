@@ -11,14 +11,19 @@
  * `LorebookStore`. The runtime constructs one and injects it into
  * `buildCoauthorTools`, mirroring the `loreDelegate` injection.
  *
+ * COAUTHOR_LORE_FULL_SETTINGS step 3: the projection carries the FULL current
+ * state — every settings field the contracts define — so the Co-Author edits
+ * from what is actually set, not a subset.
+ *
  * The mappers are pure and structural (they read only the draft-relevant
  * fields off a decoded row), so they are unit-testable without a DB.
  */
 import type { CoauthorDraftLoreEntry, CoauthorDraftLorebook } from "@vibe-tavern/api-contracts";
+import type { CharacterFilterEntry } from "@vibe-tavern/domain";
 import type { LoreEntityLookup } from "../../chat/coauthor-tools.js";
 
 /**
- * Structural view of a decoded lorebook row — the subset of
+ * Structural view of a decoded lorebook row — the settings fields of
  * `LorebookStore.Lorebook` the draft contract carries. The store's decoded
  * `Lorebook` is a superset, so it satisfies this view structurally (no import
  * of the non-exported store interface needed).
@@ -30,11 +35,22 @@ interface StoredLorebookView {
 	scopeType: string;
 	scanDepth: number;
 	tokenBudget: number;
+	tokenBudgetPercent: number | null;
+	tokenBudgetCap: number;
 	recursiveScanning: boolean;
+	useGroupScoring: boolean;
+	caseSensitive: boolean;
+	matchWholeWords: boolean;
+	maxRecursionSteps: number;
+	includeNames: boolean;
+	minActivations: number;
+	minActivationsDepthMax: number;
+	overflowAlert: boolean;
+	characterStrategy: number;
 	enabled: boolean;
 }
 
-/** Structural view of a decoded lore entry row — the draft-relevant subset. */
+/** Structural view of a decoded lore entry row — the full current settings state. */
 interface StoredEntryView {
 	id: string;
 	lorebookId: string;
@@ -46,7 +62,29 @@ interface StoredEntryView {
 	position: string;
 	depth: number;
 	logic: string;
+	priority: number;
+	probability: number;
+	ignoreBudget: boolean;
+	role: string;
+	groupName: string;
+	groupWeight: number;
+	prioritizeInclusion: boolean;
+	useGroupScoring: boolean | null;
+	excludeRecursion: boolean;
+	preventRecursion: boolean;
+	delayUntilRecursion: boolean;
+	recursionLevel: number;
+	scanDepthOverride: number | null;
+	caseSensitive: boolean | null;
+	matchWholeWords: boolean | null;
+	caseFormsKeys?: string[];
+	characterFilter: CharacterFilterEntry[];
+	characterFilterExclude: boolean;
+	matchSources: string[];
 	enabled: boolean;
+	stickyWindow: number;
+	cooldownWindow: number;
+	minChatMessages: number;
 }
 
 /**
@@ -76,6 +114,18 @@ export function lorebookToDraft(lb: StoredLorebookView): CoauthorDraftLorebook {
 		scanDepth: lb.scanDepth,
 		tokenBudget: lb.tokenBudget,
 		recursiveScanning: lb.recursiveScanning,
+		// Full current state (step 3) — every remaining contract settings field.
+		tokenBudgetPercent: lb.tokenBudgetPercent,
+		tokenBudgetCap: lb.tokenBudgetCap,
+		useGroupScoring: lb.useGroupScoring,
+		caseSensitive: lb.caseSensitive,
+		matchWholeWords: lb.matchWholeWords,
+		maxRecursionSteps: lb.maxRecursionSteps,
+		includeNames: lb.includeNames,
+		minActivations: lb.minActivations,
+		minActivationsDepthMax: lb.minActivationsDepthMax,
+		overflowAlert: lb.overflowAlert,
+		characterStrategy: lb.characterStrategy,
 	};
 }
 
@@ -93,6 +143,29 @@ export function entryToDraft(e: StoredEntryView): CoauthorDraftLoreEntry {
 		depth: e.depth,
 		logic: e.logic,
 		enabled: e.enabled,
+		// Full current state (step 3) — every remaining contract settings field.
+		priority: e.priority,
+		probability: e.probability,
+		ignoreBudget: e.ignoreBudget,
+		role: e.role,
+		groupName: e.groupName,
+		groupWeight: e.groupWeight,
+		prioritizeInclusion: e.prioritizeInclusion,
+		useGroupScoring: e.useGroupScoring,
+		excludeRecursion: e.excludeRecursion,
+		preventRecursion: e.preventRecursion,
+		delayUntilRecursion: e.delayUntilRecursion,
+		recursionLevel: e.recursionLevel,
+		scanDepthOverride: e.scanDepthOverride,
+		caseSensitive: e.caseSensitive,
+		matchWholeWords: e.matchWholeWords,
+		...(e.caseFormsKeys !== undefined ? { caseFormsKeys: e.caseFormsKeys } : {}),
+		characterFilter: e.characterFilter,
+		characterFilterExclude: e.characterFilterExclude,
+		matchSources: e.matchSources,
+		stickyWindow: e.stickyWindow,
+		cooldownWindow: e.cooldownWindow,
+		minChatMessages: e.minChatMessages,
 	};
 }
 

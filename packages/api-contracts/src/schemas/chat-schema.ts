@@ -1,5 +1,6 @@
 import { brandId, type MessageVariantId } from "@vibe-tavern/domain";
 import { z } from "zod";
+import { updateLoreEntrySchema, updateLorebookMetaSchema } from "./lorebook-schema.js";
 
 export const createChatSchema = z.object({
   characterId: z.string(),
@@ -140,9 +141,11 @@ export const renameBranchSchema = z.object({
 // Apply is the sole persistence boundary; Cancel leaves the DB unchanged. The
 // contract below is the cumulative bundle that every successful lore mutation
 // returns in full, so last-proposal aggregation can never discard earlier
-// entries or fields. The draft lorebook/entry shapes are authoring-focused
-// (stable IDs + parent refs + content + keys + activation), not the full
-// ST-parity LoreEntry — Apply (CTX-L2) fills store defaults for the rest.
+// entries or fields. Since COAUTHOR_LORE_FULL_SETTINGS (steps 2–3) the draft
+// shapes carry EVERY settings field the lorebook API contracts define
+// (optional — absent = not set by the co-author; Apply fills the store's
+// create defaults), and `lore-entity-lookup` fills them all for imported
+// (edit) nodes so the Co-Author edits from the full current state.
 
 /**
  * A draft lorebook proposed by a lore tool. Stable `id` is allocated in the
@@ -162,6 +165,22 @@ export const coauthorDraftLorebookSchema = z.object({
   tokenBudget: z.number().int().optional(),
   /** Activation: whether a key match can recurse into matched entries' keys (CE-A1). */
   recursiveScanning: z.boolean().optional(),
+  // COAUTHOR_LORE_FULL_SETTINGS steps 2–3: the remaining book-level settings
+  // are the lorebook API's own contract fields (updateLorebookMetaSchema),
+  // spread — not re-declared — so a contract field added later flows through
+  // automatically (the omit lists only the base fields declared above). All
+  // optional: absent = the co-author did not set it; Apply fills the store's
+  // create defaults, and an imported (edit) node carries the full current
+  // state via lore-entity-lookup.
+  ...updateLorebookMetaSchema.omit({
+    name: true,
+    description: true,
+    scopeType: true,
+    enabled: true,
+    scanDepth: true,
+    tokenBudget: true,
+    recursiveScanning: true,
+  }).shape,
   /**
    * CE-B1: whether this node is a NEW creation (INSERT) or an EDIT of an
    * existing persisted entity (UPDATE via Apply's upsert). Omitted / "create"
@@ -204,6 +223,27 @@ export const coauthorDraftLoreEntrySchema = z.object({
    * therefore accept/render the entry without a parent node in the bundle.
    */
   parentMode: z.literal("persisted").optional(),
+  // COAUTHOR_LORE_FULL_SETTINGS steps 2–3: every entry-level setting the
+  // lorebook API's own contract defines (updateLoreEntrySchema), spread — not
+  // re-declared — so a contract field added later flows through automatically
+  // (the omit lists only the base fields declared below plus the excluded
+  // content-path trio and `order`, an ST wire alias of `priority` the store
+  // has no column for and the API PATCH path silently drops). All optional:
+  // absent = not set by the co-author (Apply fills store defaults); an
+  // imported (edit) node carries the full current state via
+  // lore-entity-lookup.
+  ...updateLoreEntrySchema.omit({
+    content: true,
+    keys: true,
+    secondaryKeys: true,
+    order: true,
+    title: true,
+    logic: true,
+    position: true,
+    depth: true,
+    constant: true,
+    enabled: true,
+  }).shape,
   /**
    * CE-B1: whether this node is a NEW creation (INSERT) or an EDIT of an
    * existing persisted entry (UPDATE via Apply's upsert). Omitted / "create"
