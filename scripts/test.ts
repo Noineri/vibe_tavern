@@ -11,9 +11,10 @@ export interface TestSuite {
 	readonly cwd: string;
 	readonly command: readonly string[];
 	/**
-	 * Dropped from a bare `bun run test` on Windows, where every syscall costs
-	 * 2–4× what it does on Linux and this suite has no platform-specific
-	 * behaviour to pin. Naming it (`bun run test web`) still runs it anywhere.
+	 * Dropped from a bare `bun run test` only on Windows CI, where every syscall
+	 * costs 2–4× what it does on Linux and this suite has no platform-specific
+	 * behaviour to pin. Local Windows runs include it; naming it
+	 * (`bun run test web`) runs it everywhere.
 	 */
 	readonly skipOnWindows?: boolean;
 }
@@ -67,9 +68,9 @@ export function createTestSuites(): readonly TestSuite[] {
 		{
 			// One `bun test --parallel=8` run under --isolate — the timeout and the
 			// zero-test guard live in scripts/test-web.ts.
-			// All but two of its 336 files are React components and stores; exactly two
-			// touch `node:fs`/`node:path`/`process.platform`, so it buys no Windows
-			// coverage for the ~83s it costs there.
+			// In Windows CI, all but two of its 336 files are React components and
+			// stores; exactly two touch `node:fs`/`node:path`/`process.platform`, so
+			// that job gains no Windows-specific coverage for its ~83s cost.
 			name: "web",
 			cwd: join(ROOT, "apps", "web"),
 			command: [BUN, "run", "test"],
@@ -250,11 +251,14 @@ function selectTestSuites(
 	suites: readonly TestSuite[],
 	args: readonly string[],
 	platform: NodeJS.Platform,
+	environment: NodeJS.ProcessEnv,
 ): TestSuiteSelection {
 	if (args.length === 0) {
 		return {
 			kind: "selected",
-			suites: platform === "win32" ? suites.filter((suite) => suite.skipOnWindows !== true) : suites,
+			suites: platform === "win32" && environment.CI
+				? suites.filter((suite) => suite.skipOnWindows !== true)
+				: suites,
 		};
 	}
 
@@ -289,8 +293,9 @@ export async function runTestCli(
 	args: readonly string[],
 	write: TestOutputWriter,
 	platform: NodeJS.Platform = process.platform,
+	environment: NodeJS.ProcessEnv = process.env,
 ): Promise<number> {
-	const selection = selectTestSuites(suites, args, platform);
+	const selection = selectTestSuites(suites, args, platform, environment);
 	switch (selection.kind) {
 		case "error":
 			write(selection.message);

@@ -85,10 +85,10 @@ describe("test suite orchestration", () => {
 		expect(scripts?.command.at(-1)).toBe("scripts");
 	});
 
-	test("drops the platform-agnostic web suite from a bare run on Windows only", () => {
+	test("declares the platform-agnostic web suite for Windows CI skipping", () => {
 		// All but two of web's 336 files are React components and stores; two touch
-		// the filesystem. On a runner where every syscall costs 2–4× Linux that is ~83s
-		// for no platform coverage. Naming the suite still runs it there.
+		// the filesystem. On a Windows CI runner where every syscall costs 2–4× Linux,
+		// that is ~83s for no platform-specific coverage. Local Windows runs include it.
 		const suites = createTestSuites();
 		expect(suites.find((suite) => suite.name === "web")?.skipOnWindows).toBe(true);
 		for (const suite of suites) {
@@ -96,27 +96,49 @@ describe("test suite orchestration", () => {
 		}
 	});
 
-	test("skips a windows-only suite on win32 but still runs it when named", async () => {
+	test("skips Windows-only suites only for bare Windows CI runs", async () => {
 		// Given
 		const probe = { name: "probe", cwd, command: [process.execPath, "-e", "process.exit(0)"], skipOnWindows: true } as const;
 		const keep = { name: "keep", cwd, command: [process.execPath, "-e", "process.exit(0)"] } as const;
 		const suites = [probe, keep] as const satisfies readonly TestSuite[];
 
 		// When
-		const bare: string[] = [];
-		const named: string[] = [];
-		const linux: string[] = [];
-		await runTestCli(suites, [], (message) => bare.push(message), "win32");
-		await runTestCli(suites, ["probe"], (message) => named.push(message), "win32");
-		await runTestCli(suites, [], (message) => linux.push(message), "linux");
+		const windowsCi: string[] = [];
+		const windowsLocal: string[] = [];
+		const linuxCi: string[] = [];
+		const linuxLocal: string[] = [];
+		await runTestCli(suites, [], (message) => windowsCi.push(message), "win32", { CI: "true" });
+		await runTestCli(suites, [], (message) => windowsLocal.push(message), "win32", {});
+		await runTestCli(suites, [], (message) => linuxCi.push(message), "linux", { CI: "true" });
+		await runTestCli(suites, [], (message) => linuxLocal.push(message), "linux", {});
 
 		// Then
-		expect(bare.join("\n")).toContain("Skipping on win32: probe");
-		expect(bare.join("\n")).toContain("Running 1 isolated test suites");
-		expect(named.join("\n")).toContain("[1/1] probe");
-		expect(named.join("\n")).not.toContain("Skipping on win32");
-		expect(linux.join("\n")).toContain("Running 2 isolated test suites");
-		expect(linux.join("\n")).not.toContain("Skipping");
+		expect(windowsCi.join("\n")).toContain("Skipping on win32: probe");
+		expect(windowsCi.join("\n")).toContain("Running 1 isolated test suites");
+		for (const output of [windowsLocal, linuxCi, linuxLocal]) {
+			expect(output.join("\n")).toContain("Running 2 isolated test suites");
+			expect(output.join("\n")).not.toContain("Skipping");
+		}
+	});
+
+	test("keeps explicit suite selection unaffected by the platform and CI", async () => {
+		// Given
+		const probe = { name: "probe", cwd, command: [process.execPath, "-e", "process.exit(0)"], skipOnWindows: true } as const;
+		const keep = { name: "keep", cwd, command: [process.execPath, "-e", "process.exit(0)"] } as const;
+		const suites = [probe, keep] as const satisfies readonly TestSuite[];
+
+		// When / Then
+		for (const [platform, environment] of [
+			["win32", { CI: "true" }],
+			["win32", {}],
+			["linux", { CI: "true" }],
+			["linux", {}],
+		] as const) {
+			const output: string[] = [];
+			await runTestCli(suites, ["probe"], (message) => output.push(message), platform, environment);
+			expect(output.join("\n")).toContain("[1/1] probe");
+			expect(output.join("\n")).not.toContain("Skipping");
+		}
 	});
 
 	test("runs suites concurrently instead of one at a time", async () => {
