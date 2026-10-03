@@ -70,8 +70,8 @@ function setBinding(coauthorProviderId: string | null) {
   });
 }
 
-function renderModal() {
-  return render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+function renderModal(onClose = () => {}, onOpenProviderModal = () => {}) {
+  return render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={onClose} onOpenProviderModal={onOpenProviderModal} /></TooltipProvider>);
 }
 
 describe("CoauthorProviderModal", () => {
@@ -80,6 +80,39 @@ describe("CoauthorProviderModal", () => {
     loadCoauthorConnectionSettingsAction.mockImplementation(async () => null);
     useProviderDataStore.setState({ profiles: [], favoritesByProfile: {}, coauthorFavoritesByProfile: {}, coauthorSettingsByProfile: {} });
     useBootstrapStore.setState({ data: null });
+  });
+
+  it("renders the fork title + manage-connections action", async () => {
+    const view = renderModal();
+    await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.title"));
+    expect(view.getByText("coauthor.provider.title")).toBeTruthy();
+    expect(view.getByText("coauthor.provider.manage_connections")).toBeTruthy();
+  });
+
+  it("shows the selection-only profile list with the bound profile marked active", async () => {
+    setBinding("bound-profile");
+    useProviderDataStore.setState({
+      profiles: [
+        makeProfile("bound-profile", "Bound Profile"),
+        makeProfile("other-profile", "Other Profile"),
+      ],
+    });
+    const view = renderModal();
+    await waitFor(() => expect(view.getByText("★ Bound Profile")).toBeTruthy());
+    const profileList = view.getByText("profiles_label").parentElement!;
+    expect(within(profileList).getAllByText("★ Bound Profile")).toHaveLength(1);
+    expect(within(profileList).getAllByText("Other Profile")).toHaveLength(1);
+    expect(within(profileList).queryByText("new_profile_btn")).toBeNull();
+  });
+
+  it("manage-connections calls onOpenProviderModal + onClose", async () => {
+    let providerOpened = false;
+    let closed = false;
+    const view = renderModal(() => { closed = true; }, () => { providerOpened = true; });
+    await waitFor(() => expect(view.getByText("coauthor.provider.manage_connections")).toBeTruthy());
+    fireEvent.click(view.getByText("coauthor.provider.manage_connections"));
+    expect(providerOpened).toBe(true);
+    expect(closed).toBe(true);
   });
 
   it("keeps the connection and transport cards, but replaces inherited token limits and the flat list with the selector + sampler panel", async () => {
