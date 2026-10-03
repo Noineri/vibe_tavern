@@ -33,7 +33,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
     personas, activePersonaId,
     contextSize, maxTokens, favoriteModels, activeModelId, handleSelectFavoriteModel,
     fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
-    buckets, inputTokens, showGenerateMore, handleGenerateMore,
+    buckets, inputTokens, permanent, availableBudget, tokenState, showGenerateMore, handleGenerateMore,
   } = data;
 
   const [isDragOver, setIsDragOver] = useState(false);
@@ -80,12 +80,6 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
   }
   const sendLabel = renderSendLabel();
   const sendButtonText = canSend || !draft.trim() ? t("send") : sendLabel || t("send_unavailable");
-
-  const permanent = buckets.system + buckets.character + buckets.persona + buckets.lore + buckets.memory + buckets.tools;
-  const totalUsed = permanent + buckets.history + inputTokens;
-  const availableBudget = Math.max(0, contextSize - maxTokens);
-  const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
-  const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
 
   return (
     <div

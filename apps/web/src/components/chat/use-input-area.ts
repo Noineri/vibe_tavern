@@ -248,6 +248,11 @@ export function useInputArea() {
   }, [activePromptTrace?.layers]);
 
   const inputTokens = useTokenCount(draft);
+  const permanent = buckets.system + buckets.character + buckets.persona + buckets.lore + buckets.memory + buckets.tools;
+  const totalUsed = permanent + buckets.history + inputTokens;
+  const availableBudget = Math.max(0, contextSize - maxTokens);
+  const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
+  const tokenState: "ok" | "mid" | "warn" = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
 
   return {
     t,
@@ -256,7 +261,7 @@ export function useInputArea() {
     personas, activePersonaId, promptPresets, activePromptPresetId,
     contextSize, maxTokens, favoriteModels, activeModelId, handleSelectFavoriteModel,
     fileInputRef, draftAttachments, handleFileSelected, handleVoiceRecorded, onFileInputChange, handlePaste,
-    canSend, buckets, inputTokens,
+    canSend, buckets, inputTokens, permanent, availableBudget, tokenState,
     showGenerateMore, handleGenerateMore,
     // LS-4b/LS-8: the per-send prefill entry point renders only when BOTH
     // gates pass — the shared fail-closed capability resolution in

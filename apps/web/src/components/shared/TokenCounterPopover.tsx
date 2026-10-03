@@ -6,7 +6,6 @@ import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { BottomSheet } from "./BottomSheet.js";
 
-
 /**
  * Context-counter / token-breakdown flyout for the chat input toolbar.
  *
@@ -62,6 +61,18 @@ export interface TokenCounterPopoverProps {
 	align?: "center" | "end";
 	/** Mobile uses a BottomSheet instead of the desktop popover. */
 	mobile?: boolean;
+	/** Caller-owned test id for the mobile context-ring trigger. */
+	triggerTestId?: string;
+}
+
+interface ContextUsage {
+	used: number;
+	percent: number;
+}
+
+function getContextUsage(permanent: number, history: number, inputTokens: number, availableBudget: number): ContextUsage {
+	const used = permanent + history + inputTokens;
+	return { used, percent: availableBudget > 0 ? Math.round(used / availableBudget * 100) : 0 };
 }
 
 export function TokenCounterPopover({
@@ -75,13 +86,34 @@ export function TokenCounterPopover({
 	permanentItems,
 	align = "center",
 	mobile = false,
+	triggerTestId,
 }: TokenCounterPopoverProps) {
 	const { t } = useT();
 	const [open, setOpen] = useState(false);
+	const usage = getContextUsage(permanent, history, inputTokens, availableBudget);
 
 	const triggerText = <>{permanent.toLocaleString()}<span className="text-t4">+</span>{(history + inputTokens).toLocaleString()} / {contextSize > 0 ? contextSize.toLocaleString() : "∞"}</>;
-	const content = <TokenCounterContent permanent={permanent} history={history} inputTokens={inputTokens} maxTokens={maxTokens} availableBudget={availableBudget} permanentItems={permanentItems} mobile={mobile} />;
-	if (mobile) return <><button type="button" data-testid="coauthor-token-counter" onClick={() => setOpen(true)} className={cn("min-w-0 shrink font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums", tokenState === "warn" ? "text-danger-text" : tokenState === "mid" ? "text-warning-text" : "text-t3")}>{triggerText}</button><BottomSheet open={open} onClose={() => setOpen(false)} title={t("context_breakdown")}>{content}</BottomSheet></>;
+	const content = <TokenCounterContent permanent={permanent} history={history} inputTokens={inputTokens} maxTokens={maxTokens} availableBudget={availableBudget} permanentItems={permanentItems} mobile={mobile} usage={usage} />;
+	if (mobile) {
+		return <>
+			<button
+				type="button"
+				data-testid={triggerTestId}
+				onClick={() => setOpen(true)}
+				className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-t3 transition-colors active:bg-s3"
+				aria-label={t("context_usage_percent", { n: usage.percent })}
+			>
+				<ContextRing percent={usage.percent} tokenState={tokenState} />
+			</button>
+			<BottomSheet
+				open={open}
+				onClose={() => setOpen(false)}
+				title={<div className="flex w-full items-center justify-between gap-3"><span>{t("context_label")}</span><span className="shrink-0 font-normal tabular-nums text-t2">{usage.used.toLocaleString()} / {availableBudget.toLocaleString()} ({usage.percent}%)</span></div>}
+			>
+				{content}
+			</BottomSheet>
+		</>;
+	}
 
 	return (
 		<Popover.Root open={open} onOpenChange={setOpen}>
@@ -109,6 +141,20 @@ export function TokenCounterPopover({
 	);
 }
 
+function ContextRing({ percent, tokenState }: Pick<ContextUsage, "percent"> & Pick<TokenCounterPopoverProps, "tokenState">) {
+	const radius = 11;
+	const circumference = 2 * Math.PI * radius;
+	const fill = Math.min(100, percent) / 100;
+	const colorClass = tokenState === "warn" ? "stroke-danger-text" : tokenState === "mid" ? "stroke-warning-text" : "stroke-accent";
+
+	return (
+		<svg aria-hidden="true" data-token-state={tokenState} className="h-7 w-7 -rotate-90" viewBox="0 0 28 28">
+			<circle className="stroke-border" cx="14" cy="14" fill="none" r={radius} strokeWidth="3" />
+			<circle className={colorClass} cx="14" cy="14" fill="none" r={radius} strokeDasharray={circumference} strokeDashoffset={circumference * (1 - fill)} strokeLinecap="round" strokeWidth="3" />
+		</svg>
+	);
+}
+
 function TokenCounterContent({
 	permanent,
 	history,
@@ -117,10 +163,13 @@ function TokenCounterContent({
 	availableBudget,
 	permanentItems,
 	mobile,
-}: Pick<TokenCounterPopoverProps, "permanent" | "history" | "inputTokens" | "maxTokens" | "availableBudget" | "permanentItems" | "mobile">) {
+	usage,
+}: Pick<TokenCounterPopoverProps, "permanent" | "history" | "inputTokens" | "maxTokens" | "availableBudget" | "permanentItems" | "mobile"> & { usage: ContextUsage }) {
 	const { t } = useT();
+	const usageBar = availableBudget > 0 && <ContextUsageBar permanent={permanent} history={history} inputTokens={inputTokens} availableBudget={availableBudget} mobile={mobile} />;
+
 	return <div className={mobile ? "px-4 py-3" : undefined}>
-		<div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>
+		{mobile ? <div className="mb-3">{usageBar}</div> : <div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>}
 		<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
 		{permanentItems.map((item, i) => <div key={i} className={cn("mb-1 flex justify-between text-xs text-t2", i === permanentItems.length - 1 && "mb-1.5")}><span>{item.label}</span><span className="tabular-nums text-t1">{item.value.toLocaleString()}</span></div>)}
 		<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_temporary")}</div>
@@ -128,6 +177,11 @@ function TokenCounterContent({
 		<div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="tabular-nums text-t1">{inputTokens.toLocaleString()}</span></div>
 		<div className="mb-1 flex justify-between border-t border-border pt-1.5 text-xs text-t2"><span>{t("context_response_budget")}</span><span className="tabular-nums text-t1">{maxTokens === -1 ? "∞" : `-${maxTokens.toLocaleString()}`}</span></div>
 		<div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span className="tabular-nums">{maxTokens === -1 ? "∞" : availableBudget.toLocaleString()}</span></div>
-		{availableBudget > 0 && <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-s3"><div className="flex h-full"><CustomTooltip content={`${t("context_permanent")}: ${permanent.toLocaleString()}`}><div className="bg-accent" style={{ width: `${Math.min(100, permanent / availableBudget * 100)}%` }} /></CustomTooltip><CustomTooltip content={`${t("context_history")}: ${history.toLocaleString()}`}><div className="bg-t3" style={{ width: `${Math.min(100, history / availableBudget * 100)}%` }} /></CustomTooltip><CustomTooltip content={`${t("context_current_input")}: ${inputTokens.toLocaleString()}`}><div className="bg-accent-t" style={{ width: `${Math.min(100, inputTokens / availableBudget * 100)}%` }} /></CustomTooltip></div></div>}
+		{!mobile && usageBar}
 	</div>;
+}
+
+function ContextUsageBar({ permanent, history, inputTokens, availableBudget, mobile }: Pick<TokenCounterPopoverProps, "permanent" | "history" | "inputTokens" | "availableBudget" | "mobile">) {
+	const { t } = useT();
+	return <div className={mobile ? "h-1.5 w-full overflow-hidden rounded-full bg-s3" : "mt-2 h-1.5 w-full overflow-hidden rounded-full bg-s3"}><div className="flex h-full"><CustomTooltip content={`${t("context_permanent")}: ${permanent.toLocaleString()}`}><div className="bg-accent" style={{ width: `${Math.min(100, permanent / availableBudget * 100)}%` }} /></CustomTooltip><CustomTooltip content={`${t("context_history")}: ${history.toLocaleString()}`}><div className="bg-t3" style={{ width: `${Math.min(100, history / availableBudget * 100)}%` }} /></CustomTooltip><CustomTooltip content={`${t("context_current_input")}: ${inputTokens.toLocaleString()}`}><div className="bg-accent-t" style={{ width: `${Math.min(100, inputTokens / availableBudget * 100)}%` }} /></CustomTooltip></div></div>;
 }

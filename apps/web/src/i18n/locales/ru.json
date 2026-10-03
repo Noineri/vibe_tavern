@@ -369,6 +369,8 @@
 	"placeholder": "Продолжите историю...",
 	"speak_as": "Говорить как",
 	"multi_persona_tooltip": "Мульти-персона режим",
+	"context_label": "Контекст",
+	"context_usage_percent": "Контекст: {n}%",
 	"context_breakdown": "Структура контекста",
 	"context_permanent": "Постоянные",
 	"context_temporary": "Временные",

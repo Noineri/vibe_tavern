@@ -365,6 +365,8 @@
 	"placeholder": "Continue the story...",
 	"speak_as": "Speak as",
 	"multi_persona_tooltip": "Multi-persona mode",
+	"context_label": "Context",
+	"context_usage_percent": "Context: {n}%",
 	"context_breakdown": "Context Breakdown",
 	"context_permanent": "Permanent",
 	"context_temporary": "Temporary",

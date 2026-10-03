@@ -14,6 +14,7 @@ import { cn } from "../../lib/cn.js";
 import { composerCls } from "../../lib/field-tokens.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
+import { TokenCounterPopover } from "../shared/TokenCounterPopover.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
@@ -30,6 +31,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
     favoriteModels, activeModelId, handleSelectFavoriteModel,
     fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
     showGenerateMore, handleGenerateMore,
+    buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
   } = data;
 
   const [mobilePersonaOpen, setMobilePersonaOpen] = useState(false);
@@ -131,6 +133,25 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
                 <span>{t("generate_more_label")}</span>
               </button>
             )}
+            <TokenCounterPopover
+              mobile
+              triggerTestId="chat-context-ring"
+              permanent={permanent}
+              history={buckets.history}
+              inputTokens={inputTokens}
+              contextSize={contextSize}
+              maxTokens={maxTokens}
+              availableBudget={availableBudget}
+              tokenState={tokenState}
+              permanentItems={[
+                { label: t("context_system"), value: buckets.system },
+                { label: t("context_character"), value: buckets.character },
+                { label: t("context_persona"), value: buckets.persona },
+                { label: t("context_lore"), value: buckets.lore },
+                { label: t("context_memory"), value: buckets.memory },
+                { label: t("context_tools"), value: buckets.tools },
+              ]}
+            />
             {isSending ? (
               <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10" onClick={chat.handleCancelGeneration}>
                 <span className="text-[11px] font-bold">✕</span>

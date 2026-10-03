@@ -94,24 +94,6 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						}
 					/>
 
-					<TokenCounterPopover
-						mobile
-						permanent={permanent}
-						history={buckets.history}
-						inputTokens={inputTokens}
-						contextSize={contextSize}
-						maxTokens={maxTokens}
-						availableBudget={availableBudget}
-						tokenState={tokenState}
-						permanentItems={[
-							{ label: t("coauthor.module.title"), value: buckets.moduleTokens },
-							{ label: t("coauthor.module.skills"), value: buckets.skillTokens },
-							{ label: t("character_profile"), value: buckets.profileTokens },
-							{ label: t("coauthor.context.label"), value: buckets.context },
-							{ label: t("context_memory"), value: buckets.memory },
-						]}
-					/>
-
 					<ToolbarSelect
 						mobile
 						title={t("starred_models")}
@@ -145,6 +127,24 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						rows={1}
 					/>
 					<div className="flex shrink-0 items-center">
+						<TokenCounterPopover
+							mobile
+							triggerTestId="coauthor-context-ring"
+							permanent={permanent}
+							history={buckets.history}
+							inputTokens={inputTokens}
+							contextSize={contextSize}
+							maxTokens={maxTokens}
+							availableBudget={availableBudget}
+							tokenState={tokenState}
+							permanentItems={[
+								{ label: t("coauthor.module.title"), value: buckets.moduleTokens },
+								{ label: t("coauthor.module.skills"), value: buckets.skillTokens },
+								{ label: t("character_profile"), value: buckets.profileTokens },
+								{ label: t("coauthor.context.label"), value: buckets.context },
+								{ label: t("context_memory"), value: buckets.memory },
+							]}
+						/>
 						{isSending ? (
 							<button
 								type="button"
