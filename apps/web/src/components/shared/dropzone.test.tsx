@@ -109,4 +109,28 @@ describe("Dropzone", () => {
     expect(zone.className).toContain("py-10");
     expect(click).toHaveBeenCalledTimes(1);
   });
+
+  it("mobile keeps the consumer subtitle under the generic title (formats/location info, not drag wording)", () => {
+    mobileState.isMobile = true;
+    const { container, getByText } = render(
+      <Dropzone
+        accept="image/*"
+        title="Импорт изображения"
+        subtitle="Поддерживаются PNG и JPEG"
+        onFiles={() => {}}
+      />,
+    );
+    const subtitleEl = getByText("Поддерживаются PNG и JPEG");
+    expect(subtitleEl.className).toBe("font-ui text-xs text-t4");
+    // Under the generic mobile title, in order.
+    expect(container.textContent).toBe("dropzone_select_fileПоддерживаются PNG и JPEG");
+  });
+
+  it("mobile without a subtitle renders only the generic title — nothing extra", () => {
+    mobileState.isMobile = true;
+    const { container } = render(
+      <Dropzone accept="image/*" multiple title="Desktop title" onFiles={() => {}} />,
+    );
+    expect(container.textContent).toBe("dropzone_select_files");
+  });
 });

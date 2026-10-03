@@ -58,6 +58,10 @@ export function Dropzone({
         {input}
         <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-s3 text-t2 transition-all"><Icons.Import /></div>
         <div className="font-ui text-sm">{mobileTitle}</div>
+        {/* The consumer's subtitle carries formats/location info, not drag
+            wording — it stays on mobile too, exactly as the desktop default
+            variant renders it. */}
+        {subtitle && <div className="font-ui text-xs text-t4">{subtitle}</div>}
       </button>
     );
   }
