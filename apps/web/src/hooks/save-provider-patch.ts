@@ -14,6 +14,7 @@
 
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
+import type { ProviderSamplerValues } from "../lib/provider-sampler-values.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { PROVIDER_TYPE, GENERATION_MODE, type GenerationMode, type ModelSettingsOverlay, type ProviderProxyMode, type ProviderGenerationFormat, tag } from "@vibe-tavern/domain";
 
@@ -221,7 +222,7 @@ export function computeBindingIdentityPatch(patch: ProviderSavePatch): Partial<P
  * Pure — no side effects. Caller persists via
  * `upsertProviderModelSettingsAction(profileId, modelId, computeOverlayPatch(form))`.
  */
-export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
+export function computeOverlayPatch(form: ProviderSamplerValues): ModelSettingsOverlay {
   const overlay: ModelSettingsOverlay = {
     temperature: form.temperature,
     topP: form.topP,
