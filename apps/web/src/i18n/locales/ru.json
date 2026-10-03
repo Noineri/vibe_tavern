@@ -1686,6 +1686,8 @@
 	"script_template_advanced_lore": "Продвинутый лорбук",
 	"script_template_dice": "Бросок кубика (устаревший)",
 	"script_template_fate_die": "Кость Судьбы",
+	"script_template_group_prompt": "Шаблоны промпт-скриптов",
+	"script_template_group_dice": "Шаблоны дайс-скриптов",
 	"script_import": "Импорт Скрипта",
 	"script_no_scripts": "Нет скриптов в этой области",
 	"script_ai_helper": "ИИ Помощник",

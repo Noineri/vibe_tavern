@@ -207,6 +207,19 @@ function HarnessGlobal() {
   return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
 }
 
+/** Renders the modals plus a control that opens the import modal — the hook
+ *  returns `handleImportOpen` for the caller's chrome, so tests reach the
+ *  modal through a button of their own. */
+function ImportHarness() {
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity" });
+  return (
+    <>
+      {panel.modals}
+      <button type="button" onClick={panel.handleImportOpen}>open-import</button>
+    </>
+  );
+}
+
 async function openEditor(container: HTMLElement, findByText: (text: string) => Promise<HTMLElement>): Promise<EditorViewInstance> {
   fireEvent.click(await findByText("Test Script"));
   let view: EditorViewInstance | null = null;
@@ -344,6 +357,50 @@ describe("useScriptPanel explicit save", () => {
     fireEvent.click(saveButton);
     await waitFor(() => expect(updateScript).toHaveBeenCalledTimes(2));
     expect(updateScript.mock.calls[1]?.[1]).toMatchObject({ code: "AB" });
+  });
+});
+
+// ── Templates by script kind (SCRIPT_EDITOR_CLEANUP step 3) ─────────────────
+// Under the ACTIVE script only its own kind's templates are offered; the
+// import modal (no active script) keeps every template but splits them into
+// labeled prompt/dice groups.
+describe("useScriptPanel templates by script kind", () => {
+  it("offers only dice templates under a dice script", async () => {
+    serverScript = { ...baseScript, scriptKind: "dice" };
+    const { container, findByText, getByText, queryByText } = render(<Harness />);
+    await openEditor(container, findByText);
+
+    expect(getByText("script_template_fate_die")).toBeTruthy();
+    // Prompt-kind templates stay out — including the prompt-kind «Dice Roller»
+    // (a /roll listener inside a prompt script, a different scenario).
+    expect(queryByText("script_template_dice")).toBeNull();
+    expect(queryByText("script_template_relationship")).toBeNull();
+    const buttons = Array.from(container.querySelectorAll("button"))
+      .filter((b) => b.getAttribute("class")?.includes("rounded-md"));
+    expect(buttons.length).toBeGreaterThan(0);
+    const templateLabels = buttons.map((b) => b.textContent).filter((x): x is string => x !== null && x.startsWith("script_template_"));
+    expect(templateLabels).toEqual(["script_template_fate_die"]);
+  });
+
+  it("offers no dice-kind template under a prompt script (Dice Roller stays)", async () => {
+    const { container, findByText, getByText, queryByText } = render(<Harness />);
+    await openEditor(container, findByText);
+
+    expect(queryByText("script_template_fate_die")).toBeNull();
+    expect(getByText("script_template_dice")).toBeTruthy();
+    expect(getByText("script_template_relationship")).toBeTruthy();
+  });
+
+  it("shows both labeled groups in the import modal", () => {
+    const { getByText } = render(<ImportHarness />);
+    fireEvent.click(getByText("open-import"));
+
+    expect(getByText("script_template_group_prompt:")).toBeTruthy();
+    expect(getByText("script_template_group_dice:")).toBeTruthy();
+    // Prompt group keeps its templates, dice group keeps Fate Die — all nine
+    // remain importable; only the grouping changed.
+    expect(getByText("script_template_relationship")).toBeTruthy();
+    expect(getByText("script_template_fate_die")).toBeTruthy();
   });
 });
 

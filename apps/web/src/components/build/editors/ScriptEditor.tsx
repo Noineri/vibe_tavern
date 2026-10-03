@@ -12,7 +12,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
-import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
+import { SCRIPT_TEMPLATES, templateScriptKind } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
@@ -393,9 +393,15 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                   {(importCode.trim().startsWith("{") || importCode.trim().startsWith("[")) ? t("script_import_detect_json") : t("script_import_detect_js")}
                 </div>
               )}
-              <div className="mt-3 text-[11px] text-t3">{t("script_templates")}:</div>
+              <div className="mt-3 text-[11px] text-t3">{t("script_template_group_prompt")}:</div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {Object.entries(SCRIPT_TEMPLATES).map(([key, tpl]) => (
+                {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === "prompt").map(([key, tpl]) => (
+                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
+                ))}
+              </div>
+              <div className="mt-3 text-[11px] text-t3">{t("script_template_group_dice")}:</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === "dice").map(([key, tpl]) => (
                   <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
                 ))}
               </div>
@@ -583,11 +589,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         </div>
       </div>
 
-      {/* Templates */}
+      {/* Templates — only the active script's kind (SCRIPT_EDITOR_CLEANUP step 3) */}
       <div className="mb-4">
         <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_templates")}</div>
         <div className="flex flex-wrap gap-2">
-          {Object.entries(SCRIPT_TEMPLATES).map(([key, tpl]) => (
+          {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === (activeScript.scriptKind || "prompt")).map(([key, tpl]) => (
             <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => handleAddFromTemplate(key)}>{tDynamic("script_template_" + key) || tpl.name}</button>
           ))}
         </div>

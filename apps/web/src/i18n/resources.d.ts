@@ -2664,6 +2664,8 @@ export default interface Resources {
     "script_template_dice": "Dice Roller (legacy)",
     "script_template_events": "Scenario Events",
     "script_template_fate_die": "Fate Die",
+    "script_template_group_dice": "Dice-script templates",
+    "script_template_group_prompt": "Prompt-script templates",
     "script_template_hp": "HP Tracker",
     "script_template_lorebook": "Dynamic Lorebook",
     "script_template_memory": "Conversation Memory",

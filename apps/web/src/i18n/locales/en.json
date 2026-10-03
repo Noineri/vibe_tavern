@@ -1674,6 +1674,8 @@
 	"script_template_advanced_lore": "Advanced Lorebook",
 	"script_template_dice": "Dice Roller (legacy)",
 	"script_template_fate_die": "Fate Die",
+	"script_template_group_prompt": "Prompt-script templates",
+	"script_template_group_dice": "Dice-script templates",
 	"script_import": "Import Script",
 	"script_no_scripts": "No scripts in this scope",
 	"script_ai_helper": "AI Helper",
