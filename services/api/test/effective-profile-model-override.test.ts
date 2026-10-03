@@ -219,7 +219,7 @@ describe("CG-2: Co-Author generation boundary", () => {
     reasoningEffort: "auto",
   });
 
-  it("uses only the bound connection identity and its own generation set", async () => {
+  it("honors a per-request regenerate model override without inheriting RP settings", async () => {
     const { service, requestedFor } = makeProfileService({
       base: rpProfile,
       profilesById: { prof_coauthor: coauthorProfile },
@@ -233,12 +233,12 @@ describe("CG-2: Co-Author generation boundary", () => {
       },
     }));
 
-    const { profile: effective, transport } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1", modelOverride: "ignored-model" });
+    const { profile: effective, transport } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1", modelOverride: "regenerate-model" });
 
     expect(effective.id).toBe("prof_coauthor");
     expect(effective.endpoint).toBe("https://coauthor.example/v1");
     expect(effective.apiKey).toBe("coauthor-key");
-    expect(effective.defaultModel).toBe("coauthor-model");
+    expect(effective.defaultModel).toBe("regenerate-model");
     expect(effective.generationMode).toBe(GENERATION_MODE.chat);
     expect(effective.temperature).toBe(0.23);
     expect(effective.maxTokens).toBe(1_200);
@@ -262,6 +262,7 @@ describe("CG-2: Co-Author generation boundary", () => {
     const before = await makeAdapter(first.service, stores).resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
     const after = await makeAdapter(second.service, stores).resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
 
+    expect(before.profile.defaultModel).toBe("coauthor-model");
     expect(after.profile).toEqual(before.profile);
   });
 

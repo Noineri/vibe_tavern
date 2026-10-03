@@ -644,7 +644,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 	 * generation field comes from its own connection-settings row. RP remains
 	 * on its existing active-profile and per-model-overlay path.
 	 */
-	private async resolveProfileForMode(chatId?: string): Promise<
+	private async resolveProfileForMode(chatId?: string, modelOverride?: string | null): Promise<
 		| { mode: "coauthor"; profile: StoredProviderProfileRecord & { defaultModel: string }; transport: CoauthorTransport }
 		| { mode: "rp"; profile: StoredProviderProfileRecord & { defaultModel: string }; transport: CoauthorTransport }
 	> {
@@ -659,7 +659,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 				if (!bound) throw coauthorModelRequired();
 
 				const coauthorSettings = await this.stores.coauthorSettings.getByProviderId(providerId);
-				const model = coauthorSettings?.modelName ?? bound.defaultModel;
+				const model = modelOverride ?? coauthorSettings?.modelName ?? bound.defaultModel;
 				if (!model) throw coauthorModelRequired();
 
 				return {
@@ -678,17 +678,18 @@ export class ChatAdapter implements ChatRuntimeApi {
 
 	/**
 	 * Resolve the EFFECTIVE provider profile for generation. Co-Author bypasses
-	 * RP per-model binding entirely; its connection-settings row owns the model
-	 * and generation values. The RP path below is intentionally unchanged.
+	 * RP per-model binding entirely; its connection-settings row owns generation
+	 * values and its model unless a regenerate request explicitly overrides it.
+	 * The RP path below is intentionally unchanged.
 	 */
 	private async resolveEffectiveProfileOrThrow(options?: {
 		chatId?: string;
 		modelOverride?: string | null;
 	}): Promise<{ profile: StoredProviderProfileRecord & { defaultModel: string }; transport: CoauthorTransport }> {
-		const resolved = await this.resolveProfileForMode(options?.chatId);
+		const modelOverride = options?.modelOverride ?? null;
+		const resolved = await this.resolveProfileForMode(options?.chatId, modelOverride);
 		if (resolved.mode === "coauthor") return { profile: resolved.profile, transport: resolved.transport };
 
-		const modelOverride = options?.modelOverride ?? null;
 		const finalModel = modelOverride ?? resolved.profile.defaultModel;
 		const effective = !resolved.profile.bindPerModel
 			? { ...resolved.profile, defaultModel: finalModel }
