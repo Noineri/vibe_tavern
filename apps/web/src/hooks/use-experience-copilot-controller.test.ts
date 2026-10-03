@@ -30,7 +30,10 @@ const { toast } = await import("sonner");
 const toastError = spyOn(toast, "error");
 const toastInfo = spyOn(toast, "info");
 const { i18next } = await import("../i18n/i18n.js");
-const translate = spyOn(i18next, "t").mockImplementation((key) => String(key));
+// `t` returns a call-site generic ($NoInfer<Ret>) not nameable here, so the key-echo is cast to the exact `t` type.
+const translate = spyOn(i18next, "t").mockImplementation(
+  ((key: string) => String(key)) as typeof i18next.t,
+);
 
 const FINISH_STOP = 'event: finish\ndata: {"finishReason":"stop"}\n\n';
 const sseResponse = (events: readonly string[]) =>
