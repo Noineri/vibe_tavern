@@ -135,6 +135,16 @@ describe("useCoauthorProviderBinding — model source = connection row (CG-2)", 
     expect(patchUiSettingsAction).not.toHaveBeenCalled();
   });
 
+  it("quick switch auto-fills the selected model's known context length", async () => {
+    seedBinding(makeRow("old-model", { contextBudget: 128_000, pinContextBudget: false }));
+    const { result } = renderHook(() => useCoauthorProviderBinding());
+    await result.current.quickSwitchModel("row-model");
+    expect(upsertCoauthorConnectionSettings).toHaveBeenCalledWith("p1", {
+      modelName: "row-model",
+      settings: expect.objectContaining({ contextBudget: 32_000 }),
+    });
+  });
+
   it("modal save writes the row first, then binds ONLY the connection in ui_settings", async () => {
     seedBinding(makeRow("row-model", { temperature: 0.7, maxTokens: 1234, contextBudget: 5000, pinContextBudget: true }));
     const { result } = renderHook(() => useCoauthorProviderBinding());

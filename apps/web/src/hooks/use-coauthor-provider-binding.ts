@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { MODEL_FAVORITE_SCOPE, resolveCoauthorGenerationSettings } from "@vibe-tavern/domain";
+import { COAUTHOR_UNKNOWN_CONTEXT_BUDGET, MODEL_FAVORITE_SCOPE, resolveCoauthorGenerationSettings, type ModelSettingsOverlay } from "@vibe-tavern/domain";
+import { resolveModelContextBudget } from "../lib/context-autofill.js";
 import { decorateCoauthorFavorites, resolveCoauthorBinding, type CoauthorBindingResult } from "../lib/coauthor-provider-binding.js";
 import { useBootstrapStore, patchUiSettingsAction } from "../stores/api-actions/bootstrap-actions.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
@@ -12,19 +13,17 @@ import { useProviderModels } from "./use-provider-models.js";
  *  (CG-2 storage), falling back to the profile default when the row has none
  *  — the same fallback as the backend boundary. Row loading is owned by
  *  useCoauthorProviderBinding (mounted with the co-author UI); until the row
- *  lands, an absent entry falls back like a rowless connection. With no
- *  explicit binding, resolveCoauthorBinding falls back to the RP active
- *  profile. */
+ *  lands, an absent entry falls back like a rowless connection. Missing or
+ *  deleted bindings fail closed and never read RP state. */
 export function useCoauthorBindingState(): CoauthorBindingResult {
   const coauthorProviderId = useBootstrapStore((state) => state.data?.uiSettings?.coauthorProviderId ?? null);
   const profiles = useProviderDataStore((state) => state.profiles);
   const coauthorSettings = useProviderDataStore((state) =>
     coauthorProviderId ? state.coauthorSettingsByProfile[coauthorProviderId] : undefined,
   );
-  const rpActiveProfile = useMemo(() => profiles.find((profile) => profile.isActive) ?? null, [profiles]);
   return useMemo(
-    () => resolveCoauthorBinding({ coauthorProviderId, coauthorSettings, profiles, rpActiveProfile }),
-    [coauthorProviderId, coauthorSettings, profiles, rpActiveProfile],
+    () => resolveCoauthorBinding({ coauthorProviderId, coauthorSettings, profiles }),
+    [coauthorProviderId, coauthorSettings, profiles],
   );
 }
 
@@ -33,6 +32,11 @@ export function useCoauthorProviderBinding() {
   const binding = useCoauthorBindingState();
   const coauthorProviderId = useBootstrapStore((state) => state.data?.uiSettings?.coauthorProviderId ?? null);
   const favoritesByProfile = useProviderDataStore((state) => state.coauthorFavoritesByProfile);
+  const connectionSettings = useProviderDataStore((state) => binding.profileId ? state.coauthorSettingsByProfile[binding.profileId] : undefined);
+  const generationSettings = useMemo(
+    () => binding.profileId ? resolveCoauthorGenerationSettings(connectionSettings?.settings) : null,
+    [binding.profileId, connectionSettings],
+  );
   const { models } = useProviderModels(binding.profileId);
   const favoriteRows = binding.profileId ? favoritesByProfile[binding.profileId] ?? [] : [];
   const favorites = useMemo(() => decorateCoauthorFavorites(favoriteRows, models), [favoriteRows, models]);
@@ -44,11 +48,22 @@ export function useCoauthorProviderBinding() {
    *  record, so the current settings are re-sent unchanged (read-modify-write)
    *  and a connection with no row yet gets the domain defaults
    *  (`resolveCoauthorGenerationSettings`) plus the chosen model. */
-  const putRowModel = useCallback(async (profileId: string, modelName: string): Promise<void> => {
+  const putRowModel = useCallback(async (
+    profileId: string,
+    modelName: string,
+    modelContextLength?: number,
+    settingsOverride?: ModelSettingsOverlay,
+  ): Promise<void> => {
     const row = await loadCoauthorConnectionSettingsAction(profileId);
+    const settings = resolveCoauthorGenerationSettings(settingsOverride ?? row?.settings);
+    const contextBudget = settingsOverride === undefined ? resolveModelContextBudget({
+      pinned: settings.pinContextBudget,
+      contextLength: modelContextLength,
+      unknownContextBudget: COAUTHOR_UNKNOWN_CONTEXT_BUDGET,
+    }) : undefined;
     await upsertCoauthorConnectionSettingsAction(profileId, {
       modelName,
-      settings: resolveCoauthorGenerationSettings(row?.settings),
+      settings: contextBudget === undefined ? settings : { ...settings, contextBudget },
     });
   }, []);
 
@@ -57,8 +72,12 @@ export function useCoauthorProviderBinding() {
   // connection. The row is written first so a failed binding patch never
   // re-points the Co-Author at a connection whose row still holds a previous
   // model.
-  const saveBinding = useCallback(async (profileId: string, modelName: string): Promise<void> => {
-    await putRowModel(profileId, modelName);
+  const saveBinding = useCallback(async (
+    profileId: string,
+    modelName: string,
+    settings?: ModelSettingsOverlay,
+  ): Promise<void> => {
+    await putRowModel(profileId, modelName, undefined, settings);
     await patchUiSettingsAction({ coauthorProviderId: profileId });
   }, [putRowModel]);
 
@@ -67,10 +86,11 @@ export function useCoauthorProviderBinding() {
   const quickSwitchModel = useCallback(async (modelName: string): Promise<void> => {
     const profileId = binding.profileId;
     if (!profileId) return;
-    await putRowModel(profileId, modelName);
-  }, [binding.profileId, putRowModel]);
+    const contextLength = models.find((model) => model.id === modelName)?.contextLength;
+    await putRowModel(profileId, modelName, contextLength);
+  }, [binding.profileId, models, putRowModel]);
 
-  return { ...binding, models, favorites, saveBinding, quickSwitchModel };
+  return { ...binding, generationSettings, models, favorites, saveBinding, quickSwitchModel };
 }
 
 export type CoauthorProviderBinding = ReturnType<typeof useCoauthorProviderBinding>;

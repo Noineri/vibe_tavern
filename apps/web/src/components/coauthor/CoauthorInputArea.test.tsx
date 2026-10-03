@@ -176,4 +176,12 @@ describe("CoauthorInputArea", () => {
 		// outside act(). One macrotask flushes the whole .then/.finally chain.
 		await act(async () => { await new Promise((r) => setTimeout(r)); });
 	});
+
+	it("fails closed with a choose-model prompt and disabled model picker when no Co-Author binding exists", async () => {
+		const { getByTestId } = render(<CoauthorInputArea />);
+		expect((getByTestId("coauthor-favorites-pill") as HTMLButtonElement).disabled).toBe(true);
+		expect((getByTestId("coauthor-send-btn") as HTMLButtonElement).disabled).toBe(true);
+		expect((getByTestId("coauthor-input-textarea") as HTMLTextAreaElement).placeholder).toBe("coauthor.input.choose_model");
+		await act(async () => { await new Promise((resolve) => setTimeout(resolve)); });
+	});
 });

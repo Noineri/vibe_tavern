@@ -61,6 +61,12 @@ describe("CoauthorMobileInputArea — Enter does not send (E4)", () => {
     expect(handleSend).not.toHaveBeenCalled();
   });
 
+  it("renders the Co-Author token counter from the shared data limits", () => {
+    const { data } = makeData();
+    const { getByTestId } = render(<CoauthorMobileInputArea data={data} />);
+    expect(getByTestId("coauthor-token-counter").textContent?.replace(/\s/g, "")).toContain("8192");
+  });
+
   it("the send button still sends", () => {
     const { data, handleSend } = makeData();
     const { getByTestId } = render(<CoauthorMobileInputArea data={data} />);

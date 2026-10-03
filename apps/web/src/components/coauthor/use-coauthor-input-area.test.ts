@@ -230,4 +230,22 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 		}));
 		expect(patchUiSettingsAction).not.toHaveBeenCalled();
 	});
+
+	it("uses the bound connection's Co-Author limits for the token counter, not RP profile limits", () => {
+		useProviderDataStore.setState({
+			coauthorSettingsByProfile: {
+				p1: {
+					providerProfileId: "p1",
+					modelName: "gpt-4o",
+					settings: { contextBudget: 6_000, maxTokens: 1_000 },
+					createdAt: "2026-01-01",
+					updatedAt: "2026-01-01",
+				},
+			},
+		});
+		const { result } = renderHook(() => useCoauthorInputArea());
+		expect(result.current.contextSize).toBe(6_000);
+		expect(result.current.maxTokens).toBe(1_000);
+		expect(result.current.availableBudget).toBe(5_000);
+	});
 });

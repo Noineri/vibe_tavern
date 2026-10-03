@@ -1,3 +1,7 @@
+/**
+ * forks: 2 — tts/TtsModelPicker.tsx lineage, CoauthorModelSelector.tsx.
+ */
+
 import React from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
@@ -13,6 +17,7 @@ import { ProviderModelList, type ProviderModelListOption } from "./ProviderModel
 import { TextInput } from "../../shared/text-input.js";
 import { LocalConnectionStatusChip, type LocalConnectionStatus } from "../../shared/LocalConnectionStatus.js";
 import { lblCls } from "../../../lib/field-tokens.js";
+import { resolveModelContextBudget, RP_UNKNOWN_CONTEXT_BUDGET } from "../../../lib/context-autofill.js";
 
 interface ProviderModelSelectorProps {
   form: FormState;
@@ -70,8 +75,13 @@ export function ProviderModelSelector({
   };
   const selectModel = (model: ProviderModelListOption) => {
     updateForm(modelKey, model.id as FormState[typeof modelKey]);
-    if (syncContextBudget && modelKey === "model" && !form.pinContextBudget) {
-      updateForm("contextBudget", (model.contextLength != null && model.contextLength > 0 ? model.contextLength : 16_000) as FormState["contextBudget"]);
+    if (syncContextBudget && modelKey === "model") {
+      const contextBudget = resolveModelContextBudget({
+        pinned: form.pinContextBudget,
+        contextLength: model.contextLength,
+        unknownContextBudget: RP_UNKNOWN_CONTEXT_BUDGET,
+      });
+      if (contextBudget !== undefined) updateForm("contextBudget", contextBudget as FormState["contextBudget"]);
     }
     setModelListOpen(false);
     setModelSearch("");

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { CustomTooltip } from "./Tooltip.js";
+import { BottomSheet } from "./BottomSheet.js";
 
 
 /**
@@ -25,9 +26,8 @@ import { CustomTooltip } from "./Tooltip.js";
  * module/skills/profile/lore/memory), so those are passed in as
  * `permanentItems`.
  *
- * Desktop-only — the mobile shells do not surface the counter. Migrating the
- * mobile shells to BottomSheet would be a separate step (the mobile toolbar
- * deliberately shows a leaner status row).
+ * Desktop uses a Radix popover; mobile uses the shared BottomSheet so both
+ * viewport shapes expose the same limits without desktop-sized chrome.
  */
 
 /** One line in the "Permanent" (permanent context) section. */
@@ -60,6 +60,8 @@ export interface TokenCounterPopoverProps {
 	 *  under the counter; co-author right-aligns it (it sits at the row end).
 	 *  Defaults to `"center"`. */
 	align?: "center" | "end";
+	/** Mobile uses a BottomSheet instead of the desktop popover. */
+	mobile?: boolean;
 }
 
 export function TokenCounterPopover({
@@ -72,9 +74,14 @@ export function TokenCounterPopover({
 	tokenState,
 	permanentItems,
 	align = "center",
+	mobile = false,
 }: TokenCounterPopoverProps) {
 	const { t } = useT();
 	const [open, setOpen] = useState(false);
+
+	const triggerText = <>{permanent.toLocaleString()}<span className="text-t4">+</span>{(history + inputTokens).toLocaleString()} / {contextSize > 0 ? contextSize.toLocaleString() : "∞"}</>;
+	const content = <TokenCounterContent permanent={permanent} history={history} inputTokens={inputTokens} maxTokens={maxTokens} availableBudget={availableBudget} permanentItems={permanentItems} mobile={mobile} />;
+	if (mobile) return <><button type="button" data-testid="coauthor-token-counter" onClick={() => setOpen(true)} className={cn("min-w-0 shrink font-ui text-[calc(var(--ui-fs)-3px)] tabular-nums", tokenState === "warn" ? "text-danger-text" : tokenState === "mid" ? "text-warning-text" : "text-t3")}>{triggerText}</button><BottomSheet open={open} onClose={() => setOpen(false)} title={t("context_breakdown")}>{content}</BottomSheet></>;
 
 	return (
 		<Popover.Root open={open} onOpenChange={setOpen}>
@@ -85,7 +92,7 @@ export function TokenCounterPopover({
 						tokenState === "warn" ? "text-danger-text" : tokenState === "mid" ? "text-warning-text" : "text-t3",
 					)}
 				>
-					{permanent.toLocaleString()}<span className="text-t4">+</span>{(history + inputTokens).toLocaleString()} / {contextSize > 0 ? contextSize.toLocaleString() : "∞"}
+					{triggerText}
 				</span>
 			</Popover.Trigger>
 			<Popover.Portal>
@@ -95,45 +102,32 @@ export function TokenCounterPopover({
 					align={align}
 					className="glass-blur z-[220] w-[240px] rounded-lg border border-border2 bg-glass-bg px-3.5 py-2.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
 				>
-					<div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>
-					<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
-					{permanentItems.map((item, i) => (
-						<div
-							key={i}
-							className={cn(
-								"mb-1 flex justify-between text-xs text-t2",
-								i === permanentItems.length - 1 && "mb-1.5",
-							)}
-						>
-							<span>{item.label}</span>
-							<span className="tabular-nums text-t1">{item.value.toLocaleString()}</span>
-						</div>
-					))}
-
-					<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_temporary")}</div>
-					<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_history")}</span><span className="tabular-nums text-t1">{history.toLocaleString()}</span></div>
-					<div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="tabular-nums text-t1">{inputTokens.toLocaleString()}</span></div>
-
-					<div className="mb-1 flex justify-between border-t border-border pt-1.5 text-xs text-t2"><span>{t("context_response_budget")}</span><span className="tabular-nums text-t1">{maxTokens === -1 ? "∞" : `-${maxTokens.toLocaleString()}`}</span></div>
-					<div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span className="tabular-nums">{maxTokens === -1 ? "∞" : availableBudget.toLocaleString()}</span></div>
-
-					{availableBudget > 0 && (
-						<div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-s3">
-							<div className="flex h-full">
-								<CustomTooltip content={`${t("context_permanent")}: ${permanent.toLocaleString()}`}>
-									<div className="bg-accent" style={{ width: `${Math.min(100, permanent / availableBudget * 100)}%` }} />
-								</CustomTooltip>
-								<CustomTooltip content={`${t("context_history")}: ${history.toLocaleString()}`}>
-									<div className="bg-t3" style={{ width: `${Math.min(100, history / availableBudget * 100)}%` }} />
-								</CustomTooltip>
-								<CustomTooltip content={`${t("context_current_input")}: ${inputTokens.toLocaleString()}`}>
-									<div className="bg-accent-t" style={{ width: `${Math.min(100, inputTokens / availableBudget * 100)}%` }} />
-								</CustomTooltip>
-							</div>
-						</div>
-					)}
+					{content}
 				</Popover.Content>
 			</Popover.Portal>
 		</Popover.Root>
 	);
+}
+
+function TokenCounterContent({
+	permanent,
+	history,
+	inputTokens,
+	maxTokens,
+	availableBudget,
+	permanentItems,
+	mobile,
+}: Pick<TokenCounterPopoverProps, "permanent" | "history" | "inputTokens" | "maxTokens" | "availableBudget" | "permanentItems" | "mobile">) {
+	const { t } = useT();
+	return <div className={mobile ? "px-4 py-3" : undefined}>
+		<div className="mb-1.5 border-b border-border pb-1.5 text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.08em] text-t3">{t("context_breakdown")}</div>
+		<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_permanent")}</div>
+		{permanentItems.map((item, i) => <div key={i} className={cn("mb-1 flex justify-between text-xs text-t2", i === permanentItems.length - 1 && "mb-1.5")}><span>{item.label}</span><span className="tabular-nums text-t1">{item.value.toLocaleString()}</span></div>)}
+		<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.06em] text-t4">{t("context_temporary")}</div>
+		<div className="mb-1 flex justify-between text-xs text-t2"><span>{t("context_history")}</span><span className="tabular-nums text-t1">{history.toLocaleString()}</span></div>
+		<div className="mb-1.5 flex justify-between text-xs text-t2"><span>{t("context_current_input")}</span><span className="tabular-nums text-t1">{inputTokens.toLocaleString()}</span></div>
+		<div className="mb-1 flex justify-between border-t border-border pt-1.5 text-xs text-t2"><span>{t("context_response_budget")}</span><span className="tabular-nums text-t1">{maxTokens === -1 ? "∞" : `-${maxTokens.toLocaleString()}`}</span></div>
+		<div className="mt-0.5 flex justify-between text-xs font-medium text-t1"><span>{t("context_total_available")}</span><span className="tabular-nums">{maxTokens === -1 ? "∞" : availableBudget.toLocaleString()}</span></div>
+		{availableBudget > 0 && <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-s3"><div className="flex h-full"><CustomTooltip content={`${t("context_permanent")}: ${permanent.toLocaleString()}`}><div className="bg-accent" style={{ width: `${Math.min(100, permanent / availableBudget * 100)}%` }} /></CustomTooltip><CustomTooltip content={`${t("context_history")}: ${history.toLocaleString()}`}><div className="bg-t3" style={{ width: `${Math.min(100, history / availableBudget * 100)}%` }} /></CustomTooltip><CustomTooltip content={`${t("context_current_input")}: ${inputTokens.toLocaleString()}`}><div className="bg-accent-t" style={{ width: `${Math.min(100, inputTokens / availableBudget * 100)}%` }} /></CustomTooltip></div></div>}
+	</div>;
 }

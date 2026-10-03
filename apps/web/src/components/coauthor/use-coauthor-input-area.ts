@@ -93,8 +93,8 @@ export function useCoauthorInputArea() {
 
 	const inputTokens = useTokenCount(draft);
 	const permanent = buckets.moduleTokens + buckets.skillTokens + buckets.profileTokens + buckets.context + buckets.memory;
-	const contextSize = binding.profile?.contextBudget ?? 0;
-	const maxTokens = binding.profile?.maxTokens ?? 0;
+	const contextSize = binding.generationSettings?.contextBudget ?? 0;
+	const maxTokens = binding.generationSettings?.maxTokens ?? 0;
 	const totalUsed = permanent + buckets.history + inputTokens;
 	const availableBudget = Math.max(0, contextSize - maxTokens);
 	const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
@@ -108,6 +108,7 @@ export function useCoauthorInputArea() {
 		t,
 		chat,
 		draft, setDraft, isSending, activeChatId, canUseLiveApi, canSend,
+		needsModel: !canUseLiveApi,
 		activeProfileId, favorites, activeModelId, handleSelectModel,
 		sendLabel, sendButtonText,
 		buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,

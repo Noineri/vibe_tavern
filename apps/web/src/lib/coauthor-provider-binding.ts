@@ -9,7 +9,8 @@ export interface CoauthorBindingInput {
    *  backend boundary (`row.modelName ?? profile.defaultModel`). */
   coauthorSettings: CoauthorConnectionSettingsRecord | null | undefined;
   profiles: ProviderProfileRecord[];
-  rpActiveProfile: ProviderProfileRecord | null;
+  /** Legacy call-site input retained while callers migrate; never consulted. */
+  rpActiveProfile?: ProviderProfileRecord | null;
 }
 
 export interface CoauthorBindingResult {
@@ -25,23 +26,15 @@ export interface DecoratedCoauthorFavorite extends FavoriteProviderModelRecord {
   toolSupport: ToolSupport;
 }
 
-/** Resolve an explicit Co-Author pair, otherwise the non-persisted RP fallback. */
+/** Resolve only an explicit, extant Co-Author pair. Missing or deleted bindings
+ * fail closed instead of borrowing RP's active connection. */
 export function resolveCoauthorBinding(input: CoauthorBindingInput): CoauthorBindingResult {
-  const { coauthorProviderId, coauthorSettings, profiles, rpActiveProfile } = input;
-  if (coauthorProviderId) {
-    const profile = profiles.find((candidate) => candidate.id === coauthorProviderId) ?? null;
-    if (profile) {
-      const model = coauthorSettings?.modelName ?? profile.defaultModel ?? null;
-      return { profile, model, profileId: profile.id, isExplicit: true, isReady: model !== null, isDangling: false };
-    }
-    return rpFallback(rpActiveProfile, true);
-  }
-  return rpFallback(rpActiveProfile, false);
-}
-
-function rpFallback(profile: ProviderProfileRecord | null, isDangling: boolean): CoauthorBindingResult {
-  const model = profile?.defaultModel ?? null;
-  return { profile, model, profileId: profile?.id ?? null, isExplicit: false, isReady: profile !== null && model !== null, isDangling };
+  const { coauthorProviderId, coauthorSettings, profiles } = input;
+  if (!coauthorProviderId) return { profile: null, model: null, profileId: null, isExplicit: false, isReady: false, isDangling: false };
+  const profile = profiles.find((candidate) => candidate.id === coauthorProviderId) ?? null;
+  if (!profile) return { profile: null, model: null, profileId: null, isExplicit: false, isReady: false, isDangling: true };
+  const model = coauthorSettings?.modelName ?? profile.defaultModel ?? null;
+  return { profile, model, profileId: profile.id, isExplicit: true, isReady: model !== null, isDangling: false };
 }
 
 /** Joins Co-Author favorites to neutral model metadata without excluding any row. */

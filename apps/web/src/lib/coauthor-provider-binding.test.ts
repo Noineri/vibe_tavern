@@ -122,7 +122,7 @@ describe("resolveCoauthorBinding", () => {
     expect(result.isReady).toBe(true);
   });
 
-  it("null coauthorProviderId → RP fallback (not dangling, not explicit; row ignored)", () => {
+  it("null coauthorProviderId fails closed instead of using the RP profile", () => {
     const rp = makeProfile({ id: "prof_rp", defaultModel: "gpt-4o", isActive: true });
     const result = resolveCoauthorBinding({
       coauthorProviderId: null,
@@ -130,14 +130,14 @@ describe("resolveCoauthorBinding", () => {
       profiles: [rp],
       rpActiveProfile: rp,
     });
-    expect(result.profile?.id).toBe("prof_rp");
-    expect(result.model).toBe("gpt-4o");
+    expect(result.profile).toBeNull();
+    expect(result.model).toBeNull();
     expect(result.isExplicit).toBe(false);
-    expect(result.isReady).toBe(true);
+    expect(result.isReady).toBe(false);
     expect(result.isDangling).toBe(false);
   });
 
-  it("dangling providerId (deleted profile) → RP fallback flagged as dangling", () => {
+  it("dangling providerId fails closed and remains flagged as dangling", () => {
     const rp = makeProfile({ id: "prof_rp", isActive: true });
     const result = resolveCoauthorBinding({
       coauthorProviderId: "prof_deleted",
@@ -145,8 +145,10 @@ describe("resolveCoauthorBinding", () => {
       profiles: [rp], // prof_deleted not in list
       rpActiveProfile: rp,
     });
-    expect(result.profile?.id).toBe("prof_rp");
+    expect(result.profile).toBeNull();
+    expect(result.model).toBeNull();
     expect(result.isExplicit).toBe(false);
+    expect(result.isReady).toBe(false);
     expect(result.isDangling).toBe(true);
   });
 
