@@ -1696,6 +1696,7 @@ export default interface Resources {
     "message_ai_editor_stale_source": "Source message no longer exists",
     "message_ai_editor_stale_title": "Chat updated",
     "message_ai_editor_title": "AI Editor",
+    "message_ai_editor_toggle_source": "Include variant #{n} in merge",
     "message_ai_editor_tooltip": "AI editor",
     "message_ai_editor_unstar_source": "Remove from sources",
     "message_send_failed": "Message sending failed.",

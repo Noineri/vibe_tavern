@@ -2144,6 +2144,7 @@
 	"message_ai_editor_sources_label": "Sources",
 	"message_ai_editor_sources_empty": "Star messages to use as merge sources",
 	"message_ai_editor_unstar_source": "Remove from sources",
+	"message_ai_editor_toggle_source": "Include variant #{n} in merge",
 	"message_ai_editor_merge_min_sources": "Select at least two sources to merge",
 	"message_ai_editor_instruction_label": "Instruction",
 	"message_ai_editor_instruction_placeholder": "Describe how to edit the message...",

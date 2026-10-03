@@ -15,10 +15,11 @@
  *   `expectedVariantId`. A 409 (selection changed or variant deleted mid-
  *   flight) shows a conflict state and NEVER overwrites; success closes.
  *
- * - Merge: star ≥ 2 immutable variants in the jump browser (MAE-53), then
- *   Save-as-new-variant via `createMessageVariantAction` carrying source IDs
- *   plus the runner's done-metadata provenance. Success clears that
- *   message's stars and closes.
+ * - Merge (MESSAGE_MERGE_FROM_TWO_VARIANTS): check ≥ 2 sources in the
+ *   in-modal checklist — the message's FULL variant list, starred ones
+ *   pre-checked; stars are orientation marks only (the checklist never
+ *   writes them). Save-as-new-variant via `createMessageVariantAction`
+ *   carrying the CHECKED source IDs + provenance; success keeps stars.
  *
  * NON-DESTRUCTIVE BY CONSTRUCTION: cancel, provider error, empty output,
  * modal close, and stale target never mutate canonical state. No action
@@ -27,8 +28,8 @@
  * The automatic-context block is informational only — it describes the RP
  * context the backend will assemble (character, persona, chat preset,
  * summary/lore presence), never editable here. Source rows adapt to mode:
- * a single read-only row for Edit; the removable starred set for Merge
- * (remove = unstar = `toggleStar`).
+ * a single read-only row for Edit; the full-variant checklist for Merge
+ * (selection is modal-local state — stars are never written here).
  */
 // allow: SIZE_OK — single-surface modal following the existing AiAssistantModal
 // (874 LOC) / ProviderModal (762 LOC) pattern. Owns ONE responsibility ("the
@@ -37,7 +38,7 @@
 // would create artificial components with no separate consumer and require
 // passing 10+ modal-state props (parameter-bloat smell).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ChatId, MessageId, MessageVariantId } from "@vibe-tavern/domain";
+import type { ChatId, MessageVariantId } from "@vibe-tavern/domain";
 
 import { Modal } from "../shared/Modal.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
@@ -59,6 +60,7 @@ import { lblCls } from "../../lib/field-tokens.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { useMessageAiEditorStore, type MessageAiEditorMode } from "../../stores/message-ai-editor-store.js";
+import { useMergeSourceChecklist } from "./use-merge-source-checklist.js";
 import { useMessageOrder } from "../../stores/chat-selectors.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useMacroContext } from "../../stores/chat-selectors.js";
@@ -99,9 +101,7 @@ export function MessageAiEditorModal() {
   const isMobile = useIsMobile();
 
   const target = useMessageAiEditorStore((s) => s.target);
-  const starredByMessage = useMessageAiEditorStore((s) => s.starredVariantIdsByMessage);
   const closeEditor = useMessageAiEditorStore((s) => s.closeEditor);
-  const toggleStar = useMessageAiEditorStore((s) => s.toggleStar);
 
   const messagesById = useSnapshotStore((s) => s.messagesById);
   const activeChat = useSnapshotStore((s) => s.activeChat);
@@ -147,10 +147,14 @@ export function MessageAiEditorModal() {
   const [aiMaxTokens, setAiMaxTokens] = useState<number | null>(null);
   const [recentMessageCount, setRecentMessageCount] = useState<number>(20);
 
+  // Merge checklist state: use-merge-source-checklist.ts (modal-local
+  // selection — stars are never written).
+  const { liveCheckedVariantIds, starredVariantIds, toggleChecked } = useMergeSourceChecklist({ activeMode, target, targetMessage, targetMessageId });
+
   // Seed activeMode when a new target opens. Per-plan: closing does NOT clear
   // stars (they survive close + Virtuoso unmount); only the successful merge
-  // save or explicit user action clears them. So we only re-seed on a fresh
-  // open, not on every render.
+  // save or explicit user action clears them. Checklist seeding lives in the
+  // use-merge-source-checklist hook (keyed on mode entry + target identity).
   useEffect(() => {
     if (target) {
       setActiveMode(target.requestedMode);
@@ -208,9 +212,8 @@ export function MessageAiEditorModal() {
     return selected ? selected.id : (targetMessage.variants[0]?.id ?? null);
   }, [targetMessage, editSourceVariantId]);
 
-  /** Edit: the single variant captured at open. Merge: the current starred
-   *  set (read live so remove updates immediately). Both null when the
-   *  target is absent. */
+  /** Edit: the single variant captured at open. Merge: the message's FULL
+   *  variant list in display order (the checklist). */
   const sourceRows: SourceRow[] = useMemo(() => {
     if (!targetMessage) return [];
     if (activeMode === "message_edit") {
@@ -225,14 +228,15 @@ export function MessageAiEditorModal() {
       const row = toSourceRow(targetMessage, annotateSourceVariantId);
       return row ? [row] : [];
     }
-    const starred = targetMessageId ? (starredByMessage[targetMessageId] ?? []) : [];
+    // Merge: every variant, display order; check state and star glyphs ride
+    // the rows (selection lives in the checklist hook).
     const rows: SourceRow[] = [];
-    for (const variantId of starred) {
-      const row = toSourceRow(targetMessage, variantId);
+    for (const variant of targetMessage.variants) {
+      const row = toSourceRow(targetMessage, variant.id);
       if (row) rows.push(row);
     }
     return rows;
-  }, [targetMessage, activeMode, editSourceVariantId, annotateSourceVariantId, targetMessageId, starredByMessage]);
+  }, [targetMessage, activeMode, editSourceVariantId, annotateSourceVariantId]);
 
   // TPE-19: the same macro context the chat view renders with.
   const macroContext = useMacroContext();
@@ -268,16 +272,14 @@ export function MessageAiEditorModal() {
     && !staleTarget
     && editBaselineText === null;
 
-  const mergeSourceCount = activeMode === "message_merge" ? sourceRows.length : 0;
+  const mergeSourceCount = activeMode === "message_merge" ? liveCheckedVariantIds.size : 0;
   const mergeBelowMinimum = activeMode === "message_merge" && mergeSourceCount < 2;
 
-  // Merge sources are starred in the variant jump browser, which only renders
-  // for messages with more than 6 variants (VariantControls `showJump`). Below
-  // that there is no way to star anything, so the merge option is hidden rather
-  // than offered with an impossible-to-satisfy empty source state.
-  const canMerge = (targetMessage?.variants.length ?? 0) > 6;
-  /** FS-4: Merge is forbidden on greeting targets even when the jump
-   *  browser exists (>6 variants) — parity with row-level
+  // Merge needs ≥ 2 sources to combine, and sources are CHECKED in the
+  // in-modal checklist (every variant listed, starred ones pre-checked) —
+  // the jump browser's >6 threshold is no longer load-bearing for merge.
+  const canMerge = (targetMessage?.variants.length ?? 0) >= 2;
+  /** FS-4: Merge is forbidden on greeting targets — parity with row-level
    *  `canAiEdit = !isGreeting` (owner: forbid it). The in-modal
    *  mode switcher is the only path that could offer it (annotate-entry on
    *  a greeting), so hiding the option closes the hole. */
@@ -286,11 +288,9 @@ export function MessageAiEditorModal() {
   // on a greeting is unreachable through the UI, but the store accepts it —
   // without the clamp the switcher would hold a value with no matching
   // segment (a dead modal). Falls back to Edit when the session captured a
-  // variant, else Annotate (always offered). Deliberately merge-on-greeting
-  // only: the pinned below-minimum merge state (≤6 variants) and the
-  // stale-source banner are separate contracts and stay untouched.
-  // Instruction/candidate are untouched: generation must be re-triggered
-  // explicitly, and nothing here mutates canonical state.
+  // variant, else Annotate (always offered). The below-minimum merge hint
+  // and the stale-source banner are separate contracts and stay untouched;
+  // nothing here mutates canonical state.
   useEffect(() => {
     if (target && activeMode === "message_merge" && isGreetingTarget) {
       setActiveMode(editSourceVariantId !== null ? "message_edit" : "message_tts_annotate");
@@ -302,7 +302,7 @@ export function MessageAiEditorModal() {
     ? (editSourceVariantId ? [editSourceVariantId] : [])
     : activeMode === "message_tts_annotate"
       ? (annotateSourceVariantId ? [annotateSourceVariantId] : [])
-      : (targetMessageId ? (starredByMessage[targetMessageId] ?? []) : []);
+      : Array.from(liveCheckedVariantIds);
   const previewBody: AiAssistantRequestBody | null =
     isOpen && targetChatId && targetMessageId && runner.providerId && previewSourceVariantIds.length > 0
       ? {
@@ -348,7 +348,7 @@ export function MessageAiEditorModal() {
         ? editSourceVariantId ? [editSourceVariantId] : []
         : activeMode === "message_tts_annotate"
           ? annotateSourceVariantId ? [annotateSourceVariantId] : []
-          : (starredByMessage[targetMessageId] ?? []);
+          : Array.from(liveCheckedVariantIds);
 
     if (activeMode === "message_merge" && sourceVariantIds.length < 2) return;
     if (activeMode === "message_edit" && sourceVariantIds.length !== 1) return;
@@ -379,7 +379,7 @@ export function MessageAiEditorModal() {
     });
   }, [
     canGenerate, target, targetMessageId, targetChatId, activeMode,
-    editSourceVariantId, annotateSourceVariantId, editBaselineText, starredByMessage, instruction, runner,
+    editSourceVariantId, annotateSourceVariantId, editBaselineText, liveCheckedVariantIds, instruction, runner,
   ]);
 
   // ─── Apply (edit): guarded PATCH with expectedVariantId ────────────
@@ -423,7 +423,7 @@ export function MessageAiEditorModal() {
     const candidate = runner.streamedOutput.trim();
     if (!candidate || runner.streaming || applying) return;
 
-    const sourceVariantIds = starredByMessage[targetMessageId] ?? [];
+    const sourceVariantIds = Array.from(liveCheckedVariantIds);
     if (sourceVariantIds.length < 2) return;
 
     setApplying(true);
@@ -451,7 +451,7 @@ export function MessageAiEditorModal() {
   }, [
     target, targetMessageId, targetChatId, mergeBelowMinimum,
     runner.streamedOutput, runner.streaming, applying, runner.doneMetadata,
-    starredByMessage, closeEditor,
+    liveCheckedVariantIds, closeEditor,
   ]);
 
   // ─── Save (annotate): write the side field, content stays pristine ──
@@ -652,6 +652,7 @@ export function MessageAiEditorModal() {
               value={activeMode}
               onChange={(v) => {
                 if (applying || runner.streaming) return;
+                // Landing on Merge seeds the checklist; switching away clears it.
                 setActiveMode(v as MessageAiEditorMode);
                 // Mode switch clears transient apply/conflict state but keeps
                 // the instruction and any generated candidate so the user can
@@ -666,12 +667,10 @@ export function MessageAiEditorModal() {
                 // source banner with dead buttons. Hide Edit for those
                 // sessions; edit/merge entries keep the full switch set.
                 ...(editSourceVariantId !== null ? [{ value: "message_edit", label: tDynamic("message_ai_editor_mode_edit") }] : []),
-                // Merge stars variants in the jump browser, which only renders
-                // for messages with > 6 variants — below that the option is
-                // hidden rather than offered with an impossible empty source
-                // state. FS-4: merge is additionally forbidden on greeting
-                // targets (canOfferMerge) — Annotate needs only the selected
-                // variant, so it stays available on every message.
+                // Merge sources are CHECKED in the in-modal checklist, so
+                // ≥ 2 variants is the floor (FS-4: greeting targets still
+                // excluded via canOfferMerge). Annotate needs only the
+                // selected variant, so it stays available on every message.
                 ...(canOfferMerge ? [{ value: "message_merge", label: tDynamic("message_ai_editor_mode_merge") }] : []),
                 { value: "message_tts_annotate", label: tDynamic("message_ai_editor_mode_annotate") },
               ]}
@@ -726,9 +725,9 @@ export function MessageAiEditorModal() {
                   <MessageAiEditorSourceList
                     rows={sourceRows}
                     mode={activeMode}
-                    // Non-null: staleTarget gates this branch; targetMessageId is set.
-                    messageId={targetMessageId as MessageId}
-                    onUnstar={toggleStar}
+                    checkedVariantIds={liveCheckedVariantIds}
+                    starredVariantIds={starredVariantIds}
+                    onToggleChecked={toggleChecked}
                     disabled={applying || runner.streaming}
                   />
                 )}

@@ -8,8 +8,8 @@
  * preview (NO diff), stop/error behavior, the non-destructive guarantees
  * (no action before Apply/Save; cancel/error/close/stale never mutate
  * canonical state), the 409 conflict path (modal stays open, no overwrite,
- * message untouched), and the two success paths (edit closes; merge clears
- * stars, appends/selects, and closes).
+ * message untouched), and the two success paths (edit closes; merge
+ * appends/selects, KEEPS stars, and closes).
  *
  * Tests render the FULL modal (not the runner hook) and drive it through
  * its real surface (instruction textarea, Generate, Apply, Save). All API
@@ -301,20 +301,32 @@ beforeEach(() => {
 });
 
 describe("MessageAiEditorModal — merge-option variant-count gate", () => {
-  it("≤6 variants: merge option hidden (no jump browser), but the toggle stays with edit+annotate", () => {
-    seedMessage(makeVariants(6));
+  it("1 variant: merge option hidden — nothing to combine; edit+annotate stay", () => {
+    seedMessage(makeVariants(1));
     seedBootstrap("prov", "model-a");
     openEditorForEdit(brandId<MessageVariantId>("var-0"));
-    renderModal();
-    // With ≤6 variants there is no variant jump browser, so there is no way
-    // to star merge sources — merge is hidden. Annotate needs only the
-    // selected variant, so the toggle (edit+annotate) remains available.
-    expect(screen.getByText("message_ai_editor_mode_edit")).toBeTruthy();
-    expect(screen.queryByText("message_ai_editor_mode_merge")).toBeNull();
-    expect(screen.getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+    const { getByText, queryByText } = renderModal();
+    // With a single variant there is nothing to merge — the option stays
+    // hidden. Annotate needs only the selected variant, so it remains.
+    expect(getByText("message_ai_editor_mode_edit")).toBeTruthy();
+    expect(queryByText("message_ai_editor_mode_merge")).toBeNull();
+    expect(getByText("message_ai_editor_mode_annotate")).toBeTruthy();
   });
 
-  it("shows the edit+merge+annotate mode toggle when the message has >6 variants", () => {
+  it("2 variants: merge offered (in-modal checklist — no jump browser needed)", () => {
+    // MESSAGE_MERGE_FROM_TWO_VARIANTS: sources are CHECKED in the modal, so
+    // two variants is the floor — the >6 jump-browser threshold no longer
+    // gates merge.
+    seedMessage(makeVariants(2));
+    seedBootstrap("prov", "model-a");
+    openEditorForEdit(brandId<MessageVariantId>("var-0"));
+    const { getByText } = renderModal();
+    expect(getByText("message_ai_editor_mode_edit")).toBeTruthy();
+    expect(getByText("message_ai_editor_mode_merge")).toBeTruthy();
+    expect(getByText("message_ai_editor_mode_annotate")).toBeTruthy();
+  });
+
+  it("shows the full edit+merge+annotate mode toggle with many variants", () => {
     seedMessage(makeVariants(7));
     seedBootstrap("prov", "model-a");
     openEditorForEdit(brandId<MessageVariantId>("var-0"));
@@ -351,6 +363,16 @@ describe("MessageAiEditorModal — closed state", () => {
   });
 });
 
+/** The merge checklist row for display index N (role=checkbox, whole row
+ *  is the toggle hit area). Merge rows only — edit/annotate rows have no
+ *  checkbox role. */
+function mergeRow(q: { getByText: (text: string) => HTMLElement }, displayIndex: number): HTMLElement {
+  const header = q.getByText(`#${displayIndex}`);
+  const row = header.closest('[role="checkbox"]');
+  if (!(row instanceof HTMLElement)) throw new Error(`merge row #${displayIndex} not found`);
+  return row;
+}
+
 describe("MessageAiEditorModal — source construction", () => {
   beforeEach(() => {
     useProviderDataStore.setState({
@@ -377,7 +399,7 @@ describe("MessageAiEditorModal — source construction", () => {
     expect(screen.queryByLabelText("message_ai_editor_unstar_source")).toBeNull();
   });
 
-  it("merge mode lists every starred variant as a removable source row", () => {
+  it("merge mode lists EVERY variant as a checkable row; starred ones pre-checked with a glyph", () => {
     seedMessage([
       { id: VA, messageId: MID, variantIndex: 0, content: "alpha", isSelected: true, finishReason: "stop" },
       { id: VB, messageId: MID, variantIndex: 1, content: "beta", isSelected: false, finishReason: "stop" },
@@ -387,30 +409,43 @@ describe("MessageAiEditorModal — source construction", () => {
     useMessageAiEditorStore.getState().toggleStar(MID, VC);
     openEditorForMerge();
 
-    renderModal();
+    const { getByText, queryByLabelText } = renderModal();
 
-    // Both starred rows render; the middle (un-starred) one does not.
-    expect(screen.getByText(/#1/)).toBeTruthy();
-    expect(screen.queryByText(/#2/)).toBeNull();
-    expect(screen.getByText(/#3/)).toBeTruthy();
-    // Merge rows have a remove (unstar) button each.
-    expect(screen.getAllByLabelText("message_ai_editor_unstar_source").length).toBe(2);
+    // The full variant list renders — including the un-starred middle one.
+    const q = { getByText };
+    const r1 = mergeRow(q, 1);
+    const r2 = mergeRow(q, 2);
+    const r3 = mergeRow(q, 3);
+    // Starred variants arrive pre-checked; the un-starred one does not.
+    expect(r1.getAttribute("aria-checked")).toBe("true");
+    expect(r2.getAttribute("aria-checked")).toBe("false");
+    expect(r3.getAttribute("aria-checked")).toBe("true");
+    // Orientation glyphs on starred rows only.
+    expect(r1.querySelector('[data-testid="merge-source-star"]')).toBeTruthy();
+    expect(r2.querySelector('[data-testid="merge-source-star"]')).toBeNull();
+    expect(r3.querySelector('[data-testid="merge-source-star"]')).toBeTruthy();
+    // The unstar button is gone — the checklist never writes stars.
+    expect(queryByLabelText("message_ai_editor_unstar_source")).toBeNull();
   });
 
-  it("merge mode removes a source row via the unstar button (toggleStar)", () => {
+  it("unchecking a row is modal-local: it never unstars the variant", () => {
     seedMessage([
       { id: VA, messageId: MID, variantIndex: 0, content: "alpha", isSelected: true, finishReason: "stop" },
       { id: VB, messageId: MID, variantIndex: 1, content: "beta", isSelected: false, finishReason: "stop" },
+      { id: VC, messageId: MID, variantIndex: 2, content: "gamma", isSelected: false, finishReason: "stop" },
     ] as AppMessage["variants"], 0);
     useMessageAiEditorStore.getState().toggleStar(MID, VA);
-    useMessageAiEditorStore.getState().toggleStar(MID, VB);
+    useMessageAiEditorStore.getState().toggleStar(MID, VC);
     openEditorForMerge();
 
-    renderModal();
-    const removeBtns = screen.getAllByLabelText("message_ai_editor_unstar_source");
-    act(() => { fireEvent.click(removeBtns[0]!); });
+    const { getByText } = renderModal();
+    const r1 = mergeRow({ getByText }, 1);
+    act(() => { fireEvent.click(r1); });
 
-    expect(useMessageAiEditorStore.getState().starredVariantIdsByMessage[MID]).toEqual([VB]);
+    // Row unchecked — but the star (and the glyph) stays exactly as it was.
+    expect(r1.getAttribute("aria-checked")).toBe("false");
+    expect(r1.querySelector('[data-testid="merge-source-star"]')).toBeTruthy();
+    expect(useMessageAiEditorStore.getState().starredVariantIdsByMessage[MID]).toEqual([VA, VC]);
   });
 });
 
@@ -423,18 +458,37 @@ describe("MessageAiEditorModal — merge minimum sources", () => {
     seedBootstrap("prov-1", "model-a");
   });
 
-  it("merge mode with zero stars surfaces the below-minimum hint and disables Generate", () => {
+  it("no stars: nothing pre-checked — Merge blocked until two rows are checked", async () => {
     seedMessage([
       { id: VA, messageId: MID, variantIndex: 0, content: "alpha", isSelected: true, finishReason: "stop" },
+      { id: VB, messageId: MID, variantIndex: 1, content: "beta", isSelected: false, finishReason: "stop" },
     ] as AppMessage["variants"], 0);
     openEditorForMerge();
 
-    renderModal();
+    const { getByText, queryByText } = renderModal();
 
-    expect(screen.getByText("message_ai_editor_merge_min_sources")).toBeTruthy();
-    // Generate button is disabled (it has the disabled attribute).
-    const generateBtn = screen.getByText("message_ai_editor_generate");
+    // Nothing checked: the below-minimum hint shows and Generate is blocked.
+    expect(getByText("message_ai_editor_merge_min_sources")).toBeTruthy();
+    const generateBtn = getByText("message_ai_editor_generate");
     expect((generateBtn as HTMLButtonElement).disabled).toBe(true);
+
+    // One checked row is still below the minimum.
+    const q = { getByText };
+    act(() => { fireEvent.click(mergeRow(q, 1)); });
+    expect(getByText("message_ai_editor_merge_min_sources")).toBeTruthy();
+    expect((generateBtn as HTMLButtonElement).disabled).toBe(true);
+
+    // Second row unlocks the merge; the run carries exactly the checked ids.
+    act(() => { fireEvent.click(mergeRow(q, 2)); });
+    expect(queryByText("message_ai_editor_merge_min_sources")).toBeNull();
+    await generateWithPrompt("weave both");
+
+    await waitFor(() => expect(mockState.requests).toHaveLength(1));
+    expect(mockState.requests[0]).toMatchObject({
+      mode: "message_merge",
+      targetMessageId: MID,
+      sourceVariantIds: [VA, VB],
+    });
   });
 
   it("merge mode with one star still surfaces the below-minimum hint", () => {
@@ -503,6 +557,58 @@ describe("MessageAiEditorModal — canonical request IDs", () => {
       sourceVariantIds: [VA, VC],
       providerProfileId: "prov-1",
     });
+  });
+
+  it("merge: emits exactly the CHECKED ids — an unchecked starred source drops out", async () => {
+    seedMessage([
+      { id: VA, messageId: MID, variantIndex: 0, content: "alpha", isSelected: true, finishReason: "stop" },
+      { id: VB, messageId: MID, variantIndex: 1, content: "beta", isSelected: false, finishReason: "stop" },
+      { id: VC, messageId: MID, variantIndex: 2, content: "gamma", isSelected: false, finishReason: "stop" },
+    ] as AppMessage["variants"], 0);
+    useMessageAiEditorStore.getState().toggleStar(MID, VA);
+    useMessageAiEditorStore.getState().toggleStar(MID, VB);
+    useMessageAiEditorStore.getState().toggleStar(MID, VC);
+    openEditorForMerge();
+
+    const { getByText } = renderModal();
+    // All three pre-checked; uncheck #3 before running.
+    act(() => { fireEvent.click(mergeRow({ getByText }, 3)); });
+    await generateWithPrompt("combine best beats");
+
+    await waitFor(() => expect(mockState.requests).toHaveLength(1));
+    expect(mockState.requests[0]).toMatchObject({
+      mode: "message_merge",
+      targetMessageId: MID,
+      // Display order, exactly the checked set — #3 is out despite its star.
+      sourceVariantIds: [VA, VB],
+    });
+  });
+
+  it("a checked variant deleted mid-session drops out of the selection (run still guarded)", () => {
+    seedMessage([
+      { id: VA, messageId: MID, variantIndex: 0, content: "alpha", isSelected: true, finishReason: "stop" },
+      { id: VB, messageId: MID, variantIndex: 1, content: "beta", isSelected: false, finishReason: "stop" },
+      { id: VC, messageId: MID, variantIndex: 2, content: "gamma", isSelected: false, finishReason: "stop" },
+    ] as AppMessage["variants"], 0);
+    useMessageAiEditorStore.getState().toggleStar(MID, VA);
+    useMessageAiEditorStore.getState().toggleStar(MID, VB);
+    openEditorForMerge();
+
+    const { getByText, queryByText } = renderModal();
+    // Two pre-checked sources: not below the minimum.
+    expect(queryByText("message_ai_editor_merge_min_sources")).toBeNull();
+
+    // Both checked variants vanish mid-session (snapshot compaction) — the
+    // live filter drops them and the below-minimum guard re-arms.
+    act(() => {
+      seedMessage([
+        { id: VC, messageId: MID, variantIndex: 0, content: "gamma", isSelected: true, finishReason: "stop" },
+      ] as AppMessage["variants"], 0);
+    });
+
+    expect(getByText("message_ai_editor_merge_min_sources")).toBeTruthy();
+    const generateBtn = getByText("message_ai_editor_generate");
+    expect((generateBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("requires a non-empty instruction: empty/whitespace prompt does not emit a request", async () => {

@@ -2166,6 +2166,7 @@
 	"message_ai_editor_sources_label": "Источники",
 	"message_ai_editor_sources_empty": "Отметьте сообщения звёздами, чтобы использовать их как источники для объединения",
 	"message_ai_editor_unstar_source": "Убрать из источников",
+	"message_ai_editor_toggle_source": "Включить вариант #{n} в объединение",
 	"message_ai_editor_merge_min_sources": "Выберите минимум два источника для объединения",
 	"message_ai_editor_instruction_label": "Инструкция",
 	"message_ai_editor_instruction_placeholder": "Опишите, как изменить сообщение...",
