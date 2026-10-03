@@ -251,6 +251,8 @@ export const LORE_ENTRY_POSITION = {
   // SillyTavern World Info positions (8)
   beforeChar: "before_char",
   afterChar: "after_char",
+  beforePersona: "before_persona",
+  afterPersona: "after_persona",
   beforeExamples: "before_examples",
   afterExamples: "after_examples",
   topAn: "top_an",
