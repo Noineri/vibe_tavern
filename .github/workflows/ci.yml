@@ -35,7 +35,8 @@ concurrency:
 #     filesystem/Glob semantics differ there. What Windows skips, and why, is
 #     declared in scripts/test.ts (`skipOnWindows`) and in the two
 #     `skipIf(process.platform === "win32")` gates in scripts/*.test.ts —
-#     not here, so a dev running `bun run test` locally sees the same thing CI does.
+#     not here. `skipOnWindows` applies only when CI is truthy, so local Windows
+#     `bun run test` runs the web suite while Windows CI skips it.
 #   - The platform builds fan out after typecheck passes.
 # Nothing is published; the docker job only loads locally to prove the image builds.
 # Build artifacts are intentionally NOT uploaded — CI verifies compilation only,

@@ -32,6 +32,7 @@ import {
 	resolveActivatedEntries,
 	type LoreActivationState,
 } from "./lore-activation-engine.js";
+import { selectIncludedChatSummaries } from "./chat-summary-selection.js";
 import { executeScripts } from "../scripts-engine/script-sandbox.js";
 import { RegexHookService } from "../regex/regex-hook-service.js";
 
@@ -277,6 +278,11 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		const branch = await this.stores.chats.getBranch(input.branchId);
 		if (!branch || branch.chatId !== chat.id) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
 		const activationState = branch.loreActivationState as LoreActivationState;
+		// Keep activation aligned with assembly's single summary selection: only
+		// snapshots injected into the chat-summary slot become scan text.
+		const chatSummary = selectIncludedChatSummaries(
+			await this.stores.chatSummaries.listByChatBranch(chat.id, branch.id),
+		).map((summary) => summary.content).join("\n\n") || undefined;
 
 		// 6. Turn clock: the full branch count when the assembly provides it; the
 		// scan count is only a fallback for direct callers (sticky/cooldown
@@ -313,6 +319,9 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 			characterNote: character.depthPrompt ?? undefined,
 			scenario: character.defaultScenario ?? undefined,
 			creatorNotes: character.creatorNotes ?? undefined,
+			characterAltGreetings: character.alternateGreetings?.join("\n\n") || undefined,
+			chatDynamicPrompt: chat.dynamicPrompt || undefined,
+			chatSummary,
 			authorsNote: input.authorsNote,
 			summaries: input.summaries,
 			quietPrompt: input.quietPrompt,

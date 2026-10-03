@@ -314,6 +314,23 @@ describe("exportLorebookToSt (SillyTavern serializer)", () => {
     }
   });
 
+  test("maps persona-relative positions to the closest SillyTavern anchors", () => {
+    const exported = exportLorebookToSt(
+      baseLorebook(),
+      [
+        baseEntry({ position: "before_persona", keys: ["before"] }),
+        baseEntry({ position: "after_persona", keys: ["after"] }),
+      ],
+    );
+    const stEntries = exported.entries as Record<string, Record<string, unknown>>;
+
+    expect(stEntries["0"].position).toBe(0);
+    expect(stEntries["1"].position).toBe(1);
+
+    const reimported = importStLorebookJson(exported);
+    expect(reimported.entries.map((entry) => entry.position)).toEqual(["before_char", "after_char"]);
+  });
+
   test("position table is bidirectional: import(st=N) → export → st=N (no import/export drift)", () => {
     // The whole point of colocating import + export on one shared
     // LORE_ENTRY_POSITION_TABLE: a position round-trips through both directions

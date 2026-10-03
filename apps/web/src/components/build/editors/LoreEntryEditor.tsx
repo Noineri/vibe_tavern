@@ -21,7 +21,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { useFormContext, useController, type FieldPath, type UseControllerReturn } from "react-hook-form";
-import { LORE_MATCH_SOURCE } from "@vibe-tavern/domain";
+import { LORE_MATCH_SOURCE, type LoreMatchSource } from "@vibe-tavern/domain";
 import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FieldLabel } from "../fields/field-label.js";
@@ -50,8 +50,8 @@ import { CharacterFilterPicker } from "./character-filter-picker.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-// Match-source order is derived directly from the domain source of truth.
-// Every non-chat chip reuses the exact i18n key of the field it scans.
+// Every domain source is accounted for here. Sources without a localized label
+// remain unavailable in the editor until their label is introduced.
 const MATCH_SOURCE_LABEL_KEY = {
   [LORE_MATCH_SOURCE.chatMessages]: "match_src_chat_messages",
   [LORE_MATCH_SOURCE.characterDesc]: "char_desc_label",
@@ -62,7 +62,10 @@ const MATCH_SOURCE_LABEL_KEY = {
   [LORE_MATCH_SOURCE.creatorNotes]: "creator_notes",
   [LORE_MATCH_SOURCE.authorsNote]: "authors_note_label",
   [LORE_MATCH_SOURCE.summaries]: "memory_tab_summary",
-} as const;
+  [LORE_MATCH_SOURCE.characterAltGreetings]: "match_src_character_alt_greetings",
+  [LORE_MATCH_SOURCE.chatDynamicPrompt]: "match_src_chat_dynamic_prompt",
+  [LORE_MATCH_SOURCE.chatSummary]: "match_src_chat_summary",
+} as const satisfies Record<LoreMatchSource, string | null>;
 
 interface LoreEntryEditorProps {
   entryId: string;
@@ -423,38 +426,50 @@ export function LoreEntryEditor({
                 </div>
               </CustomTooltip>
 
-              <div
-                className={cn(
-                  "grid gap-1.5 mb-4",
-                  isMobile ? "grid-cols-2" : "grid-cols-4"
-                )}
-              >
+              <div className="flex flex-col gap-1.5 mb-4">
                 {(
                   [
-                    "before_char",
-                    "after_char",
-                    "before_examples",
-                    "after_examples",
-                    "top_an",
-                    "bottom_an",
-                    "at_depth",
-                    "outlet",
+                    ["lore_position_anchor_char", "before_char", "after_char"],
+                    ["lore_position_anchor_persona", "before_persona", "after_persona"],
+                    ["lore_position_anchor_examples", "before_examples", "after_examples"],
+                    ["lore_position_anchor_authors_note", "top_an", "bottom_an"],
                   ] as const
-                ).map((pos) => (
-                  <CustomTooltip key={pos} content={tDynamic("pos_" + pos + "_hint")} side="top">
-                    <button
-                      type="button"
-                      onClick={() => form.setValue("position", pos, { shouldDirty: true })}
-                      className={cn(
-                        "rounded-md border px-2 py-1.5 text-[11px] font-ui font-medium transition-all",
-                        position === pos
-                          ? "border-accent bg-accent-dim text-accent-t"
-                          : "border-border bg-s3 text-t2 hover:border-t3 hover:text-t1"
-                      )}
-                    >
-                      {tDynamic("pos_" + pos)}
-                    </button>
-                  </CustomTooltip>
+                ).map(([anchorLabel, before, after]) => (
+                  <div key={anchorLabel} className="grid grid-cols-3 gap-1.5">
+                    <div className="flex items-center text-[calc(var(--ui-fs)-2px)] text-t2">
+                      {tDynamic(anchorLabel)}
+                    </div>
+                    {[before, after].map((pos) => (
+                      <CustomTooltip key={pos} content={tDynamic("pos_" + pos + "_hint")} side="top">
+                        <button
+                          type="button"
+                          onClick={() => form.setValue("position", pos, { shouldDirty: true })}
+                          className={cn(
+                            "rounded-md border px-2 py-1.5 text-[calc(var(--ui-fs)-3px)] font-ui font-medium transition-all",
+                            position === pos ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t2 hover:border-t3 hover:text-t1",
+                          )}
+                        >
+                          {tDynamic("pos_" + pos)}
+                        </button>
+                      </CustomTooltip>
+                    ))}
+                  </div>
+                ))}
+                {(["at_depth", "outlet"] as const).map((pos, index) => (
+                  <div key={pos} className={cn(index === 0 && "border-t border-border/50 pt-1.5")}>
+                    <CustomTooltip key={pos} content={tDynamic("pos_" + pos + "_hint")} side="top">
+                      <button
+                        type="button"
+                        onClick={() => form.setValue("position", pos, { shouldDirty: true })}
+                        className={cn(
+                          "rounded-md border px-2 py-1.5 text-[calc(var(--ui-fs)-3px)] font-ui font-medium transition-all",
+                          position === pos ? "border-accent bg-accent-dim text-accent-t" : "border-border bg-s3 text-t2 hover:border-t3 hover:text-t1",
+                        )}
+                      >
+                        {tDynamic("pos_" + pos)}
+                      </button>
+                    </CustomTooltip>
+                  </div>
                 ))}
               </div>
 
@@ -491,13 +506,16 @@ export function LoreEntryEditor({
                 {(field) => (
                   <ToggleChips
                     selected={field.value}
-                    options={Object.values(LORE_MATCH_SOURCE).map((source) => ({
-                      value: source,
-                      label: t(MATCH_SOURCE_LABEL_KEY[source]),
-                      tooltip: source === LORE_MATCH_SOURCE.creatorNotes
-                        ? t("lore_matchsources_creator_notes_hint")
-                        : undefined,
-                    }))}
+                    options={Object.entries(MATCH_SOURCE_LABEL_KEY).flatMap(([source, label]) => {
+                      if (label == null) return [];
+                      return [{
+                        value: source,
+                        label: t(label),
+                        tooltip: source === LORE_MATCH_SOURCE.creatorNotes
+                          ? t("lore_matchsources_creator_notes_hint")
+                          : undefined,
+                      }];
+                    })}
                     onChange={field.onChange}
                     minSelected={1}
                   />

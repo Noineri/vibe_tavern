@@ -23,6 +23,8 @@ describe("buildLoreLayers", () => {
         lore("bottom_an"),
         lore("before_examples"),
         lore("after_examples"),
+        lore("before_persona"),
+        lore("after_persona"),
         lore("at_depth", { depth: 3 }),
         lore("outlet"),
         lore("before_prompt"),
@@ -40,6 +42,10 @@ describe("buildLoreLayers", () => {
     expect(byId.get("lore_lore_bottom_an")?.subPosition).toBe(60.1);
     expect(byId.get("lore_lore_before_examples")?.subPosition).toBe(89.9);
     expect(byId.get("lore_lore_after_examples")?.subPosition).toBe(90.1);
+    expect(byId.get("lore_lore_before_persona")?.position).toBe("in_prompt");
+    expect(byId.get("lore_lore_before_persona")?.subPosition).toBe(19.9);
+    expect(byId.get("lore_lore_after_persona")?.position).toBe("in_prompt");
+    expect(byId.get("lore_lore_after_persona")?.subPosition).toBe(20.1);
     expect(byId.get("lore_lore_at_depth")?.injectionDepth).toBe(3);
     expect(byId.get("lore_lore_outlet")?.position).toBe("hidden_system");
     expect(byId.get("lore_lore_before_prompt")?.position).toBe("before_prompt");

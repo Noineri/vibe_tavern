@@ -30,6 +30,7 @@ import { storeAttachmentToReportSnapshot } from "../interactive/experience-repor
 import { isRecordSchemaCompatible } from "../insights/scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
+import { buildChatSummaryContext } from "./chat-summary-selection.js";
 
 export interface PromptAssemblyResolver {
   getCharacter(
@@ -517,14 +518,7 @@ export class PromptAssemblyService {
     const branchSummaries = input.summary
       ? []
       : await this.stores.chatSummaries.listByChatBranch(chat.id, branchId);
-    const enabledSummaries = branchSummaries.filter((summary) => summary.includeInContext && summary.content.trim());
-    const excludedRanges = branchSummaries
-      .filter((summary) => summary.includeInContext && summary.excludeSummarized && summary.summarizedTo >= summary.summarizedFrom)
-      .map((summary) => ({ from: summary.summarizedFrom, to: summary.summarizedTo }));
-    const isInExcludedSummaryRange = (position: number) => {
-      const oneBasedPosition = position + 1;
-      return excludedRanges.some((range) => oneBasedPosition >= range.from && oneBasedPosition <= range.to);
-    };
+    const { enabledSummaries, isInExcludedSummaryRange } = buildChatSummaryContext(branchSummaries);
     const filteredMessages = branchMessages.filter((message) =>
       !excludedMessageIds.has(message.id as MessageId) && !isInExcludedSummaryRange(message.position),
     );
