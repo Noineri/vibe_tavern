@@ -248,6 +248,24 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     expect(form.getValues("matchSources")).toEqual(["chat_messages"]);
   });
 
+  it("groups positions by anchor and binds the selected position to the form", () => {
+    const { form, getByText } = renderEditor(makeEntry());
+    fireEvent.click(getByText(/lore_advanced_settings/));
+    expect(getByText("lore_position_anchor_char")).toBeTruthy();
+    expect(getByText("lore_position_anchor_persona")).toBeTruthy();
+    expect(getByText("lore_position_anchor_examples")).toBeTruthy();
+    expect(getByText("lore_position_anchor_authors_note")).toBeTruthy();
+    expect(getByText("pos_at_depth")).toBeTruthy();
+    expect(getByText("pos_outlet")).toBeTruthy();
+    fireEvent.click(getByText("pos_after_persona"));
+    expect(form.getValues("position")).toBe("after_persona");
+    expect(form.formState.isDirty).toBe(true);
+    fireEvent.click(getByText("pos_at_depth"));
+    expect(getByText("lore_depth_label")).toBeTruthy();
+    fireEvent.click(getByText("pos_outlet"));
+    expect(() => getByText("lore_depth_label")).toThrow();
+  });
+
   it("constant checkbox binds via ControlledField", () => {
     const { form, getByText } = renderEditor(makeEntry({ constant: false }));
     fireEvent.click(getByText("lore_constant"));
