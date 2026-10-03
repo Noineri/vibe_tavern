@@ -261,12 +261,56 @@ jobs:
           test -s "$SECCOMP_SHIM"
           unzip -p "$APK" assets/payload/web/index.html > "$WEB_INDEX"
           test -s "$WEB_INDEX"
+      # Play Protect flags the old release certificate's reputation as
+      # "harmful" regardless of the code (AD-027). The Gradle-signed APK is
+      # re-signed with the new key through an APK Signature Scheme v3 lineage
+      # proven by the old key, so Android keeps accepting it as an in-place
+      # update. The lineage is rebuilt on every release run and never stored.
+      - name: Rotate APK signing key
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_NEXT_KEYSTORE_BASE64: ${{ secrets.ANDROID_NEXT_KEYSTORE_BASE64 }}
+          ANDROID_NEXT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_NEXT_KEYSTORE_PASSWORD }}
+          ANDROID_NEXT_KEY_ALIAS: ${{ secrets.ANDROID_NEXT_KEY_ALIAS }}
+          ANDROID_NEXT_KEY_PASSWORD: ${{ secrets.ANDROID_NEXT_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for variable in ANDROID_NEXT_KEYSTORE_BASE64 ANDROID_NEXT_KEYSTORE_PASSWORD ANDROID_NEXT_KEY_ALIAS ANDROID_NEXT_KEY_PASSWORD; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::Missing required Android signing secret: ${variable}"
+              exit 1
+            fi
+          done
+          NEXT_KEYSTORE_PATH="$RUNNER_TEMP/vibe-tavern-release-next.jks"
+          printf '%s' "$ANDROID_NEXT_KEYSTORE_BASE64" | base64 --decode > "$NEXT_KEYSTORE_PATH"
+          test -s "$NEXT_KEYSTORE_PATH"
+          chmod 600 "$NEXT_KEYSTORE_PATH"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          OLD=(--ks "$ANDROID_KEYSTORE_PATH" --ks-key-alias "$ANDROID_KEY_ALIAS" --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD)
+          NEW=(--ks "$NEXT_KEYSTORE_PATH" --ks-key-alias "$ANDROID_NEXT_KEY_ALIAS" --ks-pass env:ANDROID_NEXT_KEYSTORE_PASSWORD --key-pass env:ANDROID_NEXT_KEY_PASSWORD)
+          "$APKSIGNER" rotate --out "$RUNNER_TEMP/lineage.bin" --old-signer "${OLD[@]}" --new-signer "${NEW[@]}"
+          "$APKSIGNER" sign "${OLD[@]}" --next-signer "${NEW[@]}" \
+            --lineage "$RUNNER_TEMP/lineage.bin" --rotation-min-sdk-version 28 \
+            --out "$RUNNER_TEMP/app-release-rotated.apk" \
+            mobile/android/app/build/outputs/apk/release/app-release.apk
+          mv "$RUNNER_TEMP/app-release-rotated.apk" mobile/android/app/build/outputs/apk/release/app-release.apk
       - name: Verify APK signature
         run: |
           set -euo pipefail
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs mobile/android/app/build/outputs/apk/release/app-release.apk
+          APK="mobile/android/app/build/outputs/apk/release/app-release.apk"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apk-verify.txt"
+          # minSdk is 29, so the rotated APK is v3-only: v1/v2 false is expected.
+          grep -Fq "Verified using v3 scheme (APK Signature Scheme v3): true" "$RUNNER_TEMP/apk-verify.txt"
+          # The lineage must carry exactly two signers: the old key (proof)
+          # and the new key (current signer).
+          "$APKSIGNER" lineage --in "$APK" --print-certs | tee "$RUNNER_TEMP/apk-lineage.txt"
+          grep -Fq "Signer #2 in lineage certificate DN:" "$RUNNER_TEMP/apk-lineage.txt"
+          ! grep -Fq "Signer #3 in lineage certificate DN:" "$RUNNER_TEMP/apk-lineage.txt"
       - name: Rename APK
         run: |
           mv mobile/android/app/build/outputs/apk/release/app-release.apk \
