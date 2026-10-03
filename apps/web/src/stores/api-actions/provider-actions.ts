@@ -1,6 +1,7 @@
-import { activateProviderProfile, addFavoriteProviderModel, deleteProviderProfile, fetchModelsByEndpoint, fetchProviderProfile, fetchProviderProfileModels, getProviderModelSettings, listFavoriteProviderModels, listProviderModelSettings, listProviderProfiles, removeFavoriteProviderModel, saveProviderProfile, testProfileChat, testProviderChat, testProviderDraft, testProviderProfile, updateProviderProfile, upsertProviderModelSettings, reorderProviderProfiles } from "../../api/provider-api.js";
-import type { FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderProfileRecord, TestChatResponse } from "../../api/types.js";
+import { activateProviderProfile, addFavoriteProviderModel, deleteProviderProfile, fetchModelsByEndpoint, fetchProviderProfile, fetchProviderProfileModels, getCoauthorConnectionSettings, getProviderModelSettings, listFavoriteProviderModels, listProviderModelSettings, listProviderProfiles, removeFavoriteProviderModel, saveProviderProfile, testProfileChat, testProviderChat, testProviderDraft, testProviderProfile, updateProviderProfile, upsertCoauthorConnectionSettings, upsertProviderModelSettings, reorderProviderProfiles } from "../../api/provider-api.js";
+import type { CoauthorConnectionSettingsRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderProfileRecord, TestChatResponse } from "../../api/types.js";
 import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, ProviderProbeResponse, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { UpsertCoauthorConnectionSettingsValue } from "@vibe-tavern/api-contracts";
 import { useProviderDataStore } from "../provider-data-store.js";
 
 // ---------------------------------------------------------------------------
@@ -100,6 +101,33 @@ export async function upsertProviderModelSettingsAction(
   settings: ModelSettingsOverlay,
 ): Promise<ProviderModelSettingsRecord> {
   return await upsertProviderModelSettings(profileId, modelId, settings);
+}
+
+// ---------------------------------------------------------------------------
+// Co-Author per-connection generation set (CG-1) Actions
+// ---------------------------------------------------------------------------
+
+/** Load the connection's Co-Author row into the store (once per profile — the
+ *  cache makes the binding hook's repeat mounts free). null = the connection
+ *  has no saved set (Co-Author defaults apply); callers that need to re-write
+ *  the row use the returned record as the read side of a read-modify-write. */
+export async function loadCoauthorConnectionSettingsAction(profileId: string): Promise<CoauthorConnectionSettingsRecord | null> {
+  const cached = useProviderDataStore.getState().coauthorSettingsByProfile[profileId];
+  if (cached !== undefined) return cached;
+  const record = await getCoauthorConnectionSettings(profileId);
+  useProviderDataStore.getState().setCoauthorSettings(profileId, record);
+  return record;
+}
+
+/** PUT the connection's whole Co-Author set (the route replaces the record)
+ *  and cache the result so binding subscribers see the new model immediately. */
+export async function upsertCoauthorConnectionSettingsAction(
+  profileId: string,
+  body: UpsertCoauthorConnectionSettingsValue,
+): Promise<CoauthorConnectionSettingsRecord> {
+  const record = await upsertCoauthorConnectionSettings(profileId, body);
+  useProviderDataStore.getState().setCoauthorSettings(profileId, record);
+  return record;
 }
 
 // ---------------------------------------------------------------------------

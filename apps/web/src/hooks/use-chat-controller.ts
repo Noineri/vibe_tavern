@@ -13,8 +13,7 @@ import { StreamingReveal } from "../lib/streaming-reveal.js";
 import { showProviderErrorToast } from "../lib/provider-error-toast.js";
 import { restoreDraftAfterSendError, settleFailedSendDraft } from "../lib/failed-send-draft.js";
 import { useSnapshotStore } from "../stores/snapshot-store.js";
-import { useBootstrapStore } from "../stores/api-actions/bootstrap-actions.js";
-import { resolveCoauthorBinding } from "../lib/coauthor-provider-binding.js";
+import { useCoauthorBindingState } from "./use-coauthor-provider-binding.js";
 import { notifyUserTurnSettled } from "../lib/star-prompt-trigger.js";
 import { useTraceHistoryStore } from "../stores/trace-history-store.js";
 import { useCoauthorTurnStore } from "../stores/coauthor-turn-store.js";
@@ -252,16 +251,11 @@ export function useChatController(): ChatControllerActions {
     [providerProfiles],
   );
 
-  // Co-Author binding — used for the send gate when the active chat is in
-  // coauthor mode. resolveCoauthorBinding falls back to the RP active profile
-  // when no explicit Co-Author pair is saved, so coauthor readiness covers both.
-  const coauthorProviderId = useBootstrapStore((s) => s.data?.uiSettings?.coauthorProviderId ?? null);
-  const coauthorModelName = useBootstrapStore((s) => s.data?.uiSettings?.coauthorModelName ?? null);
+  // Co-Author binding — the send gate when the active chat is in coauthor
+  // mode. Resolution (and its CG-2 connection-row model fallback) lives in
+  // useCoauthorBindingState — the single derivation shared with the input UI.
   const chatMode = useSnapshotStore((s) => s.activeChat?.mode);
-  const coauthorBinding = useMemo(
-    () => resolveCoauthorBinding({ coauthorProviderId, coauthorModelName, profiles: providerProfiles, rpActiveProfile: activeProfile }),
-    [coauthorProviderId, coauthorModelName, providerProfiles, activeProfile],
-  );
+  const coauthorBinding = useCoauthorBindingState();
 
   const canSendViaActiveProfile = chatMode === "coauthor"
     ? coauthorBinding.isReady

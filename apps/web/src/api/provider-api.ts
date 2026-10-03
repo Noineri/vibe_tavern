@@ -1,4 +1,5 @@
-import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderModelOption, TestChatResponse } from "./types.js";
+import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderModelOption, TestChatResponse, CoauthorConnectionSettingsRecord } from "./types.js";
+import type { UpsertCoauthorConnectionSettingsValue } from "@vibe-tavern/api-contracts";
 import type { CoauthorTransport, GenerationMode, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay, ProviderProxyMode } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
@@ -195,6 +196,27 @@ export async function getProviderModelSettings(providerProfileId: string, modelI
 
 export async function upsertProviderModelSettings(providerProfileId: string, modelId: string, settings: ModelSettingsOverlay): Promise<ProviderModelSettingsRecord> {
   const response = await client.api.providers[":providerId"]["model-settings"][":modelId"].$put({ param: { providerId: providerProfileId, modelId }, json: settings });
+  return unwrapRpc(response);
+}
+
+// ── Co-Author per-connection generation set (CG-1) ─────────────────────────
+
+/** The connection's Co-Author row, or null when the connection has no saved
+ *  set yet — the domain resolver `resolveCoauthorGenerationSettings`
+ *  (@vibe-tavern/domain) completes such a set with the Co-Author defaults. */
+export async function getCoauthorConnectionSettings(providerProfileId: string): Promise<CoauthorConnectionSettingsRecord | null> {
+  const response = await client.api.providers[":providerId"]["coauthor-settings"].$get({ param: { providerId: providerProfileId } });
+  return unwrapRpc(response);
+}
+
+/** Replace the connection's whole Co-Author set. The route replaces the
+ *  record, so a model-only switch must re-send the current settings
+ *  unchanged (read-modify-write — see use-coauthor-provider-binding.ts). */
+export async function upsertCoauthorConnectionSettings(
+  providerProfileId: string,
+  body: UpsertCoauthorConnectionSettingsValue,
+): Promise<CoauthorConnectionSettingsRecord> {
+  const response = await client.api.providers[":providerId"]["coauthor-settings"].$put({ param: { providerId: providerProfileId }, json: body });
   return unwrapRpc(response);
 }
 

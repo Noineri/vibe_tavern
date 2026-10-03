@@ -1,9 +1,13 @@
-import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../api/types.js";
+import type { CoauthorConnectionSettingsRecord, FavoriteProviderModelRecord, ProviderProfileRecord } from "../api/types.js";
 import type { ProviderModel, ToolSupport } from "./provider-model-capabilities.js";
 
 export interface CoauthorBindingInput {
   coauthorProviderId: string | null;
-  coauthorModelName: string | null;
+  /** The bound connection's Co-Author row (CG-2 storage): the model the
+   *  Co-Author actually generates with. null = no saved set, undefined = not
+   *  loaded yet — both fall back to the profile default, mirroring the
+   *  backend boundary (`row.modelName ?? profile.defaultModel`). */
+  coauthorSettings: CoauthorConnectionSettingsRecord | null | undefined;
   profiles: ProviderProfileRecord[];
   rpActiveProfile: ProviderProfileRecord | null;
 }
@@ -23,11 +27,11 @@ export interface DecoratedCoauthorFavorite extends FavoriteProviderModelRecord {
 
 /** Resolve an explicit Co-Author pair, otherwise the non-persisted RP fallback. */
 export function resolveCoauthorBinding(input: CoauthorBindingInput): CoauthorBindingResult {
-  const { coauthorProviderId, coauthorModelName, profiles, rpActiveProfile } = input;
+  const { coauthorProviderId, coauthorSettings, profiles, rpActiveProfile } = input;
   if (coauthorProviderId) {
     const profile = profiles.find((candidate) => candidate.id === coauthorProviderId) ?? null;
     if (profile) {
-      const model = coauthorModelName ?? profile.defaultModel ?? null;
+      const model = coauthorSettings?.modelName ?? profile.defaultModel ?? null;
       return { profile, model, profileId: profile.id, isExplicit: true, isReady: model !== null, isDangling: false };
     }
     return rpFallback(rpActiveProfile, true);
