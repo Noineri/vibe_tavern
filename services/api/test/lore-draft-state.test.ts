@@ -249,6 +249,31 @@ describe("LoreDraftState — edit + import (CE-B1)", () => {
 		expect(draft.hasEntry("le_persisted")).toBe(true);
 	});
 
+	it("derives review changes once from persisted baselines and creation defaults", async () => {
+		const draft = makeDraft();
+		const imported = await draft.importEntry({
+			id: "le_persisted", lorebookId: "lb_persisted", title: "T", content: "c",
+			keys: ["k"], secondaryKeys: [], constant: false, position: "before_char",
+			depth: 4, logic: "and_any", enabled: true, priority: 10, stickyWindow: 0,
+		});
+		// Importing state alone is not an edit, so no unchanged persisted field is listed.
+		expect(imported.entries[0]!.settingChanges).toBeUndefined();
+
+		const edited = await draft.editLoreEntry({ id: "le_persisted", stickyWindow: 3 });
+		expect(edited.entries[0]!.settingChanges).toEqual({
+			stickyWindow: { oldValue: 0, newValue: 3 },
+		});
+		expect(edited.entries[0]!.settingChanges?.priority).toBeUndefined();
+
+		await draft.createLorebook({ name: "New" });
+		const newEntry = await draft.createLoreEntry({ lorebookId: "lorebook_1" });
+		expect(newEntry.entries.find((entry) => entry.id === "lore_entry_1")!.settingChanges).toBeUndefined();
+		const tuned = await draft.editLoreEntry({ id: "lore_entry_1", probability: 50 });
+		expect(tuned.entries.find((entry) => entry.id === "lore_entry_1")!.settingChanges).toEqual({
+			probability: { oldValue: 100, newValue: 50 },
+		});
+	});
+
 	it("re-importing the same id replaces the node (idempotent)", async () => {
 		const draft = makeDraft();
 		await draft.importLorebook({ id: "lb_x", name: "A", description: "", scopeType: "entity", enabled: true, scanDepth: 10, tokenBudget: 1000, recursiveScanning: false });

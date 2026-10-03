@@ -1548,6 +1548,8 @@
 	"lore_case_forms": "Case forms",
 	"lore_match_whole_words": "Match Whole Words",
 	"lore_ignore_budget": "Ignore Budget",
+	"lore_include_names": "Include Names",
+	"lore_character_strategy": "Character Strategy",
 	"ignore_budget_hint": "If enabled, this entry is always included even when the lorebook token budget is exceeded.",
 	"lore_role_label": "Role",
 	"lore_role_system": "System",

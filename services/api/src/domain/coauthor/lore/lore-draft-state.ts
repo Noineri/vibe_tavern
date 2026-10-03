@@ -21,10 +21,13 @@
  *  - Draft nodes are IMMUTABLY REPLACED (never mutated in place), so a
  *    previously returned snapshot stays byte-stable after a later mutation.
  */
-import type {
-	CoauthorDraftLorebook,
-	CoauthorDraftLoreEntry,
-	CoauthorLoreBundle,
+import {
+	LOREBOOK_REVIEW_SETTING_FIELDS,
+	LORE_ENTRY_REVIEW_SETTING_FIELDS,
+	type CoauthorDraftLorebook,
+	type CoauthorDraftLoreEntry,
+	type CoauthorLoreBundle,
+	type LoreReviewSettingChange,
 } from "@vibe-tavern/api-contracts";
 import type { updateLoreEntrySchema, updateLorebookMetaSchema } from "@vibe-tavern/api-contracts";
 import type { z } from "zod";
@@ -135,6 +138,82 @@ const LOREBOOK_BASE_KEYS = new Set([
 	"name", "description", "enabled", "scanDepth", "tokenBudget", "recursiveScanning",
 ]);
 
+/** Defaults used only to identify non-default settings on newly proposed nodes. */
+const NEW_LOREBOOK_SETTING_DEFAULTS: Record<string, unknown> = {
+	enabled: true,
+	scanDepth: LOREBOOK_DEFAULTS.scanDepth,
+	tokenBudget: LOREBOOK_DEFAULTS.tokenBudget,
+	tokenBudgetPercent: null,
+	tokenBudgetCap: LOREBOOK_DEFAULTS.tokenBudgetCap,
+	recursiveScanning: LOREBOOK_DEFAULTS.recursiveScanning,
+	useGroupScoring: false,
+	caseSensitive: false,
+	matchWholeWords: false,
+	maxRecursionSteps: 0,
+	includeNames: true,
+	minActivations: 0,
+	minActivationsDepthMax: 0,
+	overflowAlert: false,
+	characterStrategy: 1,
+};
+
+const NEW_ENTRY_SETTING_DEFAULTS: Record<string, unknown> = {
+	constant: false,
+	position: DEFAULT_ENTRY_POSITION,
+	depth: DEFAULT_ENTRY_DEPTH,
+	logic: DEFAULT_ENTRY_LOGIC,
+	enabled: true,
+	priority: 10,
+	probability: 100,
+	ignoreBudget: false,
+	role: "system",
+	groupName: "",
+	groupWeight: 100,
+	prioritizeInclusion: false,
+	useGroupScoring: null,
+	excludeRecursion: false,
+	preventRecursion: false,
+	delayUntilRecursion: false,
+	recursionLevel: 0,
+	scanDepthOverride: null,
+	caseSensitive: null,
+	matchWholeWords: null,
+	caseFormsKeys: [],
+	characterFilter: [],
+	characterFilterExclude: false,
+	matchSources: ["chat_messages"],
+	stickyWindow: 0,
+	cooldownWindow: 0,
+	minChatMessages: 0,
+};
+
+function valuesMatch(a: unknown, b: unknown): boolean {
+	return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * The sole change derivation for review metadata. Imported nodes compare against
+ * their persisted baseline; new nodes compare against creation defaults.
+ */
+function valueOrDefault(source: Record<string, unknown> | undefined, field: string, defaults: Record<string, unknown>): unknown {
+	return source && Object.hasOwn(source, field) ? source[field] : defaults[field];
+}
+
+function deriveSettingChanges(
+	node: Record<string, unknown>,
+	fields: readonly string[],
+	baseline: Record<string, unknown> | undefined,
+	defaults: Record<string, unknown>,
+): Record<string, LoreReviewSettingChange> | undefined {
+	const changes: Record<string, LoreReviewSettingChange> = {};
+	for (const field of fields) {
+		const oldValue = valueOrDefault(baseline, field, defaults);
+		const newValue = valueOrDefault(node, field, defaults);
+		if (!valuesMatch(oldValue, newValue)) changes[field] = { oldValue, newValue };
+	}
+	return Object.keys(changes).length > 0 ? changes : undefined;
+}
+
 /**
  * Copy every DEFINED settings field except the base keys (undefined = not
  * set by the co-author — must not land on the node; null IS a value and is
@@ -151,6 +230,9 @@ function definedSettings<T extends object>(source: T, skip?: Set<string>): Parti
 export class LoreDraftState {
 	private readonly lorebooks = new Map<string, CoauthorDraftLorebook>();
 	private readonly entries = new Map<string, CoauthorDraftLoreEntry>();
+	/** Persisted values captured at import; the sole baseline for review changes. */
+	private readonly lorebookBaselines = new Map<string, CoauthorDraftLorebook>();
+	private readonly entryBaselines = new Map<string, CoauthorDraftLoreEntry>();
 	private chain: Promise<unknown> = Promise.resolve();
 
 	constructor(private readonly deps: LoreDraftDeps) {}
@@ -336,7 +418,9 @@ export class LoreDraftState {
 	 */
 	importLorebook(node: CoauthorDraftLorebook): Promise<CoauthorLoreBundle> {
 		return this.runQueued(() => {
-			this.lorebooks.set(node.id, { ...node, mode: "edit" });
+			const { settingChanges: _settingChanges, ...baseline } = node;
+			this.lorebookBaselines.set(node.id, baseline);
+			this.lorebooks.set(node.id, { ...baseline, mode: "edit" });
 			return this.snapshot();
 		});
 	}
@@ -346,7 +430,9 @@ export class LoreDraftState {
 		return this.runQueued(() => {
 			// A persisted entry's parent is itself persisted and intentionally need
 			// not appear as a no-op lorebook node in the proposal bundle.
-			this.entries.set(node.id, { ...node, mode: "edit", parentMode: "persisted" });
+			const { settingChanges: _settingChanges, ...baseline } = node;
+			this.entryBaselines.set(node.id, baseline);
+			this.entries.set(node.id, { ...baseline, mode: "edit", parentMode: "persisted" });
 			return this.snapshot();
 		});
 	}
@@ -395,8 +481,26 @@ export class LoreDraftState {
 	 */
 	snapshot(): CoauthorLoreBundle {
 		return {
-			lorebooks: [...this.lorebooks.values()],
-			entries: [...this.entries.values()],
+			lorebooks: [...this.lorebooks.values()].map((node) => {
+				const { settingChanges: _settingChanges, ...lorebook } = node;
+				const settingChanges = deriveSettingChanges(
+					lorebook,
+					LOREBOOK_REVIEW_SETTING_FIELDS,
+					this.lorebookBaselines.get(node.id),
+					NEW_LOREBOOK_SETTING_DEFAULTS,
+				);
+				return settingChanges ? { ...lorebook, settingChanges } : lorebook;
+			}),
+			entries: [...this.entries.values()].map((node) => {
+				const { settingChanges: _settingChanges, ...entry } = node;
+				const settingChanges = deriveSettingChanges(
+					entry,
+					LORE_ENTRY_REVIEW_SETTING_FIELDS,
+					this.entryBaselines.get(node.id),
+					NEW_ENTRY_SETTING_DEFAULTS,
+				);
+				return settingChanges ? { ...entry, settingChanges } : entry;
+			}),
 		};
 	}
 

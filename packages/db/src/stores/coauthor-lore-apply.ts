@@ -57,6 +57,8 @@ export interface CoauthorLoreDraftBundle {
     characterStrategy?: number;
     /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
     mode?: 'create' | 'edit';
+    /** Step 4 review metadata; never persisted. */
+    settingChanges?: Record<string, { oldValue: unknown; newValue: unknown }>;
   }>;
   entries: Array<{
     id: string;
@@ -97,6 +99,8 @@ export interface CoauthorLoreDraftBundle {
     mode?: 'create' | 'edit';
     /** CE-B2: verified persisted parent absent from this proposal bundle. */
     parentMode?: 'persisted';
+    /** Step 4 review metadata; never persisted. */
+    settingChanges?: Record<string, { oldValue: unknown; newValue: unknown }>;
   }>;
 }
 
@@ -104,7 +108,7 @@ export interface CoauthorLoreDraftBundle {
 function entryNodeToCreateData(
   e: CoauthorLoreDraftBundle['entries'][number],
 ): Parameters<typeof buildEntryInsert>[0] {
-  const { id: _id, lorebookId: _lorebookId, mode: _mode, parentMode: _parentMode, ...data } = e;
+  const { id: _id, lorebookId: _lorebookId, mode: _mode, parentMode: _parentMode, settingChanges: _settingChanges, ...data } = e;
   return data;
 }
 

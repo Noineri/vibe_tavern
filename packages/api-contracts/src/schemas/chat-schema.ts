@@ -2,6 +2,32 @@ import { brandId, type MessageVariantId } from "@vibe-tavern/domain";
 import { z } from "zod";
 import { updateLoreEntrySchema, updateLorebookMetaSchema } from "./lorebook-schema.js";
 
+/** The settings the lore review renders for a lorebook. */
+export const LOREBOOK_REVIEW_SETTING_FIELDS = [
+  "enabled", "scanDepth", "tokenBudget", "tokenBudgetPercent", "tokenBudgetCap",
+  "recursiveScanning", "useGroupScoring", "caseSensitive", "matchWholeWords",
+  "maxRecursionSteps", "includeNames", "minActivations", "minActivationsDepthMax",
+  "overflowAlert", "characterStrategy",
+] as const;
+export type LorebookReviewSettingField = (typeof LOREBOOK_REVIEW_SETTING_FIELDS)[number];
+
+/** The settings the lore review renders for a lore entry. */
+export const LORE_ENTRY_REVIEW_SETTING_FIELDS = [
+  "constant", "position", "depth", "logic", "enabled", "priority", "probability",
+  "ignoreBudget", "role", "groupName", "groupWeight", "prioritizeInclusion",
+  "useGroupScoring", "excludeRecursion", "preventRecursion", "delayUntilRecursion",
+  "recursionLevel", "scanDepthOverride", "caseSensitive", "matchWholeWords",
+  "caseFormsKeys", "characterFilter", "characterFilterExclude", "matchSources",
+  "stickyWindow", "cooldownWindow", "minChatMessages",
+] as const;
+export type LoreEntryReviewSettingField = (typeof LORE_ENTRY_REVIEW_SETTING_FIELDS)[number];
+
+export const loreReviewSettingChangeSchema = z.object({
+  oldValue: z.unknown(),
+  newValue: z.unknown(),
+});
+export type LoreReviewSettingChange = z.infer<typeof loreReviewSettingChangeSchema>;
+
 export const createChatSchema = z.object({
   characterId: z.string(),
   /** Chat mode. Omit for the default 'rp'. Allowed values mirror CHAT_MODE. */
@@ -190,6 +216,12 @@ export const coauthorDraftLorebookSchema = z.object({
    * by the review UI to badge new-vs-edit. Set by the draft engine.
    */
   mode: z.enum(["create", "edit"]).optional(),
+  /**
+   * Review-only metadata derived by LoreDraftState from the imported persisted
+   * state and subsequent patches. Apply ignores it; the UI renders this
+   * authoritative change set rather than attempting a second derivation.
+   */
+  settingChanges: z.record(z.string(), loreReviewSettingChangeSchema).optional(),
 });
 export type CoauthorDraftLorebook = z.infer<typeof coauthorDraftLorebookSchema>;
 
@@ -252,6 +284,8 @@ export const coauthorDraftLoreEntrySchema = z.object({
    * either way; the marker badges the review UI's new-vs-edit distinction.
    */
   mode: z.enum(["create", "edit"]).optional(),
+  /** See CoauthorDraftLorebook.settingChanges. */
+  settingChanges: z.record(z.string(), loreReviewSettingChangeSchema).optional(),
 });
 export type CoauthorDraftLoreEntry = z.infer<typeof coauthorDraftLoreEntrySchema>;
 

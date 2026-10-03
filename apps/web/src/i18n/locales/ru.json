@@ -1560,6 +1560,8 @@
 	"lore_case_forms": "Формы слова",
 	"lore_match_whole_words": "Целые слова",
 	"lore_ignore_budget": "Игнорировать бюджет",
+	"lore_include_names": "Включать имена",
+	"lore_character_strategy": "Стратегия персонажа",
 	"ignore_budget_hint": "Если включено, эта запись всегда будет добавлена, даже если бюджет токенов лорбука превышен.",
 	"lore_role_label": "Роль",
 	"lore_role_system": "Система",
