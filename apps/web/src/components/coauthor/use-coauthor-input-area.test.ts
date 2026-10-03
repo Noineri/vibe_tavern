@@ -162,7 +162,6 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 					aiAssistantProviderId: null,
 					aiAssistantModelName: null,
 					coauthorProviderId: "p1",
-					coauthorModelName: "gpt-4o",
 					updatedAt: "2026-01-01",
 				},
 				isArmServer: false,

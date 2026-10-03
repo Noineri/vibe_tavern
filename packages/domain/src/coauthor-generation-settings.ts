@@ -1,61 +1,4 @@
-import { GENERATION_MODE, type ModelSettingsOverlay, type StoredProviderProfileRecord } from "./provider-profile.js";
-
-/**
- * Generation-field defaults a brand-new RP provider profile starts from
- * (COAUTHOR_OWN_GENERATION_SETTINGS_PLAN CG-1).
- *
- * Single derivation of the sampler/context fallbacks: `ProviderStore.create`
- * consumes this constant for its per-field `??` defaults (the values were
- * inline there before), and {@link COAUTHOR_GENERATION_DEFAULTS} derives from
- * it below. The db-schema column `DEFAULT`s mirror these values for raw SQL
- * inserts only — this constant is the authoritative source for code paths.
- *
- * Field set = the {@link ModelSettingsOverlay} pick (identity fields are not
- * generation settings and never appear here). Array fields hold the READ-back
- * default: `ProviderStore.create` stores them as NULL json columns and its
- * row mapper yields `[]`.
- */
-export const PROVIDER_PROFILE_GENERATION_DEFAULTS: Required<ModelSettingsOverlay> = {
-  contextBudget: null,
-  pinContextBudget: false,
-  maxTokens: 2000,
-  temperature: 1.0,
-  topP: 1.0,
-  topK: 0,
-  minP: 0,
-  topA: 0,
-  typicalP: 1.0,
-  tfsZ: 1.0,
-  adaptiveTarget: -1,
-  adaptiveDecay: 0.9,
-  dynatempRange: 0,
-  dynatempExponent: 1.0,
-  topNSigma: 0,
-  smoothingFactor: 0,
-  repeatLastN: 0,
-  mirostat: 0,
-  mirostatTau: 5.0,
-  mirostatEta: 0.1,
-  dryMultiplier: 0,
-  dryBase: 1.75,
-  dryAllowedLength: 2,
-  dryPenaltyLastN: -1,
-  drySequenceBreakers: [],
-  xtcThreshold: 0.1,
-  xtcProbability: 0,
-  frequencyPenalty: 0,
-  presencePenalty: 0,
-  repetitionPenalty: 1.0,
-  stopSequences: [],
-  bannedStrings: [],
-  logitBias: [],
-  seed: null,
-  reasoningEffort: "auto",
-  showReasoning: false,
-  streamResponse: true,
-  customSamplers: false,
-  samplerSetId: null,
-};
+import { GENERATION_MODE, PROVIDER_PROFILE_GENERATION_DEFAULTS, type ModelSettingsOverlay, type StoredProviderProfileRecord } from "./provider-profile.js";
 
 /** Max output tokens a Co-Author connection starts from (owner ruling
  *  2026-10-03 — the one deliberate deviation from the RP default of 2000). */
@@ -82,8 +25,8 @@ export type CoauthorGenerationSettings = Omit<Required<ModelSettingsOverlay>, "c
 /**
  * Defaults a Co-Author connection with no saved set starts from (owner ruling
  * 2026-10-03): the same sampler defaults as a brand-new RP connection
- * ({@link PROVIDER_PROFILE_GENERATION_DEFAULTS}) except max output 8 000 and
- * context budget 128 000.
+ * (`PROVIDER_PROFILE_GENERATION_DEFAULTS`, provider-profile.ts) except max
+ * output 8 000 and context budget 128 000.
  */
 export const COAUTHOR_GENERATION_DEFAULTS: CoauthorGenerationSettings = {
   ...PROVIDER_PROFILE_GENERATION_DEFAULTS,

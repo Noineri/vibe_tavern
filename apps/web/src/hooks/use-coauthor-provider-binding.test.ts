@@ -72,7 +72,7 @@ function makeUiSettings(): UiSettingsRecord {
   return {
     id: "default", theme: "dark", chatFontSize: 15, uiFontSize: 14, messageWidth: 700, language: "en",
     activePromptPresetId: null, aiAssistantProviderId: null, aiAssistantModelName: null,
-    coauthorProviderId: "p1", coauthorModelName: null, updatedAt: "2026-01-01",
+    coauthorProviderId: "p1", updatedAt: "2026-01-01",
   } as unknown as UiSettingsRecord;
 }
 

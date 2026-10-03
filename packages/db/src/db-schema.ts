@@ -1256,21 +1256,20 @@ export const uiSettings = sqliteTable('ui_settings', {
   summaryModelName: text('summary_model_name'),
   messageEditorProviderId: text('message_editor_provider_id'),
   messageEditorModelName: text('message_editor_model_name'),
-  // Co-Author generation binding — app-wide, independent of RP active profile.
-  // Null (or dangling after profile deletion) falls back to the RP active
-  // profile/default model at the adapter boundary. No DB-level FK: like
-  // aiAssistantProviderId, a deleted profile leaves a dangling id that the
-  // adapter resolves (dangling → fallback) rather than blocking the delete.
+  // Co-Author connection binding (CG-5): the app-wide pointer at the
+  // provider profile whose connection identity (endpoint, API key,
+  // coauthor_transport) the Co-Author uses. Every generation setting — model
+  // included — lives on that profile's coauthor_connection_settings row
+  // (CG-1..CG-2); ui_settings holds no Co-Author generation values. A null or
+  // dangling binding fails closed (`coauthor_model_required` at the adapter
+  // boundary) — never the RP active profile. No DB-level FK: like
+  // aiAssistantProviderId, a deleted profile leaves a dangling id the adapter
+  // resolves (dangling → fail-closed) rather than blocking the delete.
   coauthorProviderId: text('coauthor_provider_id'),
-  coauthorModelName: text('coauthor_model_name'),
   // Optional lore-generation binding. Null (or dangling after profile deletion)
   // inherits the current Co-Author delegate at the runtime boundary.
   coauthorLoreProviderId: text('coauthor_lore_provider_id'),
   coauthorLoreModelName: text('coauthor_lore_model_name'),
-  // Optional Co-Author-only token overrides. Null inherits the selected
-  // profile/model effective values so RP configuration remains untouched.
-  coauthorMaxTokens: integer('coauthor_max_tokens'),
-  coauthorContextBudget: integer('coauthor_context_budget'),
   // ─── GitHub star prompt ───
   // One flag silences both the first-run welcome strip and the periodic modal.
   // userMessageCount is server-owned and monotonic; nextStarPromptAt is the

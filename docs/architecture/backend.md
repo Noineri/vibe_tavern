@@ -237,16 +237,16 @@ Scripts run BEFORE prompt assembly. They can modify `character.personality`, `ch
 
 Every generation path (send, regenerate, continue, summarize) routes through `resolveEffectiveProfileOrThrow` in `ChatAdapter` (`api/adapters/chat-adapter.ts`). This is the single chokepoint where the provider profile + model is locked for the turn.
 
-The resolver is **chat-mode-aware**: for `chat.mode === "coauthor"`, it first attempts to resolve the persisted Co-Author binding (`ui_settings.coauthorProviderId` + `coauthorModelName`); for all other modes (or when the Co-Author pair is null/incomplete/dangling), it falls back to the RP active profile (`provider_profiles.is_active`) and its `defaultModel`.
+The resolver is **chat-mode-aware**: for `chat.mode === "coauthor"`, it resolves the persisted Co-Author binding (`ui_settings.coauthorProviderId` — the connection whose identity, i.e. endpoint, API key and `coauthor_transport`, the turn runs on) and takes EVERY generation field from that connection's `coauthor_connection_settings` row through `resolveCoauthorGenerationProfile` (domain): model, samplers, reasoning, max output, context budget. The Co-Author path never reads the RP per-model overlay — `bindPerModel` is forced off and `tokenPadding` forced to zero there. All other modes use the RP active profile (`provider_profiles.is_active`) and its `defaultModel`.
 
 **Model precedence** (highest wins):
-1. Explicit per-request override (e.g. a quick-switch model passed from the frontend)
-2. Persisted `coauthorModelName` (Co-Author mode only, when the binding resolves)
+1. Explicit per-request override (e.g. a regenerate model passed from the frontend)
+2. The bound connection's `coauthor_connection_settings.model_name` (Co-Author mode only)
 3. Selected profile's `defaultModel`
 
-After the final model is locked, the per-model overlay is applied when the profile has `bindPerModel` enabled: the overlay's sampler/context/reasoning fields merge onto the effective profile, and `defaultModel` is re-pinned to the selected model so the overlay data reaches generation.
+After the final model is locked on the RP path, the per-model overlay is applied when the profile has `bindPerModel` enabled: the overlay's sampler/context/reasoning fields merge onto the effective profile, and `defaultModel` is re-pinned to the selected model so the overlay data reaches generation. The Co-Author path skips the overlay entirely — its connection row owns the values.
 
-**Fallback semantics** — a null or dangling Co-Author binding (provider id absent, profile deleted, or no model resolvable) silently falls back to the RP active profile without persisting anything. The fallback is advisory: `ui_settings` is never implicitly written. The user must save an explicit Co-Author pair through the frontend fork modal to make the binding independent.
+**Fail-closed semantics** — a null or dangling Co-Author binding (provider id absent, profile deleted, or no model resolvable) throws the typed `coauthor_model_required` error instead of falling back to the RP active profile; the frontend maps it to the "choose a model for the Co-Author" state. `ui_settings` is never implicitly written.
 
 ---
 

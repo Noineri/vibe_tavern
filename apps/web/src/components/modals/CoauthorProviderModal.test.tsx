@@ -63,7 +63,7 @@ function setBinding(coauthorProviderId: string | null) {
       uiSettings: {
         id: "default", theme: "dark", chatFontSize: 15, uiFontSize: 14, messageWidth: 700, language: "en",
         activePromptPresetId: null, aiAssistantProviderId: null, aiAssistantModelName: null,
-        coauthorProviderId, coauthorModelName: null, updatedAt: "2026-01-01",
+        coauthorProviderId, updatedAt: "2026-01-01",
       } as never,
       isArmServer: false,
     } as never,

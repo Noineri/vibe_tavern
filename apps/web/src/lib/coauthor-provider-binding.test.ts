@@ -54,7 +54,7 @@ function makeFavorite(modelId: string): FavoriteProviderModelRecord {
 
 /** The bound connection's `coauthor_connection_settings` row (CG-1/CG-2) —
  *  the model source the binding now reads instead of the retired global
- *  `ui_settings.coauthor_model_name`. */
+ *  `ui_settings` model column (dropped by CG-5). */
 function makeRow(modelName: string | null): CoauthorConnectionSettingsRecord {
   return {
     providerProfileId: "prof_coauthor",

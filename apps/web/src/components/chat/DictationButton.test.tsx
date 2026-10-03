@@ -128,7 +128,6 @@ function makeUiSettings() {
     aiAssistantProviderId: null,
     aiAssistantModelName: null,
     coauthorProviderId: null,
-    coauthorModelName: null,
     activeDictationProfileId: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

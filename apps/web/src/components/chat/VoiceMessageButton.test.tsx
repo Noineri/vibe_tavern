@@ -111,7 +111,6 @@ function makeUiSettings() {
     aiAssistantProviderId: null,
     aiAssistantModelName: null,
     coauthorProviderId: null,
-    coauthorModelName: null,
     activeDictationProfileId: null,
     activeVoiceMessageProfileId: null,
     createdAt: new Date().toISOString(),

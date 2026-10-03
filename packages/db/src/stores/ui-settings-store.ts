@@ -29,14 +29,9 @@ export interface UiSettings {
   messageEditorProviderId: string | null;
   messageEditorModelName: string | null;
   coauthorProviderId: string | null;
-  coauthorModelName: string | null;
   /** Null inherits the current Co-Author lore delegate. */
   coauthorLoreProviderId: string | null;
   coauthorLoreModelName: string | null;
-  /** Null inherits the bound profile/model's effective max output tokens. */
-  coauthorMaxTokens: number | null;
-  /** Null inherits the bound profile/model's effective context budget. */
-  coauthorContextBudget: number | null;
   /** True once the user starred the repo or opted out — silences both prompts. */
   githubStarred: boolean;
   /** Monotonic count of user messages ever sent. Server-owned. */
@@ -89,11 +84,8 @@ export interface UiSettingsUpdate {
   messageEditorProviderId?: string | null;
   messageEditorModelName?: string | null;
   coauthorProviderId?: string | null;
-  coauthorModelName?: string | null;
   coauthorLoreProviderId?: string | null;
   coauthorLoreModelName?: string | null;
-  coauthorMaxTokens?: number | null;
-  coauthorContextBudget?: number | null;
   githubStarred?: boolean;
   userMessageCount?: number;
   nextStarPromptAt?: number;
@@ -129,11 +121,8 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   messageEditorProviderId: null,
   messageEditorModelName: null,
   coauthorProviderId: null,
-  coauthorModelName: null,
   coauthorLoreProviderId: null,
   coauthorLoreModelName: null,
-  coauthorMaxTokens: null,
-  coauthorContextBudget: null,
   githubStarred: false,
   userMessageCount: 0,
   nextStarPromptAt: 10,
@@ -200,11 +189,8 @@ export class UiSettingsStore {
       messageEditorProviderId: partial.messageEditorProviderId ?? UI_SETTINGS_DEFAULTS.messageEditorProviderId,
       messageEditorModelName: partial.messageEditorModelName ?? UI_SETTINGS_DEFAULTS.messageEditorModelName,
       coauthorProviderId: partial.coauthorProviderId ?? UI_SETTINGS_DEFAULTS.coauthorProviderId,
-      coauthorModelName: partial.coauthorModelName ?? UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorLoreProviderId: partial.coauthorLoreProviderId ?? UI_SETTINGS_DEFAULTS.coauthorLoreProviderId,
       coauthorLoreModelName: partial.coauthorLoreModelName ?? UI_SETTINGS_DEFAULTS.coauthorLoreModelName,
-      coauthorMaxTokens: partial.coauthorMaxTokens ?? UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
-      coauthorContextBudget: partial.coauthorContextBudget ?? UI_SETTINGS_DEFAULTS.coauthorContextBudget,
       githubStarred: partial.githubStarred ?? UI_SETTINGS_DEFAULTS.githubStarred,
       userMessageCount: partial.userMessageCount ?? UI_SETTINGS_DEFAULTS.userMessageCount,
       nextStarPromptAt: partial.nextStarPromptAt ?? UI_SETTINGS_DEFAULTS.nextStarPromptAt,
@@ -247,11 +233,8 @@ export class UiSettingsStore {
       messageEditorProviderId: UI_SETTINGS_DEFAULTS.messageEditorProviderId,
       messageEditorModelName: UI_SETTINGS_DEFAULTS.messageEditorModelName,
       coauthorProviderId: UI_SETTINGS_DEFAULTS.coauthorProviderId,
-      coauthorModelName: UI_SETTINGS_DEFAULTS.coauthorModelName,
       coauthorLoreProviderId: UI_SETTINGS_DEFAULTS.coauthorLoreProviderId,
       coauthorLoreModelName: UI_SETTINGS_DEFAULTS.coauthorLoreModelName,
-      coauthorMaxTokens: UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
-      coauthorContextBudget: UI_SETTINGS_DEFAULTS.coauthorContextBudget,
       githubStarred: UI_SETTINGS_DEFAULTS.githubStarred,
       userMessageCount: UI_SETTINGS_DEFAULTS.userMessageCount,
       nextStarPromptAt: UI_SETTINGS_DEFAULTS.nextStarPromptAt,
@@ -292,11 +275,8 @@ export class UiSettingsStore {
       messageEditorProviderId: row.messageEditorProviderId ?? null,
       messageEditorModelName: row.messageEditorModelName ?? null,
       coauthorProviderId: row.coauthorProviderId ?? null,
-      coauthorModelName: row.coauthorModelName ?? null,
       coauthorLoreProviderId: row.coauthorLoreProviderId ?? null,
       coauthorLoreModelName: row.coauthorLoreModelName ?? null,
-      coauthorMaxTokens: row.coauthorMaxTokens ?? null,
-      coauthorContextBudget: row.coauthorContextBudget ?? null,
       githubStarred: row.githubStarred,
       userMessageCount: row.userMessageCount,
       nextStarPromptAt: row.nextStarPromptAt,

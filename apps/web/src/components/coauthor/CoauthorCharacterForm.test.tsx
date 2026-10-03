@@ -134,7 +134,7 @@ function setLoreModel(modelName: string | null) {
 			uiSettings: {
 				id: "default", theme: "dark", chatFontSize: 15, uiFontSize: 14, messageWidth: 700, language: "en",
 				activePromptPresetId: null, aiAssistantProviderId: null, aiAssistantModelName: null,
-				coauthorProviderId: null, coauthorModelName: null, coauthorLoreProviderId: modelName ? "profile_1" : null, coauthorLoreModelName: modelName, updatedAt: "2026-01-01",
+				coauthorProviderId: null, coauthorLoreProviderId: modelName ? "profile_1" : null, coauthorLoreModelName: modelName, updatedAt: "2026-01-01",
 			},
 			isArmServer: false,
 		} as unknown as BootstrapData,

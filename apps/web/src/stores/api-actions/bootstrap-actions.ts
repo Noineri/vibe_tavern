@@ -102,7 +102,7 @@ export async function fetchPersonasAction(): Promise<void> {
  * explicit null to clear a field (e.g. coauthor binding reset).
  */
 export async function patchUiSettingsAction(
-  patch: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorModelName" | "coauthorLoreProviderId" | "coauthorLoreModelName" | "coauthorMaxTokens" | "coauthorContextBudget" | "copilotProviderId" | "copilotModelName" | "githubStarred" | "nextStarPromptAt" | "starPromptDeferrals" | "activeDictationProfileId">>,
+  patch: Partial<Pick<UiSettingsRecord, "theme" | "chatFontSize" | "uiFontSize" | "messageWidth" | "language" | "activePromptPresetId" | "aiAssistantProviderId" | "aiAssistantModelName" | "coauthorProviderId" | "coauthorLoreProviderId" | "coauthorLoreModelName" | "copilotProviderId" | "copilotModelName" | "githubStarred" | "nextStarPromptAt" | "starPromptDeferrals" | "activeDictationProfileId">>,
   updateFn: (input: typeof patch) => Promise<UiSettingsRecord> = updateUiSettings,
 ): Promise<UiSettingsRecord> {
   const updated = await updateFn(patch);

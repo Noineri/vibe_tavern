@@ -318,7 +318,7 @@ describe("useChatController — Co-Author send gate", () => {
       },
     });
     useBootstrapStore.setState({
-      data: { uiSettings: { coauthorProviderId: "p_co", coauthorModelName: "tool-m" } } as never,
+      data: { uiSettings: { coauthorProviderId: "p_co" } } as never,
     });
     sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
       opts?.onDone?.();
@@ -334,7 +334,7 @@ describe("useChatController — Co-Author send gate", () => {
 
   test("blocks when no explicit binding and no RP fallback profile", async () => {
     useProviderDataStore.setState({ profiles: [] });
-    useBootstrapStore.setState({ data: { uiSettings: { coauthorProviderId: null, coauthorModelName: null } } as never });
+    useBootstrapStore.setState({ data: { uiSettings: { coauthorProviderId: null } } as never });
 
     useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
     const { result } = renderHook(() => useChatController());

@@ -63,7 +63,6 @@ function baseSettings(over: Partial<UiSettingsRecord> = {}): UiSettingsRecord {
     aiAssistantProviderId: null,
     aiAssistantModelName: null,
     coauthorProviderId: null,
-    coauthorModelName: null,
     githubStarred: false,
     userMessageCount: 10,
     nextStarPromptAt: 10,

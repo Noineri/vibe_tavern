@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { PROVIDER_PROFILE_GENERATION_DEFAULTS } from "../src/provider-profile.js";
 import {
   COAUTHOR_DEFAULT_MAX_TOKENS,
   COAUTHOR_GENERATION_DEFAULTS,
   COAUTHOR_UNKNOWN_CONTEXT_BUDGET,
-  PROVIDER_PROFILE_GENERATION_DEFAULTS,
   resolveCoauthorGenerationSettings,
 } from "../src/coauthor-generation-settings.js";
 
