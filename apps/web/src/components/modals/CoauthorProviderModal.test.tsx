@@ -103,9 +103,10 @@ describe("CoauthorProviderModal", () => {
 		const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
 		await waitFor(() => expect(view.baseElement.textContent).toContain("Bound Profile"));
 		const { getAllByText, queryByText } = within(view.baseElement);
-		// Both profiles render in the master list and the lore-model picker.
-		expect(getAllByText("Bound Profile")).toHaveLength(2);
-		expect(getAllByText("Other Profile")).toHaveLength(2);
+		// Profiles render only in the co-author binding list; lore settings live in
+		// the character document panel, not this provider-profile modal.
+		expect(getAllByText("Bound Profile")).toHaveLength(1);
+		expect(getAllByText("Other Profile")).toHaveLength(1);
 		// No "+ New" button (selectionOnly)
 		expect(queryByText("new_profile_btn")).toBeNull();
   });
@@ -218,19 +219,16 @@ describe("CoauthorProviderModal", () => {
     await waitFor(() => expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorMaxTokens: 2_000 }));
   });
 
-  it("renders a full lore picker and clears an explicit override to the coauthor model", async () => {
+  it("does not render lore settings", async () => {
     setBinding("prof_1", "tool-model", "prof_lore", "lore-model");
     useProviderDataStore.setState({
       profiles: [makeProfile("prof_1", "Co-Author"), makeProfile("prof_lore", "Lore")],
       favoritesByProfile: {},
     });
     const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
-    await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.lore_model_label"));
-    const { getByText, getByTestId } = within(view.baseElement);
-    expect(getByText("coauthor.provider.lore_model_hint")).toBeTruthy();
-    expect(getByTestId("coauthor-lore-model-list").className).toContain("h-[250px]");
-    fireEvent.click(getByTestId("coauthor-lore-model-inherit"));
-    await waitFor(() => expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorLoreProviderId: null, coauthorLoreModelName: null }));
+    await waitFor(() => expect(view.baseElement.textContent).toContain("Co-Author"));
+    expect(view.baseElement.textContent).not.toContain("coauthor.lore_assistant.title");
+    expect(view.baseElement.textContent).not.toContain("coauthor.provider.lore_model_label");
   });
 
 	it("save button is disabled when a profile is selected but no model chosen", async () => {

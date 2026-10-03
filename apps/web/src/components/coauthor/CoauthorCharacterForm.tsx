@@ -81,6 +81,7 @@ import type { LorebookRecord, ScriptRecord, AppCharacterEntry } from "../../api/
 import type { PersonaRecord } from "@vibe-tavern/api-contracts";
 import { setCoauthorContextLinksAction } from "../../stores/api-actions/chat-actions.js";
 import { CoauthorLoreReview, type CoauthorLoreReviewLabels } from "./CoauthorLoreReview.js";
+import { CoauthorLoreAssistantSettings } from "./CoauthorLoreAssistantSettings.js";
 
 /**
  * Stable empty array for the turn-store selector fallback. Returning a fresh
@@ -502,6 +503,9 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
             />
           </div>
         )}
+        <div className="mt-2">
+          <CoauthorLoreAssistantSettings />
+        </div>
       </div>
 
       {/* Body: editor surface OR the reviewing overlay (CA-11/CA-12). The editor

@@ -16,7 +16,6 @@ import { ProviderModelList, type ProviderModelListOption } from "../settings/pro
 import { Icons } from "../shared/icons.js";
 import { SearchInput } from "../shared/SearchInput.js";
 import { NumberInput } from "../shared/NumberInput.js";
-import { CoauthorLoreModelPicker } from "./CoauthorLoreModelPicker.js";
 import { cn } from "../../lib/cn.js";
 
 export interface CoauthorProviderModalProps {
@@ -82,8 +81,6 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
   const favorites = selectedProfileId ? favoritesByProfile[selectedProfileId] ?? [] : [];
   const coauthorMaxTokens = uiSettings?.coauthorMaxTokens ?? null;
   const coauthorContextBudget = uiSettings?.coauthorContextBudget ?? null;
-  const coauthorLoreProviderId = uiSettings?.coauthorLoreProviderId ?? null;
-  const coauthorLoreModelName = uiSettings?.coauthorLoreModelName ?? null;
   const inheritedMaxTokens = selectedProfile?.maxTokens ?? 2_000;
   const inheritedContextBudget = selectedProfile?.contextBudget ?? 16_000;
   // The profile's maxTokens uses -1 (and any value <= 0) as the "no output cap"
@@ -234,12 +231,6 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
           {!modelsLoading && !modelsError && <Command shouldFilter={false} className="h-full"><ProviderModelList models={filteredModels} selectedId={selectedModel ?? ""} search={modelSearch} favorites={favorites} onSelect={(model) => { setSelectedModel(model.id); setTestResult(null); }} onToggleFavorite={(model) => void handleToggleFavorite(model)} onUseCustomSlug={(slug) => { setSelectedModel(slug); setModelSearch(""); setTestResult(null); }} toolFilter={capabilityFilter === "all" ? undefined : capabilityFilter} listClassName="h-full max-h-none" /></Command>}
         </div>
       </div>
-      <CoauthorLoreModelPicker
-        profiles={profiles}
-        providerId={coauthorLoreProviderId}
-        modelName={coauthorLoreModelName}
-        onSave={async (providerId, modelName) => { await patchUiSettingsAction({ coauthorLoreProviderId: providerId, coauthorLoreModelName: modelName }); }}
-      />
       {selectedModel && <div className="shrink-0"><button type="button" disabled={testing} onClick={() => void handleTest()} className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50">{testing ? t("sending") : t("test_hi_btn")}</button>{testResult?.reply && <div className="mt-2"><span className="inline-flex rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success">&ldquo;{testResult.reply.length > 200 ? `${testResult.reply.slice(0, 200)}...` : testResult.reply}&rdquo;</span></div>}{testResult?.error && <div className="mt-2"><span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close /> {testResult.error}</span></div>}</div>}
       {!binding.isExplicit && <p className="shrink-0 font-ui text-[11px] leading-snug text-t4">{t("coauthor.provider.fallback_explainer")}</p>}
     </div>}

@@ -8,6 +8,8 @@ export interface AiAssistantConnectionFieldsProps {
   selectedProfileDefaultModel: string | null;
   onProviderChange: (id: string) => void;
   onModelChange: (id: string) => void;
+  /** Disables both selectors without changing existing consumers' behavior. */
+  disabled?: boolean;
   labels: {
     connection: string;
     model: string;
@@ -25,6 +27,7 @@ export function AiAssistantConnectionFields({
   selectedProfileDefaultModel,
   onProviderChange,
   onModelChange,
+  disabled = false,
   labels,
 }: AiAssistantConnectionFieldsProps) {
   const defaultOption = selectedProfileDefaultModel || "Default";
@@ -43,6 +46,7 @@ export function AiAssistantConnectionFields({
           placeholder={labels.selectProvider}
           searchPlaceholder={labels.searchProvider}
           onChange={onProviderChange}
+          disabled={disabled}
         />
       </div>
       <div>
@@ -56,7 +60,7 @@ export function AiAssistantConnectionFields({
           searchPlaceholder={labels.searchModel}
           defaultOption={defaultOption}
           onChange={onModelChange}
-          disabled={!providerId}
+          disabled={disabled || !providerId}
         />
       </div>
     </div>
