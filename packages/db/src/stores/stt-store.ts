@@ -1,4 +1,4 @@
-import { asc, eq, ne } from 'drizzle-orm';
+import { asc, eq, ne, sql } from 'drizzle-orm';
 
 import { brandId, STT_BACKENDS } from '@vibe-tavern/domain';
 import type { SttBackendType, SttProfile, SttProfileConfig, SttProfileId } from '@vibe-tavern/domain';
@@ -10,7 +10,7 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 // ─── Input types ──────────────────────────────────────────────────────────────
 
 /** Creation input — the full domain shape minus store-generated columns. */
-export type CreateSttProfileData = Omit<SttProfile, 'id' | 'createdAt' | 'updatedAt'>;
+export type CreateSttProfileData = Omit<SttProfile, 'id' | 'sortOrder' | 'createdAt' | 'updatedAt'>;
 
 /** Update patch — every field optional except immutable identity/timestamps. */
 export type UpdateSttProfileData = Partial<Omit<SttProfile, 'id' | 'createdAt'>>;
@@ -90,12 +90,12 @@ export class SttStore {
 
   // ─── Read operations ───────────────────────────────────────────────────────
 
-  /** All profiles ordered for a stable list view (name, then createdAt). */
+  /** All profiles ordered for a stable list view (sortOrder, then createdAt). */
   async listAll(): Promise<SttProfile[]> {
     const rows = await this.db
       .select()
       .from(sttProfiles)
-      .orderBy(asc(sttProfiles.name), asc(sttProfiles.createdAt))
+      .orderBy(asc(sttProfiles.sortOrder), asc(sttProfiles.createdAt))
       .all();
     return rows.map((r) => this.mapRow(r));
   }
@@ -111,7 +111,7 @@ export class SttStore {
       .select()
       .from(sttProfiles)
       .where(eq(sttProfiles.isDefault, 1))
-      .orderBy(asc(sttProfiles.name), asc(sttProfiles.createdAt))
+      .orderBy(asc(sttProfiles.sortOrder), asc(sttProfiles.createdAt))
       .get();
     return row ? this.mapRow(row) : null;
   }
@@ -121,6 +121,13 @@ export class SttStore {
   async create(input: CreateSttProfileData): Promise<SttProfile> {
     const id = this.idGen.next('stt_profile');
     const now = this.clock.now();
+    // Append at end so new profiles retain creation order until manually
+    // reordered (the provider-store list-order rule).
+    const maxRow = await this.db
+      .select({ maxSort: sql<number>`COALESCE(MAX(${sttProfiles.sortOrder}), -1)` })
+      .from(sttProfiles)
+      .get();
+    const nextSortOrder = (maxRow?.maxSort ?? -1) + 1;
     // Default-pointer invariant: claiming the default clears every other row —
     // atomically with the insert, so a failed insert cannot leave the roster
     // defaultless. Sync-transaction shape (ASYNC_TRANSACTION_AUDIT): the sync
@@ -135,6 +142,7 @@ export class SttStore {
           configJson: JSON.stringify(stripConfigSecrets(input.config)),
           apiKey: input.apiKey ?? null,
           emotionAnnotation: input.emotionAnnotation,
+          sortOrder: nextSortOrder,
           isDefault: input.isDefault ? 1 : 0,
           createdAt: now,
           updatedAt: now,
@@ -214,6 +222,21 @@ export class SttStore {
     return this.getById(id);
   }
 
+  /** Apply a complete manual order atomically, then return the canonical list. */
+  async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<SttProfile[]> {
+    const now = this.clock.now();
+    this.db.transaction((tx) => {
+      for (const update of updates) {
+        tx
+          .update(sttProfiles)
+          .set({ sortOrder: update.sortOrder, updatedAt: now })
+          .where(eq(sttProfiles.id, update.id))
+          .run();
+      }
+    });
+    return this.listAll();
+  }
+
   // ─── Internals ─────────────────────────────────────────────────────────────
 
   private mapRow(row: typeof sttProfiles.$inferSelect): SttProfile {
@@ -227,6 +250,7 @@ export class SttStore {
       config: parseConfig(row.configJson),
       emotionAnnotation: row.emotionAnnotation,
       isDefault: row.isDefault === 1,
+      sortOrder: row.sortOrder,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

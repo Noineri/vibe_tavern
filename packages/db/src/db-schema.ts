@@ -657,6 +657,7 @@ export const sttProfiles = sqliteTable('stt_profiles', {
   // ST-7 capability seam — v1 pure-ASR backends force it off; audio-
   // understanding backends annotate tone/emotion into the transcript.
   emotionAnnotation: integer('emotion_annotation', { mode: 'boolean' }).notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
   isDefault: integer('is_default').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

@@ -1068,6 +1068,8 @@ export interface SttProfile {
    *  profile at a time (store-maintained; used when neither scenario
    *  pointer is set). */
   isDefault: boolean;
+  /** Manual list order. New profiles append in creation order. */
+  sortOrder: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
