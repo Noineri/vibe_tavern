@@ -17,17 +17,23 @@ describe("shouldAutoFillContextBudget (LS-7)", () => {
 });
 
 describe("resolveModelContextBudget", () => {
-	it("uses the model's known context length", () => {
-		expect(resolveModelContextBudget({ pinned: false, contextLength: 32_768, unknownContextBudget: 128_000 })).toBe(32_768);
+	it("uses the model's known context length — even over an already-set budget", () => {
+		expect(resolveModelContextBudget({ pinned: false, contextLength: 32_768, currentBudget: 8_192, unknownContextBudget: 128_000 })).toBe(32_768);
 	});
 
-	it("uses the surface fallback only when the model context is unknown", () => {
-		expect(resolveModelContextBudget({ pinned: false, contextLength: undefined, unknownContextBudget: 16_000 })).toBe(16_000);
-		expect(resolveModelContextBudget({ pinned: false, contextLength: null, unknownContextBudget: 128_000 })).toBe(128_000);
+	it("unknown model context keeps an already-set budget untouched (RP_QUICK_SWITCH step 3)", () => {
+		expect(resolveModelContextBudget({ pinned: false, contextLength: undefined, currentBudget: 8_192, unknownContextBudget: 16_000 })).toBeUndefined();
+		expect(resolveModelContextBudget({ pinned: false, contextLength: null, currentBudget: 131_072, unknownContextBudget: 128_000 })).toBeUndefined();
+	});
+
+	it("unknown model context + NO budget at all → the surface fallback", () => {
+		expect(resolveModelContextBudget({ pinned: false, contextLength: undefined, currentBudget: undefined, unknownContextBudget: 16_000 })).toBe(16_000);
+		expect(resolveModelContextBudget({ pinned: false, contextLength: null, currentBudget: null, unknownContextBudget: 128_000 })).toBe(128_000);
 	});
 
 	it("respects a pinned budget", () => {
-		expect(resolveModelContextBudget({ pinned: true, contextLength: 32_768, unknownContextBudget: 128_000 })).toBeUndefined();
+		expect(resolveModelContextBudget({ pinned: true, contextLength: 32_768, currentBudget: 8_192, unknownContextBudget: 128_000 })).toBeUndefined();
+		expect(resolveModelContextBudget({ pinned: true, contextLength: null, currentBudget: null, unknownContextBudget: 128_000 })).toBeUndefined();
 	});
 });
 

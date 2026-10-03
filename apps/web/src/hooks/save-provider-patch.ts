@@ -351,9 +351,15 @@ export interface FavoriteModelSwitchInput {
   modelId: string;
   /** LIVE context length for the model, resolved by the caller from the
    *  provider's current model list — never the favorite's star-time snapshot
-   *  (`FavoriteProviderModelRecord.contextLength`). Unknown/absent resolves
-   *  to the RP unknown-context fallback via the shared rule. */
+   *  (`FavoriteProviderModelRecord.contextLength`). Unknown/absent keeps an
+   *  already-set budget and fills the RP fallback only when no budget is set
+   *  at all (via the shared rule). */
   contextLength: number | null | undefined;
+  /** The profile base's current `contextBudget` (null = none). An unknown
+   *  LIVE context length leaves it untouched; the RP unknown-context
+   *  fallback (16 000) fills only when no budget is set at all
+   *  (RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 3). */
+  currentBudget: number | null | undefined;
   /** Whether the profile has its context budget pinned. When `true`, `contextBudget` is never overwritten. */
   pinContextBudget: boolean;
   /** Per-model binding ON and the chosen model HAS a saved overlay: the
@@ -382,7 +388,8 @@ export interface FavoriteModelSwitchPatch {
  *    (`resolveModelContextBudget` in lib/context-autofill.ts — the same
  *    derivation the ProviderModelSelector sites use): a pinned budget is
  *    never written; a known LIVE context length is written; an unknown one
- *    fills the RP unknown-context fallback (16 000).
+ *    keeps an already-set budget and fills the RP unknown-context fallback
+ *    (16 000) only when no budget is set at all.
  *
  * The builder's former private copy of that rule (stale favorite snapshot +
  * `> 0` guard, silently skipping unknown models) was removed when this unit
@@ -394,6 +401,7 @@ export function buildFavoriteModelSwitchPatch(input: FavoriteModelSwitchInput): 
   const contextBudget = resolveModelContextBudget({
     pinned: input.pinContextBudget,
     contextLength: input.contextLength,
+    currentBudget: input.currentBudget,
     unknownContextBudget: RP_UNKNOWN_CONTEXT_BUDGET,
   });
   if (contextBudget !== undefined) patch.contextBudget = contextBudget;

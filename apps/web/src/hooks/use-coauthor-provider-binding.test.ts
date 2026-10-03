@@ -145,6 +145,19 @@ describe("useCoauthorProviderBinding — model source = connection row (CG-2)", 
     });
   });
 
+  it("quick switch with unknown model context keeps the row's set budget (report step 3)", async () => {
+    // "unlisted-model" is absent from cachedModels → no LIVE context length.
+    // The row's own 5 000 budget is set, so the switch must not clobber it
+    // with the Co-Author unknown-context fallback (128 000).
+    seedBinding(makeRow("old-model", { contextBudget: 5_000, pinContextBudget: false }));
+    const { result } = renderHook(() => useCoauthorProviderBinding());
+    await result.current.quickSwitchModel("unlisted-model");
+    expect(upsertCoauthorConnectionSettings).toHaveBeenCalledWith("p1", {
+      modelName: "unlisted-model",
+      settings: expect.objectContaining({ contextBudget: 5_000 }),
+    });
+  });
+
   it("modal save writes the row first, then binds ONLY the connection in ui_settings", async () => {
     seedBinding(makeRow("row-model", { temperature: 0.7, maxTokens: 1234, contextBudget: 5000, pinContextBudget: true }));
     const { result } = renderHook(() => useCoauthorProviderBinding());

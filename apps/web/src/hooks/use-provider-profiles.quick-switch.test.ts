@@ -10,7 +10,10 @@
  *  - binding ON without an overlay for the model, or binding OFF → the context
  *    budget follows the shared auto-fill rule from the LIVE context length the
  *    caller resolved from the provider's current model list;
- *  - a pinned budget is never written.
+ *  - a pinned budget is never written;
+ *  - an unknown LIVE context length keeps the profile's already-set budget and
+ *    fills the RP fallback only when the profile has no budget at all (report
+ *    step 3).
  *
  * Step 2 pins the hook-level wiring: the active model's overlay rows load when
  * binding is ON and activeModelEffectiveProfile resolves through them (the
@@ -171,6 +174,26 @@ describe("useProviderProfiles — RP star quick-switch (report steps 1-2)", () =
     await act(async () => { await result.current.handleSelectFavoriteProviderModel("p1", "m-b", 64_000); });
 
     expect(updatePatches).toEqual([{ profileId: "p1", patch: { defaultModel: "m-b" } }]);
+  });
+
+  it("unknown LIVE context length + budget already on the profile → model-only patch (report step 3)", async () => {
+    // makeProfile's default base carries contextBudget 32 000 — set, so the
+    // unknown-length switch must leave it untouched (no contextBudget key).
+    seed(makeProfile(), {});
+    const { result } = renderHook(() => useProviderProfiles());
+
+    await act(async () => { await result.current.handleSelectFavoriteProviderModel("p1", "m-x"); });
+
+    expect(updatePatches).toEqual([{ profileId: "p1", patch: { defaultModel: "m-x" } }]);
+  });
+
+  it("unknown LIVE context length + NO budget on the profile → RP fallback 16 000", async () => {
+    seed(makeProfile({ contextBudget: null }), {});
+    const { result } = renderHook(() => useProviderProfiles());
+
+    await act(async () => { await result.current.handleSelectFavoriteProviderModel("p1", "m-x"); });
+
+    expect(updatePatches).toEqual([{ profileId: "p1", patch: { defaultModel: "m-x", contextBudget: 16_000 } }]);
   });
 
   it("step 2: activeModelEffectiveProfile resolves the default model's overlay once rows load", async () => {

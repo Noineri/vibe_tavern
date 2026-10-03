@@ -66,6 +66,7 @@ export function CoauthorModelSelector({
     const contextBudget = resolveModelContextBudget({
       pinned: values.pinContextBudget,
       contextLength: model.contextLength,
+      currentBudget: values.contextBudget,
       unknownContextBudget: COAUTHOR_UNKNOWN_CONTEXT_BUDGET,
     });
     if (contextBudget !== undefined) onChange("contextBudget", contextBudget);
@@ -77,6 +78,7 @@ export function CoauthorModelSelector({
     const contextBudget = resolveModelContextBudget({
       pinned: values.pinContextBudget,
       contextLength: undefined,
+      currentBudget: values.contextBudget,
       unknownContextBudget: COAUTHOR_UNKNOWN_CONTEXT_BUDGET,
     });
     if (contextBudget !== undefined) onChange("contextBudget", contextBudget);

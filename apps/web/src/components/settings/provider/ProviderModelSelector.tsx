@@ -79,6 +79,7 @@ export function ProviderModelSelector({
       const contextBudget = resolveModelContextBudget({
         pinned: form.pinContextBudget,
         contextLength: model.contextLength,
+        currentBudget: form.contextBudget,
         unknownContextBudget: RP_UNKNOWN_CONTEXT_BUDGET,
       });
       if (contextBudget !== undefined) updateForm("contextBudget", contextBudget as FormState["contextBudget"]);

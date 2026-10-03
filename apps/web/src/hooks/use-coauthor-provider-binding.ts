@@ -59,6 +59,7 @@ export function useCoauthorProviderBinding() {
     const contextBudget = settingsOverride === undefined ? resolveModelContextBudget({
       pinned: settings.pinContextBudget,
       contextLength: modelContextLength,
+      currentBudget: settings.contextBudget,
       unknownContextBudget: COAUTHOR_UNKNOWN_CONTEXT_BUDGET,
     }) : undefined;
     await upsertCoauthorConnectionSettingsAction(profileId, {

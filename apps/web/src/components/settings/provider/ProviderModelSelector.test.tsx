@@ -46,11 +46,27 @@ mock.module("../../shared/Tooltip.js", () => ({
 
 let ProviderModelSelector: typeof import("./ProviderModelSelector.js").ProviderModelSelector;
 let render: typeof import("@testing-library/react").render;
+let fireEvent: typeof import("@testing-library/react").fireEvent;
 
 beforeAll(async () => {
-  ({ render } = await import("@testing-library/react"));
+  ({ render, fireEvent } = await import("@testing-library/react"));
   ({ ProviderModelSelector } = await import("./ProviderModelSelector.js"));
 });
+
+/** The Popover portals its list into document.body; cmdk items carry the
+ *  model id as data-value (set by cmdk from the Command.Item value). */
+function cmdkItem(value: string): HTMLElement {
+  const item = Array.from(document.body.querySelectorAll<HTMLElement>("[cmdk-item]"))
+    .find((el) => el.getAttribute("data-value") === value);
+  if (!item) throw new Error(`cmdk item not rendered: ${value}`);
+  return item;
+}
+
+/** Assert which updateForm keys fired, in order — the wiring contract for the
+ *  budget auto-fill (model always, contextBudget only when the rule fills). */
+function updateFormKeys(updateForm: { mock: { calls: unknown[] } }): string[] {
+  return (updateForm.mock.calls as Array<[keyof FormState, unknown]>).map(([key]) => key);
+}
 
 const MODELS: ProviderModelListOption[] = [
   { id: "gpt-4o", label: "gpt-4o" },
@@ -138,6 +154,61 @@ describe("ProviderModelSelector refresh button height (W1 step 5)", () => {
     expect(refresh.className).toContain("font-ui");
     expect(refresh.className).toContain("text-[13px]");
     expect(refresh.textContent).toContain("refresh_models");
+    view.unmount();
+  });
+});
+
+/** RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 3 — the selector feeds the ONE
+ *  shared auto-fill rule (lib/context-autofill.ts) with the form's current
+ *  budget: an unknown model context must leave a set budget untouched. The
+ *  rule's own cases (including the no-budget fallback) are pinned in
+ *  lib/context-autofill.test.ts; this pins the selector's WIRING. */
+describe("ProviderModelSelector context-budget auto-fill (RP_QUICK_SWITCH step 3)", () => {
+  const AUTOFILL_MODELS: ProviderModelListOption[] = [
+    { id: "ctx-unknown", label: "ctx-unknown" },
+    { id: "ctx-32k", label: "ctx-32k", contextLength: 32_768 },
+  ];
+
+  function renderAutofill(over: { form: FormState }) {
+    const updateForm = mock((_key: keyof FormState, _value: FormState[keyof FormState]) => {});
+    const view = render(
+      <ProviderModelSelector
+        {...baseProps({
+          ...over,
+          models: AUTOFILL_MODELS,
+          filteredModels: AUTOFILL_MODELS,
+          modelListOpen: true,
+          updateForm,
+        })}
+      />,
+    );
+    return { view, updateForm };
+  }
+
+  it("unknown model context keeps the form's set budget (no contextBudget write)", () => {
+    const { view, updateForm } = renderAutofill({
+      form: { model: "ctx-unknown", contextBudget: 8_192, pinContextBudget: false } as FormState,
+    });
+    fireEvent.click(cmdkItem("ctx-unknown"));
+    expect(updateFormKeys(updateForm)).toEqual(["model"]);
+    view.unmount();
+  });
+
+  it("known model context fills the budget — over the form's current value", () => {
+    const { view, updateForm } = renderAutofill({
+      form: { model: "ctx-32k", contextBudget: 8_192, pinContextBudget: false } as FormState,
+    });
+    fireEvent.click(cmdkItem("ctx-32k"));
+    expect(updateForm.mock.calls).toContainEqual(["contextBudget", 32_768]);
+    view.unmount();
+  });
+
+  it("pinned budget is never written, even for a known context length", () => {
+    const { view, updateForm } = renderAutofill({
+      form: { model: "ctx-32k", contextBudget: 8_192, pinContextBudget: true } as FormState,
+    });
+    fireEvent.click(cmdkItem("ctx-32k"));
+    expect(updateFormKeys(updateForm)).toEqual(["model"]);
     view.unmount();
   });
 });

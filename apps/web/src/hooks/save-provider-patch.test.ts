@@ -40,14 +40,16 @@ function makeForm(over: Partial<FormState> = {}): FormState {
  *  - otherwise the context budget follows the ONE shared auto-fill rule
  *    (lib/context-autofill.ts, the same derivation the ProviderModelSelector
  *    sites use): a pinned budget is never written; a known LIVE context
- *    length is written; an unknown one fills the RP unknown-context fallback
- *    (16 000).
+ *    length is written; an unknown one keeps the profile's already-set
+ *    budget and fills the RP unknown-context fallback (16 000) only when no
+ *    budget is set at all (report step 3).
  */
 describe("buildFavoriteModelSwitchPatch", () => {
   test("overlayOwned → model-only patch (the overlay is the source, base untouched)", () => {
     const patch = buildFavoriteModelSwitchPatch({
       modelId: "gpt-4o",
       contextLength: 128000,
+      currentBudget: 32_000,
       pinContextBudget: false,
       overlayOwned: true,
     });
@@ -58,27 +60,44 @@ describe("buildFavoriteModelSwitchPatch", () => {
     const patch = buildFavoriteModelSwitchPatch({
       modelId: "gpt-4o",
       contextLength: 200000,
+      currentBudget: 32_000,
       pinContextBudget: false,
       overlayOwned: true,
     });
     expect(patch.contextBudget).toBeUndefined();
   });
 
-  test("unpinned + known live contextLength → writes it as the context budget", () => {
+  test("unpinned + known live contextLength → writes it, over the current budget", () => {
     const patch = buildFavoriteModelSwitchPatch({
       modelId: "gpt-4o",
       contextLength: 128000,
+      currentBudget: 16_000,
       pinContextBudget: false,
       overlayOwned: false,
     });
     expect(patch).toEqual({ defaultModel: "gpt-4o", contextBudget: 128000 });
   });
 
-  test("unpinned + unknown live contextLength → shared-rule RP fallback (16 000)", () => {
+  test("unpinned + unknown live contextLength + budget already on the profile → untouched (model-only, report step 3)", () => {
     for (const contextLength of [null, undefined]) {
       const patch = buildFavoriteModelSwitchPatch({
         modelId: "claude-3",
         contextLength,
+        currentBudget: 32_000,
+        pinContextBudget: false,
+        overlayOwned: false,
+      });
+      expect(patch).toEqual({ defaultModel: "claude-3" });
+      expect(patch.contextBudget).toBeUndefined();
+    }
+  });
+
+  test("unpinned + unknown live contextLength + NO budget on the profile → RP fallback (16 000)", () => {
+    for (const contextLength of [null, undefined]) {
+      const patch = buildFavoriteModelSwitchPatch({
+        modelId: "claude-3",
+        contextLength,
+        currentBudget: null,
         pinContextBudget: false,
         overlayOwned: false,
       });
@@ -90,6 +109,7 @@ describe("buildFavoriteModelSwitchPatch", () => {
     const patch = buildFavoriteModelSwitchPatch({
       modelId: "gpt-4o",
       contextLength: 128000,
+      currentBudget: 32_000,
       pinContextBudget: true,
       overlayOwned: false,
     });
@@ -103,6 +123,7 @@ describe("buildFavoriteModelSwitchPatch", () => {
         const patch = buildFavoriteModelSwitchPatch({
           modelId: "llama-3",
           contextLength: 8000,
+          currentBudget: 32_000,
           pinContextBudget,
           overlayOwned,
         });

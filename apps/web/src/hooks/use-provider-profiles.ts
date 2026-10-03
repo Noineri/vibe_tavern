@@ -481,9 +481,10 @@ export function useProviderProfiles() {
     // model, the overlay owns that model's generation values (model-only
     // patch). Otherwise the context budget follows the ONE shared auto-fill
     // rule from the model's LIVE context length (resolved by the caller from
-    // the provider's current model list); a pinned budget is never written.
-    // The patch stays in the pure helper so the invariants are unit-tested
-    // without rendering this React hook.
+    // the provider's current model list); a pinned budget is never written,
+    // and an unknown context length keeps the profile's already-set budget
+    // (report step 3). The patch stays in the pure helper so the invariants
+    // are unit-tested without rendering this React hook.
     const profile = providerProfiles.find((p) => p.id === providerProfileId);
     let overlayOwned = false;
     if (profile?.bindPerModel) {
@@ -496,6 +497,7 @@ export function useProviderProfiles() {
     const patch = buildFavoriteModelSwitchPatch({
       modelId,
       contextLength: modelContextLength,
+      currentBudget: profile?.contextBudget ?? null,
       pinContextBudget: profile?.pinContextBudget ?? false,
       overlayOwned,
     });
