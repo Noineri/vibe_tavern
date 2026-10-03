@@ -21,7 +21,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { useFormContext, useController, type FieldPath, type UseControllerReturn } from "react-hook-form";
-import { LORE_MATCH_SOURCE } from "@vibe-tavern/domain";
+import { LORE_MATCH_SOURCE, type LoreMatchSource } from "@vibe-tavern/domain";
 import type { LoreEntryDraft } from "./use-lorebook-editor-state.js";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FieldLabel } from "../fields/field-label.js";
@@ -50,8 +50,8 @@ import { CharacterFilterPicker } from "./character-filter-picker.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-// Match-source order is derived directly from the domain source of truth.
-// Every non-chat chip reuses the exact i18n key of the field it scans.
+// Every domain source is accounted for here. Sources without a localized label
+// remain unavailable in the editor until their label is introduced.
 const MATCH_SOURCE_LABEL_KEY = {
   [LORE_MATCH_SOURCE.chatMessages]: "match_src_chat_messages",
   [LORE_MATCH_SOURCE.characterDesc]: "char_desc_label",
@@ -62,7 +62,10 @@ const MATCH_SOURCE_LABEL_KEY = {
   [LORE_MATCH_SOURCE.creatorNotes]: "creator_notes",
   [LORE_MATCH_SOURCE.authorsNote]: "authors_note_label",
   [LORE_MATCH_SOURCE.summaries]: "memory_tab_summary",
-} as const;
+  [LORE_MATCH_SOURCE.characterAltGreetings]: null,
+  [LORE_MATCH_SOURCE.chatDynamicPrompt]: null,
+  [LORE_MATCH_SOURCE.chatSummary]: null,
+} as const satisfies Record<LoreMatchSource, string | null>;
 
 interface LoreEntryEditorProps {
   entryId: string;
@@ -503,13 +506,16 @@ export function LoreEntryEditor({
                 {(field) => (
                   <ToggleChips
                     selected={field.value}
-                    options={Object.values(LORE_MATCH_SOURCE).map((source) => ({
-                      value: source,
-                      label: t(MATCH_SOURCE_LABEL_KEY[source]),
-                      tooltip: source === LORE_MATCH_SOURCE.creatorNotes
-                        ? t("lore_matchsources_creator_notes_hint")
-                        : undefined,
-                    }))}
+                    options={Object.entries(MATCH_SOURCE_LABEL_KEY).flatMap(([source, label]) => {
+                      if (label == null) return [];
+                      return [{
+                        value: source,
+                        label: t(label),
+                        tooltip: source === LORE_MATCH_SOURCE.creatorNotes
+                          ? t("lore_matchsources_creator_notes_hint")
+                          : undefined,
+                      }];
+                    })}
                     onChange={field.onChange}
                     minSelected={1}
                   />

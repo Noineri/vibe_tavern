@@ -113,6 +113,45 @@ describe("lore activation engine — injected-prompt scan sources (P15)", () => 
     expect(activatedIds(result)).toEqual(["summaries_opted_in"]);
   });
 
+  it("scans alternate greetings only for entries with the character_alt_greetings chip", () => {
+    const entry = makeEntry("alternate_greetings_source", {
+      keys: ["alternate-greeting-key"],
+      matchSources: ["character_alt_greetings"],
+    });
+
+    const result = resolveActivatedEntries(makeInput([entry], {
+      characterAltGreetings: "alternate-greeting-key",
+    }));
+
+    expect(activatedIds(result)).toEqual(["alternate_greetings_source"]);
+  });
+
+  it("scans the chat dynamic prompt only for entries with the chat_dynamic_prompt chip", () => {
+    const entry = makeEntry("dynamic_prompt_source", {
+      keys: ["dynamic-prompt-key"],
+      matchSources: ["chat_dynamic_prompt"],
+    });
+
+    const result = resolveActivatedEntries(makeInput([entry], {
+      chatDynamicPrompt: "dynamic-prompt-key",
+    }));
+
+    expect(activatedIds(result)).toEqual(["dynamic_prompt_source"]);
+  });
+
+  it("scans the chat summary only for entries with the chat_summary chip", () => {
+    const entry = makeEntry("chat_summary_source", {
+      keys: ["chat-summary-key"],
+      matchSources: ["chat_summary"],
+    });
+
+    const result = resolveActivatedEntries(makeInput([entry], {
+      chatSummary: "chat-summary-key",
+    }));
+
+    expect(activatedIds(result)).toEqual(["chat_summary_source"]);
+  });
+
   it("does not let either injected source activate an entry without its chip", () => {
     const authorEntry = makeEntry("author_without_chip", { keys: ["author-key"] });
     const summaryEntry = makeEntry("summary_without_chip", { keys: ["summary-key"] });

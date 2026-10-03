@@ -299,11 +299,14 @@ export const LORE_MATCH_SOURCE = {
   characterDesc: "character_desc",
   characterPersonality: "character_personality",
   characterNote: "character_note",
+  characterAltGreetings: "character_alt_greetings",
   personaDesc: "persona_desc",
   scenario: "scenario",
   creatorNotes: "creator_notes",
   authorsNote: "authors_note",
   summaries: "summaries",
+  chatDynamicPrompt: "chat_dynamic_prompt",
+  chatSummary: "chat_summary",
 } as const;
 
 export type LoreMatchSource = typeof LORE_MATCH_SOURCE[keyof typeof LORE_MATCH_SOURCE];
