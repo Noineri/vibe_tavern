@@ -244,6 +244,9 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     expect(getByText("creator_notes")).toBeTruthy();
     expect(getByText("authors_note_label")).toBeTruthy();
     expect(getByText("memory_tab_summary")).toBeTruthy();
+    expect(getByText("match_src_character_alt_greetings")).toBeTruthy();
+    expect(getByText("match_src_chat_dynamic_prompt")).toBeTruthy();
+    expect(getByText("match_src_chat_summary")).toBeTruthy();
     fireEvent.click(getByText("match_src_chat_messages"));
     expect(form.getValues("matchSources")).toEqual(["chat_messages"]);
   });

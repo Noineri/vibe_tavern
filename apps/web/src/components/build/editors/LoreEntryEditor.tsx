@@ -62,9 +62,9 @@ const MATCH_SOURCE_LABEL_KEY = {
   [LORE_MATCH_SOURCE.creatorNotes]: "creator_notes",
   [LORE_MATCH_SOURCE.authorsNote]: "authors_note_label",
   [LORE_MATCH_SOURCE.summaries]: "memory_tab_summary",
-  [LORE_MATCH_SOURCE.characterAltGreetings]: null,
-  [LORE_MATCH_SOURCE.chatDynamicPrompt]: null,
-  [LORE_MATCH_SOURCE.chatSummary]: null,
+  [LORE_MATCH_SOURCE.characterAltGreetings]: "match_src_character_alt_greetings",
+  [LORE_MATCH_SOURCE.chatDynamicPrompt]: "match_src_chat_dynamic_prompt",
+  [LORE_MATCH_SOURCE.chatSummary]: "match_src_chat_summary",
 } as const satisfies Record<LoreMatchSource, string | null>;
 
 interface LoreEntryEditorProps {
