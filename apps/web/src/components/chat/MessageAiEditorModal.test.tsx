@@ -103,6 +103,20 @@ mock.module("../../stores/api-actions/chat-actions.js", () => ({
     setVariantTtsAnnotationAction: setAnnotationMock.fn,
 }));
 
+// The instruction-template library behind the «Шаблоны ▾» button — the menu
+// is only asserted for presence/absence here (the field-level contract lives
+// in ai-instruction-field.test.tsx); the list resolves empty, hermetic.
+const realInstructionTemplateApi = await import("../../api/ai-instruction-template-api.js");
+// Stubs only — presence/absence is asserted here; they are never invoked
+// (the popover is not opened), so the promises stay parked forever.
+mock.module("../../api/ai-instruction-template-api.js", () => ({
+    ...realInstructionTemplateApi,
+    listAiInstructionTemplates: () => Promise.resolve([]),
+    createAiInstructionTemplate: () => new Promise<never>(() => {}),
+    updateAiInstructionTemplate: () => new Promise<never>(() => {}),
+    deleteAiInstructionTemplate: () => Promise.resolve(),
+}));
+
 let MessageAiEditorModal: typeof import("./MessageAiEditorModal.js").MessageAiEditorModal;
 let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
 beforeAll(async () => {
@@ -952,6 +966,31 @@ describe("MessageAiEditorModal — zero persistence before acceptance", () => {
     expect(screen.queryByText("message_ai_editor_generate")).toBeNull();
     expect(editMock.fn).not.toHaveBeenCalled();
     expect(createVariantMock.fn).not.toHaveBeenCalled();
+  });
+});
+
+// ── Instruction-template menu button presence (AI_EDITOR_INSTRUCTION_TEMPLATES) ─
+
+describe("MessageAiEditorModal — instruction-template menu button", () => {
+  beforeEach(() => {
+    useProviderDataStore.setState({
+      profiles: [makeProfile("prov-1", "Provider One")],
+      favoritesByProfile: {},
+    });
+    seedBootstrap("prov-1", "model-a");
+  });
+
+  it("edit and merge modes show the Templates button; annotate hides it (no instruction field)", async () => {
+    seedMessage(makeVariants(2));
+    openEditorForEdit(brandId<MessageVariantId>("var-0"));
+    const { queryByText } = renderModal();
+    expect(queryByText("message_ai_editor_templates_button")).toBeTruthy();
+
+    await act(async () => { fireEvent.click(queryByText("message_ai_editor_mode_merge")!); });
+    expect(queryByText("message_ai_editor_templates_button")).toBeTruthy();
+
+    await act(async () => { fireEvent.click(queryByText("message_ai_editor_mode_annotate")!); });
+    expect(queryByText("message_ai_editor_templates_button")).toBeNull();
   });
 });
 

@@ -182,3 +182,9 @@ export type {
   CreateFormatTemplateData,
   UpdateFormatTemplateData,
 } from './format-template-store.js';
+export { AiInstructionTemplateStore } from './ai-instruction-template-store.js';
+export type {
+  AiInstructionTemplateRow,
+  CreateAiInstructionTemplateData,
+  UpdateAiInstructionTemplateData,
+} from './ai-instruction-template-store.js';

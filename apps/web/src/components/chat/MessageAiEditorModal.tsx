@@ -42,8 +42,6 @@ import type { ChatId, MessageVariantId } from "@vibe-tavern/domain";
 
 import { Modal } from "../shared/Modal.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
-import { AutoTextarea } from "../shared/auto-textarea.js";
-import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { MessageReasoning } from "./MessageReasoning.js";
 import { TextDiffPreview, buildWordDiff, buildLineDiff, type TextDiffWordSummary, type TextDiffSummary } from "../shared/TextDiffPreview.js";
 import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
@@ -56,7 +54,6 @@ import { useAiAssistantRunner } from "../shared/ai-assistant/use-ai-assistant-ru
 import { useDebouncedTokenCount } from "../shared/ai-assistant/use-debounced-token-count.js";
 import { Icons } from "../shared/icons.js";
 import { cn } from "../../lib/cn.js";
-import { lblCls } from "../../lib/field-tokens.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { useMessageAiEditorStore, type MessageAiEditorMode } from "../../stores/message-ai-editor-store.js";
@@ -78,6 +75,7 @@ import {
   toSourceRow,
   type SourceRow,
 } from "./message-ai-editor-source-list.js";
+import { AiInstructionField } from "./ai-instruction-field.js";
 
 // ─── Conflict detection ────────────────────────────────────────────────
 // `editMessageAction` throws a plain Error whose message is the backend's
@@ -773,27 +771,7 @@ export function MessageAiEditorModal() {
                   {tDynamic("message_ai_editor_annotate_hint")}
                 </div>
               ) : (
-                <div className="mb-4">
-                  <label className={lblCls}>
-                    {tDynamic("message_ai_editor_instruction_label")}
-                  </label>
-                  <MobileExpandTextarea
-                    value={instruction}
-                    onChange={setInstruction}
-                    label={tDynamic("message_ai_editor_instruction_label")}
-                  >
-                    <AutoTextarea
-                      maxRows={12}
-                      minRows={4}
-                      placeholder={tDynamic("message_ai_editor_instruction_placeholder")}
-                      value={instruction}
-                      onChange={(e) => setInstruction(e.target.value)}
-                    />
-                  </MobileExpandTextarea>
-                  <div className="mt-1 font-ui text-[calc(var(--ui-fs)-4px)] text-t4">
-                    {tDynamic("message_ai_editor_instruction_hint")}
-                  </div>
-                </div>
+                <AiInstructionField instruction={instruction} onChange={setInstruction} />
               )}
 
               {/* Reasoning */}

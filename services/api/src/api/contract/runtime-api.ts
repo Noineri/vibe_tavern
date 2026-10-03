@@ -32,6 +32,8 @@ import type { ChatMode } from "@vibe-tavern/domain";
 import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
 import type { DicePendingState } from "../../domain/dice/dice-service.js";
 import type { LorebookExportResult, SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi } from "./template-library-contracts.js";
+export type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi };
 // Re-export so existing imports from this module (the skill adapter) keep
 // resolving; the canonical wire type lives in api-contracts (single source).
 export type { SkillCatalogEntryDto };
@@ -1039,15 +1041,9 @@ export interface SamplerSetRuntimeApi {
 	importSamplerSet: (input: import("@vibe-tavern/api-contracts").SamplerSetImport) => Promise<{ set: import("@vibe-tavern/api-contracts").SamplerSet; notes: string[] }>;
 }
 
-/** Named custom format templates (LOCAL_SUPPORT_PLAN LS-10) — the small-resource
- *  CRUD pattern (SamplerSetRuntimeApi minus the import endpoint; ST instruct
- *  import lands through the pane's own file picker, not a raw-JSON route). */
-export interface FormatTemplateRuntimeApi {
-	listFormatTemplates: () => Promise<import("@vibe-tavern/api-contracts").FormatTemplateList>;
-	createFormatTemplate: (input: import("@vibe-tavern/api-contracts").FormatTemplateCreate) => Promise<import("@vibe-tavern/api-contracts").FormatTemplate>;
-	updateFormatTemplate: (id: string, input: import("@vibe-tavern/api-contracts").FormatTemplateUpdate) => Promise<import("@vibe-tavern/api-contracts").FormatTemplate>;
-	deleteFormatTemplate: (id: string) => Promise<void>;
-}
+/** Named custom format templates + AI-editor instruction templates live in
+ *  template-library-contracts.ts (extracted for the size ratchet; re-exported
+ *  above). */
 
 export interface SttRuntimeApi {
 	listSttProfiles: () => Promise<import("@vibe-tavern/api-contracts").ClientSttProfileRecord[]>;
@@ -1294,4 +1290,5 @@ export interface RuntimeApi {
 	copilotProfiles: CopilotProfileRuntimeApi;
 	samplerSets: SamplerSetRuntimeApi;
 	formatTemplates: FormatTemplateRuntimeApi;
+	aiInstructionTemplates: AiInstructionTemplateRuntimeApi;
 }

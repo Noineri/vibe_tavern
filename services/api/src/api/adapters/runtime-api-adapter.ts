@@ -34,6 +34,7 @@ import { CopilotSkillAdapter } from "./copilot-skill-adapter.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
 import { SamplerSetAdapter } from "./sampler-set-adapter.js";
 import { FormatTemplateAdapter } from "./format-template-adapter.js";
+import { AiInstructionTemplateAdapter } from "./ai-instruction-template-adapter.js";
 import { ServicePromptAdapter } from "./service-prompt-adapter.js";
 import { ImagePromptProfileAdapter } from "./image-prompt-profile-adapter.js";
 import { DiceAdapter } from "./dice-adapter.js";
@@ -83,6 +84,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly copilotProfiles: CopilotProfileAdapter;
 	readonly samplerSets: SamplerSetAdapter;
 	readonly formatTemplates: FormatTemplateAdapter;
+	readonly aiInstructionTemplates: AiInstructionTemplateAdapter;
 	readonly dice: DiceAdapter;
 	readonly experience: ExperienceAdapter;
 	readonly experienceCopilot: ExperienceCopilotAdapter;
@@ -154,6 +156,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
 		this.samplerSets = new SamplerSetAdapter(stores);
 		this.formatTemplates = new FormatTemplateAdapter(stores);
+		this.aiInstructionTemplates = new AiInstructionTemplateAdapter(stores);
 		this.dice = new DiceAdapter(diceService);
 		this.experience = new ExperienceAdapter(experienceService, experienceResourceService, experienceReplayService, experienceModelEffectService, experienceContextService, providerProfileService);
 		this.experienceCopilot = new ExperienceCopilotAdapter(stores, providerProfileService, copilotSkillService);

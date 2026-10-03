@@ -92,6 +92,18 @@ export type {
   FormatTemplateUpdate,
 } from "./format-template-schema.js";
 export {
+  aiInstructionTemplateSchema,
+  aiInstructionTemplateListSchema,
+  createAiInstructionTemplateSchema,
+  updateAiInstructionTemplateSchema,
+} from "./ai-instruction-template-schema.js";
+export type {
+  AiInstructionTemplate,
+  AiInstructionTemplateList,
+  AiInstructionTemplateCreate,
+  AiInstructionTemplateUpdate,
+} from "./ai-instruction-template-schema.js";
+export {
   providerProxyModeSchema,
   saveProxySchema,
   updateProxySchema,

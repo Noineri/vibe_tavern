@@ -935,6 +935,25 @@ export const formatTemplates = sqliteTable('format_templates', {
   updatedAt: text('updated_at').notNull(),
 });
 
+// ─── aiInstructionTemplates ──────────────────────────────────────────────
+
+/**
+ * User-saved instruction templates for the message AI editor
+ * (AI_EDITOR_INSTRUCTION_TEMPLATES) — the word-twin of the format-template
+ * library: recurring edit/merge instructions («сократи», «убери пафос»)
+ * stored as named plain text. `text` is the instruction verbatim (no
+ * structure, no caps — the owner's no-arbitrary-input-limits rule).
+ */
+export const aiInstructionTemplates = sqliteTable('ai_instruction_templates', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  /** The instruction text verbatim. */
+  text: text('text').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── providerProfiles ──────────────────────────────────────────────────────────
 
 export const providerProfiles = sqliteTable('provider_profiles', {
