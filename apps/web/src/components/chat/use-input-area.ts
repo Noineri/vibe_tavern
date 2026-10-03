@@ -19,6 +19,7 @@ import { useTokenCount } from "../../hooks/use-token-count.js";
 import { useChatController, diceSendBlockReason } from "../../hooks/use-chat-controller.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
+import { useProviderModels } from "../../hooks/use-provider-models.js";
 import { usePresetController } from "../../hooks/use-preset-controller.js";
 import { enqueueGenerateMore } from "../../hooks/use-generation-queue.js";
 import { randomUUID } from "../../lib/uuid.js";
@@ -53,13 +54,29 @@ export function useInputArea() {
   const activePersonaId = chatMeta?.persona?.id ?? null;
   const promptPresets = bootstrapData?.promptPresets ?? [];
   const activePromptPresetId = chatMeta?.activeChat.promptPresetId ?? null;
+  // RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 2: the counter's budget and max
+  // output read the ACTIVE model's overlay-resolved effective settings (base
+  // values when binding is OFF / no overlay row exists), not the raw base.
   // LS-1d: the effective context size mirrors the server's compaction budget
   // (contextBudget minus the tokenPadding safety margin), so meter percentages
   // match generation-time trimming.
-  const contextSize = effectiveContextBudget(provider.activeProviderProfile?.contextBudget, provider.activeProviderProfile?.tokenPadding) ?? 0;
-  const maxTokens = provider.activeProviderProfile?.maxTokens ?? 0;
+  const effectiveProfile = provider.activeModelEffectiveProfile;
+  const contextSize = effectiveContextBudget(effectiveProfile?.contextBudget, effectiveProfile?.tokenPadding) ?? 0;
+  const maxTokens = effectiveProfile?.maxTokens ?? 0;
   const favoriteModels = provider.activeProviderProfile ? (provider.favoriteModelsByProfile[provider.activeProviderProfile.id] ?? []) : [];
   const activeModelId = provider.activeProviderProfile?.defaultModel ?? connection.model ?? null;
+
+  // The provider's current model list for the active profile (cache-first —
+  // the same source the Co-Author switch reads). Used to resolve the chosen
+  // model's LIVE context length on a star quick-switch: never the favorite's
+  // star-time snapshot (report step 1).
+  const activeModelList = useProviderModels(provider.activeProviderProfile?.id ?? null);
+  const handleSelectFavoriteModel = (modelId: string): void => {
+    const profile = provider.activeProviderProfile;
+    if (!profile) return;
+    const contextLength = activeModelList.models.find((model) => model.id === modelId)?.contextLength;
+    void provider.handleSelectFavoriteProviderModel(profile.id, modelId, contextLength);
+  };
 
   // GMR (Generate-More Relocation): the in-flight streaming target for the
   // active chat. The composer's "Generate more" button (relocated from the
@@ -237,7 +254,7 @@ export function useInputArea() {
     chat, character, provider, preset,
     draft, setDraft, isSending, activeChatId, chatMeta, canUseLiveApi,
     personas, activePersonaId, promptPresets, activePromptPresetId,
-    contextSize, maxTokens, favoriteModels, activeModelId,
+    contextSize, maxTokens, favoriteModels, activeModelId, handleSelectFavoriteModel,
     fileInputRef, draftAttachments, handleFileSelected, handleVoiceRecorded, onFileInputChange, handlePaste,
     canSend, buckets, inputTokens,
     showGenerateMore, handleGenerateMore,

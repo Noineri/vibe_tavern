@@ -5,6 +5,7 @@ import { MODEL_FAVORITE_SCOPE, PROVIDER_TYPE, tag } from "@vibe-tavern/domain";
 import { getT } from "../i18n/locale-helpers.js";
 import { computeHydration } from "./hydrate-provider.js";
 import { computeSavePatch, computeOverlayPatch, computeBindingIdentityPatch, connectionToSavePatch, validateSavePatch, buildFavoriteModelSwitchPatch } from "./save-provider-patch.js";
+import { resolveActiveModelEffectiveProfile, type ModelSettingsOverlayRow } from "../lib/effective-provider-profile.js";
 import { useProviderStore } from "../stores/provider-store.js";
 import { useProviderDataStore } from "../stores/provider-data-store.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord, TestChatResponse } from "../api/types.js";
@@ -25,6 +26,8 @@ import {
   testProviderChatAction,
   fetchModelsByEndpointAction,
   toggleFavoriteModelAction,
+  getProviderModelSettingsAction,
+  loadProviderModelSettingsAction,
   upsertProviderModelSettingsAction,
 } from "../stores/api-actions/provider-actions.js";
 
@@ -35,6 +38,7 @@ export function useProviderProfiles() {
   
   const providerProfiles = useProviderDataStore((s) => s.profiles);
   const favoritesByProfile = useProviderDataStore((s) => s.favoritesByProfile);
+  const modelSettingsByProfile = useProviderDataStore((s) => s.modelSettingsByProfile);
 
   // selectedProviderProfileId is local UI state, not server data
   const [selectedProviderProfileId, setSelectedProviderProfileId] = useState("");
@@ -57,6 +61,37 @@ export function useProviderProfiles() {
   const activeProviderProfile = useMemo(
     () => providerProfiles.find((profile) => profile.isActive) ?? null,
     [providerProfiles],
+  );
+  const activeModelId = activeProviderProfile?.defaultModel ?? connection.model ?? null;
+
+  // Per-model binding overlay rows for the ACTIVE profile
+  // (RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 2): chat-side displays resolve
+  // the active model's effective settings through them. Binding OFF needs no
+  // rows — the base IS the effective set. The absent-key guard keeps the many
+  // mounts of this hook (AppShell, input areas, modals) on one fetch per
+  // profile; the upsert action keeps a loaded cache fresh.
+  const bindingProfileId = activeProviderProfile?.bindPerModel ? activeProviderProfile.id : null;
+  useEffect(() => {
+    if (bindingProfileId && !(bindingProfileId in modelSettingsByProfile)) {
+      void loadProviderModelSettingsAction(bindingProfileId);
+    }
+  }, [bindingProfileId, modelSettingsByProfile]);
+
+  const activeModelSettings = useMemo<ModelSettingsOverlayRow[]>(
+    () => (bindingProfileId ? modelSettingsByProfile[bindingProfileId] ?? [] : []),
+    [bindingProfileId, modelSettingsByProfile],
+  );
+
+  /** The settings the ACTIVE model generates with — overlay-resolved through
+   *  the same domain derivation the generation boundary uses when the profile
+   *  binds per model, the base record otherwise (see
+   *  resolveActiveModelEffectiveProfile). This is the read source for
+   *  chat-side displays (token counter, context-memory meter). */
+  const activeModelEffectiveProfile = useMemo(
+    () => activeProviderProfile
+      ? resolveActiveModelEffectiveProfile(activeProviderProfile, activeModelId, activeModelSettings)
+      : null,
+    [activeProviderProfile, activeModelId, activeModelSettings],
   );
 
   const startupProbeProfileIdsRef = useRef(new Set<string>());
@@ -435,21 +470,34 @@ export function useProviderProfiles() {
     );
   }
 
-  async function handleSelectFavoriteProviderModel(providerProfileId: string, modelId: string): Promise<void> {
-    // Respect pinContextBudget: when the user has pinned a budget, switching
-    // the active model from the chat-input starred-models dropdown must NOT
-    // overwrite it (the three ProviderModelSelector sites gate on the pin;
-    // this fourth path — the chat dropdown — historically did not, which was
-    // the reported "pinned context size resets on model switch" bug).
-    // The patch logic is extracted into a pure helper so the invariant is
-    // unit-tested without rendering the React hook.
+  async function handleSelectFavoriteProviderModel(
+    providerProfileId: string,
+    modelId: string,
+    modelContextLength?: number | null,
+  ): Promise<void> {
+    // RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 1: the quick switch sets the
+    // model — it must not clobber the profile base with a stale context-length
+    // snapshot. With per-model binding ON and a saved overlay for the chosen
+    // model, the overlay owns that model's generation values (model-only
+    // patch). Otherwise the context budget follows the ONE shared auto-fill
+    // rule from the model's LIVE context length (resolved by the caller from
+    // the provider's current model list); a pinned budget is never written.
+    // The patch stays in the pure helper so the invariants are unit-tested
+    // without rendering this React hook.
     const profile = providerProfiles.find((p) => p.id === providerProfileId);
-    const favList = useProviderDataStore.getState().favoritesByProfile[providerProfileId] ?? [];
-    const fav = favList.find((f) => f.modelId === modelId);
+    let overlayOwned = false;
+    if (profile?.bindPerModel) {
+      try {
+        overlayOwned = (await getProviderModelSettingsAction(providerProfileId, modelId)) !== null;
+      } catch {
+        overlayOwned = false; // lookup failure → base path (auto-fill rule)
+      }
+    }
     const patch = buildFavoriteModelSwitchPatch({
       modelId,
-      favorite: fav,
+      contextLength: modelContextLength,
       pinContextBudget: profile?.pinContextBudget ?? false,
+      overlayOwned,
     });
     const saved = await updateProviderProfileAction(providerProfileId, patch);
     patchConnection({
@@ -612,6 +660,7 @@ export function useProviderProfiles() {
     setSelectedProviderProfileId,
     favoriteModelsByProfile,
     activeProviderProfile,
+    activeModelEffectiveProfile,
     canRefreshModels,
     canConnect,
     canSendViaActiveProfile,

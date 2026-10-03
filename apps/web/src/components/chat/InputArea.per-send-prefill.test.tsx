@@ -80,6 +80,7 @@ function makeFakeData() {
     maxTokens: 1024,
     favoriteModels: [] as { modelId: string; label?: string }[],
     activeModelId: null as string | null,
+    handleSelectFavoriteModel: mock(),
     fileInputRef: { current: null as HTMLInputElement | null },
     draftAttachments: [] as never[],
     onFileInputChange: () => {},

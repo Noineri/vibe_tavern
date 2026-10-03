@@ -24,10 +24,10 @@ import { useInputArea, type InputAreaData } from "./use-input-area.js";
 
 export function MobileInputArea({ data }: { data: InputAreaData }) {
   const {
-    t, chat, character, provider, preset,
+    t, chat, character, preset,
     draft, setDraft, isSending, activeChatId, chatMeta,
     personas, activePersonaId, promptPresets, activePromptPresetId,
-    favoriteModels, activeModelId,
+    favoriteModels, activeModelId, handleSelectFavoriteModel,
     fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
     showGenerateMore, handleGenerateMore,
   } = data;
@@ -168,7 +168,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
         {favoriteModels.length > 0 ? (
           <div className="max-h-[50vh] overflow-y-auto">
             {favoriteModels.map(model => (
-              <button type="button" key={model.modelId} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId); setModelDropOpen(false); }}>
+              <button type="button" key={model.modelId} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { handleSelectFavoriteModel(model.modelId); setModelDropOpen(false); }}>
                 <div className="w-5 shrink-0 flex justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check />}</div>
                 <div className="min-w-0 truncate">{model.label || model.modelId}</div>
               </button>

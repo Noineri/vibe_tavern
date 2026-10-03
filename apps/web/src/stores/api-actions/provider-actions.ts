@@ -78,11 +78,14 @@ export async function toggleFavoriteModelAction(
 // Per-model settings overlay (binding) Actions
 // ---------------------------------------------------------------------------
 
-/** Fetch every overlay row for a profile (for the binding dropdown's badges).
- *  Thin wrapper around {@link listProviderModelSettings}; no store side-effect
- *  yet (Wave 5 may cache into provider-data-store). */
-export async function listProviderModelSettingsAction(profileId: string): Promise<ProviderModelSettingsRecord[]> {
-  return await listProviderModelSettings(profileId);
+/** Fetch every overlay row for a profile and cache it in the data store —
+ *  the chat-side effective-settings display resolves the ACTIVE model's
+ *  values through this cache (RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 2;
+ *  the Wave 5 cache this wrapper used to defer). */
+export async function loadProviderModelSettingsAction(profileId: string): Promise<ProviderModelSettingsRecord[]> {
+  const records = await listProviderModelSettings(profileId);
+  useProviderDataStore.getState().setModelSettings(profileId, records);
+  return records;
 }
 
 /** Fetch a single model's overlay, or `null` when no overlay exists (base
@@ -100,7 +103,20 @@ export async function upsertProviderModelSettingsAction(
   modelId: string,
   settings: ModelSettingsOverlay,
 ): Promise<ProviderModelSettingsRecord> {
-  return await upsertProviderModelSettings(profileId, modelId, settings);
+  const record = await upsertProviderModelSettings(profileId, modelId, settings);
+  // Keep a LOADED display cache fresh (absent key = never loaded — the loader
+  // fetches on demand, so there is nothing to patch).
+  useProviderDataStore.setState((state) => {
+    const cached = state.modelSettingsByProfile[profileId];
+    if (!cached) return {};
+    return {
+      modelSettingsByProfile: {
+        ...state.modelSettingsByProfile,
+        [profileId]: [...cached.filter((row) => row.modelId !== modelId), record],
+      },
+    };
+  });
+  return record;
 }
 
 // ---------------------------------------------------------------------------
