@@ -452,6 +452,8 @@
 	"character_import_title": "Import character",
 	"character_import_sub": "Upload a PNG character card or JSON character file.",
 	"click_or_drop_file": "Click or drop character file here",
+	"dropzone_select_file": "Click to select a file",
+	"dropzone_select_files": "Click to select files",
 	"st_jsonl_png_supported": "PNG character cards, JSON, and VTF Markdown (.md) are supported",
 	"or_import_from_st": "Or import from SillyTavern folder →",
 	"st_browse": "Browse folder",

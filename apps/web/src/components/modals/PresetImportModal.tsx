@@ -1,9 +1,10 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { Modal } from "../shared/Modal.js";
 import { Icons } from "../shared/icons.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
+import { Dropzone } from "../shared/dropzone.js";
 import { InlineRenameInput } from "../shared/InlineRenameInput.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock, type VibeTavernPresetExtension } from "@vibe-tavern/import-export";
@@ -40,6 +41,7 @@ export interface PresetImportResult {
 interface PresetImportModalProps {
   onClose: () => void;
   onImport: (result: PresetImportResult) => void;
+  initialFile?: File;
 }
 
 function smartDefault(identifier: string): TargetMapping {
@@ -73,15 +75,13 @@ function computeBlockInfo(block: StPresetBlock): BlockInfo {
   return { block, target, slot };
 }
 
-export function PresetImportModal({ onClose, onImport }: PresetImportModalProps) {
+export function PresetImportModal({ onClose, onImport, initialFile }: PresetImportModalProps) {
   const { t } = useT();
   const [phase, setPhase] = useState<"drop" | "preview">("drop");
   const [errorMsg, setErrorMsg] = useState("");
   const [parsed, setParsed] = useState<ParsedStPreset | null>(null);
-  const [drag, setDrag] = useState(false);
   const [importTarget, setImportTarget] = useState<"current" | "new">("current");
   const [newPresetName, setNewPresetName] = useState("");
-  const [fileRefEl, setFileRefEl] = useState<HTMLInputElement | null>(null);
   const isMobile = useIsMobile();
 
   function handleFile(file?: File | null) {
@@ -99,6 +99,10 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
     };
     reader.readAsText(file);
   }
+
+  useEffect(() => {
+    if (initialFile) handleFile(initialFile);
+  }, [initialFile]);
 
   // Compute block infos, sorted by prompt_order index when available
   const blockInfos = useMemo(() => {
@@ -216,21 +220,12 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
         {/* Dropzone */}
         {phase === "drop" && (
           <div className="px-5 pb-4">
-            <div
-              className={cn(
-                "flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed px-5 py-10 font-ui text-t3 transition-all hover:border-accent hover:bg-s2 hover:text-t2",
-                drag && "border-accent bg-s2 text-t2"
-              )}
-              onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-              onDragLeave={() => setDrag(false)}
-              onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}
-              onClick={() => fileRefEl?.click()}
-            >
-              <input ref={setFileRefEl} className="hidden" type="file" accept=".json" onChange={(e) => handleFile(e.target.files?.[0])} />
-              <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-s3 text-t2"><Icons.Import /></div>
-              <div className="font-ui text-sm">{t("preset_import_drop_title")}</div>
-              <div className="font-ui text-xs text-t4">{t("preset_import_drop_sub")}</div>
-            </div>
+            <Dropzone
+              accept=".json"
+              title={t("preset_import_drop_title")}
+              subtitle={t("preset_import_drop_sub")}
+              onFiles={(files) => handleFile(files[0])}
+            />
             {errorMsg && (
               <div className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-center font-ui text-xs text-danger">{errorMsg}</div>
             )}

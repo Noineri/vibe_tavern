@@ -13,6 +13,7 @@ import { useKeyDown } from "../../../hooks/use-key-down.js";
 
 import { Ic } from "../../shared/icons.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
+import { Dropzone } from "../../shared/dropzone.js";
 import { cn } from "../../../lib/cn.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import { importLorebookEntries } from "../../../api/lorebook-api.js";
@@ -140,18 +141,6 @@ export function LorebookImportModal({
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const file = e.dataTransfer.files[0];
-    if (file) handleImportFile(file);
-  };
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleImportFile(file);
-  };
-
   // ── Run import ──
   const runImport = async () => {
     if (!importData) return;
@@ -253,31 +242,11 @@ export function LorebookImportModal({
               <div className="mb-4 text-xs text-t2">
                 {t("import_step1_desc")}
               </div>
-              <div
-                className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed border-border2 p-10 text-center text-t3 transition-all hover:border-accent hover:bg-s2 hover:text-t2"
-                onDrop={handleDrop}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onClick={() =>
-                  document.getElementById("lb-import-file")?.click()
-                }
-              >
-                <input
-                  id="lb-import-file"
-                  type="file"
-                  accept=".json"
-                  className="hidden"
-                  onChange={handleFileInput}
-                />
-                <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-s3 text-t2 transition-all">
-                  <Ic.import />
-                </div>
-                <div className="text-[13px] text-t2">
-                  {t("import_drop_browse")}
-                </div>
-              </div>
+              <Dropzone
+                accept=".json"
+                title={t("import_drop_browse")}
+                onFiles={(files) => handleImportFile(files[0])}
+              />
               <button type="button"
                 className="mt-4 h-9 cursor-pointer rounded-md border-0 bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-border2 hover:text-t1"
                 onClick={handlePaste}

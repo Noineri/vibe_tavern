@@ -36,6 +36,7 @@
 | `<SaveBar>` / `<SaveButton>` | Custom save buttons | `SaveBar.tsx` | Sticky save button with dirty/saved state |
 | `<TokenCounter>` | Custom token display | `TokenCounter.tsx` | "123 tokens" badge |
 | `<EmptyState>` | Custom empty states | `empty-state.tsx` | Icon + title + CTA placeholder |
+| `<Dropzone>` | Hand-copied file drop targets | `dropzone.tsx` | Desktop drag/click target; mobile native file-picker target |
 | `<LinkBindingPopover>` | Custom binding chips | `LinkBindingPopover.tsx` | Binding pills + add-trigger popover (character/persona/lorebook/script/preset/regex) |
 | `<MobileExpandTextarea>` | — | `MobileExpandTextarea.tsx` | Fullscreen editor overlay on mobile |
 | `<Icons.* />` / `<Ic.* />` | Emoji / SVG inline | `icons.tsx` | All UI icons as React components |

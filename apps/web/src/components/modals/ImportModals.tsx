@@ -1,10 +1,11 @@
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { ChatId } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
+import { Dropzone } from "../shared/dropzone.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { fetchBootstrapAction, fetchPersonasAction } from "../../stores/api-actions/bootstrap-actions.js";
@@ -334,13 +335,10 @@ export function StFolderImport({ onImported }: StFolderImportProps) {
 export function CharacterImportModal(input: ImportModalCommonProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const [drag, setDrag] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [preview, setPreview] = useState<CharacterPreview | null>(null);
   const [importEmbeddedBook, setImportEmbeddedBook] = useState(false);
   const [stMode, setStMode] = useState(false);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-
   useEffect(() => () => {
     if (preview?.avatarUrl) URL.revokeObjectURL(preview.avatarUrl);
   }, [preview?.avatarUrl]);
@@ -374,13 +372,10 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
         {!preview && !parsing && !stMode && (
           <>
             <Dropzone
-              drag={drag}
-              setDrag={setDrag}
               accept=".png,.json,.md,.markdown,.vtmd,image/png,application/json"
-              fileRef={fileRef}
               title={t("click_or_drop_file")}
               subtitle={t("st_jsonl_png_supported")}
-              onFile={processFile}
+              onFiles={(files) => { void processFile(files[0]); }}
             />
             {!isMobile && (
               <div className="mt-3 flex items-center gap-3">
@@ -417,12 +412,9 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
 export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: ChatId | null }) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const [drag, setDrag] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [preview, setPreview] = useState<ChatPreview | null>(null);
   const [stMode, setStMode] = useState(false);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-
   async function processFile(file?: File | null): Promise<void> {
     if (!file) return;
     setParsing(true);
@@ -448,13 +440,10 @@ export function ChatImportModal(input: ImportModalCommonProps & { activeChatId: 
         {!preview && !parsing && !stMode && (
           <>
             <Dropzone
-              drag={drag}
-              setDrag={setDrag}
               accept=".jsonl"
-              fileRef={fileRef}
               title={t("click_or_drop_chat")}
               subtitle={t("st_jsonl_supported")}
-              onFile={processFile}
+              onFiles={(files) => { void processFile(files[0]); }}
             />
             {!isMobile && (
               <div className="mt-3 flex items-center gap-3">
@@ -502,31 +491,6 @@ function ImportModalFrame(props: { title: string; subtitle: string; onClose: () 
         {props.children}
       </div>
     </Modal>
-  );
-}
-
-function Dropzone(props: {
-  drag: boolean;
-  setDrag: (drag: boolean) => void;
-  accept: string;
-  fileRef: React.RefObject<HTMLInputElement | null>;
-  title: string;
-  subtitle: string;
-  onFile: (file?: File | null) => void;
-}) {
-  return (
-    <div
-      className={cn("flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed px-5 py-10 font-ui text-t3 transition-all hover:border-accent hover:bg-s2 hover:text-t2", props.drag && "border-accent bg-s2 text-t2")}
-      onDragOver={(event) => { event.preventDefault(); props.setDrag(true); }}
-      onDragLeave={() => props.setDrag(false)}
-      onDrop={(event) => { event.preventDefault(); props.setDrag(false); props.onFile(event.dataTransfer.files[0]); }}
-      onClick={() => props.fileRef.current?.click()}
-    >
-      <input ref={props.fileRef} className="hidden" type="file" accept={props.accept} onChange={(event) => props.onFile(event.target.files?.[0])} />
-      <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-s3 text-t2 transition-all"><Icons.Import /></div>
-      <div className="font-ui text-sm">{props.title}</div>
-      <div className="font-ui text-xs text-t4">{props.subtitle}</div>
-    </div>
   );
 }
 

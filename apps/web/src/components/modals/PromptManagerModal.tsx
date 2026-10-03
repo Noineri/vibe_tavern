@@ -9,7 +9,8 @@ import { SaveButton } from "../shared/SaveBar.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
-import { PresetImportModal, type PresetImportResult } from "./PresetImportModal.js";
+import type { PresetImportResult } from "./PresetImportModal.js";
+import { PresetImportModalHost } from "./PresetImportModalHost.js";
 import { serializeStPreset, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
@@ -357,7 +358,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     setDirty(true);
     setSaveState("idle");
   }
-  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [presetImportFile, setPresetImportFile] = useState<File | null | undefined>(undefined);
   const isMobile = useIsMobile();
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
 
@@ -1057,7 +1058,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         setDirty(true);
         setSaveState("idle");
       }
-      setImportModalOpen(false);
+      setPresetImportFile(undefined);
       return;
     }
     if (result.target === 'new') {
@@ -1101,19 +1102,18 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       setDirty(true);
       setSaveState("idle");
     }
-    setImportModalOpen(false);
+    setPresetImportFile(undefined);
   };
 
   const advancedMode = draft.advancedMode;
 
   return (
     <>
-      {importModalOpen && (
-        <PresetImportModal
-          onClose={() => setImportModalOpen(false)}
-          onImport={handleImportPreset}
-        />
-      )}
+      <PresetImportModalHost
+        file={presetImportFile}
+        onClose={() => setPresetImportFile(undefined)}
+        onImport={handleImportPreset}
+      />
 
       {confirmCloseOpen && (
         <ConfirmCloseModal
@@ -1310,7 +1310,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onSelect={(id) => { input.setActivePresetId(id); }}
                   onAdd={handleAdd}
                   onRename={handleRename}
-                  onImportPreset={() => setImportModalOpen(true)}
+                  onImportPreset={(file) => setPresetImportFile(file ?? null)}
                   onReorder={input.onReorder}
                 />
               )

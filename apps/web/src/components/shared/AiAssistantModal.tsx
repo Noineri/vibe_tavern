@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useProviderDataStore } from "../../stores/provider-data-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useActiveCharacter, useActivePersona, useAllCharacters } from "../../stores/snapshot-store.js";
@@ -22,6 +22,7 @@ import { useT } from "../../i18n/context.js";
 import { MessageReasoning } from "../chat/MessageReasoning.js";
 import { Modal } from "./Modal.js";
 import { BottomSheet } from "./BottomSheet.js";
+import { Dropzone } from "./dropzone.js";
 import type { AiQuickSettings } from "./AiQuickPill.js";
 import { AiAssistantConnectionFields } from "./ai-assistant/AiAssistantConnectionFields.js";
 import { AiAssistantShell } from "./ai-assistant/AiAssistantShell.js";
@@ -108,8 +109,6 @@ export function AiAssistantModal({
   const [parsedFields, setParsedFields] = useState<Partial<MdImportResult>>({});
   const [checkedFields, setCheckedFields] = useState<Set<string>>(new Set());
   const [fieldTargets, setFieldTargets] = useState<Record<string, keyof MdImportResult>>({});
-  const [mdDragOver, setMdDragOver] = useState(false);
-  const mdFileRef = useRef<HTMLInputElement>(null);
 
   // AI generation params (shared across full modes)
   const [aiMaxTokens, setAiMaxTokens] = useState<number | null>(null);
@@ -525,27 +524,15 @@ export function AiAssistantModal({
                   {/* Dropzone */}
                   <div style={{ marginBottom: 16 }}>
                     <label className="mb-1.5 block font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("import_md_source")}</label>
-                    <div
-                      className={cn(
-                        "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 transition-colors",
-                        mdDragOver ? "border-accent bg-accent-dim/40" : "border-border bg-s2 hover:border-accent hover:bg-accent-dim/30",
-                      )}
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setMdDragOver(true); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setMdDragOver(false); }}
-                      onDrop={(e) => {
-                        e.preventDefault(); e.stopPropagation(); setMdDragOver(false);
-                        const file = e.dataTransfer.files?.[0];
+                    <Dropzone
+                      size="compact"
+                      accept=".md,.txt,.markdown"
+                      title={t("import_md_dropzone")}
+                      onFiles={(files) => {
+                        const file = files[0];
                         if (file) void file.text().then(setMdContent);
                       }}
-                      onClick={() => mdFileRef.current?.click()}
-                    >
-                      <input ref={mdFileRef} type="file" accept=".md,.txt,.markdown" className="hidden" onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) void file.text().then(setMdContent);
-                      }} />
-                      <Ic.import />
-                      <span className="font-ui text-[12px] text-t3">{t("import_md_dropzone")}</span>
-                    </div>
+                    />
                   </div>
 
                   {/* Paste area */}

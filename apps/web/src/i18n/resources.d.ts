@@ -668,6 +668,8 @@ export default interface Resources {
     "drop_image_here": "Drop image here",
     "dropdown_search_placeholder": "Search…",
     "dropdown_select_placeholder": "Select…",
+    "dropzone_select_file": "Click to select a file",
+    "dropzone_select_files": "Click to select files",
     "duplicate": "Duplicate",
     "duplicate_preset_btn": "Copy",
     "edit": "Edit",

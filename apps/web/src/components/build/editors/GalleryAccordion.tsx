@@ -3,6 +3,7 @@ import { Icons } from "../../shared/icons.js";
 import { AnimatedDisclosure } from "../../shared/AnimatedDisclosure.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { AvatarCropModal } from "../../shared/AvatarCropModal.js";
+import { Dropzone } from "../../shared/dropzone.js";
 import type { AvatarCropResult } from "../../shared/AvatarCropModal.js";
 import { useGalleryStore } from "../../../stores/gallery-store.js";
 import { GalleryGrid } from "./GalleryGrid.js";
@@ -196,10 +197,12 @@ export function GalleryAccordion({ characterId }: GalleryAccordionProps) {
               ))}
             </div>
           ) : assets.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-4 py-12 text-t3">
-              <Icons.import className="h-6 w-6 opacity-60" />
-              <p className="mt-2 text-sm">{t("gallery_empty")}</p>
-            </div>
+            <Dropzone
+              multiple
+              accept="image/*"
+              title={t("gallery_empty")}
+              onFiles={(files) => { void handleImportFiles(files); }}
+            />
           ) : (
             <GalleryGrid
               characterId={characterId}
