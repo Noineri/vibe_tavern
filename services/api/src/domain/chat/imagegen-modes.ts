@@ -40,6 +40,7 @@ import { IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, imagePromptCanonFa
 import type { StoreContainer } from "@vibe-tavern/db";
 import { buildPromptVariableContext, createFullMacroEngine } from "@vibe-tavern/prompt-pipeline";
 import { resolveActiveImagePromptOverrides, resolveImagePromptVariant } from "../imagegen/prompt-variant-resolver.js";
+import { isImageGenAssistRefusal } from "./imagegen-assist-refusal.js";
 import { loadPromptAsset } from "../../shared/prompt-asset-loader.js";
 
 /** IPT Wave 2: the family-driven assembly knobs the adapter passes in
@@ -60,7 +61,17 @@ export interface ImageGenModePromptOptions {
   /** FT-B2: a short user intent for the LLM assist. It is optional in every
    *  mode: the mode digest drives context-only drafts when absent. */
   assistHint?: string;
+  /** IMAGEGEN_ASSIST_REFUSAL_REPORT step 3: the profile-level opt-in for
+   *  ONE silent assist retry when the first output is a refusal. Default
+   *  (absent/false): a refusal fails the run before the image-gen call. */
+  assistRetryOnRefusal?: boolean;
 }
+
+/** The single silent retry's hardened instruction append (English — the
+ *  assist assets' language). Rides the SAME resolved instruction + budget
+ *  line; only the refusal hardening is appended. */
+const ASSIST_REFUSAL_RETRY_APPENDIX =
+  "\n\nYour previous reply was a refusal or an explanation, not an image prompt. Output ONLY the finished image prompt text — no preamble, no explanations, no refusal.";
 
 /** The IG-15 assist system prompt: the extraction core plus the resolved
  *  family's dialect addendum (`image-assist.{family}.md`; prose IS the base
@@ -250,25 +261,38 @@ export async function buildImageGenPrompts(
             options.promptCharCap - qualityBlock.length - 64,
           )} characters.`
         : "";
-    const refined = (
-      await assist(
-        resolve(instruction).trim() + capLine,
-        mode === IMAGE_GENERATION_MODES.Free && assistHint !== ""
-          ? assistHint
-          : buildAssistUserPayload(
-              // Free's canon is a WRAPPER around a caller prompt that a
-              // draft does not have — name the actual task instead of
-              // pointing at an absent "accompanying prompt".
-              mode === IMAGE_GENERATION_MODES.Free
-                ? "Depict the scene facts above as one finished image prompt."
-                : template,
-              contextDigest(mode, character, persona, lastMessage),
-              assistHint,
-            ),
-      )
-    ).trim();
+    const assistSystem = resolve(instruction).trim() + capLine;
+    const assistUser =
+      mode === IMAGE_GENERATION_MODES.Free && assistHint !== ""
+        ? assistHint
+        : buildAssistUserPayload(
+            // Free's canon is a WRAPPER around a caller prompt that a
+            // draft does not have — name the actual task instead of
+            // pointing at an absent "accompanying prompt".
+            mode === IMAGE_GENERATION_MODES.Free
+              ? "Depict the scene facts above as one finished image prompt."
+              : template,
+            contextDigest(mode, character, persona, lastMessage),
+            assistHint,
+          );
+    let refined = (await assist(assistSystem, assistUser)).trim();
     if (refined === "") {
       throw new ImageGenModeValidationError("LLM assist returned an empty prompt");
+    }
+    // IMAGEGEN_ASSIST_REFUSAL_REPORT steps 2–3: a refusal never reaches the
+    // image backend. Default: fail closed with the honest error. With the
+    // profile's opt-in: exactly ONE silent retry with a hardened
+    // instruction; a second refusal fails the same way.
+    if (isImageGenAssistRefusal(refined)) {
+      if (options?.assistRetryOnRefusal === true) {
+        refined = (await assist(assistSystem + ASSIST_REFUSAL_RETRY_APPENDIX, assistUser)).trim();
+      }
+      if (refined === "") {
+        throw new ImageGenModeValidationError("LLM assist returned an empty prompt");
+      }
+      if (isImageGenAssistRefusal(refined)) {
+        throw new ImageGenModeValidationError("LLM assist refused to write the image prompt");
+      }
     }
     return { prompt: withQualityBlock(resolve(refined).trim(), qualityBlock), negativePrompt: resolve(negative).trim() };
   }

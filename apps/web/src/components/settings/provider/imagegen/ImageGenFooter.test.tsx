@@ -62,6 +62,7 @@ function makeImageGen(overrides: Partial<ImageGenHook> = {}): ImageGenHook {
       llmAssistEnabled: false,
       llmProviderProfileId: null,
       llmModelId: null,
+      assistRetryOnRefusal: false,
       capabilities: {
         supportsNegativePrompt: false,
         supportsSamplers: false,

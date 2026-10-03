@@ -1845,6 +1845,10 @@ export const imageGenProfiles = sqliteTable('image_gen_profiles', {
   llmAssistEnabled: integer('llm_assist_enabled', { mode: 'boolean' }).notNull().default(false),
   llmProviderProfileId: text('llm_provider_profile_id'),
   llmModelId: text('llm_model_id'),
+  // IMAGEGEN_ASSIST_REFUSAL_REPORT step 3: opt-in single silent assist
+  // retry on a refused output (default OFF — the owner's "enabled
+  // consciously" ruling).
+  assistRetryOnRefusal: integer('assist_retry_on_refusal', { mode: 'boolean' }).notNull().default(false),
   // IPT-2 (IMAGE_PROMPT_TEMPLATES_PLAN): the profile's prompt-family
   // state. family_override = the manual pin (authoritative when set);
   // family_detected + family_detected_for_model = the last auto-detection

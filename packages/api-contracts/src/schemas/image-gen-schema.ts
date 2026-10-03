@@ -267,6 +267,10 @@ export const imageGenProfileSchema = z.object({
   llmAssistEnabled: z.boolean(),
   llmProviderProfileId: z.string().optional(),
   llmModelId: z.string().optional(),
+  /** IMAGEGEN_ASSIST_REFUSAL_REPORT step 3: opt-in (default off) for ONE
+   *  silent assist retry when the assist output is a refusal; a second
+   *  refusal still fails the run. */
+  assistRetryOnRefusal: z.boolean(),
   /** IPT-2: the manual family pin — authoritative when present; absent =
    *  the auto path (freshness of `familyDetected` is judged against the
    *  current modelId by the consumer, not baked into this record). */
@@ -314,6 +318,8 @@ export const createImageGenProfileSchema = z.object({
   llmAssistEnabled: z.boolean().optional().default(false),
   llmProviderProfileId: z.string().optional(),
   llmModelId: z.string().optional(),
+  /** Refusal-retry opt-in (default off — enabled consciously). */
+  assistRetryOnRefusal: z.boolean().optional().default(false),
   /** IPT-2: quality-layer toggle (default off). Family columns are
    *  deliberately ABSENT from create: a fresh profile starts unpinned;
    *  the Wave 3 family route is the only family writer. */
@@ -341,6 +347,7 @@ export const updateImageGenProfileSchema = z.object({
   llmAssistEnabled: z.boolean().optional(),
   llmProviderProfileId: z.string().nullable().optional(),
   llmModelId: z.string().nullable().optional(),
+  assistRetryOnRefusal: z.boolean().optional(),
   qualityLayerEnabled: z.boolean().optional(),
   capabilities: imageGenCapabilityFlagsSchema.optional(),
   sortOrder: z.number().optional(),

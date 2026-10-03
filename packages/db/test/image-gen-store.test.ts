@@ -90,6 +90,30 @@ describe('ImageGenStore CRUD', () => {
 		expect(loaded).toEqual(created);
 	});
 
+	// IMAGEGEN_ASSIST_REFUSAL_REPORT step 3: the retry opt-in round-trips the
+	// same way as the other assist booleans — OFF by default, explicit writes
+	// both directions, unrelated patches never touch it.
+	test('assistRetryOnRefusal: default false, create/update round-trip, unrelated patch keeps it', async () => {
+		const { store } = await setup();
+		const plain = await store.create(baseInput({ name: 'retry-off' }));
+		expect(plain.assistRetryOnRefusal).toBe(false);
+
+		const bornOn = await store.create(baseInput({ name: 'retry-born-on', assistRetryOnRefusal: true }));
+		expect(bornOn.assistRetryOnRefusal).toBe(true);
+
+		const flippedOff = await store.update(bornOn.id, { assistRetryOnRefusal: false });
+		expect(flippedOff?.assistRetryOnRefusal).toBe(false);
+
+		const flippedOn = await store.update(bornOn.id, { assistRetryOnRefusal: true });
+		expect(flippedOn?.assistRetryOnRefusal).toBe(true);
+
+		const untouched = await store.update(bornOn.id, { name: 'renamed' });
+		expect(untouched?.assistRetryOnRefusal).toBe(true);
+
+		const loaded = await store.getById(bornOn.id);
+		expect(loaded?.assistRetryOnRefusal).toBe(true);
+	});
+
 	// IF-7a: the base set pointer (the overlay samplerSetId twin) round-trips
 	// with the same tri-state convention as every other optional pointer.
 	test('defaultParamsSetId: absent on plain create, set/cleared via update tri-state, round-trips on read', async () => {

@@ -28,8 +28,13 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_BACKENDS, type ImageGenBackendType } from "@vibe-tavern/domain";
-import { matchImageGenAutoKeyProviderName, type ImageGenAutoKeyProviderCandidate } from "../components/settings/provider/imagegen/imagegen-form-helpers.js";
+import type { ImageGenBackendType } from "@vibe-tavern/domain";
+import {
+  capabilitySnapshot,
+  matchImageGenAutoKeyProviderName,
+  toImageGenBackend,
+  type ImageGenAutoKeyProviderCandidate,
+} from "../components/settings/provider/imagegen/imagegen-form-helpers.js";
 import { listProviderProfiles } from "../api/provider-api.js";
 import { useImageGenChatStore } from "../stores/image-gen-chat-store.js";
 import type { LocalConnectionStatus } from "../components/shared/LocalConnectionStatus.js";
@@ -103,6 +108,9 @@ export interface ImageGenProfileForm {
   llmAssistEnabled: boolean;
   llmProviderProfileId: string | null;
   llmModelId: string | null;
+  /** Refusal-retry opt-in (default off) — one silent assist retry when the
+   *  assist output is a refusal. */
+  assistRetryOnRefusal: boolean;
   /** Capability mirror for the current backend — gates the pane's
    *  capability-gated controls without a live round-trip. */
   capabilities: ImageGenCapabilityFlagsValue;
@@ -111,30 +119,6 @@ export interface ImageGenProfileForm {
 /** Editor screen state, the STT/TTS headerMode twin: "view" = saved profile
  *  shown compact with fields below; "edit" = the connection form alone. */
 export type ImageGenHeaderMode = "view" | "edit";
-
-/** Wire-boundary normalizer: defensive against unknown backend slugs —
- *  degrades to the OpenRouter roster default (the toSttBackend rule without
- *  a blind cast). */
-export function toImageGenBackend(raw: string): ImageGenBackendType {
-  for (const slug of Object.values(IMAGE_GEN_BACKENDS)) {
-    if (slug === raw) return slug;
-  }
-  return IMAGE_GEN_BACKENDS.OpenRouter;
-}
-
-/** Defensive copy of the static capability row for a backend — the form
- *  must never hold a reference into the shared registry table (a later
- *  in-place mutation would corrupt the single source of truth). */
-function capabilitySnapshot(backend: ImageGenBackendType): ImageGenCapabilityFlagsValue {
-  const caps = IMAGE_GEN_BACKEND_CAPABILITIES[backend];
-  return {
-    ...caps,
-    sizeSupport:
-      caps.sizeSupport.kind === "vendor-set"
-        ? { kind: "vendor-set", sizes: [...caps.sizeSupport.sizes] }
-        : { ...caps.sizeSupport },
-  };
-}
 
 export function useImageProfiles(): {
   profiles: ImageGenProfileRecord[];
@@ -389,6 +373,7 @@ export function useImageProfiles(): {
       llmAssistEnabled: record.llmAssistEnabled,
       llmProviderProfileId: record.llmProviderProfileId ?? null,
       llmModelId: record.llmModelId ?? null,
+      assistRetryOnRefusal: record.assistRetryOnRefusal,
       capabilities: { ...record.capabilities },
     };
   }
@@ -576,6 +561,7 @@ export function useImageProfiles(): {
       llmAssistEnabled: false,
       llmProviderProfileId: null,
       llmModelId: null,
+      assistRetryOnRefusal: false,
       capabilities: capabilitySnapshot(backend),
     });
     setDirty(false);
@@ -682,6 +668,7 @@ export function useImageProfiles(): {
           llmAssistEnabled: form.llmAssistEnabled,
           llmProviderProfileId: form.llmProviderProfileId ?? undefined,
           llmModelId: form.llmModelId ?? undefined,
+          assistRetryOnRefusal: form.assistRetryOnRefusal,
           capabilities: form.capabilities,
         } satisfies CreateImageGenProfileBody);
       } else {
@@ -699,6 +686,7 @@ export function useImageProfiles(): {
           llmAssistEnabled: form.llmAssistEnabled,
           llmProviderProfileId: form.llmProviderProfileId,
           llmModelId: form.llmModelId,
+          assistRetryOnRefusal: form.assistRetryOnRefusal,
           capabilities: form.capabilities,
         } satisfies UpdateImageGenProfileInput);
       }

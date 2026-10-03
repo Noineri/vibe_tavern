@@ -1217,6 +1217,8 @@ export default interface Resources {
     "image_gen_assist_model_none": "Not set",
     "image_gen_assist_provider_label": "AI provider profile",
     "image_gen_assist_provider_none": "Not set",
+    "image_gen_assist_retry_hint": "When on, a refused AI reply is retried once with a stricter instruction; a second refusal still stops the generation with an honest error.",
+    "image_gen_assist_retry_label": "Retry after a refused prompt",
     "image_gen_assist_title": "LLM-assisted prompt writing",
     "image_gen_bind_per_model": "Per-model settings",
     "image_gen_bind_per_model_hint": "When on, the sizes and parameters below apply only to {model}; empty fields inherit the profile base.",

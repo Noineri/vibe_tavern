@@ -697,6 +697,8 @@
 	"image_gen_assist_model_label": "AI model",
 	"image_gen_assist_provider_none": "Not set",
 	"image_gen_assist_model_none": "Not set",
+	"image_gen_assist_retry_label": "Retry after a refused prompt",
+	"image_gen_assist_retry_hint": "When on, a refused AI reply is retried once with a stricter instruction; a second refusal still stops the generation with an honest error.",
 	"image_gen_profile_delete_confirm_title": "Delete profile?",
 	"image_gen_profile_delete_confirm_body": "Delete \"{name}\"? This cannot be undone.",
 	"tts_section_title": "Text-to-Speech",

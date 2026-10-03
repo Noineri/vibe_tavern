@@ -82,6 +82,7 @@ function profile(id: string, name: string, capabilities: Caps, modelId?: string)
     defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
+    assistRetryOnRefusal: false,
     familySource: "none",
     qualityLayerEnabled: false,
     capabilities,

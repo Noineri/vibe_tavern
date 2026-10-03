@@ -91,19 +91,14 @@ import { defaultReadSidecarFile, detectImageGenFamily, type FamilyDetectionBacke
 import { parsePromptCharCapFromErrorMessage } from "../../domain/imagegen/prompt-char-caps.js";
 import { getProviderFetchFactory } from "../../domain/providers/provider-fetch-factory.js";
 import { promptFamiliesReadModel } from "../../domain/imagegen/prompt-template-catalog.js";
-import type {
-  ImageGenAdapterConfig,
-  ImageGenGenerateRequest,
-} from "../../domain/imagegen/imagegen-backend.js";
+import type { ImageGenAdapterConfig, ImageGenGenerateRequest } from "../../domain/imagegen/imagegen-backend.js";
 import { IMAGE_GENERATION_CLOUD_TIMEOUT_MS, withImageGenTimeoutMs } from "../../domain/imagegen/imagegen-backend.js";
 import { TEST_CHAT_TIMEOUT_MS } from "../../domain/providers/provider-transport.js";
 import { createImageGenBackend, IMAGE_GEN_FAMILY_DETECTION_BACKENDS } from "../../domain/imagegen/imagegen-registry.js";
 import { clearImageGenRunPhase, getImageGenRunPhase, setImageGenRunPhase } from "../../domain/imagegen/run-phase.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
-import {
-  resolveEffectiveSummaryProfile,
-} from "../../domain/chat/summary-generation-seam.js";
+import { resolveEffectiveSummaryProfile } from "../../domain/chat/summary-generation-seam.js";
 import type { AssemblePromptResponse, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ImageGenListing, ImageGenRuntimeApi } from "../contract/runtime-api.js";
 
@@ -191,6 +186,7 @@ function toClientProfile(profile: ImageGenProfile): ImageGenProfileValue {
     modeSizePresets: profile.modeSizePresets,
     ...(profile.userSizes !== undefined && profile.userSizes.length > 0 ? { userSizes: profile.userSizes } : {}),
     llmAssistEnabled: profile.llmAssistEnabled,
+    assistRetryOnRefusal: profile.assistRetryOnRefusal,
     qualityLayerEnabled: profile.qualityLayerEnabled,
     familySource: profile.familySource,
     // Graduation flags resolve at the profile-read seam: a snapshot saved
@@ -431,6 +427,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       llmAssistEnabled: body.llmAssistEnabled,
       llmProviderProfileId: body.llmProviderProfileId,
       llmModelId: body.llmModelId,
+      assistRetryOnRefusal: body.assistRetryOnRefusal,
       // IPT-2: a fresh profile starts unpinned (no family columns from
       // create — the Wave 3 family route is the only family writer).
       qualityLayerEnabled: body.qualityLayerEnabled,
@@ -460,6 +457,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     if (body.llmAssistEnabled !== undefined) patch.llmAssistEnabled = body.llmAssistEnabled;
     if (body.llmProviderProfileId !== undefined) patch.llmProviderProfileId = body.llmProviderProfileId;
     if (body.llmModelId !== undefined) patch.llmModelId = body.llmModelId;
+    if (body.assistRetryOnRefusal !== undefined) patch.assistRetryOnRefusal = body.assistRetryOnRefusal;
     if (body.qualityLayerEnabled !== undefined) patch.qualityLayerEnabled = body.qualityLayerEnabled;
     if (body.capabilities !== undefined) patch.capabilities = body.capabilities;
     if (body.sortOrder !== undefined) patch.sortOrder = body.sortOrder;
@@ -803,6 +801,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         {
           promptFamily,
           qualityLayerEnabled: profile.qualityLayerEnabled,
+          assistRetryOnRefusal: profile.assistRetryOnRefusal,
           ...(promptCharCap !== undefined ? { promptCharCap } : {}),
           // Presence (even `""`) marks this as the text-only draft path;
           // Free generation omits the option and retains IG-14's required
@@ -1092,7 +1091,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         body.mode,
         body.prompt,
         assist,
-        { promptFamily, qualityLayerEnabled: profile.qualityLayerEnabled, ...(promptCharCap !== undefined ? { promptCharCap } : {}) },
+        { promptFamily, qualityLayerEnabled: profile.qualityLayerEnabled, assistRetryOnRefusal: profile.assistRetryOnRefusal, ...(promptCharCap !== undefined ? { promptCharCap } : {}) },
       );
     } catch (error) {
       if (error instanceof ImageGenModeValidationError) {

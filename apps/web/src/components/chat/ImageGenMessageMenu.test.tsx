@@ -38,6 +38,7 @@ function profile(id: string, name: string, caps?: Partial<ProfileRecord["capabil
     defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
+    assistRetryOnRefusal: false,
     familySource: "none",
     qualityLayerEnabled: false,
     capabilities: {

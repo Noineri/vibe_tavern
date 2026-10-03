@@ -1369,6 +1369,11 @@ export interface ImageGenProfile {
   llmAssistEnabled: boolean;
   llmProviderProfileId?: string;
   llmModelId?: string;
+  /** IMAGEGEN_ASSIST_REFUSAL_REPORT step 3: conscious opt-in (default
+   *  false) for exactly ONE silent assist retry when the assist output is
+   *  a refusal — the retry rides a hardened instruction append; a second
+   *  refusal fails the run with the honest error. */
+  assistRetryOnRefusal: boolean;
   /** IPT-2 (IMAGE_PROMPT_TEMPLATES_PLAN): the manually pinned prompt
    *  family — authoritative when set; absent = the auto path applies. */
   familyOverride?: ImagePromptFamilyId;

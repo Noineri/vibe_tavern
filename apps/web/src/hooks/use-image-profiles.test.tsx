@@ -44,6 +44,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
+    assistRetryOnRefusal: false,
     familySource: "none",
     qualityLayerEnabled: false,
     llmProviderProfileId: undefined,
@@ -185,7 +186,8 @@ mock.module("../api/provider-api.js", () => ({
 }));
 
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
-const { useImageProfiles, toImageGenBackend } = await import("./use-image-profiles.js");
+const { useImageProfiles } = await import("./use-image-profiles.js");
+const { toImageGenBackend } = await import("../components/settings/provider/imagegen/imagegen-form-helpers.js");
 const { IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_BACKENDS } = await import("@vibe-tavern/domain");
 
 afterEach(async () => {

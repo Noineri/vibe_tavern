@@ -298,6 +298,7 @@ export class ImageGenStore {
           llmAssistEnabled: input.llmAssistEnabled,
           llmProviderProfileId: input.llmProviderProfileId ?? null,
           llmModelId: input.llmModelId ?? null,
+          assistRetryOnRefusal: input.assistRetryOnRefusal,
           familyOverride: null,
           familyDetected: null,
           familyDetectedForModel: null,
@@ -341,6 +342,7 @@ export class ImageGenStore {
     if (patch.llmAssistEnabled !== undefined) values.llmAssistEnabled = patch.llmAssistEnabled;
     if (patch.llmProviderProfileId !== undefined) values.llmProviderProfileId = patch.llmProviderProfileId ?? null;
     if (patch.llmModelId !== undefined) values.llmModelId = patch.llmModelId ?? null;
+    if (patch.assistRetryOnRefusal !== undefined) values.assistRetryOnRefusal = patch.assistRetryOnRefusal;
     // IPT-2 family columns: null-clear convention (the presetId twin) — the
     // Wave 3 family route owns these writes; the PATCH surface never sends
     // them (absent from updateImageGenProfileSchema).
@@ -509,6 +511,7 @@ export class ImageGenStore {
       ...(userSizes.length > 0 ? { userSizes } : {}),
       llmAssistEnabled: row.llmAssistEnabled,
       qualityLayerEnabled: row.qualityLayerEnabled,
+      assistRetryOnRefusal: row.assistRetryOnRefusal,
       ...(familyOverride !== undefined ? { familyOverride } : {}),
       ...(familyDetected !== undefined ? { familyDetected } : {}),
       familySource: deriveFamilySource(familyOverride, familyDetected),

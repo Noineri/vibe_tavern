@@ -709,6 +709,8 @@
 	"image_gen_assist_model_label": "Модель ИИ",
 	"image_gen_assist_provider_none": "Не выбран",
 	"image_gen_assist_model_none": "Не выбран",
+	"image_gen_assist_retry_label": "Повторная попытка после отказа",
+	"image_gen_assist_retry_hint": "Если включено, после отказа ИИ промпт запрашивается ещё раз с более жёсткой инструкцией; повторный отказ всё равно остановит генерацию с честной ошибкой.",
 	"image_gen_profile_delete_confirm_title": "Удалить профиль?",
 	"image_gen_profile_delete_confirm_body": "Удалить \"{name}\"? Это действие нельзя отменить.",
 	"tts_section_title": "Синтез речи",

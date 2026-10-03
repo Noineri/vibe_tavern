@@ -26,6 +26,7 @@ const FILE_SIZE_HINT = "split the file — extract the part you are changing int
 export const FILE_SIZE_EXEMPTIONS = {
 	"packages/db/src/db-schema.ts": "Flat database schema catalog; each schema addition belongs in the exhaustive source of truth.",
 	"packages/domain/src/entities.ts": "Flat domain entity catalog; each type addition belongs in the exhaustive source of truth.",
+	"packages/api-contracts/src/schemas/image-gen-schema.ts": "Flat zod wire-schema catalog; each contract-field addition belongs in the exhaustive source of truth.",
 } as const;
 
 export interface LayerImport {
