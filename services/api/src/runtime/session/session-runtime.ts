@@ -851,22 +851,15 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 		branchId?: ChatBranchId,
 		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; dryRun?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
 	) {
-		void await this.getActiveProviderProfile();
 		const strategy = await this.resolveChatModeStrategy(chatId);
+		const profile = strategy.mode === "rp" ? await this.getActiveProviderProfile() : null;
 		const model = options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel;
-		// Construct the lore AI-delegation callback (CTX-L2b) when a provider is
-		// configured and a real model is selected. The co-author strategy injects
-		// it into buildCoauthorTools so ai_write_lore_entry / ai_generate_lore_keys
-		// can fire an isolated one-shot LLM call. Absent (undefined) when no
-		// provider/model is available — the tools then throw a clear error if the
-		// model still tries to invoke them. The delegate reuses the current active
-		// provider + turn model by default; a complete configured lore pair replaces
-		// both, while a dangling provider deliberately retains that fallback.
-		const profile = await this.getActiveProviderProfile();
+		// Construct the lore AI-delegation callback (CTX-L2b) from Co-Author's
+		// connection settings. A complete lore pair selects that connection; an
+		// absent or dangling lore profile falls back to the Co-Author connection,
+		// never the RP active profile.
 		const loreDelegate = await createSessionLoreDelegate({
 			stores: this.stores,
-			activeProfile: profile,
-			model,
 			buildDelegate: this.buildLoreDelegate,
 		});
 		// CE-B1: lore entity lookup lets the edit / re-delegation tools target

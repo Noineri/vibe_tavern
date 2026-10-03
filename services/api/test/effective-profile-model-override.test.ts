@@ -1,8 +1,9 @@
 import { describe, it, expect } from "bun:test";
 import {
+  COAUTHOR_GENERATION_DEFAULTS,
   resolveEffectiveSettings,
-  type StoredProviderProfileRecord,
   type ModelSettingsOverlay,
+  type StoredProviderProfileRecord,
 } from "@vibe-tavern/domain";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -75,7 +76,7 @@ type AdapterInternals = {
   resolveEffectiveProfileOrThrow(options?: { chatId?: string; modelOverride?: string | null }): Promise<{ profile: StoredProviderProfileRecord; transport: import("@vibe-tavern/domain").CoauthorTransport }>;
 };
 
-function makeAdapter(service: ProviderProfileService, stores?: Partial<Pick<StoreContainer, "uiSettings" | "chats">>): AdapterInternals {
+function makeAdapter(service: ProviderProfileService, stores?: Partial<Pick<StoreContainer, "coauthorSettings" | "uiSettings" | "chats">>): AdapterInternals {
   // The other five constructor deps are never touched by the resolver.
   return new ChatAdapter(
     (stores ?? null) as unknown as StoreContainer,
@@ -172,185 +173,168 @@ describe("Q1a: resolveEffectiveProfileOrThrow(modelOverride?)", () => {
   });
 });
 
-// ─── Co-Author binding (CAP-21) ─────────────────────────────────────────────
-//
-// Mode-aware resolution: when a chat is in coauthor mode AND uiSettings holds
-// a valid coauthorProviderId + coauthorModelName, the adapter resolves that
-// binding instead of the RP active profile. Null/dangling bindings fall back
-// to the RP active profile. The plan requires these tests EXTEND the RP suite
-// (above), not replace it — every RP test above retains its original boundary.
+// ─── Co-Author generation boundary (CG-2) ─────────────────────────────────
 
-/** Minimal stores mock for Co-Author mode tests. */
 function makeStores(opts: {
   mode?: string;
   coauthorProviderId?: string | null;
-  coauthorModelName?: string | null;
-  coauthorMaxTokens?: number | null;
-  coauthorContextBudget?: number | null;
-}): { uiSettings: { get: () => Promise<object> }; chats: { getById: (id: string) => Promise<object | null> } } {
+  coauthorSettings?: { modelName: string | null; settings: ModelSettingsOverlay } | null;
+}): Pick<StoreContainer, "coauthorSettings" | "uiSettings" | "chats"> {
   return {
     uiSettings: {
-      get: async () => ({
-        id: "default",
-        theme: "dark",
-        chatFontSize: 15,
-        uiFontSize: 14,
-        messageWidth: 700,
-        language: "en",
-        activePromptPresetId: null,
-        aiAssistantProviderId: null,
-        aiAssistantModelName: null,
-        coauthorProviderId: opts.coauthorProviderId ?? null,
-        coauthorModelName: opts.coauthorModelName ?? null,
-        coauthorMaxTokens: opts.coauthorMaxTokens ?? null,
-        coauthorContextBudget: opts.coauthorContextBudget ?? null,
-        updatedAt: "2026-01-01",
-      }),
+      get: async () => ({ coauthorProviderId: opts.coauthorProviderId ?? null }),
     },
     chats: {
       getById: async (_id: string) => ({ id: "chat_1", mode: opts.mode ?? "rp" }),
     },
-  };
+    coauthorSettings: {
+      getByProviderId: async (_id: string) => opts.coauthorSettings ?? null,
+    },
+  } as Pick<StoreContainer, "coauthorSettings" | "uiSettings" | "chats">;
 }
 
-describe("CAP-21: Co-Author binding resolution", () => {
+describe("CG-2: Co-Author generation boundary", () => {
   const coauthorProfile = makeBase({
     id: "prof_coauthor",
     name: "coauthor-profile",
+    endpoint: "https://coauthor.example/v1",
+    apiKey: "coauthor-key",
     defaultModel: "coauthor-default",
+    bindPerModel: true,
+    tokenPadding: 999,
+    contextBudget: 8_000,
+    maxTokens: 111,
     temperature: 0.5,
+    reasoningEffort: "high",
   });
   const rpProfile = makeBase({
     id: "prof_1",
     name: "rp-active",
     defaultModel: "gpt-4o",
+    contextBudget: 16_000,
+    maxTokens: 2_000,
     temperature: 1,
+    reasoningEffort: "auto",
   });
 
-  it("coauthor chat with valid binding → resolves the bound profile + stored model", async () => {
+  it("uses only the bound connection identity and its own generation set", async () => {
     const { service, requestedFor } = makeProfileService({
       base: rpProfile,
       profilesById: { prof_coauthor: coauthorProfile },
-      overlays: { "coauthor-model": { temperature: 0.3 } },
     });
-    const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorModelName: "coauthor-model" });
-    const adapter = makeAdapter(service, stores);
-
-    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
-
-    expect(effective.id).toBe("prof_coauthor"); // NOT the RP active profile
-    expect(effective.defaultModel).toBe("coauthor-model"); // stored model, not profile default
-    expect(effective.temperature).toBe(0.3); // overlay for the stored model applied
-    expect(requestedFor).toEqual(["coauthor-model"]);
-  });
-
-  it("coauthor binding falls back to RP active profile when providerId is null", async () => {
-    const { service } = makeProfileService({ base: rpProfile, profilesById: {} });
-    const stores = makeStores({ mode: "coauthor", coauthorProviderId: null, coauthorModelName: null });
-    const adapter = makeAdapter(service, stores);
-
-    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
-
-    expect(effective.id).toBe("prof_1"); // RP active
-    expect(effective.defaultModel).toBe("gpt-4o");
-  });
-
-  it("coauthor binding falls back to RP when the bound profile was deleted (dangling id)", async () => {
-    const { service } = makeProfileService({ base: rpProfile, profilesById: {} }); // prof_coauthor not in profilesById
-    const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorModelName: "x" });
-    const adapter = makeAdapter(service, stores);
-
-    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
-
-    expect(effective.id).toBe("prof_1"); // RP fallback
-  });
-
-  it("model precedence: request override > coauthorModelName > profile defaultModel", async () => {
-    const { service, requestedFor } = makeProfileService({
-      base: rpProfile,
-      profilesById: { prof_coauthor: coauthorProfile },
-      overlays: { "override-model": { temperature: 0.15 } },
-    });
-    const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorModelName: "coauthor-model" });
-    const adapter = makeAdapter(service, stores);
-
-    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1", modelOverride: "override-model" });
-
-    expect(effective.defaultModel).toBe("override-model"); // override wins over coauthorModelName
-    expect(requestedFor).toEqual(["override-model"]);
-  });
-
-  it("applies Co-Author token overrides after the per-model overlay without changing RP", async () => {
-    const { service } = makeProfileService({
-      base: rpProfile,
-      profilesById: { prof_coauthor: coauthorProfile },
-      overlays: { "coauthor-model": { maxTokens: 4_000, contextBudget: 64_000 } },
-    });
-    const coauthorStores = makeStores({
+    const adapter = makeAdapter(service, makeStores({
       mode: "coauthor",
       coauthorProviderId: "prof_coauthor",
-      coauthorModelName: "coauthor-model",
-      coauthorMaxTokens: 1_200,
-      coauthorContextBudget: 24_000,
-    });
-    const adapter = makeAdapter(service, coauthorStores);
+      coauthorSettings: {
+        modelName: "coauthor-model",
+        settings: { temperature: 0.23, maxTokens: 1_200, contextBudget: 24_000, reasoningEffort: "low" },
+      },
+    }));
 
-    const { profile: coauthorEffective, transport } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
-    expect(coauthorEffective.maxTokens).toBe(1_200);
-    expect(coauthorEffective.contextBudget).toBe(24_000);
+    const { profile: effective, transport } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1", modelOverride: "ignored-model" });
+
+    expect(effective.id).toBe("prof_coauthor");
+    expect(effective.endpoint).toBe("https://coauthor.example/v1");
+    expect(effective.apiKey).toBe("coauthor-key");
+    expect(effective.defaultModel).toBe("coauthor-model");
+    expect(effective.temperature).toBe(0.23);
+    expect(effective.maxTokens).toBe(1_200);
+    expect(effective.contextBudget).toBe(24_000);
+    expect(effective.reasoningEffort).toBe("low");
+    expect(effective.bindPerModel).toBe(false);
+    expect(effective.tokenPadding).toBe(0);
     expect(transport).toBe("chat_completions");
-
-    const { profile: rpEffective, transport: rpTransport } = await adapter.resolveEffectiveProfileOrThrow();
-    expect(rpEffective.maxTokens).toBe(rpProfile.maxTokens);
-    expect(rpEffective.contextBudget).toBe(rpProfile.contextBudget);
-    expect(rpTransport).toBe("chat_completions");
+    expect(requestedFor).toEqual([]);
   });
 
-  it("coauthor path falls back to profile defaultModel when coauthorModelName is null", async () => {
+  it("is unchanged when RP temperature, limits, context budget, or reasoning change", async () => {
+    const coauthorSettings = { modelName: "coauthor-model", settings: { temperature: 0.23, maxTokens: 1_200, contextBudget: 24_000, reasoningEffort: "low" } };
+    const first = makeProfileService({ base: rpProfile, profilesById: { prof_coauthor: coauthorProfile } });
+    const second = makeProfileService({
+      base: makeBase({ temperature: 1.7, maxTokens: 9_000, contextBudget: 500_000, reasoningEffort: "high" }),
+      profilesById: { prof_coauthor: coauthorProfile },
+    });
+    const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorSettings });
+
+    const before = await makeAdapter(first.service, stores).resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+    const after = await makeAdapter(second.service, stores).resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+
+    expect(after.profile).toEqual(before.profile);
+  });
+
+  it("keeps each connection's settings independent", async () => {
+    const secondProfile = makeBase({ id: "prof_second", defaultModel: "second-default", temperature: 0.91 });
+    const first = makeProfileService({ base: rpProfile, profilesById: { prof_coauthor: coauthorProfile } });
+    const second = makeProfileService({ base: rpProfile, profilesById: { prof_second: secondProfile } });
+
+    const firstResolved = await makeAdapter(first.service, makeStores({
+      mode: "coauthor",
+      coauthorProviderId: "prof_coauthor",
+      coauthorSettings: { modelName: "first-model", settings: { temperature: 0.11, maxTokens: 111 } },
+    })).resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+    const secondResolved = await makeAdapter(second.service, makeStores({
+      mode: "coauthor",
+      coauthorProviderId: "prof_second",
+      coauthorSettings: { modelName: "second-model", settings: { temperature: 0.89, maxTokens: 222 } },
+    })).resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+
+    expect(firstResolved.profile.defaultModel).toBe("first-model");
+    expect(firstResolved.profile.temperature).toBe(0.11);
+    expect(firstResolved.profile.maxTokens).toBe(111);
+    expect(secondResolved.profile.defaultModel).toBe("second-model");
+    expect(secondResolved.profile.temperature).toBe(0.89);
+    expect(secondResolved.profile.maxTokens).toBe(222);
+  });
+
+  it("uses Co-Author defaults when the bound connection has no settings row", async () => {
+    const { service } = makeProfileService({ base: rpProfile, profilesById: { prof_coauthor: coauthorProfile } });
+    const adapter = makeAdapter(service, makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor" }));
+
+    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
+
+    expect(effective.defaultModel).toBe("coauthor-default");
+    expect(effective.temperature).toBe(COAUTHOR_GENERATION_DEFAULTS.temperature);
+    expect(effective.maxTokens).toBe(COAUTHOR_GENERATION_DEFAULTS.maxTokens);
+    expect(effective.contextBudget).toBe(COAUTHOR_GENERATION_DEFAULTS.contextBudget);
+  });
+
+  it("fails closed with a stable code for unbound and deleted Co-Author connections", async () => {
+    const calls: string[] = [];
+    const { service } = makeProfileService({ base: rpProfile, profilesById: {} });
+    (service as unknown as { resolveActiveProviderProfile: () => Promise<StoredProviderProfileRecord> }).resolveActiveProviderProfile = async () => {
+      calls.push("rp");
+      return rpProfile;
+    };
+
+    const unbound = makeAdapter(service, makeStores({ mode: "coauthor", coauthorProviderId: null }));
+    const dangling = makeAdapter(service, makeStores({ mode: "coauthor", coauthorProviderId: "prof_deleted" }));
+
+    for (const adapter of [unbound, dangling]) {
+      await expect(adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" })).rejects.toMatchObject({
+        kind: "Validation",
+        details: { code: "coauthor_model_required" },
+      });
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it("leaves RP requests on the existing per-model resolution path", async () => {
     const { service, requestedFor } = makeProfileService({
       base: rpProfile,
       profilesById: { prof_coauthor: coauthorProfile },
-      overlays: { "coauthor-default": { temperature: 0.42 } },
+      overlays: { "gpt-4o": { temperature: 0.4 } },
     });
-    const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorModelName: null });
-    const adapter = makeAdapter(service, stores);
+    const adapter = makeAdapter(service, makeStores({
+      mode: "rp",
+      coauthorProviderId: "prof_coauthor",
+      coauthorSettings: { modelName: "coauthor-model", settings: { temperature: 0.23 } },
+    }));
 
     const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
 
-    expect(effective.id).toBe("prof_coauthor");
-    expect(effective.defaultModel).toBe("coauthor-default"); // profile default used
-    expect(requestedFor).toEqual(["coauthor-default"]);
-  });
-
-  it("RP chat is unaffected — no Co-Author resolution attempted", async () => {
-    const { service } = makeProfileService({
-      base: rpProfile,
-      profilesById: { prof_coauthor: coauthorProfile },
-    });
-    const stores = makeStores({ mode: "rp", coauthorProviderId: "prof_coauthor", coauthorModelName: "coauthor-model" });
-    const adapter = makeAdapter(service, stores);
-
-    const { profile: effective } = await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
-
-    expect(effective.id).toBe("prof_1"); // RP active, even though a coauthor binding exists
-  });
-
-  it("coauthor resolution performs no profile activation/defaultModel write (read-only)", async () => {
-    // The adapter's resolveProfileForMode reads profiles via getProviderProfile;
-    // it never calls activate/save. This test pins that no mutation methods are
-    // invoked by spying on the mock service.
-    const mutations: string[] = [];
-    const { service } = makeProfileService({
-      base: rpProfile,
-      profilesById: { prof_coauthor: coauthorProfile },
-    });
-    (service as unknown as Record<string, unknown>).activateProviderProfile = async () => { mutations.push("activate"); };
-    (service as unknown as Record<string, unknown>).saveProviderProfile = async () => { mutations.push("save"); };
-    const stores = makeStores({ mode: "coauthor", coauthorProviderId: "prof_coauthor", coauthorModelName: "m" });
-    const adapter = makeAdapter(service, stores);
-
-    await adapter.resolveEffectiveProfileOrThrow({ chatId: "chat_1" });
-
-    expect(mutations).toEqual([]); // no activation, no defaultModel write
+    expect(effective.id).toBe("prof_1");
+    expect(effective.defaultModel).toBe("gpt-4o");
+    expect(effective.temperature).toBe(0.4);
+    expect(requestedFor).toEqual(["gpt-4o"]);
   });
 });

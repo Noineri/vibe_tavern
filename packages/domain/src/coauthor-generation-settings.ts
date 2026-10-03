@@ -1,4 +1,4 @@
-import type { ModelSettingsOverlay } from "./provider-profile.js";
+import type { ModelSettingsOverlay, StoredProviderProfileRecord } from "./provider-profile.js";
 
 /**
  * Generation-field defaults a brand-new RP provider profile starts from
@@ -111,4 +111,24 @@ export function resolveCoauthorGenerationSettings(
   if (!stored) return COAUTHOR_GENERATION_DEFAULTS;
   const merged = { ...COAUTHOR_GENERATION_DEFAULTS, ...stored };
   return { ...merged, contextBudget: merged.contextBudget ?? COAUTHOR_UNKNOWN_CONTEXT_BUDGET };
+}
+
+/**
+ * Build the generation-ready Co-Author profile from connection identity and
+ * its independent generation set. Per-model RP bindings and token padding are
+ * intentionally disabled: neither has a Co-Author storage field, and reading
+ * either from the connection profile would reintroduce RP inheritance.
+ */
+export function resolveCoauthorGenerationProfile(
+  profile: StoredProviderProfileRecord,
+  model: string,
+  stored: ModelSettingsOverlay | null | undefined,
+): StoredProviderProfileRecord & { defaultModel: string } {
+  return {
+    ...profile,
+    ...resolveCoauthorGenerationSettings(stored),
+    defaultModel: model,
+    bindPerModel: false,
+    tokenPadding: 0,
+  };
 }

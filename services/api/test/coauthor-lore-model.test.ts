@@ -70,6 +70,7 @@ function makeProfile(overrides: Partial<StoredProviderProfileRecord> = {}): Stor
 async function createTestRuntime(captures: CreateLoreDelegateDeps[]): Promise<{
 	runtime: SessionRuntime;
 	chatId: string;
+	coauthorProfileId: string;
 	stores: Awaited<ReturnType<typeof createRuntimeStore>>;
 	cleanup: () => Promise<void>;
 }> {
@@ -81,7 +82,23 @@ async function createTestRuntime(captures: CreateLoreDelegateDeps[]): Promise<{
 		stores.presets.ensureDefault(),
 		stores.uiSettings.ensureDefaults(),
 	]);
-	const activeProfile = makeProfile();
+	const activeProfile = makeProfile({
+		temperature: 1.7,
+		maxTokens: 9_000,
+		contextBudget: 500_000,
+		reasoningEffort: "high",
+	});
+	const coauthorProfile = await stores.providers.create({
+		name: "Co-Author connection",
+		providerPreset: "openai_compat",
+		endpoint: "https://coauthor.example/v1",
+		defaultModel: "coauthor-profile-default",
+	});
+	await stores.coauthorSettings.upsert(coauthorProfile.id, {
+		modelName: "coauthor-connection-model",
+		settings: { temperature: 0.23, maxTokens: 1_200, contextBudget: 24_000, reasoningEffort: "low" },
+	});
+	await stores.uiSettings.update({ coauthorProviderId: coauthorProfile.id });
 	const runtime = new SessionRuntime(stores, {
 		getActiveProviderProfile: async () => activeProfile,
 		createLoreDelegate: (deps) => {
@@ -95,9 +112,11 @@ async function createTestRuntime(captures: CreateLoreDelegateDeps[]): Promise<{
 		firstMessage: "Hello.",
 	});
 	const coauthor = await runtime.chatLifecycle.createChatForCharacter(character.snapshot.character!.id, "coauthor");
+	captures.length = 0;
 	return {
 		runtime,
 		chatId: coauthor.activeChat.id,
+		coauthorProfileId: coauthorProfile.id,
 		stores,
 		cleanup: async () => {
 			try {
@@ -124,7 +143,7 @@ describe("Co-Author lore model delegation", () => {
 		await Promise.all(cleanups.map((cleanup) => cleanup()));
 	});
 
-	it("null lore binding preserves the current active-profile + coauthor-turn-model delegate", async () => {
+	it("unset lore pair uses the Co-Author connection settings and model", async () => {
 		const captures: CreateLoreDelegateDeps[] = [];
 		const ctx = await createTestRuntime(captures);
 		cleanups.push(ctx.cleanup);
@@ -132,11 +151,15 @@ describe("Co-Author lore model delegation", () => {
 		await assembleCoauthorTurn(ctx.runtime, ctx.chatId);
 
 		expect(captures).toHaveLength(1);
-		expect(captures[0]!.profile.id).toBe("prof_active");
-		expect(captures[0]!.model).toBe("coauthor-turn-model");
+		expect(captures[0]!.profile.id).toBe(ctx.coauthorProfileId);
+		expect(captures[0]!.model).toBe("coauthor-connection-model");
+		expect(captures[0]!.profile.temperature).toBe(0.23);
+		expect(captures[0]!.profile.maxTokens).toBe(1_200);
+		expect(captures[0]!.profile.contextBudget).toBe(24_000);
+		expect(captures[0]!.profile.reasoningEffort).toBe("low");
 	});
 
-	it("uses the configured lore provider and model when the complete pair is set", async () => {
+	it("uses the lore connection's Co-Author settings with the configured lore model", async () => {
 		const captures: CreateLoreDelegateDeps[] = [];
 		const ctx = await createTestRuntime(captures);
 		cleanups.push(ctx.cleanup);
@@ -145,6 +168,10 @@ describe("Co-Author lore model delegation", () => {
 			providerPreset: "openai_compat",
 			endpoint: "https://lore.example/v1",
 			defaultModel: "lore-default",
+		});
+		await ctx.stores.coauthorSettings.upsert(loreProfile.id, {
+			modelName: "lore-connection-model",
+			settings: { temperature: 0.44, maxTokens: 2_400, contextBudget: 48_000, reasoningEffort: "medium" },
 		});
 		await ctx.stores.uiSettings.update({
 			coauthorLoreProviderId: loreProfile.id,
@@ -156,9 +183,13 @@ describe("Co-Author lore model delegation", () => {
 		expect(captures).toHaveLength(1);
 		expect(captures[0]!.profile.id).toBe(loreProfile.id);
 		expect(captures[0]!.model).toBe("lore-model");
+		expect(captures[0]!.profile.temperature).toBe(0.44);
+		expect(captures[0]!.profile.maxTokens).toBe(2_400);
+		expect(captures[0]!.profile.contextBudget).toBe(48_000);
+		expect(captures[0]!.profile.reasoningEffort).toBe("medium");
 	});
 
-	it("falls back to the current delegate when the configured lore provider is gone", async () => {
+	it("falls back to the Co-Author connection when the configured lore provider is gone", async () => {
 		const captures: CreateLoreDelegateDeps[] = [];
 		const ctx = await createTestRuntime(captures);
 		cleanups.push(ctx.cleanup);
@@ -170,7 +201,11 @@ describe("Co-Author lore model delegation", () => {
 		await assembleCoauthorTurn(ctx.runtime, ctx.chatId);
 
 		expect(captures).toHaveLength(1);
-		expect(captures[0]!.profile.id).toBe("prof_active");
-		expect(captures[0]!.model).toBe("coauthor-turn-model");
+		expect(captures[0]!.profile.id).toBe(ctx.coauthorProfileId);
+		expect(captures[0]!.model).toBe("coauthor-connection-model");
+		expect(captures[0]!.profile.temperature).toBe(0.23);
+		expect(captures[0]!.profile.maxTokens).toBe(1_200);
+		expect(captures[0]!.profile.contextBudget).toBe(24_000);
+		expect(captures[0]!.profile.reasoningEffort).toBe("low");
 	});
 });
