@@ -18,6 +18,10 @@ export const PROMPT_LAYER_POSITION_RANK: Record<PromptLayerPosition, number> = {
 export const IN_PROMPT_SUB_POSITION = {
   /** Character description blocks (character_base, personality, persona) */
   charDesc: 0,
+  /** WI entries positioned before the persona description */
+  beforePersona: 15,
+  /** WI entries positioned after the persona description */
+  afterPersona: 25,
   /** WI entries positioned after character description (ST: after_char) */
   afterChar: 10,
   /** WI entries positioned before Author's Note (ST: top_an) */

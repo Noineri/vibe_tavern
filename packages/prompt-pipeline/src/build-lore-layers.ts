@@ -34,6 +34,10 @@ function lorePromptSubPosition(
       return resolver.rank("dialogueExamples") - 0.1;
     case "after_examples":
       return resolver.rank("dialogueExamples") + 0.1;
+    case "before_persona":
+      return resolver.rank("personaDescription") - 0.1;
+    case "after_persona":
+      return resolver.rank("personaDescription") + 0.1;
     default:
       if (!worldInfoIdentifier) return fallbackSubPosition;
       return resolver.rank(worldInfoIdentifier, DEFAULT_PROMPT_ORDER[worldInfoIdentifier] ?? fallbackSubPosition);
@@ -46,6 +50,8 @@ function resolveLorePosition(position: string | undefined): PromptLayerPosition 
     case "after_char":
     case "before_examples":
     case "after_examples":
+    case "before_persona":
+    case "after_persona":
     case "top_an":
     case "bottom_an":
       return "in_prompt";
@@ -78,6 +84,10 @@ function fallbackLoreSubPosition(position: string | undefined): number | undefin
       return IN_PROMPT_SUB_POSITION.beforeExamples;
     case "after_examples":
       return IN_PROMPT_SUB_POSITION.afterExamples;
+    case "before_persona":
+      return IN_PROMPT_SUB_POSITION.beforePersona;
+    case "after_persona":
+      return IN_PROMPT_SUB_POSITION.afterPersona;
     default:
       return undefined;
   }
