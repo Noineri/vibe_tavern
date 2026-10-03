@@ -3,6 +3,7 @@ import type { ClientProviderProfileRecord } from "../../runtime/session/session-
 import { notFound } from "../../shared/errors.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import { COAUTHOR_TRANSPORT, PROXY_MODE, type CoauthorTransport, type ModelFavoriteScope, type ModelSettingsOverlay, type ProviderProxyMode } from "@vibe-tavern/domain";
+import type { UpsertCoauthorConnectionSettingsValue } from "@vibe-tavern/api-contracts";
 import { generateText } from "ai";
 import { resolveModel } from "../../infrastructure/ai/provider-executor-utils.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
@@ -131,6 +132,27 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 
 	deleteProviderModelSettings = (providerProfileId: string, modelId: string) =>
 		this.providerProfileService.deleteProviderModelSettings(providerProfileId, modelId);
+
+	// ── Co-Author per-connection generation set (CG-1) ──
+	// Fail-closed like the sibling overlay endpoints: an unknown provider id is a
+	// 404 BEFORE any store access; a known connection with no saved set is `null`
+	// (the domain resolver applies the Co-Author defaults), never an RP fallback.
+
+	getCoauthorConnectionSettings = async (providerProfileId: string) => {
+		await this.getRequiredProviderProfile(providerProfileId);
+		return this.stores.coauthorSettings.getByProviderId(providerProfileId);
+	};
+
+	upsertCoauthorConnectionSettings = (
+		providerProfileId: string,
+		body: UpsertCoauthorConnectionSettingsValue,
+	) => {
+		// Validation happens in the route (zValidator); re-checking the profile here
+		// keeps the adapter fail-closed regardless of the caller.
+		return this.getRequiredProviderProfile(providerProfileId).then(() =>
+			this.stores.coauthorSettings.upsert(providerProfileId, body),
+		);
+	};
 
 	fetchModelsByEndpoint = async (
 		baseUrl: string,

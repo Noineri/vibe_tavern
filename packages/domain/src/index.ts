@@ -9,6 +9,7 @@ export * from "./attachment.js";
 export * from "./character-asset.js";
 export * from "./chat-json-config.js";
 export * from "./chat-notification.js";
+export * from "./coauthor-generation-settings.js";
 export * from "./coauthor-transport-capabilities.js";
 export * from "./dice.js";
 export * from "./entities.js";

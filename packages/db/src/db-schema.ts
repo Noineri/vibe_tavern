@@ -1104,6 +1104,27 @@ export const providerModelSettings = sqliteTable('provider_model_settings', {
   providerModelUnique: uniqueIndex('idx_provider_model_settings_unique').on(table.providerProfileId, table.modelId),
 }));
 
+// ─── coauthorConnectionSettings ────────────────────────────────────────────────
+// Per-connection Co-Author generation set (COAUTHOR_OWN_GENERATION_SETTINGS_PLAN
+// CG-1): the Co-Author shares ONLY the connection identity (endpoint, key,
+// transport) with the RP profile — every generation field (model, samplers,
+// reasoning, limits) is the connection's own, exactly one row per profile.
+// `settings_json` carries the ModelSettingsOverlay field set: stored COMPLETE
+// when written through the API (unlike provider_model_settings' partial
+// inherit-overlay); the CG-1 seed row may store only the values the legacy
+// ui_settings overrides carried — resolveCoauthorGenerationSettings completes
+// them. Model name sits on the row (not in the JSON): the Co-Author's own
+// model choice, null = «choose a model» (never inherits the RP defaultModel).
+// Cascades with the profile: deleting the connection is the only teardown.
+export const coauthorConnectionSettings = sqliteTable('coauthor_connection_settings', {
+  providerProfileId: text('provider_profile_id').primaryKey().references(() => providerProfiles.id, { onDelete: 'cascade' }),
+  modelName: text('model_name'),
+  /** Stringified ModelSettingsOverlay-shaped JSON (see the block comment). */
+  settingsJson: text('settings_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── providerQuotaSettings ─────────────────────────────────────────────────────
 // The user's three quota toggles, one row per profile. `configKind` mirrors the
 // capability kind the toggles were written for: `balance` configs have no

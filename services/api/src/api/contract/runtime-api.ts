@@ -32,6 +32,8 @@ import type { ChatMode } from "@vibe-tavern/domain";
 import type { DiceDefinitionsResponse } from "../../domain/scripts-engine/dice-script-service.js";
 import type { DicePendingState } from "../../domain/dice/dice-service.js";
 import type { LorebookExportResult, SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
+import type { CoauthorConnectionSettingsRuntimeApi } from "./coauthor-connection-contracts.js";
+export type { CoauthorConnectionSettingsRuntimeApi };
 import type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi } from "./template-library-contracts.js";
 export type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi };
 // Re-export so existing imports from this module (the skill adapter) keep
@@ -447,7 +449,7 @@ export interface TtsRuntimeApi {
 
 // ─── Provider ────────────────────────────────────────────────────────
 
-export interface ProviderRuntimeApi {
+export interface ProviderRuntimeApi extends CoauthorConnectionSettingsRuntimeApi {
 	listProviderProfiles: () => Promise<ClientProviderProfileRecord[]>;
 	reorderProviderProfiles: (updates: Array<{ id: string; sortOrder: number }>) => Promise<ClientProviderProfileRecord[]>;
 	fetchProviderProfile: (providerProfileId: string) => Promise<ClientProviderProfileRecord>;

@@ -63,8 +63,11 @@ export {
   tokenizeSchema,
   modelSettingsOverlaySchema,
   samplerPresetPayloadSchema,
+  coauthorGenerationSettingsSchema,
+  upsertCoauthorConnectionSettingsSchema,
   reorderProviderProfilesSchema,
 } from "./provider-schema.js";
+export type { CoauthorGenerationSettingsValue, UpsertCoauthorConnectionSettingsValue } from "./provider-schema.js";
 export {
   samplerSetSchema,
   samplerSetListSchema,
