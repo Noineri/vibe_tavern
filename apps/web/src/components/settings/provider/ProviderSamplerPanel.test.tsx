@@ -141,7 +141,7 @@ function form(): FormState {
 describe("ProviderSamplerPanel advanced disclosure", () => {
   it("opens the real advanced sampler body from its collapsed header", () => {
     const { getByText, queryByText } = render(
-      <ProviderSamplerPanel form={form()} updateForm={mock()} />,
+      <ProviderSamplerPanel values={form()} onChange={mock()} />,
     );
     expect(queryByText("sampler_top_p")).toBeNull();
 
@@ -150,11 +150,19 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     expect(getByText("sampler_top_p")).toBeTruthy();
   });
 
+  it("hides token padding only when explicitly requested", () => {
+    const { queryByText } = render(
+      <ProviderSamplerPanel values={form()} onChange={mock()} showTokenPadding={false} />,
+    );
+
+    expect(queryByText("token_padding")).toBeNull();
+  });
+
   it("shows adaptive-p fields only for providers whose sampler set includes them (llamacpp_native / koboldcpp_native)", async () => {
     const { resolveSamplerCapabilities } = await import("@vibe-tavern/domain");
     const llamaCaps = resolveSamplerCapabilities(null, "llamacpp");
     const { getByText, queryByText, unmount } = render(
-      <ProviderSamplerPanel form={form()} updateForm={mock()} capabilities={{ samplers: llamaCaps }} />,
+      <ProviderSamplerPanel values={form()} onChange={mock()} capabilities={{ samplers: llamaCaps }} />,
     );
     fireEvent.click(getByText("samplers_advanced"));
     expect(getByText("sampler_adaptive_target")).toBeTruthy();
@@ -169,7 +177,7 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
 
     const openaiCaps = resolveSamplerCapabilities("openai", "openai_compat");
     const { getByText: get2, queryByText: query2 } = render(
-      <ProviderSamplerPanel form={form()} updateForm={mock()} capabilities={{ samplers: openaiCaps }} />,
+      <ProviderSamplerPanel values={form()} onChange={mock()} capabilities={{ samplers: openaiCaps }} />,
     );
     fireEvent.click(get2("samplers_advanced"));
     expect(query2("sampler_adaptive_target")).toBeNull();
@@ -184,7 +192,7 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
     const { resolveSamplerCapabilities } = await import("@vibe-tavern/domain");
     const koboldCaps = resolveSamplerCapabilities("koboldcpp", "koboldcpp");
     const { getByText, queryByText, unmount } = render(
-      <ProviderSamplerPanel form={form()} updateForm={mock()} capabilities={{ samplers: koboldCaps }} />,
+      <ProviderSamplerPanel values={form()} onChange={mock()} capabilities={{ samplers: koboldCaps }} />,
     );
     fireEvent.click(getByText("samplers_advanced"));
     expect(getByText("sampler_banned_strings")).toBeTruthy();
@@ -197,7 +205,7 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
       resolveSamplerCapabilities("vllm", "openai_compat"),
     ]) {
       const { getByText: get, queryByText: query, unmount: un } = render(
-        <ProviderSamplerPanel form={form()} updateForm={mock()} capabilities={{ samplers: caps }} />,
+        <ProviderSamplerPanel values={form()} onChange={mock()} capabilities={{ samplers: caps }} />,
       );
       fireEvent.click(get("samplers_advanced"));
       expect(query("sampler_banned_strings")).toBeNull();
@@ -261,8 +269,8 @@ describe("ProviderSamplerPanel sampler-set row (LS-5)", () => {
   function panelElement(h: ReturnType<typeof makeHarness>, capabilities?: Record<string, unknown>) {
     return (
       <ProviderSamplerPanel
-        form={{ ...h.current }}
-        updateForm={h.updateForm as never}
+        values={{ ...h.current }}
+        onChange={h.updateForm as never}
         capabilities={capabilities as never}
       />
     );
@@ -474,7 +482,7 @@ describe("ProviderSamplerPanel sampler-set row (LS-5)", () => {
 // (title | selector + icon actions; the md: prefixed classes restore it).
 describe("ProviderSamplerPanel accordion header (mobile two-row layout, W1)", () => {
   it("max-md: columnates the set row (selector / icon-action rows); md: restores the single horizontal row", () => {
-    const view = render(<ProviderSamplerPanel form={setForm()} updateForm={mock()} />);
+    const view = render(<ProviderSamplerPanel values={setForm()} onChange={mock()} />);
     const header = view.getByTestId("sampler-accordion-header");
     // Mobile: the header stacks (title row → set row) and children stretch.
     // Mobile-first: flex-col is the base direction, md:flex-row restores the

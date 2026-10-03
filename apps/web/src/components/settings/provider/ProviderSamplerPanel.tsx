@@ -2,15 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { PROVIDER_TYPE } from '@vibe-tavern/domain';
 import { useT } from '../../../i18n/context.js';
-import type { FormState } from '../../modals/ProviderModal.js';
+import type { ProviderSamplerOnChange, ProviderSamplerValues } from '../../../lib/provider-sampler-values.js';
 import { ChipInput } from '../../shared/ChipInput.js';
 import { LogitBiasPanel } from './LogitBiasPanel.js';
 import { Icons } from '../../shared/icons.js';
 import { cn } from '../../../lib/cn.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
-import type { SamplerCapabilityFlags, SamplerFieldId } from '@vibe-tavern/domain';
 import { NumberInput } from '../../shared/NumberInput.js';
+import type { SamplerCapabilityFlags, SamplerFieldId } from '@vibe-tavern/domain';
+import { InlineNumField } from './ProviderSamplerNumberField.js';
 import { TextInput } from '../../shared/text-input.js';
 import { AnimatedDisclosure } from '../../shared/AnimatedDisclosure.js';
 import { samplerPresetPayloadSchema, type SamplerSet } from '@vibe-tavern/api-contracts';
@@ -121,29 +122,6 @@ function Toggle({ label, checked, onChange }: ToggleProps) {
   );
 }
 
-/* ── Inline number field with blur-commit ─────────────────────── */
-
-function InlineNumField({
-  value,
-  placeholder,
-  onBlur,
-}: {
-  value: number;
-  placeholder?: string;
-  onBlur: (v: number) => void;
-}) {
-  const [raw, setRaw] = useState<string | null>(null);
-  const displayValue = raw !== null ? raw : (value || '');
-  return (
-    <NumberInput
-      className="h-[38px] w-full"
-      hideControls
-      value={value}
-      onChange={(v) => onBlur(v)}
-    />
-  );
-}
-
 /* ── ProviderSamplerPanel ───────────────────────────────────────────── */
 
 /** Default sampler values when custom samplers are toggled ON. */
@@ -178,52 +156,54 @@ const CUSTOM_SAMPLER_DEFAULTS = {
 } as const;
 
 interface ProviderSamplerPanelProps {
-  form: FormState;
-  updateForm: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+  values: ProviderSamplerValues;
+  onChange: ProviderSamplerOnChange;
+  /** Hide the profile-only token padding control for Co-Author settings. */
+  showTokenPadding?: boolean;
   capabilities?: { logitBias?: boolean; samplers?: SamplerCapabilityFlags; [k: string]: unknown } | null;
 }
 
-export function ProviderSamplerPanel({ form, updateForm, capabilities }: ProviderSamplerPanelProps) {
+export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true, capabilities }: ProviderSamplerPanelProps) {
   const { t } = useT();
   const [advOpen, setAdvOpen] = useState(false);
-  const disabled = !form.customSamplers;
+  const disabled = !values.customSamplers;
   const samplerCaps = capabilities?.samplers;
   const supports = (field: SamplerFieldId) => samplerCaps?.[field] ?? true;
 
   const handleToggleCustomSamplers = (enabled: boolean) => {
     if (enabled) {
       // Apply custom sampler defaults when enabling
-      updateForm('customSamplers', true);
-      updateForm('topP', CUSTOM_SAMPLER_DEFAULTS.topP);
-      updateForm('topK', CUSTOM_SAMPLER_DEFAULTS.topK);
-      updateForm('topA', CUSTOM_SAMPLER_DEFAULTS.topA);
-      updateForm('minP', CUSTOM_SAMPLER_DEFAULTS.minP);
-      updateForm('typicalP', CUSTOM_SAMPLER_DEFAULTS.typicalP);
-      updateForm('tfsZ', CUSTOM_SAMPLER_DEFAULTS.tfsZ);
-      updateForm('adaptiveTarget', CUSTOM_SAMPLER_DEFAULTS.adaptiveTarget);
-      updateForm('adaptiveDecay', CUSTOM_SAMPLER_DEFAULTS.adaptiveDecay);
-      updateForm('dynatempRange', CUSTOM_SAMPLER_DEFAULTS.dynatempRange);
-      updateForm('dynatempExponent', CUSTOM_SAMPLER_DEFAULTS.dynatempExponent);
-      updateForm('topNSigma', CUSTOM_SAMPLER_DEFAULTS.topNSigma);
-      updateForm('smoothingFactor', CUSTOM_SAMPLER_DEFAULTS.smoothingFactor);
-      updateForm('repeatLastN', CUSTOM_SAMPLER_DEFAULTS.repeatLastN);
-      updateForm('mirostat', CUSTOM_SAMPLER_DEFAULTS.mirostat);
-      updateForm('mirostatTau', CUSTOM_SAMPLER_DEFAULTS.mirostatTau);
-      updateForm('mirostatEta', CUSTOM_SAMPLER_DEFAULTS.mirostatEta);
-      updateForm('dryMultiplier', CUSTOM_SAMPLER_DEFAULTS.dryMultiplier);
-      updateForm('dryBase', CUSTOM_SAMPLER_DEFAULTS.dryBase);
-      updateForm('dryAllowedLength', CUSTOM_SAMPLER_DEFAULTS.dryAllowedLength);
-      updateForm('drySequenceBreakers', CUSTOM_SAMPLER_DEFAULTS.drySequenceBreakers);
-      updateForm('bannedStrings', CUSTOM_SAMPLER_DEFAULTS.bannedStrings);
-      updateForm('dryPenaltyLastN', CUSTOM_SAMPLER_DEFAULTS.dryPenaltyLastN);
-      updateForm('xtcThreshold', CUSTOM_SAMPLER_DEFAULTS.xtcThreshold);
-      updateForm('xtcProbability', CUSTOM_SAMPLER_DEFAULTS.xtcProbability);
-      updateForm('frequencyPenalty', CUSTOM_SAMPLER_DEFAULTS.frequencyPenalty);
-      updateForm('presencePenalty', CUSTOM_SAMPLER_DEFAULTS.presencePenalty);
-      updateForm('repetitionPenalty', CUSTOM_SAMPLER_DEFAULTS.repetitionPenalty);
+      onChange('customSamplers', true);
+      onChange('topP', CUSTOM_SAMPLER_DEFAULTS.topP);
+      onChange('topK', CUSTOM_SAMPLER_DEFAULTS.topK);
+      onChange('topA', CUSTOM_SAMPLER_DEFAULTS.topA);
+      onChange('minP', CUSTOM_SAMPLER_DEFAULTS.minP);
+      onChange('typicalP', CUSTOM_SAMPLER_DEFAULTS.typicalP);
+      onChange('tfsZ', CUSTOM_SAMPLER_DEFAULTS.tfsZ);
+      onChange('adaptiveTarget', CUSTOM_SAMPLER_DEFAULTS.adaptiveTarget);
+      onChange('adaptiveDecay', CUSTOM_SAMPLER_DEFAULTS.adaptiveDecay);
+      onChange('dynatempRange', CUSTOM_SAMPLER_DEFAULTS.dynatempRange);
+      onChange('dynatempExponent', CUSTOM_SAMPLER_DEFAULTS.dynatempExponent);
+      onChange('topNSigma', CUSTOM_SAMPLER_DEFAULTS.topNSigma);
+      onChange('smoothingFactor', CUSTOM_SAMPLER_DEFAULTS.smoothingFactor);
+      onChange('repeatLastN', CUSTOM_SAMPLER_DEFAULTS.repeatLastN);
+      onChange('mirostat', CUSTOM_SAMPLER_DEFAULTS.mirostat);
+      onChange('mirostatTau', CUSTOM_SAMPLER_DEFAULTS.mirostatTau);
+      onChange('mirostatEta', CUSTOM_SAMPLER_DEFAULTS.mirostatEta);
+      onChange('dryMultiplier', CUSTOM_SAMPLER_DEFAULTS.dryMultiplier);
+      onChange('dryBase', CUSTOM_SAMPLER_DEFAULTS.dryBase);
+      onChange('dryAllowedLength', CUSTOM_SAMPLER_DEFAULTS.dryAllowedLength);
+      onChange('drySequenceBreakers', CUSTOM_SAMPLER_DEFAULTS.drySequenceBreakers);
+      onChange('bannedStrings', CUSTOM_SAMPLER_DEFAULTS.bannedStrings);
+      onChange('dryPenaltyLastN', CUSTOM_SAMPLER_DEFAULTS.dryPenaltyLastN);
+      onChange('xtcThreshold', CUSTOM_SAMPLER_DEFAULTS.xtcThreshold);
+      onChange('xtcProbability', CUSTOM_SAMPLER_DEFAULTS.xtcProbability);
+      onChange('frequencyPenalty', CUSTOM_SAMPLER_DEFAULTS.frequencyPenalty);
+      onChange('presencePenalty', CUSTOM_SAMPLER_DEFAULTS.presencePenalty);
+      onChange('repetitionPenalty', CUSTOM_SAMPLER_DEFAULTS.repetitionPenalty);
       setAdvOpen(true);
     } else {
-      updateForm('customSamplers', false);
+      onChange('customSamplers', false);
     }
   };
 
@@ -238,9 +218,9 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
   //  - Apply (select / re-select / 🔄) = safeParse → filter by the panel's
   //    per-protocol capability set (LS-5f — unsupported values never enter the
   //    form) → applySamplerPresetFields (overlay-vs-base routing is free).
-  //  - 💾 = computeOverlayPatch(form) → update the selected set's payload.
+  //  - 💾 = computeOverlayPatch(values) → update the selected set's payload.
   //  - «+» = the same payload under the morph-entered name.
-  //  - Profile.samplerSetId rides updateForm on apply/💾/+; cleared by delete
+  //  - Profile.samplerSetId rides onChange on apply/💾/+; cleared by delete
   //    of that set and by picking "no set".
   //  - Dirty dot: the applied (capability-filtered) payload vs the current
   //    extract, field-wise deep compare; cleared by 💾 and by re-applying.
@@ -279,14 +259,14 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
     return () => { cancelled = true; };
   }, []);
 
-  const selected = sets.find((s) => s.id === form.samplerSetId) ?? null;
+  const selected = sets.find((s) => s.id === values.samplerSetId) ?? null;
 
   // Back-fill the dirty-dot baseline from the profile's pre-selected set once
   // the library arrives (previous-session pre-selection — no re-apply).
   useEffect(() => {
-    if (!setsLoaded || !form.samplerSetId) return;
-    if (appliedRef.current?.setId === form.samplerSetId) return;
-    const set = sets.find((s) => s.id === form.samplerSetId);
+    if (!setsLoaded || !values.samplerSetId) return;
+    if (appliedRef.current?.setId === values.samplerSetId) return;
+    const set = sets.find((s) => s.id === values.samplerSetId);
     if (!set) return;
     const parsed = samplerPresetPayloadSchema.safeParse(set.payload);
     if (!parsed.success) return;
@@ -297,7 +277,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
   const isDirty = Boolean(
     selected &&
       appliedRef.current?.setId === selected.id &&
-      overlayDivergesFromSet(appliedRef.current.baseline, computeOverlayPatch(form)),
+      overlayDivergesFromSet(appliedRef.current.baseline, computeOverlayPatch(values)),
   );
 
   const applySet = (set: SamplerSet) => {
@@ -309,17 +289,17 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
     // Per-protocol filtering ON APPLY (LS-5f): unsupported values never enter
     // the form, so they can't persist invisibly onto the profile.
     const filtered = filterOverlayByCapabilities(parsed.data, supports);
-    applySamplerPresetFields(filtered, updateForm);
+    applySamplerPresetFields(filtered, onChange);
     appliedRef.current = { setId: set.id, baseline: filtered };
     bumpApplied();
-    updateForm('samplerSetId', set.id);
+    onChange('samplerSetId', set.id);
     toast.success(t('sampler_set_applied', { name: set.name }));
   };
 
   const handleSelectSet = (id: string) => {
     if (!id) {
       // Explicit "no set": clear the pointer, keep the panel's current values.
-      updateForm('samplerSetId', null);
+      onChange('samplerSetId', null);
       appliedRef.current = null;
       bumpApplied();
       return;
@@ -330,13 +310,13 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
 
   const handleSaveIntoSet = async () => {
     if (!selected) return;
-    const payload = computeOverlayPatch(form);
+    const payload = computeOverlayPatch(values);
     try {
       const updated = await updateSamplerSet(selected.id, { payload });
       setSets((list) => list.map((s) => (s.id === updated.id ? updated : s)));
       appliedRef.current = { setId: updated.id, baseline: filterOverlayByCapabilities(payload, supports) };
       bumpApplied();
-      updateForm('samplerSetId', updated.id);
+      onChange('samplerSetId', updated.id);
       toast.success(t('sampler_set_saved'));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('sampler_set_action_failed'));
@@ -349,11 +329,11 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
     if (!name) return;
     if (morph.intent === 'new') {
       try {
-        const created = await createSamplerSet({ name, payload: computeOverlayPatch(form) });
+        const created = await createSamplerSet({ name, payload: computeOverlayPatch(values) });
         setSets((list) => [...list, created]);
         appliedRef.current = { setId: created.id, baseline: filterOverlayByCapabilities(created.payload, supports) };
         bumpApplied();
-        updateForm('samplerSetId', created.id);
+        onChange('samplerSetId', created.id);
         setMorph(null);
         setMorphConflict(false);
         toast.success(t('sampler_set_created'));
@@ -384,10 +364,10 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
     try {
       await deleteSamplerSet(confirmDeleteId);
       setSets((list) => list.filter((s) => s.id !== confirmDeleteId));
-      if (form.samplerSetId === confirmDeleteId) {
+      if (values.samplerSetId === confirmDeleteId) {
         // Deleting a set never touches profiles that already applied it
         // (copy-on-select) — only the pointer clears.
-        updateForm('samplerSetId', null);
+        onChange('samplerSetId', null);
       }
       if (appliedRef.current?.setId === confirmDeleteId) {
         appliedRef.current = null;
@@ -465,9 +445,9 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
           </label>
           </CustomTooltip>
           <InlineNumField
-            value={form.maxTokens}
+            value={values.maxTokens}
             placeholder="-1"
-            onBlur={(v) => updateForm('maxTokens', v)}
+            onBlur={(v) => onChange('maxTokens', v)}
           />
         </div>
 
@@ -478,22 +458,22 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
           </label>
           <div className="flex items-center gap-1.5">
             <InlineNumField
-              value={form.contextBudget}
+              value={values.contextBudget}
               placeholder={t("context_auto")}
-              onBlur={(v) => updateForm('contextBudget', v)}
+              onBlur={(v) => onChange('contextBudget', v)}
             />
-            <CustomTooltip content={form.pinContextBudget ? t("context_pin_locked") : t("context_pin_unlocked")}>
+            <CustomTooltip content={values.pinContextBudget ? t("context_pin_locked") : t("context_pin_unlocked")}>
               <button type="button"
                 className={cn(
                   "flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-md border transition-colors",
-                  form.pinContextBudget
+                  values.pinContextBudget
                     ? "border-accent bg-accent/15 text-accent"
                     : "border-border bg-s2 text-t3 hover:border-border2 hover:text-t2",
                 )}
-                onClick={() => updateForm('pinContextBudget', !form.pinContextBudget)}
+                onClick={() => onChange('pinContextBudget', !values.pinContextBudget)}
               >
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  {form.pinContextBudget
+                  {values.pinContextBudget
                     ? <><path d="M9.828 1.172a2.828 2.828 0 1 1 4 4L12.5 6.5l-4-4 1.328-1.328z"/><path d="M5 14l-3 1 1-3 7.5-7.5 2 2L5 14z"/></>
                     : <><path d="M9.828 1.172a2.828 2.828 0 1 1 4 4L12.5 6.5l-4-4 1.328-1.328z"/><path d="M8 6.5 5 14l-3 1 1-3 7.5-7.5" strokeLinecap="round"/><line x1="4" y1="4" x2="12" y2="12"/></>
                   }
@@ -501,7 +481,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               </button>
             </CustomTooltip>
           </div>
-          {form.providerPreset === PROVIDER_TYPE.koboldCpp && (
+          {values.providerPreset === PROVIDER_TYPE.koboldCpp && (
             <div className="mt-1 font-ui text-[11px] text-t3 italic">{t("context_kobold_hint")}</div>
           )}
         </div>
@@ -510,30 +490,32 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
             budget — compensates chat-template overhead the estimator can't
             see (local backends). Profile-level, consumed server-side via
             effectiveContextBudget. */}
-        <div>
-          <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
-            <span>{t("token_padding")}</span>
-            <CustomTooltip content={t("token_padding_hint")} side="top" align="start">
-              <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
-            </CustomTooltip>
-          </label>
-          <InlineNumField
-            value={form.tokenPadding}
-            placeholder="0"
-            onBlur={(v) => updateForm('tokenPadding', Math.max(0, Math.round(v)))}
-          />
-        </div>
+        {showTokenPadding && (
+          <div>
+            <label className="mb-[7px] flex items-center gap-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.06em] text-t3">
+              <span>{t("token_padding")}</span>
+              <CustomTooltip content={t("token_padding_hint")} side="top" align="start">
+                <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-border2 bg-s3 text-[10px] font-semibold normal-case tracking-normal text-t3">?</span>
+              </CustomTooltip>
+            </label>
+            <InlineNumField
+              value={values.tokenPadding}
+              placeholder="0"
+              onBlur={(v) => onChange('tokenPadding', Math.max(0, Math.round(v)))}
+            />
+          </div>
+        )}
 
         {/* Temperature */}
         {supports('temperature') && (
           <SamplerField
-            label={`${t("sampler_temperature")} (${form.temperature})`}
+            label={`${t("sampler_temperature")} (${values.temperature})`}
             tooltip={t("sampler_temperature_hint")}
             min={0}
             max={2}
             step={0.05}
-            value={form.temperature}
-            onChange={(v) => updateForm('temperature', v)}
+            value={values.temperature}
+            onChange={(v) => onChange('temperature', v)}
           />
         )}
 
@@ -544,13 +526,13 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
               {t("reasoning_effort")}
             </label>
             <SegmentedControl
-              value={form.reasoningEffort}
+              value={values.reasoningEffort}
               options={[
                 { value: "low", label: t("effort_low") },
                 { value: "medium", label: t("effort_medium") },
                 { value: "high", label: t("effort_high") },
               ]}
-              onChange={(v) => updateForm('reasoningEffort', v)}
+              onChange={(v) => onChange('reasoningEffort', v)}
             />
           </div>
         )}
@@ -560,13 +542,13 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Toggle
           label={t("stream_response")}
-          checked={form.streamResponse !== false}
-          onChange={(v) => updateForm('streamResponse', v)}
+          checked={values.streamResponse !== false}
+          onChange={(v) => onChange('streamResponse', v)}
         />
         <Toggle
           label={t("show_reasoning")}
-          checked={form.showReasoning}
-          onChange={(v) => updateForm('showReasoning', v)}
+          checked={values.showReasoning}
+          onChange={(v) => onChange('showReasoning', v)}
         />
       </div>
 
@@ -650,7 +632,7 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
             ) : (
               <div className="flex min-w-0 items-center">
                 <DropdownSelect
-                  value={form.samplerSetId ?? ''}
+                  value={values.samplerSetId ?? ''}
                   options={sets.map((s) => ({ id: s.id, label: s.name }))}
                   defaultOption={t('sampler_set_none')}
                   placeholder={t('sampler_set_placeholder')}
@@ -777,10 +759,10 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
             />
             {/* Toggle switch right in the accordion header */}
             <div
-              className={cn("relative ml-1 h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors", form.customSamplers ? "bg-accent" : "bg-s3")}
-              onClick={(e) => { e.stopPropagation(); handleToggleCustomSamplers(!form.customSamplers); }}
+              className={cn("relative ml-1 h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors", values.customSamplers ? "bg-accent" : "bg-s3")}
+              onClick={(e) => { e.stopPropagation(); handleToggleCustomSamplers(!values.customSamplers); }}
             >
-              <div className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", form.customSamplers ? "translate-x-[18px]" : "translate-x-0.5")} />
+              <div className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", values.customSamplers ? "translate-x-[18px]" : "translate-x-0.5")} />
             </div>
             </div>
           </div>
@@ -796,8 +778,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={1}
                   step={0.01}
-                  value={form.topP}
-                  onChange={(v) => updateForm('topP', v)}
+                  value={values.topP}
+                  onChange={(v) => onChange('topP', v)}
                   disabled={disabled}
                 />
               )}
@@ -808,8 +790,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={-2}
                   max={2}
                   step={0.1}
-                  value={form.frequencyPenalty}
-                  onChange={(v) => updateForm('frequencyPenalty', v)}
+                  value={values.frequencyPenalty}
+                  onChange={(v) => onChange('frequencyPenalty', v)}
                   disabled={disabled}
                 />
               )}
@@ -821,8 +803,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   max={100}
                   step={1}
                   isInteger={true}
-                  value={form.topK}
-                  onChange={(v) => updateForm('topK', v)}
+                  value={values.topK}
+                  onChange={(v) => onChange('topK', v)}
                   disabled={disabled}
                 />
               )}
@@ -833,8 +815,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={-2}
                   max={2}
                   step={0.1}
-                  value={form.presencePenalty}
-                  onChange={(v) => updateForm('presencePenalty', v)}
+                  value={values.presencePenalty}
+                  onChange={(v) => onChange('presencePenalty', v)}
                   disabled={disabled}
                 />
               )}
@@ -845,8 +827,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={1}
                   step={0.01}
-                  value={form.topA ?? 0}
-                  onChange={(v) => updateForm('topA', v)}
+                  value={values.topA ?? 0}
+                  onChange={(v) => onChange('topA', v)}
                   disabled={disabled}
                 />
               )}
@@ -857,8 +839,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={2}
                   step={0.05}
-                  value={form.repetitionPenalty}
-                  onChange={(v) => updateForm('repetitionPenalty', v)}
+                  value={values.repetitionPenalty}
+                  onChange={(v) => onChange('repetitionPenalty', v)}
                   disabled={disabled}
                 />
               )}
@@ -869,8 +851,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={1}
                   step={0.01}
-                  value={form.minP}
-                  onChange={(v) => updateForm('minP', v)}
+                  value={values.minP}
+                  onChange={(v) => onChange('minP', v)}
                   disabled={disabled}
                 />
               )}
@@ -881,8 +863,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={1}
                   step={0.01}
-                  value={form.typicalP}
-                  onChange={(v) => updateForm('typicalP', v)}
+                  value={values.typicalP}
+                  onChange={(v) => onChange('typicalP', v)}
                   disabled={disabled}
                 />
               )}
@@ -893,8 +875,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={2}
                   step={0.01}
-                  value={form.tfsZ}
-                  onChange={(v) => updateForm('tfsZ', v)}
+                  value={values.tfsZ}
+                  onChange={(v) => onChange('tfsZ', v)}
                   disabled={disabled}
                 />
               )}
@@ -905,8 +887,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={-1}
                   max={1}
                   step={0.01}
-                  value={form.adaptiveTarget}
-                  onChange={(v) => updateForm('adaptiveTarget', v)}
+                  value={values.adaptiveTarget}
+                  onChange={(v) => onChange('adaptiveTarget', v)}
                   disabled={disabled}
                 />
               )}
@@ -917,8 +899,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={0.99}
                   step={0.01}
-                  value={form.adaptiveDecay}
-                  onChange={(v) => updateForm('adaptiveDecay', v)}
+                  value={values.adaptiveDecay}
+                  onChange={(v) => onChange('adaptiveDecay', v)}
                   disabled={disabled}
                 />
               )}
@@ -929,8 +911,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={10}
                   step={0.1}
-                  value={form.dynatempRange}
-                  onChange={(v) => updateForm('dynatempRange', v)}
+                  value={values.dynatempRange}
+                  onChange={(v) => onChange('dynatempRange', v)}
                   disabled={disabled}
                 />
               )}
@@ -941,8 +923,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={2}
                   step={0.05}
-                  value={form.dynatempExponent}
-                  onChange={(v) => updateForm('dynatempExponent', v)}
+                  value={values.dynatempExponent}
+                  onChange={(v) => onChange('dynatempExponent', v)}
                   disabled={disabled}
                 />
               )}
@@ -953,8 +935,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={1}
                   step={0.01}
-                  value={form.topNSigma}
-                  onChange={(v) => updateForm('topNSigma', v)}
+                  value={values.topNSigma}
+                  onChange={(v) => onChange('topNSigma', v)}
                   disabled={disabled}
                 />
               )}
@@ -965,8 +947,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={1.5}
                   step={0.05}
-                  value={form.smoothingFactor}
-                  onChange={(v) => updateForm('smoothingFactor', v)}
+                  value={values.smoothingFactor}
+                  onChange={(v) => onChange('smoothingFactor', v)}
                   disabled={disabled}
                 />
               )}
@@ -978,8 +960,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   max={4096}
                   step={1}
                   isInteger={true}
-                  value={form.repeatLastN}
-                  onChange={(v) => updateForm('repeatLastN', v)}
+                  value={values.repeatLastN}
+                  onChange={(v) => onChange('repeatLastN', v)}
                   disabled={disabled}
                 />
               )}
@@ -991,8 +973,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   max={2}
                   step={1}
                   isInteger={true}
-                  value={form.mirostat}
-                  onChange={(v) => updateForm('mirostat', v)}
+                  value={values.mirostat}
+                  onChange={(v) => onChange('mirostat', v)}
                   disabled={disabled}
                 />
               )}
@@ -1003,8 +985,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={10}
                   step={0.1}
-                  value={form.mirostatTau}
-                  onChange={(v) => updateForm('mirostatTau', v)}
+                  value={values.mirostatTau}
+                  onChange={(v) => onChange('mirostatTau', v)}
                   disabled={disabled}
                 />
               )}
@@ -1015,8 +997,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={1}
                   step={0.01}
-                  value={form.mirostatEta}
-                  onChange={(v) => updateForm('mirostatEta', v)}
+                  value={values.mirostatEta}
+                  onChange={(v) => onChange('mirostatEta', v)}
                   disabled={disabled}
                 />
               )}
@@ -1027,8 +1009,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={5}
                   step={0.05}
-                  value={form.dryMultiplier}
-                  onChange={(v) => updateForm('dryMultiplier', v)}
+                  value={values.dryMultiplier}
+                  onChange={(v) => onChange('dryMultiplier', v)}
                   disabled={disabled}
                 />
               )}
@@ -1039,8 +1021,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={4}
                   step={0.05}
-                  value={form.dryBase}
-                  onChange={(v) => updateForm('dryBase', v)}
+                  value={values.dryBase}
+                  onChange={(v) => onChange('dryBase', v)}
                   disabled={disabled}
                 />
               )}
@@ -1052,8 +1034,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   max={32}
                   step={1}
                   isInteger={true}
-                  value={form.dryAllowedLength}
-                  onChange={(v) => updateForm('dryAllowedLength', v)}
+                  value={values.dryAllowedLength}
+                  onChange={(v) => onChange('dryAllowedLength', v)}
                   disabled={disabled}
                 />
               )}
@@ -1065,8 +1047,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   max={4096}
                   step={1}
                   isInteger={true}
-                  value={form.dryPenaltyLastN}
-                  onChange={(v) => updateForm('dryPenaltyLastN', v)}
+                  value={values.dryPenaltyLastN}
+                  onChange={(v) => onChange('dryPenaltyLastN', v)}
                   disabled={disabled}
                 />
               )}
@@ -1077,8 +1059,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={1}
                   step={0.01}
-                  value={form.xtcThreshold}
-                  onChange={(v) => updateForm('xtcThreshold', v)}
+                  value={values.xtcThreshold}
+                  onChange={(v) => onChange('xtcThreshold', v)}
                   disabled={disabled}
                 />
               )}
@@ -1089,8 +1071,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   min={0}
                   max={1}
                   step={0.01}
-                  value={form.xtcProbability}
-                  onChange={(v) => updateForm('xtcProbability', v)}
+                  value={values.xtcProbability}
+                  onChange={(v) => onChange('xtcProbability', v)}
                   disabled={disabled}
                 />
               )}
@@ -1105,8 +1087,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   </CustomTooltip>
                 </label>
                 <ChipInput
-                  values={form.drySequenceBreakers}
-                  onChange={(v) => updateForm('drySequenceBreakers', v)}
+                  values={values.drySequenceBreakers}
+                  onChange={(v) => onChange('drySequenceBreakers', v)}
                   placeholder={t("sampler_dry_sequence_breakers_placeholder")}
                   disabled={disabled}
                   showPresets={false}
@@ -1125,8 +1107,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                   </CustomTooltip>
                 </label>
                 <ChipInput
-                  values={form.bannedStrings}
-                  onChange={(v) => updateForm('bannedStrings', v)}
+                  values={values.bannedStrings}
+                  onChange={(v) => onChange('bannedStrings', v)}
                   placeholder={t("sampler_banned_strings_placeholder")}
                   disabled={disabled}
                   showPresets={false}
@@ -1144,8 +1126,8 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
                 </label>
               </CustomTooltip>
               <ChipInput
-                values={form.stopSequences}
-                onChange={(v) => updateForm('stopSequences', v)}
+                values={values.stopSequences}
+                onChange={(v) => onChange('stopSequences', v)}
                 placeholder={t("stop_seqs_placeholder")}
                 disabled={disabled}
                 showPresets
@@ -1157,11 +1139,11 @@ export function ProviderSamplerPanel({ form, updateForm, capabilities }: Provide
 
             {capabilities?.logitBias && supports('logitBias') && (
               <LogitBiasPanel
-                entries={form.logitBias}
-                onChange={(v) => updateForm('logitBias', v)}
+                entries={values.logitBias}
+                onChange={(v) => onChange('logitBias', v)}
                 disabled={disabled}
                 supported
-                model={form.model}
+                model={values.model}
               />
             )}
         </AnimatedDisclosure>

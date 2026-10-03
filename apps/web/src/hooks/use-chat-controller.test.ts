@@ -311,6 +311,11 @@ describe("useChatController — Co-Author send gate", () => {
   test("passes the gate when an explicit Co-Author binding exists", async () => {
     useProviderDataStore.setState({
       profiles: [{ id: "p_co", name: "Co Prof", isActive: false, defaultModel: null } as never],
+      // CG-2: the Co-Author model lives on the bound connection's row — same
+      // effective model ("tool-m") the retired ui_settings global carried.
+      coauthorSettingsByProfile: {
+        p_co: { providerProfileId: "p_co", modelName: "tool-m", settings: {}, createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+      },
     });
     useBootstrapStore.setState({
       data: { uiSettings: { coauthorProviderId: "p_co", coauthorModelName: "tool-m" } } as never,

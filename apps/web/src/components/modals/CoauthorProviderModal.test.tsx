@@ -1,15 +1,18 @@
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 
 import { useDomEnv } from "../../../test/dom-env.js";
-import type { ProviderProfileRecord as ClientProviderProfileRecord } from "../../api/types.js";
+import type { CoauthorConnectionSettingsRecord, ProviderProfileRecord as ClientProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
 
 const { render, fireEvent, waitFor, within } = await import("@testing-library/react");
+const { default: userEvent } = await import("@testing-library/user-event");
 
 // Mock patchUiSettingsAction so saveBinding doesn't hit the network.
 const patchUiSettingsAction = mock(async (_patch: never) => ({}) as never);
 const loadFavoriteModelsAction = mock(async (_profileId: string) => {});
+const loadCoauthorConnectionSettingsAction = mock(async (_profileId: string): Promise<CoauthorConnectionSettingsRecord | null> => null);
+const upsertCoauthorConnectionSettingsAction = mock(async (_profileId: string, _body: unknown) => ({}));
 const updateProviderProfileAction = mock(async (_profileId: string, patch: { coauthorTransport?: "chat_completions" | "responses" }) => ({ coauthorTransport: patch.coauthorTransport ?? "chat_completions" }) as never);
 const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
@@ -21,12 +24,16 @@ mock.module("../../stores/api-actions/bootstrap-actions.js", () => {
   };
 });
 
-// Mock loadFavoriteModelsAction so the binding hook doesn't fire network calls.
+// Mock loadFavoriteModelsAction + the CG-2 connection-row actions so the
+// binding hook doesn't fire network calls (the model now lives on the
+// connection's row, not in ui_settings).
 mock.module("../../stores/api-actions/provider-actions.js", () => {
   return {
     ...realProviderActions,
     loadFavoriteModelsAction,
     updateProviderProfileAction,
+    loadCoauthorConnectionSettingsAction,
+    upsertCoauthorConnectionSettingsAction,
   };
 });
 
@@ -78,7 +85,7 @@ function setBinding(
 describe("CoauthorProviderModal", () => {
   beforeEach(() => {
     mock.clearAllMocks();
-    useProviderDataStore.setState({ profiles: [], favoritesByProfile: {} });
+    useProviderDataStore.setState({ profiles: [], favoritesByProfile: {}, coauthorSettingsByProfile: {} });
     useBootstrapStore.setState({ data: null });
   });
 
@@ -244,5 +251,39 @@ describe("CoauthorProviderModal", () => {
 		fireEvent.pointerDown(getByText("Alpha"));
 		const saveBtn = getByText("coauthor.provider.use_for_coauthor");
     expect((saveBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("use-for-coauthor save writes the connection row's model (keeping its settings) and binds ONLY the connection in ui_settings", async () => {
+    setBinding("prof_1", null);
+    useProviderDataStore.setState({
+      profiles: [makeProfile("prof_1", "Alpha")],
+      favoritesByProfile: {},
+    });
+    // The connection's existing row: its generation settings must survive the
+    // model write (the PUT replaces the whole record → read-modify-write).
+    loadCoauthorConnectionSettingsAction.mockReturnValue(Promise.resolve({
+      providerProfileId: "prof_1",
+      modelName: "old-model",
+      settings: { temperature: 0.42, maxTokens: 1234, contextBudget: 5000, pinContextBudget: true },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    }));
+    const user = userEvent.setup();
+    const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    await waitFor(() => expect(view.baseElement.textContent).toContain("Alpha"));
+    const { getByText } = within(view.baseElement);
+    fireEvent.pointerDown(getByText("Alpha"));
+    // Pick a model from the cached list, then save.
+    await waitFor(() => expect(getByText("Tool Model")).toBeTruthy());
+    await user.click(getByText("Tool Model"));
+    fireEvent.click(getByText("coauthor.provider.use_for_coauthor"));
+    await waitFor(() => expect(upsertCoauthorConnectionSettingsAction).toHaveBeenCalledWith("prof_1", {
+      modelName: "tool-model",
+      settings: expect.objectContaining({ temperature: 0.42, maxTokens: 1234, contextBudget: 5000, pinContextBudget: true }),
+    }));
+    // ui_settings keeps ONLY the connection binding; the model is not written
+    // to the retired global there.
+    await waitFor(() => expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorProviderId: "prof_1" }));
+    expect(patchUiSettingsAction).not.toHaveBeenCalledWith(expect.objectContaining({ coauthorModelName: expect.anything() }));
   });
 });

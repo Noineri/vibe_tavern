@@ -4,12 +4,12 @@ import { cn } from "../../lib/cn.js";
 import { pickContextSourceModelId, shouldAutoFillContextBudget } from "../../lib/context-autofill.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord, ProxyRecord } from "../../api/types.js";
 import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE, resolveAutoTemplateSource, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
-import type { ProviderGenerationFormat, ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
+import type { GenerationMode, ProviderGenerationFormat, ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { computeSavePatch } from "../../hooks/save-provider-patch.js";
 import { PROVIDER_PRESETS, getVisibleProviderPresets } from "../../provider-presets.js";
 import { GENERATION_MODE } from "@vibe-tavern/domain";
-import type { GenerationMode } from "@vibe-tavern/domain";
+import type { ProviderSamplerValues } from "../../lib/provider-sampler-values.js";
 import { Icons } from "../shared/icons.js";
 import {
   ProviderProfileList,
@@ -43,7 +43,7 @@ import { ImageGenProfileEditor } from "../settings/provider/imagegen/ImageGenPro
 import { ImageGenFooter } from "../settings/provider/imagegen/ImageGenFooter.js";
 import { useImageProfiles } from "../../hooks/use-image-profiles.js";
 
-export interface FormState {
+export interface FormState extends ProviderSamplerValues {
   id: string;
   name: string;
   providerPreset: string;
@@ -948,7 +948,7 @@ export function ProviderModal({
                     updateForm={autoSaveField}
                   />
 
-                  <ProviderSamplerPanel form={form} updateForm={lazyAutoSaveField} capabilities={capabilities} />
+                  <ProviderSamplerPanel values={form} onChange={lazyAutoSaveField} capabilities={capabilities} />
 
                   <ProviderQuotaPanel providerProfileId={form.id} />
                 </>
