@@ -56,14 +56,19 @@ function makeProfile(id: string, name: string, over: Record<string, unknown> = {
   } as ClientProviderProfileRecord;
 }
 
-function setBinding(coauthorProviderId: string | null, coauthorModelName: string | null) {
+function setBinding(
+  coauthorProviderId: string | null,
+  coauthorModelName: string | null,
+  coauthorLoreProviderId: string | null = null,
+  coauthorLoreModelName: string | null = null,
+) {
   useBootstrapStore.setState({
     data: {
       initialChatId: null, snapshot: null, isFirstRun: false, allCharacters: [], promptPresets: [],
       uiSettings: {
         id: "default", theme: "dark", chatFontSize: 15, uiFontSize: 14, messageWidth: 700, language: "en",
         activePromptPresetId: null, aiAssistantProviderId: null, aiAssistantModelName: null,
-        coauthorProviderId, coauthorModelName, updatedAt: "2026-01-01",
+        coauthorProviderId, coauthorModelName, coauthorLoreProviderId, coauthorLoreModelName, updatedAt: "2026-01-01",
       } as never,
       isArmServer: false,
     } as never,
@@ -97,10 +102,10 @@ describe("CoauthorProviderModal", () => {
     });
 		const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
 		await waitFor(() => expect(view.baseElement.textContent).toContain("Bound Profile"));
-		const { getByText, queryByText } = within(view.baseElement);
-		// Both profiles render in the master list
-		expect(getByText("Bound Profile")).toBeTruthy();
-		expect(getByText("Other Profile")).toBeTruthy();
+		const { getAllByText, queryByText } = within(view.baseElement);
+		// Both profiles render in the master list and the lore-model picker.
+		expect(getAllByText("Bound Profile")).toHaveLength(2);
+		expect(getAllByText("Other Profile")).toHaveLength(2);
 		// No "+ New" button (selectionOnly)
 		expect(queryByText("new_profile_btn")).toBeNull();
   });
@@ -148,10 +153,10 @@ describe("CoauthorProviderModal", () => {
     useProviderDataStore.setState({ profiles: [makeProfile("native", "Claude", { providerPreset: "anthropic" }), makeProfile("tabby", "Tabby", { providerPreset: "tabby" })], favoritesByProfile: {} });
     const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
 		await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.transport_native"));
-		const { getByText, queryByText } = within(view.baseElement);
+		const { getAllByText, getByText, queryByText } = within(view.baseElement);
     expect(getByText("coauthor.provider.transport_native")).toBeTruthy();
     expect(queryByText("coauthor.provider.transport_responses")).toBeNull();
-    fireEvent.pointerDown(getByText("Tabby"));
+    fireEvent.pointerDown(getAllByText("Tabby")[0]!);
 		await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.transport_responses"));
     expect(getByText("coauthor.provider.transport_may_not_be_supported")).toBeTruthy();
   });
@@ -211,6 +216,21 @@ describe("CoauthorProviderModal", () => {
 		const { getByText } = within(view.baseElement);
     fireEvent.click(getByText("∞"));
     await waitFor(() => expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorMaxTokens: 2_000 }));
+  });
+
+  it("renders a full lore picker and clears an explicit override to the coauthor model", async () => {
+    setBinding("prof_1", "tool-model", "prof_lore", "lore-model");
+    useProviderDataStore.setState({
+      profiles: [makeProfile("prof_1", "Co-Author"), makeProfile("prof_lore", "Lore")],
+      favoritesByProfile: {},
+    });
+    const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
+    await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.lore_model_label"));
+    const { getByText, getByTestId } = within(view.baseElement);
+    expect(getByText("coauthor.provider.lore_model_hint")).toBeTruthy();
+    expect(getByTestId("coauthor-lore-model-list").className).toContain("h-[250px]");
+    fireEvent.click(getByTestId("coauthor-lore-model-inherit"));
+    await waitFor(() => expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorLoreProviderId: null, coauthorLoreModelName: null }));
   });
 
 	it("save button is disabled when a profile is selected but no model chosen", async () => {

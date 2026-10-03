@@ -24,6 +24,8 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 		...(typeof body.messageEditorModelName === "string" || body.messageEditorModelName === null ? { messageEditorModelName: body.messageEditorModelName } : {}),
 		...(typeof body.coauthorProviderId === "string" || body.coauthorProviderId === null ? { coauthorProviderId: body.coauthorProviderId } : {}),
 		...(typeof body.coauthorModelName === "string" || body.coauthorModelName === null ? { coauthorModelName: body.coauthorModelName } : {}),
+		...(typeof body.coauthorLoreProviderId === "string" || body.coauthorLoreProviderId === null ? { coauthorLoreProviderId: body.coauthorLoreProviderId } : {}),
+		...(typeof body.coauthorLoreModelName === "string" || body.coauthorLoreModelName === null ? { coauthorLoreModelName: body.coauthorLoreModelName } : {}),
 		...(isPositiveIntegerOrNull(body.coauthorMaxTokens) ? { coauthorMaxTokens: body.coauthorMaxTokens } : {}),
 		...(isPositiveIntegerOrNull(body.coauthorContextBudget) ? { coauthorContextBudget: body.coauthorContextBudget } : {}),
 		// Star prompt. `userMessageCount` is deliberately absent: it is

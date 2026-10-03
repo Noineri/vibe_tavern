@@ -25,10 +25,12 @@ import { storeRollToSnapshot } from "../../domain/dice/dice-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
+import { createSessionLoreDelegate } from "./session-runtime-lore-delegate.js";
+import { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
+export { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
 import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
 import { findUnsafeMacros } from "../../domain/coauthor/macro-subset.js";
 import { createContextSearchSession } from "../../domain/context/context-search-service.js";
-import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import {
 	mapChatBranch,
 	mapChatDto,
@@ -94,25 +96,6 @@ import * as importExportModule from "./session-runtime-import-export.js";
 import { scanSillyTavernDirectory as scanST, importSillyTavernDirectory as importST } from "../../shared/st-directory-scanner.js";
 import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 
-/**
- * Pick the chat the app boots into. Prefers the most-recent NON-coauthor chat
- * so a reload never drops the user into the co-author surface (F-7) — the
- * co-author surface is entered by opening a co-author chat, not by a reload.
- * Falls back to the overall most-recent chat only when no RP chat exists.
- *
- * `orderedIds` is recency-desc (chatOrder.items); `isCoauthor` maps an id to
- * whether it belongs to a co-author chat. Pure — extracted so the F-7 default
- * is unit-testable without spinning a full SessionRuntime.
- */
-export function pickBootstrapChatId<T extends string>(
-	orderedIds: readonly T[],
-	isCoauthor: (id: T) => boolean,
-): T | null {
-	if (orderedIds.length === 0) return null;
-	return orderedIds.find((id) => !isCoauthor(id)) ?? orderedIds[0] ?? null;
-}
-
-
 	/**
 	 * Top-level coordinator for all session state.
 	 *
@@ -132,6 +115,7 @@ export function pickBootstrapChatId<T extends string>(
 	private readonly chatOrder: ChatOrderService;
 	private defaultsEnsured = false;
 	private readonly getActiveProviderProfile: () => Promise<StoredProviderProfileRecord | null>;
+	private readonly buildLoreDelegate: typeof createLoreDelegate;
 	private readonly getSkillCatalog: () => Promise<import("../../domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[]>;
 
 	readonly chatRuntime: ChatRuntime;
@@ -143,6 +127,7 @@ export function pickBootstrapChatId<T extends string>(
 		stores: StoreContainer,
 		options?: {
 			getActiveProviderProfile?: () => Promise<StoredProviderProfileRecord | null>;
+			createLoreDelegate?: typeof createLoreDelegate;
 			dataDir?: string;
 			getSkillCatalog?: () => Promise<import("../../domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[]>;
 		},
@@ -153,6 +138,7 @@ export function pickBootstrapChatId<T extends string>(
 		this.promptService = new PromptAssemblyService(stores, this.resolver, this.stores.content.fileStore);
 		this.getActiveProviderProfile =
 			options?.getActiveProviderProfile ?? (async () => null);
+		this.buildLoreDelegate = options?.createLoreDelegate ?? createLoreDelegate;
 		this.getSkillCatalog =
 			options?.getSkillCatalog ?? (async () => []);
 		this.chatOrder = new ChatOrderService(stores.chats);
@@ -873,14 +859,16 @@ export function pickBootstrapChatId<T extends string>(
 		// it into buildCoauthorTools so ai_write_lore_entry / ai_generate_lore_keys
 		// can fire an isolated one-shot LLM call. Absent (undefined) when no
 		// provider/model is available — the tools then throw a clear error if the
-		// model still tries to invoke them. The delegate reuses the chat's active
-		// provider + model by default; a dedicated smaller model is a future
-		// config knob on this seam (createLoreDelegate accepts any profile+model).
+		// model still tries to invoke them. The delegate reuses the current active
+		// provider + turn model by default; a complete configured lore pair replaces
+		// both, while a dangling provider deliberately retains that fallback.
 		const profile = await this.getActiveProviderProfile();
-		const loreDelegate =
-			profile && model && model !== SYSTEM_RESOURCE_ID.unresolvedModel
-				? createLoreDelegate({ execute: nonstreamingProviderExecute, profile, model })
-				: undefined;
+		const loreDelegate = await createSessionLoreDelegate({
+			stores: this.stores,
+			activeProfile: profile,
+			model,
+			buildDelegate: this.buildLoreDelegate,
+		});
 		// CE-B1: lore entity lookup lets the edit / re-delegation tools target
 		// previously-created (persisted) lore entities across turns, not just
 		// ones drafted this turn. Built when a lorebook store is wired (production

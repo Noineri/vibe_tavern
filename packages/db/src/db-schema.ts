@@ -1242,6 +1242,10 @@ export const uiSettings = sqliteTable('ui_settings', {
   // adapter resolves (dangling → fallback) rather than blocking the delete.
   coauthorProviderId: text('coauthor_provider_id'),
   coauthorModelName: text('coauthor_model_name'),
+  // Optional lore-generation binding. Null (or dangling after profile deletion)
+  // inherits the current Co-Author delegate at the runtime boundary.
+  coauthorLoreProviderId: text('coauthor_lore_provider_id'),
+  coauthorLoreModelName: text('coauthor_lore_model_name'),
   // Optional Co-Author-only token overrides. Null inherits the selected
   // profile/model effective values so RP configuration remains untouched.
   coauthorMaxTokens: integer('coauthor_max_tokens'),

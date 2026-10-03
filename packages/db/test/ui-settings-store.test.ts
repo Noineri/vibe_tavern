@@ -73,27 +73,35 @@ describe("UiSettingsStore — per-context secondary-model pairs (SUM-5)", () => 
 });
 
 describe("UiSettingsStore — coauthor binding fields", () => {
-	test("defaults are null for both coauthorProviderId and coauthorModelName", async () => {
+	test("defaults are null for both coauthor and lore model pairs", async () => {
 		const { settings } = await mkSettingsStore();
 		const got = await settings.get();
 		expect(got.coauthorProviderId).toBeNull();
 		expect(got.coauthorModelName).toBeNull();
+		expect(got.coauthorLoreProviderId).toBeNull();
+		expect(got.coauthorLoreModelName).toBeNull();
 	});
 
-	test("persists a coauthor provider+model pair", async () => {
+	test("round-trips independent coauthor and lore model pairs", async () => {
 		const { settings, providers } = await mkSettingsStore();
-		const profile = await providers.create(baseProfile);
+		const coauthorProfile = await providers.create(baseProfile);
+		const loreProfile = await providers.create({ ...baseProfile, name: "Lore" });
 		const updated = await settings.update({
-			coauthorProviderId: profile.id,
+			coauthorProviderId: coauthorProfile.id,
 			coauthorModelName: "claude-sonnet-4",
+			coauthorLoreProviderId: loreProfile.id,
+			coauthorLoreModelName: "gpt-4o-mini",
 		});
-		expect(updated.coauthorProviderId).toBe(profile.id);
+		expect(updated.coauthorProviderId).toBe(coauthorProfile.id);
 		expect(updated.coauthorModelName).toBe("claude-sonnet-4");
+		expect(updated.coauthorLoreProviderId).toBe(loreProfile.id);
+		expect(updated.coauthorLoreModelName).toBe("gpt-4o-mini");
 
-		// Survives a fresh read.
 		const reread = await settings.get();
-		expect(reread.coauthorProviderId).toBe(profile.id);
+		expect(reread.coauthorProviderId).toBe(coauthorProfile.id);
 		expect(reread.coauthorModelName).toBe("claude-sonnet-4");
+		expect(reread.coauthorLoreProviderId).toBe(loreProfile.id);
+		expect(reread.coauthorLoreModelName).toBe("gpt-4o-mini");
 	});
 
 	test("partial update preserves the other coauthor field and all legacy fields", async () => {
@@ -115,14 +123,22 @@ describe("UiSettingsStore — coauthor binding fields", () => {
 		expect(after.language).toBe("ru");
 	});
 
-	test("explicit null clears a previously saved coauthor binding", async () => {
+	test("explicit null clears a lore pair without disturbing the coauthor binding", async () => {
 		const { settings, providers } = await mkSettingsStore();
-		const profile = await providers.create(baseProfile);
-		await settings.update({ coauthorProviderId: profile.id, coauthorModelName: "x" });
+		const coauthorProfile = await providers.create(baseProfile);
+		const loreProfile = await providers.create({ ...baseProfile, name: "Lore" });
+		await settings.update({
+			coauthorProviderId: coauthorProfile.id,
+			coauthorModelName: "coauthor-model",
+			coauthorLoreProviderId: loreProfile.id,
+			coauthorLoreModelName: "lore-model",
+		});
 
-		const cleared = await settings.update({ coauthorProviderId: null, coauthorModelName: null });
-		expect(cleared.coauthorProviderId).toBeNull();
-		expect(cleared.coauthorModelName).toBeNull();
+		const cleared = await settings.update({ coauthorLoreProviderId: null, coauthorLoreModelName: null });
+		expect(cleared.coauthorLoreProviderId).toBeNull();
+		expect(cleared.coauthorLoreModelName).toBeNull();
+		expect(cleared.coauthorProviderId).toBe(coauthorProfile.id);
+		expect(cleared.coauthorModelName).toBe("coauthor-model");
 	});
 
 	test("deleting the bound provider leaves a dangling id (resolved by adapter, not DB FK)", async () => {
@@ -158,6 +174,8 @@ describe("UiSettingsStore — coauthor binding fields", () => {
 		const seeded = await settings.ensureDefaults();
 		expect(seeded.coauthorProviderId).toBeNull();
 		expect(seeded.coauthorModelName).toBeNull();
+		expect(seeded.coauthorLoreProviderId).toBeNull();
+		expect(seeded.coauthorLoreModelName).toBeNull();
 		expect(seeded.coauthorMaxTokens).toBeNull();
 		expect(seeded.coauthorContextBudget).toBeNull();
 	});

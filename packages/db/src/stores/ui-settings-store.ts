@@ -30,6 +30,9 @@ export interface UiSettings {
   messageEditorModelName: string | null;
   coauthorProviderId: string | null;
   coauthorModelName: string | null;
+  /** Null inherits the current Co-Author lore delegate. */
+  coauthorLoreProviderId: string | null;
+  coauthorLoreModelName: string | null;
   /** Null inherits the bound profile/model's effective max output tokens. */
   coauthorMaxTokens: number | null;
   /** Null inherits the bound profile/model's effective context budget. */
@@ -87,6 +90,8 @@ export interface UiSettingsUpdate {
   messageEditorModelName?: string | null;
   coauthorProviderId?: string | null;
   coauthorModelName?: string | null;
+  coauthorLoreProviderId?: string | null;
+  coauthorLoreModelName?: string | null;
   coauthorMaxTokens?: number | null;
   coauthorContextBudget?: number | null;
   githubStarred?: boolean;
@@ -125,6 +130,8 @@ const UI_SETTINGS_DEFAULTS: Omit<UiSettings, 'updatedAt'> = {
   messageEditorModelName: null,
   coauthorProviderId: null,
   coauthorModelName: null,
+  coauthorLoreProviderId: null,
+  coauthorLoreModelName: null,
   coauthorMaxTokens: null,
   coauthorContextBudget: null,
   githubStarred: false,
@@ -194,6 +201,8 @@ export class UiSettingsStore {
       messageEditorModelName: partial.messageEditorModelName ?? UI_SETTINGS_DEFAULTS.messageEditorModelName,
       coauthorProviderId: partial.coauthorProviderId ?? UI_SETTINGS_DEFAULTS.coauthorProviderId,
       coauthorModelName: partial.coauthorModelName ?? UI_SETTINGS_DEFAULTS.coauthorModelName,
+      coauthorLoreProviderId: partial.coauthorLoreProviderId ?? UI_SETTINGS_DEFAULTS.coauthorLoreProviderId,
+      coauthorLoreModelName: partial.coauthorLoreModelName ?? UI_SETTINGS_DEFAULTS.coauthorLoreModelName,
       coauthorMaxTokens: partial.coauthorMaxTokens ?? UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
       coauthorContextBudget: partial.coauthorContextBudget ?? UI_SETTINGS_DEFAULTS.coauthorContextBudget,
       githubStarred: partial.githubStarred ?? UI_SETTINGS_DEFAULTS.githubStarred,
@@ -239,6 +248,8 @@ export class UiSettingsStore {
       messageEditorModelName: UI_SETTINGS_DEFAULTS.messageEditorModelName,
       coauthorProviderId: UI_SETTINGS_DEFAULTS.coauthorProviderId,
       coauthorModelName: UI_SETTINGS_DEFAULTS.coauthorModelName,
+      coauthorLoreProviderId: UI_SETTINGS_DEFAULTS.coauthorLoreProviderId,
+      coauthorLoreModelName: UI_SETTINGS_DEFAULTS.coauthorLoreModelName,
       coauthorMaxTokens: UI_SETTINGS_DEFAULTS.coauthorMaxTokens,
       coauthorContextBudget: UI_SETTINGS_DEFAULTS.coauthorContextBudget,
       githubStarred: UI_SETTINGS_DEFAULTS.githubStarred,
@@ -282,6 +293,8 @@ export class UiSettingsStore {
       messageEditorModelName: row.messageEditorModelName ?? null,
       coauthorProviderId: row.coauthorProviderId ?? null,
       coauthorModelName: row.coauthorModelName ?? null,
+      coauthorLoreProviderId: row.coauthorLoreProviderId ?? null,
+      coauthorLoreModelName: row.coauthorLoreModelName ?? null,
       coauthorMaxTokens: row.coauthorMaxTokens ?? null,
       coauthorContextBudget: row.coauthorContextBudget ?? null,
       githubStarred: row.githubStarred,

@@ -61,6 +61,8 @@ export function wireUiSettings(): UiSettingsRecord {
 		messageEditorModelName: null,
 		coauthorProviderId: null,
 		coauthorModelName: null,
+		coauthorLoreProviderId: null,
+		coauthorLoreModelName: null,
 		coauthorMaxTokens: null,
 		coauthorContextBudget: null,
 		githubStarred: false,
