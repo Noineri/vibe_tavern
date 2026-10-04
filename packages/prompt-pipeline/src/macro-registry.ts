@@ -15,6 +15,7 @@
  *   {{random::a::b::c}}          — random choice
  *   {{roll::1d20}}               — dice roll
  *   {{if condition}}...{{else}}...{{/if}}  — conditional block
+ *   {{trim}}...{{/trim}}                   — trim scoped content
  *   <USER> / <BOT> / <CHAR>      — legacy markers
  *
  * Variable state persists across all resolve() calls on the same engine
@@ -25,6 +26,8 @@ import type { PromptVariableContext } from "./prompt-variable-context.js";
 import type { PronounForms } from "@vibe-tavern/domain";
 import { resolvePronounForms } from "./pronoun-forms.js";
 import { createRandomMacroResolvers } from "./random-macro-resolvers.js";
+import { splitMacroArgs } from "./macro-argument-parser.js";
+import { findTrimClose, removeTrimmedLineBreaks, TRIM_LINE_BREAK_MARKER } from "./macro-trim.js";
 export { getMacroCatalog } from "./macro-catalog.js";
 
 /** Macro resolvers whose values are frozen when a greeting or user message is written. */
@@ -90,7 +93,7 @@ export interface MacroCatalogEntry {
 
 // ─── Tokenizer ─────────────────────────────────────────────────────────
 
-type TokenType = "text" | "macro" | "ifOpen" | "else" | "ifClose";
+type TokenType = "text" | "macro" | "ifOpen" | "else" | "ifClose" | "trimClose";
 
 interface Token {
   type: TokenType;
@@ -200,6 +203,12 @@ function tokenize(input: string): Token[] {
       continue;
     }
 
+    // {{/trim}}
+    if (inner.trim() === "/trim") {
+      tokens.push({ type: "trimClose", value: "/trim", args: [], raw: fullMatch });
+      continue;
+    }
+
     // {{/if}}
     if (inner.trim() === "/if") {
       tokens.push({ type: "ifClose", value: "/if", args: [], raw: fullMatch });
@@ -244,53 +253,6 @@ export function extractMacroNames(input: string): string[] {
   return [...names];
 }
 
-/**
- * Split macro inner text by :: separator, then by ST's single-argument space
- * separator when no colon separator is present.
- * "setvar::x::hello world" → ["setvar", "x", "hello world"]
- * Also handles single : for legacy syntax: "random:a,b,c" → ["random", "a,b,c"]
- * Respects escaped colons \:
- */
-function splitMacroArgs(inner: string): string[] {
-  const parts: string[] = [];
-  let current = "";
-  let i = 0;
-  while (i < inner.length) {
-    if (inner[i] === "\\" && i + 1 < inner.length && inner[i + 1] === ":") {
-      current += ":";
-      i += 2;
-    } else if (inner[i] === ":" && i + 1 < inner.length && inner[i + 1] === ":") {
-      parts.push(current.trim());
-      current = "";
-      i += 2;
-    } else {
-      current += inner[i];
-      i++;
-    }
-  }
-  // If we have accumulated content and there was a single : before it
-  // (legacy format like "random:a,b,c")
-  const trimmed = current.trim();
-  // Check for legacy single-colon syntax: name:value
-  if (parts.length === 0) {
-    const colonIdx = trimmed.indexOf(":");
-    if (colonIdx > 0) {
-      // "random:a,b,c" → ["random", "a,b,c"]
-      // But only if the part before : looks like a macro name
-      const possibleName = trimmed.slice(0, colonIdx).trim();
-      if (/^[A-Za-z][A-Za-z0-9_]*$/.test(possibleName)) {
-        return [possibleName, trimmed.slice(colonIdx + 1).trim()];
-      }
-    }
-    const spaceMatch = trimmed.match(/^(\S+)\s+([\s\S]+)$/);
-    if (spaceMatch) {
-      return [spaceMatch[1], spaceMatch[2].trim()];
-    }
-  }
-  parts.push(trimmed);
-  return parts;
-}
-
 // ─── AST Nodes ──────────────────────────────────────────────────────────
 
 interface TextNode { kind: "text"; value: string }
@@ -302,7 +264,14 @@ interface IfNode {
   elseBranch: AstNode[] | null;
 }
 
-type AstNode = TextNode | MacroNode | IfNode;
+interface TrimNode {
+  kind: "trim";
+  content: AstNode[];
+  openRaw: string;
+  closeRaw: string;
+}
+
+type AstNode = TextNode | MacroNode | IfNode | TrimNode;
 
 // ─── Parser ─────────────────────────────────────────────────────────────
 
@@ -320,7 +289,21 @@ function parse(tokens: Token[], start: number, end: number): AstNode[] {
       nodes.push({ kind: "text", value: token.value });
       i++;
     } else if (token.type === "macro") {
-      nodes.push({ kind: "macro", name: normalizeName(token.value), args: token.args, raw: token.raw, offset: token.offset ?? 0 });
+      const name = normalizeName(token.value);
+      if (name === "trim") {
+        const trimClose = findTrimClose(tokens, i + 1, end);
+        if (trimClose !== -1) {
+          nodes.push({
+            kind: "trim",
+            content: parse(tokens, i + 1, trimClose),
+            openRaw: token.raw,
+            closeRaw: tokens[trimClose].raw,
+          });
+          i = trimClose + 1;
+          continue;
+        }
+      }
+      nodes.push({ kind: "macro", name, args: token.args, raw: token.raw, offset: token.offset ?? 0 });
       i++;
     } else if (token.type === "ifOpen") {
       // Find matching else and /if
@@ -339,7 +322,7 @@ function parse(tokens: Token[], start: number, end: number): AstNode[] {
         nodes.push({ kind: "if", condition: token.args[0], thenBranch, elseBranch });
         i = ifClose + 1;
       }
-    } else if (token.type === "else" || token.type === "ifClose") {
+    } else if (token.type === "else" || token.type === "ifClose" || token.type === "trimClose") {
       // These are handled by the ifOpen parser — shouldn't be reached at top level.
       // Treat as text.
       nodes.push({ kind: "text", value: token.raw });
@@ -409,6 +392,16 @@ function evaluate(
           result += evaluate(node.thenBranch, resolvers, context, state, variables, resolveNested, shouldResolve);
         } else if (node.elseBranch) {
           result += evaluate(node.elseBranch, resolvers, context, state, variables, resolveNested, shouldResolve);
+        }
+        break;
+      }
+      case "trim": {
+        const resolver = resolvers.get("trim");
+        const content = evaluate(node.content, resolvers, context, state, variables, resolveNested, shouldResolve);
+        if (resolver && shouldResolve && !shouldResolve(resolver)) {
+          result += `${node.openRaw}${content}${node.closeRaw}`;
+        } else {
+          result += content.trim();
         }
         break;
       }
@@ -500,7 +493,7 @@ export class MacroEngine {
 
     const tokens = tokenize(text);
     const ast = parse(tokens, 0, tokens.length);
-    return evaluate(ast, this.resolvers, context, state, variables, resolveNested, shouldResolve);
+    return removeTrimmedLineBreaks(evaluate(ast, this.resolvers, context, state, variables, resolveNested, shouldResolve));
   }
 
   /** Shared variable state for this engine instance. */
@@ -868,6 +861,13 @@ export function createFullMacroEngine(): MacroEngine {
     description: "Resolves to nothing (strips itself).",
     category: MacroCategory.Utility,
     resolve: () => "",
+  });
+
+  engine.register({
+    name: "trim",
+    description: "Remove surrounding line breaks, or trim scoped content.",
+    category: MacroCategory.Utility,
+    resolve: () => TRIM_LINE_BREAK_MARKER,
   });
 
   engine.register({

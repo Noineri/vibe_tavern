@@ -501,6 +501,55 @@ describe("Comment macro: {{// ...}}", () => {
   });
 });
 
+// ─── Trim macro ─────────────────────────────────────────────────────────
+
+describe("Trim macro", () => {
+  it("removes the line breaks around a non-scoped marker", () => {
+    const engine = createFullMacroEngine();
+    const ctx = buildPromptVariableContext({});
+
+    expect(engine.resolve("Enabled\n{{trim}}\nDisabled", ctx)).toBe("EnabledDisabled");
+  });
+
+  it("trims the resolved content of a scoped block", () => {
+    const engine = createFullMacroEngine();
+    const ctx = buildPromptVariableContext({ character: { name: "Aria" } });
+
+    expect(engine.resolve("before{{trim}}\n  {{char}}  \n{{/trim}}after", ctx)).toBe("beforeAriaafter");
+  });
+
+  it("preserves trim markers during selective resolution", () => {
+    const engine = createFullMacroEngine();
+    const ctx = buildPromptVariableContext({});
+
+    expect(engine.resolveSelected("Enabled\n{{trim}}\nDisabled", ctx, new Set(["random"])))
+      .toBe("Enabled\n{{trim}}\nDisabled");
+  });
+
+  it("keeps a toggle-heavy preset compact in the Marinara style", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "marinara-trim" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+      persona: { id: "persona_1", name: "Olya", description: "A scholar." },
+      preset: {
+        id: "marinara-style",
+        text: [
+          "<identity>",
+          "{{if {{char}}}}Character: {{char}}{{/if}}",
+          "{{trim}}",
+          "{{if {{user}}}}User: {{user}}{{/if}}",
+          "{{trim}}",
+          "</identity>",
+        ].join("\n"),
+      },
+    });
+
+    const preset = result.layers.find((layer) => layer.id === "prompt_preset_system");
+    expect(preset?.text).toBe("<identity>\nCharacter: AriaUser: Olya</identity>");
+  });
+});
+
 // ─── Conditional macro: if/else ───
 
 describe("Conditional macro: {{if}}...{{else}}...{{/if}}", () => {
