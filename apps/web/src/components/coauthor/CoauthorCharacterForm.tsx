@@ -424,7 +424,12 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   const canSave = (form.watch("name") || "").trim().length > 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col max-md:block max-md:overflow-y-auto">
+    // max-md:overflow-x-clip — D4 (v1.2.1), co-author instance: the sticky
+    // glass-bar's ::before frost bleeds 20px past the bar; overflow-y:auto
+    // coerces overflow-x to auto → a 20px horizontal swipe-scroll on the
+    // mobile Doc tab (owner 2026-09-24; root sw 410 vs cw 390, no visible
+    // offender). Same fix as BuildMode's container; visually lossless.
+    <div className="flex h-full min-h-0 flex-col max-md:block max-md:overflow-y-auto max-md:overflow-x-clip">
       {/* Header bar — title + state subtitle + save. */}
       <div className="glass-bar sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-surface px-4 py-2.5">
         <div className="min-w-0">

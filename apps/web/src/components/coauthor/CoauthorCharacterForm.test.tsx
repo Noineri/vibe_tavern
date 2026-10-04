@@ -393,6 +393,12 @@ describe("CoauthorCharacterForm", () => {
 		const root = container.firstElementChild as HTMLElement;
 		expect(root.className).toContain("max-md:overflow-y-auto");
 		expect(root.className).toContain("max-md:block");
+		// D4 (v1.2.1), co-author instance (owner 2026-09-24): the sticky
+		// glass-bar's ::before frost bleeds 20px past the bar, and
+		// overflow-y:auto coerces overflow-x to auto — the bleed was a 20px
+		// horizontal swipe-scroll on the Doc tab. Pinned so the clip never
+		// silently disappears (same guard as BuildMode's container).
+		expect(root.className).toContain("max-md:overflow-x-clip");
 		// The editor section is at least a full screen tall, so once the context
 		// is scrolled past, the editor occupies the whole phone viewport; the
 		// editor box itself grows toward a full screen (min-height, never clips —
