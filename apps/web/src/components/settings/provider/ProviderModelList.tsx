@@ -28,6 +28,8 @@ interface ProviderModelListProps {
   showPricing?: boolean;
   groupByOwner?: boolean;
   listClassName?: string;
+  optionTestId?: string;
+  favoriteTestId?: string;
 }
 
 export function ProviderModelList({
@@ -45,6 +47,8 @@ export function ProviderModelList({
   showPricing = true,
   groupByOwner,
   listClassName,
+  optionTestId,
+  favoriteTestId,
 }: ProviderModelListProps) {
   const { t } = useT();
   const favoriteIds = new Set(favorites.map((model) => model.modelId));
@@ -74,6 +78,7 @@ export function ProviderModelList({
       <Command.Item
         key={model.id}
         value={model.id}
+        data-testid={optionTestId}
         onSelect={() => onSelect(model)}
         className={cn(
           "flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
@@ -85,6 +90,7 @@ export function ProviderModelList({
         {onToggleFavorite && <CustomTooltip content={favorite ? t("remove_from_favorites") : t("add_to_favorites")}>
           <button
             type="button"
+            data-testid={favoriteTestId}
             className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text", favorite && "text-warning-text")}
             onPointerDown={(event) => event.stopPropagation()}
             onPointerUp={(event) => event.stopPropagation()}
