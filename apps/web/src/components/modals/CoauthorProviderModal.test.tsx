@@ -46,10 +46,11 @@ function makeProfile(id: string, name: string, over: Record<string, unknown> = {
   } as ClientProviderProfileRecord;
 }
 
-function makeRow(profileId: string, modelName: string, settings: Record<string, unknown> = {}): CoauthorConnectionSettingsRecord {
+function makeRow(profileId: string, modelName: string, settings: Record<string, unknown> = {}, sortOrder: number | null = null): CoauthorConnectionSettingsRecord {
   return {
     providerProfileId: profileId,
     modelName,
+    sortOrder,
     settings: { temperature: 0.42, maxTokens: 8_000, contextBudget: 128_000, pinContextBudget: false, ...settings },
     createdAt: "2026-01-01",
     updatedAt: "2026-01-01",
@@ -143,6 +144,36 @@ describe("CoauthorProviderModal", () => {
     await waitFor(() => expect(view.baseElement.textContent).toContain("two-model"));
     fireEvent.pointerDown(within(view.baseElement).getAllByText("openai")[0]!.closest(".cursor-pointer")!);
     await waitFor(() => expect(view.baseElement.textContent).toContain("one-model"));
+  });
+
+  it("places ordered profiles first and keeps unordered profiles in RP order", async () => {
+    setBinding("p1");
+    useProviderDataStore.setState({
+      profiles: [
+        makeProfile("p1", "RP first"),
+        makeProfile("p2", "RP second"),
+        makeProfile("p3", "Co-Author first"),
+      ],
+      coauthorSettingsByProfile: {
+        p1: null,
+        p2: null,
+        p3: makeRow("p3", "tool-model", {}, 0),
+      },
+    });
+    const view = renderModal();
+
+    await waitFor(() => expect(view.getByText("Co-Author first")).toBeTruthy());
+    const profileList = view.getByText("profiles_label").parentElement!;
+    const rowNames = Array.from(profileList.querySelectorAll("[class*='border-l-']"))
+      .map((row) => row.textContent ?? "");
+    const coauthorFirst = rowNames.findIndex((name) => name.includes("Co-Author first"));
+    const rpFirst = rowNames.findIndex((name) => name.includes("RP first"));
+    const rpSecond = rowNames.findIndex((name) => name.includes("RP second"));
+    expect(coauthorFirst).toBeGreaterThanOrEqual(0);
+    expect(rpFirst).toBeGreaterThanOrEqual(0);
+    expect(rpSecond).toBeGreaterThanOrEqual(0);
+    expect(coauthorFirst).toBeLessThan(rpFirst);
+    expect(rpFirst).toBeLessThan(rpSecond);
   });
 
   it("places the test greeting directly after the model selector and before sampler settings", async () => {
