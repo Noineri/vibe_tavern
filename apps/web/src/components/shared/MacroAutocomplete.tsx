@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { MacroCatalogEntry } from "@vibe-tavern/prompt-pipeline";
-import { macroCategoryLabel } from "./macro-autocomplete-store.js";
+import { macroCategoryLabel, matchingMacroAliases } from "./macro-autocomplete-store.js";
 import { cn } from "../../lib/cn.js";
 
 const POPUP_MAX_WIDTH = 380;
@@ -120,6 +120,7 @@ export function MacroAutocomplete({
           <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1">
             {items.map((entry, index) => {
               const isActive = index === activeIndex;
+              const matchingAliases = matchingMacroAliases(entry, query);
               return (
                 <div
                   key={entry.name}
@@ -137,6 +138,11 @@ export function MacroAutocomplete({
                   )}
                 >
                   <code className="shrink-0 font-mono text-[12px] text-accent-t">{`{{${entry.name}}}`}</code>
+                  {matchingAliases.length > 0 ? (
+                    <span className="shrink-0 font-mono text-[11px] text-t3">
+                      · {matchingAliases.join(", ")}
+                    </span>
+                  ) : null}
                   <span className="min-w-0 flex-1 truncate font-ui text-[11px] text-t3">{entry.description}</span>
                   <span className="shrink-0 rounded-sm bg-s2/60 px-1.5 py-0.5 font-ui text-[9px] uppercase tracking-[0.06em] text-t4">
                     {macroCategoryLabel(entry.category)}
