@@ -30,6 +30,8 @@ export interface SttProfileRecord {
   emotionAnnotation: boolean;
   /** The fallback pointer — at most one profile carries it. */
   isDefault: boolean;
+  /** Present on reorder-capable servers; older contract clients omit it. */
+  sortOrder?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -90,6 +92,14 @@ export async function deleteSttProfile(id: string): Promise<void> {
 
 export async function setSttDefault(id: string): Promise<SttProfileRecord> {
   const response = await client.api.stt.profiles[":id"].default.$put({ param: { id } });
+  return unwrapRpc(response);
+}
+
+/** Persist the manual master-list order for STT profiles. */
+export async function reorderSttProfiles(
+  updates: Array<{ id: string; sortOrder: number }>,
+): Promise<SttProfileRecord[]> {
+  const response = await client.api.stt.profiles.reorder.$patch({ json: { updates } as never });
   return unwrapRpc(response);
 }
 

@@ -57,7 +57,7 @@ function ImageGenProfileRow({
   );
 }
 
-/** Image-gen master list — the SttProfileList fork (IG-11): title, rows,
+/** Image-gen master list (IG-11): title, rows,
  *  "+ New" docked at the bottom of the master column (never headerActions —
  *  the master-detail house pattern). The seed for a new profile comes from
  *  the caller (the pane owns i18n + the roster's first row, the STT

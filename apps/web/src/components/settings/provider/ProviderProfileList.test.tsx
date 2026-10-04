@@ -1,12 +1,17 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
 
-const { fireEvent, render, within } = await import("@testing-library/react");
+const { act, fireEvent, render, within } = await import("@testing-library/react");
 const realI18n = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
 const realSortable = await import("@dnd-kit/sortable");
+const realDndKit = await import("@dnd-kit/core");
+type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+const RealDndContext = realDndKit.DndContext;
+let dndHandlers: RealDndContextProps | null = null;
 
 const useSortable = mock(() => ({
   attributes: {},
@@ -36,6 +41,15 @@ mock.module("../../shared/MasterDetailModal.js", () => ({
   ),
 }));
 mock.module("@dnd-kit/sortable", () => ({ ...realSortable, useSortable }));
+mock.module("@dnd-kit/core", () => ({
+  ...realDndKit,
+  // Preserve dnd-kit's provider while exposing the exact drag-end boundary
+  // without fragile pointer simulation in happy-dom.
+  DndContext: (props: RealDndContextProps) => {
+    dndHandlers = props;
+    return <RealDndContext {...props} />;
+  },
+}));
 
 let ProviderProfileList: typeof import("./ProviderProfileList.js").ProviderProfileList;
 beforeAll(async () => {
@@ -65,6 +79,7 @@ function baseProps(overrides: Partial<Parameters<typeof ProviderProfileList>[0]>
 describe("ProviderProfileList", () => {
   beforeEach(() => {
     mock.clearAllMocks();
+    dndHandlers = null;
   });
 
   it("keeps the LLM list's search, status, active row, drag handles, and new-profile action", () => {
@@ -88,6 +103,25 @@ describe("ProviderProfileList", () => {
     const selectionOnly = render(<ProviderProfileList {...baseProps({ selectionOnly: true })} />);
     expect(within(selectionOnly.container).queryByLabelText("drag")).toBeNull();
     expect(within(selectionOnly.container).queryByText("new_profile_btn")).toBeNull();
+  });
+
+  it("commits the complete sorted payload through the family reorder action on drop", () => {
+    const onReorder = mock();
+    render(<ProviderProfileList {...baseProps({ onReorder })} />);
+
+    expect(dndHandlers).toBeTruthy();
+    const endEvent = {
+      active: { id: "p1" },
+      over: { id: "p2" },
+    } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    act(() => {
+      dndHandlers!.onDragEnd!(endEvent);
+    });
+
+    expect(onReorder).toHaveBeenCalledWith([
+      { id: "p2", sortOrder: 0 },
+      { id: "p1", sortOrder: 1 },
+    ]);
   });
 
   it("uses family slots for the title, row sub-label, active marker, status, and test-id stem", () => {
@@ -121,8 +155,49 @@ describe("ProviderProfileList", () => {
     const voiceOneRow = view.getAllByTestId("tts-profile-row").find((row) => row.getAttribute("data-profile-id") === "media-1");
     if (!voiceOneRow) throw new Error("Voice One row missing");
     expect(voiceOneRow.getAttribute("data-profile-id")).toBe("media-1");
+    expect(voiceOneRow.querySelector(".bg-success")).toBeTruthy();
     expect(within(voiceOneRow).getByText("backend:local")).toBeTruthy();
     fireEvent.pointerDown(voiceOneRow);
     expect(onSelectProfile).toHaveBeenCalledWith("media-1");
+    fireEvent.click(within(voiceOneRow).getByText("drill"));
+    expect(onSelectProfile).toHaveBeenCalledTimes(2);
+  });
+
+  it("rerenders generic family slots when same-id profile data and slot callbacks change", () => {
+    const initialProfiles = [{ id: "media-1", name: "Voice One", backend: "local", connected: true }];
+    const view = render(
+      <ProviderProfileList
+        profiles={initialProfiles}
+        filteredProfiles={initialProfiles}
+        editingId={null}
+        activeProfileId={null}
+        rowSubLabel={(profile) => `first:${profile.backend}`}
+        statusClassName={(profile) => profile.connected ? "bg-success" : "bg-danger"}
+        profileSearch=""
+        onProfileSearchChange={() => {}}
+        onSelectProfile={() => {}}
+      />,
+    );
+
+    expect(view.getByText("first:local")).toBeTruthy();
+    expect(view.container.querySelector(".bg-success")).toBeTruthy();
+
+    const updatedProfiles = [{ id: "media-1", name: "Voice One", backend: "cloud", connected: false }];
+    view.rerender(
+      <ProviderProfileList
+        profiles={updatedProfiles}
+        filteredProfiles={updatedProfiles}
+        editingId={null}
+        activeProfileId={null}
+        rowSubLabel={(profile) => `second:${profile.backend}`}
+        statusClassName={(profile) => profile.connected ? "bg-success" : "bg-danger"}
+        profileSearch=""
+        onProfileSearchChange={() => {}}
+        onSelectProfile={() => {}}
+      />,
+    );
+
+    expect(view.getByText("second:cloud")).toBeTruthy();
+    expect(view.container.querySelector(".bg-danger")).toBeTruthy();
   });
 });

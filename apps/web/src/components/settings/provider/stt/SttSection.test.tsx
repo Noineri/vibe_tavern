@@ -36,6 +36,7 @@ function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
     autoKeyProviderName: null,
     emotionAnnotation: false,
     isDefault: false,
+    sortOrder: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,
@@ -43,7 +44,7 @@ function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
 }
 
 function makeStt(overrides: Record<string, unknown> = {}) {
-  return {
+  const base = {
     profiles: [makeRecord()] as SttRecord[],
     loading: false,
     editingId: "p1",
@@ -61,7 +62,15 @@ function makeStt(overrides: Record<string, unknown> = {}) {
     remove: mock(async () => {}),
     cancelEdit: mock(() => {}),
     reload: mock(async () => {}),
+    profileSearch: "",
+    filteredProfiles: [makeRecord()] as SttRecord[],
+    setProfileSearch: mock(() => {}),
+    reorder: mock(async () => {}),
+  };
+  return {
+    ...base,
     ...overrides,
+    filteredProfiles: "filteredProfiles" in overrides ? overrides.filteredProfiles : base.profiles,
   };
 }
 
@@ -97,6 +106,7 @@ describe("SttSection", () => {
     );
     await waitFor(() => expect(view.getByTestId("stt-section")).toBeTruthy());
     expect(view.getByText("Dictation")).toBeTruthy();
+    expect(view.getByTestId("stt-profile-row").querySelector(".bg-accent")).toBeTruthy();
   });
 
   it("loading state shows the loading label", async () => {
@@ -160,4 +170,5 @@ describe("SttSection", () => {
     // TTS list never had — the row shows the bare backend like the twin.
     expect(view.queryByText("stt_backend_browser_badge")).toBeNull();
   });
+
 });

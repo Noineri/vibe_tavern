@@ -38,7 +38,7 @@ export interface ProviderProfileListProps<TProfile extends ProviderProfileListIt
   /** Family-specific secondary row label; LLM defaults to its provider-preset label. */
   rowSubLabel?: (profile: TProfile) => React.ReactNode;
   /** Family-specific connection/status dot class; LLM defaults to its API-key status. */
-  statusClassName?: (profile: TProfile, isActive: boolean) => string;
+  statusClassName?: (profile: TProfile, isActive: boolean, isEditing: boolean) => string;
   /** Family-specific title and new-profile translation keys. */
   titleKey?: Parameters<TFunc>[0];
   newProfileKey?: Parameters<TFunc>[0];
@@ -77,7 +77,7 @@ function SortableProfileRowInner<TProfile extends ProviderProfileListItem>({
   onSelectProfile: (id: string) => void;
   dndDisabled: boolean;
   rowSubLabel: (profile: TProfile) => React.ReactNode;
-  statusClassName: (profile: TProfile, isActive: boolean) => string;
+  statusClassName: (profile: TProfile, isActive: boolean, isEditing: boolean) => string;
   testidStem?: string;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
@@ -121,7 +121,7 @@ function SortableProfileRowInner<TProfile extends ProviderProfileListItem>({
         <div
           className={cn(
             'h-2 w-2 shrink-0 rounded-full transition-colors',
-            statusClassName(p, isActive),
+            statusClassName(p, isActive, isEditing),
           )}
         />
         <div className="min-w-0 flex-1 py-2">
@@ -147,9 +147,12 @@ function SortableProfileRowInner<TProfile extends ProviderProfileListItem>({
 const SortableProfileRow = React.memo(SortableProfileRowInner, (prev, next) =>
   prev.isEditing === next.isEditing &&
   prev.isActive === next.isActive &&
-  prev.p.id === next.p.id &&
-  prev.p.name === next.p.name &&
-  prev.dndDisabled === next.dndDisabled,
+  prev.p === next.p &&
+  prev.onSelectProfile === next.onSelectProfile &&
+  prev.dndDisabled === next.dndDisabled &&
+  prev.rowSubLabel === next.rowSubLabel &&
+  prev.statusClassName === next.statusClassName &&
+  prev.testidStem === next.testidStem,
 ) as typeof SortableProfileRowInner;
 
 export function ProviderProfileList<TProfile extends ProviderProfileListItem = ProviderProfileRecord>({
@@ -210,7 +213,7 @@ export function ProviderProfileList<TProfile extends ProviderProfileListItem = P
         return (
           <div className="flex items-center gap-2 border-l-[3px] border-l-transparent pl-4 pr-2 min-h-[56px] bg-s2">
             <span className="text-base leading-none text-t4">≡</span>
-            <div className={cn('h-2 w-2 shrink-0 rounded-full', statusClassName(profile, isActive))} />
+            <div className={cn('h-2 w-2 shrink-0 rounded-full', statusClassName(profile, isActive, editingId === profile.id))} />
             <span className="truncate text-[13px] font-medium text-t1">{isActive ? '★ ' : ''}{profile.name}</span>
           </div>
         );

@@ -37,6 +37,7 @@ function makeRecord(overrides: Partial<SttRecord> = {}): SttRecord {
     autoKeyProviderName: null,
     emotionAnnotation: false,
     isDefault: false,
+    sortOrder: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,
@@ -110,6 +111,11 @@ const setDefaultMock = mock(async (id: string) => {
   if (!updated) throw new Error("not found");
   return updated;
 });
+const reorderMock = mock(async (updates: Array<{ id: string; sortOrder: number }>) => {
+  const order = new Map(updates.map((update) => [update.id, update.sortOrder]));
+  store = [...store].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  return [...store];
+});
 
 mock.module("../../../../api/stt-api.js", () => ({
   ...realSttApi,
@@ -118,6 +124,7 @@ mock.module("../../../../api/stt-api.js", () => ({
   updateSttProfile: updateMock,
   deleteSttProfile: deleteMock,
   setSttDefault: setDefaultMock,
+  reorderSttProfiles: reorderMock,
 }));
 
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
@@ -135,11 +142,29 @@ afterEach(async () => {
   updateMock.mockClear();
   deleteMock.mockClear();
   setDefaultMock.mockClear();
+  reorderMock.mockClear();
   listProvidersMock.mockClear();
   listTtsMock.mockClear();
 });
 
 describe("useSttProfiles — P2 draft auto-key hint", () => {
+  it("filters name and backend without changing source order, then persists reordered records", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "whisper-browser" }), makeRecord({ id: "p2", name: "Beta", backend: "gemini" })];
+    const hookRef: { current: ReturnType<typeof useSttProfiles> | null } = { current: null };
+    function Probe() {
+      hookRef.current = useSttProfiles();
+      return null;
+    }
+    render(<Probe />);
+    await waitFor(() => expect(hookRef.current?.loading).toBe(false));
+    await act(async () => hookRef.current?.setProfileSearch?.("gemini"));
+    expect(hookRef.current?.filteredProfiles?.map((profile) => profile.id)).toEqual(["p2"]);
+    expect(hookRef.current?.profiles.map((profile) => profile.id)).toEqual(["p1", "p2"]);
+    await act(async () => hookRef.current?.reorder?.([{ id: "p2", sortOrder: 0 }, { id: "p1", sortOrder: 1 }]));
+    expect(reorderMock).toHaveBeenCalledWith([{ id: "p2", sortOrder: 0 }, { id: "p1", sortOrder: 1 }]);
+    expect(hookRef.current?.profiles.map((profile) => profile.id)).toEqual(["p2", "p1"]);
+  });
+
   it("gemini draft: vendor match resolves the provider name pre-save (the owner repro)", async () => {
     providerStore = [
       { endpoint: "https://openrouter.ai/api/v1", hasStoredApiKey: true, name: "OpenRouter" },

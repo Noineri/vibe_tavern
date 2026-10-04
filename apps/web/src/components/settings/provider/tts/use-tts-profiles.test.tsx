@@ -91,6 +91,11 @@ const setDefaultMock = mock(async (id: string) => {
   if (!updated) throw new Error("not found");
   return updated;
 });
+const reorderMock = mock(async (updates: Array<{ id: string; sortOrder: number }>) => {
+  const order = new Map(updates.map((update) => [update.id, update.sortOrder]));
+  store = [...store].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  return [...store];
+});
 
 mock.module("../../../../api/tts-api.js", () => ({
   ...realTtsApi,
@@ -99,6 +104,7 @@ mock.module("../../../../api/tts-api.js", () => ({
   updateTtsProfile: updateMock,
   deleteTtsProfile: deleteMock,
   setTtsDefault: setDefaultMock,
+  reorderTtsProfiles: reorderMock,
 }));
 
 // D21: the hook fetches the provider wire list once for the client-side
@@ -127,11 +133,29 @@ afterEach(async () => {
   updateMock.mockClear();
   deleteMock.mockClear();
   setDefaultMock.mockClear();
+  reorderMock.mockClear();
   listProvidersMock.mockClear();
   refreshVoiceMapMock.mockClear();
 });
 
 describe("useTtsProfiles", () => {
+  it("filters name and backend without changing source order, then persists reordered records", async () => {
+    store = [makeRecord({ id: "p1", name: "Alpha", backend: "kokoro" }), makeRecord({ id: "p2", name: "Beta", backend: "gemini" })];
+    const hookRef: { current: ReturnType<typeof useTtsProfiles> | null } = { current: null };
+    function Probe() {
+      hookRef.current = useTtsProfiles();
+      return null;
+    }
+    render(<Probe />);
+    await waitFor(() => expect(hookRef.current?.loading).toBe(false));
+    await act(async () => hookRef.current?.setProfileSearch?.("gemini"));
+    expect(hookRef.current?.filteredProfiles?.map((profile) => profile.id)).toEqual(["p2"]);
+    expect(hookRef.current?.profiles.map((profile) => profile.id)).toEqual(["p1", "p2"]);
+    await act(async () => hookRef.current?.reorder?.([{ id: "p2", sortOrder: 0 }, { id: "p1", sortOrder: 1 }]));
+    expect(reorderMock).toHaveBeenCalledWith([{ id: "p2", sortOrder: 0 }, { id: "p1", sortOrder: 1 }]);
+    expect(hookRef.current?.profiles.map((profile) => profile.id)).toEqual(["p2", "p1"]);
+  });
+
   it("D21 draft auto-key hint: a draft endpoint matching a keyful provider resolves the name client-side", async () => {
     providerStore = [
       { endpoint: "NanoGPT", hasStoredApiKey: false, name: "NoKey" },
