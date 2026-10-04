@@ -1,9 +1,6 @@
-/**
- * fork #2 of TtsSection.tsx (provider master column).
- */
-
-import { useT } from "../../../../i18n/context.js";
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
+import { useT } from "../../../../i18n/context.js";
+import { ProviderSection } from "../provider-section.js";
 import { ImageGenProfileList } from "./ImageGenProfileList.js";
 import type { useImageProfiles } from "../../../../hooks/use-image-profiles.js";
 
@@ -18,24 +15,15 @@ type ImageGenHook = ReturnType<typeof useImageProfiles>;
 export function ImageGenSection({ imageGen }: { imageGen: ImageGenHook }) {
   const { t } = useT();
 
-  if (imageGen.loading) {
-    return (
-      <div data-testid="image-gen-section" className="flex flex-col p-3">
-        <div className="mb-3 font-ui text-[12px] font-semibold uppercase tracking-wide text-t3">
-          {t("image_gen_section_title")}
-        </div>
-        <div className="font-ui text-[13px] text-t3">{t("loading")}</div>
-      </div>
-    );
-  }
-
   return (
-    <div data-testid="image-gen-section" className="flex flex-col flex-1 min-h-0">
-      {imageGen.error && (
-        <div data-testid="image-gen-load-error" className="mx-3 mt-2 rounded-md bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">
-          {t("image_gen_profiles_load_failed")}: {imageGen.error}
-        </div>
-      )}
+    <ProviderSection
+      testidStem="image-gen"
+      titleKey="image_gen_section_title"
+      loadingKey="loading"
+      errorKey="image_gen_profiles_load_failed"
+      loading={imageGen.loading}
+      error={imageGen.error}
+    >
       <ImageGenProfileList
         profiles={imageGen.profiles}
         editingId={imageGen.editingId}
@@ -44,7 +32,7 @@ export function ImageGenSection({ imageGen }: { imageGen: ImageGenHook }) {
           imageGen.startCreate(t("image_gen_profile_default_name"), IMAGE_GEN_CUSTOM_SEED_BACKEND);
         }}
       />
-    </div>
+    </ProviderSection>
   );
 }
 

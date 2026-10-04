@@ -115,6 +115,8 @@ describe("SttSection", () => {
       ),
     );
     await waitFor(() => expect(view.getByTestId("stt-section")).toBeTruthy());
+    expect(view.getByTestId("stt-section").className).toBe("flex flex-col p-3");
+    expect(view.getByText("stt_section_title")).toBeTruthy();
     expect(view.getByText("loading")).toBeTruthy();
   });
 

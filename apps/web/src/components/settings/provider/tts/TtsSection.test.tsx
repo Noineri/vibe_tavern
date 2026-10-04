@@ -101,4 +101,13 @@ describe("TtsSection", () => {
     const view = render(React.createElement(TtsSection as never, { tts } as never));
     expect(view.getByTestId("tts-load-error").textContent).toContain("boom");
   });
+
+  it("keeps the loading shell title, label, and compact layout", () => {
+    const tts = makeTts({ loading: true, profiles: [] as unknown[] });
+    const view = render(<TtsSection tts={tts} />);
+    const section = view.getByTestId("tts-section");
+    expect(section.className).toBe("flex flex-col p-3");
+    expect(view.getByText("tts_section_title")).toBeTruthy();
+    expect(view.getByText("loading")).toBeTruthy();
+  });
 });

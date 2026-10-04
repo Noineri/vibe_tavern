@@ -164,6 +164,8 @@ describe("ImageGenSection", () => {
     const imageGen = makeImageGen({ loading: true, profiles: [] });
     const view = renderSection(imageGen);
     await waitFor(() => expect(view.getByTestId("image-gen-section")).toBeTruthy());
+    expect(view.getByTestId("image-gen-section").className).toBe("flex flex-col p-3");
+    expect(view.getByText("image_gen_section_title")).toBeTruthy();
     expect(view.getByText("loading")).toBeTruthy();
   });
 
