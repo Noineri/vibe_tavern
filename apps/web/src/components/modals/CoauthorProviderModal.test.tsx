@@ -144,6 +144,20 @@ describe("CoauthorProviderModal", () => {
     await waitFor(() => expect(view.baseElement.textContent).toContain("one-model"));
   });
 
+  it("places the test greeting directly after the model selector and before sampler settings", async () => {
+    setBinding("p1");
+    loadCoauthorConnectionSettingsAction.mockImplementation(async (id) => makeRow(id, "tool-model"));
+    useProviderDataStore.setState({ profiles: [makeProfile("p1", "Alpha")] });
+    const view = renderModal();
+
+    await waitFor(() => expect(view.getByRole("button", { name: "test_hi_btn" })).toBeTruthy());
+    const selector = view.getByText("coauthor.provider.model_label");
+    const button = view.getByRole("button", { name: "test_hi_btn" });
+    const sampler = view.getByText("sampler_basic_settings");
+    expect(Boolean(selector.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(button.compareDocumentPosition(sampler) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  });
+
   it("uses the Co-Author row limits rather than RP profile limits", async () => {
     setBinding("p1");
     loadCoauthorConnectionSettingsAction.mockImplementation(async (id) => makeRow(id, "tool-model", { maxTokens: 8_000, contextBudget: 128_000 }));

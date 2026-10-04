@@ -13,7 +13,7 @@ import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { ProviderProfileList } from "../settings/provider/ProviderProfileList.js";
 import { CoauthorModelSelector } from "../settings/provider/CoauthorModelSelector.js";
 import { ProviderSamplerPanel } from "../settings/provider/ProviderSamplerPanel.js";
-import { Icons } from "../shared/icons.js";
+import { ProviderTestHelloButton } from "../settings/provider/ProviderTestHelloButton.js";
 import { SearchInput } from "../shared/SearchInput.js";
 import { cn } from "../../lib/cn.js";
 
@@ -196,8 +196,8 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
       </div>
       {form ? <>
         <CoauthorModelSelector values={form} models={models} fetching={modelsLoading} fetchError={modelsError} modelSearch={modelSearch} modelListOpen={modelListOpen} favoriteModels={favorites} onChange={updateModelForm} onFetchModels={refreshModels} setModelSearch={setModelSearch} setModelListOpen={setModelListOpen} onToggleFavoriteModel={(model) => void handleToggleFavorite(model)} />
+        {form.model && <ProviderTestHelloButton className="shrink-0 mt-2 mb-4" testing={testing} result={testResult} onTest={() => void handleTest()} replyWrapperClassName="mt-2" errorWrapperClassName="mt-2" />}
         <ProviderSamplerPanel values={form} onChange={updateForm} showTokenPadding={false} capabilities={samplerCapabilities} />
-        {form.model && <div className="shrink-0"><button type="button" disabled={testing} onClick={() => void handleTest()} className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50">{testing ? t("sending") : t("test_hi_btn")}</button>{testResult?.reply && <div className="mt-2"><span className="inline-flex rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success">&ldquo;{testResult.reply.length > 200 ? `${testResult.reply.slice(0, 200)}...` : testResult.reply}&rdquo;</span></div>}{testResult?.error && <div className="mt-2"><span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close /> {testResult.error}</span></div>}</div>}
       </> : <div className="py-6 text-center font-ui text-[12px] text-t4">{t("loading")}</div>}
     </div>}
     footer={<div data-testid="coauthor-modal-footer" className={cn("flex shrink-0 items-center justify-end gap-2 border-t border-border", isMobile ? "px-4 py-3" : "px-6 py-4")}><button type="button" className="rounded-md px-3 py-1.5 font-ui text-[12px] font-medium text-t3 transition-colors hover:bg-s2 hover:text-t1" onClick={onClose}>{t("cancel")}</button><button type="button" disabled={!canSave} onClick={() => void handleSave()} className={cn("rounded-md px-4 py-1.5 font-ui text-[12px] font-medium transition-colors", canSave ? "bg-accent text-accent-t hover:bg-accent/90" : "cursor-not-allowed bg-s3 text-t4")}>{saving ? t("saving") : t("coauthor.provider.use_for_coauthor")}</button></div>}

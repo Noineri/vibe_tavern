@@ -10,6 +10,7 @@ import type { TtsProfileForm } from "./use-tts-profiles.js";
 import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 import { listTtsDraftModels, listTtsDraftVoices } from "../../../../api/tts-api.js";
 import { Icons } from "../../../shared/icons.js";
+import { ProviderTestHelloButton } from "../ProviderTestHelloButton.js";
 import { cn } from "../../../../lib/cn.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
@@ -469,15 +470,16 @@ export function TtsProviderForm({
               </button>
               )}
               {!hideTestChat && (
-                <button
-                  type="button"
-                  data-testid="tts-test-preview-btn"
-                  className="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
-                  onClick={() => void handleTestChat()}
-                  disabled={testingChatEff}
-                >
-                  {testingChatEff ? t("sending") : t("test_hi_btn")}
-                </button>
+                <ProviderTestHelloButton
+                  testing={testingChatEff}
+                  result={chatResultEff}
+                  onTest={() => void handleTestChat()}
+                  buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
+                  buttonTestId="tts-test-preview-btn"
+                  resultContainerClassName="mt-3"
+                  replyClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success"
+                  errorClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"
+                />
               )}
             </div>
             {testOkEff !== null && (
@@ -488,23 +490,6 @@ export function TtsProviderForm({
                 successText={t("connection_successful")}
                 failureText={t("connection_failed")}
               />
-            )}
-            {!hideTestChat && chatResultEff && (
-              <div className="mt-3">
-                {chatResultEff.reply && (
-                  <span className="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success">
-                    &ldquo;
-                    {chatResultEff.reply.length > 200 ? chatResultEff.reply.slice(0, 200) + "..." : chatResultEff.reply}
-                    &rdquo;
-                  </span>
-                )}
-                {chatResultEff.error && (
-                  <span className="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
-                    <Icons.Close />
-                    {chatResultEff.error}
-                  </span>
-                )}
-              </div>
             )}
             {preview.error && (
               <div data-testid="tts-preview-error" className="mt-2 font-ui text-[11px] text-danger">
