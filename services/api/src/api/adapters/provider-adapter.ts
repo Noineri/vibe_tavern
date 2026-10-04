@@ -138,6 +138,11 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 	// 404 BEFORE any store access; a known connection with no saved set is `null`
 	// (the domain resolver applies the Co-Author defaults), never an RP fallback.
 
+	reorderCoauthorProviderProfiles = async (updates: Array<{ id: string; sortOrder: number }>) => {
+		await Promise.all(updates.map((update) => this.getRequiredProviderProfile(update.id)));
+		await this.stores.coauthorSettings.reorder(updates);
+	};
+
 	getCoauthorConnectionSettings = async (providerProfileId: string) => {
 		await this.getRequiredProviderProfile(providerProfileId);
 		return this.stores.coauthorSettings.getByProviderId(providerProfileId);

@@ -19,8 +19,9 @@
 import { afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import { useEffect, type ReactNode } from "react";
-import type { ScriptRecord } from "../../../api/types.js";
+import type { AppCharacterEntry, ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
+import { WORLD_LORE_UNBOUND_OWNER_ID } from "./use-world-lore-list-filters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
@@ -29,12 +30,12 @@ useDomEnv();
 const listScripts = mock((_characterId?: string) => Promise.resolve<ScriptRecord[]>([]));
 const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
 const listParticipatingScripts = mock((_chatId: string) => Promise.resolve<ScriptRecord[]>([]));
-const createScript = mock(() => Promise.resolve<ScriptRecord>(undefined as never));
+const createScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(undefined as never));
 const updateScript = mock((_id: string, _patch: Partial<ScriptRecord>) => Promise.resolve<ScriptRecord>(undefined as never));
 const deleteScript = mock(() => Promise.resolve());
-const importScript = mock(() => Promise.resolve<ScriptRecord>(undefined as never));
-const getScriptLinks = mock(() => Promise.resolve([]));
-const setScriptLinks = mock(() => Promise.resolve([]));
+const importScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(undefined as never));
+const getScriptLinks = mock((_scriptId: string) => Promise.resolve<ScriptLinkRecord[]>([]));
+const setScriptLinks = mock((_scriptId: string, _links: Array<{ targetType: "character" | "persona"; targetId: string }>) => Promise.resolve<ScriptLinkRecord[]>([]));
 const testScript = mock(() => Promise.resolve({
 	kind: "prompt" as const,
 	personality: "",
@@ -53,6 +54,8 @@ const realMobileHook = await import("../../../hooks/use-mobile.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
 const realTooltip = await import("../../shared/Tooltip.js");
+
+let testCharacters: AppCharacterEntry[] = [];
 
 mock.module("../../../api/script-api.js", () => ({
 	...realScriptApi,
@@ -81,7 +84,7 @@ mock.module("../../../i18n/context.js", () => ({
 
 mock.module("../../../stores/snapshot-store.js", () => ({
 	...realSnapshotStore,
-  useAllCharacters: () => [],
+  useAllCharacters: () => testCharacters,
 }));
 
 mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
@@ -104,7 +107,23 @@ mock.module("../../shared/AiAssistantModal.js", () => ({
 }));
 mock.module("../../shared/LinkBindingPopover.js", () => ({
 	...realLinkBindingPopover,
-  LinkBindingPopover: () => null,
+  LinkBindingPopover: (props: {
+    links: Array<{ targetType: "character" | "persona"; targetId: string }>;
+    onSetLinks: (links: Array<{ targetType: "character" | "persona"; targetId: string }>) => void;
+  }) => (
+    <div data-testid="script-owner-picker">
+      {props.links.map((link) => (
+        <button
+          key={`${link.targetType}:${link.targetId}`}
+          type="button"
+          onClick={() => props.onSetLinks(props.links.filter((candidate) => candidate !== link))}
+        >
+          {link.targetId}
+        </button>
+      ))}
+      <button type="button" onClick={() => props.onSetLinks([...props.links, { targetType: "persona", targetId: "persona-2" }])}>add-persona</button>
+    </div>
+  ),
 }));
 mock.module("../../shared/Tooltip.js", () => ({
 	...realTooltip,
@@ -134,7 +153,7 @@ const baseScript: ScriptRecord = {
   description: "",
   code: "",
   scriptKind: "prompt",
-  scopeType: "character",
+  scopeType: "entity",
   characterId: "c1",
   personaId: null,
   chatId: null,
@@ -166,6 +185,7 @@ beforeEach(() => {
   getScriptLinks.mockClear();
   setScriptLinks.mockClear();
   testScript.mockClear();
+  testCharacters = [];
   useScriptDraftStore.getState().resetAll();
   serverScript = { ...baseScript };
   updateGate = null;
@@ -176,7 +196,7 @@ beforeEach(() => {
   createScript.mockResolvedValue({ ...baseScript });
   deleteScript.mockResolvedValue(undefined);
   importScript.mockResolvedValue({ ...baseScript });
-  setScriptLinks.mockResolvedValue([]);
+  setScriptLinks.mockImplementation(async (_scriptId, links) => links.map((link) => ({ scriptId: "s1", ...link })));
   updateScript.mockImplementation(async (_id, patch) => {
     serverScript = { ...serverScript, ...patch };
     const gate = updateGate;
@@ -219,7 +239,10 @@ function HarnessCurrent() {
 function HarnessFiltered({ ownerId, nameSearch }: { ownerId: string | null; nameSearch: string }) {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId });
   useEffect(() => panel.setNameSearch(nameSearch), [nameSearch, panel.setNameSearch]);
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+  return <>
+    <div data-testid="script-owner-options">{panel.ownerOptions.map((owner) => owner.id).join(",")}</div>
+    {panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}
+  </>;
 }
 
 /** Renders the modals plus a control that opens the import modal — the hook
@@ -389,19 +412,40 @@ describe("useScriptPanel list filters", () => {
     expect(listScripts).not.toHaveBeenCalled();
   });
 
-  it("filters Bound scripts by owner and name", async () => {
+  it("lists and filters Bound scripts by a linked-only owner, then exactly the unbound scripts", async () => {
+    testCharacters = [{
+      id: "owner-1",
+      name: "Linked-only owner",
+      subtitle: "",
+      tags: [],
+      avatarAssetId: null,
+      avatarFullAssetId: null,
+      avatarCropJson: null,
+      avatarExt: null,
+      avatarFullExt: null,
+      updatedAt: "",
+    }];
     listScripts.mockResolvedValue([
-      { ...baseScript, id: "owner-alpha", name: "Owner alpha", characterId: "owner-1" },
-      { ...baseScript, id: "owner-tavern", name: "Owner tavern", characterId: "owner-1" },
-      { ...baseScript, id: "other-tavern", name: "Other tavern", characterId: "owner-2" },
+      { ...baseScript, id: "owner-alpha", name: "Owner alpha", characterId: null, personaId: null },
+      { ...baseScript, id: "owner-tavern", name: "Owner tavern", characterId: null, personaId: null },
+      { ...baseScript, id: "unbound-script", name: "Unbound script", characterId: null, personaId: null },
+      { ...baseScript, id: "global-script", name: "Global script", scopeType: "global", characterId: null, personaId: null },
     ]);
+    getScriptLinks.mockImplementation(async (id) => id.startsWith("owner-")
+      ? [{ scriptId: id, targetType: "character" as const, targetId: "owner-1" }]
+      : []);
     const ui = render(<HarnessFiltered ownerId="owner-1" nameSearch="" />);
 
+    await waitFor(() => expect(ui.getByTestId("script-owner-options").textContent).toContain("owner-1"));
     await waitFor(() => expect(ui.queryAllByTestId("script-name")).toHaveLength(2));
     ui.rerender(<HarnessFiltered ownerId="owner-1" nameSearch="tavern" />);
 
     await waitFor(() => expect(ui.queryAllByTestId("script-name")).toHaveLength(1));
     expect(ui.queryAllByTestId("script-name")[0]?.textContent).toBe("Owner tavern");
+
+    ui.rerender(<HarnessFiltered ownerId={WORLD_LORE_UNBOUND_OWNER_ID} nameSearch="" />);
+    await waitFor(() => expect(ui.queryAllByTestId("script-name")).toHaveLength(1));
+    expect(ui.queryAllByTestId("script-name")[0]?.textContent).toBe("Unbound script");
   });
 });
 
@@ -499,7 +543,13 @@ describe("useScriptPanel interactive-script filtering", () => {
 // Global (application-scope) scripts run everywhere, so a character/persona
 // link is never consulted for them; chat scripts are already chat-bound.
 describe("useScriptPanel link-binding scope filter", () => {
+  it("shows an unbound warning after an entity script's empty links load", async () => {
+    const { findByText } = render(<Harness />);
+    expect(await findByText("script_unbound_warning")).toBeTruthy();
+  });
+
   it("omits the character/persona link binding for global (application-scope) scripts", async () => {
+    serverScript = { ...baseScript, scopeType: "global" };
     const { container, findByText, queryByText } = render(<HarnessGlobal />);
 
     await openEditor(container, findByText);
@@ -511,6 +561,23 @@ describe("useScriptPanel link-binding scope filter", () => {
 
     await openEditor(container, findByText);
     expect(await findByText("script_links_label")).toBeTruthy();
+  });
+
+  it("changes and clears an owner chip through the shared link picker", async () => {
+    getScriptLinks.mockResolvedValue([{ scriptId: "s1", targetType: "character", targetId: "c1" }]);
+    const { container, findByText, getByText } = render(<Harness />);
+
+    await openEditor(container, findByText);
+    expect(await findByText("c1")).toBeTruthy();
+    fireEvent.click(getByText("add-persona"));
+    await waitFor(() => expect(setScriptLinks).toHaveBeenLastCalledWith("s1", [
+      { targetType: "character", targetId: "c1" },
+      { targetType: "persona", targetId: "persona-2" },
+    ]));
+    fireEvent.click(getByText("c1"));
+    await waitFor(() => expect(setScriptLinks).toHaveBeenLastCalledWith("s1", [
+      { targetType: "persona", targetId: "persona-2" },
+    ]));
   });
 });
 
@@ -536,5 +603,47 @@ describe("ScriptEditor — D3 mobile touch booster", () => {
     ) as HTMLElement | undefined;
     expect(booster).toBeTruthy();
     expect(booster!.className).toContain(":not([role=switch])");
+  });
+});
+
+// LORE_SCRIPT_OWNERS_AS_LINKS step 2: creating (or importing) a script never
+// derives an owner from the persona/character context — the create body
+// carries scopeType (+chatId for chat scope) and nothing else; owners are
+// explicit links (the creation-row picker is step 3).
+describe("useScriptPanel create/import owner boundary (LORE_SCRIPT_OWNERS_AS_LINKS step 2)", () => {
+  function HarnessPersonaContext() {
+    // Persona context ACTIVE — before step 2 this silently homed every
+    // created script to that persona.
+    const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: "persona_active", scope: "entity", ownerId: null });
+    return (
+      <>
+        {panel.modals}
+        <button type="button" onClick={() => panel.handleAdd()}>trigger-add</button>
+        <button type="button" onClick={panel.handleImportOpen}>trigger-import-open</button>
+      </>
+    );
+  }
+
+  it("creating a script from an entity scope explicitly links the current character", async () => {
+    const { getByText } = render(<HarnessPersonaContext />);
+    fireEvent.click(getByText("trigger-add"));
+    await waitFor(() => expect(createScript).toHaveBeenCalledTimes(1));
+    const body = createScript.mock.calls[0]![0] as Record<string, unknown>;
+    expect(body.scopeType).toBe("entity");
+    expect("characterId" in body).toBe(false);
+    expect("personaId" in body).toBe(false);
+    expect(body.links).toEqual([{ targetType: "character", targetId: "c1" }]);
+  });
+
+  it("importing a script from an entity scope with a persona context sends NO owner fields", async () => {
+    const { getByText, getByPlaceholderText, getByRole } = render(<HarnessPersonaContext />);
+    fireEvent.click(getByText("trigger-import-open"));
+    fireEvent.change(getByPlaceholderText("script_import_placeholder"), { target: { value: "code();" } });
+    fireEvent.click(getByRole("button", { name: "script_import_import" }));
+    await waitFor(() => expect(importScript).toHaveBeenCalledTimes(1));
+    const body = importScript.mock.calls[0]![0] as Record<string, unknown>;
+    expect(body.scopeType).toBe("entity");
+    expect("characterId" in body).toBe(false);
+    expect("personaId" in body).toBe(false);
   });
 });

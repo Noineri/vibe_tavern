@@ -139,6 +139,25 @@ describe("CoauthorLoreReview — rendering (CTX-L3)", () => {
 		expect(getByText("4")).toBeTruthy();
 	});
 
+	it("wraps long setting values in full while preserving the old → new grid", () => {
+		const b = bundle();
+		const oldValue = "A long prior setting value that must remain readable on a narrow touch pane";
+		const newValue = "A long replacement setting value that must remain readable on a narrow touch pane";
+		b.lorebooks[0] = {
+			...b.lorebooks[0]!,
+			settingChanges: { characterStrategy: { oldValue, newValue } },
+		};
+		const { getByText } = renderReview({ bundle: b, ...allSelected(b) });
+		const oldNode = getByText(oldValue);
+		const newNode = getByText(newValue);
+		expect(oldNode.textContent).toBe(oldValue);
+		expect(newNode.textContent).toBe(newValue);
+		expect(oldNode.className).toContain("break-words");
+		expect(newNode.className).toContain("break-words");
+		expect(oldNode.className).not.toContain("truncate");
+		expect(newNode.className).not.toContain("truncate");
+	});
+
 	it("does not add a setting row to a new entry with only default fields", () => {
 		const b: CoauthorLoreBundle = {
 			lorebooks: [{ id: "lb1", name: "L", description: "", scopeType: "global", enabled: true }],

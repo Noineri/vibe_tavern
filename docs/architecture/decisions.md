@@ -280,6 +280,8 @@ Why the original decision missed this: the options table weighs three ways to fi
 
 **Trade-off:** Two sources of truth (FK + links table) for character/persona associations. Mitigated by: (1) the migration seeds links from FKs, (2) `createLorebook` populates both, (3) the pipeline (`listAllActiveForChat`) reads exclusively from links.
 
+> **Amendment (2026-10, LORE_SCRIPT_OWNERS_AS_LINKS):** the "Legacy FK retention" choice above is superseded. Migration 0107 copied every entity-scoped home owner into its link table and DROPPED `lorebooks.characterId`/`personaId` (and the `scripts` twins); links are now the ONLY owner source — there is no hidden or primary owner anywhere (create/import take an explicit owner list, owner deletion removes just the link rows). The FK-era bullets above describe the original 2026 decision, not the current schema.
+
 ---
 
 ## AD-015: Flex Centering over CSS Transform for Modal Positioning

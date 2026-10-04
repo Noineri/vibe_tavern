@@ -59,6 +59,7 @@ const listParticipatingLorebooks = mock(realLorebookApi.listParticipatingLoreboo
 const listLorebooks = mock(realLorebookApi.listLorebooks);
 const listLoreEntries = mock(realLorebookApi.listLoreEntries);
 const getLorebookLinks = mock(realLorebookApi.getLorebookLinks);
+const updateLorebookMeta = mock(realLorebookApi.updateLorebookMeta);
 const updateLoreEntry = mock(realLorebookApi.updateLoreEntry);
 const createLoreEntry = mock(realLorebookApi.createLoreEntry);
 const exportLorebookSt = mock(realLorebookApi.exportLorebookSt);
@@ -162,17 +163,23 @@ mock.module("./LoreEntryEditor.js", () => {
 mock.module("./LorebookAccordion.js", () => ({
   ...realLorebookAccordion,
   LorebookAccordion: (props: {
-    lorebook: { id: string; name: string };
+    lorebook: { id: string; name: string; includeNames: boolean; characterStrategy: number };
     onEntryClick: (entryId: string) => void;
     onExport: () => void;
+    onUpdateMeta: (body: { includeNames?: boolean; characterStrategy?: number }) => void;
   }) => (
     <div data-testid="lb-accordion">
       <span data-testid="lb-name">{props.lorebook.name}</span>
+      <output data-testid="lb-settings">{`${props.lorebook.includeNames}:${props.lorebook.characterStrategy}`}</output>
       <button
         data-testid="entry-click"
         onClick={() => props.onEntryClick("entry-1")}
       />
       <button data-testid="export-lorebook" onClick={props.onExport} />
+      <button
+        data-testid="update-book-settings"
+        onClick={() => props.onUpdateMeta({ includeNames: false, characterStrategy: 2 })}
+      />
     </div>
   ),
 }));
@@ -201,6 +208,7 @@ mock.module("../../../api/lorebook-api.js", () => ({
 	listLorebooks,
 	listLoreEntries,
 	getLorebookLinks,
+	updateLorebookMeta,
 	updateLoreEntry,
 	createLoreEntry,
 	exportLorebookSt,
@@ -346,6 +354,7 @@ describe("LorebookEditor (characterization)", () => {
     mocked(listLorebooks).mockResolvedValue([makeLorebook()]);
     mocked(listLoreEntries).mockResolvedValue([makeEntry()]);
     mocked(getLorebookLinks).mockResolvedValue([]);
+    mocked(updateLorebookMeta).mockResolvedValue(makeLorebook());
     mocked(updateLoreEntry).mockResolvedValue(makeEntry());
     mocked(exportLorebookSt).mockResolvedValue({ data: { entries: {} }, warnings: [] });
   });
@@ -428,7 +437,7 @@ describe("LorebookEditor (characterization)", () => {
     });
   });
 
-  it("filters Bound lorebooks by the selected owner", async () => {
+  it("lists and filters Bound lorebooks by a linked-only owner", async () => {
     testCharacters = [{
       id: CHARACTER_ID,
       name: "Owner Character",
@@ -443,9 +452,12 @@ describe("LorebookEditor (characterization)", () => {
     }];
     setViewport(375);
     mocked(listLorebooks).mockResolvedValue([
-      makeLorebook({ id: "owner-book", name: "Owner book", characterId: CHARACTER_ID }),
-      makeLorebook({ id: "other-book", name: "Other book", characterId: "other-character" }),
+      makeLorebook({ id: "owner-book", name: "Owner book", characterId: null, personaId: null }),
+      makeLorebook({ id: "other-book", name: "Other book", characterId: null, personaId: null }),
     ]);
+    mocked(getLorebookLinks).mockImplementation(async (id) => id === "owner-book"
+      ? [{ lorebookId: id, targetType: "character" as const, targetId: CHARACTER_ID }]
+      : []);
     const { getByText, getByTestId, queryAllByTestId } = await renderAtList();
 
     fireEvent.click(getByText("scope_entity"));
@@ -461,6 +473,32 @@ describe("LorebookEditor (characterization)", () => {
 
     await waitFor(() => expect(queryAllByTestId("lb-name")).toHaveLength(1));
     expect(queryAllByTestId("lb-name")[0]?.textContent).toBe("Owner book");
+  });
+
+  it("lists exactly unbound entity-scoped lorebooks", async () => {
+    setViewport(375);
+    mocked(listLorebooks).mockResolvedValue([
+      makeLorebook({ id: "linked-book", name: "Linked book", characterId: null, personaId: null }),
+      makeLorebook({ id: "unbound-book", name: "Unbound book", characterId: null, personaId: null }),
+      makeLorebook({ id: "global-book", name: "Global book", scopeType: "global", characterId: null, personaId: null }),
+    ]);
+    mocked(getLorebookLinks).mockImplementation(async (id) => id === "linked-book"
+      ? [{ lorebookId: id, targetType: "character" as const, targetId: CHARACTER_ID }]
+      : []);
+    const { getByText, getByTestId, queryAllByTestId } = await renderAtList();
+
+    fireEvent.click(getByText("scope_entity"));
+    await act(async () => {
+      setViewport(1024);
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    await waitFor(() => expect(getByTestId("lorebook-owner-desktop")).toBeTruthy());
+    fireEvent.click(getByTestId("lorebook-owner-desktop"));
+    fireEvent.click(getByText("lore_owner_unbound"));
+
+    await waitFor(() => expect(queryAllByTestId("lb-name")).toHaveLength(1));
+    expect(queryAllByTestId("lb-name")[0]?.textContent).toBe("Unbound book");
   });
 
   it("filters the current list by lorebook name", async () => {
@@ -489,6 +527,29 @@ describe("LorebookEditor (characterization)", () => {
       expect(exportLorebookSt).toHaveBeenCalledWith(LB_ID);
       expect(toastWarning).toHaveBeenCalledWith("lore_export_chat_disabled_warning");
     });
+  });
+
+  it("round-trips Include Names and Insertion Strategy through editor save and reload", async () => {
+    let persisted = makeLorebook({ includeNames: true, characterStrategy: 0 });
+    mocked(listAllLorebooks).mockImplementation(async () => [persisted]);
+    mocked(updateLorebookMeta).mockImplementation(async (id, patch) => {
+      expect(id).toBe(LB_ID);
+      persisted = { ...persisted, ...patch };
+      return persisted;
+    });
+
+    const { getByTestId } = await renderAtList();
+    expect(getByTestId("lb-settings").textContent).toBe("true:0");
+
+    fireEvent.click(getByTestId("update-book-settings"));
+
+    await waitFor(() => {
+      expect(updateLorebookMeta).toHaveBeenCalledWith(LB_ID, {
+        includeNames: false,
+        characterStrategy: 2,
+      });
+    });
+    await waitFor(() => expect(getByTestId("lb-settings").textContent).toBe("false:2"));
   });
 
   it("entry-loading: selecting an entry loads its lorebook's entries via listLoreEntries", async () => {

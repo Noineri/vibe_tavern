@@ -1,0 +1,1 @@
+ALTER TABLE `coauthor_connection_settings` ADD `sort_order` integer;

@@ -4,6 +4,7 @@ import type { ProviderProfileRecord } from "../../../api/types.js";
 import { PROVIDER_PRESETS, getPresetGroup, getVisibleProviderPresets, getVisiblePresetGroups } from '../../../provider-presets.js';
 import type { FormState } from '../../modals/ProviderModal.js';
 import { Icons } from '../../shared/icons.js';
+import { ProviderTestHelloButton } from './ProviderTestHelloButton.js';
 import { cn } from '../../../lib/cn.js';
 import { Toggle } from '../../shared/Toggle.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
@@ -199,13 +200,15 @@ export function ProviderForm({
                 {testing ? t("testing") : t("test_connection")}
               </button>
               {!hideTestChat && (
-                <button type="button"
-                  className="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
-                  onClick={() => void onTestChat()}
-                  disabled={testingChat}
-                >
-                  {testingChat ? t("sending") : t("test_hi_btn")}
-                </button>
+                <ProviderTestHelloButton
+                  testing={testingChat}
+                  result={chatResult}
+                  onTest={() => void onTestChat()}
+                  buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
+                  resultContainerClassName="mt-3"
+                  replyClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success"
+                  errorClassName="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"
+                />
               )}
             </div>
             {testOk === true && (
@@ -222,25 +225,6 @@ export function ProviderForm({
                   <Icons.Close />
                   {t("connection_failed")}
                 </span>
-              </div>
-            )}
-            {!hideTestChat && chatResult && (
-              <div className="mt-3">
-                {chatResult.reply && (
-                  <span className="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success">
-                    &ldquo;
-                    {chatResult.reply.length > 200
-                      ? chatResult.reply.slice(0, 200) + '...'
-                      : chatResult.reply}
-                    &rdquo;
-                  </span>
-                )}
-                {chatResult.error && (
-                  <span className="inline-flex max-w-full items-center gap-1.5 break-words rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger">
-                    <Icons.Close />
-                    {chatResult.error}
-                  </span>
-                )}
               </div>
             )}
           </div>

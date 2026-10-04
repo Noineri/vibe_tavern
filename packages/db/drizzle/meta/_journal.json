@@ -757,6 +757,13 @@
       "when": 1791094057659,
       "tag": "0107_talented_rumiko_fujikawa",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "6",
+      "when": 1791131743328,
+      "tag": "0108_aberrant_black_queen",
+      "breakpoints": true
     }
   ]
 }

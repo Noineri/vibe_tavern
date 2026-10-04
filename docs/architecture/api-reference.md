@@ -578,11 +578,13 @@ Create a lorebook.
 {
   "name": "World Lore",
   "scopeType": "entity",
-  "characterId": "char_1",
+  "links": [{ "targetType": "character", "targetId": "char_1" }],
   "tokenBudget": 2048,
   "recursiveScanning": false
 }
 ```
+
+`links` is the explicit owner list (empty/omitted = unbound — no owner is derived from context).
 
 ### `PATCH /api/lorebooks/:lorebookId`
 
@@ -1001,11 +1003,13 @@ Create a script.
   "description": "Tracks character mood across messages.",
   "code": "const last = context.chat.lastMessage;\nif (last.includes('angry')) {\n  context.state.set('mood', 'angry');\n}",
   "scopeType": "entity",
-  "characterId": "char_1",
+  "links": [{ "targetType": "character", "targetId": "char_1" }],
   "enabled": true,
   "sortOrder": 0
 }
 ```
+
+`links` is the explicit owner list (empty/omitted = unbound — no owner is derived from context).
 
 ### `PATCH /api/scripts/:scriptId`
 

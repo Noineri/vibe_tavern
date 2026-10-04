@@ -222,6 +222,12 @@ export class CharacterRuntime {
     // R-13: profile links targeting this character die with it too (same policy
     // B — the PROFILE survives, its link to the deleted character must not).
     await this.deps.stores.regex.deleteProfileLinksForTarget(REGEX_TARGET_TYPE.Character, characterId);
+    // LORE_SCRIPT_OWNERS_AS_LINKS step 2: the character's lorebook and script
+    // LINK ROWS die with it (same polymorphic-target pattern as the regex
+    // links above); the books and scripts themselves SURVIVE for their other
+    // owners — an owner's deletion never deletes content.
+    await this.deps.stores.lorebooks.deleteLinksForTarget("character", characterId);
+    await this.deps.stores.scripts.deleteLinksForTarget("character", characterId);
     await this.deps.stores.characters.delete(typedCharacterId);
   }
 

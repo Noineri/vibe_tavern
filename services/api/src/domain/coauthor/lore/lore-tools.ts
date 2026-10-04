@@ -17,7 +17,8 @@
  * into the tool set between the greeting tools and the context-search tools.
  * The deps mirror the injection seams `buildCoauthorTools` receives
  * (`loreIdGen`, `loreDelegate`, `loreEntityLookup`) plus a getter for the live
- * working profile (delegations ground on the in-flux character card).
+ * working profile (delegations ground on the in-flux character card) and the
+ * step-6 `loreWorkActive` flag (full vs basic parameter view).
  */
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
@@ -34,14 +35,26 @@ import {
   LoreDraftState,
   type LoreDraftIdGen,
 } from "./lore-draft-state.js";
-import {
-  addLoreEntryToolInputSchema,
-  createLorebookToolInputSchema,
-  createLoreEntryToolInputSchema,
-  editLoreEntryToolInputSchema,
-  editLorebookToolInputSchema,
-} from "./lore-tool-schemas.js";
+import { buildLoreToolInputSchemas } from "./lore-tool-schemas.js";
 import type { LoreDelegate, LoreDelegateInput } from "./lore-delegate.js";
+
+/**
+ * Every tool name in the lore half of the co-author tool set, in definition
+ * order. Single source for consumers that must recognize "a lore tool": the
+ * step-6 lore-work trigger (`lore-work-trigger.ts`) matches persisted tool-call
+ * names from the chat history against this list. Pinned against the keys
+ * `buildLoreTools` actually returns by `lore-work-trigger.test.ts`.
+ */
+export const LORE_TOOL_NAMES = [
+  "create_lorebook",
+  "create_lore_entry",
+  "set_lore_activation",
+  "edit_lorebook",
+  "edit_lore_entry",
+  "add_lore_entry",
+  "ai_write_lore_entry",
+  "ai_generate_lore_keys",
+] as const;
 
 /**
  * CE-B1: loads a persisted lore entity's current state as a draft-compatible
@@ -78,6 +91,12 @@ export interface LoreToolsDeps {
    *  character). Passed as a getter because the working profile is mutable
    *  closure state owned by `buildCoauthorTools`. */
   getWorkingProfileMd: () => string | undefined;
+  /** COAUTHOR_LORE_FULL_SETTINGS step 6: is the Co-Author working on lore?
+   *  True = the FULL step-2 settings surface on every lore tool; false = the
+   *  BASIC starter view (create with basics / lookup / content and keys).
+   *  Computed by the assembler from `lore-work-trigger.ts`. Absent = FULL —
+   *  callers that predate the trigger keep today's behavior. */
+  loreWorkActive?: boolean;
 }
 
 /**
@@ -89,6 +108,12 @@ export interface LoreToolsDeps {
  */
 export function buildLoreTools(deps: LoreToolsDeps): ToolSet {
   const { loreDelegate, loreEntityLookup } = deps;
+
+  // COAUTHOR_LORE_FULL_SETTINGS step 6: tool schemas are fixed for the whole
+  // multi-step model request, so the parameter view (full vs basic) is chosen
+  // HERE, at build time, from the lore-work trigger the assembler computed.
+  const loreWorkActive = deps.loreWorkActive ?? true;
+  const schemas = buildLoreToolInputSchemas(loreWorkActive);
 
   // ── Turn-local lore draft state (CTX-L1, Wave 4) ──────────────────────────
   // Proposal-only: allocates stable draft IDs and mutates closure state only —
@@ -183,10 +208,13 @@ export function buildLoreTools(deps: LoreToolsDeps): ToolSet {
     // with one model-facing description map. Content and keys still go ONLY
     // through the delegates; `order` is deliberately not exposed (ST wire
     // alias of priority — the store has no column for it).
+    // Step 6: the description and parameter set follow the active view — FULL
+    // while working on lore, BASIC (starter fields) outside it.
     create_lorebook: tool({
-      description:
-        "Propose creating a NEW lorebook (world-info book) for the character. Every book-level setting is available: budget (fixed tokens or percent-of-context), scan depth, recursion, group scoring, case/whole-word matching, min activations, overflow alert, character-vs-global ordering. Returns the complete cumulative lore draft (all books + entries proposed this turn). The book is shown for review before applying — nothing is persisted until Apply.",
-      inputSchema: createLorebookToolInputSchema,
+      description: loreWorkActive
+        ? "Propose creating a NEW lorebook (world-info book) for the character. Every book-level setting is available: budget (fixed tokens or percent-of-context), scan depth, recursion, group scoring, case/whole-word matching, min activations, overflow alert, character-vs-global ordering. Returns the complete cumulative lore draft (all books + entries proposed this turn). The book is shown for review before applying — nothing is persisted until Apply."
+        : "Propose creating a NEW lorebook (world-info book) for the character with its core settings: name, description, scope, enabled, scanDepth, tokenBudget (fixed), recursiveScanning. Advanced book settings (budget percent/cap, group scoring, match defaults, min activations, overflow alert, character-vs-global ordering) open on the lore tools automatically from your next turn onward once you have made any lore change (no extra call needed); refine them then with edit_lorebook. Returns the complete cumulative lore draft (all books + entries proposed this turn). The book is shown for review before applying — nothing is persisted until Apply.",
+      inputSchema: schemas.createLorebook,
       execute: async ({ name, scopeType, summary, ...settings }): Promise<CoauthorLoreBundleOutput> => {
         logger.info("create_lorebook IN name=%j scopeType=%s settings=%j summary=%s", name, scopeType ?? "(default)", settings, summary);
         const bundle = await loreDraft.createLorebook({ name, scopeType, ...settings });
@@ -195,9 +223,10 @@ export function buildLoreTools(deps: LoreToolsDeps): ToolSet {
     }),
 
     create_lore_entry: tool({
-      description:
-        "Propose adding a NEW entry SKELETON to a lorebook drafted this turn. `lorebookId` MUST be the id of a lorebook returned by an earlier create_lorebook in this turn. Every entry setting is available: position/depth/role, logic, probability, timing windows (sticky/cooldown/minChatMessages), inclusion groups, recursion flags, per-entry matching overrides, character filter, match sources. It does NOT set content or keys — after creating the skeleton: delegate CONTENT via ai_write_lore_entry, then delegate KEYS via ai_generate_lore_keys. Returns the complete cumulative lore draft.",
-      inputSchema: createLoreEntryToolInputSchema,
+      description: loreWorkActive
+        ? "Propose adding a NEW entry SKELETON to a lorebook drafted this turn. `lorebookId` MUST be the id of a lorebook returned by an earlier create_lorebook in this turn. Every entry setting is available: position/depth/role, logic, probability, timing windows (sticky/cooldown/minChatMessages), inclusion groups, recursion flags, per-entry matching overrides, character filter, match sources. It does NOT set content or keys — after creating the skeleton: delegate CONTENT via ai_write_lore_entry, then delegate KEYS via ai_generate_lore_keys. Returns the complete cumulative lore draft."
+        : "Propose adding a NEW entry SKELETON to a lorebook drafted this turn, with its core settings: title, constant, position, depth, logic, enabled. `lorebookId` MUST be the id of a lorebook returned by an earlier create_lorebook in this turn. Advanced entry settings (probability, timing windows, inclusion groups, recursion flags, per-entry matching overrides, character filter, match sources) open on the lore tools automatically from your next turn onward once you have made any lore change (no extra call needed); refine them then with edit_lore_entry. It does NOT set content or keys — after creating the skeleton: delegate CONTENT via ai_write_lore_entry, then delegate KEYS via ai_generate_lore_keys. Returns the complete cumulative lore draft.",
+      inputSchema: schemas.createLoreEntry,
       execute: async ({ lorebookId, summary, ...settings }): Promise<CoauthorLoreBundleOutput> => {
         logger.info("create_lore_entry IN lorebookId=%s title=%j summary=%s", lorebookId, settings.title ?? "(none)", summary);
         const bundle = await loreDraft.createLoreEntry({ lorebookId, ...settings });
@@ -235,9 +264,10 @@ export function buildLoreTools(deps: LoreToolsDeps): ToolSet {
     // The draft node is badged mode:"edit" for the review UI. Keys / content
     // stay delegate-only — edit_lore_entry changes settings, NOT keys/content.
     edit_lorebook: tool({
-      description:
-        "Propose editing an EXISTING lorebook — rename it, change its description, or adjust any book setting (budget fixed-or-percent, scan depth, recursion, group scoring, case/whole-word matching, min activations, overflow alert, character-vs-global ordering, scope, enabled). The lorebook can be one drafted earlier this turn OR a previously-created (persisted) one, referenced by its id; its current settings are imported first, so edit from what is actually set. Only the fields you supply are changed. Returns the complete cumulative lore draft.",
-      inputSchema: editLorebookToolInputSchema,
+      description: loreWorkActive
+        ? "Propose editing an EXISTING lorebook — rename it, change its description, or adjust any book setting (budget fixed-or-percent, scan depth, recursion, group scoring, case/whole-word matching, min activations, overflow alert, character-vs-global ordering, scope, enabled). The lorebook can be one drafted earlier this turn OR a previously-created (persisted) one, referenced by its id; its current settings are imported first, so edit from what is actually set. Only the fields you supply are changed. Returns the complete cumulative lore draft."
+        : "Propose editing an EXISTING lorebook's core settings (name, description, scope, enabled, scanDepth, tokenBudget, recursiveScanning). The lorebook can be one drafted earlier this turn OR a previously-created (persisted) one, referenced by its id; its current settings are imported first, so edit from what is actually set. Only the fields you supply are changed. Advanced book settings (budget percent/cap, group scoring, match defaults, min activations, overflow alert, character-vs-global ordering) open on the lore tools automatically from your next turn onward once you have made any lore change (no extra call needed). Returns the complete cumulative lore draft.",
+      inputSchema: schemas.editLorebook,
       execute: async ({ lorebookId, summary, ...settings }): Promise<CoauthorLoreBundleOutput> => {
         logger.info("edit_lorebook IN id=%s settings=%j summary=%s", lorebookId, settings, summary);
         await ensureLorebookInDraft(lorebookId, "edit_lorebook");
@@ -248,9 +278,10 @@ export function buildLoreTools(deps: LoreToolsDeps): ToolSet {
     }),
 
     edit_lore_entry: tool({
-      description:
-        "Propose editing an EXISTING lore entry's settings: title, position/depth/role, logic, constant/enabled, probability, timing windows (sticky/cooldown/minChatMessages), inclusion groups, recursion flags, per-entry matching overrides, character filter, match sources. The entry can be one drafted earlier this turn OR a previously-created (persisted) one, referenced by its id; its current settings are imported first, so edit from what is actually set. Only the fields you supply are changed. This does NOT change content or keys — delegate those with ai_write_lore_entry / ai_generate_lore_keys. Returns the complete cumulative lore draft.",
-      inputSchema: editLoreEntryToolInputSchema,
+      description: loreWorkActive
+        ? "Propose editing an EXISTING lore entry's settings: title, position/depth/role, logic, constant/enabled, probability, timing windows (sticky/cooldown/minChatMessages), inclusion groups, recursion flags, per-entry matching overrides, character filter, match sources. The entry can be one drafted earlier this turn OR a previously-created (persisted) one, referenced by its id; its current settings are imported first, so edit from what is actually set. Only the fields you supply are changed. This does NOT change content or keys — delegate those with ai_write_lore_entry / ai_generate_lore_keys. Returns the complete cumulative lore draft."
+        : "Propose editing an EXISTING lore entry's core settings: title, constant, position, depth, logic, enabled. The entry can be one drafted earlier this turn OR a previously-created (persisted) one, referenced by its id; its current settings are imported first, so edit from what is actually set. Only the fields you supply are changed. Advanced entry settings (probability, timing windows, inclusion groups, recursion flags, per-entry matching overrides, character filter, match sources) open on the lore tools automatically from your next turn onward once you have made any lore change (no extra call needed). This does NOT change content or keys — delegate those with ai_write_lore_entry / ai_generate_lore_keys. Returns the complete cumulative lore draft.",
+      inputSchema: schemas.editLoreEntry,
       execute: async ({ entryId, summary, ...settings }): Promise<CoauthorLoreBundleOutput> => {
         logger.info("edit_lore_entry IN id=%s settings=%j summary=%s", entryId, settings, summary);
         await ensureEntryInDraft(entryId, "edit_lore_entry");
@@ -261,9 +292,10 @@ export function buildLoreTools(deps: LoreToolsDeps): ToolSet {
     }),
 
     add_lore_entry: tool({
-      description:
-        "Propose adding a NEW entry skeleton to an EXISTING lorebook — one drafted this turn OR a previously-created (persisted) one. Use this (not create_lore_entry) when the lorebook already exists. Every entry setting is available (position/depth/role, logic, probability, timing windows, inclusion groups, recursion flags, matching overrides, character filter, match sources). It creates a settings skeleton ONLY; delegate CONTENT via ai_write_lore_entry and KEYS via ai_generate_lore_keys afterward. Returns the complete cumulative lore draft.",
-      inputSchema: addLoreEntryToolInputSchema,
+      description: loreWorkActive
+        ? "Propose adding a NEW entry skeleton to an EXISTING lorebook — one drafted this turn OR a previously-created (persisted) one. Use this (not create_lore_entry) when the lorebook already exists. Every entry setting is available (position/depth/role, logic, probability, timing windows, inclusion groups, recursion flags, matching overrides, character filter, match sources). It creates a settings skeleton ONLY; delegate CONTENT via ai_write_lore_entry and KEYS via ai_generate_lore_keys afterward. Returns the complete cumulative lore draft."
+        : "Propose adding a NEW entry skeleton to an EXISTING lorebook — one drafted this turn OR a previously-created (persisted) one. Use this (not create_lore_entry) when the lorebook already exists. Core settings only for now: title, constant, position, depth, logic, enabled — advanced entry settings (probability, timing windows, inclusion groups, recursion flags, matching overrides, character filter, match sources) open on the lore tools automatically from your next turn onward once you have made any lore change (no extra call needed). It creates a settings skeleton ONLY; delegate CONTENT via ai_write_lore_entry and KEYS via ai_generate_lore_keys afterward. Returns the complete cumulative lore draft.",
+      inputSchema: schemas.addLoreEntry,
       execute: async ({ lorebookId, summary, ...settings }): Promise<CoauthorLoreBundleOutput> => {
         logger.info("add_lore_entry IN lorebookId=%s title=%j summary=%s", lorebookId, settings.title ?? "(none)", summary);
         // Validate the parent exists: if not in the draft, confirm via the

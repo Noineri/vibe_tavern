@@ -222,8 +222,12 @@ export type DiceRollServiceResult =
  * silently), ordered by `sortOrder`. `null`/`undefined` → INHERIT: the usual
  * global/character/persona/chat-home ∪ char/persona link union. Actor
  * restrictions declared by each check remain authoritative AFTER selection.
+ *
+ * Exported as the ONE source of the override rule (LOREBOOK_LIST_FILTERS
+ * step 8): the «Текущие» participating query reuses this same resolution for
+ * the dice kind — a second copy of the rule anywhere else is a defect.
  */
-async function resolveEffectiveDiceScripts(
+export async function resolveEffectiveDiceScripts(
   stores: StoreContainer,
   input: { characterId: string; personaId: string | null; chatId: string; diceScriptIds?: string[] | null },
 ) {

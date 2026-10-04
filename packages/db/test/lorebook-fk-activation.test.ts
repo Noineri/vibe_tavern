@@ -73,8 +73,9 @@ describe("LorebookStore.listAllActiveForChat (owners are links)", () => {
     const { store } = await setup();
     // Since 0107 there is no hidden home owner: a book with no link rows is
     // bound to nobody. (Was: createLorebook({characterId}) wrote an invisible
-    // home that fired in the owner's chats.)
-    await store.createLorebook({ name: "orphan", scopeType: "entity", characterId: "char_X" });
+    // home that fired in the owner's chats; step 2 removed the deprecated
+    // input entirely — creation takes an explicit owner list.)
+    await store.createLorebook({ name: "orphan", scopeType: "entity" });
     expect((await store.listAllActiveForChat("char_X", null, "chat_X")).some((a) => a.lorebook.name === "orphan")).toBe(false);
     expect((await store.listAllActiveForChat("char_Y", null, "chat_Y")).some((a) => a.lorebook.name === "orphan")).toBe(false);
   });

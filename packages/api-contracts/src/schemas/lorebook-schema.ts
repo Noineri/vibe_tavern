@@ -4,12 +4,26 @@ export const testActivationSchema = z.object({
   text: z.string(),
 });
 
+// ─── Link management ─────────────────────────────────────────────────────────
+// One owner binding: since migration 0107 (LORE_SCRIPT_OWNERS_AS_LINKS) a
+// lorebook's ONLY owners are these link rows — there is no home-owner column.
+// Defined before the create schema because `createLorebookSchema.links`
+// consumes it (module-init order; the PUT schema below reuses it too).
+
+export const lorebookLinkSchema = z.object({
+  targetType: z.enum(["character", "persona"]),
+  targetId: z.string().min(1),
+});
+
 export const createLorebookSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional().default(""),
   scopeType: z.string(),
-  characterId: z.string().optional(),
-  personaId: z.string().optional(),
+  /** Explicit owner list (LORE_SCRIPT_OWNERS_AS_LINKS step 2): the link rows
+   *  written at create. Empty/omitted = unbound — the API never derives an
+   *  owner from context; the deprecated `characterId`/`personaId` inputs were
+   * removed with it. */
+  links: z.array(lorebookLinkSchema).optional().default([]),
   chatId: z.string().optional(),
   scanDepth: z.number().optional().default(10),
   tokenBudget: z.number().optional().default(2048),
@@ -158,11 +172,6 @@ export const importLorebookSchema = z.object({
 });
 
 // ─── Link management ─────────────────────────────────────────────────────────
-
-export const lorebookLinkSchema = z.object({
-  targetType: z.enum(["character", "persona"]),
-  targetId: z.string().min(1),
-});
 
 export const setLorebookLinksSchema = z.object({
   links: z.array(lorebookLinkSchema),

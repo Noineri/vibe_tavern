@@ -25,6 +25,7 @@ import { brandId } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult, CoauthorContextItem, CoauthorBoundResources } from "./chat-mode-strategy.js";
 import { buildCoauthorTools } from "./coauthor-tools.js";
+import { isLoreWorkActive } from "../coauthor/lore/lore-work-trigger.js";
 import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import { dirname } from "node:path";
@@ -230,6 +231,11 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
         });
       }),
   ]);
+  // COAUTHOR_LORE_FULL_SETTINGS step 6: full lore tool schemas only while the
+  // Co-Author is actually working on lore. The trigger reads the already-loaded
+  // history — the model's most recent working segment (lore-work-trigger.ts).
+  const loreWorkActive = isLoreWorkActive(history);
+
   // Card state + lorebook context + prompt assets are all independent once
   // we have the history (skill autodetect reads it), so fan them out together.
   // Lore is read-only reference (CA-13): the entries of the lorebooks the user
@@ -528,7 +534,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       latencyMs: 0,
       compactionSummary,
     },
-    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots, loreDelegate, loreEntityLookup, contextSearchSession }),
+    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots, loreDelegate, loreEntityLookup, loreWorkActive, contextSearchSession }),
     maxSteps: module.maxSteps,
     coauthorModuleId: module.id,
     coauthorSkillId: null,

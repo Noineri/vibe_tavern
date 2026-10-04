@@ -95,6 +95,10 @@ export function createProviderRoutes(runtime: ProviderRuntimeApi) {
       return c.json({ ok: true });
     })
     // ── Co-Author per-connection generation set (CG-1) ──
+    .patch("/api/providers/coauthor-order", zValidator("json", schemas.reorderCoauthorProviderProfilesSchema), async (c) => {
+      await runtime.reorderCoauthorProviderProfiles(c.req.valid("json").updates);
+      return c.json({ ok: true });
+    })
     .get("/api/providers/:providerId/coauthor-settings", async (c) => {
       return c.json(await runtime.getCoauthorConnectionSettings(c.req.param("providerId")));
     })

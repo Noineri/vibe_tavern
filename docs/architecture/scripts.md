@@ -33,18 +33,18 @@ The script step is the only pipeline stage that runs **arbitrary user code**. Ev
 
 | Field | Purpose |
 |-------|---------|
-| `scopeType` | `global` / `entity` / `chat` — the script's **home scope** (its primary owner). `entity` covers both character and persona homes (collapsed from two scope values 2026-09; the typed FK says which) |
+| `scopeType` | `global` / `entity` / `chat` — the script's scope. `global` fires everywhere; `entity` means the owners are its `script_links` rows (empty list = bound to nobody, fires nowhere); `chat` is 1:1 via the `chatId` FK (collapsed from two entity scope values 2026-09) |
 | `sortOrder` | Execution order within a turn — ascending. The resolver sorts the active set by this before running |
 | `enabled` | Master switch. Disabled scripts are never loaded by the resolver |
 | `code` | Raw JavaScript source, run verbatim in `node:vm` |
-| `characterId` / `personaId` / `chatId` | Legacy FK columns — the **home scope** binding. Retained as the primary owner; `script_links` layers M:N on top |
+| `chatId` | Chat-scope FK (1:1 with a chat). The character/persona home-FK columns were dropped by migration 0107 (`LORE_SCRIPT_OWNERS_AS_LINKS`) — every character/persona owner is a plain `script_links` row |
 | `extensions` | Free-form JSON bag (`extensions_json` column). Not read by the engine; available for editor metadata |
 
-The `scopeType` + one FK column form the home scope. **M:N link-binding** (one script activating across multiple characters/personas without duplication) is layered on top via the `script_links` junction — see [Scope Resolution](#scope-resolution).
+**M:N link-binding** (one script activating across multiple characters/personas without duplication) lives in the `script_links` junction — since migration 0107 links are the ONLY owner source (see [Scope Resolution](#scope-resolution)).
 
 ### `script_links` junction (`packages/db/src/db-schema.ts`)
 
-Mirrors `lorebook_links`. A row `{ scriptId, targetType, targetId }` binds a script to an **additional** character or persona beyond its home-scope FK. Composite PK `(scriptId, targetType, targetId)` makes links idempotent. `ON DELETE cascade` on `scriptId` cleans up links when a script is deleted.
+Mirrors `lorebook_links`. A row `{ scriptId, targetType, targetId }` binds a script to a character or persona — since migration 0107 (`LORE_SCRIPT_OWNERS_AS_LINKS`) a link IS the owner binding (the separate home-scope FK columns were copied into this table and dropped). Composite PK `(scriptId, targetType, targetId)` makes links idempotent. `ON DELETE cascade` on `scriptId` cleans up links when a script is deleted; deleting an OWNER removes only its link rows (`deleteLinksForTarget`) — the script survives for its other owners.
 
 Chat-scoped scripts stay 1:1 via the `chatId` FK — `script_links` supports `character` / `persona` targets only, identical to lorebooks. Linking a script to another chat is semantically meaningless (different conversation).
 
@@ -188,18 +188,19 @@ Character mutations are **non-persistent** — the DB row is not touched, only t
 
 ## Scope Resolution
 
-`ScriptStore.listAllEnabledForChat(characterId, personaId, chatId)` is the resolver entry point. It builds an enabled-script set from **two** sources, then sorts by `sortOrder`:
+`ScriptStore.listAllEnabledForChat(characterId, personaId, chatId)` is the resolver entry point. Since migration 0107 it builds the enabled-script set from links only (plus the two FK-free scopes), then sorts by `sortOrder`:
 
-1. **FK-scoped** (home scope): `global` ∪ `character(FK=characterId)` ∪ `persona(FK=personaId)` ∪ `chat(FK=chatId)`.
-2. **Junction-linked** (`script_links`): all scripts M:N-linked to `characterId` or `personaId`.
+1. **Global**: `scopeType = 'global'`.
+2. **Chat**: the `chatId` FK (1:1, no junction).
+3. **Junction-linked** (`script_links`): all scripts M:N-linked to `characterId` or `personaId` — the ONLY owner source; an entity-scoped script with no links is bound to nobody.
 
-The resolver consults **both** sources with `Set`-based dedup by id. This is deliberate: the `script_links` migration is incremental, so FK-owned scripts created the normal way (via `createScript`, which does **not** mirror the FK into the junction) would be silently dropped if the resolver were junction-only. `LorebookStore.listAllActiveForChat` uses the same FK ∪ junction shape (fixed 2026-06-29 — previously it was junction-only for char/persona, which was a real bug; see `packages/db/test/lorebook-fk-activation.test.ts`). The two resolvers are now consistent.
+`LorebookStore.listAllActiveForChat` uses the same shape (`lorebook-chat-resolution.ts`). The two resolvers stay consistent. (Historical: before 0107 each resolver unioned entity home-FK columns with the junction; migration 0107 copied every home owner into the junction and dropped the columns, collapsing the union into one source.)
 
-Editor tabs (`listByScope`) also union FK ∪ junction for character/persona scopes, so a script appears in a character's editor tab iff it activates for that character — no editor/resolver divergence. Chat scope remains FK-only (1:1, no junction).
+Editor tabs (`listByScope`) read links for character/persona scopes too, so a script appears in a character's editor tab iff it activates for that character — no editor/resolver divergence. Chat scope remains FK-only (1:1, no junction).
 
 ### Link management
 
-`ScriptStore` exposes `getLinks` / `setLinks` (transactional replace) / `addLink` (idempotent) / `removeLink` / `listScriptsLinkedToTarget` (reverse query for the editor view). The UI binds scripts to targets via `LinkBindingPopover` in both directions: from the character/persona editor (`BoundResourcesField` lists scripts bound to this target) and from the script editor (`ScriptEditor` lists targets this script is bound to). Mirrors the lorebook binding UI.
+`ScriptStore` exposes `getLinks` / `setLinks` (transactional replace) / `addLink` (idempotent) / `removeLink` / `deleteLinksForTarget` (owner deletion — link rows only, the script survives) / `listScriptsLinkedToTarget` (reverse query for the editor view). The UI binds scripts to targets via `LinkBindingPopover` in both directions: from the character/persona editor (`BoundResourcesField` lists scripts bound to this target) and from the script editor (`ScriptEditor` lists targets this script is bound to). Mirrors the lorebook binding UI.
 
 ---
 

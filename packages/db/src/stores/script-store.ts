@@ -23,14 +23,10 @@ export interface CreateScriptData {
   creationIntentId?: string | null;
   scopeType?: string;
   sortOrder?: number;
-  /** Deprecated home-owner input — accepted for API-shape compatibility but
-   *  NOT written anywhere: migration 0107 (LORE_SCRIPT_OWNERS_AS_LINKS step 1)
-   *  dropped the home-owner columns; owners are `script_links` rows only.
-   *  The explicit-owner-list create API that replaces this field is step 2
-   *  (COAUTHOR_MODEL_LORE_CHAIN_PLAN unit 15). */
-  characterId?: string | null;
-  /** Deprecated home-owner input — ignored; see {@link characterId}. */
-  personaId?: string | null;
+  /** Explicit owner list (LORE_SCRIPT_OWNERS_AS_LINKS step 2): the link
+   *  rows written at create. Empty/absent = unbound — no owner is ever
+   *  derived from context. Create-only; updates go through `setLinks`. */
+  links?: Array<{ targetType: string; targetId: string }>;
   chatId?: string | null;
   /** Default visual paired with this experience (interactive scripts only).
    *  Set by the creation wizard; null for non-interactive and legacy rows. */
@@ -60,8 +56,8 @@ export interface Script {
   scopeType: string;
   sortOrder: number;
   /** Always null since migration 0107 (home-owner columns dropped; owners are
-   *  links). Kept on the store/API shape until the step-2 contract redesign
-   *  removes it — do not read it for behavior. */
+   *  links). Kept on the store/API payload until the units-16–17 contract
+   *  redesign — do not read it for behavior. */
   characterId: string | null;
   /** Always null since migration 0107 — see {@link characterId}. */
   personaId: string | null;
@@ -209,7 +205,13 @@ export class ScriptStore {
         .from(scripts)
         .where(eq(scripts.creationIntentId, data.creationIntentId))
         .get();
-      if (existing) return this.mapRow(existing);
+      if (existing) {
+        // Idempotent-create retry with an owner list: the caller asked for
+        // these links to exist, so ensure them on the returned script too
+        // (onConflictDoNothing — no duplicates, no removal of extra links).
+        await this.insertScriptLinks(existing.id, data.links ?? []);
+        return this.mapRow(existing);
+      }
     }
 
     const id = this.idGen.next('script');
@@ -234,6 +236,10 @@ export class ScriptStore {
         updatedAt: now,
       })
       .returning();
+
+    // Owners are links (LORE_SCRIPT_OWNERS_AS_LINKS step 2): the create API's
+    // explicit owner list lands as link rows; empty list = unbound script.
+    await this.insertScriptLinks(id, data.links ?? []);
 
     // Dual-write: write canonical JSON file
     if (this.content) {
@@ -577,6 +583,29 @@ export class ScriptStore {
         eq(scriptLinks.targetId, targetId),
       ),
     ).run();
+  }
+
+  /**
+   * Remove every link targeting one entity (owner deletion,
+   * LORE_SCRIPT_OWNERS_AS_LINKS step 2 — the RegexStore/TtsStore
+   * deleteLinksForTarget pattern): the deleted owner's link rows die with
+   * it; the SCRIPT itself survives for its other owners. The junction's
+   * `targetId` is a polymorphic text column without an FK, so this cleanup
+   * is app-level. Mirrors `LorebookStore.deleteLinksForTarget`.
+   */
+  async deleteLinksForTarget(targetType: 'character' | 'persona', targetId: string): Promise<void> {
+    await this.db
+      .delete(scriptLinks)
+      .where(and(eq(scriptLinks.targetType, targetType), eq(scriptLinks.targetId, targetId)))
+      .run();
+  }
+
+  /** Insert the create API's explicit owner list (idempotent on duplicate
+   *  tuples — junction composite PK). */
+  private async insertScriptLinks(id: string, links: ReadonlyArray<{ targetType: string; targetId: string }>): Promise<void> {
+    for (const link of links) {
+      await this.addLink(id, link.targetType, link.targetId);
+    }
   }
 
   /**

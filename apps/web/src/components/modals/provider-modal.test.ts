@@ -194,6 +194,41 @@ function baseProps(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe("ProviderModal local connection chip gate (PLU-7 regression)", () => {
+  beforeEach(() => {
+    useBootstrapStore.setState({ data: null });
+    useModalStore.setState({ isProviderModalOpen: true, providerModalOrigin: null });
+  });
+
+  it("keeps the local connection chip out of a remote NanoGPT primary picker", () => {
+    const view = renderModal(baseProps({
+      providerProfiles: [makeProfile({ providerPreset: "nanogpt", endpoint: "https://nano-gpt.com/api/v1" })],
+    }));
+
+    expect(within(view.baseElement).queryByText("local_connection_unknown")).toBeNull();
+  });
+
+  it("shows the local connection status and its refresh control only above a local primary picker", () => {
+    const view = renderModal(baseProps({
+      providerProfiles: [makeProfile({
+        providerPreset: "ollama",
+        endpoint: "http://localhost:11434",
+        cachedModels: {
+          models: [
+            { id: "llama", label: "llama" },
+            { id: "llava", label: "llava", capabilities: { vision: true } },
+          ],
+        },
+      })],
+    }));
+
+    const chipLabel = within(view.baseElement).getByText("local_connection_unknown");
+    const chip = chipLabel.closest("div")!.parentElement!;
+    expect(chip.textContent).toContain("refresh_models");
+    expect(within(view.baseElement).getAllByText("local_connection_unknown")).toHaveLength(1);
+  });
+});
+
 describe("ProviderModal — category tabs (TS-7a)", () => {
   beforeEach(() => {
     useBootstrapStore.setState({ data: null } as never);

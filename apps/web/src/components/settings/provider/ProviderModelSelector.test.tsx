@@ -179,6 +179,12 @@ describe("ProviderModelSelector context-budget auto-fill (RP_QUICK_SWITCH step 3
     return { view, onChange };
   }
 
+  it("omits the local chip without a status, matching both SetupWizard adapter sites", () => {
+    const { view } = renderAutofill({ model: "ctx-unknown", contextBudget: 8_192, pinContextBudget: false });
+    expect(view.queryByText("local_connection_unknown")).toBeNull();
+    view.unmount();
+  });
+
   it("unknown model context keeps the form's set budget (no contextBudget write)", () => {
     const { view, onChange } = renderAutofill({ model: "ctx-unknown", contextBudget: 8_192, pinContextBudget: false });
     fireEvent.click(view.getByText("ctx-unknown").closest("button")!);

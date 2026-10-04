@@ -16,6 +16,8 @@ export interface CoauthorConnectionSettingsRuntimeApi {
 	 *  domain resolver resolveCoauthorGenerationSettings applies the Co-Author
 	 *  defaults — never an RP-profile fallback). Unknown provider id → 404. */
 	getCoauthorConnectionSettings: (providerProfileId: string) => Promise<CoauthorConnectionSettingsRecord | null>;
+	/** Persist the independently ordered Co-Author provider list. */
+	reorderCoauthorProviderProfiles: (updates: Array<{ id: string; sortOrder: number }>) => Promise<void>;
 	/** Replace the connection's whole set (model + settings) in one write. */
 	upsertCoauthorConnectionSettings: (
 		providerProfileId: string,

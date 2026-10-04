@@ -2,6 +2,17 @@ import { z } from "zod";
 import { scriptKindSchema, diceFaceShapeSchema, diceResolutionSchema, diceCheckDescriptorSchema } from "./dice-schema.js";
 import { experienceDefinitionSchema } from "./interactive-schema.js";
 
+// ─── Link management ─────────────────────────────────────────────────────────
+// One owner binding: since migration 0107 (LORE_SCRIPT_OWNERS_AS_LINKS) a
+// script's ONLY owners are these link rows — there is no home-owner column.
+// Mirrors `lorebookLinkSchema`; defined before the create schema because
+// `createScriptSchema.links` consumes it (module-init order).
+
+export const scriptLinkSchema = z.object({
+  targetType: z.enum(["character", "persona"]),
+  targetId: z.string().min(1),
+});
+
 export const createScriptSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional().default(""),
@@ -12,8 +23,11 @@ export const createScriptSchema = z.object({
    *  existing script. NOT mutable content: absent from updateScriptSchema. */
   creationIntentId: z.string().min(1).max(500).optional(),
   scopeType: z.string(),
-  characterId: z.string().optional(),
-  personaId: z.string().optional(),
+  /** Explicit owner list (LORE_SCRIPT_OWNERS_AS_LINKS step 2): the link rows
+   *  written at create. Empty/omitted = unbound — the API never derives an
+   *  owner from context; the deprecated `characterId`/`personaId` inputs were
+   *  removed with it. */
+  links: z.array(scriptLinkSchema).optional().default([]),
   chatId: z.string().optional(),
   enabled: z.boolean().optional().default(true),
   sortOrder: z.number().optional().default(0),
@@ -71,8 +85,6 @@ export const importScriptSchema = z.discriminatedUnion("format", [
     name: z.string().optional(),
     scriptKind: scriptKindSchema.optional().default("prompt"),
     scopeType: z.string().optional().default("entity"),
-    characterId: z.string().optional(),
-    personaId: z.string().optional(),
     chatId: z.string().optional(),
   }),
   z.object({
@@ -80,20 +92,13 @@ export const importScriptSchema = z.discriminatedUnion("format", [
     jsonText: z.string().min(1),
     scriptKind: scriptKindSchema.optional().default("prompt"),
     scopeType: z.string().optional().default("entity"),
-    characterId: z.string().optional(),
-    personaId: z.string().optional(),
     chatId: z.string().optional(),
   }),
 ]);
 
 // ─── Link management ─────────────────────────────────────────────────────────
-// Mirrors lorebookLinkSchema / setLorebookLinksSchema: a script can be M:N
-// bound to characters and personas on top of its home-scope FK.
-
-export const scriptLinkSchema = z.object({
-  targetType: z.enum(["character", "persona"]),
-  targetId: z.string().min(1),
-});
+// A script can be M:N bound to characters and personas; the link rows ARE the
+// owner bindings (mirrors lorebookLinkSchema / setLorebookLinksSchema).
 
 export const setScriptLinksSchema = z.object({
   links: z.array(scriptLinkSchema),

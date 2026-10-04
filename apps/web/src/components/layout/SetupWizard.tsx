@@ -13,6 +13,7 @@ import { repoWebUrl } from "../../lib/star-prompt.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { ProviderForm } from "../settings/provider/ProviderForm.js";
+import { ProviderTestHelloButton } from "../settings/provider/ProviderTestHelloButton.js";
 import { ProviderModalModelSelector } from "../settings/provider/ProviderModalModelSelector.js";
 import type { FormState } from "../modals/ProviderModal.js";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
@@ -326,19 +327,15 @@ function ProviderStep({
         {/* Test hi */}
         <div className="my-2 rounded-lg border border-border bg-surface p-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
-            <button type="button"
-              className="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
-              onClick={() => void handleTestChat()}
-              disabled={testingChat}
-            >
-              {testingChat ? t("sending") : t("test_hi_btn")}
-            </button>
+            <ProviderTestHelloButton
+              testing={testingChat}
+              result={chatResult}
+              onTest={() => void handleTestChat()}
+              buttonClassName="min-h-11 rounded-md border border-border bg-s2 px-4 py-2 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50 sm:min-h-0 sm:py-1.5"
+              replyRenderer={(reply) => <div className="mt-3 rounded-md bg-s2 p-3 font-ui text-[12px] leading-relaxed text-t2">{reply}</div>}
+              errorRenderer={(error) => <div className="mt-3 rounded-md bg-danger-dim p-3 font-ui text-[12px] leading-relaxed text-danger-text">{error}</div>}
+            />
           </div>
-          {chatResult && (
-            <div className={cn("mt-3 rounded-md p-3 font-ui text-[12px] leading-relaxed", chatResult.error ? "bg-danger-dim text-danger-text" : "bg-s2 text-t2")}>
-              {chatResult.error ?? chatResult.reply}
-            </div>
-          )}
         </div>
 
         {models.length > 0 && (

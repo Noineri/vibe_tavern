@@ -94,8 +94,8 @@ interface ChangedSettingsProps {
 
 /**
  * Narrow-pane budget: the label is capped at 45% of a ~300px content pane,
- * leaving at least ~160px for the old → new user values. Labels wrap; values
- * may ellipsize but their full pair remains reachable through title.
+ * leaving at least ~160px for the old → new user values. Labels and values
+ * wrap, so touch users can read the complete pair without hover-only content.
  */
 function ChangedSettings({ changes, settingLabels, labels }: ChangedSettingsProps) {
   if (!changes) return null;
@@ -107,10 +107,10 @@ function ChangedSettings({ changes, settingLabels, labels }: ChangedSettingsProp
         return (
           <div key={field} className="grid grid-cols-[minmax(0,45%)_minmax(0,1fr)] gap-x-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
             <span>{settingLabels[field] ?? field}:</span>
-            <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-x-1" title={`${oldValue} → ${newValue}`}>
-              <span className="truncate text-right">{oldValue}</span>
+            <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-x-1">
+              <span className="min-w-0 break-words text-right">{oldValue}</span>
               <span aria-hidden="true">→</span>
-              <span className="truncate">{newValue}</span>
+              <span className="min-w-0 break-words">{newValue}</span>
             </span>
           </div>
         );

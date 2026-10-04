@@ -16,6 +16,7 @@ export interface CoauthorConnectionSettingsRow {
   providerProfileId: string;
   modelName: string | null;
   settings: ModelSettingsOverlay;
+  sortOrder: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -58,6 +59,25 @@ export class CoauthorConnectionSettingsStore {
   }
 
   /** Insert or replace the connection's set. Idempotent on the provider id. */
+  /** Stores the Co-Author-only list order. Missing rows are seeded with the
+   *  default-resolving empty settings set, preserving existing generation behavior. */
+  async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<void> {
+    const now = this.clock.now();
+    for (const update of updates) {
+      await this.db.insert(coauthorConnectionSettings).values({
+        providerProfileId: update.id,
+        modelName: null,
+        settingsJson: '{}',
+        sortOrder: update.sortOrder,
+        createdAt: now,
+        updatedAt: now,
+      }).onConflictDoUpdate({
+        target: coauthorConnectionSettings.providerProfileId,
+        set: { sortOrder: update.sortOrder, updatedAt: now },
+      }).run();
+    }
+  }
+
   async upsert(
     providerProfileId: string,
     data: UpsertCoauthorConnectionSettingsData,
@@ -69,6 +89,7 @@ export class CoauthorConnectionSettingsStore {
         providerProfileId,
         modelName: data.modelName,
         settingsJson: JSON.stringify(data.settings),
+        sortOrder: null,
         createdAt: now,
         updatedAt: now,
       })
@@ -89,6 +110,7 @@ export class CoauthorConnectionSettingsStore {
       providerProfileId: row.providerProfileId,
       modelName: row.modelName,
       settings: parseSettingsJson(row.settingsJson),
+      sortOrder: row.sortOrder,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
