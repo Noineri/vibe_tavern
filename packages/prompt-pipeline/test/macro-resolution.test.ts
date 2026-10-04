@@ -173,6 +173,11 @@ describe("Macro engine: direct resolution", () => {
     expect(engine.resolve("{{unknown}} stays.", ctx)).toBe("{{unknown}} stays.");
   });
 
+  it("preserves unknown space-form macros literally", () => {
+    const ctx = buildPromptVariableContext({});
+    expect(engine.resolve("{{unknown argument}} stays.", ctx)).toBe("{{unknown argument}} stays.");
+  });
+
   it("resolves multiple macros in one string", () => {
     const ctx = buildPromptVariableContext({
       character: { name: "Aria" },
@@ -294,6 +299,12 @@ describe("Variable macros: setvar/getvar", () => {
     expect(engine.resolve("{{getvar::unknown::default}}", ctx)).toBe("default");
   });
 
+  it("getvar accepts the single-argument space separator", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    expect(engine.resolve("{{setvar::color::red}}{{getvar color}}", ctx)).toBe("red");
+  });
+
   it("setvar with empty value resets variable", () => {
     const ctx = buildPromptVariableContext({});
     engine.resetVariables();
@@ -373,6 +384,51 @@ describe("Random macro: {{random::a::b::c}}", () => {
     const ctx = buildPromptVariableContext({});
     expect(engine.resolve("{{random}}", ctx)).toBe("");
   });
+
+  it("accepts the single-argument space separator", () => {
+    const ctx = buildPromptVariableContext({});
+    expect(["a", "b", "c"]).toContain(engine.resolve("{{random a,b,c}}", ctx));
+  });
+});
+
+describe("Pick macro: {{pick::a::b::c}}", () => {
+  it("is stable across assemblies and regenerations for one chat", () => {
+    const makeAssembly = () => assemblePrompt({
+      identity: { chatId: "stable-pick-chat" },
+      chat: { recentMessages: [{ id: "message_1", role: "assistant", content: "{{pick::a::b::c}}" }] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+    });
+
+    const first = makeAssembly().layers.find((layer) => layer.id === "recent_history")?.text;
+    const regenerated = makeAssembly().layers.find((layer) => layer.id === "recent_history")?.text;
+
+    expect(first).toBe(regenerated);
+    expect(first).toMatch(/ASSISTANT: [abc]/);
+  });
+
+  it("selects a different stable option for a different chat", () => {
+    const resolvePick = (chatId: string) => assemblePrompt({
+      identity: { chatId },
+      chat: { recentMessages: [{ id: "message_1", role: "assistant", content: "{{pick::a::b::c}}" }] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+    }).layers.find((layer) => layer.id === "recent_history")?.text;
+
+    expect(resolvePick("stable-pick-chat")).not.toBe(resolvePick("different-pick-chat"));
+  });
+
+  it("uses the macro position as part of its stable seed", () => {
+    const options = Array.from({ length: 100 }, (_, index) => String(index)).join("::");
+    const result = assemblePrompt({
+      identity: { chatId: "stable-pick-chat" },
+      chat: { recentMessages: [{ id: "message_1", role: "assistant", content: `{{pick::${options}}} {{pick::${options}}}` }] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+    }).layers.find((layer) => layer.id === "recent_history")?.text ?? "";
+
+    const [, first, second] = result.match(/^ASSISTANT: (\d+) (\d+)$/) ?? [];
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+    expect(first).not.toBe(second);
+  });
 });
 
 // ─── Roll macro ───
@@ -410,6 +466,22 @@ describe("Roll macro: {{roll::1d20}}", () => {
     const num = Number(result);
     expect(num).toBeGreaterThanOrEqual(6);
     expect(num).toBeLessThanOrEqual(15);
+  });
+
+  it("treats a bare number as a one-die formula", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{roll::20}}", ctx);
+    const num = Number(result);
+    expect(num).toBeGreaterThanOrEqual(1);
+    expect(num).toBeLessThanOrEqual(20);
+  });
+
+  it("accepts the single-argument space separator", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{roll 1d20}}", ctx);
+    const num = Number(result);
+    expect(num).toBeGreaterThanOrEqual(1);
+    expect(num).toBeLessThanOrEqual(20);
   });
 });
 

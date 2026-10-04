@@ -24,7 +24,7 @@
 import type { PromptVariableContext } from "./prompt-variable-context.js";
 import type { PronounForms } from "@vibe-tavern/domain";
 import { resolvePronounForms } from "./pronoun-forms.js";
-import { rollDice } from "./dice.js";
+import { createRandomMacroResolvers } from "./random-macro-resolvers.js";
 export { getMacroCatalog } from "./macro-catalog.js";
 
 /** Macro resolvers whose values are frozen when a greeting or user message is written. */
@@ -66,7 +66,8 @@ export interface MacroResolver {
   category?: MacroCategory;
   /**
    * Resolve this macro. Args are the ::-separated arguments (name excluded).
-   * resolveNested can be called to resolve nested macros in a string.
+   * resolveNested can be called to resolve nested macros in a string. sourceOffset
+   * is the macro's character offset in the source text being resolved.
    */
   resolve: (
     args: string[],
@@ -74,6 +75,7 @@ export interface MacroResolver {
     state: MacroResolutionState,
     variables: Map<string, string>,
     resolveNested: (text: string) => string,
+    sourceOffset: number,
   ) => string;
 }
 
@@ -98,6 +100,8 @@ interface Token {
   args: string[];
   /** Original text span in input (for reconstruction). */
   raw: string;
+  /** Character offset of the token's opening delimiter in its source text. */
+  offset?: number;
 }
 
 /**
@@ -187,6 +191,7 @@ function tokenize(input: string): Token[] {
 
     // Extract inner content
     const inner = input.slice(innerStart, scan);
+    const macroOffset = pos;
     const fullMatch = input.slice(pos, scan + 2);
     pos = scan + 2;
 
@@ -211,13 +216,13 @@ function tokenize(input: string): Token[] {
     const ifMatch = inner.match(/^\s*if(?:::?\s*|\s+)(.*)/i);
     if (ifMatch) {
       const condition = ifMatch[1].trim();
-      tokens.push({ type: "ifOpen", value: "if", args: [condition], raw: fullMatch });
+      tokens.push({ type: "ifOpen", value: "if", args: [condition], raw: fullMatch, offset: macroOffset });
       continue;
     }
 
     // Regular macro: {{name}} or {{name::arg1::arg2}} or {{name:arg1,arg2}}
     const parts = splitMacroArgs(inner);
-    tokens.push({ type: "macro", value: parts[0], args: parts.slice(1), raw: fullMatch });
+    tokens.push({ type: "macro", value: parts[0], args: parts.slice(1), raw: fullMatch, offset: macroOffset });
   }
 
   return tokens;
@@ -240,7 +245,8 @@ export function extractMacroNames(input: string): string[] {
 }
 
 /**
- * Split macro inner text by :: separator.
+ * Split macro inner text by :: separator, then by ST's single-argument space
+ * separator when no colon separator is present.
  * "setvar::x::hello world" → ["setvar", "x", "hello world"]
  * Also handles single : for legacy syntax: "random:a,b,c" → ["random", "a,b,c"]
  * Respects escaped colons \:
@@ -276,6 +282,10 @@ function splitMacroArgs(inner: string): string[] {
         return [possibleName, trimmed.slice(colonIdx + 1).trim()];
       }
     }
+    const spaceMatch = trimmed.match(/^(\S+)\s+([\s\S]+)$/);
+    if (spaceMatch) {
+      return [spaceMatch[1], spaceMatch[2].trim()];
+    }
   }
   parts.push(trimmed);
   return parts;
@@ -284,7 +294,7 @@ function splitMacroArgs(inner: string): string[] {
 // ─── AST Nodes ──────────────────────────────────────────────────────────
 
 interface TextNode { kind: "text"; value: string }
-interface MacroNode { kind: "macro"; name: string; args: string[]; raw: string }
+interface MacroNode { kind: "macro"; name: string; args: string[]; raw: string; offset: number }
 interface IfNode {
   kind: "if";
   condition: string;
@@ -310,7 +320,7 @@ function parse(tokens: Token[], start: number, end: number): AstNode[] {
       nodes.push({ kind: "text", value: token.value });
       i++;
     } else if (token.type === "macro") {
-      nodes.push({ kind: "macro", name: normalizeName(token.value), args: token.args, raw: token.raw });
+      nodes.push({ kind: "macro", name: normalizeName(token.value), args: token.args, raw: token.raw, offset: token.offset ?? 0 });
       i++;
     } else if (token.type === "ifOpen") {
       // Find matching else and /if
@@ -386,7 +396,7 @@ function evaluate(
         result += node.value;
         break;
       case "macro":
-        result += resolveMacro(node.name, node.args, node.raw, resolvers, context, state, variables, resolveNested, shouldResolve);
+        result += resolveMacro(node.name, node.args, node.raw, node.offset, resolvers, context, state, variables, resolveNested, shouldResolve);
         break;
       case "if": {
         // Resolve the condition first
@@ -411,6 +421,7 @@ function resolveMacro(
   name: string,
   args: string[],
   raw: string,
+  offset: number,
   resolvers: Map<string, MacroResolver>,
   context: PromptVariableContext,
   state: MacroResolutionState,
@@ -420,6 +431,9 @@ function resolveMacro(
 ): string {
   const resolver = resolvers.get(name);
   if (!resolver) {
+    // Space-separated arguments cannot be distinguished from an unknown macro
+    // name after parsing. Preserve the original literal form for that syntax.
+    if (/^\{\{\s*[^\s:]+\s+/.test(raw)) return raw;
     // Unknown macro — resolve any nested macros in args, then reconstruct
     const resolvedArgs = args.map(resolveNested);
     if (resolvedArgs.length === 0) {
@@ -432,7 +446,7 @@ function resolveMacro(
 
   // Resolve nested macros in args before passing to resolver
   const resolvedArgs = args.map(resolveNested);
-  return resolver.resolve(resolvedArgs, context, state, variables, resolveNested);
+  return resolver.resolve(resolvedArgs, context, state, variables, resolveNested, offset);
 }
 
 function isFalseBoolean(value: string): boolean {
@@ -980,35 +994,7 @@ export function createFullMacroEngine(): MacroEngine {
 
   // ─── Random ────────────────────────────────────────────────────────
 
-  engine.register({
-    name: "random",
-    description: "Pick one option at random: {{random::a::b::c}} or {{random:a,b,c}}.",
-    category: MacroCategory.Random,
-    resolve: (args) => {
-      // {{random::a::b::c}} → args = ["a", "b", "c"]
-      // {{random:a,b,c}} → args = ["a,b,c"] (legacy single-arg form)
-      let items = args;
-      if (args.length === 1 && args[0].includes(",")) {
-        items = args[0].split(",").map(s => s.trim());
-      }
-      if (items.length === 0) return "";
-      return items[Math.floor(Math.random() * items.length)];
-    },
-  });
-
-  engine.register({
-    name: "roll",
-    description: "Roll dice and emit the total: {{roll::1d20}}, {{roll::3d6+2}}.",
-    category: MacroCategory.Random,
-    resolve: (args) => {
-      const formula = args[0]?.trim() ?? "";
-      if (!formula) return "";
-      // "d20" → "1d20"
-      const normalized = /^d\d+/i.test(formula) ? "1" + formula : formula;
-      const result = rollDice(normalized);
-      return result ? String(result.total) : "";
-    },
-  });
+  for (const resolver of createRandomMacroResolvers()) engine.register(resolver);
 
   // ─── Banned words (collected for logit bias) ───────────────────────
 

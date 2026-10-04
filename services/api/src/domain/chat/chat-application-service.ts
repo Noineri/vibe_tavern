@@ -440,6 +440,7 @@ export class ChatApplicationService {
     ]);
     if (!character) return content;
     const context = buildPromptVariableContext({
+      chat: { id: chat.id },
       character: {
         name: character.name,
         description: character.description,

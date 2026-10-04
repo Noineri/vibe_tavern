@@ -79,6 +79,8 @@ export interface ChatPromptSwipeContext {
 }
 
 export interface ChatPromptContext {
+  /** Chat identifier, used by chat-stable macros such as {{pick}}. */
+  id: string;
   messages: ChatPromptMessageContext[];
   lastMessage: string | null;
   lastUserMessage: string | null;
@@ -232,6 +234,7 @@ export function buildPromptVariableContext(input: BuildPromptVariableContextInpu
       instruct: input.prompt?.instruct,
     },
     chat: {
+      id: input.chat?.id ?? "",
       messages: input.chat?.messages ?? [],
       lastMessage: input.chat?.lastMessage ?? null,
       lastUserMessage: input.chat?.lastUserMessage ?? null,

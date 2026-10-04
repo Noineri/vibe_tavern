@@ -25,7 +25,7 @@ describe("volatile macro storage", () => {
 		const created = await runtime.character.createFromScratch({
 			name: "Aria",
 			description: "A mage.",
-			firstMessage: "Greeting {{random::sun::moon}} for {{user}}.",
+			firstMessage: "Greeting {{random::sun::moon}} {{pick::dawn::dusk}} for {{user}}.",
 			alternateGreetings: ["Alternate {{random::north::south}} for {{char}}."],
 		});
 		const chat = await stores.chats.getById(created.activeChatId);
@@ -37,7 +37,7 @@ describe("volatile macro storage", () => {
 		const userMessage = messages[1]!;
 
 		expect(greetingVariants.map((variant) => variant.content)).toEqual([
-			expect.stringMatching(/^Greeting (sun|moon) for \{\{user}}\.$/),
+			expect.stringMatching(/^Greeting (sun|moon) (dawn|dusk) for \{\{user}}\.$/),
 			expect.stringMatching(/^Alternate (north|south) for \{\{char}}\.$/),
 		]);
 		expect(userMessage.content).toMatch(/^Roll (?:[1-9]|1\d|20) for \{\{char}}\.$/);
