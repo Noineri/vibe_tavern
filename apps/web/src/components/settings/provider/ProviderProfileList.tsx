@@ -47,7 +47,7 @@ export interface ProviderProfileListProps<TProfile extends ProviderProfileListIt
   profileSearch: string;
   onProfileSearchChange: (value: string) => void;
   onSelectProfile: (id: string) => void;
-  /** When selectionOnly, hides the drag handle, reorder, and "+ New" button. */
+  /** When selectionOnly, hides "+ New" but may opt into a family-specific reorder target. */
   onAddProfile?: () => void;
   onReorder?: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
   selectionOnly?: boolean;
@@ -175,7 +175,7 @@ export function ProviderProfileList<TProfile extends ProviderProfileListItem = P
 }: ProviderProfileListProps<TProfile>) {
   const { t } = useT();
   const { openDetail } = useMasterDetail();
-  const dndDisabled = selectionOnly || profileSearch.trim().length > 0;
+  const dndDisabled = !onReorder || profileSearch.trim().length > 0;
 
   const {
     displayItems,

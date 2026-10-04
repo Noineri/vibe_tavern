@@ -100,9 +100,19 @@ describe("ProviderProfileList", () => {
     const searching = render(<ProviderProfileList {...baseProps({ profileSearch: "Alpha", filteredProfiles: [profiles[0]!] })} />);
     expect(searching.queryByLabelText("drag")).toBeNull();
 
-    const selectionOnly = render(<ProviderProfileList {...baseProps({ selectionOnly: true })} />);
+    const selectionOnly = render(<ProviderProfileList {...baseProps({ selectionOnly: true, onReorder: undefined })} />);
     expect(within(selectionOnly.container).queryByLabelText("drag")).toBeNull();
     expect(within(selectionOnly.container).queryByText("new_profile_btn")).toBeNull();
+  });
+
+  it("allows a selection-only family to supply its own independent reorder target", () => {
+    const onReorder = mock();
+    const view = render(<ProviderProfileList {...baseProps({ selectionOnly: true, onReorder })} />);
+
+    expect(view.getAllByLabelText("drag")).toHaveLength(2);
+    const endEvent = { active: { id: "p1" }, over: { id: "p2" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    act(() => { dndHandlers!.onDragEnd!(endEvent); });
+    expect(onReorder).toHaveBeenCalledWith([{ id: "p2", sortOrder: 0 }, { id: "p1", sortOrder: 1 }]);
   });
 
   it("commits the complete sorted payload through the family reorder action on drop", () => {

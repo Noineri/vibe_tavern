@@ -204,6 +204,11 @@ export async function upsertProviderModelSettings(providerProfileId: string, mod
 /** The connection's Co-Author row, or null when the connection has no saved
  *  set yet — the domain resolver `resolveCoauthorGenerationSettings`
  *  (@vibe-tavern/domain) completes such a set with the Co-Author defaults. */
+export async function reorderCoauthorProviderProfiles(updates: Array<{ id: string; sortOrder: number }>): Promise<void> {
+  const response = await client.api.providers["coauthor-order"].$patch({ json: { updates } });
+  await unwrapRpc(response);
+}
+
 export async function getCoauthorConnectionSettings(providerProfileId: string): Promise<CoauthorConnectionSettingsRecord | null> {
   const response = await client.api.providers[":providerId"]["coauthor-settings"].$get({ param: { providerId: providerProfileId } });
   return unwrapRpc(response);

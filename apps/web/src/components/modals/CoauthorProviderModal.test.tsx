@@ -103,6 +103,7 @@ describe("CoauthorProviderModal", () => {
     expect(within(profileList).getAllByText("★ Bound Profile")).toHaveLength(1);
     expect(within(profileList).getAllByText("Other Profile")).toHaveLength(1);
     expect(within(profileList).queryByText("new_profile_btn")).toBeNull();
+    expect(within(profileList).getAllByLabelText("drag")).toHaveLength(2);
   });
 
   it("manage-connections calls onOpenProviderModal + onClose", async () => {

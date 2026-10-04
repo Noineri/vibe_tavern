@@ -68,6 +68,7 @@ export {
   coauthorGenerationSettingsSchema,
   upsertCoauthorConnectionSettingsSchema,
   reorderProviderProfilesSchema,
+  reorderCoauthorProviderProfilesSchema,
 } from "./provider-schema.js";
 export type { CoauthorGenerationSettingsValue, UpsertCoauthorConnectionSettingsValue } from "./provider-schema.js";
 export { reorderTtsProfilesSchema } from "./tts-schema.js";

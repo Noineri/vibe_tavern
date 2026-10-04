@@ -8,7 +8,7 @@ import { useCoauthorProviderBinding } from "../../hooks/use-coauthor-provider-bi
 import { useProviderModels } from "../../hooks/use-provider-models.js";
 import { type ProviderSamplerOnChange, type ProviderSamplerValues } from "../../lib/provider-sampler-values.js";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
-import { loadCoauthorConnectionSettingsAction, loadFavoriteModelsAction, testProfileChatAction, toggleFavoriteModelAction, updateProviderProfileAction } from "../../stores/api-actions/provider-actions.js";
+import { loadCoauthorConnectionSettingsAction, loadFavoriteModelsAction, reorderCoauthorProviderProfilesAction, testProfileChatAction, toggleFavoriteModelAction, updateProviderProfileAction } from "../../stores/api-actions/provider-actions.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { ProviderProfileList } from "../settings/provider/ProviderProfileList.js";
 import { CoauthorModelSelector } from "../settings/provider/CoauthorModelSelector.js";
@@ -45,6 +45,7 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
   const isMobile = useIsMobile();
   const profiles = useProviderDataStore((state) => state.profiles);
   const favoritesByProfile = useProviderDataStore((state) => state.coauthorFavoritesByProfile);
+  const coauthorSettingsByProfile = useProviderDataStore((state) => state.coauthorSettingsByProfile);
   const resumeProfileId = useModalStore((state) => state.coauthorResumeProfileId);
   const consumeCoauthorResumeProfileId = useModalStore((state) => state.consumeCoauthorResumeProfileId);
   const binding = useCoauthorProviderBinding();
@@ -107,10 +108,22 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
   const selectedTransport = selectedProfile ? transportByProfile[selectedProfile.id] ?? selectedProfile.coauthorTransport ?? COAUTHOR_TRANSPORT.chatCompletions : COAUTHOR_TRANSPORT.chatCompletions;
   const selectedPreset = selectedProfile ? PROVIDER_PRESETS.find((preset) => preset.id === selectedProfile.providerPreset) : undefined;
   const samplerCapabilities = selectedProfile ? { samplers: resolveSamplerCapabilities(selectedProfile.providerPreset, selectedPreset?.type ?? PROVIDER_TYPE.openaiCompat) } : undefined;
+  useEffect(() => {
+    if (isOpen) void Promise.all(profiles.map((profile) => loadCoauthorConnectionSettingsAction(profile.id)));
+  }, [isOpen, profiles]);
+
+  const coauthorProfiles = useMemo(() => [...profiles].sort((left, right) => {
+    const leftOrder = coauthorSettingsByProfile[left.id]?.sortOrder;
+    const rightOrder = coauthorSettingsByProfile[right.id]?.sortOrder;
+    if (leftOrder !== null && leftOrder !== undefined && rightOrder !== null && rightOrder !== undefined) return leftOrder - rightOrder;
+    if (leftOrder !== null && leftOrder !== undefined) return -1;
+    if (rightOrder !== null && rightOrder !== undefined) return 1;
+    return 0;
+  }), [profiles, coauthorSettingsByProfile]);
   const filteredProfiles = useMemo(() => {
     const query = profileSearch.trim().toLowerCase();
-    return !query ? profiles : profiles.filter((profile) => profile.name.toLowerCase().includes(query) || profile.providerPreset.toLowerCase().includes(query));
-  }, [profileSearch, profiles]);
+    return !query ? coauthorProfiles : coauthorProfiles.filter((profile) => profile.name.toLowerCase().includes(query) || profile.providerPreset.toLowerCase().includes(query));
+  }, [profileSearch, coauthorProfiles]);
   const dirty = selectedProfileId !== binding.profileId || (form !== null && baseline !== null && JSON.stringify(form) !== JSON.stringify(baseline));
   const canSave = Boolean(selectedProfileId && form?.model && dirty && !saving);
 
@@ -186,7 +199,7 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
     detailClassName={isMobile ? "p-4" : "p-5"}
     headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
     headerActions={<button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => { onClose(); onOpenProviderModal(); }}>{t("coauthor.provider.manage_connections")}</button>}
-    masterContent={() => <ProviderProfileList profiles={profiles} filteredProfiles={filteredProfiles} editingId={selectedProfileId} activeProfileId={binding.profileId} profileSearch={profileSearch} onProfileSearchChange={setProfileSearch} onSelectProfile={handleSelectProfile} selectionOnly />}
+    masterContent={() => <ProviderProfileList profiles={coauthorProfiles} filteredProfiles={filteredProfiles} editingId={selectedProfileId} activeProfileId={binding.profileId} profileSearch={profileSearch} onProfileSearchChange={setProfileSearch} onSelectProfile={handleSelectProfile} onReorder={(updates) => reorderCoauthorProviderProfilesAction(updates)} selectionOnly />}
     detailContent={!selectedProfile ? <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">{profiles.length === 0 ? t("coauthor.provider.no_profiles") : t("coauthor.provider.select_profile")}</div> : <div className="flex min-h-full flex-col gap-4">
       <div className="shrink-0 rounded-lg border border-border bg-s2 px-4 py-3"><div className="font-ui text-[13px] font-medium text-t1">{selectedProfile.name}</div><div className="mt-0.5 font-ui text-[11px] text-t4">{selectedProfile.endpoint}</div></div>
       <div className="shrink-0 rounded-lg border border-border bg-s2 px-4 py-3">

@@ -1,4 +1,4 @@
-import { activateProviderProfile, addFavoriteProviderModel, deleteProviderProfile, fetchModelsByEndpoint, fetchProviderProfile, fetchProviderProfileModels, getCoauthorConnectionSettings, getProviderModelSettings, listFavoriteProviderModels, listProviderModelSettings, listProviderProfiles, removeFavoriteProviderModel, saveProviderProfile, testProfileChat, testProviderChat, testProviderDraft, testProviderProfile, updateProviderProfile, upsertCoauthorConnectionSettings, upsertProviderModelSettings, reorderProviderProfiles } from "../../api/provider-api.js";
+import { activateProviderProfile, addFavoriteProviderModel, deleteProviderProfile, fetchModelsByEndpoint, fetchProviderProfile, fetchProviderProfileModels, getCoauthorConnectionSettings, getProviderModelSettings, listFavoriteProviderModels, listProviderModelSettings, listProviderProfiles, removeFavoriteProviderModel, saveProviderProfile, testProfileChat, testProviderChat, testProviderDraft, testProviderProfile, updateProviderProfile, upsertCoauthorConnectionSettings, upsertProviderModelSettings, reorderProviderProfiles, reorderCoauthorProviderProfiles } from "../../api/provider-api.js";
 import type { CoauthorConnectionSettingsRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderProfileRecord, TestChatResponse } from "../../api/types.js";
 import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, ProviderProbeResponse, ProviderProxyMode } from "@vibe-tavern/domain";
 import type { UpsertCoauthorConnectionSettingsValue } from "@vibe-tavern/api-contracts";
@@ -51,6 +51,22 @@ export async function deleteProviderProfileAction(id: string): Promise<void> {
 export async function reorderProviderProfilesAction(updates: Array<{ id: string; sortOrder: number }>): Promise<void> {
   await reorderProviderProfiles(updates);
   void loadProviderProfilesAction();
+}
+
+export async function reorderCoauthorProviderProfilesAction(updates: Array<{ id: string; sortOrder: number }>): Promise<void> {
+  await reorderCoauthorProviderProfiles(updates);
+  useProviderDataStore.setState((state) => ({
+    coauthorSettingsByProfile: Object.fromEntries(Object.entries(state.coauthorSettingsByProfile).map(([id, record]) => [
+      id,
+      (() => {
+        const update = updates.find((candidate) => candidate.id === id);
+        if (!update) return record;
+        return record ? { ...record, sortOrder: update.sortOrder } : {
+          providerProfileId: id, modelName: null, settings: {}, sortOrder: update.sortOrder, createdAt: "", updatedAt: "",
+        };
+      })(),
+    ])),
+  }));
 }
 
 export async function activateProviderProfileAction(id: string): Promise<void> {

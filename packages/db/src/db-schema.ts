@@ -1122,6 +1122,8 @@ export const coauthorConnectionSettings = sqliteTable('coauthor_connection_setti
   modelName: text('model_name'),
   /** Stringified ModelSettingsOverlay-shaped JSON (see the block comment). */
   settingsJson: text('settings_json').notNull(),
+  /** Null means this profile has never been ordered in the Co-Author list. */
+  sortOrder: integer('sort_order'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

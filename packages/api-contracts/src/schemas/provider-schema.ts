@@ -185,6 +185,11 @@ export const upsertCoauthorConnectionSettingsSchema = z.object({
 });
 export type UpsertCoauthorConnectionSettingsValue = z.infer<typeof upsertCoauthorConnectionSettingsSchema>;
 
+/** Body for PATCH /api/providers/coauthor-order. Only Co-Author order changes. */
+export const reorderCoauthorProviderProfilesSchema = z.object({
+  updates: z.array(z.object({ id: z.string(), sortOrder: z.number().int().nonnegative() })),
+});
+
 export const fetchModelsSchema = z.object({
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),
