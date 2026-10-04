@@ -92,6 +92,19 @@ export function registerStaticTextMacroResolvers(
     resolve: (_args, context) => context.prompt.defaultAuthorsNote ?? "",
   });
   register({
+    name: "charAuthorsNote",
+    description: "The character card's author's note.",
+    category: categories.Character,
+    resolve: (_args, context) => typeof context.character.extensions.charNote === "string" ? context.character.extensions.charNote : "",
+  });
+  register({
+    name: "groupNotMuted",
+    description: "The unmuted participants (the character in Vibe Tavern's 1:1 chats).",
+    category: categories.Identity,
+    // VT has no groups or mute state, so its only non-user participant is the character.
+    resolve: (_args, context) => context.names.charIfNotGroup || context.names.charName,
+  });
+  register({
     name: "notChar",
     description: "Participants other than the current character.",
     category: categories.Identity,
@@ -102,6 +115,12 @@ export function registerStaticTextMacroResolvers(
     description: "Reverse the characters in an argument.",
     category: categories.Utility,
     resolve: (args) => Array.from(args[0] ?? "").reverse().join(""),
+  });
+  register({
+    name: "input",
+    description: "The user's current input message.",
+    category: categories.Utility,
+    resolve: (_args, context) => context.chat.lastUserMessage ?? "",
   });
   register({
     name: "datetimeformat",

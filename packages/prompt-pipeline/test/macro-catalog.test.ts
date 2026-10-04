@@ -68,7 +68,7 @@ describe("macro catalog", () => {
 
   it("catalogs every added static-text macro and the idle_duration alias", () => {
     const byName = new Map(getMacroCatalog().map((entry) => [entry.name, entry]));
-    for (const name of ["charPrompt", "charInstruction", "systemPrompt", "defaultSystemPrompt", "authorsNote", "defaultAuthorsNote", "notChar", "reverse", "datetimeformat", "idleDuration", "timeDiff", "time"]) {
+    for (const name of ["charPrompt", "charInstruction", "systemPrompt", "defaultSystemPrompt", "authorsNote", "defaultAuthorsNote", "charAuthorsNote", "groupNotMuted", "notChar", "reverse", "input", "datetimeformat", "idleDuration", "timeDiff", "time"]) {
       expect(byName.get(name)?.description).toBeTruthy();
     }
     expect(byName.get("idleDuration")?.aliases).toContain("idle_duration");

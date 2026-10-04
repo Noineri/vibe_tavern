@@ -4,7 +4,12 @@ import { buildPromptVariableContext } from "../src/prompt-variable-context.ts";
 
 const engine = createFullMacroEngine();
 const context = buildPromptVariableContext({
-  character: { systemPrompt: "Character system", postHistoryInstructions: "Character instruction" },
+  character: {
+    name: "Aria",
+    systemPrompt: "Character system",
+    postHistoryInstructions: "Character instruction",
+    extensions: { charNote: "Character note" },
+  },
   prompt: {
     system: "Preset system",
     defaultSystemPrompt: "Default system",
@@ -12,7 +17,7 @@ const context = buildPromptVariableContext({
     defaultAuthorsNote: "Default note",
   },
   names: { userName: "User", notChar: "Not character" },
-  chat: { idleDuration: "five minutes" },
+  chat: { idleDuration: "five minutes", lastUserMessage: "Current input" },
   now: new Date("2026-10-04T12:34:56.000Z"),
 });
 
@@ -46,6 +51,16 @@ describe("static text macro resolvers", () => {
     expect(engine.resolve("{{defaultAuthorsNote}}", context)).toBe("Default note");
   });
 
+  it("resolves {{charAuthorsNote}} from the character card extension", () => {
+    expect(engine.resolve("{{charAuthorsNote}}", context)).toBe("Character note");
+    expect(engine.resolve("{{charAuthorsNote}}", buildPromptVariableContext({ character: { extensions: {} } }))).toBe("");
+  });
+
+  it("resolves {{groupNotMuted}} to the character in Vibe Tavern's 1:1 chat", () => {
+    expect(engine.resolve("{{groupNotMuted}}", context)).toBe("Aria");
+    expect(engine.resolve("{{groupNotMuted}}", buildPromptVariableContext({}))).toBe("");
+  });
+
   it("resolves {{notChar}} from the non-character participant", () => {
     expect(engine.resolve("{{notChar}}", context)).toBe("Not character");
   });
@@ -60,6 +75,11 @@ describe("static text macro resolvers", () => {
 
   it("resolves {{idleDuration}} and its {{idle_duration}} alias", () => {
     expect(engine.resolve("{{idleDuration}}/{{idle_duration}}", context)).toBe("five minutes/five minutes");
+  });
+
+  it("resolves {{input}} from the current user message", () => {
+    expect(engine.resolve("{{input}}", context)).toBe("Current input");
+    expect(engine.resolve("{{input}}", buildPromptVariableContext({ chat: { lastUserMessage: null } }))).toBe("");
   });
 
   it("resolves {{timeDiff}}", () => {
