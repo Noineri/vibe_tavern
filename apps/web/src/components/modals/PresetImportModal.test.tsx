@@ -29,6 +29,30 @@ beforeAll(async () => {
   ({ PresetImportModal } = await import("./PresetImportModal.js"));
 });
 
+function presetFile(blockContent: string): File {
+  return new File(
+    [
+      JSON.stringify({
+        name: "Probe preset",
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main",
+            role: "system",
+            content: blockContent,
+            injection_position: 0,
+            injection_depth: 4,
+            injection_order: 100,
+            enabled: true,
+          },
+        ],
+      }),
+    ],
+    "probe-preset.json",
+    { type: "application/json" },
+  );
+}
+
 describe("PresetImportModal", () => {
   it("opens the fullscreen preview directly when the mobile picker supplies a file", async () => {
     const file = new File([
@@ -40,5 +64,36 @@ describe("PresetImportModal", () => {
 
     expect(await view.findByText("Mobile preset.json")).toBeTruthy();
     expect(view.queryByText("preset_import_drop_title")).toBeNull();
+  });
+
+  // st-macro-parity step 8: importing a preset that uses an ST macro VT
+  // deliberately does not support shows the import warning in the preview.
+  it("shows the dropped-macro warning for a preset block using {{wiBefore}}", async () => {
+    const view = render(
+      <PresetImportModal
+        initialFile={presetFile("Prefix {{wiBefore}} suffix")}
+        onClose={() => {}}
+        onImport={() => {}}
+      />,
+    );
+
+    expect(
+      await view.findByText(
+        "Macro {{wiBefore}} is not supported in VT — use preset layers and the generation format instead.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows no dropped-macro warning for a preset using only supported macros", async () => {
+    const view = render(
+      <PresetImportModal
+        initialFile={presetFile("{{trim}} {{user}} said {{pick::a::b}}")}
+        onClose={() => {}}
+        onImport={() => {}}
+      />,
+    );
+
+    expect(await view.findByText("Probe preset.json")).toBeTruthy();
+    expect(view.queryByText(/is not supported in VT/)).toBeNull();
   });
 });

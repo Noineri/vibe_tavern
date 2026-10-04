@@ -109,6 +109,11 @@ describe("buildSamplerConfig", () => {
       });
     });
 
+    it("adds no native reasoning key — the effort stays in providerOptions.openai_compat", () => {
+      const config = buildSamplerConfig(profile("openai"));
+      expect(config.reasoning).toBeUndefined();
+    });
+
     it("includes logit bias for a matching model", () => {
       const config = buildSamplerConfig(
         profile("openai", {
@@ -281,6 +286,37 @@ describe("buildSamplerConfig", () => {
       expect(config.presencePenalty).toBeUndefined();
       expect(config.seed).toBeUndefined();
       expect(config.topK).toBeUndefined();
+      expect(config.providerOptions).toBeUndefined();
+    });
+
+    it("maps stored reasoningEffort to the SDK-neutral reasoning call setting", () => {
+      const config = buildSamplerConfig(profile("google", { reasoningEffort: "low" }));
+      expect(config.reasoning).toBe("low");
+    });
+
+    it("sends no reasoning when reasoningEffort is auto", () => {
+      const config = buildSamplerConfig(profile("google", { reasoningEffort: "auto" }));
+      expect(config.reasoning).toBeUndefined();
+      expect(config.providerOptions).toBeUndefined();
+    });
+  });
+
+  // ─── Google Interactions (minimal_reasoning) ───────────────────────────
+
+  describe("google_interactions (minimal_reasoning)", () => {
+    it("maps stored reasoningEffort to providerOptions.google.thinkingLevel", () => {
+      const config = buildSamplerConfig(profile("google_interactions", { reasoningEffort: "low" }));
+      expect(config.providerOptions).toEqual({ google: { thinkingLevel: "low" } });
+      // The Interactions language model never reads the neutral `reasoning`
+      // call setting (verified against installed @ai-sdk/google 4.0.69), so
+      // emitting it here would be a silent no-op — the effort rides
+      // providerOptions.google.thinkingLevel instead.
+      expect(config.reasoning).toBeUndefined();
+    });
+
+    it("sends nothing when reasoningEffort is auto", () => {
+      const config = buildSamplerConfig(profile("google_interactions", { reasoningEffort: "auto" }));
+      expect(config.reasoning).toBeUndefined();
       expect(config.providerOptions).toBeUndefined();
     });
   });
@@ -523,6 +559,16 @@ describe("buildSamplerConfig", () => {
       expect(config.topP).toBe(0.95);
       expect(config.maxOutputTokens).toBe(4096);
       expect(config.stopSequences).toEqual(["\\n\\n", "STOP"]);
+    });
+
+    it("maps stored reasoningEffort to the SDK-neutral reasoning call setting", () => {
+      const config = buildSamplerConfig(profile("anthropic"));
+      expect(config.reasoning).toBe("high");
+    });
+
+    it("sends no reasoning when reasoningEffort is auto", () => {
+      const config = buildSamplerConfig(profile("anthropic", { reasoningEffort: "auto" }));
+      expect(config.reasoning).toBeUndefined();
     });
   });
 

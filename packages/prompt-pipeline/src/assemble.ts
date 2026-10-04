@@ -6,7 +6,7 @@ import type {
   RecentMessage,
 } from "./types.js";
 import { estimateTokens, planHistoryCompaction } from "./compaction.js";
-import { createFullMacroEngine } from "./macro-registry.js";
+import { createFullMacroEngine, type MacroEngine } from "./macro-registry.js";
 import {
   applyRegexToChatHistory,
   createValueEscapingMacroSource,
@@ -15,7 +15,8 @@ import {
 import { formatSceneHistory } from "./scene-injection.js";
 import { formatDiceMessageBlock } from "./dice-message-format.js";
 import { formatExperienceMessageBlock } from "./experience-report.js";
-import { buildPromptVariableContext, type PromptVariableContext } from "./prompt-variable-context.js";
+import type { PromptVariableContext } from "./prompt-variable-context.js";
+import { buildAssemblyVariableContext } from "./assembly-variable-context.js";
 import { DEFAULT_PROMPT_ORDER, tag } from "@vibe-tavern/domain";
 import { createResolver, type PositionResolver } from "./resolvers/position-resolver.js";
 import { buildLoreLayers } from "./build-lore-layers.js";
@@ -243,46 +244,8 @@ export function sortLayers(layers: PromptLayer[]): PromptLayer[] {
   });
 }
 
-const phaseOneMacroEngine = createFullMacroEngine();
-
-function buildAssemblyVariableContext(context: PromptAssemblyContext): PromptVariableContext {
-  return buildPromptVariableContext({
-    outlets: context.outletEntries ?? {},
-    character: {
-      name: context.character.name,
-      description: context.character.description,
-      personality: context.character.personality ?? null,
-      scenario: context.character.scenario ?? null,
-      systemPrompt: context.character.systemPrompt ?? null,
-      mesExample: context.character.mesExample ?? null,
-      postHistoryInstructions: context.character.postHistoryInstructions ?? null,
-    },
-    persona: {
-      name: context.persona?.name ?? "User",
-      description: context.persona?.description ?? "",
-      pronouns: context.persona?.pronouns ?? null,
-      pronounForms: context.persona?.pronounForms ?? null,
-    },
-    prompt: {
-      system: context.preset?.text ?? "",
-      jailbreak: context.preset?.jailbreak ?? "",
-      summary: context.preset?.summary ?? "",
-      tools: context.preset?.tools ?? context.instructions?.toolInstructions ?? "",
-      contextBudget: context.config?.contextBudget ?? null,
-    },
-    chat: {
-      messages: context.chat.recentMessages,
-      messageIds: context.chat.recentMessages.map((message) => message.id),
-    },
-    runtime: {
-      contextBudget: context.config?.contextBudget ?? null,
-      maxPromptTokens: context.config?.contextBudget ?? null,
-    },
-  });
-}
-
-function applyMacros(text: string | null | undefined, variableContext: PromptVariableContext): string {
-  return text ? phaseOneMacroEngine.resolve(text, variableContext) : "";
+function applyMacros(text: string | null | undefined, variableContext: PromptVariableContext, macroEngine: MacroEngine): string {
+  return text ? macroEngine.resolve(text, variableContext) : "";
 }
 
 /**
@@ -291,8 +254,9 @@ function applyMacros(text: string | null | undefined, variableContext: PromptVar
  * Called before any layer construction so all downstream text is fully resolved.
  */
 function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyContext {
-  // Reset variable state for this assembly pass so setvar/getvar start clean.
-  phaseOneMacroEngine.resetVariables();
+  // A service-provided scope bridges activation and assembly; otherwise this
+  // fresh engine owns an isolated scope for this one direct assembly call.
+  const macroEngine = createFullMacroEngine(context.macroVariableScope);
 
   // First resolve character/persona fields from the raw context. Then build a
   // second variable context from those resolved fields so ST macros such as
@@ -302,17 +266,17 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
   const baseVariableContext = buildAssemblyVariableContext(context);
   const resolvedCharacter = {
     ...context.character,
-    description: applyMacros(context.character.description, baseVariableContext),
-    scenario: context.character.scenario != null ? applyMacros(context.character.scenario, baseVariableContext) : context.character.scenario,
-    systemPrompt: context.character.systemPrompt != null ? applyMacros(context.character.systemPrompt, baseVariableContext) : context.character.systemPrompt,
-    personality: context.character.personality != null ? applyMacros(context.character.personality, baseVariableContext) : context.character.personality,
-    mesExample: context.character.mesExample != null ? applyMacros(context.character.mesExample, baseVariableContext) : context.character.mesExample,
-    postHistoryInstructions: context.character.postHistoryInstructions != null ? applyMacros(context.character.postHistoryInstructions, baseVariableContext) : context.character.postHistoryInstructions,
-    depthPrompt: context.character.depthPrompt != null ? applyMacros(context.character.depthPrompt, baseVariableContext) : context.character.depthPrompt,
+    description: applyMacros(context.character.description, baseVariableContext, macroEngine),
+    scenario: context.character.scenario != null ? applyMacros(context.character.scenario, baseVariableContext, macroEngine) : context.character.scenario,
+    systemPrompt: context.character.systemPrompt != null ? applyMacros(context.character.systemPrompt, baseVariableContext, macroEngine) : context.character.systemPrompt,
+    personality: context.character.personality != null ? applyMacros(context.character.personality, baseVariableContext, macroEngine) : context.character.personality,
+    mesExample: context.character.mesExample != null ? applyMacros(context.character.mesExample, baseVariableContext, macroEngine) : context.character.mesExample,
+    postHistoryInstructions: context.character.postHistoryInstructions != null ? applyMacros(context.character.postHistoryInstructions, baseVariableContext, macroEngine) : context.character.postHistoryInstructions,
+    depthPrompt: context.character.depthPrompt != null ? applyMacros(context.character.depthPrompt, baseVariableContext, macroEngine) : context.character.depthPrompt,
   };
   const resolvedPersona = context.persona ? {
     ...context.persona,
-    description: applyMacros(context.persona.description, baseVariableContext),
+    description: applyMacros(context.persona.description, baseVariableContext, macroEngine),
   } : context.persona;
   const variableContext = buildAssemblyVariableContext({
     ...context,
@@ -344,35 +308,35 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
     persona: resolvedPersona,
     preset: context.preset ? {
       ...context.preset,
-      text: applyMacros(context.preset.text, variableContext),
-      jailbreak: context.preset.jailbreak != null ? applyMacros(context.preset.jailbreak, variableContext) : context.preset.jailbreak,
-      prefill: context.preset.prefill != null ? applyMacros(context.preset.prefill, variableContext) : context.preset.prefill,
-      authorsNote: context.preset.authorsNote != null ? applyMacros(context.preset.authorsNote, variableContext) : context.preset.authorsNote,
-      summary: context.preset.summary != null ? applyMacros(context.preset.summary, variableContext) : context.preset.summary,
-      tools: context.preset.tools != null ? applyMacros(context.preset.tools, variableContext) : context.preset.tools,
+        text: applyMacros(context.preset.text, variableContext, macroEngine),
+        jailbreak: context.preset.jailbreak != null ? applyMacros(context.preset.jailbreak, variableContext, macroEngine) : context.preset.jailbreak,
+        prefill: context.preset.prefill != null ? applyMacros(context.preset.prefill, variableContext, macroEngine) : context.preset.prefill,
+        authorsNote: context.preset.authorsNote != null ? applyMacros(context.preset.authorsNote, variableContext, macroEngine) : context.preset.authorsNote,
+        summary: context.preset.summary != null ? applyMacros(context.preset.summary, variableContext, macroEngine) : context.preset.summary,
+        tools: context.preset.tools != null ? applyMacros(context.preset.tools, variableContext, macroEngine) : context.preset.tools,
       customInjections: context.preset.customInjections?.map((injection) => ({
         ...injection,
-        name: applyMacros(injection.name, variableContext),
-        content: applyMacros(injection.content, variableContext),
+          name: applyMacros(injection.name, variableContext, macroEngine),
+          content: applyMacros(injection.content, variableContext, macroEngine),
       })),
     } : context.preset,
     lore: context.lore?.map((entry) => ({
       ...entry,
-      title: applyMacros(entry.title, variableContext),
+      title: applyMacros(entry.title, variableContext, macroEngine),
       // P16 boundary: activated lore from StaticPromptResolver has already
       // passed through the full macro engine before WORLD_INFO regex hooks.
       // Other lore producers (for example, AI Assistant context) retain the
       // pipeline-owned expansion path.
-      content: entry.macrosResolved ? entry.content : applyMacros(entry.content, variableContext),
+      content: entry.macrosResolved ? entry.content : applyMacros(entry.content, variableContext, macroEngine),
     })),
     memory: {
       summary: context.memory?.summary?.map((s) => ({
         ...s,
-        summary: applyMacros(s.summary, variableContext),
+        summary: applyMacros(s.summary, variableContext, macroEngine),
       })),
       retrieval: context.memory?.retrieval?.map((m) => ({
         ...m,
-        content: applyMacros(m.content, variableContext),
+        content: applyMacros(m.content, variableContext, macroEngine),
       })),
     },
     chat: {
@@ -396,7 +360,7 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
         regexPresets,
         regexMacroSource,
       ).map((msg) => {
-        const baseContent = applyMacros(msg.content, variableContext);
+        const baseContent = applyMacros(msg.content, variableContext, macroEngine);
         const diceBlock = msg.diceRolls?.length
           ? formatDiceMessageBlock(msg.diceRolls)
           : "";
@@ -411,17 +375,17 @@ function applyMacrosToContext(context: PromptAssemblyContext): PromptAssemblyCon
       }),
       scriptInjections: context.chat.scriptInjections?.map((msg) => ({
         ...msg,
-        content: applyMacros(msg.content, variableContext),
+        content: applyMacros(msg.content, variableContext, macroEngine),
       })),
     },
     instructions: context.instructions ? {
-      toolInstructions: context.instructions.toolInstructions != null ? applyMacros(context.instructions.toolInstructions, variableContext) : context.instructions.toolInstructions,
+      toolInstructions: context.instructions.toolInstructions != null ? applyMacros(context.instructions.toolInstructions, variableContext, macroEngine) : context.instructions.toolInstructions,
     } : context.instructions,
     aiAssistant: context.aiAssistant ? {
       ...context.aiAssistant,
-      systemPrompt: applyMacros(context.aiAssistant.systemPrompt, variableContext),
-      instruction: applyMacros(context.aiAssistant.instruction, variableContext),
-      existingContent: context.aiAssistant.existingContent != null ? applyMacros(context.aiAssistant.existingContent, variableContext) : context.aiAssistant.existingContent,
+      systemPrompt: applyMacros(context.aiAssistant.systemPrompt, variableContext, macroEngine),
+      instruction: applyMacros(context.aiAssistant.instruction, variableContext, macroEngine),
+      existingContent: context.aiAssistant.existingContent != null ? applyMacros(context.aiAssistant.existingContent, variableContext, macroEngine) : context.aiAssistant.existingContent,
     } : context.aiAssistant,
   };
 }

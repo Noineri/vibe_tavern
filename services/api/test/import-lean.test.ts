@@ -42,6 +42,7 @@ function makeDeps() {
   );
   const createLorebook = mock(async (_data: unknown) => ({ id: "lore_test_123" }));
   const bulkCreateEntries = mock(async (_id: unknown, _entries: unknown) => 1);
+  const addLink = mock(async (_id: unknown, _type: unknown, _target: unknown) => undefined);
   const deps = {
     stores: {
       characters: {
@@ -53,7 +54,7 @@ function makeDeps() {
         resolveFolderName: mock((id: string) => Promise.resolve(id)),
         listAll: mock(() => Promise.resolve([])),
       },
-      lorebooks: { createLorebook, bulkCreateEntries },
+      lorebooks: { createLorebook, bulkCreateEntries, addLink },
       content: {
         writeEntity: mock((_folder: unknown, _id: string, _data: unknown) =>
           Promise.resolve("stub/path") as never,
@@ -84,7 +85,7 @@ function makeDeps() {
       resolvePath: () => { throw new Error("fileStore should not be called by importJson"); },
     },
   } as unknown as ImportExportModuleDeps;
-  return { deps, getSnapshot, createLorebook, bulkCreateEntries };
+  return { deps, getSnapshot, createLorebook, bulkCreateEntries, addLink };
 }
 
 describe("importJson — lean mass-import path (MASS_IMPORT Wave 1)", () => {
@@ -139,11 +140,14 @@ describe("importJson — lean mass-import path (MASS_IMPORT Wave 1)", () => {
     });
     expect(withFlag.createLorebook).toHaveBeenCalledTimes(1);
     expect(withFlag.bulkCreateEntries).toHaveBeenCalledTimes(1);
+    // Owners are links (migration 0107): the create carries no home owner —
+    // the import seam binds the imported character by lorebook_links.
     expect(withFlag.createLorebook.mock.calls[0][0]).toMatchObject({
       scopeType: "entity",
-      characterId: "char_test_123",
       name: "Embedded",
     });
+    expect("characterId" in (withFlag.createLorebook.mock.calls[0][0] as Record<string, unknown>)).toBe(false);
+    expect(withFlag.addLink.mock.calls[0]).toEqual(["lore_test_123", "character", "char_test_123"]);
   });
 
   test("no lean flag keeps the full path byte-identical: getSnapshot called once, snapshot present", async () => {

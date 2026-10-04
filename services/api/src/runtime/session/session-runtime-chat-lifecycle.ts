@@ -132,14 +132,7 @@ export class ChatLifecycleRuntime {
 			} else {
 				const greetingVariants = buildGreetingVariants(character.firstMessage, character.alternateGreetings);
 				if (greetingVariants.length > 0) {
-					await this.deps.stores.messages.addMessage({
-						chatId: createdChatId,
-						branchId: chat.activeBranchId,
-						role: "assistant",
-						authorType: "assistant",
-						content: greetingVariants[0],
-						variants: greetingVariants,
-					});
+					await this.deps.chatApp.addGreetingMessage(createdChatId, chat.activeBranchId, greetingVariants);
 				}
 			}
 		}
@@ -217,14 +210,7 @@ export class ChatLifecycleRuntime {
 			} else {
 				const greetingVariants = buildGreetingVariants(character.firstMessage, character.alternateGreetings);
 				if (greetingVariants.length > 0) {
-					await this.deps.stores.messages.addMessage({
-						chatId: created.id,
-						branchId: chat.activeBranchId,
-						role: "assistant",
-						authorType: "assistant",
-						content: greetingVariants[0],
-						variants: greetingVariants,
-					});
+					await this.deps.chatApp.addGreetingMessage(created.id, chat.activeBranchId, greetingVariants);
 				}
 			}
 		}
@@ -449,14 +435,8 @@ export class ChatLifecycleRuntime {
 		// This is the difference between a 68s and a 0.1s import for one card
 		// when a heavy global lorebook is active.
 		const withTrace = opts?.withTrace ?? true;
-		const message = await this.deps.stores.messages.addMessage({
-			chatId,
-			branchId: chat.activeBranchId,
-			role: "assistant",
-			authorType: "assistant",
-			content: greetingVariants[0],
-			variants: greetingVariants,
-		});
+		const message = await this.deps.chatApp.addGreetingMessage(chatId, chat.activeBranchId, greetingVariants);
+		if (!message) return;
 		if (withTrace) {
 			const assembled = await this.deps.assemblePrompt(chatId, chat.activeBranchId as ChatBranchId);
 			await this.deps.stores.traces.saveTrace({

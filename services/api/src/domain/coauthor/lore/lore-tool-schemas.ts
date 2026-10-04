@@ -21,6 +21,15 @@
  *    VT `priority` → ST `order`), the store has no `order` column and the
  *    API PATCH path silently drops it — exposing it would let the Co-Author
  *    set a value that never lands. `priority` is the live knob.
+ *
+ * COAUTHOR_LORE_FULL_SETTINGS step 6: the tools come in TWO parameter views —
+ * FULL while the Co-Author is working on lore (the step-2 surface, unchanged;
+ * owner ruling 2026-10-04: full lorebook schemas only while the Co-Author
+ * works on the lorebook) and BASIC outside it (create with the basics, lookup,
+ * content and keys). Both views derive from the SAME contract shapes: the
+ * basic view PICKS from the described full shapes (`LORE_TOOL_BASIC_*_FIELDS`
+ * below), so neither view contains hand-written duplicate zod objects and
+ * every basic field keeps its model-facing description.
  */
 import {
   createLorebookSchema,
@@ -95,7 +104,7 @@ export const LOREBOOK_SETTINGS_FIELD_DESCRIPTIONS: {
   characterStrategy:
     "How character-scoped and global lore entries are ordered relative to each other: 0 = evenly interleave, 1 = character books first (default), 2 = global books first.",
   scopeType:
-    "Where this lorebook is scoped. 'entity' (default) attaches it to the current character; 'global' applies to every character; 'chat' only to this chat (rare).",
+    "Where this lorebook is scoped. 'entity' (default) binds it to the character being authored as a plain link (visible and removable in the lorebook's bindings list); 'global' applies to every character; 'chat' only to this chat (rare).",
   enabled: "Whether the lorebook is active at all. Defaults to true.",
 };
 
@@ -190,6 +199,26 @@ function domainEnumValues<const T extends Record<string, string>>(values: T) {
   return z.enum(Object.values(values) as [T[keyof T], ...T[keyof T][]]);
 }
 
+/**
+ * Pick a subset of an already-described shape (step 6's basic view). The keys
+ * argument is the only hand-written part — WHICH fields are "basics" — while
+ * the field schemas AND their descriptions stay the derived contract ones, so
+ * the basic view can never drift from the schema source. The mapped type makes
+ * a basic-field key that does not exist in the source shape a compile error.
+ */
+function pickDescribedFields<T extends Record<string, z.ZodType>>(
+  shape: T,
+  keys: { readonly [K in keyof T & string]?: string },
+): { [K in keyof T & keyof typeof keys]: T[K] } {
+  const out: Record<string, z.ZodType> = {};
+  for (const key of Object.keys(keys)) {
+    out[key] = shape[key as keyof T];
+  }
+  // Same edge cast as withFieldDescriptions: the loop provably preserves each
+  // picked field's exact type; TS cannot see through Object.keys.
+  return out as unknown as { [K in keyof T & keyof typeof keys]: T[K] };
+}
+
 // ─── Book-level settings fields (create_lorebook / edit_lorebook) ───────────
 
 const lorebookScopeTypeEnum = domainEnumValues(LORE_SCOPE_TYPE)
@@ -212,22 +241,28 @@ const lorebookSettingsFieldsExceptName = {
   scopeType: lorebookScopeTypeEnum,
 };
 
-/** create_lorebook input: required `name` + every book setting + summary. */
-export const createLorebookToolInputSchema = z.object({
-  name: createLorebookSchema.shape.name.describe(LOREBOOK_SETTINGS_FIELD_DESCRIPTIONS.name),
-  ...lorebookSettingsFieldsExceptName,
-  summary: summaryField,
-});
+/**
+ * Book settings kept in the BASIC (outside-lore-work) view — the pre-step-2
+ * exposed subset: enough to START lore work (identify, scope, and the core
+ * activation knobs), with every advanced setting reachable on the same tools
+ * once lore work is underway (the full view). Keyed object so the basic list
+ * is itself drift-checked by `lore-tool-schemas.test.ts`, mirroring
+ * {@link LORE_TOOL_EXCLUDED_ENTRY_FIELDS}.
+ */
+export const LORE_TOOL_BASIC_BOOK_FIELDS = {
+  description: "what the book covers — needed to start lore work",
+  scopeType: "where the book binds — needed to start lore work",
+  enabled: "on/off",
+  scanDepth: "core activation knob",
+  tokenBudget: "core activation knob (fixed-budget mode)",
+  recursiveScanning: "core activation knob",
+} as const;
 
-/** edit_lorebook input: target id + every book setting + summary. */
-export const editLorebookToolInputSchema = z.object({
-  lorebookId: z
-    .string()
-    .describe("The id of the lorebook to edit — a create_lorebook id from this turn, or a persisted lorebook id."),
-  name: updateLorebookMetaSchema.shape.name.describe(LOREBOOK_SETTINGS_FIELD_DESCRIPTIONS.name),
-  ...lorebookSettingsFieldsExceptName,
-  summary: summaryField,
-});
+/** Book settings EXCLUDING `name` in the basic view (picked from the full shape). */
+const lorebookBasicSettingsFieldsExceptName = pickDescribedFields(
+  lorebookSettingsFieldsExceptName,
+  LORE_TOOL_BASIC_BOOK_FIELDS,
+);
 
 // ─── Entry-level settings fields ─────────────────────────────────────────────
 
@@ -261,29 +296,147 @@ const loreEntrySettingsFields = {
     .describe(LORE_ENTRY_SETTINGS_FIELD_DESCRIPTIONS.matchSources),
 };
 
-/** create_lore_entry input: parent id + settings skeleton + summary. */
-export const createLoreEntryToolInputSchema = z.object({
-  lorebookId: z
-    .string()
-    .describe("The id of the parent lorebook (from a create_lorebook result this turn)."),
-  ...loreEntrySettingsFields,
-  summary: summaryField,
-});
+/**
+ * Entry settings kept in the BASIC (outside-lore-work) view — the pre-step-2
+ * exposed subset: enough to START lore work (identify the entry and its core
+ * activation/injection knobs). Same drift contract as
+ * {@link LORE_TOOL_BASIC_BOOK_FIELDS}.
+ */
+export const LORE_TOOL_BASIC_ENTRY_FIELDS = {
+  title: "organizational identity of the entry",
+  constant: "activation-mode basic",
+  position: "core injection knob",
+  depth: "core injection knob",
+  logic: "core matching knob",
+  enabled: "on/off",
+} as const;
 
-/** add_lore_entry input: EXISTING parent id + settings skeleton + summary. */
-export const addLoreEntryToolInputSchema = z.object({
-  lorebookId: z
-    .string()
-    .describe("The id of an EXISTING lorebook (drafted this turn or persisted) to add the entry to."),
-  ...loreEntrySettingsFields,
-  summary: summaryField,
-});
+/** Entry settings in the basic view (picked from the described full shape). */
+const loreEntryBasicSettingsFields = pickDescribedFields(
+  loreEntrySettingsFields,
+  LORE_TOOL_BASIC_ENTRY_FIELDS,
+);
 
-/** edit_lore_entry input: target id + every entry setting + summary. */
-export const editLoreEntryToolInputSchema = z.object({
-  entryId: z
-    .string()
-    .describe("The id of the entry to edit — a create_lore_entry id from this turn, or a persisted entry id."),
-  ...loreEntrySettingsFields,
-  summary: summaryField,
-});
+// ─── Tool input schemas: full (in lore work) and basic (outside) views ───────
+
+/** `edit_lorebook` target id (shared by both views). */
+const editLorebookTargetField = z
+  .string()
+  .describe("The id of the lorebook to edit — a create_lorebook id from this turn, or a persisted lorebook id.");
+/** `create_lore_entry` parent id (shared by both views). */
+const draftParentLorebookField = z
+  .string()
+  .describe("The id of the parent lorebook (from a create_lorebook result this turn).");
+/** `add_lore_entry` parent id (shared by both views). */
+const persistedParentLorebookField = z
+  .string()
+  .describe("The id of an EXISTING lorebook (drafted this turn or persisted) to add the entry to.");
+/** `edit_lore_entry` target id (shared by both views). */
+const editLoreEntryTargetField = z
+  .string()
+  .describe("The id of the entry to edit — a create_lore_entry id from this turn, or a persisted entry id.");
+
+/**
+ * FULL view (step 2 surface, shown while the Co-Author works on lore):
+ * required/optional `name` + EVERY book setting + summary per tool.
+ */
+function buildFullLoreToolSchemas() {
+  return {
+    /** create_lorebook input: required `name` + every book setting + summary. */
+    createLorebook: z.object({
+      name: createLorebookSchema.shape.name.describe(LOREBOOK_SETTINGS_FIELD_DESCRIPTIONS.name),
+      ...lorebookSettingsFieldsExceptName,
+      summary: summaryField,
+    }),
+    /** edit_lorebook input: target id + every book setting + summary. */
+    editLorebook: z.object({
+      lorebookId: editLorebookTargetField,
+      name: updateLorebookMetaSchema.shape.name.describe(LOREBOOK_SETTINGS_FIELD_DESCRIPTIONS.name),
+      ...lorebookSettingsFieldsExceptName,
+      summary: summaryField,
+    }),
+    /** create_lore_entry input: parent id + settings skeleton + summary. */
+    createLoreEntry: z.object({
+      lorebookId: draftParentLorebookField,
+      ...loreEntrySettingsFields,
+      summary: summaryField,
+    }),
+    /** add_lore_entry input: EXISTING parent id + settings skeleton + summary. */
+    addLoreEntry: z.object({
+      lorebookId: persistedParentLorebookField,
+      ...loreEntrySettingsFields,
+      summary: summaryField,
+    }),
+    /** edit_lore_entry input: target id + every entry setting + summary. */
+    editLoreEntry: z.object({
+      entryId: editLoreEntryTargetField,
+      ...loreEntrySettingsFields,
+      summary: summaryField,
+    }),
+  };
+}
+
+/**
+ * BASIC view (outside lore work, step 6): the same tools with only the basic
+ * settings picked from the described full shapes — advanced settings stay
+ * reachable in the full view once lore work is underway (see
+ * `lore-work-trigger.ts`). STRICT: zod's default key-stripping would silently
+ * DROP an advanced field a model sends anyway (a settings loss with no
+ * feedback); the strict error names the unknown key, which steers the model
+ * back to the documented basics (the same self-correct loop the profile
+ * guards use). The FULL view keeps today's stripping semantics.
+ */
+function buildBasicLoreToolSchemas() {
+  return {
+    createLorebook: z.strictObject({
+      name: createLorebookSchema.shape.name.describe(LOREBOOK_SETTINGS_FIELD_DESCRIPTIONS.name),
+      ...lorebookBasicSettingsFieldsExceptName,
+      summary: summaryField,
+    }),
+    editLorebook: z.strictObject({
+      lorebookId: editLorebookTargetField,
+      name: updateLorebookMetaSchema.shape.name.describe(LOREBOOK_SETTINGS_FIELD_DESCRIPTIONS.name),
+      ...lorebookBasicSettingsFieldsExceptName,
+      summary: summaryField,
+    }),
+    createLoreEntry: z.strictObject({
+      lorebookId: draftParentLorebookField,
+      ...loreEntryBasicSettingsFields,
+      summary: summaryField,
+    }),
+    addLoreEntry: z.strictObject({
+      lorebookId: persistedParentLorebookField,
+      ...loreEntryBasicSettingsFields,
+      summary: summaryField,
+    }),
+    editLoreEntry: z.strictObject({
+      entryId: editLoreEntryTargetField,
+      ...loreEntryBasicSettingsFields,
+      summary: summaryField,
+    }),
+  };
+}
+
+/**
+ * The lore tools' input schemas in one of the two parameter views, selected by
+ * the lore-work trigger (step 6). `loreWorkActive` true = the FULL step-2
+ * surface; false = the BASIC starter view. Tool schemas are fixed for a whole
+ * multi-step model request, so the view is chosen at assembly time.
+ */
+export function buildLoreToolInputSchemas(loreWorkActive: boolean) {
+  return loreWorkActive ? buildFullLoreToolSchemas() : buildBasicLoreToolSchemas();
+}
+
+// Static exports = the FULL (in-lore-work) view, unchanged from step 2 — the
+// step-2 completeness tests run against this view.
+const FULL_LORE_TOOL_INPUT_SCHEMAS = buildFullLoreToolSchemas();
+
+export const createLorebookToolInputSchema = FULL_LORE_TOOL_INPUT_SCHEMAS.createLorebook;
+
+export const editLorebookToolInputSchema = FULL_LORE_TOOL_INPUT_SCHEMAS.editLorebook;
+
+export const createLoreEntryToolInputSchema = FULL_LORE_TOOL_INPUT_SCHEMAS.createLoreEntry;
+
+export const addLoreEntryToolInputSchema = FULL_LORE_TOOL_INPUT_SCHEMAS.addLoreEntry;
+
+export const editLoreEntryToolInputSchema = FULL_LORE_TOOL_INPUT_SCHEMAS.editLoreEntry;

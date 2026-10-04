@@ -103,6 +103,18 @@ export function filterMacros(
   return out;
 }
 
+/**
+ * Return aliases that caused an entry to match a query. Canonical-name matches
+ * take precedence, so their rows stay uncluttered even when an alias also
+ * contains the query. The popup can then explain an alias-only result without
+ * changing the canonical macro that selection inserts.
+ */
+export function matchingMacroAliases(entry: MacroCatalogEntry, query: string): string[] {
+  const q = query.trim().toLowerCase();
+  if (!q || entry.name.toLowerCase().includes(q)) return [];
+  return entry.aliases.filter((alias) => alias.toLowerCase().includes(q));
+}
+
 /** Human label for a macro category (used for the badge in the popup). */
 const CATEGORY_LABELS: Record<string, string> = {
   identity: "identity",

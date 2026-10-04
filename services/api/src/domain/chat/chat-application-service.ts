@@ -18,7 +18,8 @@ import type {
   ObjectiveState,
   SummaryMemorySnapshot,
 } from "@vibe-tavern/domain";
-import type { ChatStore, MessageStore, DiceRollStore, ExperienceStore, DbTransaction, Message as DbMessage, MessageVariant as DbMessageVariant } from "@vibe-tavern/db";
+import type { ChatStore, MessageStore, DiceRollStore, ExperienceStore, DbTransaction, Message as DbMessage, MessageVariant as DbMessageVariant, StoreContainer } from "@vibe-tavern/db";
+import { buildPromptVariableContext, createFullMacroEngine, VOLATILE_MACRO_NAMES } from "@vibe-tavern/prompt-pipeline";
 import { conflict, notFound } from "../../shared/errors.js";
 
 /**
@@ -69,7 +70,13 @@ type AddEditorVariantInput = {
 };
 
 export class ChatApplicationService {
-  constructor(private readonly chatStore: ChatStore, private readonly messageStore: MessageStore, private readonly diceRollStore: DiceRollStore, private readonly experienceStore: ExperienceStore) {}
+  constructor(
+    private readonly chatStore: ChatStore,
+    private readonly messageStore: MessageStore,
+    private readonly diceRollStore: DiceRollStore,
+    private readonly experienceStore: ExperienceStore,
+    private readonly macroStores: Pick<StoreContainer, "characters" | "personas">,
+  ) {}
 
   async createChat(input: CreateChatRequest): Promise<CreateChatResponse> {
     const chat = await this.chatStore.createChat({
@@ -142,7 +149,7 @@ export class ChatApplicationService {
       branchId: targetBranchId,
       role: "user" as const,
       authorType: "user" as const,
-      content: input.content,
+      content: await this.freezeVolatileMacros(chat, input.content),
       attachmentsJson: input.attachments?.length ? JSON.stringify(input.attachments) : null,
     };
 
@@ -313,7 +320,10 @@ export class ChatApplicationService {
 
   async editMessage(messageId: string, content: string, expectedVariantId?: string): Promise<Message> {
     try {
-      const message = await this.messageStore.editMessage(messageId, content, expectedVariantId);
+      const existing = await this.messageStore.getMessageById(messageId);
+      if (!existing) throw notFound("Message", `Message '${messageId}' was not found.`);
+      const chat = await this.requireChat(existing.chatId as ChatId);
+      const message = await this.messageStore.editMessage(messageId, await this.freezeVolatileMacros(chat, content), expectedVariantId);
       return mapDbMessage(message);
     } catch (error) {
       if (error instanceof Error && error.name === "SelectedVariantMismatchError") {
@@ -340,6 +350,25 @@ export class ChatApplicationService {
       input.modelId,
       input.presetName,
     );
+  }
+
+  /**
+   * Persist an RP greeting's main and alternate variants after freezing only
+   * volatile macros. Identity and variable macros remain raw so later prompt
+   * assembly observes the chat's current character/persona context.
+   */
+  async addGreetingMessage(chatId: ChatId, branchId: string, greetingVariants: readonly string[]): Promise<DbMessage | null> {
+    if (greetingVariants.length === 0) return null;
+    const chat = await this.requireChat(chatId);
+    const frozenVariants = await Promise.all(greetingVariants.map((content) => this.freezeVolatileMacros(chat, content)));
+    return this.messageStore.addMessage({
+      chatId,
+      branchId,
+      role: "assistant",
+      authorType: "assistant",
+      content: frozenVariants[0],
+      variants: frozenVariants,
+    });
   }
 
   async deleteMessage(messageId: string): Promise<void> {
@@ -402,6 +431,39 @@ export class ChatApplicationService {
       throw notFound("Chat", `Chat '${chatId}' was not found.`);
     }
     return chat;
+  }
+
+  private async freezeVolatileMacros(chat: import("@vibe-tavern/db").Chat, content: string): Promise<string> {
+    const [character, persona] = await Promise.all([
+      this.macroStores.characters.getById(chat.characterId),
+      chat.personaId ? this.macroStores.personas.getById(chat.personaId) : null,
+    ]);
+    if (!character) return content;
+    const context = buildPromptVariableContext({
+      chat: { id: chat.id },
+      character: {
+        name: character.name,
+        description: character.description,
+        personality: character.personalitySummary,
+        scenario: character.defaultScenario,
+        firstMessage: character.firstMessage,
+        alternateGreetings: character.alternateGreetings,
+        mesExample: character.mesExample,
+        postHistoryInstructions: character.postHistoryInstructions,
+        creatorNotes: character.creatorNotes,
+        depthPrompt: character.depthPrompt,
+        depthPromptDepth: character.depthPromptDepth,
+        depthPromptRole: character.depthPromptRole,
+        systemPrompt: character.systemPrompt,
+      },
+      persona: persona ? {
+        name: persona.name,
+        description: persona.description,
+        pronouns: persona.pronouns,
+        pronounForms: persona.pronounForms,
+      } : undefined,
+    });
+    return createFullMacroEngine().resolveSelected(content, context, VOLATILE_MACRO_NAMES);
   }
 }
 

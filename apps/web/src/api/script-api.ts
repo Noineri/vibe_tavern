@@ -18,7 +18,7 @@ export async function listParticipatingScripts(chatId: string): Promise<ScriptRe
   return unwrapRpc(await client.api.scripts.participating.$get({ query: { chatId } }));
 }
 
-export async function createScript(body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }): Promise<ScriptRecord> {
+export async function createScript(body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; links?: Array<{ targetType: "character" | "persona"; targetId: string }>; chatId?: string; enabled?: boolean; sortOrder?: number }): Promise<ScriptRecord> {
   const response = await client.api.scripts.$post({ json: body });
   return unwrapRpc(response);
 }
@@ -47,7 +47,7 @@ export async function testScript(scriptId: string, body: { code?: string; messag
 /** A successfully discovered interactive-script definition, as the test endpoint returns it. */
 export type DiscoveredExperienceDefinition = NonNullable<Extract<Awaited<ReturnType<typeof testScript>>, { kind: "interactive" }>["definition"]>;
 
-export async function importScript(body: { format: "js"; code: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; characterId?: string; personaId?: string; chatId?: string } | { format: "json"; jsonText: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }): Promise<ScriptRecord> {
+export async function importScript(body: { format: "js"; code: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; chatId?: string } | { format: "json"; jsonText: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; chatId?: string }): Promise<ScriptRecord> {
   const response = await client.api.scripts.import.$post({ json: body });
   return unwrapRpc(response);
 }

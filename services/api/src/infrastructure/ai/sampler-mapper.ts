@@ -38,6 +38,12 @@ export interface SamplerConfig {
   presencePenalty?: number;
   seed?: number;
   topK?: number;
+  /** AI SDK v7 provider-neutral reasoning effort (CallSettings.reasoning — a
+   *  flat string union, not the v4/v5 `{ effort }` object). Consumed by the
+   *  Anthropic and classic-Google language models; maps to the provider's
+   *  thinking surface (see the SDK interplay pins in
+   *  test/reasoning-effort-sdk-interplay.test.ts). */
+  reasoning?: "low" | "medium" | "high";
   providerOptions?: Record<string, Record<string, JSONValue>>;
 }
 
@@ -137,6 +143,15 @@ function emitLlamaNumericTailOptions(
   if (can("dryPenaltyLastN") && profile.dryPenaltyLastN != null && profile.dryPenaltyLastN > 0) {
     providerOpts.dry_penalty_last_n = profile.dryPenaltyLastN;
   }
+}
+
+/** Map the stored reasoning-effort value onto the concrete levels the SDK
+ *  accepts. Only low/medium/high map 1:1; "auto" (the profile default) and
+ *  any empty/unknown value send NOTHING — no `reasoning` key and no
+ *  providerOptions — so the provider applies its own default and the request
+ *  stays byte-identical to a profile that never touched the control. */
+function mapReasoningEffort(effort: string | null | undefined): "low" | "medium" | "high" | undefined {
+  return effort === "low" || effort === "medium" || effort === "high" ? effort : undefined;
 }
 
 /**
@@ -276,14 +291,40 @@ export function buildSamplerConfig(
     case PROVIDER_TYPE.anthropic: {
       // Native topK (gated); no frequencyPenalty, presencePenalty, or seed
       if (can("topK") && profile.topK != null) config.topK = profile.topK;
+      // reasoningEffort -> SDK-neutral `reasoning` call setting. The
+      // @ai-sdk/anthropic language model maps it to the request's thinking
+      // surface (adaptive Claude models: thinking + output_config.effort;
+      // older models: thinking budget_tokens derived from maxOutputTokens).
+      const effort = mapReasoningEffort(profile.reasoningEffort);
+      if (can("reasoningEffort") && effort != null) config.reasoning = effort;
       break;
     }
 
-    // -- Google (classic + Interactions) -------------------------------------
-    case PROVIDER_TYPE.google:
+    // -- Google (classic) ------------------------------------------------------
+    case PROVIDER_TYPE.google: {
+      // Only temperature, topP, maxOutputTokens, stopSequences (already set above).
+      // reasoningEffort -> SDK-neutral `reasoning` call setting: nothing reaches
+      // the model unless set here — @ai-sdk/google maps it to
+      // generationConfig.thinkingConfig (thinkingLevel on Gemini 3,
+      // thinkingBudget on 2.5).
+      const effort = mapReasoningEffort(profile.reasoningEffort);
+      if (can("reasoningEffort") && effort != null) config.reasoning = effort;
+      break;
+    }
+
+    // -- Google Interactions ---------------------------------------------------
     case PROVIDER_TYPE.googleInteractions: {
       // Only temperature, topP, maxOutputTokens, stopSequences (already set above).
-      // reasoningEffort -> thinking_level is mapped natively by the SDK.
+      // reasoningEffort -> providerOptions.google.thinkingLevel (request body
+      // generation_config.thinking_level): the Interactions language model in
+      // @ai-sdk/google NEVER reads the SDK-neutral `reasoning` call setting,
+      // so the effort must ride the providerOptions.google namespace that
+      // model documents for exactly this ("per-call options that the AI SDK
+      // doesn't natively expose live here" — googleInteractionsLanguageModelOptions).
+      const effort = mapReasoningEffort(profile.reasoningEffort);
+      if (can("reasoningEffort") && effort != null) {
+        config.providerOptions = { google: { thinkingLevel: effort } };
+      }
       break;
     }
 

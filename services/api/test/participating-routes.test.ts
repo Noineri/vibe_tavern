@@ -117,7 +117,7 @@ describe("participating adapters (fail-closed delegation)", () => {
         return [SCRIPT];
       },
     };
-    const chatRow = { id: "chat_X", characterId: "char_1", personaId: null };
+    const chatRow = { id: "chat_X", characterId: "char_1", personaId: null, insightsConfig: { diceScriptIds: null } };
     const adapter = new ScriptAdapter(stubStores({ getById: async () => chatRow }, undefined, scripts));
     const result = await adapter.listParticipatingScripts("chat_X");
     expect(result).toEqual([SCRIPT]);

@@ -23,6 +23,7 @@ import {
   ProviderBindingPanel,
   ProviderQuotaPanel,
 } from "../settings/provider/index.js";
+import { ProviderTestHelloButton } from "../settings/provider/ProviderTestHelloButton.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
@@ -878,27 +879,18 @@ export function ProviderModal({
                     onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
                     requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
                     localEndpoint={form.baseUrl}
-                    localConnectionStatus={fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown"}
+                    localConnectionStatus={isLocalProvider ? (fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown") : undefined}
                   />
 
                   {form.model && (
-                    <div className="mt-2 mb-4">
-                      <button type="button" onClick={() => void handleTestChat()} disabled={testingChat}
-                        className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
-                      >
-                        {testingChat ? t("sending") : t("test_hi_btn")}
-                      </button>
-                      {chatResult?.reply && (
-                        <div className="mt-2">
-                          <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success italic">&ldquo;{chatResult.reply.length > 200 ? chatResult.reply.slice(0, 200) + "..." : chatResult.reply}&rdquo;</span>
-                        </div>
-                      )}
-                      {chatResult?.error && (
-                        <div className="mt-2">
-                          <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close /> {chatResult.error}</span>
-                        </div>
-                      )}
-                    </div>
+                    <ProviderTestHelloButton
+                      className="mt-2 mb-4"
+                      testing={testingChat}
+                      result={chatResult}
+                      onTest={() => void handleTestChat()}
+                      replyWrapperClassName="mt-2"
+                      errorWrapperClassName="mt-2"
+                    />
                   )}
 
                   <ProviderCapabilityPanel capabilities={capabilities} />

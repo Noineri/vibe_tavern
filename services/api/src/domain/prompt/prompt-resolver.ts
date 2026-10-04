@@ -17,7 +17,7 @@ import {
 	type PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import { brandId } from "@vibe-tavern/domain";
-import { buildPromptVariableContext, createFullMacroEngine } from "@vibe-tavern/prompt-pipeline";
+import { buildPromptVariableContext, createFullMacroEngine, type MacroVariableScope } from "@vibe-tavern/prompt-pipeline";
 import { notFound } from "../../shared/errors.js";
 import {
 	type CharacterRecord,
@@ -185,6 +185,8 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		/** Resolve active entries without changing branch timed state. */
 		dryRun?: boolean;
 		maxContextTokens?: number;
+		/** One assembly-scoped namespace shared with the pipeline macro engine. */
+		macroVariableScope?: MacroVariableScope;
 	}): Promise<ActiveLoreEntriesResult> {
 		const chat = await this.stores.chats.getById(input.chatId);
 		if (!chat) return { entries: [], overflowedLorebooks: [], outletEntries: {} };
@@ -219,7 +221,7 @@ export class StaticPromptResolver implements PromptAssemblyResolver {
 		// fresh synchronous engine is bound for this activation resolve, so the
 		// pure lore engine receives only text→text substitution and stays free of
 		// prompt-context construction or I/O.
-		const macroEngine = createFullMacroEngine();
+		const macroEngine = createFullMacroEngine(input.macroVariableScope);
 		const macroContext = buildPromptVariableContext({
 			character: {
 				name: character.name,

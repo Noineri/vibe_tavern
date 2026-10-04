@@ -109,4 +109,26 @@ describe("AutoTextarea — macro autocomplete", () => {
     expect(opts.length).toBeGreaterThanOrEqual(1);
     expect(opts[0]!.textContent).toContain("{{char}}");
   });
+
+  it("shows the alias that matched the query beside its canonical macro", () => {
+    render(<Controlled />);
+    const ta = textarea();
+    typeInto(ta, "{{us");
+    const deletevar = Array.from(document.body.querySelectorAll('[role="option"]')).find((option) =>
+      option.textContent?.includes("{{deletevar}}"),
+    );
+    expect(deletevar).toBeTruthy();
+    expect(deletevar!.textContent).toContain("flushvar");
+  });
+
+  it("does not show an alias when the canonical name matched the query", () => {
+    render(<Controlled />);
+    const ta = textarea();
+    typeInto(ta, "{{deletevar");
+    const deletevar = Array.from(document.body.querySelectorAll('[role="option"]')).find((option) =>
+      option.textContent?.includes("{{deletevar}}"),
+    );
+    expect(deletevar).toBeTruthy();
+    expect(deletevar!.textContent).not.toContain("flushvar");
+  });
 });

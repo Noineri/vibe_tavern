@@ -5,9 +5,11 @@
  * activation read and the «Текущие» list query consume the SAME binding rules
  * with no second, route-side copy of the participation logic.
  *
- * Binding sources (unchanged from the pre-extraction resolver): the global
- * pool ∪ entity-FK homes (character OR persona column) ∪ `lorebook_links`
- * junction rows (character ∪ persona targets) ∪ chat-FK rows.
+ * Binding sources (since migration 0107, LORE_SCRIPT_OWNERS_AS_LINKS step 1 —
+ * the home-owner FK columns were copied into links and dropped): the global
+ * pool ∪ `lorebook_links` junction rows (character ∪ persona targets) ∪
+ * chat-FK rows. Every character/persona owner is a plain link; there is no
+ * hidden "primary owner" any more.
  *
  * The `enabled` flag is deliberately NOT filtered here — which bound rows
  * survive is caller policy, and the two callers differ on purpose:
@@ -19,7 +21,7 @@
  *     them on) and drops books that participate only through the global
  *     pool while disabled (owner ruling, 2026-10-03).
  */
-import { and, asc, eq, inArray, or } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { lorebooks, lorebookLinks } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 
@@ -39,7 +41,7 @@ export interface BoundLorebookRow {
    * pipeline's per-book ordering cue, unchanged from the inline resolver. */
   bindingKind: LorebookBindingKind;
   /** True when at least one NON-global source binds this book to the chat
-   * (entity-FK home, lorebook_links row, or chat FK). */
+   * (lorebook_links row or chat FK). */
   entityBound: boolean;
 }
 
@@ -72,31 +74,12 @@ export async function resolveBoundLorebookRows(
     .all();
   for (const r of globalRows) addBinding(r.id, LOREBOOK_BINDING_KIND.global);
 
-  // 2. Entity-scoped lorebooks: FK-owned (home scope) AND junction-linked.
-  //    The resolver consults BOTH — the previous junction-only query silently
-  //    dropped FK-owned lorebooks because `createLorebook` does NOT mirror the
-  //    FK into `lorebook_links`, so an entity-FK lorebook created the normal
-  //    way was visible in editor tabs but never activated in chat.
-  //    Mirrors `ScriptStore`'s chat resolver (FK ∪ junction, Set dedup).
-  //    The home FK is whichever owner column is set, so one pass covers both:
-  //    (characterId = :cid OR personaId = :pid) — a book M:N-bound to BOTH a
-  //    character and a persona activates for a chat matching either target.
-  const entityFkCondition = personaId
-    ? and(eq(lorebooks.scopeType, 'entity'), or(eq(lorebooks.characterId, characterId), eq(lorebooks.personaId, personaId)))
-    : and(eq(lorebooks.scopeType, 'entity'), eq(lorebooks.characterId, characterId));
-  const entityFkRows = await db
-    .select({ id: lorebooks.id, characterId: lorebooks.characterId, personaId: lorebooks.personaId })
-    .from(lorebooks)
-    .where(entityFkCondition)
-    .all();
-  for (const r of entityFkRows) {
-    addBinding(
-      r.id,
-      personaId && r.personaId === personaId
-        ? LOREBOOK_BINDING_KIND.persona
-        : LOREBOOK_BINDING_KIND.character,
-    );
-  }
+  // 2. Entity-scoped lorebooks: junction-linked owners. Since migration
+  //    0107 every owner is a plain `lorebook_links` row (the entity-FK home
+  //    columns were copied into the junction and dropped), so links are the
+  //    ONLY char/persona source. The links queries deliberately do not
+  //    filter scope_type — they never did — so a linked book participates
+  //    via its link regardless of its own scope value.
   const charLinks = await db
     .select({ lorebookId: lorebookLinks.lorebookId })
     .from(lorebookLinks)
@@ -105,7 +88,7 @@ export async function resolveBoundLorebookRows(
     .all();
   for (const r of charLinks) addBinding(r.lorebookId, LOREBOOK_BINDING_KIND.character);
 
-  // 3. Persona junction links (target-typed, unchanged by the collapse).
+  // 3. Persona junction links (target-typed; only when the chat HAS a persona).
   if (personaId) {
     const personaLinks = await db
       .select({ lorebookId: lorebookLinks.lorebookId })
@@ -116,7 +99,7 @@ export async function resolveBoundLorebookRows(
     for (const r of personaLinks) addBinding(r.lorebookId, LOREBOOK_BINDING_KIND.persona);
   }
 
-  // 4. Chat-scoped lorebooks (direct FK — not via links)
+  // 4. Chat-scoped lorebooks (direct FK — not via links; 1:1 with the chat)
   const chatRows = await db
     .select({ id: lorebooks.id })
     .from(lorebooks)

@@ -1,15 +1,20 @@
 // Characterization of `LorebookStore.listAllActiveForChat` — the prompt-resolver
-// read path (prompt-resolver.ts:97 calls exactly this). Pinned after the
-// FK ∪ junction fix: an entity-FK-scoped lorebook created the normal
-// way (createLorebook, which does NOT mirror the FK into lorebook_links) MUST
-// activate in a chat for its owner. Before the fix this was a silent gap — the
-// lorebook was visible in editor tabs (listLorebooksByScope is FK ∪ junction)
-// but dropped by the chat resolver (was junction-only).
+// read path (prompt-resolver.ts:97 calls exactly this).
+//
+// History: this file pinned the FK ∪ junction fix (2026-06-29) — an entity-FK
+// lorebook created the normal way (createLorebook did NOT mirror the FK into
+// lorebook_links) had to activate in its owner's chat. Migration 0107
+// (LORE_SCRIPT_OWNERS_AS_LINKS step 1) removed the home-owner FK columns
+// entirely: every owner IS a `lorebook_links` row now, and the fixtures below
+// were migrated with the data exactly like the migration does (home → link).
+// Every PARTICIPATION assertion keeps its original meaning; the "no junction
+// row created" assertions died with the FK (a created book with no link is
+// simply unbound — pinned by the link-only exclusion tests at the bottom).
 //
 // Scope taxonomy collapse 4 → 3: 'character' and 'persona' merged into
-// 'entity' — the home FK is whichever owner column is set, so one entity
-// branch covers both homes, and a book M:N-bound to BOTH a character and a
-// persona (home FK + junction) activates for a chat matching either target.
+// 'entity' — owners are link rows (character or persona target), and a book
+// M:N-bound to BOTH a character and a persona activates for a chat matching
+// either target.
 import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -30,57 +35,63 @@ async function setup() {
   const store = new LorebookStore(db, { clock, idGenerator: idGen, content: null });
   await db.run(sql`INSERT INTO personas (id, name, description, default_for_new_chats, has_file_on_disk, created_at, updated_at) VALUES ('persona_X', 'P', '', 0, 0, '2026-01-01', '2026-01-01')`);
   await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_X', 'C', '2026-01-01', '2026-01-01')`);
-  // Minimal chat row (chats has NOT NULL columns + active_branch_id which is a
-  // free text column here, not FK-enforced in this test fixture).
+  await db.run(sql`INSERT INTO characters (id, name, created_at, updated_at) VALUES ('char_Y', 'CY', '2026-01-01', '2026-01-01')`);
   await db.run(sql`INSERT INTO chats (id, character_id, active_branch_id, title, created_at, updated_at) VALUES ('chat_X', 'char_X', 'branch_X', 'T', '2026-01-01', '2026-01-01')`);
+  await db.run(sql`INSERT INTO chats (id, character_id, active_branch_id, title, created_at, updated_at) VALUES ('chat_Y', 'char_Y', 'branch_Y', 'T', '2026-01-01', '2026-01-01')`);
   return { store };
 }
 
-describe("LorebookStore.listAllActiveForChat (entity FK ∪ junction)", () => {
-  test("entity-FK persona home activates in its chat (the fixed gap)", async () => {
+describe("LorebookStore.listAllActiveForChat (owners are links)", () => {
+  test("a persona-linked lorebook activates in its chat (the originally-fixed gap)", async () => {
     const { store } = await setup();
-    const lb = await store.createLorebook({ name: "persona-owned", scopeType: "entity", personaId: "persona_X" });
-    // No junction row created — createLorebook does not mirror FK into links.
-    expect((await store.getLinks(lb.id)).length).toBe(0);
+    const lb = await store.createLorebook({ name: "persona-owned", scopeType: "entity" });
+    await store.addLink(lb.id, "persona", "persona_X");
 
     const active = await store.listAllActiveForChat("char_X", "persona_X", "chat_X");
     expect(active.some((a) => a.lorebook.id === lb.id)).toBe(true);
   });
 
-  test("entity-FK character home activates in its chat", async () => {
+  test("a character-linked lorebook activates in its chat", async () => {
     const { store } = await setup();
-    const lb = await store.createLorebook({ name: "char-owned", scopeType: "entity", characterId: "char_X" });
-    expect((await store.getLinks(lb.id)).length).toBe(0);
+    const lb = await store.createLorebook({ name: "char-owned", scopeType: "entity" });
+    await store.addLink(lb.id, "character", "char_X");
 
     const active = await store.listAllActiveForChat("char_X", null, "chat_X");
     expect(active.some((a) => a.lorebook.id === lb.id)).toBe(true);
   });
 
-  test("entity persona home does NOT activate for a chat without that persona", async () => {
+  test("a persona-linked book does NOT activate for a chat without that persona", async () => {
     const { store } = await setup();
-    await store.createLorebook({ name: "persona-home", scopeType: "entity", personaId: "persona_X" });
-    // Same chat, but the persona column does not match — FK home must not fire.
+    const lb = await store.createLorebook({ name: "persona-home", scopeType: "entity" });
+    await store.addLink(lb.id, "persona", "persona_X");
+    // Same chat, but the persona column does not match — the link must not fire.
     const active = await store.listAllActiveForChat("char_X", null, "chat_X");
     expect(active.some((a) => a.lorebook.name === "persona-home")).toBe(false);
   });
 
+  test("an unlinked entity book activates nowhere (links are the only owner source)", async () => {
+    const { store } = await setup();
+    // Since 0107 there is no hidden home owner: a book with no link rows is
+    // bound to nobody. (Was: createLorebook({characterId}) wrote an invisible
+    // home that fired in the owner's chats; step 2 removed the deprecated
+    // input entirely — creation takes an explicit owner list.)
+    await store.createLorebook({ name: "orphan", scopeType: "entity" });
+    expect((await store.listAllActiveForChat("char_X", null, "chat_X")).some((a) => a.lorebook.name === "orphan")).toBe(false);
+    expect((await store.listAllActiveForChat("char_Y", null, "chat_Y")).some((a) => a.lorebook.name === "orphan")).toBe(false);
+  });
+
   test("a book M:N-bound to BOTH a character and a persona activates for a chat matching either target", async () => {
     const { store } = await setup();
-    // Home FK = character; junction link = persona (the cross-binding picker).
-    const viaLink = await store.createLorebook({ name: "both-link", scopeType: "entity", characterId: "char_X" });
+    // Character link + persona link (the cross-binding picker).
+    const viaLink = await store.createLorebook({ name: "both-link", scopeType: "entity" });
+    await store.addLink(viaLink.id, "character", "char_X");
     await store.addLink(viaLink.id, "persona", "persona_X");
     const charChat = await store.listAllActiveForChat("char_X", null, "chat_X");
     expect(charChat.some((a) => a.lorebook.id === viaLink.id)).toBe(true);
     const personaChat = await store.listAllActiveForChat("char_Y", "persona_X", "chat_Y");
     expect(personaChat.some((a) => a.lorebook.id === viaLink.id)).toBe(true);
-    // Neither binding is lost — the junction row survives alongside the FK.
-    expect((await store.getLinks(viaLink.id)).map((l) => `${l.targetType}:${l.targetId}`)).toEqual(["persona:persona_X"]);
-
-    // Mirror: home FK = persona; junction link = character.
-    const viaFk = await store.createLorebook({ name: "both-fk", scopeType: "entity", personaId: "persona_X" });
-    await store.addLink(viaFk.id, "character", "char_X");
-    expect((await store.listAllActiveForChat("char_X", "persona_X", "chat_X")).some((a) => a.lorebook.id === viaFk.id)).toBe(true);
-    expect((await store.listAllActiveForChat("char_Y", "persona_X", "chat_Y")).some((a) => a.lorebook.id === viaFk.id)).toBe(true);
+    // Neither binding is lost — both link rows survive side by side.
+    expect((await store.getLinks(viaLink.id)).map((l) => `${l.targetType}:${l.targetId}`).sort()).toEqual(["character:char_X", "persona:persona_X"]);
   });
 
   test("global lorebook activates regardless of owner", async () => {
@@ -105,19 +116,22 @@ describe("LorebookStore.listAllActiveForChat (entity FK ∪ junction)", () => {
     expect(active.some((a) => a.lorebook.id === lb.id)).toBe(true);
   });
 
-  test("FK ∪ junction does not double-activate (Set dedup by id)", async () => {
+  test("double-bound (two links to the same persona) does not double-activate (Set dedup by id)", async () => {
     const { store } = await setup();
-    // Entity persona-FK AND persona-junction-linked simultaneously — must appear once.
-    const lb = await store.createLorebook({ name: "dual", scopeType: "entity", personaId: "persona_X" });
+    // One persona link twice would violate the composite PK — pin the dedup
+    // with persona + character links both matching the same chat instead.
+    const lb = await store.createLorebook({ name: "dual", scopeType: "entity" });
     await store.addLink(lb.id, "persona", "persona_X");
+    await store.addLink(lb.id, "character", "char_X");
     const active = await store.listAllActiveForChat("char_X", "persona_X", "chat_X");
     const hits = active.filter((a) => a.lorebook.id === lb.id);
     expect(hits.length).toBe(1);
   });
 
-  test("entity-FK lorebook of a DIFFERENT persona does not leak", async () => {
+  test("a lorebook linked to a DIFFERENT persona does not leak", async () => {
     const { store } = await setup();
-    await store.createLorebook({ name: "other-persona", scopeType: "entity", personaId: "persona_X" });
+    const lb = await store.createLorebook({ name: "other-persona", scopeType: "entity" });
+    await store.addLink(lb.id, "persona", "persona_X");
     // Query as persona_Y — must not activate.
     const active = await store.listAllActiveForChat("char_X", "persona_Y", "chat_X");
     expect(active.some((a) => a.lorebook.name === "other-persona")).toBe(false);
@@ -125,24 +139,26 @@ describe("LorebookStore.listAllActiveForChat (entity FK ∪ junction)", () => {
 
   test("disabled lorebook never activates", async () => {
     const { store } = await setup();
-    const lb = await store.createLorebook({ name: "off", scopeType: "entity", personaId: "persona_X", enabled: false });
+    const lb = await store.createLorebook({ name: "off", scopeType: "entity", enabled: false });
+    await store.addLink(lb.id, "persona", "persona_X");
     const active = await store.listAllActiveForChat("char_X", "persona_X", "chat_X");
     expect(active.some((a) => a.lorebook.id === lb.id)).toBe(false);
   });
 
-  test("listLorebooksByScope entity branch unions the typed FK home with junction links of EITHER target type", async () => {
+  test("listLorebooksByScope entity branch is links-only (either target type)", async () => {
     const { store } = await setup();
-    const fkOwned = await store.createLorebook({ name: "fk", scopeType: "entity", characterId: "char_X" });
+    const owned = await store.createLorebook({ name: "linked-owned", scopeType: "entity" });
+    await store.addLink(owned.id, "character", "char_X");
     const linkedChar = await store.createLorebook({ name: "linked-char", scopeType: "global" });
     await store.addLink(linkedChar.id, "character", "char_X");
     const linkedPersona = await store.createLorebook({ name: "linked-persona", scopeType: "global" });
     await store.addLink(linkedPersona.id, "persona", "char_X");
     const names = (await store.listLorebooksByScope("entity", "char_X")).map((l) => l.name);
-    expect(names).toContain("fk");
+    expect(names).toContain("linked-owned");
     expect(names).toContain("linked-char");
     expect(names).toContain("linked-persona");
-    // Persona view of the same owner id must not leak the character-FK home…
-    const personaView = (await store.listLorebooksByScope("entity", "char_Y")).map((l) => l.name);
-    expect(personaView).not.toContain("fk");
+    // An owner with no links sees nothing.
+    const strangerView = (await store.listLorebooksByScope("entity", "char_Z")).map((l) => l.name);
+    expect(strangerView).not.toContain("linked-owned");
   });
 });

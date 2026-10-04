@@ -133,9 +133,9 @@ export async function importPersonas(file: File): Promise<{ created: number; ski
 }
 
 // ─── Bound resources (PR-12) ────────────────────────────────────────────
-// Reverse-direction reads for the persona-editor binding field.
-// Lorebooks are M:N-linked via lorebook_links (links-only); scripts are
-// FK-owned via scripts.personaId.
+// Reverse-direction reads for the persona-editor binding field. Both are
+// M:N-linked (lorebook_links / script_links) — since migration 0107 links
+// are the only owner source.
 
 export async function listPersonaLorebooks(personaId: string): Promise<LorebookRecord[]> {
   const response = await client.api.personas[":personaId"].lorebooks.$get({ param: { personaId } });

@@ -222,6 +222,12 @@ export class CharacterRuntime {
     // R-13: profile links targeting this character die with it too (same policy
     // B — the PROFILE survives, its link to the deleted character must not).
     await this.deps.stores.regex.deleteProfileLinksForTarget(REGEX_TARGET_TYPE.Character, characterId);
+    // LORE_SCRIPT_OWNERS_AS_LINKS step 2: the character's lorebook and script
+    // LINK ROWS die with it (same polymorphic-target pattern as the regex
+    // links above); the books and scripts themselves SURVIVE for their other
+    // owners — an owner's deletion never deletes content.
+    await this.deps.stores.lorebooks.deleteLinksForTarget("character", characterId);
+    await this.deps.stores.scripts.deleteLinksForTarget("character", characterId);
     await this.deps.stores.characters.delete(typedCharacterId);
   }
 
@@ -473,7 +479,9 @@ export class CharacterRuntime {
       }
     }
 
-    // Duplicate character-scoped lorebooks
+    // Duplicate character-scoped lorebooks. Owners are links (migration 0107,
+    // LORE_SCRIPT_OWNERS_AS_LINKS step 1): the source set is the character's
+    // LINKED books, and each copy is bound to the new character by a link.
     const sourceLorebooks = await this.deps.stores.lorebooks.listLorebooksByScope("entity", characterId);
     for (const lb of sourceLorebooks) {
       const entries = await this.deps.stores.lorebooks.listEntries(lb.id);
@@ -481,11 +489,11 @@ export class CharacterRuntime {
         name: lb.name,
         description: lb.description,
         scopeType: "entity",
-        characterId: newCharacterId,
         scanDepth: lb.scanDepth,
         recursiveScanning: lb.recursiveScanning,
         enabled: lb.enabled,
       });
+      await this.deps.stores.lorebooks.addLink(newLb.id, "character", newCharacterId);
       await this.deps.stores.lorebooks.bulkCreateEntries(newLb.id, entries.map(e => ({
         keys: e.keys,
         secondaryKeys: e.secondaryKeys,
@@ -512,19 +520,20 @@ export class CharacterRuntime {
       })));
     }
 
-    // Duplicate character-scoped scripts
+    // Duplicate character-scoped scripts (owners are links — migration 0107;
+    // each copy is bound to the new character by a link).
     const sourceScripts = await this.deps.stores.scripts.listByScope("entity", characterId);
     for (const sc of sourceScripts) {
-      await this.deps.stores.scripts.create({
+      const copy = await this.deps.stores.scripts.create({
         name: sc.name,
         description: sc.description,
         code: sc.code,
         scriptKind: sc.scriptKind,
         scopeType: "entity",
-        characterId: newCharacterId,
         enabled: sc.enabled,
         sortOrder: sc.sortOrder,
       });
+      await this.deps.stores.scripts.addLink(copy.id, "character", newCharacterId);
     }
 
     const created = await this.deps.chatApp.createChat({

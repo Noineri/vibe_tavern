@@ -15,7 +15,7 @@ import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js
 
 useDomEnv();
 
-const { fireEvent, render } = await import("@testing-library/react");
+const { fireEvent, render, waitFor } = await import("@testing-library/react");
 
 // TopBar.test.tsx safe pattern: capture real exports first, spread, override.
 const realI18nContext = await import("../../i18n/context.js");
@@ -25,15 +25,16 @@ const realProviderProfiles = await import("../../hooks/use-provider-profiles.js"
 // Mutable viewport flag: the wizard branches on useIsMobile() at render time,
 // so one module mock can serve both the desktop and the mobile case.
 let isMobileViewport = false;
+let wizardProviderProfiles: unknown[] = [];
 
 mock.module("../../i18n/context.js", () => ({ ...realI18nContext, useT: () => ({ t: (key: string) => key }) }));
 mock.module("../../hooks/use-mobile.js", () => ({ ...realMobileHook, useIsMobile: () => isMobileViewport }));
 mock.module("../../hooks/use-provider-profiles.js", () => ({
 	...realProviderProfiles,
 	useProviderProfiles: () => ({
-		providerProfiles: [],
-		handleFetchModelsForProfile: mock(),
-		handleFetchModelsByEndpoint: mock(),
+		providerProfiles: wizardProviderProfiles,
+		handleFetchModelsForProfile: async () => [{ id: "wizard-model", label: "wizard-model" }],
+		handleFetchModelsByEndpoint: async () => [{ id: "wizard-model", label: "wizard-model" }],
 		handleTestProfileConnection: mock(),
 		handleTestDraftConnection: mock(),
 		handleTestChat: mock(),
@@ -73,6 +74,7 @@ async function renderAtPersonaStep() {
 
 beforeEach(() => {
 	isMobileViewport = false;
+	wizardProviderProfiles = [];
 	seedFirstRun();
 });
 
@@ -92,6 +94,23 @@ test("path selector: the ST-migrate path is absent on mobile and present on desk
 	const desktopView = render(createElement(SetupWizard, { onVisibilityChange: () => {} }));
 	expect(desktopView.getByText("wizard_path_b_title")).toBeTruthy();
 	desktopView.unmount();
+});
+
+test("provider wizard keeps local presets chip-free at its selector site", async () => {
+	wizardProviderProfiles = [{
+		id: "local-wizard",
+		name: "Local wizard",
+		providerPreset: "ollama",
+		endpoint: "http://localhost:11434",
+		defaultModel: "wizard-model",
+	}];
+	const view = render(createElement(SetupWizard, { onVisibilityChange: () => {} }));
+	fireEvent.click(view.getByText("wizard_path_a_title"));
+	await waitFor(() => {
+		expect(view.getByText("wizard-model")).toBeTruthy();
+	});
+	expect(view.queryByText("local_connection_unknown")).toBeNull();
+	view.unmount();
 });
 
 test("persona step: fields render with labels and controlled typing works", async () => {

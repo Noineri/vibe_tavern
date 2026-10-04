@@ -42,8 +42,10 @@ const names = (books: Array<{ name: string }>) => books.map((b) => b.name);
 describe("LorebookStore.listParticipatingForChat («Текущие»)", () => {
   test("character + persona + chat + enabled global books are all included", async () => {
     const { store } = await setup();
-    await store.createLorebook({ name: "char-book", scopeType: "entity", characterId: "char_X" });
-    await store.createLorebook({ name: "persona-book", scopeType: "entity", personaId: "persona_X" });
+    const charBook = await store.createLorebook({ name: "char-book", scopeType: "entity" });
+    await store.addLink(charBook.id, "character", "char_X");
+    const personaBook = await store.createLorebook({ name: "persona-book", scopeType: "entity" });
+    await store.addLink(personaBook.id, "persona", "persona_X");
     await store.createLorebook({ name: "chat-book", scopeType: "chat", chatId: "chat_X" });
     await store.createLorebook({ name: "global-on", scopeType: "global" });
 
@@ -64,8 +66,10 @@ describe("LorebookStore.listParticipatingForChat («Текущие»)", () => {
 
   test("disabled character / persona / chat books are included (attached — the toggle turns them on)", async () => {
     const { store } = await setup();
-    await store.createLorebook({ name: "char-off", scopeType: "entity", characterId: "char_X", enabled: false });
-    await store.createLorebook({ name: "persona-off", scopeType: "entity", personaId: "persona_X", enabled: false });
+    const charOff = await store.createLorebook({ name: "char-off", scopeType: "entity", enabled: false });
+    await store.addLink(charOff.id, "character", "char_X");
+    const personaOff = await store.createLorebook({ name: "persona-off", scopeType: "entity", enabled: false });
+    await store.addLink(personaOff.id, "persona", "persona_X");
     await store.createLorebook({ name: "chat-off", scopeType: "chat", chatId: "chat_X", enabled: false });
 
     const participating = names(await store.listParticipatingForChat("char_X", "persona_X", "chat_X"));
@@ -76,8 +80,10 @@ describe("LorebookStore.listParticipatingForChat («Текущие»)", () => {
 
   test("other characters' and other personas' books are excluded", async () => {
     const { store } = await setup();
-    await store.createLorebook({ name: "other-char", scopeType: "entity", characterId: "char_Y" });
-    await store.createLorebook({ name: "other-persona", scopeType: "entity", personaId: "persona_Y" });
+    const otherChar = await store.createLorebook({ name: "other-char", scopeType: "entity" });
+    await store.addLink(otherChar.id, "character", "char_Y");
+    const otherPersona = await store.createLorebook({ name: "other-persona", scopeType: "entity" });
+    await store.addLink(otherPersona.id, "persona", "persona_Y");
     await store.createLorebook({ name: "other-chat", scopeType: "chat", chatId: "chat_Y" });
 
     const participating = names(await store.listParticipatingForChat("char_X", "persona_X", "chat_X"));
@@ -88,15 +94,17 @@ describe("LorebookStore.listParticipatingForChat («Текущие»)", () => {
 
   test("links are honored: a book homed elsewhere but linked to this chat's owner participates", async () => {
     const { store } = await setup();
-    // Home FK = char_Y, junction link = the chat's persona → participates.
-    const crossLinked = await store.createLorebook({ name: "cross-linked", scopeType: "entity", characterId: "char_Y" });
+    // Owned by char_Y, additionally linked to the chat's persona → participates.
+    const crossLinked = await store.createLorebook({ name: "cross-linked", scopeType: "entity" });
+    await store.addLink(crossLinked.id, "character", "char_Y");
     await store.addLink(crossLinked.id, "persona", "persona_X");
     // Global book linked to the chat's character → participates through the
     // character binding even while disabled (most specific binding wins).
     const linkedGlobalOff = await store.createLorebook({ name: "linked-global-off", scopeType: "global", enabled: false });
     await store.addLink(linkedGlobalOff.id, "character", "char_X");
-    // Multi-binding: homed to char_X AND linked to persona_X — one row, both targets.
-    const multiBound = await store.createLorebook({ name: "multi-bound", scopeType: "entity", characterId: "char_X" });
+    // Multi-binding: linked to char_X AND persona_X — one row, both targets.
+    const multiBound = await store.createLorebook({ name: "multi-bound", scopeType: "entity" });
+    await store.addLink(multiBound.id, "character", "char_X");
     await store.addLink(multiBound.id, "persona", "persona_X");
 
     const participating = names(await store.listParticipatingForChat("char_X", "persona_X", "chat_X"));
@@ -110,11 +118,14 @@ describe("LorebookStore.listParticipatingForChat («Текущие»)", () => {
 
   test("pipeline parity: the same disabled bound books stay excluded from the activation read", async () => {
     const { store } = await setup();
-    await store.createLorebook({ name: "char-off", scopeType: "entity", characterId: "char_X", enabled: false });
-    await store.createLorebook({ name: "persona-off", scopeType: "entity", personaId: "persona_X", enabled: false });
+    const charOff = await store.createLorebook({ name: "char-off", scopeType: "entity", enabled: false });
+    await store.addLink(charOff.id, "character", "char_X");
+    const personaOff = await store.createLorebook({ name: "persona-off", scopeType: "entity", enabled: false });
+    await store.addLink(personaOff.id, "persona", "persona_X");
     await store.createLorebook({ name: "chat-off", scopeType: "chat", chatId: "chat_X", enabled: false });
     await store.createLorebook({ name: "global-off", scopeType: "global", enabled: false });
-    await store.createLorebook({ name: "char-on", scopeType: "entity", characterId: "char_X" });
+    const charOn = await store.createLorebook({ name: "char-on", scopeType: "entity" });
+    await store.addLink(charOn.id, "character", "char_X");
 
     const active = names((await store.listAllActiveForChat("char_X", "persona_X", "chat_X")).map((s) => s.lorebook));
     expect(active).toEqual(["char-on"]);

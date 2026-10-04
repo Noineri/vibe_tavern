@@ -8,12 +8,12 @@ import { useCoauthorProviderBinding } from "../../hooks/use-coauthor-provider-bi
 import { useProviderModels } from "../../hooks/use-provider-models.js";
 import { type ProviderSamplerOnChange, type ProviderSamplerValues } from "../../lib/provider-sampler-values.js";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
-import { loadCoauthorConnectionSettingsAction, loadFavoriteModelsAction, testProfileChatAction, toggleFavoriteModelAction, updateProviderProfileAction } from "../../stores/api-actions/provider-actions.js";
+import { loadCoauthorConnectionSettingsAction, loadFavoriteModelsAction, reorderCoauthorProviderProfilesAction, testProfileChatAction, toggleFavoriteModelAction, updateProviderProfileAction } from "../../stores/api-actions/provider-actions.js";
 import { MasterDetailModal } from "../shared/MasterDetailModal.js";
 import { ProviderProfileList } from "../settings/provider/ProviderProfileList.js";
 import { CoauthorModelSelector } from "../settings/provider/CoauthorModelSelector.js";
 import { ProviderSamplerPanel } from "../settings/provider/ProviderSamplerPanel.js";
-import { Icons } from "../shared/icons.js";
+import { ProviderTestHelloButton } from "../settings/provider/ProviderTestHelloButton.js";
 import { SearchInput } from "../shared/SearchInput.js";
 import { cn } from "../../lib/cn.js";
 
@@ -45,6 +45,7 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
   const isMobile = useIsMobile();
   const profiles = useProviderDataStore((state) => state.profiles);
   const favoritesByProfile = useProviderDataStore((state) => state.coauthorFavoritesByProfile);
+  const coauthorSettingsByProfile = useProviderDataStore((state) => state.coauthorSettingsByProfile);
   const resumeProfileId = useModalStore((state) => state.coauthorResumeProfileId);
   const consumeCoauthorResumeProfileId = useModalStore((state) => state.consumeCoauthorResumeProfileId);
   const binding = useCoauthorProviderBinding();
@@ -107,10 +108,22 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
   const selectedTransport = selectedProfile ? transportByProfile[selectedProfile.id] ?? selectedProfile.coauthorTransport ?? COAUTHOR_TRANSPORT.chatCompletions : COAUTHOR_TRANSPORT.chatCompletions;
   const selectedPreset = selectedProfile ? PROVIDER_PRESETS.find((preset) => preset.id === selectedProfile.providerPreset) : undefined;
   const samplerCapabilities = selectedProfile ? { samplers: resolveSamplerCapabilities(selectedProfile.providerPreset, selectedPreset?.type ?? PROVIDER_TYPE.openaiCompat) } : undefined;
+  useEffect(() => {
+    if (isOpen) void Promise.all(profiles.map((profile) => loadCoauthorConnectionSettingsAction(profile.id)));
+  }, [isOpen, profiles]);
+
+  const coauthorProfiles = useMemo(() => [...profiles].sort((left, right) => {
+    const leftOrder = coauthorSettingsByProfile[left.id]?.sortOrder;
+    const rightOrder = coauthorSettingsByProfile[right.id]?.sortOrder;
+    if (leftOrder !== null && leftOrder !== undefined && rightOrder !== null && rightOrder !== undefined) return leftOrder - rightOrder;
+    if (leftOrder !== null && leftOrder !== undefined) return -1;
+    if (rightOrder !== null && rightOrder !== undefined) return 1;
+    return 0;
+  }), [profiles, coauthorSettingsByProfile]);
   const filteredProfiles = useMemo(() => {
     const query = profileSearch.trim().toLowerCase();
-    return !query ? profiles : profiles.filter((profile) => profile.name.toLowerCase().includes(query) || profile.providerPreset.toLowerCase().includes(query));
-  }, [profileSearch, profiles]);
+    return !query ? coauthorProfiles : coauthorProfiles.filter((profile) => profile.name.toLowerCase().includes(query) || profile.providerPreset.toLowerCase().includes(query));
+  }, [profileSearch, coauthorProfiles]);
   const dirty = selectedProfileId !== binding.profileId || (form !== null && baseline !== null && JSON.stringify(form) !== JSON.stringify(baseline));
   const canSave = Boolean(selectedProfileId && form?.model && dirty && !saving);
 
@@ -186,7 +199,7 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
     detailClassName={isMobile ? "p-4" : "p-5"}
     headerClassName={isMobile ? "px-3 py-2.5" : "px-6 pt-5 pb-4"}
     headerActions={<button type="button" className="font-ui text-[12px] font-medium text-t3 transition-colors hover:text-t1" onClick={() => { onClose(); onOpenProviderModal(); }}>{t("coauthor.provider.manage_connections")}</button>}
-    masterContent={() => <ProviderProfileList profiles={profiles} filteredProfiles={filteredProfiles} editingId={selectedProfileId} activeProfileId={binding.profileId} profileSearch={profileSearch} onProfileSearchChange={setProfileSearch} onSelectProfile={handleSelectProfile} selectionOnly />}
+    masterContent={() => <ProviderProfileList profiles={coauthorProfiles} filteredProfiles={filteredProfiles} editingId={selectedProfileId} activeProfileId={binding.profileId} profileSearch={profileSearch} onProfileSearchChange={setProfileSearch} onSelectProfile={handleSelectProfile} onReorder={(updates) => reorderCoauthorProviderProfilesAction(updates)} selectionOnly />}
     detailContent={!selectedProfile ? <div className="flex h-full items-center justify-center font-ui text-[13px] text-t3">{profiles.length === 0 ? t("coauthor.provider.no_profiles") : t("coauthor.provider.select_profile")}</div> : <div className="flex min-h-full flex-col gap-4">
       <div className="shrink-0 rounded-lg border border-border bg-s2 px-4 py-3"><div className="font-ui text-[13px] font-medium text-t1">{selectedProfile.name}</div><div className="mt-0.5 font-ui text-[11px] text-t4">{selectedProfile.endpoint}</div></div>
       <div className="shrink-0 rounded-lg border border-border bg-s2 px-4 py-3">
@@ -196,8 +209,8 @@ export function CoauthorProviderModal({ isOpen, onClose, onOpenProviderModal }: 
       </div>
       {form ? <>
         <CoauthorModelSelector values={form} models={models} fetching={modelsLoading} fetchError={modelsError} modelSearch={modelSearch} modelListOpen={modelListOpen} favoriteModels={favorites} onChange={updateModelForm} onFetchModels={refreshModels} setModelSearch={setModelSearch} setModelListOpen={setModelListOpen} onToggleFavoriteModel={(model) => void handleToggleFavorite(model)} />
+        {form.model && <ProviderTestHelloButton className="shrink-0 mt-2 mb-4" testing={testing} result={testResult} onTest={() => void handleTest()} replyWrapperClassName="mt-2" errorWrapperClassName="mt-2" />}
         <ProviderSamplerPanel values={form} onChange={updateForm} showTokenPadding={false} capabilities={samplerCapabilities} />
-        {form.model && <div className="shrink-0"><button type="button" disabled={testing} onClick={() => void handleTest()} className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50">{testing ? t("sending") : t("test_hi_btn")}</button>{testResult?.reply && <div className="mt-2"><span className="inline-flex rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] italic text-success">&ldquo;{testResult.reply.length > 200 ? `${testResult.reply.slice(0, 200)}...` : testResult.reply}&rdquo;</span></div>}{testResult?.error && <div className="mt-2"><span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close /> {testResult.error}</span></div>}</div>}
       </> : <div className="py-6 text-center font-ui text-[12px] text-t4">{t("loading")}</div>}
     </div>}
     footer={<div data-testid="coauthor-modal-footer" className={cn("flex shrink-0 items-center justify-end gap-2 border-t border-border", isMobile ? "px-4 py-3" : "px-6 py-4")}><button type="button" className="rounded-md px-3 py-1.5 font-ui text-[12px] font-medium text-t3 transition-colors hover:bg-s2 hover:text-t1" onClick={onClose}>{t("cancel")}</button><button type="button" disabled={!canSave} onClick={() => void handleSave()} className={cn("rounded-md px-4 py-1.5 font-ui text-[12px] font-medium transition-colors", canSave ? "bg-accent text-accent-t hover:bg-accent/90" : "cursor-not-allowed bg-s3 text-t4")}>{saving ? t("saving") : t("coauthor.provider.use_for_coauthor")}</button></div>}

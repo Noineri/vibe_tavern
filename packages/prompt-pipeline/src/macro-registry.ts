@@ -15,6 +15,7 @@
  *   {{random::a::b::c}}          — random choice
  *   {{roll::1d20}}               — dice roll
  *   {{if condition}}...{{else}}...{{/if}}  — conditional block
+ *   {{trim}}...{{/trim}}                   — trim scoped content
  *   <USER> / <BOT> / <CHAR>      — legacy markers
  *
  * Variable state persists across all resolve() calls on the same engine
@@ -24,6 +25,20 @@
 import type { PromptVariableContext } from "./prompt-variable-context.js";
 import type { PronounForms } from "@vibe-tavern/domain";
 import { resolvePronounForms } from "./pronoun-forms.js";
+import { createRandomMacroResolvers } from "./random-macro-resolvers.js";
+import { splitMacroArgs } from "./macro-argument-parser.js";
+import { findTrimClose, removeTrimmedLineBreaks, TRIM_LINE_BREAK_MARKER } from "./macro-trim.js";
+import { MacroVariableScope } from "./macro-variable-scope.js";
+import { createVariableMacroResolvers, resolveVariableShorthand } from "./variable-macro-resolvers.js";
+import { registerCharacterMacroResolvers } from "./macro-character-resolvers.js";
+import { registerStaticTextMacroResolvers } from "./macro-static-text-resolvers.js";
+export { getMacroCatalog } from "./macro-catalog.js";
+
+/** Macro resolvers whose values are frozen when a greeting or user message is written. */
+export const VOLATILE_MACRO_NAMES = new Set([
+  "random", "pick", "roll", "time", "date", "weekday", "isotime", "isodate",
+  "datetimeformat", "idleduration", "timediff",
+]);
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -58,14 +73,16 @@ export interface MacroResolver {
   category?: MacroCategory;
   /**
    * Resolve this macro. Args are the ::-separated arguments (name excluded).
-   * resolveNested can be called to resolve nested macros in a string.
+   * resolveNested can be called to resolve nested macros in a string. sourceOffset
+   * is the macro's character offset in the source text being resolved.
    */
   resolve: (
     args: string[],
     context: PromptVariableContext,
     state: MacroResolutionState,
-    variables: Map<string, string>,
+    variables: MacroVariableScope,
     resolveNested: (text: string) => string,
+    sourceOffset: number,
   ) => string;
 }
 
@@ -80,7 +97,7 @@ export interface MacroCatalogEntry {
 
 // ─── Tokenizer ─────────────────────────────────────────────────────────
 
-type TokenType = "text" | "macro" | "ifOpen" | "else" | "ifClose";
+type TokenType = "text" | "macro" | "ifOpen" | "else" | "ifClose" | "trimClose";
 
 interface Token {
   type: TokenType;
@@ -90,6 +107,8 @@ interface Token {
   args: string[];
   /** Original text span in input (for reconstruction). */
   raw: string;
+  /** Character offset of the token's opening delimiter in its source text. */
+  offset?: number;
 }
 
 /**
@@ -179,11 +198,18 @@ function tokenize(input: string): Token[] {
 
     // Extract inner content
     const inner = input.slice(innerStart, scan);
+    const macroOffset = pos;
     const fullMatch = input.slice(pos, scan + 2);
     pos = scan + 2;
 
     // Comment: {{// ...}}
     if (inner.startsWith("//")) {
+      continue;
+    }
+
+    // {{/trim}}
+    if (inner.trim() === "/trim") {
+      tokens.push({ type: "trimClose", value: "/trim", args: [], raw: fullMatch });
       continue;
     }
 
@@ -203,13 +229,13 @@ function tokenize(input: string): Token[] {
     const ifMatch = inner.match(/^\s*if(?:::?\s*|\s+)(.*)/i);
     if (ifMatch) {
       const condition = ifMatch[1].trim();
-      tokens.push({ type: "ifOpen", value: "if", args: [condition], raw: fullMatch });
+      tokens.push({ type: "ifOpen", value: "if", args: [condition], raw: fullMatch, offset: macroOffset });
       continue;
     }
 
     // Regular macro: {{name}} or {{name::arg1::arg2}} or {{name:arg1,arg2}}
     const parts = splitMacroArgs(inner);
-    tokens.push({ type: "macro", value: parts[0], args: parts.slice(1), raw: fullMatch });
+    tokens.push({ type: "macro", value: parts[0], args: parts.slice(1), raw: fullMatch, offset: macroOffset });
   }
 
   return tokens;
@@ -231,52 +257,10 @@ export function extractMacroNames(input: string): string[] {
   return [...names];
 }
 
-/**
- * Split macro inner text by :: separator.
- * "setvar::x::hello world" → ["setvar", "x", "hello world"]
- * Also handles single : for legacy syntax: "random:a,b,c" → ["random", "a,b,c"]
- * Respects escaped colons \:
- */
-function splitMacroArgs(inner: string): string[] {
-  const parts: string[] = [];
-  let current = "";
-  let i = 0;
-  while (i < inner.length) {
-    if (inner[i] === "\\" && i + 1 < inner.length && inner[i + 1] === ":") {
-      current += ":";
-      i += 2;
-    } else if (inner[i] === ":" && i + 1 < inner.length && inner[i + 1] === ":") {
-      parts.push(current.trim());
-      current = "";
-      i += 2;
-    } else {
-      current += inner[i];
-      i++;
-    }
-  }
-  // If we have accumulated content and there was a single : before it
-  // (legacy format like "random:a,b,c")
-  const trimmed = current.trim();
-  // Check for legacy single-colon syntax: name:value
-  if (parts.length === 0) {
-    const colonIdx = trimmed.indexOf(":");
-    if (colonIdx > 0) {
-      // "random:a,b,c" → ["random", "a,b,c"]
-      // But only if the part before : looks like a macro name
-      const possibleName = trimmed.slice(0, colonIdx).trim();
-      if (/^[A-Za-z][A-Za-z0-9_]*$/.test(possibleName)) {
-        return [possibleName, trimmed.slice(colonIdx + 1).trim()];
-      }
-    }
-  }
-  parts.push(trimmed);
-  return parts;
-}
-
 // ─── AST Nodes ──────────────────────────────────────────────────────────
 
 interface TextNode { kind: "text"; value: string }
-interface MacroNode { kind: "macro"; name: string; args: string[] }
+interface MacroNode { kind: "macro"; name: string; args: string[]; raw: string; offset: number }
 interface IfNode {
   kind: "if";
   condition: string;
@@ -284,7 +268,14 @@ interface IfNode {
   elseBranch: AstNode[] | null;
 }
 
-type AstNode = TextNode | MacroNode | IfNode;
+interface TrimNode {
+  kind: "trim";
+  content: AstNode[];
+  openRaw: string;
+  closeRaw: string;
+}
+
+type AstNode = TextNode | MacroNode | IfNode | TrimNode;
 
 // ─── Parser ─────────────────────────────────────────────────────────────
 
@@ -302,7 +293,21 @@ function parse(tokens: Token[], start: number, end: number): AstNode[] {
       nodes.push({ kind: "text", value: token.value });
       i++;
     } else if (token.type === "macro") {
-      nodes.push({ kind: "macro", name: normalizeName(token.value), args: token.args });
+      const name = normalizeName(token.value);
+      if (name === "trim") {
+        const trimClose = findTrimClose(tokens, i + 1, end);
+        if (trimClose !== -1) {
+          nodes.push({
+            kind: "trim",
+            content: parse(tokens, i + 1, trimClose),
+            openRaw: token.raw,
+            closeRaw: tokens[trimClose].raw,
+          });
+          i = trimClose + 1;
+          continue;
+        }
+      }
+      nodes.push({ kind: "macro", name, args: token.args, raw: token.raw, offset: token.offset ?? 0 });
       i++;
     } else if (token.type === "ifOpen") {
       // Find matching else and /if
@@ -321,7 +326,7 @@ function parse(tokens: Token[], start: number, end: number): AstNode[] {
         nodes.push({ kind: "if", condition: token.args[0], thenBranch, elseBranch });
         i = ifClose + 1;
       }
-    } else if (token.type === "else" || token.type === "ifClose") {
+    } else if (token.type === "else" || token.type === "ifClose" || token.type === "trimClose") {
       // These are handled by the ifOpen parser — shouldn't be reached at top level.
       // Treat as text.
       nodes.push({ kind: "text", value: token.raw });
@@ -367,8 +372,9 @@ function evaluate(
   resolvers: Map<string, MacroResolver>,
   context: PromptVariableContext,
   state: MacroResolutionState,
-  variables: Map<string, string>,
+  variables: MacroVariableScope,
   resolveNested: (text: string) => string,
+  shouldResolve: ((resolver: MacroResolver) => boolean) | undefined,
 ): string {
   let result = "";
   for (const node of nodes) {
@@ -377,19 +383,31 @@ function evaluate(
         result += node.value;
         break;
       case "macro":
-        result += resolveMacro(node.name, node.args, resolvers, context, state, variables, resolveNested);
+        result += resolveMacro(node.name, node.args, node.raw, node.offset, resolvers, context, state, variables, resolveNested, shouldResolve);
         break;
       case "if": {
         // Resolve the condition first
         const rawCondition = resolveNested(node.condition);
         const negate = rawCondition.startsWith("!");
         const condition = negate ? rawCondition.slice(1).trim() : rawCondition;
-        let isTruthy = condition !== "" && !isFalseBoolean(condition);
+        const variableCondition = resolveVariableShorthand(condition, [], variables);
+        const resolvedCondition = variableCondition ?? condition;
+        let isTruthy = resolvedCondition !== "" && !isFalseBoolean(resolvedCondition);
         if (negate) isTruthy = !isTruthy;
         if (isTruthy) {
-          result += evaluate(node.thenBranch, resolvers, context, state, variables, resolveNested);
+          result += evaluate(node.thenBranch, resolvers, context, state, variables, resolveNested, shouldResolve);
         } else if (node.elseBranch) {
-          result += evaluate(node.elseBranch, resolvers, context, state, variables, resolveNested);
+          result += evaluate(node.elseBranch, resolvers, context, state, variables, resolveNested, shouldResolve);
+        }
+        break;
+      }
+      case "trim": {
+        const resolver = resolvers.get("trim");
+        const content = evaluate(node.content, resolvers, context, state, variables, resolveNested, shouldResolve);
+        if (resolver && shouldResolve && !shouldResolve(resolver)) {
+          result += `${node.openRaw}${content}${node.closeRaw}`;
+        } else {
+          result += content.trim();
         }
         break;
       }
@@ -401,14 +419,25 @@ function evaluate(
 function resolveMacro(
   name: string,
   args: string[],
+  raw: string,
+  offset: number,
   resolvers: Map<string, MacroResolver>,
   context: PromptVariableContext,
   state: MacroResolutionState,
-  variables: Map<string, string>,
+  variables: MacroVariableScope,
   resolveNested: (text: string) => string,
+  shouldResolve: ((resolver: MacroResolver) => boolean) | undefined,
 ): string {
   const resolver = resolvers.get(name);
   if (!resolver) {
+    // Selective volatile resolution must leave shorthand live in stored
+    // messages, just like named non-volatile variable macros.
+    if (shouldResolve && /^[.$][A-Za-z_]/.test(name)) return raw;
+    const shorthand = resolveVariableShorthand(name, args, variables);
+    if (shorthand != null) return shorthand;
+    // Space-separated arguments cannot be distinguished from an unknown macro
+    // name after parsing. Preserve the original literal form for that syntax.
+    if (/^\{\{\s*[^\s:]+\s+/.test(raw)) return raw;
     // Unknown macro — resolve any nested macros in args, then reconstruct
     const resolvedArgs = args.map(resolveNested);
     if (resolvedArgs.length === 0) {
@@ -417,9 +446,11 @@ function resolveMacro(
     return `{{${name}::${resolvedArgs.join("::")}}}`;
   }
 
+  if (shouldResolve && !shouldResolve(resolver)) return raw;
+
   // Resolve nested macros in args before passing to resolver
   const resolvedArgs = args.map(resolveNested);
-  return resolver.resolve(resolvedArgs, context, state, variables, resolveNested);
+  return resolver.resolve(resolvedArgs, context, state, variables, resolveNested, offset);
 }
 
 function isFalseBoolean(value: string): boolean {
@@ -431,6 +462,8 @@ function isFalseBoolean(value: string): boolean {
 
 export class MacroEngine {
   private readonly resolvers = new Map<string, MacroResolver>();
+
+  constructor(private readonly variableScope = new MacroVariableScope()) {}
 
   register(resolver: MacroResolver): this {
     this.resolvers.set(normalizeName(resolver.name), resolver);
@@ -445,30 +478,40 @@ export class MacroEngine {
    * Variables are shared across calls on this engine instance.
    */
   resolve(text: string, context: PromptVariableContext): string {
+    return this.resolveWith(text, context);
+  }
+
+  /** Resolve only resolvers selected by name, preserving all other macro text verbatim. */
+  resolveSelected(text: string, context: PromptVariableContext, names: ReadonlySet<string>): string {
+    return this.resolveWith(text, context, (resolver) => names.has(normalizeName(resolver.name)));
+  }
+
+  private resolveWith(
+    text: string,
+    context: PromptVariableContext,
+    shouldResolve?: (resolver: MacroResolver) => boolean,
+  ): string {
     if (!text) return text;
 
     const state: MacroResolutionState = { didUseOriginal: false };
-    const variables = this.variables;
+    const variables = this.variableScope;
 
     // Recursive resolve — used for nested content
     const resolveNested = (t: string): string => {
       if (!t) return t;
       const tokens = tokenize(t);
       const ast = parse(tokens, 0, tokens.length);
-      return evaluate(ast, this.resolvers, context, state, variables, resolveNested);
+      return evaluate(ast, this.resolvers, context, state, variables, resolveNested, shouldResolve);
     };
 
     const tokens = tokenize(text);
     const ast = parse(tokens, 0, tokens.length);
-    return evaluate(ast, this.resolvers, context, state, variables, resolveNested);
+    return removeTrimmedLineBreaks(evaluate(ast, this.resolvers, context, state, variables, resolveNested, shouldResolve));
   }
-
-  /** Shared variable state for this engine instance. */
-  private readonly variables = new Map<string, string>();
 
   /** Reset variable state. Call between prompt assembly passes. */
   resetVariables(): void {
-    this.variables.clear();
+    this.variableScope.reset();
   }
 
   /**
@@ -496,17 +539,6 @@ export class MacroEngine {
   }
 }
 
-/**
- * The full macro catalog (all user-facing resolvers), derived from a fresh full
- * engine and cached (the registry is static after module load). Used by the
- * editor autocomplete and to derive the Co-Author's allowed subset.
- */
-let macroCatalogCache: MacroCatalogEntry[] | null = null;
-export function getMacroCatalog(): MacroCatalogEntry[] {
-  if (macroCatalogCache == null) macroCatalogCache = createFullMacroEngine().catalog();
-  return macroCatalogCache;
-}
-
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 const normalizeName = (name: string): string => name.toLowerCase();
@@ -518,30 +550,10 @@ const firstDefined = (...values: Array<string | number | null | undefined>): str
   return undefined;
 };
 
-// ─── Dice Roller ────────────────────────────────────────────────────────
-
-/**
- * Roll dice: "1d20" → { rolls: [14], total: 14 }, "3d6+4" → { rolls: [3,5,2], total: 14 }
- */
-function rollDice(formula: string): { total: number } | null {
-  const match = formula.match(/^(\d+)?d(\d+)([+-]\d+)?$/i);
-  if (!match) return null;
-  const count = Math.max(1, parseInt(match[1] || "1", 10));
-  const sides = parseInt(match[2], 10);
-  const modifier = parseInt(match[3] || "0", 10);
-  if (sides < 2 || count > 100) return null;
-
-  let total = modifier;
-  for (let i = 0; i < count; i++) {
-    total += Math.floor(Math.random() * sides) + 1;
-  }
-  return { total };
-}
-
 // ─── Built-in Macro Registrations ───────────────────────────────────────
 
-export function createPhaseOneMacroEngine(): MacroEngine {
-  return new MacroEngine()
+export function createPhaseOneMacroEngine(variableScope?: MacroVariableScope): MacroEngine {
+  return new MacroEngine(variableScope)
 
     // ─── Identity / Context ───────────────────────────────────────────
 
@@ -561,8 +573,8 @@ export function createPhaseOneMacroEngine(): MacroEngine {
  * Create the full macro engine with all built-in macros.
  * This replaces createPhaseOneMacroEngine for the new parser.
  */
-export function createFullMacroEngine(): MacroEngine {
-  const engine = new MacroEngine();
+export function createFullMacroEngine(variableScope?: MacroVariableScope): MacroEngine {
+  const engine = new MacroEngine(variableScope);
 
   // ─── Identity ──────────────────────────────────────────────────────
 
@@ -679,73 +691,13 @@ export function createFullMacroEngine(): MacroEngine {
 
   // ─── Character fields ──────────────────────────────────────────────
 
-  engine.register({
-    name: "description",
-    aliases: ["charDescription"],
-    description: "The character's description field.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.description ?? "",
-  });
-
-  engine.register({
-    name: "personality",
-    aliases: ["charPersonality"],
-    description: "The character's personality field.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.personality ?? "",
-  });
-
-  engine.register({
-    name: "scenario",
-    aliases: ["charScenario"],
-    description: "The character's scenario field.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.scenario ?? "",
-  });
-
-  engine.register({
-    name: "mesExamplesRaw",
-    aliases: ["mesExamples"],
-    description: "The character's example dialogue, raw text.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.mesExample ?? "",
-  });
-
-  engine.register({
-    name: "charFirstMessage",
-    aliases: ["greeting"],
-    description: "The character's first message / greeting.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.firstMessage ?? "",
-  });
-
-  engine.register({
-    name: "charCreatorNotes",
-    aliases: ["creatorNotes"],
-    description: "The character's creator notes.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.creatorNotes ?? "",
-  });
-
-  engine.register({
-    name: "charDepthPrompt",
-    description: "The character's depth-prompt.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.depthPrompt ?? "",
-  });
-
-  engine.register({
-    name: "charVersion",
-    aliases: ["version", "char_version"],
-    description: "The character's version string.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.version?.title ?? "",
-  });
+  registerCharacterMacroResolvers(engine.register.bind(engine), MacroCategory);
 
   // ─── Chat context ──────────────────────────────────────────────────
 
   engine.register({
     name: "lastChatMessage",
+    aliases: ["lastMessage"],
     description: "The last message in the chat (any role).",
     category: MacroCategory.Chat,
     resolve: (_args, context) => context.chat.lastMessage ?? "",
@@ -808,12 +760,6 @@ export function createFullMacroEngine(): MacroEngine {
   // ─── Time ──────────────────────────────────────────────────────────
 
   engine.register({
-    name: "time",
-    description: "Current local time (e.g. 10:30 PM).",
-    category: MacroCategory.Time,
-    resolve: (_args, context) => context.time.time,
-  });
-  engine.register({
     name: "date",
     description: "Current local date.",
     category: MacroCategory.Time,
@@ -838,6 +784,8 @@ export function createFullMacroEngine(): MacroEngine {
     resolve: (_args, context) => context.time.isodate,
   });
 
+  registerStaticTextMacroResolvers(engine.register.bind(engine), MacroCategory);
+
   // ─── Utility ───────────────────────────────────────────────────────
 
   engine.register({
@@ -859,6 +807,13 @@ export function createFullMacroEngine(): MacroEngine {
     description: "Resolves to nothing (strips itself).",
     category: MacroCategory.Utility,
     resolve: () => "",
+  });
+
+  engine.register({
+    name: "trim",
+    description: "Remove surrounding line breaks, or trim scoped content.",
+    category: MacroCategory.Utility,
+    resolve: () => TRIM_LINE_BREAK_MARKER,
   });
 
   engine.register({
@@ -888,132 +843,13 @@ export function createFullMacroEngine(): MacroEngine {
     },
   });
 
-  // ─── Variables (local, per-assembly) ───────────────────────────────
+  // ─── Variables (local and global, per-assembly) ─────────────────────
 
-  engine.register({
-    name: "setvar",
-    description: "Set a local variable: {{setvar::name::value}}.",
-    category: MacroCategory.Variables,
-    resolve: (args, _ctx, _state, variables) => {
-      const name = args[0] ?? "";
-      const value = args[1] ?? "";
-      if (name) variables.set(name, value);
-      return "";
-    },
-  });
-
-  engine.register({
-    name: "getvar",
-    description: "Read a local variable, with optional fallback: {{getvar::name::fallback}}.",
-    category: MacroCategory.Variables,
-    resolve: (args, _ctx, _state, variables) => {
-      const name = args[0] ?? "";
-      const fallback = args[1] ?? "";
-      if (!name) return fallback;
-      return variables.has(name) ? (variables.get(name) ?? "") : fallback;
-    },
-  });
-
-  engine.register({
-    name: "addvar",
-    description: "Append (or numerically add to) a local variable.",
-    category: MacroCategory.Variables,
-    resolve: (args, _ctx, _state, variables) => {
-      const name = args[0] ?? "";
-      const value = args[1] ?? "";
-      if (!name) return "";
-      const existing = variables.get(name) ?? "0";
-      const existingNum = Number(existing);
-      const addNum = Number(value);
-      if (!isNaN(existingNum) && !isNaN(addNum)) {
-        variables.set(name, String(existingNum + addNum));
-      } else {
-        variables.set(name, existing + value);
-      }
-      return "";
-    },
-  });
-
-  engine.register({
-    name: "incvar",
-    description: "Increment a numeric variable and emit the new value.",
-    category: MacroCategory.Variables,
-    resolve: (args, _ctx, _state, variables) => {
-      const name = args[0] ?? "";
-      if (!name) return "0";
-      const current = Number(variables.get(name) ?? "0");
-      const next = current + 1;
-      variables.set(name, String(next));
-      return String(next);
-    },
-  });
-
-  engine.register({
-    name: "decvar",
-    description: "Decrement a numeric variable and emit the new value.",
-    category: MacroCategory.Variables,
-    resolve: (args, _ctx, _state, variables) => {
-      const name = args[0] ?? "";
-      if (!name) return "0";
-      const current = Number(variables.get(name) ?? "0");
-      const next = current - 1;
-      variables.set(name, String(next));
-      return String(next);
-    },
-  });
-
-  engine.register({
-    name: "hasvar",
-    aliases: ["varexists"],
-    description: "Whether a variable exists (true / false).",
-    category: MacroCategory.Variables,
-    resolve: (args, _ctx, _state, variables) => {
-      return variables.has(args[0] ?? "") ? "true" : "false";
-    },
-  });
-
-  engine.register({
-    name: "deletevar",
-    aliases: ["flushvar"],
-    description: "Delete a local variable.",
-    category: MacroCategory.Variables,
-    resolve: (args, _ctx, _state, variables) => {
-      variables.delete(args[0] ?? "");
-      return "";
-    },
-  });
+  for (const resolver of createVariableMacroResolvers()) engine.register(resolver);
 
   // ─── Random ────────────────────────────────────────────────────────
 
-  engine.register({
-    name: "random",
-    description: "Pick one option at random: {{random::a::b::c}} or {{random:a,b,c}}.",
-    category: MacroCategory.Random,
-    resolve: (args) => {
-      // {{random::a::b::c}} → args = ["a", "b", "c"]
-      // {{random:a,b,c}} → args = ["a,b,c"] (legacy single-arg form)
-      let items = args;
-      if (args.length === 1 && args[0].includes(",")) {
-        items = args[0].split(",").map(s => s.trim());
-      }
-      if (items.length === 0) return "";
-      return items[Math.floor(Math.random() * items.length)];
-    },
-  });
-
-  engine.register({
-    name: "roll",
-    description: "Roll dice and emit the total: {{roll::1d20}}, {{roll::3d6+2}}.",
-    category: MacroCategory.Random,
-    resolve: (args) => {
-      const formula = args[0]?.trim() ?? "";
-      if (!formula) return "";
-      // "d20" → "1d20"
-      const normalized = /^d\d+/i.test(formula) ? "1" + formula : formula;
-      const result = rollDice(normalized);
-      return result ? String(result.total) : "";
-    },
-  });
+  for (const resolver of createRandomMacroResolvers()) engine.register(resolver);
 
   // ─── Banned words (collected for logit bias) ───────────────────────
 

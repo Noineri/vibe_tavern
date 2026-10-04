@@ -183,6 +183,7 @@ export interface CoauthorConnectionSettingsRecord {
 	providerProfileId: string;
 	modelName: string | null;
 	settings: ModelSettingsOverlay;
+	sortOrder?: number | null;
 	createdAt: string;
 	updatedAt: string;
 }

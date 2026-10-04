@@ -8,6 +8,7 @@ import { Dropzone } from "../shared/dropzone.js";
 import { InlineRenameInput } from "../shared/InlineRenameInput.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock, type VibeTavernPresetExtension } from "@vibe-tavern/import-export";
+import { findDroppedStMacroWarnings } from "@vibe-tavern/prompt-pipeline";
 import { inferSlot } from "@vibe-tavern/domain";
 import type { CustomInjection, PromptOrderEntry, PromptSlot } from "@vibe-tavern/domain";
 
@@ -115,6 +116,25 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
       return ai - bi;
     });
     return infos;
+  }, [parsed]);
+
+  // st-macro-parity step 8: warn about ST macros VT deliberately does not
+  // support (the report's dropped list, e.g. {{wiBefore}}). "Supported" is
+  // decided by the prompt-pipeline checker against the one macro registry.
+  const macroWarnings = useMemo(() => {
+    if (!parsed) return [];
+    const texts = parsed.blocks.map((block) => block.content);
+    const vt = parsed.vibeTavern;
+    if (vt) {
+      // VT exports embed the full DTO under _vibe_tavern, and prompts[] omits
+      // prefill — so the DTO's user-content fields are scanned too (the
+      // checker dedups macro names across texts).
+      texts.push(
+        vt.system, vt.jailbreak, vt.prefill, vt.nsfw, vt.enhanceDefinitions,
+        vt.authorsNote, ...vt.customInjections.map((inj) => inj.content),
+      );
+    }
+    return findDroppedStMacroWarnings(texts);
   }, [parsed]);
 
   // Counts per target
@@ -257,6 +277,21 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
                 {counts.injection > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.injection.cls)}>{counts.injection} {t("preset_cat_injection")}</span>}
               </div>
             </div>
+
+            {/* Dropped-ST-macro import warnings (st-macro-parity step 8) —
+                the warning strip idiom (cf. ExperienceEditor's header strip);
+                advisory, so the warning family, not danger. */}
+            {macroWarnings.length > 0 && (
+              <div className={cn("border-b border-warning/40 bg-warning-dim/30 px-5 py-2", !isMobile && "shrink-0")}>
+                <ul>
+                  {macroWarnings.map((warning) => (
+                    <li key={warning} className="font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.4] text-warning-text">
+                      {warning}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* Block list */}
             <div className={cn(!isMobile && "flex-1 overflow-y-auto")}>

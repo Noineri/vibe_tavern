@@ -239,7 +239,9 @@ describe("Co-Author Apply RPC — lore bundle (CTX-L2)", () => {
 		const lb = await env.stores.lorebooks.getLorebook("lorebook_draft1");
 		expect(lb).not.toBeNull();
 		expect(lb!.name).toBe("World Lore");
-		expect(lb!.characterId).toBe(env.characterId);
+		// Owners are links (migration 0107): the Apply binds the character by lorebook_links.
+		expect(lb!.characterId).toBeNull();
+		expect((await env.stores.lorebooks.getLinks("lorebook_draft1")).map((l) => `${l.targetType}:${l.targetId}`)).toEqual([`character:${env.characterId}`]);
 		const entry = await env.stores.lorebooks.getEntry("lore_entry_draft1");
 		expect(entry!.title).toBe("Castle");
 	});

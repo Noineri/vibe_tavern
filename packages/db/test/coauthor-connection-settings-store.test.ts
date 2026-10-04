@@ -71,6 +71,45 @@ describe("CoauthorConnectionSettingsStore", () => {
     expect(replaced.settings.maxTokens).toBe(4_000);
   });
 
+  test("Co-Author reorder persists across a fresh store and leaves RP sortOrder untouched", async () => {
+    const rpBefore = await providers.listAll();
+    await store.reorder([
+      { id: otherProfileId, sortOrder: 0 },
+      { id: profileId, sortOrder: 1 },
+    ]);
+
+    const reloadedStore = new CoauthorConnectionSettingsStore(db);
+    expect((await reloadedStore.getByProviderId(otherProfileId))!.sortOrder).toBe(0);
+    expect((await reloadedStore.getByProviderId(profileId))!.sortOrder).toBe(1);
+    expect((await providers.listAll()).map((profile) => profile.sortOrder)).toEqual(rpBefore.map((profile) => profile.sortOrder));
+  });
+
+  test("RP reorder changes only RP sortOrder and keeps the Co-Author order", async () => {
+    await store.reorder([
+      { id: otherProfileId, sortOrder: 0 },
+      { id: profileId, sortOrder: 1 },
+    ]);
+    await providers.reorder([
+      { id: profileId, sortOrder: 0 },
+      { id: otherProfileId, sortOrder: 1 },
+    ]);
+
+    expect((await providers.listAll()).map((profile) => profile.id)).toEqual([profileId, otherProfileId]);
+    expect((await store.getByProviderId(otherProfileId))!.sortOrder).toBe(0);
+    expect((await store.getByProviderId(profileId))!.sortOrder).toBe(1);
+  });
+
+  test("deleting a reordered provider cascades its stale Co-Author position away", async () => {
+    await store.reorder([
+      { id: profileId, sortOrder: 0 },
+      { id: otherProfileId, sortOrder: 1 },
+    ]);
+    await providers.delete(profileId);
+
+    expect(await store.getByProviderId(profileId)).toBeNull();
+    expect((await store.list()).map((row) => row.providerProfileId)).toEqual([otherProfileId]);
+  });
+
   test("per-connection independence: one profile's set never touches another", async () => {
     await store.upsert(profileId, { modelName: "model-a", settings: { maxTokens: 111 } });
     await store.upsert(otherProfileId, { modelName: "model-b", settings: { maxTokens: 222 } });

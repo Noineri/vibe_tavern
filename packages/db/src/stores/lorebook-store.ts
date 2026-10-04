@@ -7,6 +7,14 @@ import { STORAGE_FOLDERS } from '../file-store.js';
 import type { CharacterFilterEntry } from '@vibe-tavern/domain';
 import { LOREBOOK_DEFAULTS } from '@vibe-tavern/domain';
 import { applyCoauthorLoreDraftTx } from './coauthor-lore-apply.js';
+import {
+  addLorebookLink,
+  deleteLorebookLinksForTarget,
+  getLorebookLinks,
+  insertLorebookLinks,
+  removeLorebookLink,
+  setLorebookLinks,
+} from './lorebook-links.js';
 import { resolveBoundLorebookRows, type LorebookBindingKind } from './lorebook-chat-resolution.js';
 // The binding-kind vocabulary moved to `lorebook-chat-resolution.ts` (the one
 // source of the chat participation rules); re-exported here so the store's
@@ -73,8 +81,10 @@ export interface CreateLorebookData {
   characterStrategy?: number;
   sortOrder?: number;
   enabled?: boolean;
-  characterId?: string | null;
-  personaId?: string | null;
+  /** Explicit owner list (LORE_SCRIPT_OWNERS_AS_LINKS step 2): the link rows
+   *  written at create. Empty/absent = unbound — no owner is ever derived
+   *  from context. Create-only; updates go through `setLinks`. */
+  links?: Array<{ targetType: string; targetId: string }>;
   chatId?: string | null;
   extensions?: Record<string, unknown>;
 }
@@ -158,6 +168,8 @@ export interface Lorebook {
   characterStrategy: number;
   sortOrder: number;
   enabled: boolean;
+  /** Always null since migration 0107 (home owners are links now); kept on
+   *  the store/API payload until the units-16–17 contract redesign. */
   characterId: string | null;
   personaId: string | null;
   chatId: string | null;
@@ -336,13 +348,16 @@ export class LorebookStore {
       return rows.map((r) => this.mapLorebookRow(r));
     }
 
-    // Entity scope: the home FK is whichever owner column is set
-    // (characterId OR personaId), so the direct match covers both.
-    // Without an ownerId this is a BROWSE view — every entity-home book
-    // regardless of which owner it is bound to (the editor sidebar's
-    // "entity" tab is a scope filter, symmetric with the global tab).
-    // Owner views (character/persona build sidebars) always pass ownerId.
-    if (scopeType === 'entity') {
+    // Entity scope (and any legacy scope value — the 0062 collapse made
+    // global/entity/chat the only reachable values): owners are
+    // `lorebook_links` rows (since migration 0107 the home-owner FK columns
+    // are gone — every owner is a plain link).
+    // Without an ownerId this is a BROWSE view — every entity book regardless
+    // of which owners it is linked to (the editor sidebar's "entity" tab is a
+    // scope filter, symmetric with the global tab). Owner views
+    // (character/persona build sidebars) always pass ownerId and see exactly
+    // the books linked to that owner through any link target type.
+    if (scopeType !== 'global' && scopeType !== 'chat') {
       if (!ownerId) {
         const rows = await this.db
           .select()
@@ -352,13 +367,7 @@ export class LorebookStore {
           .all();
         return rows.map((r) => this.mapLorebookRow(r));
       }
-      const directCondition = and(
-        eq(lorebooks.scopeType, 'entity'),
-        or(eq(lorebooks.characterId, ownerId), eq(lorebooks.personaId, ownerId)),
-      );
-      // The owner view shows both directly scoped lorebooks and lorebooks
-      // linked via the junction table (either target type — a book bound to
-      // the owner through any link belongs to the owner's view).
+      // A book bound to the owner through ANY link belongs to the owner's view.
       const linkedRows = await this.db
         .select({ lorebookId: lorebookLinks.lorebookId })
         .from(lorebookLinks)
@@ -366,31 +375,25 @@ export class LorebookStore {
         .all();
 
       const linkedIds = [...new Set(linkedRows.map((row) => row.lorebookId))];
-      const whereCondition = linkedIds.length > 0
-        ? or(directCondition, inArray(lorebooks.id, linkedIds))
-        : directCondition;
+      if (linkedIds.length === 0) return [];
 
       const rows = await this.db
         .select()
         .from(lorebooks)
-        .where(whereCondition)
+        .where(inArray(lorebooks.id, linkedIds))
         .orderBy(asc(lorebooks.scopeType), asc(lorebooks.sortOrder), asc(lorebooks.name))
         .all();
       return rows.map((r) => this.mapLorebookRow(r));
     }
 
     // Chat scope remains direct-only because lorebook_links supports
-    // character/persona targets only. Any other (legacy) scope value falls
-    // through to the same direct-FK read — no junction union. These are
-    // owner views by definition — no ownerId means nothing to match.
+    // character/persona targets only. These are owner views by definition —
+    // no ownerId means nothing to match.
     if (!ownerId) return [];
-    const fkCol = scopeType === 'persona' ? lorebooks.personaId
-      : scopeType === 'chat' ? lorebooks.chatId
-      : lorebooks.characterId;
     const rows = await this.db
       .select()
       .from(lorebooks)
-      .where(and(eq(lorebooks.scopeType, scopeType), eq(fkCol, ownerId)))
+      .where(and(eq(lorebooks.scopeType, scopeType), eq(lorebooks.chatId, ownerId)))
       .orderBy(asc(lorebooks.sortOrder), asc(lorebooks.name))
       .all();
     return rows.map((r) => this.mapLorebookRow(r));
@@ -423,14 +426,16 @@ export class LorebookStore {
         characterStrategy: data.characterStrategy ?? 1,
         sortOrder: data.sortOrder ?? 0,
         enabled: (data.enabled ?? true) ? 1 : 0,
-        characterId: data.characterId ?? null,
-        personaId: data.personaId ?? null,
         chatId: data.chatId ?? null,
         extensionsJson: JSON.stringify(data.extensions ?? {}),
         createdAt: now,
         updatedAt: now,
       })
       .returning();
+
+    // Owners are links (LORE_SCRIPT_OWNERS_AS_LINKS step 2): the create API's
+    // explicit owner list lands as link rows; empty list = unbound book.
+    await insertLorebookLinks(this.db, id, data.links ?? []);
 
     // Dual-write: write canonical JSON file (entries will be empty at this point)
     if (this.content) {
@@ -462,8 +467,8 @@ export class LorebookStore {
     if (data.characterStrategy !== undefined) values.characterStrategy = data.characterStrategy;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
     if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
-    if (data.characterId !== undefined) values.characterId = data.characterId;
-    if (data.personaId !== undefined) values.personaId = data.personaId;
+    // Home-owner inputs are deliberately not mapped: the columns are gone
+    // (migration 0107) and owners are links only.
     if (data.chatId !== undefined) values.chatId = data.chatId;
     if (data.extensions !== undefined) values.extensionsJson = JSON.stringify(data.extensions);
 
@@ -715,86 +720,56 @@ export class LorebookStore {
   }
 
   // ─── Link management ───────────────────────────────────────────────────────
+  // Junction operations live in `lorebook-links.ts` (extracted when the
+  // create-with-links and owner-deletion paths landed — this file sits over
+  // its arch-gate line budget); these methods stay the public API.
 
   /**
    * Get all links for a lorebook.
    */
   async getLinks(lorebookId: string): Promise<LorebookLink[]> {
-    const rows = await this.db
-      .select()
-      .from(lorebookLinks)
-      .where(eq(lorebookLinks.lorebookId, lorebookId))
-      .all();
-    return rows.map((r) => ({
-      lorebookId: r.lorebookId,
-      targetType: r.targetType as 'character' | 'persona',
-      targetId: r.targetId,
-    }));
+    return getLorebookLinks(this.db, lorebookId);
   }
 
   /**
    * Replace all links for a lorebook. Deletes existing and inserts new ones in a transaction.
    */
   async setLinks(lorebookId: string, links: Array<{ targetType: string; targetId: string }>): Promise<LorebookLink[]> {
-    // Dedup by (targetType, targetId) BEFORE the delete: the junction table
-    // has a composite PK on those columns, so a duplicate tuple in the input
-    // would violate the PK on the second insert — AFTER the old set is already
-    // deleted, leaving the graph empty. Normalizing first keeps the replace whole.
-    const seen = new Set<string>();
-    const unique: Array<{ targetType: string; targetId: string }> = [];
-    for (const link of links) {
-      const key = JSON.stringify([link.targetType, link.targetId]);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(link);
-    }
-
-    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 3): see reorderEntries.
-    // A failure on a later link insert rolls the delete back too — the prior
-    // complete graph survives instead of being wiped to empty.
-    this.db.transaction((tx) => {
-      tx.delete(lorebookLinks).where(eq(lorebookLinks.lorebookId, lorebookId)).run();
-      for (const link of unique) {
-        tx.insert(lorebookLinks).values({
-          lorebookId,
-          targetType: link.targetType,
-          targetId: link.targetId,
-        }).run();
-      }
-    });
-    return this.getLinks(lorebookId);
+    return setLorebookLinks(this.db, lorebookId, links);
   }
 
   /**
    * Add a single link (idempotent — ignores duplicates).
    */
   async addLink(lorebookId: string, targetType: string, targetId: string): Promise<void> {
-    await this.db.insert(lorebookLinks).values({
-      lorebookId,
-      targetType,
-      targetId,
-    }).onConflictDoNothing().run();
+    await addLorebookLink(this.db, lorebookId, targetType, targetId);
   }
 
   /**
    * Remove a single link.
    */
   async removeLink(lorebookId: string, targetType: string, targetId: string): Promise<void> {
-    await this.db.delete(lorebookLinks).where(
-      and(
-        eq(lorebookLinks.lorebookId, lorebookId),
-        eq(lorebookLinks.targetType, targetType),
-        eq(lorebookLinks.targetId, targetId),
-      ),
-    ).run();
+    await removeLorebookLink(this.db, lorebookId, targetType, targetId);
+  }
+
+  /**
+   * Remove every link targeting one entity (owner deletion,
+   * LORE_SCRIPT_OWNERS_AS_LINKS step 2 — the RegexStore/TtsStore
+   * deleteLinksForTarget pattern): the deleted owner's link rows die with
+   * it; the BOOK itself survives for its other owners. The junction's
+   * `targetId` is a polymorphic text column without an FK, so this cleanup
+   * is app-level.
+   */
+  async deleteLinksForTarget(targetType: 'character' | 'persona', targetId: string): Promise<void> {
+    await deleteLorebookLinksForTarget(this.db, targetType, targetId);
   }
 
   /**
    * Reverse query — list lorebooks M:N-linked to a given target (character or
-   * persona), regardless of the lorebook's own home scope. This is the
-   * persona/character-editor view of "which lorebooks activate for me". Returns
-   * links-only (FK-owned lorebooks are NOT included here; those surface via
-   * `listLorebooksByScope` which unions FK + links).
+   * persona), regardless of the lorebook's own scope. This is the
+   * persona/character-editor view of "which lorebooks activate for me". Since
+   * migration 0107 links are the ONLY owner source, so this and the owner
+   * branch of `listLorebooksByScope` read the same rows.
    */
   async listLorebooksLinkedToTarget(targetType: 'character' | 'persona', targetId: string): Promise<Lorebook[]> {
     const linkedRows = await this.db
@@ -818,6 +793,9 @@ export class LorebookStore {
   /**
    * Deep-copy a lorebook with all its entries.
    * Copies links from the original. Overrides optional fields if provided.
+   * The deprecated `characterId`/`personaId` overrides are accepted for API
+   * compatibility but ignored — owners are links (migration 0107) and the
+   * source book's links are copied verbatim.
    */
   async duplicateLorebook(
     lorebookId: string,
@@ -833,8 +811,6 @@ export class LorebookStore {
       name: overrides?.name ?? `${source.name} (copy)`,
       description: source.description,
       scopeType: overrides?.scopeType ?? source.scopeType,
-      characterId: overrides?.characterId ?? source.characterId,
-      personaId: overrides?.personaId ?? source.personaId,
       scanDepth: source.scanDepth,
       tokenBudget: source.tokenBudget,
       tokenBudgetPercent: source.tokenBudgetPercent ?? null,
@@ -915,8 +891,10 @@ export class LorebookStore {
       characterStrategy: row.characterStrategy,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
-      characterId: row.characterId,
-      personaId: row.personaId,
+      // Home owners are links since migration 0107 — these payload fields stay
+      // null until the step-2 contract redesign removes them.
+      characterId: null,
+      personaId: null,
       chatId: row.chatId,
       extensions: JSON.parse(row.extensionsJson),
       entries: entryRows.map((e) => ({
@@ -982,8 +960,10 @@ export class LorebookStore {
       characterStrategy: row.characterStrategy,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
-      characterId: row.characterId,
-      personaId: row.personaId,
+      // Home owners are links since migration 0107 (columns dropped) — kept
+      // null until the step-2 contract redesign removes the fields.
+      characterId: null,
+      personaId: null,
       chatId: row.chatId,
       extensions: JSON.parse(row.extensionsJson),
       createdAt: row.createdAt,

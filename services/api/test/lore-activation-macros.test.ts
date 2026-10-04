@@ -10,7 +10,7 @@ import {
   type ChatBranchId,
   type ChatId,
 } from "@vibe-tavern/domain";
-import { assemblePrompt, buildPromptVariableContext, createFullMacroEngine } from "@vibe-tavern/prompt-pipeline";
+import { assemblePrompt, buildPromptVariableContext, createFullMacroEngine, MacroVariableScope } from "@vibe-tavern/prompt-pipeline";
 import { RegexHookService } from "../src/domain/regex/regex-hook-service.js";
 import { resolveActivatedEntries, type ActivationInput } from "../src/domain/prompt/lore-activation-engine.js";
 import { StaticPromptResolver } from "../src/domain/prompt/prompt-resolver.js";
@@ -152,8 +152,8 @@ async function makeResolverWorld(
   const lorebook = await stores.lorebooks.createLorebook({
     name: "macro lore",
     scopeType: "entity",
-    characterId: character.id,
   });
+  await stores.lorebooks.addLink(lorebook.id, "character", character.id);
   await stores.lorebooks.createEntry(lorebook.id, {
     title: "Archive",
     content: entryContent,
@@ -203,6 +203,29 @@ afterAll(async () => {
 });
 
 describe("lore activation engine — full macro resolution (P16)", () => {
+  it("shares one variable scope from lore activation into prompt assembly", async () => {
+    const world = await makeResolverWorld("{{setvar::loreTone::solemn}}lore body");
+    const scope = new MacroVariableScope();
+    const activated = await world.resolver.listActiveLoreEntries({
+      chatId: world.chatId,
+      branchId: world.branchId,
+      recentText: "open the archive",
+      scanMessages: [{ role: "user", content: "open the archive" }],
+      macroVariableScope: scope,
+    });
+
+    const prompt = assemblePrompt({
+      identity: { chatId: world.chatId },
+      macroVariableScope: scope,
+      character: { id: world.characterId, name: "Keeper", description: "" },
+      chat: { recentMessages: [] },
+      lore: activated.entries.map((entry) => ({ ...entry, macrosResolved: true })),
+      preset: { id: "preset", text: "Tone: {{getvar::loreTone}}" },
+    });
+
+    expect(prompt.layers.find((layer) => layer.id === "prompt_preset_system")?.text).toBe("Tone: solemn");
+  });
+
   it("matches non-identity full-engine macros in keys only after expansion", () => {
     const entries = [
       makeEntry("persona_key", { keys: ["{{persona}}"] }),

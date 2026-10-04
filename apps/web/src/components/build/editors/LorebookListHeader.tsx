@@ -13,7 +13,7 @@ import { LorebookScopeBreadcrumb } from "./LorebookScopePanel.js";
 export interface WorldLoreOwnerOption {
   id: string;
   name: string;
-  kind: "character" | "persona";
+  kind: "character" | "persona" | "unbound";
 }
 
 interface WorldLoreOwnerFilterProps {
@@ -25,8 +25,16 @@ interface WorldLoreOwnerFilterProps {
   t: TFunc;
 }
 
+function ownerLabel(owner: WorldLoreOwnerOption, t: TFunc) {
+  return owner.kind === "unbound" ? t("lore_owner_unbound") : owner.name;
+}
+
 function ownerGroups(owners: WorldLoreOwnerOption[], t: TFunc) {
   return [
+    {
+      id: "unbound",
+      options: owners.filter((owner) => owner.kind === "unbound").map((owner) => ({ id: owner.id, label: ownerLabel(owner, t) })),
+    },
     {
       id: "characters",
       label: t("characters"),
@@ -50,7 +58,7 @@ export function WorldLoreOwnerFilter({
   t,
 }: WorldLoreOwnerFilterProps) {
   const selectedOwner = owners.find((owner) => owner.id === ownerId) ?? null;
-  const label = selectedOwner?.name ?? t("lore_owner_all");
+  const label = selectedOwner ? ownerLabel(selectedOwner, t) : t("lore_owner_all");
   const groups = ownerGroups(owners, t);
 
   if (isMobile) {
@@ -80,7 +88,7 @@ export function WorldLoreOwnerFilter({
             data-testid={testId}
             className="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-all hover:bg-s2 active:bg-s3"
           >
-            <span className="max-w-36 truncate" title={selectedOwner?.name}>{label}</span>
+            <span className="max-w-36 truncate" title={selectedOwner?.kind === "unbound" ? undefined : selectedOwner?.name}>{label}</span>
             {Ic.caret("d")}
           </button>
         }
@@ -178,7 +186,10 @@ export function WorldLoreListHeader({
               type="button"
               aria-label={t("close")}
               className="text-t3 hover:text-t1"
-              onClick={() => setMobileSearchOpen(false)}
+              onClick={() => {
+                onNameSearchChange("");
+                setMobileSearchOpen(false);
+              }}
             >
               {Ic.close()}
             </button>

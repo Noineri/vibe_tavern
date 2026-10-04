@@ -63,6 +63,7 @@ function createStores(regexStore: StoreContainer["regex"]): StoreContainer {
     personas: {
       listAll: async () => [{ id: "persona_1", name: "User", description: "A user.", defaultForNewChats: true }],
     },
+    presets: { listAll: async () => [] },
     messages: {
       getMessages: async () => [
         { id: "msg_1", role: "user", content: "Hello!", branchId: "branch_1" },

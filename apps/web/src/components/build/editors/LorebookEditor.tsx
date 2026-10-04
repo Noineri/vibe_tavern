@@ -44,7 +44,7 @@ import { LorebookImportModal } from "./LorebookImportModal.js";
 import { buildLorebookCreateBody } from "./lorebook-create-body.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
-import { useLorebookListFilters } from "./use-world-lore-list-filters.js";
+import { useWorldLoreListFilters } from "./use-world-lore-list-filters.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -109,6 +109,7 @@ export function LorebookEditor({
     flushSave,
     refreshLorebooks,
     handleSetLinks,
+    seedLorebookLinks,
     form,
   } = useLorebookEditorState({ characterId, chatId, personaId });
 
@@ -228,11 +229,12 @@ export function LorebookEditor({
   const linkCharacters: LinkTarget[] = allCharacters.map(characterToLinkTarget);
   const linkPersonas: LinkTarget[] = personas.map(personaToLinkTarget);
   const [lorebookNameSearch, setLorebookNameSearch] = useState("");
-  const { owners: lorebookOwnerOptions, visibleLorebooks } = useLorebookListFilters({
+  const { owners: lorebookOwnerOptions, visibleItems: visibleLorebooks } = useWorldLoreListFilters({
     scope,
     ownerId,
     setOwnerId,
-    lorebooks,
+    items: lorebooks,
+    linksByItemId: lorebookLinksMap,
     characters: allCharacters,
     personas,
     ownerDataReady,
@@ -265,12 +267,12 @@ export function LorebookEditor({
   const handleCreateLb = async (body: {
     name: string;
     scopeType: string;
-    characterId?: string;
-    personaId?: string;
+    links?: Array<{ targetType: "character"; targetId: string }>;
     chatId?: string;
   }) => {
     await discardCreatedLorebookDraft();
     const newLb = await createLorebook(body);
+    if (body.links) seedLorebookLinks(newLb.id, body.links);
     setCreatedDraftLorebookId(newLb.id);
     await refreshLorebooks();
     setExpandedLorebooks((prev) => new Set([...prev, newLb.id]));
@@ -442,10 +444,13 @@ export function LorebookEditor({
     // `scope` is the list filter (may be "all"); buildLorebookCreateBody
     // coerces "all" → "character" so creation works from every filter,
     // including the overview. The new lorebook opens in the inline edit
-    // form where its scope can be changed.
+    // form where its scope can be changed. No owner is derived from the
+    // context (LORE_SCRIPT_OWNERS_AS_LINKS step 2): an entity book is
+    // created unbound until linked.
     const body = buildLorebookCreateBody(
       scope,
-      { characterId, personaId, chatId },
+      chatId,
+      characterId,
       t("new_lorebook"),
     );
     handleCreateLb(body);
@@ -568,6 +573,7 @@ export function LorebookEditor({
           key={lb.id}
           lorebook={lb}
           links={lorebookLinksMap.get(lb.id) ?? []}
+          linksLoaded={lorebookLinksMap.has(lb.id)}
           characters={linkCharacters}
           personas={linkPersonas}
           expanded={expandedLorebooks.has(lb.id)}
@@ -598,7 +604,12 @@ export function LorebookEditor({
             setEditingLorebookId(null);
           }}
           onEditLbName={setEditLbName}
-          onEditLbScope={(s: string) => setEditLbScope(s as Scope)}
+          onEditLbScope={(s: string) => {
+            setEditLbScope(s as Scope);
+            if (s === "entity" && lb.id === createdDraftLorebookId && (lorebookLinksMap.get(lb.id)?.length ?? 0) === 0) {
+              void handleSetLinks(lb.id, [{ targetType: "character", targetId: characterId }]);
+            }
+          }}
           onDelete={() => setConfirmDeleteLorebook(lb.id)}
           onAddEntry={() => handleAddEntry(lb.id)}
           onEntryClick={(entryId) => handleEntryClick(lb.id, entryId)}
