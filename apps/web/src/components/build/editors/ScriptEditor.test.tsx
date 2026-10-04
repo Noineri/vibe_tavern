@@ -19,7 +19,7 @@
 import { afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import { useEffect, type ReactNode } from "react";
-import type { ScriptRecord } from "../../../api/types.js";
+import type { ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
@@ -33,8 +33,8 @@ const createScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(unde
 const updateScript = mock((_id: string, _patch: Partial<ScriptRecord>) => Promise.resolve<ScriptRecord>(undefined as never));
 const deleteScript = mock(() => Promise.resolve());
 const importScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(undefined as never));
-const getScriptLinks = mock(() => Promise.resolve([]));
-const setScriptLinks = mock(() => Promise.resolve([]));
+const getScriptLinks = mock((_scriptId: string) => Promise.resolve<ScriptLinkRecord[]>([]));
+const setScriptLinks = mock((_scriptId: string, _links: Array<{ targetType: "character" | "persona"; targetId: string }>) => Promise.resolve<ScriptLinkRecord[]>([]));
 const testScript = mock(() => Promise.resolve({
 	kind: "prompt" as const,
 	personality: "",
@@ -104,7 +104,23 @@ mock.module("../../shared/AiAssistantModal.js", () => ({
 }));
 mock.module("../../shared/LinkBindingPopover.js", () => ({
 	...realLinkBindingPopover,
-  LinkBindingPopover: () => null,
+  LinkBindingPopover: (props: {
+    links: Array<{ targetType: "character" | "persona"; targetId: string }>;
+    onSetLinks: (links: Array<{ targetType: "character" | "persona"; targetId: string }>) => void;
+  }) => (
+    <div data-testid="script-owner-picker">
+      {props.links.map((link) => (
+        <button
+          key={`${link.targetType}:${link.targetId}`}
+          type="button"
+          onClick={() => props.onSetLinks(props.links.filter((candidate) => candidate !== link))}
+        >
+          {link.targetId}
+        </button>
+      ))}
+      <button type="button" onClick={() => props.onSetLinks([...props.links, { targetType: "persona", targetId: "persona-2" }])}>add-persona</button>
+    </div>
+  ),
 }));
 mock.module("../../shared/Tooltip.js", () => ({
 	...realTooltip,
@@ -134,7 +150,7 @@ const baseScript: ScriptRecord = {
   description: "",
   code: "",
   scriptKind: "prompt",
-  scopeType: "character",
+  scopeType: "entity",
   characterId: "c1",
   personaId: null,
   chatId: null,
@@ -176,7 +192,7 @@ beforeEach(() => {
   createScript.mockResolvedValue({ ...baseScript });
   deleteScript.mockResolvedValue(undefined);
   importScript.mockResolvedValue({ ...baseScript });
-  setScriptLinks.mockResolvedValue([]);
+  setScriptLinks.mockImplementation(async (_scriptId, links) => links.map((link) => ({ scriptId: "s1", ...link })));
   updateScript.mockImplementation(async (_id, patch) => {
     serverScript = { ...serverScript, ...patch };
     const gate = updateGate;
@@ -499,7 +515,13 @@ describe("useScriptPanel interactive-script filtering", () => {
 // Global (application-scope) scripts run everywhere, so a character/persona
 // link is never consulted for them; chat scripts are already chat-bound.
 describe("useScriptPanel link-binding scope filter", () => {
+  it("shows an unbound warning after an entity script's empty links load", async () => {
+    const { findByText } = render(<Harness />);
+    expect(await findByText("script_unbound_warning")).toBeTruthy();
+  });
+
   it("omits the character/persona link binding for global (application-scope) scripts", async () => {
+    serverScript = { ...baseScript, scopeType: "global" };
     const { container, findByText, queryByText } = render(<HarnessGlobal />);
 
     await openEditor(container, findByText);
@@ -511,6 +533,23 @@ describe("useScriptPanel link-binding scope filter", () => {
 
     await openEditor(container, findByText);
     expect(await findByText("script_links_label")).toBeTruthy();
+  });
+
+  it("changes and clears an owner chip through the shared link picker", async () => {
+    getScriptLinks.mockResolvedValue([{ scriptId: "s1", targetType: "character", targetId: "c1" }]);
+    const { container, findByText, getByText } = render(<Harness />);
+
+    await openEditor(container, findByText);
+    expect(await findByText("c1")).toBeTruthy();
+    fireEvent.click(getByText("add-persona"));
+    await waitFor(() => expect(setScriptLinks).toHaveBeenLastCalledWith("s1", [
+      { targetType: "character", targetId: "c1" },
+      { targetType: "persona", targetId: "persona-2" },
+    ]));
+    fireEvent.click(getByText("c1"));
+    await waitFor(() => expect(setScriptLinks).toHaveBeenLastCalledWith("s1", [
+      { targetType: "persona", targetId: "persona-2" },
+    ]));
   });
 });
 
@@ -557,7 +596,7 @@ describe("useScriptPanel create/import owner boundary (LORE_SCRIPT_OWNERS_AS_LIN
     );
   }
 
-  it("creating a script from an entity scope with a persona context sends NO owner fields", async () => {
+  it("creating a script from an entity scope explicitly links the current character", async () => {
     const { getByText } = render(<HarnessPersonaContext />);
     fireEvent.click(getByText("trigger-add"));
     await waitFor(() => expect(createScript).toHaveBeenCalledTimes(1));
@@ -565,7 +604,7 @@ describe("useScriptPanel create/import owner boundary (LORE_SCRIPT_OWNERS_AS_LIN
     expect(body.scopeType).toBe("entity");
     expect("characterId" in body).toBe(false);
     expect("personaId" in body).toBe(false);
-    expect("links" in body).toBe(false);
+    expect(body.links).toEqual([{ targetType: "character", targetId: "c1" }]);
   });
 
   it("importing a script from an entity scope with a persona context sends NO owner fields", async () => {

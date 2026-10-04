@@ -14,7 +14,7 @@ import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { useState } from "react";
 import { wireLorebook, wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
-import type { LoreEntryRecord, LorebookRecord } from "../../../api/types.js";
+import type { LoreEntryRecord, LorebookLinkRecord, LorebookRecord } from "../../../api/types.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
@@ -71,7 +71,22 @@ mock.module("./LoreEntryList.js", () => ({
 // LinkBindingPopover pulls character/persona pickers irrelevant to filtering.
 mock.module("../../shared/LinkBindingPopover.js", () => ({
 	...realLinkBindingPopover,
-  LinkBindingPopover: () => <div data-testid="link-binding-stub" />,
+  LinkBindingPopover: (props: {
+    links: Array<{ targetType: "character" | "persona"; targetId: string }>;
+    onSetLinks: (links: Array<{ targetType: "character" | "persona"; targetId: string }>) => void;
+  }) => (
+    <div data-testid="link-binding-stub">
+      {props.links.map((link) => (
+        <button
+          key={`${link.targetType}:${link.targetId}`}
+          type="button"
+          onClick={() => props.onSetLinks(props.links.filter((candidate) => candidate !== link))}
+        >
+          {link.targetId}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 
 // CustomTooltip needs a Radix TooltipProvider context irrelevant here;
@@ -170,12 +185,15 @@ const ENTRIES: LoreEntryRecord[] = [
 type AccordionOverrides = Partial<{
   lorebook: LorebookRecord;
   onUpdateMeta: (body: Parameters<NonNullable<Parameters<typeof LorebookAccordion>[0]["onUpdateMeta"]>>[0]) => void;
+  links: LorebookLinkRecord[];
+  linksLoaded: boolean;
   editing: boolean;
   editLbName: string;
   editLbScope: string;
   isMobile: boolean;
   onEditLbScope: (scope: string) => void;
   onSaveEdit: () => void;
+  onSetLinks: (links: Array<{ targetType: "character" | "persona"; targetId: string }>) => void;
 }>;
 
 function accordionElement(
@@ -184,7 +202,8 @@ function accordionElement(
   return (
     <LorebookAccordion
       lorebook={overrides.lorebook ?? LOREBOOK}
-      links={[]}
+      links={overrides.links ?? []}
+      linksLoaded={overrides.linksLoaded ?? true}
       expanded={true}
       editing={overrides.editing ?? false}
       editLbName={overrides.editLbName ?? ""}
@@ -207,7 +226,7 @@ function accordionElement(
       onUpdateMeta={overrides.onUpdateMeta ?? (() => {})}
       onReorderEntries={async () => []}
       onToggleEntryEnabled={async () => ENTRIES[0]}
-      onSetLinks={() => {}}
+      onSetLinks={overrides.onSetLinks ?? (() => {})}
       onDuplicate={() => {}}
       onExport={() => {}}
       characters={[]}
@@ -454,23 +473,60 @@ describe("LorebookAccordion scope collapse (entity)", () => {
 		expect(onEditLbScope).toHaveBeenCalledWith("entity");
 	});
 
-	it("entity-homed books (character OR persona FK) map to the ONE entity binding icon", async () => {
+  it("characterization: switching away from Bound changes only scope, not links", () => {
+    const onEditLbScope = mock();
+    const onSetLinks = mock();
+    const { getByText } = renderAccordion({
+      editing: true,
+      editLbScope: "entity",
+      onEditLbScope,
+      onSetLinks,
+    });
+
+    fireEvent.click(getByText("scope_global"));
+
+    expect(onEditLbScope).toHaveBeenCalledWith("global");
+    expect(onSetLinks).not.toHaveBeenCalled();
+  });
+
+	it("entity books map to the entity icon without a legacy owner field", async () => {
 		const { lorebookBindingIcon } = await import("./LorebookAccordion.js");
-		const charHomed = lorebookBindingIcon({ ...LOREBOOK, scopeType: "entity", characterId: "char-1" });
-		expect(charHomed?.tooltipKey).toBe("scope_entity");
-		const personaHomed = lorebookBindingIcon({ ...LOREBOOK, scopeType: "entity", personaId: "persona-9" });
-		// The persona FK maps to the SAME single entity icon — no separate
-		// persona tooltip, no user icon.
-		expect(personaHomed?.tooltipKey).toBe("scope_entity");
-		expect(personaHomed).toEqual(charHomed);
+		const entityBound = lorebookBindingIcon({ ...LOREBOOK, scopeType: "entity" });
+		expect(entityBound?.tooltipKey).toBe("scope_entity");
 	});
 
-	it("global books map to no binding icon; chat-homed books keep the chat icon", async () => {
+	it("global books map to no binding icon; chat books keep the chat icon", async () => {
 		const { lorebookBindingIcon } = await import("./LorebookAccordion.js");
 		expect(lorebookBindingIcon(LOREBOOK)).toBeNull();
-		const chatHomed = lorebookBindingIcon({ ...LOREBOOK, scopeType: "chat", chatId: "chat-1" });
-		expect(chatHomed?.tooltipKey).toBe("scope_chat");
+		const chatBound = lorebookBindingIcon({ ...LOREBOOK, scopeType: "chat", chatId: "chat-1" });
+		expect(chatBound?.tooltipKey).toBe("scope_chat");
 	});
+
+  it("shows the shared owner picker inline for Bound editing and can clear its chip", () => {
+    const onSetLinks = mock();
+    const view = renderAccordion({
+      lorebook: { ...LOREBOOK, scopeType: "entity" },
+      editing: true,
+      editLbScope: "entity",
+      links: [{ targetType: "character", targetId: "character-1", lorebookId: "lb-1" }],
+      onSetLinks,
+    });
+    expect(view.getByTestId("link-binding-stub")).toBeTruthy();
+    fireEvent.click(view.getByText("character-1"));
+    expect(onSetLinks).toHaveBeenCalledWith([]);
+  });
+
+  it("shows the unbound warning only after an entity book's links load empty", () => {
+    const empty = renderAccordion({ lorebook: { ...LOREBOOK, scopeType: "entity" }, links: [], linksLoaded: true });
+    expect(empty.getByText("lore_unbound_warning")).toBeTruthy();
+    empty.unmount();
+
+    const linked = renderAccordion({
+      lorebook: { ...LOREBOOK, scopeType: "entity" },
+      links: [{ targetType: "character", targetId: "character-1", lorebookId: "lb-1" }],
+    });
+    expect(linked.queryByText("lore_unbound_warning")).toBeNull();
+  });
 });
 
 describe("LorebookAccordion mobile edit form (MUI step 6)", () => {

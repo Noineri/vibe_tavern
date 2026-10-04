@@ -109,6 +109,7 @@ export function LorebookEditor({
     flushSave,
     refreshLorebooks,
     handleSetLinks,
+    seedLorebookLinks,
     form,
   } = useLorebookEditorState({ characterId, chatId, personaId });
 
@@ -265,10 +266,12 @@ export function LorebookEditor({
   const handleCreateLb = async (body: {
     name: string;
     scopeType: string;
+    links?: Array<{ targetType: "character"; targetId: string }>;
     chatId?: string;
   }) => {
     await discardCreatedLorebookDraft();
     const newLb = await createLorebook(body);
+    if (body.links) seedLorebookLinks(newLb.id, body.links);
     setCreatedDraftLorebookId(newLb.id);
     await refreshLorebooks();
     setExpandedLorebooks((prev) => new Set([...prev, newLb.id]));
@@ -446,6 +449,7 @@ export function LorebookEditor({
     const body = buildLorebookCreateBody(
       scope,
       chatId,
+      characterId,
       t("new_lorebook"),
     );
     handleCreateLb(body);
@@ -568,6 +572,7 @@ export function LorebookEditor({
           key={lb.id}
           lorebook={lb}
           links={lorebookLinksMap.get(lb.id) ?? []}
+          linksLoaded={lorebookLinksMap.has(lb.id)}
           characters={linkCharacters}
           personas={linkPersonas}
           expanded={expandedLorebooks.has(lb.id)}
@@ -598,7 +603,12 @@ export function LorebookEditor({
             setEditingLorebookId(null);
           }}
           onEditLbName={setEditLbName}
-          onEditLbScope={(s: string) => setEditLbScope(s as Scope)}
+          onEditLbScope={(s: string) => {
+            setEditLbScope(s as Scope);
+            if (s === "entity" && lb.id === createdDraftLorebookId && (lorebookLinksMap.get(lb.id)?.length ?? 0) === 0) {
+              void handleSetLinks(lb.id, [{ targetType: "character", targetId: characterId }]);
+            }
+          }}
           onDelete={() => setConfirmDeleteLorebook(lb.id)}
           onAddEntry={() => handleAddEntry(lb.id)}
           onEntryClick={(entryId) => handleEntryClick(lb.id, entryId)}

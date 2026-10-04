@@ -13,10 +13,10 @@
  * after, where the scope picker lets the user change it — so a fixed,
  * predictable default is correct, independent of the active filter.
  *
- * LORE_SCRIPT_OWNERS_AS_LINKS step 2: NO owner is derived from the context
- * any more — an entity-scoped book is created unbound (empty owner list) and
- * the caller links owners explicitly (the creation-row owner picker is
- * step 3). Only `chatId` rides along for chat scope.
+ * LORE_SCRIPT_OWNERS_AS_LINKS step 3: an entity-scoped book explicitly links
+ * the current character at creation. The inline owner picker makes that link
+ * visible and lets the user change or clear it. Only `chatId` rides along for
+ * chat scope.
  *
  * Mirrors `scopeBody()` in ScriptEditor.tsx (same `effectiveScope` coercion);
  * if that sibling is ever shared, this is the natural home for the unified
@@ -27,12 +27,14 @@ import type { Scope } from "./LorebookAccordion.js";
 export type LorebookCreateBody = {
 	name: string;
 	scopeType: string;
+	links?: Array<{ targetType: "character"; targetId: string }>;
 	chatId?: string;
 };
 
 export function buildLorebookCreateBody(
 	scope: Scope,
 	chatId: string | null,
+	characterId: string,
 	name: string,
 ): LorebookCreateBody {
 	const effectiveScope: Exclude<Scope, "all" | "current"> =
@@ -41,6 +43,9 @@ export function buildLorebookCreateBody(
 		name,
 		scopeType: effectiveScope,
 	};
+	if (effectiveScope === "entity") {
+		body.links = [{ targetType: "character", targetId: characterId }];
+	}
 	if (effectiveScope === "chat" && chatId) body.chatId = chatId;
 	return body;
 }

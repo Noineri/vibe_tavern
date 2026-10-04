@@ -186,6 +186,10 @@ export interface LorebookEditorState {
     lorebookId: string,
     links: Array<{ targetType: "character" | "persona"; targetId: string }>,
   ) => Promise<void>;
+  seedLorebookLinks: (
+    lorebookId: string,
+    links: Array<{ targetType: "character" | "persona"; targetId: string }>,
+  ) => void;
   // Entry data (for the active lorebook)
   activeEntry: LoreEntryRecord | null;
   existingGroups: string[];
@@ -333,13 +337,13 @@ export function useLorebookEditorState({
           const links = await getLorebookLinks(lb.id);
           return [lb.id, links] as const;
         } catch {
-          return [lb.id, [] as LorebookLinkRecord[]] as const;
+          return [lb.id, null] as const;
         }
       }),
     ).then((results) => {
       if (cancelled) return;
       const map = new Map<string, LorebookLinkRecord[]>();
-      for (const [id, links] of results) map.set(id, links);
+      for (const [id, links] of results) if (links) map.set(id, links);
       setLorebookLinksMap(map);
     });
     return () => {
@@ -348,16 +352,22 @@ export function useLorebookEditorState({
   }, [lorebooks]);
 
   // ── Link management ──
+  const seedLorebookLinks = (
+    lorebookId: string,
+    links: Array<{ targetType: "character" | "persona"; targetId: string }>,
+  ) => {
+    setLorebookLinksMap((prev) => new Map(prev).set(
+      lorebookId,
+      links.map((link) => ({ lorebookId, ...link })),
+    ));
+  };
+
   const handleSetLinks = async (
     lorebookId: string,
     links: Array<{ targetType: "character" | "persona"; targetId: string }>,
   ) => {
     const updated = await setLorebookLinks(lorebookId, links);
-    setLorebookLinksMap((prev) => {
-      const next = new Map(prev);
-      next.set(lorebookId, updated);
-      return next;
-    });
+    setLorebookLinksMap((prev) => new Map(prev).set(lorebookId, updated));
   };
 
   // ═══ Entry loading (for the active lorebook) ═══
@@ -511,6 +521,7 @@ export function useLorebookEditorState({
     // Links data
     lorebookLinksMap,
     handleSetLinks,
+    seedLorebookLinks,
     // Entry data
     activeEntry,
     existingGroups,
