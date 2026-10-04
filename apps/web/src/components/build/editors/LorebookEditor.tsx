@@ -14,7 +14,6 @@
  *   - LorebookImportModal — 3-step import wizard
  *   - ScriptEditor (useScriptPanel) — script editor
  */
-import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FormProvider } from "react-hook-form";
@@ -37,6 +36,7 @@ import { useScriptPanel } from "./ScriptEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
 import type { Scope } from "./LorebookAccordion.js";
+import { LorebookScopeBreadcrumb, LorebookScopePanel } from "./LorebookScopePanel.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget, personaToLinkTarget } from "../../../lib/link-targets.js";
 import { LoreEntryEditor } from "./LoreEntryEditor.js";
@@ -444,64 +444,6 @@ export function LorebookEditor({
   // UI fragments
   // ══════════════════════════════════════════════════════════════════════
 
-  // ── Scope column (desktop: vertical with icons) ──
-  // The "all" label depends on the active tab — "All lorebooks" / "All scripts".
-  // Other scope names (Global/Entity/...) are invariant across tabs.
-  const allLabel = tab === "lorebooks" ? t("scope_all") : t("scope_all_scripts");
-  const scopeItems: { id: Scope; icon: ReactNode; label: string }[] = [
-    { id: "all", icon: <Ic.stack />, label: allLabel },
-    { id: "global", icon: <Ic.globe />, label: t("scope_global") },
-    { id: "entity", icon: <Ic.book />, label: t("scope_entity") },
-    { id: "chat", icon: <Ic.chat />, label: t("scope_chat") },
-  ];
-
-  const scopeColumn = !isMobile ? (
-    <div
-      className="flex shrink-0 flex-col items-center gap-1 border-r border-border bg-surface"
-      style={{ width: 48, padding: "12px 0" }}
-    >
-      {scopeItems.map((s) => (
-        <CustomTooltip content={s.label} key={s.id}>
-          <div
-            className={cn(
-              "relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg transition-all hover:bg-s2",
-              scope === s.id && "bg-accent-dim text-accent-t"
-            )}
-            onClick={() => setScope(s.id)}
-          >
-            {s.icon}
-          </div>
-        </CustomTooltip>
-      ))}
-    </div>
-  ) : null;
-
-  // ── Scope bar (mobile: horizontal chips) ──
-  const scopeBarMobile = isMobile ? (
-    <div
-      className="flex shrink-0 gap-1 overflow-x-auto border-b border-border scrollbar-hide"
-      style={{ padding: "8px 12px" }}
-    >
-      {scopeItems.map((s) => (
-        <div
-          key={s.id}
-          className={cn(
-            "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 font-ui text-[11px] font-medium transition-all select-none",
-            scope === s.id
-              ? "bg-accent text-on-accent"
-              : "text-t3 bg-transparent hover:bg-s2 active:bg-s3"
-          )}
-          onClick={() => setScope(s.id)}
-        >
-          <span className="flex h-4 w-4 items-center justify-center">
-            {s.icon}
-          </span>
-          <span className="whitespace-nowrap">{s.label}</span>
-        </div>
-      ))}
-    </div>
-  ) : null;
-
   // ── View: Pick (choose Lorebooks / Scripts) ──
   const pickView = (
     <div
@@ -690,19 +632,9 @@ export function LorebookEditor({
       {/* Breadcrumb: active scope from the mini-sidebar. Desktop only — on
           mobile the scope labels are already visible in the bottom chip bar.
           Works for both tabs (Lorebooks and Scripts) since scope is shared. */}
-      {!isMobile && (() => {
-        const activeScope = scopeItems.find((s) => s.id === scope);
-        if (!activeScope) return null;
-        return (
-          <>
-            <span className="text-t4">/</span>
-            <span className="flex min-w-0 items-center gap-1 font-ui text-[13px] font-medium text-t3">
-              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">{activeScope.icon}</span>
-              <span className="truncate">{activeScope.label}</span>
-            </span>
-          </>
-        );
-      })()}
+      {!isMobile && (
+        <LorebookScopeBreadcrumb scope={scope} tab={tab} t={t} />
+      )}
       <div className="ml-auto flex gap-1">
         <CustomTooltip
           content={tab === "lorebooks" ? t("scripts_card_title") : t("lorebooks_card_title")}
@@ -938,7 +870,13 @@ export function LorebookEditor({
               }}
             >
               <div className={cn("w-full", headerAnim)}>{headerBar}</div>
-              {scopeBarMobile}
+              <LorebookScopePanel
+                isMobile={isMobile}
+                scope={scope}
+                onScopeChange={setScope}
+                tab={tab}
+                t={t}
+              />
               {tab === "lorebooks"
                 ? lorebookListContent
                 : scriptPanel.scriptListContent}
@@ -996,7 +934,13 @@ export function LorebookEditor({
             >
               <div className={headerAnim}>{headerBar}</div>
               <div className="flex flex-1 overflow-hidden">
-                {scopeColumn}
+                <LorebookScopePanel
+                  isMobile={isMobile}
+                  scope={scope}
+                  onScopeChange={setScope}
+                  tab={tab}
+                  t={t}
+                />
                 {tab === "lorebooks"
                   ? lorebookListContent
                   : scriptPanel.scriptListContent}
