@@ -29,10 +29,10 @@ useDomEnv();
 const listScripts = mock((_characterId?: string) => Promise.resolve<ScriptRecord[]>([]));
 const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
 const listParticipatingScripts = mock((_chatId: string) => Promise.resolve<ScriptRecord[]>([]));
-const createScript = mock(() => Promise.resolve<ScriptRecord>(undefined as never));
+const createScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(undefined as never));
 const updateScript = mock((_id: string, _patch: Partial<ScriptRecord>) => Promise.resolve<ScriptRecord>(undefined as never));
 const deleteScript = mock(() => Promise.resolve());
-const importScript = mock(() => Promise.resolve<ScriptRecord>(undefined as never));
+const importScript = mock((_body: unknown) => Promise.resolve<ScriptRecord>(undefined as never));
 const getScriptLinks = mock(() => Promise.resolve([]));
 const setScriptLinks = mock(() => Promise.resolve([]));
 const testScript = mock(() => Promise.resolve({
@@ -536,5 +536,47 @@ describe("ScriptEditor — D3 mobile touch booster", () => {
     ) as HTMLElement | undefined;
     expect(booster).toBeTruthy();
     expect(booster!.className).toContain(":not([role=switch])");
+  });
+});
+
+// LORE_SCRIPT_OWNERS_AS_LINKS step 2: creating (or importing) a script never
+// derives an owner from the persona/character context — the create body
+// carries scopeType (+chatId for chat scope) and nothing else; owners are
+// explicit links (the creation-row picker is step 3).
+describe("useScriptPanel create/import owner boundary (LORE_SCRIPT_OWNERS_AS_LINKS step 2)", () => {
+  function HarnessPersonaContext() {
+    // Persona context ACTIVE — before step 2 this silently homed every
+    // created script to that persona.
+    const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: "persona_active", scope: "entity", ownerId: null });
+    return (
+      <>
+        {panel.modals}
+        <button type="button" onClick={() => panel.handleAdd()}>trigger-add</button>
+        <button type="button" onClick={panel.handleImportOpen}>trigger-import-open</button>
+      </>
+    );
+  }
+
+  it("creating a script from an entity scope with a persona context sends NO owner fields", async () => {
+    const { getByText } = render(<HarnessPersonaContext />);
+    fireEvent.click(getByText("trigger-add"));
+    await waitFor(() => expect(createScript).toHaveBeenCalledTimes(1));
+    const body = createScript.mock.calls[0]![0] as Record<string, unknown>;
+    expect(body.scopeType).toBe("entity");
+    expect("characterId" in body).toBe(false);
+    expect("personaId" in body).toBe(false);
+    expect("links" in body).toBe(false);
+  });
+
+  it("importing a script from an entity scope with a persona context sends NO owner fields", async () => {
+    const { getByText, getByPlaceholderText, getByRole } = render(<HarnessPersonaContext />);
+    fireEvent.click(getByText("trigger-import-open"));
+    fireEvent.change(getByPlaceholderText("script_import_placeholder"), { target: { value: "code();" } });
+    fireEvent.click(getByRole("button", { name: "script_import_import" }));
+    await waitFor(() => expect(importScript).toHaveBeenCalledTimes(1));
+    const body = importScript.mock.calls[0]![0] as Record<string, unknown>;
+    expect(body.scopeType).toBe("entity");
+    expect("characterId" in body).toBe(false);
+    expect("personaId" in body).toBe(false);
   });
 });

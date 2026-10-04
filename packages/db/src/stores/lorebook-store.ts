@@ -7,6 +7,14 @@ import { STORAGE_FOLDERS } from '../file-store.js';
 import type { CharacterFilterEntry } from '@vibe-tavern/domain';
 import { LOREBOOK_DEFAULTS } from '@vibe-tavern/domain';
 import { applyCoauthorLoreDraftTx } from './coauthor-lore-apply.js';
+import {
+  addLorebookLink,
+  deleteLorebookLinksForTarget,
+  getLorebookLinks,
+  insertLorebookLinks,
+  removeLorebookLink,
+  setLorebookLinks,
+} from './lorebook-links.js';
 import { resolveBoundLorebookRows, type LorebookBindingKind } from './lorebook-chat-resolution.js';
 // The binding-kind vocabulary moved to `lorebook-chat-resolution.ts` (the one
 // source of the chat participation rules); re-exported here so the store's
@@ -73,12 +81,10 @@ export interface CreateLorebookData {
   characterStrategy?: number;
   sortOrder?: number;
   enabled?: boolean;
-  /** Deprecated home-owner inputs (characterId, personaId): accepted for
-   *  API-shape compatibility but NOT written — migration 0107 dropped the
-   *  home-owner columns; owners are `lorebook_links` rows. Replaced by the
-   *  explicit-owner-list create API in step 2 (chain unit 15). */
-  characterId?: string | null;
-  personaId?: string | null;
+  /** Explicit owner list (LORE_SCRIPT_OWNERS_AS_LINKS step 2): the link rows
+   *  written at create. Empty/absent = unbound — no owner is ever derived
+   *  from context. Create-only; updates go through `setLinks`. */
+  links?: Array<{ targetType: string; targetId: string }>;
   chatId?: string | null;
   extensions?: Record<string, unknown>;
 }
@@ -163,7 +169,7 @@ export interface Lorebook {
   sortOrder: number;
   enabled: boolean;
   /** Always null since migration 0107 (home owners are links now); kept on
-   *  the store/API shape until the step-2 contract redesign removes them. */
+   *  the store/API payload until the units-16–17 contract redesign. */
   characterId: string | null;
   personaId: string | null;
   chatId: string | null;
@@ -426,6 +432,10 @@ export class LorebookStore {
         updatedAt: now,
       })
       .returning();
+
+    // Owners are links (LORE_SCRIPT_OWNERS_AS_LINKS step 2): the create API's
+    // explicit owner list lands as link rows; empty list = unbound book.
+    await insertLorebookLinks(this.db, id, data.links ?? []);
 
     // Dual-write: write canonical JSON file (entries will be empty at this point)
     if (this.content) {
@@ -710,78 +720,48 @@ export class LorebookStore {
   }
 
   // ─── Link management ───────────────────────────────────────────────────────
+  // Junction operations live in `lorebook-links.ts` (extracted when the
+  // create-with-links and owner-deletion paths landed — this file sits over
+  // its arch-gate line budget); these methods stay the public API.
 
   /**
    * Get all links for a lorebook.
    */
   async getLinks(lorebookId: string): Promise<LorebookLink[]> {
-    const rows = await this.db
-      .select()
-      .from(lorebookLinks)
-      .where(eq(lorebookLinks.lorebookId, lorebookId))
-      .all();
-    return rows.map((r) => ({
-      lorebookId: r.lorebookId,
-      targetType: r.targetType as 'character' | 'persona',
-      targetId: r.targetId,
-    }));
+    return getLorebookLinks(this.db, lorebookId);
   }
 
   /**
    * Replace all links for a lorebook. Deletes existing and inserts new ones in a transaction.
    */
   async setLinks(lorebookId: string, links: Array<{ targetType: string; targetId: string }>): Promise<LorebookLink[]> {
-    // Dedup by (targetType, targetId) BEFORE the delete: the junction table
-    // has a composite PK on those columns, so a duplicate tuple in the input
-    // would violate the PK on the second insert — AFTER the old set is already
-    // deleted, leaving the graph empty. Normalizing first keeps the replace whole.
-    const seen = new Set<string>();
-    const unique: Array<{ targetType: string; targetId: string }> = [];
-    for (const link of links) {
-      const key = JSON.stringify([link.targetType, link.targetId]);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(link);
-    }
-
-    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 3): see reorderEntries.
-    // A failure on a later link insert rolls the delete back too — the prior
-    // complete graph survives instead of being wiped to empty.
-    this.db.transaction((tx) => {
-      tx.delete(lorebookLinks).where(eq(lorebookLinks.lorebookId, lorebookId)).run();
-      for (const link of unique) {
-        tx.insert(lorebookLinks).values({
-          lorebookId,
-          targetType: link.targetType,
-          targetId: link.targetId,
-        }).run();
-      }
-    });
-    return this.getLinks(lorebookId);
+    return setLorebookLinks(this.db, lorebookId, links);
   }
 
   /**
    * Add a single link (idempotent — ignores duplicates).
    */
   async addLink(lorebookId: string, targetType: string, targetId: string): Promise<void> {
-    await this.db.insert(lorebookLinks).values({
-      lorebookId,
-      targetType,
-      targetId,
-    }).onConflictDoNothing().run();
+    await addLorebookLink(this.db, lorebookId, targetType, targetId);
   }
 
   /**
    * Remove a single link.
    */
   async removeLink(lorebookId: string, targetType: string, targetId: string): Promise<void> {
-    await this.db.delete(lorebookLinks).where(
-      and(
-        eq(lorebookLinks.lorebookId, lorebookId),
-        eq(lorebookLinks.targetType, targetType),
-        eq(lorebookLinks.targetId, targetId),
-      ),
-    ).run();
+    await removeLorebookLink(this.db, lorebookId, targetType, targetId);
+  }
+
+  /**
+   * Remove every link targeting one entity (owner deletion,
+   * LORE_SCRIPT_OWNERS_AS_LINKS step 2 — the RegexStore/TtsStore
+   * deleteLinksForTarget pattern): the deleted owner's link rows die with
+   * it; the BOOK itself survives for its other owners. The junction's
+   * `targetId` is a polymorphic text column without an FK, so this cleanup
+   * is app-level.
+   */
+  async deleteLinksForTarget(targetType: 'character' | 'persona', targetId: string): Promise<void> {
+    await deleteLorebookLinksForTarget(this.db, targetType, targetId);
   }
 
   /**

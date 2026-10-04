@@ -20,7 +20,7 @@ export async function listLorebooks(scopeType: string, ownerId?: string): Promis
   return unwrapRpc(response);
 }
 
-export async function createLorebook(body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string }): Promise<LorebookRecord> {
+export async function createLorebook(body: { name: string; description?: string; scopeType: string; links?: Array<{ targetType: "character" | "persona"; targetId: string }>; chatId?: string }): Promise<LorebookRecord> {
   const response = await client.api.lorebooks.$post({ json: body });
   return unwrapRpc(response);
 }

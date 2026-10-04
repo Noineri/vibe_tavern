@@ -780,3 +780,62 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     expect(await store.listEntries("lb_logic")).toHaveLength(1);
   });
 });
+
+// LORE_SCRIPT_OWNERS_AS_LINKS step 2: the create API takes an explicit owner
+// list (link rows); empty allowed. Nothing derives an owner from context —
+// the deprecated characterId/personaId create inputs are gone.
+describe("LorebookStore.createLorebook owner links (step 2)", () => {
+  test("create with an explicit owner list writes exactly those link rows", async () => {
+    const store = await mkStore();
+    const created = await store.createLorebook({
+      name: "owned",
+      scopeType: "entity",
+      links: [
+        { targetType: "character", targetId: "char_a" },
+        { targetType: "persona", targetId: "persona_b" },
+      ],
+    });
+    expect((await store.getLinks(created.id)).map((l) => `${l.targetType}:${l.targetId}`))
+      .toEqual(["character:char_a", "persona:persona_b"]);
+  });
+
+  test("create without links leaves the book unbound (no context-derived owner)", async () => {
+    const store = await mkStore();
+    const created = await store.createLorebook({ name: "unbound", scopeType: "entity" });
+    expect(await store.getLinks(created.id)).toEqual([]);
+    // Payload home-owner fields stay null (kept on the shape until the
+    // units-16–17 contract redesign).
+    expect(created.characterId).toBeNull();
+    expect(created.personaId).toBeNull();
+  });
+
+  test("duplicate tuples in the owner list are deduplicated (junction composite PK)", async () => {
+    const store = await mkStore();
+    const created = await store.createLorebook({
+      name: "dedup",
+      scopeType: "entity",
+      links: [
+        { targetType: "character", targetId: "char_a" },
+        { targetType: "character", targetId: "char_a" },
+      ],
+    });
+    expect(await store.getLinks(created.id)).toHaveLength(1);
+  });
+
+  test("deleteLinksForTarget removes only the target's rows; other links survive", async () => {
+    const store = await mkStore();
+    const created = await store.createLorebook({
+      name: "both",
+      scopeType: "entity",
+      links: [
+        { targetType: "character", targetId: "char_a" },
+        { targetType: "persona", targetId: "persona_b" },
+      ],
+    });
+    await store.deleteLinksForTarget("character", "char_a");
+    expect((await store.getLinks(created.id)).map((l) => `${l.targetType}:${l.targetId}`))
+      .toEqual(["persona:persona_b"]);
+    // The BOOK itself survives owner deletion (no cascade).
+    expect((await store.getLorebook(created.id))?.name).toBe("both");
+  });
+});

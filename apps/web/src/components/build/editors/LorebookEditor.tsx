@@ -265,8 +265,6 @@ export function LorebookEditor({
   const handleCreateLb = async (body: {
     name: string;
     scopeType: string;
-    characterId?: string;
-    personaId?: string;
     chatId?: string;
   }) => {
     await discardCreatedLorebookDraft();
@@ -442,10 +440,12 @@ export function LorebookEditor({
     // `scope` is the list filter (may be "all"); buildLorebookCreateBody
     // coerces "all" → "character" so creation works from every filter,
     // including the overview. The new lorebook opens in the inline edit
-    // form where its scope can be changed.
+    // form where its scope can be changed. No owner is derived from the
+    // context (LORE_SCRIPT_OWNERS_AS_LINKS step 2): an entity book is
+    // created unbound until linked.
     const body = buildLorebookCreateBody(
       scope,
-      { characterId, personaId, chatId },
+      chatId,
       t("new_lorebook"),
     );
     handleCreateLb(body);

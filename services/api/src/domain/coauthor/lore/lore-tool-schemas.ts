@@ -95,7 +95,7 @@ export const LOREBOOK_SETTINGS_FIELD_DESCRIPTIONS: {
   characterStrategy:
     "How character-scoped and global lore entries are ordered relative to each other: 0 = evenly interleave, 1 = character books first (default), 2 = global books first.",
   scopeType:
-    "Where this lorebook is scoped. 'entity' (default) attaches it to the current character; 'global' applies to every character; 'chat' only to this chat (rare).",
+    "Where this lorebook is scoped. 'entity' (default) binds it to the character being authored as a plain link (visible and removable in the lorebook's bindings list); 'global' applies to every character; 'chat' only to this chat (rare).",
   enabled: "Whether the lorebook is active at all. Defaults to true.",
 };
 

@@ -125,6 +125,15 @@ export class PersonaRuntime {
 			}
 			throw error;
 		}
+		// LORE_SCRIPT_OWNERS_AS_LINKS step 2: the persona's lorebook and script
+		// LINK ROWS die with it (RegexStore.deleteLinksForTarget pattern — the
+		// junction's polymorphic target has no FK); the books and scripts
+		// themselves SURVIVE for their other owners. Runs AFTER the store delete
+		// (unlike the character path) because a persona delete can be refused
+		// with a "referenced by one or more chats" conflict — a persona that
+		// survives must not lose its links.
+		await this.deps.stores.lorebooks.deleteLinksForTarget("persona", personaId);
+		await this.deps.stores.scripts.deleteLinksForTarget("persona", personaId);
 	}
 
 	async update(

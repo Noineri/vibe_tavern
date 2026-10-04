@@ -434,3 +434,70 @@ describe("ScriptStore.defaultVisualId (experience default-visual soft link)", ()
 		expect(cleared.defaultVisualId).toBeNull();
 	});
 });
+
+// LORE_SCRIPT_OWNERS_AS_LINKS step 2: the create API takes an explicit owner
+// list (link rows); empty allowed. Nothing derives an owner from context —
+// the deprecated characterId/personaId create inputs are gone.
+describe("ScriptStore.create owner links (step 2)", () => {
+	test("create with an explicit owner list writes exactly those link rows", async () => {
+		const { store } = await setup();
+		const created = await store.create({
+			name: "owned",
+			scopeType: "entity",
+			links: [
+				{ targetType: "character", targetId: "char_1" },
+				{ targetType: "persona", targetId: "persona_9" },
+			],
+		});
+		expect((await store.getLinks(created.id)).map((l) => `${l.targetType}:${l.targetId}`))
+			.toEqual(["character:char_1", "persona:persona_9"]);
+	});
+
+	test("create without links leaves the script unbound (no context-derived owner)", async () => {
+		const { store } = await setup();
+		const created = await store.create({ name: "unbound", scopeType: "entity" });
+		expect(await store.getLinks(created.id)).toEqual([]);
+		// Payload home-owner fields stay null (kept on the shape until the
+		// units-16–17 contract redesign).
+		expect(created.characterId).toBeNull();
+		expect(created.personaId).toBeNull();
+	});
+
+	test("creationIntentId retry returns the existing script and ensures the requested links without duplicates", async () => {
+		const { store } = await setup();
+		const first = await store.create({
+			name: "intent",
+			scopeType: "entity",
+			creationIntentId: "intent-1",
+			links: [{ targetType: "character", targetId: "char_1" }],
+		});
+		// Retry with the same intent + owner list: the same script comes back
+		// and the links exist exactly once (onConflictDoNothing).
+		const retry = await store.create({
+			name: "intent",
+			scopeType: "entity",
+			creationIntentId: "intent-1",
+			links: [{ targetType: "character", targetId: "char_1" }],
+		});
+		expect(retry.id).toBe(first.id);
+		expect((await store.listAll()).filter((s) => s.creationIntentId === "intent-1")).toHaveLength(1);
+		expect(await store.getLinks(first.id)).toHaveLength(1);
+	});
+
+	test("deleteLinksForTarget removes only the target's rows; other links survive", async () => {
+		const { store } = await setup();
+		const created = await store.create({
+			name: "both",
+			scopeType: "entity",
+			links: [
+				{ targetType: "character", targetId: "char_1" },
+				{ targetType: "persona", targetId: "persona_9" },
+			],
+		});
+		await store.deleteLinksForTarget("persona", "persona_9");
+		expect((await store.getLinks(created.id)).map((l) => `${l.targetType}:${l.targetId}`))
+			.toEqual(["character:char_1"]);
+		// The SCRIPT itself survives owner deletion (no cascade).
+		expect((await store.getById(created.id))?.name).toBe("both");
+	});
+});

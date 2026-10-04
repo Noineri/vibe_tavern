@@ -333,7 +333,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     : null;
 
   const handleImportScript = async (code: string) => {
-    const imported = await importScript({ format: "js", code, scopeType: scope, ...(scope === "entity" ? (personaId ? { personaId } : { characterId }) : {}), chatId: scope === "chat" ? chatId ?? undefined : undefined });
+    // No owner is derived from the context (LORE_SCRIPT_OWNERS_AS_LINKS
+    // step 2): an entity-scoped import lands unbound until linked.
+    const imported = await importScript({ format: "js", code, scopeType: scope, chatId: scope === "chat" ? chatId ?? undefined : undefined });
     setScripts((prev) => [...prev, imported]);
     ensureDraft(imported);
     setActiveScriptId(imported.id);
@@ -344,23 +346,21 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   // ── Scope-aware body helper ──────────────────────────────
   // "all" — overview mode with no specific owner; creating/importing scripts
   // is disabled there (CTAs are hidden in LorebookEditor), the fallback is purely defensive.
-  const scopeBody = () => {
+  // LORE_SCRIPT_OWNERS_AS_LINKS step 2: no owner is derived from the context —
+  // an entity-scoped script is created unbound (empty owner list); owners are
+  // explicit links (the creation-row picker is step 3). Mirrors
+  // buildLorebookCreateBody in lorebook-create-body.ts.
+  const scopeBody = (): { scopeType: string; chatId?: string } => {
     const effectiveScope: Exclude<Scope, "all" | "current"> =
       scope === "all" || scope === "current" ? "entity" : scope;
-    const base: Record<string, string | undefined> = { scopeType: effectiveScope };
-    // Entity home FK resolves from the current context: a persona context owns
-    // the script, otherwise the character does (exactly one typed FK).
-    if (effectiveScope === "entity") {
-      if (personaId) base.personaId = personaId;
-      else base.characterId = characterId;
-    }
-    if (effectiveScope === "chat") base.chatId = chatId ?? undefined;
-    return base;
+    const body: { scopeType: string; chatId?: string } = { scopeType: effectiveScope };
+    if (effectiveScope === "chat" && chatId) body.chatId = chatId;
+    return body;
   };
 
   // ── Handlers ─────────────────────────────────────────────
   const handleAdd = (kind: "prompt" | "dice" = "prompt", creationIntentId?: string) => {
-    const body = { name: "New Script", code: "", scriptKind: kind, creationIntentId, ...scopeBody() } as Parameters<typeof createScript>[0];
+    const body: Parameters<typeof createScript>[0] = { name: "New Script", code: "", scriptKind: kind, creationIntentId, ...scopeBody() };
     handleCreateScript(body);
   };
 
@@ -370,7 +370,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     if (activeScript) {
       updateDraft({ code: activeScript.code ? activeScript.code + "\n\n" + tpl.code : tpl.code });
     } else {
-      void handleCreateScript({ name: tpl.name, code: tpl.code, scriptKind: tpl.scriptKind || "prompt", creationIntentId, ...scopeBody() } as Parameters<typeof createScript>[0]);
+      void handleCreateScript({ name: tpl.name, code: tpl.code, scriptKind: tpl.scriptKind || "prompt", creationIntentId, ...scopeBody() });
     }
   };
 
