@@ -806,7 +806,7 @@ export function ProviderModal({
             <ProviderProfileList
               filteredProfiles={filteredProfiles}
               editingId={editingId}
-              activeProviderProfileId={activeProviderProfileId}
+              activeProfileId={activeProviderProfileId}
               profileSearch={profileSearch}
               profiles={providerProfiles}
               onReorder={reorderProviderProfilesAction}

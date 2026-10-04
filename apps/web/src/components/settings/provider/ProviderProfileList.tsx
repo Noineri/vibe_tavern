@@ -1,8 +1,7 @@
 import React, { type CSSProperties } from 'react';
-import { useT } from '../../../i18n/context.js';
-import { useIsMobile } from '../../../hooks/use-mobile.js';
+import { useT, type TFunc } from '../../../i18n/context.js';
 import { useMasterDetail } from '../../shared/MasterDetailModal.js';
-import type { ProviderProfileRecord } from "../../../api/types.js";
+import type { ProviderProfileRecord } from '../../../api/types.js';
 import { PROVIDER_PRESETS, TYPE_LABELS } from '../../../provider-presets.js';
 import { SearchInput } from '../../shared/SearchInput.js';
 import { cn } from '../../../lib/cn.js';
@@ -12,13 +11,39 @@ import { DndContext, DragOverlay, closestCenter } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-interface ProviderProfileListProps {
+/**
+ * forks: 0 — provider-family master-list source.
+ *
+ * Family-specific row knowledge enters through the slots below; list chrome,
+ * search, reorder, selection-only behavior, and mobile drill-down stay here.
+ */
+export interface ProviderProfileListItem {
+  id: string;
+  name: string;
+  /** LLM fallback metadata; media-family consumers supply row slots instead. */
+  providerPreset?: string;
+  hasStoredApiKey?: boolean;
+}
+
+export interface ProviderProfileListProps<TProfile extends ProviderProfileListItem = ProviderProfileRecord> {
   /** Full (unfiltered) list — the hook's source of truth for reorder. */
-  profiles: ProviderProfileRecord[];
+  profiles: TProfile[];
   /** Already-filtered subset for rendering (parent controls search). */
-  filteredProfiles: ProviderProfileRecord[];
+  filteredProfiles: TProfile[];
   editingId: string | null;
-  activeProviderProfileId: string | null;
+  /** Canonical active-profile pointer when a family does not need a derived marker. */
+  activeProfileId: string | null;
+  /** Family-specific effective-active marker (for example ImageGen's fallback pointer). */
+  rowActive?: (profile: TProfile) => boolean;
+  /** Family-specific secondary row label; LLM defaults to its provider-preset label. */
+  rowSubLabel?: (profile: TProfile) => React.ReactNode;
+  /** Family-specific connection/status dot class; LLM defaults to its API-key status. */
+  statusClassName?: (profile: TProfile, isActive: boolean) => string;
+  /** Family-specific title and new-profile translation keys. */
+  titleKey?: Parameters<TFunc>[0];
+  newProfileKey?: Parameters<TFunc>[0];
+  /** Opt-in test-id prefix for adopting family lists; absent for the LLM source instance. */
+  testidStem?: string;
   profileSearch: string;
   onProfileSearchChange: (value: string) => void;
   onSelectProfile: (id: string) => void;
@@ -28,22 +53,33 @@ interface ProviderProfileListProps {
   selectionOnly?: boolean;
 }
 
+function defaultRowSubLabel(profile: ProviderProfileListItem): string {
+  const presetId = profile.providerPreset ?? '';
+  return TYPE_LABELS[presetId] || presetId;
+}
+
+function defaultStatusClassName(profile: ProviderProfileListItem, isActive: boolean): string {
+  const preset = PROVIDER_PRESETS.find((candidate) => candidate.id === profile.providerPreset);
+  const hasRequiredAuth = preset?.noApiKey === true || profile.hasStoredApiKey === true;
+  return isActive ? (hasRequiredAuth ? 'bg-success' : 'bg-danger') : 'bg-t4';
+}
+
 // A single profile row with a dedicated ≡ drag handle (same pattern as
 // SortablePresetRow in PresetList). The row keeps onPointerDown-to-select;
 // dragging is only initiated from the handle, avoiding conflicts with the
 // drill-down button inside the row.
-const SortableProfileRow = React.memo(({
-  p, isEditing, isActive, isMobile, onSelectProfile, dndDisabled,
+function SortableProfileRowInner<TProfile extends ProviderProfileListItem>({
+  p, isEditing, isActive, onSelectProfile, dndDisabled, rowSubLabel, statusClassName, testidStem,
 }: {
-  p: ProviderProfileRecord;
+  p: TProfile;
   isEditing: boolean;
   isActive: boolean;
-  isMobile: boolean;
   onSelectProfile: (id: string) => void;
   dndDisabled: boolean;
-}) => {
-  const preset = PROVIDER_PRESETS.find((candidate) => candidate.id === p.providerPreset);
-  const hasRequiredAuth = preset?.noApiKey === true || p.hasStoredApiKey;
+  rowSubLabel: (profile: TProfile) => React.ReactNode;
+  statusClassName: (profile: TProfile, isActive: boolean) => string;
+  testidStem?: string;
+}) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: p.id,
     disabled: dndDisabled,
@@ -58,6 +94,8 @@ const SortableProfileRow = React.memo(({
     <div
       ref={setNodeRef}
       style={style}
+      data-testid={testidStem ? `${testidStem}-profile-row` : undefined}
+      data-profile-id={testidStem ? p.id : undefined}
       className={cn(
         'cursor-pointer border-l-[3px] pl-4 pr-2 min-h-[56px] flex items-center active:bg-s2 sm:overflow-hidden sm:whitespace-nowrap sm:text-ellipsis sm:transition-colors touch-manipulation',
         isEditing
@@ -83,11 +121,7 @@ const SortableProfileRow = React.memo(({
         <div
           className={cn(
             'h-2 w-2 shrink-0 rounded-full transition-colors',
-            isActive
-              ? hasRequiredAuth
-                ? 'bg-success'
-                : 'bg-danger'
-              : 'bg-t4',
+            statusClassName(p, isActive),
           )}
         />
         <div className="min-w-0 flex-1 py-2">
@@ -101,34 +135,42 @@ const SortableProfileRow = React.memo(({
               isEditing ? 'text-accent-t' : 'text-t4',
             )}
           >
-            {TYPE_LABELS[p.providerPreset] || p.providerPreset}
+            {rowSubLabel(p)}
           </div>
         </div>
         <MasterDetailMobileDrillDown onSelect={() => onSelectProfile(p.id)} className="py-3" />
       </div>
     </div>
   );
-}, (prev, next) =>
+}
+
+const SortableProfileRow = React.memo(SortableProfileRowInner, (prev, next) =>
   prev.isEditing === next.isEditing &&
   prev.isActive === next.isActive &&
   prev.p.id === next.p.id &&
   prev.p.name === next.p.name &&
-  prev.dndDisabled === next.dndDisabled);
+  prev.dndDisabled === next.dndDisabled,
+) as typeof SortableProfileRowInner;
 
-export function ProviderProfileList({
+export function ProviderProfileList<TProfile extends ProviderProfileListItem = ProviderProfileRecord>({
   profiles,
   filteredProfiles,
   editingId,
-  activeProviderProfileId,
+  activeProfileId,
+  rowActive,
+  rowSubLabel = defaultRowSubLabel,
+  statusClassName = defaultStatusClassName,
+  titleKey = 'profiles_label',
+  newProfileKey = 'new_profile_btn',
+  testidStem,
   profileSearch,
   onProfileSearchChange,
   onSelectProfile,
   onAddProfile,
   onReorder,
   selectionOnly = false,
-}: ProviderProfileListProps) {
+}: ProviderProfileListProps<TProfile>) {
   const { t } = useT();
-  const isMobile = useIsMobile();
   const { openDetail } = useMasterDetail();
   const dndDisabled = selectionOnly || profileSearch.trim().length > 0;
 
@@ -139,7 +181,7 @@ export function ProviderProfileList({
     handleDragStart,
     handleDragEnd,
     handleDragCancel,
-  } = useReorderableList<ProviderProfileRecord>({
+  } = useReorderableList<TProfile>({
     items: profiles,
     getId: (p) => p.id,
     onReorder: (activeId, overId, currentItems) => {
@@ -164,13 +206,11 @@ export function ProviderProfileList({
   const dragOverlayProfile = activeDragProfile
     ? (() => {
         const profile = activeDragProfile;
-        const preset = PROVIDER_PRESETS.find((c) => c.id === profile.providerPreset);
-        const isActive = activeProviderProfileId === profile.id;
-        const hasRequiredAuth = preset?.noApiKey === true || profile.hasStoredApiKey;
+        const isActive = rowActive?.(profile) ?? activeProfileId === profile.id;
         return (
           <div className="flex items-center gap-2 border-l-[3px] border-l-transparent pl-4 pr-2 min-h-[56px] bg-s2">
             <span className="text-base leading-none text-t4">≡</span>
-            <div className={cn('h-2 w-2 shrink-0 rounded-full', isActive ? (hasRequiredAuth ? 'bg-success' : 'bg-danger') : 'bg-t4')} />
+            <div className={cn('h-2 w-2 shrink-0 rounded-full', statusClassName(profile, isActive))} />
             <span className="truncate text-[13px] font-medium text-t1">{isActive ? '★ ' : ''}{profile.name}</span>
           </div>
         );
@@ -180,7 +220,7 @@ export function ProviderProfileList({
   return (
     <div className="flex flex-col flex-1 min-h-0 pt-5 pb-2.5">
       <div className="mb-1.5 px-4 font-ui text-[12px] font-medium uppercase tracking-[0.05em] text-t3">
-        {t('profiles_label')}
+        {t(titleKey)}
       </div>
 
       <SearchInput
@@ -201,16 +241,18 @@ export function ProviderProfileList({
           <div className="flex-1 overflow-y-auto">
             {rendered.map((p) => {
               const isEditing = editingId === p.id;
-              const isActive = activeProviderProfileId === p.id;
+              const isActive = rowActive?.(p) ?? activeProfileId === p.id;
               return (
                 <SortableProfileRow
                   key={p.id}
                   p={p}
                   isEditing={isEditing}
                   isActive={isActive}
-                  isMobile={isMobile}
                   onSelectProfile={onSelectProfile}
                   dndDisabled={dndDisabled}
+                  rowSubLabel={rowSubLabel}
+                  statusClassName={statusClassName}
+                  testidStem={testidStem}
                 />
               );
             })}
@@ -224,10 +266,11 @@ export function ProviderProfileList({
 
       {!selectionOnly && (
         <div
+          data-testid={testidStem ? `${testidStem}-new-profile-btn` : undefined}
           className="mx-3 mt-3 cursor-pointer rounded-md border border-dashed border-border2 py-2 text-center font-ui text-[12px] font-medium text-t3 transition-colors hover:border-border hover:text-t1 hover:bg-s2"
           onClick={() => { void onAddProfile?.(); openDetail(); }}
         >
-          {t('new_profile_btn')}
+          {t(newProfileKey)}
         </div>
       )}
     </div>
