@@ -2689,6 +2689,7 @@ export default interface Resources {
     "script_links_hint": "Additional characters and personas this script runs for, beyond its home scope. Click a pill to unlink; click + to bind more.",
     "script_links_label": "Also runs for",
     "script_name": "Name",
+    "script_name_search_placeholder": "Search scripts…",
     "script_no_scripts": "No scripts in this scope",
     "script_running": "Running...",
     "script_template_advanced_lore": "Advanced Lorebook",

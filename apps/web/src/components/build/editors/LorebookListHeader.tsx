@@ -10,21 +10,22 @@ import type { Tab } from "./use-lorebook-editor-state.js";
 import type { Scope } from "./LorebookAccordion.js";
 import { LorebookScopeBreadcrumb } from "./LorebookScopePanel.js";
 
-export interface LorebookOwnerOption {
+export interface WorldLoreOwnerOption {
   id: string;
   name: string;
   kind: "character" | "persona";
 }
 
-interface LorebookOwnerFilterProps {
+interface WorldLoreOwnerFilterProps {
   isMobile: boolean;
   ownerId: string | null;
-  owners: LorebookOwnerOption[];
+  owners: WorldLoreOwnerOption[];
   onOwnerChange: (ownerId: string | null) => void;
+  testId: string;
   t: TFunc;
 }
 
-function ownerGroups(owners: LorebookOwnerOption[], t: TFunc) {
+function ownerGroups(owners: WorldLoreOwnerOption[], t: TFunc) {
   return [
     {
       id: "characters",
@@ -39,14 +40,15 @@ function ownerGroups(owners: LorebookOwnerOption[], t: TFunc) {
   ];
 }
 
-/** Responsive owner picker: searchable desktop combobox and mobile BottomSheet. */
-export function LorebookOwnerFilter({
+/** Responsive owner picker shared by the lorebook and script list headers. */
+export function WorldLoreOwnerFilter({
   isMobile,
   ownerId,
   owners,
   onOwnerChange,
+  testId,
   t,
-}: LorebookOwnerFilterProps) {
+}: WorldLoreOwnerFilterProps) {
   const selectedOwner = owners.find((owner) => owner.id === ownerId) ?? null;
   const label = selectedOwner?.name ?? t("lore_owner_all");
   const groups = ownerGroups(owners, t);
@@ -75,7 +77,7 @@ export function LorebookOwnerFilter({
         trigger={
           <button
             type="button"
-            data-testid="lorebook-owner-mobile"
+            data-testid={testId}
             className="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] font-medium text-t3 transition-all hover:bg-s2 active:bg-s3"
           >
             <span className="max-w-36 truncate" title={selectedOwner?.name}>{label}</span>
@@ -95,7 +97,7 @@ export function LorebookOwnerFilter({
       searchPlaceholder={t("lore_owner_search_placeholder")}
       onChange={(value) => onOwnerChange(value || null)}
       triggerDetail={false}
-      triggerTestId="lorebook-owner-desktop"
+      triggerTestId={testId}
       triggerClassName="flex h-8 max-w-48 shrink-0 items-center justify-between gap-1.5 rounded px-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:bg-s2 hover:text-t1"
       triggerLeading={<span>{t("lore_owner")}:</span>}
       contentWidth={260}
@@ -103,12 +105,12 @@ export function LorebookOwnerFilter({
   );
 }
 
-interface LorebookListHeaderProps {
+interface WorldLoreListHeaderProps {
   isMobile: boolean;
   scope: Scope;
   tab: Tab;
   ownerId: string | null;
-  owners: LorebookOwnerOption[];
+  owners: WorldLoreOwnerOption[];
   nameSearch: string;
   onNameSearchChange: (value: string) => void;
   onOwnerChange: (ownerId: string | null) => void;
@@ -122,7 +124,7 @@ interface LorebookListHeaderProps {
   t: TFunc;
 }
 
-export function LorebookListHeader({
+export function WorldLoreListHeader({
   isMobile,
   scope,
   tab,
@@ -139,9 +141,13 @@ export function LorebookListHeader({
   onAddDiceScript,
   onImportScript,
   t,
-}: LorebookListHeaderProps) {
+}: WorldLoreListHeaderProps) {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const title = tab === "lorebooks" ? t("lorebooks_card_title") : t("scripts_card_title");
+  const searchPlaceholder = tab === "lorebooks" ? t("lorebook_name_search_placeholder") : t("script_name_search_placeholder");
+  const testPrefix = tab === "lorebooks" ? "lorebook" : "script";
+  const searchTestId = `${testPrefix}-name-search`;
+  const ownerTestId = `${testPrefix}-owner-${isMobile ? "mobile" : "desktop"}`;
 
   return (
     <div
@@ -162,9 +168,9 @@ export function LorebookListHeader({
       {isMobile && mobileSearchOpen ? (
         <SearchInput
           autoFocus
-          data-testid="lorebook-name-search"
+          data-testid={searchTestId}
           className="min-w-0 flex-1"
-          placeholder={t("lorebook_name_search_placeholder")}
+          placeholder={searchPlaceholder}
           value={nameSearch}
           onChange={(event) => onNameSearchChange(event.target.value)}
           trailing={
@@ -184,30 +190,31 @@ export function LorebookListHeader({
           {!isMobile && <LorebookScopeBreadcrumb scope={scope} tab={tab} t={t} />}
           {!isMobile && (
             <div className="ml-auto flex min-w-0 items-center gap-1">
-              {tab === "lorebooks" && scope === "entity" && (
-                <LorebookOwnerFilter
+              {scope === "entity" && (
+                <WorldLoreOwnerFilter
                   isMobile={false}
                   ownerId={ownerId}
                   owners={owners}
                   onOwnerChange={onOwnerChange}
+                  testId={ownerTestId}
                   t={t}
                 />
               )}
               <SearchInput
-                data-testid="lorebook-name-search"
+                data-testid={searchTestId}
                 className="w-48"
-                placeholder={t("lorebook_name_search_placeholder")}
+                placeholder={searchPlaceholder}
                 value={nameSearch}
                 onChange={(event) => onNameSearchChange(event.target.value)}
               />
             </div>
           )}
           {isMobile && (
-            <CustomTooltip content={t("lorebook_name_search_placeholder")}>
+            <CustomTooltip content={searchPlaceholder}>
               <button
                 type="button"
-                data-testid="lorebook-name-search-toggle"
-                aria-label={t("lorebook_name_search_placeholder")}
+                data-testid={`${testPrefix}-name-search-toggle`}
+                aria-label={searchPlaceholder}
                 className="ml-auto flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
                 onClick={() => setMobileSearchOpen(true)}
               >

@@ -27,9 +27,7 @@ function getScopeItems(tab: Tab, t: TFunc): { id: Scope; icon: ReactNode; label:
   const allLabel = tab === "lorebooks" ? t("scope_all") : t("scope_all_scripts");
   return [
     { id: "all", icon: <Ic.stack />, label: allLabel },
-    ...(tab === "lorebooks"
-      ? [{ id: "current" as const, icon: <Ic.target />, label: t("scope_current") }]
-      : []),
+    { id: "current", icon: <Ic.target />, label: t("scope_current") },
     { id: "global", icon: <Ic.globe />, label: t("scope_global") },
     { id: "entity", icon: <Ic.book />, label: t("scope_entity") },
     { id: "chat", icon: <Ic.chat />, label: t("scope_chat") },

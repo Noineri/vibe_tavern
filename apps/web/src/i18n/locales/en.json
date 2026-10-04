@@ -1627,6 +1627,7 @@
 	"lore_owner_all": "All",
 	"lore_owner_search_placeholder": "Search owners…",
 	"lorebook_name_search_placeholder": "Search lorebooks…",
+	"script_name_search_placeholder": "Search scripts…",
 	"scope_lorebook": "Lorebook",
 	"scope_script": "Script",
 	"scope_visual": "Visuals",

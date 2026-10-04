@@ -1639,6 +1639,7 @@
 	"lore_owner_all": "Все",
 	"lore_owner_search_placeholder": "Поиск владельца…",
 	"lorebook_name_search_placeholder": "Поиск лорбуков…",
+	"script_name_search_placeholder": "Поиск скриптов…",
 	"scope_lorebook": "Лорбук",
 	"scope_script": "Скрипт",
 	"scope_visual": "Визуалы",

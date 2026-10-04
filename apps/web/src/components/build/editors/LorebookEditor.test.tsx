@@ -110,6 +110,9 @@ mock.module("./ScriptEditor.js", () => ({
     modals: null,
     scriptListContent: null,
     scriptEditorPanel: null,
+    ownerOptions: [],
+    nameSearch: "",
+    setNameSearch: () => {},
     setActiveScriptId: () => {},
     handleAdd: () => {},
     handleAddDice: () => {},
@@ -647,6 +650,34 @@ describe("LorebookEditor list filters", () => {
 
     fireEvent.click(getByText("scope_global"));
     await waitFor(() => expect(queryByTestId("lorebook-owner-mobile")).toBeNull());
+  });
+
+  it("keeps scripts' mobile owner chip scoped to Bound", async () => {
+    const { getByLabelText, getByText, queryByTestId } = await renderAtList();
+    fireEvent.click(getByLabelText("scripts_card_title"));
+
+    expect(getByText("scope_current")).toBeTruthy();
+    expect(queryByTestId("script-owner-mobile")).toBeNull();
+
+    fireEvent.click(getByText("scope_entity"));
+    await waitFor(() => expect(queryByTestId("script-owner-mobile")).not.toBeNull());
+
+    fireEvent.click(getByText("scope_global"));
+    await waitFor(() => expect(queryByTestId("script-owner-mobile")).toBeNull());
+  });
+
+  it("silently resets a deleted persisted script owner", async () => {
+    sessionStorage.setItem("vibe-tavern.world-lore-tab", "scripts");
+    writeWorldLoreFilters({
+      lorebooks: { scope: "all", ownerId: null },
+      scripts: { scope: "entity", ownerId: "deleted-owner" },
+    });
+
+    render(<LorebookEditor characterId={CHARACTER_ID} chatId={null} personaId={null} />);
+
+    await waitFor(() => {
+      expect(readWorldLoreFilters().scripts.ownerId).toBeNull();
+    });
   });
 });
 

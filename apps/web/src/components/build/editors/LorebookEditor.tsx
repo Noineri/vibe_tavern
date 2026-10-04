@@ -14,7 +14,7 @@
  *   - LorebookImportModal — 3-step import wizard
  *   - ScriptEditor (useScriptPanel) — script editor
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FormProvider } from "react-hook-form";
 
@@ -36,7 +36,7 @@ import { useScriptPanel } from "./ScriptEditor.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
 import type { Scope } from "./LorebookAccordion.js";
 import { LorebookScopePanel } from "./LorebookScopePanel.js";
-import { LorebookListHeader, LorebookOwnerFilter, type LorebookOwnerOption } from "./LorebookListHeader.js";
+import { WorldLoreListHeader, WorldLoreOwnerFilter } from "./LorebookListHeader.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget, personaToLinkTarget } from "../../../lib/link-targets.js";
 import { LoreEntryEditor } from "./LoreEntryEditor.js";
@@ -44,6 +44,7 @@ import { LorebookImportModal } from "./LorebookImportModal.js";
 import { buildLorebookCreateBody } from "./lorebook-create-body.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
+import { useLorebookListFilters } from "./use-world-lore-list-filters.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -206,6 +207,7 @@ export function LorebookEditor({
     chatId,
     personaId,
     scope,
+    ownerId,
     onOpenEditor: () => setView("editor"),
     onBackToList: () => setView("list"),
   });
@@ -225,29 +227,20 @@ export function LorebookEditor({
   const ownerDataReady = useBootstrapStore((s) => s.data !== null && s.personas !== null);
   const linkCharacters: LinkTarget[] = allCharacters.map(characterToLinkTarget);
   const linkPersonas: LinkTarget[] = personas.map(personaToLinkTarget);
-  const ownerOptions = useMemo<LorebookOwnerOption[]>(() => {
-    const characterIds = new Set(lorebooks.flatMap((lorebook) => lorebook.characterId ? [lorebook.characterId] : []));
-    const personaIds = new Set(lorebooks.flatMap((lorebook) => lorebook.personaId ? [lorebook.personaId] : []));
-    return [
-      ...allCharacters.filter((character) => characterIds.has(character.id)).map((character) => ({ id: character.id, name: character.name, kind: "character" as const })),
-      ...personas.filter((persona) => personaIds.has(persona.id)).map((persona) => ({ id: persona.id, name: persona.name, kind: "persona" as const })),
-    ];
-  }, [allCharacters, lorebooks, personas]);
   const [lorebookNameSearch, setLorebookNameSearch] = useState("");
-  const visibleLorebooks = useMemo(() => {
-    const ownerFiltered = scope === "entity" && ownerId
-      ? lorebooks.filter((lorebook) => lorebook.characterId === ownerId || lorebook.personaId === ownerId)
-      : lorebooks;
-    const query = lorebookNameSearch.trim().toLocaleLowerCase();
-    return query ? ownerFiltered.filter((lorebook) => lorebook.name.toLocaleLowerCase().includes(query)) : ownerFiltered;
-  }, [lorebookNameSearch, lorebooks, ownerId, scope]);
-
-  useEffect(() => {
-    if (!ownerId || !ownerDataReady) return;
-    const ownerExists = allCharacters.some((character) => character.id === ownerId)
-      || personas.some((persona) => persona.id === ownerId);
-    if (!ownerExists) setOwnerId(null);
-  }, [allCharacters, ownerDataReady, ownerId, personas, setOwnerId]);
+  const { owners: lorebookOwnerOptions, visibleLorebooks } = useLorebookListFilters({
+    scope,
+    ownerId,
+    setOwnerId,
+    lorebooks,
+    characters: allCharacters,
+    personas,
+    ownerDataReady,
+    nameSearch: lorebookNameSearch,
+  });
+  const ownerOptions = tab === "lorebooks" ? lorebookOwnerOptions : scriptPanel.ownerOptions;
+  const nameSearch = tab === "lorebooks" ? lorebookNameSearch : scriptPanel.nameSearch;
+  const onNameSearchChange = tab === "lorebooks" ? setLorebookNameSearch : scriptPanel.setNameSearch;
 
   // ═══ Lorebook mutations ═══
 
@@ -637,14 +630,14 @@ export function LorebookEditor({
 
   // Header bar (list) is extracted so this editor stays below its line baseline.
   const headerBar = (
-    <LorebookListHeader
+    <WorldLoreListHeader
       isMobile={isMobile}
       scope={scope}
       tab={tab}
       ownerId={ownerId}
       owners={ownerOptions}
-      nameSearch={lorebookNameSearch}
-      onNameSearchChange={setLorebookNameSearch}
+      nameSearch={nameSearch}
+      onNameSearchChange={onNameSearchChange}
       onOwnerChange={setOwnerId}
       onBack={handleBackToPick}
       onSwitchTab={() => handleSwitchTab(tab === "lorebooks" ? "scripts" : "lorebooks")}
@@ -829,15 +822,16 @@ export function LorebookEditor({
                 scope={scope}
                 onScopeChange={setScope}
                 tab={tab}
-                mobileOwnerFilter={tab === "lorebooks" ? (
-                  <LorebookOwnerFilter
+                mobileOwnerFilter={(
+                  <WorldLoreOwnerFilter
                     isMobile
                     ownerId={ownerId}
                     owners={ownerOptions}
                     onOwnerChange={setOwnerId}
+                    testId={tab === "lorebooks" ? "lorebook-owner-mobile" : "script-owner-mobile"}
                     t={t}
                   />
-                ) : undefined}
+                )}
                 t={t}
               />
               {tab === "lorebooks"
