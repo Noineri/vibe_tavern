@@ -13,11 +13,13 @@
  * execution log). The hook path is environment-agnostic.
  */
 import { describe, it, expect, beforeEach, mock } from "bun:test";
-import { renderHook, waitFor } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { CoauthorModule } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
+
+const { renderHook, waitFor } = await import("@testing-library/react");
 
 // Mock the two chat-actions the switch calls. `listCoauthorModulesAction` is
 // read by useModuleSwitch on mount; `setCoauthorModuleAction` is what
@@ -31,6 +33,8 @@ const listCoauthorModulesAction = mock(() => Promise.resolve(MODULES));
 const setCoauthorModuleAction = mock(async (_chatId: string, _moduleId: string | null) => {});
 const patchUiSettingsAction = mock(async (_patch: never) => ({}) as never);
 const loadFavoriteModelsAction = mock(async (_profileId: string) => {});
+const loadCoauthorConnectionSettingsAction = mock(async (_profileId: string) => null);
+const upsertCoauthorConnectionSettingsAction = mock(async (_profileId: string, _body: unknown) => ({}));
 const realChatActions = await import("../../stores/api-actions/chat-actions.js");
 const realI18n = await import("../../i18n/context.js");
 const realProviderProfiles = await import("../../hooks/use-provider-profiles.js");
@@ -86,11 +90,15 @@ mock.module("../../stores/api-actions/bootstrap-actions.js", () => {
 	};
 });
 
-// Mock loadFavoriteModelsAction so the hook doesn't fire a network request.
+// Mock loadFavoriteModelsAction + the CG-2 connection-row actions so the
+// binding hook doesn't hit the network (model now lives on the row, not in
+// ui_settings).
 mock.module("../../stores/api-actions/provider-actions.js", () => {
   return {
     ...realProviderActions,
     loadFavoriteModelsAction,
+    loadCoauthorConnectionSettingsAction,
+    upsertCoauthorConnectionSettingsAction,
   };
 });
 
@@ -154,11 +162,24 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 					aiAssistantProviderId: null,
 					aiAssistantModelName: null,
 					coauthorProviderId: "p1",
-					coauthorModelName: "gpt-4o",
 					updatedAt: "2026-01-01",
 				},
 				isArmServer: false,
 			} as never,
+		});
+		// CG-2: the Co-Author model comes from the bound connection's row — seed it
+		// so activeModelId stays "gpt-4o" (same value the retired ui_settings
+		// global carried in this fixture).
+		useProviderDataStore.setState({
+			coauthorSettingsByProfile: {
+				p1: {
+					providerProfileId: "p1",
+					modelName: "gpt-4o",
+					settings: {},
+					createdAt: "2026-01-01",
+					updatedAt: "2026-01-01",
+				},
+			},
 		});
 		// Seed the provider-data-store: profile p1 with tool-capable cache + favorites.
 		useProviderDataStore.setState({
@@ -199,9 +220,31 @@ describe("useCoauthorInputArea — tool-filtered favorites", () => {
 		expect(result.current.activeModelId).toBe("gpt-4o");
 	});
 
-	it("handleSelectModel calls quickSwitchModel (updates coauthorModelName, not RP defaultModel)", async () => {
+	it("handleSelectModel quick-switches the connection row's model (not ui_settings, not the RP defaultModel)", async () => {
 		const { result } = renderHook(() => useCoauthorInputArea());
 		result.current.handleSelectModel("gpt-4o-mini");
-		await waitFor(() => expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorModelName: "gpt-4o-mini" }));
+		await waitFor(() => expect(upsertCoauthorConnectionSettingsAction).toHaveBeenCalledWith("p1", {
+			modelName: "gpt-4o-mini",
+			settings: expect.objectContaining({ maxTokens: 8_000, contextBudget: 128_000 }),
+		}));
+		expect(patchUiSettingsAction).not.toHaveBeenCalled();
+	});
+
+	it("uses the bound connection's Co-Author limits for the token counter, not RP profile limits", () => {
+		useProviderDataStore.setState({
+			coauthorSettingsByProfile: {
+				p1: {
+					providerProfileId: "p1",
+					modelName: "gpt-4o",
+					settings: { contextBudget: 6_000, maxTokens: 1_000 },
+					createdAt: "2026-01-01",
+					updatedAt: "2026-01-01",
+				},
+			},
+		});
+		const { result } = renderHook(() => useCoauthorInputArea());
+		expect(result.current.contextSize).toBe(6_000);
+		expect(result.current.maxTokens).toBe(1_000);
+		expect(result.current.availableBudget).toBe(5_000);
 	});
 });

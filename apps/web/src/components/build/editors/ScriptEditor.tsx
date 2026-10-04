@@ -12,7 +12,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
 import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
-import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
+import { SCRIPT_TEMPLATES, templateScriptKind } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
@@ -28,7 +28,7 @@ import {
   useScriptDraftStore,
   type ScriptDraftValues,
 } from "../../../stores/script-draft-store.js";
-import { listAllScripts, listScripts, createScript, updateScript, deleteScript, importScript, getScriptLinks, setScriptLinks } from "../../../api/script-api.js";
+import { listAllScripts, listParticipatingScripts, listScripts, createScript, updateScript, deleteScript, importScript, getScriptLinks, setScriptLinks } from "../../../api/script-api.js";
 import type { ScriptRecord, ScriptLinkRecord } from "../../../api/types.js";
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -36,6 +36,7 @@ import { LoreEntryList } from "./LoreEntryList.js";
 import { ScriptTester } from "./ScriptTester.js";
 import { DiceScriptTester } from "./DiceScriptTester.js";
 import { ScriptApiReference } from "./script-api-reference.js";
+import { useWorldLoreListFilters } from "./use-world-lore-list-filters.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -58,6 +59,7 @@ interface ScriptPanelProps {
   chatId: string | null;
   personaId: string | null;
   scope: Scope;
+  ownerId: string | null;
   onOpenEditor?: () => void;
   onBackToList?: () => void;
 }
@@ -71,10 +73,13 @@ interface ScriptPanelProps {
 /** Sortable wrapper for a script card in the list view. Mirrors LoreEntryList's
  *  SortableEntryCard: desktop drags the whole card (MouseSensor distance: 2
  *  keeps click-vs-drag distinct), mobile uses a ≡ handle as the activator. */
-function SortableScriptCard({ script, isActive, isMobile, onClick }: {
+function SortableScriptCard({ script, isActive, isMobile, links, linksLoaded, unboundWarning, onClick }: {
 	script: ScriptRecord;
 	isActive: boolean;
 	isMobile: boolean;
+	links: ScriptLinkRecord[];
+	linksLoaded: boolean;
+	unboundWarning: string;
 	onClick: () => void;
 }) {
 	const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: script.id });
@@ -101,7 +106,7 @@ function SortableScriptCard({ script, isActive, isMobile, onClick }: {
 					</button>
 				)}
 				<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t"><Ic.terminal /></div>
-				<span className="flex-1 truncate text-[14px] font-semibold text-t1">{script.name}</span>
+				<span data-testid="script-name" className="flex-1 truncate text-[14px] font-semibold text-t1">{script.name}</span>
 				<div className="shrink-0 rounded px-1.5 py-0.5 font-ui text-[10px] uppercase tracking-wide bg-s3 text-t2 mr-1">
 					{script.scriptKind === "dice" ? "DICE" : "PROMPT"}
 				</div>
@@ -110,13 +115,17 @@ function SortableScriptCard({ script, isActive, isMobile, onClick }: {
 				</div>
 			</div>
 			{script.description && <div className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t2 px-4 pb-3 pt-0">{script.description}</div>}
+			{script.scopeType === "entity" && linksLoaded && links.length === 0 && (
+				<div className="px-4 pb-3 font-ui text-[calc(var(--ui-fs)-3px)] text-warning">{unboundWarning}</div>
+			)}
 		</div>
 	);
 }
 
-export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEditor, onBackToList }: ScriptPanelProps) {
+export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId, onOpenEditor, onBackToList }: ScriptPanelProps) {
   const { t, tDynamic } = useT();
   const isMobile = useIsMobile();
+  const [nameSearch, setNameSearch] = useState("");
 
   const [activeScriptId, setActiveScriptIdRaw] = useState<string | null>(null);
   const setActiveScriptId = (id: string | null) => {
@@ -133,8 +142,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   // ── Queries (replaced with local state + async fetch) ────
   // "entity" is a BROWSE filter here, not an owner view: the sidebar's
-  // "Bound" tab lists every entity-home script regardless of which
-  // character/persona owns it (symmetric with the Global tab). Owner-scoped
+  // "Bound" tab lists every entity-scoped script regardless of which
+  // character/persona links it (symmetric with the Global tab). Owner-scoped
   // views live in the character/persona build sidebars (explicit ownerId).
   const scopeId = (() => {
     if (scope === "chat") return chatId ?? undefined;
@@ -149,9 +158,13 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     // Interactive scripts are owned exclusively by the Experience editor;
     // exclude them here so they never enter this generic Prompt/Dice list
     // (never listed, never badged, never opened or tested as a prompt script).
-    const all = scope === "all" ? await listAllScripts() : await listScripts(scope, scopeId);
+    const all = scope === "all"
+      ? await listAllScripts()
+      : scope === "current"
+        ? chatId ? await listParticipatingScripts(chatId) : []
+        : await listScripts(scope, scopeId);
     setScripts(all.filter((s) => s.scriptKind !== "interactive"));
-  }, [scope, scopeId]);
+  }, [scope, scopeId, chatId]);
 
   useEffect(() => { void refreshScripts(); }, [refreshScripts]);
 
@@ -192,25 +205,36 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   // ── Link binding (forward direction: bind THIS script to characters/personas).
   // Mirrors LorebookEditor's per-lorebook link state, but a single active script
   // (not a list), so a flat array is enough.
-  const [scriptLinks, setScriptLinksState] = useState<ScriptLinkRecord[]>([]);
+  const [scriptLinksMap, setScriptLinksMap] = useState<Map<string, ScriptLinkRecord[]>>(new Map());
   const allCharacters = useAllCharacters();
   const personas = useBootstrapStore((s) => s.personas) ?? [];
   const linkCharacters: LinkTarget[] = allCharacters.map(characterToLinkTarget);
   const linkPersonas: LinkTarget[] = personas.map(personaToLinkTarget);
 
   useEffect(() => {
-    if (!activeScriptId) { setScriptLinksState([]); return; }
+    if (scripts.length === 0) {
+      setScriptLinksMap(new Map());
+      return;
+    }
     let cancelled = false;
-    getScriptLinks(activeScriptId)
-      .then((links) => { if (!cancelled) setScriptLinksState(links); })
-      .catch(() => { if (!cancelled) setScriptLinksState([]); });
+    Promise.all(scripts.map(async (script) => {
+      try {
+        return [script.id, await getScriptLinks(script.id)] as const;
+      } catch {
+        return [script.id, null] as const;
+      }
+    })).then((results) => {
+      if (!cancelled) setScriptLinksMap(new Map(results.filter((result): result is readonly [string, ScriptLinkRecord[]] => result[1] !== null)));
+    });
     return () => { cancelled = true; };
-  }, [activeScriptId]);
+  }, [scripts]);
+
+  const scriptLinks = activeScriptId ? scriptLinksMap.get(activeScriptId) ?? [] : [];
 
   const handleSetScriptLinks = async (next: Array<{ targetType: "character" | "persona"; targetId: string }>) => {
     if (!activeScriptId) return;
     const updated = await setScriptLinks(activeScriptId, next);
-    setScriptLinksState(updated);
+    setScriptLinksMap((previous) => new Map(previous).set(activeScriptId, updated));
   };
 
   // ── Mutations ───────────────────────────────────────────
@@ -222,6 +246,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
 
   const handleCreateScript = async (body: Parameters<typeof createScript>[0]) => {
     const created = await createScript(body);
+    const links = body.links;
+    if (links) setScriptLinksMap((previous) => new Map(previous).set(
+      created.id,
+      links.map((link) => ({ scriptId: created.id, ...link })),
+    ));
     setScripts((prev) => [...prev, created]);
     ensureDraft(created);
     setActiveScriptId(created.id);
@@ -306,12 +335,23 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
       .map((script) => ({ ...script, ...(drafts[script.id]?.values ?? {}) })),
     [displayItems, drafts],
   );
+  const { owners: ownerOptions, visibleItems: visibleDisplayScripts } = useWorldLoreListFilters({
+    scope,
+    ownerId,
+    items: displayScripts,
+    linksByItemId: scriptLinksMap,
+    characters: allCharacters,
+    personas,
+    nameSearch,
+  });
   const activeDragDisplay = activeDragScript
     ? { ...activeDragScript, ...(drafts[activeDragScript.id]?.values ?? {}) }
     : null;
 
   const handleImportScript = async (code: string) => {
-    const imported = await importScript({ format: "js", code, scopeType: scope, ...(scope === "entity" ? (personaId ? { personaId } : { characterId }) : {}), chatId: scope === "chat" ? chatId ?? undefined : undefined });
+    // No owner is derived from the context (LORE_SCRIPT_OWNERS_AS_LINKS
+    // step 2): an entity-scoped import lands unbound until linked.
+    const imported = await importScript({ format: "js", code, scopeType: scope, chatId: scope === "chat" ? chatId ?? undefined : undefined });
     setScripts((prev) => [...prev, imported]);
     ensureDraft(imported);
     setActiveScriptId(imported.id);
@@ -322,22 +362,21 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   // ── Scope-aware body helper ──────────────────────────────
   // "all" — overview mode with no specific owner; creating/importing scripts
   // is disabled there (CTAs are hidden in LorebookEditor), the fallback is purely defensive.
-  const scopeBody = () => {
-    const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "entity" : scope;
-    const base: Record<string, string | undefined> = { scopeType: effectiveScope };
-    // Entity home FK resolves from the current context: a persona context owns
-    // the script, otherwise the character does (exactly one typed FK).
-    if (effectiveScope === "entity") {
-      if (personaId) base.personaId = personaId;
-      else base.characterId = characterId;
-    }
-    if (effectiveScope === "chat") base.chatId = chatId ?? undefined;
-    return base;
+  // LORE_SCRIPT_OWNERS_AS_LINKS step 3: an entity-scoped script explicitly
+  // starts linked to the current character; the shared picker can change or
+  // clear that link. Mirrors buildLorebookCreateBody in lorebook-create-body.ts.
+  const scopeBody = (): { scopeType: string; links?: Array<{ targetType: "character"; targetId: string }>; chatId?: string } => {
+    const effectiveScope: Exclude<Scope, "all" | "current"> =
+      scope === "all" || scope === "current" ? "entity" : scope;
+    const body: { scopeType: string; links?: Array<{ targetType: "character"; targetId: string }>; chatId?: string } = { scopeType: effectiveScope };
+    if (effectiveScope === "entity") body.links = [{ targetType: "character", targetId: characterId }];
+    if (effectiveScope === "chat" && chatId) body.chatId = chatId;
+    return body;
   };
 
   // ── Handlers ─────────────────────────────────────────────
   const handleAdd = (kind: "prompt" | "dice" = "prompt", creationIntentId?: string) => {
-    const body = { name: "New Script", code: "", scriptKind: kind, creationIntentId, ...scopeBody() } as Parameters<typeof createScript>[0];
+    const body: Parameters<typeof createScript>[0] = { name: "New Script", code: "", scriptKind: kind, creationIntentId, ...scopeBody() };
     handleCreateScript(body);
   };
 
@@ -347,7 +386,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     if (activeScript) {
       updateDraft({ code: activeScript.code ? activeScript.code + "\n\n" + tpl.code : tpl.code });
     } else {
-      void handleCreateScript({ name: tpl.name, code: tpl.code, scriptKind: tpl.scriptKind || "prompt", creationIntentId, ...scopeBody() } as Parameters<typeof createScript>[0]);
+      void handleCreateScript({ name: tpl.name, code: tpl.code, scriptKind: tpl.scriptKind || "prompt", creationIntentId, ...scopeBody() });
     }
   };
 
@@ -393,9 +432,15 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
                   {(importCode.trim().startsWith("{") || importCode.trim().startsWith("[")) ? t("script_import_detect_json") : t("script_import_detect_js")}
                 </div>
               )}
-              <div className="mt-3 text-[11px] text-t3">{t("script_templates")}:</div>
+              <div className="mt-3 text-[11px] text-t3">{t("script_template_group_prompt")}:</div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {Object.entries(SCRIPT_TEMPLATES).map(([key, tpl]) => (
+                {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === "prompt").map(([key, tpl]) => (
+                  <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
+                ))}
+              </div>
+              <div className="mt-3 text-[11px] text-t3">{t("script_template_group_dice")}:</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === "dice").map(([key, tpl]) => (
                   <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => { handleAddFromTemplate(key); setImportOpen(false); setImportCode(""); }}>{tDynamic("script_template_" + key) || tpl.name}</button>
                 ))}
               </div>
@@ -449,13 +494,16 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          <SortableContext items={displayScripts.map(s => s.id)} strategy={verticalListSortingStrategy}>
-            {displayScripts.map(s => (
+          <SortableContext items={visibleDisplayScripts.map(s => s.id)} strategy={verticalListSortingStrategy}>
+            {visibleDisplayScripts.map(s => (
               <SortableScriptCard
                 key={s.id}
                 script={s}
                 isActive={s.id === activeScriptId}
                 isMobile={isMobile}
+                links={scriptLinksMap.get(s.id) ?? []}
+                linksLoaded={scriptLinksMap.has(s.id)}
+                unboundWarning={t("script_unbound_warning")}
                 onClick={() => setActiveScriptId(s.id)}
               />
             ))}
@@ -536,9 +584,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         <TextInput value={activeScript.description ?? ""} onChange={(e) => updateDraft({ description: e.target.value })} placeholder={t("script_desc_placeholder")} />
       </div>
 
-      {/* Link binding (forward): bind this script to additional characters/personas */}
-      {/* MUI step 13: only entity-owned scripts bind to characters/personas; global (application-scope) scripts run unconditionally and chat scripts are chat-bound. */}
-      {scope === "entity" && (
+      {/* Entity scripts bind to characters/personas; global scripts run unconditionally and chat scripts are chat-bound. */}
+      {activeScript.scopeType === "entity" && (
         <div style={{ marginBottom: 16 }}>
           <div className="mb-1.5 flex items-center gap-1.5">
             <span className="font-ui text-[calc(var(--ui-fs)-3px)] font-medium uppercase tracking-[0.05em] text-t3">{t("script_links_label")}</span>
@@ -550,7 +597,13 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
             links={scriptLinks}
             characters={linkCharacters}
             personas={linkPersonas}
-            onSetLinks={(next) => { void handleSetScriptLinks(next as Array<{ targetType: "character" | "persona"; targetId: string }>); }}
+            onSetLinks={(next) => {
+              void handleSetScriptLinks(next
+                .filter((link): link is { targetType: "character" | "persona"; targetId: string } =>
+                  link.targetType === "character" || link.targetType === "persona",
+                )
+                .map(({ targetType, targetId }) => ({ targetType, targetId })));
+            }}
             t={t}
             isMobile={isMobile}
             tooltipLabel={t("script_links_add")}
@@ -583,11 +636,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
         </div>
       </div>
 
-      {/* Templates */}
+      {/* Templates — only the active script's kind (SCRIPT_EDITOR_CLEANUP step 3) */}
       <div className="mb-4">
         <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-accent-t">{t("script_templates")}</div>
         <div className="flex flex-wrap gap-2">
-          {Object.entries(SCRIPT_TEMPLATES).map(([key, tpl]) => (
+          {Object.entries(SCRIPT_TEMPLATES).filter(([, tpl]) => templateScriptKind(tpl) === (activeScript.scriptKind || "prompt")).map(([key, tpl]) => (
             <button type="button" key={key} className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1" onClick={() => handleAddFromTemplate(key)}>{tDynamic("script_template_" + key) || tpl.name}</button>
           ))}
         </div>
@@ -605,5 +658,5 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
     </div>
   );
 
-  return { modals, scriptListContent, scriptEditorPanel, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleAddDice: () => handleAdd("dice"), handleImportOpen: () => setImportOpen(true) };
+  return { modals, scriptListContent, scriptEditorPanel, ownerOptions, nameSearch, setNameSearch, activeScriptId, setActiveScriptId, handleAdd: () => handleAdd(), handleAddDice: () => handleAdd("dice"), handleImportOpen: () => setImportOpen(true) };
 }

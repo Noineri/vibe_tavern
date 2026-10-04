@@ -1,5 +1,5 @@
 import type { ChatRuntimeApi, SttRuntimeApi } from "../contract/runtime-api.js";
-import { brandId, parseStoredAttachments, resolveEffectiveSettings, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, COAUTHOR_TRANSPORT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type CoauthorTransport, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
+import { brandId, parseStoredAttachments, resolveEffectiveSettings, resolveCoauthorGenerationProfile, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, COAUTHOR_TRANSPORT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type CoauthorTransport, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
@@ -639,92 +639,71 @@ export class ChatAdapter implements ChatRuntimeApi {
 	}
 
 	/**
-	 * Resolve the base profile for a chat's mode. For Co-Author chats with a
-	 * valid persisted binding (both provider id + profile exist), returns the
-	 * bound profile and the stored model name. Otherwise falls back to the RP
-	 * active profile. Never throws for a dangling/incomplete Co-Author binding —
-	 * the caller's validation runs on the final resolved profile.
+	 * Resolve the base profile for a chat's mode. A Co-Author chat must have a
+	 * live bound connection: its identity comes from that profile and every
+	 * generation field comes from its own connection-settings row. RP remains
+	 * on its existing active-profile and per-model-overlay path.
 	 */
-	private async resolveProfileForMode(chatId?: string): Promise<{
-		profile: StoredProviderProfileRecord & { defaultModel: string };
-		preferredModel: string | null;
-		transport: CoauthorTransport;
-		coauthorTokenOverrides: { maxTokens: number | null; contextBudget: number | null } | null;
-	}> {
-		// Co-Author path: only when a chat is explicitly in coauthor mode AND has
-		// a persisted binding whose profile still exists.
+	private async resolveProfileForMode(chatId?: string, modelOverride?: string | null): Promise<
+		| { mode: "coauthor"; profile: StoredProviderProfileRecord & { defaultModel: string }; transport: CoauthorTransport }
+		| { mode: "rp"; profile: StoredProviderProfileRecord & { defaultModel: string }; transport: CoauthorTransport }
+	> {
 		if (chatId) {
 			const chat = await this.stores.chats.getById(chatId);
 			if (chat?.mode === "coauthor") {
 				const settings = await this.stores.uiSettings.get();
-				if (settings.coauthorProviderId) {
-					const bound = await this.providerProfileService.getProviderProfile(settings.coauthorProviderId);
-					if (bound) {
-						const preferredModel = settings.coauthorModelName ?? null;
-						const effectiveModel = preferredModel ?? bound.defaultModel;
-						if (effectiveModel) {
-							return {
-								profile: { ...bound, defaultModel: effectiveModel as string },
-								preferredModel,
-								transport: bound.coauthorTransport,
-								coauthorTokenOverrides: { maxTokens: settings.coauthorMaxTokens, contextBudget: settings.coauthorContextBudget },
-							};
-						}
-					}
-				}
+				const providerId = settings.coauthorProviderId;
+				if (!providerId) throw coauthorModelRequired();
+
+				const bound = await this.providerProfileService.getProviderProfile(providerId);
+				if (!bound) throw coauthorModelRequired();
+
+				const coauthorSettings = await this.stores.coauthorSettings.getByProviderId(providerId);
+				const model = modelOverride ?? coauthorSettings?.modelName ?? bound.defaultModel;
+				if (!model) throw coauthorModelRequired();
+
+				return {
+					mode: "coauthor",
+					profile: resolveCoauthorGenerationProfile(bound, model, coauthorSettings?.settings),
+					transport: bound.coauthorTransport,
+				};
 			}
 		}
-		// RP fallback (also reached when the Co-Author binding is null/dangling).
 		return {
+			mode: "rp",
 			profile: await this.resolveActiveProfileOrThrow(),
-			preferredModel: null,
 			transport: COAUTHOR_TRANSPORT.chatCompletions,
-			coauthorTokenOverrides: null,
 		};
 	}
 
 	/**
-	 * Resolve the EFFECTIVE provider profile for generation: the base profile
-	 * merged with the final model's per-model overlay (when binding is ON).
-	 *
-	 * This is the single generation-boundary chokepoint. All generation methods
-	 * (send/regenerate/generateReply + their stream variants + vision describe)
-	 * call this so a bound model's overlay (temperature, contextBudget,
-	 * pinContextBudget, ...) actually reaches the provider executor.
-	 *
-	 * Mode awareness: when `chatId` resolves to a Co-Author chat with a valid
-	 * persisted binding, that binding's profile/model is used instead of the RP
-	 * active profile. Null/dangling Co-Author bindings fall back to RP silently.
-	 *
-	 * Model precedence: explicit request override > persisted coauthorModelName >
-	 * selected profile defaultModel. The overlay is always loaded for the FINAL
-	 * model so per-model binding (samplers/contextBudget/reasoning) applies.
-	 *
-	 * Identity fields (endpoint, apiKey, defaultModel, visionModel) come from the
-	 * base — the overlay cannot rename/rebind, only override sampler/context.
+	 * Resolve the EFFECTIVE provider profile for generation. Co-Author bypasses
+	 * RP per-model binding entirely; its connection-settings row owns generation
+	 * values and its model unless a regenerate request explicitly overrides it.
+	 * The RP path below is intentionally unchanged.
 	 */
 	private async resolveEffectiveProfileOrThrow(options?: {
 		chatId?: string;
 		modelOverride?: string | null;
-	}) {
+	}): Promise<{ profile: StoredProviderProfileRecord & { defaultModel: string }; transport: CoauthorTransport }> {
 		const modelOverride = options?.modelOverride ?? null;
-		const { profile, preferredModel, transport, coauthorTokenOverrides } = await this.resolveProfileForMode(options?.chatId);
+		const resolved = await this.resolveProfileForMode(options?.chatId, modelOverride);
+		if (resolved.mode === "coauthor") return { profile: resolved.profile, transport: resolved.transport };
 
-		// Final model: explicit override > mode-preferred (coauthor) > profile default.
-		const finalModel = modelOverride ?? preferredModel ?? profile.defaultModel;
-
-		const effective = !profile.bindPerModel
-			? { ...profile, defaultModel: finalModel }
-			: { ...resolveEffectiveSettings(profile, (await this.providerProfileService.getProviderModelSettings(profile.id, finalModel))?.settings ?? null), defaultModel: finalModel };
-		return {
-			profile: {
-				...effective,
-				...(coauthorTokenOverrides?.maxTokens != null ? { maxTokens: coauthorTokenOverrides.maxTokens } : {}),
-				...(coauthorTokenOverrides?.contextBudget != null ? { contextBudget: coauthorTokenOverrides.contextBudget } : {}),
-			},
-			transport,
-		};
+		const finalModel = modelOverride ?? resolved.profile.defaultModel;
+		const effective = !resolved.profile.bindPerModel
+			? { ...resolved.profile, defaultModel: finalModel }
+			: { ...resolveEffectiveSettings(resolved.profile, (await this.providerProfileService.getProviderModelSettings(resolved.profile.id, finalModel))?.settings ?? null), defaultModel: finalModel };
+		return { profile: effective, transport: resolved.transport };
 	}
+}
+
+const COAUTHOR_MODEL_REQUIRED_CODE = "coauthor_model_required";
+
+/** Stable fail-closed error for missing or dangling Co-Author connections.
+ * CG-4 maps this code to the Co-Author model-selection state. */
+function coauthorModelRequired() {
+	return validation("Choose a model for the Co-Author.", { code: COAUTHOR_MODEL_REQUIRED_CODE });
 }
 
 /** Map the validated send body's optional Dice commit intent (the wire shape

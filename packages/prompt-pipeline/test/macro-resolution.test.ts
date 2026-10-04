@@ -152,6 +152,18 @@ describe("Macro engine: direct resolution", () => {
     expect(engine.resolve("Hello {{user}}.", ctx)).toBe("Hello Olya.");
   });
 
+  it("aliases lastMessage and formats mesExamples separately from raw examples", () => {
+    const ctx = buildPromptVariableContext({
+      character: { mesExample: "<START>\n{{user}}: Hello\n{{char}}: Hi\n<START>\nA second example" },
+      chat: { lastMessage: "The latest reply." },
+    });
+
+    expect(engine.resolve("{{lastChatMessage}}", ctx)).toBe("The latest reply.");
+    expect(engine.resolve("{{lastMessage}}", ctx)).toBe("The latest reply.");
+    expect(engine.resolve("{{mesExamplesRaw}}", ctx)).toBe("<START>\n{{user}}: Hello\n{{char}}: Hi\n<START>\nA second example");
+    expect(engine.resolve("{{mesExamples}}", ctx)).toBe("{{user}}: Hello\n{{char}}: Hi\nA second example");
+  });
+
   it("is case-insensitive", () => {
     const ctx = buildPromptVariableContext({
       character: { name: "Aria" },
@@ -171,6 +183,11 @@ describe("Macro engine: direct resolution", () => {
   it("leaves unsupported macros untouched", () => {
     const ctx = buildPromptVariableContext({});
     expect(engine.resolve("{{unknown}} stays.", ctx)).toBe("{{unknown}} stays.");
+  });
+
+  it("preserves unknown space-form macros literally", () => {
+    const ctx = buildPromptVariableContext({});
+    expect(engine.resolve("{{unknown argument}} stays.", ctx)).toBe("{{unknown argument}} stays.");
   });
 
   it("resolves multiple macros in one string", () => {
@@ -294,6 +311,12 @@ describe("Variable macros: setvar/getvar", () => {
     expect(engine.resolve("{{getvar::unknown::default}}", ctx)).toBe("default");
   });
 
+  it("getvar accepts the single-argument space separator", () => {
+    const ctx = buildPromptVariableContext({});
+    engine.resetVariables();
+    expect(engine.resolve("{{setvar::color::red}}{{getvar color}}", ctx)).toBe("red");
+  });
+
   it("setvar with empty value resets variable", () => {
     const ctx = buildPromptVariableContext({});
     engine.resetVariables();
@@ -373,6 +396,165 @@ describe("Random macro: {{random::a::b::c}}", () => {
     const ctx = buildPromptVariableContext({});
     expect(engine.resolve("{{random}}", ctx)).toBe("");
   });
+
+  it("accepts the single-argument space separator", () => {
+    const ctx = buildPromptVariableContext({});
+    expect(["a", "b", "c"]).toContain(engine.resolve("{{random a,b,c}}", ctx));
+  });
+});
+
+describe("Variable macros: assembly scope", () => {
+  it("resolves a variable set by an earlier preset block in prompt order", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "variable-preset-order" },
+      character: { id: "character", name: "Keeper", description: "" },
+      chat: { recentMessages: [] },
+      preset: {
+        id: "preset",
+        text: "{{setvar::tone::formal}}",
+        prefill: "Reply in {{getvar::tone}} prose.",
+      },
+    });
+
+    expect(result.prefill).toBe("Reply in formal prose.");
+  });
+});
+
+describe("Variable shorthand and global macros", () => {
+  it("evaluates local shorthand, operators, and shorthand conditions", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{.count = 1}}{{.count += 2}}{{.count++}}{{if .count}}count={{.count}}{{/if}}", context))
+      .toBe("4count=4");
+  });
+
+  it("evaluates global shorthand mutations and reads from the global namespace", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{$count = 1}}{{$count += 2}}{{$count}}", context)).toBe("3");
+  });
+
+  it("evaluates global shorthand conditions for truthy and falsy values", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{setglobalvar::enabled::true}}{{if $enabled}}yes{{else}}no{{/if}}{{setglobalvar::enabled::}}{{if $enabled}}yes{{else}}no{{/if}}", context))
+      .toBe("yesno");
+  });
+
+  it("supports every shorthand fallback, comparison, and mutation operator", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{.x ??= 5}}/{{.x ?? 9}}/{{.x ||= 8}}/{{.x == 5}}/{{.x != 4}}/{{.x > 4}}/{{.x >= 5}}/{{.x < 6}}/{{.x <= 5}}{{.x -= 2}}{{.x || 9}}{{.x--}}{{.x}}", context))
+      .toBe("5/5/5/true/true/true/true/true/true322");
+  });
+
+  it("keeps global variables separate from local variables", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{setvar::scope::local}}{{setglobalvar::scope::global}}{{getvar::scope}}/{{getglobalvar::scope}}", context))
+      .toBe("local/global");
+  });
+
+  it("registers the variable existence and deletion aliases", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{setvar::x::1}}{{varexists::x}}{{flushvar::x}}{{hasvar::x}}", context)).toBe("truefalse");
+    expect(engine.resolve("{{setglobalvar::x::1}}{{globalvarexists::x}}{{flushglobalvar::x}}{{hasglobalvar::x}}", context)).toBe("truefalse");
+  });
+
+  it("supports every global mutation macro within the assembly scope", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{setglobalvar::count::1}}{{addglobalvar::count::2}}{{incglobalvar::count}}{{decglobalvar::count}}/{{getglobalvar::count}}", context))
+      .toBe("43/3");
+  });
+
+  it("reads and writes local and global object keys through key and index aliases", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{setvarkey::profile::name::Ada}}{{setvarkey::profile::role::captain}}{{getvarindex::profile::name}}/{{getvarkey::profile::role}}", context))
+      .toBe("Ada/captain");
+    expect(engine.resolve("{{setglobalvarkey::profile::rank::one}}{{setglobalvarindex::profile::rank::two}}{{getglobalvarkey::profile::rank}}", context))
+      .toBe("two");
+    expect(engine.resolve("{{setvarindex::list::0::first}}{{getvarkey::list::0}}", context)).toBe("first");
+  });
+
+  it("passes a toggle-set global value to the prefill in one assembly", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "w7bw55" },
+      character: { id: "character", name: "Keeper", description: "" },
+      chat: { recentMessages: [] },
+      preset: {
+        id: "w7bw55",
+        text: "{{setglobalvar::length::concise}}{{setglobalvar::pov::first person}}",
+        prefill: "Write {{getglobalvar::length}}, {{getglobalvar::pov}}.",
+      },
+    });
+
+    expect(result.prefill).toBe("Write concise, first person.");
+  });
+
+  it("does not persist local or global state into the next assembly", () => {
+    const makeAssembly = (text: string) => assemblePrompt({
+      identity: { chatId: "isolated-variable-assembly" },
+      character: { id: "character", name: "Keeper", description: "" },
+      chat: { recentMessages: [] },
+      preset: { id: "preset", text },
+    });
+
+    makeAssembly("{{setvar::local::one}}{{setglobalvar::global::one}}");
+    const next = makeAssembly("{{getvar::local}}/{{getglobalvar::global}}");
+
+    expect(next.layers.find((layer) => layer.id === "prompt_preset_system")?.text).toBe("/");
+  });
+});
+
+describe("Pick macro: {{pick::a::b::c}}", () => {
+  it("is stable across assemblies and regenerations for one chat", () => {
+    const makeAssembly = () => assemblePrompt({
+      identity: { chatId: "stable-pick-chat" },
+      chat: { recentMessages: [{ id: "message_1", role: "assistant", content: "{{pick::a::b::c}}" }] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+    });
+
+    const first = makeAssembly().layers.find((layer) => layer.id === "recent_history")?.text;
+    const regenerated = makeAssembly().layers.find((layer) => layer.id === "recent_history")?.text;
+
+    expect(first).toBe(regenerated);
+    expect(first).toMatch(/ASSISTANT: [abc]/);
+  });
+
+  it("selects a different stable option for a different chat", () => {
+    const resolvePick = (chatId: string) => assemblePrompt({
+      identity: { chatId },
+      chat: { recentMessages: [{ id: "message_1", role: "assistant", content: "{{pick::a::b::c}}" }] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+    }).layers.find((layer) => layer.id === "recent_history")?.text;
+
+    expect(resolvePick("stable-pick-chat")).not.toBe(resolvePick("different-pick-chat"));
+  });
+
+  it("uses the macro position as part of its stable seed", () => {
+    const options = Array.from({ length: 100 }, (_, index) => String(index)).join("::");
+    const result = assemblePrompt({
+      identity: { chatId: "stable-pick-chat" },
+      chat: { recentMessages: [{ id: "message_1", role: "assistant", content: `{{pick::${options}}} {{pick::${options}}}` }] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+    }).layers.find((layer) => layer.id === "recent_history")?.text ?? "";
+
+    const [, first, second] = result.match(/^ASSISTANT: (\d+) (\d+)$/) ?? [];
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+    expect(first).not.toBe(second);
+  });
 });
 
 // ─── Roll macro ───
@@ -411,6 +593,22 @@ describe("Roll macro: {{roll::1d20}}", () => {
     expect(num).toBeGreaterThanOrEqual(6);
     expect(num).toBeLessThanOrEqual(15);
   });
+
+  it("treats a bare number as a one-die formula", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{roll::20}}", ctx);
+    const num = Number(result);
+    expect(num).toBeGreaterThanOrEqual(1);
+    expect(num).toBeLessThanOrEqual(20);
+  });
+
+  it("accepts the single-argument space separator", () => {
+    const ctx = buildPromptVariableContext({});
+    const result = engine.resolve("{{roll 1d20}}", ctx);
+    const num = Number(result);
+    expect(num).toBeGreaterThanOrEqual(1);
+    expect(num).toBeLessThanOrEqual(20);
+  });
 });
 
 // ─── Comment macro ───
@@ -426,6 +624,55 @@ describe("Comment macro: {{// ...}}", () => {
   it("strips comment with long text", () => {
     const ctx = buildPromptVariableContext({});
     expect(engine.resolve("{{// Make sure to edit both!}}text", ctx)).toBe("text");
+  });
+});
+
+// ─── Trim macro ─────────────────────────────────────────────────────────
+
+describe("Trim macro", () => {
+  it("removes the line breaks around a non-scoped marker", () => {
+    const engine = createFullMacroEngine();
+    const ctx = buildPromptVariableContext({});
+
+    expect(engine.resolve("Enabled\n{{trim}}\nDisabled", ctx)).toBe("EnabledDisabled");
+  });
+
+  it("trims the resolved content of a scoped block", () => {
+    const engine = createFullMacroEngine();
+    const ctx = buildPromptVariableContext({ character: { name: "Aria" } });
+
+    expect(engine.resolve("before{{trim}}\n  {{char}}  \n{{/trim}}after", ctx)).toBe("beforeAriaafter");
+  });
+
+  it("preserves trim markers during selective resolution", () => {
+    const engine = createFullMacroEngine();
+    const ctx = buildPromptVariableContext({});
+
+    expect(engine.resolveSelected("Enabled\n{{trim}}\nDisabled", ctx, new Set(["random"])))
+      .toBe("Enabled\n{{trim}}\nDisabled");
+  });
+
+  it("keeps a toggle-heavy preset compact in the Marinara style", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "marinara-trim" },
+      chat: { recentMessages: [] },
+      character: { id: "char_1", name: "Aria", description: "A mage." },
+      persona: { id: "persona_1", name: "Olya", description: "A scholar." },
+      preset: {
+        id: "marinara-style",
+        text: [
+          "<identity>",
+          "{{if {{char}}}}Character: {{char}}{{/if}}",
+          "{{trim}}",
+          "{{if {{user}}}}User: {{user}}{{/if}}",
+          "{{trim}}",
+          "</identity>",
+        ].join("\n"),
+      },
+    });
+
+    const preset = result.layers.find((layer) => layer.id === "prompt_preset_system");
+    expect(preset?.text).toBe("<identity>\nCharacter: AriaUser: Olya</identity>");
   });
 });
 

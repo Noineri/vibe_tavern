@@ -17,11 +17,13 @@
  * typecheck gate + the end-of-slice live visual check.
  */
 import { describe, it, expect, mock } from "bun:test";
-import { render, fireEvent } from "@testing-library/react";
+
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ReactNode } from "react";
 
 useDomEnv();
+
+const { render, fireEvent } = await import("@testing-library/react");
 
 const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");

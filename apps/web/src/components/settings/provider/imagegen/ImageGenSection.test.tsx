@@ -24,6 +24,7 @@ const { ImageGenSection } = await import("./ImageGenSection.js");
 const { useImageProfiles } = await import("../../../../hooks/use-image-profiles.js");
 const { useMasterDetail, MasterDetailModal } = await import("../../../shared/MasterDetailModal.js");
 const { IMAGE_GEN_BACKENDS } = await import("@vibe-tavern/domain");
+const { useImageGenChatStore } = await import("../../../../stores/image-gen-chat-store.js");
 
 type ImageGenRecord = import("../../../../api/image-gen-api.js").ImageGenProfileRecord;
 type ImageGenHook = ReturnType<typeof useImageProfiles>;
@@ -42,6 +43,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
+    assistRetryOnRefusal: false,
     familySource: "none",
     qualityLayerEnabled: false,
     llmProviderProfileId: undefined,
@@ -66,8 +68,10 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
 }
 
 function makeImageGen(overrides: Record<string, unknown> = {}): ImageGenHook {
-  return {
+  const base = {
     profiles: [makeRecord()] as ImageGenRecord[],
+    profileSearch: "",
+    filteredProfiles: [makeRecord()] as ImageGenRecord[],
     loading: false,
     editingId: "ig1",
     form: null,
@@ -93,6 +97,8 @@ function makeImageGen(overrides: Record<string, unknown> = {}): ImageGenHook {
     remove: mock(async () => {}),
     cancelEdit: mock(() => {}),
     reload: mock(async () => {}),
+    setProfileSearch: mock(() => {}),
+    reorder: mock(async () => {}),
     activateProfile: mock(async () => {}),
     fetchSavedModels: mock(async () => null),
     fetchSamplers: mock(async () => null),
@@ -112,8 +118,12 @@ function makeImageGen(overrides: Record<string, unknown> = {}): ImageGenHook {
     modelOverlaySetId: null,
     setModelSamplerSetBinding: mock(() => {}),
     applyBaseSamplerSet: mock(() => {}),
-    ...overrides,
   };
+  return {
+    ...base,
+    ...overrides,
+    filteredProfiles: "filteredProfiles" in overrides ? overrides.filteredProfiles : "profiles" in overrides ? overrides.profiles : base.filteredProfiles,
+  } as ImageGenHook;
 }
 
 /** Section renders inside the MasterDetailModal context (it calls
@@ -136,6 +146,7 @@ function renderSection(imageGen: ImageGenHook) {
 }
 
 afterEach(async () => {
+  useImageGenChatStore.setState({ activeImageGenProfileId: null });
   await act(async () => {});
   cleanup();
 });
@@ -163,7 +174,29 @@ describe("ImageGenSection", () => {
     const imageGen = makeImageGen({ loading: true, profiles: [] });
     const view = renderSection(imageGen);
     await waitFor(() => expect(view.getByTestId("image-gen-section")).toBeTruthy());
+    expect(view.getByTestId("image-gen-section").className).toBe("flex flex-col p-3");
+    expect(view.getByText("image_gen_section_title")).toBeTruthy();
     expect(view.getByText("loading")).toBeTruthy();
+  });
+
+  it("uses the effective active pointer: session selection wins, then persisted default", async () => {
+    const imageGen = makeImageGen({
+      profiles: [makeRecord({ id: "default", name: "Saved default", isDefault: true }), makeRecord({ id: "session", name: "Session choice" })],
+    });
+    useImageGenChatStore.setState({ activeImageGenProfileId: "session" });
+    const view = renderSection(imageGen);
+    await waitFor(() => expect(view.getByText("★ Session choice")).toBeTruthy());
+    expect(view.queryByText("★ Saved default")).toBeNull();
+  });
+
+  it("passes hook-owned search to the unified list and disables its drag handles while active", async () => {
+    const setProfileSearch = mock(() => {});
+    const imageGen = makeImageGen({ profileSearch: "OpenRouter", filteredProfiles: [makeRecord()], setProfileSearch });
+    const view = renderSection(imageGen);
+    await waitFor(() => expect(view.getByPlaceholderText("search_profiles")).toBeTruthy());
+    fireEvent.change(view.getByPlaceholderText("search_profiles"), { target: { value: "art" } });
+    expect(setProfileSearch).toHaveBeenCalledWith("art");
+    expect(view.queryByLabelText("drag")).toBeNull();
   });
 
   it("error state renders the load-error banner", async () => {
@@ -180,5 +213,15 @@ describe("ImageGenSection", () => {
     await waitFor(() =>
       expect(imageGen.startCreate).toHaveBeenCalledWith("image_gen_profile_default_name", IMAGE_GEN_BACKENDS.OpenAiImages),
     );
+  });
+
+  it("keeps the mobile drill-down selection action on the shared row", async () => {
+    const select = mock(() => {});
+    const imageGen = makeImageGen({ select });
+    const view = renderSection(imageGen);
+    await waitFor(() => expect(view.getByTestId("image-gen-profile-row")).toBeTruthy());
+    const rowButtons = view.getByTestId("image-gen-profile-row").querySelectorAll("button");
+    fireEvent.click(rowButtons[rowButtons.length - 1]!);
+    expect(select).toHaveBeenCalledWith("ig1");
   });
 });

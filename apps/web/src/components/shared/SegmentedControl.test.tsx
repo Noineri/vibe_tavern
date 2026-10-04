@@ -21,10 +21,12 @@
  *     container classes so call sites' layouts does not regress
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
-import { render, fireEvent } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, fireEvent } = await import("@testing-library/react");
 
 // CustomTooltip (Radix Tooltip) needs a TooltipProvider ancestor that the
 // isolated render here doesn't mount. The app mounts one globally; tests mock

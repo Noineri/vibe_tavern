@@ -1,9 +1,11 @@
 import { beforeAll, describe, it, expect, mock } from "bun:test";
-import { render, fireEvent } from "@testing-library/react";
+
 import React from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, fireEvent } = await import("@testing-library/react");
 
 // Mock react-i18next (safe pattern: capture the real module first, spread it,
 // override only useTranslation — mock.module is process-global under bun:test).

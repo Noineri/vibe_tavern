@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { Profiler, type ProfilerOnRenderCallback } from "react";
-import { render, act } from "@testing-library/react";
+
 import { useDomEnv } from "../../test/dom-env.js";
 import {
   useGenerationQueueStore,
@@ -11,6 +11,8 @@ import {
 } from "./generation-queue-store.js";
 
 useDomEnv();
+
+const { render, act } = await import("@testing-library/react");
 
 /**
  * State-machine + narrow-selector tests for the generation queue store (Q3).

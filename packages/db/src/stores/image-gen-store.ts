@@ -298,6 +298,7 @@ export class ImageGenStore {
           llmAssistEnabled: input.llmAssistEnabled,
           llmProviderProfileId: input.llmProviderProfileId ?? null,
           llmModelId: input.llmModelId ?? null,
+          assistRetryOnRefusal: input.assistRetryOnRefusal,
           familyOverride: null,
           familyDetected: null,
           familyDetectedForModel: null,
@@ -341,6 +342,7 @@ export class ImageGenStore {
     if (patch.llmAssistEnabled !== undefined) values.llmAssistEnabled = patch.llmAssistEnabled;
     if (patch.llmProviderProfileId !== undefined) values.llmProviderProfileId = patch.llmProviderProfileId ?? null;
     if (patch.llmModelId !== undefined) values.llmModelId = patch.llmModelId ?? null;
+    if (patch.assistRetryOnRefusal !== undefined) values.assistRetryOnRefusal = patch.assistRetryOnRefusal;
     // IPT-2 family columns: null-clear convention (the presetId twin) — the
     // Wave 3 family route owns these writes; the PATCH surface never sends
     // them (absent from updateImageGenProfileSchema).
@@ -377,6 +379,21 @@ export class ImageGenStore {
   /** Deletes the profile; junction links cascade via FK. */
   async delete(id: string): Promise<void> {
     await this.db.delete(imageGenProfiles).where(eq(imageGenProfiles.id, id)).run();
+  }
+
+  /** Apply a complete manual order atomically, then return the canonical list. */
+  async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<ImageGenProfile[]> {
+    const now = this.clock.now();
+    this.db.transaction((tx) => {
+      for (const update of updates) {
+        tx
+          .update(imageGenProfiles)
+          .set({ sortOrder: update.sortOrder, updatedAt: now })
+          .where(eq(imageGenProfiles.id, update.id))
+          .run();
+      }
+    });
+    return this.listAll();
   }
 
   /** MR-12: move the GLOBAL active-profile pointer onto `id` (the TTS/STT
@@ -509,6 +526,7 @@ export class ImageGenStore {
       ...(userSizes.length > 0 ? { userSizes } : {}),
       llmAssistEnabled: row.llmAssistEnabled,
       qualityLayerEnabled: row.qualityLayerEnabled,
+      assistRetryOnRefusal: row.assistRetryOnRefusal,
       ...(familyOverride !== undefined ? { familyOverride } : {}),
       ...(familyDetected !== undefined ? { familyDetected } : {}),
       familySource: deriveFamilySource(familyOverride, familyDetected),

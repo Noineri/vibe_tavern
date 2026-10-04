@@ -1,40 +1,40 @@
-/**
- * forks: 2 — SttSection.tsx; ImageGenSection.tsx.
- */
-
-import { useT } from "../../../../i18n/context.js";
-import { TtsProfileList } from "./TtsProfileList.js";
+import { ProviderSection } from "../provider-section.js";
+import { ProviderProfileList } from "../ProviderProfileList.js";
 import type { useTtsProfiles } from "./use-tts-profiles.js";
+import type { TtsProfileRecord } from "../../../../api/tts-api.js";
 
 type TtsHook = ReturnType<typeof useTtsProfiles>;
 
+const ttsRowSubLabel = (profile: TtsProfileRecord) => profile.backend;
+const ttsStatusClassName = (_profile: TtsProfileRecord, _isActive: boolean, isEditing: boolean) =>
+  isEditing ? "bg-accent" : "bg-t4";
+
 export function TtsSection({ tts }: { tts: TtsHook }) {
-  const { t } = useT();
-
-  if (tts.loading) {
-    return (
-      <div data-testid="tts-section" className="flex flex-col p-3">
-        <div className="mb-3 font-ui text-[12px] font-semibold uppercase tracking-wide text-t3">
-          {t("tts_section_title")}
-        </div>
-        <div className="font-ui text-[13px] text-t3">{t("loading")}</div>
-      </div>
-    );
-  }
-
   return (
-    <div data-testid="tts-section" className="flex flex-col flex-1 min-h-0">
-      {tts.error && (
-        <div data-testid="tts-load-error" className="mx-3 mt-2 rounded-md bg-danger/10 px-3 py-2 font-ui text-[12px] text-danger">
-          {t("tts_profiles_load_failed")}: {tts.error}
-        </div>
-      )}
-      <TtsProfileList
+    <ProviderSection
+      testidStem="tts"
+      titleKey="tts_section_title"
+      loadingKey="loading"
+      errorKey="tts_profiles_load_failed"
+      loading={tts.loading}
+      error={tts.error}
+    >
+      <ProviderProfileList
         profiles={tts.profiles}
+        filteredProfiles={tts.filteredProfiles ?? tts.profiles}
         editingId={tts.editingId}
+        activeProfileId={null}
+        rowSubLabel={ttsRowSubLabel}
+        statusClassName={ttsStatusClassName}
+        titleKey="tts_section_title"
+        newProfileKey="tts_profile_new"
+        testidStem="tts"
+        profileSearch={tts.profileSearch ?? ""}
+        onProfileSearchChange={tts.setProfileSearch ?? (() => {})}
         onSelectProfile={tts.select}
         onAddProfile={tts.startCreate}
+        onReorder={tts.reorder}
       />
-    </div>
+    </ProviderSection>
   );
 }

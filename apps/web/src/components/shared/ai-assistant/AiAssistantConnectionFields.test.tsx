@@ -10,7 +10,7 @@ import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
 
-const { render } = await import("@testing-library/react");
+const { render, fireEvent } = await import("@testing-library/react");
 const { AiAssistantConnectionFields } = await import("./AiAssistantConnectionFields.js");
 
 const LABELS = {
@@ -40,5 +40,43 @@ describe("AiAssistantConnectionFields mobile layout (MUI step 17)", () => {
     expect(container.className).toContain("max-md:grid-cols-1");
     expect(view.getByText("connection")).toBeTruthy();
     expect(view.getByText("model")).toBeTruthy();
+  });
+
+  it("opt-in secondary-model controls resolve the chat fallback and expose the shared toggle and pin", () => {
+    const changes: Array<[string, unknown]> = [];
+    const view = render(
+      <AiAssistantConnectionFields
+        providerProfiles={[
+          { id: "active", name: "Active", defaultModel: "chat-default", isActive: true },
+          { id: "secondary", name: "Secondary", defaultModel: "secondary-default" },
+        ]}
+        providerId="secondary"
+        modelName="secondary-model"
+        providerModels={[{ id: "chat-default", label: "Chat default" }]}
+        onProviderChange={() => {}}
+        onModelChange={() => {}}
+        useChatModel={{ checked: true, onChange: (checked) => changes.push(["chat", checked]), label: "Use chat" }}
+        modelPin={{
+          pinned: false,
+          onChange: (pinned, value) => changes.push(["pin", { pinned, ...value }]),
+          pinLabel: "Pin model",
+          unpinLabel: "Unpin model",
+          overridesChatModel: true,
+        }}
+        showLabels={false}
+        includeDefaultOption={false}
+        withBottomMargin={false}
+        labels={LABELS}
+      />,
+    );
+
+    expect(view.getByRole("button", { name: "Active" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "Chat default" })).toBeTruthy();
+    fireEvent.click(view.getByRole("switch", { name: "Use chat" }));
+    fireEvent.click(view.getByTitle("Pin model"));
+    expect(changes).toEqual([
+      ["chat", false],
+      ["pin", { pinned: true, providerId: "active", modelName: "chat-default" }],
+    ]);
   });
 });

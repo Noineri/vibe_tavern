@@ -1,4 +1,11 @@
 /**
+ * Portions of this file are adapted from SillyTavern
+ * (public/scripts/world-info.js and public/scripts/utils.js,
+ * https://github.com/SillyTavern/SillyTavern), licensed under AGPL-3.0.
+ * Modified for Vibe Tavern, 2026-08-31.
+ */
+
+/**
  * Differential-parity harness, ST side — LG-1 (LOREBOOK_GROUP_SCORING_PARITY_REPORT).
  *
  * Verbatim-behavior port of the SillyTavern World Info GROUP pipeline, extracted

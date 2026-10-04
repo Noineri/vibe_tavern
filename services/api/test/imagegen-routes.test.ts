@@ -39,6 +39,8 @@ import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-e
 import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { createImageGenRoutes } from "../src/api/routes/image-gen.js";
+import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { createApp } from "../src/server/app-factory.js";
 import { openRouterImageGenFactory } from "../src/domain/imagegen/backends/openrouter.js";
 import { openAiImagesFactory } from "../src/domain/imagegen/backends/openai-images.js";
 import { a1111Factory } from "../src/domain/imagegen/backends/a1111.js";
@@ -139,6 +141,7 @@ interface ProfileSeed {
   llmAssistEnabled?: boolean;
   llmProviderProfileId?: string;
   llmModelId?: string;
+  assistRetryOnRefusal?: boolean;
   /** Capability override — used to seed a STALE stored mirror (the
    *  static-table gate regression pin, 2026-09-18). */
   capabilities?: (typeof IMAGE_GEN_BACKEND_CAPABILITIES)[keyof typeof IMAGE_GEN_BACKEND_CAPABILITIES];
@@ -161,6 +164,7 @@ async function seedProfile(app: ReturnType<typeof createImageGenRoutes>, seed: P
       ...(seed.llmAssistEnabled !== undefined ? { llmAssistEnabled: seed.llmAssistEnabled } : {}),
       ...(seed.llmProviderProfileId !== undefined ? { llmProviderProfileId: seed.llmProviderProfileId } : {}),
       ...(seed.llmModelId !== undefined ? { llmModelId: seed.llmModelId } : {}),
+      ...(seed.assistRetryOnRefusal !== undefined ? { assistRetryOnRefusal: seed.assistRetryOnRefusal } : {}),
       // The registry's static snapshot — exactly what the Providers editor
       // persists (the create schema requires the flags object); an explicit
       // seed override replaces it (stale-mirror pins).
@@ -188,6 +192,26 @@ function modelsBody(): Response {
 }
 
 describe("image-gen routes — profile CRUD", () => {
+  test("PATCH /api/image-gen/profiles/reorder requires mobile bearer auth before the route", async () => {
+    let reorderCalled = false;
+    const app = await createApp({
+      runtime: {
+        imageGen: {
+          reorderImageGenProfiles: async () => {
+            reorderCalled = true;
+            return [];
+          },
+        },
+      } as unknown as RuntimeApi,
+      mobileAccessToken: "test-token",
+      enforceMobileAuth: true,
+    });
+
+    const response = await app.request("/api/image-gen/profiles/reorder", { method: "PATCH" });
+    expect(response.status).toBe(401);
+    expect(reorderCalled).toBe(false);
+  });
+
   test("POST → 201; apiKey write-only (hasStoredApiKey, secret never on the wire); GET :id + all", async () => {
     const { app } = await makeApp();
     const createdRes = await app.request("/api/image-gen/profiles", {
@@ -216,6 +240,29 @@ describe("image-gen routes — profile CRUD", () => {
 
     const allRes = await app.request("/api/image-gen/profiles/all");
     expect(((await allRes.json()) as unknown[]).length).toBe(1);
+  });
+
+  test("PATCH /api/image-gen/profiles/reorder validates its body and returns the reordered profiles", async () => {
+    const { app } = await makeApp();
+    const first = await seedProfile(app);
+    const second = await seedProfile(app);
+    const beforeMalformed = await (await app.request("/api/image-gen/profiles/all")).json();
+
+    const malformed = await app.request("/api/image-gen/profiles/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: first }] }),
+    });
+    expect(malformed.status).toBe(400);
+    expect(await (await app.request("/api/image-gen/profiles/all")).json()).toEqual(beforeMalformed);
+
+    const reordered = await app.request("/api/image-gen/profiles/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: first, sortOrder: 1 }, { id: second, sortOrder: 0 }] }),
+    });
+    expect(reordered.status).toBe(200);
+    expect(((await reordered.json()) as Array<{ id: string }>).map((profile) => profile.id)).toEqual([second, first]);
   });
 
   test("PATCH unknown id → 404; DELETE → ok:true", async () => {
@@ -3340,11 +3387,16 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     deps: ImageGenAssistDeps;
     /** Reconfigure what the next execute call returns / throws. */
     setExecuteBehavior: (behavior: { text?: string; error?: Error }) => void;
+    /** Queue per-call behaviors (refusal-then-good sequences — the retry
+     *  tests): each entry serves exactly ONE call; once drained, calls fall
+     *  back to the behavior set above. */
+    setExecuteSequence: (behaviors: Array<{ text?: string; error?: Error }>) => void;
   }
 
   function makeAssistDeps(profiles: Record<string, StoredProviderProfileRecord>): AssistFixture {
     const calls: CapturedExecuteCall[] = [];
     let behavior: { text?: string; error?: Error } = { text: "refined" };
+    let queue: Array<{ text?: string; error?: Error }> = [];
     const deps: ImageGenAssistDeps = {
       providerProfiles: {
         getProviderProfile: async (id: string) => profiles[id] ?? null,
@@ -3359,14 +3411,20 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
           profileId: input.profile.id,
           signal: input.signal,
         });
-        if (behavior.error !== undefined) throw behavior.error;
+        const current = queue.length > 0 ? queue.shift()! : behavior;
+        if (current.error !== undefined) throw current.error;
         return {
-          text: behavior.text ?? "",
+          text: current.text ?? "",
           providerResponse: { mode: "nonstream" as const, steps: [] },
         };
       },
     };
-    return { calls, deps, setExecuteBehavior: (next) => { behavior = next; } };
+    return {
+      calls,
+      deps,
+      setExecuteBehavior: (next) => { behavior = next; queue = []; },
+      setExecuteSequence: (behaviors) => { queue = [...behaviors]; },
+    };
   }
 
   /** The assist scene: character + persona + last message (the digest
@@ -3554,6 +3612,76 @@ describe("image-gen routes — generate LLM assist (IG-15)", () => {
     const budget = Number(/must stay under (\d+) characters/.exec(system)![1]);
     expect(budget).toBeGreaterThan(0);
     expect(budget).toBeLessThanOrEqual(1200);
+  });
+
+  // ── IMAGEGEN_ASSIST_REFUSAL_REPORT: refusal detection + opt-in retry ──
+
+  test("a refused assist output fails the run before the image backend call (no retry by default)", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    assist.setExecuteBehavior({ text: "I'm sorry, but I can't write an image prompt for this scene." });
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+    });
+    const res = await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("LLM assist refused to write the image prompt");
+    // The honest failure fired BEFORE the image-gen call: exactly one quiet
+    // call, zero prompts on the wire.
+    expect(assist.calls).toHaveLength(1);
+    expect(scene.sent).toHaveLength(0);
+  });
+
+  test("retry opt-in: a refusal then a good prompt → one silent retry, the good prompt reaches the wire", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    assist.setExecuteSequence([
+      { text: "Простите, я не могу написать такой промпт." },
+      { text: "a silver-haired tavern keeper in warm candlelight" },
+    ]);
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+      assistRetryOnRefusal: true,
+    });
+    const res = await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(res.status).toBe(200);
+    expect(assist.calls).toHaveLength(2);
+    // The retry rides the SAME resolved instruction plus the hardening
+    // appendix (the user payload is unchanged).
+    expect(assist.calls[1]!.system).toContain("Output ONLY the finished image prompt text");
+    expect(assist.calls[1]!.user).toBe(assist.calls[0]!.user);
+    expect(scene.sent[0]).toContain("a silver-haired tavern keeper in warm candlelight");
+  });
+
+  test("retry opt-in: a second refusal still fails with the honest error", async () => {
+    const assist = makeAssistDeps({ llm1: makeLlmProfile() });
+    assist.setExecuteSequence([
+      { text: "I can't help with that request." },
+      { text: "I won't generate this prompt." },
+    ]);
+    const scene = await makeAssistScene(assist);
+    const id = await seedProfile(scene.app, {
+      apiKey: "sk-own",
+      modelId: "or-model",
+      llmAssistEnabled: true,
+      llmProviderProfileId: "llm1",
+      llmModelId: "writer-model",
+      assistRetryOnRefusal: true,
+    });
+    const res = await generate(scene.app, scene.chatId, { profileId: id, mode: "portrait" });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("LLM assist refused to write the image prompt");
+    // Exactly one retry — never a third call.
+    expect(assist.calls).toHaveLength(2);
+    expect(scene.sent).toHaveLength(0);
   });
 
   test("toggle on + picks set: the quiet call writes the prompt; residual macros in its output still resolve", async () => {

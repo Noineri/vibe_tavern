@@ -1,6 +1,7 @@
-import { activateProviderProfile, addFavoriteProviderModel, deleteProviderProfile, fetchModelsByEndpoint, fetchProviderProfile, fetchProviderProfileModels, getProviderModelSettings, listFavoriteProviderModels, listProviderModelSettings, listProviderProfiles, removeFavoriteProviderModel, saveProviderProfile, testProfileChat, testProviderChat, testProviderDraft, testProviderProfile, updateProviderProfile, upsertProviderModelSettings, reorderProviderProfiles } from "../../api/provider-api.js";
-import type { FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderProfileRecord, TestChatResponse } from "../../api/types.js";
+import { activateProviderProfile, addFavoriteProviderModel, deleteProviderProfile, fetchModelsByEndpoint, fetchProviderProfile, fetchProviderProfileModels, getCoauthorConnectionSettings, getProviderModelSettings, listFavoriteProviderModels, listProviderModelSettings, listProviderProfiles, removeFavoriteProviderModel, saveProviderProfile, testProfileChat, testProviderChat, testProviderDraft, testProviderProfile, updateProviderProfile, upsertCoauthorConnectionSettings, upsertProviderModelSettings, reorderProviderProfiles, reorderCoauthorProviderProfiles } from "../../api/provider-api.js";
+import type { CoauthorConnectionSettingsRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderProfileRecord, TestChatResponse } from "../../api/types.js";
 import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay, ProviderProbeResponse, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { UpsertCoauthorConnectionSettingsValue } from "@vibe-tavern/api-contracts";
 import { useProviderDataStore } from "../provider-data-store.js";
 
 // ---------------------------------------------------------------------------
@@ -52,6 +53,22 @@ export async function reorderProviderProfilesAction(updates: Array<{ id: string;
   void loadProviderProfilesAction();
 }
 
+export async function reorderCoauthorProviderProfilesAction(updates: Array<{ id: string; sortOrder: number }>): Promise<void> {
+  await reorderCoauthorProviderProfiles(updates);
+  useProviderDataStore.setState((state) => ({
+    coauthorSettingsByProfile: Object.fromEntries(Object.entries(state.coauthorSettingsByProfile).map(([id, record]) => [
+      id,
+      (() => {
+        const update = updates.find((candidate) => candidate.id === id);
+        if (!update) return record;
+        return record ? { ...record, sortOrder: update.sortOrder } : {
+          providerProfileId: id, modelName: null, settings: {}, sortOrder: update.sortOrder, createdAt: "", updatedAt: "",
+        };
+      })(),
+    ])),
+  }));
+}
+
 export async function activateProviderProfileAction(id: string): Promise<void> {
   await activateProviderProfile(id);
   void loadProviderProfilesAction();
@@ -77,11 +94,14 @@ export async function toggleFavoriteModelAction(
 // Per-model settings overlay (binding) Actions
 // ---------------------------------------------------------------------------
 
-/** Fetch every overlay row for a profile (for the binding dropdown's badges).
- *  Thin wrapper around {@link listProviderModelSettings}; no store side-effect
- *  yet (Wave 5 may cache into provider-data-store). */
-export async function listProviderModelSettingsAction(profileId: string): Promise<ProviderModelSettingsRecord[]> {
-  return await listProviderModelSettings(profileId);
+/** Fetch every overlay row for a profile and cache it in the data store —
+ *  the chat-side effective-settings display resolves the ACTIVE model's
+ *  values through this cache (RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 2;
+ *  the Wave 5 cache this wrapper used to defer). */
+export async function loadProviderModelSettingsAction(profileId: string): Promise<ProviderModelSettingsRecord[]> {
+  const records = await listProviderModelSettings(profileId);
+  useProviderDataStore.getState().setModelSettings(profileId, records);
+  return records;
 }
 
 /** Fetch a single model's overlay, or `null` when no overlay exists (base
@@ -99,7 +119,47 @@ export async function upsertProviderModelSettingsAction(
   modelId: string,
   settings: ModelSettingsOverlay,
 ): Promise<ProviderModelSettingsRecord> {
-  return await upsertProviderModelSettings(profileId, modelId, settings);
+  const record = await upsertProviderModelSettings(profileId, modelId, settings);
+  // Keep a LOADED display cache fresh (absent key = never loaded — the loader
+  // fetches on demand, so there is nothing to patch).
+  useProviderDataStore.setState((state) => {
+    const cached = state.modelSettingsByProfile[profileId];
+    if (!cached) return {};
+    return {
+      modelSettingsByProfile: {
+        ...state.modelSettingsByProfile,
+        [profileId]: [...cached.filter((row) => row.modelId !== modelId), record],
+      },
+    };
+  });
+  return record;
+}
+
+// ---------------------------------------------------------------------------
+// Co-Author per-connection generation set (CG-1) Actions
+// ---------------------------------------------------------------------------
+
+/** Load the connection's Co-Author row into the store (once per profile — the
+ *  cache makes the binding hook's repeat mounts free). null = the connection
+ *  has no saved set (Co-Author defaults apply); callers that need to re-write
+ *  the row use the returned record as the read side of a read-modify-write. */
+export async function loadCoauthorConnectionSettingsAction(profileId: string): Promise<CoauthorConnectionSettingsRecord | null> {
+  const cached = useProviderDataStore.getState().coauthorSettingsByProfile[profileId];
+  if (cached !== undefined) return cached;
+  const record = await getCoauthorConnectionSettings(profileId);
+  useProviderDataStore.getState().setCoauthorSettings(profileId, record);
+  return record;
+}
+
+/** PUT the connection's whole Co-Author set (the route replaces the record)
+ *  and cache the result so binding subscribers see the new model immediately. */
+export async function upsertCoauthorConnectionSettingsAction(
+  profileId: string,
+  body: UpsertCoauthorConnectionSettingsValue,
+): Promise<CoauthorConnectionSettingsRecord> {
+  const record = await upsertCoauthorConnectionSettings(profileId, body);
+  useProviderDataStore.getState().setCoauthorSettings(profileId, record);
+  return record;
 }
 
 // ---------------------------------------------------------------------------

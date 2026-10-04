@@ -219,8 +219,8 @@ async function main() {
 		console.log(`   → ${join(DIST, "package.json")}`);
 	});
 
-	await step("Copying README and LICENSE", async () => {
-		for (const file of ["README.md", "LICENSE"]) {
+	await step("Copying README, LICENSE and NOTICE", async () => {
+		for (const file of ["README.md", "LICENSE", "NOTICE"]) {
 			const source = join(ROOT, file);
 			if (!(await pathExists(source))) {
 				throw new Error(`${file} not found at ${source}`);

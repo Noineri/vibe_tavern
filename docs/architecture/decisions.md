@@ -280,6 +280,8 @@ Why the original decision missed this: the options table weighs three ways to fi
 
 **Trade-off:** Two sources of truth (FK + links table) for character/persona associations. Mitigated by: (1) the migration seeds links from FKs, (2) `createLorebook` populates both, (3) the pipeline (`listAllActiveForChat`) reads exclusively from links.
 
+> **Amendment (2026-10, LORE_SCRIPT_OWNERS_AS_LINKS):** the "Legacy FK retention" choice above is superseded. Migration 0107 copied every entity-scoped home owner into its link table and DROPPED `lorebooks.characterId`/`personaId` (and the `scripts` twins); links are now the ONLY owner source — there is no hidden or primary owner anywhere (create/import take an explicit owner list, owner deletion removes just the link rows). The FK-era bullets above describe the original 2026 decision, not the current schema.
+
 ---
 
 ## AD-015: Flex Centering over CSS Transform for Modal Positioning
@@ -637,3 +639,28 @@ The decision rule was GO only if realistic production work produced a p95 event-
 **Constraints:** The shim stays C against bionic's headers — bionic pads `uc_sigmask` to 128 bytes before `uc_mcontext`, and hand-rolled `ucontext_t` layouts write to the wrong offset. The handler only calls async-signal-safe functions. A SIGSYS sent with `kill(2)` keeps its default meaning. Bun replaces the handler if JS registers `process.on("SIGSYS")`, and spawned children lose it before their own `close_range`; the server registers no SIGSYS listener and spawns nothing on Android in normal operation.
 
 **Revisit trigger:** Delete the shim, its CMake/Gradle wiring and the `LD_PRELOAD` line once a stable Bun ships the SIGSYS→ENOSYS handler (`oven-sh/bun#39775`) and the repo bumps to it.
+
+---
+
+## AD-027: v3 Signing-Key Lineage for the Android Release APK
+
+**Context:** Play Protect blocked every official APK as a "harmful app" (v1.3.0 and v1.4.0) because of the release certificate's reputation, not the code: debug-signed builds and the exact v1.4.0 content re-signed with the debug key get only the mild "never scanned this app" prompt, and the re-released content (VirusTotal 0/66) was flagged again. Google's developer appeal produces no reply by design and developer verification is unavailable. The certificate therefore had to change without breaking in-place updates over existing installs.
+
+**Options considered:**
+
+| Approach | Problem |
+|----------|---------|
+| Google appeal / developer verification | Dead end: no reply by design; verification unavailable. |
+| New key without a lineage | Android sees an unrelated signer — no in-place update; users must uninstall and lose data. |
+| **v3 key-rotation lineage to a new key** | Chosen. |
+
+**Decision:** After `assembleRelease`, the release workflow (`release.yml`, job `build-android`, step "Rotate APK signing key") re-signs the Gradle-signed APK with the new key through an APK Signature Scheme v3 lineage proven by the old key: `apksigner rotate` builds the lineage, then `apksigner sign --next-signer --lineage --rotation-min-sdk-version 28` applies it. minSdk is 29, so the rotated APK is v3-only — `apksigner verify` reporting v1/v2 false is expected. The following "Verify APK signature" step fails the release unless v3 verifies and the lineage lists exactly two signers (old key as proof, new key as current signer).
+
+**Evidence:** The exact v1.4.0 APK re-signed through such a lineage in CI (run 37057657344, 2026-10-02) installed on the owner's Android 14 phone over the released v1.4.0 with data intact, and Play Protect showed the mild "never scanned this developer" prompt instead of the "harmful app" verdict: the bad reputation does not travel along the lineage, while Android accepts the new key as the same app's successor.
+
+**Constraints:**
+- The lineage's proof is signed by the old key, so the old keystore and the `ANDROID_KEYSTORE_*` secrets must never be removed — every future release re-runs the rotation from both keys.
+- The lineage is rebuilt on every release run; no lineage artifact is stored anywhere.
+- The old keystore's password exists only in the GitHub Actions secrets (the owner holds the `.jks` file but not the password), so any operation that needs the old key runs in CI.
+
+**Revisit trigger:** If the app is ever distributed through Google Play, key management moves to Play App Signing and this rotation step is retired. If the new key ever attracts the same verdict, rotate again through the same mechanism — the lineage scheme supports successive rotations.

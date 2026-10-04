@@ -9,10 +9,12 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import React from "react";
-import { render, act, waitFor } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, act, waitFor } = await import("@testing-library/react");
 
 const { default: userEvent } = await import("@testing-library/user-event");
 
@@ -109,7 +111,6 @@ function makeUiSettings() {
     aiAssistantProviderId: null,
     aiAssistantModelName: null,
     coauthorProviderId: null,
-    coauthorModelName: null,
     activeDictationProfileId: null,
     activeVoiceMessageProfileId: null,
     createdAt: new Date().toISOString(),

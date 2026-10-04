@@ -7,10 +7,12 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { wireUiSettings } from "../../../test/wire-fixtures.js";
 import React from "react";
-import { render, act, waitFor } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, act, waitFor } = await import("@testing-library/react");
 
 // user-event binds `document` at setup() — import AFTER the DOM env exists
 // (the static import binds before GlobalRegistrator runs; house pattern from
@@ -126,7 +128,6 @@ function makeUiSettings() {
     aiAssistantProviderId: null,
     aiAssistantModelName: null,
     coauthorProviderId: null,
-    coauthorModelName: null,
     activeDictationProfileId: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

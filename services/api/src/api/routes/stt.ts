@@ -54,6 +54,9 @@ export function createSttRoutes(runtime: SttRuntimeApi) {
     .get("/api/stt/profiles/all", async (c) => {
       return c.json(await runtime.listSttProfiles());
     })
+    .patch("/api/stt/profiles/reorder", zValidator("json", schemas.reorderSttProfilesSchema), async (c) => {
+      return c.json(await runtime.reorderSttProfiles(c.req.valid("json").updates));
+    })
     .get("/api/stt/profiles/:id", async (c) => {
       const profile = await runtime.getSttProfile(c.req.param("id"));
       if (!profile) return c.json({ error: "STT profile not found" }, 404);

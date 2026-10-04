@@ -1,4 +1,5 @@
 import type { DiceRollSnapshot, ExperienceReportSnapshot, GenerationFormat, PromptLayerPosition, PronounForms, RegexPreset } from "@vibe-tavern/domain";
+import type { MacroVariableScope } from "./macro-variable-scope.js";
 
 export type { PromptLayerPosition };
 
@@ -71,6 +72,8 @@ export interface RecentMessage {
 }
 
 export interface PromptAssemblyContext {
+  /** Optional scope created by the service to bridge lore activation and assembly. */
+  macroVariableScope?: MacroVariableScope;
   identity: {
     chatId: string;
   };
@@ -128,6 +131,10 @@ export interface PromptAssemblyContext {
     prefill?: string | null;
     /** Author's note — a short blurb injected into the chat history at a specified depth. */
     authorsNote?: string | null;
+    /** Main prompt from the user-selected default preset. */
+    defaultSystemPrompt?: string | null;
+    /** Author's note from the user-selected default preset. */
+    defaultAuthorsNote?: string | null;
     /** How many messages from the end of history to insert the author's note at. Defaults to 4. */
     authorsNoteDepth?: number | null;
     /** Where to place the author's note: in_prompt (system block), in_chat (at depth), or after_chat (depth=0). Defaults to in_chat. */
@@ -202,6 +209,8 @@ export interface PromptAssemblyContext {
   };
   chat: {
     recentMessages: RecentMessage[];
+    /** Human-readable duration since the prior user message, computed by the service. */
+    idleDuration?: string | null;
     /** Messages injected by scripts via context.chat.injectMessage() */
     scriptInjections?: Array<{ content: string; role: 'system' | 'user' | 'assistant' }>;
     /** Per-chat dynamic prompt — content edited via the advanced prompt canvas

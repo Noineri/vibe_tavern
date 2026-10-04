@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { fireEvent, render, waitFor } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { ProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
+
+const { fireEvent, render, waitFor } = await import("@testing-library/react");
 
 let ProviderModal: typeof import("./ProviderModal.js").ProviderModal;
 let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;

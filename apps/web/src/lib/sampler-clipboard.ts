@@ -19,10 +19,10 @@
 
 import type { ModelSettingsOverlay, SamplerFieldId } from "@vibe-tavern/domain";
 import { SAMPLER_FIELDS } from "@vibe-tavern/domain";
-import type { FormState } from "../components/modals/ProviderModal.js";
+import type { ProviderSamplerOnChange } from "./provider-sampler-values.js";
 
 /** The form-update callback shape (matches lazyAutoSaveField / autoSaveField). */
-export type FormUpdater = <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+export type FormUpdater = ProviderSamplerOnChange;
 
 /**
  * Apply every PRESENT field from a parsed sampler preset to the form.

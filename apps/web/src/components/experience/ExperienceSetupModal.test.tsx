@@ -30,7 +30,7 @@
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
-import type { RenderResult } from "@testing-library/react";
+
 import type { ReactNode } from "react";
 import type {
   ExperienceChatConfigRow,
@@ -46,6 +46,8 @@ import type { ExperienceCapability } from "@vibe-tavern/domain";
 // and React's delegated event listeners never attach (controlled-input onChange
 // silently stops firing). Mirrors the ObjectiveConfig.test import order.
 useDomEnv();
+
+type RenderResult = import("@testing-library/react").RenderResult;
 const { render, fireEvent, waitFor, cleanup } = await import("@testing-library/react");
 const { useSyncExternalStore } = await import("react");
 

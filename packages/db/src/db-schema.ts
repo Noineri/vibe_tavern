@@ -275,8 +275,6 @@ export const lorebooks = sqliteTable('lorebooks', {
   overflowAlert: integer('overflow_alert').notNull().default(0),
   characterStrategy: integer('character_strategy').notNull().default(1),
   sortOrder: integer('sort_order').notNull().default(0),
-  characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
-  personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
   chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
   enabled: integer('enabled').notNull().default(1),
   extensionsJson: text('extensions_json').notNull().default('{}'),
@@ -285,8 +283,6 @@ export const lorebooks = sqliteTable('lorebooks', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
-  characterIdIdx: index('idx_lorebooks_character').on(table.characterId),
-  personaIdIdx: index('idx_lorebooks_persona').on(table.personaId),
   chatIdIdx: index('idx_lorebooks_chat').on(table.chatId),
   scopeTypeIdx: index('idx_lorebooks_scope').on(table.scopeType),
 }));
@@ -355,6 +351,10 @@ export const loreEntries = sqliteTable('lore_entries', {
 // The legacy FK columns (`characterId`, `personaId`) on `lorebooks`
 // are retained as the "primary owner" used by the scope-based UI tabs
 // and by import/duplicate flows.
+//
+// [0107 / LORE_SCRIPT_OWNERS_AS_LINKS step 1] The paragraph above is
+// historical: every character/persona owner is now a plain link row — the
+// legacy "primary owner" FK columns were copied here (deduped) and dropped.
 
 export const lorebookLinks = sqliteTable('lorebook_links', {
   lorebookId: text('lorebook_id').notNull().references(() => lorebooks.id, { onDelete: 'cascade' }),
@@ -387,8 +387,6 @@ export const scripts = sqliteTable('scripts', {
   creationIntentId: text('creation_intent_id').unique(),
   scopeType: text('scope_type').notNull().default('character'),
   sortOrder: integer('sort_order').notNull().default(0),
-  characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
-  personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
   chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
   // Default visual paired with this experience (interactive scripts only). Set
   // by the creation wizard so the script↔visual pairing persists across chats;
@@ -414,8 +412,6 @@ export const scripts = sqliteTable('scripts', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
-  characterIdIdx: index('idx_scripts_character').on(table.characterId),
-  personaIdIdx: index('idx_scripts_persona').on(table.personaId),
   chatIdIdx: index('idx_scripts_chat').on(table.chatId),
   scopeTypeIdx: index('idx_scripts_scope').on(table.scopeType),
   scriptKindIdx: index('idx_scripts_kind').on(table.scriptKind),
@@ -436,6 +432,10 @@ export const scripts = sqliteTable('scripts', {
 // junction-linked — deliberately more consistent than the lorebook resolver,
 // which is junction-only for char/persona and relies on every FK-owned row
 // having been junction-linked at baseline-migration time.
+//
+// [0107 / LORE_SCRIPT_OWNERS_AS_LINKS step 1] The paragraph above is
+// historical: every owner is now a plain link row — the legacy home FK
+// columns were copied here (deduped) and dropped; links are the only source.
 export const scriptLinks = sqliteTable('script_links', {
   scriptId: text('script_id').notNull().references(() => scripts.id, { onDelete: 'cascade' }),
   targetType: text('target_type').notNull(),  // 'character' | 'persona'
@@ -657,6 +657,7 @@ export const sttProfiles = sqliteTable('stt_profiles', {
   // ST-7 capability seam — v1 pure-ASR backends force it off; audio-
   // understanding backends annotate tone/emotion into the transcript.
   emotionAnnotation: integer('emotion_annotation', { mode: 'boolean' }).notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
   isDefault: integer('is_default').notNull().default(0),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -935,6 +936,25 @@ export const formatTemplates = sqliteTable('format_templates', {
   updatedAt: text('updated_at').notNull(),
 });
 
+// ─── aiInstructionTemplates ──────────────────────────────────────────────
+
+/**
+ * User-saved instruction templates for the message AI editor
+ * (AI_EDITOR_INSTRUCTION_TEMPLATES) — the word-twin of the format-template
+ * library: recurring edit/merge instructions («сократи», «убери пафос»)
+ * stored as named plain text. `text` is the instruction verbatim (no
+ * structure, no caps — the owner's no-arbitrary-input-limits rule).
+ */
+export const aiInstructionTemplates = sqliteTable('ai_instruction_templates', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  /** The instruction text verbatim. */
+  text: text('text').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── providerProfiles ──────────────────────────────────────────────────────────
 
 export const providerProfiles = sqliteTable('provider_profiles', {
@@ -1085,6 +1105,29 @@ export const providerModelSettings = sqliteTable('provider_model_settings', {
   providerModelUnique: uniqueIndex('idx_provider_model_settings_unique').on(table.providerProfileId, table.modelId),
 }));
 
+// ─── coauthorConnectionSettings ────────────────────────────────────────────────
+// Per-connection Co-Author generation set (COAUTHOR_OWN_GENERATION_SETTINGS_PLAN
+// CG-1): the Co-Author shares ONLY the connection identity (endpoint, key,
+// transport) with the RP profile — every generation field (model, samplers,
+// reasoning, limits) is the connection's own, exactly one row per profile.
+// `settings_json` carries the ModelSettingsOverlay field set: stored COMPLETE
+// when written through the API (unlike provider_model_settings' partial
+// inherit-overlay); the CG-1 seed row may store only the values the legacy
+// ui_settings overrides carried — resolveCoauthorGenerationSettings completes
+// them. Model name sits on the row (not in the JSON): the Co-Author's own
+// model choice, null = «choose a model» (never inherits the RP defaultModel).
+// Cascades with the profile: deleting the connection is the only teardown.
+export const coauthorConnectionSettings = sqliteTable('coauthor_connection_settings', {
+  providerProfileId: text('provider_profile_id').primaryKey().references(() => providerProfiles.id, { onDelete: 'cascade' }),
+  modelName: text('model_name'),
+  /** Stringified ModelSettingsOverlay-shaped JSON (see the block comment). */
+  settingsJson: text('settings_json').notNull(),
+  /** Null means this profile has never been ordered in the Co-Author list. */
+  sortOrder: integer('sort_order'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 // ─── providerQuotaSettings ─────────────────────────────────────────────────────
 // The user's three quota toggles, one row per profile. `configKind` mirrors the
 // capability kind the toggles were written for: `balance` configs have no
@@ -1216,17 +1259,20 @@ export const uiSettings = sqliteTable('ui_settings', {
   summaryModelName: text('summary_model_name'),
   messageEditorProviderId: text('message_editor_provider_id'),
   messageEditorModelName: text('message_editor_model_name'),
-  // Co-Author generation binding — app-wide, independent of RP active profile.
-  // Null (or dangling after profile deletion) falls back to the RP active
-  // profile/default model at the adapter boundary. No DB-level FK: like
-  // aiAssistantProviderId, a deleted profile leaves a dangling id that the
-  // adapter resolves (dangling → fallback) rather than blocking the delete.
+  // Co-Author connection binding (CG-5): the app-wide pointer at the
+  // provider profile whose connection identity (endpoint, API key,
+  // coauthor_transport) the Co-Author uses. Every generation setting — model
+  // included — lives on that profile's coauthor_connection_settings row
+  // (CG-1..CG-2); ui_settings holds no Co-Author generation values. A null or
+  // dangling binding fails closed (`coauthor_model_required` at the adapter
+  // boundary) — never the RP active profile. No DB-level FK: like
+  // aiAssistantProviderId, a deleted profile leaves a dangling id the adapter
+  // resolves (dangling → fail-closed) rather than blocking the delete.
   coauthorProviderId: text('coauthor_provider_id'),
-  coauthorModelName: text('coauthor_model_name'),
-  // Optional Co-Author-only token overrides. Null inherits the selected
-  // profile/model effective values so RP configuration remains untouched.
-  coauthorMaxTokens: integer('coauthor_max_tokens'),
-  coauthorContextBudget: integer('coauthor_context_budget'),
+  // Optional lore-generation binding. Null (or dangling after profile deletion)
+  // inherits the current Co-Author delegate at the runtime boundary.
+  coauthorLoreProviderId: text('coauthor_lore_provider_id'),
+  coauthorLoreModelName: text('coauthor_lore_model_name'),
   // ─── GitHub star prompt ───
   // One flag silences both the first-run welcome strip and the periodic modal.
   // userMessageCount is server-owned and monotonic; nextStarPromptAt is the
@@ -1845,6 +1891,10 @@ export const imageGenProfiles = sqliteTable('image_gen_profiles', {
   llmAssistEnabled: integer('llm_assist_enabled', { mode: 'boolean' }).notNull().default(false),
   llmProviderProfileId: text('llm_provider_profile_id'),
   llmModelId: text('llm_model_id'),
+  // IMAGEGEN_ASSIST_REFUSAL_REPORT step 3: opt-in single silent assist
+  // retry on a refused output (default OFF — the owner's "enabled
+  // consciously" ruling).
+  assistRetryOnRefusal: integer('assist_retry_on_refusal', { mode: 'boolean' }).notNull().default(false),
   // IPT-2 (IMAGE_PROMPT_TEMPLATES_PLAN): the profile's prompt-family
   // state. family_override = the manual pin (authoritative when set);
   // family_detected + family_detected_for_model = the last auto-detection

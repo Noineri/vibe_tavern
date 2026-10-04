@@ -170,6 +170,24 @@ export interface ProviderModelSettingsRecord {
 	updatedAt: string;
 }
 
+/**
+ * Per-connection Co-Author generation set (COAUTHOR_OWN_GENERATION_SETTINGS_PLAN
+ * CG-1; DTO mirror of the `coauthor_connection_settings` row). `settings` is
+ * the set exactly as STORED — complete when written through the API, possibly
+ * partial for the CG-1 seed row; consumers complete it with the shared domain
+ * derivation `resolveCoauthorGenerationSettings` (@vibe-tavern/domain), never a
+ * second local default. `modelName` null = no model chosen yet. GET returns
+ * `null` for a known connection with no saved set (defaults apply).
+ */
+export interface CoauthorConnectionSettingsRecord {
+	providerProfileId: string;
+	modelName: string | null;
+	settings: ModelSettingsOverlay;
+	sortOrder?: number | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
 // ─── Provider errors ──────────────────────────────────────────────────
 
 /**

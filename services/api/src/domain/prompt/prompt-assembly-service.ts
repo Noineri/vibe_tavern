@@ -3,7 +3,6 @@ import type {
   AssemblePromptResponse,
   CustomInjection,
   GenerationFormat,
-  PromptLayerDto,
   PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import type {
@@ -24,12 +23,16 @@ import type {
   ObjectiveState,
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
-import { assemblePrompt, getSummaryStrategy, setModelHint, type PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
+import { assemblePrompt, formatIdleDuration, getSummaryStrategy, MacroVariableScope, setModelHint, type PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import { storeRollToSnapshot } from "../dice/dice-service.js";
 import { storeAttachmentToReportSnapshot } from "../interactive/experience-report-snapshot.js";
 import { isRecordSchemaCompatible } from "../insights/scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
+import { buildChatSummaryContext } from "./chat-summary-selection.js";
+import { mapPromptLayerDto } from "./prompt-layer-dto.js";
+import { priorUserMessageCreatedAt } from "./idle-duration.js";
+import { sanitizeGenerationFormatPayload } from "./generation-format-payload.js";
 
 export interface PromptAssemblyResolver {
   getCharacter(
@@ -112,6 +115,8 @@ export interface PromptAssemblyResolver {
      * token-budget mode on lorebooks. Optional — when absent, percent-mode
      * lorebooks silently fall back to their fixed `tokenBudget`. */
     maxContextTokens?: number;
+    /** One assembly-scoped variable namespace shared with prompt assembly. */
+    macroVariableScope?: MacroVariableScope;
   }): Promise<ActiveLoreEntriesResult>;
   listRetrievedMemories(input: {
     chatId: ChatId;
@@ -444,7 +449,7 @@ export class PromptAssemblyService {
       const customId = profileFormat.selection.slice(CUSTOM_TEMPLATE_SELECTION_PREFIX.length);
       const row = await this.stores.formatTemplates.getById(customId);
       if (row) {
-        const parsed = sanitizeTemplatePayload(row.payload);
+        const parsed = sanitizeGenerationFormatPayload(row.payload);
         if (parsed) return { ...parsed, selection: profileFormat.selection };
       }
       log.tag("assembly").warn("format selection '%s' points at a missing custom template — falling back to auto", profileFormat.selection);
@@ -471,8 +476,9 @@ export class PromptAssemblyService {
     const allPersonas = await this.stores.personas.listAll();
     const effectivePersonaId = chat.personaId ?? allPersonas.find(p => p.defaultForNewChats)?.id ?? allPersonas[0]?.id ?? "";
     const persona = await this.resolver.getPersona(effectivePersonaId);
-    const promptPresetId = input.presetId ?? chat.promptPresetId
-      ?? (await this.stores.presets.listAll()).find(p => p.isDefault)?.id;
+    const promptPresets = await this.stores.presets.listAll();
+    const defaultPromptPreset = promptPresets.find((preset) => preset.isDefault);
+    const promptPresetId = input.presetId ?? chat.promptPresetId ?? defaultPromptPreset?.id;
     const promptPreset = promptPresetId ? await this.resolver.getPromptPreset(promptPresetId) : null;
 
     // RX-13: hand the chat's ACTIVE regex presets to the pipeline so
@@ -517,14 +523,7 @@ export class PromptAssemblyService {
     const branchSummaries = input.summary
       ? []
       : await this.stores.chatSummaries.listByChatBranch(chat.id, branchId);
-    const enabledSummaries = branchSummaries.filter((summary) => summary.includeInContext && summary.content.trim());
-    const excludedRanges = branchSummaries
-      .filter((summary) => summary.includeInContext && summary.excludeSummarized && summary.summarizedTo >= summary.summarizedFrom)
-      .map((summary) => ({ from: summary.summarizedFrom, to: summary.summarizedTo }));
-    const isInExcludedSummaryRange = (position: number) => {
-      const oneBasedPosition = position + 1;
-      return excludedRanges.some((range) => oneBasedPosition >= range.from && oneBasedPosition <= range.to);
-    };
+    const { enabledSummaries, isInExcludedSummaryRange } = buildChatSummaryContext(branchSummaries);
     const filteredMessages = branchMessages.filter((message) =>
       !excludedMessageIds.has(message.id as MessageId) && !isInExcludedSummaryRange(message.position),
     );
@@ -576,6 +575,7 @@ export class PromptAssemblyService {
         ...(reports.length ? { experienceReports: reports } : {}),
       };
     });
+    const idleDuration = formatIdleDuration(new Date(), priorUserMessageCreatedAt(branchMessages));
 
     const recentText = recentMessages.map((message) => message.content).join("\n");
     // P13: lore scans the post-exclusion set before the history-limit window,
@@ -583,6 +583,7 @@ export class PromptAssemblyService {
     // messages are removed and the swipe target is dropped before WI scanning.
     // `ensureLastUser` also preserves the normal chat-mode final-user safeguard;
     // `windowedMessages` must not narrow the scan beyond the lorebook scan depth.
+    const macroVariableScope = new MacroVariableScope();
     const loreActivation = await this.resolver.listActiveLoreEntries({
       chatId: chat.id as ChatId,
       branchId,
@@ -602,6 +603,7 @@ export class PromptAssemblyService {
       currentTurn: branchMessages.length,
       dryRun: input.dryRun,
       maxContextTokens: input.contextBudget ?? undefined,
+      macroVariableScope,
     });
     const activeLoreEntries = loreActivation.entries;
     const retrievedMemories = await this.resolver.listRetrievedMemories({
@@ -659,6 +661,7 @@ export class PromptAssemblyService {
     const sceneState = await this.resolveSceneInjection(chat.insightsConfig, branchId);
 
     const pipelineContext = {
+      macroVariableScope,
       identity: {
         chatId: chat.id as ChatId,
       },
@@ -693,6 +696,8 @@ export class PromptAssemblyService {
             tools: promptPreset.tools,
             prefill: promptPreset.prefill,
             authorsNote: promptPreset.authorsNote,
+            defaultSystemPrompt: defaultPromptPreset?.systemPrompt ?? null,
+            defaultAuthorsNote: defaultPromptPreset?.authorsNote ?? null,
             authorsNoteDepth: promptPreset.authorsNoteDepth,
             authorsNotePosition: (promptPreset.authorsNotePosition as "in_prompt" | "in_chat" | "after_chat") ?? "in_chat",
             authorsNoteRole: (promptPreset.authorsNoteRole as "system" | "user" | "assistant") ?? "system",
@@ -743,6 +748,7 @@ export class PromptAssemblyService {
       sceneState,
       chat: {
         recentMessages,
+        idleDuration,
         scriptInjections: scriptResult.injectedMessages,
         dynamicPrompt: chat.dynamicPrompt?.trim() || null,
       },
@@ -793,57 +799,4 @@ export class PromptAssemblyService {
     await this.fileStore.writeJson(filePath, trace);
     return filePath;
   }
-}
-
-function mapPromptLayerDto(layer: {
-  id: string;
-  sourceType: string;
-  sourceId: string;
-  sourceName: string;
-  position: "before_prompt" | "in_prompt" | "in_chat" | "hidden_system";
-  priority: number;
-  enabled: boolean;
-  reason: string;
-  tokenCount: number;
-  text: string;
-  injectionDepth?: number;
-  modes?: string[];
-}): PromptLayerDto {
-  return {
-    id: layer.id,
-    sourceType: layer.sourceType,
-    sourceId: layer.sourceId,
-    sourceName: layer.sourceName,
-    position: layer.position,
-    priority: layer.priority,
-    enabled: layer.enabled,
-    reason: layer.reason,
-    tokenCount: layer.tokenCount,
-    text: layer.text,
-    injectionDepth: layer.injectionDepth,
-    modes: layer.modes,
-  };
-}
-
-/** Structural validation of a stored format-template payload (the loose JSON
- *  record from the format-templates store) into a GenerationFormat — string
- *  fields stay strings, everything else is dropped. A malformed payload
- *  degrades to null (the caller falls back to auto), never throws. */
-function sanitizeTemplatePayload(payload: Record<string, unknown>): GenerationFormat | null {
-  const mode = payload["mode"];
-  if (mode !== "manual" && mode !== "auto") return null;
-  const out: GenerationFormat = { mode };
-  for (const key of [
-    "inputSequence", "outputSequence", "firstOutputSequence", "lastOutputSequence",
-    "systemSequence", "systemSequencePrefix", "systemSequenceSuffix",
-    "inputSuffix", "outputSuffix", "systemSuffix", "selection",
-  ] as const) {
-    const value = payload[key];
-    if (typeof value === "string") out[key] = value;
-  }
-  if (typeof payload.wrap === "boolean") out.wrap = payload.wrap;
-  if (payload.namesBehavior === "force" || payload.namesBehavior === "always" || payload.namesBehavior === "never") {
-    out.namesBehavior = payload.namesBehavior;
-  }
-  return out;
 }

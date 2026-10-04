@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { renderHook } from "@testing-library/react";
+
 import { useDomEnv } from "../../test/dom-env.js";
 import { useLastNonNull } from "./use-last-non-null.js";
 
 useDomEnv();
+
+const { renderHook } = await import("@testing-library/react");
 
 describe("useLastNonNull", () => {
   it("returns null before any non-null value has been seen", () => {

@@ -116,8 +116,8 @@ async function makeResolverWorld() {
   const lorebook = await stores.lorebooks.createLorebook({
     name: "Timed lore",
     scopeType: "entity",
-    characterId: character.id,
   });
+  await stores.lorebooks.addLink(lorebook.id, "character", character.id);
   const entry = await stores.lorebooks.createEntry(lorebook.id, {
     title: "Needle",
     content: "Matched lore",
@@ -202,5 +202,51 @@ describe("lore activation — dry-run timed state", () => {
     });
 
     expect(await branchStateJson(world.stores, world.branchId)).not.toBe(before);
+  });
+
+  it("activates from included chat-summary snapshots only", async () => {
+    const world = await makeResolverWorld();
+    const lorebook = await world.stores.lorebooks.createLorebook({
+      name: "Summary lore",
+      scopeType: "chat",
+      chatId: world.chatId,
+    });
+    const included = await world.stores.lorebooks.createEntry(lorebook.id, {
+      title: "Included summary",
+      content: "Included summary lore",
+      keys: ["included-summary-key"],
+      matchSources: ["chat_summary"],
+    });
+    await world.stores.lorebooks.createEntry(lorebook.id, {
+      title: "Excluded summary",
+      content: "Excluded summary lore",
+      keys: ["excluded-summary-key"],
+      matchSources: ["chat_summary"],
+    });
+    await world.stores.chatSummaries.create({
+      chatId: world.chatId,
+      branchId: world.branchId,
+      content: "included-summary-key",
+      summarizedFrom: 1,
+      summarizedTo: 1,
+      includeInContext: true,
+    });
+    await world.stores.chatSummaries.create({
+      chatId: world.chatId,
+      branchId: world.branchId,
+      content: "excluded-summary-key",
+      summarizedFrom: 1,
+      summarizedTo: 1,
+      includeInContext: false,
+    });
+
+    const result = await world.resolver.listActiveLoreEntries({
+      chatId: world.chatId,
+      branchId: world.branchId,
+      recentText: "",
+      scanMessages: [],
+    });
+
+    expect(result.entries.map((entry) => entry.id)).toEqual([included.id]);
   });
 });

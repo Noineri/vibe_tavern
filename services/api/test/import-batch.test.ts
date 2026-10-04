@@ -41,6 +41,7 @@ function makeDeps() {
 	);
 	const createLorebook = mock(async (_data: unknown) => ({ id: "lore_1" }));
 	const bulkCreateEntries = mock(async (_id: unknown, _entries: unknown) => 1);
+	const addLink = mock(async (_id: unknown, _type: unknown, _target: unknown) => undefined);
 	const deps = {
 		stores: {
 			characters: {
@@ -52,7 +53,7 @@ function makeDeps() {
 				resolveFolderName: mock((id: string) => Promise.resolve(id)),
 				listAll: mock(() => Promise.resolve([])),
 			},
-			lorebooks: { createLorebook, bulkCreateEntries },
+			lorebooks: { createLorebook, bulkCreateEntries, addLink },
 			content: {
 				writeEntity: mock(() => Promise.resolve("stub/path") as never),
 			},
@@ -73,7 +74,7 @@ function makeDeps() {
 		},
 		fileStore: { resolvePath: () => { throw new Error("should not be called"); } },
 	} as unknown as ImportExportModuleDeps;
-	return { deps, getSnapshot, createLorebook, bulkCreateEntries };
+	return { deps, getSnapshot, createLorebook, bulkCreateEntries, addLink };
 }
 
 describe("importJsonBatch — mass-import batch path (MASS_IMPORT Wave 2)", () => {
@@ -99,15 +100,18 @@ describe("importJsonBatch — mass-import batch path (MASS_IMPORT Wave 2)", () =
 	test("bulk import automatically creates a character-bound embedded book", async () => {
 		// Bulk has no confirmation surface, unlike ST's single-card prompt
 		// (world-info.js:5559-5574), so it forces importEmbeddedBook on.
-		const { deps, createLorebook, bulkCreateEntries } = makeDeps();
+		const { deps, createLorebook, bulkCreateEntries, addLink } = makeDeps();
 		await importJsonBatch(deps, { items: [makeCard("Embedded", true)] });
 		expect(createLorebook).toHaveBeenCalledTimes(1);
 		expect(bulkCreateEntries).toHaveBeenCalledTimes(1);
+		// Owners are links (migration 0107): the create carries no home owner —
+		// the import seam binds the imported character by lorebook_links.
 		expect(createLorebook.mock.calls[0][0]).toMatchObject({
 			name: "Embedded Lore",
 			scopeType: "entity",
-			characterId: "char_Embedded",
 		});
+		expect("characterId" in (createLorebook.mock.calls[0][0] as Record<string, unknown>)).toBe(false);
+		expect(addLink.mock.calls[0]).toEqual(["lore_1", "character", "char_Embedded"]);
 	});
 
 	test("partial failure: one bad card lands in results[].error; siblings still import", async () => {

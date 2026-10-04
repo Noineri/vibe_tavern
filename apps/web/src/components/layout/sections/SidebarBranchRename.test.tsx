@@ -17,10 +17,12 @@
  * renders its output — same passthrough pattern as ActionSheet/VibeMdView).
  */
 import { describe, it, expect, beforeAll, mock } from "bun:test";
-import { render, fireEvent } from "@testing-library/react";
+
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, fireEvent } = await import("@testing-library/react");
 
 const realI18nContext = await import("../../../i18n/context.js");
 mock.module("../../../i18n/context.js", () => ({

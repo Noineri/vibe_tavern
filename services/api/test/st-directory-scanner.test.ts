@@ -197,7 +197,10 @@ describe("ST directory scanner — three gaps (STN-1D)", () => {
 			const character = (await local.stores.characters.listAll()).find((item) => item.name === "Test Char");
 			const book = (await local.stores.lorebooks.listAllLorebooks()).find((item) => item.name === "Embedded Card Book");
 			expect(character).toBeTruthy();
-			expect(book).toMatchObject({ scopeType: "entity", characterId: character!.id });
+			// Owners are links (migration 0107): the embedded book is bound to the
+			// imported character by a lorebook_links row, not a home FK.
+			expect(book).toMatchObject({ scopeType: "entity" });
+			expect((await local.stores.lorebooks.getLinks(book!.id)).map((l) => `${l.targetType}:${l.targetId}`)).toEqual([`character:${character!.id}`]);
 			const entries = await local.stores.lorebooks.listEntries(book!.id);
 			expect(entries[0]).toMatchObject({
 				keys: ["embedded-key"],
@@ -863,12 +866,14 @@ describe("ST directory scanner — ownership-aware lorebook import (L1)", () => 
 		// The settings-block rewrite must not drop the group-scoring passthrough.
 		expect(global.useGroupScoring).toBe(true);
 
-		// CardTome: card extensions.world only → character+enabled, bound to Card Char.
+		// CardTome: card extensions.world only → character+enabled, bound to Card Char
+		// (owners are links since migration 0107 — check the lorebook_links row).
 		const card = byName("CardTome");
 		expect(card.scopeType).toBe("entity");
 		expect(card.enabled).toBe(true);
-		expect(card.characterId).toBe(charId("Card Char"));
+		expect(card.characterId).toBeNull();
 		expect(card.chatId).toBeNull();
+		expect((await env.stores.lorebooks.getLinks(card.id)).map((l) => `${l.targetType}:${l.targetId}`)).toEqual([`character:${charId("Card Char")}`]);
 
 		// ChatTome: chat world_info only → chat+enabled, bound to the history chat.
 		const chat = byName("ChatTome");
@@ -881,8 +886,9 @@ describe("ST directory scanner — ownership-aware lorebook import (L1)", () => 
 		const both = byName("BothTome");
 		expect(both.scopeType).toBe("entity");
 		expect(both.enabled).toBe(true);
-		expect(both.characterId).toBe(charId("Both Char"));
+		expect(both.characterId).toBeNull();
 		expect(both.chatId).toBeNull();
+		expect((await env.stores.lorebooks.getLinks(both.id)).map((l) => `${l.targetType}:${l.targetId}`)).toEqual([`character:${charId("Both Char")}`]);
 
 		// OrphanTome: referenced nowhere → global+DISABLED (inert stays inert).
 		const orphan = byName("OrphanTome");
@@ -957,7 +963,9 @@ describe("ST directory scanner — P17 ST lorebook bindings", () => {
 		expect(character).toBeTruthy();
 		for (const name of ["Primary Book", "Extra Book"]) {
 			const book = books.find((item) => item.name === name);
-			expect(book).toMatchObject({ scopeType: "entity", characterId: character!.id, personaId: null, enabled: true });
+			expect(book).toMatchObject({ scopeType: "entity", characterId: null, personaId: null, enabled: true });
+			// Owners are links (migration 0107): the binding is a lorebook_links row.
+			expect((await env.stores.lorebooks.getLinks(book!.id)).map((l) => `${l.targetType}:${l.targetId}`)).toEqual([`character:${character!.id}`]);
 		}
 	});
 
@@ -966,9 +974,13 @@ describe("ST directory scanner — P17 ST lorebook bindings", () => {
 		const { books, personas } = await importBindings();
 		const persona = personas.find((item) => item.name === "Bound Persona");
 		expect(persona).toBeTruthy();
-		expect(books.find((item) => item.name === "Persona Book")).toMatchObject({
-			scopeType: "entity", personaId: persona!.id, characterId: null, enabled: true,
+		const personaBook = books.find((item) => item.name === "Persona Book");
+		expect(personaBook).toMatchObject({
+			scopeType: "entity", personaId: null, characterId: null, enabled: true,
 		});
+		// Owners are links (migration 0107): the persona descriptor book is bound
+		// to the imported persona by a lorebook_links row.
+		expect((await env.stores.lorebooks.getLinks(personaBook!.id)).map((l) => `${l.targetType}:${l.targetId}`)).toEqual([`persona:${persona!.id}`]);
 	});
 
 	it("warns and leaves a book global and disabled when its charLore character did not import", async () => {

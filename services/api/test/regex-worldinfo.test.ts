@@ -88,12 +88,12 @@ async function setup(
     content: SCAN_MESSAGE,
   });
 
-  // Character-scoped lorebook with one keyed entry.
+  // Character-bound lorebook (owners are links since migration 0107) with one keyed entry.
   const lorebook = await stores.lorebooks.createLorebook({
     name: "RX-9 lore",
     scopeType: "entity",
-    characterId: character.id,
   });
+  await stores.lorebooks.addLink(lorebook.id, "character", character.id);
   const entry = await stores.lorebooks.createEntry(lorebook.id, {
     title: "Tavern",
     content: options.entryContent ?? "The tavern has a secret room.",

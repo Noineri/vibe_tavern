@@ -15,30 +15,56 @@ import {
 } from "../src/domain/coauthor/lore/lore-entity-lookup.js";
 
 describe("lore-entity-lookup mappers (CE-B1)", () => {
-	it("lorebookToDraft projects the draft-relevant fields and stamps no mode", () => {
+	it("lorebookToDraft projects the FULL current state (every contract settings field) and stamps no mode", () => {
 		const draft = lorebookToDraft({
 			id: "lb_1", name: "N", description: "d", scopeType: "entity",
-			scanDepth: 7, tokenBudget: 500, recursiveScanning: true, enabled: false,
+			scanDepth: 7, tokenBudget: 500, tokenBudgetPercent: 30, tokenBudgetCap: 2000,
+			recursiveScanning: true, useGroupScoring: true, caseSensitive: true, matchWholeWords: true,
+			maxRecursionSteps: 3, includeNames: false, minActivations: 2, minActivationsDepthMax: 20,
+			overflowAlert: true, characterStrategy: 2, enabled: false,
 		});
 		expect(draft).toEqual({
 			id: "lb_1", name: "N", description: "d", scopeType: "entity",
 			scanDepth: 7, tokenBudget: 500, recursiveScanning: true, enabled: false,
+			tokenBudgetPercent: 30, tokenBudgetCap: 2000, useGroupScoring: true,
+			caseSensitive: true, matchWholeWords: true, maxRecursionSteps: 3,
+			includeNames: false, minActivations: 2, minActivationsDepthMax: 20,
+			overflowAlert: true, characterStrategy: 2,
 		});
 		// No mode here — LoreDraftState.importLorebook stamps mode:"edit".
 		expect(draft.mode).toBeUndefined();
 	});
 
-	it("entryToDraft projects the draft-relevant fields (decoded domain types)", () => {
+	it("entryToDraft projects the FULL current state (every contract settings field)", () => {
 		const draft = entryToDraft({
 			id: "le_1", lorebookId: "lb_1", title: "T", content: "c",
 			keys: ["k1"], secondaryKeys: ["s1"], constant: true,
 			position: "before_char", depth: 4, logic: "and_all", enabled: true,
+			priority: 42, probability: 77, ignoreBudget: true, role: "assistant",
+			groupName: "squad", groupWeight: 55, prioritizeInclusion: true,
+			useGroupScoring: null, excludeRecursion: true, preventRecursion: true,
+			delayUntilRecursion: true, recursionLevel: 4, scanDepthOverride: 9,
+			caseSensitive: null, matchWholeWords: true, caseFormsKeys: ["дракон"],
+			characterFilter: [{ id: null, name: "Alice" }], characterFilterExclude: true,
+			matchSources: ["chat_messages", "scenario"],
+			stickyWindow: 3, cooldownWindow: 5, minChatMessages: 2,
 		});
 		expect(draft).toEqual({
 			id: "le_1", lorebookId: "lb_1", title: "T", content: "c",
 			keys: ["k1"], secondaryKeys: ["s1"], constant: true,
 			position: "before_char", depth: 4, logic: "and_all", enabled: true,
+			priority: 42, probability: 77, ignoreBudget: true, role: "assistant",
+			groupName: "squad", groupWeight: 55, prioritizeInclusion: true,
+			useGroupScoring: null, excludeRecursion: true, preventRecursion: true,
+			delayUntilRecursion: true, recursionLevel: 4, scanDepthOverride: 9,
+			caseSensitive: null, matchWholeWords: true, caseFormsKeys: ["дракон"],
+			characterFilter: [{ id: null, name: "Alice" }], characterFilterExclude: true,
+			matchSources: ["chat_messages", "scenario"],
+			stickyWindow: 3, cooldownWindow: 5, minChatMessages: 2,
 		});
+		// Tri-state null survives the projection (it is a set value, not unset).
+		expect(draft.useGroupScoring).toBeNull();
+		expect(draft.caseSensitive).toBeNull();
 	});
 });
 

@@ -31,13 +31,16 @@
  * purpose — plain getAttribute keeps the file typecheck-clean).
  */
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { render, fireEvent, waitFor, within, type RenderResult } from "@testing-library/react";
+
 import type { ReactNode } from "react";
 import { brandId, type ChatId, type ExperienceCapability } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceAssignmentProps } from "./ExperienceAssignment.js";
 
 useDomEnv();
+
+const { render, fireEvent, waitFor, within } = await import("@testing-library/react");
+type RenderResult = import("@testing-library/react").RenderResult;
 
 // Shared mock state is defined before the module registrations.
 const mocks = {

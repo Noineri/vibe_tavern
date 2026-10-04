@@ -149,7 +149,13 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 
 	uploadCharacterAvatar = async (characterId: string, crop: File, full?: File): Promise<{ avatarExt: string; avatarFullExt: string | null }> => {
 		const cid = brandId<CharacterId>(characterId);
-		const priorThumbExt = (await this.stores.characters.getById(cid))?.avatarExt ?? null;
+		const prior = await this.stores.characters.getById(cid);
+		const priorThumbExt = prior?.avatarExt ?? null;
+		// "Has a full" is the SAME notion serveCharacterAvatarFull resolves
+		// with: getById lazy-migrates a legacy avatarFullAssetId into a folder
+		// avatar-full.{ext} (and nulls the asset id), so avatarFullExt alone
+		// answers it after this read — no second derivation of the rule.
+		const priorFullExt = prior?.avatarFullExt ?? null;
 		// LB-1B: the thumbnail normalizes to ≤ 512 webp, so the ORIGINAL crop
 		// bytes must land in avatar-full BEFORE the thumbnail is overwritten
 		// (the original is never lost — plan non-negotiable). The verdict is
@@ -162,15 +168,19 @@ export class CharacterAdapter implements CharacterRuntimeApi, CharacterAssetRunt
 			: null;
 		// Full (uncropped original): optional. Written to {id}/avatar-full.{ext}
 		// when provided (crop-confirm flow passes the unmodified source). When
-		// omitted (single-image upload, ST import) and the thumbnail will be
-		// re-encoded, the ORIGINAL crop bytes become the full so large slots and
-		// card export keep full resolution.
-		let avatarFullExt: string | null = null;
+		// omitted (single-image upload, ST import) AND the character has NO
+		// existing full, a re-encoded thumbnail promotes the ORIGINAL crop
+		// bytes to the full so large slots and card export keep full
+		// resolution (LB-1B). An EXISTING full is never overwritten by a
+		// crop-only upload — the adjust-thumbnail flow (re-crop without a
+		// `full` arg) depends on the original staying untouched (owner live
+		// regression: Zack Foster's avatar-full.png became the 512 crop).
+		let avatarFullExt: string | null = priorFullExt;
 		if (full) {
 			const f = await this.assetService.writeCharacterAvatarFull(characterId, full);
 			await this.stores.characters.setFolderAvatarFull(brandId<CharacterId>(characterId), f.ext);
 			avatarFullExt = f.ext;
-		} else if (plan?.changed) {
+		} else if (plan?.changed && !priorFullExt) {
 			const originalFile = new File([new Uint8Array(await crop.arrayBuffer())], `avatar-full.${cropExt}`, { type: crop.type });
 			const f = await this.assetService.writeCharacterAvatarFull(characterId, originalFile);
 			await this.stores.characters.setFolderAvatarFull(brandId<CharacterId>(characterId), f.ext);

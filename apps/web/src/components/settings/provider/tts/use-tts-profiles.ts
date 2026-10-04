@@ -12,6 +12,7 @@ import {
   createTtsProfile,
   deleteTtsProfile,
   listAllTtsProfiles,
+  reorderTtsProfiles,
   setTtsDefault,
   updateTtsProfile,
   type TtsProfileRecord,
@@ -63,6 +64,9 @@ export type TtsHeaderMode = "view" | "edit";
 
 export function useTtsProfiles(): {
   profiles: TtsProfileRecord[];
+  /** Master-list filter state; the section renders this hook-derived subset. */
+  profileSearch?: string;
+  filteredProfiles?: TtsProfileRecord[];
   loading: boolean;
   editingId: string | null;
   form: TtsProfileForm | null;
@@ -87,8 +91,11 @@ export function useTtsProfiles(): {
   remove(): Promise<void>;
   cancelEdit(): void;
   reload(): Promise<void>;
+  setProfileSearch?(value: string): void;
+  reorder?(updates: Array<{ id: string; sortOrder: number }>): Promise<void>;
 } {
   const [profiles, setProfiles] = useState<TtsProfileRecord[]>([]);
+  const [profileSearch, setProfileSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setFormState] = useState<TtsProfileForm | null>(null);
@@ -113,6 +120,17 @@ export function useTtsProfiles(): {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const filteredProfiles = profileSearch.trim()
+    ? profiles.filter((profile) =>
+        profile.name.toLowerCase().includes(profileSearch.toLowerCase()) ||
+        profile.backend.toLowerCase().includes(profileSearch.toLowerCase()),
+      )
+    : profiles;
+
+  const reorder = useCallback(async (updates: Array<{ id: string; sortOrder: number }>) => {
+    setProfiles(await reorderTtsProfiles(updates));
   }, []);
 
   useEffect(() => {
@@ -347,6 +365,8 @@ export function useTtsProfiles(): {
 
   return {
     profiles,
+    profileSearch,
+    filteredProfiles,
     loading,
     editingId,
     form,
@@ -364,5 +384,7 @@ export function useTtsProfiles(): {
     remove,
     cancelEdit,
     reload,
+    setProfileSearch,
+    reorder,
   };
 }

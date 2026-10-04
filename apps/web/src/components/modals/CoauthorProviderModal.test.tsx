@@ -1,228 +1,230 @@
 import { describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
-import { render, fireEvent, waitFor, within } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
-import type { ProviderProfileRecord as ClientProviderProfileRecord } from "../../api/types.js";
+import type { CoauthorConnectionSettingsRecord, ProviderProfileRecord as ClientProviderProfileRecord } from "../../api/types.js";
 
 useDomEnv();
 
-// Mock patchUiSettingsAction so saveBinding doesn't hit the network.
-const patchUiSettingsAction = mock(async (_patch: never) => ({}) as never);
+const { render, fireEvent, waitFor, within } = await import("@testing-library/react");
+
+const patchUiSettingsAction = mock(async (_patch: never) => ({} as never));
 const loadFavoriteModelsAction = mock(async (_profileId: string) => {});
+const loadCoauthorConnectionSettingsAction = mock(async (_profileId: string): Promise<CoauthorConnectionSettingsRecord | null> => null);
+const upsertCoauthorConnectionSettingsAction = mock(async (_profileId: string, _body: unknown) => ({}));
 const updateProviderProfileAction = mock(async (_profileId: string, patch: { coauthorTransport?: "chat_completions" | "responses" }) => ({ coauthorTransport: patch.coauthorTransport ?? "chat_completions" }) as never);
 const realBootstrapActions = await import("../../stores/api-actions/bootstrap-actions.js");
 const realProviderActions = await import("../../stores/api-actions/provider-actions.js");
 const realI18n = await import("../../i18n/context.js");
-mock.module("../../stores/api-actions/bootstrap-actions.js", () => {
-  return {
-    ...realBootstrapActions,
-    patchUiSettingsAction,
-  };
-});
-
-// Mock loadFavoriteModelsAction so the binding hook doesn't fire network calls.
-mock.module("../../stores/api-actions/provider-actions.js", () => {
-  return {
-    ...realProviderActions,
-    loadFavoriteModelsAction,
-    updateProviderProfileAction,
-  };
-});
-
-// useT must return a stable t() — the modal builds labels off it.
-mock.module("../../i18n/context.js", () => {
-  return {
-    ...realI18n,
-    useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
-  };
-});
+mock.module("../../stores/api-actions/bootstrap-actions.js", () => ({ ...realBootstrapActions, patchUiSettingsAction }));
+mock.module("../../stores/api-actions/provider-actions.js", () => ({
+  ...realProviderActions,
+  loadFavoriteModelsAction,
+  updateProviderProfileAction,
+  loadCoauthorConnectionSettingsAction,
+  upsertCoauthorConnectionSettingsAction,
+}));
+mock.module("../../i18n/context.js", () => ({
+  ...realI18n,
+  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+}));
 
 const { useProviderDataStore } = await import("../../stores/provider-data-store.js");
 const { useBootstrapStore } = await import("../../stores/api-actions/bootstrap-actions.js");
 let TooltipProvider: typeof import("../shared/Tooltip.js").TooltipProvider;
 let CoauthorProviderModal: typeof import("./CoauthorProviderModal.js").CoauthorProviderModal;
 beforeAll(async () => {
-	({ TooltipProvider } = await import("../shared/Tooltip.js"));
-	({ CoauthorProviderModal } = await import("./CoauthorProviderModal.js"));
+  ({ TooltipProvider } = await import("../shared/Tooltip.js"));
+  ({ CoauthorProviderModal } = await import("./CoauthorProviderModal.js"));
 });
 
 function makeProfile(id: string, name: string, over: Record<string, unknown> = {}): ClientProviderProfileRecord {
   return {
     id, name, providerPreset: "openai", coauthorTransport: "chat_completions", endpoint: "https://api.test/v1",
     defaultModel: null, isActive: false,
-    cachedModels: { models: [{ id: "tool-model", label: "Tool Model", contextLength: 32000, capabilities: { tools: true } }] },
+    cachedModels: { models: [{ id: "tool-model", label: "Tool Model", contextLength: 32_000, capabilities: { tools: true } }] },
     ...over,
   } as ClientProviderProfileRecord;
 }
 
-function setBinding(coauthorProviderId: string | null, coauthorModelName: string | null) {
+function makeRow(profileId: string, modelName: string, settings: Record<string, unknown> = {}, sortOrder: number | null = null): CoauthorConnectionSettingsRecord {
+  return {
+    providerProfileId: profileId,
+    modelName,
+    sortOrder,
+    settings: { temperature: 0.42, maxTokens: 8_000, contextBudget: 128_000, pinContextBudget: false, ...settings },
+    createdAt: "2026-01-01",
+    updatedAt: "2026-01-01",
+  } as CoauthorConnectionSettingsRecord;
+}
+
+function setBinding(coauthorProviderId: string | null) {
   useBootstrapStore.setState({
     data: {
       initialChatId: null, snapshot: null, isFirstRun: false, allCharacters: [], promptPresets: [],
       uiSettings: {
         id: "default", theme: "dark", chatFontSize: 15, uiFontSize: 14, messageWidth: 700, language: "en",
         activePromptPresetId: null, aiAssistantProviderId: null, aiAssistantModelName: null,
-        coauthorProviderId, coauthorModelName, updatedAt: "2026-01-01",
+        coauthorProviderId, updatedAt: "2026-01-01",
       } as never,
       isArmServer: false,
     } as never,
   });
 }
 
+function renderModal(onClose = () => {}, onOpenProviderModal = () => {}) {
+  return render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={onClose} onOpenProviderModal={onOpenProviderModal} /></TooltipProvider>);
+}
+
 describe("CoauthorProviderModal", () => {
   beforeEach(() => {
     mock.clearAllMocks();
-    useProviderDataStore.setState({ profiles: [], favoritesByProfile: {} });
+    loadCoauthorConnectionSettingsAction.mockImplementation(async () => null);
+    useProviderDataStore.setState({ profiles: [], favoritesByProfile: {}, coauthorFavoritesByProfile: {}, coauthorSettingsByProfile: {} });
     useBootstrapStore.setState({ data: null });
   });
 
-	it("renders the fork title + manage-connections action", async () => {
-		setBinding(null, null);
-		const view = render(<CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} />);
-		await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.title"));
-		const { getByText } = within(view.baseElement);
-		expect(getByText("coauthor.provider.title")).toBeTruthy();
-		expect(getByText("coauthor.provider.manage_connections")).toBeTruthy();
+  it("renders the fork title + manage-connections action", async () => {
+    const view = renderModal();
+    await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.title"));
+    expect(view.getByText("coauthor.provider.title")).toBeTruthy();
+    expect(view.getByText("coauthor.provider.manage_connections")).toBeTruthy();
   });
 
-	it("shows the selection-only profile list with the bound profile marked active", async () => {
-    setBinding("prof_coauthor", "model-a");
+  it("shows the selection-only profile list with the bound profile marked active", async () => {
+    setBinding("bound-profile");
     useProviderDataStore.setState({
       profiles: [
-        makeProfile("prof_coauthor", "Bound Profile"),
-        makeProfile("prof_other", "Other Profile"),
+        makeProfile("bound-profile", "Bound Profile"),
+        makeProfile("other-profile", "Other Profile"),
       ],
-      favoritesByProfile: {},
     });
-		const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
-		await waitFor(() => expect(view.baseElement.textContent).toContain("Bound Profile"));
-		const { getByText, queryByText } = within(view.baseElement);
-		// Both profiles render in the master list
-		expect(getByText("Bound Profile")).toBeTruthy();
-		expect(getByText("Other Profile")).toBeTruthy();
-		// No "+ New" button (selectionOnly)
-		expect(queryByText("new_profile_btn")).toBeNull();
+    const view = renderModal();
+    await waitFor(() => expect(view.getByText("★ Bound Profile")).toBeTruthy());
+    const profileList = view.getByText("profiles_label").parentElement!;
+    expect(within(profileList).getAllByText("★ Bound Profile")).toHaveLength(1);
+    expect(within(profileList).getAllByText("Other Profile")).toHaveLength(1);
+    expect(within(profileList).queryByText("new_profile_btn")).toBeNull();
+    expect(within(profileList).getAllByLabelText("drag")).toHaveLength(2);
   });
 
-	it("manage-connections calls onOpenProviderModal + onClose", async () => {
-    setBinding(null, null);
+  it("manage-connections calls onOpenProviderModal + onClose", async () => {
     let providerOpened = false;
     let closed = false;
-		const view = render(
-      <TooltipProvider><CoauthorProviderModal
-        isOpen={true}
-        onClose={() => { closed = true; }}
-        onOpenProviderModal={() => { providerOpened = true; }}
-      /></TooltipProvider>,
-		);
-		await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.manage_connections"));
-		const { getByText } = within(view.baseElement);
-		fireEvent.click(getByText("coauthor.provider.manage_connections"));
+    const view = renderModal(() => { closed = true; }, () => { providerOpened = true; });
+    await waitFor(() => expect(view.getByText("coauthor.provider.manage_connections")).toBeTruthy());
+    fireEvent.click(view.getByText("coauthor.provider.manage_connections"));
     expect(providerOpened).toBe(true);
     expect(closed).toBe(true);
   });
 
-	it("shows custom-ID guidance and an explicit model refresh action", async () => {
-    setBinding("prof_1", "tool-model");
-    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha")], favoritesByProfile: {} });
-    const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
-		await waitFor(() => expect(view.baseElement.textContent).toContain("Alpha"));
-		const { getByPlaceholderText, getByText } = within(view.baseElement);
-    expect(getByPlaceholderText("coauthor.provider.model_search")).toBeTruthy();
-    expect(getByText("refresh_models")).toBeTruthy();
+  it("keeps the connection and transport cards, but replaces inherited token limits and the flat list with the selector + sampler panel", async () => {
+    setBinding("p1");
+    loadCoauthorConnectionSettingsAction.mockImplementation(async (id) => makeRow(id, "tool-model"));
+    useProviderDataStore.setState({ profiles: [makeProfile("p1", "Alpha", { maxTokens: 2_000, contextBudget: 16_000 })] });
+    const view = renderModal();
+    await waitFor(() => expect(view.baseElement.textContent).toContain("sampler_basic_settings"));
+    expect(view.getByText("Alpha")).toBeTruthy();
+    expect(view.getByText("coauthor.provider.transport_label")).toBeTruthy();
+    expect(view.getByText("coauthor.provider.model_label")).toBeTruthy();
+    expect(view.baseElement.textContent).not.toContain("coauthor.provider.tokens_label");
+    expect(view.baseElement.querySelector("[data-testid='coauthor-model-list']")).toBeNull();
   });
 
-  it("persists a permitted Responses selection without changing the binding", async () => {
-    setBinding("prof_1", "tool-model");
-    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "OpenAI")], favoritesByProfile: {} });
-    const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
-		await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.transport_responses"));
-		const { getByText } = within(view.baseElement);
-    fireEvent.click(getByText("coauthor.provider.transport_responses"));
-    await waitFor(() => expect(updateProviderProfileAction).toHaveBeenCalledWith("prof_1", { coauthorTransport: "responses" }));
+  it("loads each connection's own set and restores it after switching back", async () => {
+    setBinding("p1");
+    const rows = {
+      p1: makeRow("p1", "one-model", { temperature: 0.11, contextBudget: 32_000 }),
+      p2: makeRow("p2", "two-model", { temperature: 0.88, contextBudget: 64_000 }),
+    };
+    loadCoauthorConnectionSettingsAction.mockImplementation(async (id) => rows[id as keyof typeof rows] ?? null);
+    useProviderDataStore.setState({ profiles: [makeProfile("p1", "Alpha"), makeProfile("p2", "Beta")] });
+    const view = renderModal();
+    await waitFor(() => expect(view.baseElement.textContent).toContain("one-model"));
+    fireEvent.pointerDown(within(view.baseElement).getAllByText("openai")[1]!.closest(".cursor-pointer")!);
+    await waitFor(() => expect(view.baseElement.textContent).toContain("two-model"));
+    fireEvent.pointerDown(within(view.baseElement).getAllByText("openai")[0]!.closest(".cursor-pointer")!);
+    await waitFor(() => expect(view.baseElement.textContent).toContain("one-model"));
   });
 
-  it("hides Responses for native profiles but permits an explicit attempt for every OpenAI-compatible profile", async () => {
-    setBinding("native", "tool-model");
-    useProviderDataStore.setState({ profiles: [makeProfile("native", "Claude", { providerPreset: "anthropic" }), makeProfile("tabby", "Tabby", { providerPreset: "tabby" })], favoritesByProfile: {} });
-    const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
-		await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.transport_native"));
-		const { getByText, queryByText } = within(view.baseElement);
-    expect(getByText("coauthor.provider.transport_native")).toBeTruthy();
-    expect(queryByText("coauthor.provider.transport_responses")).toBeNull();
-    fireEvent.pointerDown(getByText("Tabby"));
-		await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.transport_responses"));
-    expect(getByText("coauthor.provider.transport_may_not_be_supported")).toBeTruthy();
-  });
-
-  it("renders a fixed-height model viewport that scrolls internally, with a stable footer", async () => {
-    setBinding("prof_1", "tool-model");
-    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha", { maxTokens: 2_000, contextBudget: 32_000 })], favoritesByProfile: {} });
-    const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
-		await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.tokens_label"));
-		const { getByText, getByTestId } = within(view.baseElement);
-    expect(getByText("coauthor.provider.tokens_label")).toBeTruthy();
-    expect(getByText("coauthor.provider.max_tokens")).toBeTruthy();
-    expect(getByText("coauthor.provider.context_budget")).toBeTruthy();
-    // The model viewport is a FIXED height (~250px, ~5 rows) and must NEVER grow
-    // with model count, so the Hi button sits immediately below it regardless of
-    // how many models load. Scrolling is delegated inside (overflow-hidden box).
-    const list = getByTestId("coauthor-model-list");
-    expect(list.className).toContain("h-[250px]");
-    expect(list.className).toContain("shrink-0");
-    expect(list.className).toContain("overflow-hidden");
-    expect(list.className).not.toContain("flex-1");
-    // The wrapping model section must not grow either — flex-1 on the section
-    // would shove the Hi button to the bottom and tie content height to count.
-    const modelSection = list.parentElement;
-    expect(modelSection?.className).not.toContain("flex-1");
-    // Stable footer: Cancel/Use live in the MasterDetailModal footer slot, which
-    // renders OUTSIDE the scrollable detail pane, so they never overlay content
-    // or scroll away. The footer is a sibling of the scroll region, not inside it.
-    const footer = getByTestId("coauthor-modal-footer");
-    expect(footer.textContent).toContain("cancel");
-    expect(footer.textContent).toContain("coauthor.provider.use_for_coauthor");
-    let scrollPane: Element | null = list.parentElement;
-    while (scrollPane && !scrollPane.className.includes("overflow-y-auto")) {
-      scrollPane = scrollPane.parentElement;
-    }
-    expect(scrollPane).not.toBeNull();
-    expect(scrollPane!.contains(footer)).toBe(false);
-  });
-
-  it("renders the inherited -1 (unlimited) max-output sentinel as ∞, never as -1", async () => {
-    setBinding("prof_1", "tool-model");
-    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha", { maxTokens: -1 })], favoritesByProfile: {} });
-    const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
-		await waitFor(() => expect(view.baseElement.textContent).toContain("∞"));
-		const { getByText, queryAllByRole } = within(view.baseElement);
-    // The internal -1 sentinel must not leak as a raw numeric value into the editor.
-    expect(getByText("∞")).toBeTruthy();
-    const leakingSentinel = queryAllByRole("textbox").some((el) => (el as HTMLInputElement).value === "-1");
-    expect(leakingSentinel).toBe(false);
-  });
-
-  it("converts an inherited unlimited max-output into a concrete override on demand", async () => {
-    setBinding("prof_1", "tool-model");
-    useProviderDataStore.setState({ profiles: [makeProfile("prof_1", "Alpha", { maxTokens: -1 })], favoritesByProfile: {} });
-    const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
-		await waitFor(() => expect(view.baseElement.textContent).toContain("∞"));
-		const { getByText } = within(view.baseElement);
-    fireEvent.click(getByText("∞"));
-    await waitFor(() => expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorMaxTokens: 2_000 }));
-  });
-
-	it("save button is disabled when a profile is selected but no model chosen", async () => {
-    setBinding(null, null);
+  it("places ordered profiles first and keeps unordered profiles in RP order", async () => {
+    setBinding("p1");
     useProviderDataStore.setState({
-      profiles: [makeProfile("prof_1", "Alpha")],
-      favoritesByProfile: {},
+      profiles: [
+        makeProfile("p1", "RP first"),
+        makeProfile("p2", "RP second"),
+        makeProfile("p3", "Co-Author first"),
+      ],
+      coauthorSettingsByProfile: {
+        p1: null,
+        p2: null,
+        p3: makeRow("p3", "tool-model", {}, 0),
+      },
     });
-		const view = render(<TooltipProvider><CoauthorProviderModal isOpen={true} onClose={() => {}} onOpenProviderModal={() => {}} /></TooltipProvider>);
-		await waitFor(() => expect(view.baseElement.textContent).toContain("Alpha"));
-		const { getByText } = within(view.baseElement);
-		// Select a profile first — the save button only renders in the detail pane.
-		fireEvent.pointerDown(getByText("Alpha"));
-		const saveBtn = getByText("coauthor.provider.use_for_coauthor");
-    expect((saveBtn as HTMLButtonElement).disabled).toBe(true);
+    const view = renderModal();
+
+    await waitFor(() => expect(view.getByText("Co-Author first")).toBeTruthy());
+    const profileList = view.getByText("profiles_label").parentElement!;
+    const rowNames = Array.from(profileList.querySelectorAll("[class*='border-l-']"))
+      .map((row) => row.textContent ?? "");
+    const coauthorFirst = rowNames.findIndex((name) => name.includes("Co-Author first"));
+    const rpFirst = rowNames.findIndex((name) => name.includes("RP first"));
+    const rpSecond = rowNames.findIndex((name) => name.includes("RP second"));
+    expect(coauthorFirst).toBeGreaterThanOrEqual(0);
+    expect(rpFirst).toBeGreaterThanOrEqual(0);
+    expect(rpSecond).toBeGreaterThanOrEqual(0);
+    expect(coauthorFirst).toBeLessThan(rpFirst);
+    expect(rpFirst).toBeLessThan(rpSecond);
+  });
+
+  it("places the test greeting directly after the model selector and before sampler settings", async () => {
+    setBinding("p1");
+    loadCoauthorConnectionSettingsAction.mockImplementation(async (id) => makeRow(id, "tool-model"));
+    useProviderDataStore.setState({ profiles: [makeProfile("p1", "Alpha")] });
+    const view = renderModal();
+
+    await waitFor(() => expect(view.getByRole("button", { name: "test_hi_btn" })).toBeTruthy());
+    const selector = view.getByText("coauthor.provider.model_label");
+    const button = view.getByRole("button", { name: "test_hi_btn" });
+    const sampler = view.getByText("sampler_basic_settings");
+    expect(Boolean(selector.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(button.compareDocumentPosition(sampler) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  });
+
+  it("uses the Co-Author row limits rather than RP profile limits", async () => {
+    setBinding("p1");
+    loadCoauthorConnectionSettingsAction.mockImplementation(async (id) => makeRow(id, "tool-model", { maxTokens: 8_000, contextBudget: 128_000 }));
+    useProviderDataStore.setState({ profiles: [makeProfile("p1", "Alpha", { maxTokens: 111, contextBudget: 222 })] });
+    const view = renderModal();
+    await waitFor(() => expect(view.baseElement.textContent).toContain("sampler_basic_settings"));
+    const inputValues = Array.from(view.baseElement.querySelectorAll("input")).map((input) => (input as HTMLInputElement).value);
+    expect(inputValues).toContain("8000");
+    expect(inputValues).toContain("128000");
+    expect(inputValues).not.toContain("111");
+    expect(inputValues).not.toContain("222");
+  });
+
+  it("persists the selected connection's complete set before binding it", async () => {
+    setBinding(null);
+    const row = makeRow("p1", "tool-model", { temperature: 0.42, maxTokens: 1234, contextBudget: 5000, pinContextBudget: true });
+    loadCoauthorConnectionSettingsAction.mockImplementation(async () => row);
+    useProviderDataStore.setState({ profiles: [makeProfile("p1", "Alpha")] });
+    const view = renderModal();
+    fireEvent.pointerDown(within(view.baseElement).getByText("openai").closest(".cursor-pointer")!);
+    await waitFor(() => expect(view.baseElement.textContent).toContain("Tool Model"));
+    fireEvent.click(within(view.baseElement).getByText("coauthor.provider.use_for_coauthor"));
+    await waitFor(() => expect(upsertCoauthorConnectionSettingsAction).toHaveBeenCalledWith("p1", {
+      modelName: "tool-model",
+      settings: expect.objectContaining({ temperature: 0.42, maxTokens: 1234, contextBudget: 5000, pinContextBudget: true }),
+    }));
+    expect(patchUiSettingsAction).toHaveBeenCalledWith({ coauthorProviderId: "p1" });
+  });
+
+  it("keeps the Responses transport behavior unchanged", async () => {
+    setBinding("p1");
+    useProviderDataStore.setState({ profiles: [makeProfile("p1", "OpenAI")] });
+    const view = renderModal();
+    await waitFor(() => expect(view.baseElement.textContent).toContain("coauthor.provider.transport_responses"));
+    fireEvent.click(within(view.baseElement).getByText("coauthor.provider.transport_responses"));
+    await waitFor(() => expect(updateProviderProfileAction).toHaveBeenCalledWith("p1", { coauthorTransport: "responses" }));
   });
 });

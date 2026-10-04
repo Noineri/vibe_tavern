@@ -18,7 +18,7 @@
  * OWN typed key always overrides; a keyless no-match profile passes through
  * to the backend factory which surfaces whatever auth error applies. The
  * wire records carry the same hint the STT editor shows ("key will be taken
- * from profile X") via decorateAutoKey — two mirrors, one rule (the STT
+ * from profile X") via decorateImageGenProfileAutoKeys — two mirrors, one rule (the STT
  * discipline: the client mirror in imagegen-form-helpers.ts must stay in
  * lockstep with autoMatchImageGenKey below).
  *
@@ -81,6 +81,7 @@ import type { Attachment, ImageGenHiresBlock, ImageGenModelSettings, ImageGenPro
 import { parseStoredAttachments, IMAGE_GEN_ADETAILER_DEFAULT_MODEL, IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GENERATION_MODES, IMAGE_PROMPT_DEFAULT_FAMILY, IMAGE_PROMPT_FAMILIES, PROXY_MODE, resolveImageGenCapabilities } from "@vibe-tavern/domain";
 
 import type { AssetService } from "../../domain/asset/asset-service.js";
+import { decorateImageGenProfileAutoKeys } from "./image-gen-profile-list.js";
 import {
   buildImageGenPrompts,
   ImageGenModeValidationError,
@@ -91,19 +92,14 @@ import { defaultReadSidecarFile, detectImageGenFamily, type FamilyDetectionBacke
 import { parsePromptCharCapFromErrorMessage } from "../../domain/imagegen/prompt-char-caps.js";
 import { getProviderFetchFactory } from "../../domain/providers/provider-fetch-factory.js";
 import { promptFamiliesReadModel } from "../../domain/imagegen/prompt-template-catalog.js";
-import type {
-  ImageGenAdapterConfig,
-  ImageGenGenerateRequest,
-} from "../../domain/imagegen/imagegen-backend.js";
+import type { ImageGenAdapterConfig, ImageGenGenerateRequest } from "../../domain/imagegen/imagegen-backend.js";
 import { IMAGE_GENERATION_CLOUD_TIMEOUT_MS, withImageGenTimeoutMs } from "../../domain/imagegen/imagegen-backend.js";
 import { TEST_CHAT_TIMEOUT_MS } from "../../domain/providers/provider-transport.js";
 import { createImageGenBackend, IMAGE_GEN_FAMILY_DETECTION_BACKENDS } from "../../domain/imagegen/imagegen-registry.js";
 import { clearImageGenRunPhase, getImageGenRunPhase, setImageGenRunPhase } from "../../domain/imagegen/run-phase.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
-import {
-  resolveEffectiveSummaryProfile,
-} from "../../domain/chat/summary-generation-seam.js";
+import { resolveEffectiveSummaryProfile } from "../../domain/chat/summary-generation-seam.js";
 import type { AssemblePromptResponse, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ImageGenListing, ImageGenRuntimeApi } from "../contract/runtime-api.js";
 
@@ -191,6 +187,7 @@ function toClientProfile(profile: ImageGenProfile): ImageGenProfileValue {
     modeSizePresets: profile.modeSizePresets,
     ...(profile.userSizes !== undefined && profile.userSizes.length > 0 ? { userSizes: profile.userSizes } : {}),
     llmAssistEnabled: profile.llmAssistEnabled,
+    assistRetryOnRefusal: profile.assistRetryOnRefusal,
     qualityLayerEnabled: profile.qualityLayerEnabled,
     familySource: profile.familySource,
     // Graduation flags resolve at the profile-read seam: a snapshot saved
@@ -376,41 +373,17 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     private readonly assistDeps?: ImageGenAssistDeps,
   ) {}
 
-  /** Auto-key HINT (UI display only, IG-21 — the stt-adapter twin): which
-   *  provider profile's key auto-matches for a keyless profile. The SAME
-   *  rule as autoMatchImageGenKey (first keyful provider in sort order;
-   *  openrouter by vendor host, openai-images by exact endpoint, a1111
-   *  never). Records with a stored key stay null — an own key overrides. */
-  private async decorateAutoKey(records: ImageGenProfileValue[]): Promise<ImageGenProfileValue[]> {
-    if (records.length === 0) return records;
-    const providers = await this.stores.providers.listAll();
-    const keyful = providers.filter((p) => p.apiKey);
-    if (keyful.length === 0) return records;
-    const byEndpoint = new Map(keyful.map((p) => [normalizeEndpoint(p.endpoint), p.name]));
-    const openrouterName = keyful.find((p) =>
-      normalizeEndpoint(p.endpoint).startsWith(OPENROUTER_API_HOST),
-    )?.name;
-    for (const record of records) {
-      if (record.hasStoredApiKey) continue;
-      if (record.backend === IMAGE_GEN_BACKENDS.OpenRouter) {
-        record.autoKeyProviderName = openrouterName ?? null;
-      } else if (record.backend === IMAGE_GEN_BACKENDS.OpenAiImages) {
-        const endpoint = record.endpoint.trim();
-        if (endpoint === "") continue;
-        record.autoKeyProviderName = byEndpoint.get(normalizeEndpoint(endpoint)) ?? null;
-      }
-    }
-    return records;
-  }
-
   // ── Profile CRUD ────────────────────────────────────────────────────────
 
   listImageGenProfiles = async () =>
-    await this.decorateAutoKey((await this.stores.imageGen.listAll()).map(toClientProfile));
+    await decorateImageGenProfileAutoKeys(this.stores, (await this.stores.imageGen.listAll()).map(toClientProfile));
+
+  reorderImageGenProfiles: ImageGenRuntimeApi["reorderImageGenProfiles"] = async (updates) =>
+    await decorateImageGenProfileAutoKeys(this.stores, (await this.stores.imageGen.reorder(updates)).map(toClientProfile));
 
   getImageGenProfile = async (id: string) => {
     const profile = await this.stores.imageGen.getById(id);
-    return profile ? (await this.decorateAutoKey([toClientProfile(profile)]))[0] : null;
+    return profile ? (await decorateImageGenProfileAutoKeys(this.stores, [toClientProfile(profile)]))[0] : null;
   };
 
   createImageGenProfile: ImageGenRuntimeApi["createImageGenProfile"] = async (body) => {
@@ -431,6 +404,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       llmAssistEnabled: body.llmAssistEnabled,
       llmProviderProfileId: body.llmProviderProfileId,
       llmModelId: body.llmModelId,
+      assistRetryOnRefusal: body.assistRetryOnRefusal,
       // IPT-2: a fresh profile starts unpinned (no family columns from
       // create — the Wave 3 family route is the only family writer).
       qualityLayerEnabled: body.qualityLayerEnabled,
@@ -438,7 +412,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       sortOrder: body.sortOrder,
       isDefault: false,
     };
-    return (await this.decorateAutoKey([toClientProfile(await this.stores.imageGen.create(input))]))[0];
+    return (await decorateImageGenProfileAutoKeys(this.stores, [toClientProfile(await this.stores.imageGen.create(input))]))[0];
   };
 
   updateImageGenProfile: ImageGenRuntimeApi["updateImageGenProfile"] = async (id, body) => {
@@ -460,6 +434,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     if (body.llmAssistEnabled !== undefined) patch.llmAssistEnabled = body.llmAssistEnabled;
     if (body.llmProviderProfileId !== undefined) patch.llmProviderProfileId = body.llmProviderProfileId;
     if (body.llmModelId !== undefined) patch.llmModelId = body.llmModelId;
+    if (body.assistRetryOnRefusal !== undefined) patch.assistRetryOnRefusal = body.assistRetryOnRefusal;
     if (body.qualityLayerEnabled !== undefined) patch.qualityLayerEnabled = body.qualityLayerEnabled;
     if (body.capabilities !== undefined) patch.capabilities = body.capabilities;
     if (body.sortOrder !== undefined) patch.sortOrder = body.sortOrder;
@@ -474,7 +449,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     ) {
       await this.stores.imageGenListingSnapshots.clear(id);
     }
-    return updated ? (await this.decorateAutoKey([toClientProfile(updated)]))[0] : null;
+    return updated ? (await decorateImageGenProfileAutoKeys(this.stores, [toClientProfile(updated)]))[0] : null;
   };
 
   deleteImageGenProfile = async (id: string): Promise<void> => {
@@ -485,7 +460,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
    *  the store's `setDefault` transaction keeps the at-most-one invariant. */
   setImageGenDefault = async (id: string) => {
     const updated = await this.stores.imageGen.setDefault(id);
-    return updated ? (await this.decorateAutoKey([toClientProfile(updated)]))[0] : null;
+    return updated ? (await decorateImageGenProfileAutoKeys(this.stores, [toClientProfile(updated)]))[0] : null;
   };
 
   // ── Probe / models / samplers ───────────────────────────────────────────
@@ -803,6 +778,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         {
           promptFamily,
           qualityLayerEnabled: profile.qualityLayerEnabled,
+          assistRetryOnRefusal: profile.assistRetryOnRefusal,
           ...(promptCharCap !== undefined ? { promptCharCap } : {}),
           // Presence (even `""`) marks this as the text-only draft path;
           // Free generation omits the option and retains IG-14's required
@@ -1092,7 +1068,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         body.mode,
         body.prompt,
         assist,
-        { promptFamily, qualityLayerEnabled: profile.qualityLayerEnabled, ...(promptCharCap !== undefined ? { promptCharCap } : {}) },
+        { promptFamily, qualityLayerEnabled: profile.qualityLayerEnabled, assistRetryOnRefusal: profile.assistRetryOnRefusal, ...(promptCharCap !== undefined ? { promptCharCap } : {}) },
       );
     } catch (error) {
       if (error instanceof ImageGenModeValidationError) {
@@ -1500,7 +1476,7 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // store's null-clear convention rides the update patch (IPT-2); the
     // stored detection survives a pin and re-anchors after a clear.
     const updated = await this.stores.imageGen.update(id, { familyOverride: family });
-    return updated ? (await this.decorateAutoKey([toClientProfile(updated)]))[0] : null;
+    return updated ? (await decorateImageGenProfileAutoKeys(this.stores, [toClientProfile(updated)]))[0] : null;
   };
 
   detectImageGenProfileFamily = async (

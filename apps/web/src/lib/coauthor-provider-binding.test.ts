@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { decorateCoauthorFavorites, resolveCoauthorBinding } from "./coauthor-provider-binding.js";
-import type { ProviderProfileRecord, FavoriteProviderModelRecord } from "../api/types.js";
+import type { CoauthorConnectionSettingsRecord, ProviderProfileRecord, FavoriteProviderModelRecord } from "../api/types.js";
 
 function makeProfile(over: Partial<ProviderProfileRecord> = {}): ProviderProfileRecord {
   return {
@@ -52,13 +52,26 @@ function makeFavorite(modelId: string): FavoriteProviderModelRecord {
   return { id: `fav_${modelId}`, profileId: "prof_1", modelId, label: null, sortOrder: 0 } as unknown as FavoriteProviderModelRecord;
 }
 
+/** The bound connection's `coauthor_connection_settings` row (CG-1/CG-2) —
+ *  the model source the binding now reads instead of the retired global
+ *  `ui_settings` model column (dropped by CG-5). */
+function makeRow(modelName: string | null): CoauthorConnectionSettingsRecord {
+  return {
+    providerProfileId: "prof_coauthor",
+    modelName,
+    settings: { temperature: 0.5, maxTokens: 1234, contextBudget: 5000, pinContextBudget: true },
+    createdAt: "2026-01-01",
+    updatedAt: "2026-01-01",
+  } as unknown as CoauthorConnectionSettingsRecord;
+}
+
 describe("resolveCoauthorBinding", () => {
   it("explicit binding with stored model → resolves the bound profile + model", () => {
     const coauthor = makeProfile({ id: "prof_coauthor", defaultModel: "fallback-model", isActive: false });
     const rp = makeProfile({ id: "prof_rp", defaultModel: "gpt-4o", isActive: true });
     const result = resolveCoauthorBinding({
       coauthorProviderId: "prof_coauthor",
-      coauthorModelName: "claude-sonnet",
+      coauthorSettings: makeRow("claude-sonnet"),
       profiles: [rp, coauthor],
       rpActiveProfile: rp,
     });
@@ -69,12 +82,24 @@ describe("resolveCoauthorBinding", () => {
     expect(result.isDangling).toBe(false);
   });
 
-  it("explicit binding with null modelName → falls back to profile defaultModel", () => {
+  it("row model wins over the connection profile's defaultModel (CG-2 fallback order)", () => {
+    const coauthor = makeProfile({ id: "prof_coauthor", defaultModel: "profile-default", isActive: false });
+    const rp = makeProfile({ id: "prof_rp", defaultModel: "gpt-4o", isActive: true });
+    const result = resolveCoauthorBinding({
+      coauthorProviderId: "prof_coauthor",
+      coauthorSettings: makeRow("row-model"),
+      profiles: [rp, coauthor],
+      rpActiveProfile: rp,
+    });
+    expect(result.model).toBe("row-model");
+  });
+
+  it("explicit binding with a rowless connection (null) → falls back to profile defaultModel", () => {
     const coauthor = makeProfile({ id: "prof_coauthor", defaultModel: "profile-default", isActive: false });
     const rp = makeProfile({ id: "prof_rp", isActive: true });
     const result = resolveCoauthorBinding({
       coauthorProviderId: "prof_coauthor",
-      coauthorModelName: null,
+      coauthorSettings: makeRow(null),
       profiles: [rp, coauthor],
       rpActiveProfile: rp,
     });
@@ -83,38 +108,54 @@ describe("resolveCoauthorBinding", () => {
     expect(result.isReady).toBe(true);
   });
 
-  it("null coauthorProviderId → RP fallback (not dangling, not explicit)", () => {
+  it("row not loaded yet (undefined) → same profile-default fallback as a rowless connection", () => {
+    const coauthor = makeProfile({ id: "prof_coauthor", defaultModel: "profile-default", isActive: false });
+    const rp = makeProfile({ id: "prof_rp", isActive: true });
+    const result = resolveCoauthorBinding({
+      coauthorProviderId: "prof_coauthor",
+      coauthorSettings: undefined,
+      profiles: [rp, coauthor],
+      rpActiveProfile: rp,
+    });
+    expect(result.model).toBe("profile-default");
+    expect(result.isExplicit).toBe(true);
+    expect(result.isReady).toBe(true);
+  });
+
+  it("null coauthorProviderId fails closed instead of using the RP profile", () => {
     const rp = makeProfile({ id: "prof_rp", defaultModel: "gpt-4o", isActive: true });
     const result = resolveCoauthorBinding({
       coauthorProviderId: null,
-      coauthorModelName: null,
+      coauthorSettings: undefined,
       profiles: [rp],
       rpActiveProfile: rp,
     });
-    expect(result.profile?.id).toBe("prof_rp");
-    expect(result.model).toBe("gpt-4o");
+    expect(result.profile).toBeNull();
+    expect(result.model).toBeNull();
     expect(result.isExplicit).toBe(false);
-    expect(result.isReady).toBe(true);
+    expect(result.isReady).toBe(false);
     expect(result.isDangling).toBe(false);
   });
 
-  it("dangling providerId (deleted profile) → RP fallback flagged as dangling", () => {
+  it("dangling providerId fails closed and remains flagged as dangling", () => {
     const rp = makeProfile({ id: "prof_rp", isActive: true });
     const result = resolveCoauthorBinding({
       coauthorProviderId: "prof_deleted",
-      coauthorModelName: "x",
+      coauthorSettings: makeRow("x"),
       profiles: [rp], // prof_deleted not in list
       rpActiveProfile: rp,
     });
-    expect(result.profile?.id).toBe("prof_rp");
+    expect(result.profile).toBeNull();
+    expect(result.model).toBeNull();
     expect(result.isExplicit).toBe(false);
+    expect(result.isReady).toBe(false);
     expect(result.isDangling).toBe(true);
   });
 
   it("no RP active profile and no coauthor binding → null profile, not ready", () => {
     const result = resolveCoauthorBinding({
       coauthorProviderId: null,
-      coauthorModelName: null,
+      coauthorSettings: undefined,
       profiles: [],
       rpActiveProfile: null,
     });
@@ -130,7 +171,7 @@ describe("resolveCoauthorBinding", () => {
 
     const result1 = resolveCoauthorBinding({
       coauthorProviderId: "prof_coauthor",
-      coauthorModelName: "coauthor-model",
+      coauthorSettings: makeRow("coauthor-model"),
       profiles,
       rpActiveProfile: rp,
     });
@@ -141,7 +182,7 @@ describe("resolveCoauthorBinding", () => {
 
     const result2 = resolveCoauthorBinding({
       coauthorProviderId: "prof_coauthor",
-      coauthorModelName: "coauthor-model",
+      coauthorSettings: makeRow("coauthor-model"),
       profiles,
       rpActiveProfile: rp,
     });
@@ -158,7 +199,7 @@ describe("resolveCoauthorBinding", () => {
     const rp = makeProfile({ id: "prof_rp", isActive: true });
     const result = resolveCoauthorBinding({
       coauthorProviderId: "prof_coauthor",
-      coauthorModelName: "custom-model",
+      coauthorSettings: makeRow("custom-model"),
       profiles: [rp, coauthor],
       rpActiveProfile: rp,
     });

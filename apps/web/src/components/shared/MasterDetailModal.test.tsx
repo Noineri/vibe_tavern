@@ -16,10 +16,12 @@
  * Runner: bun:test + happy-dom.
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
-import { render, fireEvent } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, fireEvent } = await import("@testing-library/react");
 
 // ── Mobile mock ─────────────────────────────────────────────────────────
 const realUseMobile = await import("../../hooks/use-mobile.js");

@@ -41,6 +41,23 @@ const labels: CoauthorLoreReviewLabels = {
 	scopeGlobal: "global",
 	scopeChat: "chat",
 	noContent: "No content.",
+	valueOn: "On",
+	valueOff: "Off",
+	valueInherit: "Inherit",
+	lorebookSettingLabels: {
+		enabled: "Enabled", scanDepth: "Scan Depth", tokenBudget: "Token Budget", tokenBudgetPercent: "Context %", tokenBudgetCap: "Budget Cap",
+		recursiveScanning: "Recursive Scanning", useGroupScoring: "Group Scoring", caseSensitive: "Case Sensitive", matchWholeWords: "Match Whole Words",
+		maxRecursionSteps: "Max recursion steps", includeNames: "Include Names", minActivations: "Min activations", minActivationsDepthMax: "Depth max for the minimum",
+		overflowAlert: "Alert on budget overflow", characterStrategy: "Character Strategy",
+	},
+	entrySettingLabels: {
+		constant: "Constant", position: "Position", depth: "Depth", logic: "Logic", enabled: "Enabled", priority: "Priority", probability: "Probability",
+		ignoreBudget: "Ignore Budget", role: "Role", groupName: "Group", groupWeight: "Group Weight", prioritizeInclusion: "Prioritize in Group",
+		useGroupScoring: "Group Scoring", excludeRecursion: "Exclude from Recursion", preventRecursion: "Prevent Recursion", delayUntilRecursion: "Delay Until Recursion",
+		recursionLevel: "Recursion Level", scanDepthOverride: "Scan Depth Override", caseSensitive: "Case Sensitive", matchWholeWords: "Match Whole Words",
+		caseFormsKeys: "Case forms", characterFilter: "Character Filter", characterFilterExclude: "Exclude", matchSources: "Match Sources",
+		stickyWindow: "Sticky Window", cooldownWindow: "Cooldown Window", minChatMessages: "Min Chat Messages",
+	},
 };
 
 function bundle(): CoauthorLoreBundle {
@@ -101,6 +118,54 @@ describe("CoauthorLoreReview — rendering (CTX-L3)", () => {
 		expect(getByText("Vex's Fear")).toBeTruthy();
 		expect(getByText("always-on")).toBeTruthy();
 		expect(getByText("No content.")).toBeTruthy();
+	});
+
+	it("renders the authoritative setting changes as label: old → new", () => {
+		const b = bundle();
+		b.lorebooks[0] = {
+			...b.lorebooks[0]!,
+			mode: "edit",
+			settingChanges: { scanDepth: { oldValue: 10, newValue: 25 } },
+		};
+		b.entries[1] = {
+			...b.entries[1]!,
+			settingChanges: { stickyWindow: { oldValue: 0, newValue: 4 } },
+		};
+		const { getByText } = renderReview({ bundle: b, ...allSelected(b) });
+		expect(getByText("Scan Depth:")).toBeTruthy();
+		expect(getByText("Sticky Window:")).toBeTruthy();
+		expect(getByText("10")).toBeTruthy();
+		expect(getByText("25")).toBeTruthy();
+		expect(getByText("4")).toBeTruthy();
+	});
+
+	it("wraps long setting values in full while preserving the old → new grid", () => {
+		const b = bundle();
+		const oldValue = "A long prior setting value that must remain readable on a narrow touch pane";
+		const newValue = "A long replacement setting value that must remain readable on a narrow touch pane";
+		b.lorebooks[0] = {
+			...b.lorebooks[0]!,
+			settingChanges: { characterStrategy: { oldValue, newValue } },
+		};
+		const { getByText } = renderReview({ bundle: b, ...allSelected(b) });
+		const oldNode = getByText(oldValue);
+		const newNode = getByText(newValue);
+		expect(oldNode.textContent).toBe(oldValue);
+		expect(newNode.textContent).toBe(newValue);
+		expect(oldNode.className).toContain("break-words");
+		expect(newNode.className).toContain("break-words");
+		expect(oldNode.className).not.toContain("truncate");
+		expect(newNode.className).not.toContain("truncate");
+	});
+
+	it("does not add a setting row to a new entry with only default fields", () => {
+		const b: CoauthorLoreBundle = {
+			lorebooks: [{ id: "lb1", name: "L", description: "", scopeType: "global", enabled: true }],
+			entries: [{ id: "e1", lorebookId: "lb1", title: "Empty", content: "", keys: [], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true }],
+		};
+		const { queryByText } = renderReview({ bundle: b, ...allSelected(b) });
+		expect(queryByText("Constant:")).toBeNull();
+		expect(queryByText("Sticky Window:")).toBeNull();
 	});
 
 	it("hides the key-chip section for a keyless, contentless entry", () => {

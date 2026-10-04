@@ -23,8 +23,10 @@ export interface CreateScriptData {
   creationIntentId?: string | null;
   scopeType?: string;
   sortOrder?: number;
-  characterId?: string | null;
-  personaId?: string | null;
+  /** Explicit owner list (LORE_SCRIPT_OWNERS_AS_LINKS step 2): the link
+   *  rows written at create. Empty/absent = unbound — no owner is ever
+   *  derived from context. Create-only; updates go through `setLinks`. */
+  links?: Array<{ targetType: string; targetId: string }>;
   chatId?: string | null;
   /** Default visual paired with this experience (interactive scripts only).
    *  Set by the creation wizard; null for non-interactive and legacy rows. */
@@ -53,7 +55,11 @@ export interface Script {
   creationIntentId: string | null;
   scopeType: string;
   sortOrder: number;
+  /** Always null since migration 0107 (home-owner columns dropped; owners are
+   *  links). Kept on the store/API payload until the units-16–17 contract
+   *  redesign — do not read it for behavior. */
   characterId: string | null;
+  /** Always null since migration 0107 — see {@link characterId}. */
   personaId: string | null;
   chatId: string | null;
   defaultVisualId: string | null;
@@ -65,8 +71,8 @@ export interface Script {
 
 /**
  * Junction row: a script M:N-linked to a character or persona. Mirrors
- * `LorebookLink`. The script's home scope (FK on `scripts`) is tracked
- * separately; a link is an ADDITIONAL binding, not a replacement.
+ * `LorebookLink`. Since migration 0107 links are the ONLY owner source — a
+ * link IS the owner binding (the separate home-scope FK is gone).
  */
 export interface ScriptLink {
   scriptId: string;
@@ -119,13 +125,16 @@ export class ScriptStore {
         .all();
       return rows.map((r) => this.mapRow(r));
     }
-    // Entity scope: the home FK is whichever owner column is set
-    // (characterId OR personaId), so the direct match covers both.
-    // Without an ownerId this is a BROWSE view — every entity-home script
-    // regardless of which owner it is bound to (the editor sidebar's
-    // "entity" tab is a scope filter, symmetric with the global tab).
-    // Owner views (character/persona build sidebars) always pass ownerId.
-    if (scopeType === 'entity') {
+    // Entity scope (and any legacy scope value — the 0062 collapse made
+    // global/entity/chat the only reachable values): owners are `script_links`
+    // rows (since migration 0107, LORE_SCRIPT_OWNERS_AS_LINKS step 1, the
+    // home-owner FK columns are gone — every owner is a plain link).
+    // Without an ownerId this is a BROWSE view — every entity book regardless
+    // of which owners it is linked to (the editor sidebar's "entity" tab is a
+    // scope filter, symmetric with the global tab). Owner views
+    // (character/persona build sidebars) always pass ownerId and see exactly
+    // the scripts linked to that owner through any link target type.
+    if (scopeType !== 'global' && scopeType !== 'chat') {
       if (!ownerId) {
         const rows = await this.db
           .select()
@@ -135,40 +144,30 @@ export class ScriptStore {
           .all();
         return rows.map((r) => this.mapRow(r));
       }
-      const directCondition = and(
-        eq(scripts.scopeType, 'entity'),
-        or(eq(scripts.characterId, ownerId), eq(scripts.personaId, ownerId)),
-      );
-      // The owner view shows both directly scoped scripts and scripts linked
-      // via the junction table (either target type — a script bound to the
-      // owner through any link belongs to the owner's view). Mirrors
-      // `LorebookStore.listLorebooksByScope`. Chat scope remains direct-only
-      // — script_links supports character/persona targets only, same as
-      // lorebook_links. Any other (legacy) scope value falls through to the
-      // same direct-FK read — no junction union.
+      // A script bound to the owner through ANY link belongs to the owner's
+      // view. Mirrors `LorebookStore.listLorebooksByScope`; chat scope remains
+      // direct-only — script_links supports character/persona targets only,
+      // same as lorebook_links.
       const linkedRows = await this.db
         .select({ scriptId: scriptLinks.scriptId })
         .from(scriptLinks)
         .where(and(inArray(scriptLinks.targetType, ['character', 'persona']), eq(scriptLinks.targetId, ownerId)))
         .all();
       const linkedIds = [...new Set(linkedRows.map((row) => row.scriptId))];
-      const whereCondition = linkedIds.length > 0
-        ? or(directCondition, inArray(scripts.id, linkedIds))
-        : directCondition;
+      if (linkedIds.length === 0) return [];
       const rows = await this.db
         .select()
         .from(scripts)
-        .where(whereCondition)
+        .where(inArray(scripts.id, linkedIds))
         .orderBy(asc(scripts.scopeType), asc(scripts.sortOrder), asc(scripts.name))
         .all();
       return rows.map((r) => this.mapRow(r));
     }
 
-    // Legacy/chat fallthrough is an owner view by definition — no ownerId
+    // Chat fallthrough is an owner view by definition — no ownerId
     // means nothing to match (chat tab without a chat context stays empty).
     if (!ownerId) return [];
-    const fkCol = scopeType === 'chat' ? scripts.chatId : scripts.characterId;
-    const directCondition = and(eq(scripts.scopeType, scopeType), eq(fkCol, ownerId));
+    const directCondition = and(eq(scripts.scopeType, scopeType), eq(scripts.chatId, ownerId));
 
     const rows = await this.db
       .select()
@@ -206,7 +205,13 @@ export class ScriptStore {
         .from(scripts)
         .where(eq(scripts.creationIntentId, data.creationIntentId))
         .get();
-      if (existing) return this.mapRow(existing);
+      if (existing) {
+        // Idempotent-create retry with an owner list: the caller asked for
+        // these links to exist, so ensure them on the returned script too
+        // (onConflictDoNothing — no duplicates, no removal of extra links).
+        await this.insertScriptLinks(existing.id, data.links ?? []);
+        return this.mapRow(existing);
+      }
     }
 
     const id = this.idGen.next('script');
@@ -223,8 +228,6 @@ export class ScriptStore {
         creationIntentId: data.creationIntentId ?? null,
         scopeType: data.scopeType ?? 'entity',
         sortOrder: data.sortOrder ?? 0,
-        characterId: data.characterId ?? null,
-        personaId: data.personaId ?? null,
         chatId: data.chatId ?? null,
         defaultVisualId: data.defaultVisualId ?? null,
         copilotProfileId: data.copilotProfileId ?? null,
@@ -233,6 +236,10 @@ export class ScriptStore {
         updatedAt: now,
       })
       .returning();
+
+    // Owners are links (LORE_SCRIPT_OWNERS_AS_LINKS step 2): the create API's
+    // explicit owner list lands as link rows; empty list = unbound script.
+    await this.insertScriptLinks(id, data.links ?? []);
 
     // Dual-write: write canonical JSON file
     if (this.content) {
@@ -256,8 +263,8 @@ export class ScriptStore {
     if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
     if (data.scopeType !== undefined) values.scopeType = data.scopeType;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
-    if (data.characterId !== undefined) values.characterId = data.characterId;
-    if (data.personaId !== undefined) values.personaId = data.personaId;
+    // Home-owner inputs are deliberately not mapped: the columns are gone
+    // (migration 0107) and owners are links only.
     if (data.chatId !== undefined) values.chatId = data.chatId;
     if (data.defaultVisualId !== undefined) values.defaultVisualId = data.defaultVisualId;
     if (data.copilotProfileId !== undefined) values.copilotProfileId = data.copilotProfileId;
@@ -283,26 +290,21 @@ export class ScriptStore {
     return this.mapRow(row);
   }
 
-  /** Atomically reassign a script's scope: clears ALL FK columns, then sets
-   *  only the one matching `scopeType`. `ownerId` is null for 'global'.
-   *  This is the safe write path for the scope binding UI — unlike a raw
-   *  `update({ scopeType, personaId })`, it cannot leave a stale FK behind.
-   *  Entity scope: the owner FK is the typed characterId/personaId pair, and
-   *  the caller's `ownerId` alone does not identify the target type, so an
-   *  entity re-homing keeps the row's existing owner FK untouched (quirk
-   *  parity with the lorebook accordion scope flip, which sends only
-   *  `{name, scopeType}`) — global/chat transitions still clear stale FKs. */
+  /** Atomically reassign a script's scope: chat keeps its 1:1 `chatId` FK
+   *  (`ownerId` is null for 'global'). Since migration 0107 there are no
+   *  home-owner columns to clear or keep — owner bindings are `script_links`
+   *  rows, which a scope flip NEVER touches (same before and after 0107:
+   *  links always survived scope transitions, and a linked script keeps
+   *  participating through its link under any scope value). This remains the
+   *  safe write path for the scope binding UI — unlike a raw
+   *  `update({ scopeType })` it cannot leave a stale chat FK behind. */
   async setScope(id: string, scopeType: 'global' | 'entity' | 'chat', ownerId: string | null): Promise<Script> {
     const now = this.clock.now();
-    const values: Partial<typeof scripts.$inferInsert> = scopeType === 'entity'
-      ? { updatedAt: now, scopeType }
-      : {
-          updatedAt: now,
-          scopeType,
-          characterId: null,
-          personaId: null,
-          chatId: scopeType === 'chat' ? ownerId : null,
-        };
+    const values: Partial<typeof scripts.$inferInsert> = {
+      updatedAt: now,
+      scopeType,
+      chatId: scopeType === 'chat' ? ownerId : null,
+    };
     const [row] = await this.db.update(scripts).set(values).where(eq(scripts.id, id)).returning();
     if (!row) throw new Error(`Script '${id}' not found after scope update`);
     if (this.content) {
@@ -328,10 +330,10 @@ export class ScriptStore {
    * Returns all enabled PROMPT scripts visible to a chat session across all
    * scopes, sorted by sortOrder. This is the prompt-assembly resolver: it
    * excludes dice-kind scripts so the dedicated Dice VM (Wave B2) is the only
-   * path that loads dice scripts. Scope resolution and FK ∪ junction union
-   * are unchanged from the pre-kind behavior; only a kind filter is added.
+   * path that loads dice scripts. Scope resolution: global → entity links →
+   * chat (migration 0107 removed the entity home FK; every owner is a
+   * `script_links` row).
    *
-   * Scope resolution: global → entity (character-FK OR persona-FK) → chat.
    * Scripts run synchronously in this order — script #2 can read state from script #1.
    */
   async listAllEnabledForChat(
@@ -345,7 +347,7 @@ export class ScriptStore {
   /**
    * Returns all enabled DICE scripts visible to a chat session across all
    * scopes, sorted by sortOrder. This is the Dice-VM resolver (Wave B2): it
-   * excludes prompt-kind scripts. Same FK ∪ junction union + dedup/order as
+   * excludes prompt-kind scripts. Same binding core + dedup/order as
    * {@link listAllEnabledForChat}; only the kind filter differs. A dice script
    * never enters prompt assembly, and a prompt script never reaches the Dice VM.
    */
@@ -358,11 +360,45 @@ export class ScriptStore {
   }
 
   /**
-   * Shared scope-aware enabled-script resolution, filtered by `kind`. Unions
-   * FK-scoped sources (global / entity-FK = characterId OR personaId / chat-FK)
-   * with junction-linked sources (character ∪ persona), Set-dedups, and sorts by
-   * sortOrder. The kind filter is applied at BOTH the FK query and the junction
-   * innerJoin so the opposite kind can never leak into a resolver.
+   * «Текущие» (LOREBOOK_LIST_FILTERS_REPORT step 2): every script that
+   * participates in the chat through the SAME binding core the enabled
+   * resolvers above read (`resolveChatScriptBindings` — no second rule set),
+   * under attached-list semantics mirroring
+   * `LorebookStore.listParticipatingForChat`: character/persona/chat-bound
+   * scripts are included even while disabled (they are attached here — the
+   * enabled toggle is how the author turns them on); scripts participating
+   * only through the global pool are included only while enabled. Kinds:
+   * prompt + dice — the two chat runtimes this binding core serves; a dice
+   * script participates via the Dice VM just as a prompt script does via
+   * prompt assembly. Interactive scripts are excluded: they never enter
+   * either runtime and the generic scripts tab never lists them (they are
+   * owned by the Experience editor). Sorted by `sortOrder`, like the
+   * enabled resolvers.
+   */
+  async listParticipatingForChat(
+    characterId: string,
+    personaId: string | null,
+    chatId: string,
+  ): Promise<Script[]> {
+    const bindings = await this.resolveChatScriptBindings(characterId, personaId, chatId);
+    if (bindings.size === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(scripts)
+      .where(inArray(scripts.id, [...bindings.keys()]))
+      .all();
+    return rows
+      .filter((r) => r.scriptKind !== 'interactive' && (r.enabled === 1 || bindings.get(r.id) === true))
+      .map((r) => this.mapRow(r))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  /**
+   * Shared scope-aware enabled-script resolution, filtered by `kind`. The
+   * binding sources come from `resolveChatScriptBindings` (the one source of
+   * the chat participation rules, shared with `listParticipatingForChat`);
+   * this read keeps only ENABLED rows of the requested kind. Same
+   * Set-dedup + `sortOrder` ordering the pre-core resolver had.
    */
   private async resolveEnabledScriptsForChat(
     characterId: string,
@@ -370,61 +406,83 @@ export class ScriptStore {
     chatId: string,
     kind: 'prompt' | 'dice',
   ): Promise<Script[]> {
-    const ids = new Set<string>();
+    const bindings = await this.resolveChatScriptBindings(characterId, personaId, chatId);
+    if (bindings.size === 0) return [];
 
-    // FK-scoped sources: global, entity-FK (home FK is whichever owner column
-    // is set — one pass covers character AND persona homes), chat-FK.
-    const entityFkCondition = personaId
-      ? and(eq(scripts.scopeType, 'entity'), or(eq(scripts.characterId, characterId), eq(scripts.personaId, personaId)))
-      : and(eq(scripts.scopeType, 'entity'), eq(scripts.characterId, characterId));
+    const rows = await this.db
+      .select()
+      .from(scripts)
+      .where(inArray(scripts.id, [...bindings.keys()]))
+      .all();
+
+    return rows
+      .filter((r) => r.enabled === 1 && r.scriptKind === kind)
+      .map((r) => this.mapRow(r))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  /**
+   * Chat-binding core — the ONE source of "which scripts are bound to this
+   * chat" (LOREBOOK_LIST_FILTERS_REPORT step 2), extracted from
+   * `resolveEnabledScriptsForChat`. Unions FK-scoped sources (global /
+   * chat-FK) with junction-linked sources (character ∪ persona links),
+   * Set-deduped by id. Since migration 0107 (LORE_SCRIPT_OWNERS_AS_LINKS
+   * step 1) links are the ONLY char/persona source — the entity home-FK
+   * columns were copied into `script_links` and dropped.
+   *
+   * Enabled/kind filters are deliberately NOT applied here — which bound
+   * rows survive is caller policy: the enabled resolvers keep only enabled
+   * rows of their kind, while `listParticipatingForChat` keeps attached
+   * rows (see its doc). Returns scriptId → bound through a NON-global
+   * source (junction link or chat FK).
+   */
+  private async resolveChatScriptBindings(
+    characterId: string,
+    personaId: string | null,
+    chatId: string,
+  ): Promise<Map<string, boolean>> {
+    const entityBoundByScriptId = new Map<string, boolean>();
+    const addBinding = (scriptId: string, entityBound: boolean): void => {
+      entityBoundByScriptId.set(scriptId, entityBoundByScriptId.get(scriptId) || entityBound);
+    };
+
+    // FK-scoped sources: global and chat-FK. The chat branch keeps its
+    // historical OR shape (`scopeType = 'chat'` OR `chatId = :cid`) — pinned
+    // as-is by lore-script-owner-links-migration.test.ts; unit 14 does not
+    // touch chat binding semantics.
     const fkConditions = [
       eq(scripts.scopeType, 'global'),
-      entityFkCondition,
       eq(scripts.scopeType, 'chat'), eq(scripts.chatId, chatId),
     ];
     const fkRows = await this.db
-      .select({ id: scripts.id })
+      .select({ id: scripts.id, scopeType: scripts.scopeType })
       .from(scripts)
-      .where(and(or(...fkConditions), eq(scripts.enabled, 1), eq(scripts.scriptKind, kind)))
+      .where(or(...fkConditions))
       .all();
-    for (const r of fkRows) ids.add(r.id);
+    for (const r of fkRows) addBinding(r.id, r.scopeType !== 'global');
 
-    // Junction-linked sources (character ∪ persona). The resolver consults
-    // BOTH FK and junction here. Scripts cannot rely on every FK-owned row
-    // being junction-linked (the migration is incremental), so both sources
-    // are unioned with Set-based dedup. LorebookStore.listAllActiveForChat
-    // uses the same FK ∪ junction shape (fixed 2026-06-29 — see
-    // packages/db/test/lorebook-fk-activation.test.ts); the two resolvers are
-    // now consistent. Background in reports/script-link-binding-gap.md.
+    // Owner sources: junction links (character ∪ persona) — the only owner
+    // source since migration 0107. Mirrors the lorebook binding core
+    // (`lorebook-chat-resolution.ts`); the two resolvers stay consistent.
     const charLinkRows = await this.db
       .select({ scriptId: scriptLinks.scriptId })
       .from(scriptLinks)
-      .innerJoin(scripts, and(eq(scriptLinks.scriptId, scripts.id), eq(scripts.enabled, 1), eq(scripts.scriptKind, kind)))
+      .innerJoin(scripts, eq(scriptLinks.scriptId, scripts.id))
       .where(and(eq(scriptLinks.targetType, 'character'), eq(scriptLinks.targetId, characterId)))
       .all();
-    for (const r of charLinkRows) ids.add(r.scriptId);
+    for (const r of charLinkRows) addBinding(r.scriptId, true);
 
     if (personaId) {
       const personaLinkRows = await this.db
         .select({ scriptId: scriptLinks.scriptId })
         .from(scriptLinks)
-        .innerJoin(scripts, and(eq(scriptLinks.scriptId, scripts.id), eq(scripts.enabled, 1), eq(scripts.scriptKind, kind)))
+        .innerJoin(scripts, eq(scriptLinks.scriptId, scripts.id))
         .where(and(eq(scriptLinks.targetType, 'persona'), eq(scriptLinks.targetId, personaId)))
         .all();
-      for (const r of personaLinkRows) ids.add(r.scriptId);
+      for (const r of personaLinkRows) addBinding(r.scriptId, true);
     }
 
-    if (ids.size === 0) return [];
-
-    const rows = await this.db
-      .select()
-      .from(scripts)
-      .where(inArray(scripts.id, [...ids]))
-      .all();
-
-    return rows
-      .map((r) => this.mapRow(r))
-      .sort((a, b) => a.sortOrder - b.sortOrder);
+    return entityBoundByScriptId;
   }
 
   // ─── Chat-local Dice override resolution ─────────────────────────────
@@ -451,8 +509,8 @@ export class ScriptStore {
   // ─── Link management (mirrors LorebookStore link methods) ─────────────────
 
   /**
-   * Get all junction links for a script (NOT its home-scope FK). These are the
-   * ADDITIONAL character/persona bindings beyond the script's own scope.
+   * Get all junction links for a script — its owner bindings (the only owner
+   * source since migration 0107; the home-scope FK columns are gone).
    */
   async getLinks(scriptId: string): Promise<ScriptLink[]> {
     const rows = await this.db
@@ -528,11 +586,35 @@ export class ScriptStore {
   }
 
   /**
+   * Remove every link targeting one entity (owner deletion,
+   * LORE_SCRIPT_OWNERS_AS_LINKS step 2 — the RegexStore/TtsStore
+   * deleteLinksForTarget pattern): the deleted owner's link rows die with
+   * it; the SCRIPT itself survives for its other owners. The junction's
+   * `targetId` is a polymorphic text column without an FK, so this cleanup
+   * is app-level. Mirrors `LorebookStore.deleteLinksForTarget`.
+   */
+  async deleteLinksForTarget(targetType: 'character' | 'persona', targetId: string): Promise<void> {
+    await this.db
+      .delete(scriptLinks)
+      .where(and(eq(scriptLinks.targetType, targetType), eq(scriptLinks.targetId, targetId)))
+      .run();
+  }
+
+  /** Insert the create API's explicit owner list (idempotent on duplicate
+   *  tuples — junction composite PK). */
+  private async insertScriptLinks(id: string, links: ReadonlyArray<{ targetType: string; targetId: string }>): Promise<void> {
+    for (const link of links) {
+      await this.addLink(id, link.targetType, link.targetId);
+    }
+  }
+
+  /**
    * Reverse query — list scripts M:N-linked to a given target (character or
-   * persona), regardless of the script's own home scope. This is the
-   * persona/character-editor view of "which scripts activate for me". Returns
-   * links-only; FK-owned scripts surface via `listByScope` which unions FK +
-   * links. Mirrors `LorebookStore.listLorebooksLinkedToTarget`.
+   * persona), regardless of the script's own scope. This is the
+   * persona/character-editor view of "which scripts activate for me". Since
+   * migration 0107 links are the ONLY owner source, so this and the owner
+   * branch of `listByScope` read the same rows. Mirrors
+   * `LorebookStore.listLorebooksLinkedToTarget`.
    */
   async listScriptsLinkedToTarget(targetType: 'character' | 'persona', targetId: string): Promise<Script[]> {
     const linkedRows = await this.db
@@ -653,8 +735,10 @@ export class ScriptStore {
       scriptKind: row.scriptKind,
       scopeType: row.scopeType,
       sortOrder: row.sortOrder,
-      characterId: row.characterId,
-      personaId: row.personaId,
+      // Home owners are links since migration 0107 (columns dropped) — kept
+      // null until the step-2 contract redesign removes the fields.
+      characterId: null,
+      personaId: null,
       chatId: row.chatId,
       extensions: JSON.parse(row.extensionsJson),
     };
@@ -673,8 +757,10 @@ export class ScriptStore {
       creationIntentId: row.creationIntentId,
       scopeType: row.scopeType,
       sortOrder: row.sortOrder,
-      characterId: row.characterId,
-      personaId: row.personaId,
+      // Home owners are links since migration 0107 (columns dropped) — kept
+      // null until the step-2 contract redesign removes the fields.
+      characterId: null,
+      personaId: null,
       chatId: row.chatId,
       defaultVisualId: row.defaultVisualId,
       copilotProfileId: row.copilotProfileId,

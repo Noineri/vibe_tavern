@@ -161,6 +161,35 @@ export const modelSettingsOverlaySchema = z.object({
  *  Reuses modelSettingsOverlaySchema: a sampler preset IS an overlay with no identity. */
 export const samplerPresetPayloadSchema = modelSettingsOverlaySchema;
 
+/**
+ * Co-Author per-connection generation set (COAUTHOR_OWN_GENERATION_SETTINGS_PLAN
+ * CG-1). Same field set as `modelSettingsOverlaySchema` (the sampler validators
+ * are reused — no parallel per-field schemas), but the Co-Author set is stored
+ * COMPLETE, so the wire shape makes the load-bearing limits required and
+ * strict: positive integers for maxTokens/contextBudget (the Co-Author has no
+ * "auto" budget — 128 000 is the unknown-context default applied by the domain
+ * resolver, never a null on the wire) and the pin flag always carried.
+ */
+export const coauthorGenerationSettingsSchema = modelSettingsOverlaySchema.extend({
+  maxTokens: z.number().int().positive(),
+  contextBudget: z.number().int().positive(),
+  pinContextBudget: z.boolean(),
+});
+export type CoauthorGenerationSettingsValue = z.infer<typeof coauthorGenerationSettingsSchema>;
+
+/** Body for PUT /api/providers/:id/coauthor-settings — the connection's whole
+ *  set in one write: the chosen model (null = none yet) plus the settings. */
+export const upsertCoauthorConnectionSettingsSchema = z.object({
+  modelName: z.string().nullable(),
+  settings: coauthorGenerationSettingsSchema,
+});
+export type UpsertCoauthorConnectionSettingsValue = z.infer<typeof upsertCoauthorConnectionSettingsSchema>;
+
+/** Body for PATCH /api/providers/coauthor-order. Only Co-Author order changes. */
+export const reorderCoauthorProviderProfilesSchema = z.object({
+  updates: z.array(z.object({ id: z.string(), sortOrder: z.number().int().nonnegative() })),
+});
+
 export const fetchModelsSchema = z.object({
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),

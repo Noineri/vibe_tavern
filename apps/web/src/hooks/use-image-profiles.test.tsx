@@ -44,6 +44,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
+    assistRetryOnRefusal: false,
     familySource: "none",
     qualityLayerEnabled: false,
     llmProviderProfileId: undefined,
@@ -64,6 +65,10 @@ let failUpdate = false;
 let failMessage = "save boom";
 
 const listAllMock = mock(async () => [...store]);
+const reorderMock = mock(async (updates: Array<{ id: string; sortOrder: number }>) => {
+  store = updates.map((update) => ({ ...store.find((profile) => profile.id === update.id)!, sortOrder: update.sortOrder }));
+  return [...store];
+});
 // MR-12: the dedicated default route seam — activation persists server-side.
 const setDefaultMock = mock(async (id: string) => {
   store = store.map((p) => ({ ...p, isDefault: p.id === id }));
@@ -167,6 +172,7 @@ const providersListMock = mock(async (): Promise<Array<{ endpoint: string; hasSt
 mock.module("../api/image-gen-api.js", () => ({
   ...realImageGenApi,
   listAllImageGenProfiles: listAllMock,
+  reorderImageGenProfiles: reorderMock,
   setImageGenDefault: setDefaultMock,
   createImageGenProfile: createMock,
   updateImageGenProfile: updateMock,
@@ -185,7 +191,8 @@ mock.module("../api/provider-api.js", () => ({
 }));
 
 const { act, cleanup, waitFor, render } = await import("@testing-library/react");
-const { useImageProfiles, toImageGenBackend } = await import("./use-image-profiles.js");
+const { useImageProfiles } = await import("./use-image-profiles.js");
+const { toImageGenBackend } = await import("../components/settings/provider/imagegen/imagegen-form-helpers.js");
 const { IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_BACKENDS } = await import("@vibe-tavern/domain");
 
 afterEach(async () => {
@@ -194,6 +201,7 @@ afterEach(async () => {
   store = [];
   failUpdate = false;
   listAllMock.mockClear();
+  reorderMock.mockClear();
   setDefaultMock.mockClear();
   createMock.mockClear();
   updateMock.mockClear();
@@ -205,6 +213,29 @@ afterEach(async () => {
 });
 
 describe("useImageProfiles — CRUD", () => {
+  it("filters by name or the visible preset label and persists complete reorder updates", async () => {
+    store = [
+      makeRecord({ id: "p1", name: "Forge local", backend: "a1111", presetId: "a1111", sortOrder: 0 }),
+      makeRecord({ id: "p2", name: "Cloud art", backend: "openrouter", presetId: "openrouter", sortOrder: 1 }),
+    ];
+    let hook: ReturnType<typeof useImageProfiles> | null = null;
+    function Probe() {
+      hook = useImageProfiles();
+      return null;
+    }
+    render(<Probe />);
+    await waitFor(() => expect(hook?.profiles).toHaveLength(2));
+
+    act(() => hook!.setProfileSearch!("OpenRouter"));
+    expect(hook!.filteredProfiles!.map((profile) => profile.id)).toEqual(["p2"]);
+    act(() => hook!.setProfileSearch!("forge"));
+    expect(hook!.filteredProfiles!.map((profile) => profile.id)).toEqual(["p1"]);
+
+    await hook!.reorder!([{ id: "p2", sortOrder: 0 }, { id: "p1", sortOrder: 1 }]);
+    expect(reorderMock).toHaveBeenCalledWith([{ id: "p2", sortOrder: 0 }, { id: "p1", sortOrder: 1 }]);
+    await waitFor(() => expect(hook!.profiles.map((profile) => profile.id)).toEqual(["p2", "p1"]));
+  });
+
   it("loads profiles on mount; select hydrates the form from the record", async () => {
     store = [
       makeRecord({ id: "p1", name: "Alpha", backend: "openrouter", endpoint: "https://openrouter.ai/api/v1" }),

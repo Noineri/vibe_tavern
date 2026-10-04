@@ -1,7 +1,7 @@
 import { createDb, type AppDb } from './db-connection.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
-import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, RegexStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, CopilotProfileStore, SamplerSetStore, ImageGenSamplerSetStore, ImageGenPromptCapStore, ImageGenListingSnapshotStore, ImagePromptVariantStore, ImagePromptProfileStore, FormatTemplateStore, DiceRollStore, ExperienceStore, ExperienceResourceStore, ExperienceCopilotStore, QuotaStore, TtsStore, SttStore, ImageGenStore } from './stores/index.js';
+import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, RegexStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, CoauthorConnectionSettingsStore, CopilotProfileStore, SamplerSetStore, ImageGenSamplerSetStore, ImageGenPromptCapStore, ImageGenListingSnapshotStore, ImagePromptVariantStore, ImagePromptProfileStore, FormatTemplateStore, AiInstructionTemplateStore, DiceRollStore, ExperienceStore, ExperienceResourceStore, ExperienceCopilotStore, QuotaStore, TtsStore, SttStore, ImageGenStore } from './stores/index.js';
 
 export interface StoreContainer {
   db: AppDb;
@@ -26,6 +26,7 @@ export interface StoreContainer {
   imageGen: ImageGenStore;
   characterAssets: CharacterAssetStore;
   coauthorModules: CoauthorModuleStore;
+  coauthorSettings: CoauthorConnectionSettingsStore;
   copilotProfiles: CopilotProfileStore;
   samplerSets: SamplerSetStore;
   imageGenSamplerSets: ImageGenSamplerSetStore;
@@ -34,6 +35,7 @@ export interface StoreContainer {
   imagePromptVariants: ImagePromptVariantStore;
   imagePromptProfiles: ImagePromptProfileStore;
   formatTemplates: FormatTemplateStore;
+  aiInstructionTemplates: AiInstructionTemplateStore;
   diceRolls: DiceRollStore;
   experiences: ExperienceStore;
   experienceResources: ExperienceResourceStore;
@@ -94,6 +96,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     imageGen: new ImageGenStore(db),
     characterAssets: new CharacterAssetStore(db),
     coauthorModules: new CoauthorModuleStore(db),
+    coauthorSettings: new CoauthorConnectionSettingsStore(db),
     copilotProfiles: new CopilotProfileStore(db),
     samplerSets: new SamplerSetStore(db),
     imageGenSamplerSets: new ImageGenSamplerSetStore(db),
@@ -102,6 +105,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     imagePromptVariants: new ImagePromptVariantStore(db),
     imagePromptProfiles: new ImagePromptProfileStore(db),
     formatTemplates: new FormatTemplateStore(db),
+    aiInstructionTemplates: new AiInstructionTemplateStore(db),
     diceRolls: new DiceRollStore(db),
     experiences: new ExperienceStore(db),
     experienceResources: new ExperienceResourceStore(db),

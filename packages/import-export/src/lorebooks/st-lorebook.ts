@@ -192,6 +192,8 @@ function mapLoreEntryPosition(value: unknown): LoreEntryPosition {
 
 /** VT position → ST numeric position (export direction). Unknown VT → ST default `after_char` (1). */
 function vtPositionToSt(vt: string): number {
+  if (vt === "before_persona") return 0;
+  if (vt === "after_persona") return 1;
   return LORE_ENTRY_POSITION_TABLE.find((r) => r.vt === vt)?.st ?? 1;
 }
 

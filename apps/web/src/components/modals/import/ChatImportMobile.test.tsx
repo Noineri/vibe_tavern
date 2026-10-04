@@ -21,13 +21,15 @@
  */
 import { describe, it, expect, mock, spyOn, beforeAll, beforeEach } from "bun:test";
 import { createRef } from "react";
-import { render, fireEvent, waitFor, act } from "@testing-library/react";
+
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { mocked } from "../../../../test/mock-utils.js";
 import type { ChatImportMobileHandle } from "./ChatImportMobile.js";
 import type { ChatPreview } from "./parse-import-file.js";
 
 useDomEnv();
+
+const { render, fireEvent, waitFor, act } = await import("@testing-library/react");
 
 const toastError = mock();
 const toastSuccess = mock();

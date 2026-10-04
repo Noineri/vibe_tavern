@@ -1,8 +1,10 @@
 import { beforeAll, describe, expect, it } from "bun:test";
-import { fireEvent, render } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { fireEvent, render } = await import("@testing-library/react");
 
 // The component reads `window.HTMLTextAreaElement` at module scope, so it must
 // be imported only after useDomEnv() has registered happy-dom.
@@ -106,5 +108,27 @@ describe("AutoTextarea — macro autocomplete", () => {
     const opts = Array.from(document.body.querySelectorAll('[role="option"]'));
     expect(opts.length).toBeGreaterThanOrEqual(1);
     expect(opts[0]!.textContent).toContain("{{char}}");
+  });
+
+  it("shows the alias that matched the query beside its canonical macro", () => {
+    render(<Controlled />);
+    const ta = textarea();
+    typeInto(ta, "{{us");
+    const deletevar = Array.from(document.body.querySelectorAll('[role="option"]')).find((option) =>
+      option.textContent?.includes("{{deletevar}}"),
+    );
+    expect(deletevar).toBeTruthy();
+    expect(deletevar!.textContent).toContain("flushvar");
+  });
+
+  it("does not show an alias when the canonical name matched the query", () => {
+    render(<Controlled />);
+    const ta = textarea();
+    typeInto(ta, "{{deletevar");
+    const deletevar = Array.from(document.body.querySelectorAll('[role="option"]')).find((option) =>
+      option.textContent?.includes("{{deletevar}}"),
+    );
+    expect(deletevar).toBeTruthy();
+    expect(deletevar!.textContent).not.toContain("flushvar");
   });
 });

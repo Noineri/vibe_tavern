@@ -1,0 +1,1 @@
+ALTER TABLE `image_gen_profiles` ADD `assist_retry_on_refusal` integer DEFAULT false NOT NULL;

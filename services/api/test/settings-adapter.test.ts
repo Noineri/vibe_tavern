@@ -53,22 +53,29 @@ describe("SettingsAdapter — per-context secondary-model pairs (SUM-5)", () => 
 });
 
 describe("SettingsAdapter — coauthor binding whitelist", () => {
-	test("persists coauthor provider + model pair", async () => {
+	test("persists the coauthor binding and the lore model pair", async () => {
 		const { adapter } = await setup();
 		const result = await adapter.updateUiSettings({
 			coauthorProviderId: "prov_1",
-			coauthorModelName: "claude-sonnet-4",
+			coauthorLoreProviderId: "prov_lore",
+			coauthorLoreModelName: "gpt-4o-mini",
 		});
 		expect(result.coauthorProviderId).toBe("prov_1");
-		expect(result.coauthorModelName).toBe("claude-sonnet-4");
+		expect(result.coauthorLoreProviderId).toBe("prov_lore");
+		expect(result.coauthorLoreModelName).toBe("gpt-4o-mini");
 	});
 
-	test("explicit null clears a coauthor field", async () => {
+	test("explicit null clears the lore pair without clearing the coauthor binding", async () => {
 		const { adapter } = await setup();
-		await adapter.updateUiSettings({ coauthorProviderId: "prov_1", coauthorModelName: "x" });
-		const cleared = await adapter.updateUiSettings({ coauthorProviderId: null, coauthorModelName: null });
-		expect(cleared.coauthorProviderId).toBeNull();
-		expect(cleared.coauthorModelName).toBeNull();
+		await adapter.updateUiSettings({
+			coauthorProviderId: "prov_1",
+			coauthorLoreProviderId: "prov_lore",
+			coauthorLoreModelName: "lore-model",
+		});
+		const cleared = await adapter.updateUiSettings({ coauthorLoreProviderId: null, coauthorLoreModelName: null });
+		expect(cleared.coauthorLoreProviderId).toBeNull();
+		expect(cleared.coauthorLoreModelName).toBeNull();
+		expect(cleared.coauthorProviderId).toBe("prov_1");
 	});
 
 	test("ignores non-string, non-null values (type filtering)", async () => {
@@ -76,11 +83,13 @@ describe("SettingsAdapter — coauthor binding whitelist", () => {
 		// Garbage types should be filtered out, not crash.
 		const result = await adapter.updateUiSettings({
 			coauthorProviderId: 123 as never,
-			coauthorModelName: undefined as never,
+			coauthorLoreProviderId: [] as never,
+			coauthorLoreModelName: {} as never,
 		});
 		// Nothing was written for coauthor fields.
 		expect(result.coauthorProviderId).toBeNull();
-		expect(result.coauthorModelName).toBeNull();
+		expect(result.coauthorLoreProviderId).toBeNull();
+		expect(result.coauthorLoreModelName).toBeNull();
 	});
 
 	test("coauthor patch does not disturb existing legacy fields", async () => {
@@ -94,9 +103,8 @@ describe("SettingsAdapter — coauthor binding whitelist", () => {
 
 	test("get returns the coauthor fields", async () => {
 		const { adapter } = await setup();
-		await adapter.updateUiSettings({ coauthorProviderId: "prov_3", coauthorModelName: "m" });
+		await adapter.updateUiSettings({ coauthorProviderId: "prov_3" });
 		const got = await adapter.getUiSettings();
 		expect(got.coauthorProviderId).toBe("prov_3");
-		expect(got.coauthorModelName).toBe("m");
 	});
 });

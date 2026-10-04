@@ -15,10 +15,12 @@
  */
 import { describe, it, expect, mock } from "bun:test";
 import * as Popover from "@radix-ui/react-popover";
-import { render } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render } = await import("@testing-library/react");
 
 const realI18n = await import("../../i18n/context.js");
 const realChatSelectors = await import("../../stores/chat-selectors.js");

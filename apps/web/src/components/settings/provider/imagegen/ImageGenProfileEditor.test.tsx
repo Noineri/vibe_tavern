@@ -50,6 +50,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     defaultParamsSetId: null,
     modeSizePresets: {},
     llmAssistEnabled: false,
+    assistRetryOnRefusal: false,
     familySource: "none",
     qualityLayerEnabled: false,
     llmProviderProfileId: undefined,
@@ -94,6 +95,7 @@ function makeForm(overrides: Partial<ImageGenHook["form"]> = {}): NonNullable<Im
     llmAssistEnabled: false,
     llmProviderProfileId: null,
     llmModelId: null,
+    assistRetryOnRefusal: false,
     capabilities: makeRecord().capabilities,
     ...overrides,
   };

@@ -195,7 +195,6 @@ describe("patchUiSettingsAction", () => {
     aiAssistantProviderId: null,
     aiAssistantModelName: null,
     coauthorProviderId: null,
-    coauthorModelName: null,
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 
@@ -213,14 +212,13 @@ describe("patchUiSettingsAction", () => {
     });
 
     const result = await patchUiSettingsAction(
-      { coauthorProviderId: "prov_1", coauthorModelName: "m" },
+      { coauthorProviderId: "prov_1" },
       async (input) => ({ ...baseSettings, ...input, updatedAt: "2026-02-02" }),
     );
 
     expect(result.coauthorProviderId).toBe("prov_1");
     const live = useBootstrapStore.getState().data!.uiSettings;
     expect(live.coauthorProviderId).toBe("prov_1");
-    expect(live.coauthorModelName).toBe("m");
     expect(live.updatedAt).toBe("2026-02-02");
   });
 
@@ -232,19 +230,18 @@ describe("patchUiSettingsAction", () => {
         isFirstRun: false,
         allCharacters: [],
         promptPresets: [],
-        uiSettings: { ...baseSettings, coauthorProviderId: "prov_1", coauthorModelName: "m" },
+        uiSettings: { ...baseSettings, coauthorProviderId: "prov_1" },
         isArmServer: false,
       },
     });
 
     await patchUiSettingsAction(
-      { coauthorProviderId: null, coauthorModelName: null },
+      { coauthorProviderId: null },
       async (input) => ({ ...baseSettings, ...input }),
     );
 
     const live = useBootstrapStore.getState().data!.uiSettings;
     expect(live.coauthorProviderId).toBeNull();
-    expect(live.coauthorModelName).toBeNull();
   });
 
   test("preserves snapshot and other bootstrap payload fields", async () => {

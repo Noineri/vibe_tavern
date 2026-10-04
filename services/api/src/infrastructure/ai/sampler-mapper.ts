@@ -38,6 +38,15 @@ export interface SamplerConfig {
   presencePenalty?: number;
   seed?: number;
   topK?: number;
+  /** AI SDK v7 provider-neutral reasoning effort (CallSettings.reasoning — a
+   *  flat string union, not the v4/v5 `{ effort }` object). Consumed by the
+   *  classic-Google language model (maps to generationConfig.thinkingConfig)
+   *  and by the Anthropic model ONLY for legacy families (adapter-derived
+   *  thinking budget; sampling drop is provider-mandated with thinking on).
+   *  Effort-capable Anthropic families ride `providerOptions.anthropic`
+   *  instead — see anthropicEffortFamily in sampler-mapper.ts and the SDK
+   *  interplay pins in test/reasoning-effort-sdk-interplay.test.ts. */
+  reasoning?: "low" | "medium" | "high";
   providerOptions?: Record<string, Record<string, JSONValue>>;
 }
 
@@ -139,8 +148,62 @@ function emitLlamaNumericTailOptions(
   }
 }
 
+/** Map the stored reasoning-effort value onto the concrete levels the SDK
+ *  accepts. Only low/medium/high map 1:1; "auto" (the profile default) and
+ *  any empty/unknown value send NOTHING — no `reasoning` key and no
+ *  providerOptions — so the provider applies its own default and the request
+ *  stays byte-identical to a profile that never touched the control. */
+function mapReasoningEffort(effort: string | null | undefined): "low" | "medium" | "high" | undefined {
+  return effort === "low" || effort === "medium" || effort === "high" ? effort : undefined;
+}
+
+/** Anthropic effort routing, by model family (docs.anthropic.com/en/docs/
+ *  build-with-claude/thinking — per-model thinking table + "Sampling
+ *  parameters" section; effort compatibility: /docs/build-with-claude/effort).
+ *
+ *  - effortPlusThinking — sampling params (temperature/topP/topK) return a
+ *    400 on EVERY request for these families (Fable/Mythos 5 incl. Preview,
+ *    Opus 4.7+/5.x, Sonnet 5+), and most default to adaptive thinking anyway.
+ *    Nothing is lost by sending thinking, so we send `thinking: adaptive,
+ *    display: summarized` + effort — reproducing exactly what the neutral
+ *    `reasoning` path did (visible thinking summaries included). WITHOUT the
+ *    explicit thinking field, Opus 4.7/4.8 think NOTHING (their no-field
+ *    default is off) — the 2026-10-04 v1 of this split made exactly that
+ *    mistake.
+ *  - effortOnly — the real choice exists here (Opus 4.5/4.6, Sonnet 4.6):
+ *    sampling params are legal with thinking off, and thinking is OFF by
+ *    default. Owner ruling 2026-10-04: effort as a profile default must not
+ *    cost temperature/topK — so effort rides output_config WITHOUT thinking
+ *    (thinking off; effort steers response thoroughness only). These are the
+ *    only families where the fix actually restores sampling.
+ *  - legacy — everything else (3.x, Opus 4.0–4.1, Sonnet 4.0/4.5, Haiku,
+ *    unknown/empty ids): no effort support (output_config would 400); keep
+ *    the neutral `reasoning` path (adapter-derived thinking budget; the
+ *    sampling drop there is provider-mandated with thinking on). Unknown
+ *    future ids stay here deliberately — never send a body an unlisted
+ *    model may reject. */
+type AnthropicEffortFamily = "effortPlusThinking" | "effortOnly" | "legacy";
+
+function anthropicEffortFamily(model: string | undefined): AnthropicEffortFamily {
+  if (!model) return "legacy";
+  // Sampling-rejected families (incl. future ids inside these lineages).
+  if (/(?:fable|mythos)-(?:5|preview)|opus-4-[7-9]|opus-[5-9]|sonnet-[5-9]/i.test(model)) {
+    return "effortPlusThinking";
+  }
+  // Either/or families: sampling legal with thinking off, effort supported.
+  if (/opus-4-[5-6]|sonnet-4-[6-9]/i.test(model)) {
+    return "effortOnly";
+  }
+  return "legacy";
+}
+
 /**
  * Build the sampler config for a given provider profile.
+ *
+ * `requestModel` is the model id actually used for THIS call (the executors'
+ * `input.model`) — required for model-family-sensitive routing (Anthropic
+ * effort vs thinking budget). Omitted, it degrades to the conservative
+ * path (never sends a body an older model would reject).
  *
  * Returns an object that can be spread directly into generateText() / streamText().
  * Routes each sampler field to either native AI SDK params or providerOptions
@@ -154,6 +217,7 @@ function emitLlamaNumericTailOptions(
  */
 export function buildSamplerConfig(
   profile: StoredProviderProfileRecord,
+  requestModel?: string,
 ): SamplerConfig {
   const providerType = normalizeProviderType(profile.providerPreset);
   const caps = resolveSamplerCapabilities(profile.providerPreset, providerType);
@@ -276,14 +340,54 @@ export function buildSamplerConfig(
     case PROVIDER_TYPE.anthropic: {
       // Native topK (gated); no frequencyPenalty, presencePenalty, or seed
       if (can("topK") && profile.topK != null) config.topK = profile.topK;
+      // reasoningEffort — routed by model family (owner 2026-10-04: effort as
+      // a profile default must not cost temperature/topK where the API allows
+      // both to coexist — and must not silently disable thinking where it
+      // doesn't). See anthropicEffortFamily for the three-way split and the
+      // docs citations; both paths are pinned in
+      // test/reasoning-effort-sdk-interplay.test.ts against the installed
+      // adapter.
+      const effort = mapReasoningEffort(profile.reasoningEffort);
+      if (can("reasoningEffort") && effort != null) {
+        const family = anthropicEffortFamily(requestModel);
+        if (family === "effortPlusThinking") {
+          config.providerOptions = {
+            anthropic: { effort, thinking: { type: "adaptive", display: "summarized" } },
+          };
+        } else if (family === "effortOnly") {
+          config.providerOptions = { anthropic: { effort } };
+        } else {
+          config.reasoning = effort;
+        }
+      }
       break;
     }
 
-    // -- Google (classic + Interactions) -------------------------------------
-    case PROVIDER_TYPE.google:
+    // -- Google (classic) ------------------------------------------------------
+    case PROVIDER_TYPE.google: {
+      // Only temperature, topP, maxOutputTokens, stopSequences (already set above).
+      // reasoningEffort -> SDK-neutral `reasoning` call setting: nothing reaches
+      // the model unless set here — @ai-sdk/google maps it to
+      // generationConfig.thinkingConfig (thinkingLevel on Gemini 3,
+      // thinkingBudget on 2.5).
+      const effort = mapReasoningEffort(profile.reasoningEffort);
+      if (can("reasoningEffort") && effort != null) config.reasoning = effort;
+      break;
+    }
+
+    // -- Google Interactions ---------------------------------------------------
     case PROVIDER_TYPE.googleInteractions: {
       // Only temperature, topP, maxOutputTokens, stopSequences (already set above).
-      // reasoningEffort -> thinking_level is mapped natively by the SDK.
+      // reasoningEffort -> providerOptions.google.thinkingLevel (request body
+      // generation_config.thinking_level): the Interactions language model in
+      // @ai-sdk/google NEVER reads the SDK-neutral `reasoning` call setting,
+      // so the effort must ride the providerOptions.google namespace that
+      // model documents for exactly this ("per-call options that the AI SDK
+      // doesn't natively expose live here" — googleInteractionsLanguageModelOptions).
+      const effort = mapReasoningEffort(profile.reasoningEffort);
+      if (can("reasoningEffort") && effort != null) {
+        config.providerOptions = { google: { thinkingLevel: effort } };
+      }
       break;
     }
 

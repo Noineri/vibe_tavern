@@ -7,6 +7,16 @@ export interface RpcErrorBody {
   error?: string | { message?: string; code?: string; details?: { category?: ProviderErrorCategory } };
 }
 
+/** A failed RPC call carrying its HTTP status — callers that branch on the
+ *  status (e.g. the instruction-template auto-number retry on 409) can;
+ *  everything else keeps treating it as a plain `Error` with a message. */
+export class RpcError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "RpcError";
+  }
+}
+
 /** Success body of a Hono RPC response: error-status variants are dropped. */
 export type RpcBody<R> = R extends { ok: false } ? never : R extends { json(): Promise<infer T> } ? T : never;
 
@@ -46,5 +56,5 @@ export function errorFromBody(errorBody: RpcErrorBody | null, status: number): E
     return new Error(TYPED_ERROR_SENTINELS[typed]);
   }
   const message = typeof error === "string" ? error : error?.message || `Request failed: ${status}`;
-  return new Error(message);
+  return new RpcError(message, status);
 }

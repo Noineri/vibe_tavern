@@ -28,7 +28,7 @@ async function setup() {
 	await mkdir(join(dataRoot, "assets"), { recursive: true });
 	const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
 	const assetService = new AssetService(join(dataRoot, "assets"), stores.content);
-	const chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls);
+	const chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls, stores.experiences, stores);
 
 	// Minimal sessionRuntime: chatApp is real (so the include-in-prompt
 	// persistence hits the real store). ChatAdapter's method only needs

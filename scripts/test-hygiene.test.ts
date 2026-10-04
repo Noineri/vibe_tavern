@@ -88,6 +88,26 @@ describe("test-hygiene guard (TH-4c, L2 layer)", () => {
 		expect(benignReset.violations).toEqual([]);
 	});
 
+	test("rejects static RTL imports in web tests and accepts a dynamic import after useDomEnv", () => {
+		const normal = scanFile(
+			`import { render } from "@testing-library/react";\nuseDomEnv();\n`,
+			"apps/web/src/example.test.tsx",
+		);
+		expect(normal.violations.some((v) => v.rule === "rtl-import-needs-dom-env")).toBe(true);
+
+		const multilineTypeOnly = scanFile(
+			`import type {\n  RenderResult,\n} from "@testing-library/react";\n`,
+			"apps/web/src/example.test.tsx",
+		);
+		expect(multilineTypeOnly.violations.some((v) => v.rule === "rtl-import-needs-dom-env")).toBe(true);
+
+		const dynamic = scanFile(
+			`useDomEnv();\nconst { render } = await import("@testing-library/react");\ntype RenderResult = import("@testing-library/react").RenderResult;\n`,
+			"apps/web/src/example.test.tsx",
+		);
+		expect(dynamic.violations.filter((v) => v.rule === "rtl-import-needs-dom-env")).toEqual([]);
+	});
+
 	test("counts ratchet metrics exactly (as never, screen, innerHTML, long sleeps)", () => {
 		const content = [
 			`const a = mock as never;`,

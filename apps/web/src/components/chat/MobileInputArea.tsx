@@ -14,6 +14,7 @@ import { cn } from "../../lib/cn.js";
 import { composerCls } from "../../lib/field-tokens.js";
 import { resolveEntityAvatarUrl } from "../../lib/avatar.js";
 import { BottomSheet } from "../shared/BottomSheet.js";
+import { TokenCounterPopover } from "../shared/TokenCounterPopover.js";
 import { AttachmentPreview } from "./AttachmentPreview.js";
 import { ChatImpersonateAiPill } from "./ChatImpersonateAiPill.js";
 import { DictationButton } from "./DictationButton.js";
@@ -24,12 +25,13 @@ import { useInputArea, type InputAreaData } from "./use-input-area.js";
 
 export function MobileInputArea({ data }: { data: InputAreaData }) {
   const {
-    t, chat, character, provider, preset,
+    t, chat, character, preset,
     draft, setDraft, isSending, activeChatId, chatMeta,
     personas, activePersonaId, promptPresets, activePromptPresetId,
-    favoriteModels, activeModelId,
+    favoriteModels, activeModelId, handleSelectFavoriteModel,
     fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
     showGenerateMore, handleGenerateMore,
+    buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
   } = data;
 
   const [mobilePersonaOpen, setMobilePersonaOpen] = useState(false);
@@ -131,6 +133,25 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
                 <span>{t("generate_more_label")}</span>
               </button>
             )}
+            <TokenCounterPopover
+              mobile
+              triggerTestId="chat-context-ring"
+              permanent={permanent}
+              history={buckets.history}
+              inputTokens={inputTokens}
+              contextSize={contextSize}
+              maxTokens={maxTokens}
+              availableBudget={availableBudget}
+              tokenState={tokenState}
+              permanentItems={[
+                { label: t("context_system"), value: buckets.system },
+                { label: t("context_character"), value: buckets.character },
+                { label: t("context_persona"), value: buckets.persona },
+                { label: t("context_lore"), value: buckets.lore },
+                { label: t("context_memory"), value: buckets.memory },
+                { label: t("context_tools"), value: buckets.tools },
+              ]}
+            />
             {isSending ? (
               <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger text-danger-text active:bg-danger/10" onClick={chat.handleCancelGeneration}>
                 <span className="text-[11px] font-bold">✕</span>
@@ -168,7 +189,7 @@ export function MobileInputArea({ data }: { data: InputAreaData }) {
         {favoriteModels.length > 0 ? (
           <div className="max-h-[50vh] overflow-y-auto">
             {favoriteModels.map(model => (
-              <button type="button" key={model.modelId} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, model.modelId); setModelDropOpen(false); }}>
+              <button type="button" key={model.modelId} className="flex w-full min-h-[52px] cursor-pointer items-center gap-3 px-5 text-[calc(var(--ui-fs)+1px)] text-t2 active:bg-s3" onClick={() => { handleSelectFavoriteModel(model.modelId); setModelDropOpen(false); }}>
                 <div className="w-5 shrink-0 flex justify-center text-accent-t">{activeModelId === model.modelId && <Icons.Check />}</div>
                 <div className="min-w-0 truncate">{model.label || model.modelId}</div>
               </button>

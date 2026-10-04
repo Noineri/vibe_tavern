@@ -176,9 +176,24 @@ describe("useMessageNarration", () => {
     await act(async () => {
       hook!.onNarrate();
     });
-    // Give the async start a tick
+    // Park until narration #1 reaches its TERMINAL state — the fill loop
+    // parks on a REAL 60ms timer after each synthesized segment
+    // (INTER_SYNTHESIS_YIELD_MS, tts-orchestrator.ts), so the lane keeps
+    // emitting state writes for ≥60ms after start. The old fixed 10ms
+    // sleep raced those trailing writes on loaded CI runners (2026-10-04
+    // linux flake): the terminal "complete" write landed AFTER the
+    // synthetic playing-state re-seed below and the re-render captured
+    // narrating=false. Poll the store for the terminal event instead of
+    // sleeping (R5 — resolved-state assertion, not a bare sleep).
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      const deadline = Date.now() + 2000;
+      while (useTtsPlaybackStore.getState().narrations.m1?.status !== "complete") {
+        if (Date.now() > deadline) {
+          const stuck = useTtsPlaybackStore.getState().narrations.m1 ?? null;
+          throw new Error(`narration #1 never reached terminal status: ${JSON.stringify(stuck)}`);
+        }
+        await new Promise((r) => setTimeout(r, 5));
+      }
     });
     expect(startCalled).toBe(true);
 

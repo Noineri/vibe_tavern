@@ -1,13 +1,15 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
-const { render, screen, within } = await import("@testing-library/react");
+const { fireEvent, render, screen, within } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
 const realI18nContext = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realSortable = await import("@dnd-kit/sortable");
+const realMobileHook = await import("../../../hooks/use-mobile.js");
+const mobileState = { isMobile: false };
 
 const useSortable = mock(() => ({
   attributes: {},
@@ -28,6 +30,10 @@ mock.module("../../../i18n/context.js", () => ({
     setLocale: () => {},
     ready: true,
   }),
+}));
+mock.module("../../../hooks/use-mobile.js", () => ({
+  ...realMobileHook,
+  useIsMobile: () => mobileState.isMobile,
 }));
 
 // PresetList uses useMasterDetail (mobile drill-down) — stub the context so
@@ -81,6 +87,10 @@ function baseProps(overrides: Partial<Parameters<typeof PresetList>[0]> = {}) {
 describe("PresetList", () => {
   beforeEach(() => {
     mock.clearAllMocks();
+  });
+
+  afterEach(() => {
+    mobileState.isMobile = false;
   });
 
   it("renders presets with names and a drag handle on each row", () => {
@@ -158,5 +168,24 @@ describe("PresetList", () => {
     const importBtn = screen.getByText("import_preset_btn");
     await user.click(importBtn);
     expect(onImportPreset).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the native picker and forwards its file from the mobile import action", async () => {
+    mobileState.isMobile = true;
+    const onImportPreset = mock();
+    const user = userEvent.setup();
+    const view = render(<PresetList {...baseProps({ onImportPreset })} />);
+    const input = view.container.querySelector("input[type='file']");
+    if (!(input instanceof HTMLInputElement)) throw new Error("preset import input missing");
+    const click = mock(() => {});
+    input.click = click;
+
+    await user.click(screen.getByText("import_preset_btn"));
+    expect(click).toHaveBeenCalledTimes(1);
+
+    const file = new File(["{}"], "preset.json", { type: "application/json" });
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    fireEvent.change(input);
+    expect(onImportPreset).toHaveBeenCalledWith(file);
   });
 });

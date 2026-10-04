@@ -14,7 +14,7 @@
  * lifecycle and can read back the exact document bytes handed to the frame.
  */
 import { describe, it, expect, afterEach } from "bun:test";
-import { render, act } from "@testing-library/react";
+
 import { createRef } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import {
@@ -26,6 +26,9 @@ import {
 import { VIBE_EXPERIENCE_SDK_SOURCE } from "../../lib/experience-sdk.js";
 
 useDomEnv();
+
+const { render, act } = await import("@testing-library/react");
+const { waitFor } = await import("@testing-library/react");
 
 const VISUAL = [
   "<div id=\"game\">hello</div>",
@@ -331,7 +334,7 @@ import {
   EXPERIENCE_FRAME_REALTIME_CSP,
 } from "./ExperienceFrame.js";
 import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
-import { waitFor } from "@testing-library/react";
+
 
 const RUNTIME_STUB = "/*__RUNTIME_STUB__*/ var __vtFrameRuntime = 1;";
 

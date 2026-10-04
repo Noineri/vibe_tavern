@@ -32,12 +32,12 @@ const repoRoot = join(import.meta.dir, "..");
  */
 export const BUDGETS = {
 	/** `as never` casts in test files (TS-7b class; blanket rewrite wontfix). */
-	// 1244 (2026-09-22): +1 — one justified hostile-input cast in the
-	// image-prompt-profile store boundary test (IF-1a: bogus payload cast IN
-	// to prove the store filters it). Deliberate growth, not cleanup debt.
-	asNever: 1244,
+	// 1243 (2026-10-04): ratcheted to the merged tree's count after PR #51.
+	asNever: 1243,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
-	screen: 205,
+	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
+	// (provider-lists unification removed the forked pickers' screen usage).
+	screen: 196,
 	/** `innerHTML = ""` surgeries (TtsProfileEditor legacy block). */
 	innerHTMLEmpty: 30,
 	/** Literal `await sleep/delay/wait(N)` with N > 200 in test files. */
@@ -110,6 +110,7 @@ const INNER_HTML_EMPTY = /innerHTML\s*=\s*(?:""|'')/g;
 const AS_NEVER = /\bas\s+never\b/g;
 const SCREEN_DOT = /\bscreen\./g;
 const LONG_SLEEP = /await\s+(?:Bun\.)?(?:sleep|delay|wait)\(\s*(\d+)\s*\)/g;
+const STATIC_RTL_IMPORT = /^\s*import(?:\s+type)?\s+(?:[\s\S]*?\s+from\s+)?["']@testing-library\/react["']\s*;/gm;
 
 /** Blank/comment lines never count as calls — incident reports are quoted in comments. */
 function isCommentLine(line: string): boolean {
@@ -126,6 +127,18 @@ export function scanFile(content: string, file: string): { violations: Violation
 	const metrics: FileMetrics = { asNever: 0, screen: 0, innerHTMLEmpty: 0, longSleeps: 0 };
 	if (GUARD_SELF_TEST.test(file)) return { violations, metrics };
 	const pathsAllowed = ALLOW_ABS_PATH_INPUTS.test(content);
+	STATIC_RTL_IMPORT.lastIndex = 0;
+	const staticRtlImport = file.startsWith("apps/web/src/") ? STATIC_RTL_IMPORT.exec(content) : null;
+	if (staticRtlImport) {
+		const offset = staticRtlImport.index;
+		violations.push({
+			rule: "rtl-import-needs-dom-env",
+			file,
+			line: content.slice(0, offset).split(/\r?\n/).length,
+			text: staticRtlImport[0].trim(),
+			hint: "Call useDomEnv(), then use top-level `await import(\"@testing-library/react\")` below it; static RTL imports bind screen before happy-dom registers.",
+		});
+	}
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];

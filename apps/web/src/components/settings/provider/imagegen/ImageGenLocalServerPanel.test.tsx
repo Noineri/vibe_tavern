@@ -56,6 +56,7 @@ function localForm(overrides: Partial<ImageGenProfileForm> = {}): ImageGenProfil
     llmAssistEnabled: false,
     llmProviderProfileId: null,
     llmModelId: null,
+    assistRetryOnRefusal: false,
     capabilities: {
       supportsNegativePrompt: true,
       supportsSamplers: true,

@@ -30,73 +30,105 @@ function makeForm(over: Partial<FormState> = {}): FormState {
 /**
  * Characterization test for the favorite-model-switch patch builder.
  *
- * This pins the contract for switching the active model from the chat-input
- * starred-models dropdown (`handleSelectFavoriteProviderModel`):
+ * Pins the contract for switching the active model from the chat-input
+ * starred-models dropdown (`handleSelectFavoriteProviderModel`,
+ * RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 1):
  *  - `defaultModel` is ALWAYS set to the new modelId.
- *  - `contextBudget` is overwritten from the favorite's cached `contextLength`
- *    ONLY when the profile has NOT pinned its budget AND the favorite has a
- *    positive contextLength.
- *
- * The pin rule mirrors the three ProviderModelSelector sites (which gate on
- * `&& !form.pinContextBudget`). Historically the chat-dropdown path did NOT
- * gate, so switching a starred model always reset the budget — the reported
- * "pinned context size resets on model switch" bug. These tests lock the fix.
+ *  - `overlayOwned` (per-model binding ON + a saved overlay for the chosen
+ *    model): model-only patch — the overlay owns that model's generation
+ *    values, so the profile base is left untouched.
+ *  - otherwise the context budget follows the ONE shared auto-fill rule
+ *    (lib/context-autofill.ts, the same derivation the ProviderModelSelector
+ *    sites use): a pinned budget is never written; a known LIVE context
+ *    length is written; an unknown one keeps the profile's already-set
+ *    budget and fills the RP unknown-context fallback (16 000) only when no
+ *    budget is set at all (report step 3).
  */
 describe("buildFavoriteModelSwitchPatch", () => {
-  test("unpinned + positive contextLength → overwrites contextBudget", () => {
+  test("overlayOwned → model-only patch (the overlay is the source, base untouched)", () => {
     const patch = buildFavoriteModelSwitchPatch({
       modelId: "gpt-4o",
-      favorite: { contextLength: 128000 },
+      contextLength: 128000,
+      currentBudget: 32_000,
       pinContextBudget: false,
+      overlayOwned: true,
+    });
+    expect(patch).toEqual({ defaultModel: "gpt-4o" });
+  });
+
+  test("overlayOwned wins over the auto-fill rule even when the budget is unpinned", () => {
+    const patch = buildFavoriteModelSwitchPatch({
+      modelId: "gpt-4o",
+      contextLength: 200000,
+      currentBudget: 32_000,
+      pinContextBudget: false,
+      overlayOwned: true,
+    });
+    expect(patch.contextBudget).toBeUndefined();
+  });
+
+  test("unpinned + known live contextLength → writes it, over the current budget", () => {
+    const patch = buildFavoriteModelSwitchPatch({
+      modelId: "gpt-4o",
+      contextLength: 128000,
+      currentBudget: 16_000,
+      pinContextBudget: false,
+      overlayOwned: false,
     });
     expect(patch).toEqual({ defaultModel: "gpt-4o", contextBudget: 128000 });
   });
 
-  test("pinned + positive contextLength → preserves budget (no overwrite)", () => {
+  test("unpinned + unknown live contextLength + budget already on the profile → untouched (model-only, report step 3)", () => {
+    for (const contextLength of [null, undefined]) {
+      const patch = buildFavoriteModelSwitchPatch({
+        modelId: "claude-3",
+        contextLength,
+        currentBudget: 32_000,
+        pinContextBudget: false,
+        overlayOwned: false,
+      });
+      expect(patch).toEqual({ defaultModel: "claude-3" });
+      expect(patch.contextBudget).toBeUndefined();
+    }
+  });
+
+  test("unpinned + unknown live contextLength + NO budget on the profile → RP fallback (16 000)", () => {
+    for (const contextLength of [null, undefined]) {
+      const patch = buildFavoriteModelSwitchPatch({
+        modelId: "claude-3",
+        contextLength,
+        currentBudget: null,
+        pinContextBudget: false,
+        overlayOwned: false,
+      });
+      expect(patch).toEqual({ defaultModel: "claude-3", contextBudget: 16000 });
+    }
+  });
+
+  test("pinned + known contextLength → preserves budget (no overwrite)", () => {
     const patch = buildFavoriteModelSwitchPatch({
       modelId: "gpt-4o",
-      favorite: { contextLength: 128000 },
+      contextLength: 128000,
+      currentBudget: 32_000,
       pinContextBudget: true,
+      overlayOwned: false,
     });
     expect(patch).toEqual({ defaultModel: "gpt-4o" });
     expect(patch.contextBudget).toBeUndefined();
   });
 
-  test("unpinned + zero contextLength → no overwrite (guard > 0)", () => {
-    const patch = buildFavoriteModelSwitchPatch({
-      modelId: "claude-3",
-      favorite: { contextLength: 0 },
-      pinContextBudget: false,
-    });
-    expect(patch).toEqual({ defaultModel: "claude-3" });
-  });
-
-  test("unpinned + null contextLength → no overwrite", () => {
-    const patch = buildFavoriteModelSwitchPatch({
-      modelId: "claude-3",
-      favorite: { contextLength: null },
-      pinContextBudget: false,
-    });
-    expect(patch).toEqual({ defaultModel: "claude-3" });
-  });
-
-  test("no matching favorite → no overwrite even when unpinned", () => {
-    const patch = buildFavoriteModelSwitchPatch({
-      modelId: "unknown-model",
-      favorite: undefined,
-      pinContextBudget: false,
-    });
-    expect(patch).toEqual({ defaultModel: "unknown-model" });
-  });
-
-  test("defaultModel is always set regardless of pin/budget state", () => {
-    for (const pinContextBudget of [false, true]) {
-      const patch = buildFavoriteModelSwitchPatch({
-        modelId: "llama-3",
-        favorite: { contextLength: 8000 },
-        pinContextBudget,
-      });
-      expect(patch.defaultModel).toBe("llama-3");
+  test("defaultModel is always set regardless of pin/overlay state", () => {
+    for (const overlayOwned of [false, true]) {
+      for (const pinContextBudget of [false, true]) {
+        const patch = buildFavoriteModelSwitchPatch({
+          modelId: "llama-3",
+          contextLength: 8000,
+          currentBudget: 32_000,
+          pinContextBudget,
+          overlayOwned,
+        });
+        expect(patch.defaultModel).toBe("llama-3");
+      }
     }
   });
 });

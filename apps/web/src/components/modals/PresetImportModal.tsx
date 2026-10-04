@@ -1,12 +1,14 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { Modal } from "../shared/Modal.js";
 import { Icons } from "../shared/icons.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
+import { Dropzone } from "../shared/dropzone.js";
 import { InlineRenameInput } from "../shared/InlineRenameInput.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock, type VibeTavernPresetExtension } from "@vibe-tavern/import-export";
+import { findDroppedStMacroWarnings } from "@vibe-tavern/prompt-pipeline";
 import { inferSlot } from "@vibe-tavern/domain";
 import type { CustomInjection, PromptOrderEntry, PromptSlot } from "@vibe-tavern/domain";
 
@@ -40,6 +42,7 @@ export interface PresetImportResult {
 interface PresetImportModalProps {
   onClose: () => void;
   onImport: (result: PresetImportResult) => void;
+  initialFile?: File;
 }
 
 function smartDefault(identifier: string): TargetMapping {
@@ -73,15 +76,13 @@ function computeBlockInfo(block: StPresetBlock): BlockInfo {
   return { block, target, slot };
 }
 
-export function PresetImportModal({ onClose, onImport }: PresetImportModalProps) {
+export function PresetImportModal({ onClose, onImport, initialFile }: PresetImportModalProps) {
   const { t } = useT();
   const [phase, setPhase] = useState<"drop" | "preview">("drop");
   const [errorMsg, setErrorMsg] = useState("");
   const [parsed, setParsed] = useState<ParsedStPreset | null>(null);
-  const [drag, setDrag] = useState(false);
   const [importTarget, setImportTarget] = useState<"current" | "new">("current");
   const [newPresetName, setNewPresetName] = useState("");
-  const [fileRefEl, setFileRefEl] = useState<HTMLInputElement | null>(null);
   const isMobile = useIsMobile();
 
   function handleFile(file?: File | null) {
@@ -100,6 +101,10 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
     reader.readAsText(file);
   }
 
+  useEffect(() => {
+    if (initialFile) handleFile(initialFile);
+  }, [initialFile]);
+
   // Compute block infos, sorted by prompt_order index when available
   const blockInfos = useMemo(() => {
     const infos = parsed?.blocks.map(computeBlockInfo) ?? [];
@@ -111,6 +116,25 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
       return ai - bi;
     });
     return infos;
+  }, [parsed]);
+
+  // st-macro-parity step 8: warn about ST macros VT deliberately does not
+  // support (the report's dropped list, e.g. {{wiBefore}}). "Supported" is
+  // decided by the prompt-pipeline checker against the one macro registry.
+  const macroWarnings = useMemo(() => {
+    if (!parsed) return [];
+    const texts = parsed.blocks.map((block) => block.content);
+    const vt = parsed.vibeTavern;
+    if (vt) {
+      // VT exports embed the full DTO under _vibe_tavern, and prompts[] omits
+      // prefill — so the DTO's user-content fields are scanned too (the
+      // checker dedups macro names across texts).
+      texts.push(
+        vt.system, vt.jailbreak, vt.prefill, vt.nsfw, vt.enhanceDefinitions,
+        vt.authorsNote, ...vt.customInjections.map((inj) => inj.content),
+      );
+    }
+    return findDroppedStMacroWarnings(texts);
   }, [parsed]);
 
   // Counts per target
@@ -216,21 +240,12 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
         {/* Dropzone */}
         {phase === "drop" && (
           <div className="px-5 pb-4">
-            <div
-              className={cn(
-                "flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed px-5 py-10 font-ui text-t3 transition-all hover:border-accent hover:bg-s2 hover:text-t2",
-                drag && "border-accent bg-s2 text-t2"
-              )}
-              onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-              onDragLeave={() => setDrag(false)}
-              onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}
-              onClick={() => fileRefEl?.click()}
-            >
-              <input ref={setFileRefEl} className="hidden" type="file" accept=".json" onChange={(e) => handleFile(e.target.files?.[0])} />
-              <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-s3 text-t2"><Icons.Import /></div>
-              <div className="font-ui text-sm">{t("preset_import_drop_title")}</div>
-              <div className="font-ui text-xs text-t4">{t("preset_import_drop_sub")}</div>
-            </div>
+            <Dropzone
+              accept=".json"
+              title={t("preset_import_drop_title")}
+              subtitle={t("preset_import_drop_sub")}
+              onFiles={(files) => handleFile(files[0])}
+            />
             {errorMsg && (
               <div className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-center font-ui text-xs text-danger">{errorMsg}</div>
             )}
@@ -262,6 +277,21 @@ export function PresetImportModal({ onClose, onImport }: PresetImportModalProps)
                 {counts.injection > 0 && <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", TARGET_BADGE.injection.cls)}>{counts.injection} {t("preset_cat_injection")}</span>}
               </div>
             </div>
+
+            {/* Dropped-ST-macro import warnings (st-macro-parity step 8) —
+                the warning strip idiom (cf. ExperienceEditor's header strip);
+                advisory, so the warning family, not danger. */}
+            {macroWarnings.length > 0 && (
+              <div className={cn("border-b border-warning/40 bg-warning-dim/30 px-5 py-2", !isMobile && "shrink-0")}>
+                <ul>
+                  {macroWarnings.map((warning) => (
+                    <li key={warning} className="font-ui text-[calc(var(--ui-fs)-2px)] leading-[1.4] text-warning-text">
+                      {warning}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* Block list */}
             <div className={cn(!isMobile && "flex-1 overflow-y-auto")}>

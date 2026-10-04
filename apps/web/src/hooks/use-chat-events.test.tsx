@@ -12,10 +12,12 @@
  * need a provider.
  */
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { renderHook } from "@testing-library/react";
+
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
+
+const { renderHook } = await import("@testing-library/react");
 
 const realI18n = await import("../i18n/context.js");
 mock.module("../i18n/context.js", () => ({

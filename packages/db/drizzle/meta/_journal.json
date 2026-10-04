@@ -708,6 +708,62 @@
       "when": 1790789106046,
       "tag": "0100_skinny_jamie_braddock",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "6",
+      "when": 1791035939320,
+      "tag": "0101_spooky_mandroid",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "6",
+      "when": 1791040439432,
+      "tag": "0102_tidy_ender_wiggin",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "6",
+      "when": 1791045567443,
+      "tag": "0103_furry_guardsmen",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "6",
+      "when": 1791049095570,
+      "tag": "0104_normal_silver_surfer",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "6",
+      "when": 1791061777554,
+      "tag": "0105_aspiring_james_howlett",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "6",
+      "when": 1791067799140,
+      "tag": "0106_parallel_lucky_pierre",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "6",
+      "when": 1791094057659,
+      "tag": "0107_talented_rumiko_fujikawa",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "6",
+      "when": 1791131743328,
+      "tag": "0108_aberrant_black_queen",
+      "breakpoints": true
     }
   ]
 }

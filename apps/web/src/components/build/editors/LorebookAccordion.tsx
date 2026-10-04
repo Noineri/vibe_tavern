@@ -27,7 +27,9 @@ import { listLoreEntries } from "../../../api/lorebook-api.js";
 import type { LorebookRecord, LoreEntryRecord, LorebookLinkRecord } from "../../../api/types.js";
 import { LoreEntryList } from "./LoreEntryList.js";
 import { ListSearchPanel } from "../../shared/ListSearchPanel.js";
-import { LinkBindingPopover, type LinkTarget } from "../../shared/LinkBindingPopover.js";
+import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
+import { LorebookOwnerPicker } from "./LorebookOwnerPicker.js";
+import { LorebookActivationSettings } from "./lorebook-activation-settings.js";
 import { countTokens } from "../../../utils/tokenizer.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import type Resources from "../../../i18n/resources.js";
@@ -42,29 +44,24 @@ function formatTokenCount(n: number): string {
 }
 
 /**
- * Derive a single binding icon for a lorebook row, showing what it is bound to.
- * Uses the primary-owner FK columns (not the multi-bind `lorebook_links` rows):
- * precedence is chat → entity (character or persona FK — one home owner per
- * book). Global lorebooks return null (no binding icon — they are unbound by
- * definition). Multi-bind surface is a follow-up.
- *
+ * Derive a binding icon from the book's scope, not from a legacy owner field.
  * Exported for its colocated test (the pure scope→icon mapping is pinned
  * directly; the rendered tooltip is hover-gated in happy-dom).
  */
 export function lorebookBindingIcon(lb: LorebookRecord): { icon: ReactNode; tooltipKey: keyof Resources["en"] } | null {
-  if (lb.scopeType === "global") return null;
-  if (lb.chatId) return { icon: <Ic.chat />, tooltipKey: "scope_chat" };
-  if (lb.characterId || lb.personaId) return { icon: <Ic.book />, tooltipKey: "scope_entity" };
+  if (lb.scopeType === "chat") return { icon: <Ic.chat />, tooltipKey: "scope_chat" };
+  if (lb.scopeType === "entity") return { icon: <Ic.book />, tooltipKey: "scope_entity" };
   return null;
 }
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-export type Scope = "global" | "entity" | "chat" | "all";
+export type Scope = "global" | "entity" | "chat" | "all" | "current";
 
 interface LorebookAccordionProps {
   lorebook: LorebookRecord;
   links: LorebookLinkRecord[];
+  linksLoaded: boolean;
   expanded: boolean;
   editing: boolean;
   editLbName: string;
@@ -94,9 +91,11 @@ interface LorebookAccordionProps {
     caseSensitive?: boolean;
     matchWholeWords?: boolean;
     maxRecursionSteps?: number;
+    includeNames?: boolean;
     minActivations?: number;
     minActivationsDepthMax?: number;
     overflowAlert?: boolean;
+    characterStrategy?: number;
   }) => void;
   onReorderEntries: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntryRecord[]>;
   onToggleEntryEnabled: (entryId: string, enabled: boolean) => Promise<LoreEntryRecord>;
@@ -112,6 +111,7 @@ interface LorebookAccordionProps {
 export function LorebookAccordion({
   lorebook,
   links,
+  linksLoaded,
   expanded,
   editing,
   editLbName,
@@ -377,6 +377,12 @@ export function LorebookAccordion({
               fill={isMobile}
               className={cn(isMobile && "[&_button]:py-0.5")}
             />
+            {editLbScope === "entity" && (
+              <LorebookOwnerPicker
+                links={links} characters={characters} personas={personas} onSetLinks={onSetLinks} t={t} isMobile={isMobile}
+                className={cn("w-fit max-w-[150px] shrink-0", isMobile && "basis-full max-w-none")}
+              />
+            )}
             {/* Save (✓) and Cancel (✕) — 44px touch target on mobile, new row */}
             <div className={cn("flex items-center gap-1", isMobile && "w-full justify-end")}>
               <div
@@ -417,6 +423,11 @@ export function LorebookAccordion({
             >
               {lorebook.name}
             </span>
+            {lorebook.scopeType === "entity" && linksLoaded && links.length === 0 && (
+              <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] text-warning">
+                {t("lore_unbound_warning")}
+              </span>
+            )}
 
             {/* Enabled/disabled toggle */}
             <div
@@ -674,26 +685,14 @@ export function LorebookAccordion({
                   />
                 </div>
               </CustomTooltip>
+              <LorebookActivationSettings includeNames={lorebook.includeNames} characterStrategy={lorebook.characterStrategy} t={t} onUpdateMeta={onUpdateMeta} />
             </div>
             {/* Link targets — only for non-chat scopes */}
-            {lorebook.scopeType !== 'chat' && (
-              <div className={cn("w-fit self-start", !isMobile && "flex-1 pb-0.5")}>
-                <label className={lblCls}>
-                  {t("lore_link_targets")}
-                </label>
-                <LinkBindingPopover
-                  links={links}
-                  characters={characters}
-                  personas={personas}
-                  onSetLinks={(nextLinks) => onSetLinks(
-                    nextLinks.filter((l): l is { targetType: "character" | "persona"; targetId: string } =>
-                      l.targetType === "character" || l.targetType === "persona",
-                    ),
-                  )}
-                  t={t}
-                  isMobile={isMobile}
-                />
-              </div>
+            {lorebook.scopeType !== "chat" && (
+              <LorebookOwnerPicker
+                links={links} characters={characters} personas={personas} onSetLinks={onSetLinks} t={t} isMobile={isMobile} showLabel
+                className={cn("w-fit self-start", !isMobile && "flex-1 pb-0.5")}
+              />
             )}
           </div>
 

@@ -214,7 +214,10 @@ export function AppShell({ tweaksSettings, setTweaksSettings }: AppShellProps) {
   // --- Derived values for rendering ---
   const resolvedActiveChatId = activeChatId ?? activeChat?.id ?? null;
   const contextUsed = activePromptTrace?.tokenAccounting?.total ?? 0;
-  const contextLimit = provider.activeProviderProfile?.contextBudget ?? 0;
+  // The ACTIVE model's overlay-resolved context budget when the profile binds
+  // per model (RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 2) — the base value
+  // otherwise. Same derivation the chat token counter reads.
+  const contextLimit = provider.activeModelEffectiveProfile?.contextBudget ?? 0;
   // LS-10: the generation-format surface moved to the provider settings (the
   // format block under the Chat/Text switch) — the prompt-manager tab and its
   // AppShell activation gate retired. No tc* derivations remain here.

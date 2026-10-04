@@ -1,12 +1,19 @@
 import { Hono } from "hono";
 import type { LorebookRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import * as schemas from "@vibe-tavern/api-contracts";
 
 export function createLorebookRoutes(runtime: LorebookRuntimeApi) {
   return new Hono()
     .get("/api/lorebooks/all", async (c) => {
       return c.json(await runtime.listAllLorebooks());
+    })
+    // «Текущие» (LOREBOOK_LIST_FILTERS_REPORT step 2): lorebooks participating
+    // in a chat — the pipeline's own binding rules, attached-list semantics.
+    .get("/api/lorebooks/participating", zValidator("query", z.object({ chatId: z.string().min(1) })), async (c) => {
+      const { chatId } = c.req.valid("query");
+      return c.json(await runtime.listParticipatingLorebooks(chatId));
     })
     .get("/api/lorebooks", async (c) => {
       const scopeType = c.req.query("scopeType") ?? "entity";

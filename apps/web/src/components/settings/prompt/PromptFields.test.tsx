@@ -17,10 +17,12 @@
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
 import { useState, type ReactNode } from "react";
-import { render, within } from "@testing-library/react";
+
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, within } = await import("@testing-library/react");
 
 // Identity i18n — assertion strings match keys verbatim. Covers useT in every
 // component in the module graph (PromptFields + TokenCounter + AutoTextarea +

@@ -1,8 +1,10 @@
 import { beforeAll, describe, expect, it } from "bun:test";
-import { fireEvent, render } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { fireEvent, render } = await import("@testing-library/react");
 
 // auto-textarea reads `window.HTMLTextAreaElement` at module scope, so it
 // must be imported only after useDomEnv() has registered happy-dom.

@@ -94,6 +94,12 @@ export type {
   UpdateCoauthorModuleData,
 } from './coauthor-module-store.js';
 
+export { CoauthorConnectionSettingsStore } from './coauthor-connection-settings-store.js';
+export type {
+  CoauthorConnectionSettingsRow,
+  UpsertCoauthorConnectionSettingsData,
+} from './coauthor-connection-settings-store.js';
+
 export { CopilotProfileStore } from './copilot-profile-store.js';
 export { SamplerSetStore } from './sampler-set-store.js';
 export { ImageGenSamplerSetStore } from './image-gen-sampler-set-store.js';
@@ -182,3 +188,9 @@ export type {
   CreateFormatTemplateData,
   UpdateFormatTemplateData,
 } from './format-template-store.js';
+export { AiInstructionTemplateStore } from './ai-instruction-template-store.js';
+export type {
+  AiInstructionTemplateRow,
+  CreateAiInstructionTemplateData,
+  UpdateAiInstructionTemplateData,
+} from './ai-instruction-template-store.js';

@@ -51,6 +51,10 @@ export interface PromptPresetContext {
   tools: string;
   prefill: string | null;
   authorsNote: string | null;
+  /** Main prompt from the user-selected default preset. */
+  defaultSystemPrompt: string | null;
+  /** Author's note from the user-selected default preset. */
+  defaultAuthorsNote: string | null;
   authorsNoteDepth: number | null;
   customInjections: Array<{
     identifier?: string;
@@ -79,6 +83,8 @@ export interface ChatPromptSwipeContext {
 }
 
 export interface ChatPromptContext {
+  /** Chat identifier, used by chat-stable macros such as {{pick}}. */
+  id: string;
   messages: ChatPromptMessageContext[];
   lastMessage: string | null;
   lastUserMessage: string | null;
@@ -223,6 +229,8 @@ export function buildPromptVariableContext(input: BuildPromptVariableContextInpu
       tools: input.prompt?.tools ?? "",
       prefill: input.prompt?.prefill ?? null,
       authorsNote: input.prompt?.authorsNote ?? null,
+      defaultSystemPrompt: input.prompt?.defaultSystemPrompt ?? null,
+      defaultAuthorsNote: input.prompt?.defaultAuthorsNote ?? null,
       authorsNoteDepth: input.prompt?.authorsNoteDepth ?? null,
       customInjections: input.prompt?.customInjections ?? [],
       promptOrder: input.prompt?.promptOrder ?? [],
@@ -232,6 +240,7 @@ export function buildPromptVariableContext(input: BuildPromptVariableContextInpu
       instruct: input.prompt?.instruct,
     },
     chat: {
+      id: input.chat?.id ?? "",
       messages: input.chat?.messages ?? [],
       lastMessage: input.chat?.lastMessage ?? null,
       lastUserMessage: input.chat?.lastUserMessage ?? null,

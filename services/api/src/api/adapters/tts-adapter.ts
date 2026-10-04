@@ -214,6 +214,9 @@ export class TtsAdapter implements TtsRuntimeApi {
 
   listTtsProfiles = async () => await this.decorateAutoKey((await this.stores.tts.listAll()).map(toClientTtsProfile));
 
+  reorderTtsProfiles: TtsRuntimeApi["reorderTtsProfiles"] = async (updates) =>
+    await this.decorateAutoKey((await this.stores.tts.reorder(updates)).map(toClientTtsProfile));
+
   getTtsProfile = async (id: string) => {
     const profile = await this.stores.tts.getById(id);
     return profile ? (await this.decorateAutoKey([toClientTtsProfile(profile)]))[0] : null;

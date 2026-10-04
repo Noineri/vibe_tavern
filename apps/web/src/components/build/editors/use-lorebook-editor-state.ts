@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { useDebouncedCallback } from "use-debounce";
-import { listAllLorebooks, listLorebooks, listLoreEntries, updateLoreEntry, getLorebookLinks, setLorebookLinks } from "../../../api/lorebook-api.js";
+import { listAllLorebooks, listParticipatingLorebooks, listLorebooks, listLoreEntries, updateLoreEntry, getLorebookLinks, setLorebookLinks } from "../../../api/lorebook-api.js";
 import type { LorebookRecord, LoreEntryRecord, LorebookLinkRecord } from "../../../api/types.js";
 import type { Scope } from "./LorebookAccordion.js";
 
@@ -96,6 +96,51 @@ const EMPTY_ENTRY_DRAFT: LoreEntryDraft = {
 // ── Sticky-tab persistence (sessionStorage) ────────────────────────────
 
 const WORLD_LORE_TAB_KEY = "vibe-tavern.world-lore-tab";
+const WORLD_LORE_FILTERS_KEY = "vibe-tavern.world-lore-filters";
+const SCOPES = ["all", "current", "global", "entity", "chat"] as const;
+
+type LorebookTabFilters = Record<Tab, { scope: Scope; ownerId: string | null }>;
+
+const DEFAULT_TAB_FILTERS: LorebookTabFilters = {
+  lorebooks: { scope: "all", ownerId: null },
+  scripts: { scope: "all", ownerId: null },
+};
+
+function isScope(value: unknown): value is Scope {
+  return typeof value === "string" && (SCOPES as readonly string[]).includes(value);
+}
+
+/** Reads the session-scoped World & Lore UI preferences, rejecting malformed values. */
+export function readWorldLoreFilters(): LorebookTabFilters {
+  if (typeof window === "undefined") return DEFAULT_TAB_FILTERS;
+  try {
+    const parsed: unknown = JSON.parse(window.sessionStorage.getItem(WORLD_LORE_FILTERS_KEY) ?? "");
+    if (!parsed || typeof parsed !== "object") return DEFAULT_TAB_FILTERS;
+    const source = parsed as Partial<Record<Tab, { scope?: unknown; ownerId?: unknown }>>;
+    return {
+      lorebooks: {
+        scope: isScope(source.lorebooks?.scope) ? source.lorebooks.scope : "all",
+        ownerId: typeof source.lorebooks?.ownerId === "string" ? source.lorebooks.ownerId : null,
+      },
+      scripts: {
+        scope: isScope(source.scripts?.scope) ? source.scripts.scope : "all",
+        ownerId: typeof source.scripts?.ownerId === "string" ? source.scripts.ownerId : null,
+      },
+    };
+  } catch {
+    return DEFAULT_TAB_FILTERS;
+  }
+}
+
+/** Writes the World & Lore UI preferences through the existing sessionStorage mechanism. */
+export function writeWorldLoreFilters(filters: LorebookTabFilters): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(WORLD_LORE_FILTERS_KEY, JSON.stringify(filters));
+  } catch {
+    // Storage unavailable (private mode / quota): preferences stay in memory.
+  }
+}
 
 export function readStickyWorldLoreTab(): Tab | null {
   if (typeof window === "undefined") return null;
@@ -122,9 +167,11 @@ export interface LorebookEditorState {
   view: View;
   tab: Tab;
   scope: Scope;
+  ownerId: string | null;
   setView: (view: View) => void;
   setTab: (tab: Tab) => void;
   setScope: (scope: Scope) => void;
+  setOwnerId: (ownerId: string | null) => void;
   // Active entry (editor target)
   activeEntryId: string | null;
   activeLorebookIdForEntry: string | null;
@@ -139,6 +186,10 @@ export interface LorebookEditorState {
     lorebookId: string,
     links: Array<{ targetType: "character" | "persona"; targetId: string }>,
   ) => Promise<void>;
+  seedLorebookLinks: (
+    lorebookId: string,
+    links: Array<{ targetType: "character" | "persona"; targetId: string }>,
+  ) => void;
   // Entry data (for the active lorebook)
   activeEntry: LoreEntryRecord | null;
   existingGroups: string[];
@@ -170,7 +221,25 @@ export function useLorebookEditorState({
   const [tab, setTab] = useState<Tab>(
     () => stickyInitialTab.current ?? "lorebooks",
   );
-  const [scope, setScope] = useState<Scope>("all");
+  const [filtersByTab, setFiltersByTab] = useState<LorebookTabFilters>(readWorldLoreFilters);
+  const scope = filtersByTab[tab].scope;
+  const ownerId = filtersByTab[tab].ownerId;
+  const setScope = useCallback((nextScope: Scope) => {
+    setFiltersByTab((previous) => ({
+      ...previous,
+      [tab]: { ...previous[tab], scope: nextScope },
+    }));
+  }, [tab]);
+  const setOwnerId = useCallback((nextOwnerId: string | null) => {
+    setFiltersByTab((previous) => ({
+      ...previous,
+      [tab]: { ...previous[tab], ownerId: nextOwnerId },
+    }));
+  }, [tab]);
+
+  useEffect(() => {
+    writeWorldLoreFilters(filtersByTab);
+  }, [filtersByTab]);
 
   // ── Active entry ──
   const [activeEntryId, _setActiveEntryId] = useState<string | null>(null);
@@ -235,12 +304,16 @@ export function useLorebookEditorState({
       setLorebooks(
         scope === "all"
           ? await listAllLorebooks()
-          : await listLorebooks(scope, getOwnerId(scope)),
+          : scope === "current"
+            ? chatId
+              ? await listParticipatingLorebooks(chatId)
+              : []
+            : await listLorebooks(scope, getOwnerId(scope)),
       );
     } finally {
       setLoadingLorebooks(false);
     }
-  }, [scope, getOwnerId(scope)]);
+  }, [scope, chatId, getOwnerId]);
 
   useEffect(() => {
     if (view !== "pick") void refreshLorebooks();
@@ -264,13 +337,13 @@ export function useLorebookEditorState({
           const links = await getLorebookLinks(lb.id);
           return [lb.id, links] as const;
         } catch {
-          return [lb.id, [] as LorebookLinkRecord[]] as const;
+          return [lb.id, null] as const;
         }
       }),
     ).then((results) => {
       if (cancelled) return;
       const map = new Map<string, LorebookLinkRecord[]>();
-      for (const [id, links] of results) map.set(id, links);
+      for (const [id, links] of results) if (links) map.set(id, links);
       setLorebookLinksMap(map);
     });
     return () => {
@@ -279,16 +352,22 @@ export function useLorebookEditorState({
   }, [lorebooks]);
 
   // ── Link management ──
+  const seedLorebookLinks = (
+    lorebookId: string,
+    links: Array<{ targetType: "character" | "persona"; targetId: string }>,
+  ) => {
+    setLorebookLinksMap((prev) => new Map(prev).set(
+      lorebookId,
+      links.map((link) => ({ lorebookId, ...link })),
+    ));
+  };
+
   const handleSetLinks = async (
     lorebookId: string,
     links: Array<{ targetType: "character" | "persona"; targetId: string }>,
   ) => {
     const updated = await setLorebookLinks(lorebookId, links);
-    setLorebookLinksMap((prev) => {
-      const next = new Map(prev);
-      next.set(lorebookId, updated);
-      return next;
-    });
+    setLorebookLinksMap((prev) => new Map(prev).set(lorebookId, updated));
   };
 
   // ═══ Entry loading (for the active lorebook) ═══
@@ -426,9 +505,11 @@ export function useLorebookEditorState({
     view,
     tab,
     scope,
+    ownerId,
     setView,
     setTab,
     setScope,
+    setOwnerId,
     // Active entry
     activeEntryId,
     activeLorebookIdForEntry,
@@ -440,6 +521,7 @@ export function useLorebookEditorState({
     // Links data
     lorebookLinksMap,
     handleSetLinks,
+    seedLorebookLinks,
     // Entry data
     activeEntry,
     existingGroups,

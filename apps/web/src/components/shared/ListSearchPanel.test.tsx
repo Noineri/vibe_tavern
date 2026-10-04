@@ -11,10 +11,12 @@
  * Runner: bun:test with scoped happy-dom.
  */
 import { beforeAll, describe, it, expect, mock } from "bun:test";
-import { render, fireEvent, within } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, fireEvent, within } = await import("@testing-library/react");
 
 const realI18nContext = await import("../../i18n/context.js");
 mock.module("../../i18n/context.js", () => ({

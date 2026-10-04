@@ -89,20 +89,27 @@ export class PersonaAdapter implements PersonaRuntimeApi {
 		this.sessionRuntime.persona.setDefault(personaId);
 
 	uploadPersonaAvatar = async (personaId: string, crop: File, full?: File): Promise<{ avatarExt: string; avatarFullExt: string | null }> => {
-		const priorThumbExt = (await this.stores.personas.getById(personaId))?.avatarExt ?? null;
+		const prior = await this.stores.personas.getById(personaId);
+		const priorThumbExt = prior?.avatarExt ?? null;
+		// "Has a full": same ONE notion as the character side / the serve
+		// path — getById lazy-migrates a legacy avatarFullAssetId into a
+		// folder avatar-full.{ext}, so avatarFullExt alone answers it.
+		const priorFullExt = prior?.avatarFullExt ?? null;
 		// LB-1B: mirror of the character upload — the original crop bytes land
 		// in avatar-full BEFORE the normalized (≤ 512 webp) thumbnail write, so
-		// the original is never lost even without a dedicated full.
+		// the original is never lost even without a dedicated full. An
+		// EXISTING full is never overwritten by a crop-only upload
+		// (adjust-thumbnail regression, see the character upload path).
 		const cropExt = mimeToExt(crop.type);
 		const plan = cropExt
 			? await normalizeAvatarThumbnail(new Uint8Array(await crop.arrayBuffer()), cropExt)
 			: null;
-		let avatarFullExt: string | null = null;
+		let avatarFullExt: string | null = priorFullExt;
 		if (full) {
 			const f = await this.assetService.writePersonaAvatarFull(personaId, full);
 			await this.stores.personas.setFolderAvatarFull(personaId, f.ext);
 			avatarFullExt = f.ext;
-		} else if (plan?.changed) {
+		} else if (plan?.changed && !priorFullExt) {
 			const originalFile = new File([new Uint8Array(await crop.arrayBuffer())], `avatar-full.${cropExt}`, { type: crop.type });
 			const f = await this.assetService.writePersonaAvatarFull(personaId, originalFile);
 			await this.stores.personas.setFolderAvatarFull(personaId, f.ext);

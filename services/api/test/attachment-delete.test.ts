@@ -26,7 +26,7 @@ async function setup() {
 	const assetService = new AssetService(join(dataRoot, "assets"), stores.content);
 	// DICE-B12: deleteMessage now also clears bound Dice rows, so the service
 	// needs its diceRolls dependency (added in B10).
-	const chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls);
+	const chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls, stores.experiences, stores);
 
 	// Minimal sessionRuntime: chatApp is real (so removeAttachment/deleteMessage
 	// hit the real store), chatRuntime.deleteMessage delegates to chatApp to

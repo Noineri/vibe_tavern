@@ -13,13 +13,15 @@
  * the abort/error/success boundaries are observable without a server.
  */
 import { describe, test, expect, beforeEach, mock } from "bun:test";
-import { act, renderHook } from "@testing-library/react";
+
 import { brandId, type ChatId } from "@vibe-tavern/domain";
 import type { DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
 import type { ExperienceScopeState } from "../stores/experience-store.js";
 import { useDomEnv } from "../../test/dom-env.js";
 
 useDomEnv();
+
+const { act, renderHook } = await import("@testing-library/react");
 
 // --- chat-api stubs (the functions the non-stream path crosses) ---
 const regenerateChatMessage = mock();
@@ -309,9 +311,14 @@ describe("useChatController — Co-Author send gate", () => {
   test("passes the gate when an explicit Co-Author binding exists", async () => {
     useProviderDataStore.setState({
       profiles: [{ id: "p_co", name: "Co Prof", isActive: false, defaultModel: null } as never],
+      // CG-2: the Co-Author model lives on the bound connection's row — same
+      // effective model ("tool-m") the retired ui_settings global carried.
+      coauthorSettingsByProfile: {
+        p_co: { providerProfileId: "p_co", modelName: "tool-m", settings: {}, createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+      },
     });
     useBootstrapStore.setState({
-      data: { uiSettings: { coauthorProviderId: "p_co", coauthorModelName: "tool-m" } } as never,
+      data: { uiSettings: { coauthorProviderId: "p_co" } } as never,
     });
     sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: { onDone?: () => void }) => {
       opts?.onDone?.();
@@ -327,7 +334,7 @@ describe("useChatController — Co-Author send gate", () => {
 
   test("blocks when no explicit binding and no RP fallback profile", async () => {
     useProviderDataStore.setState({ profiles: [] });
-    useBootstrapStore.setState({ data: { uiSettings: { coauthorProviderId: null, coauthorModelName: null } } as never });
+    useBootstrapStore.setState({ data: { uiSettings: { coauthorProviderId: null } } as never });
 
     useChatStore.setState({ activeChatId: CHAT, draft: "hello", generations: {}, messageActionId: null });
     const { result } = renderHook(() => useChatController());

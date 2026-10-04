@@ -1,6 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
-import { Command } from "cmdk";
 import { toast } from "sonner";
 import { useT, type TFunc } from "../../../../i18n/context.js";
 import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_PARAM_RANGES, IMAGE_GENERATION_MODES, IMAGE_GEN_STOCK_SAMPLER_SET_IDS, IMAGE_GEN_WORKFLOW_FAMILY_IDS, IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX_PX, IMAGE_SIZE_MIN_PX, IMAGE_SIZE_PRESETS, IMAGE_SIZE_STEP_PX, adaptSamplerSetPayloadToTarget, type ImageGenerationMode, type ImageGenParamRange, type ImageSizeOrientation, type SetFieldNote } from "@vibe-tavern/domain";
@@ -18,9 +16,7 @@ import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { DropdownSelect } from "../../../shared/DropdownSelect.js";
 import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
-import { getModalPortal } from "../../../shared/modal-helpers.js";
 import { LocalConnectionStatusChip, type LocalConnectionStatus } from "../../../shared/LocalConnectionStatus.js";
-import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import type {
   ImageGenFamilyDetectionAttemptValue,
   ImageGenFamilyDetectionSourceValue,
@@ -45,7 +41,9 @@ import {
   setImageGenProfileFamily,
   updateImageGenSamplerSet,
 } from "../../../../api/image-gen-api.js";
-import { fetchProviderProfileModels, listProviderProfiles } from "../../../../api/provider-api.js";
+import { LlmAssistSection } from "./ImageGenLlmAssistSection.js";
+import { ProviderModelSelector } from "../ProviderModelSelector.js";
+import type { ProviderModelListOption } from "../ProviderModelList.js";
 import type { useImageProfiles } from "../../../../hooks/use-image-profiles.js";
 
 type ImageGenHook = ReturnType<typeof useImageProfiles>;
@@ -83,19 +81,6 @@ type ImageGenHook = ReturnType<typeof useImageProfiles>;
  * wrapper div (the primitive has no passthrough).
  */
 
-/** Picker option — the models cache entry verbatim. */
-interface ModelOption {
-  id: string;
-  label: string;
-  isFree?: boolean;
-  /** Model-family label (comfyui dialect, CG-A3): rendered as a chip in
-   *  the row; absent = unknown family. */
-  family?: string;
-  /** Workflow template marker (comfyui dialect, CG-A2/A3): drives the
-   *  «Detected» readout under the trigger and the DiT sidecar fields. */
-  template?: string;
-}
-
 /** Krea-2 starting-point values (CG-B1, form-side per CF5 — the backend
  *  keeps ONE materialization ladder of node-class defaults for both
  *  templates; these are the values the FORM offers as explicit starting
@@ -125,260 +110,6 @@ const PRESET_LABEL_KEYS: Record<ImageSizeOrientation, Parameters<TFunc>[0]> = {
   portrait: "image_gen_preset_portrait",
   landscape: "image_gen_preset_landscape",
 };
-
-// ─── Model picker (SttModelPicker fork: favorites pinned + custom-slug) ──────
-
-function ModelPicker({
-  value,
-  onChange,
-  models,
-  fetching,
-  favoriteIds,
-  onToggleFavorite,
-  onRefresh,
-  snapshotAt,
-}: {
-  value: string | null;
-  onChange: (modelId: string) => void;
-  models: ModelOption[];
-  fetching: boolean;
-  favoriteIds: Set<string>;
-  onToggleFavorite: (model: ModelOption) => void;
-  onRefresh: () => void;
-  /** IF-20: the list came from the server's last-good snapshot (ISO time). */
-  snapshotAt: string | null;
-}) {
-  const { t } = useT();
-  const isMobile = useIsMobile();
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-
-  const selectedModel = models.find((model) => model.id === value);
-  // The selected id always stays visible even when it is not in the fetched
-  // list (a hand-typed or since-removed model) — the STT/LLM selector rule.
-  const listModels = selectedModel || !value ? models : [{ id: value, label: value }, ...models];
-  const portalContainer = getModalPortal() ?? undefined;
-
-  const selectModel = (model: ModelOption) => {
-    onChange(model.id);
-    setOpen(false);
-    setSearch("");
-  };
-  const useCustomSlug = (slug: string) => {
-    onChange(slug);
-    setOpen(false);
-    setSearch("");
-  };
-
-  const query = search.trim().toLowerCase();
-  // The LLM ProviderModelList sort verbatim: favorites first, then label —
-  // NO group headers (the owner says the LLM dropdown is the canon; its
-  // favorites are a sort, not a section split).
-  const visible = listModels
-    .filter((model) => !query || model.id.toLowerCase().includes(query) || model.label.toLowerCase().includes(query))
-    .sort((a, b) => {
-      const favoriteOrder = Number(favoriteIds.has(b.id)) - Number(favoriteIds.has(a.id));
-      return favoriteOrder || a.label.localeCompare(b.label);
-    });
-  const customSlug = search.trim();
-  const hasExactMatch = listModels.some((model) => model.id === customSlug);
-
-  const renderRow = (model: ModelOption) => {
-    const favorite = favoriteIds.has(model.id);
-    return (
-    <Command.Item
-      key={model.id}
-      value={model.id}
-      data-testid="image-gen-model-option"
-      onSelect={() => selectModel(model)}
-      className={cn(
-        "flex cursor-pointer items-center gap-2 rounded px-2.5 py-1.5 font-ui text-[12px] outline-none transition-colors",
-        model.id === value
-          ? "bg-accent-dim font-medium text-accent-t"
-          : "text-t2 hover:bg-s2 hover:text-t1 data-[selected=true]:bg-s2 data-[selected=true]:text-t1",
-      )}
-    >
-      <CustomTooltip content={favorite ? t("remove_from_favorites") : t("add_to_favorites")}>
-        <button
-          type="button"
-          data-testid="image-gen-model-star"
-          className={cn(
-            "flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text",
-            favorite && "text-warning-text",
-          )}
-          onPointerDown={(event) => event.stopPropagation()}
-          onPointerUp={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleFavorite(model);
-          }}
-        >
-          {favorite ? <Icons.StarFilled /> : <Icons.Star />}
-        </button>
-      </CustomTooltip>
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t1">{model.label || model.id}</span>
-          {model.isFree && (
-            <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4">free</span>
-          )}
-          {model.family && (
-            <span
-              data-testid="image-gen-model-family"
-              className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4"
-            >
-              {model.family}
-            </span>
-          )}
-        </div>
-        {model.label && model.label !== model.id && (
-          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] text-t4">
-            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{model.id}</span>
-          </div>
-        )}
-      </div>
-    </Command.Item>
-    );
-  };
-
-  return (
-    <div className="my-4">
-      <div className="mb-3 border-b border-border2 pb-2 font-ui text-[14px] font-semibold text-t1">
-        {t("model_label")}
-      </div>
-      <div className="min-w-0 flex-1">
-        <label className="mb-[6px] block text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.06em] uppercase text-t3">
-          {t("selected_model_label")}
-        </label>
-        {/* The refresh button rides the DROPDOWN's row (not a sibling of the
-            whole field column): the custom/detected hints render below the
-            row, so their appearance can no longer drop the button to a
-            different height (owner 2026-09-22; same fix in the LLM/STT/TTS
-            model pickers). */}
-        <div className="flex items-end gap-3">
-          <div className="relative min-w-0 flex-1">
-            <Popover.Root open={open} onOpenChange={setOpen}>
-              <Popover.Trigger asChild>
-                <button
-                  type="button"
-                  data-testid="image-gen-field-model"
-                  className="flex w-full items-center justify-between rounded-md border border-border bg-s2 px-3 py-[6px] font-ui text-[13px] text-t1 transition-colors hover:border-accent"
-                >
-                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left">
-                    {fetching && models.length === 0
-                      ? t("loading")
-                      : selectedModel?.label || value || t("select_model")}
-                  </span>
-                  <span className="text-t3">
-                    <Icons.Caret direction="d" />
-                  </span>
-                </button>
-              </Popover.Trigger>
-              <Popover.Portal container={portalContainer}>
-                <Popover.Content
-                  sideOffset={4}
-                  align="start"
-                  onCloseAutoFocus={(event) => event.preventDefault()}
-                  className="glass-blur z-[600] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
-                  style={{ width: "var(--radix-popover-trigger-width)", maxHeight: 260 }}
-                >
-                  <Command shouldFilter={false} loop className="flex flex-col outline-none">
-                    <div className="border-b border-border2 bg-s2 p-2">
-                      <Command.Input
-                        placeholder={t("search_models")}
-                        value={search}
-                        onValueChange={setSearch}
-                        className="w-full rounded border border-border bg-surface px-2 py-[5px] font-ui text-[12px] text-t1 outline-none focus:border-accent"
-                      />
-                    </div>
-                    <Command.List className="max-h-[200px] overflow-y-auto bg-surface p-1">
-                      {visible.map(renderRow)}
-                      {customSlug && !hasExactMatch && (
-                        <Command.Item
-                          data-testid="use-custom-model"
-                          value={`use-${customSlug}`}
-                          onSelect={() => useCustomSlug(customSlug)}
-                          className="cursor-pointer rounded px-2.5 py-1.5 font-ui text-[12px] text-accent-t data-[selected=true]:bg-s2"
-                        >
-                          {t("use_custom_model_id", { id: customSlug })}
-                        </Command.Item>
-                      )}
-                      {visible.length === 0 && !customSlug && (
-                        <div className="px-2.5 py-1.5 text-center font-ui text-[11px] text-t4">{t("no_models_found")}</div>
-                      )}
-                    </Command.List>
-                  </Command>
-                </Popover.Content>
-              </Popover.Portal>
-            </Popover.Root>
-          </div>
-          {/** IG-16 clone rule: the refresh button is the ProviderModelSelector
-           *  picker-row canon VERBATIM (the `provider-models-refresh` shape —
-           *  Icons.Regen, py-[6px] matching the trigger, mobile icon-only 34px,
-           *  genp dots while fetching). The first cut had cloned the wrong
-           *  sibling (the local-status chip's mini button, line 109) — caught by
-           *  the owner 2026-09-16. */}
-          <button
-            type="button"
-            data-testid="image-gen-models-refresh"
-            onClick={() => onRefresh()}
-            disabled={fetching}
-            className={cn(
-              "shrink-0 items-center gap-2 rounded-md border border-border bg-s2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50",
-              // Mobile stays the icon-only 34px shape but must match the closed
-              // dropdown's height: 2px borders + 2×6px py + 13px×1.5 line box
-              // (Tailwind preflight html line-height) = 33.5px. The row is
-              // items-end, so a shorter button would leave the row top edges
-              // misaligned (MOBILE_UI_DEFECTS_REPORT step 5).
-              isMobile ? "flex w-[34px] min-h-[33.5px] justify-center px-0 py-[6px]" : "flex px-4 py-[6px] font-ui text-[13px] font-medium text-t2",
-            )}
-            title={t("refresh_models")}
-          >
-            {fetching ? (
-              <span className="ml-[3px] inline-flex items-center gap-[3px] align-middle">
-                <span className="h-1 w-1 animate-genp rounded-full bg-accent" />
-                <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.18s]" />
-                <span className="h-1 w-1 animate-genp rounded-full bg-accent [animation-delay:0.36s]" />
-              </span>
-            ) : (
-              <Icons.Regen />
-            )}
-            {!isMobile && <> {t("refresh_models")}</>}
-          </button>
-        </div>
-        {!selectedModel && value && (
-          <div className="mt-2 font-ui text-[12px] font-medium text-accent">{t("custom_model", { name: value })}</div>
-        )}
-        {/* «Detected: …» readout (CG-B1, the Matrix idiom): which
-            workflow template the adapter auto-detects for the picked
-            model — loader-folder membership, the adapter's ground
-            truth. A selected model without a template marker (cloud
-            dialects, custom slugs) renders nothing. */}
-        {selectedModel?.template && (
-          <div
-            data-testid="image-gen-model-detected"
-            className="mt-2 font-ui text-[12px] font-medium text-accent"
-          >
-            {t("image_gen_detected_template", {
-              template: templateDisplayLabel(selectedModel.template, t),
-            })}
-          </div>
-        )}
-        {/* IF-20: an honest «saved list» line — the live fetch failed and
-            the server answered from its last-good snapshot; «refresh»
-            re-fetches live. */}
-        {snapshotAt !== null && (
-          <div
-            data-testid="image-gen-models-snapshot"
-            className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4"
-          >
-            {t("image_gen_models_snapshot", { time: formatListingSnapshotTime(snapshotAt) })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ─── Image prompt family (IPT-5 — the profile's checkpoint-family row,
 //     always visible in the params block directly under the model setting) ──
@@ -857,145 +588,6 @@ function SamplerSliderField({
   );
 }
 
-// ─── LLM assist (IG-15): explicit per-profile toggle + LLM profile/model pick ──
-
-/** The assist section's provider row — the LLM provider list mapped down to
- *  the picker's needs (id, display name, default model). */
-interface LlmProfileOption {
-  id: string;
-  label: string;
-  defaultModel: string | null;
-}
-
-function LlmAssistSection({
-  enabled,
-  providerProfileId,
-  modelId,
-  onToggle,
-  onPickProvider,
-  onPickModel,
-}: {
-  enabled: boolean;
-  providerProfileId: string | null;
-  modelId: string | null;
-  onToggle: (next: boolean) => void;
-  onPickProvider: (next: string) => void;
-  onPickModel: (next: string) => void;
-}) {
-  const { t } = useT();
-  const [providerProfiles, setProviderProfiles] = useState<LlmProfileOption[] | null>(null);
-  const [modelsByProvider, setModelsByProvider] = useState<Record<string, Array<{ id: string; label: string }>>>({});
-
-  // LLM provider list: loaded once when the section becomes visible (the
-  // ExperienceSetupModal pattern — an inline error surface, never a crash).
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    listProviderProfiles()
-      .then((profiles) => {
-        if (cancelled) return;
-        setProviderProfiles(
-          profiles.map((p) => ({ id: p.id, label: p.name, defaultModel: p.defaultModel ?? null })),
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setProviderProfiles([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled]);
-
-  // The picked provider's model catalog, cached per provider (idempotent —
-  // a re-render with the cache present does not refetch).
-  useEffect(() => {
-    if (!enabled || providerProfileId === null) return;
-    if (modelsByProvider[providerProfileId] !== undefined) return;
-    let cancelled = false;
-    fetchProviderProfileModels(providerProfileId)
-      .then((res) => {
-        if (cancelled) return;
-        setModelsByProvider((prev) => ({
-          ...prev,
-          [providerProfileId]: res.models.map((m) => ({ id: m.id, label: m.label || m.id })),
-        }));
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setModelsByProvider((prev) => ({ ...prev, [providerProfileId]: [] }));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, providerProfileId, modelsByProvider]);
-
-  // The saved picks stay visible even when the lists do not contain them
-  // (a since-removed profile/model) — the STT/LLM selector rule.
-  const pickedProvider = providerProfiles?.find((p) => p.id === providerProfileId);
-  const fetchedModels = providerProfileId !== null ? modelsByProvider[providerProfileId] : undefined;
-  const providerOptions = [
-    { id: "", label: t("image_gen_assist_provider_none") },
-    ...(providerProfiles ?? []).map((p) => ({ id: p.id, label: p.label })),
-    ...(providerProfileId !== null && !pickedProvider ? [{ id: providerProfileId, label: providerProfileId }] : []),
-  ];
-  const modelOptions = [
-    { id: "", label: t("image_gen_assist_model_none") },
-    ...(fetchedModels ?? []),
-    // The provider's default model stays pickable even when the listing
-    // omits it (the ExperienceSetupModal rule) — but only when it differs
-    // from what the catalog already offers.
-    ...(pickedProvider?.defaultModel != null && !(fetchedModels ?? []).some((m) => m.id === pickedProvider.defaultModel)
-      ? [{ id: pickedProvider.defaultModel, label: pickedProvider.defaultModel }]
-      : []),
-    ...(modelId !== null && !["", ...(fetchedModels ?? []).map((m) => m.id), pickedProvider?.defaultModel ?? ""].includes(modelId)
-      ? [{ id: modelId, label: modelId }]
-      : []),
-  ];
-
-  return (
-    <section className="rounded-lg border border-border bg-surface p-3.5" data-testid="image-gen-assist-section">
-      <div className="mb-3 font-ui text-[14px] font-semibold text-t1">{t("image_gen_assist_title")}</div>
-      <div className="flex items-center gap-3 rounded-lg border border-border2 bg-s2 px-4 py-2.5">
-        <Toggle
-          checked={enabled}
-          onChange={onToggle}
-          className="!mb-0 !inline-flex"
-          aria-label={t("image_gen_assist_title")}
-        />
-        <div className="min-w-0">
-          <div className="font-ui text-[13px] font-medium text-t1">{t("image_gen_assist_title")}</div>
-          <div className="mt-0.5 text-[calc(var(--ui-fs)-3px)] leading-[1.5] text-t3">
-            {t("image_gen_assist_hint")}
-          </div>
-        </div>
-      </div>
-      {enabled && (
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="min-w-0">
-            <label className={lblCls}>{t("image_gen_assist_provider_label")}</label>
-            <DropdownSelect
-              value={providerProfileId ?? ""}
-              options={providerOptions}
-              onChange={onPickProvider}
-              triggerTestId="image-gen-assist-provider"
-            />
-          </div>
-          <div className="min-w-0">
-            <label className={lblCls}>{t("image_gen_assist_model_label")}</label>
-            <DropdownSelect
-              value={modelId ?? ""}
-              options={modelOptions}
-              onChange={onPickModel}
-              triggerTestId="image-gen-assist-model"
-              disabled={providerProfileId === null}
-            />
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
 
 // ─── Model sampler-set row (IG-CF15 — the ProviderSamplerPanel LS-5 set
 //     row twin, model-scoped): bounded inline dropdown + 7 icon-only actions
@@ -1818,6 +1410,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   if (form === null || form.id === null) return null;
   const profileId = form.id;
   const models: ImageGenModelEntry[] = imageGen.modelsByProfile[profileId] ?? [];
+  const selectedModel = models.find((model) => model.id === form.modelId);
   const samplers = imageGen.samplersByProfile[profileId] ?? [];
   const schedulers = imageGen.schedulersByProfile[profileId] ?? [];
   const sidecars = imageGen.sidecarsByProfile[profileId];
@@ -1924,6 +1517,12 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
   };
 
   const favoriteIds = new Set(imageGen.favorites.map((f) => f.modelId));
+  const modelOptions: ProviderModelListOption[] = models.map((model) => ({ id: model.id, label: model.label }));
+  const favoriteModels = imageGen.favorites.map((favorite) => ({
+    modelId: favorite.modelId,
+    label: favorite.label,
+    contextLength: null,
+  }));
 
   // ── IG-20a user size entries (vendor-set backends only) ──────────────
   // The entries extend the vendor grid until our static table catches up
@@ -1989,8 +1588,19 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
         className={cn("m-0 flex min-w-0 flex-col gap-4 border-0 p-0", localOffline && "pointer-events-none opacity-50")}
       >
       {/* ── Model: picker + star + refresh (bare, the first level-2 section) ── */}
-      <ModelPicker
-        value={form.modelId}
+      {/* The selected id always stays visible even when it is not in the fetched
+          list (a hand-typed or since-removed model) — the STT/LLM selector rule. */}
+      {/* The LLM ProviderModelList sort verbatim: favorites first, then label —
+          NO group headers (the owner says the LLM dropdown is the canon; its
+          favorites are a sort, not a section split). */}
+      {/** IG-16 clone rule: the refresh button is the ProviderModelSelector
+       *  picker-row canon VERBATIM (the `provider-models-refresh` shape —
+       *  Icons.Regen, py-[6px] matching the trigger, mobile icon-only 34px,
+       *  genp dots while fetching). The first cut had cloned the wrong
+       *  sibling (the local-status chip's mini button, line 109) — caught by
+       *  the owner 2026-09-16. */}
+      <ProviderModelSelector
+        value={form.modelId ?? ""}
         onChange={(modelId) => {
           // The hook's setForm handles the model switch: bind state resets
           // and the NEW model's stored overlay loads (fire-and-forget — the
@@ -2042,19 +1652,74 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
               : {}),
           });
         }}
-        models={models}
+        options={modelOptions}
         fetching={false}
-        favoriteIds={favoriteIds}
-        onToggleFavorite={(model) =>
+        fetchError={null}
+        favoriteModels={favoriteModels}
+        onToggleFavoriteModel={(model) =>
           void (favoriteIds.has(model.id) ? imageGen.unstarModel(model.id) : imageGen.starModel(model.id, model.label))
         }
-        onRefresh={() => {
+        keepDropdownWhenOptionsEmpty
+        triggerTestId="image-gen-field-model"
+        refreshTestId="image-gen-models-refresh"
+        optionTestId="image-gen-model-option"
+        favoriteTestId="image-gen-model-star"
+        showContextLength={false}
+        showPricing={false}
+        renderRowBadges={(model) => {
+          const entry = models.find((candidate) => candidate.id === model.id);
+          return (
+            <>
+              {entry?.isFree && (
+                <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4">free</span>
+              )}
+              {entry?.family && (
+                <span
+                  data-testid="image-gen-model-family"
+                  className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium text-t4"
+                >
+                  {entry.family}
+                </span>
+              )}
+            </>
+          );
+        }}
+        onRefreshOptions={() => {
           void imageGen.fetchSavedModels(profileId);
           // IF-20: «refresh» is the force-live path for every listing the
           // pane shows from the models folders — the DiT sidecar lists too.
           if (ditControls !== null) void imageGen.fetchSidecars(profileId);
         }}
-        snapshotAt={modelsSnapshotAt ?? null}
+        renderFieldHints={(
+          <>
+            {/* «Detected: …» readout (CG-B1, the Matrix idiom): which
+                workflow template the adapter auto-detects for the picked
+                model — loader-folder membership, the adapter's ground
+                truth. A selected model without a template marker (cloud
+                dialects, custom slugs) renders nothing. */}
+            {selectedModel?.template && (
+              <div
+                data-testid="image-gen-model-detected"
+                className="mt-2 font-ui text-[12px] font-medium text-accent"
+              >
+                {t("image_gen_detected_template", {
+                  template: templateDisplayLabel(selectedModel.template, t),
+                })}
+              </div>
+            )}
+            {/* IF-20: an honest «saved list» line — the live fetch failed and
+                the server answered from its last-good snapshot; «refresh»
+                re-fetches live. */}
+            {modelsSnapshotAt !== null && modelsSnapshotAt !== undefined && (
+              <div
+                data-testid="image-gen-models-snapshot"
+                className="mt-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4"
+              >
+                {t("image_gen_models_snapshot", { time: formatListingSnapshotTime(modelsSnapshotAt) })}
+              </div>
+            )}
+          </>
+        )}
       />
 
       {/* ── Image prompt family (IPT-5): ALWAYS visible under the model
@@ -2789,6 +2454,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
         enabled={form.llmAssistEnabled}
         providerProfileId={form.llmProviderProfileId}
         modelId={form.llmModelId}
+        retryOnRefusal={form.assistRetryOnRefusal}
         onToggle={(next) => imageGen.setForm({ llmAssistEnabled: next })}
         onPickProvider={(next) =>
           // A provider switch invalidates the model pick — a model id from
@@ -2796,6 +2462,7 @@ export function ImageGenPane({ imageGen }: { imageGen: ImageGenHook }) {
           imageGen.setForm({ llmProviderProfileId: next === "" ? null : next, llmModelId: null })
         }
         onPickModel={(next) => imageGen.setForm({ llmModelId: next === "" ? null : next })}
+        onToggleRetry={(next) => imageGen.setForm({ assistRetryOnRefusal: next })}
       />
       </fieldset>
     </div>

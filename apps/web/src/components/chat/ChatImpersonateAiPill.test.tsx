@@ -1,9 +1,11 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import React from "react";
-import { act, render, waitFor } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { act, render, waitFor } = await import("@testing-library/react");
 
 const calls = {
   request: null as import("../../api/types.js").AiAssistantRequestBody | null,

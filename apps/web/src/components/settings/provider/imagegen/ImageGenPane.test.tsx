@@ -259,6 +259,7 @@ function makeRecord(overrides: Partial<ImageGenRecord> = {}): ImageGenRecord {
     modeSizePresets: {},
     userSizes: [],
     llmAssistEnabled: false,
+    assistRetryOnRefusal: false,
     familySource: "none",
     qualityLayerEnabled: false,
     llmProviderProfileId: undefined,
@@ -288,6 +289,7 @@ function makeForm(overrides: Partial<NonNullable<ImageGenHook["form"]>> = {}): N
     modeSizePresets: {},
     userSizes: [],
     llmAssistEnabled: false,
+    assistRetryOnRefusal: false,
     llmProviderProfileId: null,
     llmModelId: null,
     capabilities: makeCaps(),
@@ -2756,7 +2758,7 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
       vaeName: "qwen_image_2.1_vae.safetensors",
       workflowFamily: "qwen-image-2.1",
     }));
-    // Re-rendering the pane does not invoke ModelPicker's model-switch
+    // Re-rendering the pane does not invoke the model selector's model-switch
     // guard, so fresh set pins remain available to the eventual save.
     view.rerender(<TooltipProvider delayDuration={200}><Harness hookRef={hookRef} /></TooltipProvider>);
     expect(hookRef.current!.modelOverlay?.workflowFamily).toBe("qwen-image-2.1");
@@ -2898,6 +2900,25 @@ describe("ImageGenPane — LLM assist (IG-15)", () => {
     expect(setForm).toHaveBeenCalledWith({ llmAssistEnabled: true });
   });
 
+  // IMAGEGEN_ASSIST_REFUSAL_REPORT step 3: the retry opt-in rides the SAME
+  // assist section + toggle row; hidden while assist is off, off by default.
+  it("retry row: hidden while assist is off; shown off-by-default once enabled; toggling patches assistRetryOnRefusal", async () => {
+    const setForm = mock(() => {});
+    const view = render(<ImageGenPane imageGen={makeImageGen({ setForm })} />);
+    await waitFor(() => expect(view.getByTestId("image-gen-assist-section")).toBeTruthy());
+    expect(view.queryByRole("switch", { name: "image_gen_assist_retry_label" })).toBeNull();
+
+    const enabled = render(
+      <ImageGenPane imageGen={makeImageGen({ form: makeForm({ llmAssistEnabled: true }), setForm })} />,
+    );
+    await waitFor(() => expect(enabled.getByRole("switch", { name: "image_gen_assist_retry_label" })).toBeTruthy());
+    expect(enabled.getByRole("switch", { name: "image_gen_assist_retry_label" }).getAttribute("aria-checked")).toBe("false");
+    await act(async () => {
+      fireEvent.click(enabled.getByRole("switch", { name: "image_gen_assist_retry_label" }));
+    });
+    expect(setForm).toHaveBeenCalledWith({ assistRetryOnRefusal: true });
+  });
+
   it("enabled: picking a provider RESETS the model pick (a model from another provider is meaningless)", async () => {
     listLlmProfilesApi.mockResolvedValue([
       { id: "llm-p1", name: "Writer", defaultModel: "w-default" },
@@ -2954,6 +2975,10 @@ describe("ImageGenPane — LLM assist (IG-15)", () => {
     await waitFor(() => expect(view.getByTestId("image-gen-assist-provider").textContent).toContain("Writer"));
     await waitFor(() => expect(fetchLlmModelsApi).toHaveBeenCalledWith("llm-p1"));
     await pickOption(view, "image-gen-assist-model", "Writer Two");
+    // The refusal-retry opt-in rides the same PATCH (off by default → flip on).
+    await act(async () => {
+      fireEvent.click(view.getByRole("switch", { name: "image_gen_assist_retry_label" }));
+    });
 
     await act(async () => {
       await hookRef.current!.save();
@@ -2963,6 +2988,7 @@ describe("ImageGenPane — LLM assist (IG-15)", () => {
     expect(patch.llmAssistEnabled).toBe(true);
     expect(patch.llmProviderProfileId).toBe("llm-p1");
     expect(patch.llmModelId).toBe("w-2");
+    expect(patch.assistRetryOnRefusal).toBe(true);
     expect(hookRef.current!.error).toBeNull();
   });
 });
@@ -3005,7 +3031,7 @@ describe("ImageGenPane — prompt family row (IPT-5)", () => {
     return <ImageGenPane imageGen={familyHook(target.record, target.model)} />;
   }
 
-  it("renders directly under ModelPicker for persisted cloud and local profiles; create mode remains outside this pane", async () => {
+  it("renders directly under the model selector for persisted cloud and local profiles; create mode remains outside this pane", async () => {
     const cloud = makeRecord({ modelId: "cloud-model" });
     const cloudView = render(<ImageGenPane imageGen={familyHook(cloud)} />);
     await waitFor(() => expect(cloudView.getByTestId("image-gen-family-row")).toBeTruthy());

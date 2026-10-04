@@ -23,9 +23,8 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 		...(typeof body.messageEditorProviderId === "string" || body.messageEditorProviderId === null ? { messageEditorProviderId: body.messageEditorProviderId } : {}),
 		...(typeof body.messageEditorModelName === "string" || body.messageEditorModelName === null ? { messageEditorModelName: body.messageEditorModelName } : {}),
 		...(typeof body.coauthorProviderId === "string" || body.coauthorProviderId === null ? { coauthorProviderId: body.coauthorProviderId } : {}),
-		...(typeof body.coauthorModelName === "string" || body.coauthorModelName === null ? { coauthorModelName: body.coauthorModelName } : {}),
-		...(isPositiveIntegerOrNull(body.coauthorMaxTokens) ? { coauthorMaxTokens: body.coauthorMaxTokens } : {}),
-		...(isPositiveIntegerOrNull(body.coauthorContextBudget) ? { coauthorContextBudget: body.coauthorContextBudget } : {}),
+		...(typeof body.coauthorLoreProviderId === "string" || body.coauthorLoreProviderId === null ? { coauthorLoreProviderId: body.coauthorLoreProviderId } : {}),
+		...(typeof body.coauthorLoreModelName === "string" || body.coauthorLoreModelName === null ? { coauthorLoreModelName: body.coauthorLoreModelName } : {}),
 		// Star prompt. `userMessageCount` is deliberately absent: it is
 		// server-owned (bumped in ChatRuntime.prepareLiveTurn), and its omission
 		// from this allowlist is the whole enforcement mechanism.
@@ -35,10 +34,6 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 		...(typeof body.copilotProviderId === "string" || body.copilotProviderId === null ? { copilotProviderId: body.copilotProviderId } : {}),
 		...(typeof body.copilotModelName === "string" || body.copilotModelName === null ? { copilotModelName: body.copilotModelName } : {}),
 	});
-}
-
-function isPositiveIntegerOrNull(value: unknown): value is number | null {
-	return value === null || (typeof value === "number" && Number.isInteger(value) && value > 0);
 }
 
 function isNonNegativeInteger(value: unknown): value is number {

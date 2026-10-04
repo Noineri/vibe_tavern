@@ -1,5 +1,6 @@
 /**
  * Lorebook activation engine — pure function module.
+ * Portions adapted from SillyTavern world-info.js (AGPL-3.0, see NOTICE); modified 2026-09-30.
  *
  * Takes lorebooks with entries, recent messages, activation state, and macro
  * context → returns activated entries + updated activation state.
@@ -12,9 +13,9 @@
  */
 
 // ─── Public types ────────────────────────────────────────────────────────────
-
 import { compileRussianCaseFormsKey, tag } from "@vibe-tavern/domain";
 import type { LoreActivationReason } from "@vibe-tavern/domain";
+import { buildLoreScanText, entryBaseDepth } from "./lore-scan-text.js";
 
 // Lorebook activation is high-frequency (runs on every message send) and the
 // per-entry trace is only useful when debugging activation logic. Routed
@@ -129,6 +130,8 @@ export interface ActivationInput {
   characterPersonality?: string;
   /** Optional: character notes / depth prompt for matchSources */
   characterNote?: string;
+  /** Optional: alternate character greetings for matchSources */
+  characterAltGreetings?: string;
   /** Optional: scenario for matchSources */
   scenario?: string;
   /** Optional: creator notes for matchSources */
@@ -137,6 +140,10 @@ export interface ActivationInput {
   authorsNote?: string;
   /** Optional: enabled chat-summary texts for matchSources */
   summaries?: string[];
+  /** Optional: per-chat dynamic prompt for matchSources */
+  chatDynamicPrompt?: string;
+  /** Optional: per-chat summary for matchSources */
+  chatSummary?: string;
   /** Optional one-shot quiet-prompt text, scanned after global sources. */
   quietPrompt?: string;
   /** Current activation state from the selected branch (deserialized from loreActivationStateJson) */
@@ -448,7 +455,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
 
       const result = tryActivateEntry({
         entry, resolveMacros, characterId, characterName, currentTurn,
-        scanText: buildScanText(entry, input.messages, scanDepths, input, depthSkew),
+        scanText: buildLoreScanText(entry, input.messages, scanDepths, input, depthSkew),
         scanState: "normal",
         currentRecursionLevel: 0,
         updatedState, activatedIds,
@@ -567,7 +574,7 @@ export function resolveActivatedEntries(input: ActivationInput): ActivationResul
           // Recursion scan includes the (possibly widened — the skew is
           // buffer state in ST, world-info.js 280/402, and survives into
           // every later scan state) window plus each recursion-buffer unit.
-          scanText: buildScanText(entry, input.messages, scanDepths, input, depthSkew, recurseBuffer),
+          scanText: buildLoreScanText(entry, input.messages, scanDepths, input, depthSkew, recurseBuffer),
           scanState: "recursion",
           currentRecursionLevel,
           updatedState, activatedIds,
@@ -842,81 +849,6 @@ function tryActivateEntry(ctx: {
 function outletNameFromMetadata(metadata: Record<string, unknown> | undefined): string | null {
   const outletName = metadata?.stOutletName;
   return typeof outletName === "string" && outletName.trim() ? outletName.trim() : null;
-}
-
-function entryBaseDepth(entry: FlatEntry, scanDepths: Map<string, number>): number {
-  return entry.scanDepthOverride ?? (scanDepths.get(entry.lorebookId) ?? 2);
-}
-
-const SCAN_SENTINEL = "\x01";
-const SCAN_JOINER = `\n${SCAN_SENTINEL}`;
-
-function buildScanText(
-  entry: FlatEntry,
-  messages: ActivationInput["messages"],
-  scanDepths: Map<string, number>,
-  input: ActivationInput,
-  depthSkew = 0,
-  recurseBuffer: readonly string[] = [],
-): string {
-  const scanDepth = entryBaseDepth(entry, scanDepths) + depthSkew;
-  // Array#slice(-0) is equivalent to slice(0), which scans the full chat.
-  // ST's buffer has no chat-message units at depth 0 (world-info.js:279-297).
-  const effectiveMessages = scanDepth === 0 ? [] : messages.slice(-scanDepth);
-  const sources = entry.matchSources.length > 0 ? entry.matchSources : ["chat_messages"];
-
-  // Port of ST's WorldInfoBuffer.get construction (world-info.js:278-325):
-  // start with a sentinel, then separate every scanned message, selected
-  // global source, and recursion-buffer unit with `\n\x01`. `\x01` is not
-  // matched by JS `\s`, so regex keys cannot cross those seams. ST's message
-  // text itself is assembled by chatForWI (public/script.js:4563-4572), which
-  // supplies the optional speaker prefix below.
-  let result = SCAN_SENTINEL;
-  if (sources.includes("chat_messages")) {
-    result += effectiveMessages.map(m =>
-      entry.includeNames && m.name ? `${m.name}: ${m.content}` : m.content,
-    ).join(SCAN_JOINER);
-  }
-  if (sources.includes("persona_desc") && input.personaDescription) {
-    result += SCAN_JOINER + input.personaDescription;
-  }
-  if (sources.includes("character_desc") && input.characterDescription) {
-    result += SCAN_JOINER + input.characterDescription;
-  }
-  if (sources.includes("character_personality") && input.characterPersonality) {
-    result += SCAN_JOINER + input.characterPersonality;
-  }
-  if (sources.includes("character_note") && input.characterNote) {
-    result += SCAN_JOINER + input.characterNote;
-  }
-  if (sources.includes("scenario") && input.scenario) {
-    result += SCAN_JOINER + input.scenario;
-  }
-  if (sources.includes("creator_notes") && input.creatorNotes) {
-    result += SCAN_JOINER + input.creatorNotes;
-  }
-  // ST appends prompt injections after its selected global sources
-  // (world-info.js:317-320). ST gates Author's Note and the character depth
-  // prompt with allowWIScan, default false (authors-note.js:295-305, 375-392;
-  // script.js:4415-4430). VT has no global switch: selecting a source chip is
-  // the per-entry, default-off gate. Persona remains separately selectable and
-  // has no such global gate, matching ST's hardcoded scan=true at depth
-  // (script.js:3155-3166).
-  if (sources.includes("authors_note") && input.authorsNote) {
-    result += SCAN_JOINER + input.authorsNote;
-  }
-  if (sources.includes("summaries") && input.summaries?.length) {
-    result += SCAN_JOINER + input.summaries.join(SCAN_JOINER);
-  }
-  // The quiet prompt is always scanned in ST (`setExtensionPrompt(..., true)`
-  // in public/script.js:4564), independently of an entry source chip.
-  if (input.quietPrompt) {
-    result += SCAN_JOINER + input.quietPrompt;
-  }
-  if (recurseBuffer.length > 0) {
-    result += SCAN_JOINER + recurseBuffer.join(SCAN_JOINER);
-  }
-  return result;
 }
 
 function applyLegacyMacros(text: string, macroMap: Record<string, string>): string {

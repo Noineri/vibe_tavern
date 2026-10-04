@@ -31,9 +31,9 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
     t, chat, character, provider,
     draft, setDraft, isSending, activeChatId, chatMeta,
     personas, activePersonaId,
-    contextSize, maxTokens, favoriteModels, activeModelId,
+    contextSize, maxTokens, favoriteModels, activeModelId, handleSelectFavoriteModel,
     fileInputRef, draftAttachments, onFileInputChange, handlePaste, canSend,
-    buckets, inputTokens, showGenerateMore, handleGenerateMore,
+    buckets, inputTokens, permanent, availableBudget, tokenState, showGenerateMore, handleGenerateMore,
   } = data;
 
   const [isDragOver, setIsDragOver] = useState(false);
@@ -80,12 +80,6 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
   }
   const sendLabel = renderSendLabel();
   const sendButtonText = canSend || !draft.trim() ? t("send") : sendLabel || t("send_unavailable");
-
-  const permanent = buckets.system + buckets.character + buckets.persona + buckets.lore + buckets.memory + buckets.tools;
-  const totalUsed = permanent + buckets.history + inputTokens;
-  const availableBudget = Math.max(0, contextSize - maxTokens);
-  const usageRatio = availableBudget > 0 ? totalUsed / availableBudget : 0;
-  const tokenState = usageRatio > 0.95 ? "warn" : usageRatio > 0.75 ? "mid" : "ok";
 
   return (
     <div
@@ -260,9 +254,7 @@ function DesktopInputArea({ data }: { data: ReturnType<typeof useInputArea> }) {
                   emptyText={t("no_starred_models")}
                   items={favoriteModels.map((m) => ({ value: m.modelId, label: m.label || m.modelId }))}
                   value={activeModelId}
-                  onSelect={(modelId) => {
-                    if (provider.activeProviderProfile) void provider.handleSelectFavoriteProviderModel(provider.activeProviderProfile.id, modelId);
-                  }}
+                  onSelect={handleSelectFavoriteModel}
                   trigger={
                     <button type="button"
                       className="flex h-8 items-center justify-center rounded-[5px] bg-s2 px-2.5 text-warning-text transition-colors hover:bg-s3 hover:brightness-110 data-[state=open]:brightness-110"

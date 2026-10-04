@@ -24,8 +24,10 @@ import { useDomEnv } from "../../../test/dom-env.js";
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
 import type { AppCharacter } from "../../api/types.js";
+import type { BootstrapData } from "../../stores/api-actions/bootstrap-actions.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
+import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
 import { coauthorToolOutputSchema } from "@vibe-tavern/api-contracts";
 import { toast } from "sonner";
@@ -44,6 +46,7 @@ const realChatStore = await import("../../stores/chat-store.js");
 
 /** Shared Checkbox exposes its state via aria-checked (role="checkbox"), not input.checked. */
 const ariaChecked = (el: Element) => el.getAttribute("aria-checked") === "true";
+type ActiveChat = NonNullable<ReturnType<typeof useSnapshotStore.getState>["activeChat"]>;
 
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
@@ -120,6 +123,24 @@ beforeAll(async () => {
 	({ CoauthorCharacterForm } = await import("./CoauthorCharacterForm.js"));
 });
 
+function setLoreModel(modelName: string | null) {
+	useBootstrapStore.setState({
+		data: {
+			initialChatId: null,
+			snapshot: null,
+			isFirstRun: false,
+			allCharacters: [],
+			promptPresets: [],
+			uiSettings: {
+				id: "default", theme: "dark", chatFontSize: 15, uiFontSize: 14, messageWidth: 700, language: "en",
+				activePromptPresetId: null, aiAssistantProviderId: null, aiAssistantModelName: null,
+				coauthorProviderId: null, coauthorLoreProviderId: modelName ? "profile_1" : null, coauthorLoreModelName: modelName, updatedAt: "2026-01-01",
+			},
+			isArmServer: false,
+		} as unknown as BootstrapData,
+	});
+}
+
 function makeCharacter(over: Partial<AppCharacter> = {}): AppCharacter {
 	return {
 		...wireCharacter(),
@@ -180,6 +201,7 @@ describe("CoauthorCharacterForm", () => {
 		// Restore the real stores to their defaults so the in-process state does
 		// not leak a test character / turn into other files.
 		useSnapshotStore.getState().clear();
+		useBootstrapStore.setState({ data: null });
 		useCoauthorTurnStore.setState({ turnsByChat: {} });
 	});
 
@@ -284,6 +306,21 @@ describe("CoauthorCharacterForm", () => {
 		expect(container.querySelector(".vibe-md-editor")).toBeNull();
 	});
 
+	it("renders the lore assistant button with the co-author default when unset", () => {
+		setLoreModel(null);
+		useSnapshotStore.setState({ character: makeCharacter() });
+		const { getByRole, getByText } = render(<CoauthorCharacterForm />);
+		expect(getByRole("button", { name: "coauthor.lore_assistant.title" })).toBeTruthy();
+		expect(getByText("coauthor.lore_assistant.same_as_coauthor")).toBeTruthy();
+	});
+
+	it("renders the chosen lore model name in the character-form button", () => {
+		setLoreModel("lore-model");
+		useSnapshotStore.setState({ character: makeCharacter() });
+		const { getByText } = render(<CoauthorCharacterForm />);
+		expect(getByText("lore-model")).toBeTruthy();
+	});
+
 	it("CE-C1: picker trigger is disabled while generating (mutation guard)", () => {
 		// During generation the LinkBindingPopover trigger must be visually +
 		// functionally disabled so the user cannot open the picker and silently
@@ -292,7 +329,7 @@ describe("CoauthorCharacterForm", () => {
 		__isSending = true;
 		useSnapshotStore.setState({
 			character: makeCharacter(),
-			activeChat: { id: TEST_CHAT } as never,
+			activeChat: { id: TEST_CHAT } as unknown as ActiveChat,
 		});
 		const { container } = render(<CoauthorCharacterForm />);
 		// The trigger button is the '+' button inside LinkBindingPopover.
@@ -313,7 +350,7 @@ describe("CoauthorCharacterForm", () => {
 				avatarAssetId: null, avatarFullAssetId: null, avatarCropJson: null,
 				avatarExt: null, avatarFullExt: null, updatedAt: "0",
 			}],
-			activeChat: { id: TEST_CHAT, coauthorContextLinks: [{ targetType: "character", targetId: "char_pinned" }] } as never,
+			activeChat: { id: TEST_CHAT, coauthorContextLinks: [{ targetType: "character", targetId: "char_pinned" }] } as unknown as ActiveChat,
 		});
 		const { getByText } = render(<CoauthorCharacterForm />);
 		expect(getByText("Mira")).toBeTruthy();
@@ -324,7 +361,7 @@ describe("CoauthorCharacterForm", () => {
 		// L1 full content, L2 lorebook names+titles, L3 script names+summaries.
 		useSnapshotStore.setState({
 			character: makeCharacter(),
-			activeChat: { id: TEST_CHAT } as never,
+			activeChat: { id: TEST_CHAT } as unknown as ActiveChat,
 		});
 		const { getByText, findByText } = render(<CoauthorCharacterForm />);
 		// L1 caption renders immediately (not behind BoundResourcesField's load).

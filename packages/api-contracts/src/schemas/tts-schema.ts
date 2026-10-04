@@ -111,6 +111,14 @@ export const updateTtsProfileSchema = z.object({
 });
 export type UpdateTtsProfileInput = z.infer<typeof updateTtsProfileSchema>;
 
+/** Complete manual-order update for the TTS profile list. */
+export const reorderTtsProfilesSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});
+
 // ─── Links (voice map) ────────────────────────────────────────────────────────
 
 /** Replace-all voice-map binding payload for a TTS profile (mirrors

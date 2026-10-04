@@ -1,11 +1,16 @@
-import type { FavoriteProviderModelRecord, ProviderProfileRecord } from "../api/types.js";
+import type { CoauthorConnectionSettingsRecord, FavoriteProviderModelRecord, ProviderProfileRecord } from "../api/types.js";
 import type { ProviderModel, ToolSupport } from "./provider-model-capabilities.js";
 
 export interface CoauthorBindingInput {
   coauthorProviderId: string | null;
-  coauthorModelName: string | null;
+  /** The bound connection's Co-Author row (CG-2 storage): the model the
+   *  Co-Author actually generates with. null = no saved set, undefined = not
+   *  loaded yet — both fall back to the profile default, mirroring the
+   *  backend boundary (`row.modelName ?? profile.defaultModel`). */
+  coauthorSettings: CoauthorConnectionSettingsRecord | null | undefined;
   profiles: ProviderProfileRecord[];
-  rpActiveProfile: ProviderProfileRecord | null;
+  /** Legacy call-site input retained while callers migrate; never consulted. */
+  rpActiveProfile?: ProviderProfileRecord | null;
 }
 
 export interface CoauthorBindingResult {
@@ -21,23 +26,15 @@ export interface DecoratedCoauthorFavorite extends FavoriteProviderModelRecord {
   toolSupport: ToolSupport;
 }
 
-/** Resolve an explicit Co-Author pair, otherwise the non-persisted RP fallback. */
+/** Resolve only an explicit, extant Co-Author pair. Missing or deleted bindings
+ * fail closed instead of borrowing RP's active connection. */
 export function resolveCoauthorBinding(input: CoauthorBindingInput): CoauthorBindingResult {
-  const { coauthorProviderId, coauthorModelName, profiles, rpActiveProfile } = input;
-  if (coauthorProviderId) {
-    const profile = profiles.find((candidate) => candidate.id === coauthorProviderId) ?? null;
-    if (profile) {
-      const model = coauthorModelName ?? profile.defaultModel ?? null;
-      return { profile, model, profileId: profile.id, isExplicit: true, isReady: model !== null, isDangling: false };
-    }
-    return rpFallback(rpActiveProfile, true);
-  }
-  return rpFallback(rpActiveProfile, false);
-}
-
-function rpFallback(profile: ProviderProfileRecord | null, isDangling: boolean): CoauthorBindingResult {
-  const model = profile?.defaultModel ?? null;
-  return { profile, model, profileId: profile?.id ?? null, isExplicit: false, isReady: profile !== null && model !== null, isDangling };
+  const { coauthorProviderId, coauthorSettings, profiles } = input;
+  if (!coauthorProviderId) return { profile: null, model: null, profileId: null, isExplicit: false, isReady: false, isDangling: false };
+  const profile = profiles.find((candidate) => candidate.id === coauthorProviderId) ?? null;
+  if (!profile) return { profile: null, model: null, profileId: null, isExplicit: false, isReady: false, isDangling: true };
+  const model = coauthorSettings?.modelName ?? profile.defaultModel ?? null;
+  return { profile, model, profileId: profile.id, isExplicit: true, isReady: model !== null, isDangling: false };
 }
 
 /** Joins Co-Author favorites to neutral model metadata without excluding any row. */

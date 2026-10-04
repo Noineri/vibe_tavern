@@ -6,10 +6,12 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import React from "react";
-import { renderHook, waitFor, act } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { renderHook, waitFor, act } = await import("@testing-library/react");
 
 import type { SttProfileRecord } from "../../api/stt-api.js";
 import type { VoiceRecorder } from "../../lib/stt/voice-recorder.js";

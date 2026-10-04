@@ -51,7 +51,7 @@ export function CoauthorInputArea() {
 function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> }) {
 	const {
 		t, chat,
-		draft, setDraft, isSending, activeChatId, canSend,
+		draft, setDraft, isSending, activeChatId, canSend, canUseLiveApi,
 		activeModelId, favorites, handleSelectModel,
 		sendLabel, sendButtonText,
 		buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
@@ -70,10 +70,11 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 			<div className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
 				<AutoTextarea
 					bare
+					data-testid="coauthor-input-textarea"
 					className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[15.5px] !leading-tight")}
 					maxRows={12}
 					minRows={3}
-					placeholder={t("coauthor.input.placeholder")}
+					placeholder={canUseLiveApi ? t("coauthor.input.placeholder") : t("coauthor.input.choose_model")}
 					value={draft}
 					onChange={(e) => setDraft(e.target.value)}
 					onKeyDown={(e) => {
@@ -157,6 +158,7 @@ function DesktopInput({ data }: { data: ReturnType<typeof useCoauthorInputArea> 
 							trigger={
 								<button
 									type="button"
+									disabled={!canUseLiveApi}
 									data-testid="coauthor-favorites-pill"
 									className="flex h-8 items-center justify-center rounded-[5px] bg-s2 px-2.5 text-warning-text transition-colors hover:bg-s3 hover:brightness-110"
 								>

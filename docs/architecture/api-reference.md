@@ -562,6 +562,12 @@ List lorebooks in a scope.
 
 List **all** lorebooks across every scope (used by the global lorebook manager).
 
+### `GET /api/lorebooks/participating`
+
+«Текущие»: lorebooks participating in a chat — the prompt pipeline's own binding rules (character/persona/chat bindings + links), attached-list semantics: disabled character/persona/chat books are included (the toggle is how the author turns them on); disabled global-pool-only books are excluded. 404 for an unknown chat.
+
+**Query:** `chatId` (required)
+
 ### `POST /api/lorebooks`
 
 Create a lorebook.
@@ -572,11 +578,13 @@ Create a lorebook.
 {
   "name": "World Lore",
   "scopeType": "entity",
-  "characterId": "char_1",
+  "links": [{ "targetType": "character", "targetId": "char_1" }],
   "tokenBudget": 2048,
   "recursiveScanning": false
 }
 ```
+
+`links` is the explicit owner list (empty/omitted = unbound — no owner is derived from context).
 
 ### `PATCH /api/lorebooks/:lorebookId`
 
@@ -905,6 +913,17 @@ Remove a model from favorites.
 | `PUT /api/providers/:providerId/model-settings/:modelId` | `modelSettingsOverlaySchema` (partial sampler fields) | `ProviderModelSettingsRecord` (upsert) |
 | `DELETE /api/providers/:providerId/model-settings/:modelId` | — | `{ ok: true }` |
 
+### Co-Author per-connection generation settings
+
+The Co-Author owns its generation set per provider connection — model, samplers, reasoning, max output, context budget — stored in `coauthor_connection_settings` (`settings` carries the complete `ModelSettingsOverlay` field set, never a partial RP inherit). `ui_settings.coauthorProviderId` stays as the app-wide binding of which connection is used; no Co-Author generation values live in `ui_settings` anymore.
+
+| Endpoint | Body | Response |
+|----------|------|----------|
+| `GET /api/providers/:providerId/coauthor-settings` | — | `CoauthorConnectionSettingsRecord \| null` |
+| `PUT /api/providers/:providerId/coauthor-settings` | `upsertCoauthorConnectionSettingsSchema` (`{ modelName, settings }`) | `CoauthorConnectionSettingsRecord` (upsert) |
+
+Unknown provider ids fail closed with 404 — the Co-Author never falls back to the RP active profile.
+
 ### `POST /api/tokenize`
 
 Count tokens for a text against a specific model's tokenizer (used by the UI token bar and context-budget preview).
@@ -962,6 +981,12 @@ List all scripts (with scope information).
 
 List **all** scripts across every scope (used by the global script manager).
 
+### `GET /api/scripts/participating`
+
+«Текущие» script counterpart: prompt- and dice-kind scripts participating in a chat — the script runtime's own binding rules, attached-list semantics (mirrors the lorebook participating route). 404 for an unknown chat.
+
+**Query:** `chatId` (required)
+
 ### `GET /api/scripts/:scriptId`
 
 Get a single script with full code.
@@ -978,11 +1003,13 @@ Create a script.
   "description": "Tracks character mood across messages.",
   "code": "const last = context.chat.lastMessage;\nif (last.includes('angry')) {\n  context.state.set('mood', 'angry');\n}",
   "scopeType": "entity",
-  "characterId": "char_1",
+  "links": [{ "targetType": "character", "targetId": "char_1" }],
   "enabled": true,
   "sortOrder": 0
 }
 ```
+
+`links` is the explicit owner list (empty/omitted = unbound — no owner is derived from context).
 
 ### `PATCH /api/scripts/:scriptId`
 

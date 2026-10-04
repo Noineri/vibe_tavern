@@ -109,6 +109,11 @@ describe("buildSamplerConfig", () => {
       });
     });
 
+    it("adds no native reasoning key — the effort stays in providerOptions.openai_compat", () => {
+      const config = buildSamplerConfig(profile("openai"));
+      expect(config.reasoning).toBeUndefined();
+    });
+
     it("includes logit bias for a matching model", () => {
       const config = buildSamplerConfig(
         profile("openai", {
@@ -281,6 +286,37 @@ describe("buildSamplerConfig", () => {
       expect(config.presencePenalty).toBeUndefined();
       expect(config.seed).toBeUndefined();
       expect(config.topK).toBeUndefined();
+      expect(config.providerOptions).toBeUndefined();
+    });
+
+    it("maps stored reasoningEffort to the SDK-neutral reasoning call setting", () => {
+      const config = buildSamplerConfig(profile("google", { reasoningEffort: "low" }));
+      expect(config.reasoning).toBe("low");
+    });
+
+    it("sends no reasoning when reasoningEffort is auto", () => {
+      const config = buildSamplerConfig(profile("google", { reasoningEffort: "auto" }));
+      expect(config.reasoning).toBeUndefined();
+      expect(config.providerOptions).toBeUndefined();
+    });
+  });
+
+  // ─── Google Interactions (minimal_reasoning) ───────────────────────────
+
+  describe("google_interactions (minimal_reasoning)", () => {
+    it("maps stored reasoningEffort to providerOptions.google.thinkingLevel", () => {
+      const config = buildSamplerConfig(profile("google_interactions", { reasoningEffort: "low" }));
+      expect(config.providerOptions).toEqual({ google: { thinkingLevel: "low" } });
+      // The Interactions language model never reads the neutral `reasoning`
+      // call setting (verified against installed @ai-sdk/google 4.0.69), so
+      // emitting it here would be a silent no-op — the effort rides
+      // providerOptions.google.thinkingLevel instead.
+      expect(config.reasoning).toBeUndefined();
+    });
+
+    it("sends nothing when reasoningEffort is auto", () => {
+      const config = buildSamplerConfig(profile("google_interactions", { reasoningEffort: "auto" }));
+      expect(config.reasoning).toBeUndefined();
       expect(config.providerOptions).toBeUndefined();
     });
   });
@@ -523,6 +559,77 @@ describe("buildSamplerConfig", () => {
       expect(config.topP).toBe(0.95);
       expect(config.maxOutputTokens).toBe(4096);
       expect(config.stopSequences).toEqual(["\\n\\n", "STOP"]);
+    });
+
+    it("maps stored reasoningEffort to the SDK-neutral reasoning call setting", () => {
+      const config = buildSamplerConfig(profile("anthropic"));
+      expect(config.reasoning).toBe("high");
+    });
+
+    it("routes effort through providerOptions.anthropic.effort for either/or families — sampling survives (owner 2026-10-04)", () => {
+      const config = buildSamplerConfig(profile("anthropic"), "claude-sonnet-4-6");
+      // output_config.effort WITHOUT a thinking param — temperature/topK stay
+      // (thinking is off by default on the 4.5/4.6 family, so this is the
+      // owner's chosen tradeoff: sampling over thinking).
+      expect(config.providerOptions).toEqual({ anthropic: { effort: "high" } });
+      expect(config.reasoning).toBeUndefined();
+      expect(config.temperature).toBe(0.9);
+      expect(config.topK).toBe(80);
+    });
+
+    it("either/or families: opus 4.5/4.6, sonnet 4.6+ — incl. dated ids", () => {
+      const eitherOr = [
+        "claude-opus-4-5",
+        "claude-opus-4-6",
+        "claude-opus-4-6-20260101",
+        "claude-sonnet-4-6",
+        "claude-sonnet-4-9-20260202",
+      ];
+      for (const model of eitherOr) {
+        expect(buildSamplerConfig(profile("anthropic"), model).providerOptions).toEqual({ anthropic: { effort: "high" } });
+      }
+    });
+
+    it("sampling-rejected families (4.7+, 5.x, Fable/Mythos) keep thinking ON: effort + adaptive thinking, sampling moot", () => {
+      const rejected = [
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-sonnet-5",
+        "claude-fable-5-1",
+        "claude-mythos-5",
+        "claude-mythos-preview",
+      ];
+      for (const model of rejected) {
+        expect(buildSamplerConfig(profile("anthropic"), model).providerOptions).toEqual({
+          anthropic: { effort: "high", thinking: { type: "adaptive", display: "summarized" } },
+        });
+      }
+      // Opus 4.7/4.8 default to thinking OFF without the explicit field —
+      // effort-only there would silently disable reasoning (v1 defect).
+    });
+
+    it("families without effort support keep the neutral thinking-budget path", () => {
+      const legacy = [
+        "claude-3-5-sonnet-20240620",
+        "claude-opus-4-1",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+        "",
+      ];
+      for (const model of legacy) {
+        const config = buildSamplerConfig(profile("anthropic"), model);
+        expect(config.reasoning).toBe("high");
+        expect(config.providerOptions).toBeUndefined();
+      }
+      // No model id at all (conservative default): neutral path too.
+      expect(buildSamplerConfig(profile("anthropic")).reasoning).toBe("high");
+    });
+
+    it("sends no reasoning when reasoningEffort is auto", () => {
+      const config = buildSamplerConfig(profile("anthropic", { reasoningEffort: "auto" }));
+      expect(config.reasoning).toBeUndefined();
     });
   });
 

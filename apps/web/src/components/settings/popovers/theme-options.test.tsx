@@ -1,8 +1,10 @@
-import { fireEvent, render, within } from "@testing-library/react";
+
 import { describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
+
+const { fireEvent, render, within } = await import("@testing-library/react");
 
 const realUseMobile = await import("../../../hooks/use-mobile.js");
 mock.module("../../../hooks/use-mobile.js", () => ({

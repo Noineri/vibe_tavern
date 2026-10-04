@@ -14,7 +14,32 @@
  * never match.
  */
 
-import { IMAGE_GEN_BACKENDS, type ImageGenBackendType } from "@vibe-tavern/domain";
+import { IMAGE_GEN_BACKEND_CAPABILITIES, IMAGE_GEN_BACKENDS, type ImageGenBackendType } from "@vibe-tavern/domain";
+import type { ImageGenCapabilityFlagsValue } from "@vibe-tavern/api-contracts";
+
+/** Wire-boundary normalizer: defensive against unknown backend slugs —
+ *  degrades to the OpenRouter roster default (the toSttBackend rule without
+ *  a blind cast). */
+export function toImageGenBackend(raw: string): ImageGenBackendType {
+  for (const slug of Object.values(IMAGE_GEN_BACKENDS)) {
+    if (slug === raw) return slug;
+  }
+  return IMAGE_GEN_BACKENDS.OpenRouter;
+}
+
+/** Defensive copy of the static capability row for a backend — the form
+ *  must never hold a reference into the shared registry table (a later
+ *  in-place mutation would corrupt the single source of truth). */
+export function capabilitySnapshot(backend: ImageGenBackendType): ImageGenCapabilityFlagsValue {
+  const caps = IMAGE_GEN_BACKEND_CAPABILITIES[backend];
+  return {
+    ...caps,
+    sizeSupport:
+      caps.sizeSupport.kind === "vendor-set"
+        ? { kind: "vendor-set", sizes: [...caps.sizeSupport.sizes] }
+        : { ...caps.sizeSupport },
+  };
+}
 
 /** LLM provider profile as seen by the client-side auto-key mirror — the
  *  hint-only projection of the wire record (no key material). */

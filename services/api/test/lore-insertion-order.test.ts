@@ -58,16 +58,20 @@ async function makeWorld(strategy: number, chatStrategy = strategy, includeBound
     ? await stores.lorebooks.createLorebook({
       name: "character",
       scopeType: "entity",
-      characterId: character.id,
       characterStrategy: strategy,
+    }).then(async (book) => {
+      await stores.lorebooks.addLink(book.id, "character", character.id);
+      return book;
     })
     : null;
   const personaBook = includeBoundBooks
     ? await stores.lorebooks.createLorebook({
       name: "persona",
       scopeType: "entity",
-      personaId: persona.id,
       characterStrategy: strategy,
+    }).then(async (book) => {
+      await stores.lorebooks.addLink(book.id, "persona", persona.id);
+      return book;
     })
     : null;
   const entries = [

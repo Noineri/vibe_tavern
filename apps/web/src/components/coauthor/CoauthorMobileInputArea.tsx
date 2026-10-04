@@ -13,14 +13,16 @@ import { composerCls } from "../../lib/field-tokens.js";
 import { Icons } from "../shared/icons.js";
 import { ToolbarSelect } from "../shared/ToolbarSelect.js";
 import { QuickSwitchPopover } from "../shared/QuickSwitchPopover.js";
+import { TokenCounterPopover } from "../shared/TokenCounterPopover.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { useModuleSwitch, type CoauthorInputAreaData } from "./use-coauthor-input-area.js";
 
 export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData }) {
 	const {
 		t, chat,
-		draft, setDraft, isSending, activeChatId, canSend,
+		draft, setDraft, isSending, activeChatId, canSend, canUseLiveApi,
 		activeModelId, favorites, handleSelectModel,
+		buckets, inputTokens, permanent, contextSize, maxTokens, availableBudget, tokenState,
 	} = data;
 
 	const moduleSwitch = useModuleSwitch();
@@ -103,6 +105,7 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						trigger={
 							<button
 								type="button"
+								disabled={!canUseLiveApi}
 								data-testid="coauthor-favorites-pill"
 								className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-s3 text-warning-text active:bg-s2"
 							>
@@ -118,12 +121,30 @@ export function CoauthorMobileInputArea({ data }: { data: CoauthorInputAreaData 
 						ref={mobileTextareaRef}
 						data-testid="coauthor-input-textarea"
 						className={composerCls}
-						placeholder={t("coauthor.input.placeholder")}
+						placeholder={canUseLiveApi ? t("coauthor.input.placeholder") : t("coauthor.input.choose_model")}
 						value={draft}
 						onChange={mobileOnChange}
 						rows={1}
 					/>
 					<div className="flex shrink-0 items-center">
+						<TokenCounterPopover
+							mobile
+							triggerTestId="coauthor-context-ring"
+							permanent={permanent}
+							history={buckets.history}
+							inputTokens={inputTokens}
+							contextSize={contextSize}
+							maxTokens={maxTokens}
+							availableBudget={availableBudget}
+							tokenState={tokenState}
+							permanentItems={[
+								{ label: t("coauthor.module.title"), value: buckets.moduleTokens },
+								{ label: t("coauthor.module.skills"), value: buckets.skillTokens },
+								{ label: t("character_profile"), value: buckets.profileTokens },
+								{ label: t("coauthor.context.label"), value: buckets.context },
+								{ label: t("context_memory"), value: buckets.memory },
+							]}
+						/>
 						{isSending ? (
 							<button
 								type="button"

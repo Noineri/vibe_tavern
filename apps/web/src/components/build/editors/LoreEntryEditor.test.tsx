@@ -244,8 +244,29 @@ describe("LoreEntryEditor (RHF field binding)", () => {
     expect(getByText("creator_notes")).toBeTruthy();
     expect(getByText("authors_note_label")).toBeTruthy();
     expect(getByText("memory_tab_summary")).toBeTruthy();
+    expect(getByText("match_src_character_alt_greetings")).toBeTruthy();
+    expect(getByText("match_src_chat_dynamic_prompt")).toBeTruthy();
+    expect(getByText("match_src_chat_summary")).toBeTruthy();
     fireEvent.click(getByText("match_src_chat_messages"));
     expect(form.getValues("matchSources")).toEqual(["chat_messages"]);
+  });
+
+  it("groups positions by anchor and binds the selected position to the form", () => {
+    const { form, getByText } = renderEditor(makeEntry());
+    fireEvent.click(getByText(/lore_advanced_settings/));
+    expect(getByText("lore_position_anchor_char")).toBeTruthy();
+    expect(getByText("lore_position_anchor_persona")).toBeTruthy();
+    expect(getByText("lore_position_anchor_examples")).toBeTruthy();
+    expect(getByText("lore_position_anchor_authors_note")).toBeTruthy();
+    expect(getByText("pos_at_depth")).toBeTruthy();
+    expect(getByText("pos_outlet")).toBeTruthy();
+    fireEvent.click(getByText("pos_after_persona"));
+    expect(form.getValues("position")).toBe("after_persona");
+    expect(form.formState.isDirty).toBe(true);
+    fireEvent.click(getByText("pos_at_depth"));
+    expect(getByText("lore_depth_label")).toBeTruthy();
+    fireEvent.click(getByText("pos_outlet"));
+    expect(() => getByText("lore_depth_label")).toThrow();
   });
 
   it("constant checkbox binds via ControlledField", () => {

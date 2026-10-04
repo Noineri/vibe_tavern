@@ -24,7 +24,7 @@ interface PresetListProps {
   /** Persist a manual reorder: each entry sets the listed id to the listed
    *  sort order. Driven by `useReorderableList` (optimistic + rollback). */
   onReorder: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
-  onImportPreset?: () => void;
+  onImportPreset?: (file?: File) => void;
 }
 
 // A single preset row, sortable via `useSortable`. The drag affordance is a
@@ -109,6 +109,7 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
   const [newName, setNewName] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
   const newInputRef = useRef<HTMLInputElement>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (editingId) editInputRef.current?.focus(); }, [editingId]);
   useEffect(() => { if (isCreating) newInputRef.current?.focus(); }, [isCreating]);
@@ -178,6 +179,11 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
   const handleNewKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") saveNew();
     if (e.key === "Escape") { setIsCreating(false); setNewName(""); }
+  };
+
+  const handleImportPreset = () => {
+    if (isMobile) importFileRef.current?.click();
+    else onImportPreset?.();
   };
 
   return (
@@ -296,13 +302,26 @@ export function PresetList({ presets, activePresetId, onSelect, onAdd, onRename,
           <Icons.Plus /> {t("new_preset_btn")}
         </button>
         {onImportPreset && (
-          <button
-            onClick={onImportPreset}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
-            type="button"
-          >
-            <Icons.Import /> {t("import_preset_btn")}
-          </button>
+          <>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (file) onImportPreset(file);
+              }}
+            />
+            <button
+              onClick={handleImportPreset}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border2 py-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 transition-colors hover:border-border hover:bg-s2 hover:text-t1"
+              type="button"
+            >
+              <Icons.Import /> {t("import_preset_btn")}
+            </button>
+          </>
         )}
       </div>
     </div>

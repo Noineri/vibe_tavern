@@ -31,6 +31,12 @@ export interface ScriptTemplate {
   scriptKind?: "prompt" | "dice";
 }
 
+/** Effective kind of a template — the ONE derivation (SCRIPT_EDITOR_CLEANUP
+ *  step 3); the editor's template row and the import modal both read it. */
+export function templateScriptKind(tpl: ScriptTemplate): "prompt" | "dice" {
+  return tpl.scriptKind ?? "prompt";
+}
+
 export const SCRIPT_TEMPLATES: Record<string, ScriptTemplate> = {
   relationship: { name: "Relationship Progression", code: relationshipCode },
   events: { name: "Scenario Events", code: eventsCode },

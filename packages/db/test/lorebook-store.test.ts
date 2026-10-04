@@ -59,7 +59,8 @@ describe("LorebookStore.listLorebooksByScope", () => {
   });
 
   test("entity browse (no ownerId) lists every entity-home book regardless of owner kind", async () => {
-    // FK parents first — lorebooks.characterId/personaId are enforced.
+    // Owner ids referenced by this fixture (links are not FK-enforced, but
+    // the chat's character FK is).
     const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
     const db = await createDb(join(dir, "test.db"));
     const store = new LorebookStore(db, {
@@ -75,16 +76,8 @@ describe("LorebookStore.listLorebooksByScope", () => {
     // used to resolve an owner from context, so a character-bound book was
     // invisible when a persona context was active. Browse semantics: no
     // ownerId → every entity-home book, both FK kinds, and nothing else.
-    const charBound = await store.createLorebook({
-      name: "Silk Lair",
-      scopeType: "entity",
-      characterId: "char_arachnid",
-    });
-    const personaBound = await store.createLorebook({
-      name: "Persona notes",
-      scopeType: "entity",
-      personaId: "persona_1",
-    });
+    const charBound = await store.createLorebook({ name: "Silk Lair", scopeType: "entity" });
+    const personaBound = await store.createLorebook({ name: "Persona notes", scopeType: "entity" });
     await store.createLorebook({ name: "Global one", scopeType: "global" });
     await store.createLorebook({ name: "Chat one", scopeType: "chat", chatId: "chat_1" });
 
@@ -505,8 +498,11 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     const lb = await store.getLorebook("lorebook_draft1");
     expect(lb).not.toBeNull();
     expect(lb!.name).toBe("World Lore");
-    // Character-scoped draft book is written with characterId (activation engine FK ∪ junction).
-    expect(lb!.characterId).toBe("char_1");
+    // Entity-scoped draft book is bound to its character via lorebook_links
+    // (CE-A1; since migration 0107 links are the ONLY owner source — the
+    // characterId field itself is always null now).
+    expect(lb!.characterId).toBeNull();
+    expect((await store.getLinks("lorebook_draft1")).map((l) => `${l.targetType}:${l.targetId}`)).toEqual(["character:char_1"]);
 
     const entry = await store.getEntry("lore_entry_draft1");
     expect(entry).not.toBeNull();
@@ -551,6 +547,98 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     expect(await store.listAllLorebooks()).toEqual([]);
     expect(await store.getLorebook("lb_valid")).toBeNull();
     expect(await store.getEntry("lore_entry_orphan")).toBeNull();
+  });
+
+  // ─── COAUTHOR_LORE_FULL_SETTINGS step 3: full-field round trips ──────────
+
+  /** A bundle with EVERY book + entry settings field set to a distinct value. */
+  function fullSettingsBundle() {
+    return {
+      lorebooks: [
+        {
+          id: "lb_full", name: "Tuned Book", description: "d", scopeType: "entity" as const, enabled: true,
+          scanDepth: 12, tokenBudget: 777, tokenBudgetPercent: 25, tokenBudgetCap: 3000,
+          recursiveScanning: true, useGroupScoring: true, caseSensitive: true, matchWholeWords: true,
+          maxRecursionSteps: 4, includeNames: true, minActivations: 2, minActivationsDepthMax: 30,
+          overflowAlert: true, characterStrategy: 2,
+        },
+      ],
+      entries: [
+        {
+          id: "le_full", lorebookId: "lb_full", title: "T", content: "c", keys: ["k"], secondaryKeys: ["s"],
+          constant: true, position: "at_depth", depth: 9, logic: "not_all", enabled: true,
+          priority: 42, probability: 77, ignoreBudget: true, role: "assistant",
+          groupName: "squad", groupWeight: 55, prioritizeInclusion: true, useGroupScoring: true,
+          excludeRecursion: true, preventRecursion: true, delayUntilRecursion: true, recursionLevel: 4,
+          scanDepthOverride: 9, caseSensitive: true, matchWholeWords: true,
+          caseFormsKeys: ["Векс"], characterFilter: [{ id: null, name: "Alice" }], characterFilterExclude: true,
+          matchSources: ["chat_messages", "scenario"], stickyWindow: 3, cooldownWindow: 5, minChatMessages: 2,
+        },
+      ],
+    };
+  }
+
+  test("full settings round-trip: every book + entry field survives draft → Apply → store", async () => {
+    const store = await mkStoreWithChar();
+    await store.applyCoauthorLoreDraft("char_1", fullSettingsBundle());
+
+    const lb = (await store.getLorebook("lb_full"))!;
+    expect(lb).toMatchObject({
+      scanDepth: 12, tokenBudget: 777, tokenBudgetPercent: 25, tokenBudgetCap: 3000,
+      recursiveScanning: true, useGroupScoring: true, caseSensitive: true, matchWholeWords: true,
+      maxRecursionSteps: 4, includeNames: true, minActivations: 2, minActivationsDepthMax: 30,
+      overflowAlert: true, characterStrategy: 2,
+    });
+
+    const e = (await store.getEntry("le_full"))!;
+    expect(e).toMatchObject({
+      constant: true, position: "at_depth", depth: 9, logic: "not_all", enabled: true,
+      priority: 42, probability: 77, ignoreBudget: true, role: "assistant",
+      groupName: "squad", groupWeight: 55, prioritizeInclusion: true, useGroupScoring: true,
+      excludeRecursion: true, preventRecursion: true, delayUntilRecursion: true, recursionLevel: 4,
+      scanDepthOverride: 9, caseSensitive: true, matchWholeWords: true,
+      caseFormsKeys: ["Векс"], characterFilter: [{ id: null, name: "Alice" }], characterFilterExclude: true,
+      matchSources: ["chat_messages", "scenario"], stickyWindow: 3, cooldownWindow: 5, minChatMessages: 2,
+    });
+  });
+
+  test("re-Apply with changed settings UPDATES every field (edit path across turns)", async () => {
+    const store = await mkStoreWithChar();
+    await store.applyCoauthorLoreDraft("char_1", fullSettingsBundle());
+    const edited = fullSettingsBundle();
+    edited.lorebooks[0]!.tokenBudgetPercent = 80;
+    edited.lorebooks[0]!.overflowAlert = false;
+    edited.lorebooks[0]!.characterStrategy = 0;
+    edited.entries[0]!.probability = 10;
+    edited.entries[0]!.stickyWindow = 6;
+    edited.entries[0]!.useGroupScoring = null; // tri-state: explicit null override
+    edited.entries[0]!.caseFormsKeys = []; // pruned
+    await store.applyCoauthorLoreDraft("char_1", edited);
+
+    const lb = (await store.getLorebook("lb_full"))!;
+    expect(lb.tokenBudgetPercent).toBe(80);
+    expect(lb.overflowAlert).toBe(false);
+    expect(lb.characterStrategy).toBe(0);
+    const e = (await store.getEntry("le_full"))!;
+    expect(e.probability).toBe(10);
+    expect(e.stickyWindow).toBe(6);
+    expect(e.useGroupScoring).toBeNull();
+    // An empty caseFormsKeys list prunes the stored flag list (updateEntry merge rule).
+    expect(e.caseFormsKeys).toEqual([]);
+  });
+
+  test("absent book settings fall back to the store create defaults (incl. includeNames=true)", async () => {
+    const store = await mkStoreWithChar();
+    await store.applyCoauthorLoreDraft("char_1", sampleBundle());
+    const lb = (await store.getLorebook("lorebook_draft1"))!;
+    // Mirrors createLorebook's defaults: an ST-on includeNames, everything else neutral.
+    expect(lb.includeNames).toBe(true);
+    expect(lb.maxRecursionSteps).toBe(0);
+    expect(lb.minActivations).toBe(0);
+    expect(lb.overflowAlert).toBe(false);
+    expect(lb.characterStrategy).toBe(1);
+    expect(lb.tokenBudgetPercent).toBeNull();
+    expect(lb.tokenBudgetCap).toBe(0);
   });
 
   test("multiple books + entries apply in one transaction and compose", async () => {
@@ -690,5 +778,64 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     // rows rather than inserting duplicates.
     expect(await store.listAllLorebooks()).toHaveLength(1);
     expect(await store.listEntries("lb_logic")).toHaveLength(1);
+  });
+});
+
+// LORE_SCRIPT_OWNERS_AS_LINKS step 2: the create API takes an explicit owner
+// list (link rows); empty allowed. Nothing derives an owner from context —
+// the deprecated characterId/personaId create inputs are gone.
+describe("LorebookStore.createLorebook owner links (step 2)", () => {
+  test("create with an explicit owner list writes exactly those link rows", async () => {
+    const store = await mkStore();
+    const created = await store.createLorebook({
+      name: "owned",
+      scopeType: "entity",
+      links: [
+        { targetType: "character", targetId: "char_a" },
+        { targetType: "persona", targetId: "persona_b" },
+      ],
+    });
+    expect((await store.getLinks(created.id)).map((l) => `${l.targetType}:${l.targetId}`))
+      .toEqual(["character:char_a", "persona:persona_b"]);
+  });
+
+  test("create without links leaves the book unbound (no context-derived owner)", async () => {
+    const store = await mkStore();
+    const created = await store.createLorebook({ name: "unbound", scopeType: "entity" });
+    expect(await store.getLinks(created.id)).toEqual([]);
+    // Payload home-owner fields stay null (kept on the shape until the
+    // units-16–17 contract redesign).
+    expect(created.characterId).toBeNull();
+    expect(created.personaId).toBeNull();
+  });
+
+  test("duplicate tuples in the owner list are deduplicated (junction composite PK)", async () => {
+    const store = await mkStore();
+    const created = await store.createLorebook({
+      name: "dedup",
+      scopeType: "entity",
+      links: [
+        { targetType: "character", targetId: "char_a" },
+        { targetType: "character", targetId: "char_a" },
+      ],
+    });
+    expect(await store.getLinks(created.id)).toHaveLength(1);
+  });
+
+  test("deleteLinksForTarget removes only the target's rows; other links survive", async () => {
+    const store = await mkStore();
+    const created = await store.createLorebook({
+      name: "both",
+      scopeType: "entity",
+      links: [
+        { targetType: "character", targetId: "char_a" },
+        { targetType: "persona", targetId: "persona_b" },
+      ],
+    });
+    await store.deleteLinksForTarget("character", "char_a");
+    expect((await store.getLinks(created.id)).map((l) => `${l.targetType}:${l.targetId}`))
+      .toEqual(["persona:persona_b"]);
+    // The BOOK itself survives owner deletion (no cascade).
+    expect((await store.getLorebook(created.id))?.name).toBe("both");
   });
 });

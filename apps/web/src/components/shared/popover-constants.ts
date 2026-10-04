@@ -43,6 +43,11 @@ export const ROW_HEIGHT = {
 	 *  rounded UP to 56 (6 × 56 = 336). Fixes the silent regression where the
 	 *  old `max-h-[280px]` only fit ~5 two-line rows. */
 	twoLine: 56,
+	/** AI-editor instruction-template row (ai-instruction-templates-button):
+	 *  `min-h-11` (44px) — the touch-floor row shape shared verbatim by the
+	 *  desktop popover and the mobile sheet (rows ≥ 44px is the touch rule;
+	 *  one row shape, two shells — the dual-mode canon). 6 × 44 = 264. */
+	touchRow: 44,
 } as const;
 
 /** Pixel max-height for a popover showing {@link MAX_VISIBLE_ITEMS} rows of

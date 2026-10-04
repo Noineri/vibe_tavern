@@ -126,6 +126,14 @@ export async function setTtsDefault(id: string): Promise<TtsProfileRecord> {
   return unwrapRpc(response);
 }
 
+/** Persist the manual master-list order for TTS profiles. */
+export async function reorderTtsProfiles(
+  updates: Array<{ id: string; sortOrder: number }>,
+): Promise<TtsProfileRecord[]> {
+  const response = await client.api.tts.profiles.reorder.$patch({ json: { updates } as never });
+  return unwrapRpc(response);
+}
+
 export async function getDefaultTtsProfile(): Promise<TtsProfileRecord | null> {
   const response = await client.api.tts.profiles.default.$get();
   if (response.status === 404) return null;

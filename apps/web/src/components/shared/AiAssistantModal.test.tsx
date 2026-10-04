@@ -105,7 +105,6 @@ function baseSettings(over: Partial<UiSettingsRecord> = {}): UiSettingsRecord {
     aiAssistantProviderId: null,
     aiAssistantModelName: null,
     coauthorProviderId: null,
-    coauthorModelName: null,
     updatedAt: "2026-01-01",
     ...over,
   };

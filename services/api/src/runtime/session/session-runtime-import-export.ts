@@ -7,6 +7,7 @@ import type {
 	PromptPresetId,
 } from "@vibe-tavern/domain";
 import { brandId, type CharacterId, REGEX_TARGET_TYPE } from "@vibe-tavern/domain";
+import { findDroppedStMacroWarnings } from "@vibe-tavern/prompt-pipeline";
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import {
 	flattenV2CompatFields,
@@ -289,6 +290,27 @@ export async function importJson(
 		if (!isCharacterCard) throw validation("Lorebook import is not supported in phase 1.");
 		imported = importCharacterCardV3Json(parsed);
 	}
+	// st-macro-parity step 8: warn about ST macros VT deliberately does not
+	// support (dropped list from the report's Verdict). The scan runs here — not
+	// inside the import-export parser — because the checker derives "supported"
+	// from the prompt-pipeline macro registry and packages stay domain-only
+	// below this layer. The card's own text fields are scanned; the embedded
+	// character book is a lorebook-import surface and keeps its own warnings.
+	imported.warnings.push(
+		...findDroppedStMacroWarnings([
+			imported.normalized.description,
+			imported.normalized.personality,
+			imported.normalized.scenario,
+			imported.normalized.firstMessage,
+			imported.normalized.exampleMessages,
+			imported.normalized.systemPrompt,
+			imported.normalized.postHistoryInstructions,
+			imported.normalized.depthPrompt,
+			imported.normalized.creatorNotes,
+			...imported.normalized.alternateGreetings,
+			...imported.normalized.groupOnlyGreetings,
+		]),
+	);
 	{
 		// Upsert character via new CharacterStore
 		const existing = await deps.stores.characters.getById(imported.character.id);

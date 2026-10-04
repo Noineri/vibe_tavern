@@ -14,6 +14,8 @@
 
 import type { ConnectionState } from "../components/layout/app-shell-types.js";
 import type { FormState } from "../components/modals/ProviderModal.js";
+import type { ProviderSamplerValues } from "../lib/provider-sampler-values.js";
+import { resolveModelContextBudget, RP_UNKNOWN_CONTEXT_BUDGET } from "../lib/context-autofill.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
 import { PROVIDER_TYPE, GENERATION_MODE, type GenerationMode, type ModelSettingsOverlay, type ProviderProxyMode, type ProviderGenerationFormat, tag } from "@vibe-tavern/domain";
 
@@ -221,7 +223,7 @@ export function computeBindingIdentityPatch(patch: ProviderSavePatch): Partial<P
  * Pure — no side effects. Caller persists via
  * `upsertProviderModelSettingsAction(profileId, modelId, computeOverlayPatch(form))`.
  */
-export function computeOverlayPatch(form: FormState): ModelSettingsOverlay {
+export function computeOverlayPatch(form: ProviderSamplerValues): ModelSettingsOverlay {
   const overlay: ModelSettingsOverlay = {
     temperature: form.temperature,
     topP: form.topP,
@@ -347,14 +349,28 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
 export interface FavoriteModelSwitchInput {
   /** The model being selected as the profile's new `defaultModel`. */
   modelId: string;
-  /** The matching favorite (carries the cached `contextLength`). `undefined` when the model is not favorited. */
-  favorite: { contextLength: number | null } | undefined;
+  /** LIVE context length for the model, resolved by the caller from the
+   *  provider's current model list — never the favorite's star-time snapshot
+   *  (`FavoriteProviderModelRecord.contextLength`). Unknown/absent keeps an
+   *  already-set budget and fills the RP fallback only when no budget is set
+   *  at all (via the shared rule). */
+  contextLength: number | null | undefined;
+  /** The profile base's current `contextBudget` (null = none). An unknown
+   *  LIVE context length leaves it untouched; the RP unknown-context
+   *  fallback (16 000) fills only when no budget is set at all
+   *  (RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 3). */
+  currentBudget: number | null | undefined;
   /** Whether the profile has its context budget pinned. When `true`, `contextBudget` is never overwritten. */
   pinContextBudget: boolean;
+  /** Per-model binding ON and the chosen model HAS a saved overlay: the
+   *  overlay owns the model's generation values, so the switch writes the
+   *  model and nothing else (RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 1). */
+  overlayOwned: boolean;
 }
 
 /** Result of a favorite-model switch: always a new `defaultModel`, plus an
- *  optional `contextBudget` overwrite when the budget is not pinned. */
+ *  optional `contextBudget` overwrite when the budget is not pinned and no
+ *  overlay owns the model's settings. */
 export interface FavoriteModelSwitchPatch {
   defaultModel: string;
   contextBudget?: number;
@@ -364,22 +380,30 @@ export interface FavoriteModelSwitchPatch {
  * Build the profile PATCH for switching the active model from the chat-input
  * starred-models dropdown. Pure — the caller performs the actual save.
  *
- * Always sets `defaultModel`. Overwrites `contextBudget` from the favorite's
- * cached `contextLength` ONLY when the profile has NOT pinned its context
- * budget. When pinned, the user's saved budget is preserved across model
- * switches — this is the pin-toggle contract (the three ProviderModelSelector
- * sites gate on the pin via `&& !form.pinContextBudget`; this is the same rule
- * for the chat-dropdown path, which historically did not gate and reset the
- * budget on every switch — the reported "pinned context size" bug).
+ * Always sets `defaultModel`. Two ownership rules decide everything else
+ * (RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 1):
+ *  - `overlayOwned` → the chosen model's saved overlay is the source of its
+ *    generation values, so the base is left untouched (model-only patch).
+ *  - otherwise the context budget follows the ONE shared auto-fill rule
+ *    (`resolveModelContextBudget` in lib/context-autofill.ts — the same
+ *    derivation the ProviderModelSelector sites use): a pinned budget is
+ *    never written; a known LIVE context length is written; an unknown one
+ *    keeps an already-set budget and fills the RP unknown-context fallback
+ *    (16 000) only when no budget is set at all.
+ *
+ * The builder's former private copy of that rule (stale favorite snapshot +
+ * `> 0` guard, silently skipping unknown models) was removed when this unit
+ * moved the path onto the shared rule.
  */
 export function buildFavoriteModelSwitchPatch(input: FavoriteModelSwitchInput): FavoriteModelSwitchPatch {
   const patch: FavoriteModelSwitchPatch = { defaultModel: input.modelId };
-  if (
-    !input.pinContextBudget &&
-    input.favorite?.contextLength != null &&
-    input.favorite.contextLength > 0
-  ) {
-    patch.contextBudget = input.favorite.contextLength;
-  }
+  if (input.overlayOwned) return patch;
+  const contextBudget = resolveModelContextBudget({
+    pinned: input.pinContextBudget,
+    contextLength: input.contextLength,
+    currentBudget: input.currentBudget,
+    unknownContextBudget: RP_UNKNOWN_CONTEXT_BUDGET,
+  });
+  if (contextBudget !== undefined) patch.contextBudget = contextBudget;
   return patch;
 }

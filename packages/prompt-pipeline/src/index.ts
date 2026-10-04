@@ -8,10 +8,17 @@ export type { SummaryStrategy } from "./summary/summary-strategy.js";
 export { activateLoreEntries, type ActivatableLoreEntry } from "./lore-activation.js";
 export { parseFindRegex, compileRegexScript, filterRegexPresets, applyRegexLayer, applyRegexToChatHistory, escapeRegexLiteral, createValueEscapingMacroSource } from "./regex-engine.js";
 export type { ParsedFindRegex, RegexMacroSource, CompiledRegexScript, RegexHistoryMessage } from "./regex-engine.js";
-export { createPhaseOneMacroEngine, createFullMacroEngine, getMacroCatalog, extractMacroNames } from "./macro-registry.js";
+export { createPhaseOneMacroEngine, createFullMacroEngine, extractMacroNames, VOLATILE_MACRO_NAMES } from "./macro-registry.js";
+export { formatIdleDuration } from "./macro-static-text-resolvers.js";
+export { getMacroCatalog } from "./macro-catalog.js";
+export {
+	findDroppedStMacroWarnings,
+	DROPPED_ST_MACROS,
+} from "./dropped-st-macro-warnings.js";
 export type { MacroCatalogEntry, MacroCategory } from "./macro-registry.js";
 export { PRESET_PRONOUN_FORMS, resolvePronounForms } from "./pronoun-forms.js";
 export { buildPromptVariableContext } from "./prompt-variable-context.js";
+export { MacroVariableScope } from "./macro-variable-scope.js";
 export { PROMPT_LAYER_ID, PROMPT_LAYER_PRIORITY } from "./prompt-layer-constants.js";
 export { formatSceneHistory, escapeXml, type SceneInjectionEntry, type SceneInjectionFormat } from "./scene-injection.js";
 export { setTokenCountFn, setModelHint, estimateMessageArrayTokens, findSafeCompactionBoundary, planHistoryCompaction, estimateTokens } from "./compaction.js";

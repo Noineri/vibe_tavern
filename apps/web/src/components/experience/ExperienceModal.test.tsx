@@ -17,11 +17,13 @@
  * text is stable and the test does not depend on the locale bundle.
  */
 import { describe, it, expect, beforeAll, mock, afterEach } from "bun:test";
-import { render, fireEvent, act } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
 useDomEnv();
+
+const { render, fireEvent, act } = await import("@testing-library/react");
 
 // Spy on URL.createObjectURL so happy-dom does not try to navigate the embedded
 // iframe (its BrowserFrameNavigator rejects a real blob URL as "null" and logs

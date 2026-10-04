@@ -4,24 +4,26 @@ import { cn } from "../../lib/cn.js";
 import { pickContextSourceModelId, shouldAutoFillContextBudget } from "../../lib/context-autofill.js";
 import type { FavoriteProviderModelRecord, ProviderProfileRecord, ProxyRecord } from "../../api/types.js";
 import { PROVIDER_PRESET_GROUP, PROVIDER_TYPE, resolveAutoTemplateSource, resolveLogitBiasSupport, resolveSamplerCapabilities } from "@vibe-tavern/domain";
-import type { ProviderGenerationFormat, ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
+import type { GenerationMode, ProviderGenerationFormat, ProviderProbeResponse, ProviderProxyMode, SamplerCapabilityFlags } from "@vibe-tavern/domain";
 import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { computeSavePatch } from "../../hooks/save-provider-patch.js";
 import { PROVIDER_PRESETS, getVisibleProviderPresets } from "../../provider-presets.js";
 import { GENERATION_MODE } from "@vibe-tavern/domain";
-import type { GenerationMode } from "@vibe-tavern/domain";
+import type { ProviderSamplerValues } from "../../lib/provider-sampler-values.js";
 import { Icons } from "../shared/icons.js";
 import {
   ProviderProfileList,
   ProviderEditHeader,
   ProviderViewHeader,
   ProviderModelSelector,
+  ProviderModalModelSelector,
   ProviderCapabilityPanel,
   ProviderGenerationModePanel,
   ProviderSamplerPanel,
   ProviderBindingPanel,
   ProviderQuotaPanel,
 } from "../settings/provider/index.js";
+import { ProviderTestHelloButton } from "../settings/provider/ProviderTestHelloButton.js";
 import { ConfirmCloseModal } from "../shared/confirm-close-modal.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useModalStore } from "../../stores/modal-store.js";
@@ -43,7 +45,7 @@ import { ImageGenProfileEditor } from "../settings/provider/imagegen/ImageGenPro
 import { ImageGenFooter } from "../settings/provider/imagegen/ImageGenFooter.js";
 import { useImageProfiles } from "../../hooks/use-image-profiles.js";
 
-export interface FormState {
+export interface FormState extends ProviderSamplerValues {
   id: string;
   name: string;
   providerPreset: string;
@@ -255,10 +257,6 @@ export function ProviderModal({
   const [testing, setTesting] = useState(false);
   const [testingChat, setTestingChat] = useState(false);
   const [chatResult, setChatResult] = useState<{ reply?: string; error?: string } | null>(null);
-  const [modelSearch, setModelSearch] = useState("");
-  const [modelListOpen, setModelListOpen] = useState(false);
-  const [visionModelSearch, setVisionModelSearch] = useState("");
-  const [visionModelListOpen, setVisionModelListOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [closeTarget, setCloseTarget] = useState<"close" | "return">("close");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -732,18 +730,9 @@ export function ProviderModal({
     : providerProfiles;
   // Main selector shows all models (RP surface). Co-Author has its own
   // dedicated modal with tool-capability filtering — no mode flag here.
-  const selectableModels = models;
-  const filteredModels = modelSearch.trim()
-    ? selectableModels.filter((m) => m.label.toLowerCase().includes(modelSearch.toLowerCase()) || m.id.toLowerCase().includes(modelSearch.toLowerCase()))
-    : selectableModels;
-  
   const hasVisionModels = models.some(m => m.capabilities?.vision);
   const allVisionModels = models.length > 0 && models.every(m => m.capabilities?.vision);
   const showVisionFallback = hasVisionModels && !allVisionModels;
-  
-  const visionFilteredModels = visionModelSearch.trim()
-    ? models.filter(m => m.capabilities?.vision && (m.label.toLowerCase().includes(visionModelSearch.toLowerCase()) || m.id.toLowerCase().includes(visionModelSearch.toLowerCase())))
-    : models.filter(m => m.capabilities?.vision);
 
   return (
     <>
@@ -806,7 +795,7 @@ export function ProviderModal({
             <ProviderProfileList
               filteredProfiles={filteredProfiles}
               editingId={editingId}
-              activeProviderProfileId={activeProviderProfileId}
+              activeProfileId={activeProviderProfileId}
               profileSearch={profileSearch}
               profiles={providerProfiles}
               onReorder={reorderProviderProfilesAction}
@@ -879,36 +868,29 @@ export function ProviderModal({
               {/* ── CONFIG SECTION (only after header saved) ── */}
               {showConfig && (
                 <>
-                  <ProviderModelSelector form={form} models={selectableModels} filteredModels={filteredModels}
-                    fetching={fetching} fetchError={fetchError} modelSearch={modelSearch} modelListOpen={modelListOpen}
+                  <ProviderModalModelSelector
+                    values={form}
+                    options={models}
+                    fetching={fetching}
+                    fetchError={fetchError}
+                    onRefreshOptions={handleFetchModels}
                     favoriteModels={favoriteModelsByProfile[form.id] ?? []}
-                    updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setModelSearch}
-                    setModelListOpen={setModelListOpen}
+                    onChange={autoSaveField}
                     onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
                     requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
-                    isLocalProvider={isLocalProvider}
                     localEndpoint={form.baseUrl}
-                    localConnectionStatus={fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown"}
+                    localConnectionStatus={isLocalProvider ? (fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown") : undefined}
                   />
 
                   {form.model && (
-                    <div className="mt-2 mb-4">
-                      <button type="button" onClick={() => void handleTestChat()} disabled={testingChat}
-                        className="rounded-md border border-border bg-s2 px-4 py-1.5 font-ui text-[13px] font-medium text-t2 transition-colors hover:border-border2 hover:text-t1 disabled:opacity-50"
-                      >
-                        {testingChat ? t("sending") : t("test_hi_btn")}
-                      </button>
-                      {chatResult?.reply && (
-                        <div className="mt-2">
-                          <span className="inline-flex items-center gap-1.5 rounded bg-success/10 px-2.5 py-1 font-ui text-[12px] text-success italic">&ldquo;{chatResult.reply.length > 200 ? chatResult.reply.slice(0, 200) + "..." : chatResult.reply}&rdquo;</span>
-                        </div>
-                      )}
-                      {chatResult?.error && (
-                        <div className="mt-2">
-                          <span className="inline-flex items-center gap-1.5 rounded bg-danger/10 px-2.5 py-1 font-ui text-[12px] text-danger"><Icons.Close /> {chatResult.error}</span>
-                        </div>
-                      )}
-                    </div>
+                    <ProviderTestHelloButton
+                      className="mt-2 mb-4"
+                      testing={testingChat}
+                      result={chatResult}
+                      onTest={() => void handleTestChat()}
+                      replyWrapperClassName="mt-2"
+                      errorWrapperClassName="mt-2"
+                    />
                   )}
 
                   <ProviderCapabilityPanel capabilities={capabilities} />
@@ -919,18 +901,22 @@ export function ProviderModal({
 
                   {showVisionFallback && (
                     <div className="mt-4 border-t border-border2 pt-2">
-                      <ProviderModelSelector form={form} models={models.filter(m => m.capabilities?.vision)} filteredModels={visionFilteredModels}
-                        modelKey="visionModel" labelOverride={t("vision_fallback_model")} placeholderOverride={t("select_vision_model")}
-                        fetching={fetching} fetchError={fetchError} modelSearch={visionModelSearch} modelListOpen={visionModelListOpen}
+                      <ProviderModelSelector
+                        value={form.visionModel}
+                        onChange={(value) => autoSaveField("visionModel", value)}
+                        options={models.filter((model) => model.capabilities?.vision)}
+                        label={t("vision_fallback_model")}
+                        placeholder={t("select_vision_model")}
+                        fetching={fetching}
+                        fetchError={fetchError}
+                        onRefreshOptions={handleFetchModels}
                         favoriteModels={favoriteModelsByProfile[form.id] ?? []}
-                        updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setVisionModelSearch}
-                        setModelListOpen={setVisionModelListOpen}
                         onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
+                        freeOnly={{ checked: form.modelFreeOnly, onChange: (value) => autoSaveField("modelFreeOnly", value) }}
+                        groupByOwner={{ checked: form.modelGroupByOwner, onChange: (value) => autoSaveField("modelGroupByOwner", value) }}
                         requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
-                        isLocalProvider={false} // Local settings only shown for primary model
                         showRefreshButton={false}
                         showContextLength={false}
-                        syncContextBudget={false}
                       />
                     </div>
                   )}
@@ -948,7 +934,7 @@ export function ProviderModal({
                     updateForm={autoSaveField}
                   />
 
-                  <ProviderSamplerPanel form={form} updateForm={lazyAutoSaveField} capabilities={capabilities} />
+                  <ProviderSamplerPanel values={form} onChange={lazyAutoSaveField} capabilities={capabilities} />
 
                   <ProviderQuotaPanel providerProfileId={form.id} />
                 </>

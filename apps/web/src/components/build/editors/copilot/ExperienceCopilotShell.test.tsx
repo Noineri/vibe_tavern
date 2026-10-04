@@ -1003,7 +1003,6 @@ describe("ExperienceCopilotShell — provider binding persistence", () => {
         aiAssistantProviderId: null,
         aiAssistantModelName: null,
         coauthorProviderId: null,
-        coauthorModelName: null,
         copilotProviderId: null,
         copilotModelName: null,
         updatedAt: "",

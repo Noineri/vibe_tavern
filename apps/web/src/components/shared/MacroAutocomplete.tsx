@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslation } from "react-i18next";
 import type { MacroCatalogEntry } from "@vibe-tavern/prompt-pipeline";
-import { macroCategoryLabel } from "./macro-autocomplete-store.js";
+import { macroCategoryLabel, matchingMacroAliases } from "./macro-autocomplete-store.js";
 import { cn } from "../../lib/cn.js";
 
 const POPUP_MAX_WIDTH = 380;
@@ -10,6 +11,32 @@ const EDGE_GAP = 8;
 const ANCHOR_GAP = 4;
 /** Hard cap on popup height (~8–10 rows); the list scrolls internally beyond this. */
 const CONTENT_CAP = 240;
+
+/** Localized descriptions for macros added after the initial catalog shipped. */
+const MACRO_DESCRIPTION_KEYS = {
+  charPrompt: "macro_desc_char_prompt",
+  charInstruction: "macro_desc_char_instruction",
+  systemPrompt: "macro_desc_system_prompt",
+  defaultSystemPrompt: "macro_desc_default_system_prompt",
+  authorsNote: "macro_desc_authors_note",
+  defaultAuthorsNote: "macro_desc_default_authors_note",
+  charAuthorsNote: "macro_desc_char_authors_note",
+  groupNotMuted: "macro_desc_group_not_muted",
+  notChar: "macro_desc_not_char",
+  reverse: "macro_desc_reverse",
+  input: "macro_desc_input",
+  datetimeformat: "macro_desc_datetimeformat",
+  idleDuration: "macro_desc_idle_duration",
+  timeDiff: "macro_desc_time_diff",
+  time: "macro_desc_time",
+} as const;
+
+type LocalizedMacroName = keyof typeof MACRO_DESCRIPTION_KEYS;
+
+function macroDescription(t: ReturnType<typeof useTranslation>["t"], entry: MacroCatalogEntry): string {
+  if (entry.name in MACRO_DESCRIPTION_KEYS) return t(MACRO_DESCRIPTION_KEYS[entry.name as LocalizedMacroName]);
+  return entry.description;
+}
 
 export interface MacroAutocompleteProps {
   /** Already ordered + filtered entries to render. */
@@ -53,6 +80,7 @@ export function MacroAutocomplete({
   anchorEl,
   query,
 }: MacroAutocompleteProps) {
+  const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [placement, setPlacement] = useState<Placement>({
@@ -120,6 +148,7 @@ export function MacroAutocomplete({
           <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1">
             {items.map((entry, index) => {
               const isActive = index === activeIndex;
+              const matchingAliases = matchingMacroAliases(entry, query);
               return (
                 <div
                   key={entry.name}
@@ -137,7 +166,12 @@ export function MacroAutocomplete({
                   )}
                 >
                   <code className="shrink-0 font-mono text-[12px] text-accent-t">{`{{${entry.name}}}`}</code>
-                  <span className="min-w-0 flex-1 truncate font-ui text-[11px] text-t3">{entry.description}</span>
+                  {matchingAliases.length > 0 ? (
+                    <span className="shrink-0 font-mono text-[11px] text-t3">
+                      · {matchingAliases.join(", ")}
+                    </span>
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate font-ui text-[11px] text-t3">{macroDescription(t, entry)}</span>
                   <span className="shrink-0 rounded-sm bg-s2/60 px-1.5 py-0.5 font-ui text-[9px] uppercase tracking-[0.06em] text-t4">
                     {macroCategoryLabel(entry.category)}
                   </span>

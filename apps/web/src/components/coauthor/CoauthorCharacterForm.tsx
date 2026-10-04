@@ -81,6 +81,7 @@ import type { LorebookRecord, ScriptRecord, AppCharacterEntry } from "../../api/
 import type { PersonaRecord } from "@vibe-tavern/api-contracts";
 import { setCoauthorContextLinksAction } from "../../stores/api-actions/chat-actions.js";
 import { CoauthorLoreReview, type CoauthorLoreReviewLabels } from "./CoauthorLoreReview.js";
+import { CoauthorLoreAssistantSettings } from "./CoauthorLoreAssistantSettings.js";
 
 /**
  * Stable empty array for the turn-store selector fallback. Returning a fresh
@@ -502,6 +503,9 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
             />
           </div>
         )}
+        <div className="mt-2">
+          <CoauthorLoreAssistantSettings />
+        </div>
       </div>
 
       {/* Body: editor surface OR the reviewing overlay (CA-11/CA-12). The editor
@@ -584,6 +588,55 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
               scopeGlobal: t("coauthor.lore.review.scope_global"),
               scopeChat: t("coauthor.lore.review.scope_chat"),
               noContent: t("coauthor.lore.review.no_content"),
+              valueOn: t("lore_tri_on"),
+              valueOff: t("lore_tri_off"),
+              valueInherit: t("lore_tri_inherit"),
+              lorebookSettingLabels: {
+                enabled: t("enabled"),
+                scanDepth: t("lore_scan_depth"),
+                tokenBudget: t("lore_token_budget"),
+                tokenBudgetPercent: t("lore_token_budget_mode_percent"),
+                tokenBudgetCap: t("lore_token_budget_cap"),
+                recursiveScanning: t("lore_recursive_scanning"),
+                useGroupScoring: t("lore_book_group_scoring"),
+                caseSensitive: t("lore_book_case_sensitive"),
+                matchWholeWords: t("lore_book_match_whole_words"),
+                maxRecursionSteps: t("lore_max_recursion_steps"),
+                includeNames: t("lore_include_names"),
+                minActivations: t("lore_min_activations"),
+                minActivationsDepthMax: t("lore_min_activations_depth_max"),
+                overflowAlert: t("lore_overflow_alert"),
+                characterStrategy: t("lore_character_strategy"),
+              },
+              entrySettingLabels: {
+                constant: t("lore_constant"),
+                position: t("lore_position_label"),
+                depth: t("lore_depth_label"),
+                logic: t("lore_logic_label"),
+                enabled: t("enabled"),
+                priority: t("lore_priority_label"),
+                probability: t("lore_probability"),
+                ignoreBudget: t("lore_ignore_budget"),
+                role: t("lore_role_label"),
+                groupName: t("lore_group_name"),
+                groupWeight: t("lore_group_weight"),
+                prioritizeInclusion: t("lore_prioritize_inclusion"),
+                useGroupScoring: t("lore_use_group_scoring"),
+                excludeRecursion: t("lore_exclude_recursion"),
+                preventRecursion: t("lore_prevent_recursion"),
+                delayUntilRecursion: t("lore_delay_until_recursion"),
+                recursionLevel: t("lore_recursion_label"),
+                scanDepthOverride: t("lore_scan_depth_override"),
+                caseSensitive: t("lore_case_sensitive"),
+                matchWholeWords: t("lore_match_whole_words"),
+                caseFormsKeys: t("lore_case_forms"),
+                characterFilter: t("lore_charfilter_section"),
+                characterFilterExclude: t("lore_char_filter_exclude"),
+                matchSources: t("lore_matchsources_section"),
+                stickyWindow: t("lore_sticky_window"),
+                cooldownWindow: t("lore_cooldown_window"),
+                minChatMessages: t("lore_min_chat_messages"),
+              },
             }}
             labels={{
               title: t("coauthor.review.title"),

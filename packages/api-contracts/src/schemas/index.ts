@@ -20,6 +20,8 @@ export {
   coauthorToolOutputSchema,
   coauthorLoreBundleOutputSchema,
   coauthorLoreBundleSchema,
+  LOREBOOK_REVIEW_SETTING_FIELDS,
+  LORE_ENTRY_REVIEW_SETTING_FIELDS,
   coauthorSkillReadOutputSchema,
   contextSearchResultItemSchema,
   coauthorSearchOutputSchema,
@@ -32,7 +34,7 @@ export {
   coauthorSectionEditInputSchema,
   coauthorSectionWriteInputSchema,
 } from "./chat-schema.js";
-export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTarget, CoauthorEditItem, CoauthorSectionEditInput, CoauthorSectionWriteInput, SkillCatalogEntryDto, SkillCatalogError, SkillCatalog, SkillImportResult, CoauthorSkillReadOutput, CoauthorDraftLorebook, CoauthorDraftLoreEntry, CoauthorLoreBundle, CoauthorLoreBundleOutput, ContextSearchResultItem, CoauthorSearchOutput, CoauthorContextReadOutput } from "./chat-schema.js";
+export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTarget, CoauthorEditItem, CoauthorSectionEditInput, CoauthorSectionWriteInput, SkillCatalogEntryDto, SkillCatalogError, SkillCatalog, SkillImportResult, CoauthorSkillReadOutput, CoauthorDraftLorebook, CoauthorDraftLoreEntry, CoauthorLoreBundle, CoauthorLoreBundleOutput, ContextSearchResultItem, CoauthorSearchOutput, CoauthorContextReadOutput, LorebookReviewSettingField, LoreEntryReviewSettingField, LoreReviewSettingChange } from "./chat-schema.js";
 export { regenerateOverrideSchema } from "./chat-regenerate-schema.js";
 export type { RegenerateOverride } from "./chat-regenerate-schema.js";
 export {
@@ -63,8 +65,15 @@ export {
   tokenizeSchema,
   modelSettingsOverlaySchema,
   samplerPresetPayloadSchema,
+  coauthorGenerationSettingsSchema,
+  upsertCoauthorConnectionSettingsSchema,
   reorderProviderProfilesSchema,
+  reorderCoauthorProviderProfilesSchema,
 } from "./provider-schema.js";
+export type { CoauthorGenerationSettingsValue, UpsertCoauthorConnectionSettingsValue } from "./provider-schema.js";
+export { reorderTtsProfilesSchema } from "./tts-schema.js";
+export { reorderSttProfilesSchema } from "./stt-schema.js";
+export { reorderImageGenProfilesSchema } from "./image-gen-schema.js";
 export {
   samplerSetSchema,
   samplerSetListSchema,
@@ -91,6 +100,18 @@ export type {
   FormatTemplateCreate,
   FormatTemplateUpdate,
 } from "./format-template-schema.js";
+export {
+  aiInstructionTemplateSchema,
+  aiInstructionTemplateListSchema,
+  createAiInstructionTemplateSchema,
+  updateAiInstructionTemplateSchema,
+} from "./ai-instruction-template-schema.js";
+export type {
+  AiInstructionTemplate,
+  AiInstructionTemplateList,
+  AiInstructionTemplateCreate,
+  AiInstructionTemplateUpdate,
+} from "./ai-instruction-template-schema.js";
 export {
   providerProxyModeSchema,
   saveProxySchema,

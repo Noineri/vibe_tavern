@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   attachmentSchema,
   cloneChatSchema,
+  coauthorLoreBundleSchema,
   createChatSchema,
   editMessageSchema,
   renameBranchSchema,
@@ -463,6 +464,24 @@ describe("updateDynamicPromptSchema", () => {
 
   it("accepts unknown keys (non-strict — stripped, not rejected)", () => {
     expect(updateDynamicPromptSchema.safeParse({ content: "ok", extra: 1 }).success).toBe(true);
+  });
+});
+
+// --- renameBranchSchema -----------------------------------------------------
+
+describe("coauthorLoreBundleSchema — review metadata", () => {
+  it("round-trips additive setting changes without affecting the draft fields", () => {
+    const bundle = {
+      lorebooks: [],
+      entries: [{
+        id: "entry_1", lorebookId: "book_1", title: "Entry", content: "", keys: [], secondaryKeys: [],
+        constant: false, position: "before_char", depth: 4, enabled: true,
+        settingChanges: { probability: { oldValue: 100, newValue: 50 } },
+      }],
+    };
+    const parsed = coauthorLoreBundleSchema.parse(bundle);
+    expect(parsed.entries[0]!.settingChanges).toEqual(bundle.entries[0]!.settingChanges);
+    expect(parsed.entries[0]!.title).toBe("Entry");
   });
 });
 

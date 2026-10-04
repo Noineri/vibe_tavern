@@ -21,7 +21,7 @@
  * is covered, not stubbed.
  */
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { render, fireEvent, waitFor } from "@testing-library/react";
+
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { EXPERIENCE_CAPABILITY, EXPERIENCE_CONTEXT_MODE } from "@vibe-tavern/domain";
@@ -29,6 +29,8 @@ import type { ExperienceChatConfigRow } from "../../../api/types.js";
 import type { ExperienceAssignmentProps } from "./ExperienceAssignment.js";
 
 useDomEnv();
+
+const { render, fireEvent, waitFor } = await import("@testing-library/react");
 
 // Shared mock state is defined before the module registrations.
 const mocks = {

@@ -17,12 +17,14 @@
  * window.location/opener.
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
-import { render, fireEvent, act } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 import type { DetachWindow } from "./ExperienceDetachedWindow.js";
 import type { ExperienceLoopConfig } from "../../lib/experience-loop-host.js";
 
 useDomEnv();
+
+const { render, fireEvent, act } = await import("@testing-library/react");
 
 // URL spy so the embedded ExperienceFrame does not make happy-dom navigate.
 const realCreate = URL.createObjectURL;

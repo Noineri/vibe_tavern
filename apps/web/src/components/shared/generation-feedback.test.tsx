@@ -14,10 +14,12 @@
  * Runner: bun:test with the scoped happy-dom harness.
  */
 import { describe, it, expect, jest, mock, beforeAll, beforeEach, afterEach } from "bun:test";
-import { render, fireEvent, waitFor, act } from "@testing-library/react";
+
 import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
+
+const { render, fireEvent, waitFor, act } = await import("@testing-library/react");
 
 let useGenerationTask: typeof import("./generation-feedback.js").useGenerationTask;
 let GenerateCancelButton: typeof import("./generation-feedback.js").GenerateCancelButton;
