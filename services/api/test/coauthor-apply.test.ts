@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { serializeProfileMd } from "@vibe-tavern/db";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
+import { createLoreEntityLookup } from "../src/domain/coauthor/lore/lore-entity-lookup.js";
 import type { ChatId } from "@vibe-tavern/domain";
 
 async function createTestRuntime(): Promise<{
@@ -277,5 +278,54 @@ describe("Co-Author Apply RPC — lore bundle (CTX-L2)", () => {
 		// No new rows written.
 		expect((await env.stores.lorebooks.listAllLorebooks()).length).toBe(before);
 		expect(await env.stores.lorebooks.getEntry("lore_orphan")).toBeNull();
+	});
+
+	it("COAUTHOR_LORE_FULL_SETTINGS: a full-settings bundle round-trips through Apply, and lore-entity-lookup returns the full current state", async () => {
+		const res = await env.runtime.applyCoauthorDraft(env.coauthorChatId, {
+			loreBundle: {
+				lorebooks: [
+					{
+						id: "lb_settings", name: "Tuned", description: "d", scopeType: "entity", enabled: true,
+						scanDepth: 12, tokenBudget: 777, tokenBudgetPercent: 25, tokenBudgetCap: 3000,
+						recursiveScanning: true, useGroupScoring: true, caseSensitive: true, matchWholeWords: true,
+						maxRecursionSteps: 4, includeNames: true, minActivations: 2, minActivationsDepthMax: 30,
+						overflowAlert: true, characterStrategy: 2,
+					},
+				],
+				entries: [
+					{
+						id: "le_settings", lorebookId: "lb_settings", title: "T", content: "c", keys: ["k"], secondaryKeys: [],
+						constant: true, position: "at_depth", depth: 9, logic: "not_all", enabled: true,
+						priority: 42, probability: 77, ignoreBudget: true, role: "assistant",
+						groupName: "squad", groupWeight: 55, prioritizeInclusion: true, useGroupScoring: true,
+						excludeRecursion: true, preventRecursion: true, delayUntilRecursion: true, recursionLevel: 4,
+						scanDepthOverride: 9, caseSensitive: true, matchWholeWords: true,
+						characterFilter: [{ id: null, name: "Alice" }], characterFilterExclude: true,
+						matchSources: ["chat_messages", "scenario"], stickyWindow: 3, cooldownWindow: 5, minChatMessages: 2,
+					},
+				],
+			},
+		});
+		expect(res.lore).toEqual({ lorebookIds: ["lb_settings"], entryIds: ["le_settings"] });
+
+		// The same lookup the runtime injects into the lore tools returns the
+		// FULL current state — the Co-Author edits from what is actually set.
+		const lookup = createLoreEntityLookup(env.stores.lorebooks);
+		const lb = await lookup.lorebook("lb_settings");
+		expect(lb).toMatchObject({
+			tokenBudgetPercent: 25, tokenBudgetCap: 3000, useGroupScoring: true,
+			caseSensitive: true, matchWholeWords: true, maxRecursionSteps: 4, includeNames: true,
+			minActivations: 2, minActivationsDepthMax: 30, overflowAlert: true, characterStrategy: 2,
+		});
+		const e = await lookup.entry("le_settings");
+		expect(e).toMatchObject({
+			priority: 42, probability: 77, ignoreBudget: true, role: "assistant",
+			groupName: "squad", groupWeight: 55, prioritizeInclusion: true, useGroupScoring: true,
+			excludeRecursion: true, preventRecursion: true, delayUntilRecursion: true, recursionLevel: 4,
+			scanDepthOverride: 9, caseSensitive: true, matchWholeWords: true,
+			characterFilter: [{ id: null, name: "Alice" }], characterFilterExclude: true,
+			matchSources: ["chat_messages", "scenario"],
+			stickyWindow: 3, cooldownWindow: 5, minChatMessages: 2,
+		});
 	});
 });

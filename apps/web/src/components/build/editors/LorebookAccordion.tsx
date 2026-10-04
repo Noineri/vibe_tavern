@@ -60,7 +60,7 @@ export function lorebookBindingIcon(lb: LorebookRecord): { icon: ReactNode; tool
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-export type Scope = "global" | "entity" | "chat" | "all";
+export type Scope = "global" | "entity" | "chat" | "all" | "current";
 
 interface LorebookAccordionProps {
   lorebook: LorebookRecord;

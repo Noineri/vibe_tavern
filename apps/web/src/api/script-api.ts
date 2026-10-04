@@ -13,6 +13,11 @@ export async function listAllScripts(): Promise<ScriptRecord[]> {
   return unwrapRpc(response);
 }
 
+/** Scripts participating in a chat, resolved by the backend's runtime binding rules. */
+export async function listParticipatingScripts(chatId: string): Promise<ScriptRecord[]> {
+  return unwrapRpc(await client.api.scripts.participating.$get({ query: { chatId } }));
+}
+
 export async function createScript(body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }): Promise<ScriptRecord> {
   const response = await client.api.scripts.$post({ json: body });
   return unwrapRpc(response);

@@ -6,6 +6,23 @@ import type { ContentStore } from '../content-store.js';
 import { STORAGE_FOLDERS } from '../file-store.js';
 import type { CharacterFilterEntry } from '@vibe-tavern/domain';
 import { LOREBOOK_DEFAULTS } from '@vibe-tavern/domain';
+import { applyCoauthorLoreDraftTx } from './coauthor-lore-apply.js';
+import { resolveBoundLorebookRows, type LorebookBindingKind } from './lorebook-chat-resolution.js';
+// The binding-kind vocabulary moved to `lorebook-chat-resolution.ts` (the one
+// source of the chat participation rules); re-exported here so the store's
+// public surface (`stores/index.ts`, prompt-resolver) is unchanged.
+export { LOREBOOK_BINDING_KIND } from './lorebook-chat-resolution.js';
+export type { LorebookBindingKind } from './lorebook-chat-resolution.js';
+import {
+  ENTRY_FIELD_SPEC,
+  type EntryFieldSpec,
+  buildEntryInsert,
+  buildEntryPatch,
+  decodeEntryField,
+  entryToCreateData,
+  mergeCaseFormsKeys,
+  type StoredEntryField,
+} from './lore-entry-fields.js';
 
 /**
  * Parse a raw `characterFilterJson` value into the canonical `CharacterFilterEntry[]`
@@ -108,56 +125,11 @@ export interface CreateLoreEntryData {
 export type UpdateLoreEntryData = Partial<CreateLoreEntryData>;
 
 // ─── Co-Author lore draft Apply (CTX-L2, Wave 4) ──────────────────────────────
-
-/**
- * The co-author lore draft bundle persisted by Apply. Structurally identical
- * to the api-contracts `CoauthorLoreBundle` — the store (packages/db) cannot
- * import api-contracts (dependency graph: db ← domain only), so the shape is
- * re-declared here and the caller passes the contract bundle verbatim (TS
- * structural typing accepts it without a forbidden import).
- *
- * `id`s are PREALLOCATED in the request-local draft engine and become the DB
- * primary keys; Apply is idempotent (re-Apply upserts the same rows). The
- * scopeType→owner mapping mirrors `createLorebook`: an 'entity'-scoped draft
- * book is written with `characterId` set so the activation engine (FK ∪
- * junction) finds it.
- */
-export interface CoauthorLoreDraftBundle {
-  lorebooks: Array<{
-    id: string;
-    name: string;
-    description: string;
-    scopeType: 'global' | 'entity' | 'chat';
-    enabled: boolean;
-    /** CE-A1: activation overrides authored by the co-author. Apply falls back to `LOREBOOK_DEFAULTS` when absent. */
-    scanDepth?: number;
-    tokenBudget?: number;
-    recursiveScanning?: boolean;
-    useGroupScoring?: boolean;
-    caseSensitive?: boolean;
-    matchWholeWords?: boolean;
-    /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
-    mode?: 'create' | 'edit';
-  }>;
-  entries: Array<{
-    id: string;
-    lorebookId: string;
-    title: string;
-    content: string;
-    keys: string[];
-    secondaryKeys: string[];
-    constant: boolean;
-    position: string;
-    depth: number;
-    /** CE-A2: activation logic / match mode (LORE_LOGIC); falls back to 'and_any' when absent. */
-    logic?: string;
-    enabled: boolean;
-    /** CE-B1 review metadata; Apply already routes create/edit via PK upsert. */
-    mode?: 'create' | 'edit';
-    /** CE-B2: verified persisted parent absent from this proposal bundle. */
-    parentMode?: 'persisted';
-  }>;
-}
+// The bundle type and the whole Apply transaction live in `coauthor-lore-apply.ts`
+// (COAUTHOR_LORE_FULL_SETTINGS step 3: the Apply grew to carry every settings
+// field, and this file sits on its arch-gate line budget — it moved OUT, this
+// file only re-exports the bundle type and keeps the thin store method below).
+export type { CoauthorLoreDraftBundle } from './coauthor-lore-apply.js';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -194,18 +166,6 @@ export interface Lorebook {
   updatedAt: string;
 }
 
-/**
- * Store-level LoreEntry — domain LoreEntry projected from a DB row.
- */
-export const LOREBOOK_BINDING_KIND = {
-  chat: 'chat',
-  persona: 'persona',
-  character: 'character',
-  global: 'global',
-} as const;
-
-export type LorebookBindingKind = typeof LOREBOOK_BINDING_KIND[keyof typeof LOREBOOK_BINDING_KIND];
-
 /** One enabled lorebook resolved for a chat, with its most specific binding. */
 export interface ActiveLorebookSet {
   lorebook: Lorebook;
@@ -213,6 +173,9 @@ export interface ActiveLorebookSet {
   bindingKind: LorebookBindingKind;
 }
 
+/**
+ * Store-level LoreEntry — domain LoreEntry projected from a DB row.
+ */
 export interface LoreEntry {
   id: string;
   lorebookId: string;
@@ -264,142 +227,6 @@ export interface LorebookLink {
   lorebookId: string;
   targetType: 'character' | 'persona';
   targetId: string;
-}
-
-// ─── Entry field-map spec (single source of truth) ───────────────────────────
-//
-// The ~33 lore-entry fields are mapped at three transform-bearing boundaries
-// (createEntry insert, updateEntry patch, mapEntryRow read) plus one identity
-// projection (duplicateLorebook). Previously each site hand-maintained the
-// field list with bool→int coercion, JSON serialization, and `?? default` —
-// the same structural drift class that shipped the avatar `avatarFullExt` bug
-// (one map silently dropped a field). In fact duplicateLorebook's projection
-// had ALREADY dropped useGroupScoring/automationId/sortOrder — caught by the
-// characterization test. `ENTRY_FIELD_SPEC` is the one table the three
-// transform-bearing sites derive from; keyed by `keyof CreateLoreEntryData` so
-// adding a field to the input type without adding it here is a compile error
-// (exhaustiveness via the mapped type). The duplicate projection needs no
-// transforms (it is LoreEntry→CreateLoreEntryData, same domain types) so it is
-// a structural destructure, not a spec loop — type-safe and auto-exhaustive.
-
-type EntryCoerce = 'bool' | 'bool3' | 'json' | 'raw';
-type StoredEntryField = Exclude<keyof CreateLoreEntryData, 'caseFormsKeys'>;
-
-interface EntryFieldSpec {
-  /** Drizzle column on `loreEntries`. */
-  readonly column: keyof typeof loreEntries.$inferInsert;
-  /** Transform at the DB boundary: bool→0/1 int, json→stringify, raw→passthrough. */
-  readonly coerce: EntryCoerce;
-  /** Value used on create when the input omits the field. */
-  readonly insertDefault: unknown;
-}
-
-const ENTRY_FIELD_SPEC: { readonly [K in StoredEntryField]: EntryFieldSpec } = {
-  title:                  { column: 'title',                  coerce: 'raw',  insertDefault: '' },
-  content:                { column: 'content',                coerce: 'raw',  insertDefault: '' },
-  keys:                   { column: 'keysJson',               coerce: 'json', insertDefault: [] },
-  secondaryKeys:          { column: 'secondaryKeysJson',      coerce: 'json', insertDefault: [] },
-  logic:                  { column: 'logic',                  coerce: 'raw',  insertDefault: 'and_any' },
-  position:               { column: 'position',               coerce: 'raw',  insertDefault: 'in_prompt' },
-  depth:                  { column: 'depth',                  coerce: 'raw',  insertDefault: 4 },
-  priority:               { column: 'priority',               coerce: 'raw',  insertDefault: 100 },
-  stickyWindow:           { column: 'stickyWindow',           coerce: 'raw',  insertDefault: 0 },
-  cooldownWindow:         { column: 'cooldownWindow',         coerce: 'raw',  insertDefault: 0 },
-  minChatMessages:        { column: 'minChatMessages',        coerce: 'raw',  insertDefault: 0 },
-  constant:               { column: 'constant',               coerce: 'bool', insertDefault: false },
-  probability:            { column: 'probability',            coerce: 'raw',  insertDefault: 100 },
-  ignoreBudget:           { column: 'ignoreBudget',           coerce: 'bool', insertDefault: false },
-  role:                   { column: 'role',                   coerce: 'raw',  insertDefault: 'system' },
-  groupName:              { column: 'groupName',              coerce: 'raw',  insertDefault: '' },
-  groupWeight:            { column: 'groupWeight',            coerce: 'raw',  insertDefault: 100 },
-  prioritizeInclusion:    { column: 'prioritizeInclusion',    coerce: 'bool', insertDefault: false },
-  useGroupScoring:        { column: 'useGroupScoring',        coerce: 'bool3', insertDefault: null },
-  excludeRecursion:       { column: 'excludeRecursion',       coerce: 'bool', insertDefault: false },
-  preventRecursion:       { column: 'preventRecursion',       coerce: 'bool', insertDefault: false },
-  delayUntilRecursion:    { column: 'delayUntilRecursion',    coerce: 'bool', insertDefault: false },
-  recursionLevel:         { column: 'recursionLevel',         coerce: 'raw',  insertDefault: 0 },
-  scanDepthOverride:      { column: 'scanDepthOverride',      coerce: 'raw',  insertDefault: null },
-  caseSensitive:          { column: 'caseSensitive',          coerce: 'bool3', insertDefault: null },
-  matchWholeWords:        { column: 'matchWholeWords',        coerce: 'bool3', insertDefault: null },
-  characterFilter:        { column: 'characterFilterJson',    coerce: 'json', insertDefault: [] },
-  characterFilterExclude: { column: 'characterFilterExclude', coerce: 'bool', insertDefault: false },
-  matchSources:           { column: 'matchSourcesJson',       coerce: 'json', insertDefault: ['chat_messages'] },
-  enabled:                { column: 'enabled',                coerce: 'bool', insertDefault: true },
-  sortOrder:              { column: 'sortOrder',              coerce: 'raw',  insertDefault: 0 },
-  automationId:           { column: 'automationId',           coerce: 'raw',  insertDefault: '' },
-  metadata:               { column: 'metadataJson',           coerce: 'json', insertDefault: {} },
-};
-
-/** Encode a domain value into its DB representation (write boundary). */
-function encodeEntryField(coerce: EntryCoerce, value: unknown): number | string | null {
-  switch (coerce) {
-    case 'bool': return value ? 1 : 0;
-    case 'bool3': return value === null || value === undefined ? null : value ? 1 : 0;
-    case 'json': return JSON.stringify(value);
-    case 'raw':  return value as number | string | null;
-  }
-}
-
-/** Decode a DB cell into its domain value (read boundary). */
-function decodeEntryField(coerce: EntryCoerce, value: unknown): unknown {
-  switch (coerce) {
-    case 'bool': return value === 1;
-    case 'bool3': return value === null || value === undefined ? null : value === 1;
-    case 'json': return JSON.parse(value as string);
-    case 'raw':  return value;
-  }
-}
-
-/** Build the data-field payload for `createEntry`'s `.values()` (create path). */
-function mergeCaseFormsKeys(metadata: Record<string, unknown> | undefined, caseFormsKeys: string[] | undefined): Record<string, unknown> {
-  // undefined = no opinion: leave metadata untouched (a bare unrelated-field
-  // update must not fabricate or prune the key). A DEFINED list writes or
-  // prunes: non-empty writes the flag list, empty deletes a stale key — so an
-  // absent flag round-trips byte-identically while a toggled-off chip prunes.
-  if (caseFormsKeys === undefined) return metadata ?? {};
-  const next = { ...(metadata ?? {}) };
-  if (caseFormsKeys.length > 0) next.caseFormsKeys = caseFormsKeys;
-  else delete next.caseFormsKeys;
-  return next;
-}
-
-function buildEntryInsert(data: CreateLoreEntryData): Partial<typeof loreEntries.$inferInsert> {
-  const out: Record<string, number | string | null> = {};
-  const metadata = mergeCaseFormsKeys(data.metadata, data.caseFormsKeys);
-  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[StoredEntryField, EntryFieldSpec]>) {
-    const value = domain === 'metadata' ? metadata : data[domain];
-    out[spec.column] = encodeEntryField(spec.coerce, value ?? spec.insertDefault);
-  }
-  // Single concrete assertion at the DB boundary (the spec loop cannot assign
-  // to specific keys of the Drizzle insert type per-iteration without it).
-  // Exhaustiveness is guaranteed by ENTRY_FIELD_SPEC's mapped-type keying;
-  // coerce correctness is pinned by the entry field round-trip tests.
-  return out as Partial<typeof loreEntries.$inferInsert>;
-}
-
-/** Build the partial patch for `updateEntry` (only fields the caller provided). */
-function buildEntryPatch(data: UpdateLoreEntryData): Partial<typeof loreEntries.$inferInsert> {
-  const out: Record<string, number | string | null> = {};
-  for (const [domain, spec] of Object.entries(ENTRY_FIELD_SPEC) as Array<[StoredEntryField, EntryFieldSpec]>) {
-    const value = data[domain];
-    if (value !== undefined) {
-      out[spec.column] = encodeEntryField(spec.coerce, value);
-    }
-  }
-  return out as Partial<typeof loreEntries.$inferInsert>;
-}
-
-/**
- * Project a stored `LoreEntry` back into `CreateLoreEntryData` (for
- * `duplicateLorebook` and any replay-into-create path). This is an identity
- * projection — LoreEntry and CreateLoreEntryData share the same domain field
- * types — so a structural destructure is type-safe, auto-exhaustive, and cannot
- * silently drop a field. (Previously a hand-written 31-field literal here
- * dropped useGroupScoring/automationId/sortOrder.)
- */
-function entryToCreateData(entry: LoreEntry): CreateLoreEntryData {
-  const { id: _id, lorebookId: _lorebookId, createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = entry;
-  return rest;
 }
 
 /**
@@ -799,139 +626,23 @@ export class LorebookStore {
   }
 
   /**
-   * CTX-L2: persist a co-author lore draft bundle as entity-scoped lorebooks
-   * + entries using the PREALLOCATED draft ids, IDEMPOTENTLY. This is the sole
-   * persistence boundary for lore proposals — tool execution only mutates the
-   * request-local draft state; nothing reaches SQLite until Apply. Re-Apply
-   * (same ids) upserts the same rows rather than creating duplicates; a first
-   * Apply inserts. Runs in ONE transaction so a partial failure rolls back the
-   * whole graph. Dependency validation: every entry's parent lorebook must be
-   * present in the bundle (the draft engine enforces this, but Apply re-checks
-   * defensively). The scopeType→owner mapping mirrors `createLorebook` (an
-   * 'entity'-scoped book sets the owner FK — the draft engine targets the
-   * chat's character, so `characterId`), so the activation engine (FK ∪
-   * junction) discovers the new book.
+   * CTX-L2: persist a co-author lore draft bundle idempotently — the sole
+   * persistence boundary for lore proposals. The whole transaction lives in
+   * `coauthor-lore-apply.ts` (extracted so this file stays under its line
+   * budget); this method is the store seam: it stamps the clock, delegates,
+   * and dual-writes the canonical JSON files AFTER the transaction commits
+   * (mirrors createLorebook/createEntry's syncFile calls).
    */
   async applyCoauthorLoreDraft(
     characterId: string,
-    bundle: CoauthorLoreDraftBundle,
+    bundle: import('./coauthor-lore-apply.js').CoauthorLoreDraftBundle,
   ): Promise<{ lorebookIds: string[]; entryIds: string[] }> {
-    const bookIds = new Set(bundle.lorebooks.map((lb) => lb.id));
-    // CE-B2: an entry may reference a persisted parent lorebook NOT in the
-    // bundle (edit_lore_entry on a persisted entry, or add_lore_entry to an
-    // existing book). Accept a parent that exists in the DB in addition to one
-    // drafted in this bundle; only reject a parent that is neither.
-    const externalParentIds = [...new Set(
-      bundle.entries.map((e) => e.lorebookId).filter((id) => !bookIds.has(id)),
-    )];
-    const externalParentSet = externalParentIds.length
-      ? new Set((await this.db.select({ id: lorebooks.id }).from(lorebooks).where(inArray(lorebooks.id, externalParentIds))).map((r) => r.id))
-      : new Set<string>();
-    for (const entry of bundle.entries) {
-      if (!bookIds.has(entry.lorebookId) && !externalParentSet.has(entry.lorebookId)) {
-        throw new Error(
-          `applyCoauthorLoreDraft: entry '${entry.id}' references unknown parent lorebook '${entry.lorebookId}'`,
-        );
-      }
-    }
-
-    const now = this.clock.now();
-    const lorebookIds: string[] = [];
-    const entryIds: string[] = [];
-
-    // Synchronous callback (ASYNC_TRANSACTION_AUDIT step 3): see reorderEntries.
-    // syncFile runs AFTER this transaction commits (below), so it stays outside
-    // the DB callback — only synchronous bun:sqlite work happens here.
-    this.db.transaction((tx) => {
-      for (const lb of bundle.lorebooks) {
-        const entityScoped = lb.scopeType === 'entity';
-        tx
-          .insert(lorebooks)
-          .values({
-            id: lb.id,
-            name: lb.name,
-            description: lb.description,
-            scopeType: lb.scopeType,
-            scanDepth: lb.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
-            tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
-            tokenBudgetPercent: null,
-            recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
-            useGroupScoring: (lb.useGroupScoring ?? false) ? 1 : 0,
-            caseSensitive: (lb.caseSensitive ?? false) ? 1 : 0,
-            matchWholeWords: (lb.matchWholeWords ?? false) ? 1 : 0,
-            maxRecursionSteps: 0,
-            includeNames: 0,
-            minActivations: 0,
-            minActivationsDepthMax: 0,
-            overflowAlert: 0,
-            characterStrategy: 1,
-            sortOrder: 0,
-            enabled: lb.enabled ? 1 : 0,
-            characterId: entityScoped ? characterId : null,
-            personaId: null,
-            chatId: null,
-            extensionsJson: '{}',
-            createdAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: lorebooks.id,
-            // Re-Apply updates mutable fields (incl. CE-A1 activation params) but preserves createdAt + id.
-            set: {
-              name: lb.name,
-              description: lb.description,
-              scopeType: lb.scopeType,
-              scanDepth: lb.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
-              tokenBudget: lb.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
-              recursiveScanning: (lb.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning) ? 1 : 0,
-              useGroupScoring: (lb.useGroupScoring ?? false) ? 1 : 0,
-              caseSensitive: (lb.caseSensitive ?? false) ? 1 : 0,
-              matchWholeWords: (lb.matchWholeWords ?? false) ? 1 : 0,
-              enabled: lb.enabled ? 1 : 0,
-              characterId: entityScoped ? characterId : null,
-              updatedAt: now,
-            },
-          })
-          .run();
-        // CE-A1: an entity-scoped lorebook is bound to its character via
-        // lorebook_links (idempotent), so the co-author's book is discoverable
-        // by the activation engine (FK ∪ junction) without the user binding it
-        // manually. Non-entity scopes do not create a character link.
-        if (entityScoped) {
-          tx
-            .insert(lorebookLinks)
-            .values({ lorebookId: lb.id, targetType: 'character', targetId: characterId })
-            .onConflictDoNothing()
-            .run();
-        }
-        lorebookIds.push(lb.id);
-      }
-      for (const e of bundle.entries) {
-        const fields = buildEntryInsert({
-          title: e.title,
-          content: e.content,
-          keys: e.keys,
-          secondaryKeys: e.secondaryKeys,
-          constant: e.constant,
-          position: e.position,
-          depth: e.depth,
-          logic: e.logic,
-          enabled: e.enabled,
-        });
-        tx
-          .insert(loreEntries)
-          .values({ id: e.id, lorebookId: e.lorebookId, createdAt: now, updatedAt: now, ...fields })
-          .onConflictDoUpdate({
-            target: loreEntries.id,
-            set: { lorebookId: e.lorebookId, updatedAt: now, ...buildEntryPatch({
-              title: e.title, content: e.content, keys: e.keys, secondaryKeys: e.secondaryKeys,
-              constant: e.constant, position: e.position, depth: e.depth, logic: e.logic, enabled: e.enabled,
-            }) },
-          })
-          .run();
-        entryIds.push(e.id);
-      }
-    });
+    const { lorebookIds, entryIds } = await applyCoauthorLoreDraftTx(
+      this.db,
+      characterId,
+      bundle,
+      this.clock.now(),
+    );
 
     // Dual-write canonical JSON files after the transaction commits (mirrors
     // createLorebook/createEntry's syncFile calls).
@@ -946,135 +657,61 @@ export class LorebookStore {
 
   /**
    * Returns all lorebooks visible to a chat session across all scopes,
-   * plus their enabled entries.
-   *
-   * Resolution: global lorebooks + entity-scoped lorebooks homed to the
-   * character or persona (home FK) + lorebooks linked to either owner (via
-   * lorebook_links) + chat-scoped lorebooks (direct FK).
-   * Only enabled entries are included.
+   * plus their enabled entries — the prompt pipeline's activation read.
+   * The binding rules live in `lorebook-chat-resolution.ts` (the one source,
+   * shared with `listParticipatingForChat`); this read keeps only ENABLED
+   * rows (activation semantics — a disabled book never activates), while the
+   * «Текущие» list keeps attached-but-disabled character/persona/chat books.
    */
   async listAllActiveForChat(
     characterId: string,
     personaId: string | null,
     chatId: string,
   ): Promise<ActiveLorebookSet[]> {
-    // One book can match through several bindings. Preserve every matching
-    // source, then select its most specific kind after loading the rows.
-    const bindingKindsByLorebookId = new Map<string, Set<LorebookBindingKind>>();
-    const addBinding = (lorebookId: string, bindingKind: LorebookBindingKind): void => {
-      const bindingKinds = bindingKindsByLorebookId.get(lorebookId) ?? new Set<LorebookBindingKind>();
-      bindingKinds.add(bindingKind);
-      bindingKindsByLorebookId.set(lorebookId, bindingKinds);
-    };
-
-    // 1. Global lorebooks
-    const globalRows = await this.db
-      .select({ id: lorebooks.id })
-      .from(lorebooks)
-      .where(and(eq(lorebooks.scopeType, 'global'), eq(lorebooks.enabled, 1)))
-      .all();
-    for (const r of globalRows) addBinding(r.id, LOREBOOK_BINDING_KIND.global);
-
-    // 2. Entity-scoped lorebooks: FK-owned (home scope) AND junction-linked.
-    //    The resolver consults BOTH — the previous junction-only query silently
-    //    dropped FK-owned lorebooks because `createLorebook` does NOT mirror the
-    //    FK into `lorebook_links`, so an entity-FK lorebook created the normal
-    //    way was visible in editor tabs but never activated in chat.
-    //    Mirrors `ScriptStore.listAllEnabledForChat` (FK ∪ junction, Set dedup).
-    //    The home FK is whichever owner column is set, so one pass covers both:
-    //    (characterId = :cid OR personaId = :pid) — a book M:N-bound to BOTH a
-    //    character and a persona activates for a chat matching either target.
-    const entityFkCondition = personaId
-      ? and(eq(lorebooks.scopeType, 'entity'), or(eq(lorebooks.characterId, characterId), eq(lorebooks.personaId, personaId)), eq(lorebooks.enabled, 1))
-      : and(eq(lorebooks.scopeType, 'entity'), eq(lorebooks.characterId, characterId), eq(lorebooks.enabled, 1));
-    const entityFkRows = await this.db
-      .select({ id: lorebooks.id, characterId: lorebooks.characterId, personaId: lorebooks.personaId })
-      .from(lorebooks)
-      .where(entityFkCondition)
-      .all();
-    for (const r of entityFkRows) {
-      addBinding(
-        r.id,
-        personaId && r.personaId === personaId
-          ? LOREBOOK_BINDING_KIND.persona
-          : LOREBOOK_BINDING_KIND.character,
-      );
-    }
-    const charLinks = await this.db
-      .select({ lorebookId: lorebookLinks.lorebookId })
-      .from(lorebookLinks)
-      .innerJoin(lorebooks, and(
-        eq(lorebookLinks.lorebookId, lorebooks.id),
-        eq(lorebooks.enabled, 1),
-      ))
-      .where(and(eq(lorebookLinks.targetType, 'character'), eq(lorebookLinks.targetId, characterId)))
-      .all();
-    for (const r of charLinks) addBinding(r.lorebookId, LOREBOOK_BINDING_KIND.character);
-
-    // 3. Persona junction links (target-typed, unchanged by the collapse).
-    if (personaId) {
-      const personaLinks = await this.db
-        .select({ lorebookId: lorebookLinks.lorebookId })
-        .from(lorebookLinks)
-        .innerJoin(lorebooks, and(
-          eq(lorebookLinks.lorebookId, lorebooks.id),
-          eq(lorebooks.enabled, 1),
-        ))
-        .where(and(eq(lorebookLinks.targetType, 'persona'), eq(lorebookLinks.targetId, personaId)))
-        .all();
-      for (const r of personaLinks) addBinding(r.lorebookId, LOREBOOK_BINDING_KIND.persona);
-    }
-
-    // 4. Chat-scoped lorebooks (direct FK — not via links)
-    const chatRows = await this.db
-      .select({ id: lorebooks.id })
-      .from(lorebooks)
-      .where(and(eq(lorebooks.scopeType, 'chat'), eq(lorebooks.chatId, chatId), eq(lorebooks.enabled, 1)))
-      .all();
-    for (const r of chatRows) addBinding(r.id, LOREBOOK_BINDING_KIND.chat);
-
-    if (bindingKindsByLorebookId.size === 0) return [];
-
-    // Batch-load lorebooks in a stable order. This is the deterministic
-    // book-resolution order used if an ST strategy needs a first bound book.
-    const idArray = [...bindingKindsByLorebookId.keys()];
-    const bookRows = await this.db
-      .select()
-      .from(lorebooks)
-      .where(inArray(lorebooks.id, idArray))
-      .orderBy(asc(lorebooks.sortOrder), asc(lorebooks.name), asc(lorebooks.id))
-      .all();
+    const bound = await resolveBoundLorebookRows(this.db, characterId, personaId, chatId);
 
     const result: ActiveLorebookSet[] = [];
-
-    for (const bookRow of bookRows) {
+    for (const { row, bindingKind } of bound) {
+      if (row.enabled !== 1) continue;
       const entryRows = await this.db
         .select()
         .from(loreEntries)
         .where(
           and(
-            eq(loreEntries.lorebookId, bookRow.id),
+            eq(loreEntries.lorebookId, row.id),
             eq(loreEntries.enabled, 1),
           ),
         )
         .all();
-
-      const bindingKinds = bindingKindsByLorebookId.get(bookRow.id);
-      const bindingKind = bindingKinds?.has(LOREBOOK_BINDING_KIND.chat)
-        ? LOREBOOK_BINDING_KIND.chat
-        : bindingKinds?.has(LOREBOOK_BINDING_KIND.persona)
-          ? LOREBOOK_BINDING_KIND.persona
-          : bindingKinds?.has(LOREBOOK_BINDING_KIND.character)
-            ? LOREBOOK_BINDING_KIND.character
-            : LOREBOOK_BINDING_KIND.global;
       result.push({
-        lorebook: this.mapLorebookRow(bookRow),
+        lorebook: this.mapLorebookRow(row),
         entries: entryRows.map((r) => this.mapEntryRow(r)),
         bindingKind,
       });
     }
-
     return result;
+  }
+
+  /**
+   * «Текущие» (LOREBOOK_LIST_FILTERS_REPORT step 2): every lorebook that
+   * participates in the chat through the SAME binding rules the prompt
+   * pipeline reads (`lorebook-chat-resolution.ts` — no second rule set),
+   * under attached-list semantics: character/persona/chat-bound books are
+   * included even while disabled (they are attached here — the enabled
+   * toggle is how the author turns them on); books participating only
+   * through the global pool are included only while enabled. Returns book
+   * rows only (no entries — the UI loads entries on expand), in the
+   * resolver's deterministic order.
+   */
+  async listParticipatingForChat(
+    characterId: string,
+    personaId: string | null,
+    chatId: string,
+  ): Promise<Lorebook[]> {
+    const bound = await resolveBoundLorebookRows(this.db, characterId, personaId, chatId);
+    return bound
+      .filter(({ row, entityBound }) => row.enabled === 1 || entityBound)
+      .map(({ row }) => this.mapLorebookRow(row));
   }
 
   // ─── Link management ───────────────────────────────────────────────────────

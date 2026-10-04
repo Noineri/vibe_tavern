@@ -249,6 +249,31 @@ describe("LoreDraftState — edit + import (CE-B1)", () => {
 		expect(draft.hasEntry("le_persisted")).toBe(true);
 	});
 
+	it("derives review changes once from persisted baselines and creation defaults", async () => {
+		const draft = makeDraft();
+		const imported = await draft.importEntry({
+			id: "le_persisted", lorebookId: "lb_persisted", title: "T", content: "c",
+			keys: ["k"], secondaryKeys: [], constant: false, position: "before_char",
+			depth: 4, logic: "and_any", enabled: true, priority: 10, stickyWindow: 0,
+		});
+		// Importing state alone is not an edit, so no unchanged persisted field is listed.
+		expect(imported.entries[0]!.settingChanges).toBeUndefined();
+
+		const edited = await draft.editLoreEntry({ id: "le_persisted", stickyWindow: 3 });
+		expect(edited.entries[0]!.settingChanges).toEqual({
+			stickyWindow: { oldValue: 0, newValue: 3 },
+		});
+		expect(edited.entries[0]!.settingChanges?.priority).toBeUndefined();
+
+		await draft.createLorebook({ name: "New" });
+		const newEntry = await draft.createLoreEntry({ lorebookId: "lorebook_1" });
+		expect(newEntry.entries.find((entry) => entry.id === "lore_entry_1")!.settingChanges).toBeUndefined();
+		const tuned = await draft.editLoreEntry({ id: "lore_entry_1", probability: 50 });
+		expect(tuned.entries.find((entry) => entry.id === "lore_entry_1")!.settingChanges).toEqual({
+			probability: { oldValue: 100, newValue: 50 },
+		});
+	});
+
 	it("re-importing the same id replaces the node (idempotent)", async () => {
 		const draft = makeDraft();
 		await draft.importLorebook({ id: "lb_x", name: "A", description: "", scopeType: "entity", enabled: true, scanDepth: 10, tokenBudget: 1000, recursiveScanning: false });
@@ -291,6 +316,89 @@ describe("LoreDraftState — edit + import (CE-B1)", () => {
 		expect(e.content).toBe("prose");
 		expect(e.keys).toEqual(["keep"]);
 		expect(e.mode).toBeUndefined();
+	});
+
+	it("COAUTHOR_LORE_FULL_SETTINGS: createLorebook carries every book settings field; absent fields stay off the node", async () => {
+		const draft = makeDraft();
+		const bundle = await draft.createLorebook({
+			name: "Full Book",
+			description: "d",
+			scopeType: "chat",
+			enabled: false,
+			scanDepth: 12,
+			tokenBudget: 777,
+			tokenBudgetPercent: 25,
+			tokenBudgetCap: 3000,
+			recursiveScanning: true,
+			useGroupScoring: true,
+			caseSensitive: true,
+			matchWholeWords: true,
+			maxRecursionSteps: 4,
+			includeNames: false,
+			minActivations: 2,
+			minActivationsDepthMax: 30,
+			overflowAlert: true,
+			characterStrategy: 2,
+		});
+		expect(bundle.lorebooks[0]).toMatchObject({
+			tokenBudgetPercent: 25, tokenBudgetCap: 3000, useGroupScoring: true,
+			caseSensitive: true, matchWholeWords: true, maxRecursionSteps: 4,
+			includeNames: false, minActivations: 2, minActivationsDepthMax: 30,
+			overflowAlert: true, characterStrategy: 2, scopeType: "chat", enabled: false,
+		});
+		// Absent fields stay OFF the node (Apply fills the store create defaults).
+		const minimal = await draft.createLorebook({ name: "Minimal" });
+		expect(minimal.lorebooks[1]!.tokenBudgetPercent).toBeUndefined();
+		expect(minimal.lorebooks[1]!.includeNames).toBeUndefined();
+	});
+
+	it("COAUTHOR_LORE_FULL_SETTINGS: createLoreEntry carries every entry settings field", async () => {
+		const draft = makeDraft();
+		await draft.createLorebook({ name: "Book" });
+		const bundle = await draft.createLoreEntry({
+			lorebookId: "lorebook_1",
+			title: "T", constant: true, position: "at_depth", depth: 9, logic: "not_all", enabled: true,
+			priority: 42, probability: 77, ignoreBudget: true, role: "assistant",
+			groupName: "squad", groupWeight: 55, prioritizeInclusion: true,
+			useGroupScoring: true, excludeRecursion: true, preventRecursion: true,
+			delayUntilRecursion: true, recursionLevel: 4, scanDepthOverride: 9,
+			caseSensitive: true, matchWholeWords: true, caseFormsKeys: ["дракон"],
+			characterFilter: [{ id: null, name: "Alice" }], characterFilterExclude: true,
+			matchSources: ["chat_messages", "scenario"],
+			stickyWindow: 3, cooldownWindow: 5, minChatMessages: 2,
+		});
+		expect(bundle.entries[0]).toMatchObject({
+			priority: 42, probability: 77, ignoreBudget: true, role: "assistant",
+			groupName: "squad", groupWeight: 55, prioritizeInclusion: true,
+			useGroupScoring: true, excludeRecursion: true, preventRecursion: true,
+			delayUntilRecursion: true, recursionLevel: 4, scanDepthOverride: 9,
+			caseSensitive: true, matchWholeWords: true, caseFormsKeys: ["дракон"],
+			characterFilter: [{ id: null, name: "Alice" }], characterFilterExclude: true,
+			matchSources: ["chat_messages", "scenario"],
+			stickyWindow: 3, cooldownWindow: 5, minChatMessages: 2,
+		});
+	});
+
+	it("COAUTHOR_LORE_FULL_SETTINGS: editLorebook / editLoreEntry patch the new fields (null kept, undefined skipped)", async () => {
+		const draft = makeDraft();
+		await draft.createLorebook({ name: "Book" });
+		const book = await draft.editLorebook({ id: "lorebook_1", tokenBudgetPercent: 60, includeNames: true, characterStrategy: 0 });
+		expect(book.lorebooks[0]).toMatchObject({ tokenBudgetPercent: 60, includeNames: true, characterStrategy: 0 });
+
+		await draft.createLoreEntry({ lorebookId: "lorebook_1" });
+		const entry = await draft.editLoreEntry({
+			id: "lore_entry_1",
+			probability: 30, stickyWindow: 4, useGroupScoring: null, scanDepthOverride: null,
+			characterFilter: [{ id: null, name: "Alice" }], matchSources: ["persona_desc"],
+		});
+		const e = entry.entries[0]!;
+		// Tri-state null IS a value — an explicit override, not "unset".
+		expect(e.useGroupScoring).toBeNull();
+		expect(e.scanDepthOverride).toBeNull();
+		expect(e).toMatchObject({ probability: 30, stickyWindow: 4, matchSources: ["persona_desc"] });
+		// Fields NOT supplied keep their prior value (undefined = skip).
+		expect(e.cooldownWindow).toBeUndefined();
+		expect(e.minChatMessages).toBeUndefined();
 	});
 
 	it("editLorebook / editLoreEntry reject a missing id", async () => {

@@ -16,7 +16,13 @@
  * as badges.
  */
 import { Fragment, useMemo } from "react";
-import type { CoauthorDraftLoreEntry, CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
+import type {
+  CoauthorDraftLoreEntry,
+  CoauthorLoreBundle,
+  LoreEntryReviewSettingField,
+  LoreReviewSettingChange,
+  LorebookReviewSettingField,
+} from "@vibe-tavern/api-contracts";
 import { Checkbox } from "../shared/Checkbox.js";
 import { cn } from "../../lib/cn.js";
 
@@ -38,6 +44,11 @@ export interface CoauthorLoreReviewLabels {
   scopeGlobal: string;
   scopeChat: string;
   noContent: string;
+  valueOn: string;
+  valueOff: string;
+  valueInherit: string;
+  lorebookSettingLabels: Record<LorebookReviewSettingField, string>;
+  entrySettingLabels: Record<LoreEntryReviewSettingField, string>;
 }
 
 interface CoauthorLoreReviewProps {
@@ -59,11 +70,54 @@ function entriesLabel(n: number, labels: CoauthorLoreReviewLabels): string {
   return labels.entriesMany;
 }
 
-const SCOPE_LABEL: Record<string, keyof CoauthorLoreReviewLabels> = {
+type ScopeLabelKey = "scopeEntity" | "scopeGlobal" | "scopeChat";
+
+const SCOPE_LABEL: Record<string, ScopeLabelKey> = {
   entity: "scopeEntity",
   global: "scopeGlobal",
   chat: "scopeChat",
 };
+
+function formatSettingValue(value: unknown, labels: CoauthorLoreReviewLabels): string {
+  if (value === null) return labels.valueInherit;
+  if (value === true) return labels.valueOn;
+  if (value === false) return labels.valueOff;
+  if (typeof value === "string") return value || "—";
+  return JSON.stringify(value);
+}
+
+interface ChangedSettingsProps {
+  changes: Record<string, LoreReviewSettingChange> | undefined;
+  settingLabels: Record<string, string>;
+  labels: CoauthorLoreReviewLabels;
+}
+
+/**
+ * Narrow-pane budget: the label is capped at 45% of a ~300px content pane,
+ * leaving at least ~160px for the old → new user values. Labels wrap; values
+ * may ellipsize but their full pair remains reachable through title.
+ */
+function ChangedSettings({ changes, settingLabels, labels }: ChangedSettingsProps) {
+  if (!changes) return null;
+  return (
+    <div className="mt-2 flex flex-col gap-1 border-t border-border/40 pt-1.5">
+      {Object.entries(changes).map(([field, change]) => {
+        const oldValue = formatSettingValue(change.oldValue, labels);
+        const newValue = formatSettingValue(change.newValue, labels);
+        return (
+          <div key={field} className="grid grid-cols-[minmax(0,45%)_minmax(0,1fr)] gap-x-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3">
+            <span>{settingLabels[field] ?? field}:</span>
+            <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-x-1" title={`${oldValue} → ${newValue}`}>
+              <span className="truncate text-right">{oldValue}</span>
+              <span aria-hidden="true">→</span>
+              <span className="truncate">{newValue}</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 interface LoreEntryReviewCardProps {
   entry: CoauthorDraftLoreEntry;
@@ -138,6 +192,11 @@ function LoreEntryReviewCard({
               )}
             </div>
           )}
+          <ChangedSettings
+            changes={e.settingChanges}
+            settingLabels={labels.entrySettingLabels}
+            labels={labels}
+          />
         </div>
       </div>
     </div>
@@ -215,6 +274,11 @@ export function CoauthorLoreReview({
                   {lb.description && (
                     <p className="truncate font-ui text-[11px] text-t3">{lb.description}</p>
                   )}
+                  <ChangedSettings
+                    changes={lb.settingChanges}
+                    settingLabels={labels.lorebookSettingLabels}
+                    labels={labels}
+                  />
                 </div>
                 <span className="shrink-0 font-ui text-[10px] text-t4">
                   {entries.length} {entriesLabel(entries.length, labels)}

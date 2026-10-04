@@ -90,6 +90,9 @@ interface ToolbarSelectProps {
 	/** Optional trailing row under the list (e.g. the "manage personas" link).
 	 *  Rendered inside the popover/sheet, above the mobile cancel button. */
 	footer?: ReactNode;
+	/** Mobile search placeholder. Callers with a non-model list provide its
+	 *  domain-specific copy; the existing model picker keeps its default. */
+	searchPlaceholder?: string;
 	/** Desktop popover geometry. Defaults reproduce the prior absolute-positioned
 	 *  placement (upward, end-aligned). Ignored on mobile. */
 	side?: "top" | "bottom";
@@ -111,6 +114,7 @@ export function ToolbarSelect({
 	emptyText,
 	footer,
 	searchable,
+	searchPlaceholder,
 	side = "top",
 	align = "end",
 	sideOffset = 8,
@@ -136,6 +140,7 @@ export function ToolbarSelect({
 				emptyText={emptyText}
 				footer={footer}
 				searchable={searchable}
+				searchPlaceholder={searchPlaceholder}
 			/>
 		);
 	}
@@ -235,7 +240,8 @@ function ToolbarSelectMobile({
 	emptyText,
 	footer,
 	searchable,
-}: Pick<ToolbarSelectProps, "trigger" | "itemTestId" | "title" | "items" | "value" | "onSelect" | "emptyText" | "footer" | "searchable"> & {
+	searchPlaceholder,
+}: Pick<ToolbarSelectProps, "trigger" | "itemTestId" | "title" | "items" | "value" | "onSelect" | "emptyText" | "footer" | "searchable" | "searchPlaceholder"> & {
 	open: boolean;
 	setOpen: (open: boolean) => void;
 }) {
@@ -266,7 +272,7 @@ function ToolbarSelectMobile({
 					<div className="px-4 pb-2">
 						<SearchInput
 							data-testid="toolbar-select-search"
-							placeholder={t("search_models")}
+							placeholder={searchPlaceholder ?? t("search_models")}
 							value={search}
 							onChange={(e) => setSearch(e.target.value)}
 						/>

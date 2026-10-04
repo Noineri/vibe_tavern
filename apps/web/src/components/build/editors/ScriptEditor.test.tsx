@@ -18,7 +18,7 @@
  */
 import { afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import type { ScriptRecord } from "../../../api/types.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
@@ -28,6 +28,7 @@ useDomEnv();
 
 const listScripts = mock((_characterId?: string) => Promise.resolve<ScriptRecord[]>([]));
 const listAllScripts = mock(() => Promise.resolve<ScriptRecord[]>([]));
+const listParticipatingScripts = mock((_chatId: string) => Promise.resolve<ScriptRecord[]>([]));
 const createScript = mock(() => Promise.resolve<ScriptRecord>(undefined as never));
 const updateScript = mock((_id: string, _patch: Partial<ScriptRecord>) => Promise.resolve<ScriptRecord>(undefined as never));
 const deleteScript = mock(() => Promise.resolve());
@@ -57,6 +58,7 @@ mock.module("../../../api/script-api.js", () => ({
 	...realScriptApi,
 	listScripts,
 	listAllScripts,
+	listParticipatingScripts,
 	createScript,
 	updateScript,
 	deleteScript,
@@ -156,6 +158,7 @@ function holdNextUpdate() {
 beforeEach(() => {
   listScripts.mockClear();
   listAllScripts.mockClear();
+  listParticipatingScripts.mockClear();
   createScript.mockClear();
   updateScript.mockClear();
   deleteScript.mockClear();
@@ -168,6 +171,7 @@ beforeEach(() => {
   updateGate = null;
   listScripts.mockImplementation(async () => [{ ...serverScript }]);
   listAllScripts.mockResolvedValue([]);
+  listParticipatingScripts.mockResolvedValue([]);
   getScriptLinks.mockResolvedValue([]);
   createScript.mockResolvedValue({ ...baseScript });
   deleteScript.mockResolvedValue(undefined);
@@ -193,17 +197,28 @@ beforeEach(() => {
 });
 
 function Harness() {
-  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity" });
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId: null });
   return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
 }
 
 function HarnessAll() {
-  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "all" });
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "all", ownerId: null });
   return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
 }
 
 function HarnessGlobal() {
-  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "global" });
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "global", ownerId: null });
+  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+}
+
+function HarnessCurrent() {
+  const panel = useScriptPanel({ characterId: "c1", chatId: "chat-current", personaId: null, scope: "current", ownerId: null });
+  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+}
+
+function HarnessFiltered({ ownerId, nameSearch }: { ownerId: string | null; nameSearch: string }) {
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId });
+  useEffect(() => panel.setNameSearch(nameSearch), [nameSearch, panel.setNameSearch]);
   return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
 }
 
@@ -211,7 +226,7 @@ function HarnessGlobal() {
  *  returns `handleImportOpen` for the caller's chrome, so tests reach the
  *  modal through a button of their own. */
 function ImportHarness() {
-  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity" });
+  const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId: null });
   return (
     <>
       {panel.modals}
@@ -364,6 +379,33 @@ describe("useScriptPanel explicit save", () => {
 // Under the ACTIVE script only its own kind's templates are offered; the
 // import modal (no active script) keeps every template but splits them into
 // labeled prompt/dice groups.
+describe("useScriptPanel list filters", () => {
+  it("loads Current scripts from the backend participation query", async () => {
+    listParticipatingScripts.mockResolvedValue([{ ...baseScript, id: "current-script", name: "Current script" }]);
+    const { findByText } = render(<HarnessCurrent />);
+
+    expect(await findByText("Current script")).toBeTruthy();
+    expect(listParticipatingScripts).toHaveBeenCalledWith("chat-current");
+    expect(listScripts).not.toHaveBeenCalled();
+  });
+
+  it("filters Bound scripts by owner and name", async () => {
+    listScripts.mockResolvedValue([
+      { ...baseScript, id: "owner-alpha", name: "Owner alpha", characterId: "owner-1" },
+      { ...baseScript, id: "owner-tavern", name: "Owner tavern", characterId: "owner-1" },
+      { ...baseScript, id: "other-tavern", name: "Other tavern", characterId: "owner-2" },
+    ]);
+    const ui = render(<HarnessFiltered ownerId="owner-1" nameSearch="" />);
+
+    await waitFor(() => expect(ui.queryAllByTestId("script-name")).toHaveLength(2));
+    ui.rerender(<HarnessFiltered ownerId="owner-1" nameSearch="tavern" />);
+
+    await waitFor(() => expect(ui.queryAllByTestId("script-name")).toHaveLength(1));
+    expect(ui.queryAllByTestId("script-name")[0]?.textContent).toBe("Owner tavern");
+  });
+});
+
+// ── Templates by script kind (SCRIPT_EDITOR_CLEANUP step 3) ─────────────────
 describe("useScriptPanel templates by script kind", () => {
   it("offers only dice templates under a dice script", async () => {
     serverScript = { ...baseScript, scriptKind: "dice" };

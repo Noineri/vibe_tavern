@@ -21,12 +21,18 @@
  *  - Draft nodes are IMMUTABLY REPLACED (never mutated in place), so a
  *    previously returned snapshot stays byte-stable after a later mutation.
  */
-import type {
-	CoauthorDraftLorebook,
-	CoauthorDraftLoreEntry,
-	CoauthorLoreBundle,
+import {
+	LOREBOOK_REVIEW_SETTING_FIELDS,
+	LORE_ENTRY_REVIEW_SETTING_FIELDS,
+	type CoauthorDraftLorebook,
+	type CoauthorDraftLoreEntry,
+	type CoauthorLoreBundle,
+	type LoreReviewSettingChange,
 } from "@vibe-tavern/api-contracts";
+import type { updateLoreEntrySchema, updateLorebookMetaSchema } from "@vibe-tavern/api-contracts";
+import type { z } from "zod";
 import { LOREBOOK_DEFAULTS, LORE_LOGIC } from "@vibe-tavern/domain";
+import { LORE_TOOL_EXCLUDED_ENTRY_FIELDS } from "./lore-tool-schemas.js";
 
 /** Allocates a stable, DB-primary-key-compatible id for a draft node. */
 export type LoreDraftIdGen = (prefix: "lorebook" | "lore_entry") => string;
@@ -37,30 +43,33 @@ export interface LoreDraftDeps {
 
 export type LoreDraftScopeType = "global" | "entity" | "chat";
 
-export interface CreateLorebookInput {
+/**
+ * Every book-level settings field the lorebook API contract defines
+ * (`updateLorebookMetaSchema`), all optional — the SAME contract the
+ * lorebook API validates with (COAUTHOR_LORE_FULL_SETTINGS step 3: no
+ * parallel validator set). `scopeType` is re-narrowed per input below.
+ */
+export type LorebookSettingsPatch = Omit<z.output<typeof updateLorebookMetaSchema>, "scopeType">;
+
+/**
+ * Every entry-level settings field the lorebook API contract defines
+ * (`updateLoreEntrySchema`) minus the documented content-path / dead-alias
+ * exclusions (see `LORE_TOOL_EXCLUDED_ENTRY_FIELDS`). Same contract as the
+ * lorebook API — no parallel validator set.
+ */
+export type LoreEntrySettingsPatch = Omit<
+	z.output<typeof updateLoreEntrySchema>,
+	keyof typeof LORE_TOOL_EXCLUDED_ENTRY_FIELDS
+>;
+
+export interface CreateLorebookInput extends Omit<LorebookSettingsPatch, "name"> {
 	name: string;
-	description?: string;
 	scopeType?: LoreDraftScopeType;
-	enabled?: boolean;
-	/** CE-A1: activation overrides; default to `LOREBOOK_DEFAULTS`. */
-	scanDepth?: number;
-	tokenBudget?: number;
-	recursiveScanning?: boolean;
 }
 
-export interface CreateLoreEntryInput {
+export interface CreateLoreEntryInput extends LoreEntrySettingsPatch {
 	/** Parent lorebook draft id; MUST already exist in this draft. */
 	lorebookId: string;
-	title?: string;
-	/** CE-A2: the entry is a SKELETON. Content + keys come ONLY from delegates
-	 *  (ai_write_lore_entry / ai_generate_lore_keys), never set inline here. */
-	constant?: boolean;
-	/** Injection position (mirrors LoreEntryPosition). Default `before_char`. */
-	position?: string;
-	depth?: number;
-	/** Activation logic / match mode (domain LORE_LOGIC). Default `and_any`. */
-	logic?: string;
-	enabled?: boolean;
 	/** CE-B2: parent is a verified persisted lorebook absent from the bundle. */
 	parentMode?: "persisted";
 }
@@ -86,35 +95,24 @@ export interface SetLoreEntryKeysInput {
 }
 
 /**
- * CE-B1: patch for editing a draft lorebook's mutable fields. All fields
- * optional — only the supplied ones are applied (immutable replace). `id`
- * targets either a turn-drafted lorebook or an imported (persisted) one.
+ * CE-B1: patch for editing a draft lorebook's settings. Every field the
+ * contract defines, all optional — only the supplied ones are applied
+ * (immutable replace). `id` targets either a turn-drafted lorebook or an
+ * imported (persisted) one.
  */
-export interface EditLorebookInput {
+export interface EditLorebookInput extends LorebookSettingsPatch {
 	id: string;
-	name?: string;
-	description?: string;
 	scopeType?: LoreDraftScopeType;
-	enabled?: boolean;
-	scanDepth?: number;
-	tokenBudget?: number;
-	recursiveScanning?: boolean;
 }
 
 /**
- * CE-B1: patch for editing a draft entry's mutable fields (title + activation
- * params + logic + enabled). Keys/content are NOT editable here — they stay
- * delegate-only (ai_generate_lore_keys / ai_write_lore_entry). All fields
- * optional; only the supplied ones are applied (immutable replace).
+ * CE-B1: patch for editing a draft entry's settings. Every contract field
+ * (minus content-path), all optional; only the supplied ones are applied.
+ * Keys/content are NOT editable here — they stay delegate-only
+ * (ai_generate_lore_keys / ai_write_lore_entry). Immutable replace.
  */
-export interface EditLoreEntryInput {
+export interface EditLoreEntryInput extends LoreEntrySettingsPatch {
 	id: string;
-	title?: string;
-	constant?: boolean;
-	position?: string;
-	depth?: number;
-	logic?: string;
-	enabled?: boolean;
 }
 
 /** Defaults for a newly drafted lorebook (scopeType mirrors lorebook routes). */
@@ -126,9 +124,115 @@ const DEFAULT_ENTRY_DEPTH = 4;
 /** CE-A2: default activation logic — ST's AND_ANY (at least one key matches). */
 const DEFAULT_ENTRY_LOGIC = LORE_LOGIC.andAny;
 
+/**
+ * The entry fields the draft node ALWAYS carries (base skeleton shape);
+ * settings fields beyond these are copied only when the co-author set them
+ * (absent = Apply fills the store's create defaults).
+ */
+const ENTRY_BASE_KEYS = new Set([
+	"lorebookId", "parentMode", "title", "constant", "position", "depth", "logic", "enabled",
+]);
+
+/** The lorebook fields the draft node ALWAYS carries (see ENTRY_BASE_KEYS). */
+const LOREBOOK_BASE_KEYS = new Set([
+	"name", "description", "enabled", "scanDepth", "tokenBudget", "recursiveScanning",
+]);
+
+/** Defaults used only to identify non-default settings on newly proposed nodes. */
+const NEW_LOREBOOK_SETTING_DEFAULTS: Record<string, unknown> = {
+	enabled: true,
+	scanDepth: LOREBOOK_DEFAULTS.scanDepth,
+	tokenBudget: LOREBOOK_DEFAULTS.tokenBudget,
+	tokenBudgetPercent: null,
+	tokenBudgetCap: LOREBOOK_DEFAULTS.tokenBudgetCap,
+	recursiveScanning: LOREBOOK_DEFAULTS.recursiveScanning,
+	useGroupScoring: false,
+	caseSensitive: false,
+	matchWholeWords: false,
+	maxRecursionSteps: 0,
+	includeNames: true,
+	minActivations: 0,
+	minActivationsDepthMax: 0,
+	overflowAlert: false,
+	characterStrategy: 1,
+};
+
+const NEW_ENTRY_SETTING_DEFAULTS: Record<string, unknown> = {
+	constant: false,
+	position: DEFAULT_ENTRY_POSITION,
+	depth: DEFAULT_ENTRY_DEPTH,
+	logic: DEFAULT_ENTRY_LOGIC,
+	enabled: true,
+	priority: 10,
+	probability: 100,
+	ignoreBudget: false,
+	role: "system",
+	groupName: "",
+	groupWeight: 100,
+	prioritizeInclusion: false,
+	useGroupScoring: null,
+	excludeRecursion: false,
+	preventRecursion: false,
+	delayUntilRecursion: false,
+	recursionLevel: 0,
+	scanDepthOverride: null,
+	caseSensitive: null,
+	matchWholeWords: null,
+	caseFormsKeys: [],
+	characterFilter: [],
+	characterFilterExclude: false,
+	matchSources: ["chat_messages"],
+	stickyWindow: 0,
+	cooldownWindow: 0,
+	minChatMessages: 0,
+};
+
+function valuesMatch(a: unknown, b: unknown): boolean {
+	return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * The sole change derivation for review metadata. Imported nodes compare against
+ * their persisted baseline; new nodes compare against creation defaults.
+ */
+function valueOrDefault(source: Record<string, unknown> | undefined, field: string, defaults: Record<string, unknown>): unknown {
+	return source && Object.hasOwn(source, field) ? source[field] : defaults[field];
+}
+
+function deriveSettingChanges(
+	node: Record<string, unknown>,
+	fields: readonly string[],
+	baseline: Record<string, unknown> | undefined,
+	defaults: Record<string, unknown>,
+): Record<string, LoreReviewSettingChange> | undefined {
+	const changes: Record<string, LoreReviewSettingChange> = {};
+	for (const field of fields) {
+		const oldValue = valueOrDefault(baseline, field, defaults);
+		const newValue = valueOrDefault(node, field, defaults);
+		if (!valuesMatch(oldValue, newValue)) changes[field] = { oldValue, newValue };
+	}
+	return Object.keys(changes).length > 0 ? changes : undefined;
+}
+
+/**
+ * Copy every DEFINED settings field except the base keys (undefined = not
+ * set by the co-author — must not land on the node; null IS a value and is
+ * kept, e.g. the tri-state useGroupScoring / scanDepthOverride overrides).
+ */
+function definedSettings<T extends object>(source: T, skip?: Set<string>): Partial<T> {
+	const out: Partial<T> = {};
+	for (const [key, value] of Object.entries(source) as Array<[keyof T & string, T[keyof T & string]]>) {
+		if (value !== undefined && !skip?.has(key)) out[key] = value;
+	}
+	return out;
+}
+
 export class LoreDraftState {
 	private readonly lorebooks = new Map<string, CoauthorDraftLorebook>();
 	private readonly entries = new Map<string, CoauthorDraftLoreEntry>();
+	/** Persisted values captured at import; the sole baseline for review changes. */
+	private readonly lorebookBaselines = new Map<string, CoauthorDraftLorebook>();
+	private readonly entryBaselines = new Map<string, CoauthorDraftLoreEntry>();
 	private chain: Promise<unknown> = Promise.resolve();
 
 	constructor(private readonly deps: LoreDraftDeps) {}
@@ -156,15 +260,19 @@ export class LoreDraftState {
 			if (!input.name.trim()) {
 				throw new Error("create_lorebook: name must not be empty");
 			}
+			const { name, scopeType, ...settings } = input;
 			const lorebook: CoauthorDraftLorebook = {
 				id: this.deps.idGen("lorebook"),
-				name: input.name,
-				description: input.description ?? "",
-				scopeType: input.scopeType ?? DEFAULT_LOREBOOK_SCOPE,
-				enabled: input.enabled ?? true,
-				scanDepth: input.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
-				tokenBudget: input.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
-				recursiveScanning: input.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning,
+				name,
+				description: settings.description ?? "",
+				scopeType: scopeType ?? DEFAULT_LOREBOOK_SCOPE,
+				enabled: settings.enabled ?? true,
+				scanDepth: settings.scanDepth ?? LOREBOOK_DEFAULTS.scanDepth,
+				tokenBudget: settings.tokenBudget ?? LOREBOOK_DEFAULTS.tokenBudget,
+				recursiveScanning: settings.recursiveScanning ?? LOREBOOK_DEFAULTS.recursiveScanning,
+				// Every other settings field rides along only when set (absent =
+				// Apply fills the store's create defaults — step 3).
+				...definedSettings(settings, LOREBOOK_BASE_KEYS),
 			};
 			this.lorebooks.set(lorebook.id, lorebook);
 			return this.snapshot();
@@ -206,20 +314,24 @@ export class LoreDraftState {
 
 	/** Build a fresh draft entry (CE-A2 skeleton) from a create/add input. */
 	private appendEntry(input: CreateLoreEntryInput): [string, CoauthorDraftLoreEntry] {
+		const { lorebookId, parentMode, ...settings } = input;
 		const entry: CoauthorDraftLoreEntry = {
-			id: this.deps.idGen("lore_entry"),
-			lorebookId: input.lorebookId,
-			title: input.title ?? "",
-			// CE-A2: skeleton — content + keys are delegate-only, start empty.
-			content: "",
-			keys: [],
-			secondaryKeys: [],
-			constant: input.constant ?? false,
-			position: input.position ?? DEFAULT_ENTRY_POSITION,
-			depth: input.depth ?? DEFAULT_ENTRY_DEPTH,
-			logic: input.logic ?? DEFAULT_ENTRY_LOGIC,
-			enabled: input.enabled ?? true,
-			...(input.parentMode !== undefined ? { parentMode: input.parentMode } : {}),
+				id: this.deps.idGen("lore_entry"),
+				lorebookId,
+				title: settings.title ?? "",
+				// CE-A2: skeleton — content + keys are delegate-only, start empty.
+				content: "",
+				keys: [],
+				secondaryKeys: [],
+				constant: settings.constant ?? false,
+				position: settings.position ?? DEFAULT_ENTRY_POSITION,
+				depth: settings.depth ?? DEFAULT_ENTRY_DEPTH,
+				logic: settings.logic ?? DEFAULT_ENTRY_LOGIC,
+				enabled: settings.enabled ?? true,
+				...(parentMode !== undefined ? { parentMode } : {}),
+				// Every other settings field rides along only when set (absent =
+				// Apply fills the store's create defaults — step 3).
+				...definedSettings(settings, ENTRY_BASE_KEYS),
 		};
 		return [entry.id, entry];
 	}
@@ -306,7 +418,9 @@ export class LoreDraftState {
 	 */
 	importLorebook(node: CoauthorDraftLorebook): Promise<CoauthorLoreBundle> {
 		return this.runQueued(() => {
-			this.lorebooks.set(node.id, { ...node, mode: "edit" });
+			const { settingChanges: _settingChanges, ...baseline } = node;
+			this.lorebookBaselines.set(node.id, baseline);
+			this.lorebooks.set(node.id, { ...baseline, mode: "edit" });
 			return this.snapshot();
 		});
 	}
@@ -316,7 +430,9 @@ export class LoreDraftState {
 		return this.runQueued(() => {
 			// A persisted entry's parent is itself persisted and intentionally need
 			// not appear as a no-op lorebook node in the proposal bundle.
-			this.entries.set(node.id, { ...node, mode: "edit", parentMode: "persisted" });
+			const { settingChanges: _settingChanges, ...baseline } = node;
+			this.entryBaselines.set(node.id, baseline);
+			this.entries.set(node.id, { ...baseline, mode: "edit", parentMode: "persisted" });
 			return this.snapshot();
 		});
 	}
@@ -333,23 +449,17 @@ export class LoreDraftState {
 			if (!existing) {
 				throw new Error(`edit_lorebook: lorebook '${input.id}' does not exist in the draft`);
 			}
-			const patch: Partial<CoauthorDraftLorebook> = {};
-			if (input.name !== undefined) patch.name = input.name;
-			if (input.description !== undefined) patch.description = input.description;
-			if (input.scopeType !== undefined) patch.scopeType = input.scopeType;
-			if (input.enabled !== undefined) patch.enabled = input.enabled;
-			if (input.scanDepth !== undefined) patch.scanDepth = input.scanDepth;
-			if (input.tokenBudget !== undefined) patch.tokenBudget = input.tokenBudget;
-			if (input.recursiveScanning !== undefined) patch.recursiveScanning = input.recursiveScanning;
-			this.lorebooks.set(existing.id, { ...existing, ...patch });
+			const { id: _id, ...settings } = input;
+			this.lorebooks.set(existing.id, { ...existing, ...definedSettings(settings) });
 			return this.snapshot();
 		});
 	}
 
 	/**
-	 * CE-B1: apply a partial patch to a draft entry's mutable fields (title +
-	 * activation params + logic + enabled). Keys/content are NOT editable here —
-	 * they stay delegate-only (`ai_generate_lore_keys` / `ai_write_lore_entry`).
+	 * CE-B1: apply a partial patch to a draft entry's settings — every
+	 * contract settings field (title, activation, timing, groups, recursion,
+	 * matching, filters). Keys/content are NOT editable here — they stay
+	 * delegate-only (`ai_generate_lore_keys` / `ai_write_lore_entry`).
 	 * Immutable replace; preserves `mode`. Rejects if the entry is absent.
 	 */
 	editLoreEntry(input: EditLoreEntryInput): Promise<CoauthorLoreBundle> {
@@ -358,14 +468,8 @@ export class LoreDraftState {
 			if (!existing) {
 				throw new Error(`edit_lore_entry: entry '${input.id}' does not exist in the draft`);
 			}
-			const patch: Partial<CoauthorDraftLoreEntry> = {};
-			if (input.title !== undefined) patch.title = input.title;
-			if (input.constant !== undefined) patch.constant = input.constant;
-			if (input.position !== undefined) patch.position = input.position;
-			if (input.depth !== undefined) patch.depth = input.depth;
-			if (input.logic !== undefined) patch.logic = input.logic;
-			if (input.enabled !== undefined) patch.enabled = input.enabled;
-			this.entries.set(existing.id, { ...existing, ...patch });
+			const { id: _id, ...settings } = input;
+			this.entries.set(existing.id, { ...existing, ...definedSettings(settings) });
 			return this.snapshot();
 		});
 	}
@@ -377,8 +481,26 @@ export class LoreDraftState {
 	 */
 	snapshot(): CoauthorLoreBundle {
 		return {
-			lorebooks: [...this.lorebooks.values()],
-			entries: [...this.entries.values()],
+			lorebooks: [...this.lorebooks.values()].map((node) => {
+				const { settingChanges: _settingChanges, ...lorebook } = node;
+				const settingChanges = deriveSettingChanges(
+					lorebook,
+					LOREBOOK_REVIEW_SETTING_FIELDS,
+					this.lorebookBaselines.get(node.id),
+					NEW_LOREBOOK_SETTING_DEFAULTS,
+				);
+				return settingChanges ? { ...lorebook, settingChanges } : lorebook;
+			}),
+			entries: [...this.entries.values()].map((node) => {
+				const { settingChanges: _settingChanges, ...entry } = node;
+				const settingChanges = deriveSettingChanges(
+					entry,
+					LORE_ENTRY_REVIEW_SETTING_FIELDS,
+					this.entryBaselines.get(node.id),
+					NEW_ENTRY_SETTING_DEFAULTS,
+				);
+				return settingChanges ? { ...entry, settingChanges } : entry;
+			}),
 		};
 	}
 

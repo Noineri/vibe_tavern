@@ -20,6 +20,8 @@ export {
   coauthorToolOutputSchema,
   coauthorLoreBundleOutputSchema,
   coauthorLoreBundleSchema,
+  LOREBOOK_REVIEW_SETTING_FIELDS,
+  LORE_ENTRY_REVIEW_SETTING_FIELDS,
   coauthorSkillReadOutputSchema,
   contextSearchResultItemSchema,
   coauthorSearchOutputSchema,
@@ -32,7 +34,7 @@ export {
   coauthorSectionEditInputSchema,
   coauthorSectionWriteInputSchema,
 } from "./chat-schema.js";
-export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTarget, CoauthorEditItem, CoauthorSectionEditInput, CoauthorSectionWriteInput, SkillCatalogEntryDto, SkillCatalogError, SkillCatalog, SkillImportResult, CoauthorSkillReadOutput, CoauthorDraftLorebook, CoauthorDraftLoreEntry, CoauthorLoreBundle, CoauthorLoreBundleOutput, ContextSearchResultItem, CoauthorSearchOutput, CoauthorContextReadOutput } from "./chat-schema.js";
+export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTarget, CoauthorEditItem, CoauthorSectionEditInput, CoauthorSectionWriteInput, SkillCatalogEntryDto, SkillCatalogError, SkillCatalog, SkillImportResult, CoauthorSkillReadOutput, CoauthorDraftLorebook, CoauthorDraftLoreEntry, CoauthorLoreBundle, CoauthorLoreBundleOutput, ContextSearchResultItem, CoauthorSearchOutput, CoauthorContextReadOutput, LorebookReviewSettingField, LoreEntryReviewSettingField, LoreReviewSettingChange } from "./chat-schema.js";
 export { regenerateOverrideSchema } from "./chat-regenerate-schema.js";
 export type { RegenerateOverride } from "./chat-regenerate-schema.js";
 export {
