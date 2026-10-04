@@ -32,12 +32,12 @@ const repoRoot = join(import.meta.dir, "..");
  */
 export const BUDGETS = {
 	/** `as never` casts in test files (TS-7b class; blanket rewrite wontfix). */
-	// 1244 (2026-09-22): +1 — one justified hostile-input cast in the
-	// image-prompt-profile store boundary test (IF-1a: bogus payload cast IN
-	// to prove the store filters it). Deliberate growth, not cleanup debt.
-	asNever: 1244,
+	// 1243 (2026-10-04): ratcheted to the merged tree's count after PR #51.
+	asNever: 1243,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
-	screen: 205,
+	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
+	// (provider-lists unification removed the forked pickers' screen usage).
+	screen: 196,
 	/** `innerHTML = ""` surgeries (TtsProfileEditor legacy block). */
 	innerHTMLEmpty: 30,
 	/** Literal `await sleep/delay/wait(N)` with N > 200 in test files. */
