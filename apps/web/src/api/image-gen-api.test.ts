@@ -95,3 +95,21 @@ describe("image-gen listing client (IF-20)", () => {
     expect(await imageGenApi.listImageGenModels("missing")).toBeNull();
   });
 });
+
+describe("ImageGen profile reorder client", () => {
+  test("patches the typed reorder endpoint with the full sort-order payload", async () => {
+    let capturedUrl = "";
+    let capturedInit: RequestInit | undefined;
+    globalThis.fetch = mockFetch(async (input, init) => {
+      capturedUrl = String(input);
+      capturedInit = init;
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    await imageGenApi.reorderImageGenProfiles([{ id: "image-2", sortOrder: 0 }, { id: "image-1", sortOrder: 1 }]);
+
+    expect(capturedUrl.endsWith("/api/image-gen/profiles/reorder")).toBe(true);
+    expect(capturedInit?.method).toBe("PATCH");
+    expect(capturedInit?.body).toBe(JSON.stringify({ updates: [{ id: "image-2", sortOrder: 0 }, { id: "image-1", sortOrder: 1 }] }));
+  });
+});
