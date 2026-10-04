@@ -878,7 +878,7 @@ export function ProviderModal({
                     onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
                     requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
                     localEndpoint={form.baseUrl}
-                    localConnectionStatus={fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown"}
+                    localConnectionStatus={isLocalProvider ? (fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown") : undefined}
                   />
 
                   {form.model && (
