@@ -379,6 +379,7 @@ describe("PromptAssemblyService summary preparation", () => {
       },
       messages: { getMessages: async () => messages },
       personas: { listAll: async () => [{ id: "persona_1", defaultForNewChats: true }] },
+      presets: { listAll: async () => [] },
       chatSummaries: { listByChatBranch: async () => { summaryLoads += 1; return []; } },
       characterAssets: { listByCharacter: async () => [] },
       diceRolls: { getRollsForMessages: async () => new Map() },

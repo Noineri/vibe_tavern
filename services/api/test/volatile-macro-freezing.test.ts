@@ -58,6 +58,21 @@ describe("volatile macro storage", () => {
 		expect(secondAssembly).toContain("Nika");
 	});
 
+	it("freezes UTC-offset and formatted-time macros in greeting storage", async () => {
+		const { runtime, stores } = await createTestRuntime();
+		const created = await runtime.character.createFromScratch({
+			name: "Aria",
+			description: "A mage.",
+			firstMessage: "At {{time::UTC+2}} on {{datetimeformat::YYYY-MM-DD}} for {{user}}.",
+		});
+		const chat = await stores.chats.getById(created.activeChatId);
+		if (!chat) throw new Error("The created chat was not found.");
+		const messages = await stores.messages.getMessages(chat.activeBranchId);
+		const variants = await stores.messages.getVariants(messages[0]!.id);
+
+		expect(variants[0]?.content).toMatch(/^At \d{2}:\d{2} on \d{4}-\d{2}-\d{2} for \{\{user}}\.$/);
+	});
+
 	it("freezes a user-message edit but leaves model-written content raw", async () => {
 		const { runtime, stores } = await createTestRuntime();
 		const created = await runtime.character.createFromScratch({

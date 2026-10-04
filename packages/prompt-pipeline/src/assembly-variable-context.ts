@@ -25,12 +25,16 @@ export function buildAssemblyVariableContext(context: PromptAssemblyContext): Pr
       jailbreak: context.preset?.jailbreak ?? "",
       summary: context.preset?.summary ?? "",
       tools: context.preset?.tools ?? context.instructions?.toolInstructions ?? "",
+      authorsNote: context.preset?.authorsNote ?? null,
+      defaultSystemPrompt: context.preset?.defaultSystemPrompt ?? null,
+      defaultAuthorsNote: context.preset?.defaultAuthorsNote ?? null,
       contextBudget: context.config?.contextBudget ?? null,
     },
     chat: {
       id: context.identity.chatId,
       messages: context.chat.recentMessages,
       messageIds: context.chat.recentMessages.map((message) => message.id),
+      idleDuration: context.chat.idleDuration ?? null,
     },
     runtime: {
       contextBudget: context.config?.contextBudget ?? null,

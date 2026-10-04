@@ -51,6 +51,10 @@ export interface PromptPresetContext {
   tools: string;
   prefill: string | null;
   authorsNote: string | null;
+  /** Main prompt from the user-selected default preset. */
+  defaultSystemPrompt: string | null;
+  /** Author's note from the user-selected default preset. */
+  defaultAuthorsNote: string | null;
   authorsNoteDepth: number | null;
   customInjections: Array<{
     identifier?: string;
@@ -225,6 +229,8 @@ export function buildPromptVariableContext(input: BuildPromptVariableContextInpu
       tools: input.prompt?.tools ?? "",
       prefill: input.prompt?.prefill ?? null,
       authorsNote: input.prompt?.authorsNote ?? null,
+      defaultSystemPrompt: input.prompt?.defaultSystemPrompt ?? null,
+      defaultAuthorsNote: input.prompt?.defaultAuthorsNote ?? null,
       authorsNoteDepth: input.prompt?.authorsNoteDepth ?? null,
       customInjections: input.prompt?.customInjections ?? [],
       promptOrder: input.prompt?.promptOrder ?? [],

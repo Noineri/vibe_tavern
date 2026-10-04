@@ -31,6 +31,7 @@ import { findTrimClose, removeTrimmedLineBreaks, TRIM_LINE_BREAK_MARKER } from "
 import { MacroVariableScope } from "./macro-variable-scope.js";
 import { createVariableMacroResolvers, resolveVariableShorthand } from "./variable-macro-resolvers.js";
 import { registerCharacterMacroResolvers } from "./macro-character-resolvers.js";
+import { registerStaticTextMacroResolvers } from "./macro-static-text-resolvers.js";
 export { getMacroCatalog } from "./macro-catalog.js";
 
 /** Macro resolvers whose values are frozen when a greeting or user message is written. */
@@ -759,12 +760,6 @@ export function createFullMacroEngine(variableScope?: MacroVariableScope): Macro
   // ─── Time ──────────────────────────────────────────────────────────
 
   engine.register({
-    name: "time",
-    description: "Current local time (e.g. 10:30 PM).",
-    category: MacroCategory.Time,
-    resolve: (_args, context) => context.time.time,
-  });
-  engine.register({
     name: "date",
     description: "Current local date.",
     category: MacroCategory.Time,
@@ -788,6 +783,8 @@ export function createFullMacroEngine(variableScope?: MacroVariableScope): Macro
     category: MacroCategory.Time,
     resolve: (_args, context) => context.time.isodate,
   });
+
+  registerStaticTextMacroResolvers(engine.register.bind(engine), MacroCategory);
 
   // ─── Utility ───────────────────────────────────────────────────────
 

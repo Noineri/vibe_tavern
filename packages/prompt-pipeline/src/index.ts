@@ -9,6 +9,7 @@ export { activateLoreEntries, type ActivatableLoreEntry } from "./lore-activatio
 export { parseFindRegex, compileRegexScript, filterRegexPresets, applyRegexLayer, applyRegexToChatHistory, escapeRegexLiteral, createValueEscapingMacroSource } from "./regex-engine.js";
 export type { ParsedFindRegex, RegexMacroSource, CompiledRegexScript, RegexHistoryMessage } from "./regex-engine.js";
 export { createPhaseOneMacroEngine, createFullMacroEngine, extractMacroNames, VOLATILE_MACRO_NAMES } from "./macro-registry.js";
+export { formatIdleDuration } from "./macro-static-text-resolvers.js";
 export { getMacroCatalog } from "./macro-catalog.js";
 export type { MacroCatalogEntry, MacroCategory } from "./macro-registry.js";
 export { PRESET_PRONOUN_FORMS, resolvePronounForms } from "./pronoun-forms.js";
