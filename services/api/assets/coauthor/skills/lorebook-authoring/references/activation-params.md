@@ -3,6 +3,7 @@
 The dense field reference for lorebook authoring.
 Read this when a param choice is non-obvious; for the workflow and the delegate-only rule, see the parent `SKILL.md`.
 Every field below is accepted by the tools as named: `create_lorebook` / `edit_lorebook` take all book fields, and `create_lore_entry` / `add_lore_entry` / `edit_lore_entry` take all entry fields — only the fields you supply change anything.
+That full field set is available while you are working on lore: after your first lore tool call the tools carry every field from your next turn onward, and before that they expose only the starter fields (books: `name`, `description`, `scopeType`, `enabled`, `scanDepth`, `tokenBudget`, `recursiveScanning`; entries: `title`, `constant`, `position`, `depth`, `logic`, `enabled`), rejecting any advanced field with a named error — start with the starter fields, then refine.
 `set_lore_activation` is the narrow convenience for `constant` / `enabled` only; anything else goes through `edit_lore_entry`.
 "Default" is what a drafted node gets when the field is left unset: books from `LOREBOOK_DEFAULTS` in `packages/domain` plus the Apply create defaults, entries from the draft skeleton plus the Apply create defaults.
 Content and keys are **never** set through these fields — they come from the delegate tools (`ai_write_lore_entry` / `ai_generate_lore_keys`).

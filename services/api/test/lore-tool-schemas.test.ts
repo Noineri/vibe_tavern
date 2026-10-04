@@ -1,21 +1,28 @@
 /**
  * COAUTHOR_LORE_FULL_SETTINGS steps 2–3 — schema-source tests for the lore
- * tools' full settings surface.
+ * tools' full settings surface — plus step 6's two parameter views.
  *
- * Pins three contracts:
+ * Pins four contracts:
  *  1. Description-map coverage — every settings field the lorebook API
  *     contracts define has a model-facing description (a contract field
  *     without one is drift; the compile-time mapped types make it an error,
  *     this makes it a runtime guarantee).
- *  2. Tool exposure — every contract settings field (minus the documented
- *     content-path / dead-alias exclusions) is a parameter of the tools, so a
- *     field added to the contracts reaches the Co-Author by editing the
- *     description map only.
- *  3. Full round-trip — a create with EVERY field set flows tool → draft
+ *  2. Tool exposure IN LORE WORK — every contract settings field (minus the
+ *     documented content-path / dead-alias exclusions) is a parameter of the
+ *     tools' FULL view (`buildLoreToolInputSchemas(true)` — the view the step-2
+ *     static exports alias), so a field added to the contracts reaches the
+ *     Co-Author by editing the description map only.
+ *  3. Basic view outside lore work (step 6) — the outside view is DERIVED from
+ *     the same source (picked from the described full shapes via
+ *     `LORE_TOOL_BASIC_*_FIELDS`): exactly the starter fields, a strict subset
+ *     of the full view, every field still carrying its description, and strict
+ *     (an advanced field sent anyway is a named error, never a silent drop).
+ *  4. Full round-trip — a create with EVERY field set flows tool → draft
  *     bundle → the Apply RPC's own contract validation (the same schemas the
  *     lorebook API uses; no parallel validator set).
  */
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 import {
   coauthorApplySchema,
   updateLoreEntrySchema,
@@ -24,11 +31,9 @@ import {
 import type { CoauthorLoreBundleOutput } from "@vibe-tavern/api-contracts";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
 import {
-  addLoreEntryToolInputSchema,
-  createLoreEntryToolInputSchema,
-  createLorebookToolInputSchema,
-  editLoreEntryToolInputSchema,
-  editLorebookToolInputSchema,
+  buildLoreToolInputSchemas,
+  LORE_TOOL_BASIC_BOOK_FIELDS,
+  LORE_TOOL_BASIC_ENTRY_FIELDS,
   LORE_ENTRY_SETTINGS_FIELD_DESCRIPTIONS,
   LORE_TOOL_EXCLUDED_ENTRY_FIELDS,
   LOREBOOK_SETTINGS_FIELD_DESCRIPTIONS,
@@ -113,12 +118,15 @@ describe("lore-tool-schemas: description-map coverage (step 2 drift guard)", () 
   });
 });
 
-describe("lore-tool-schemas: tool exposure of every contract field (step 2)", () => {
+describe("lore-tool-schemas: tool exposure of every contract field in lore work (step 2, step 6 view)", () => {
   const excluded = new Set(Object.keys(LORE_TOOL_EXCLUDED_ENTRY_FIELDS));
+  // The IN-LORE-WORK view — what the lore-work trigger serves once the
+  // Co-Author is working on lore. The step-2 static exports alias this view.
+  const inLoreWork = buildLoreToolInputSchemas(true);
 
   test("create_lorebook / edit_lorebook expose every book settings field", () => {
-    const createFields = Object.keys(createLorebookToolInputSchema.shape);
-    const editFields = Object.keys(editLorebookToolInputSchema.shape);
+    const createFields = Object.keys(inLoreWork.createLorebook.shape);
+    const editFields = Object.keys(inLoreWork.editLorebook.shape);
     for (const field of Object.keys(updateLorebookMetaSchema.shape)) {
       expect(createFields).toContain(field);
       expect(editFields).toContain(field);
@@ -126,12 +134,12 @@ describe("lore-tool-schemas: tool exposure of every contract field (step 2)", ()
     expect(editFields).toContain("lorebookId");
     // create requires a name (the draft engine rejects empty names) — the
     // update contract's optional name must not have leaked in.
-    expect(createLorebookToolInputSchema.safeParse({ summary: "s" }).success).toBe(false);
-    expect(createLorebookToolInputSchema.safeParse({ name: "Book", summary: "s" }).success).toBe(true);
+    expect(inLoreWork.createLorebook.safeParse({ summary: "s" }).success).toBe(false);
+    expect(inLoreWork.createLorebook.safeParse({ name: "Book", summary: "s" }).success).toBe(true);
   });
 
   test("create/add/edit lore entry tools expose every entry settings field and no content path", () => {
-    for (const schema of [createLoreEntryToolInputSchema, addLoreEntryToolInputSchema, editLoreEntryToolInputSchema]) {
+    for (const schema of [inLoreWork.createLoreEntry, inLoreWork.addLoreEntry, inLoreWork.editLoreEntry]) {
       const fields = Object.keys(schema.shape);
       for (const field of Object.keys(updateLoreEntrySchema.shape)) {
         if (excluded.has(field)) {
@@ -141,20 +149,96 @@ describe("lore-tool-schemas: tool exposure of every contract field (step 2)", ()
         }
       }
     }
-    expect(Object.keys(createLoreEntryToolInputSchema.shape)).toContain("lorebookId");
-    expect(Object.keys(editLoreEntryToolInputSchema.shape)).toContain("entryId");
+    expect(Object.keys(inLoreWork.createLoreEntry.shape)).toContain("lorebookId");
+    expect(Object.keys(inLoreWork.editLoreEntry.shape)).toContain("entryId");
   });
 
   test("stringly contract fields are narrowed to the domain enums (garbage rejected)", () => {
-    expect(editLoreEntryToolInputSchema.safeParse({ entryId: "e", summary: "s", position: "middle_of_nowhere" }).success).toBe(false);
-    expect(editLoreEntryToolInputSchema.safeParse({ entryId: "e", summary: "s", logic: "xor" }).success).toBe(false);
-    expect(editLoreEntryToolInputSchema.safeParse({ entryId: "e", summary: "s", role: "narrator" }).success).toBe(false);
-    expect(editLoreEntryToolInputSchema.safeParse({ entryId: "e", summary: "s", matchSources: ["chat_messages", "bogus"] }).success).toBe(false);
-    expect(editLorebookToolInputSchema.safeParse({ lorebookId: "lb", summary: "s", scopeType: "banana" }).success).toBe(false);
+    expect(inLoreWork.editLoreEntry.safeParse({ entryId: "e", summary: "s", position: "middle_of_nowhere" }).success).toBe(false);
+    expect(inLoreWork.editLoreEntry.safeParse({ entryId: "e", summary: "s", logic: "xor" }).success).toBe(false);
+    expect(inLoreWork.editLoreEntry.safeParse({ entryId: "e", summary: "s", role: "narrator" }).success).toBe(false);
+    expect(inLoreWork.editLoreEntry.safeParse({ entryId: "e", summary: "s", matchSources: ["chat_messages", "bogus"] }).success).toBe(false);
+    expect(inLoreWork.editLorebook.safeParse({ lorebookId: "lb", summary: "s", scopeType: "banana" }).success).toBe(false);
     // The full settings payload itself parses, incl. the enum narrowings and
     // tri-state nulls.
-    expect(editLoreEntryToolInputSchema.safeParse({ entryId: "e", summary: "s", useGroupScoring: null, scanDepthOverride: null }).success).toBe(true);
-    expect(editLoreEntryToolInputSchema.safeParse({ entryId: "e", summary: "s", position: "before_persona", role: "user", matchSources: ["persona_desc"], logic: "and_all" }).success).toBe(true);
+    expect(inLoreWork.editLoreEntry.safeParse({ entryId: "e", summary: "s", useGroupScoring: null, scanDepthOverride: null }).success).toBe(true);
+    expect(inLoreWork.editLoreEntry.safeParse({ entryId: "e", summary: "s", position: "before_persona", role: "user", matchSources: ["persona_desc"], logic: "and_all" }).success).toBe(true);
+  });
+});
+
+describe("lore-tool-schemas: basic view outside lore work (step 6)", () => {
+  const basic = buildLoreToolInputSchemas(false);
+  const full = buildLoreToolInputSchemas(true);
+
+  test("books keep exactly the starter fields, picked from the source shape", () => {
+    // The exact starter cut is a product decision — pinned here so a new basic
+    // field is a deliberate change, not drift. Everything else stays full-view
+    // only.
+    expect(Object.keys(basic.createLorebook.shape).sort()).toEqual(
+      ["name", ...Object.keys(LORE_TOOL_BASIC_BOOK_FIELDS), "summary"].sort(),
+    );
+    expect(Object.keys(basic.editLorebook.shape).sort()).toEqual(
+      ["lorebookId", "name", ...Object.keys(LORE_TOOL_BASIC_BOOK_FIELDS), "summary"].sort(),
+    );
+    // Spot-check the heavy settings fields are OFF the outside tool block.
+    for (const field of ["tokenBudgetPercent", "tokenBudgetCap", "useGroupScoring", "maxRecursionSteps", "minActivations", "overflowAlert", "characterStrategy"]) {
+      expect(Object.keys(basic.createLorebook.shape), `${field} must stay out of the basic view`).not.toContain(field);
+    }
+    // create still requires a name outside lore work.
+    expect(basic.createLorebook.safeParse({ summary: "s" }).success).toBe(false);
+    expect(basic.createLorebook.safeParse({ name: "Book", description: "d", scanDepth: 8, tokenBudget: 500, summary: "s" }).success).toBe(true);
+  });
+
+  test("entries keep exactly the starter fields, picked from the source shape", () => {
+    expect(Object.keys(basic.createLoreEntry.shape).sort()).toEqual(
+      ["lorebookId", ...Object.keys(LORE_TOOL_BASIC_ENTRY_FIELDS), "summary"].sort(),
+    );
+    expect(Object.keys(basic.addLoreEntry.shape).sort()).toEqual(
+      ["lorebookId", ...Object.keys(LORE_TOOL_BASIC_ENTRY_FIELDS), "summary"].sort(),
+    );
+    expect(Object.keys(basic.editLoreEntry.shape).sort()).toEqual(
+      ["entryId", ...Object.keys(LORE_TOOL_BASIC_ENTRY_FIELDS), "summary"].sort(),
+    );
+    for (const field of ["probability", "stickyWindow", "cooldownWindow", "minChatMessages", "groupName", "excludeRecursion", "caseFormsKeys", "characterFilter", "matchSources", "priority"]) {
+      expect(Object.keys(basic.editLoreEntry.shape), `${field} must stay out of the basic view`).not.toContain(field);
+    }
+  });
+
+  test("the basic view is a strict subset of the full view with descriptions intact", () => {
+    // Derived, not hand-written: every basic field IS a full-view field (same
+    // schema object with its model-facing description), so nothing outside the
+    // source shape can appear and no description is lost.
+    expect(Object.keys(LORE_TOOL_BASIC_BOOK_FIELDS).every((key) => key in full.editLorebook.shape)).toBe(true);
+    expect(Object.keys(LORE_TOOL_BASIC_ENTRY_FIELDS).every((key) => key in full.editLoreEntry.shape)).toBe(true);
+    const basicEntryJson = z.toJSONSchema(basic.editLoreEntry) as { properties: Record<string, { description?: string }> };
+    for (const key of [...Object.keys(LORE_TOOL_BASIC_ENTRY_FIELDS), "entryId", "summary"]) {
+      expect(basicEntryJson.properties[key]?.description, `basic field '${key}' keeps its description`).toBeTruthy();
+    }
+    // The enum narrowing survives the pick (no stringly regression outside lore work).
+    expect(basic.editLoreEntry.safeParse({ entryId: "e", summary: "s", position: "middle_of_nowhere" }).success).toBe(false);
+    expect(basic.editLoreEntry.safeParse({ entryId: "e", summary: "s", position: "at_depth", logic: "not_any" }).success).toBe(true);
+  });
+
+  test("an advanced field sent outside lore work is a NAMED error, never a silent drop", () => {
+    // zod's default key-stripping would quietly discard the setting; the
+    // basic view is strict so the model gets a tool-error naming the field.
+    expect(basic.editLoreEntry.safeParse({ entryId: "e", stickyWindow: 3, summary: "s" }).success).toBe(false);
+    expect(basic.editLorebook.safeParse({ lorebookId: "lb", tokenBudgetPercent: 25, summary: "s" }).success).toBe(false);
+  });
+
+  test("a basic create still flows tool → draft bundle → the Apply contract", async () => {
+    const tools = buildCoauthorTools({ loreWorkActive: false, loreIdGen: deterministicIdGen() });
+    const book = await tools.create_lorebook.execute(
+      { name: "Basic Book", description: "Starter fields only.", scanDepth: 8, tokenBudget: 400, recursiveScanning: false, summary: "s" },
+      ctx,
+    );
+    const entry = await tools.create_lore_entry.execute(
+      { lorebookId: "lorebook_1", title: "T", constant: false, position: "at_depth", depth: 4, logic: "and_any", enabled: true, summary: "s" },
+      ctx,
+    );
+    expect(book.bundle.lorebooks[0]).toMatchObject({ name: "Basic Book", scanDepth: 8, tokenBudget: 400 });
+    expect(entry.bundle.entries[0]).toMatchObject({ title: "T", position: "at_depth", depth: 4 });
+    expect(coauthorApplySchema.safeParse({ loreBundle: entry.bundle }).success).toBe(true);
   });
 });
 

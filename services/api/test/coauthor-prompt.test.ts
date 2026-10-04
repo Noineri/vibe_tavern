@@ -117,6 +117,63 @@ describe("assembleCoauthorPrompt", () => {
     expect(messages[2]).toEqual({ role: "assistant", content: "on it" });
   });
 
+  test("COAUTHOR_LORE_FULL_SETTINGS step 6: full lore schemas only when the previous turn worked on lore", async () => {
+    // The lore-work trigger reads the persisted history: the model's most
+    // recent working segment (after the previous user message, trailing user
+    // turns skipped) decides which parameter view the lore tools carry.
+    // histRow builds fully-typed DbMessage rows (no as-never stubs — the
+    // hygiene ratchet forbids growing that budget).
+    let rowSeq = 0;
+    const histRow = (
+      role: string,
+      content: string,
+      toolCalls?: Array<{ id: string; name: string; args: unknown }>,
+    ): DbMessage => ({
+      id: `m_${++rowSeq}`,
+      chatId: "chat_test",
+      branchId: "branch_test",
+      role,
+      authorType: "ai",
+      position: rowSeq,
+      content,
+      state: "complete",
+      createdAt: "2026-10-04T00:00:00.000Z",
+      updatedAt: "2026-10-04T00:00:00.000Z",
+      attachmentsJson: null,
+      toolCalls: toolCalls ?? null,
+      toolCallId: null,
+    });
+    const loreTurn: Array<DbMessage> = [
+      histRow("user", "make a lorebook"),
+      histRow("assistant", "on it", [{ id: "tc_lore", name: "create_lorebook", args: {} }]),
+      histRow("user", "continue"),
+    ];
+    const withLore = await assembleCoauthorPrompt(makeInput(makeLoaders({ messages: loreTurn })));
+    const withLoreTools = withLore.tools as unknown as { create_lore_entry: { inputSchema: { shape: Record<string, unknown>; safeParse(value: unknown): { success: boolean } } } };
+    expect(Object.keys(withLoreTools.create_lore_entry.inputSchema.shape)).toContain("stickyWindow");
+    expect(
+      withLoreTools.create_lore_entry.inputSchema.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
+    ).toBe(true);
+
+    // Same shape WITHOUT a lore call (a profile-only turn) → the basic view:
+    // advanced fields are off the tool block entirely.
+    const profileTurn: Array<DbMessage> = [
+      histRow("user", "rewrite the profile"),
+      histRow("assistant", "done", [{ id: "tc_prof", name: "edit_personality", args: {} }]),
+      histRow("user", "thanks"),
+    ];
+    const withoutLore = await assembleCoauthorPrompt(makeInput(makeLoaders({ messages: profileTurn })));
+    const withoutLoreTools = withoutLore.tools as unknown as { create_lore_entry: { inputSchema: { shape: Record<string, unknown>; safeParse(value: unknown): { success: boolean } } } };
+    expect(Object.keys(withoutLoreTools.create_lore_entry.inputSchema.shape)).not.toContain("stickyWindow");
+    expect(
+      withoutLoreTools.create_lore_entry.inputSchema.safeParse({ lorebookId: "lb", stickyWindow: 3, summary: "s" }).success,
+    ).toBe(false);
+    // The starter fields are still there — lore work can begin this turn.
+    for (const field of ["lorebookId", "title", "constant", "position", "depth", "logic", "enabled", "summary"]) {
+      expect(Object.keys(withoutLoreTools.create_lore_entry.inputSchema.shape), `${field} must stay in the basic view`).toContain(field);
+    }
+  });
+
   test("system message embeds the base prompt, current card, and profile.md", async () => {
     const loaders = makeLoaders({
       profileMd: "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",

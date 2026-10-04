@@ -225,7 +225,7 @@ function setSectionField(profile: VtfProfile, field: SectionField, value: string
  * validates and echoes the proposal; the strategy passes this set to the
  * executor (tools propose; the Apply RPC is the sole write path).
  */
-export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate; loreEntityLookup?: LoreEntityLookup; contextSearchSession?: import("../context/context-search-service.js").ContextSearchSession } = {}): ToolSet {
+export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; profileMd?: string; skillRoots?: readonly string[]; loreIdGen?: LoreDraftIdGen; loreDelegate?: LoreDelegate; loreEntityLookup?: LoreEntityLookup; loreWorkActive?: boolean; contextSearchSession?: import("../context/context-search-service.js").ContextSearchSession } = {}): ToolSet {
   const { toolSet, skillRoots, loreDelegate, loreEntityLookup, contextSearchSession } = opts;
 
   // ── Turn-local composable profile state (CED-2) ───────────────────────────
@@ -514,8 +514,11 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
     // The whole lore surface (create/edit/add tools + the two AI-delegation
     // tools) lives in domain/coauthor/lore/lore-tools.ts; the spread preserves
     // the pre-split tool order (profile/greeting → lore → context search) so
-    // the serialized tool block stays byte-identical.
-    ...buildLoreTools({ idGen: opts.loreIdGen, loreDelegate, loreEntityLookup, getWorkingProfileMd: () => workingProfileMd }),
+    // the serialized tool block stays byte-identical. `loreWorkActive` (step 6)
+    // selects the lore tools' parameter view — full settings while the
+    // Co-Author works on lore, basic starter fields outside it; computed by the
+    // assembler from lore-work-trigger.ts.
+    ...buildLoreTools({ idGen: opts.loreIdGen, loreDelegate, loreEntityLookup, loreWorkActive: opts.loreWorkActive, getWorkingProfileMd: () => workingProfileMd }),
 
     // ── CE-D2: indexed two-step context search ──────────────────────────────
     // search_context returns compact locator metadata only (no body);
