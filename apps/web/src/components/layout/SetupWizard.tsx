@@ -13,7 +13,7 @@ import { repoWebUrl } from "../../lib/star-prompt.js";
 import { useProviderProfiles } from "../../hooks/use-provider-profiles.js";
 import { useCharacterController } from "../../hooks/use-character-controller.js";
 import { ProviderForm } from "../settings/provider/ProviderForm.js";
-import { ProviderModelSelector } from "../settings/provider/ProviderModelSelector.js";
+import { ProviderModalModelSelector } from "../settings/provider/ProviderModalModelSelector.js";
 import type { FormState } from "../modals/ProviderModal.js";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
 import { StFolderImport } from "../modals/ImportModals.js";
@@ -196,8 +196,6 @@ function ProviderStep({
   const [saving, setSaving] = useState(false);
   const [models, setModels] = useState<Array<{ id: string; label: string; contextLength?: number }>>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
-  const [modelSearch, setModelSearch] = useState("");
-  const [modelListOpen, setModelListOpen] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
 
   // If profile already exists → collapsed view by default
@@ -298,10 +296,6 @@ function ProviderStep({
     }
   }
 
-  const filteredModels = modelSearch.trim()
-    ? models.filter((m) => m.label.toLowerCase().includes(modelSearch.toLowerCase()) || m.id.toLowerCase().includes(modelSearch.toLowerCase()))
-    : models;
-
   const presetLabel = PROVIDER_PRESETS.find((f) => f.id === form.providerPreset)?.label ?? form.providerPreset;
 
   // ── Collapsed view (saved profile card + test + models) ──
@@ -348,19 +342,14 @@ function ProviderStep({
         </div>
 
         {models.length > 0 && (
-          <ProviderModelSelector
-            form={form}
-            models={models}
-            filteredModels={filteredModels}
+          <ProviderModalModelSelector
+            values={form}
+            options={models}
             fetching={fetchingModels}
             fetchError={null}
-            modelSearch={modelSearch}
-            modelListOpen={modelListOpen}
             favoriteModels={[]}
-            updateForm={updateForm}
-            onFetchModels={handleTest}
-            setModelSearch={setModelSearch}
-            setModelListOpen={setModelListOpen}
+            onChange={updateForm}
+            onRefreshOptions={handleTest}
             onToggleFavoriteModel={async () => {}}
             requiresAuthForModels={true}
           />
@@ -427,19 +416,14 @@ function ProviderStep({
         </button>
       )}
       {testOk && !showEdit && (
-        <ProviderModelSelector
-          form={form}
-          models={models}
-          filteredModels={filteredModels}
+        <ProviderModalModelSelector
+          values={form}
+          options={models}
           fetching={fetchingModels}
           fetchError={null}
-          modelSearch={modelSearch}
-          modelListOpen={modelListOpen}
           favoriteModels={[]}
-          updateForm={updateForm}
-          onFetchModels={handleTest}
-          setModelSearch={setModelSearch}
-          setModelListOpen={setModelListOpen}
+          onChange={updateForm}
+          onRefreshOptions={handleTest}
           onToggleFavoriteModel={async () => {}}
           requiresAuthForModels={true}
         />

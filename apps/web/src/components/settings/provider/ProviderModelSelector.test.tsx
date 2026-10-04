@@ -10,7 +10,6 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
-import type { FormState } from "../../modals/ProviderModal.js";
 import type { ProviderModelListOption } from "./ProviderModelList.js";
 
 useDomEnv();
@@ -45,12 +44,14 @@ mock.module("../../shared/Tooltip.js", () => ({
 }));
 
 let ProviderModelSelector: typeof import("./ProviderModelSelector.js").ProviderModelSelector;
+let ProviderModalModelSelector: typeof import("./ProviderModalModelSelector.js").ProviderModalModelSelector;
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
 
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
   ({ ProviderModelSelector } = await import("./ProviderModelSelector.js"));
+  ({ ProviderModalModelSelector } = await import("./ProviderModalModelSelector.js"));
 });
 
 /** The Popover portals its list into document.body; cmdk items carry the
@@ -62,44 +63,37 @@ function cmdkItem(value: string): HTMLElement {
   return item;
 }
 
-/** Assert which updateForm keys fired, in order — the wiring contract for the
- *  budget auto-fill (model always, contextBudget only when the rule fills). */
-function updateFormKeys(updateForm: { mock: { calls: unknown[] } }): string[] {
-  return (updateForm.mock.calls as Array<[keyof FormState, unknown]>).map(([key]) => key);
-}
-
 const MODELS: ProviderModelListOption[] = [
   { id: "gpt-4o", label: "gpt-4o" },
   { id: "claude-3-7", label: "claude-3-7" },
 ];
+
+function updateFormKeys(onChange: { mock: { calls: unknown[] } }): string[] {
+  return (onChange.mock.calls as Array<[string, unknown]>).map(([key]) => key);
+}
 
 /** Props shape derived from the component (the interface is not exported). */
 type Props = Parameters<typeof ProviderModelSelector>[0];
 
 function baseProps(over: Partial<Props> = {}): Props {
   return {
-    form: { model: "gpt-4o" } as FormState,
-    models: MODELS,
-    filteredModels: MODELS,
+    value: "gpt-4o",
+    onChange: () => {},
+    options: MODELS,
     fetching: false,
     fetchError: null,
-    modelSearch: "",
-    modelListOpen: false,
+    onRefreshOptions: () => {},
     favoriteModels: [],
-    updateForm: () => {},
-    onFetchModels: () => {},
-    setModelSearch: () => {},
-    setModelListOpen: () => {},
     onToggleFavoriteModel: () => {},
     ...over,
   };
 }
 
 describe("ProviderModelSelector local status chip (IG-CF12b)", () => {
-  it("isLocalProvider: the shared primitive renders with the state class + the mb-2.5 placement the extraction moved to the caller", () => {
+  it("localConnection: the shared primitive renders with the state class + the mb-2.5 placement", () => {
     const view = render(
       <ProviderModelSelector
-        {...baseProps({ isLocalProvider: true, localEndpoint: "http://127.0.0.1:11434", localConnectionStatus: "online" })}
+        {...baseProps({ localConnection: { endpoint: "http://127.0.0.1:11434", status: "online" } })}
       />,
     );
     const label = view.getByText("local_connection_online");
@@ -114,7 +108,7 @@ describe("ProviderModelSelector local status chip (IG-CF12b)", () => {
   it("showRefreshButton=false: no mini re-check button inside the chip (the gating moved into the onRefresh presence)", () => {
     const view = render(
       <ProviderModelSelector
-        {...baseProps({ isLocalProvider: true, showRefreshButton: false })}
+        {...baseProps({ localConnection: { endpoint: "", status: "unknown" }, showRefreshButton: false })}
       />,
     );
     const label = view.getByText("local_connection_unknown");
@@ -158,57 +152,103 @@ describe("ProviderModelSelector refresh button height (W1 step 5)", () => {
   });
 });
 
-/** RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 3 — the selector feeds the ONE
- *  shared auto-fill rule (lib/context-autofill.ts) with the form's current
- *  budget: an unknown model context must leave a set budget untouched. The
- *  rule's own cases (including the no-budget fallback) are pinned in
- *  lib/context-autofill.test.ts; this pins the selector's WIRING. */
+/** RP_QUICK_SWITCH_MODEL_SETTINGS_REPORT step 3 — the RP adapter retains the
+ * selector's original context-budget policy while the shared source only
+ * delivers a selected catalog option through its optional callback. */
 describe("ProviderModelSelector context-budget auto-fill (RP_QUICK_SWITCH step 3)", () => {
   const AUTOFILL_MODELS: ProviderModelListOption[] = [
     { id: "ctx-unknown", label: "ctx-unknown" },
     { id: "ctx-32k", label: "ctx-32k", contextLength: 32_768 },
   ];
 
-  function renderAutofill(over: { form: FormState }) {
-    const updateForm = mock((_key: keyof FormState, _value: FormState[keyof FormState]) => {});
+  function renderAutofill(values: { model: string; contextBudget: number; pinContextBudget: boolean }) {
+    const onChange = mock((_key: string, _value: string | number | boolean) => {});
     const view = render(
-      <ProviderModelSelector
-        {...baseProps({
-          ...over,
-          models: AUTOFILL_MODELS,
-          filteredModels: AUTOFILL_MODELS,
-          modelListOpen: true,
-          updateForm,
-        })}
+      <ProviderModalModelSelector
+        values={{ ...values, modelFreeOnly: false, modelGroupByOwner: false }}
+        options={AUTOFILL_MODELS}
+        fetching={false}
+        fetchError={null}
+        favoriteModels={[]}
+        onChange={onChange}
+        onRefreshOptions={() => {}}
+        onToggleFavoriteModel={() => {}}
+        requiresAuthForModels={false}
       />,
     );
-    return { view, updateForm };
+    return { view, onChange };
   }
 
   it("unknown model context keeps the form's set budget (no contextBudget write)", () => {
-    const { view, updateForm } = renderAutofill({
-      form: { model: "ctx-unknown", contextBudget: 8_192, pinContextBudget: false } as FormState,
-    });
+    const { view, onChange } = renderAutofill({ model: "ctx-unknown", contextBudget: 8_192, pinContextBudget: false });
+    fireEvent.click(view.getByText("ctx-unknown").closest("button")!);
     fireEvent.click(cmdkItem("ctx-unknown"));
-    expect(updateFormKeys(updateForm)).toEqual(["model"]);
+    expect(updateFormKeys(onChange)).toEqual(["model"]);
     view.unmount();
   });
 
   it("known model context fills the budget — over the form's current value", () => {
-    const { view, updateForm } = renderAutofill({
-      form: { model: "ctx-32k", contextBudget: 8_192, pinContextBudget: false } as FormState,
-    });
+    const { view, onChange } = renderAutofill({ model: "ctx-32k", contextBudget: 8_192, pinContextBudget: false });
+    fireEvent.click(view.getByText("ctx-32k").closest("button")!);
     fireEvent.click(cmdkItem("ctx-32k"));
-    expect(updateForm.mock.calls).toContainEqual(["contextBudget", 32_768]);
+    expect(onChange.mock.calls).toContainEqual(["contextBudget", 32_768]);
     view.unmount();
   });
 
   it("pinned budget is never written, even for a known context length", () => {
-    const { view, updateForm } = renderAutofill({
-      form: { model: "ctx-32k", contextBudget: 8_192, pinContextBudget: true } as FormState,
-    });
+    const { view, onChange } = renderAutofill({ model: "ctx-32k", contextBudget: 8_192, pinContextBudget: true });
+    fireEvent.click(view.getByText("ctx-32k").closest("button")!);
     fireEvent.click(cmdkItem("ctx-32k"));
-    expect(updateFormKeys(updateForm)).toEqual(["model"]);
+    expect(updateFormKeys(onChange)).toEqual(["model"]);
+    view.unmount();
+  });
+});
+
+/** The family source delivers catalog selection through an optional callback
+ * after changing its controlled value, and never invokes it for custom IDs. */
+describe("ProviderModelSelector optional selection callback", () => {
+  const CALLBACK_MODELS: ProviderModelListOption[] = [
+    { id: "ctx-unknown", label: "ctx-unknown" },
+    { id: "ctx-32k", label: "ctx-32k", contextLength: 32_768 },
+  ];
+
+  it("delivers the catalog option after changing the controlled value", () => {
+    const calls: string[] = [];
+    const onChange = mock((value: string) => calls.push(`value:${value}`));
+    const onOptionSelected = mock((model: ProviderModelListOption) => calls.push(`option:${model.id}`));
+    const view = render(<ProviderModelSelector {...baseProps({ options: CALLBACK_MODELS, value: "ctx-unknown", onChange, onOptionSelected })} />);
+    fireEvent.click(view.getByText("ctx-unknown").closest("button")!);
+    fireEvent.click(cmdkItem("ctx-32k"));
+    expect(calls).toEqual(["value:ctx-32k", "option:ctx-32k"]);
+    view.unmount();
+  });
+
+  it("keeps the callback out of the custom-ID fallback", () => {
+    const onChange = mock((_value: string) => {});
+    const onOptionSelected = mock((_model: ProviderModelListOption) => {});
+    const view = render(<ProviderModelSelector {...baseProps({ options: CALLBACK_MODELS, onChange, onOptionSelected })} />);
+    fireEvent.click(view.getByText("gpt-4o").closest("button")!);
+    const search = document.body.querySelector<HTMLInputElement>("[cmdk-input]")!;
+    fireEvent.input(search, { target: { value: "custom-id" } });
+    fireEvent.click(view.getByTestId("use-custom-model"));
+    expect(onChange.mock.calls).toEqual([["custom-id"]]);
+    expect(onOptionSelected.mock.calls).toEqual([]);
+    view.unmount();
+  });
+
+  it("forwards family row slots without deriving their chrome in a fork", () => {
+    const view = render(
+      <ProviderModelSelector
+        {...baseProps({
+          options: [MODELS[0]],
+          renderRowBadges: (model) => <span data-testid="family-badge">{model.id}</span>,
+          renderRowDescription: (model) => <span data-testid="family-description">{model.label}</span>,
+        })}
+      />,
+    );
+    fireEvent.click(view.getByText("gpt-4o").closest("button")!);
+    expect(document.body.querySelector("[data-testid='family-badge']")?.textContent).toBe("gpt-4o");
+    expect(document.body.querySelector("[data-testid='family-description']")?.textContent).toBe("gpt-4o");
     view.unmount();
   });
 });

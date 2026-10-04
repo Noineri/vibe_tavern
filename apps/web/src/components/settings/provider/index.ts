@@ -2,6 +2,7 @@ export { ProviderProfileList } from './ProviderProfileList.js';
 export { ProviderEditHeader } from './ProviderEditHeader.js';
 export { ProviderViewHeader } from './ProviderViewHeader.js';
 export { ProviderModelSelector } from './ProviderModelSelector.js';
+export { ProviderModalModelSelector } from './ProviderModalModelSelector.js';
 export { ProviderModelList } from './ProviderModelList.js';
 export { ProviderCapabilityPanel } from './ProviderCapabilityPanel.js';
 export { ProviderGenerationModePanel } from './ProviderGenerationModePanel.js';

@@ -1,4 +1,5 @@
 import { Command } from "cmdk";
+import type { ReactNode } from "react";
 import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import type { ProviderModelOption } from "../../../api/types.js";
@@ -6,7 +7,11 @@ import { Icons } from "../../shared/icons.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { deriveOwner, type ToolSupport } from "../../../lib/provider-model-capabilities.js";
 
-export type ProviderModelListOption = ProviderModelOption & { toolSupport?: ToolSupport };
+export type ProviderModelListOption = ProviderModelOption & {
+  toolSupport?: ToolSupport;
+  isFree?: boolean;
+  description?: string;
+};
 
 interface ProviderModelListProps {
   models: ProviderModelListOption[];
@@ -14,8 +19,10 @@ interface ProviderModelListProps {
   search: string;
   favorites: Array<{ modelId: string }>;
   onSelect: (model: ProviderModelListOption) => void;
-  onToggleFavorite: (model: ProviderModelListOption) => void;
+  onToggleFavorite?: (model: ProviderModelListOption) => void;
   onUseCustomSlug: (slug: string) => void;
+  renderRowBadges?: (model: ProviderModelListOption) => ReactNode;
+  renderRowDescription?: (model: ProviderModelListOption) => ReactNode;
   toolFilter?: ToolSupport;
   showContextLength?: boolean;
   showPricing?: boolean;
@@ -31,6 +38,8 @@ export function ProviderModelList({
   onSelect,
   onToggleFavorite,
   onUseCustomSlug,
+  renderRowBadges,
+  renderRowDescription,
   toolFilter,
   showContextLength = true,
   showPricing = true,
@@ -73,7 +82,7 @@ export function ProviderModelList({
             : "text-t2 hover:bg-s2 hover:text-t1 data-[selected=true]:bg-s2 data-[selected=true]:text-t1",
         )}
       >
-        <CustomTooltip content={favorite ? t("remove_from_favorites") : t("add_to_favorites")}>
+        {onToggleFavorite && <CustomTooltip content={favorite ? t("remove_from_favorites") : t("add_to_favorites")}>
           <button
             type="button"
             className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded text-t4 transition-colors hover:bg-s3 hover:text-warning-text", favorite && "text-warning-text")}
@@ -86,7 +95,7 @@ export function ProviderModelList({
           >
             {favorite ? <Icons.StarFilled /> : <Icons.Star />}
           </button>
-        </CustomTooltip>
+        </CustomTooltip>}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-t1">{model.label || model.id}</span>
@@ -95,6 +104,7 @@ export function ProviderModelList({
             {model.capabilities?.reasoning && <CustomTooltip content={t("cap_reasoning")}><span className="shrink-0 text-t3"><Icons.Brain /></span></CustomTooltip>}
             {model.capabilities?.tools && <CustomTooltip content={t("cap_tools")}><span className="shrink-0 text-t3"><Icons.Wrench /></span></CustomTooltip>}
             {showContextLength && formatContext(model.contextLength) && <span className="shrink-0 rounded bg-s2 px-1.5 py-0.5 text-[10px] font-medium text-t2">{formatContext(model.contextLength)}</span>}
+            {renderRowBadges?.(model)}
           </div>
           {((model.label && model.label !== model.id) || (showPricing && formatPrice(model.pricing))) && (
             <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] text-t4">
@@ -102,6 +112,7 @@ export function ProviderModelList({
               {showPricing && formatPrice(model.pricing) && <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-medium text-t4">{formatPrice(model.pricing)}</span>}
             </div>
           )}
+          {renderRowDescription?.(model)}
         </div>
       </Command.Item>
     );
