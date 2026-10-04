@@ -3,6 +3,7 @@ import type { StoreContainer, ExperienceVisualRow } from "@vibe-tavern/db";
 import type { ScriptKind } from "@vibe-tavern/domain";
 import { notFound } from "../../shared/errors.js";
 import { testScript, parseScriptImport } from "../../domain/scripts-engine/script-test-service.js";
+import { resolveEffectiveDiceScripts } from "../../domain/scripts-engine/dice-script-service.js";
 import { BUILTIN_EXPERIENCE_CATALOG } from "../../domain/interactive/builtin-experiences/index.js";
 
 export class ScriptAdapter implements ScriptRuntimeApi {
@@ -17,7 +18,26 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		// an unknown chat has no participating set.
 		const chat = await this.stores.chats.getById(chatId);
 		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
-		return this.stores.scripts.listParticipatingForChat(chat.characterId, chat.personaId, chatId);
+		const bound = await this.stores.scripts.listParticipatingForChat(chat.characterId, chat.personaId, chatId);
+		// No chat-local dice selection → the binding-based answer IS «Текущие»
+		// (unchanged, attached-list semantics for both kinds).
+		const { diceScriptIds } = chat.insightsConfig;
+		if (!Array.isArray(diceScriptIds)) return bound;
+		// Chat-local dice selection (LOREBOOK_LIST_FILTERS step 8): it REPLACES
+		// the binding-resolved dice scripts at runtime, so «Текущие» shows exactly
+		// what runs — the bound PROMPT scripts plus the selection resolved by the
+		// SAME one-source rule the Dice runtime reads (`resolveEffectiveDiceScripts`
+		// in dice-script-service.ts — never a second copy of the override rule).
+		const effectiveDice = await resolveEffectiveDiceScripts(this.stores, {
+			characterId: chat.characterId,
+			personaId: chat.personaId,
+			chatId,
+			diceScriptIds,
+		});
+		return [
+			...bound.filter((script) => script.scriptKind === "prompt"),
+			...effectiveDice,
+		].sort((a, b) => a.sortOrder - b.sortOrder);
 	};
 
 	getScript = (scriptId: string) =>
