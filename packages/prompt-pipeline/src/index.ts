@@ -11,6 +11,10 @@ export type { ParsedFindRegex, RegexMacroSource, CompiledRegexScript, RegexHisto
 export { createPhaseOneMacroEngine, createFullMacroEngine, extractMacroNames, VOLATILE_MACRO_NAMES } from "./macro-registry.js";
 export { formatIdleDuration } from "./macro-static-text-resolvers.js";
 export { getMacroCatalog } from "./macro-catalog.js";
+export {
+	findDroppedStMacroWarnings,
+	DROPPED_ST_MACROS,
+} from "./dropped-st-macro-warnings.js";
 export type { MacroCatalogEntry, MacroCategory } from "./macro-registry.js";
 export { PRESET_PRONOUN_FORMS, resolvePronounForms } from "./pronoun-forms.js";
 export { buildPromptVariableContext } from "./prompt-variable-context.js";
