@@ -127,6 +127,33 @@ describe("reasoning effort SDK interplay (installed ai@7 / @ai-sdk 4.x)", () => 
     expect(changedKeys(on, off)).toEqual(["output_config", "temperature", "thinking", "top_k"]);
   });
 
+  it("anthropic: providerOptions.anthropic.effort sends output_config.effort with NO thinking — sampling survives (VT's effort path since 2026-10-04)", async () => {
+    const { bodies, fetch } = captureFetch(ANTHROPIC_RESPONSE);
+    const anthropic = createAnthropic({ apiKey: "test-key", fetch });
+    const base = {
+      model: anthropic("claude-sonnet-4-6"),
+      prompt: "Hi",
+      temperature: 0.9,
+      topK: 80,
+      maxOutputTokens: 4096,
+    };
+
+    await generateText(base);
+    await generateText({ ...base, providerOptions: { anthropic: { effort: "high" } } });
+
+    expect(bodies).toHaveLength(2);
+    const [off, on] = bodies;
+    // The complete pin of the path sampler-mapper.ts now uses for
+    // effort-capable families: ONLY output_config is added — no thinking
+    // param, so temperature/topK stay (topP still loses to temperature by
+    // the baseline interplay, effort or not).
+    expect(on["output_config"]).toEqual({ effort: "high" });
+    expect(on["thinking"]).toBeUndefined();
+    expect(on["temperature"]).toBe(0.9);
+    expect(on["top_k"]).toBe(80);
+    expect(changedKeys(on, off)).toEqual(["output_config"]);
+  });
+
   it("google (classic): reasoning adds ONLY generationConfig.thinkingConfig", async () => {
     const { bodies, fetch } = captureFetch(GOOGLE_RESPONSE);
     const google = createGoogle({ apiKey: "test-key", fetch });

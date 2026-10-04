@@ -150,7 +150,7 @@ export async function generateStructuredActionChoice(
 		const model = resolveModel(input.profile, input.model, undefined, providerFetch);
 		const { system, user } = flattenPrompt(input.prompt);
 		const schema = synthesizeActionChoiceSchema(input.legalActions);
-		const sampler = buildSamplerConfig(input.profile);
+		const sampler = buildSamplerConfig(input.profile, input.model);
 
 		const result = await generateObject({
 			model,

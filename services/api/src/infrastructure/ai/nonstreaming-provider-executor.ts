@@ -215,7 +215,7 @@ export async function nonstreamingProviderExecute(
     // Co-Author keeps only its explicit output-token limit on this transport.
     const samplerConfig = input.transport === COAUTHOR_TRANSPORT.responses
       ? { maxOutputTokens: input.profile.maxTokens }
-      : buildSamplerConfig(input.profile);
+      : buildSamplerConfig(input.profile, input.model);
     if (input.overrideMaxTokens != null) {
       samplerConfig.maxOutputTokens = input.overrideMaxTokens;
     }

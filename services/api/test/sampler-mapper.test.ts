@@ -566,6 +566,48 @@ describe("buildSamplerConfig", () => {
       expect(config.reasoning).toBe("high");
     });
 
+    it("routes effort through providerOptions.anthropic.effort for effort-capable models — sampling survives (owner 2026-10-04)", () => {
+      const config = buildSamplerConfig(profile("anthropic"), "claude-sonnet-4-6");
+      // output_config.effort WITHOUT a thinking param — temperature/topK stay.
+      expect(config.providerOptions).toEqual({ anthropic: { effort: "high" } });
+      expect(config.reasoning).toBeUndefined();
+      expect(config.temperature).toBe(0.9);
+      expect(config.topK).toBe(80);
+    });
+
+    it("effort-capable families: opus 4.5+, opus 5+, fable/mythos 5, sonnet 4.6+ — incl. dated ids", () => {
+      const capable = [
+        "claude-opus-4-5",
+        "claude-opus-4-8-20260101",
+        "claude-opus-5-5",
+        "claude-fable-5",
+        "claude-fable-5-1",
+        "claude-mythos-5-preview",
+        "claude-sonnet-4-6",
+        "claude-sonnet-5-5-20260202",
+      ];
+      for (const model of capable) {
+        expect(buildSamplerConfig(profile("anthropic"), model).providerOptions).toEqual({ anthropic: { effort: "high" } });
+      }
+    });
+
+    it("families without effort support keep the neutral thinking-budget path", () => {
+      const legacy = [
+        "claude-3-5-sonnet-20240620",
+        "claude-opus-4-1",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+        "",
+      ];
+      for (const model of legacy) {
+        const config = buildSamplerConfig(profile("anthropic"), model);
+        expect(config.reasoning).toBe("high");
+        expect(config.providerOptions).toBeUndefined();
+      }
+      // No model id at all (conservative default): neutral path too.
+      expect(buildSamplerConfig(profile("anthropic")).reasoning).toBe("high");
+    });
+
     it("sends no reasoning when reasoningEffort is auto", () => {
       const config = buildSamplerConfig(profile("anthropic", { reasoningEffort: "auto" }));
       expect(config.reasoning).toBeUndefined();

@@ -149,7 +149,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     // Co-Author keeps only its explicit output-token limit on this transport.
     const samplerConfig = input.transport === COAUTHOR_TRANSPORT.responses
       ? { maxOutputTokens: input.profile.maxTokens }
-      : buildSamplerConfig(input.profile);
+      : buildSamplerConfig(input.profile, input.model);
     // Responses API multi-step tool calling: the SDK defaults `store` to true,
     // which assumes stateful continuation via `previousResponseId`. We send
     // full history each turn with NO previousResponseId, so force `store:
