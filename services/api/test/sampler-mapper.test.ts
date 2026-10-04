@@ -566,29 +566,48 @@ describe("buildSamplerConfig", () => {
       expect(config.reasoning).toBe("high");
     });
 
-    it("routes effort through providerOptions.anthropic.effort for effort-capable models — sampling survives (owner 2026-10-04)", () => {
+    it("routes effort through providerOptions.anthropic.effort for either/or families — sampling survives (owner 2026-10-04)", () => {
       const config = buildSamplerConfig(profile("anthropic"), "claude-sonnet-4-6");
-      // output_config.effort WITHOUT a thinking param — temperature/topK stay.
+      // output_config.effort WITHOUT a thinking param — temperature/topK stay
+      // (thinking is off by default on the 4.5/4.6 family, so this is the
+      // owner's chosen tradeoff: sampling over thinking).
       expect(config.providerOptions).toEqual({ anthropic: { effort: "high" } });
       expect(config.reasoning).toBeUndefined();
       expect(config.temperature).toBe(0.9);
       expect(config.topK).toBe(80);
     });
 
-    it("effort-capable families: opus 4.5+, opus 5+, fable/mythos 5, sonnet 4.6+ — incl. dated ids", () => {
-      const capable = [
+    it("either/or families: opus 4.5/4.6, sonnet 4.6+ — incl. dated ids", () => {
+      const eitherOr = [
         "claude-opus-4-5",
-        "claude-opus-4-8-20260101",
-        "claude-opus-5-5",
-        "claude-fable-5",
-        "claude-fable-5-1",
-        "claude-mythos-5-preview",
+        "claude-opus-4-6",
+        "claude-opus-4-6-20260101",
         "claude-sonnet-4-6",
-        "claude-sonnet-5-5-20260202",
+        "claude-sonnet-4-9-20260202",
       ];
-      for (const model of capable) {
+      for (const model of eitherOr) {
         expect(buildSamplerConfig(profile("anthropic"), model).providerOptions).toEqual({ anthropic: { effort: "high" } });
       }
+    });
+
+    it("sampling-rejected families (4.7+, 5.x, Fable/Mythos) keep thinking ON: effort + adaptive thinking, sampling moot", () => {
+      const rejected = [
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-sonnet-5",
+        "claude-fable-5-1",
+        "claude-mythos-5",
+        "claude-mythos-preview",
+      ];
+      for (const model of rejected) {
+        expect(buildSamplerConfig(profile("anthropic"), model).providerOptions).toEqual({
+          anthropic: { effort: "high", thinking: { type: "adaptive", display: "summarized" } },
+        });
+      }
+      // Opus 4.7/4.8 default to thinking OFF without the explicit field —
+      // effort-only there would silently disable reasoning (v1 defect).
     });
 
     it("families without effort support keep the neutral thinking-budget path", () => {

@@ -154,6 +154,43 @@ describe("reasoning effort SDK interplay (installed ai@7 / @ai-sdk 4.x)", () => 
     expect(changedKeys(on, off)).toEqual(["output_config"]);
   });
 
+  it("anthropic (opus-4-7): effort + adaptive thinking — sampling params dropped by the adapter anyway (VT's path for sampling-rejected families)", async () => {
+    const { bodies, fetch } = captureFetch(ANTHROPIC_RESPONSE);
+    const anthropic = createAnthropic({ apiKey: "test-key", fetch });
+    const base = {
+      model: anthropic("claude-opus-4-7"),
+      prompt: "Hi",
+      temperature: 0.9,
+      topK: 80,
+      maxOutputTokens: 4096,
+    };
+
+    await generateText(base);
+    await generateText({
+      ...base,
+      providerOptions: { anthropic: { effort: "high", thinking: { type: "adaptive", display: "summarized" } } },
+    });
+
+    expect(bodies).toHaveLength(2);
+    const [off, on] = bodies;
+    // Opus 4.7/4.8 reject temperature/topK/topP on EVERY request
+    // (rejectsSamplingParameters in the adapter's model table) — the baseline
+    // body already lacks them, so nothing is lost by keeping thinking on.
+    // Baseline: thinking field omitted = thinking OFF on 4.7/4.8 (docs
+    // per-model table) — exactly why VT sends explicit adaptive thinking
+    // here instead of effort-only.
+    expect(off["temperature"]).toBeUndefined();
+    expect(off["top_k"]).toBeUndefined();
+    expect(off["thinking"]).toBeUndefined();
+    // The VT path: adaptive thinking (summarized display) + output_config
+    // effort — the same envelope the neutral reasoning path produced.
+    expect(canon(on["thinking"])).toBe(canon({ type: "adaptive", display: "summarized" }));
+    expect(canon(on["output_config"])).toBe(canon({ effort: "high" }));
+    expect(on["temperature"]).toBeUndefined();
+    expect(on["top_k"]).toBeUndefined();
+    expect(changedKeys(on, off)).toEqual(["output_config", "thinking"]);
+  });
+
   it("google (classic): reasoning adds ONLY generationConfig.thinkingConfig", async () => {
     const { bodies, fetch } = captureFetch(GOOGLE_RESPONSE);
     const google = createGoogle({ apiKey: "test-key", fetch });

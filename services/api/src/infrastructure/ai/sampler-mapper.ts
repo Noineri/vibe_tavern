@@ -41,12 +41,11 @@ export interface SamplerConfig {
   /** AI SDK v7 provider-neutral reasoning effort (CallSettings.reasoning — a
    *  flat string union, not the v4/v5 `{ effort }` object). Consumed by the
    *  classic-Google language model (maps to generationConfig.thinkingConfig)
-   *  and by the Anthropic model for families WITHOUT effort support (the
-   *  adapter derives a thinking budget and, provider-mandated, drops the
-   *  sampling parameters — see the SDK interplay pins in
-   *  test/reasoning-effort-sdk-interplay.test.ts). Anthropic families WITH
-   *  effort support ride `providerOptions.anthropic.effort` instead, which
-   *  keeps temperature/topK ("effort works with or without thinking"). */
+   *  and by the Anthropic model ONLY for legacy families (adapter-derived
+   *  thinking budget; sampling drop is provider-mandated with thinking on).
+   *  Effort-capable Anthropic families ride `providerOptions.anthropic`
+   *  instead — see anthropicEffortFamily in sampler-mapper.ts and the SDK
+   *  interplay pins in test/reasoning-effort-sdk-interplay.test.ts. */
   reasoning?: "low" | "medium" | "high";
   providerOptions?: Record<string, Record<string, JSONValue>>;
 }
@@ -158,22 +157,44 @@ function mapReasoningEffort(effort: string | null | undefined): "low" | "medium"
   return effort === "low" || effort === "medium" || effort === "high" ? effort : undefined;
 }
 
-/** Anthropic model families whose API accepts `output_config.effort`
- *  (docs.anthropic.com/en/docs/build-with-claude/effort, compatibility:
- *  Fable 5/5.1, Mythos 5/5.1/Preview, Opus 4.5–4.8 and 5/5.5, Sonnet 4.6
- *  and 5/5.5). These ride providerOptions.anthropic.effort, which sends
- *  effort WITHOUT a thinking param — so temperature/topK/topP survive
- *  ("effort works with or without thinking"; the sampling prohibition binds
- *  only to thinking). Everything else — older families (3.x, Opus 4.0–4.1,
- *  Sonnet 4.0–4.5, Haiku) and unknown/empty ids — falls back to the neutral
- *  `reasoning` path, which works on every model (adapter-derived thinking
- *  budget) and never sends a body an older model would reject. The loose
- *  tails (`opus-[5-9]`, `sonnet-[5-9]`, …) deliberately match future models
- *  inside supported lineages; a genuinely new family stays on the safe path
- *  until this list learns it. */
-function anthropicModelSupportsEffort(model: string | undefined): boolean {
-  if (!model) return false;
-  return /(?:fable|mythos)-5|opus-4-[5-9]|opus-[5-9]|sonnet-4-[6-9]|sonnet-[5-9]/i.test(model);
+/** Anthropic effort routing, by model family (docs.anthropic.com/en/docs/
+ *  build-with-claude/thinking — per-model thinking table + "Sampling
+ *  parameters" section; effort compatibility: /docs/build-with-claude/effort).
+ *
+ *  - effortPlusThinking — sampling params (temperature/topP/topK) return a
+ *    400 on EVERY request for these families (Fable/Mythos 5 incl. Preview,
+ *    Opus 4.7+/5.x, Sonnet 5+), and most default to adaptive thinking anyway.
+ *    Nothing is lost by sending thinking, so we send `thinking: adaptive,
+ *    display: summarized` + effort — reproducing exactly what the neutral
+ *    `reasoning` path did (visible thinking summaries included). WITHOUT the
+ *    explicit thinking field, Opus 4.7/4.8 think NOTHING (their no-field
+ *    default is off) — the 2026-10-04 v1 of this split made exactly that
+ *    mistake.
+ *  - effortOnly — the real choice exists here (Opus 4.5/4.6, Sonnet 4.6):
+ *    sampling params are legal with thinking off, and thinking is OFF by
+ *    default. Owner ruling 2026-10-04: effort as a profile default must not
+ *    cost temperature/topK — so effort rides output_config WITHOUT thinking
+ *    (thinking off; effort steers response thoroughness only). These are the
+ *    only families where the fix actually restores sampling.
+ *  - legacy — everything else (3.x, Opus 4.0–4.1, Sonnet 4.0/4.5, Haiku,
+ *    unknown/empty ids): no effort support (output_config would 400); keep
+ *    the neutral `reasoning` path (adapter-derived thinking budget; the
+ *    sampling drop there is provider-mandated with thinking on). Unknown
+ *    future ids stay here deliberately — never send a body an unlisted
+ *    model may reject. */
+type AnthropicEffortFamily = "effortPlusThinking" | "effortOnly" | "legacy";
+
+function anthropicEffortFamily(model: string | undefined): AnthropicEffortFamily {
+  if (!model) return "legacy";
+  // Sampling-rejected families (incl. future ids inside these lineages).
+  if (/(?:fable|mythos)-(?:5|preview)|opus-4-[7-9]|opus-[5-9]|sonnet-[5-9]/i.test(model)) {
+    return "effortPlusThinking";
+  }
+  // Either/or families: sampling legal with thinking off, effort supported.
+  if (/opus-4-[5-6]|sonnet-4-[6-9]/i.test(model)) {
+    return "effortOnly";
+  }
+  return "legacy";
 }
 
 /**
@@ -319,21 +340,21 @@ export function buildSamplerConfig(
     case PROVIDER_TYPE.anthropic: {
       // Native topK (gated); no frequencyPenalty, presencePenalty, or seed
       if (can("topK") && profile.topK != null) config.topK = profile.topK;
-      // reasoningEffort — TWO paths, split by model family (owner 2026-10-04:
-      // effort as a profile default must not cost temperature/topK).
-      // Effort-capable families: providerOptions.anthropic.effort sends
-      // output_config.effort WITHOUT any thinking param, so the sampling
-      // parameters survive (Anthropic docs: "effort works with or without
-      // thinking"; the temperature/topK/topP prohibition binds only to
-      // thinking). The neutral `reasoning` setting would map to adaptive
-      // thinking here and the adapter drops the sampling parameters (pinned
-      // in test/reasoning-effort-sdk-interplay.test.ts). Families without
-      // effort support keep the neutral path — the adapter derives a
-      // thinking budget from maxOutputTokens and the sampling drop is
-      // provider-mandated with thinking on, so it is correct there.
+      // reasoningEffort — routed by model family (owner 2026-10-04: effort as
+      // a profile default must not cost temperature/topK where the API allows
+      // both to coexist — and must not silently disable thinking where it
+      // doesn't). See anthropicEffortFamily for the three-way split and the
+      // docs citations; both paths are pinned in
+      // test/reasoning-effort-sdk-interplay.test.ts against the installed
+      // adapter.
       const effort = mapReasoningEffort(profile.reasoningEffort);
       if (can("reasoningEffort") && effort != null) {
-        if (anthropicModelSupportsEffort(requestModel)) {
+        const family = anthropicEffortFamily(requestModel);
+        if (family === "effortPlusThinking") {
+          config.providerOptions = {
+            anthropic: { effort, thinking: { type: "adaptive", display: "summarized" } },
+          };
+        } else if (family === "effortOnly") {
           config.providerOptions = { anthropic: { effort } };
         } else {
           config.reasoning = effort;
