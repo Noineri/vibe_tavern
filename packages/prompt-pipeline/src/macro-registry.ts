@@ -24,6 +24,14 @@
 import type { PromptVariableContext } from "./prompt-variable-context.js";
 import type { PronounForms } from "@vibe-tavern/domain";
 import { resolvePronounForms } from "./pronoun-forms.js";
+import { rollDice } from "./dice.js";
+export { getMacroCatalog } from "./macro-catalog.js";
+
+/** Macro resolvers whose values are frozen when a greeting or user message is written. */
+export const VOLATILE_MACRO_NAMES = new Set([
+  "random", "pick", "roll", "time", "date", "weekday", "isotime", "isodate",
+  "datetimeformat", "idleduration", "timediff",
+]);
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -276,7 +284,7 @@ function splitMacroArgs(inner: string): string[] {
 // ─── AST Nodes ──────────────────────────────────────────────────────────
 
 interface TextNode { kind: "text"; value: string }
-interface MacroNode { kind: "macro"; name: string; args: string[] }
+interface MacroNode { kind: "macro"; name: string; args: string[]; raw: string }
 interface IfNode {
   kind: "if";
   condition: string;
@@ -302,7 +310,7 @@ function parse(tokens: Token[], start: number, end: number): AstNode[] {
       nodes.push({ kind: "text", value: token.value });
       i++;
     } else if (token.type === "macro") {
-      nodes.push({ kind: "macro", name: normalizeName(token.value), args: token.args });
+      nodes.push({ kind: "macro", name: normalizeName(token.value), args: token.args, raw: token.raw });
       i++;
     } else if (token.type === "ifOpen") {
       // Find matching else and /if
@@ -369,6 +377,7 @@ function evaluate(
   state: MacroResolutionState,
   variables: Map<string, string>,
   resolveNested: (text: string) => string,
+  shouldResolve: ((resolver: MacroResolver) => boolean) | undefined,
 ): string {
   let result = "";
   for (const node of nodes) {
@@ -377,7 +386,7 @@ function evaluate(
         result += node.value;
         break;
       case "macro":
-        result += resolveMacro(node.name, node.args, resolvers, context, state, variables, resolveNested);
+        result += resolveMacro(node.name, node.args, node.raw, resolvers, context, state, variables, resolveNested, shouldResolve);
         break;
       case "if": {
         // Resolve the condition first
@@ -387,9 +396,9 @@ function evaluate(
         let isTruthy = condition !== "" && !isFalseBoolean(condition);
         if (negate) isTruthy = !isTruthy;
         if (isTruthy) {
-          result += evaluate(node.thenBranch, resolvers, context, state, variables, resolveNested);
+          result += evaluate(node.thenBranch, resolvers, context, state, variables, resolveNested, shouldResolve);
         } else if (node.elseBranch) {
-          result += evaluate(node.elseBranch, resolvers, context, state, variables, resolveNested);
+          result += evaluate(node.elseBranch, resolvers, context, state, variables, resolveNested, shouldResolve);
         }
         break;
       }
@@ -401,11 +410,13 @@ function evaluate(
 function resolveMacro(
   name: string,
   args: string[],
+  raw: string,
   resolvers: Map<string, MacroResolver>,
   context: PromptVariableContext,
   state: MacroResolutionState,
   variables: Map<string, string>,
   resolveNested: (text: string) => string,
+  shouldResolve: ((resolver: MacroResolver) => boolean) | undefined,
 ): string {
   const resolver = resolvers.get(name);
   if (!resolver) {
@@ -416,6 +427,8 @@ function resolveMacro(
     }
     return `{{${name}::${resolvedArgs.join("::")}}}`;
   }
+
+  if (shouldResolve && !shouldResolve(resolver)) return raw;
 
   // Resolve nested macros in args before passing to resolver
   const resolvedArgs = args.map(resolveNested);
@@ -445,6 +458,19 @@ export class MacroEngine {
    * Variables are shared across calls on this engine instance.
    */
   resolve(text: string, context: PromptVariableContext): string {
+    return this.resolveWith(text, context);
+  }
+
+  /** Resolve only resolvers selected by name, preserving all other macro text verbatim. */
+  resolveSelected(text: string, context: PromptVariableContext, names: ReadonlySet<string>): string {
+    return this.resolveWith(text, context, (resolver) => names.has(normalizeName(resolver.name)));
+  }
+
+  private resolveWith(
+    text: string,
+    context: PromptVariableContext,
+    shouldResolve?: (resolver: MacroResolver) => boolean,
+  ): string {
     if (!text) return text;
 
     const state: MacroResolutionState = { didUseOriginal: false };
@@ -455,12 +481,12 @@ export class MacroEngine {
       if (!t) return t;
       const tokens = tokenize(t);
       const ast = parse(tokens, 0, tokens.length);
-      return evaluate(ast, this.resolvers, context, state, variables, resolveNested);
+      return evaluate(ast, this.resolvers, context, state, variables, resolveNested, shouldResolve);
     };
 
     const tokens = tokenize(text);
     const ast = parse(tokens, 0, tokens.length);
-    return evaluate(ast, this.resolvers, context, state, variables, resolveNested);
+    return evaluate(ast, this.resolvers, context, state, variables, resolveNested, shouldResolve);
   }
 
   /** Shared variable state for this engine instance. */
@@ -496,17 +522,6 @@ export class MacroEngine {
   }
 }
 
-/**
- * The full macro catalog (all user-facing resolvers), derived from a fresh full
- * engine and cached (the registry is static after module load). Used by the
- * editor autocomplete and to derive the Co-Author's allowed subset.
- */
-let macroCatalogCache: MacroCatalogEntry[] | null = null;
-export function getMacroCatalog(): MacroCatalogEntry[] {
-  if (macroCatalogCache == null) macroCatalogCache = createFullMacroEngine().catalog();
-  return macroCatalogCache;
-}
-
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 const normalizeName = (name: string): string => name.toLowerCase();
@@ -517,26 +532,6 @@ const firstDefined = (...values: Array<string | number | null | undefined>): str
   }
   return undefined;
 };
-
-// ─── Dice Roller ────────────────────────────────────────────────────────
-
-/**
- * Roll dice: "1d20" → { rolls: [14], total: 14 }, "3d6+4" → { rolls: [3,5,2], total: 14 }
- */
-function rollDice(formula: string): { total: number } | null {
-  const match = formula.match(/^(\d+)?d(\d+)([+-]\d+)?$/i);
-  if (!match) return null;
-  const count = Math.max(1, parseInt(match[1] || "1", 10));
-  const sides = parseInt(match[2], 10);
-  const modifier = parseInt(match[3] || "0", 10);
-  if (sides < 2 || count > 100) return null;
-
-  let total = modifier;
-  for (let i = 0; i < count; i++) {
-    total += Math.floor(Math.random() * sides) + 1;
-  }
-  return { total };
-}
 
 // ─── Built-in Macro Registrations ───────────────────────────────────────
 

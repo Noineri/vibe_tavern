@@ -104,7 +104,7 @@ async function setup(characterName = "RegexProbe"): Promise<TestChat> {
   });
   return {
     stores,
-    chatApp: new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls),
+    chatApp: new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls, stores.experiences, stores),
     chatId: brandId<ChatId>(chat.id),
     branchId: chat.activeBranchId,
     characterId: character.id,

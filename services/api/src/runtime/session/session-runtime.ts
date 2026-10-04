@@ -134,7 +134,7 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 	) {
 		this.stores = stores;
 		this.resolver = new StaticPromptResolver(stores, new RegexHookService(stores));
-		this.chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls, stores.experiences);
+		this.chatApp = new ChatApplicationService(stores.chats, stores.messages, stores.diceRolls, stores.experiences, stores);
 		this.promptService = new PromptAssemblyService(stores, this.resolver, this.stores.content.fileStore);
 		this.getActiveProviderProfile =
 			options?.getActiveProviderProfile ?? (async () => null);
