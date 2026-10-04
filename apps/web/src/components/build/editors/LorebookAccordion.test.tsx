@@ -426,6 +426,20 @@ describe("LorebookAccordion book-level group scoring (LG-7)", () => {
     view.unmount();
   });
 
+  it("saves Include Names and Insertion Strategy through the book-meta callback", async () => {
+    const { view, writes } = renderStatefulAccordion({ includeNames: true, characterStrategy: 0 });
+    await view.findByText("lore_scan_depth");
+
+    fireEvent.click(view.getByRole("switch", { name: "lore_include_names" }));
+    expect(writes).toEqual([{ includeNames: false }]);
+
+    fireEvent.click(view.getByRole("radio", { name: "lore_character_strategy_global_first" }));
+    expect(writes).toEqual([
+      { includeNames: false },
+      { characterStrategy: 2 },
+    ]);
+  });
+
   it("toggling reports onUpdateMeta({ useGroupScoring }) in both directions", async () => {
     // Two independent renders (unmount between): the disclosure's mount
     // animation doesn't like two live accordions in one document.

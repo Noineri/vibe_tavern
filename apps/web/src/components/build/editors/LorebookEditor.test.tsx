@@ -59,6 +59,7 @@ const listParticipatingLorebooks = mock(realLorebookApi.listParticipatingLoreboo
 const listLorebooks = mock(realLorebookApi.listLorebooks);
 const listLoreEntries = mock(realLorebookApi.listLoreEntries);
 const getLorebookLinks = mock(realLorebookApi.getLorebookLinks);
+const updateLorebookMeta = mock(realLorebookApi.updateLorebookMeta);
 const updateLoreEntry = mock(realLorebookApi.updateLoreEntry);
 const createLoreEntry = mock(realLorebookApi.createLoreEntry);
 const exportLorebookSt = mock(realLorebookApi.exportLorebookSt);
@@ -162,17 +163,23 @@ mock.module("./LoreEntryEditor.js", () => {
 mock.module("./LorebookAccordion.js", () => ({
   ...realLorebookAccordion,
   LorebookAccordion: (props: {
-    lorebook: { id: string; name: string };
+    lorebook: { id: string; name: string; includeNames: boolean; characterStrategy: number };
     onEntryClick: (entryId: string) => void;
     onExport: () => void;
+    onUpdateMeta: (body: { includeNames?: boolean; characterStrategy?: number }) => void;
   }) => (
     <div data-testid="lb-accordion">
       <span data-testid="lb-name">{props.lorebook.name}</span>
+      <output data-testid="lb-settings">{`${props.lorebook.includeNames}:${props.lorebook.characterStrategy}`}</output>
       <button
         data-testid="entry-click"
         onClick={() => props.onEntryClick("entry-1")}
       />
       <button data-testid="export-lorebook" onClick={props.onExport} />
+      <button
+        data-testid="update-book-settings"
+        onClick={() => props.onUpdateMeta({ includeNames: false, characterStrategy: 2 })}
+      />
     </div>
   ),
 }));
@@ -201,6 +208,7 @@ mock.module("../../../api/lorebook-api.js", () => ({
 	listLorebooks,
 	listLoreEntries,
 	getLorebookLinks,
+	updateLorebookMeta,
 	updateLoreEntry,
 	createLoreEntry,
 	exportLorebookSt,
@@ -346,6 +354,7 @@ describe("LorebookEditor (characterization)", () => {
     mocked(listLorebooks).mockResolvedValue([makeLorebook()]);
     mocked(listLoreEntries).mockResolvedValue([makeEntry()]);
     mocked(getLorebookLinks).mockResolvedValue([]);
+    mocked(updateLorebookMeta).mockResolvedValue(makeLorebook());
     mocked(updateLoreEntry).mockResolvedValue(makeEntry());
     mocked(exportLorebookSt).mockResolvedValue({ data: { entries: {} }, warnings: [] });
   });
@@ -518,6 +527,29 @@ describe("LorebookEditor (characterization)", () => {
       expect(exportLorebookSt).toHaveBeenCalledWith(LB_ID);
       expect(toastWarning).toHaveBeenCalledWith("lore_export_chat_disabled_warning");
     });
+  });
+
+  it("round-trips Include Names and Insertion Strategy through editor save and reload", async () => {
+    let persisted = makeLorebook({ includeNames: true, characterStrategy: 0 });
+    mocked(listAllLorebooks).mockImplementation(async () => [persisted]);
+    mocked(updateLorebookMeta).mockImplementation(async (id, patch) => {
+      expect(id).toBe(LB_ID);
+      persisted = { ...persisted, ...patch };
+      return persisted;
+    });
+
+    const { getByTestId } = await renderAtList();
+    expect(getByTestId("lb-settings").textContent).toBe("true:0");
+
+    fireEvent.click(getByTestId("update-book-settings"));
+
+    await waitFor(() => {
+      expect(updateLorebookMeta).toHaveBeenCalledWith(LB_ID, {
+        includeNames: false,
+        characterStrategy: 2,
+      });
+    });
+    await waitFor(() => expect(getByTestId("lb-settings").textContent).toBe("false:2"));
   });
 
   it("entry-loading: selecting an entry loads its lorebook's entries via listLoreEntries", async () => {

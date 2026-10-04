@@ -29,6 +29,7 @@ import { LoreEntryList } from "./LoreEntryList.js";
 import { ListSearchPanel } from "../../shared/ListSearchPanel.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { LorebookOwnerPicker } from "./LorebookOwnerPicker.js";
+import { LorebookActivationSettings } from "./lorebook-activation-settings.js";
 import { countTokens } from "../../../utils/tokenizer.js";
 import type { TFunc } from "../../../i18n/locale-helpers.js";
 import type Resources from "../../../i18n/resources.js";
@@ -90,9 +91,11 @@ interface LorebookAccordionProps {
     caseSensitive?: boolean;
     matchWholeWords?: boolean;
     maxRecursionSteps?: number;
+    includeNames?: boolean;
     minActivations?: number;
     minActivationsDepthMax?: number;
     overflowAlert?: boolean;
+    characterStrategy?: number;
   }) => void;
   onReorderEntries: (updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntryRecord[]>;
   onToggleEntryEnabled: (entryId: string, enabled: boolean) => Promise<LoreEntryRecord>;
@@ -682,6 +685,7 @@ export function LorebookAccordion({
                   />
                 </div>
               </CustomTooltip>
+              <LorebookActivationSettings includeNames={lorebook.includeNames} characterStrategy={lorebook.characterStrategy} t={t} onUpdateMeta={onUpdateMeta} />
             </div>
             {/* Link targets — only for non-chat scopes */}
             {lorebook.scopeType !== "chat" && (
