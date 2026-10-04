@@ -39,9 +39,11 @@ const names = (scripts: Array<{ name: string }>) => scripts.map((s) => s.name);
 describe("ScriptStore.listParticipatingForChat («Текущие»)", () => {
 	test("global + character + persona + chat scripts are included, sorted by sortOrder", async () => {
 		const { store } = await setup();
-		await store.create({ name: "char-a", scopeType: "entity", characterId: "char_1", sortOrder: 30, enabled: true });
+		const charA = await store.create({ name: "char-a", scopeType: "entity", sortOrder: 30, enabled: true });
+		await store.addLink(charA.id, "character", "char_1");
 		await store.create({ name: "glob", scopeType: "global", sortOrder: 10, enabled: true });
-		await store.create({ name: "persona-a", scopeType: "entity", personaId: "persona_9", sortOrder: 20, enabled: true });
+		const personaA = await store.create({ name: "persona-a", scopeType: "entity", sortOrder: 20, enabled: true });
+		await store.addLink(personaA.id, "persona", "persona_9");
 		await store.create({ name: "chat-a", scopeType: "chat", chatId: "chat_x", sortOrder: 5, enabled: true });
 
 		const participating = names(await store.listParticipatingForChat("char_1", "persona_9", "chat_x"));
@@ -58,8 +60,10 @@ describe("ScriptStore.listParticipatingForChat («Текущие»)", () => {
 
 	test("disabled character / persona / chat scripts are included (attached — the toggle turns them on)", async () => {
 		const { store } = await setup();
-		await store.create({ name: "char-off", scopeType: "entity", characterId: "char_1", enabled: false });
-		await store.create({ name: "persona-off", scopeType: "entity", personaId: "persona_9", enabled: false });
+		const charOff = await store.create({ name: "char-off", scopeType: "entity", enabled: false });
+		await store.addLink(charOff.id, "character", "char_1");
+		const personaOff = await store.create({ name: "persona-off", scopeType: "entity", enabled: false });
+		await store.addLink(personaOff.id, "persona", "persona_9");
 		await store.create({ name: "chat-off", scopeType: "chat", chatId: "chat_x", enabled: false });
 
 		const participating = names(await store.listParticipatingForChat("char_1", "persona_9", "chat_x"));
@@ -70,8 +74,10 @@ describe("ScriptStore.listParticipatingForChat («Текущие»)", () => {
 
 	test("other characters' and other personas' scripts are excluded", async () => {
 		const { store } = await setup();
-		await store.create({ name: "other-char", scopeType: "entity", characterId: "char_other", enabled: true });
-		await store.create({ name: "other-persona", scopeType: "entity", personaId: "persona_9", enabled: true });
+		const otherChar = await store.create({ name: "other-char", scopeType: "entity", enabled: true });
+		await store.addLink(otherChar.id, "character", "char_other");
+		const otherPersona = await store.create({ name: "other-persona", scopeType: "entity", enabled: true });
+		await store.addLink(otherPersona.id, "persona", "persona_9");
 
 		// The chat has no persona resolved → persona_9's script must not leak in.
 		const participating = names(await store.listParticipatingForChat("char_1", null, "chat_x"));
@@ -87,8 +93,9 @@ describe("ScriptStore.listParticipatingForChat («Текущие»)", () => {
 		// Disabled global linked to the chat's persona → participates through the persona binding.
 		const linkedGlobalOff = await store.create({ name: "linked-global-off", scopeType: "global", enabled: false });
 		await store.addLink(linkedGlobalOff.id, "persona", "persona_9");
-		// Multi-binding: homed to char_1 AND linked to persona_9 — one row, both targets.
-		const multiBound = await store.create({ name: "multi-bound", scopeType: "entity", characterId: "char_1", enabled: true });
+		// Multi-binding: linked to char_1 AND persona_9 — one row, both targets.
+		const multiBound = await store.create({ name: "multi-bound", scopeType: "entity", enabled: true });
+		await store.addLink(multiBound.id, "character", "char_1");
 		await store.addLink(multiBound.id, "persona", "persona_9");
 
 		const participating = names(await store.listParticipatingForChat("char_1", "persona_9", "chat_x"));
@@ -105,7 +112,8 @@ describe("ScriptStore.listParticipatingForChat («Текущие»)", () => {
 
 	test("interactive scripts never participate (owned by the Experience editor)", async () => {
 		const { store } = await setup();
-		await store.create({ name: "interactive-bound", scopeType: "entity", characterId: "char_1", enabled: true, scriptKind: "interactive" });
+		const interactiveBound = await store.create({ name: "interactive-bound", scopeType: "entity", enabled: true, scriptKind: "interactive" });
+		await store.addLink(interactiveBound.id, "character", "char_1");
 
 		const participating = names(await store.listParticipatingForChat("char_1", "persona_9", "chat_x"));
 		expect(participating).not.toContain("interactive-bound");
@@ -113,10 +121,12 @@ describe("ScriptStore.listParticipatingForChat («Текущие»)", () => {
 
 	test("pipeline parity: the enabled resolvers still exclude disabled and cross-kind rows on the same fixture", async () => {
 		const { store } = await setup();
-		await store.create({ name: "char-off", scopeType: "entity", characterId: "char_1", enabled: false });
+		const charOff = await store.create({ name: "char-off", scopeType: "entity", enabled: false });
+		await store.addLink(charOff.id, "character", "char_1");
 		await store.create({ name: "global-off", scopeType: "global", enabled: false });
 		await store.create({ name: "dice-glob", scopeType: "global", enabled: true, scriptKind: "dice" });
-		await store.create({ name: "char-on", scopeType: "entity", characterId: "char_1", enabled: true });
+		const charOn = await store.create({ name: "char-on", scopeType: "entity", enabled: true });
+		await store.addLink(charOn.id, "character", "char_1");
 
 		const promptResolved = names(await store.listAllEnabledForChat("char_1", "persona_9", "chat_x"));
 		expect(promptResolved).toEqual(["char-on"]);

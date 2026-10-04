@@ -59,7 +59,8 @@ describe("LorebookStore.listLorebooksByScope", () => {
   });
 
   test("entity browse (no ownerId) lists every entity-home book regardless of owner kind", async () => {
-    // FK parents first — lorebooks.characterId/personaId are enforced.
+    // Owner ids referenced by this fixture (links are not FK-enforced, but
+    // the chat's character FK is).
     const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-db-test-"));
     const db = await createDb(join(dir, "test.db"));
     const store = new LorebookStore(db, {
@@ -75,16 +76,8 @@ describe("LorebookStore.listLorebooksByScope", () => {
     // used to resolve an owner from context, so a character-bound book was
     // invisible when a persona context was active. Browse semantics: no
     // ownerId → every entity-home book, both FK kinds, and nothing else.
-    const charBound = await store.createLorebook({
-      name: "Silk Lair",
-      scopeType: "entity",
-      characterId: "char_arachnid",
-    });
-    const personaBound = await store.createLorebook({
-      name: "Persona notes",
-      scopeType: "entity",
-      personaId: "persona_1",
-    });
+    const charBound = await store.createLorebook({ name: "Silk Lair", scopeType: "entity" });
+    const personaBound = await store.createLorebook({ name: "Persona notes", scopeType: "entity" });
     await store.createLorebook({ name: "Global one", scopeType: "global" });
     await store.createLorebook({ name: "Chat one", scopeType: "chat", chatId: "chat_1" });
 
@@ -505,8 +498,11 @@ describe("LorebookStore.applyCoauthorLoreDraft (CTX-L2)", () => {
     const lb = await store.getLorebook("lorebook_draft1");
     expect(lb).not.toBeNull();
     expect(lb!.name).toBe("World Lore");
-    // Character-scoped draft book is written with characterId (activation engine FK ∪ junction).
-    expect(lb!.characterId).toBe("char_1");
+    // Entity-scoped draft book is bound to its character via lorebook_links
+    // (CE-A1; since migration 0107 links are the ONLY owner source — the
+    // characterId field itself is always null now).
+    expect(lb!.characterId).toBeNull();
+    expect((await store.getLinks("lorebook_draft1")).map((l) => `${l.targetType}:${l.targetId}`)).toEqual(["character:char_1"]);
 
     const entry = await store.getEntry("lore_entry_draft1");
     expect(entry).not.toBeNull();

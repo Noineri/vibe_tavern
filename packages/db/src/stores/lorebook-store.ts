@@ -73,6 +73,10 @@ export interface CreateLorebookData {
   characterStrategy?: number;
   sortOrder?: number;
   enabled?: boolean;
+  /** Deprecated home-owner inputs (characterId, personaId): accepted for
+   *  API-shape compatibility but NOT written — migration 0107 dropped the
+   *  home-owner columns; owners are `lorebook_links` rows. Replaced by the
+   *  explicit-owner-list create API in step 2 (chain unit 15). */
   characterId?: string | null;
   personaId?: string | null;
   chatId?: string | null;
@@ -158,6 +162,8 @@ export interface Lorebook {
   characterStrategy: number;
   sortOrder: number;
   enabled: boolean;
+  /** Always null since migration 0107 (home owners are links now); kept on
+   *  the store/API shape until the step-2 contract redesign removes them. */
   characterId: string | null;
   personaId: string | null;
   chatId: string | null;
@@ -336,13 +342,16 @@ export class LorebookStore {
       return rows.map((r) => this.mapLorebookRow(r));
     }
 
-    // Entity scope: the home FK is whichever owner column is set
-    // (characterId OR personaId), so the direct match covers both.
-    // Without an ownerId this is a BROWSE view — every entity-home book
-    // regardless of which owner it is bound to (the editor sidebar's
-    // "entity" tab is a scope filter, symmetric with the global tab).
-    // Owner views (character/persona build sidebars) always pass ownerId.
-    if (scopeType === 'entity') {
+    // Entity scope (and any legacy scope value — the 0062 collapse made
+    // global/entity/chat the only reachable values): owners are
+    // `lorebook_links` rows (since migration 0107 the home-owner FK columns
+    // are gone — every owner is a plain link).
+    // Without an ownerId this is a BROWSE view — every entity book regardless
+    // of which owners it is linked to (the editor sidebar's "entity" tab is a
+    // scope filter, symmetric with the global tab). Owner views
+    // (character/persona build sidebars) always pass ownerId and see exactly
+    // the books linked to that owner through any link target type.
+    if (scopeType !== 'global' && scopeType !== 'chat') {
       if (!ownerId) {
         const rows = await this.db
           .select()
@@ -352,13 +361,7 @@ export class LorebookStore {
           .all();
         return rows.map((r) => this.mapLorebookRow(r));
       }
-      const directCondition = and(
-        eq(lorebooks.scopeType, 'entity'),
-        or(eq(lorebooks.characterId, ownerId), eq(lorebooks.personaId, ownerId)),
-      );
-      // The owner view shows both directly scoped lorebooks and lorebooks
-      // linked via the junction table (either target type — a book bound to
-      // the owner through any link belongs to the owner's view).
+      // A book bound to the owner through ANY link belongs to the owner's view.
       const linkedRows = await this.db
         .select({ lorebookId: lorebookLinks.lorebookId })
         .from(lorebookLinks)
@@ -366,31 +369,25 @@ export class LorebookStore {
         .all();
 
       const linkedIds = [...new Set(linkedRows.map((row) => row.lorebookId))];
-      const whereCondition = linkedIds.length > 0
-        ? or(directCondition, inArray(lorebooks.id, linkedIds))
-        : directCondition;
+      if (linkedIds.length === 0) return [];
 
       const rows = await this.db
         .select()
         .from(lorebooks)
-        .where(whereCondition)
+        .where(inArray(lorebooks.id, linkedIds))
         .orderBy(asc(lorebooks.scopeType), asc(lorebooks.sortOrder), asc(lorebooks.name))
         .all();
       return rows.map((r) => this.mapLorebookRow(r));
     }
 
     // Chat scope remains direct-only because lorebook_links supports
-    // character/persona targets only. Any other (legacy) scope value falls
-    // through to the same direct-FK read — no junction union. These are
-    // owner views by definition — no ownerId means nothing to match.
+    // character/persona targets only. These are owner views by definition —
+    // no ownerId means nothing to match.
     if (!ownerId) return [];
-    const fkCol = scopeType === 'persona' ? lorebooks.personaId
-      : scopeType === 'chat' ? lorebooks.chatId
-      : lorebooks.characterId;
     const rows = await this.db
       .select()
       .from(lorebooks)
-      .where(and(eq(lorebooks.scopeType, scopeType), eq(fkCol, ownerId)))
+      .where(and(eq(lorebooks.scopeType, scopeType), eq(lorebooks.chatId, ownerId)))
       .orderBy(asc(lorebooks.sortOrder), asc(lorebooks.name))
       .all();
     return rows.map((r) => this.mapLorebookRow(r));
@@ -423,8 +420,6 @@ export class LorebookStore {
         characterStrategy: data.characterStrategy ?? 1,
         sortOrder: data.sortOrder ?? 0,
         enabled: (data.enabled ?? true) ? 1 : 0,
-        characterId: data.characterId ?? null,
-        personaId: data.personaId ?? null,
         chatId: data.chatId ?? null,
         extensionsJson: JSON.stringify(data.extensions ?? {}),
         createdAt: now,
@@ -462,8 +457,8 @@ export class LorebookStore {
     if (data.characterStrategy !== undefined) values.characterStrategy = data.characterStrategy;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
     if (data.enabled !== undefined) values.enabled = data.enabled ? 1 : 0;
-    if (data.characterId !== undefined) values.characterId = data.characterId;
-    if (data.personaId !== undefined) values.personaId = data.personaId;
+    // Home-owner inputs are deliberately not mapped: the columns are gone
+    // (migration 0107) and owners are links only.
     if (data.chatId !== undefined) values.chatId = data.chatId;
     if (data.extensions !== undefined) values.extensionsJson = JSON.stringify(data.extensions);
 
@@ -791,10 +786,10 @@ export class LorebookStore {
 
   /**
    * Reverse query — list lorebooks M:N-linked to a given target (character or
-   * persona), regardless of the lorebook's own home scope. This is the
-   * persona/character-editor view of "which lorebooks activate for me". Returns
-   * links-only (FK-owned lorebooks are NOT included here; those surface via
-   * `listLorebooksByScope` which unions FK + links).
+   * persona), regardless of the lorebook's own scope. This is the
+   * persona/character-editor view of "which lorebooks activate for me". Since
+   * migration 0107 links are the ONLY owner source, so this and the owner
+   * branch of `listLorebooksByScope` read the same rows.
    */
   async listLorebooksLinkedToTarget(targetType: 'character' | 'persona', targetId: string): Promise<Lorebook[]> {
     const linkedRows = await this.db
@@ -818,6 +813,9 @@ export class LorebookStore {
   /**
    * Deep-copy a lorebook with all its entries.
    * Copies links from the original. Overrides optional fields if provided.
+   * The deprecated `characterId`/`personaId` overrides are accepted for API
+   * compatibility but ignored — owners are links (migration 0107) and the
+   * source book's links are copied verbatim.
    */
   async duplicateLorebook(
     lorebookId: string,
@@ -833,8 +831,6 @@ export class LorebookStore {
       name: overrides?.name ?? `${source.name} (copy)`,
       description: source.description,
       scopeType: overrides?.scopeType ?? source.scopeType,
-      characterId: overrides?.characterId ?? source.characterId,
-      personaId: overrides?.personaId ?? source.personaId,
       scanDepth: source.scanDepth,
       tokenBudget: source.tokenBudget,
       tokenBudgetPercent: source.tokenBudgetPercent ?? null,
@@ -915,8 +911,10 @@ export class LorebookStore {
       characterStrategy: row.characterStrategy,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
-      characterId: row.characterId,
-      personaId: row.personaId,
+      // Home owners are links since migration 0107 — these payload fields stay
+      // null until the step-2 contract redesign removes them.
+      characterId: null,
+      personaId: null,
       chatId: row.chatId,
       extensions: JSON.parse(row.extensionsJson),
       entries: entryRows.map((e) => ({
@@ -982,8 +980,10 @@ export class LorebookStore {
       characterStrategy: row.characterStrategy,
       sortOrder: row.sortOrder,
       enabled: row.enabled === 1,
-      characterId: row.characterId,
-      personaId: row.personaId,
+      // Home owners are links since migration 0107 (columns dropped) — kept
+      // null until the step-2 contract redesign removes the fields.
+      characterId: null,
+      personaId: null,
       chatId: row.chatId,
       extensions: JSON.parse(row.extensionsJson),
       createdAt: row.createdAt,

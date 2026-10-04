@@ -29,9 +29,9 @@ import { buildEntryInsert, buildEntryPatch, mergeCaseFormsKeys } from './lore-en
  * structural typing accepts it without a forbidden import).
  *
  * `id`s are PREALLOCATED in the request-local draft engine and become the DB
- * primary keys. The scopeType→owner mapping mirrors `createLorebook`: an
- * 'entity'-scoped draft book is written with `characterId` set so the
- * activation engine (FK ∪ junction) finds it.
+ * primary keys. Since migration 0107 owners are links only: an 'entity'-scoped
+ * draft book is bound to the authored character via a `lorebook_links` row
+ * (CE-A1, inserted idempotently below) so the activation engine finds it.
  */
 export interface CoauthorLoreDraftBundle {
   lorebooks: Array<{
@@ -115,10 +115,8 @@ function entryNodeToCreateData(
 /** Insert values for one draft lorebook (defaults mirror `createLorebook`). */
 function lorebookInsertValues(
   lb: CoauthorLoreDraftBundle['lorebooks'][number],
-  characterId: string,
   now: string,
 ): typeof lorebooks.$inferInsert {
-  const entityScoped = lb.scopeType === 'entity';
   return {
     id: lb.id,
     name: lb.name,
@@ -142,8 +140,6 @@ function lorebookInsertValues(
     characterStrategy: lb.characterStrategy ?? 1,
     sortOrder: 0,
     enabled: lb.enabled ? 1 : 0,
-    characterId: entityScoped ? characterId : null,
-    personaId: null,
     chatId: null,
     extensionsJson: '{}',
     createdAt: now,
@@ -154,10 +150,9 @@ function lorebookInsertValues(
 /** Upsert-update set for one draft lorebook (mutable fields; preserves createdAt + id). */
 function lorebookUpsertSet(
   lb: CoauthorLoreDraftBundle['lorebooks'][number],
-  characterId: string,
   now: string,
 ): Partial<typeof lorebooks.$inferInsert> {
-  const { id: _id, createdAt: _createdAt, sortOrder: _sortOrder, extensionsJson: _ext, personaId: _p, chatId: _c, ...values } = lorebookInsertValues(lb, characterId, now);
+  const { id: _id, createdAt: _createdAt, sortOrder: _sortOrder, extensionsJson: _ext, chatId: _c, ...values } = lorebookInsertValues(lb, now);
   return { ...values, updatedAt: now };
 }
 
@@ -201,17 +196,18 @@ export async function applyCoauthorLoreDraftTx(
       const entityScoped = lb.scopeType === 'entity';
       tx
         .insert(lorebooks)
-        .values(lorebookInsertValues(lb, characterId, now))
+        .values(lorebookInsertValues(lb, now))
         .onConflictDoUpdate({
           target: lorebooks.id,
           // Re-Apply updates mutable fields (incl. CE-A1 activation params) but preserves createdAt + id.
-          set: lorebookUpsertSet(lb, characterId, now),
+          set: lorebookUpsertSet(lb, now),
         })
         .run();
       // CE-A1: an entity-scoped lorebook is bound to its character via
       // lorebook_links (idempotent), so the co-author's book is discoverable
-      // by the activation engine (FK ∪ junction) without the user binding it
-      // manually. Non-entity scopes do not create a character link.
+      // by the activation engine without the user binding it manually. Since
+      // migration 0107 this link IS the owner binding (the home-FK columns are
+      // gone). Non-entity scopes do not create a character link.
       if (entityScoped) {
         tx
           .insert(lorebookLinks)

@@ -241,8 +241,8 @@ describe("AI assistant stream prompt preparation", () => {
       const lorebook = await fixture.stores.lorebooks.createLorebook({
         name: "Draft lore",
         scopeType: "entity",
-        characterId: fixture.chat.characterId,
       });
+      await fixture.stores.lorebooks.addLink(lorebook.id, "character", fixture.chat.characterId);
       const entry = await fixture.stores.lorebooks.createEntry(lorebook.id, {
         title: "Draft key",
         content: "Draft lore content",

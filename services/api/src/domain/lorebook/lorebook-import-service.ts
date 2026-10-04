@@ -129,8 +129,6 @@ export async function importLorebook(
 			overflowAlert: parsed.lorebook.overflowAlert,
 			characterStrategy: parsed.lorebook.characterStrategy,
 			sortOrder: parsed.lorebook.sortOrder,
-			characterId: body.characterId ?? null,
-			personaId: body.personaId ?? null,
 			chatId: body.chatId ?? null,
 			extensions: parsed.lorebook.extensions,
 			// Absent → store default (enabled). Merge/replace into an existing
@@ -138,6 +136,18 @@ export async function importLorebook(
 			enabled: body.enabled ?? true,
 		});
 		targetId = created.id;
+		// Owners are links (migration 0107, LORE_SCRIPT_OWNERS_AS_LINKS step 1):
+		// the create API's deprecated home-owner inputs no longer bind anything,
+		// so THIS seam binds the requested owner itself. The callers are exactly
+		// the contexts where the owner is unambiguous (the import modal's owner
+		// pick, a card import's embedded book → the imported character, the ST
+		// directory scanner → the owners it already resolves) — per the report's
+		// Verdict they bind without asking. Idempotent: an existing link row is
+		// left untouched (onConflictDoNothing).
+		if ((body.scopeType ?? "entity") === "entity") {
+			if (body.characterId) await stores.lorebooks.addLink(targetId, "character", body.characterId);
+			if (body.personaId) await stores.lorebooks.addLink(targetId, "persona", body.personaId);
+		}
 	} else {
 		const lorebook = await stores.lorebooks.getLorebook(targetId);
 		if (!lorebook) throw new Error(`Lorebook not found: ${targetId}`);

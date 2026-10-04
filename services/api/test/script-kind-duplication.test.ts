@@ -69,9 +69,13 @@ describe("DICE-B3 — character duplication preserves scriptKind", () => {
 	afterAll(async () => { await cleanup(); });
 
 	it("copies each character-scoped script with its kind intact (prompt + dice)", async () => {
-		// Seed one prompt-kind and one dice-kind character-scoped script.
-		await stores.scripts.create({ name: "char-prompt", scopeType: "entity", characterId, scriptKind: "prompt", enabled: true });
-		await stores.scripts.create({ name: "char-dice", scopeType: "entity", characterId, scriptKind: "dice", enabled: true });
+		// Seed one prompt-kind and one dice-kind script bound to the character
+		// by links (owners are links since migration 0107 — LORE_SCRIPT_OWNERS_AS_LINKS
+		// step 1; the duplication loop binds the copies by links too).
+		const charPrompt = await stores.scripts.create({ name: "char-prompt", scopeType: "entity", scriptKind: "prompt", enabled: true });
+		await stores.scripts.addLink(charPrompt.id, "character", characterId);
+		const charDice = await stores.scripts.create({ name: "char-dice", scopeType: "entity", scriptKind: "dice", enabled: true });
+		await stores.scripts.addLink(charDice.id, "character", characterId);
 
 		const dup = await runtime.character.duplicate(characterId as never);
 		// The duplicate's new character id is reachable via its seeded chat snapshot.
@@ -107,8 +111,10 @@ describe("DICE-B3 — persona duplication preserves scriptKind", () => {
 		expect(persona).not.toBeNull();
 		const personaId = persona!.id;
 
-		await stores.scripts.create({ name: "persona-prompt", scopeType: "entity", personaId, scriptKind: "prompt", enabled: true });
-		await stores.scripts.create({ name: "persona-dice", scopeType: "entity", personaId, scriptKind: "dice", enabled: true });
+		const personaPrompt = await stores.scripts.create({ name: "persona-prompt", scopeType: "entity", scriptKind: "prompt", enabled: true });
+		await stores.scripts.addLink(personaPrompt.id, "persona", personaId);
+		const personaDice = await stores.scripts.create({ name: "persona-dice", scopeType: "entity", scriptKind: "dice", enabled: true });
+		await stores.scripts.addLink(personaDice.id, "persona", personaId);
 
 		const dup = await runtime.persona.duplicate(personaId);
 		// PersonaRuntime.duplicate returns the new persona record.

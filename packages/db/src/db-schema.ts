@@ -275,8 +275,6 @@ export const lorebooks = sqliteTable('lorebooks', {
   overflowAlert: integer('overflow_alert').notNull().default(0),
   characterStrategy: integer('character_strategy').notNull().default(1),
   sortOrder: integer('sort_order').notNull().default(0),
-  characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
-  personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
   chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
   enabled: integer('enabled').notNull().default(1),
   extensionsJson: text('extensions_json').notNull().default('{}'),
@@ -285,8 +283,6 @@ export const lorebooks = sqliteTable('lorebooks', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
-  characterIdIdx: index('idx_lorebooks_character').on(table.characterId),
-  personaIdIdx: index('idx_lorebooks_persona').on(table.personaId),
   chatIdIdx: index('idx_lorebooks_chat').on(table.chatId),
   scopeTypeIdx: index('idx_lorebooks_scope').on(table.scopeType),
 }));
@@ -355,6 +351,10 @@ export const loreEntries = sqliteTable('lore_entries', {
 // The legacy FK columns (`characterId`, `personaId`) on `lorebooks`
 // are retained as the "primary owner" used by the scope-based UI tabs
 // and by import/duplicate flows.
+//
+// [0107 / LORE_SCRIPT_OWNERS_AS_LINKS step 1] The paragraph above is
+// historical: every character/persona owner is now a plain link row — the
+// legacy "primary owner" FK columns were copied here (deduped) and dropped.
 
 export const lorebookLinks = sqliteTable('lorebook_links', {
   lorebookId: text('lorebook_id').notNull().references(() => lorebooks.id, { onDelete: 'cascade' }),
@@ -387,8 +387,6 @@ export const scripts = sqliteTable('scripts', {
   creationIntentId: text('creation_intent_id').unique(),
   scopeType: text('scope_type').notNull().default('character'),
   sortOrder: integer('sort_order').notNull().default(0),
-  characterId: text('character_id').references(() => characters.id, { onDelete: 'cascade' }),
-  personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
   chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
   // Default visual paired with this experience (interactive scripts only). Set
   // by the creation wizard so the script↔visual pairing persists across chats;
@@ -414,8 +412,6 @@ export const scripts = sqliteTable('scripts', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
-  characterIdIdx: index('idx_scripts_character').on(table.characterId),
-  personaIdIdx: index('idx_scripts_persona').on(table.personaId),
   chatIdIdx: index('idx_scripts_chat').on(table.chatId),
   scopeTypeIdx: index('idx_scripts_scope').on(table.scopeType),
   scriptKindIdx: index('idx_scripts_kind').on(table.scriptKind),
@@ -436,6 +432,10 @@ export const scripts = sqliteTable('scripts', {
 // junction-linked — deliberately more consistent than the lorebook resolver,
 // which is junction-only for char/persona and relies on every FK-owned row
 // having been junction-linked at baseline-migration time.
+//
+// [0107 / LORE_SCRIPT_OWNERS_AS_LINKS step 1] The paragraph above is
+// historical: every owner is now a plain link row — the legacy home FK
+// columns were copied here (deduped) and dropped; links are the only source.
 export const scriptLinks = sqliteTable('script_links', {
   scriptId: text('script_id').notNull().references(() => scripts.id, { onDelete: 'cascade' }),
   targetType: text('target_type').notNull(),  // 'character' | 'persona'

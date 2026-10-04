@@ -889,8 +889,8 @@ export async function importSillyTavernDirectory(
 				}
 			}
 			// globalSelect remains the strongest explicit signal. Otherwise keep
-			// every entity owner: the first is the book's home FK and additional
-			// ST references become junction links, which listAllActiveForChat reads.
+			// every entity owner: the first is bound by the importLorebook seam
+			// (owners are links since 0107), extras become further links.
 			const personaOwnerIds = getBindingOwners(personaBookToPersonaIds, candidates);
 			const characterOwnerIds = getBindingOwners(cardWorldToCharacterIds, candidates);
 			let scopeType = "global";

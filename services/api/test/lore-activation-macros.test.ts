@@ -152,8 +152,8 @@ async function makeResolverWorld(
   const lorebook = await stores.lorebooks.createLorebook({
     name: "macro lore",
     scopeType: "entity",
-    characterId: character.id,
   });
+  await stores.lorebooks.addLink(lorebook.id, "character", character.id);
   await stores.lorebooks.createEntry(lorebook.id, {
     title: "Archive",
     content: entryContent,

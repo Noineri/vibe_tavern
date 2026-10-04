@@ -266,7 +266,9 @@ export class PersonaRuntime {
 			}
 		}
 
-		// Duplicate persona-scoped lorebooks (entity scope, persona FK)
+		// Duplicate persona-scoped lorebooks. Owners are links (migration 0107,
+		// LORE_SCRIPT_OWNERS_AS_LINKS step 1): the source set is the persona's
+		// LINKED books, and each copy is bound to the new persona by a link.
 		const sourceLorebooks = await this.deps.stores.lorebooks.listLorebooksByScope("entity", personaId);
 		for (const lb of sourceLorebooks) {
 			const entries = await this.deps.stores.lorebooks.listEntries(lb.id);
@@ -274,11 +276,11 @@ export class PersonaRuntime {
 				name: lb.name,
 				description: lb.description,
 				scopeType: "entity",
-				personaId: persona.id,
 				scanDepth: lb.scanDepth,
 				recursiveScanning: lb.recursiveScanning,
 				enabled: lb.enabled,
 			});
+			await this.deps.stores.lorebooks.addLink(newLb.id, "persona", persona.id);
 			await this.deps.stores.lorebooks.bulkCreateEntries(newLb.id, entries.map(e => ({
 				keys: e.keys,
 				secondaryKeys: e.secondaryKeys,
@@ -305,19 +307,20 @@ export class PersonaRuntime {
 			})));
 		}
 
-		// Duplicate persona-scoped scripts
+		// Duplicate persona-scoped scripts (owners are links — migration 0107;
+		// each copy is bound to the new persona by a link).
 		const sourceScripts = await this.deps.stores.scripts.listByScope("entity", personaId);
 		for (const sc of sourceScripts) {
-			await this.deps.stores.scripts.create({
+			const copy = await this.deps.stores.scripts.create({
 				name: sc.name,
 				description: sc.description,
 				code: sc.code,
 				scriptKind: sc.scriptKind,
 				scopeType: "entity",
-				personaId: persona.id,
 				enabled: sc.enabled,
 				sortOrder: sc.sortOrder,
 			});
+			await this.deps.stores.scripts.addLink(copy.id, "persona", persona.id);
 		}
 
 		return {
