@@ -1,6 +1,7 @@
 import type { ScriptRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer, ExperienceVisualRow } from "@vibe-tavern/db";
 import type { ScriptKind } from "@vibe-tavern/domain";
+import { notFound } from "../../shared/errors.js";
 import { testScript, parseScriptImport } from "../../domain/scripts-engine/script-test-service.js";
 import { BUILTIN_EXPERIENCE_CATALOG } from "../../domain/interactive/builtin-experiences/index.js";
 
@@ -10,6 +11,14 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 	listAllScripts = () => this.stores.scripts.listAll();
 	listScripts = (scopeType: string, ownerId?: string) =>
 		this.stores.scripts.listByScope(scopeType, ownerId);
+
+	listParticipatingScripts = async (chatId: string) => {
+		// Fail-closed: the chat's character/persona pairing defines the bindings —
+		// an unknown chat has no participating set.
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		return this.stores.scripts.listParticipatingForChat(chat.characterId, chat.personaId, chatId);
+	};
 
 	getScript = (scriptId: string) =>
 		this.stores.scripts.getById(scriptId);

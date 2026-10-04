@@ -1,5 +1,6 @@
 import type { LorebookRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer, CreateLoreEntryData, UpdateLoreEntryData } from "@vibe-tavern/db";
+import { notFound } from "../../shared/errors.js";
 import { importLorebook } from "../../domain/lorebook/lorebook-import-service.js";
 import { exportLorebookToStWithWarnings } from "@vibe-tavern/import-export";
 
@@ -12,6 +13,14 @@ export class LorebookAdapter implements LorebookRuntimeApi {
 
 	listLorebooks = (scopeType: string, ownerId?: string) =>
 		this.stores.lorebooks.listLorebooksByScope(scopeType, ownerId);
+
+	listParticipatingLorebooks = async (chatId: string) => {
+		// Fail-closed: the chat's character/persona pairing defines the bindings —
+		// an unknown chat has no participating set.
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		return this.stores.lorebooks.listParticipatingForChat(chat.characterId, chat.personaId, chatId);
+	};
 
 	createLorebook = (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean }) =>
 		this.stores.lorebooks.createLorebook(body);

@@ -7,6 +7,12 @@ import { STORAGE_FOLDERS } from '../file-store.js';
 import type { CharacterFilterEntry } from '@vibe-tavern/domain';
 import { LOREBOOK_DEFAULTS } from '@vibe-tavern/domain';
 import { applyCoauthorLoreDraftTx } from './coauthor-lore-apply.js';
+import { resolveBoundLorebookRows, type LorebookBindingKind } from './lorebook-chat-resolution.js';
+// The binding-kind vocabulary moved to `lorebook-chat-resolution.ts` (the one
+// source of the chat participation rules); re-exported here so the store's
+// public surface (`stores/index.ts`, prompt-resolver) is unchanged.
+export { LOREBOOK_BINDING_KIND } from './lorebook-chat-resolution.js';
+export type { LorebookBindingKind } from './lorebook-chat-resolution.js';
 import {
   ENTRY_FIELD_SPEC,
   type EntryFieldSpec,
@@ -160,18 +166,6 @@ export interface Lorebook {
   updatedAt: string;
 }
 
-/**
- * Store-level LoreEntry — domain LoreEntry projected from a DB row.
- */
-export const LOREBOOK_BINDING_KIND = {
-  chat: 'chat',
-  persona: 'persona',
-  character: 'character',
-  global: 'global',
-} as const;
-
-export type LorebookBindingKind = typeof LOREBOOK_BINDING_KIND[keyof typeof LOREBOOK_BINDING_KIND];
-
 /** One enabled lorebook resolved for a chat, with its most specific binding. */
 export interface ActiveLorebookSet {
   lorebook: Lorebook;
@@ -179,6 +173,9 @@ export interface ActiveLorebookSet {
   bindingKind: LorebookBindingKind;
 }
 
+/**
+ * Store-level LoreEntry — domain LoreEntry projected from a DB row.
+ */
 export interface LoreEntry {
   id: string;
   lorebookId: string;
@@ -660,135 +657,61 @@ export class LorebookStore {
 
   /**
    * Returns all lorebooks visible to a chat session across all scopes,
-   * plus their enabled entries.
-   *
-   * Resolution: global lorebooks + entity-scoped lorebooks homed to the
-   * character or persona (home FK) + lorebooks linked to either owner (via
-   * lorebook_links) + chat-scoped lorebooks (direct FK).
-   * Only enabled entries are included.
+   * plus their enabled entries — the prompt pipeline's activation read.
+   * The binding rules live in `lorebook-chat-resolution.ts` (the one source,
+   * shared with `listParticipatingForChat`); this read keeps only ENABLED
+   * rows (activation semantics — a disabled book never activates), while the
+   * «Текущие» list keeps attached-but-disabled character/persona/chat books.
    */
   async listAllActiveForChat(
     characterId: string,
     personaId: string | null,
     chatId: string,
   ): Promise<ActiveLorebookSet[]> {
-    // One book can match through several bindings. Preserve every matching
-    // source, then select its most specific kind after loading the rows.
-    const bindingKindsByLorebookId = new Map<string, Set<LorebookBindingKind>>();
-    const addBinding = (lorebookId: string, bindingKind: LorebookBindingKind): void => {
-      const bindingKinds = bindingKindsByLorebookId.get(lorebookId) ?? new Set<LorebookBindingKind>();
-      bindingKinds.add(bindingKind);
-      bindingKindsByLorebookId.set(lorebookId, bindingKinds);
-    };
-
-    // 1. Global lorebooks
-    const globalRows = await this.db
-      .select({ id: lorebooks.id })
-      .from(lorebooks)
-      .where(and(eq(lorebooks.scopeType, 'global'), eq(lorebooks.enabled, 1)))
-      .all();
-    for (const r of globalRows) addBinding(r.id, LOREBOOK_BINDING_KIND.global);
-
-    // 2. Entity-scoped lorebooks: FK-owned (home scope) AND junction-linked.
-    //    The resolver consults BOTH — the previous junction-only query silently
-    //    dropped FK-owned lorebooks because `createLorebook` does NOT mirror the
-    //    FK into `lorebook_links`, so an entity-FK lorebook created the normal
-    //    way was visible in editor tabs but never activated in chat.
-    //    Mirrors `ScriptStore.listAllEnabledForChat` (FK ∪ junction, Set dedup).
-    //    The home FK is whichever owner column is set, so one pass covers both:
-    //    (characterId = :cid OR personaId = :pid) — a book M:N-bound to BOTH a
-    //    character and a persona activates for a chat matching either target.
-    const entityFkCondition = personaId
-      ? and(eq(lorebooks.scopeType, 'entity'), or(eq(lorebooks.characterId, characterId), eq(lorebooks.personaId, personaId)), eq(lorebooks.enabled, 1))
-      : and(eq(lorebooks.scopeType, 'entity'), eq(lorebooks.characterId, characterId), eq(lorebooks.enabled, 1));
-    const entityFkRows = await this.db
-      .select({ id: lorebooks.id, characterId: lorebooks.characterId, personaId: lorebooks.personaId })
-      .from(lorebooks)
-      .where(entityFkCondition)
-      .all();
-    for (const r of entityFkRows) {
-      addBinding(
-        r.id,
-        personaId && r.personaId === personaId
-          ? LOREBOOK_BINDING_KIND.persona
-          : LOREBOOK_BINDING_KIND.character,
-      );
-    }
-    const charLinks = await this.db
-      .select({ lorebookId: lorebookLinks.lorebookId })
-      .from(lorebookLinks)
-      .innerJoin(lorebooks, and(
-        eq(lorebookLinks.lorebookId, lorebooks.id),
-        eq(lorebooks.enabled, 1),
-      ))
-      .where(and(eq(lorebookLinks.targetType, 'character'), eq(lorebookLinks.targetId, characterId)))
-      .all();
-    for (const r of charLinks) addBinding(r.lorebookId, LOREBOOK_BINDING_KIND.character);
-
-    // 3. Persona junction links (target-typed, unchanged by the collapse).
-    if (personaId) {
-      const personaLinks = await this.db
-        .select({ lorebookId: lorebookLinks.lorebookId })
-        .from(lorebookLinks)
-        .innerJoin(lorebooks, and(
-          eq(lorebookLinks.lorebookId, lorebooks.id),
-          eq(lorebooks.enabled, 1),
-        ))
-        .where(and(eq(lorebookLinks.targetType, 'persona'), eq(lorebookLinks.targetId, personaId)))
-        .all();
-      for (const r of personaLinks) addBinding(r.lorebookId, LOREBOOK_BINDING_KIND.persona);
-    }
-
-    // 4. Chat-scoped lorebooks (direct FK — not via links)
-    const chatRows = await this.db
-      .select({ id: lorebooks.id })
-      .from(lorebooks)
-      .where(and(eq(lorebooks.scopeType, 'chat'), eq(lorebooks.chatId, chatId), eq(lorebooks.enabled, 1)))
-      .all();
-    for (const r of chatRows) addBinding(r.id, LOREBOOK_BINDING_KIND.chat);
-
-    if (bindingKindsByLorebookId.size === 0) return [];
-
-    // Batch-load lorebooks in a stable order. This is the deterministic
-    // book-resolution order used if an ST strategy needs a first bound book.
-    const idArray = [...bindingKindsByLorebookId.keys()];
-    const bookRows = await this.db
-      .select()
-      .from(lorebooks)
-      .where(inArray(lorebooks.id, idArray))
-      .orderBy(asc(lorebooks.sortOrder), asc(lorebooks.name), asc(lorebooks.id))
-      .all();
+    const bound = await resolveBoundLorebookRows(this.db, characterId, personaId, chatId);
 
     const result: ActiveLorebookSet[] = [];
-
-    for (const bookRow of bookRows) {
+    for (const { row, bindingKind } of bound) {
+      if (row.enabled !== 1) continue;
       const entryRows = await this.db
         .select()
         .from(loreEntries)
         .where(
           and(
-            eq(loreEntries.lorebookId, bookRow.id),
+            eq(loreEntries.lorebookId, row.id),
             eq(loreEntries.enabled, 1),
           ),
         )
         .all();
-
-      const bindingKinds = bindingKindsByLorebookId.get(bookRow.id);
-      const bindingKind = bindingKinds?.has(LOREBOOK_BINDING_KIND.chat)
-        ? LOREBOOK_BINDING_KIND.chat
-        : bindingKinds?.has(LOREBOOK_BINDING_KIND.persona)
-          ? LOREBOOK_BINDING_KIND.persona
-          : bindingKinds?.has(LOREBOOK_BINDING_KIND.character)
-            ? LOREBOOK_BINDING_KIND.character
-            : LOREBOOK_BINDING_KIND.global;
       result.push({
-        lorebook: this.mapLorebookRow(bookRow),
+        lorebook: this.mapLorebookRow(row),
         entries: entryRows.map((r) => this.mapEntryRow(r)),
         bindingKind,
       });
     }
-
     return result;
+  }
+
+  /**
+   * «Текущие» (LOREBOOK_LIST_FILTERS_REPORT step 2): every lorebook that
+   * participates in the chat through the SAME binding rules the prompt
+   * pipeline reads (`lorebook-chat-resolution.ts` — no second rule set),
+   * under attached-list semantics: character/persona/chat-bound books are
+   * included even while disabled (they are attached here — the enabled
+   * toggle is how the author turns them on); books participating only
+   * through the global pool are included only while enabled. Returns book
+   * rows only (no entries — the UI loads entries on expand), in the
+   * resolver's deterministic order.
+   */
+  async listParticipatingForChat(
+    characterId: string,
+    personaId: string | null,
+    chatId: string,
+  ): Promise<Lorebook[]> {
+    const bound = await resolveBoundLorebookRows(this.db, characterId, personaId, chatId);
+    return bound
+      .filter(({ row, entityBound }) => row.enabled === 1 || entityBound)
+      .map(({ row }) => this.mapLorebookRow(row));
   }
 
   // ─── Link management ───────────────────────────────────────────────────────

@@ -36,6 +36,12 @@ import type { CoauthorConnectionSettingsRuntimeApi } from "./coauthor-connection
 export type { CoauthorConnectionSettingsRuntimeApi };
 import type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi } from "./template-library-contracts.js";
 export type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi };
+// Lorebook + Script contracts live in their own module (extracted when the
+// «Текущие» participating queries grew them past this file's line baseline —
+// LOREBOOK_LIST_FILTERS_REPORT step 2); re-exported here so every existing
+// import path keeps resolving.
+import type { LorebookRuntimeApi, ScriptRuntimeApi } from "./lorebook-script-contracts.js";
+export type { LorebookRuntimeApi, ScriptRuntimeApi };
 // Re-export so existing imports from this module (the skill adapter) keep
 // resolving; the canonical wire type lives in api-contracts (single source).
 export type { SkillCatalogEntryDto };
@@ -318,51 +324,6 @@ export interface PersonaRuntimeApi {
 	// BoundResourcesField pill groups.
 	listPersonaLorebooks: (personaId: string) => Promise<Lorebook[]>;
 	listPersonaScripts: (personaId: string) => Promise<Script[]>;
-}
-
-// ─── Lorebook ────────────────────────────────────────────────────────
-
-export interface LorebookRuntimeApi {
-	listAllLorebooks: () => Promise<Lorebook[]>;
-	listLorebooks: (scopeType: string, ownerId?: string) => Promise<Lorebook[]>;
-	createLorebook: (body: { name: string; description?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean }) => Promise<Lorebook>;
-	updateLorebookMeta: (lorebookId: string, body: { name?: string; description?: string; scanDepth?: number; tokenBudget?: number; tokenBudgetPercent?: number | null; recursiveScanning?: boolean; enabled?: boolean; scopeType?: string }) => Promise<Lorebook>;
-	deleteLorebook: (lorebookId: string) => Promise<void>;
-	duplicateLorebook: (lorebookId: string, overrides?: { name?: string; scopeType?: string; characterId?: string | null; personaId?: string | null }) => Promise<{ lorebook: Lorebook; links: LorebookLink[] }>;
-	exportLorebook: (lorebookId: string) => Promise<LorebookExportResult>;
-	getLorebookLinks: (lorebookId: string) => Promise<LorebookLink[]>;
-	setLorebookLinks: (lorebookId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<LorebookLink[]>;
-	importLorebook: (lorebookId: string | null, body: { format: string; data: unknown; mode: string; scopeType?: string; characterId?: string; personaId?: string; chatId?: string; fallbackName?: string; enabled?: boolean }) => Promise<LorebookImportResult>;
-
-	// Entries
-	createLoreEntry: (lorebookId: string, body: Record<string, unknown>) => Promise<LoreEntry>;
-	updateLoreEntry: (lorebookId: string, entryId: string, body: Record<string, unknown>) => Promise<LoreEntry>;
-	deleteLoreEntry: (lorebookId: string, entryId: string) => Promise<void>;
-	listLoreEntries: (lorebookId: string) => Promise<LoreEntry[]>;
-	reorderLoreEntries: (lorebookId: string, updates: Array<{ id: string; sortOrder: number; position?: string }>) => Promise<LoreEntry[]>;
-	testLoreActivation: (lorebookId: string, body: { text: string }) => Promise<{ activatedIds: string[]; totalEntries: number }>;
-}
-
-// ─── Script ──────────────────────────────────────────────────────────
-
-export interface ScriptRuntimeApi {
-	listAllScripts: () => Promise<Script[]>;
-	listScripts: (scopeType: string, ownerId?: string) => Promise<Script[]>;
-	getScript: (scriptId: string) => Promise<Script | null>;
-	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; characterId?: string; personaId?: string; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
-	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null; copilotProfileId?: string | null }) => Promise<Script>;
-	setScriptScope: (scriptId: string, scopeType: 'global' | 'entity' | 'chat', ownerId: string | null) => Promise<Script>;
-	deleteScript: (scriptId: string) => Promise<void>;
-	testScript: (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
-	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; characterId?: string; personaId?: string; chatId?: string }) => Promise<Script>;
-	getScriptLinks: (scriptId: string) => Promise<ScriptLink[]>;
-	setScriptLinks: (scriptId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<ScriptLink[]>;
-	/** List the visuals bound to a script (its equal-peer "skin" set; BE-5 junction). */
-	getScriptVisuals: (scriptId: string) => Promise<ExperienceVisualRow[]>;
-	/** Bind a visual to a script (idempotent; first bound visual auto-becomes the silent default). */
-	bindScriptVisual: (scriptId: string, visualId: string) => Promise<void>;
-	/** Unbind a visual (reassigns the silent default if it was the one removed). */
-	unbindScriptVisual: (scriptId: string, visualId: string) => Promise<void>;
 }
 
 // ─── Regex presets ───────────────────────────────────────────────────

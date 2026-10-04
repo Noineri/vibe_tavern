@@ -358,11 +358,45 @@ export class ScriptStore {
   }
 
   /**
-   * Shared scope-aware enabled-script resolution, filtered by `kind`. Unions
-   * FK-scoped sources (global / entity-FK = characterId OR personaId / chat-FK)
-   * with junction-linked sources (character ∪ persona), Set-dedups, and sorts by
-   * sortOrder. The kind filter is applied at BOTH the FK query and the junction
-   * innerJoin so the opposite kind can never leak into a resolver.
+   * «Текущие» (LOREBOOK_LIST_FILTERS_REPORT step 2): every script that
+   * participates in the chat through the SAME binding core the enabled
+   * resolvers above read (`resolveChatScriptBindings` — no second rule set),
+   * under attached-list semantics mirroring
+   * `LorebookStore.listParticipatingForChat`: character/persona/chat-bound
+   * scripts are included even while disabled (they are attached here — the
+   * enabled toggle is how the author turns them on); scripts participating
+   * only through the global pool are included only while enabled. Kinds:
+   * prompt + dice — the two chat runtimes this binding core serves; a dice
+   * script participates via the Dice VM just as a prompt script does via
+   * prompt assembly. Interactive scripts are excluded: they never enter
+   * either runtime and the generic scripts tab never lists them (they are
+   * owned by the Experience editor). Sorted by `sortOrder`, like the
+   * enabled resolvers.
+   */
+  async listParticipatingForChat(
+    characterId: string,
+    personaId: string | null,
+    chatId: string,
+  ): Promise<Script[]> {
+    const bindings = await this.resolveChatScriptBindings(characterId, personaId, chatId);
+    if (bindings.size === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(scripts)
+      .where(inArray(scripts.id, [...bindings.keys()]))
+      .all();
+    return rows
+      .filter((r) => r.scriptKind !== 'interactive' && (r.enabled === 1 || bindings.get(r.id) === true))
+      .map((r) => this.mapRow(r))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  /**
+   * Shared scope-aware enabled-script resolution, filtered by `kind`. The
+   * binding sources come from `resolveChatScriptBindings` (the one source of
+   * the chat participation rules, shared with `listParticipatingForChat`);
+   * this read keeps only ENABLED rows of the requested kind. Same
+   * Set-dedup + `sortOrder` ordering the pre-core resolver had.
    */
   private async resolveEnabledScriptsForChat(
     characterId: string,
@@ -370,7 +404,44 @@ export class ScriptStore {
     chatId: string,
     kind: 'prompt' | 'dice',
   ): Promise<Script[]> {
-    const ids = new Set<string>();
+    const bindings = await this.resolveChatScriptBindings(characterId, personaId, chatId);
+    if (bindings.size === 0) return [];
+
+    const rows = await this.db
+      .select()
+      .from(scripts)
+      .where(inArray(scripts.id, [...bindings.keys()]))
+      .all();
+
+    return rows
+      .filter((r) => r.enabled === 1 && r.scriptKind === kind)
+      .map((r) => this.mapRow(r))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  /**
+   * Chat-binding core — the ONE source of "which scripts are bound to this
+   * chat" (LOREBOOK_LIST_FILTERS_REPORT step 2), extracted from
+   * `resolveEnabledScriptsForChat`. Unions FK-scoped sources (global /
+   * entity-FK = characterId OR personaId / chat-FK) with junction-linked
+   * sources (character ∪ persona), Set-deduped by id — the same sources the
+   * resolver always consulted.
+   *
+   * Enabled/kind filters are deliberately NOT applied here — which bound
+   * rows survive is caller policy: the enabled resolvers keep only enabled
+   * rows of their kind, while `listParticipatingForChat` keeps attached
+   * rows (see its doc). Returns scriptId → bound through a NON-global
+   * source (entity home, junction link, or chat FK).
+   */
+  private async resolveChatScriptBindings(
+    characterId: string,
+    personaId: string | null,
+    chatId: string,
+  ): Promise<Map<string, boolean>> {
+    const entityBoundByScriptId = new Map<string, boolean>();
+    const addBinding = (scriptId: string, entityBound: boolean): void => {
+      entityBoundByScriptId.set(scriptId, entityBoundByScriptId.get(scriptId) || entityBound);
+    };
 
     // FK-scoped sources: global, entity-FK (home FK is whichever owner column
     // is set — one pass covers character AND persona homes), chat-FK.
@@ -383,48 +454,39 @@ export class ScriptStore {
       eq(scripts.scopeType, 'chat'), eq(scripts.chatId, chatId),
     ];
     const fkRows = await this.db
-      .select({ id: scripts.id })
+      .select({ id: scripts.id, scopeType: scripts.scopeType })
       .from(scripts)
-      .where(and(or(...fkConditions), eq(scripts.enabled, 1), eq(scripts.scriptKind, kind)))
+      .where(or(...fkConditions))
       .all();
-    for (const r of fkRows) ids.add(r.id);
+    for (const r of fkRows) addBinding(r.id, r.scopeType !== 'global');
 
     // Junction-linked sources (character ∪ persona). The resolver consults
     // BOTH FK and junction here. Scripts cannot rely on every FK-owned row
     // being junction-linked (the migration is incremental), so both sources
-    // are unioned with Set-based dedup. LorebookStore.listAllActiveForChat
-    // uses the same FK ∪ junction shape (fixed 2026-06-29 — see
-    // packages/db/test/lorebook-fk-activation.test.ts); the two resolvers are
-    // now consistent. Background in reports/script-link-binding-gap.md.
+    // are unioned with Set-based dedup. LorebookStore's chat binding core
+    // (`lorebook-chat-resolution.ts`) uses the same FK ∪ junction shape
+    // (fixed 2026-06-29 — see packages/db/test/lorebook-fk-activation.test.ts);
+    // the two resolvers stay consistent. Background in
+    // reports/script-link-binding-gap.md.
     const charLinkRows = await this.db
       .select({ scriptId: scriptLinks.scriptId })
       .from(scriptLinks)
-      .innerJoin(scripts, and(eq(scriptLinks.scriptId, scripts.id), eq(scripts.enabled, 1), eq(scripts.scriptKind, kind)))
+      .innerJoin(scripts, eq(scriptLinks.scriptId, scripts.id))
       .where(and(eq(scriptLinks.targetType, 'character'), eq(scriptLinks.targetId, characterId)))
       .all();
-    for (const r of charLinkRows) ids.add(r.scriptId);
+    for (const r of charLinkRows) addBinding(r.scriptId, true);
 
     if (personaId) {
       const personaLinkRows = await this.db
         .select({ scriptId: scriptLinks.scriptId })
         .from(scriptLinks)
-        .innerJoin(scripts, and(eq(scriptLinks.scriptId, scripts.id), eq(scripts.enabled, 1), eq(scripts.scriptKind, kind)))
+        .innerJoin(scripts, eq(scriptLinks.scriptId, scripts.id))
         .where(and(eq(scriptLinks.targetType, 'persona'), eq(scriptLinks.targetId, personaId)))
         .all();
-      for (const r of personaLinkRows) ids.add(r.scriptId);
+      for (const r of personaLinkRows) addBinding(r.scriptId, true);
     }
 
-    if (ids.size === 0) return [];
-
-    const rows = await this.db
-      .select()
-      .from(scripts)
-      .where(inArray(scripts.id, [...ids]))
-      .all();
-
-    return rows
-      .map((r) => this.mapRow(r))
-      .sort((a, b) => a.sortOrder - b.sortOrder);
+    return entityBoundByScriptId;
   }
 
   // ─── Chat-local Dice override resolution ─────────────────────────────

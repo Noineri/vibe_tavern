@@ -562,6 +562,12 @@ List lorebooks in a scope.
 
 List **all** lorebooks across every scope (used by the global lorebook manager).
 
+### `GET /api/lorebooks/participating`
+
+«Текущие»: lorebooks participating in a chat — the prompt pipeline's own binding rules (character/persona/chat bindings + links), attached-list semantics: disabled character/persona/chat books are included (the toggle is how the author turns them on); disabled global-pool-only books are excluded. 404 for an unknown chat.
+
+**Query:** `chatId` (required)
+
 ### `POST /api/lorebooks`
 
 Create a lorebook.
@@ -972,6 +978,12 @@ List all scripts (with scope information).
 ### `GET /api/scripts/all`
 
 List **all** scripts across every scope (used by the global script manager).
+
+### `GET /api/scripts/participating`
+
+«Текущие» script counterpart: prompt- and dice-kind scripts participating in a chat — the script runtime's own binding rules, attached-list semantics (mirrors the lorebook participating route). 404 for an unknown chat.
+
+**Query:** `chatId` (required)
 
 ### `GET /api/scripts/:scriptId`
 

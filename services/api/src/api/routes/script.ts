@@ -1,12 +1,21 @@
 import { Hono } from "hono";
 import type { ScriptRuntimeApi } from "../contract/runtime-api.js";
 import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
 import * as schemas from "@vibe-tavern/api-contracts";
 
 export function createScriptRoutes(runtime: ScriptRuntimeApi) {
   return new Hono()
     .get("/api/scripts/all", async (c) => {
       return c.json(await runtime.listAllScripts());
+    })
+    // «Текущие» script counterpart (LOREBOOK_LIST_FILTERS_REPORT step 2):
+    // prompt- and dice-kind scripts participating in a chat — the script
+    // runtime's own binding rules, attached-list semantics. Registered before
+    // the `:scriptId` literal conflict so "participating" never parses as an id.
+    .get("/api/scripts/participating", zValidator("query", z.object({ chatId: z.string().min(1) })), async (c) => {
+      const { chatId } = c.req.valid("query");
+      return c.json(await runtime.listParticipatingScripts(chatId));
     })
     .get("/api/scripts", async (c) => {
       const scopeType = c.req.query("scopeType") ?? "entity";
