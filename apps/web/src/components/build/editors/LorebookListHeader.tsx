@@ -186,7 +186,10 @@ export function WorldLoreListHeader({
               type="button"
               aria-label={t("close")}
               className="text-t3 hover:text-t1"
-              onClick={() => setMobileSearchOpen(false)}
+              onClick={() => {
+                onNameSearchChange("");
+                setMobileSearchOpen(false);
+              }}
             >
               {Ic.close()}
             </button>
