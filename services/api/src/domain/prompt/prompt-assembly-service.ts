@@ -3,7 +3,6 @@ import type {
   AssemblePromptResponse,
   CustomInjection,
   GenerationFormat,
-  PromptLayerDto,
   PromptOrderEntry,
 } from "@vibe-tavern/domain";
 import type {
@@ -24,13 +23,14 @@ import type {
   ObjectiveState,
 } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
-import { assemblePrompt, getSummaryStrategy, setModelHint, type PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
+import { assemblePrompt, getSummaryStrategy, MacroVariableScope, setModelHint, type PromptAssemblyContext } from "@vibe-tavern/prompt-pipeline";
 import { storeRollToSnapshot } from "../dice/dice-service.js";
 import { storeAttachmentToReportSnapshot } from "../interactive/experience-report-snapshot.js";
 import { isRecordSchemaCompatible } from "../insights/scene-cache.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { type FileStore, STORAGE_FOLDERS } from "@vibe-tavern/db";
 import { buildChatSummaryContext } from "./chat-summary-selection.js";
+import { mapPromptLayerDto } from "./prompt-layer-dto.js";
 
 export interface PromptAssemblyResolver {
   getCharacter(
@@ -113,6 +113,8 @@ export interface PromptAssemblyResolver {
      * token-budget mode on lorebooks. Optional — when absent, percent-mode
      * lorebooks silently fall back to their fixed `tokenBudget`. */
     maxContextTokens?: number;
+    /** One assembly-scoped variable namespace shared with prompt assembly. */
+    macroVariableScope?: MacroVariableScope;
   }): Promise<ActiveLoreEntriesResult>;
   listRetrievedMemories(input: {
     chatId: ChatId;
@@ -577,6 +579,7 @@ export class PromptAssemblyService {
     // messages are removed and the swipe target is dropped before WI scanning.
     // `ensureLastUser` also preserves the normal chat-mode final-user safeguard;
     // `windowedMessages` must not narrow the scan beyond the lorebook scan depth.
+    const macroVariableScope = new MacroVariableScope();
     const loreActivation = await this.resolver.listActiveLoreEntries({
       chatId: chat.id as ChatId,
       branchId,
@@ -596,6 +599,7 @@ export class PromptAssemblyService {
       currentTurn: branchMessages.length,
       dryRun: input.dryRun,
       maxContextTokens: input.contextBudget ?? undefined,
+      macroVariableScope,
     });
     const activeLoreEntries = loreActivation.entries;
     const retrievedMemories = await this.resolver.listRetrievedMemories({
@@ -653,6 +657,7 @@ export class PromptAssemblyService {
     const sceneState = await this.resolveSceneInjection(chat.insightsConfig, branchId);
 
     const pipelineContext = {
+      macroVariableScope,
       identity: {
         chatId: chat.id as ChatId,
       },
@@ -787,36 +792,6 @@ export class PromptAssemblyService {
     await this.fileStore.writeJson(filePath, trace);
     return filePath;
   }
-}
-
-function mapPromptLayerDto(layer: {
-  id: string;
-  sourceType: string;
-  sourceId: string;
-  sourceName: string;
-  position: "before_prompt" | "in_prompt" | "in_chat" | "hidden_system";
-  priority: number;
-  enabled: boolean;
-  reason: string;
-  tokenCount: number;
-  text: string;
-  injectionDepth?: number;
-  modes?: string[];
-}): PromptLayerDto {
-  return {
-    id: layer.id,
-    sourceType: layer.sourceType,
-    sourceId: layer.sourceId,
-    sourceName: layer.sourceName,
-    position: layer.position,
-    priority: layer.priority,
-    enabled: layer.enabled,
-    reason: layer.reason,
-    tokenCount: layer.tokenCount,
-    text: layer.text,
-    injectionDepth: layer.injectionDepth,
-    modes: layer.modes,
-  };
 }
 
 /** Structural validation of a stored format-template payload (the loose JSON

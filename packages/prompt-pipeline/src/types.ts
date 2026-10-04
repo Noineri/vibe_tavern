@@ -1,4 +1,5 @@
 import type { DiceRollSnapshot, ExperienceReportSnapshot, GenerationFormat, PromptLayerPosition, PronounForms, RegexPreset } from "@vibe-tavern/domain";
+import type { MacroVariableScope } from "./macro-variable-scope.js";
 
 export type { PromptLayerPosition };
 
@@ -71,6 +72,8 @@ export interface RecentMessage {
 }
 
 export interface PromptAssemblyContext {
+  /** Optional scope created by the service to bridge lore activation and assembly. */
+  macroVariableScope?: MacroVariableScope;
   identity: {
     chatId: string;
   };

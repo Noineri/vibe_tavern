@@ -391,6 +391,120 @@ describe("Random macro: {{random::a::b::c}}", () => {
   });
 });
 
+describe("Variable macros: assembly scope", () => {
+  it("resolves a variable set by an earlier preset block in prompt order", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "variable-preset-order" },
+      character: { id: "character", name: "Keeper", description: "" },
+      chat: { recentMessages: [] },
+      preset: {
+        id: "preset",
+        text: "{{setvar::tone::formal}}",
+        prefill: "Reply in {{getvar::tone}} prose.",
+      },
+    });
+
+    expect(result.prefill).toBe("Reply in formal prose.");
+  });
+});
+
+describe("Variable shorthand and global macros", () => {
+  it("evaluates local shorthand, operators, and shorthand conditions", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{.count = 1}}{{.count += 2}}{{.count++}}{{if .count}}count={{.count}}{{/if}}", context))
+      .toBe("4count=4");
+  });
+
+  it("evaluates global shorthand mutations and reads from the global namespace", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{$count = 1}}{{$count += 2}}{{$count}}", context)).toBe("3");
+  });
+
+  it("evaluates global shorthand conditions for truthy and falsy values", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{setglobalvar::enabled::true}}{{if $enabled}}yes{{else}}no{{/if}}{{setglobalvar::enabled::}}{{if $enabled}}yes{{else}}no{{/if}}", context))
+      .toBe("yesno");
+  });
+
+  it("supports every shorthand fallback, comparison, and mutation operator", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{.x ??= 5}}/{{.x ?? 9}}/{{.x ||= 8}}/{{.x == 5}}/{{.x != 4}}/{{.x > 4}}/{{.x >= 5}}/{{.x < 6}}/{{.x <= 5}}{{.x -= 2}}{{.x || 9}}{{.x--}}{{.x}}", context))
+      .toBe("5/5/5/true/true/true/true/true/true322");
+  });
+
+  it("keeps global variables separate from local variables", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{setvar::scope::local}}{{setglobalvar::scope::global}}{{getvar::scope}}/{{getglobalvar::scope}}", context))
+      .toBe("local/global");
+  });
+
+  it("registers the variable existence and deletion aliases", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{setvar::x::1}}{{varexists::x}}{{flushvar::x}}{{hasvar::x}}", context)).toBe("truefalse");
+    expect(engine.resolve("{{setglobalvar::x::1}}{{globalvarexists::x}}{{flushglobalvar::x}}{{hasglobalvar::x}}", context)).toBe("truefalse");
+  });
+
+  it("supports every global mutation macro within the assembly scope", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{setglobalvar::count::1}}{{addglobalvar::count::2}}{{incglobalvar::count}}{{decglobalvar::count}}/{{getglobalvar::count}}", context))
+      .toBe("43/3");
+  });
+
+  it("reads and writes local and global object keys through key and index aliases", () => {
+    const engine = createFullMacroEngine();
+    const context = buildPromptVariableContext({});
+
+    expect(engine.resolve("{{setvarkey::profile::name::Ada}}{{setvarkey::profile::role::captain}}{{getvarindex::profile::name}}/{{getvarkey::profile::role}}", context))
+      .toBe("Ada/captain");
+    expect(engine.resolve("{{setglobalvarkey::profile::rank::one}}{{setglobalvarindex::profile::rank::two}}{{getglobalvarkey::profile::rank}}", context))
+      .toBe("two");
+    expect(engine.resolve("{{setvarindex::list::0::first}}{{getvarkey::list::0}}", context)).toBe("first");
+  });
+
+  it("passes a toggle-set global value to the prefill in one assembly", () => {
+    const result = assemblePrompt({
+      identity: { chatId: "w7bw55" },
+      character: { id: "character", name: "Keeper", description: "" },
+      chat: { recentMessages: [] },
+      preset: {
+        id: "w7bw55",
+        text: "{{setglobalvar::length::concise}}{{setglobalvar::pov::first person}}",
+        prefill: "Write {{getglobalvar::length}}, {{getglobalvar::pov}}.",
+      },
+    });
+
+    expect(result.prefill).toBe("Write concise, first person.");
+  });
+
+  it("does not persist local or global state into the next assembly", () => {
+    const makeAssembly = (text: string) => assemblePrompt({
+      identity: { chatId: "isolated-variable-assembly" },
+      character: { id: "character", name: "Keeper", description: "" },
+      chat: { recentMessages: [] },
+      preset: { id: "preset", text },
+    });
+
+    makeAssembly("{{setvar::local::one}}{{setglobalvar::global::one}}");
+    const next = makeAssembly("{{getvar::local}}/{{getglobalvar::global}}");
+
+    expect(next.layers.find((layer) => layer.id === "prompt_preset_system")?.text).toBe("/");
+  });
+});
+
 describe("Pick macro: {{pick::a::b::c}}", () => {
   it("is stable across assemblies and regenerations for one chat", () => {
     const makeAssembly = () => assemblePrompt({
