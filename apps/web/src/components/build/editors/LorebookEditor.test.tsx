@@ -31,10 +31,10 @@ import { wireLorebook, wireLoreEntry } from "../../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ReactNode } from "react";
 import { mocked } from "../../../../test/mock-utils.js";
-import type { LoreEntryRecord, LorebookRecord } from "../../../api/types.js";
+import type { AppCharacterEntry, LoreEntryRecord, LorebookRecord, PersonaRecord } from "../../../api/types.js";
 
 useDomEnv();
-const { fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
 
 // ── Module-boundary mocks ─────────────────────────────────────────────────
 
@@ -55,6 +55,7 @@ const toastError = mock();
 const toastInfo = mock();
 const toastWarning = mock();
 const listAllLorebooks = mock(realLorebookApi.listAllLorebooks);
+const listParticipatingLorebooks = mock(realLorebookApi.listParticipatingLorebooks);
 const listLorebooks = mock(realLorebookApi.listLorebooks);
 const listLoreEntries = mock(realLorebookApi.listLoreEntries);
 const getLorebookLinks = mock(realLorebookApi.getLorebookLinks);
@@ -173,14 +174,18 @@ mock.module("./LorebookAccordion.js", () => ({
   ),
 }));
 
+let testCharacters: AppCharacterEntry[] = [];
+let testPersonas: PersonaRecord[] = [];
+
 mock.module("../../../stores/snapshot-store.js", () => ({
   ...realSnapshotStore,
-  useAllCharacters: () => [],
+  useAllCharacters: () => testCharacters,
 }));
 
 mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
   ...realBootstrapActions,
-  useBootstrapStore: () => [],
+  useBootstrapStore: (selector: (state: { personas: PersonaRecord[]; data: object }) => unknown) =>
+    selector({ personas: testPersonas, data: {} }),
 }));
 
 // lorebook-api — override the lorebook/entry functions the parent calls;
@@ -189,6 +194,7 @@ mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
 mock.module("../../../api/lorebook-api.js", () => ({
 	...realLorebookApi,
 	listAllLorebooks,
+	listParticipatingLorebooks,
 	listLorebooks,
 	listLoreEntries,
 	getLorebookLinks,
@@ -198,8 +204,11 @@ mock.module("../../../api/lorebook-api.js", () => ({
 }));
 
 let LorebookEditor: typeof import("./LorebookEditor.js").LorebookEditor;
+let readWorldLoreFilters: typeof import("./use-lorebook-editor-state.js").readWorldLoreFilters;
+let writeWorldLoreFilters: typeof import("./use-lorebook-editor-state.js").writeWorldLoreFilters;
 beforeAll(async () => {
   ({ LorebookEditor } = await import("./LorebookEditor.js"));
+  ({ readWorldLoreFilters, writeWorldLoreFilters } = await import("./use-lorebook-editor-state.js"));
 });
 
 // ── Fixtures ───────────────────────────────────────────────────────────
@@ -314,7 +323,7 @@ async function renderAtList(props?: { characterId?: string; chatId?: string | nu
   fireEvent.click(utils.getByText("lorebooks_card_title"));
   fireEvent.animationEnd(utils.getByText("lorebooks_card_title"));
   await waitFor(() => expect(listAllLorebooks).toHaveBeenCalledTimes(1));
-  await waitFor(() => expect(utils.getByTestId("lb-name").textContent).toBe("Bestiary"));
+  await waitFor(() => expect(utils.getAllByTestId("lb-name").length).toBeGreaterThan(0));
   return utils;
 }
 
@@ -326,8 +335,11 @@ describe("LorebookEditor (characterization)", () => {
     ensureSessionStorage();
     sessionStorage.clear();
     setViewport(1024); // desktop by default
+    testCharacters = [];
+    testPersonas = [];
 
     mocked(listAllLorebooks).mockResolvedValue([makeLorebook()]);
+    mocked(listParticipatingLorebooks).mockResolvedValue([makeLorebook()]);
     mocked(listLorebooks).mockResolvedValue([makeLorebook()]);
     mocked(listLoreEntries).mockResolvedValue([makeEntry()]);
     mocked(getLorebookLinks).mockResolvedValue([]);
@@ -363,10 +375,11 @@ describe("LorebookEditor (characterization)", () => {
     setViewport(375);
     const { getByText } = await renderAtList();
 
-    // Sidebar contract: exactly 3 scopes + the "all" overview — the character/
-    // persona split is gone (scope_char stays a live key only for the
+    // Sidebar contract: «Current» follows the all overview; the character/
+    // persona split remains absent (scope_char stays a live key only for the
     // LinkBindingPopover target-type section labels, not the scope list).
     expect(getByText("scope_all")).toBeTruthy();
+    expect(getByText("scope_current")).toBeTruthy();
     expect(getByText("scope_global")).toBeTruthy();
     expect(getByText("scope_entity")).toBeTruthy();
     expect(getByText("scope_chat")).toBeTruthy();
@@ -385,6 +398,17 @@ describe("LorebookEditor (characterization)", () => {
     });
   });
 
+  it("data-loading: Current uses the backend participation query", async () => {
+    setViewport(375);
+    const { getByText } = await renderAtList({ chatId: "chat-current" });
+
+    fireEvent.click(getByText("scope_current"));
+
+    await waitFor(() => {
+      expect(listParticipatingLorebooks).toHaveBeenCalledWith("chat-current");
+    });
+  });
+
   it("data-loading: the entity scope browse ignores a persona context (no owner hijack)", async () => {
     setViewport(375);
     const { getByText } = await renderAtList({ personaId: "persona-9" });
@@ -399,6 +423,54 @@ describe("LorebookEditor (characterization)", () => {
       // Browse semantics: the persona context must NOT leak into the query.
       expect(listLorebooks).toHaveBeenCalledWith("entity", undefined);
     });
+  });
+
+  it("filters Bound lorebooks by the selected owner", async () => {
+    testCharacters = [{
+      id: CHARACTER_ID,
+      name: "Owner Character",
+      subtitle: "",
+      tags: [],
+      avatarAssetId: null,
+      avatarFullAssetId: null,
+      avatarCropJson: null,
+      avatarExt: null,
+      avatarFullExt: null,
+      updatedAt: "",
+    }];
+    setViewport(375);
+    mocked(listLorebooks).mockResolvedValue([
+      makeLorebook({ id: "owner-book", name: "Owner book", characterId: CHARACTER_ID }),
+      makeLorebook({ id: "other-book", name: "Other book", characterId: "other-character" }),
+    ]);
+    const { getByText, getByTestId, queryAllByTestId } = await renderAtList();
+
+    fireEvent.click(getByText("scope_entity"));
+    await waitFor(() => expect(listLorebooks).toHaveBeenCalledWith("entity", undefined));
+    await act(async () => {
+      setViewport(1024);
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    await waitFor(() => expect(getByTestId("lorebook-owner-desktop")).toBeTruthy());
+    fireEvent.click(getByTestId("lorebook-owner-desktop"));
+    fireEvent.click(getByText("Owner Character"));
+
+    await waitFor(() => expect(queryAllByTestId("lb-name")).toHaveLength(1));
+    expect(queryAllByTestId("lb-name")[0]?.textContent).toBe("Owner book");
+  });
+
+  it("filters the current list by lorebook name", async () => {
+    mocked(listAllLorebooks).mockResolvedValue([
+      makeLorebook({ id: "lb-bestiary", name: "Bestiary" }),
+      makeLorebook({ id: "lb-tavern", name: "Tavern rules" }),
+    ]);
+    const { getByTestId, queryAllByTestId } = await renderAtList();
+
+    fireEvent.change(getByTestId("lorebook-name-search"), { target: { value: "tavern" } });
+
+    await waitFor(() => expect(queryAllByTestId("lb-name")).toHaveLength(1));
+    expect(queryAllByTestId("lb-name")[0]?.textContent).toBe("Tavern rules");
   });
 
   it("export starts the download and surfaces the chat-off compatibility warning", async () => {
@@ -525,12 +597,68 @@ describe("LorebookEditor (characterization)", () => {
   });
 });
 
+describe("LorebookEditor list filters", () => {
+  beforeEach(() => {
+    mock.clearAllMocks();
+    ensureSessionStorage();
+    sessionStorage.clear();
+    setViewport(375);
+    testCharacters = [];
+    testPersonas = [];
+    mocked(listAllLorebooks).mockResolvedValue([makeLorebook()]);
+    mocked(listParticipatingLorebooks).mockResolvedValue([makeLorebook()]);
+    mocked(listLorebooks).mockResolvedValue([makeLorebook()]);
+    mocked(listLoreEntries).mockResolvedValue([makeEntry()]);
+    mocked(getLorebookLinks).mockResolvedValue([]);
+  });
+
+  it("remembers a scope and owner separately for each tab", () => {
+    writeWorldLoreFilters({
+      lorebooks: { scope: "entity", ownerId: "char-1" },
+      scripts: { scope: "chat", ownerId: null },
+    });
+
+    expect(readWorldLoreFilters()).toEqual({
+      lorebooks: { scope: "entity", ownerId: "char-1" },
+      scripts: { scope: "chat", ownerId: null },
+    });
+  });
+
+  it("silently resets a persisted owner that no longer exists", async () => {
+    sessionStorage.setItem("vibe-tavern.world-lore-tab", "lorebooks");
+    writeWorldLoreFilters({
+      lorebooks: { scope: "entity", ownerId: "deleted-owner" },
+      scripts: { scope: "all", ownerId: null },
+    });
+
+    render(<LorebookEditor characterId={CHARACTER_ID} chatId={null} personaId={null} />);
+
+    await waitFor(() => {
+      expect(readWorldLoreFilters().lorebooks.ownerId).toBeNull();
+    });
+  });
+
+  it("renders the mobile owner chip only in the Bound scope", async () => {
+    const { getByText, queryByTestId } = await renderAtList();
+    expect(queryByTestId("lorebook-owner-mobile")).toBeNull();
+
+    fireEvent.click(getByText("scope_entity"));
+    await waitFor(() => expect(queryByTestId("lorebook-owner-mobile")).not.toBeNull());
+
+    fireEvent.click(getByText("scope_global"));
+    await waitFor(() => expect(queryByTestId("lorebook-owner-mobile")).toBeNull());
+  });
+});
+
 describe("LorebookEditor — D3 mobile touch booster", () => {
   beforeEach(() => {
     mock.clearAllMocks();
     ensureSessionStorage();
     sessionStorage.clear();
+    testCharacters = [];
+    testPersonas = [];
     mocked(listAllLorebooks).mockResolvedValue([makeLorebook()]);
+    mocked(listParticipatingLorebooks).mockResolvedValue([makeLorebook()]);
     mocked(listLorebooks).mockResolvedValue([makeLorebook()]);
     mocked(listLoreEntries).mockResolvedValue([makeEntry()]);
     mocked(getLorebookLinks).mockResolvedValue([]);

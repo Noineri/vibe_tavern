@@ -10,6 +10,11 @@ export async function listAllLorebooks(): Promise<LorebookRecord[]> {
   return unwrapRpc(await client.api.lorebooks.all.$get());
 }
 
+/** Lorebooks participating in a chat, resolved by the backend's prompt-pipeline binding rules. */
+export async function listParticipatingLorebooks(chatId: string): Promise<LorebookRecord[]> {
+  return unwrapRpc(await client.api.lorebooks.participating.$get({ query: { chatId } }));
+}
+
 export async function listLorebooks(scopeType: string, ownerId?: string): Promise<LorebookRecord[]> {
   const response = await client.api.lorebooks.$get({ query: { scopeType, ownerId } });
   return unwrapRpc(response);

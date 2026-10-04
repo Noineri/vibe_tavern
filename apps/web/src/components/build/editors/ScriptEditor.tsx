@@ -323,7 +323,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, onOpenEd
   // "all" — overview mode with no specific owner; creating/importing scripts
   // is disabled there (CTAs are hidden in LorebookEditor), the fallback is purely defensive.
   const scopeBody = () => {
-    const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "entity" : scope;
+    const effectiveScope: Exclude<Scope, "all" | "current"> =
+      scope === "all" || scope === "current" ? "entity" : scope;
     const base: Record<string, string | undefined> = { scopeType: effectiveScope };
     // Entity home FK resolves from the current context: a persona context owns
     // the script, otherwise the character does (exactly one typed FK).

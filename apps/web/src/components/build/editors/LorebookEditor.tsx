@@ -14,7 +14,7 @@
  *   - LorebookImportModal — 3-step import wizard
  *   - ScriptEditor (useScriptPanel) — script editor
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useKeyDown } from "../../../hooks/use-key-down.js";
 import { FormProvider } from "react-hook-form";
 
@@ -33,10 +33,10 @@ import {
 } from "./use-lorebook-editor-state.js";
 import { useBuildNavigationStore } from "../../../stores/build-navigation-store.js";
 import { useScriptPanel } from "./ScriptEditor.js";
-import { CustomTooltip } from "../../shared/Tooltip.js";
 import { LorebookAccordion } from "./LorebookAccordion.js";
 import type { Scope } from "./LorebookAccordion.js";
-import { LorebookScopeBreadcrumb, LorebookScopePanel } from "./LorebookScopePanel.js";
+import { LorebookScopePanel } from "./LorebookScopePanel.js";
+import { LorebookListHeader, LorebookOwnerFilter, type LorebookOwnerOption } from "./LorebookListHeader.js";
 import type { LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget, personaToLinkTarget } from "../../../lib/link-targets.js";
 import { LoreEntryEditor } from "./LoreEntryEditor.js";
@@ -90,9 +90,11 @@ export function LorebookEditor({
     view,
     tab,
     scope,
+    ownerId,
     setView,
     setTab,
     setScope,
+    setOwnerId,
     activeEntryId,
     activeLorebookIdForEntry,
     setActiveEntryId,
@@ -220,8 +222,32 @@ export function LorebookEditor({
   // ── Reference data for link popover ──
   const allCharacters = useAllCharacters();
   const personas = useBootstrapStore((s) => s.personas) ?? [];
+  const ownerDataReady = useBootstrapStore((s) => s.data !== null && s.personas !== null);
   const linkCharacters: LinkTarget[] = allCharacters.map(characterToLinkTarget);
   const linkPersonas: LinkTarget[] = personas.map(personaToLinkTarget);
+  const ownerOptions = useMemo<LorebookOwnerOption[]>(() => {
+    const characterIds = new Set(lorebooks.flatMap((lorebook) => lorebook.characterId ? [lorebook.characterId] : []));
+    const personaIds = new Set(lorebooks.flatMap((lorebook) => lorebook.personaId ? [lorebook.personaId] : []));
+    return [
+      ...allCharacters.filter((character) => characterIds.has(character.id)).map((character) => ({ id: character.id, name: character.name, kind: "character" as const })),
+      ...personas.filter((persona) => personaIds.has(persona.id)).map((persona) => ({ id: persona.id, name: persona.name, kind: "persona" as const })),
+    ];
+  }, [allCharacters, lorebooks, personas]);
+  const [lorebookNameSearch, setLorebookNameSearch] = useState("");
+  const visibleLorebooks = useMemo(() => {
+    const ownerFiltered = scope === "entity" && ownerId
+      ? lorebooks.filter((lorebook) => lorebook.characterId === ownerId || lorebook.personaId === ownerId)
+      : lorebooks;
+    const query = lorebookNameSearch.trim().toLocaleLowerCase();
+    return query ? ownerFiltered.filter((lorebook) => lorebook.name.toLocaleLowerCase().includes(query)) : ownerFiltered;
+  }, [lorebookNameSearch, lorebooks, ownerId, scope]);
+
+  useEffect(() => {
+    if (!ownerId || !ownerDataReady) return;
+    const ownerExists = allCharacters.some((character) => character.id === ownerId)
+      || personas.some((persona) => persona.id === ownerId);
+    if (!ownerExists) setOwnerId(null);
+  }, [allCharacters, ownerDataReady, ownerId, personas, setOwnerId]);
 
   // ═══ Lorebook mutations ═══
 
@@ -527,7 +553,7 @@ export function LorebookEditor({
       style={{ padding: isMobile ? "12px" : "20px 24px" }}
     >
       {/* Empty state */}
-      {lorebooks.length === 0 && (
+      {visibleLorebooks.length === 0 && (
         <div className="py-10 text-center">
           <div className="mb-2 text-[13px] text-t3">
             {t("lore_no_entries")}
@@ -544,7 +570,7 @@ export function LorebookEditor({
       )}
 
       {/* Accordion list */}
-      {lorebooks.map((lb) => (
+      {visibleLorebooks.map((lb) => (
         <LorebookAccordion
           key={lb.id}
           lorebook={lb}
@@ -596,7 +622,7 @@ export function LorebookEditor({
       ))}
 
       {/* Bottom list buttons */}
-      {lorebooks.length > 0 && (
+      {visibleLorebooks.length > 0 && (
         <div className="mt-2 flex gap-2 max-md:flex-col max-md:items-stretch">
           <AddButton onClick={handleAddLorebook}>
             <Ic.plus /> {t("new_lorebook")}
@@ -609,98 +635,26 @@ export function LorebookEditor({
     </div>
   );
 
-  // ── Header bar (list) ──
+  // Header bar (list) is extracted so this editor stays below its line baseline.
   const headerBar = (
-    <div
-      className="w-full flex shrink-0 items-center gap-2 border-b border-border bg-surface"
-      style={{ padding: isMobile ? "10px 12px" : "10px 20px" }}
-    >
-      <div
-        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
-        onClick={handleBackToPick}
-      >
-        {Ic.caret("l")}
-      </div>
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim text-accent-t">
-        {tab === "lorebooks" ? <Ic.book /> : <Ic.terminal />}
-      </div>
-      <span className="font-ui text-[14px] font-semibold text-t1">
-        {tab === "lorebooks"
-          ? t("lorebooks_card_title")
-          : t("scripts_card_title")}
-      </span>
-      {/* Breadcrumb: active scope from the mini-sidebar. Desktop only — on
-          mobile the scope labels are already visible in the bottom chip bar.
-          Works for both tabs (Lorebooks and Scripts) since scope is shared. */}
-      {!isMobile && (
-        <LorebookScopeBreadcrumb scope={scope} tab={tab} t={t} />
-      )}
-      <div className="ml-auto flex gap-1">
-        <CustomTooltip
-          content={tab === "lorebooks" ? t("scripts_card_title") : t("lorebooks_card_title")}
-        >
-          <button type="button"
-            className="flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded px-2 font-ui text-[12px] text-t3 transition-all hover:bg-s2 hover:text-t1"
-            aria-label={tab === "lorebooks" ? t("scripts_card_title") : t("lorebooks_card_title")}
-            onClick={() => handleSwitchTab(tab === "lorebooks" ? "scripts" : "lorebooks")}
-          >
-            {tab === "lorebooks" ? <Ic.terminal /> : <Ic.book />}
-            {!isMobile && (
-              <span>{tab === "lorebooks" ? t("scripts_card_title") : t("lorebooks_card_title")}</span>
-            )}
-          </button>
-        </CustomTooltip>
-        <div className="mx-1 h-8 w-px bg-border" />
-        {tab === "lorebooks" && (
-          <>
-            <CustomTooltip content={t("new_lorebook")}>
-              <div
-                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
-                onClick={handleAddLorebook}
-              >
-                <Ic.plus />
-              </div>
-            </CustomTooltip>
-            <CustomTooltip content={t("import_lorebook_title")}>
-              <div
-                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
-                onClick={() => setImportOpen(true)}
-              >
-                <Ic.import />
-              </div>
-            </CustomTooltip>
-          </>
-        )}
-        {tab === "scripts" && (
-          <>
-            <CustomTooltip content={t("new_script")}>
-              <div
-                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
-                onClick={scriptPanel.handleAdd}
-              >
-                <Ic.plus />
-              </div>
-            </CustomTooltip>
-            <CustomTooltip content={t("new_dice_script")}>
-              <div
-                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
-                onClick={scriptPanel.handleAddDice}
-              >
-                <Ic.dice />
-              </div>
-            </CustomTooltip>
-            <CustomTooltip content={t("script_import")}>
-              <div
-                className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded text-t3 transition-all hover:bg-s2 hover:text-t1"
-                onClick={scriptPanel.handleImportOpen}
-              >
-                <Ic.import />
-              </div>
-            </CustomTooltip>
-          </>
-        )}
-      </div>
-    </div>
+    <LorebookListHeader
+      isMobile={isMobile}
+      scope={scope}
+      tab={tab}
+      ownerId={ownerId}
+      owners={ownerOptions}
+      nameSearch={lorebookNameSearch}
+      onNameSearchChange={setLorebookNameSearch}
+      onOwnerChange={setOwnerId}
+      onBack={handleBackToPick}
+      onSwitchTab={() => handleSwitchTab(tab === "lorebooks" ? "scripts" : "lorebooks")}
+      onAddLorebook={handleAddLorebook}
+      onImportLorebook={() => setImportOpen(true)}
+      onAddScript={scriptPanel.handleAdd}
+      onAddDiceScript={scriptPanel.handleAddDice}
+      onImportScript={scriptPanel.handleImportOpen}
+      t={t}
+    />
   );
 
   // ── Header bar (editor) ──
@@ -875,6 +829,15 @@ export function LorebookEditor({
                 scope={scope}
                 onScopeChange={setScope}
                 tab={tab}
+                mobileOwnerFilter={tab === "lorebooks" ? (
+                  <LorebookOwnerFilter
+                    isMobile
+                    ownerId={ownerId}
+                    owners={ownerOptions}
+                    onOwnerChange={setOwnerId}
+                    t={t}
+                  />
+                ) : undefined}
                 t={t}
               />
               {tab === "lorebooks"

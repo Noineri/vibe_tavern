@@ -6,8 +6,9 @@
  * Mirrors `lore-entry-reorder.ts` — same "pure helper colocated next to the
  * component that uses it" pattern.
  *
- * `scope` is the LIST FILTER and includes `"all"` (the overview). `"all"` is
- * NOT a valid scopeType for a real lorebook, so it is coerced to the editor's
+ * `scope` is the LIST FILTER and includes `"all"` and `"current"` (the
+ * overview and participating-chat view). Neither is a valid scopeType for a
+ * real lorebook, so either is coerced to the editor's
  * primary context (`"entity"`, which always has an owner — persona context
  * when present, otherwise the character). The create flow opens the inline
  * edit form immediately after, where the scope picker lets the user change
@@ -33,7 +34,8 @@ export function buildLorebookCreateBody(
 	ids: { characterId: string; personaId: string | null; chatId: string | null },
 	name: string,
 ): LorebookCreateBody {
-	const effectiveScope: Exclude<Scope, "all"> = scope === "all" ? "entity" : scope;
+	const effectiveScope: Exclude<Scope, "all" | "current"> =
+		scope === "all" || scope === "current" ? "entity" : scope;
 	const body: LorebookCreateBody = {
 		name,
 		scopeType: effectiveScope,
