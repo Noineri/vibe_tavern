@@ -428,7 +428,7 @@ describe("LorebookEditor (characterization)", () => {
     });
   });
 
-  it("filters Bound lorebooks by the selected owner", async () => {
+  it("lists and filters Bound lorebooks by a linked-only owner", async () => {
     testCharacters = [{
       id: CHARACTER_ID,
       name: "Owner Character",
@@ -443,9 +443,12 @@ describe("LorebookEditor (characterization)", () => {
     }];
     setViewport(375);
     mocked(listLorebooks).mockResolvedValue([
-      makeLorebook({ id: "owner-book", name: "Owner book", characterId: CHARACTER_ID }),
-      makeLorebook({ id: "other-book", name: "Other book", characterId: "other-character" }),
+      makeLorebook({ id: "owner-book", name: "Owner book", characterId: null, personaId: null }),
+      makeLorebook({ id: "other-book", name: "Other book", characterId: null, personaId: null }),
     ]);
+    mocked(getLorebookLinks).mockImplementation(async (id) => id === "owner-book"
+      ? [{ lorebookId: id, targetType: "character" as const, targetId: CHARACTER_ID }]
+      : []);
     const { getByText, getByTestId, queryAllByTestId } = await renderAtList();
 
     fireEvent.click(getByText("scope_entity"));
@@ -461,6 +464,32 @@ describe("LorebookEditor (characterization)", () => {
 
     await waitFor(() => expect(queryAllByTestId("lb-name")).toHaveLength(1));
     expect(queryAllByTestId("lb-name")[0]?.textContent).toBe("Owner book");
+  });
+
+  it("lists exactly unbound entity-scoped lorebooks", async () => {
+    setViewport(375);
+    mocked(listLorebooks).mockResolvedValue([
+      makeLorebook({ id: "linked-book", name: "Linked book", characterId: null, personaId: null }),
+      makeLorebook({ id: "unbound-book", name: "Unbound book", characterId: null, personaId: null }),
+      makeLorebook({ id: "global-book", name: "Global book", scopeType: "global", characterId: null, personaId: null }),
+    ]);
+    mocked(getLorebookLinks).mockImplementation(async (id) => id === "linked-book"
+      ? [{ lorebookId: id, targetType: "character" as const, targetId: CHARACTER_ID }]
+      : []);
+    const { getByText, getByTestId, queryAllByTestId } = await renderAtList();
+
+    fireEvent.click(getByText("scope_entity"));
+    await act(async () => {
+      setViewport(1024);
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    await waitFor(() => expect(getByTestId("lorebook-owner-desktop")).toBeTruthy());
+    fireEvent.click(getByTestId("lorebook-owner-desktop"));
+    fireEvent.click(getByText("lore_owner_unbound"));
+
+    await waitFor(() => expect(queryAllByTestId("lb-name")).toHaveLength(1));
+    expect(queryAllByTestId("lb-name")[0]?.textContent).toBe("Unbound book");
   });
 
   it("filters the current list by lorebook name", async () => {

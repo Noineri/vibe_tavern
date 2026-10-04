@@ -44,7 +44,7 @@ import { LorebookImportModal } from "./LorebookImportModal.js";
 import { buildLorebookCreateBody } from "./lorebook-create-body.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
-import { useLorebookListFilters } from "./use-world-lore-list-filters.js";
+import { useWorldLoreListFilters } from "./use-world-lore-list-filters.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -229,11 +229,12 @@ export function LorebookEditor({
   const linkCharacters: LinkTarget[] = allCharacters.map(characterToLinkTarget);
   const linkPersonas: LinkTarget[] = personas.map(personaToLinkTarget);
   const [lorebookNameSearch, setLorebookNameSearch] = useState("");
-  const { owners: lorebookOwnerOptions, visibleLorebooks } = useLorebookListFilters({
+  const { owners: lorebookOwnerOptions, visibleItems: visibleLorebooks } = useWorldLoreListFilters({
     scope,
     ownerId,
     setOwnerId,
-    lorebooks,
+    items: lorebooks,
+    linksByItemId: lorebookLinksMap,
     characters: allCharacters,
     personas,
     ownerDataReady,

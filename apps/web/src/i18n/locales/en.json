@@ -1626,6 +1626,7 @@
 	"scope_current": "Current",
 	"lore_owner": "Owner",
 	"lore_owner_all": "All",
+	"lore_owner_unbound": "No owner",
 	"lore_owner_search_placeholder": "Search owners…",
 	"lorebook_name_search_placeholder": "Search lorebooks…",
 	"script_name_search_placeholder": "Search scripts…",

@@ -1600,6 +1600,7 @@ export default interface Resources {
     "lore_owner": "Owner",
     "lore_owner_all": "All",
     "lore_owner_search_placeholder": "Search owners…",
+    "lore_owner_unbound": "No owner",
     "lore_position_anchor_authors_note": "Author's Note",
     "lore_position_anchor_char": "Character",
     "lore_position_anchor_examples": "Examples",

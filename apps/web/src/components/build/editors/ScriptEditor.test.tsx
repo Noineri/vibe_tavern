@@ -19,8 +19,9 @@
 import { afterEach, describe, it, expect, beforeAll, beforeEach, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import { useEffect, type ReactNode } from "react";
-import type { ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
+import type { AppCharacterEntry, ScriptLinkRecord, ScriptRecord } from "../../../api/types.js";
 import { SCRIPT_TEMPLATES } from "./script-templates/index.js";
+import { WORLD_LORE_UNBOUND_OWNER_ID } from "./use-world-lore-list-filters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
@@ -54,6 +55,8 @@ const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 
+let testCharacters: AppCharacterEntry[] = [];
+
 mock.module("../../../api/script-api.js", () => ({
 	...realScriptApi,
 	listScripts,
@@ -81,7 +84,7 @@ mock.module("../../../i18n/context.js", () => ({
 
 mock.module("../../../stores/snapshot-store.js", () => ({
 	...realSnapshotStore,
-  useAllCharacters: () => [],
+  useAllCharacters: () => testCharacters,
 }));
 
 mock.module("../../../stores/api-actions/bootstrap-actions.js", () => ({
@@ -182,6 +185,7 @@ beforeEach(() => {
   getScriptLinks.mockClear();
   setScriptLinks.mockClear();
   testScript.mockClear();
+  testCharacters = [];
   useScriptDraftStore.getState().resetAll();
   serverScript = { ...baseScript };
   updateGate = null;
@@ -235,7 +239,10 @@ function HarnessCurrent() {
 function HarnessFiltered({ ownerId, nameSearch }: { ownerId: string | null; nameSearch: string }) {
   const panel = useScriptPanel({ characterId: "c1", chatId: null, personaId: null, scope: "entity", ownerId });
   useEffect(() => panel.setNameSearch(nameSearch), [nameSearch, panel.setNameSearch]);
-  return <>{panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}</>;
+  return <>
+    <div data-testid="script-owner-options">{panel.ownerOptions.map((owner) => owner.id).join(",")}</div>
+    {panel.modals}{panel.activeScriptId ? panel.scriptEditorPanel : panel.scriptListContent}
+  </>;
 }
 
 /** Renders the modals plus a control that opens the import modal — the hook
@@ -405,19 +412,40 @@ describe("useScriptPanel list filters", () => {
     expect(listScripts).not.toHaveBeenCalled();
   });
 
-  it("filters Bound scripts by owner and name", async () => {
+  it("lists and filters Bound scripts by a linked-only owner, then exactly the unbound scripts", async () => {
+    testCharacters = [{
+      id: "owner-1",
+      name: "Linked-only owner",
+      subtitle: "",
+      tags: [],
+      avatarAssetId: null,
+      avatarFullAssetId: null,
+      avatarCropJson: null,
+      avatarExt: null,
+      avatarFullExt: null,
+      updatedAt: "",
+    }];
     listScripts.mockResolvedValue([
-      { ...baseScript, id: "owner-alpha", name: "Owner alpha", characterId: "owner-1" },
-      { ...baseScript, id: "owner-tavern", name: "Owner tavern", characterId: "owner-1" },
-      { ...baseScript, id: "other-tavern", name: "Other tavern", characterId: "owner-2" },
+      { ...baseScript, id: "owner-alpha", name: "Owner alpha", characterId: null, personaId: null },
+      { ...baseScript, id: "owner-tavern", name: "Owner tavern", characterId: null, personaId: null },
+      { ...baseScript, id: "unbound-script", name: "Unbound script", characterId: null, personaId: null },
+      { ...baseScript, id: "global-script", name: "Global script", scopeType: "global", characterId: null, personaId: null },
     ]);
+    getScriptLinks.mockImplementation(async (id) => id.startsWith("owner-")
+      ? [{ scriptId: id, targetType: "character" as const, targetId: "owner-1" }]
+      : []);
     const ui = render(<HarnessFiltered ownerId="owner-1" nameSearch="" />);
 
+    await waitFor(() => expect(ui.getByTestId("script-owner-options").textContent).toContain("owner-1"));
     await waitFor(() => expect(ui.queryAllByTestId("script-name")).toHaveLength(2));
     ui.rerender(<HarnessFiltered ownerId="owner-1" nameSearch="tavern" />);
 
     await waitFor(() => expect(ui.queryAllByTestId("script-name")).toHaveLength(1));
     expect(ui.queryAllByTestId("script-name")[0]?.textContent).toBe("Owner tavern");
+
+    ui.rerender(<HarnessFiltered ownerId={WORLD_LORE_UNBOUND_OWNER_ID} nameSearch="" />);
+    await waitFor(() => expect(ui.queryAllByTestId("script-name")).toHaveLength(1));
+    expect(ui.queryAllByTestId("script-name")[0]?.textContent).toBe("Unbound script");
   });
 });
 

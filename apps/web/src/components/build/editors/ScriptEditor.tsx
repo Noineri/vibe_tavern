@@ -36,7 +36,7 @@ import { LoreEntryList } from "./LoreEntryList.js";
 import { ScriptTester } from "./ScriptTester.js";
 import { DiceScriptTester } from "./DiceScriptTester.js";
 import { ScriptApiReference } from "./script-api-reference.js";
-import type { WorldLoreOwnerOption } from "./LorebookListHeader.js";
+import { useWorldLoreListFilters } from "./use-world-lore-list-filters.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -142,8 +142,8 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
 
   // ── Queries (replaced with local state + async fetch) ────
   // "entity" is a BROWSE filter here, not an owner view: the sidebar's
-  // "Bound" tab lists every entity-home script regardless of which
-  // character/persona owns it (symmetric with the Global tab). Owner-scoped
+  // "Bound" tab lists every entity-scoped script regardless of which
+  // character/persona links it (symmetric with the Global tab). Owner-scoped
   // views live in the character/persona build sidebars (explicit ownerId).
   const scopeId = (() => {
     if (scope === "chat") return chatId ?? undefined;
@@ -210,14 +210,6 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   const personas = useBootstrapStore((s) => s.personas) ?? [];
   const linkCharacters: LinkTarget[] = allCharacters.map(characterToLinkTarget);
   const linkPersonas: LinkTarget[] = personas.map(personaToLinkTarget);
-  const ownerOptions = useMemo<WorldLoreOwnerOption[]>(() => {
-    const characterIds = new Set(scripts.flatMap((script) => script.characterId ? [script.characterId] : []));
-    const personaIds = new Set(scripts.flatMap((script) => script.personaId ? [script.personaId] : []));
-    return [
-      ...allCharacters.filter((character) => characterIds.has(character.id)).map((character) => ({ id: character.id, name: character.name, kind: "character" as const })),
-      ...personas.filter((persona) => personaIds.has(persona.id)).map((persona) => ({ id: persona.id, name: persona.name, kind: "persona" as const })),
-    ];
-  }, [allCharacters, personas, scripts]);
 
   useEffect(() => {
     if (scripts.length === 0) {
@@ -343,13 +335,15 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
       .map((script) => ({ ...script, ...(drafts[script.id]?.values ?? {}) })),
     [displayItems, drafts],
   );
-  const visibleDisplayScripts = useMemo(() => {
-    const ownerFiltered = scope === "entity" && ownerId
-      ? displayScripts.filter((script) => script.characterId === ownerId || script.personaId === ownerId)
-      : displayScripts;
-    const query = nameSearch.trim().toLocaleLowerCase();
-    return query ? ownerFiltered.filter((script) => script.name.toLocaleLowerCase().includes(query)) : ownerFiltered;
-  }, [displayScripts, nameSearch, ownerId, scope]);
+  const { owners: ownerOptions, visibleItems: visibleDisplayScripts } = useWorldLoreListFilters({
+    scope,
+    ownerId,
+    items: displayScripts,
+    linksByItemId: scriptLinksMap,
+    characters: allCharacters,
+    personas,
+    nameSearch,
+  });
   const activeDragDisplay = activeDragScript
     ? { ...activeDragScript, ...(drafts[activeDragScript.id]?.values ?? {}) }
     : null;

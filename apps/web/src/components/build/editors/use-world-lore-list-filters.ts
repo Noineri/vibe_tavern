@@ -1,52 +1,86 @@
 import { useEffect, useMemo } from "react";
-import type { AppCharacterEntry, LorebookRecord, PersonaRecord } from "../../../api/types.js";
+import type { AppCharacterEntry, PersonaRecord } from "../../../api/types.js";
 import type { Scope } from "./LorebookAccordion.js";
 import type { WorldLoreOwnerOption } from "./LorebookListHeader.js";
 
-interface UseLorebookListFiltersArgs {
+/** Persisted owner-filter value reserved for entity-scoped records with no links. */
+export const WORLD_LORE_UNBOUND_OWNER_ID = "__world_lore_unbound_owner__";
+
+type WorldLoreLink = {
+  targetType: "character" | "persona";
+  targetId: string;
+};
+
+type WorldLoreListItem = {
+  id: string;
+  name: string;
+  scopeType: string;
+};
+
+interface UseWorldLoreListFiltersArgs<T extends WorldLoreListItem> {
   scope: Scope;
   ownerId: string | null;
-  setOwnerId: (ownerId: string | null) => void;
-  lorebooks: LorebookRecord[];
+  setOwnerId?: (ownerId: string | null) => void;
+  items: T[];
+  linksByItemId: Map<string, WorldLoreLink[]>;
   characters: AppCharacterEntry[];
   personas: PersonaRecord[];
-  ownerDataReady: boolean;
+  ownerDataReady?: boolean;
   nameSearch: string;
 }
 
-/** Owns lorebook-only list filtering while the shared owner picker receives its source options. */
-export function useLorebookListFilters({
+/**
+ * The client-side ownership rule for World & Lore lists.
+ *
+ * Both tabs already load their link rows for the shared LinkBindingPopover, so
+ * this derives options, owner filtering, and the unbound filter from those same
+ * rows instead of recreating ownership from removed home-owner fields.
+ */
+export function useWorldLoreListFilters<T extends WorldLoreListItem>({
   scope,
   ownerId,
   setOwnerId,
-  lorebooks,
+  items,
+  linksByItemId,
   characters,
   personas,
   ownerDataReady,
   nameSearch,
-}: UseLorebookListFiltersArgs) {
+}: UseWorldLoreListFiltersArgs<T>) {
   const owners = useMemo<WorldLoreOwnerOption[]>(() => {
-    const characterIds = new Set(lorebooks.flatMap((lorebook) => lorebook.characterId ? [lorebook.characterId] : []));
-    const personaIds = new Set(lorebooks.flatMap((lorebook) => lorebook.personaId ? [lorebook.personaId] : []));
+    const linkedTargetIds = new Set(
+      items.flatMap((item) =>
+        item.scopeType === "entity"
+          ? (linksByItemId.get(item.id) ?? []).map((link) => link.targetId)
+          : [],
+      ),
+    );
+    const hasUnboundEntity = items.some(
+      (item) => item.scopeType === "entity" && linksByItemId.get(item.id)?.length === 0,
+    );
     return [
-      ...characters.filter((character) => characterIds.has(character.id)).map((character) => ({ id: character.id, name: character.name, kind: "character" as const })),
-      ...personas.filter((persona) => personaIds.has(persona.id)).map((persona) => ({ id: persona.id, name: persona.name, kind: "persona" as const })),
+      ...(hasUnboundEntity ? [{ id: WORLD_LORE_UNBOUND_OWNER_ID, name: "", kind: "unbound" as const }] : []),
+      ...characters.filter((character) => linkedTargetIds.has(character.id)).map((character) => ({ id: character.id, name: character.name, kind: "character" as const })),
+      ...personas.filter((persona) => linkedTargetIds.has(persona.id)).map((persona) => ({ id: persona.id, name: persona.name, kind: "persona" as const })),
     ];
-  }, [characters, lorebooks, personas]);
-  const visibleLorebooks = useMemo(() => {
+  }, [characters, items, linksByItemId, personas]);
+
+  const visibleItems = useMemo(() => {
     const ownerFiltered = scope === "entity" && ownerId
-      ? lorebooks.filter((lorebook) => lorebook.characterId === ownerId || lorebook.personaId === ownerId)
-      : lorebooks;
+      ? ownerId === WORLD_LORE_UNBOUND_OWNER_ID
+        ? items.filter((item) => item.scopeType === "entity" && linksByItemId.get(item.id)?.length === 0)
+        : items.filter((item) => item.scopeType === "entity" && linksByItemId.get(item.id)?.some((link) => link.targetId === ownerId))
+      : items;
     const query = nameSearch.trim().toLocaleLowerCase();
-    return query ? ownerFiltered.filter((lorebook) => lorebook.name.toLocaleLowerCase().includes(query)) : ownerFiltered;
-  }, [lorebooks, nameSearch, ownerId, scope]);
+    return query ? ownerFiltered.filter((item) => item.name.toLocaleLowerCase().includes(query)) : ownerFiltered;
+  }, [items, linksByItemId, nameSearch, ownerId, scope]);
 
   useEffect(() => {
-    if (!ownerId || !ownerDataReady) return;
+    if (!ownerId || ownerId === WORLD_LORE_UNBOUND_OWNER_ID || !ownerDataReady || !setOwnerId) return;
     const ownerExists = characters.some((character) => character.id === ownerId)
       || personas.some((persona) => persona.id === ownerId);
     if (!ownerExists) setOwnerId(null);
   }, [characters, ownerDataReady, ownerId, personas, setOwnerId]);
 
-  return { owners, visibleLorebooks };
+  return { owners, visibleItems };
 }

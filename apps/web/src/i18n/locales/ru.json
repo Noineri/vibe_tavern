@@ -1638,6 +1638,7 @@
 	"scope_current": "Текущие",
 	"lore_owner": "Чей",
 	"lore_owner_all": "Все",
+	"lore_owner_unbound": "Без владельца",
 	"lore_owner_search_placeholder": "Поиск владельца…",
 	"lorebook_name_search_placeholder": "Поиск лорбуков…",
 	"script_name_search_placeholder": "Поиск скриптов…",
