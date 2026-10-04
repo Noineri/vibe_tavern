@@ -7,11 +7,11 @@ import { AutoTextarea } from "../shared/auto-textarea.js";
 import { TextInput } from "../shared/text-input.js";
 import { lblCls } from "../../lib/field-tokens.js";
 import { MasterDetailMobileDrillDown } from "../shared/MasterDetailModal.js";
-import { DropdownSelect } from "../shared/DropdownSelect.js";
 import { MobileExpandTextarea } from "../shared/MobileExpandTextarea.js";
 import { Toggle } from "../shared/Toggle.js";
 import { NumberInput } from "../shared/NumberInput.js";
 import { AiGenParamsRow, type SecondaryGenOverrides } from "../shared/ai-assistant/AiGenParamsRow.js";
+import { AiAssistantConnectionFields } from "../shared/ai-assistant/AiAssistantConnectionFields.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -206,7 +206,7 @@ export function useSummaryTab({
   // the store on open; the star writes/clears the pair. Null = follow the
   // chat model (unpinned).
   const [pinnedModel, setPinnedModel] = useState<string | null>(null);
-  const [providerModels, setProviderModels] = useState<Array<{ id: string; label: string; contextLength?: number }>>([]);
+  const [providerModels, setProviderModels] = useState<Array<{ id: string; label: string; detail?: string }>>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   // History-limit latch: null = AUTO (persisted 0 = unlimited server-side,
   // consumed as `limit || Infinity`), a positive number = manual cap. Touching
@@ -318,14 +318,6 @@ export function useSummaryTab({
 
   const contextPct = contextWindow.limit > 0 ? Math.min(100, Math.round((contextWindow.used / contextWindow.limit) * 100)) : 0;
 
-  const providerOptions = useMemo(
-    () => providers.map((p) => ({ id: p.id, label: p.name })),
-    [providers],
-  );
-  const modelOptions = useMemo(
-    () => providerModels.map((m) => ({ id: m.id, label: m.label, detail: m.contextLength ? `${m.contextLength}t` : undefined })),
-    [providerModels],
-  );
 
   /* ─── effects ─── */
   const loadSummaries = useCallback(async () => {
@@ -409,6 +401,7 @@ export function useSummaryTab({
     }
   }, [activeProvider, selectedProviderId]);
 
+
   useEffect(() => {
     if (!isOpen || !selectedProviderId) { setProviderModels([]); return; }
     let cancelled = false;
@@ -416,11 +409,15 @@ export function useSummaryTab({
     void onFetchModelsForProfile(selectedProviderId)
       .then((models) => {
         if (cancelled) return;
-        setProviderModels(models.map((m) => ({ id: m.id, label: m.label || m.id, contextLength: m.contextLength })));
-        const defaultModel = providers.find((p) => p.id === selectedProviderId)?.defaultModel ?? "";
-        setSelectedModel((cur) => cur || defaultModel || models[0]?.id || "");
+        setProviderModels(models.map((model) => ({
+          id: model.id,
+          label: model.label || model.id,
+          detail: model.contextLength ? `${model.contextLength}t` : undefined,
+        })));
+        const defaultModel = providers.find((provider) => provider.id === selectedProviderId)?.defaultModel ?? "";
+        setSelectedModel((current) => current || defaultModel || models[0]?.id || "");
       })
-      .catch((err) => { if (!cancelled) toast.error(err instanceof Error ? err.message : t("models_load_failed")); })
+      .catch((error) => { if (!cancelled) toast.error(error instanceof Error ? error.message : t("models_load_failed")); })
       .finally(() => { if (!cancelled) setIsLoadingModels(false); });
     return () => { cancelled = true; };
   }, [isOpen, onFetchModelsForProfile, providers, selectedProviderId, t]);
@@ -757,69 +754,66 @@ export function useSummaryTab({
       {/* ── Provider & Model ── */}
       <section className="mt-4">
         <div className={lblCls}>{t("summary_provider_label")}</div>
-        <label className="mb-3 flex items-center gap-2 font-ui text-[13px] text-t2">
-          <Toggle checked={useChatModel} onChange={(v) => setUseChatModel(v)} />
-          {t("summary_use_chat_model")}
-        </label>
-        <div className={cn("gap-3", isMobile ? "flex flex-col" : "grid grid-cols-2")}>
-          <DropdownSelect
-            value={selectedProviderId}
-            options={providerOptions}
-            onChange={(id) => {
-              setSelectedProviderId(id);
-              setSelectedModel("");
-              setPinnedModel(null);
-              // SUM-4: switching providers invalidates the persisted pin.
-              void updateUiSettings({ summaryProviderId: null, summaryModelName: null }).catch(() => {});
-            }}
-            disabled={useChatModel || generating}
-            placeholder={t("summarize_provider_label")}
-            searchPlaceholder={t("summarize_provider_label")}
-          />
-          <div className="flex items-center gap-1.5">
-            <DropdownSelect
-              value={pinnedModel ?? selectedModel}
-              options={modelOptions}
-              onChange={(id) => {
-                setSelectedModel(id);
-                // SUM-4: picking a model while pinned rewrites the persisted
-                // binding (the pin follows the live selection, as before).
-                if (pinnedModel !== null) {
-                  setPinnedModel(id);
-                  void updateUiSettings({ summaryProviderId: effectiveProviderId || null, summaryModelName: id }).catch(() => {});
-                } else {
-                  setPinnedModel(useChatModel ? id : null);
-                }
-              }}
-              disabled={useChatModel || generating || isLoadingModels}
-              placeholder={t("model_placeholder")}
-              searchPlaceholder={t("summarize_model_label")}
-              className="flex-1"
-            />
-            {/* Pin star: lock this model even when "use chat model" is on.
-             *  SUM-4: the pin is PERSISTED in ui_settings (summary pair) —
-             *  it survives modal close/reopen; unpin clears the pair. */}
-            <button type="button"
-              className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors",
-                pinnedModel ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
-              )}
-              title={pinnedModel ? t("summary_unpin_model") : t("summary_pin_model")}
-              onClick={() => {
-                if (pinnedModel) {
-                  setPinnedModel(null);
-                  void updateUiSettings({ summaryProviderId: null, summaryModelName: null }).catch(() => {});
-                } else if (selectedModel) {
-                  setPinnedModel(selectedModel);
-                  void updateUiSettings({ summaryProviderId: effectiveProviderId || null, summaryModelName: selectedModel }).catch(() => {});
-                }
-              }}
-              disabled={!selectedModel}
-            >
-              {pinnedModel ? <Ic.starFilled /> : <Ic.star />}
-            </button>
-          </div>
-        </div>
+        <AiAssistantConnectionFields
+          providerProfiles={providers}
+          providerId={selectedProviderId}
+          modelName={pinnedModel ?? selectedModel}
+          providerModels={providerModels}
+          loadingModels={isLoadingModels}
+          onProviderChange={(id) => {
+            setSelectedProviderId(id);
+            setSelectedModel("");
+            setPinnedModel(null);
+            // SUM-4: switching providers invalidates the persisted pin.
+            void updateUiSettings({ summaryProviderId: null, summaryModelName: null }).catch(() => {});
+          }}
+          onModelChange={(id) => {
+            setSelectedModel(id);
+            // SUM-4: picking a model while pinned rewrites the persisted
+            // binding (the pin follows the live selection, as before).
+            if (pinnedModel !== null) {
+              setPinnedModel(id);
+              void updateUiSettings({ summaryProviderId: effectiveProviderId || null, summaryModelName: id }).catch(() => {});
+            } else {
+              setPinnedModel(useChatModel ? id : null);
+            }
+          }}
+          disabled={generating}
+          useChatModel={{
+            checked: useChatModel,
+            onChange: setUseChatModel,
+            label: t("summary_use_chat_model"),
+            className: "mb-3 flex items-center gap-2 font-ui text-[13px] text-t2",
+            visibleModel: "provided",
+          }}
+          modelPin={{
+            pinned: pinnedModel !== null,
+            onChange: (pinned) => {
+              if (!pinned) {
+                setPinnedModel(null);
+                void updateUiSettings({ summaryProviderId: null, summaryModelName: null }).catch(() => {});
+              } else if (selectedModel) {
+                setPinnedModel(selectedModel);
+                void updateUiSettings({ summaryProviderId: effectiveProviderId || null, summaryModelName: selectedModel }).catch(() => {});
+              }
+            },
+            pinLabel: t("summary_pin_model"),
+            unpinLabel: t("summary_unpin_model"),
+            disabled: !selectedModel,
+            overridesChatModel: true,
+          }}
+          showLabels={false}
+          includeDefaultOption={false}
+          withBottomMargin={false}
+          labels={{
+            connection: t("summarize_provider_label"),
+            model: t("summarize_model_label"),
+            selectProvider: t("summarize_provider_label"),
+            searchProvider: t("summarize_provider_label"),
+            searchModel: t("summarize_model_label"),
+            modelPlaceholder: t("model_placeholder"),
+          }}
+        />
         {generating ? (
           <button type="button"
             className="mt-3 h-10 w-full rounded-md bg-danger px-4 font-ui text-sm font-semibold text-on-danger transition-all hover:brightness-110"

@@ -9,8 +9,8 @@ import { copyText } from "../../../lib/clipboard.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
-import { Toggle } from "../../shared/Toggle.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
+import { AiAssistantConnectionFields } from "../../shared/ai-assistant/AiAssistantConnectionFields.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { SceneStateView } from "../../shared/SceneStateView.js";
@@ -322,7 +322,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
       </div>
 
       {/* Model selection (secondary insight model — mirrors Objective/Summary) */}
-      <SceneModelSelector draft={draft} onUpdate={update} />
+      <SceneModelFields draft={draft} onUpdate={update} />
 
       {/* Advanced config (injection depth, prompt format, prompt overrides) */}
       <div className="border-t border-border pt-2">
@@ -549,9 +549,9 @@ function PromptField({ label, hint, defaultValue, onSave, action }: { label: str
   );
 }
 
-// ─── Model selection (secondary insight model — mirrors ObjectiveConfig) ──
+// ─── Model selection (shared secondary-model fields) ────────────────────
 
-function SceneModelSelector({
+function SceneModelFields({
   draft,
   onUpdate,
 }: {
@@ -559,78 +559,62 @@ function SceneModelSelector({
   onUpdate: <K extends keyof SceneTrackerConfig>(field: K, value: SceneTrackerConfig[K]) => void;
 }) {
   const { t } = useT();
-  const profiles = useProviderDataStore((s) => s.profiles);
-  const activeProvider = useMemo(() => profiles.find((p) => p.isActive) ?? profiles[0] ?? null, [profiles]);
-  const useChatModel = draft.useChatModel;
-  const pinnedModel = draft.model;
-
-  const profileId = useChatModel ? (activeProvider?.id ?? "") : (draft.providerProfileId ?? "");
-  const profile = profiles.find((p) => p.id === profileId) ?? null;
-
+  const profiles = useProviderDataStore((store) => store.profiles);
+  const activeProfile = useMemo(() => profiles.find((profile) => profile.isActive) ?? profiles[0] ?? null, [profiles]);
+  const visibleProfileId = draft.useChatModel ? (activeProfile?.id ?? "") : (draft.providerProfileId ?? "");
   const [models, setModels] = useState<Array<{ id: string; label: string }>>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+
   useEffect(() => {
-    if (!profileId) { setModels([]); return; }
+    if (!visibleProfileId) { setModels([]); return; }
     let cancelled = false;
     setLoadingModels(true);
-    fetchProviderModelsAction(profileId)
-      .then((res) => {
-        if (cancelled) return;
-        setModels(res.models.map((m) => ({ id: m.id, label: m.label ?? m.id })));
+    fetchProviderModelsAction(visibleProfileId)
+      .then((response) => {
+        if (!cancelled) setModels(response.models.map((model) => ({ id: model.id, label: model.label ?? model.id })));
       })
       .catch(() => { if (!cancelled) setModels([]); })
       .finally(() => { if (!cancelled) setLoadingModels(false); });
     return () => { cancelled = true; };
-  }, [profileId]);
-
-  const providerOptions = useMemo(() => profiles.map((p) => ({ id: p.id, label: p.name })), [profiles]);
-  const effectiveModel = (
-    useChatModel
-      ? (profile?.defaultModel ?? "")
-      : (pinnedModel ?? profile?.defaultModel ?? "")
-  ).trim();
+  }, [visibleProfileId]);
 
   return (
     <div className="border-t border-border pt-3">
       <label className={lblCls}>{t("scn_model_label")}</label>
-      <label className="mb-2 mt-1.5 flex items-center gap-2 font-ui text-[12px] text-t2">
-        <Toggle checked={useChatModel} onChange={(v) => onUpdate("useChatModel", v)} />
-        {t("scn_use_chat_model")}
-      </label>
-      <div className="grid grid-cols-2 gap-2 max-md:grid-cols-1">
-        <DropdownSelect
-          value={profileId}
-          options={providerOptions}
-          onChange={(id) => { onUpdate("providerProfileId", id); onUpdate("model", null); }}
-          disabled={useChatModel}
-          placeholder={t("scn_provider_label")}
-          searchPlaceholder={t("scn_provider_label")}
-        />
-        <div className="flex items-center gap-1.5">
-          <DropdownSelect
-            value={effectiveModel}
-            options={models}
-            onChange={(id) => onUpdate("model", id)}
-            disabled={useChatModel || !profileId || loadingModels}
-            placeholder={loadingModels ? "…" : t("scn_model_label")}
-            searchPlaceholder={t("scn_model_label")}
-            className="flex-1"
-          />
-          <CustomTooltip content={pinnedModel ? t("scn_model_unpin") : t("scn_model_pin")}>
-            <button
-              type="button"
-              className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors disabled:pointer-events-none disabled:opacity-40",
-                pinnedModel ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
-              )}
-              onClick={() => onUpdate("model", pinnedModel ? null : (effectiveModel || null))}
-              disabled={useChatModel || !effectiveModel}
-            >
-              {pinnedModel ? <Ic.starFilled /> : <Ic.star />}
-            </button>
-          </CustomTooltip>
-        </div>
-      </div>
+      <AiAssistantConnectionFields
+        providerProfiles={profiles}
+        providerId={draft.providerProfileId ?? ""}
+        modelName={draft.model ?? ""}
+        providerModels={models}
+        loadingModels={loadingModels}
+        onProviderChange={(id) => { onUpdate("providerProfileId", id); onUpdate("model", null); }}
+        onModelChange={(id) => onUpdate("model", id)}
+        useChatModel={{
+          checked: draft.useChatModel,
+          onChange: (checked) => onUpdate("useChatModel", checked),
+          label: t("scn_use_chat_model"),
+        }}
+        modelPin={{
+          pinned: draft.model !== null,
+          onChange: (pinned, value) => onUpdate("model", pinned ? value.modelName || null : null),
+          pinLabel: t("scn_model_pin"),
+          unpinLabel: t("scn_model_unpin"),
+          disabled: draft.useChatModel,
+          disabledClassName: true,
+        }}
+        showLabels={false}
+        includeDefaultOption={false}
+        resolveProfileDefaultModel
+        compact
+        withBottomMargin={false}
+        labels={{
+          connection: t("scn_provider_label"),
+          model: t("scn_model_label"),
+          selectProvider: t("scn_provider_label"),
+          searchProvider: t("scn_provider_label"),
+          searchModel: t("scn_model_label"),
+        }}
+      />
     </div>
   );
 }
