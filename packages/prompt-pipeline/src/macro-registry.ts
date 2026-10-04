@@ -30,6 +30,7 @@ import { splitMacroArgs } from "./macro-argument-parser.js";
 import { findTrimClose, removeTrimmedLineBreaks, TRIM_LINE_BREAK_MARKER } from "./macro-trim.js";
 import { MacroVariableScope } from "./macro-variable-scope.js";
 import { createVariableMacroResolvers, resolveVariableShorthand } from "./variable-macro-resolvers.js";
+import { registerCharacterMacroResolvers } from "./macro-character-resolvers.js";
 export { getMacroCatalog } from "./macro-catalog.js";
 
 /** Macro resolvers whose values are frozen when a greeting or user message is written. */
@@ -689,73 +690,13 @@ export function createFullMacroEngine(variableScope?: MacroVariableScope): Macro
 
   // ─── Character fields ──────────────────────────────────────────────
 
-  engine.register({
-    name: "description",
-    aliases: ["charDescription"],
-    description: "The character's description field.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.description ?? "",
-  });
-
-  engine.register({
-    name: "personality",
-    aliases: ["charPersonality"],
-    description: "The character's personality field.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.personality ?? "",
-  });
-
-  engine.register({
-    name: "scenario",
-    aliases: ["charScenario"],
-    description: "The character's scenario field.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.scenario ?? "",
-  });
-
-  engine.register({
-    name: "mesExamplesRaw",
-    aliases: ["mesExamples"],
-    description: "The character's example dialogue, raw text.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.mesExample ?? "",
-  });
-
-  engine.register({
-    name: "charFirstMessage",
-    aliases: ["greeting"],
-    description: "The character's first message / greeting.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.firstMessage ?? "",
-  });
-
-  engine.register({
-    name: "charCreatorNotes",
-    aliases: ["creatorNotes"],
-    description: "The character's creator notes.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.creatorNotes ?? "",
-  });
-
-  engine.register({
-    name: "charDepthPrompt",
-    description: "The character's depth-prompt.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.depthPrompt ?? "",
-  });
-
-  engine.register({
-    name: "charVersion",
-    aliases: ["version", "char_version"],
-    description: "The character's version string.",
-    category: MacroCategory.Character,
-    resolve: (_args, context) => context.character.version?.title ?? "",
-  });
+  registerCharacterMacroResolvers(engine.register.bind(engine), MacroCategory);
 
   // ─── Chat context ──────────────────────────────────────────────────
 
   engine.register({
     name: "lastChatMessage",
+    aliases: ["lastMessage"],
     description: "The last message in the chat (any role).",
     category: MacroCategory.Chat,
     resolve: (_args, context) => context.chat.lastMessage ?? "",

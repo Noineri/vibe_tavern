@@ -152,6 +152,18 @@ describe("Macro engine: direct resolution", () => {
     expect(engine.resolve("Hello {{user}}.", ctx)).toBe("Hello Olya.");
   });
 
+  it("aliases lastMessage and formats mesExamples separately from raw examples", () => {
+    const ctx = buildPromptVariableContext({
+      character: { mesExample: "<START>\n{{user}}: Hello\n{{char}}: Hi\n<START>\nA second example" },
+      chat: { lastMessage: "The latest reply." },
+    });
+
+    expect(engine.resolve("{{lastChatMessage}}", ctx)).toBe("The latest reply.");
+    expect(engine.resolve("{{lastMessage}}", ctx)).toBe("The latest reply.");
+    expect(engine.resolve("{{mesExamplesRaw}}", ctx)).toBe("<START>\n{{user}}: Hello\n{{char}}: Hi\n<START>\nA second example");
+    expect(engine.resolve("{{mesExamples}}", ctx)).toBe("{{user}}: Hello\n{{char}}: Hi\nA second example");
+  });
+
   it("is case-insensitive", () => {
     const ctx = buildPromptVariableContext({
       character: { name: "Aria" },
