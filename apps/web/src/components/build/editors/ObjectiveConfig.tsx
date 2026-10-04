@@ -5,14 +5,14 @@ import { Ic } from "../../shared/icons.js";
 import { cn } from "../../../lib/cn.js";
 import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { EmptyState } from "../../shared/empty-state.js";
-import { Toggle } from "../../shared/Toggle.js";
-import { DropdownSelect } from "../../shared/DropdownSelect.js";
+
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { TextInput } from "../../shared/text-input.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
+import { AiAssistantConnectionFields } from "../../shared/ai-assistant/AiAssistantConnectionFields.js";
 import {
   generateObjectiveTasksAction,
   checkObjectiveCompletionAction,
@@ -170,7 +170,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
       )}
 
       {/* Model selection (secondary insight model — mirrors Summary) */}
-      <ModelSelector chatId={chatId} state={state} />
+      <ObjectiveModelFields chatId={chatId} state={state} />
 
       {/* Advanced config */}
       <div className="border-t border-border pt-2">
@@ -547,91 +547,71 @@ function statusClass(status: ObjectiveTaskStatus): string {
   }
 }
 
-// ─── Model selection (secondary insight model — mirrors Summary) ───────
+// ─── Model selection (shared secondary-model fields) ────────────────────
 
-function ModelSelector({ chatId, state }: { chatId: ChatId; state: ObjectiveState }) {
+function ObjectiveModelFields({ chatId, state }: { chatId: ChatId; state: ObjectiveState }) {
   const { t } = useT();
-  const profiles = useProviderDataStore((s) => s.profiles);
-  const activeProvider = useMemo(() => profiles.find((p) => p.isActive) ?? profiles[0] ?? null, [profiles]);
-  const useChatModel = state.useChatModel;
-  const pinnedModel = state.model;
-
-  // The provider whose models we list + use: the chat's active one when
-  // `useChatModel`, else the pinned `providerProfileId`.
-  const profileId = useChatModel ? (activeProvider?.id ?? "") : (state.providerProfileId ?? "");
-  const profile = profiles.find((p) => p.id === profileId) ?? null;
-
+  const profiles = useProviderDataStore((store) => store.profiles);
+  const activeProfile = useMemo(() => profiles.find((profile) => profile.isActive) ?? profiles[0] ?? null, [profiles]);
+  const visibleProfileId = state.useChatModel ? (activeProfile?.id ?? "") : (state.providerProfileId ?? "");
   const [models, setModels] = useState<Array<{ id: string; label: string }>>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+
   useEffect(() => {
-    if (!profileId) { setModels([]); return; }
+    if (!visibleProfileId) { setModels([]); return; }
     let cancelled = false;
     setLoadingModels(true);
-    fetchProviderModelsAction(profileId)
-      .then((res) => {
-        if (cancelled) return;
-        setModels(res.models.map((m) => ({ id: m.id, label: m.label ?? m.id })));
+    fetchProviderModelsAction(visibleProfileId)
+      .then((response) => {
+        if (!cancelled) setModels(response.models.map((model) => ({ id: model.id, label: model.label ?? model.id })));
       })
       .catch(() => { if (!cancelled) setModels([]); })
       .finally(() => { if (!cancelled) setLoadingModels(false); });
     return () => { cancelled = true; };
-  }, [profileId]);
+  }, [visibleProfileId]);
 
   function save(patch: Partial<Pick<ObjectiveState, "useChatModel" | "providerProfileId" | "model">>) {
     updateObjectiveConfigAction(chatId, patch)
       .catch((err) => toast.error(err instanceof Error ? err.message : t("obj_action_failed")));
   }
 
-  const providerOptions = useMemo(() => profiles.map((p) => ({ id: p.id, label: p.name })), [profiles]);
-  // "Use chat model" is strict: show and use the active chat provider's
-  // default model, ignoring any secondary pin preserved for when the toggle is
-  // turned back off. This mirrors Summary's locked provider+model controls.
-  const effectiveModel = (
-    useChatModel
-      ? (profile?.defaultModel ?? "")
-      : (pinnedModel ?? profile?.defaultModel ?? "")
-  ).trim();
-
   return (
     <div className="border-t border-border pt-3">
       <label className={lblCls}>{t("obj_model_label")}</label>
-      <label className="mb-2 mt-1.5 flex items-center gap-2 font-ui text-[12px] text-t2">
-        <Toggle checked={useChatModel} onChange={(v) => save({ useChatModel: v })} />
-        {t("obj_use_chat_model")}
-      </label>
-      <div className="grid grid-cols-2 gap-2 max-md:grid-cols-1">
-        <DropdownSelect
-          value={profileId}
-          options={providerOptions}
-          onChange={(id) => save({ providerProfileId: id, model: null })}
-          disabled={useChatModel}
-          placeholder={t("obj_provider_label")}
-          searchPlaceholder={t("obj_provider_label")}
-        />
-        <div className="flex items-center gap-1.5">
-          <DropdownSelect
-            value={effectiveModel}
-            options={models}
-            onChange={(id) => save({ model: id })}
-            disabled={useChatModel || !profileId || loadingModels}
-            placeholder={loadingModels ? "…" : t("obj_model_label")}
-            searchPlaceholder={t("obj_model_label")}
-            className="flex-1"
-          />
-          <button
-            type="button"
-            className={cn(
-              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors disabled:pointer-events-none disabled:opacity-40",
-              pinnedModel ? "border-accent bg-accent-dim text-accent" : "border-border text-t4 hover:text-t3",
-            )}
-            title={pinnedModel ? t("obj_model_unpin") : t("obj_model_pin")}
-            onClick={() => save({ model: pinnedModel ? null : (effectiveModel || null) })}
-            disabled={useChatModel || !effectiveModel}
-          >
-            {pinnedModel ? <Ic.starFilled /> : <Ic.star />}
-          </button>
-        </div>
-      </div>
+      <AiAssistantConnectionFields
+        providerProfiles={profiles}
+        providerId={state.providerProfileId ?? ""}
+        modelName={state.model ?? ""}
+        providerModels={models}
+        loadingModels={loadingModels}
+        onProviderChange={(id) => save({ providerProfileId: id, model: null })}
+        onModelChange={(id) => save({ model: id })}
+        useChatModel={{
+          checked: state.useChatModel,
+          onChange: (checked) => save({ useChatModel: checked }),
+          label: t("obj_use_chat_model"),
+        }}
+        modelPin={{
+          pinned: state.model !== null,
+          onChange: (pinned, value) => save({ model: pinned ? value.modelName || null : null }),
+          pinLabel: t("obj_model_pin"),
+          unpinLabel: t("obj_model_unpin"),
+          disabled: state.useChatModel,
+          disabledClassName: true,
+        }}
+        showLabels={false}
+        includeDefaultOption={false}
+        resolveProfileDefaultModel
+        compact
+        withBottomMargin={false}
+        labels={{
+          connection: t("obj_provider_label"),
+          model: t("obj_model_label"),
+          selectProvider: t("obj_provider_label"),
+          searchProvider: t("obj_provider_label"),
+          searchModel: t("obj_model_label"),
+        }}
+      />
     </div>
   );
 }

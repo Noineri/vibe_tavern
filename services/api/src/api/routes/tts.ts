@@ -21,6 +21,9 @@ export function createTtsRoutes(runtime: TtsRuntimeApi) {
     .get("/api/tts/profiles/all", async (c) => {
       return c.json(await runtime.listTtsProfiles());
     })
+    .patch("/api/tts/profiles/reorder", zValidator("json", schemas.reorderTtsProfilesSchema), async (c) => {
+      return c.json(await runtime.reorderTtsProfiles(c.req.valid("json").updates));
+    })
     .get("/api/tts/profiles/:id", async (c) => {
       const profile = await runtime.getTtsProfile(c.req.param("id"));
       if (!profile) return c.json({ error: "TTS profile not found" }, 404);

@@ -381,6 +381,21 @@ export class ImageGenStore {
     await this.db.delete(imageGenProfiles).where(eq(imageGenProfiles.id, id)).run();
   }
 
+  /** Apply a complete manual order atomically, then return the canonical list. */
+  async reorder(updates: Array<{ id: string; sortOrder: number }>): Promise<ImageGenProfile[]> {
+    const now = this.clock.now();
+    this.db.transaction((tx) => {
+      for (const update of updates) {
+        tx
+          .update(imageGenProfiles)
+          .set({ sortOrder: update.sortOrder, updatedAt: now })
+          .where(eq(imageGenProfiles.id, update.id))
+          .run();
+      }
+    });
+    return this.listAll();
+  }
+
   /** MR-12: move the GLOBAL active-profile pointer onto `id` (the TTS/STT
    *  `setDefault` twin — one transaction: clear every row's flag, set the
    *  target's). Returns null when id is unknown (route → 404). Deleting the

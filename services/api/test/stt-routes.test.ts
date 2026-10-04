@@ -12,6 +12,8 @@ import { createDb } from "@vibe-tavern/db";
 import { ProviderStore, SttStore, TtsStore } from "@vibe-tavern/db";
 
 import { createSttRoutes } from "../src/api/routes/stt.js";
+import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { createApp } from "../src/server/app-factory.js";
 import { SttAdapter, __setSttDiscoveryFetchForTests } from "../src/api/adapters/stt-adapter.js";
 
 const fixedClock = { now: () => "2026-09-03T00:00:00.000Z" };
@@ -145,6 +147,26 @@ describe("STT routes — local discovery (server-side, ST-8)", () => {
 });
 
 describe("STT routes — CRUD", () => {
+  test("PATCH /api/stt/profiles/reorder requires mobile bearer auth before the route", async () => {
+    let reorderCalled = false;
+    const app = await createApp({
+      runtime: {
+        stt: {
+          reorderSttProfiles: async () => {
+            reorderCalled = true;
+            return [];
+          },
+        },
+      } as unknown as RuntimeApi,
+      mobileAccessToken: "test-token",
+      enforceMobileAuth: true,
+    });
+
+    const response = await app.request("/api/stt/profiles/reorder", { method: "PATCH" });
+    expect(response.status).toBe(401);
+    expect(reorderCalled).toBe(false);
+  });
+
   test("POST /api/stt/profiles → 201, GET :id round-trip, GET all", async () => {
     const { app } = await makeApp();
 
@@ -171,6 +193,37 @@ describe("STT routes — CRUD", () => {
     expect(allRes.status).toBe(200);
     const all = (await allRes.json()) as unknown[];
     expect(all.length).toBe(1);
+  });
+
+  test("PATCH /api/stt/profiles/reorder validates its body and returns the reordered profiles", async () => {
+    const { app } = await makeApp();
+    const create = async (name: string) => {
+      const response = await app.request("/api/stt/profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, backend: "whisper-browser", config: { model: "onnx-community/whisper-base" } }),
+      });
+      return await response.json() as { id: string };
+    };
+    const first = await create("First");
+    const second = await create("Second");
+    const beforeMalformed = await (await app.request("/api/stt/profiles/all")).json();
+
+    const malformed = await app.request("/api/stt/profiles/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: first.id }] }),
+    });
+    expect(malformed.status).toBe(400);
+    expect(await (await app.request("/api/stt/profiles/all")).json()).toEqual(beforeMalformed);
+
+    const reordered = await app.request("/api/stt/profiles/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: first.id, sortOrder: 1 }, { id: second.id, sortOrder: 0 }] }),
+    });
+    expect(reordered.status).toBe(200);
+    expect(((await reordered.json()) as Array<{ id: string }>).map((profile) => profile.id)).toEqual([second.id, first.id]);
   });
 
   test("PATCH unknown id → 404; DELETE → ok:true", async () => {

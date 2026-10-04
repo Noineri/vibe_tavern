@@ -70,6 +70,9 @@ export {
   reorderProviderProfilesSchema,
 } from "./provider-schema.js";
 export type { CoauthorGenerationSettingsValue, UpsertCoauthorConnectionSettingsValue } from "./provider-schema.js";
+export { reorderTtsProfilesSchema } from "./tts-schema.js";
+export { reorderSttProfilesSchema } from "./stt-schema.js";
+export { reorderImageGenProfilesSchema } from "./image-gen-schema.js";
 export {
   samplerSetSchema,
   samplerSetListSchema,

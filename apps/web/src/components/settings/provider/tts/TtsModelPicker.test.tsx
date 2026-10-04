@@ -77,7 +77,7 @@ afterEach(async () => {
   document.body.innerHTML = "";
 });
 
-describe("TtsModelPicker (ProviderModelSelector fork)", () => {
+describe("TtsModelPicker (ProviderModelSelector adapter)", () => {
   it("no placeholder stub (owner directive): the trigger reports loading while the first fetch is in flight", () => {
     const { view } = mountPicker({ models: [], fetching: true });
     const trigger = view.getByTestId("tts-field-model") as HTMLElement;
@@ -138,7 +138,7 @@ describe("TtsModelPicker (ProviderModelSelector fork)", () => {
   });
 });
 
-describe("TtsModelPicker refresh button height (MUI step 5 extension to TTS/STT)", () => {
+describe("TtsModelPicker refresh button height (MUI step 5 TTS adapter)", () => {
   it("mobile: the icon-only refresh button matches the closed dropdown height (min-h-[33.5px], same derivation as the LLM picker)", () => {
     isMobileValue = true;
     const { view } = mountPicker();

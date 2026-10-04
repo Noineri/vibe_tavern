@@ -127,14 +127,22 @@ describe('SttStore CRUD', () => {
 		expect(await store.getDefault()).toBeNull();
 	});
 
-	test('listAll orders by name then createdAt (no sortOrder in the STT schema)', async () => {
+	test('listAll seeds creation order and reorder round-trips the canonical order', async () => {
 		const { store } = await setup();
-		await store.create(baseInput({ name: 'zeta' }));
-		await store.create(baseInput({ name: 'alpha' }));
-		await store.create(baseInput({ name: 'mid' }));
+		const first = await store.create(baseInput({ name: 'zeta' }));
+		const second = await store.create(baseInput({ name: 'alpha' }));
+		const third = await store.create(baseInput({ name: 'mid' }));
 
-		const names = (await store.listAll()).map((p) => p.name);
-		expect(names).toEqual(['alpha', 'mid', 'zeta']);
+		expect((await store.listAll()).map((profile) => profile.name)).toEqual(['zeta', 'alpha', 'mid']);
+
+		const reordered = await store.reorder([
+			{ id: third.id, sortOrder: 0 },
+			{ id: second.id, sortOrder: 1 },
+			{ id: first.id, sortOrder: 2 },
+		]);
+
+		expect(reordered.map((profile) => profile.name)).toEqual(['mid', 'alpha', 'zeta']);
+		expect((await store.listAll()).map((profile) => profile.sortOrder)).toEqual([0, 1, 2]);
 	});
 });
 

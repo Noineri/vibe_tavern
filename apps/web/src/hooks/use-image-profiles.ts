@@ -32,24 +32,22 @@ import type { ImageGenBackendType } from "@vibe-tavern/domain";
 import {
   capabilitySnapshot,
   matchImageGenAutoKeyProviderName,
-  toImageGenBackend,
   type ImageGenAutoKeyProviderCandidate,
 } from "../components/settings/provider/imagegen/imagegen-form-helpers.js";
 import { listProviderProfiles } from "../api/provider-api.js";
 import { useImageGenChatStore } from "../stores/image-gen-chat-store.js";
+import { useImageProfileList } from "./use-image-profile-list.js";
+import { hydrateImageGenProfile, type ImageGenProfileForm } from "./image-gen-profile-form.js";
+export type { ImageGenProfileForm } from "./image-gen-profile-form.js";
 import type { LocalConnectionStatus } from "../components/shared/LocalConnectionStatus.js";
 import type {
   CreateImageGenProfileInput,
-  ImageGenCapabilityFlagsValue,
   ImageGenDefaultParamsValue,
-  ImageGenModeSizePresetsValue,
   ImageGenModelFavoriteValue,
   ImageGenModelInfoValue,
   ImageGenModelSettingsOverlayValue,
-  ImageGenProfileValue,
   ImageGenSamplerInfoValue,
   ImageGenSchedulerInfoValue,
-  ImageGenUserSizeEntryValue,
   UpdateImageGenProfileInput,
 } from "@vibe-tavern/api-contracts";
 import {
@@ -76,52 +74,15 @@ import {
   type ImageGenProfileRecord,
 } from "../api/image-gen-api.js";
 
-/** Editor form — the wire record's editable fields plus the write-only key
- *  field (see the module header for the tri-state rule). */
-export interface ImageGenProfileForm {
-  id: string | null;
-  name: string;
-  backend: ImageGenBackendType;
-  /** UI preset slug; null = Custom (no preset). */
-  presetId: string | null;
-  endpoint: string;
-  /** Typed write-only API key: empty while editing a stored-key profile =
-   *  keep the stored one on save (undefined on the wire). */
-  apiKey: string;
-  /** Mirror of the record's write-only flag — drives the key field's
-   *  "saved" placeholder. */
-  hasStoredApiKey: boolean;
-  /** Server-decorated auto-key hint (IG-21): the provider profile name
-   *  whose key the execution seam would take; null while an own key wins.
-   *  SAVED profiles only — drafts resolve through the client mirror
-   *  (draftAutoKeyProviderName below). */
-  autoKeyProviderName: string | null;
-  modelId: string | null;
-  defaultParams: ImageGenDefaultParamsValue;
-  /** IF-7a: the sampler set the base defaultParams were last applied from
-   *  (the unbound arm of the sets row) — provenance only, rides the
-   *  profile PATCH like the rest of the form. */
-  defaultParamsSetId: string | null;
-  modeSizePresets: ImageGenModeSizePresetsValue;
-  /** User-added vendor-size entries (IG-20a) — extend the vendor-set grid. */
-  userSizes: ImageGenUserSizeEntryValue[];
-  llmAssistEnabled: boolean;
-  llmProviderProfileId: string | null;
-  llmModelId: string | null;
-  /** Refusal-retry opt-in (default off) — one silent assist retry when the
-   *  assist output is a refusal. */
-  assistRetryOnRefusal: boolean;
-  /** Capability mirror for the current backend — gates the pane's
-   *  capability-gated controls without a live round-trip. */
-  capabilities: ImageGenCapabilityFlagsValue;
-}
-
 /** Editor screen state, the STT/TTS headerMode twin: "view" = saved profile
  *  shown compact with fields below; "edit" = the connection form alone. */
 export type ImageGenHeaderMode = "view" | "edit";
 
 export function useImageProfiles(): {
   profiles: ImageGenProfileRecord[];
+  /** Master-list filter state; matches profile name and the visible preset label. */
+  profileSearch?: string;
+  filteredProfiles?: ImageGenProfileRecord[];
   loading: boolean;
   editingId: string | null;
   form: ImageGenProfileForm | null;
@@ -180,6 +141,8 @@ export function useImageProfiles(): {
   remove(): Promise<void>;
   cancelEdit(): void;
   reload(): Promise<void>;
+  setProfileSearch?(value: string): void;
+  reorder?(updates: Array<{ id: string; sortOrder: number }>): Promise<void>;
   /** MR-12 (the STT `setDefault` twin): make `id` the GLOBAL active
    *  profile — persists server-side (the dedicated default route), so the
    *  pointer survives restarts/reloads; the session pointer flips only on
@@ -334,6 +297,8 @@ export function useImageProfiles(): {
     }
   }, []);
 
+  const { profileSearch, setProfileSearch, filteredProfiles, reorder } = useImageProfileList(profiles, setProfiles);
+
   // MR-12: persist-first (the STT `setDefault` twin) — no optimistic flip:
   // the pointer moves when the server accepted it, and the list reload
   // brings the `isDefault` flag back for the star rows + resolver.
@@ -352,31 +317,6 @@ export function useImageProfiles(): {
   useEffect(() => {
     void reload();
   }, [reload]);
-
-  function hydrate(record: ImageGenProfileValue): ImageGenProfileForm {
-    return {
-      id: record.id,
-      name: record.name,
-      backend: toImageGenBackend(record.backend),
-      presetId: record.presetId ?? null,
-      endpoint: record.endpoint,
-      // record never carries the apiKey (typed column) — the key field
-      // starts empty and shows the "saved" placeholder instead.
-      apiKey: "",
-      hasStoredApiKey: record.hasStoredApiKey,
-      autoKeyProviderName: record.autoKeyProviderName ?? null,
-      modelId: record.modelId ?? null,
-      defaultParams: { ...record.defaultParams },
-      defaultParamsSetId: record.defaultParamsSetId ?? null,
-      modeSizePresets: { ...record.modeSizePresets },
-      userSizes: record.userSizes !== undefined ? record.userSizes.map((entry) => ({ ...entry })) : [],
-      llmAssistEnabled: record.llmAssistEnabled,
-      llmProviderProfileId: record.llmProviderProfileId ?? null,
-      llmModelId: record.llmModelId ?? null,
-      assistRetryOnRefusal: record.assistRetryOnRefusal,
-      capabilities: { ...record.capabilities },
-    };
-  }
 
   const loadFavorites = useCallback(async (profileId: string) => {
     setError(null);
@@ -512,7 +452,7 @@ export function useImageProfiles(): {
       const record = profiles.find((p) => p.id === id);
       if (!record) return;
       setEditingId(id);
-      setFormState(hydrate(record));
+      setFormState(hydrateImageGenProfile(record));
       setDirty(false);
       setHeaderMode("view");
       setError(null);
@@ -627,7 +567,7 @@ export function useImageProfiles(): {
   const cancelEdit = useCallback(() => {
     if (editingId) {
       const record = profiles.find((p) => p.id === editingId);
-      if (record) setFormState(hydrate(record));
+       if (record) setFormState(hydrateImageGenProfile(record));
       setDirty(false);
       setHeaderMode("view");
       setError(null);
@@ -693,7 +633,7 @@ export function useImageProfiles(): {
       const list = await listAllImageGenProfiles();
       setProfiles(list);
       setEditingId(saved.id);
-      setFormState(hydrate(saved));
+       setFormState(hydrateImageGenProfile(saved));
       setDirty(false);
       setHeaderMode("view");
       // Per-model overlay routing (IG-12b, the bindPerModel mechanic on
@@ -875,6 +815,8 @@ export function useImageProfiles(): {
 
   return {
     profiles,
+    profileSearch,
+    filteredProfiles,
     loading,
     editingId,
     form,
@@ -903,6 +845,8 @@ export function useImageProfiles(): {
     remove,
     cancelEdit,
     reload,
+    setProfileSearch,
+    reorder,
     activateProfile,
     fetchSavedModels,
     fetchSamplers,

@@ -33,7 +33,7 @@ afterEach(async () => {
 });
 
 function makeTts(overrides: Record<string, unknown> = {}) {
-  return {
+  const base = {
     profiles: [] as unknown[],
     loading: false,
     editingId: null as string | null,
@@ -48,7 +48,15 @@ function makeTts(overrides: Record<string, unknown> = {}) {
     remove: mock(async () => {}),
     cancelEdit: mock(() => {}),
     reload: mock(async () => {}),
+    profileSearch: "",
+    filteredProfiles: [] as unknown[],
+    setProfileSearch: mock(() => {}),
+    reorder: mock(async () => {}),
+  };
+  return {
+    ...base,
     ...overrides,
+    filteredProfiles: "filteredProfiles" in overrides ? overrides.filteredProfiles : base.profiles,
   } as unknown as ReturnType<typeof import("./use-tts-profiles.js").useTtsProfiles>;
 }
 
@@ -72,6 +80,7 @@ describe("TtsSection", () => {
     expect(rows.length).toBe(2);
     const editingRow = view.baseElement.querySelector('[data-profile-id="p1"]') as HTMLElement;
     expect(editingRow.className).toContain("border-l-accent");
+    expect(editingRow.querySelector(".bg-accent")).toBeTruthy();
   });
 
   it("clicking a row calls select and + New calls startCreate", async () => {
@@ -100,5 +109,14 @@ describe("TtsSection", () => {
     const tts = makeTts({ error: "boom", profiles: [] as unknown[] });
     const view = render(React.createElement(TtsSection as never, { tts } as never));
     expect(view.getByTestId("tts-load-error").textContent).toContain("boom");
+  });
+
+  it("keeps the loading shell title, label, and compact layout", () => {
+    const tts = makeTts({ loading: true, profiles: [] as unknown[] });
+    const view = render(<TtsSection tts={tts} />);
+    const section = view.getByTestId("tts-section");
+    expect(section.className).toBe("flex flex-col p-3");
+    expect(view.getByText("tts_section_title")).toBeTruthy();
+    expect(view.getByText("loading")).toBeTruthy();
   });
 });

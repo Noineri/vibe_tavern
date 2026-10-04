@@ -109,6 +109,9 @@ export function createImageGenRoutes(runtime: ImageGenRuntimeApi) {
     .get("/api/image-gen/profiles/all", async (c) => {
       return c.json(await runtime.listImageGenProfiles());
     })
+    .patch("/api/image-gen/profiles/reorder", zValidator("json", schemas.reorderImageGenProfilesSchema), async (c) => {
+      return c.json(await runtime.reorderImageGenProfiles(c.req.valid("json").updates));
+    })
     .get("/api/image-gen/profiles/:id", async (c) => {
       const profile = await runtime.getImageGenProfile(c.req.param("id"));
       if (!profile) return c.json({ error: "Image-gen profile not found" }, 404);

@@ -16,6 +16,7 @@ import {
   ProviderEditHeader,
   ProviderViewHeader,
   ProviderModelSelector,
+  ProviderModalModelSelector,
   ProviderCapabilityPanel,
   ProviderGenerationModePanel,
   ProviderSamplerPanel,
@@ -255,10 +256,6 @@ export function ProviderModal({
   const [testing, setTesting] = useState(false);
   const [testingChat, setTestingChat] = useState(false);
   const [chatResult, setChatResult] = useState<{ reply?: string; error?: string } | null>(null);
-  const [modelSearch, setModelSearch] = useState("");
-  const [modelListOpen, setModelListOpen] = useState(false);
-  const [visionModelSearch, setVisionModelSearch] = useState("");
-  const [visionModelListOpen, setVisionModelListOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [closeTarget, setCloseTarget] = useState<"close" | "return">("close");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -732,18 +729,9 @@ export function ProviderModal({
     : providerProfiles;
   // Main selector shows all models (RP surface). Co-Author has its own
   // dedicated modal with tool-capability filtering — no mode flag here.
-  const selectableModels = models;
-  const filteredModels = modelSearch.trim()
-    ? selectableModels.filter((m) => m.label.toLowerCase().includes(modelSearch.toLowerCase()) || m.id.toLowerCase().includes(modelSearch.toLowerCase()))
-    : selectableModels;
-  
   const hasVisionModels = models.some(m => m.capabilities?.vision);
   const allVisionModels = models.length > 0 && models.every(m => m.capabilities?.vision);
   const showVisionFallback = hasVisionModels && !allVisionModels;
-  
-  const visionFilteredModels = visionModelSearch.trim()
-    ? models.filter(m => m.capabilities?.vision && (m.label.toLowerCase().includes(visionModelSearch.toLowerCase()) || m.id.toLowerCase().includes(visionModelSearch.toLowerCase())))
-    : models.filter(m => m.capabilities?.vision);
 
   return (
     <>
@@ -806,7 +794,7 @@ export function ProviderModal({
             <ProviderProfileList
               filteredProfiles={filteredProfiles}
               editingId={editingId}
-              activeProviderProfileId={activeProviderProfileId}
+              activeProfileId={activeProviderProfileId}
               profileSearch={profileSearch}
               profiles={providerProfiles}
               onReorder={reorderProviderProfilesAction}
@@ -879,14 +867,16 @@ export function ProviderModal({
               {/* ── CONFIG SECTION (only after header saved) ── */}
               {showConfig && (
                 <>
-                  <ProviderModelSelector form={form} models={selectableModels} filteredModels={filteredModels}
-                    fetching={fetching} fetchError={fetchError} modelSearch={modelSearch} modelListOpen={modelListOpen}
+                  <ProviderModalModelSelector
+                    values={form}
+                    options={models}
+                    fetching={fetching}
+                    fetchError={fetchError}
+                    onRefreshOptions={handleFetchModels}
                     favoriteModels={favoriteModelsByProfile[form.id] ?? []}
-                    updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setModelSearch}
-                    setModelListOpen={setModelListOpen}
+                    onChange={autoSaveField}
                     onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
                     requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
-                    isLocalProvider={isLocalProvider}
                     localEndpoint={form.baseUrl}
                     localConnectionStatus={fetching || testing ? "checking" : fetchError || testOk === false ? "offline" : testOk === true ? "online" : "unknown"}
                   />
@@ -919,18 +909,22 @@ export function ProviderModal({
 
                   {showVisionFallback && (
                     <div className="mt-4 border-t border-border2 pt-2">
-                      <ProviderModelSelector form={form} models={models.filter(m => m.capabilities?.vision)} filteredModels={visionFilteredModels}
-                        modelKey="visionModel" labelOverride={t("vision_fallback_model")} placeholderOverride={t("select_vision_model")}
-                        fetching={fetching} fetchError={fetchError} modelSearch={visionModelSearch} modelListOpen={visionModelListOpen}
+                      <ProviderModelSelector
+                        value={form.visionModel}
+                        onChange={(value) => autoSaveField("visionModel", value)}
+                        options={models.filter((model) => model.capabilities?.vision)}
+                        label={t("vision_fallback_model")}
+                        placeholder={t("select_vision_model")}
+                        fetching={fetching}
+                        fetchError={fetchError}
+                        onRefreshOptions={handleFetchModels}
                         favoriteModels={favoriteModelsByProfile[form.id] ?? []}
-                        updateForm={autoSaveField} onFetchModels={handleFetchModels} setModelSearch={setVisionModelSearch}
-                        setModelListOpen={setVisionModelListOpen}
                         onToggleFavoriteModel={(model) => onToggleFavoriteModel(form.id, model)}
+                        freeOnly={{ checked: form.modelFreeOnly, onChange: (value) => autoSaveField("modelFreeOnly", value) }}
+                        groupByOwner={{ checked: form.modelGroupByOwner, onChange: (value) => autoSaveField("modelGroupByOwner", value) }}
                         requiresAuthForModels={selectedPreset?.requiresAuthForModels ?? false}
-                        isLocalProvider={false} // Local settings only shown for primary model
                         showRefreshButton={false}
                         showContextLength={false}
-                        syncContextBudget={false}
                       />
                     </div>
                   )}

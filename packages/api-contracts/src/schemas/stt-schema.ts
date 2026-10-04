@@ -144,3 +144,11 @@ export const updateSttProfileSchema = z.object({
   isDefault: z.boolean().optional(),
 });
 export type UpdateSttProfileInput = z.infer<typeof updateSttProfileSchema>;
+
+/** Complete manual-order update for the STT profile list. */
+export const reorderSttProfilesSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string(),
+    sortOrder: z.number(),
+  })),
+});

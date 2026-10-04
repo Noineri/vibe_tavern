@@ -116,3 +116,21 @@ describe("STT profile CRUD helpers", () => {
 		);
 	});
 });
+
+describe("STT profile reorder client", () => {
+	it("patches the typed reorder endpoint with the full sort-order payload", async () => {
+		let capturedUrl = "";
+		let capturedInit: RequestInit | undefined;
+		globalThis.fetch = mockFetch(async (input, init) => {
+			capturedUrl = String(input);
+			capturedInit = init;
+			return new Response(JSON.stringify([]), { status: 200 });
+		});
+
+		await sttApi.reorderSttProfiles([{ id: "stt-2", sortOrder: 0 }, { id: "stt-1", sortOrder: 1 }]);
+
+		expect(capturedUrl.endsWith("/api/stt/profiles/reorder")).toBe(true);
+		expect(capturedInit?.method).toBe("PATCH");
+		expect(capturedInit?.body).toBe(JSON.stringify({ updates: [{ id: "stt-2", sortOrder: 0 }, { id: "stt-1", sortOrder: 1 }] }));
+	});
+});

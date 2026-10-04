@@ -18,6 +18,7 @@ import {
   createSttProfile,
   deleteSttProfile,
   listAllSttProfiles,
+  reorderSttProfiles,
   setSttDefault,
   updateSttProfile,
   type SttProfileRecord,
@@ -107,6 +108,9 @@ function defaultConfigForBackend(backend: SttBackendType): Record<string, unknow
 
 export function useSttProfiles(): {
   profiles: SttProfileRecord[];
+  /** Master-list filter state; the section renders this hook-derived subset. */
+  profileSearch?: string;
+  filteredProfiles?: SttProfileRecord[];
   loading: boolean;
   editingId: string | null;
   form: SttProfileForm | null;
@@ -132,8 +136,11 @@ export function useSttProfiles(): {
   remove(): Promise<void>;
   cancelEdit(): void;
   reload(): Promise<void>;
+  setProfileSearch?(value: string): void;
+  reorder?(updates: Array<{ id: string; sortOrder: number }>): Promise<void>;
 } {
   const [profiles, setProfiles] = useState<SttProfileRecord[]>([]);
+  const [profileSearch, setProfileSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setFormState] = useState<SttProfileForm | null>(null);
@@ -159,6 +166,17 @@ export function useSttProfiles(): {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const filteredProfiles = profileSearch.trim()
+    ? profiles.filter((profile) =>
+        profile.name.toLowerCase().includes(profileSearch.toLowerCase()) ||
+        profile.backend.toLowerCase().includes(profileSearch.toLowerCase()),
+      )
+    : profiles;
+
+  const reorder = useCallback(async (updates: Array<{ id: string; sortOrder: number }>) => {
+    setProfiles(await reorderSttProfiles(updates));
   }, []);
 
   useEffect(() => {
@@ -381,6 +399,8 @@ export function useSttProfiles(): {
 
   return {
     profiles,
+    profileSearch,
+    filteredProfiles,
     loading,
     editingId,
     form,
@@ -398,5 +418,7 @@ export function useSttProfiles(): {
     remove,
     cancelEdit,
     reload,
+    setProfileSearch,
+    reorder,
   };
 }

@@ -39,6 +39,8 @@ import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-e
 import { ProviderExecutionError } from "../src/infrastructure/ai/provider-execution-types.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { createImageGenRoutes } from "../src/api/routes/image-gen.js";
+import type { RuntimeApi } from "../src/api/contract/runtime-api.js";
+import { createApp } from "../src/server/app-factory.js";
 import { openRouterImageGenFactory } from "../src/domain/imagegen/backends/openrouter.js";
 import { openAiImagesFactory } from "../src/domain/imagegen/backends/openai-images.js";
 import { a1111Factory } from "../src/domain/imagegen/backends/a1111.js";
@@ -190,6 +192,26 @@ function modelsBody(): Response {
 }
 
 describe("image-gen routes — profile CRUD", () => {
+  test("PATCH /api/image-gen/profiles/reorder requires mobile bearer auth before the route", async () => {
+    let reorderCalled = false;
+    const app = await createApp({
+      runtime: {
+        imageGen: {
+          reorderImageGenProfiles: async () => {
+            reorderCalled = true;
+            return [];
+          },
+        },
+      } as unknown as RuntimeApi,
+      mobileAccessToken: "test-token",
+      enforceMobileAuth: true,
+    });
+
+    const response = await app.request("/api/image-gen/profiles/reorder", { method: "PATCH" });
+    expect(response.status).toBe(401);
+    expect(reorderCalled).toBe(false);
+  });
+
   test("POST → 201; apiKey write-only (hasStoredApiKey, secret never on the wire); GET :id + all", async () => {
     const { app } = await makeApp();
     const createdRes = await app.request("/api/image-gen/profiles", {
@@ -218,6 +240,29 @@ describe("image-gen routes — profile CRUD", () => {
 
     const allRes = await app.request("/api/image-gen/profiles/all");
     expect(((await allRes.json()) as unknown[]).length).toBe(1);
+  });
+
+  test("PATCH /api/image-gen/profiles/reorder validates its body and returns the reordered profiles", async () => {
+    const { app } = await makeApp();
+    const first = await seedProfile(app);
+    const second = await seedProfile(app);
+    const beforeMalformed = await (await app.request("/api/image-gen/profiles/all")).json();
+
+    const malformed = await app.request("/api/image-gen/profiles/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: first }] }),
+    });
+    expect(malformed.status).toBe(400);
+    expect(await (await app.request("/api/image-gen/profiles/all")).json()).toEqual(beforeMalformed);
+
+    const reordered = await app.request("/api/image-gen/profiles/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: [{ id: first, sortOrder: 1 }, { id: second, sortOrder: 0 }] }),
+    });
+    expect(reordered.status).toBe(200);
+    expect(((await reordered.json()) as Array<{ id: string }>).map((profile) => profile.id)).toEqual([second, first]);
   });
 
   test("PATCH unknown id → 404; DELETE → ok:true", async () => {

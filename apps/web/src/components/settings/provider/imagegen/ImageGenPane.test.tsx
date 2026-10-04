@@ -2758,7 +2758,7 @@ describe("ImageGenPane — overlay round-trip via the API seam (plan self-check)
       vaeName: "qwen_image_2.1_vae.safetensors",
       workflowFamily: "qwen-image-2.1",
     }));
-    // Re-rendering the pane does not invoke ModelPicker's model-switch
+    // Re-rendering the pane does not invoke the model selector's model-switch
     // guard, so fresh set pins remain available to the eventual save.
     view.rerender(<TooltipProvider delayDuration={200}><Harness hookRef={hookRef} /></TooltipProvider>);
     expect(hookRef.current!.modelOverlay?.workflowFamily).toBe("qwen-image-2.1");
@@ -3031,7 +3031,7 @@ describe("ImageGenPane — prompt family row (IPT-5)", () => {
     return <ImageGenPane imageGen={familyHook(target.record, target.model)} />;
   }
 
-  it("renders directly under ModelPicker for persisted cloud and local profiles; create mode remains outside this pane", async () => {
+  it("renders directly under the model selector for persisted cloud and local profiles; create mode remains outside this pane", async () => {
     const cloud = makeRecord({ modelId: "cloud-model" });
     const cloudView = render(<ImageGenPane imageGen={familyHook(cloud)} />);
     await waitFor(() => expect(cloudView.getByTestId("image-gen-family-row")).toBeTruthy());

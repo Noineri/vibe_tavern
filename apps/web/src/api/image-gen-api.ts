@@ -112,6 +112,14 @@ export async function deleteImageGenProfile(id: string): Promise<void> {
   if (!response.ok) throw await unwrapError(response);
 }
 
+/** Persist the manual master-list order for ImageGen profiles. */
+export async function reorderImageGenProfiles(
+  updates: Array<{ id: string; sortOrder: number }>,
+): Promise<ImageGenProfileRecord[]> {
+  const response = await client.api["image-gen"].profiles.reorder.$patch({ json: { updates } as never });
+  return unwrapRpc(response);
+}
+
 /** MR-12 (the STT `setSttDefault` twin): move the GLOBAL active-profile
  *  pointer server-side — survives restarts/reloads (owner report
  *  2026-09-19). Returns the updated record. */
