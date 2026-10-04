@@ -111,6 +111,72 @@ describe("C1 avatar adapter: character", () => {
 		expect(servedMeta.width).toBe(512);
 	});
 
+	test("adjust-thumbnail regression: crop-only upload never overwrites an existing avatar-full", async () => {
+		const { dataRoot, stores, characters } = await setup();
+		// A character WITH a separate full (crop-confirm upload shape).
+		const FULL = minimalPng(800, 800, [1, 3, 5]);
+		const char = await stores.characters.create({ name: "Zack" });
+		const dir = await stores.characters.resolveFolderName(char.id);
+		await characters.uploadCharacterAvatar(
+			char.id,
+			new File([minimalPng(600, 600, [10, 20, 30])], "crop.png", { type: "image/png" }),
+			new File([FULL], "full.png", { type: "image/png" }),
+		);
+		const before = new Uint8Array(await Bun.file(join(dataRoot, CHARS, dir, "avatar-full.png")).arrayBuffer());
+		expect(before).toEqual(FULL);
+
+		// "Adjust thumbnail": crop ONLY, no `full` arg. The cropper's PNG is
+		// always re-encoded, which used to route the crop bytes into
+		// avatar-full and destroy the original (owner live hit: Zack Foster,
+		// folder zack-foster-2 — avatar-full.png became the 512 crop).
+		const res = await characters.uploadCharacterAvatar(
+			char.id,
+			new File([minimalPng(640, 640, [200, 100, 50])], "crop.png", { type: "image/png" }),
+		);
+
+		// Full slot: byte-identical to the pre-upload original, ext unchanged.
+		const after = new Uint8Array(await Bun.file(join(dataRoot, CHARS, dir, "avatar-full.png")).arrayBuffer());
+		expect(after).toEqual(FULL);
+		expect(res.avatarFullExt).toBe("png");
+		expect((await stores.characters.getById(char.id))?.avatarFullExt).toBe("png");
+
+		// Thumbnail DID change (the new crop landed, normalized to ≤ 512 webp).
+		expect(res.avatarExt).toBe("webp");
+		const thumbMeta = await new Bun.Image(
+			new Uint8Array(await Bun.file(join(dataRoot, CHARS, dir, "avatar.webp")).arrayBuffer()),
+		).metadata();
+		expect(thumbMeta.width).toBe(512);
+
+		// Serve boundary: /avatar/full still answers with the untouched original.
+		const served = await characters.serveCharacterAvatarFull(char.id);
+		expect(new Uint8Array(await served!.arrayBuffer())).toEqual(FULL);
+	});
+
+	test("adjust-thumbnail regression: a legacy avatarFullAssetId full counts as an existing full", async () => {
+		const { dataRoot, stores, characters } = await setup();
+		// Legacy shape: uncropped original as a flat asset, avatarFullExt null.
+		// "Has a full" is ONE notion — the same getById the serve path uses
+		// lazy-migrates this into {id}/avatar-full.png, so a later crop-only
+		// upload must treat it as an existing full and leave it alone.
+		const LEGACY_FULL = minimalPng(700, 700, [9, 99, 199]);
+		const assetId = "asset_full_legacy";
+		await Bun.write(join(dataRoot, "assets", `${assetId}.png`), LEGACY_FULL);
+		const char = await stores.characters.create({ name: "Legacy", avatarFullAssetId: assetId });
+		const dir = await stores.characters.resolveFolderName(char.id);
+
+		const res = await characters.uploadCharacterAvatar(
+			char.id,
+			new File([minimalPng(600, 600, [60, 120, 180])], "crop.png", { type: "image/png" }),
+		);
+
+		const after = new Uint8Array(await Bun.file(join(dataRoot, CHARS, dir, "avatar-full.png")).arrayBuffer());
+		expect(after).toEqual(LEGACY_FULL);
+		expect(res.avatarFullExt).toBe("png");
+		const row = await stores.characters.getById(char.id);
+		expect(row?.avatarFullExt).toBe("png");
+		expect(res.avatarExt).toBe("webp");
+	});
+
 	test("LB-1B: a re-upload that renames the leaf removes the stale avatar.{oldExt} file", async () => {
 		const { dataRoot, stores, characters } = await setup();
 		const char = await stores.characters.create({ name: "Swap" });
@@ -293,6 +359,32 @@ describe("C1 avatar adapter: persona", () => {
 		const row = await stores.personas.getById(persona.id);
 		expect(row?.avatarExt).toBe("webp");
 		expect(row?.avatarFullExt).toBe("png");
+	});
+
+	test("adjust-thumbnail regression: persona crop-only upload never overwrites an existing avatar-full", async () => {
+		const { dataRoot, stores, personas } = await setup();
+		const FULL = minimalPng(800, 800, [7, 11, 13]);
+		const persona = await stores.personas.create({ name: "ZackUser" });
+		await personas.uploadPersonaAvatar(
+			persona.id,
+			new File([minimalPng(600, 600, [17, 19, 23])], "crop.png", { type: "image/png" }),
+			new File([FULL], "full.png", { type: "image/png" }),
+		);
+		const before = new Uint8Array(await Bun.file(join(dataRoot, PERSONAS, persona.id, "avatar-full.png")).arrayBuffer());
+		expect(before).toEqual(FULL);
+
+		// "Adjust thumbnail" (PersonaModal): crop ONLY — the persona original
+		// must survive the re-crop exactly like the character one.
+		const res = await personas.uploadPersonaAvatar(
+			persona.id,
+			new File([minimalPng(640, 640, [210, 110, 60])], "crop.png", { type: "image/png" }),
+		);
+
+		const after = new Uint8Array(await Bun.file(join(dataRoot, PERSONAS, persona.id, "avatar-full.png")).arrayBuffer());
+		expect(after).toEqual(FULL);
+		expect(res.avatarFullExt).toBe("png");
+		expect((await stores.personas.getById(persona.id))?.avatarFullExt).toBe("png");
+		expect(res.avatarExt).toBe("webp");
 	});
 
 	test("LB-1B follow-up: persona upload deletes the stale avatar.png AFTER the store update", async () => {
