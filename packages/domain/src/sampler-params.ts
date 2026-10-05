@@ -121,6 +121,10 @@ export type SamplerSetId =
   // NovelAI `/oa/v1` (Xialong / GLM-4.6) — NovelAI's own reduced sampler
   // list (evidence on SAMPLER_SETS.novelai_oa)
   | "novelai_oa"
+  // NovelAI native `/ai/generate` (Kayra / Erato) — the full native sampler
+  // surface of `text.RequestParameters` (NOVELAI_PROVIDER_PLAN NAI-3a);
+  // stops are matched client-side (no tokenizer for token-id arrays)
+  | "novelai_native"
   // Fallback for unknown/custom providers
   | "openai_compat_minimal";
 
@@ -437,6 +441,37 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
     "thinkingMode",
   ),
 
+  // ── Outlier: NovelAI native /ai/generate (Kayra / Erato) ─────────────
+  // The native `text.RequestParameters` sampler surface (NOVELAI_PROVIDER_PLAN
+  // NAI-3a; spec + community KB «Generation Settings"): the shared tail-free /
+  // top-a / typical / mirostat pair, the repetition-penalty family (incl. the
+  // Wave-1 slope + phrase_rep_pen), and the Unified trio (math1_*).
+  // NO seed, no logit bias, no thinking toggle, no mirostat mode flag (the
+  // native API has none of those); stop sequences ride the CLIENT-SIDE match
+  // (the native API takes token-id arrays from the model's own tokenizer —
+  // VT has no nerdstash/Llama-3 tokenizer), never the wire.
+  novelai_native: set(
+    "temperature",
+    "topP",
+    "topK",
+    "topA",
+    "minP",
+    "typicalP",
+    "tfsZ",
+    "mirostatTau",
+    "mirostatEta",
+    "repetitionPenalty",
+    "repeatLastN",
+    "repetitionPenaltySlope",
+    "frequencyPenalty",
+    "presencePenalty",
+    "phraseRepPen",
+    "stopSequences",
+    "unifiedLinear",
+    "unifiedQuad",
+    "unifiedConf",
+  ),
+
   // ── Fallback: unknown/custom OpenAI-compatible providers ─────────────────
   openai_compat_minimal: set(
     "temperature",
@@ -522,6 +557,9 @@ export function resolveSamplerSet(
       return "llamacpp_native";
     case PROVIDER_TYPE.koboldCpp:
       return "koboldcpp_native";
+    case PROVIDER_TYPE.novelai:
+      // Native /ai/generate (Kayra / Erato) — full native sampler surface.
+      return "novelai_native";
     case PROVIDER_TYPE.openaiCompat:
     default: {
       if (!providerPreset) return "openai_compat_minimal";

@@ -260,4 +260,42 @@ describe("sampler params", () => {
       expect(caps[field]).toBe(enabled.includes(field));
     }
   });
+
+  it("resolves the novelai_native sampler set exactly (NovelAI native /ai/generate — NAI-3a)", () => {
+    expect(resolveSamplerSet("novelai", PROVIDER_TYPE.novelai)).toBe("novelai_native");
+    expect(resolveSamplerSet(null, PROVIDER_TYPE.novelai)).toBe("novelai_native");
+
+    // The native text.RequestParameters surface: the shared tail-free / top-a /
+    // typical / mirostat pair, the repetition-penalty family (incl. the Wave-1
+    // slope + phrase_rep_pen) and the Unified trio. NO seed, no logit bias, no
+    // thinking toggle, no mirostat mode flag — the native API has none of
+    // those. stopSequences stays ON as a capability: the control exists, the
+    // adapter matches the stops client-side (no tokenizer for token-id
+    // arrays — NAI-3a design decision).
+    const enabled: SamplerFieldId[] = [
+      "temperature",
+      "topP",
+      "topK",
+      "topA",
+      "minP",
+      "typicalP",
+      "tfsZ",
+      "mirostatTau",
+      "mirostatEta",
+      "repetitionPenalty",
+      "repeatLastN",
+      "repetitionPenaltySlope",
+      "frequencyPenalty",
+      "presencePenalty",
+      "phraseRepPen",
+      "stopSequences",
+      "unifiedLinear",
+      "unifiedQuad",
+      "unifiedConf",
+    ];
+    const caps = resolveSamplerCapabilities("novelai", PROVIDER_TYPE.novelai);
+    for (const field of SAMPLER_FIELDS) {
+      expect(caps[field]).toBe(enabled.includes(field));
+    }
+  });
 });

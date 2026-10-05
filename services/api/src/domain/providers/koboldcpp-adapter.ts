@@ -1,6 +1,8 @@
 /**
  * KoboldCPP native adapter — thin LanguageModelV3 wrapper.
  *
+ * forks: 1 — novelai-adapter.ts (fork discipline, AGENTS.md §3).
+ *
  * KoboldCPP uses a non-standard generation endpoint (`/api/v1/generate`)
  * that is NOT OpenAI-compatible. This adapter implements the LanguageModelV3
  * interface directly, routing through KoboldCPP's native API:

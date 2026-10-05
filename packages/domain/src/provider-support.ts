@@ -14,6 +14,7 @@ const PRESET_TO_PROVIDER_TYPE: Record<string, ProviderType> = {
   [PROVIDER_TYPE.llamaCpp]: PROVIDER_TYPE.llamaCpp,
   [PROVIDER_TYPE.koboldCpp]: PROVIDER_TYPE.koboldCpp,
   [PROVIDER_TYPE.unsloth]: PROVIDER_TYPE.unsloth,
+  [PROVIDER_TYPE.novelai]: PROVIDER_TYPE.novelai,
 
   openai: PROVIDER_TYPE.openaiCompat,
   openrouter: PROVIDER_TYPE.openaiCompat,
@@ -90,6 +91,7 @@ const DIRECT_DISABLED_PRESETS = new Set([
   "mimo",
   "koboldcpp",
   "novelai_oa",
+  "novelai",
 ]);
 
 function inferPresetFromEndpoint(endpoint?: string | null): string | null {
@@ -122,7 +124,7 @@ export interface TextCompletionSupport {
  * - cloud presets (`openai`, `openrouter`, … — they normalize onto the same
  *   openai_compat protocol, but the toggle is local-only);
  * - `koboldcpp` — already ALWAYS text completion natively, a toggle is
- *   meaningless there;
+ *   meaningless there (same for the NovelAI native protocol);
  * - `ollama`, `unsloth`, `anthropic`, `google*` — no `/completions` surface.
  *
  * UI-visibility gate. The backend execution gate is the per-protocol
@@ -147,6 +149,9 @@ export function resolveTextCompletionSupport(providerPreset: string | null | und
   if (preset === "koboldcpp") {
     return { supported: false, reason: "koboldcpp_is_native_text_completion" };
   }
+  if (preset === PROVIDER_TYPE.novelai) {
+    return { supported: false, reason: "novelai_is_native_text_completion" };
+  }
   return { supported: false, reason: "provider_has_no_completion_endpoint" };
 }
 
@@ -154,11 +159,11 @@ export function resolveTextCompletionSupport(providerPreset: string | null | und
  * Native-TC presets (LOCAL_SUPPORT_PLAN LS-6a): providers whose adapter builds
  * the flat completion prompt ITSELF — always text completion, no generation
  * mode, no toggle (owner 2026-09-09: a mode flip is meaningless there). Today:
- * KoboldCPP only ({@link resolveAutoTemplateSource} → "native"). Shared web +
- * API so the AppShell pane gate and the executor format handoff fail closed
- * identically.
+ * KoboldCPP and the NovelAI native protocol ({@link resolveAutoTemplateSource}
+ * → "native"). Shared web + API so the AppShell pane gate and the executor
+ * format handoff fail closed identically.
  */
-const NATIVE_TC_PRESETS = new Set<string>([PROVIDER_TYPE.koboldCpp]);
+const NATIVE_TC_PRESETS = new Set<string>([PROVIDER_TYPE.koboldCpp, PROVIDER_TYPE.novelai]);
 
 export function resolveNativeTextCompletion(providerPreset: string | null | undefined): { supported: boolean; reason: string } {
   const preset = (providerPreset ?? "").trim();
@@ -188,9 +193,10 @@ export function resolveTcPaneActive(providerPreset: string | null | undefined, g
 /**
  * Presets where assistant prefill is NOT supported. Mirrors the backend
  * per-protocol `capabilities.prefill` flags (protocol-registry — the canonical
- * source): `anthropic` and `google*` have no prefill channel in VT, and
- * `koboldcpp`'s native adapter builds the flat prompt itself (a pushed trailing
- * assistant message would never reach the model). Everything else — the
+ * source): `anthropic` and `google*` have no prefill channel in VT,
+ * `koboldcpp`'s and the NovelAI native adapter build the flat prompt
+ * themselves (a pushed trailing assistant message would never reach the
+ * model). Everything else — the
  * OpenAI-compat family (clouds AND local backends), `llamacpp`, `ollama`,
  * `unsloth` — pushes the prefill as the trailing assistant message, which is
  * exactly the continuation-point seam (LS-2/LS-3).
@@ -200,6 +206,7 @@ const ASSISTANT_PREFILL_DISABLED_PRESETS = new Set<string>([
   PROVIDER_TYPE.google,
   PROVIDER_TYPE.googleInteractions,
   PROVIDER_TYPE.koboldCpp,
+  PROVIDER_TYPE.novelai,
 ]);
 
 /** Fail-closed assistant-prefill gate, shared web + API (same contract as
@@ -261,8 +268,8 @@ export function resolvePerSendPrefillSupport(providerPreset: string | null | und
  * - `default`  — the documented default template (VT's role-prefixed
  *   serialization; the provider exposes no template API — LM Studio, ooba,
  *   TabbyAPI, Aphrodite, vLLM, generic openai_compat).
- * - `native`   — KoboldCPP builds its own prompt in its adapter; auto is a
- *   no-op there.
+ * - `native`   — KoboldCPP and the NovelAI native adapter build their own
+ *   prompt in their adapter; auto is a no-op there.
  * - `none`     — not a TC provider at all.
  */
 export type AutoTemplateSource = "backend" | "default" | "native" | "none";
@@ -270,6 +277,7 @@ export type AutoTemplateSource = "backend" | "default" | "native" | "none";
 export function resolveAutoTemplateSource(providerPreset: string | null | undefined): AutoTemplateSource {
   const preset = (providerPreset ?? "").trim();
   if (preset === PROVIDER_TYPE.koboldCpp) return "native";
+  if (preset === PROVIDER_TYPE.novelai) return "native";
   if (preset === PROVIDER_TYPE.llamaCpp) return "backend";
   if (TEXT_COMPLETION_PRESETS.has(preset)) return "default";
   return "none";
