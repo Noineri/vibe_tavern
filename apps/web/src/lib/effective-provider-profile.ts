@@ -32,24 +32,24 @@ export function resolveActiveModelEffectiveProfile(
   // adorn it with a redacted null for the domain signature; apiKey is not an
   // overlay field, so the merge can never write a real one, and the result is
   // stripped back to the wire shape below.
-  // NAI-1a convoy: the wire record does not carry the six NovelAI sampler
-  // fields until NAI-1b adds them — default them from the domain constant so
-  // overlays that already set them (the overlay schema accepts the keys)
-  // still merge over the documented base values.
+  // NAI-1b: the wire record now carries the six NovelAI sampler fields, so a
+  // present value passes through; records without them (older clients) still
+  // fall back to the domain defaults. The domain constant stays the single
+  // derivation point — no second value source.
   const storedBase: StoredProviderProfileRecord = {
     ...base,
     apiKey: null,
-    unifiedLinear: PROVIDER_PROFILE_GENERATION_DEFAULTS.unifiedLinear,
-    unifiedQuad: PROVIDER_PROFILE_GENERATION_DEFAULTS.unifiedQuad,
-    unifiedConf: PROVIDER_PROFILE_GENERATION_DEFAULTS.unifiedConf,
-    repetitionPenaltySlope: PROVIDER_PROFILE_GENERATION_DEFAULTS.repetitionPenaltySlope,
-    phraseRepPen: PROVIDER_PROFILE_GENERATION_DEFAULTS.phraseRepPen,
-    thinkingMode: PROVIDER_PROFILE_GENERATION_DEFAULTS.thinkingMode,
+    unifiedLinear: base.unifiedLinear ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.unifiedLinear,
+    unifiedQuad: base.unifiedQuad ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.unifiedQuad,
+    unifiedConf: base.unifiedConf ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.unifiedConf,
+    repetitionPenaltySlope: base.repetitionPenaltySlope ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.repetitionPenaltySlope,
+    phraseRepPen: base.phraseRepPen ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.phraseRepPen,
+    thinkingMode: base.thinkingMode ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.thinkingMode,
   };
   const { apiKey: _redacted, ...effective } = resolveEffectiveSettings(storedBase, overlay);
   // Spread base first so the wire-only fields (hasStoredApiKey, cachedModels)
   // keep their static type; `effective` overrides everything else at runtime.
-  // The six NovelAI fields ride along on `effective` structurally and become
-  // typed members of the wire record in NAI-1b.
+  // The six NovelAI fields are now typed members of the wire record and ride
+  // along on `effective`.
   return { ...base, ...effective } as ProviderProfileRecord;
 }

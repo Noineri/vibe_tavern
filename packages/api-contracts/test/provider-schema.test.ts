@@ -12,7 +12,7 @@ import {
   modelSettingsOverlaySchema,
   samplerPresetPayloadSchema,
 } from "../src/schemas/provider-schema.js";
-import { COAUTHOR_TRANSPORT, SAMPLER_FIELDS, type SamplerFieldId } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, PHRASE_REP_PEN, SAMPLER_FIELDS, THINKING_MODE, type SamplerFieldId } from "@vibe-tavern/domain";
 
 /**
  * Characterization tests for the provider schemas.
@@ -559,5 +559,31 @@ describe("sampler single-source invariant (ERA-1)", () => {
     for (const k of nonSamplerCore) {
       expect(keys.has(k), `non-sampler field "${k}" dropped from providerCoreSchema`).toBe(true);
     }
+  });
+});
+
+// ─── NovelAI enum sampler fields (NOVELAI_PROVIDER_PLAN Wave 1) ───────
+
+describe("NovelAI enum sampler fields (Wave 1)", () => {
+  it("accepts every phraseRepPen vocabulary value", () => {
+    for (const value of Object.values(PHRASE_REP_PEN)) {
+      const parsed = saveProviderDraftSchema.safeParse({ ...validSaveDraft(), phraseRepPen: value });
+      expect(parsed.success, `phraseRepPen "${value}" rejected`).toBe(true);
+    }
+  });
+
+  it("accepts every thinkingMode vocabulary value", () => {
+    for (const value of Object.values(THINKING_MODE)) {
+      const parsed = saveProviderDraftSchema.safeParse({ ...validSaveDraft(), thinkingMode: value });
+      expect(parsed.success, `thinkingMode "${value}" rejected`).toBe(true);
+    }
+  });
+
+  it("rejects an unknown phraseRepPen value", () => {
+    expectReject(saveProviderDraftSchema.safeParse({ ...validSaveDraft(), phraseRepPen: "extreme" }));
+  });
+
+  it("rejects an unknown thinkingMode value", () => {
+    expectReject(saveProviderDraftSchema.safeParse({ ...validSaveDraft(), thinkingMode: "sometimes" }));
   });
 });

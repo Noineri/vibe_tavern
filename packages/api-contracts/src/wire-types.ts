@@ -26,7 +26,7 @@
  */
 
 import type { AutoSummaryConfig, Chat, InsightsConfig, ObjectiveState, SceneBackfillErrorEntry, SceneBackfillMode, SceneBackfillRunStatus, SceneBackfillSummary, SceneTrackerConfig } from "@vibe-tavern/domain";
-import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, GenerationMode, ModelFavoriteScope, ModelSettingsOverlay, PronounForms, ProviderGenerationFormat, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot } from "@vibe-tavern/domain";
+import type { CharacterId, ChatId, ChatMode, CoauthorTransport, ExperienceController, GenerationMode, ModelFavoriteScope, ModelSettingsOverlay, PhraseRepPen, PronounForms, ProviderGenerationFormat, ProviderProxyMode, ProviderQuotaConfig, ProviderQuotaErrorKind, ProviderQuotaKind, ProviderQuotaNoneReason, ProviderQuotaSnapshot, ThinkingMode } from "@vibe-tavern/domain";
 
 // ─── Provider ──────────────────────────────────────────────────────────
 
@@ -94,6 +94,18 @@ export interface ClientProviderProfileRecord {
 	frequencyPenalty: number;
 	presencePenalty: number;
 	repetitionPenalty: number;
+	/** Unified Linear (NovelAI native); 1 = off (not applied). */
+	unifiedLinear: number;
+	/** Unified Quad (NovelAI native); 0 = off. */
+	unifiedQuad: number;
+	/** Unified Conf (NovelAI native); 0 = off. */
+	unifiedConf: number;
+	/** Repetition penalty slope (NovelAI native `repetition_penalty_slope`); 0 = off. */
+	repetitionPenaltySlope: number;
+	/** Phrase repetition penalty (NovelAI native `phrase_rep_pen`); "off" = not applied. */
+	phraseRepPen: PhraseRepPen;
+	/** Thinking toggle (NovelAI `/oa/v1` `enable_thinking`); "auto" = not sent. */
+	thinkingMode: ThinkingMode;
 	stopSequences: string[];
 	/** Antislop phrase banning (KoboldCPP only, native `banned_strings` request field); exact-match phrases, leading/trailing spaces significant. */
 	bannedStrings: string[];
