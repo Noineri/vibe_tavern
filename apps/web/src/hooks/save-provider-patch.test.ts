@@ -156,6 +156,17 @@ describe("computeSavePatch", () => {
     expect(patch.dryPenaltyLastN).toBe(512);
   });
 
+  test("carries the NovelAI sampler fields into the save patch (NAI-1c)", () => {
+    const form = makeForm({ unifiedLinear: 0.7, unifiedQuad: 0.15, unifiedConf: -0.2, repetitionPenaltySlope: 3.3, phraseRepPen: "light", thinkingMode: "on" });
+    const patch = computeSavePatch(form);
+    expect(patch.unifiedLinear).toBe(0.7);
+    expect(patch.unifiedQuad).toBe(0.15);
+    expect(patch.unifiedConf).toBe(-0.2);
+    expect(patch.repetitionPenaltySlope).toBe(3.3);
+    expect(patch.phraseRepPen).toBe("light");
+    expect(patch.thinkingMode).toBe("on");
+  });
+
   test("includes bindPerModel in the base patch (Wave 1 column)", () => {
     const form = makeForm({ bindPerModel: true });
     const patch = computeSavePatch(form);
@@ -245,6 +256,29 @@ describe("computeOverlayPatch", () => {
     expect(overlay.adaptiveDecay).toBe(0.8);
     expect(overlay.dynatempRange).toBe(1.5);
     expect(overlay.dryPenaltyLastN).toBe(512);
+  });
+
+  test("carries the NovelAI sampler fields into the overlay (NAI-1c)", () => {
+    const form = makeForm({ unifiedLinear: 0.7, unifiedQuad: 0.15, unifiedConf: -0.2, repetitionPenaltySlope: 3.3, phraseRepPen: "very_light", thinkingMode: "off" });
+    const overlay = computeOverlayPatch(form);
+    expect(overlay.unifiedLinear).toBe(0.7);
+    expect(overlay.unifiedQuad).toBe(0.15);
+    expect(overlay.unifiedConf).toBe(-0.2);
+    expect(overlay.repetitionPenaltySlope).toBe(3.3);
+    expect(overlay.phraseRepPen).toBe("very_light");
+    expect(overlay.thinkingMode).toBe("off");
+  });
+
+  test("full-snapshot semantics: the six NovelAI fields are emitted even at defaults (NAI-1c)", () => {
+    // computeOverlayPatch is a full snapshot, NOT a delta — verify, don't assume:
+    // an untouched form still carries the six fields at their off values.
+    const overlay = computeOverlayPatch(makeForm());
+    expect(overlay.unifiedLinear).toBe(1);
+    expect(overlay.unifiedQuad).toBe(0);
+    expect(overlay.unifiedConf).toBe(0);
+    expect(overlay.repetitionPenaltySlope).toBe(0);
+    expect(overlay.phraseRepPen).toBe("off");
+    expect(overlay.thinkingMode).toBe("auto");
   });
 
   test("NEVER includes identity fields (name/endpoint/apiKey/defaultModel/visionModel)", () => {

@@ -105,6 +105,33 @@ describe("sampler clipboard round-trip", () => {
     expect(target.dryPenaltyLastN).toBe(512);
   });
 
+  test("NovelAI sampler fields round-trip through the clipboard (NAI-1c)", () => {
+    const original = makeForm({ unifiedLinear: 0.7, unifiedQuad: 0.15, unifiedConf: -0.2, repetitionPenaltySlope: 3.3, phraseRepPen: "light", thinkingMode: "on" });
+    const payload = computeOverlayPatch(original);
+    const parsed = samplerPresetPayloadSchema.safeParse(JSON.parse(JSON.stringify(payload)));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const { updater, form: target } = recordingUpdater(makeForm());
+    applySamplerPresetFields(parsed.data as Partial<ModelSettingsOverlay>, updater);
+    expect(target.unifiedLinear).toBe(0.7);
+    expect(target.unifiedQuad).toBe(0.15);
+    expect(target.unifiedConf).toBe(-0.2);
+    expect(target.repetitionPenaltySlope).toBe(3.3);
+    expect(target.phraseRepPen).toBe("light");
+    expect(target.thinkingMode).toBe("on");
+  });
+
+  test("paste of a payload without the NovelAI fields leaves them untouched (NAI-1c)", () => {
+    const { updater, form: target } = recordingUpdater(makeForm({ unifiedLinear: 0.7, phraseRepPen: "medium", thinkingMode: "on" }));
+    // A payload that never carried the six fields (e.g. a pre-NAI preset)
+    // must not inject new keys into the form — only PRESENT fields apply.
+    applySamplerPresetFields({ temperature: 0.1 }, updater);
+    expect(target.temperature).toBe(0.1);
+    expect(target.unifiedLinear).toBe(0.7);
+    expect(target.phraseRepPen).toBe("medium");
+    expect(target.thinkingMode).toBe("on");
+  });
+
   test("bannedStrings round-trip through the clipboard (B3, leading spaces kept)", () => {
     const original = makeForm({ bannedStrings: [" finger", " purr"] });
     const payload = computeOverlayPatch(original);

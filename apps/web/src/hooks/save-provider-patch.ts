@@ -17,7 +17,7 @@ import type { FormState } from "../components/modals/ProviderModal.js";
 import type { ProviderSamplerValues } from "../lib/provider-sampler-values.js";
 import { resolveModelContextBudget, RP_UNKNOWN_CONTEXT_BUDGET } from "../lib/context-autofill.js";
 import { normalizeOpenAiCompatibleBaseUrl } from "../openai-compatible.js";
-import { PROVIDER_TYPE, GENERATION_MODE, type GenerationMode, type ModelSettingsOverlay, type ProviderProxyMode, type ProviderGenerationFormat, tag } from "@vibe-tavern/domain";
+import { PROVIDER_TYPE, GENERATION_MODE, type GenerationMode, type ModelSettingsOverlay, type PhraseRepPen, type ProviderProxyMode, type ProviderGenerationFormat, type ThinkingMode, tag } from "@vibe-tavern/domain";
 
 const saveLog = tag("save");
 
@@ -67,6 +67,12 @@ export interface ProviderSavePatch {
   frequencyPenalty: number;
   presencePenalty: number;
   repetitionPenalty: number;
+  unifiedLinear: number;
+  unifiedQuad: number;
+  unifiedConf: number;
+  repetitionPenaltySlope: number;
+  phraseRepPen: PhraseRepPen;
+  thinkingMode: ThinkingMode;
   maxTokens: number;
   stopSequences: string[];
   bannedStrings: string[];
@@ -141,6 +147,12 @@ export function computeSavePatch(form: FormState): ProviderSavePatch {
     frequencyPenalty: form.frequencyPenalty,
     presencePenalty: form.presencePenalty,
     repetitionPenalty: form.repetitionPenalty,
+    unifiedLinear: form.unifiedLinear,
+    unifiedQuad: form.unifiedQuad,
+    unifiedConf: form.unifiedConf,
+    repetitionPenaltySlope: form.repetitionPenaltySlope,
+    phraseRepPen: form.phraseRepPen,
+    thinkingMode: form.thinkingMode,
     maxTokens: form.maxTokens,
     stopSequences: form.stopSequences,
     bannedStrings: form.bannedStrings,
@@ -252,6 +264,12 @@ export function computeOverlayPatch(form: ProviderSamplerValues): ModelSettingsO
     frequencyPenalty: form.frequencyPenalty,
     presencePenalty: form.presencePenalty,
     repetitionPenalty: form.repetitionPenalty,
+    unifiedLinear: form.unifiedLinear,
+    unifiedQuad: form.unifiedQuad,
+    unifiedConf: form.unifiedConf,
+    repetitionPenaltySlope: form.repetitionPenaltySlope,
+    phraseRepPen: form.phraseRepPen,
+    thinkingMode: form.thinkingMode,
     maxTokens: form.maxTokens,
     contextBudget: form.contextBudget || null,
     pinContextBudget: form.pinContextBudget,
@@ -324,6 +342,12 @@ export function connectionToSavePatch(conn: ConnectionState): ProviderSavePatch 
     frequencyPenalty: conn.frequencyPenalty,
     presencePenalty: conn.presencePenalty,
     repetitionPenalty: conn.repetitionPenalty,
+    unifiedLinear: 1,
+    unifiedQuad: 0,
+    unifiedConf: 0,
+    repetitionPenaltySlope: 0,
+    phraseRepPen: "off",
+    thinkingMode: "auto",
     maxTokens: conn.maxTokens,
     stopSequences: conn.stopSequences,
     bannedStrings: [],
