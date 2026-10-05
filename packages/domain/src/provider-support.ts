@@ -35,6 +35,7 @@ const PRESET_TO_PROVIDER_TYPE: Record<string, ProviderType> = {
   siliconflow: PROVIDER_TYPE.openaiCompat,
   togetherai: PROVIDER_TYPE.openaiCompat,
   pollinations: PROVIDER_TYPE.openaiCompat,
+  novelai_oa: PROVIDER_TYPE.openaiCompat,
   vllm: PROVIDER_TYPE.openaiCompat,
   ooba: PROVIDER_TYPE.openaiCompat,
   tabby: PROVIDER_TYPE.openaiCompat,
@@ -88,6 +89,7 @@ const DIRECT_DISABLED_PRESETS = new Set([
   "ai21",
   "mimo",
   "koboldcpp",
+  "novelai_oa",
 ]);
 
 function inferPresetFromEndpoint(endpoint?: string | null): string | null {

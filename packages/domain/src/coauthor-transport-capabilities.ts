@@ -22,6 +22,7 @@ export const PROVIDER_PRESET_ID = {
   siliconflow: "siliconflow",
   togetherai: "togetherai",
   pollinations: "pollinations",
+  novelaiOa: "novelai_oa",
   anthropic: "anthropic",
   google: "google",
   googleInteractions: "google_interactions",
@@ -120,6 +121,12 @@ export const COAUTHOR_TRANSPORT_CAPABILITIES = {
     responsesSupport: RESPONSES_SUPPORT.unsupported,
     toolPath: COAUTHOR_TOOL_PATH.conditional,
     caveat: COAUTHOR_TRANSPORT_CAVEAT.pollinationsUpstreamDependent,
+  },
+  // NovelAI /oa/v1: the spec's OAIChatGenerateRequest has no `tools` field
+  // (NOVELAI_PROVIDER_PLAN NAI-2a).
+  novelai_oa: {
+    responsesSupport: RESPONSES_SUPPORT.unsupported,
+    toolPath: COAUTHOR_TOOL_PATH.unsupported,
   },
   anthropic: native,
   google: native,

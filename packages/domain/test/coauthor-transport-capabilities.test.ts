@@ -44,4 +44,12 @@ describe("Co-Author transport capability map", () => {
     expect(canUseCoauthorResponsesTransport("tabby")).toBe(true);
     expect(canUseCoauthorResponsesTransport("google")).toBe(false);
   });
+
+  test("classifies novelai_oa (/oa/v1) as Responses- and tools-unsupported (NAI-2a)", () => {
+    // The spec's OAIChatGenerateRequest has no `tools` field.
+    expect(COAUTHOR_TRANSPORT_CAPABILITIES.novelai_oa).toEqual({
+      responsesSupport: RESPONSES_SUPPORT.unsupported,
+      toolPath: COAUTHOR_TOOL_PATH.unsupported,
+    });
+  });
 });

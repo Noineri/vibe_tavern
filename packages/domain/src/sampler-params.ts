@@ -118,6 +118,9 @@ export type SamplerSetId =
   | "koboldcpp_native"
   | "pollinations"
   | "groq"
+  // NovelAI `/oa/v1` (Xialong / GLM-4.6) — NovelAI's own reduced sampler
+  // list (evidence on SAMPLER_SETS.novelai_oa)
+  | "novelai_oa"
   // Fallback for unknown/custom providers
   | "openai_compat_minimal";
 
@@ -418,6 +421,22 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
     "reasoningEffort",
   ),
 
+  // ── Outlier: NovelAI /oa/v1 (Xialong / GLM-4.6) ─────────────────────
+  // Evidence (NOVELAI_PROVIDER_PLAN, owner ruling 2026-10-05): NovelAI's own
+  // GLM-4.6 editor shows exactly Temperature, Top-K, Nucleus (Top-P), Min-P —
+  // nothing else, not reorderable; a Xialong story file from NovelAI's
+  // Discord confirms the same order (`order: temperature, top_k, top_p,
+  // min_p`). Plus stop strings and the `enable_thinking` switch — no
+  // unified_*, penalties, seed or logit bias on this route.
+  novelai_oa: set(
+    "temperature",
+    "topP",
+    "topK",
+    "minP",
+    "stopSequences",
+    "thinkingMode",
+  ),
+
   // ── Fallback: unknown/custom OpenAI-compatible providers ─────────────────
   openai_compat_minimal: set(
     "temperature",
@@ -479,6 +498,7 @@ const PRESET_SAMPLER_SET_MAP: Record<string, SamplerSetId> = {
   // Outliers
   groq: "groq",
   pollinations: "pollinations",
+  novelai_oa: "novelai_oa",
 };
 
 export function resolveSamplerSet(

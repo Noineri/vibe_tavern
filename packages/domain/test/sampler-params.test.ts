@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { resolveSamplerCapabilities, resolveSamplerSet } from "../src/sampler-params.js";
+import { SAMPLER_FIELDS, resolveSamplerCapabilities, resolveSamplerSet, type SamplerFieldId } from "../src/sampler-params.js";
 import { PROVIDER_TYPE } from "../src/platform-constants.js";
 
 describe("sampler params", () => {
@@ -245,5 +245,19 @@ describe("sampler params", () => {
     expect(resolveSamplerCapabilities(null, PROVIDER_TYPE.unsloth).bannedStrings).toBe(false);
     expect(resolveSamplerCapabilities("ollama", PROVIDER_TYPE.ollama).bannedStrings).toBe(false);
     expect(resolveSamplerCapabilities("vllm", PROVIDER_TYPE.openaiCompat).bannedStrings).toBe(false);
+  });
+
+  it("resolves the novelai_oa sampler set exactly (NovelAI /oa/v1 — NAI-2a)", () => {
+    expect(resolveSamplerSet("novelai_oa", PROVIDER_TYPE.openaiCompat)).toBe("novelai_oa");
+
+    // NovelAI's own GLM-4.6 editor shows exactly Temperature, Top-K, Nucleus
+    // (Top-P), Min-P — nothing else, not reorderable; a Xialong story file
+    // confirms the same order. Plus stop strings and the enable_thinking
+    // switch (owner ruling 2026-10-05) — every other field stays off.
+    const enabled: SamplerFieldId[] = ["temperature", "topP", "topK", "minP", "stopSequences", "thinkingMode"];
+    const caps = resolveSamplerCapabilities("novelai_oa", PROVIDER_TYPE.openaiCompat);
+    for (const field of SAMPLER_FIELDS) {
+      expect(caps[field]).toBe(enabled.includes(field));
+    }
   });
 });

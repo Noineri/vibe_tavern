@@ -19,6 +19,16 @@ describe("provider preset transport classifications", () => {
     expect(lmstudio!.group).toBe("local");
     expect(lmstudio!.noApiKey).toBe(true);
   });
+
+  test("NovelAI (/oa/v1) rides the cloud group and requires a key for its model list (NAI-2a)", () => {
+    const novelai = PROVIDER_PRESETS.find((preset) => preset.id === "novelai_oa");
+    expect(novelai).toBeDefined();
+    expect(novelai!.label).toBe("NovelAI");
+    expect(novelai!.type).toBe("openai_compat");
+    expect(novelai!.baseUrl).toBe("https://text.novelai.net/oa/v1");
+    expect(novelai!.group).toBe("cloud");
+    expect(novelai!.requiresAuthForModels).toBe(true);
+  });
 });
 
 describe("image-gen preset segments (MR-6 — the four-segment split; boundary = the app-wide protocol canon, owner 2026-09-18)", () => {

@@ -28,6 +28,7 @@ const PRESET_ENDPOINTS: Readonly<Record<string, string>> = {
 	"zai-coding": "https://api.z.ai/api/coding/paas/v4",
 	siliconflow: "https://api.siliconflow.com/v1",
 	togetherai: "https://api.together.xyz/v1",
+	novelai_oa: "https://text.novelai.net/oa/v1",
 	pollinations: "https://gen.pollinations.ai/v1",
 	anthropic: "https://api.anthropic.com/v1",
 	google: "https://generativelanguage.googleapis.com",
@@ -64,9 +65,9 @@ describe("resolveQuotaAdapter", () => {
 		}
 	});
 
-	test("the other sixteen report not_exposed with a maintainer note", () => {
+	test("the other seventeen report not_exposed with a maintainer note", () => {
 		const unsupported = REMOTE_PROVIDER_PRESET_IDS.filter((id) => !SUPPORTED.has(id));
-		expect(unsupported).toHaveLength(16);
+		expect(unsupported).toHaveLength(17);
 		for (const presetId of unsupported) {
 			const capability = resolveQuotaAdapter(presetId, PRESET_ENDPOINTS[presetId]!);
 			expect(capability.kind).toBe(PROVIDER_QUOTA_KIND.none);
