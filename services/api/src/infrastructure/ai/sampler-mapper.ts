@@ -330,6 +330,14 @@ export function buildSamplerConfig(
         providerOpts.enable_thinking = profile.showReasoning;
       }
 
+      // NovelAI /oa/v1: map thinkingMode -> enable_thinking. "auto" means the
+      // field stays absent (owner ruling 2026-10-05). Gated by `can`, so only
+      // the novelai_oa sampler set (the sole set with thinkingMode) emits it —
+      // every other preset's request body is unchanged.
+      if (can("thinkingMode") && profile.thinkingMode !== "auto") {
+        providerOpts.enable_thinking = profile.thinkingMode === "on";
+      }
+
       if (Object.keys(providerOpts).length > 0) {
         config.providerOptions = { [providerOptionsKey]: providerOpts };
       }

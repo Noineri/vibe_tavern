@@ -91,7 +91,7 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
 			providerType: profile.providerPreset,
-			requiresAuthForModels: profile.providerPreset === "anthropic" || profile.providerPreset === "google" || profile.providerPreset === "unsloth",
+			requiresAuthForModels: profile.providerPreset === "anthropic" || profile.providerPreset === "google" || profile.providerPreset === "unsloth" || profile.providerPreset === "novelai_oa",
 			...(fetch ? { fetch } : {}),
 		});
 
@@ -167,7 +167,15 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 		proxyId?: string | null,
 	) => {
 		const normalized = normalizeOpenAiCompatibleBaseUrl(baseUrl);
-		const requiresAuth = providerType === "anthropic" || providerType === "google" || providerType === "unsloth";
+		// `novelai_oa` rides the openaiCompat type, whose draft-edit model list
+		// stays keyless for every other preset — NovelAI's must not be fetched
+		// without a key. The preset id is not on this path (the client sends
+		// `preset.type`), so the base URL is the only novelai signal available.
+		const requiresAuth = providerType === "anthropic"
+			|| providerType === "google"
+			|| providerType === "unsloth"
+			|| providerType === "novelai_oa"
+			|| /text\.novelai\.net/.test(normalized);
 		const fetch = await this.resolveDraftFetch(proxyMode, proxyId);
 		return listProviderModels({
 			baseUrl: normalized,

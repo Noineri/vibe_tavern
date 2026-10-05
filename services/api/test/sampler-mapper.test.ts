@@ -49,6 +49,7 @@ function profile(
     seed: "42",
     reasoningEffort: "high",
     showReasoning: false,
+    thinkingMode: "auto",
     streamResponse: false,
     customSamplers: true,
     isActive: true,
@@ -530,6 +531,62 @@ describe("buildSamplerConfig", () => {
       expect(opts.dry_penalty_last_n).toBe(512);
       const samplers = opts.samplers as string[];
       expect(samplers).not.toContain("adaptive_p");
+    });
+  });
+
+  // ─── NovelAI /oa/v1 (novelai_oa — Xialong / GLM-4.6) ──────────────
+
+  describe("novelai_oa (openaiCompat /oa/v1)", () => {
+    it("maps thinkingMode on -> enable_thinking true", () => {
+      const config = buildSamplerConfig(profile("novelai_oa", { thinkingMode: "on" }));
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.enable_thinking).toBe(true);
+    });
+
+    it("maps thinkingMode off -> enable_thinking false", () => {
+      const config = buildSamplerConfig(profile("novelai_oa", { thinkingMode: "off" }));
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.enable_thinking).toBe(false);
+    });
+
+    it("omits enable_thinking when thinkingMode is auto", () => {
+      const config = buildSamplerConfig(profile("novelai_oa", { thinkingMode: "auto" }));
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.enable_thinking).toBeUndefined();
+    });
+
+    it("does not send enable_thinking when custom samplers are off", () => {
+      const config = buildSamplerConfig(profile("novelai_oa", { customSamplers: false, thinkingMode: "on" }));
+      expect(config.providerOptions).toBeUndefined();
+    });
+
+    it("sends only temperature/topP/topK/minP/stop/thinking — no penalties, seed, logit bias, unified", () => {
+      const config = buildSamplerConfig(profile("novelai_oa", { thinkingMode: "on" }));
+      expect(config.frequencyPenalty).toBeUndefined();
+      expect(config.presencePenalty).toBeUndefined();
+      expect(config.seed).toBeUndefined();
+      const opts = config.providerOptions!.openai_compat as Record<string, unknown>;
+      expect(opts.logit_bias).toBeUndefined();
+      expect(opts.reasoningEffort).toBeUndefined();
+      expect(opts.unified_linear).toBeUndefined();
+      expect(opts.unified_quad).toBeUndefined();
+      expect(opts.unified_conf).toBeUndefined();
+      expect(opts.math1_temp).toBeUndefined();
+      expect(opts.math1_quad).toBeUndefined();
+      expect(opts.math1_quad_entropy_scale).toBeUndefined();
+      expect(opts).toEqual({ top_k: 80, min_p: 0.05, enable_thinking: true });
+    });
+
+    it("never emits enable_thinking from thinkingMode for any other preset", () => {
+      for (const preset of ["openai", "google", "anthropic", "koboldcpp", "ollama"]) {
+        const config = buildSamplerConfig(profile(preset));
+        const opts = config.providerOptions;
+        if (opts) {
+          for (const ns of Object.values(opts)) {
+            expect((ns as Record<string, unknown>).enable_thinking).toBeUndefined();
+          }
+        }
+      }
     });
   });
 

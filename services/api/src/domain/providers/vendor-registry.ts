@@ -323,6 +323,30 @@ const novitaVendor: VendorAdapter = {
 	extractCapabilities: inferCapabilities,
 };
 
+/**
+ * NovelAI's OpenAI-compatible `/oa/v1` route (Xialong / GLM-4.6). Its
+ * `/models` response uses the standard `data` envelope, but a keyless (or
+ * non-subscription) response can come back empty — so we fall back to the two
+ * known model ids rather than returning an empty list.
+ *
+ * Fallback ids from NovelAI's web client bundle and a Xialong story file;
+ * `/oa/v1` acceptance UNVERIFIED (no subscription key) — owner ruling 2026-10-05.
+ */
+const novelaiFallbackModels: OpenAiModelRecord[] = [
+	{ id: "xialong-v1", name: "Xialong" },
+	{ id: "glm-4-6", name: "GLM-4.6" },
+];
+
+const novelaiVendor: VendorAdapter = {
+	id: "novelai",
+	match: /text\.novelai\.net/,
+	extractRecords: (payload) => {
+		const live = Array.isArray(payload.data) ? payload.data : [];
+		return live.length > 0 ? live : novelaiFallbackModels;
+	},
+	extractCapabilities: inferCapabilities,
+};
+
 /** Fallback for any OpenAI-compatible endpoint we don't recognize explicitly. */
 const genericVendor: VendorAdapter = {
 	id: "generic",
@@ -343,6 +367,7 @@ const vendors: VendorAdapter[] = [
 	xaiVendor,
 	groqVendor,
 	novitaVendor,
+	novelaiVendor,
 ];
 
 /**

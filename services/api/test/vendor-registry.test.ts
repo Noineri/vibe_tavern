@@ -28,6 +28,7 @@ describe("vendor-registry — resolveVendor dispatch", () => {
 		["https://api.x.ai/v1", "xai"],
 		["https://api.groq.com/openai/v1", "groq"],
 		["https://api.novita.ai/v3/openai", "novita"],
+		["https://text.novelai.net/oa/v1", "novelai"],
 	];
 
 	for (const [baseUrl, expectedId] of cases) {
@@ -264,6 +265,37 @@ describe("vendor-registry — record extraction (xAI envelope)", () => {
 
 	it("vendors without override have no extractRecords", () => {
 		expect(resolveVendor("https://openrouter.ai/api/v1").extractRecords).toBeUndefined();
+	});
+});
+
+describe("vendor-registry — NovelAI /oa/v1 record extraction", () => {
+	it("falls back to the static xialong/glm list when data is empty", () => {
+		const vendor = resolveVendor("https://text.novelai.net/oa/v1");
+		expect(vendor.extractRecords?.({ data: [] })).toEqual([
+			{ id: "xialong-v1", name: "Xialong" },
+			{ id: "glm-4-6", name: "GLM-4.6" },
+		]);
+	});
+
+	it("falls back to the static list when data is missing", () => {
+		const vendor = resolveVendor("https://text.novelai.net/oa/v1");
+		expect(vendor.extractRecords?.({})).toEqual([
+			{ id: "xialong-v1", name: "Xialong" },
+			{ id: "glm-4-6", name: "GLM-4.6" },
+		]);
+	});
+
+	it("returns live records only when data is non-empty", () => {
+		const vendor = resolveVendor("https://text.novelai.net/oa/v1");
+		expect(vendor.extractRecords?.({ data: [{ id: "live-model" }] })).toEqual([
+			{ id: "live-model" },
+		]);
+	});
+
+	it("uses generic inference for capabilities (no special arm)", () => {
+		const vendor = resolveVendor("https://text.novelai.net/oa/v1");
+		const record: OpenAiModelRecord = { capabilities: { tool_calling: true } };
+		expect(vendor.extractCapabilities(record)).toEqual({ tools: true });
 	});
 });
 
