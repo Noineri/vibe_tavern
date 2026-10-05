@@ -217,6 +217,7 @@ export interface CoauthorConnectionSettingsRecord {
 export type ProviderErrorCategory =
 	| "network"
 	| "authentication"
+	| "subscription_required"
 	| "rate_limit"
 	| "invalid_request"
 	| "server_error"
