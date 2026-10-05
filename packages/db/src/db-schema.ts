@@ -1,6 +1,7 @@
 import type {
   CoauthorTransport,
   GenerationMode,
+  PhraseRepPen,
   ProviderProxyMode,
   ProviderQuotaErrorKind,
   ProviderQuotaEvent,
@@ -11,6 +12,7 @@ import type {
   SceneBackfillMode,
   SceneBackfillRunStatus,
   ScriptKind,
+  ThinkingMode,
 } from '@vibe-tavern/domain';
 import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
@@ -1024,6 +1026,16 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   frequencyPenalty: real('frequency_penalty').notNull().default(0),
   presencePenalty: real('presence_penalty').notNull().default(0),
   repetitionPenalty: real('repetition_penalty').notNull().default(1.0),
+  // NovelAI sampler fields (NOVELAI_PROVIDER_PLAN Wave 1) — Unified knobs
+  // (native math1_*), repetition_penalty_slope, phrase_rep_pen and the /oa/v1
+  // thinking toggle. No preset resolves a set that includes them until
+  // Waves 2–3 wire the NovelAI presets, so nothing is user-visible yet.
+  unifiedLinear: real('unified_linear').notNull().default(1),
+  unifiedQuad: real('unified_quad').notNull().default(0),
+  unifiedConf: real('unified_conf').notNull().default(0),
+  repetitionPenaltySlope: real('repetition_penalty_slope').notNull().default(0),
+  phraseRepPen: text('phrase_rep_pen').$type<PhraseRepPen>().notNull().default('off'),
+  thinkingMode: text('thinking_mode').$type<ThinkingMode>().notNull().default('auto'),
   stopSequencesJson: text('stop_sequences_json'),
   // KoboldCPP antislop phrase list (LOCAL_SAMPLERS_ADDITION_REPORT B3) — native
   // `banned_strings` request field; exact-match phrases, leading spaces

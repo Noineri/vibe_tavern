@@ -9,7 +9,7 @@ import { saveProviderDraftSchema } from "@vibe-tavern/api-contracts";
 import { computeSavePatch } from "../../hooks/save-provider-patch.js";
 import { PROVIDER_PRESETS, getVisibleProviderPresets } from "../../provider-presets.js";
 import { GENERATION_MODE } from "@vibe-tavern/domain";
-import type { ProviderSamplerValues } from "../../lib/provider-sampler-values.js";
+import { NOVELAI_SAMPLER_FORM_DEFAULTS, type ProviderSamplerValues } from "../../lib/provider-sampler-values.js";
 import { Icons } from "../shared/icons.js";
 import {
   ProviderProfileList,
@@ -183,6 +183,7 @@ function profileToForm(p: ProviderProfileRecord): FormState {
     frequencyPenalty: p.frequencyPenalty,
     presencePenalty: p.presencePenalty,
     repetitionPenalty: p.repetitionPenalty,
+    ...NOVELAI_SAMPLER_FORM_DEFAULTS, // NAI-1a convoy: wire fields arrive in NAI-1b
     maxTokens: p.maxTokens, contextBudget: p.contextBudget ?? 16000, pinContextBudget: p.pinContextBudget ?? false,
     tokenPadding: p.tokenPadding ?? 0,
     generationMode: p.generationMode ?? GENERATION_MODE.chat,

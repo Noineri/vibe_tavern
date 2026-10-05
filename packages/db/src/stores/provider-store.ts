@@ -1,4 +1,4 @@
-import { COAUTHOR_TRANSPORT, GENERATION_MODE, PROVIDER_PROFILE_GENERATION_DEFAULTS, type CoauthorTransport, type GenerationMode, type StoredProviderProfileRecord, type ProviderProxyMode, type ModelFavoriteScope, type ModelSettingsOverlay, type ProviderGenerationFormat } from '@vibe-tavern/domain';
+import { COAUTHOR_TRANSPORT, GENERATION_MODE, PROVIDER_PROFILE_GENERATION_DEFAULTS, type CoauthorTransport, type GenerationMode, type StoredProviderProfileRecord, type ProviderProxyMode, type ModelFavoriteScope, type ModelSettingsOverlay, type ProviderGenerationFormat, type PhraseRepPen, type ThinkingMode } from '@vibe-tavern/domain';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { providerProfiles, cachedModels, providerModelFavorites, providerModelSettings } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
@@ -90,6 +90,12 @@ export interface CreateProviderData {
   frequencyPenalty?: number;
   presencePenalty?: number;
   repetitionPenalty?: number;
+  unifiedLinear?: number;
+  unifiedQuad?: number;
+  unifiedConf?: number;
+  repetitionPenaltySlope?: number;
+  phraseRepPen?: PhraseRepPen;
+  thinkingMode?: ThinkingMode;
   stopSequences?: string[];
   bannedStrings?: string[];
   logitBias?: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
@@ -217,6 +223,12 @@ export class ProviderStore {
         frequencyPenalty: data.frequencyPenalty ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.frequencyPenalty,
         presencePenalty: data.presencePenalty ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.presencePenalty,
         repetitionPenalty: data.repetitionPenalty ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.repetitionPenalty,
+        unifiedLinear: data.unifiedLinear ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.unifiedLinear,
+        unifiedQuad: data.unifiedQuad ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.unifiedQuad,
+        unifiedConf: data.unifiedConf ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.unifiedConf,
+        repetitionPenaltySlope: data.repetitionPenaltySlope ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.repetitionPenaltySlope,
+        phraseRepPen: data.phraseRepPen ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.phraseRepPen,
+        thinkingMode: data.thinkingMode ?? PROVIDER_PROFILE_GENERATION_DEFAULTS.thinkingMode,
         stopSequencesJson: data.stopSequences ? JSON.stringify(data.stopSequences) : null,
         bannedStringsJson: data.bannedStrings?.length ? JSON.stringify(data.bannedStrings) : null,
         logitBiasJson: data.logitBias?.length ? JSON.stringify(data.logitBias) : null,
@@ -285,6 +297,12 @@ export class ProviderStore {
     if (data.frequencyPenalty !== undefined) values.frequencyPenalty = data.frequencyPenalty;
     if (data.presencePenalty !== undefined) values.presencePenalty = data.presencePenalty;
     if (data.repetitionPenalty !== undefined) values.repetitionPenalty = data.repetitionPenalty;
+    if (data.unifiedLinear !== undefined) values.unifiedLinear = data.unifiedLinear;
+    if (data.unifiedQuad !== undefined) values.unifiedQuad = data.unifiedQuad;
+    if (data.unifiedConf !== undefined) values.unifiedConf = data.unifiedConf;
+    if (data.repetitionPenaltySlope !== undefined) values.repetitionPenaltySlope = data.repetitionPenaltySlope;
+    if (data.phraseRepPen !== undefined) values.phraseRepPen = data.phraseRepPen;
+    if (data.thinkingMode !== undefined) values.thinkingMode = data.thinkingMode;
     if (data.stopSequences !== undefined) values.stopSequencesJson = JSON.stringify(data.stopSequences);
     if (data.bannedStrings !== undefined) values.bannedStringsJson = data.bannedStrings.length ? JSON.stringify(data.bannedStrings) : null;
     if (data.logitBias !== undefined) values.logitBiasJson = data.logitBias.length ? JSON.stringify(data.logitBias) : null;
@@ -411,6 +429,12 @@ export class ProviderStore {
         frequencyPenalty: original.frequencyPenalty,
         presencePenalty: original.presencePenalty,
         repetitionPenalty: original.repetitionPenalty,
+        unifiedLinear: original.unifiedLinear,
+        unifiedQuad: original.unifiedQuad,
+        unifiedConf: original.unifiedConf,
+        repetitionPenaltySlope: original.repetitionPenaltySlope,
+        phraseRepPen: original.phraseRepPen,
+        thinkingMode: original.thinkingMode,
         stopSequencesJson: original.stopSequencesJson,
         bannedStringsJson: original.bannedStringsJson,
         logitBiasJson: original.logitBiasJson,
@@ -703,6 +727,12 @@ export class ProviderStore {
       frequencyPenalty: row.frequencyPenalty,
       presencePenalty: row.presencePenalty,
       repetitionPenalty: row.repetitionPenalty,
+      unifiedLinear: row.unifiedLinear,
+      unifiedQuad: row.unifiedQuad,
+      unifiedConf: row.unifiedConf,
+      repetitionPenaltySlope: row.repetitionPenaltySlope,
+      phraseRepPen: row.phraseRepPen,
+      thinkingMode: row.thinkingMode,
       stopSequences: row.stopSequencesJson ? JSON.parse(row.stopSequencesJson) : [],
       bannedStrings: safeParseJson<string[]>(row.bannedStringsJson),
       logitBias: safeParseJson<Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>>(row.logitBiasJson),

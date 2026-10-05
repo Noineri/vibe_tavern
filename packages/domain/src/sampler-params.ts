@@ -36,9 +36,41 @@ export type SamplerFieldId =
   | "stopSequences"
   | "seed"
   | "logitBias"
-  | "reasoningEffort";
+  | "reasoningEffort"
+  | "unifiedLinear"
+  | "unifiedQuad"
+  | "unifiedConf"
+  | "repetitionPenaltySlope"
+  | "phraseRepPen"
+  | "thinkingMode";
 
 export type SamplerCapabilityFlags = Record<SamplerFieldId, boolean>;
+
+// ---------------------------------------------------------------------------
+// NovelAI sampler vocabularies (NOVELAI_PROVIDER_PLAN Wave 1) — the single
+// source for the api-contracts zod enums and the web option lists.
+// ---------------------------------------------------------------------------
+
+/** NovelAI native `phrase_rep_pen` choices (spec `text.PhraseRepPenChoice`). */
+export const PHRASE_REP_PEN = {
+  off: "off",
+  veryLight: "very_light",
+  light: "light",
+  medium: "medium",
+  aggressive: "aggressive",
+  veryAggressive: "very_aggressive",
+} as const;
+
+export type PhraseRepPen = typeof PHRASE_REP_PEN[keyof typeof PHRASE_REP_PEN];
+
+/** NovelAI `/oa/v1` thinking toggle (`enable_thinking`); `auto` = not sent. */
+export const THINKING_MODE = {
+  auto: "auto",
+  on: "on",
+  off: "off",
+} as const;
+
+export type ThinkingMode = typeof THINKING_MODE[keyof typeof THINKING_MODE];
 
 // ---------------------------------------------------------------------------
 // Sampler set IDs — one per capability profile from research
@@ -126,6 +158,12 @@ const NONE: SamplerCapabilityFlags = {
   seed: false,
   logitBias: false,
   reasoningEffort: false,
+  unifiedLinear: false,
+  unifiedQuad: false,
+  unifiedConf: false,
+  repetitionPenaltySlope: false,
+  phraseRepPen: false,
+  thinkingMode: false,
 };
 
 /** Runtime-ordered list of every sampler field id, derived from the `NONE`
