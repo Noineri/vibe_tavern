@@ -103,29 +103,9 @@ import { resolveEffectiveSummaryProfile } from "../../domain/chat/summary-genera
 import type { AssemblePromptResponse, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ImageGenListing, ImageGenRuntimeApi } from "../contract/runtime-api.js";
 
-// Import backend modules for their side-effect registrations (the
-// stt-adapter twin): importing the module makes its slug creatable via the
-// registry; the route layer reaches every backend through this file.
-import "../../domain/imagegen/backends/openrouter.js";
-import "../../domain/imagegen/backends/openai-images.js";
-import "../../domain/imagegen/backends/openai-images-family.js";
-import "../../domain/imagegen/backends/a1111.js";
-import "../../domain/imagegen/backends/comfyui.js";
-import "../../domain/imagegen/backends/minimax.js";
-import "../../domain/imagegen/backends/dashscope.js";
-import "../../domain/imagegen/backends/nim.js";
-import "../../domain/imagegen/backends/google.js";
-import "../../domain/imagegen/backends/stability.js";
-import "../../domain/imagegen/backends/ideogram.js";
-import "../../domain/imagegen/backends/cloudflare.js";
-import "../../domain/imagegen/backends/aihorde.js";
-import "../../domain/imagegen/backends/bfl.js";
-import "../../domain/imagegen/backends/fal.js";
-import "../../domain/imagegen/backends/replicate.js";import "../../domain/imagegen/backends/leonardo.js";
-import "../../domain/imagegen/backends/luma.js";
-import "../../domain/imagegen/backends/novita.js";
-import "../../domain/imagegen/backends/krea.js";
-import "../../domain/imagegen/backends/raw-binary.js";
+// Side-effect registration of the complete backend roster (the stt-adapter
+// twin) is centralized in this file-size-ratchet extraction.
+import "../../domain/imagegen/backends/register-imagegen-backends.js";
 
 // ─── Route-ladder errors ─────────────────────────────────────────────────────
 
@@ -554,12 +534,16 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
     // Static dialect gate FIRST (the extensions-arm twin, PG-3): the
-    // schedule-type surface exists on the LOCAL dialects — A1111 (its
-    // /sdapi/v1/schedulers arm) and ComfyUI (the KSampler scheduler combo,
-    // CG-A3) — schedulers are not a cross-vendor capability, so no
-    // capability flag exists for them; the dialect check answers without
-    // live config validity.
-    if (profile.backend !== IMAGE_GEN_BACKENDS.A1111 && profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI) {
+    // schedule-type surface exists on A1111 (/sdapi/v1/schedulers), ComfyUI
+    // (the KSampler scheduler combo, CG-A3), and NovelAI (its documented
+    // static scheduler catalog, NAI-5a). Schedulers are not a cross-vendor
+    // capability, so no capability flag exists for them; the dialect check
+    // answers without live config validity.
+    if (
+      profile.backend !== IMAGE_GEN_BACKENDS.A1111 &&
+      profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI &&
+      profile.backend !== IMAGE_GEN_BACKENDS.NovelAi
+    ) {
       return null;
     }
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));

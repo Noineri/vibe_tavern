@@ -48,10 +48,10 @@ describe("provider preset transport classifications", () => {
 });
 
 describe("image-gen preset segments (MR-6 — the four-segment split; boundary = the app-wide protocol canon, owner 2026-09-18)", () => {
-  test("native = the sixteen proprietary-wire rows; cloud = every OpenAI-compatible surface (the images-dialect family + the chat-completions transports) incl. the OpenAI reference row; free stays inside cloud; local unchanged", () => {
+  test("native = the seventeen proprietary-wire rows; cloud = every OpenAI-compatible surface (the images-dialect family + the chat-completions transports) incl. the OpenAI reference row; free stays inside cloud; local unchanged", () => {
     const nativeIds = IMAGE_GEN_PROVIDER_PRESETS.filter((p) => p.group === "native").map((p) => p.id).sort();
     expect(nativeIds).toEqual(
-      ["bfl", "chutes", "cloudflare", "dashscope", "fal", "google", "hf", "ideogram", "krea", "leonardo", "luma", "minimax", "nim", "novita", "replicate", "stability"].sort(),
+      ["bfl", "chutes", "cloudflare", "dashscope", "fal", "google", "hf", "ideogram", "krea", "leonardo", "luma", "minimax", "nim", "novelai", "novita", "replicate", "stability"].sort(),
     );
     // The OpenAI-images dialect family rides cloud — including the OpenAI
     // reference row (the LLM-tab twin: the LLM openai row sits in cloud) and

@@ -429,6 +429,13 @@ export const IMAGE_GEN_PROVIDER_PRESETS: readonly ImageGenProviderPreset[] = [
     baseUrl: "https://api.novita.ai",
     group: PROVIDER_PRESET_GROUP.native,
   },
+  {
+    id: "novelai",
+    label: "NovelAI",
+    backend: IMAGE_GEN_BACKENDS.NovelAi,
+    baseUrl: "https://image.novelai.net",
+    group: PROVIDER_PRESET_GROUP.native,
+  },
 ];
 
 /** Image-gen preset lookup by row slug. */
