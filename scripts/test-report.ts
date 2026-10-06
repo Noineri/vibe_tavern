@@ -1,9 +1,16 @@
+import type { QuarantineEntry } from "./test-quarantine.js";
+
 export interface TestSuiteResult {
 	readonly name: string;
 	readonly exitCode: number | null;
 	readonly durationMs: number;
 	readonly stdout: string;
 	readonly stderr: string;
+	/** Quarantine entries whose test FAILED in this run (TH-8 fix step 10.2).
+	 *  Present only for suites the runner classifies; the suite may still have
+	 *  passed — that is the point of the list — so the report lists the debt
+	 *  instead of silently swallowing it. */
+	readonly quarantined?: readonly QuarantineEntry[];
 }
 
 const BUN_FAILURE_PATTERN = /^\(fail\)/;
@@ -268,6 +275,18 @@ export function formatTestReport(results: readonly TestSuiteResult[], wallClockM
 	for (const result of results) {
 		const status = result.exitCode === 0 ? "PASS" : "FAIL";
 		lines.push(`${status}  ${result.name.padEnd(nameWidth)}  ${formatDuration(result.durationMs)}`);
+	}
+	// The quarantine block rides on the results themselves rather than being
+	// pattern-lifted from suite output (RUNNER_SUMMARY_PATTERNS): a suite can
+	// pass WITH quarantined failures, and lifted lines only ever surface inside
+	// a FAILED suite's section — a green run would lose the block entirely.
+	// Rendering it from the data keeps it in every report, red or green.
+	const quarantined = results.flatMap((result) => result.quarantined ?? []);
+	if (quarantined.length > 0) {
+		lines.push("", "Quarantined failures", "");
+		for (const entry of quarantined) {
+			lines.push(`  ${entry.suite} · ${entry.file} · ${entry.test} · since ${entry.since} · ${entry.reason}`);
+		}
 	}
 	lines.push("", `Suites: ${passed} passed, ${failures.length} failed | Time: ${time}`);
 	return lines.join("\n");

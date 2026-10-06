@@ -2,7 +2,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
+import { failingFiles, filesWithTests, junitCrossAttribution } from "./test-junit.js";
+import { classifySuiteRun, readQuarantineList } from "./test-quarantine.js";
 import { testTimeoutArgs } from "./test.js";
+
+// The JUnit parsers live in ./test-junit.js since the orchestrator started
+// collecting reports for every suite (TH-8 fix step 10.2); re-exported here so
+// this module's existing consumers (scripts/test-web.test.ts) keep their
+// boundary unchanged.
+export { failingFiles, filesWithTests, junitCrossAttribution, type FailingFile } from "./test-junit.js";
 
 interface ParsedCli {
 	readonly files: readonly string[];
@@ -156,126 +164,18 @@ async function runBunTest(
 	}
 }
 
-/**
- * Files the JUnit report saw at least one test case for, keyed the way the rest
- * of this script keys files: repository-relative with forward slashes. The paths
- * are repository-relative already because the child runs with `cwd: root`, but
- * the reporter writes them with the PLATFORM separator — `apps\web\test\a.test.ts`
- * on Windows — so they are re-slashed before the caller can compare them against
- * a normalized file list. Skipping that turns every file on Windows into an
- * apparent zero-test file.
- *
- * `bun test` exits 0 for a file that registers no tests at all, so this set is
- * the only thing standing between a silently emptied test file and a green suite.
- *
- * `>` is XML-escaped inside attribute values, so `[^>]*` cannot run past the
- * element it started in.
- */
-export function filesWithTests(report: string): ReadonlySet<string> {
-	return new Set(
-		[...report.matchAll(/<testcase\b[^>]*\bfile="([^"]+)"/g)].flatMap((match) =>
-			match[1] === undefined ? [] : [match[1].replaceAll("\\", "/")],
-		),
-	);
-}
-
-/**
- * Per-file failure info from the same JUnit report: test cases carrying a
- * `<failure>` or `<error>` child, keyed like `filesWithTests` keys them.
- *
- * Why this exists when bun already prints failures on screen: CI log systems
- * (GitHub Actions) truncate long step output with "... N additional diagnostic
- * sections omitted" — with 8 parallel workers and a failing suite, the failing
- * test names are routinely INSIDE the truncated part, and not even a debug
- * rerun recovers them (verified twice on PR #39, runs 34643719177/34644574473).
- * The runner itself must name the failing files; the JUnit report it already
- * collects is the only input that survives truncation.
- *
- * Names and messages are kept because bun's on-screen tally counts TEST
- * failures only — a file-level error (afterAll crash, worker-level throw)
- * lands in the JUnit report as an error-carrying test case bun never names
- * (PR #39 run 34664917488: gallery-api.test.ts carried a JUnit failure while
- * bun's "N tests failed" listed a different file). The message attribute is
- * the only surviving trace of such errors.
- *
- * Self-closing testcases (`<testcase ... />`) are passes by construction — a
- * failure always has body content (the assertion diff / message).
- */
-export interface FailingFile {
-	readonly file: string;
-	readonly count: number;
-	readonly entries: readonly { readonly name: string; readonly message: string }[];
-}
-
-function parseFailingEntry(block: string): { name: string; message: string } | null {
-	if (!/<(?:failure|error)\b/.test(block)) return null;
-	const file = block.match(/\bfile="([^"]+)"/)?.[1];
-	if (file === undefined) return null;
-	const name = block.match(/\bname="([^"]*)"/)?.[1] ?? "(unnamed)";
-	const rawMessage = block.match(/<(?:failure|error)\b[^>]*>([\s\S]*?)<\/(?:failure|error)>/)?.[1] ?? "";
-	// XML-unescape the essentials; escaped stack frames render as &lt;at ...&gt;
-	// blobs — collapse them, keep the readable first line of the message.
-	const message = rawMessage
-		.replace(/&lt;[\s\S]*?&gt;/g, " ")
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;/g, "'")
-		.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
-		.replace(/\s+/g, " ")
-		.trim()
-		.slice(0, 200);
-	return { name: name === "" ? "(unnamed)" : name, message };
-}
-
-export function failingFiles(report: string): ReadonlyMap<string, FailingFile> {
-	const byFile = new Map<string, FailingFile>();
-	const blocks = report.match(/<testcase\b[^>]*>[\s\S]*?<\/testcase>|<testcase\b[^>]*\/>/g) ?? [];
-	for (const block of blocks) {
-		const entry = parseFailingEntry(block);
-		if (entry === null) continue;
-		const key = (block.match(/\bfile="([^"]+)"/)?.[1] ?? "").replaceAll("\\", "/");
-		if (key === "") continue;
-		const existing = byFile.get(key);
-		if (existing === undefined) {
-			byFile.set(key, { file: key, count: 1, entries: [entry] });
-		} else {
-			const entries = [...existing.entries, entry].slice(0, 5);
-			byFile.set(key, { file: key, count: existing.count + 1, entries });
-		}
-	}
-	return byFile;
-}
-
-/**
- * `bun test --parallel=N` + `--reporter=junit` can CROSS-ATTRIBUTE a JUnit
- * entry: the testcase NAME comes from one worker's file while the failure
- * MESSAGE (and its stack frame) comes from another. Observed on Bun 1.4.0 (PR
- * #39, runs 34664917488 / 34665657469 / 34668434046: gallery-api.test.ts
- * entries whose messages point into TtsProfileEditor/experience-sdk-diag — a
- * chase that cost four CI cycles before the pattern was named). The pin has
- * since moved to 1.4.2 and it has not recurred, but nothing in the 1.4.1/1.4.2
- * changelogs claims a fix and the failure is intermittent, so this stays: it is
- * a diagnostic, not a workaround, and it costs nothing when the report is sane.
- * bun's on-screen tally is correct; the JUnit file path is not. When the failing
- * message's
- * first stack frame names a DIFFERENT test file than the JUnit `file=`
- * attribute, say so in the summary line — the stack is the thing to trust.
- */
-export function junitCrossAttribution(file: string, message: string): string | null {
-	const frame = message.match(/\bat +(\S+\.test\.tsx?):\d+:\d+/)?.[1];
-	if (frame === undefined) return null;
-	const frameFile = frame.replaceAll("\\", "/").replace(/^\(/, "");
-	if (frameFile === file || !frameFile.endsWith(".test.ts") && !frameFile.endsWith(".test.tsx")) return null;
-	return `junit filed under ${file}, stack points to ${frameFile} — parallel junit cross-attribution, trust the stack`;
-}
-
 export async function runWebTestCli(
 	args: readonly string[],
 	root: string = ROOT,
 	write: OutputWriter = console.log,
 	errorWrite: OutputWriter = console.error,
+	/**
+	 * Optional path the finished JUnit report is copied to after the run: the
+	 * orchestrator's quarantine handoff (see the entry point below). Undefined
+	 * for standalone runs and every test-driven call — a nested call must never
+	 * inherit it and clobber an outer suite's report.
+	 */
+	junitHandoffPath?: string,
 ): Promise<number> {
 	const parsed = parseCli(args);
 	if (typeof parsed === "string") {
@@ -320,6 +220,14 @@ export async function runWebTestCli(
 	try {
 		const command = createWebTestCommand(files, reportPath, parsed);
 		outcome = await runBunTest(root, command, reportPath, write);
+		// The orchestrator's handoff: it cannot append reporter flags to this
+		// suite's `bun run test` command (strict parseArgs exits 2 on unknown
+		// flags), so it hands a target path down instead and classifies the web
+		// run with the same shared verdict every other suite gets. Copied BEFORE
+		// the temp dir below is swept, so the caller reads it only after exit.
+		if (junitHandoffPath !== undefined && outcome.report !== "") {
+			await Bun.write(junitHandoffPath, outcome.report);
+		}
 	} finally {
 		await rm(reportDirectory, { recursive: true, force: true });
 	}
@@ -332,9 +240,11 @@ export async function runWebTestCli(
 
 	// Which tests failed and where is on screen above, printed by bun's own
 	// reporter — but CI log systems truncate exactly that part (see the comment
-	// on failingFiles), so the runner names the failing files itself from the
-	// JUnit report, which no truncation can eat. The exit code stays the verdict;
-	// the empty-file list remains the part bun cannot tell us.
+	// on failingFiles in ./test-junit.js), so the runner names the failing files
+	// itself from the JUnit report, which no truncation can eat. The empty-file
+	// list remains the part bun cannot tell us. This block prints for EVERY
+	// bun-reported failure, quarantined or not — the quarantine verdict below
+	// decides the exit code, never the on-screen record.
 	const covered = filesWithTests(outcome.report);
 	const empty = files.filter((file) => !covered.has(file));
 	if (empty.length > 0) {
@@ -366,14 +276,41 @@ export async function runWebTestCli(
 			);
 		}
 	}
-	if (empty.length > 0 || outcome.exitCode !== 0) {
+	// The quarantine verdict (TH-8 fix step 10.2): a run whose every failed
+	// test case matches the committed quarantine list PASSES even though bun
+	// exited non-zero; file-level failures and any unmatched failure still fail
+	// the suite. Quarantined tests still ran — no skips, no retries.
+	const verdict = classifySuiteRun({
+		exitCode: outcome.exitCode,
+		report: outcome.report,
+		suite: "web",
+		quarantine: await readQuarantineList(),
+	});
+	if (empty.length > 0 || verdict.blocking.length > 0 || verdict.fileLevel.length > 0) {
 		write(`\nWeb tests: FAIL (${files.length} files)`);
 		return 1;
 	}
 	write(`\nWeb tests: PASS (${files.length} files)`);
+	if (verdict.quarantined.length > 0) {
+		write(`Quarantined failures (${verdict.quarantined.length}):`);
+		for (const entry of verdict.quarantined) {
+			write(`  ${entry.suite} · ${entry.file} · ${entry.test} · since ${entry.since} · ${entry.reason}`);
+		}
+	}
 	return 0;
 }
 
 if (import.meta.main) {
-	process.exitCode = await runWebTestCli(process.argv.slice(2));
+	// The orchestrator (scripts/test.ts) spawns this suite as `bun run test`
+	// with VIBE_TAVERN_TEST_JUNIT_OUT pointing into the suite's private temp
+	// root; read it ONCE, here, so nested runWebTestCli calls (this module's own
+	// tests) never inherit it and clobber an outer suite's report.
+	const handoff = Bun.env.VIBE_TAVERN_TEST_JUNIT_OUT;
+	process.exitCode = await runWebTestCli(
+		process.argv.slice(2),
+		ROOT,
+		console.log,
+		console.error,
+		handoff === undefined || handoff === "" ? undefined : handoff,
+	);
 }

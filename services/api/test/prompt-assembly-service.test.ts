@@ -1,12 +1,49 @@
 import { describe, it, expect } from "bun:test";
 import { PromptAssemblyService, type PromptAssemblyResolver, resolveObjectiveTaskContext, resolveObjectiveLongTermContext } from "../src/domain/prompt/prompt-assembly-service.js";
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { Message, StoreContainer } from "@vibe-tavern/db";
 import type { ChatId, ChatBranchId, LoreEntry, MessageId, RetrievedMemoryHit } from "@vibe-tavern/domain";
 import { normalizeInsightsConfig, normalizeObjectiveState, OBJECTIVE_MODE, OBJECTIVE_TASK_STATUS } from "@vibe-tavern/domain";
 
 // ─── Mock helpers ──────────────────────────────────────────────────────────
 
-function createMockStores(overrides?: Partial<StoreContainer["chats"]>): StoreContainer {
+/**
+ * Typed store-level Message factory (TH-11). buildPipelineContext reads
+ * branch history from `stores.messages.getMessages(branchId)` and expects full
+ * Message rows (position/authorType/state/createdAt). The pre-TH-11 mock
+ * served partial rows from the dead `chats.getMessages` seam, so assembly ran
+ * on an empty history window (the TH-5 drift this builder closes).
+ */
+function makeMessage(input: {
+  id: string;
+  position: number;
+  role: "user" | "assistant";
+  content: string;
+}): Message {
+  const at = `2025-01-01T00:${String(input.position).padStart(2, "0")}:00Z`;
+  return {
+    id: input.id,
+    chatId: "chat_1",
+    branchId: "branch_1",
+    role: input.role,
+    authorType: input.role,
+    position: input.position,
+    content: input.content,
+    state: "complete",
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
+/** Default two-turn branch history (branch_1) for createMockStores. */
+const defaultBranchHistory: Message[] = [
+  makeMessage({ id: "msg_1", position: 0, role: "user", content: "Hello!" }),
+  makeMessage({ id: "msg_2", position: 1, role: "assistant", content: "Hi there!" }),
+];
+
+function createMockStores(
+  overrides?: Partial<StoreContainer["chats"]>,
+  branchHistory: Message[] = defaultBranchHistory,
+): StoreContainer {
   return {
     chats: {
       getById: async () => ({
@@ -25,13 +62,9 @@ function createMockStores(overrides?: Partial<StoreContainer["chats"]>): StoreCo
       getBranches: async () => [
         { id: "branch_1", chatId: "chat_1", parentBranchId: null, label: "main" },
       ],
-      getMessages: async () => [
-        { id: "msg_1", role: "user", content: "Hello!", branchId: "branch_1" },
-        { id: "msg_2", role: "assistant", content: "Hi there!", branchId: "branch_1" },
-      ],
       ...overrides,
     },
-    messages: { getMessages: async () => [] },
+    messages: { getMessages: async () => branchHistory },
     presets: { listAll: async () => [] },
     chatSummaries: { listByChatBranch: async () => [] },
     characterAssets: { listByCharacter: async () => [] },
@@ -115,16 +148,7 @@ describe("PromptAssemblyService — completionFormat export (LS-3b)", () => {
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 describe("PromptAssemblyService", () => {
-  // TH-5 skip inventory (2026-09-12): the whole block was describe.skip'd —
-  // stale. Five of seven tests pass un-skipped today. These two remain skipped
-  // on a mock-shape drift: createMockStores messages lack the current Message
-  // entity fields (position/authorType/state), and the conversation-injection
-  // contract (windowed messages → finalPayload.messages, tokenAccounting.
-  // recentHistory) needs re-verification against buildPipelineContext before
-  // the mocks can be fixed. Not a service regression: live assembly paths are
-  // pinned by the five active tests below and by prompt-pipeline's own
-  // assemble tests; the send path works in production.
-  it.skip("assembles a prompt with system, character, persona, and history layers", async () => {
+  it("assembles a prompt with system, character, persona, and history layers", async () => {
     const stores = createMockStores();
     const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
@@ -185,13 +209,17 @@ describe("PromptAssemblyService", () => {
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
       model: "test-model",
-      excludeMessageIds: ["msg_1" as MessageId],
+      excludeMessageIds: ["msg_2" as MessageId],
     });
 
     const payload = result.prompt.finalPayload as { messages?: Array<{ content: string }> };
     const allContent = payload.messages!.map((m) => m.content).join(" ");
-    // msg_1 was "Hello!" — after exclusion, it should not appear in conversation
-    expect(allContent).not.toContain("Hello!");
+    // Excluding an assistant turn removes it outright. Excluding the FINAL
+    // user turn would not: the send safeguard in buildPipelineContext re-adds
+    // the last user message after exclusions (only throughMessageId / summary
+    // suppress it — see the prefix-bound suite below). msg_2 was "Hi there!".
+    expect(allContent).not.toContain("Hi there!");
+    expect(allContent).toContain("Hello!");
   });
 
   it("produces a prompt trace draft with correct metadata", async () => {
@@ -272,17 +300,17 @@ describe("PromptAssemblyService", () => {
     expect(result.prompt.prefill).toBe("Sure, I will respond as TestBot:");
   });
 
-  it.skip("limits recent messages when recentMessageLimit is set", async () => {
-    const manyMessages = Array.from({ length: 20 }, (_, i) => ({
-      id: `msg_${i}`,
-      role: i % 2 === 0 ? "user" : "assistant",
-      content: `Message ${i}`,
-      branchId: "branch_1",
-    }));
+  it("limits recent messages when recentMessageLimit is set", async () => {
+    const manyMessages = Array.from({ length: 20 }, (_, i) =>
+      makeMessage({
+        id: `msg_${i}`,
+        position: i,
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `Message ${i}`,
+      }),
+    );
 
-    const stores = createMockStores({
-      getMessages: async () => manyMessages,
-    });
+    const stores = createMockStores(undefined, manyMessages);
     const service = new PromptAssemblyService(stores, mockResolver, mockFileStore);
     const result = await service.assembleForChat({
       chatId: "chat_1" as ChatId,
@@ -291,6 +319,12 @@ describe("PromptAssemblyService", () => {
     });
 
     expect(result.prompt.tokenAccounting.recentHistory).toBe(5);
+    // The window is the LAST five turns (15–19); older turns drop out. The
+    // final-user safeguard is a no-op here: msg_18 is already inside the window.
+    const payload = result.prompt.finalPayload as { messages: Array<{ content: string }> };
+    const contents = payload.messages.map((message) => message.content);
+    expect(contents).toContain("Message 19");
+    expect(contents).not.toContain("Message 14");
   });
 });
 
