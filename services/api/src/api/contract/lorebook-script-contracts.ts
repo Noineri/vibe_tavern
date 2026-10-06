@@ -66,11 +66,11 @@ export interface ScriptRuntimeApi {
 	 * NotFound for an unknown chat. */
 	listParticipatingScripts: (chatId: string) => Promise<Script[]>;
 	getScript: (scriptId: string) => Promise<Script | null>;
-	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; links?: Array<{ targetType: string; targetId: string }>; chatId?: string; enabled?: boolean; sortOrder?: number }) => Promise<Script>;
+	createScript: (body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; links?: Array<{ targetType: string; targetId: string }>; chatId?: string; enabled?: boolean; sortOrder?: number; /** Import-side provenance (SCRIPT_SAFETY_PLAN decision 9): the mini-app file-import path passes `'imported'`; omitted = in-app creation. */ origin?: "imported" }) => Promise<Script>;
 	updateScript: (scriptId: string, body: { name?: string; description?: string; code?: string; enabled?: boolean; sortOrder?: number; defaultVisualId?: string | null; copilotProfileId?: string | null }) => Promise<Script>;
 	setScriptScope: (scriptId: string, scopeType: 'global' | 'entity' | 'chat', ownerId: string | null) => Promise<Script>;
 	deleteScript: (scriptId: string) => Promise<void>;
-	testScript: (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string }) => Promise<ScriptTestResult>;
+	testScript: (scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; lastMessage?: string; /** Import-warning acknowledgement (SCRIPT_SAFETY_PLAN decision 14): required to run an imported never-enabled script. */ warningAcknowledged?: boolean }) => Promise<ScriptTestResult>;
 	importScript: (body: { format: "js" | "json"; code?: string; jsonText?: string; name?: string; scriptKind?: ScriptKind; scopeType?: string; chatId?: string }) => Promise<Script>;
 	getScriptLinks: (scriptId: string) => Promise<ScriptLink[]>;
 	setScriptLinks: (scriptId: string, links: Array<{ targetType: string; targetId: string }>) => Promise<ScriptLink[]>;

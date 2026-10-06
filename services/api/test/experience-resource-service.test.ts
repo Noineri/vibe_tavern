@@ -163,6 +163,33 @@ describe("ExperienceResourceService — resolveEffectiveSetup (the lifecycle ent
     expect(r.data.rules?.code).toBe(VALID_SOURCE);
   });
 
+  // Behavior change (SCRIPT_SAFETY_PLAN decision 14, SS-4): was — only the
+  // chat config's enabled flag was checked, so a chat pointed at a DISABLED
+  // script still executed its code at session start; now — the script's own
+  // enabled flag gates resolution with the typed script_not_enabled error.
+  test("a chat pointed at a DISABLED script gets the typed script_not_enabled error instead of executing it", async () => {
+    const disabled = await stores.scripts.create({
+      name: "Off Rules",
+      scriptKind: "interactive",
+      code: VALID_SOURCE,
+      enabled: false,
+    });
+    await service.updateConfig(chatId, { enabled: true, scriptId: disabled.id });
+    const r = await service.resolveEffectiveSetup(chatId);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("script_not_enabled");
+    expect(r.error.status).toBe(409);
+
+    // Enabling the script resolves the setup again — the gate is state, not
+    // a permanent rejection.
+    await stores.scripts.update(disabled.id, { enabled: true });
+    const after = await service.resolveEffectiveSetup(chatId);
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+    expect(after.data.rules?.definition.manifest.id).toBe("res-test");
+  });
+
   test("enabled with a non-interactive script is a validation error", async () => {
     const promptScript = await stores.scripts.create({ name: "A Prompt Script", scriptKind: "prompt", code: "" });
     await service.updateConfig(chatId, { enabled: true, scriptId: promptScript.id });

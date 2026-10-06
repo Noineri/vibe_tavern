@@ -543,3 +543,41 @@ describe("importScriptSchema origin/firstEnabledAt are NOT client-writable (SS-3
     expect("firstEnabledAt" in data).toBe(false);
   });
 });
+
+// ─── SS-4: import-side origin on create + the test-route ack flag ───────────
+
+describe("createScriptSchema origin (SS-4)", () => {
+  it("accepts 'imported' — the only client-settable value (the mini-app file-import path)", () => {
+    const data = expectData(
+      createScriptSchema.safeParse({ ...validCreateScript(), origin: "imported" }),
+    ) as Record<string, unknown>;
+    expect(data.origin).toBe("imported");
+  });
+
+  it("rejects any other origin value — provenance is not freely client-choosable", () => {
+    expectReject(createScriptSchema.safeParse({ ...validCreateScript(), origin: "in_app" }));
+    expectReject(createScriptSchema.safeParse({ ...validCreateScript(), origin: 42 }));
+  });
+
+  it("omits origin by default (in-app creation — the server-side default is 'in_app')", () => {
+    const data = expectData(
+      createScriptSchema.safeParse(validCreateScript()),
+    ) as Record<string, unknown>;
+    expect("origin" in data).toBe(false);
+  });
+});
+
+describe("testScriptSchema warningAcknowledged (SS-4)", () => {
+  it("carries the ack flag through when boolean (the warning modal sets it)", () => {
+    const data = expectData(
+      testScriptSchema.safeParse({ warningAcknowledged: true }),
+    ) as Record<string, unknown>;
+    expect(data.warningAcknowledged).toBe(true);
+  });
+
+  it("is absent by default and rejects non-boolean values", () => {
+    const data = expectData(testScriptSchema.safeParse({})) as Record<string, unknown>;
+    expect("warningAcknowledged" in data).toBe(false);
+    expectReject(testScriptSchema.safeParse({ warningAcknowledged: "yes" }));
+  });
+});

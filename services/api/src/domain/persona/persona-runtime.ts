@@ -240,7 +240,7 @@ export class PersonaRuntime {
 		return defaultPersona.id as PersonaId;
 	}
 
-	async duplicate(personaId: string): Promise<PersonaRecord> {
+	async duplicate(personaId: string): Promise<PersonaRecord & { disabledImportedScripts: number }> {
 		const source = await this.deps.stores.personas.getById(brandId<PersonaId>(personaId));
 		if (!source) {
 			throw notFound("Persona", `Persona '${personaId}' was not found.`);
@@ -319,6 +319,12 @@ export class PersonaRuntime {
 		// Duplicate persona-scoped scripts (owners are links — migration 0107;
 		// each copy is bound to the new persona by a link).
 		const sourceScripts = await this.deps.stores.scripts.listByScope("entity", personaId);
+		// Owner decision (SCRIPT_SAFETY_PLAN, SS-4 mid-unit): copies that arrive
+		// disabled where the source was live must be COUNTED, never silently
+		// turned off — the number rides the duplicate response for the web to
+		// surface (SS-6). Only enabled imported sources count: a source that was
+		// already disabled keeps its state, which is not a turn-off.
+		let disabledImportedScripts = 0;
 		for (const sc of sourceScripts) {
 			const copy = await this.deps.stores.scripts.create({
 				name: sc.name,
@@ -326,9 +332,15 @@ export class PersonaRuntime {
 				code: sc.code,
 				scriptKind: sc.scriptKind,
 				scopeType: "entity",
-				enabled: sc.enabled,
+				// Copies inherit provenance, never trust (SCRIPT_SAFETY_PLAN decision
+				// 9): a copy of an imported script is born imported and disabled — its
+				// own first enable re-stamps trust on the new row. In-app copies keep
+				// the source's enabled state.
+				origin: sc.origin,
+				enabled: sc.origin === "imported" ? false : sc.enabled,
 				sortOrder: sc.sortOrder,
 			});
+			if (sc.origin === "imported" && sc.enabled) disabledImportedScripts += 1;
 			await this.deps.stores.scripts.addLink(copy.id, "persona", persona.id);
 		}
 
@@ -347,6 +359,7 @@ export class PersonaRuntime {
 			avatarDescription: persona.avatarDescription,
 			includeAvatarInPrompt: persona.includeAvatarInPrompt,
 			updatedAt: persona.updatedAt,
+			disabledImportedScripts,
 		};
 	}
 }

@@ -62,7 +62,7 @@ import type {
 } from "@vibe-tavern/db";
 import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
-import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexProfileInput, UpdateRegexProfileInput } from "@vibe-tavern/api-contracts";
+import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexProfileInput, UpdateRegexProfileInput, ScriptSafetySettings, UpdateScriptSafetySettings } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
 import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
@@ -241,7 +241,13 @@ export interface CharacterRuntimeApi {
 	unarchiveCharacter: (characterId: string) => Promise<{ characterId: string; status: "active" }>;
 	deleteCharacter: (characterId: string) => Promise<void>;
 	exportCharacter: (characterId: string) => Promise<Record<string, unknown>>;
-	duplicateCharacter: (characterId: string) => Promise<ImportResult>;
+	// The `disabledImportedScripts` count on the duplicate responses (owner
+	// decision, SCRIPT_SAFETY_PLAN SS-4): imported script copies arrive disabled
+	// (decision 9 — trust is never inherited), and the web must surface that
+	// turn-off instead of leaving scripts silently off (SS-6 consumes the
+	// count). Only enabled imported sources are counted — a source that was
+	// already disabled keeps its state, which is not a turn-off.
+	duplicateCharacter: (characterId: string) => Promise<ImportResult & { disabledImportedScripts: number }>;
 	uploadCharacterAvatar: (characterId: string, crop: File, full?: File) => Promise<{ avatarExt: string; avatarFullExt: string | null }>;
 	serveCharacterAvatar: (characterId: string) => Promise<Response | null>;
 	serveCharacterAvatarFull: (characterId: string) => Promise<Response | null>;
@@ -303,7 +309,7 @@ export interface PersonaRuntimeApi {
 	createPersona: (body: { name: string; description: string; pronouns?: string | null; pronounForms?: PronounForms | null; defaultForNewChats?: boolean }) => Promise<PersonaRecord>;
 	updatePersona: (personaId: string, body: Record<string, unknown>) => Promise<ConfigPatchResponse | { id: string }>;
 	deletePersona: (personaId: string) => Promise<void>;
-	duplicatePersona: (personaId: string) => Promise<PersonaRecord>;
+	duplicatePersona: (personaId: string) => Promise<PersonaRecord & { disabledImportedScripts: number }>;
 	setDefaultPersona: (personaId: string) => Promise<void>;
 	uploadPersonaAvatar: (personaId: string, crop: File, full?: File) => Promise<{ avatarExt: string; avatarFullExt: string | null }>;
 	servePersonaAvatar: (personaId: string) => Promise<Response | null>;
@@ -432,6 +438,11 @@ export interface AiAssistantRuntimeApi {
 export interface SettingsRuntimeApi {
 	getUiSettings: () => Promise<UiSettings>;
 	updateUiSettings: (body: Record<string, unknown>) => Promise<UiSettings>;
+	/** Script-safety singleton (SCRIPT_SAFETY_PLAN decision 3): one server-stored
+	 *  "don't show again" flag for imported-script warnings, shared across all
+	 *  devices. GET returns the defaults when no row exists yet. */
+	getScriptSafetySettings: () => Promise<ScriptSafetySettings>;
+	updateScriptSafetySettings: (body: UpdateScriptSafetySettings) => Promise<ScriptSafetySettings>;
 }
 
 // ─── Mobile Access ───────────────────────────────────────────────────

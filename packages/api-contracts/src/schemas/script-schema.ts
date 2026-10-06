@@ -31,6 +31,13 @@ export const createScriptSchema = z.object({
   chatId: z.string().optional(),
   enabled: z.boolean().optional().default(true),
   sortOrder: z.number().optional().default(0),
+  /** Provenance stamp for import-side creations (SCRIPT_SAFETY_PLAN
+   *  decision 9): the ONLY client-settable value is `"imported"` — the
+   *  mini-app file-import path rides `createScript`; omitting it means an
+   *  in-app creation (`"in_app"` server-side default). Read-only afterwards —
+   *  absent from updateScriptSchema; an imported create always arrives
+   *  disabled regardless of `enabled`. */
+  origin: z.literal("imported").optional(),
 });
 
 export const updateScriptSchema = z.object({
@@ -76,7 +83,12 @@ export const testScriptSchema = z.object({
   personaDescription: z.string().optional(),
   /** Last message text (shorthand for messages[messages.length-1]) */
   lastMessage: z.string().optional().default(""),
-});
+  /** Import-warning acknowledgement (SCRIPT_SAFETY_PLAN decision 14): set by
+   *  the web warning modal — the ONLY way an imported never-enabled script may
+   *  execute in the test panel. Absent ⇒ the server refuses untrusted scripts
+   *  with the typed `script_not_enabled` error. */
+  warningAcknowledged: z.boolean().optional(),
+});;
 
 export const importScriptSchema = z.discriminatedUnion("format", [
   z.object({

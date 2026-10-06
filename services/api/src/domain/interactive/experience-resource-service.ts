@@ -173,6 +173,18 @@ export class ExperienceResourceService {
     if (script === null) {
       return err({ status: 404, code: "script_not_found", message: `Rules script '${config.scriptId}' not found` });
     }
+    // SCRIPT_SAFETY_PLAN decision 14 (SS-4): the SCRIPT's own enabled flag
+    // gates session start — a chat pointed at a disabled script gets the typed
+    // `script_not_enabled` error instead of executing its code (the config
+    // flag above only reflects the chat-level toggle). Named behavior change:
+    // before SS-4 a disabled selected script still executed at session start.
+    if (!script.enabled) {
+      return err({
+        status: 409,
+        code: "script_not_enabled",
+        message: `Rules script '${script.name}' is disabled — enable it before starting the experience`,
+      });
+    }
     if (script.scriptKind !== "interactive") {
       return err({
         status: 422,
