@@ -96,6 +96,18 @@ describe("ProviderProfileList", () => {
     expect(onAddProfile).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the title ellipsis inside the master column after the drag handle takes its width", () => {
+    const view = render(<ProviderProfileList {...baseProps()} />);
+    const title = view.getByText("★ Alpha");
+    const textColumn = title.parentElement;
+    const contentRow = textColumn?.parentElement;
+    if (!contentRow) throw new Error("Profile-row content wrapper missing");
+
+    expect(contentRow.classList.contains("min-w-0")).toBe(true);
+    expect(contentRow.classList.contains("flex-1")).toBe(true);
+    expect(contentRow.classList.contains("w-full")).toBe(false);
+  });
+
   it("disables drag while searching and in selection-only mode", () => {
     const searching = render(<ProviderProfileList {...baseProps({ profileSearch: "Alpha", filteredProfiles: [profiles[0]!] })} />);
     expect(searching.queryByLabelText("drag")).toBeNull();
