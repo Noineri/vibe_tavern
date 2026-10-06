@@ -431,6 +431,7 @@ export const REMOTE_PROVIDER_PRESET_IDS = [
   "siliconflow",
   "togetherai",
   "pollinations",
+  "novelai",
   "novelai_oa",
   "anthropic",
   "google",

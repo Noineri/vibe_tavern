@@ -3,8 +3,9 @@
  *
  * Exhaustive classification of every remote provider preset: an adapter for the
  * six vendors that expose quota or balance to a plain API key, and an explicit
- * `none` entry with a reason for the other seventeen (seventeenth: `novelai_oa`,
- * NAI-2a — no citable key-auth usage endpoint in the plan's sources).
+ * `none` entry with a reason for the other eighteen (seventeenth: `novelai_oa`,
+ * NAI-2a; eighteenth: `novelai`, NAI-3c — no citable key-auth usage endpoint
+ * in the plan's sources for either).
  *
  * Exhaustiveness is enforced by the type — a new entry in
  * `REMOTE_PROVIDER_PRESET_IDS` that nobody classified is a compile error, not a
@@ -89,6 +90,7 @@ const PRESET_CAPABILITIES = {
 	electronhub: notExposed("No citable key-auth usage endpoint found."),
 	siliconflow: notExposed("No citable key-auth usage endpoint found."),
 	pollinations: notExposed("No citable key-auth usage endpoint found."),
+	novelai: notExposed("No citable key-auth usage endpoint found."),
 	novelai_oa: notExposed("No citable key-auth usage endpoint found."),
 	togetherai: notExposed("A /v1/credits endpoint is reported but its schema is unverified — excluded until fixture-confirmed."),
 } satisfies Record<RemoteProviderPresetId, QuotaCapability>;

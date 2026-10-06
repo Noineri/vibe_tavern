@@ -225,7 +225,7 @@ function getCapabilities(type: string, providerPreset: string, model: string, en
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false, samplers: resolveSamplerCapabilities(providerPreset, type) };
     case PROVIDER_TYPE.ollama: case PROVIDER_TYPE.llamaCpp: case PROVIDER_TYPE.unsloth:
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported, samplers: resolveSamplerCapabilities(providerPreset, type) };
-    case PROVIDER_TYPE.koboldCpp:
+    case PROVIDER_TYPE.koboldCpp: case PROVIDER_TYPE.novelai:
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: false, logitBias: false, samplers: resolveSamplerCapabilities(providerPreset, type) };
     default:
       return { nonStreamGeneration: true, abortSignal: true, streaming: true, prefill: true, logitBias: resolveLogitBiasSupport(providerPreset, model, endpoint).supported, samplers: resolveSamplerCapabilities(providerPreset, type) };
@@ -519,6 +519,7 @@ export function ProviderModal({
         ...f,
         providerPreset: fmt.id,
         baseUrl: fmt.baseUrl,
+        ...(fmt.defaultMaxTokens != null ? { maxTokens: fmt.defaultMaxTokens } : {}),
         ...(typeChanged || fmt.noApiKey ? { apiKey: '', hasStoredApiKey: false } : {}),
       };
     });

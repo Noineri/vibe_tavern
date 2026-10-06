@@ -9,6 +9,10 @@ export interface ProviderPreset {
   group: ProviderPresetGroup;
   noApiKey?: boolean;
   requiresAuthForModels?: boolean;
+  /** Response length applied when the preset is picked (user-editable after,
+   *  never clamped). Set only where the provider's wire needs a non-generic
+   *  first-request value (NAI-3c: NovelAI's 150 = every tier accepts). */
+  defaultMaxTokens?: number;
 }
 
 export const PRESET_GROUPS: Array<{ id: ProviderPresetGroup; label: string }> = [
@@ -33,6 +37,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: "nanogpt", label: "NanoGPT", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://nano-gpt.com/api/v1", group: PROVIDER_PRESET_GROUP.cloud, requiresAuthForModels: true },
   { id: "chutes", label: "Chutes", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://llm.chutes.ai/v1", group: PROVIDER_PRESET_GROUP.cloud },
   { id: "electronhub", label: "ElectronHub", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.electronhub.ai/v1", group: PROVIDER_PRESET_GROUP.cloud },
+  { id: "novelai", label: "NovelAI (native)", type: PROVIDER_TYPE.novelai, baseUrl: "https://text.novelai.net", group: PROVIDER_PRESET_GROUP.cloud, requiresAuthForModels: true, defaultMaxTokens: 150 },
   { id: "novelai_oa", label: "NovelAI", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://text.novelai.net/oa/v1", group: PROVIDER_PRESET_GROUP.cloud, requiresAuthForModels: true },
   { id: "zai", label: "ZAI", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.z.ai/api/paas/v4", group: PROVIDER_PRESET_GROUP.cloud },
   { id: "zai-coding", label: "ZAI Coding", type: PROVIDER_TYPE.openaiCompat, baseUrl: "https://api.z.ai/api/coding/paas/v4", group: PROVIDER_PRESET_GROUP.cloud },
@@ -62,6 +67,7 @@ export const TYPE_LABELS: Record<string, string> = {
   [PROVIDER_TYPE.llamaCpp]: "llama.cpp",
   [PROVIDER_TYPE.koboldCpp]: "KoboldCPP",
   [PROVIDER_TYPE.unsloth]: "Unsloth Studio",
+  [PROVIDER_TYPE.novelai]: "NovelAI",
 };
 
 export function getVisibleProviderPresets(isArmServer: boolean): ProviderPreset[] {

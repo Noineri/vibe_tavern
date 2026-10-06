@@ -91,7 +91,7 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
 			providerType: profile.providerPreset,
-			requiresAuthForModels: profile.providerPreset === "anthropic" || profile.providerPreset === "google" || profile.providerPreset === "unsloth" || profile.providerPreset === "novelai_oa",
+			requiresAuthForModels: profile.providerPreset === "anthropic" || profile.providerPreset === "google" || profile.providerPreset === "unsloth" || profile.providerPreset === "novelai_oa" || profile.providerPreset === "novelai",
 			...(fetch ? { fetch } : {}),
 		});
 
@@ -175,6 +175,7 @@ export class ProviderAdapter implements ProviderRuntimeApi {
 			|| providerType === "google"
 			|| providerType === "unsloth"
 			|| providerType === "novelai_oa"
+			|| providerType === "novelai"
 			|| /text\.novelai\.net/.test(normalized);
 		const fetch = await this.resolveDraftFetch(proxyMode, proxyId);
 		return listProviderModels({

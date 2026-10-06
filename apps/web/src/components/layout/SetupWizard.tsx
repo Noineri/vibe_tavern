@@ -211,7 +211,7 @@ function ProviderStep({
   const applyPreset = useCallback((presetId: string) => {
     const preset = PROVIDER_PRESETS.find((f) => f.id === presetId);
     if (!preset) return;
-    setForm((prev) => ({ ...prev, providerPreset: presetId, baseUrl: preset.baseUrl }));
+    setForm((prev) => ({ ...prev, providerPreset: presetId, baseUrl: preset.baseUrl, ...(preset.defaultMaxTokens != null ? { maxTokens: preset.defaultMaxTokens } : {}) }));
   }, []);
 
   async function fetchModelsFor() {

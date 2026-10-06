@@ -43,7 +43,7 @@ export async function resolveCachedModels(
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
 			providerType,
-			requiresAuthForModels: providerType === "anthropic" || providerType === "google" || providerType === "novelai_oa",
+			requiresAuthForModels: providerType === "anthropic" || providerType === "google" || providerType === "novelai_oa" || providerType === "novelai",
 			...(fetch ? { fetch } : {}),
 		});
 		const normalized = models.map((m) => ({

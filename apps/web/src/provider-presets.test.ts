@@ -29,6 +29,22 @@ describe("provider preset transport classifications", () => {
     expect(novelai!.group).toBe("cloud");
     expect(novelai!.requiresAuthForModels).toBe(true);
   });
+
+  test("NovelAI (native) rides the cloud group, requires a key for its model list, and defaults to 150 max tokens (NAI-3c)", () => {
+    const novelai = PROVIDER_PRESETS.find((preset) => preset.id === "novelai");
+    expect(novelai).toBeDefined();
+    expect(novelai!.label).toBe("NovelAI (native)");
+    expect(novelai!.type).toBe("novelai");
+    expect(novelai!.baseUrl).toBe("https://text.novelai.net");
+    expect(novelai!.group).toBe("cloud");
+    expect(novelai!.requiresAuthForModels).toBe(true);
+    expect(novelai!.defaultMaxTokens).toBe(150);
+  });
+
+  test("defaultMaxTokens is carried only by the native NovelAI preset (NAI-3c)", () => {
+    const carriers = PROVIDER_PRESETS.filter((preset) => preset.defaultMaxTokens !== undefined);
+    expect(carriers.map((preset) => preset.id)).toEqual(["novelai"]);
+  });
 });
 
 describe("image-gen preset segments (MR-6 — the four-segment split; boundary = the app-wide protocol canon, owner 2026-09-18)", () => {
