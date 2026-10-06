@@ -196,9 +196,10 @@ describe("IF-1b image prompt profile routes (real adapter + in-memory DB)", () =
         assist: { core: string; addenda: Record<string, string> };
       };
     };
-    // 8 modes + the negative row, × 9 families — the Default carries no
+    // 8 modes + the negative row, × 10 families (novelai joined in NAI-6a;
+    // its canon assets ship in NAI-6c/6d) — the Default carries no
     // overrides, so this is the pure canon matrix.
-    expect(payload.catalog.cells).toHaveLength(81);
+    expect(payload.catalog.cells).toHaveLength(90);
     const cell = (rowKey: string, family: string) => payload.catalog.cells.find((c) => c.rowKey === rowKey && c.family === family)!;
     // Authored variant → family-canon with the family's own asset.
     expect(cell("portrait", "pony").canonSource).toBe("family-canon");
@@ -225,7 +226,7 @@ describe("IF-1b image prompt profile routes (real adapter + in-memory DB)", () =
     // Assist: the shared core + one addendum per non-prose family.
     expect(payload.catalog.assist.core).toBe((await loadPromptAsset("image-assist.md")).trim());
     expect(Object.keys(payload.catalog.assist.addenda).sort()).toEqual(
-      ["anima", "hybrid", "illustrious", "krea2", "noobai", "pony", "qwen", "sdxl-realism"],
+      ["anima", "hybrid", "illustrious", "krea2", "noobai", "novelai", "pony", "qwen", "sdxl-realism"],
     );
     expect(payload.catalog.assist.addenda["pony"]).toBe((await loadPromptAsset("image-assist.pony.md")).trim());
   });

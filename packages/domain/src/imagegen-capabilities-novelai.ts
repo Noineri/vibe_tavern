@@ -24,4 +24,9 @@ export const NOVELAI_IMAGE_GEN_CAPABILITIES: ImageGenCapabilityFlags = {
   supportsImg2img: false,
   supportsInpaint: false,
   paramRanges: {},
+  // NAI-6a: NovelAI models prompt in NovelAI's tag dialect by default —
+  // the backend-default tier of the generation-time family resolution
+  // (prompt-family-resolution.ts). Locator: this row physically lives here
+  // since the NAI-5a ratchet extraction; imagegen-capabilities.ts imports it.
+  defaultPromptFamily: "novelai",
 };

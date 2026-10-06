@@ -18,7 +18,9 @@ import { IMAGE_GENERATION_MODES, type ImageGenerationMode } from "./entities.js"
  * The registry membership mirrors the authored canon exactly: prose (the
  * universal base), four tag families (pony / illustrious / noobai / anima —
  * illustrious and noobai are SEPARATE families: their quality-tag
- * conventions differ, and the canon carries distinct files), krea2 and
+ * conventions differ, and the canon carries distinct files), novelai (tag
+ * grammar; quality rides NovelAI's server-side qualityToggle — see the
+ * registry entry), krea2 and
  * qwen (prose-grammar checkpoints: prose templates, family assist
  * addenda; qwen keeps its own negative — the 500-char dialect canon —
  * krea2 inherits the prose default, dead-negative guidance rides its
@@ -74,6 +76,11 @@ export const IMAGE_PROMPT_FAMILIES = {
   illustrious: { grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: true },
   noobai: { grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: true },
   anima: { grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: true },
+  // NOVELAI_PROVIDER_PLAN NAI-6a: NovelAI's own quality tags differ per
+  // model, so quality comes from NovelAI's server-side `qualityToggle`
+  // instead of a family-authored quality layer (research «Image prompt
+  // family»); templates + negative ship in NAI-6c/6d.
+  novelai: { grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: false },
   krea2: { grammar: "prose", ownTemplates: false, ownNegative: false, ownQuality: false },
   qwen: { grammar: "prose", ownTemplates: false, ownNegative: true, ownQuality: false },
   "sdxl-realism": { grammar: "prose", ownTemplates: false, ownNegative: true, ownQuality: true },

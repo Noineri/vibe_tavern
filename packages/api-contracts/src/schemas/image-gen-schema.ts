@@ -54,6 +54,7 @@ export const imagePromptFamilySchema = z.enum([
   'illustrious',
   'noobai',
   'anima',
+  'novelai',
   'krea2',
   'qwen',
   'sdxl-realism',

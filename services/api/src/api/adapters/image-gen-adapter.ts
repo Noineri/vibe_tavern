@@ -747,7 +747,11 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       throw new ImageGenValidationError("AI prompt drafting needs a configured LLM assist provider and model");
     }
     const model = profile.modelId;
-    const { family: promptFamily } = resolveImageGenPromptFamily(profile, model);
+    const { family: promptFamily } = resolveImageGenPromptFamily(
+      profile,
+      model,
+      IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].defaultPromptFamily,
+    );
     try {
       const promptCharCap =
         model !== undefined && model !== ""
@@ -1028,8 +1032,14 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // IPT-2 assembly: the family the prompt templates speak — manual pin,
     // else a FRESH auto detection (freshness vs the model ACTUALLY
     // generating: the chip's model override outranks the saved pick), else
-    // the universal prose default. Unpinned profiles stay byte-identical.
-    const { family: promptFamily } = resolveImageGenPromptFamily(profile, model);
+    // the backend's own default (NAI-6a: NovelAI), else the universal prose
+    // default. Unpinned profiles on backends without a default stay
+    // byte-identical.
+    const { family: promptFamily } = resolveImageGenPromptFamily(
+      profile,
+      model,
+      IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].defaultPromptFamily,
+    );
 
     // IG-14 mode assembly: the prompt the design's generation flow builds —
     // Images-tab template + chat-context macros (free mode wraps the caller
@@ -1086,6 +1096,12 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
       ...(adetailerSteps !== undefined ? { adetailerSteps } : {}),
       ...(krea !== undefined ? { krea } : {}),
+      // NAI-6a: NovelAI's server-side quality layer — the profile's quality
+      // switch rides the vendor block ONLY for the novelai backend AND only
+      // when the resolved family is novelai (quality tags are never doubled).
+      ...(profile.backend === IMAGE_GEN_BACKENDS.NovelAi
+        ? { novelai: { qualityToggle: profile.qualityLayerEnabled && promptFamily === "novelai" } }
+        : {}),
       ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
       ...(hires !== undefined ? { hires } : {}),
       // MR-11: the backend announces the moment its progress surface

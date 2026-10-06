@@ -262,9 +262,9 @@ function buildBody(request: ImageGenGenerateRequest, model: NovelAiModelId): Rec
     n_samples: 1,
     negative_prompt: negative,
     ucPreset: 0,
-    // NAI-6a supplies the vendor block. It is not in ImageGenGenerateRequest
-    // yet, so the NAI-5a contract requires false until that seam lands.
-    qualityToggle: false,
+    // NAI-6a: the vendor block's switch — absent (other backends or a
+    // layer-off profile) keeps the NAI-5a wire default of false.
+    qualityToggle: request.novelai?.qualityToggle ?? false,
     prefer_brownian: true,
     dynamic_thresholding: false,
     legacy: false,

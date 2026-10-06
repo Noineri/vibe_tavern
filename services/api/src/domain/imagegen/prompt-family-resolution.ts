@@ -12,7 +12,7 @@ export interface ImageGenPromptFamilyState {
 }
 
 /** How the winning family was chosen. */
-export type ImageGenPromptFamilySource = "manual" | "auto" | "default";
+export type ImageGenPromptFamilySource = "manual" | "auto" | "backend-default" | "default";
 
 export interface ResolvedImageGenPromptFamily {
   family: ImagePromptFamilyId;
@@ -21,14 +21,18 @@ export interface ResolvedImageGenPromptFamily {
 
 /**
  * The generation-time family resolution chain (IPT Wave 2, the plan's
- * assembly rule):
+ * assembly rule; NAI-6a adds tier 3):
  *
  * 1. `familyOverride` — the manual pin, authoritative.
  * 2. `familyDetected` — the auto result, fresh ONLY when the model it ran
  *    against (`familyDetectedForModel`) equals the model ACTUALLY
  *    generating (`effectiveModelId`, the adapter's `overrides.model ??
  *    profile.modelId`); a model swap marks the detection stale.
- * 3. The universal default family (prose).
+ * 3. `backendDefaultFamily` — the backend's own default family
+ *    (NOVELAI_PROVIDER_PLAN NAI-6a: NovelAI models prompt in NovelAI's
+ *    tag dialect), passed from the STATIC capability table by the caller.
+ *    Backends without one skip this tier unchanged.
+ * 4. The universal default family (prose).
  *
  * Pure on purpose (T0): the same function backs generation, the Wave 3
  * family API's source labels, and the pane's read model.
@@ -36,6 +40,7 @@ export interface ResolvedImageGenPromptFamily {
 export function resolveImageGenPromptFamily(
   state: ImageGenPromptFamilyState,
   effectiveModelId: string | undefined,
+  backendDefaultFamily?: ImagePromptFamilyId,
 ): ResolvedImageGenPromptFamily {
   if (state.familyOverride !== undefined) {
     return { family: state.familyOverride, source: "manual" };
@@ -49,6 +54,9 @@ export function resolveImageGenPromptFamily(
     state.familyDetectedForModel === effectiveModelId
   ) {
     return { family: state.familyDetected, source: "auto" };
+  }
+  if (backendDefaultFamily !== undefined) {
+    return { family: backendDefaultFamily, source: "backend-default" };
   }
   return { family: IMAGE_PROMPT_DEFAULT_FAMILY, source: "default" };
 }

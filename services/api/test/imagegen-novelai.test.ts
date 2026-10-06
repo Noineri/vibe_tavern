@@ -1,15 +1,26 @@
 /**
- * NovelAI image backend wire tests (NOVELAI_PROVIDER_PLAN NAI-5a).
+ * NovelAI image backend wire tests (NOVELAI_PROVIDER_PLAN NAI-5a) + the
+ * NAI-6a quality-toggle seam.
  *
  * T1 transport doubles through the config fetch seam; no test contacts
  * novelai.net. The generated body is the stable boundary under test.
  */
 
 import { describe, expect, it } from "bun:test";
+import { mkdir, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { IMAGE_GEN_BACKENDS, IMAGE_GEN_BACKEND_CAPABILITIES } from "@vibe-tavern/domain";
+import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
 
 import "../src/domain/imagegen/backends/novelai.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
+import { ImageGenAdapter } from "../src/api/adapters/image-gen-adapter.js";
+import { ImagePromptProfileAdapter } from "../src/api/adapters/image-prompt-profile-adapter.js";
+import { createImageGenRoutes } from "../src/api/routes/image-gen.js";
+import { createImagePromptProfileRoutes } from "../src/api/routes/image-prompt-profiles.js";
+import { AssetService } from "../src/domain/asset/asset-service.js";
+import { domainErrorToJson, httpStatusForDomainError, isDomainError } from "../src/shared/errors.js";
 import { DomainError } from "../src/shared/errors.js";
 
 interface RecordedCall {
@@ -248,6 +259,163 @@ describe("NovelAI image backend (V3/V4/V5 native JSON wire)", () => {
       supportsImg2img: false,
       supportsInpaint: false,
       paramRanges: {},
+      defaultPromptFamily: "novelai",
     });
+  });
+});
+
+describe("NovelAI qualityToggle on the wire (NAI-6a)", () => {
+  it("sends qualityToggle true when the vendor block carries it", async () => {
+    const t = makeTransport(() => jsonResponse(generatedImage(), 201));
+    await make(t.transport).generate({
+      prompt: "p",
+      model: "nai-diffusion-5-full",
+      seed: 3,
+      novelai: { qualityToggle: true },
+    });
+    expect((sentJson(t.calls[0]!).parameters as Record<string, unknown>).qualityToggle).toBe(true);
+  });
+
+  it("keeps qualityToggle false for an explicit false and an absent block", async () => {
+    const explicit = makeTransport(() => jsonResponse(generatedImage(), 201));
+    await make(explicit.transport).generate({ prompt: "p", seed: 3, novelai: { qualityToggle: false } });
+    expect((sentJson(explicit.calls[0]!).parameters as Record<string, unknown>).qualityToggle).toBe(false);
+
+    const absent = makeTransport(() => jsonResponse(generatedImage(), 201));
+    await make(absent.transport).generate({ prompt: "p", seed: 3 });
+    expect((sentJson(absent.calls[0]!).parameters as Record<string, unknown>).qualityToggle).toBe(false);
+  });
+});
+
+/** Full-stack fixture (the imagegen-routes pattern): disk DB + real
+ *  adapter + real routes; the ONLY double is the transport through the
+ *  adapter's fetchOverride seam (tier T1). */
+async function makeApp(transport: typeof fetch): Promise<{
+  app: ReturnType<typeof createImageGenRoutes>;
+  promptProfiles: ReturnType<typeof createImagePromptProfileRoutes>;
+  stores: StoreContainer;
+}> {
+  const dataRoot = await mkdtemp(join(tmpdir(), "vt-imagegen-novelai-"));
+  const assetsDir = join(dataRoot, "assets");
+  await mkdir(assetsDir, { recursive: true });
+  const stores = await createStoreContainer(join(dataRoot, "test.db"), dataRoot);
+  const assetService = new AssetService(assetsDir, stores.content);
+  const adapter = new ImageGenAdapter(stores, assetService, transport);
+  const app = createImageGenRoutes(adapter);
+  app.onError((err, c) => {
+    if (isDomainError(err)) {
+      return c.json(domainErrorToJson(err), httpStatusForDomainError(err) as 400 | 404 | 409 | 422 | 500);
+    }
+    return c.json({ error: { kind: "Internal", message: err instanceof Error ? err.message : "error" } }, 500);
+  });
+  const promptProfiles = createImagePromptProfileRoutes(new ImagePromptProfileAdapter({ db: stores.db }));
+  return { app, promptProfiles, stores };
+}
+
+describe("NovelAI qualityToggle through the generate route (NAI-6a)", () => {
+  // The vendor block is `qualityLayerEnabled && resolved family ===
+  // "novelai"` — true ONLY with the backend-default novelai family AND the
+  // profile's quality-layer switch on. The novelai canon assets do not
+  // exist yet (NAI-6c/6d), so the ACTIVE image-prompt profile carries
+  // custom cells for the two rows the build resolves (the chain's real
+  // tier 1 — no mocks; the family/default resolution under test is the
+  // real resolver's).
+
+  const jsonHeaders = { "Content-Type": "application/json" };
+
+  async function setup() {
+    const bodies: Record<string, unknown>[] = [];
+    const transport: typeof fetch = (url, init) => {
+      if (String(url).endsWith("/ai/generate-image")) {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Promise.resolve(jsonResponse(generatedImage(), 201));
+      }
+      return Promise.resolve(jsonResponse({}, 200));
+    };
+    const { app, promptProfiles, stores } = await makeApp(transport);
+    const character = await stores.characters.create({ name: "Test" });
+    const chatId = (
+      await stores.chats.createChat({ characterId: character.id, title: "t", promptPresetId: null })
+    ).id;
+    // Custom cells for the two rows the portrait build resolves under the
+    // novelai family (its canon assets ship in NAI-6c/6d).
+    const profile = await promptProfiles.request("/api/image-gen/prompt-profiles", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        name: "NovelAI cells",
+        overrides: {
+          "portrait|novelai": { body: "NOVELAI-PORTRAIT {{char}}" },
+          "negative|novelai": { body: "NOVELAI-NEG" },
+        },
+      }),
+    });
+    expect(profile.status).toBe(201);
+    const { id: promptProfileId } = (await profile.json()) as { id: string };
+    const active = await promptProfiles.request("/api/image-gen/prompt-profiles/active", {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify({ profileId: promptProfileId }),
+    });
+    expect(active.status).toBe(200);
+    return { app, bodies, chatId };
+  }
+
+  async function createImageGenProfile(app: ReturnType<typeof createImageGenRoutes>, qualityLayerEnabled: boolean) {
+    const res = await app.request("/api/image-gen/profiles", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        name: "NovelAI",
+        backend: IMAGE_GEN_BACKENDS.NovelAi,
+        endpoint: "https://image.novelai.net",
+        apiKey: "pst-test",
+        modelId: "nai-diffusion-5-curated",
+        qualityLayerEnabled,
+        defaultParams: {},
+        modeSizePresets: {},
+        capabilities: IMAGE_GEN_BACKEND_CAPABILITIES[IMAGE_GEN_BACKENDS.NovelAi],
+      }),
+    });
+    expect(res.status).toBe(201);
+    return ((await res.json()) as { id: string }).id;
+  }
+
+  const run = async (app: ReturnType<typeof createImageGenRoutes>, chatId: string, profileId: string) => {
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ profileId, mode: "portrait", prompt: "a" }),
+    });
+    expect(res.status).toBe(200);
+  };
+
+  it("true with the backend-default novelai family and the layer on; false with the layer off", async () => {
+    const { app, bodies, chatId } = await setup();
+    const id = await createImageGenProfile(app, true);
+    await run(app, chatId, id);
+    expect(((bodies[0]!.parameters as Record<string, unknown>).qualityToggle)).toBe(true);
+
+    const patch = await app.request(`/api/image-gen/profiles/${id}`, {
+      method: "PATCH",
+      headers: jsonHeaders,
+      body: JSON.stringify({ qualityLayerEnabled: false }),
+    });
+    expect(patch.status).toBe(200);
+    await run(app, chatId, id);
+    expect(((bodies[1]!.parameters as Record<string, unknown>).qualityToggle)).toBe(false);
+  });
+
+  it("false when the family is pinned away from novelai (pin beats the backend default)", async () => {
+    const { app, bodies, chatId } = await setup();
+    const id = await createImageGenProfile(app, true);
+    const pin = await app.request(`/api/image-gen/profiles/${id}/family`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify({ family: "prose" }),
+    });
+    expect(pin.status).toBe(200);
+    await run(app, chatId, id);
+    expect(((bodies[0]!.parameters as Record<string, unknown>).qualityToggle)).toBe(false);
   });
 });

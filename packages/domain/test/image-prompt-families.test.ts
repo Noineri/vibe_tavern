@@ -13,13 +13,14 @@ import {
  *  rule (pure data boundary: registry shape, membership, and the
  *  custom-tier-independent canon owner matrix). */
 describe("image-prompt-families registry", () => {
-  test("membership mirrors the authored canon (nine families)", () => {
+  test("membership mirrors the authored canon (ten families — novelai's assets ship in NAI-6c/6d)", () => {
     expect([...IMAGE_PROMPT_FAMILY_IDS]).toEqual([
       "prose",
       "pony",
       "illustrious",
       "noobai",
       "anima",
+      "novelai",
       "krea2",
       "qwen",
       "sdxl-realism",
@@ -58,6 +59,9 @@ describe("image-prompt-families registry", () => {
     expect(IMAGE_PROMPT_FAMILIES["sdxl-realism"]).toMatchObject({ ownTemplates: false, ownNegative: true, ownQuality: true });
     // hybrid: assist-only.
     expect(IMAGE_PROMPT_FAMILIES.hybrid).toMatchObject({ ownTemplates: false, ownNegative: false, ownQuality: false });
+    // novelai (NAI-6a): tag grammar, own templates + negative, but quality
+    // rides NovelAI's server-side qualityToggle — no family quality layer.
+    expect(IMAGE_PROMPT_FAMILIES.novelai).toMatchObject({ ownTemplates: true, ownNegative: true, ownQuality: false });
   });
 });
 
@@ -92,6 +96,8 @@ describe("imagePromptCanonFamily — the variant-resolution rule", () => {
     expect(imagePromptCanonFamily("krea2", "quality")).toBeUndefined();
     expect(imagePromptCanonFamily("qwen", "quality")).toBeUndefined();
     expect(imagePromptCanonFamily("hybrid", "quality")).toBeUndefined();
+    // NAI-6a: NovelAI's quality comes from the server-side qualityToggle.
+    expect(imagePromptCanonFamily("novelai", "quality")).toBeUndefined();
   });
 
   test("free mode is family-neutral — always prose", () => {
