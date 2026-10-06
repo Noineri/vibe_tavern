@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { PROVIDER_TYPE } from '@vibe-tavern/domain';
+import { PROVIDER_TYPE, type ModelSettingsOverlay, type SamplerCapabilityFlags, type SamplerFieldId } from '@vibe-tavern/domain';
 import { useT } from '../../../i18n/context.js';
 import type { ProviderSamplerOnChange, ProviderSamplerValues } from '../../../lib/provider-sampler-values.js';
 import { ChipInput } from '../../shared/ChipInput.js';
@@ -10,7 +10,6 @@ import { cn } from '../../../lib/cn.js';
 import { CustomTooltip } from '../../shared/Tooltip.js';
 import { SegmentedControl } from '../../shared/SegmentedControl.js';
 import { NumberInput } from '../../shared/NumberInput.js';
-import type { SamplerCapabilityFlags, SamplerFieldId } from '@vibe-tavern/domain';
 import { InlineNumField } from './ProviderSamplerNumberField.js';
 import { TextInput } from '../../shared/text-input.js';
 import { AnimatedDisclosure } from '../../shared/AnimatedDisclosure.js';
@@ -26,8 +25,7 @@ import {
 } from '../../../api/sampler-set-api.js';
 import { DropdownSelect } from '../../shared/DropdownSelect.js';
 import { DestructiveConfirmModal } from '../../shared/destructive-confirm-modal.js';
-import type { ModelSettingsOverlay } from '@vibe-tavern/domain';
-
+import { NovelaiPhraseRepPenControl, NovelaiSamplerNumberFields, NovelaiThinkingModeControl } from './novelai-sampler-controls.js';
 /* ── SamplerField sub-component ────────────────────────────────────── */
 
 interface SamplerFieldProps {
@@ -536,6 +534,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
             />
           </div>
         )}
+        <NovelaiThinkingModeControl values={values} onChange={onChange} supports={supports} />
       </div>
 
       {/* Toggles: Streaming, Reasoning */}
@@ -880,6 +879,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
                   disabled={disabled}
                 />
               )}
+              <NovelaiSamplerNumberFields values={values} onChange={onChange} supports={supports} disabled={disabled} renderSamplerField={(props) => <SamplerField {...props} />} />
               {supports('adaptiveTarget') && (
                 <SamplerField
                   label={t("sampler_adaptive_target")}
@@ -1116,7 +1116,7 @@ export function ProviderSamplerPanel({ values, onChange, showTokenPadding = true
                 />
               </div>
             )}
-
+            <NovelaiPhraseRepPenControl values={values} onChange={onChange} supports={supports} />
             {/* Stop Sequences — full width */}
             {supports('stopSequences') && (
             <div className={cn("mt-4", disabled && "opacity-40 pointer-events-none")}>

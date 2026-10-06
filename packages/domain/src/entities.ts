@@ -1121,6 +1121,7 @@ export const IMAGE_GEN_BACKENDS = {
   Luma: "luma",
   Novita: "novita",
   Krea: "krea",
+  NovelAi: "novelai",
 } as const;
 export type ImageGenBackendType = (typeof IMAGE_GEN_BACKENDS)[keyof typeof IMAGE_GEN_BACKENDS];
 
@@ -1228,6 +1229,14 @@ export interface ImageGenCapabilityFlags {
    *  absent or partially empty falls back to the global
    *  `IMAGE_GEN_PARAM_RANGES` defaults (see {@link ImageGenParamRanges}). */
   paramRanges?: ImageGenParamRanges;
+  /** The backend's own default prompt family (NOVELAI_PROVIDER_PLAN
+   *  NAI-6a): the resolution tier between a fresh auto detection and the
+   *  universal prose default — NovelAI models prompt in NovelAI's tag
+   *  dialect unless pinned. OPTIONAL by design: absent = no backend
+   *  default, resolution falls to prose exactly as before. Read from the
+   *  STATIC registry table at generation time (the static-table rule),
+   *  never from this save-time mirror. */
+  defaultPromptFamily?: ImagePromptFamilyId;
 }
 
 /** Profile-level default generation params. EVERY field optional by design

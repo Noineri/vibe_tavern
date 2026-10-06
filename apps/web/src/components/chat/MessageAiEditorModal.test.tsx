@@ -161,6 +161,7 @@ function makeProfile(id: string, name: string, over: Partial<ProviderProfileReco
     dryPenaltyLastN: -1,
     xtcThreshold: 0.1, xtcProbability: 0,
     frequencyPenalty: 0, presencePenalty: 0, repetitionPenalty: 1,
+    unifiedLinear: 1, unifiedQuad: 0, unifiedConf: 0, repetitionPenaltySlope: 0, phraseRepPen: "off", thinkingMode: "auto",
     stopSequences: [], logitBias: [], seed: null,
     reasoningEffort: "default", showReasoning: true, streamResponse: true,
     customSamplers: false, isActive: false,

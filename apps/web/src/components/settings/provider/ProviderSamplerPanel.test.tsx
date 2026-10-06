@@ -115,6 +115,12 @@ function form(): FormState {
     frequencyPenalty: 0,
     presencePenalty: 0,
     repetitionPenalty: 1,
+    unifiedLinear: 1,
+    unifiedQuad: 0,
+    unifiedConf: 0,
+    repetitionPenaltySlope: 0,
+    phraseRepPen: "off",
+    thinkingMode: "auto",
     maxTokens: 4096,
     contextBudget: 8192,
     pinContextBudget: false,
@@ -211,6 +217,96 @@ describe("ProviderSamplerPanel advanced disclosure", () => {
       expect(query("sampler_banned_strings")).toBeNull();
       un();
     }
+  });
+
+  it("renders NovelAI native controls only for their enabled sampler flags and commits phrase repetition penalty changes", async () => {
+    const { PROVIDER_TYPE, resolveSamplerCapabilities } = await import("@vibe-tavern/domain");
+    const nativeCaps = resolveSamplerCapabilities("novelai", PROVIDER_TYPE.novelai);
+    const onChange = mock();
+    const { getByText, queryByText, baseElement, unmount } = render(
+      <ProviderSamplerPanel values={form()} onChange={onChange} capabilities={{ samplers: nativeCaps }} />,
+    );
+    fireEvent.click(getByText("samplers_advanced"));
+
+    for (const label of [
+      "sampler_unified_linear",
+      "sampler_unified_quad",
+      "sampler_unified_conf",
+      "sampler_repetition_penalty_slope",
+      "sampler_phrase_rep_pen",
+    ]) {
+      expect(getByText(label)).toBeTruthy();
+    }
+    expect(queryByText("thinking_mode")).toBeNull();
+
+    fireEvent.click(getByText("sampler_phrase_rep_pen_off"));
+    await waitFor(() => expect(baseElement.querySelector("[cmdk-list]")).toBeTruthy());
+    const aggressive = [...baseElement.querySelectorAll("[cmdk-item]")].find(
+      (item) => item.textContent === "sampler_phrase_rep_pen_aggressive",
+    );
+    fireEvent.click(aggressive!);
+    expect(onChange).toHaveBeenCalledWith("phraseRepPen", "aggressive");
+    unmount();
+
+    for (const [field, label] of [
+      ["unifiedLinear", "sampler_unified_linear"],
+      ["unifiedQuad", "sampler_unified_quad"],
+      ["unifiedConf", "sampler_unified_conf"],
+      ["repetitionPenaltySlope", "sampler_repetition_penalty_slope"],
+      ["phraseRepPen", "sampler_phrase_rep_pen"],
+    ] as const) {
+      const caps = { ...nativeCaps, [field]: false };
+      const view = render(
+        <ProviderSamplerPanel values={form()} onChange={mock()} capabilities={{ samplers: caps }} />,
+      );
+      fireEvent.click(view.getByText("samplers_advanced"));
+      expect(view.queryByText(label)).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it("renders thinking mode only for the NovelAI /oa/v1 sampler flag", async () => {
+    const { PROVIDER_TYPE, resolveSamplerCapabilities } = await import("@vibe-tavern/domain");
+    const oaCaps = resolveSamplerCapabilities("novelai_oa", PROVIDER_TYPE.openaiCompat);
+    const { getByText, queryByText, unmount } = render(
+      <ProviderSamplerPanel values={form()} onChange={mock()} capabilities={{ samplers: oaCaps }} />,
+    );
+    expect(getByText("thinking_mode")).toBeTruthy();
+    fireEvent.click(getByText("samplers_advanced"));
+    for (const label of [
+      "sampler_unified_linear",
+      "sampler_unified_quad",
+      "sampler_unified_conf",
+      "sampler_repetition_penalty_slope",
+      "sampler_phrase_rep_pen",
+    ]) {
+      expect(queryByText(label)).toBeNull();
+    }
+    unmount();
+
+    const noThinkingCaps = { ...oaCaps, thinkingMode: false };
+    const withoutThinking = render(
+      <ProviderSamplerPanel values={form()} onChange={mock()} capabilities={{ samplers: noThinkingCaps }} />,
+    );
+    expect(withoutThinking.queryByText("thinking_mode")).toBeNull();
+    withoutThinking.unmount();
+
+    const otherCaps = resolveSamplerCapabilities("openai", PROVIDER_TYPE.openaiCompat);
+    const other = render(
+      <ProviderSamplerPanel values={form()} onChange={mock()} capabilities={{ samplers: otherCaps }} />,
+    );
+    expect(other.queryByText("thinking_mode")).toBeNull();
+    fireEvent.click(other.getByText("samplers_advanced"));
+    for (const label of [
+      "sampler_unified_linear",
+      "sampler_unified_quad",
+      "sampler_unified_conf",
+      "sampler_repetition_penalty_slope",
+      "sampler_phrase_rep_pen",
+    ]) {
+      expect(other.queryByText(label)).toBeNull();
+    }
+    other.unmount();
   });
 });
 

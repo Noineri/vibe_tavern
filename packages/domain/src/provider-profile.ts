@@ -1,5 +1,6 @@
 import type { CoauthorTransport } from "./coauthor-transport-capabilities.js";
 import type { ProviderGenerationFormat } from "./generation-format.js";
+import type { PhraseRepPen, ThinkingMode } from "./sampler-params.js";
 
 /** Generation mode (LOCAL_SUPPORT_PLAN LS-2a): how the server talks to the
  *  provider backend for this profile's generations.
@@ -115,6 +116,18 @@ export interface StoredProviderProfileRecord {
   frequencyPenalty: number;
   presencePenalty: number;
   repetitionPenalty: number;
+  /** Unified Linear (NovelAI native); 1 = off (not applied). */
+  unifiedLinear: number;
+  /** Unified Quad (NovelAI native); 0 = off. */
+  unifiedQuad: number;
+  /** Unified Conf (NovelAI native); 0 = off. */
+  unifiedConf: number;
+  /** Repetition penalty slope (NovelAI native `repetition_penalty_slope`); 0 = off. */
+  repetitionPenaltySlope: number;
+  /** Phrase repetition penalty (NovelAI native `phrase_rep_pen`); "off" = not applied. */
+  phraseRepPen: PhraseRepPen;
+  /** Thinking toggle (NovelAI `/oa/v1` `enable_thinking`); "auto" = not sent. */
+  thinkingMode: ThinkingMode;
   stopSequences: string[];
   logitBias: Array<{ tokenId: number; bias: number; text?: string; sourceText?: string; model?: string }>;
   seed: string | null;
@@ -209,6 +222,12 @@ export type ModelSettingsOverlay = Partial<
     | 'frequencyPenalty'
     | 'presencePenalty'
     | 'repetitionPenalty'
+    | 'unifiedLinear'
+    | 'unifiedQuad'
+    | 'unifiedConf'
+    | 'repetitionPenaltySlope'
+    | 'phraseRepPen'
+    | 'thinkingMode'
     | 'stopSequences'
     | 'logitBias'
     | 'seed'
@@ -267,6 +286,12 @@ export const PROVIDER_PROFILE_GENERATION_DEFAULTS: Required<ModelSettingsOverlay
   frequencyPenalty: 0,
   presencePenalty: 0,
   repetitionPenalty: 1.0,
+  unifiedLinear: 1,
+  unifiedQuad: 0,
+  unifiedConf: 0,
+  repetitionPenaltySlope: 0,
+  phraseRepPen: "off",
+  thinkingMode: "auto",
   stopSequences: [],
   bannedStrings: [],
   logitBias: [],

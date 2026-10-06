@@ -21,10 +21,9 @@
  * 1024x1024 / 1536x1024 / 1024x1536 (arbitrary W×H exists on gpt-image-2
  * only — not assumed for Custom endpoints).
  */
-
 import { IMAGE_GEN_BACKENDS } from "./entities.js";
+import { NOVELAI_IMAGE_GEN_CAPABILITIES } from "./imagegen-capabilities-novelai.js";
 import type { ImageGenBackendType, ImageGenCapabilityFlags, ImageGenParamRange } from "./entities.js";
-
 /** Global default slider ranges for the advanced numeric params
  *  (IMAGE_GENERATION_PLAN IG-CF5) — the single named constants block both
  *  the editor pane and its tests import (no scattered literals): steps
@@ -938,6 +937,7 @@ export const IMAGE_GEN_BACKEND_CAPABILITIES: Record<ImageGenBackendType, ImageGe
     supportsInpaint: false,
     paramRanges: {},
   },
+  [IMAGE_GEN_BACKENDS.NovelAi]: NOVELAI_IMAGE_GEN_CAPABILITIES,
   [IMAGE_GEN_BACKENDS.Krea]: {
     // IF-11 — Krea card (doc-verified 2026-09-26: live openapi.json at
     // https://api.krea.ai/openapi.json — 3.1, 118 paths — plus their docs

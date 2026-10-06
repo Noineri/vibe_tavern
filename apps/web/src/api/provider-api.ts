@@ -1,6 +1,6 @@
 import type { ProviderProfileRecord, FavoriteProviderModelRecord, ProviderModelSettingsRecord, ProviderModelOption, TestChatResponse, CoauthorConnectionSettingsRecord } from "./types.js";
 import type { UpsertCoauthorConnectionSettingsValue } from "@vibe-tavern/api-contracts";
-import type { CoauthorTransport, GenerationMode, ModelFavoriteScope, ProviderProbeResponse, ModelSettingsOverlay, ProviderProxyMode } from "@vibe-tavern/domain";
+import type { CoauthorTransport, GenerationMode, ModelFavoriteScope, PhraseRepPen, ProviderProbeResponse, ModelSettingsOverlay, ProviderProxyMode, ThinkingMode } from "@vibe-tavern/domain";
 import { client } from "./client.js";
 import { unwrapRpc } from "./unwrap.js";
 
@@ -54,6 +54,12 @@ export async function saveProviderProfile(input: {
   frequencyPenalty?: number;
   presencePenalty?: number;
   repetitionPenalty?: number;
+  unifiedLinear?: number;
+  unifiedQuad?: number;
+  unifiedConf?: number;
+  repetitionPenaltySlope?: number;
+  phraseRepPen?: PhraseRepPen;
+  thinkingMode?: ThinkingMode;
   maxTokens?: number;
   stopSequences?: string[];
   bannedStrings?: string[];
@@ -111,6 +117,12 @@ export async function updateProviderProfile(
     frequencyPenalty?: number;
     presencePenalty?: number;
     repetitionPenalty?: number;
+    unifiedLinear?: number;
+    unifiedQuad?: number;
+    unifiedConf?: number;
+    repetitionPenaltySlope?: number;
+    phraseRepPen?: PhraseRepPen;
+    thinkingMode?: ThinkingMode;
     maxTokens?: number;
     stopSequences?: string[];
     bannedStrings?: string[];

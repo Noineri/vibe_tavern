@@ -12,7 +12,7 @@ import { z } from "zod";
  *  family), the A1111-compatible local dialect, ComfyUI (raw API —
  *  COMFYUI_BACKEND_PLAN), and the PE-1 OpenAI-images-family cloud slugs
  *  (IMAGEGEN_PROVIDER_EXPANSION_PLAN wave PE-1). */
-export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'a1111', 'comfyui', 'togetherai', 'siliconflow', 'nanogpt', 'electronhub', 'pollinations', 'deepinfra', 'recraft', 'zai', 'minimax', 'volcengine', 'dashscope', 'nim', 'chutes', 'hf', 'google', 'stability', 'ideogram', 'cloudflare', 'aihorde', 'bfl', 'fal', 'replicate', 'leonardo', 'luma', 'novita', 'krea']);
+export const imageGenBackendSchema = z.enum(['openrouter', 'openai-images', 'a1111', 'comfyui', 'togetherai', 'siliconflow', 'nanogpt', 'electronhub', 'pollinations', 'deepinfra', 'recraft', 'zai', 'minimax', 'volcengine', 'dashscope', 'nim', 'chutes', 'hf', 'google', 'stability', 'ideogram', 'cloudflare', 'aihorde', 'bfl', 'fal', 'replicate', 'leonardo', 'luma', 'novita', 'krea', 'novelai']);
 
 /** Krea per-model params (IF-11): the K2 prompt-expansion mode + the
  *  generative sliders (intensity / complexity / movement, −100..100,
@@ -54,6 +54,7 @@ export const imagePromptFamilySchema = z.enum([
   'illustrious',
   'noobai',
   'anima',
+  'novelai',
   'krea2',
   'qwen',
   'sdxl-realism',

@@ -54,6 +54,7 @@ export type SystemResourceId = typeof SYSTEM_RESOURCE_ID[keyof typeof SYSTEM_RES
  * - `llamaCpp` — llama.cpp server (via OpenAI-compatible adapter)
  * - `koboldCpp` — KoboldCpp (native adapter, non-OpenAI API)
  * - `unsloth` — Unsloth Studio (OpenAI-compatible /v1 endpoints; requires sk-unsloth- key)
+ * - `novelai` — NovelAI native text API (adapter fork of KoboldCpp; Kayra/Erato)
  */
 export const PROVIDER_TYPE = {
   openaiCompat: "openai_compat",
@@ -64,6 +65,7 @@ export const PROVIDER_TYPE = {
   llamaCpp: "llamacpp",
   koboldCpp: "koboldcpp",
   unsloth: "unsloth",
+  novelai: "novelai",
 } as const;
 
 export type ProviderType = typeof PROVIDER_TYPE[keyof typeof PROVIDER_TYPE];

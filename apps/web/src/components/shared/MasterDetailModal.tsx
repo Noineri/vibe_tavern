@@ -239,6 +239,7 @@ export function MasterDetailModal<T extends string = string>({
           {headerActions}
           <button
             type="button"
+            aria-label={t("close")}
             className={cn(
               "flex shrink-0 cursor-pointer items-center justify-center text-t3 transition-colors",
               isMobile ? "h-10 w-10 rounded-lg active:bg-s2" : "h-8 w-8 rounded-md hover:bg-s2 hover:text-t1"
@@ -278,6 +279,7 @@ export function MasterDetailModal<T extends string = string>({
         </div>
         <button
           type="button"
+          aria-label={t("close")}
           className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 transition-colors hover:bg-s2 hover:text-t1"
           onClick={onClose}
         >

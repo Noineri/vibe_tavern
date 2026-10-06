@@ -67,6 +67,12 @@ export function applySamplerPresetFields(
   if (fields.frequencyPenalty != null) updateForm("frequencyPenalty", fields.frequencyPenalty);
   if (fields.presencePenalty != null) updateForm("presencePenalty", fields.presencePenalty);
   if (fields.repetitionPenalty != null) updateForm("repetitionPenalty", fields.repetitionPenalty);
+  if (fields.unifiedLinear != null) updateForm("unifiedLinear", fields.unifiedLinear);
+  if (fields.unifiedQuad != null) updateForm("unifiedQuad", fields.unifiedQuad);
+  if (fields.unifiedConf != null) updateForm("unifiedConf", fields.unifiedConf);
+  if (fields.repetitionPenaltySlope != null) updateForm("repetitionPenaltySlope", fields.repetitionPenaltySlope);
+  if (fields.phraseRepPen != null) updateForm("phraseRepPen", fields.phraseRepPen);
+  if (fields.thinkingMode != null) updateForm("thinkingMode", fields.thinkingMode);
   if (fields.maxTokens != null) updateForm("maxTokens", fields.maxTokens);
   if (fields.contextBudget !== undefined) updateForm("contextBudget", fields.contextBudget ?? 0);
   if (fields.pinContextBudget != null) updateForm("pinContextBudget", fields.pinContextBudget);

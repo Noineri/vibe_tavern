@@ -36,9 +36,41 @@ export type SamplerFieldId =
   | "stopSequences"
   | "seed"
   | "logitBias"
-  | "reasoningEffort";
+  | "reasoningEffort"
+  | "unifiedLinear"
+  | "unifiedQuad"
+  | "unifiedConf"
+  | "repetitionPenaltySlope"
+  | "phraseRepPen"
+  | "thinkingMode";
 
 export type SamplerCapabilityFlags = Record<SamplerFieldId, boolean>;
+
+// ---------------------------------------------------------------------------
+// NovelAI sampler vocabularies (NOVELAI_PROVIDER_PLAN Wave 1) — the single
+// source for the api-contracts zod enums and the web option lists.
+// ---------------------------------------------------------------------------
+
+/** NovelAI native `phrase_rep_pen` choices (spec `text.PhraseRepPenChoice`). */
+export const PHRASE_REP_PEN = {
+  off: "off",
+  veryLight: "very_light",
+  light: "light",
+  medium: "medium",
+  aggressive: "aggressive",
+  veryAggressive: "very_aggressive",
+} as const;
+
+export type PhraseRepPen = typeof PHRASE_REP_PEN[keyof typeof PHRASE_REP_PEN];
+
+/** NovelAI `/oa/v1` thinking toggle (`enable_thinking`); `auto` = not sent. */
+export const THINKING_MODE = {
+  auto: "auto",
+  on: "on",
+  off: "off",
+} as const;
+
+export type ThinkingMode = typeof THINKING_MODE[keyof typeof THINKING_MODE];
 
 // ---------------------------------------------------------------------------
 // Sampler set IDs — one per capability profile from research
@@ -86,6 +118,13 @@ export type SamplerSetId =
   | "koboldcpp_native"
   | "pollinations"
   | "groq"
+  // NovelAI `/oa/v1` (Xialong / GLM-4.6) — NovelAI's own reduced sampler
+  // list (evidence on SAMPLER_SETS.novelai_oa)
+  | "novelai_oa"
+  // NovelAI native `/ai/generate` (Kayra / Erato) — the full native sampler
+  // surface of `text.RequestParameters` (NOVELAI_PROVIDER_PLAN NAI-3a);
+  // stops are matched client-side (no tokenizer for token-id arrays)
+  | "novelai_native"
   // Fallback for unknown/custom providers
   | "openai_compat_minimal";
 
@@ -126,6 +165,12 @@ const NONE: SamplerCapabilityFlags = {
   seed: false,
   logitBias: false,
   reasoningEffort: false,
+  unifiedLinear: false,
+  unifiedQuad: false,
+  unifiedConf: false,
+  repetitionPenaltySlope: false,
+  phraseRepPen: false,
+  thinkingMode: false,
 };
 
 /** Runtime-ordered list of every sampler field id, derived from the `NONE`
@@ -380,6 +425,53 @@ export const SAMPLER_SETS: Record<SamplerSetId, SamplerCapabilityFlags> = {
     "reasoningEffort",
   ),
 
+  // ── Outlier: NovelAI /oa/v1 (Xialong / GLM-4.6) ─────────────────────
+  // Evidence (NOVELAI_PROVIDER_PLAN, owner ruling 2026-10-05): NovelAI's own
+  // GLM-4.6 editor shows exactly Temperature, Top-K, Nucleus (Top-P), Min-P —
+  // nothing else, not reorderable; a Xialong story file from NovelAI's
+  // Discord confirms the same order (`order: temperature, top_k, top_p,
+  // min_p`). Plus stop strings and the `enable_thinking` switch — no
+  // unified_*, penalties, seed or logit bias on this route.
+  novelai_oa: set(
+    "temperature",
+    "topP",
+    "topK",
+    "minP",
+    "stopSequences",
+    "thinkingMode",
+  ),
+
+  // ── Outlier: NovelAI native /ai/generate (Kayra / Erato) ─────────────
+  // The native `text.RequestParameters` sampler surface (NOVELAI_PROVIDER_PLAN
+  // NAI-3a; spec + community KB «Generation Settings"): the shared tail-free /
+  // top-a / typical / mirostat pair, the repetition-penalty family (incl. the
+  // Wave-1 slope + phrase_rep_pen), and the Unified trio (math1_*).
+  // NO seed, no logit bias, no thinking toggle, no mirostat mode flag (the
+  // native API has none of those); stop sequences ride the CLIENT-SIDE match
+  // (the native API takes token-id arrays from the model's own tokenizer —
+  // VT has no nerdstash/Llama-3 tokenizer), never the wire.
+  novelai_native: set(
+    "temperature",
+    "topP",
+    "topK",
+    "topA",
+    "minP",
+    "typicalP",
+    "tfsZ",
+    "mirostatTau",
+    "mirostatEta",
+    "repetitionPenalty",
+    "repeatLastN",
+    "repetitionPenaltySlope",
+    "frequencyPenalty",
+    "presencePenalty",
+    "phraseRepPen",
+    "stopSequences",
+    "unifiedLinear",
+    "unifiedQuad",
+    "unifiedConf",
+  ),
+
   // ── Fallback: unknown/custom OpenAI-compatible providers ─────────────────
   openai_compat_minimal: set(
     "temperature",
@@ -441,6 +533,7 @@ const PRESET_SAMPLER_SET_MAP: Record<string, SamplerSetId> = {
   // Outliers
   groq: "groq",
   pollinations: "pollinations",
+  novelai_oa: "novelai_oa",
 };
 
 export function resolveSamplerSet(
@@ -464,6 +557,9 @@ export function resolveSamplerSet(
       return "llamacpp_native";
     case PROVIDER_TYPE.koboldCpp:
       return "koboldcpp_native";
+    case PROVIDER_TYPE.novelai:
+      // Native /ai/generate (Kayra / Erato) — full native sampler surface.
+      return "novelai_native";
     case PROVIDER_TYPE.openaiCompat:
     default: {
       if (!providerPreset) return "openai_compat_minimal";

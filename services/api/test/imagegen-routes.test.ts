@@ -4448,7 +4448,7 @@ describe("image-gen routes — prompt families (IPT-3)", () => {
     expect(res.status).toBe(200);
     const { families } = (await res.json()) as { families: Array<{ id: string; grammar: string; ownTemplates: boolean; ownNegative: boolean; ownQuality: boolean; hasAssistAddendum: boolean }> };
     expect(families.map((f) => f.id)).toEqual([
-      "prose", "pony", "illustrious", "noobai", "anima", "krea2", "qwen", "sdxl-realism", "hybrid",
+      "prose", "pony", "illustrious", "noobai", "anima", "novelai", "krea2", "qwen", "sdxl-realism", "hybrid",
     ]);
     const byId = Object.fromEntries(families.map((f) => [f.id, f]));
     expect(byId["prose"]).toMatchObject({ grammar: "prose", ownTemplates: true, ownNegative: true, ownQuality: false, hasAssistAddendum: false });
@@ -4456,6 +4456,7 @@ describe("image-gen routes — prompt families (IPT-3)", () => {
     expect(byId["krea2"]).toMatchObject({ grammar: "prose", ownTemplates: false, ownNegative: false, ownQuality: false, hasAssistAddendum: true });
     expect(byId["qwen"]).toMatchObject({ ownNegative: true, ownQuality: false, hasAssistAddendum: true });
     expect(byId["sdxl-realism"]).toMatchObject({ ownTemplates: false, ownNegative: true, ownQuality: true });
+    expect(byId["novelai"]).toMatchObject({ grammar: "tags", ownTemplates: true, ownNegative: true, ownQuality: false, hasAssistAddendum: true });
   });
 });
 

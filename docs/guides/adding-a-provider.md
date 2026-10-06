@@ -109,7 +109,7 @@ Verify with `bun run typecheck` and `bun run test`, then smoke-test in the UI: S
 
 ## Case B — New protocol
 
-Use this only when the API shape is fundamentally new (e.g. a vendor SDK with its own message format, or a native text-completion endpoint like KoboldCPP's `/api/v1/generate`). Example below assumes a new `vertex` protocol.
+Use this only when the API shape is fundamentally new (e.g. a vendor SDK with its own message format, or a native text-completion endpoint like KoboldCPP's `/api/v1/generate` or NovelAI's `/ai/generate` — `koboldcpp-adapter.ts` and `novelai-adapter.ts` are the two examples). Example below assumes a new `vertex` protocol.
 
 ### Step 1 — Canonical type
 
