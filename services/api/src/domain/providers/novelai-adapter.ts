@@ -260,8 +260,13 @@ export function createNovelAiModel(options: NovelAiAdapterOptions): LanguageMode
           // Mandated fields go AFTER the spread: parameters ALWAYS carry them,
           // and the call's maxOutputTokens reaches max_length unchanged —
           // never clamped (owner ruling), never overridden by providerOptions.
+          // Unset-value fallback is 150, NOT the fork's 512: 150 is the value
+          // every NovelAI tier accepts (spec `input` description; lowest tiers
+          // cap above it) — a keyless-config first request must not 4xx on a
+          // tier limit before NAI-3c's preset default even applies (owner
+          // 2026-10-06).
           use_string: true,
-          max_length: callOptions.maxOutputTokens ?? 512,
+          max_length: callOptions.maxOutputTokens ?? 150,
           min_length: 1,
           prefix: "vanilla",
         },
@@ -307,7 +312,8 @@ export function createNovelAiModel(options: NovelAiAdapterOptions): LanguageMode
           temperature: callOptions.temperature ?? 1.0,
           ...(callOptions.providerOptions?.novelai ?? {}),
           use_string: true,
-          max_length: callOptions.maxOutputTokens ?? 512,
+          // 150 = every-tier-safe unset fallback (see the blocking path above).
+          max_length: callOptions.maxOutputTokens ?? 150,
           min_length: 1,
           prefix: "vanilla",
         },

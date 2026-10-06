@@ -260,7 +260,7 @@ describe("NovelAI adapter — doStream", () => {
     expect(headers.get("Authorization")).toBe(`Bearer ${TEST_API_KEY}`);
     const body = sentBody() as { model: string; parameters: { max_length: number } };
     expect(body.model).toBe("kayra-v1");
-    expect(body.parameters.max_length).toBe(512); // fork-kept defensive default
+    expect(body.parameters.max_length).toBe(150); // every-tier-safe unset fallback (owner 2026-10-06; NOT the fork's 512)
   });
 
   it("emits every token immediately when no stops are active (manual template, no user stops)", async () => {
