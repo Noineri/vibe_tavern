@@ -3084,6 +3084,52 @@ describe("ImageGenPane — prompt family row (IPT-5)", () => {
     expect(apiStore[0]?.familyOverride).toBeUndefined();
   });
 
+  it("shows the backend default family with its own source label when nothing is pinned or detected (NAI-6b)", async () => {
+    const record = makeRecord({
+      backend: IMAGE_GEN_BACKENDS.NovelAi,
+      modelId: "nai-diffusion-5-curated",
+    });
+    const view = render(familyNode(familyHook(record)));
+    await waitFor(() => expect(view.getByTestId("image-gen-family-backend-default")).toBeTruthy());
+    expect(view.getByTestId("image-gen-family-backend-default").textContent).toContain(
+      "imagePromptTemplates.family.novelai",
+    );
+    expect(view.getByTestId("image-gen-family-status").textContent).toContain(
+      "image_gen_family_source_backend-default",
+    );
+    expect(view.getByTestId("image-gen-family-status").textContent).not.toContain(
+      "image_gen_family_not_detected",
+    );
+  });
+
+  it("keeps a manual pin and a fresh detection authoritative over the backend default (NAI-6b)", async () => {
+    const pinned = makeRecord({
+      backend: IMAGE_GEN_BACKENDS.NovelAi,
+      modelId: "nai-diffusion-5-curated",
+      familyOverride: "pony",
+      familySource: "manual",
+    });
+    const pinnedView = render(familyNode(familyHook(pinned)));
+    await waitFor(() =>
+      expect(pinnedView.getByTestId("image-gen-family-status").textContent).toContain(
+        "image_gen_family_manual_note",
+      ),
+    );
+    expect(pinnedView.queryByTestId("image-gen-family-backend-default")).toBeNull();
+    cleanup();
+
+    const detected = makeRecord({
+      backend: IMAGE_GEN_BACKENDS.NovelAi,
+      modelId: "nai-diffusion-5-curated",
+      familyDetected: "pony",
+      familyDetectedForModel: "nai-diffusion-5-curated",
+      familySource: "auto",
+    });
+    const detectedView = render(familyNode(familyHook(detected)));
+    await waitFor(() => expect(detectedView.getByTestId("image-gen-family-detected")).toBeTruthy());
+    expect(detectedView.queryByTestId("image-gen-family-backend-default")).toBeNull();
+  });
+
   it("refreshes successful detection for the matching saved model and shows the exact response source", async () => {
     const record = makeRecord({ modelId: "checkpoint-a" });
     apiStore = [record];
