@@ -204,6 +204,12 @@ export {
   type DiceSampleRoll,
   type InteractiveScriptTestResult,
 } from "./script-schema.js";
+export {
+  scriptSafetySettingsSchema,
+  updateScriptSafetySettingsSchema,
+  type ScriptSafetySettings,
+  type UpdateScriptSafetySettings,
+} from "./script-safety-settings-schema.js";
 export { regexPlacementSchema, regexSubstituteSchema, regexApplyTargetSchema, regexTargetTypeSchema, createRegexPresetSchema, updateRegexPresetSchema, setRegexLinksSchema, resolveActiveRegexQuerySchema, createRegexProfileSchema, updateRegexProfileSchema, deleteRegexProfileQuerySchema, attachRegexRuleSchema, setRegexProfileLinksSchema } from "./regex-schema.js";
 export type { RegexPlacementCode, RegexSubstituteCode, RegexApplyTargetValue, RegexTargetTypeValue, CreateRegexPresetInput, UpdateRegexPresetInput, SetRegexLinksInput, ResolveActiveRegexQuery, CreateRegexProfileInput, UpdateRegexProfileInput, DeleteRegexProfileQuery, AttachRegexRuleInput, SetRegexProfileLinksInput } from "./regex-schema.js";
 export { ttsBackendSchema, ttsTargetTypeSchema, ttsProfileConfigSchema, ttsProfileSchema, createTtsProfileSchema, updateTtsProfileSchema, setTtsLinksSchema, generateTtsSchema, draftTtsVoicesSchema, draftTtsPreviewSchema, draftTtsModelsSchema, localDockerStatusSchema, revealNarrationSchema } from "./tts-schema.js";
