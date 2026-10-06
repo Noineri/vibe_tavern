@@ -621,4 +621,79 @@ describe("final test report", () => {
 		});
 		expect(surviving).toEqual([]);
 	});
+
+	test("lists quarantined failures after the suite summaries and before the tally", () => {
+		// TH-8 fix step 10.2: a suite can PASS with quarantined failures, so the
+		// block cannot live inside the failure sections (those only exist for red
+		// suites) — it rides on the results and renders even in an all-green
+		// report, so a green run never silently swallows known failures. The
+		// aggregate tally stays the last line.
+		const withQuarantine = [{
+			name: "web",
+			exitCode: 0,
+			durationMs: 56_400,
+			stdout: "",
+			stderr: "",
+			quarantined: [{
+				suite: "web",
+				file: "apps/web/src/api/gallery-api.test.ts",
+				test: "gallery > lists avatars",
+				reason: "known flake — TEST_SUITE_HYGIENE_REPORT step 10",
+				since: "2026-10-06",
+			}],
+		}] satisfies readonly TestSuiteResult[];
+
+		// When
+		const report = formatTestReport(withQuarantine);
+
+		// Then
+		expect(report).toContain("Quarantined failures");
+		expect(report).toContain(
+			"web · apps/web/src/api/gallery-api.test.ts · gallery > lists avatars · since 2026-10-06 · known flake — TEST_SUITE_HYGIENE_REPORT step 10",
+		);
+		expect(report.indexOf("PASS  web")).toBeLessThan(report.indexOf("Quarantined failures"));
+		expect(report.indexOf("Quarantined failures")).toBeLessThan(report.indexOf("Suites: 1 passed, 0 failed"));
+	});
+
+	test("keeps quarantined failures visible alongside a blocking failure", () => {
+		// A red run still names its quarantined debt — the block is not only a
+		// green-run nicety.
+		const mixed = [
+			{
+				name: "api",
+				exitCode: 1,
+				durationMs: 20,
+				stdout: "",
+				stderr: "services/api/test/example.test.ts:\n(fail) example > fails\n 1 fail\n",
+			},
+			{
+				name: "web",
+				exitCode: 0,
+				durationMs: 56_400,
+				stdout: "",
+				stderr: "",
+				quarantined: [{
+					suite: "web",
+					file: "apps/web/src/flaky.test.ts",
+					test: "flaky > probe",
+					reason: "known flake — TEST_SUITE_HYGIENE_REPORT step 10",
+					since: "2026-10-06",
+				}],
+			},
+		] satisfies readonly TestSuiteResult[];
+
+		// When
+		const report = formatTestReport(mixed);
+
+		// Then
+		expect(report).toContain("Failure details");
+		expect(report).toContain("FAIL  api");
+		expect(report).toContain("Quarantined failures");
+		expect(report).toContain("web · apps/web/src/flaky.test.ts · flaky > probe");
+	});
+
+	test("omits the quarantine block when nothing is quarantined", () => {
+		const report = formatTestReport(results);
+		expect(report).not.toContain("Quarantined failures");
+	});
 });
