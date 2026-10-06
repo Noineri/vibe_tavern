@@ -480,3 +480,104 @@ describe("experience-copilot-tools: ToolSet shape + gating", () => {
     expect(tools.read_skill_file).toBeDefined();
   });
 });
+
+// ─── SS-4B: untrusted-script trust gate (SCRIPT_SAFETY_PLAN decision 10) ─────
+//
+// `rulesTrusted: false` models an IMPORTED, NEVER-ENABLED script: its code
+// must not execute in the copilot. Runs refuse with a structured reason the
+// model relays; rules proposals are accepted WITHOUT the sandbox run, marked.
+
+describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () => {
+  test("run_test refuses an untrusted script with a structured digest — the code never runs", async () => {
+    // VALID rules prove non-execution: a real run would return ok:true; the
+    // refusal fires before the sandbox is ever touched.
+    const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
+    const digest = (await tools.run_test.execute({}, ctx)) as unknown as {
+      ok: boolean;
+      errorCode?: string;
+      errorMessage?: string;
+    };
+    expect(digest.ok).toBe(false);
+    expect(digest.errorCode).toBe("script_not_trusted");
+    expect(digest.errorMessage).toContain("imported and never enabled");
+    expect(digest.errorMessage).toContain("enable it in the editor first");
+  });
+
+  test("run_simulate refuses an untrusted script with the same structured digest", async () => {
+    const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
+    const digest = (await tools.run_simulate.execute({}, ctx)) as unknown as {
+      ok: boolean;
+      errorCode?: string;
+      errorMessage?: string;
+    };
+    expect(digest.ok).toBe(false);
+    expect(digest.errorCode).toBe("script_not_trusted");
+    expect(digest.errorMessage).toContain("imported and never enabled");
+  });
+
+  test("write_buffer accepts a rules proposal WITHOUT validation and carries the «not validated» marker", async () => {
+    // SYNTAX_ERROR rules would throw on the trusted path — acceptance proves
+    // the sandbox run was skipped; the marker names the trust state.
+    const tools = buildExperienceCopilotTools({ rulesTrusted: false });
+    const out = (await tools.write_buffer.execute(
+      { target: "rules", content: SYNTAX_ERROR_RULES, summary: "draft" },
+      ctx,
+    )) as unknown as { target: string; proposed: string; notValidated?: string };
+    expect(out.target).toBe("rules");
+    expect(out.proposed).toBe(SYNTAX_ERROR_RULES);
+    expect(out.notValidated).toBe("not validated: script is imported and not yet enabled");
+  });
+
+  test("edit_buffer accepts invalid edits without validation and carries the marker; the buffer still advances", async () => {
+    const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
+    const out = (await tools.edit_buffer.execute(
+      {
+        target: "rules",
+        edits: [{ search: "context.experience.register({", replace: "context.experience.register({ !!broken" }],
+        summary: "break",
+      },
+      ctx,
+    )) as unknown as { notValidated?: string };
+    expect(out.notValidated).toBe("not validated: script is imported and not yet enabled");
+    // The working buffer advanced (no validation throw, no rollback).
+    const after = (await tools.edit_buffer.execute(
+      { target: "rules", edits: [{ search: " !!broken", replace: "" }], summary: "fix" },
+      ctx,
+    )) as unknown as { proposed: string; notValidated?: string };
+    expect(after.proposed).toContain("context.experience.register({");
+    expect(after.notValidated).toBe("not validated: script is imported and not yet enabled");
+  });
+
+  test("visual proposals never carry the marker (no rules validation exists for visual)", async () => {
+    const tools = buildExperienceCopilotTools({ rulesTrusted: false });
+    const out = (await tools.write_buffer.execute(
+      { target: "visual", content: "<div>x</div>", summary: "v" },
+      ctx,
+    )) as unknown as { target: string; proposed: string; notValidated?: string };
+    expect(out.target).toBe("visual");
+    expect(out.proposed).toBe("<div>x</div>");
+    expect(out.notValidated).toBeUndefined();
+  });
+});
+
+describe("experience-copilot-tools: SS-4B trusted parity (after first enable)", () => {
+  test("rulesTrusted: true — run_test executes, rules proposals validate and carry NO marker", async () => {
+    const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: true });
+    const digest = (await tools.run_test.execute({}, ctx)) as unknown as {
+      ok: boolean;
+      legalActionTypes?: string[];
+    };
+    expect(digest.ok).toBe(true);
+    expect(digest.legalActionTypes).toEqual(["increment", "reset"]);
+
+    // Validation still throws on invalid rules for a trusted script.
+    await expect(
+      tools.write_buffer.execute({ target: "rules", content: SYNTAX_ERROR_RULES, summary: "bad" }, ctx),
+    ).rejects.toThrow(/failed validation/);
+    const out = (await tools.write_buffer.execute(
+      { target: "rules", content: VALID_RULES, summary: "ok" },
+      ctx,
+    )) as unknown as { notValidated?: string };
+    expect(out.notValidated).toBeUndefined();
+  });
+});

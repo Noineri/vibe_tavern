@@ -290,9 +290,8 @@ export function storeMessagesToHistory(
 /** Convert the ER-5 assembled prompt messages into AI SDK `ModelMessage[]`.
  *  Mirrors `prepareSdkMessages`'s assistant branch: the SDK has NO top-level
  *  `toolCalls` field on an assistant message — tool calls live INSIDE `content`
- *  as `ToolCallPart[]` (AssistantContent). Without this fold the SDK silently
- *  ignores the `toolCalls` field and the model loses its cross-turn tool-call
- *  context. */
+ *  as `ToolCallPart[]` (AssistantContent) — without this fold the SDK silently
+ *  ignores them and the model loses its cross-turn tool-call context. */
 function toModelMessages(
   messages: ReadonlyArray<ExperienceCopilotPromptMessage>,
 ): ModelMessage[] {
@@ -322,6 +321,9 @@ interface CopilotContext {
   rules: string;
   visual: string | undefined;
   boundVisuals: Array<{ id: string; name: string; kind: string }>;
+  /** SS-4B: trust flag of the thread's script (`origin === 'imported' &&
+   *  firstEnabledAt === null` → false) — gates every copilot execution path. */
+  rulesTrusted: boolean;
 }
 
 /** Load the turn-start context package by `thread.scriptId`. When `scriptId` is
@@ -333,7 +335,7 @@ async function loadCopilotContext(
   deps: ExperienceCopilotStreamDeps,
 ): Promise<CopilotContext> {
   if (scriptId === null) {
-    return { rules: "", visual: undefined, boundVisuals: [] };
+    return { rules: "", visual: undefined, boundVisuals: [], rulesTrusted: true };
   }
   const [script, boundVisualIds] = await Promise.all([
     deps.getScript(scriptId),
@@ -343,6 +345,10 @@ async function loadCopilotContext(
   // Rules source = the script's code. A missing script is treated as an empty
   // draft (the thread's scriptId is a soft link that may dangle pre-save).
   const rules = script?.code ?? "";
+  // SS-4B, derived ONCE here: imported rows are trusted only after the first
+  // explicit enable; in_app rows, drafts and dangling ids are trusted.
+  const rulesTrusted =
+    script === null || script.origin !== "imported" || script.firstEnabledAt !== null;
 
   // Active visual = the script's defaultVisualId, resolved to its source.
   let visual: string | undefined;
@@ -358,7 +364,7 @@ async function loadCopilotContext(
     if (v) boundVisuals.push({ id: v.id, name: v.name, kind: "visual" });
   }
 
-  return { rules, visual, boundVisuals };
+  return { rules, visual, boundVisuals, rulesTrusted };
 }
 
 // ─── Main streaming function ─────────────────────────────────────────────────
@@ -469,17 +475,15 @@ export async function* streamExperienceCopilot(
     ? [...priorHistory, { role: "user", content: request.content }]
     : priorHistory;
   const step: ExperienceCopilotStep = request.step ?? "rules";
-  // Prefer the LIVE draft buffers the editor sent (unsaved in-progress edits)
-  // over the last-persisted buffers loaded from the DB — the copilot must see
-  // exactly what the user sees, including a fresh creation draft (pre-save,
-  // where the DB buffers are empty) and the buffer the user has switched to.
+  // Prefer the LIVE drafts the editor sent over the persisted DB buffers — the
+  // copilot must see exactly what the user sees (in-progress edits, pre-save
+  // drafts where the DB buffers are empty, the switched-to buffer).
   const rules = request.rules ?? context.rules;
   const visual = request.visual ?? context.visual;
   // CX-3: resolve the thread's pinned links into the rendered attached block.
   // Live by-id resolution EVERY turn — never persisted, so a later
-  // rename/delete/edit re-resolves on the next turn (dangling ids just
-  // vanish). No dep or no links → empty string → byte-identical pre-CX-3
-  // assembly (the assembler omits the section entirely).
+  // rename/delete/edit re-resolves next turn (dangling ids vanish). No dep or
+  // no links → empty string → the assembler omits the section entirely.
   const contextItems = deps.resolveContextItems && thread.contextLinks.length > 0
     ? await deps.resolveContextItems(thread.contextLinks)
     : [];
@@ -505,6 +509,7 @@ export async function* streamExperienceCopilot(
     responseReserve: COPILOT_RESPONSE_RESERVE_TOKENS,
     profile: copilotProfile,
     todo: thread.todo,
+    rulesTrusted: context.rulesTrusted,
     ...(deps.skillUserRoot !== undefined ? { skillUserRoot: deps.skillUserRoot } : {}),
     ...(attachedContextBlock ? { attachedContextBlock } : {}),
   });
@@ -513,24 +518,24 @@ export async function* streamExperienceCopilot(
     threadId: request.threadId,
     systemMessageLength: assembled.systemMessage.length,
     messageCount: assembled.messages.length,
+    rulesTrusted: context.rulesTrusted,
     ...(assembled.compactionSummary ? { compaction: assembled.compactionSummary } : {}),
   });
 
   // ── 7. Build tools (ER-4), seeded from the current rules/visual ──
-  // Skill roots come from the resolved skill catalog (ER-16) — the prompt
-  // assembler derives them from the same catalog it rendered, so read_skill_file
-  // resolves paths against the matching root. toolSet is the resolved profile's
-  // set (read_skill_file is always added on top, mirroring Co-Author).
+  // Skill roots come from the resolved skill catalog (ER-16) so read_skill_file
+  // resolves against the rendered catalog's root; toolSet is the resolved
+  // profile's set (read_skill_file always added on top, mirroring Co-Author).
   const tools: ToolSet = buildExperienceCopilotTools({
     ...(rules ? { rules } : {}),
     ...(visual !== undefined ? { visual } : {}),
+    rulesTrusted: context.rulesTrusted,
     toolSet: copilotProfile.toolSet,
     skillRoots: assembled.skillRoots,
     // TAG-6: the todo tool's full-list rewrite persists onto the thread row via
-    // the ER-3 store (session-scoped lifetime — survives turns, reloads, and
-    // compaction via the prompt section above). The tool's dep signature is
-    // `(items: readonly CopilotTodoItem[]) => Promise<void>`; the store's
-    // `updateTodo(threadId, items)` is its structural twin.
+    // the ER-3 store (session-scoped — survives turns, reloads, compaction via
+    // the prompt section above); `updateTodo(threadId, items)` is the store's
+    // structural twin of the tool's `(items) => Promise<void>` dep.
     saveTodo: (items) => deps.store.updateTodo(request.threadId, items),
   });
 
@@ -551,14 +556,12 @@ export async function* streamExperienceCopilot(
       tools,
       // TAG-5 split-turn (style B): a question turn ENDS on the ask_user call.
       // The SDK ships the exact primitive — `hasToolCall(name)` stops the loop
-      // when the most recent step contains a tool call with that name (verified
-      // against the installed ai@7.0.66: `stopWhen` is
-      // `Arrayable<StopCondition>`, and hasToolCall inspects
-      // `steps[len-1].toolCalls[].toolName`). The tool still EXECUTES — its
-      // awaiting marker streams to the client and persists via persistTurn —
-      // then the loop halts and the turn finishes normally (a finish event,
-      // never an error). The user's answer arrives later as a NEW stream
-      // request in `answer` mode, which rewrites the marker row (step 4).
+      // when the latest step contains that tool call (verified against the
+      // installed ai@7.0.66). The tool still EXECUTES — its awaiting marker
+      // streams to the client and persists via persistTurn — then the loop
+      // halts and the turn finishes normally (a finish event, never an error).
+      // The user's answer arrives later as a NEW stream request in `answer`
+      // mode, which rewrites the marker row (step 4).
       stopWhen: [isStepCount(COPILOT_TOOL_LOOP_CEILING), hasToolCall("ask_user")],
     });
   } catch (err) {
@@ -676,14 +679,12 @@ export async function* streamExperienceCopilot(
   // Per-segment values are ALWAYS the assembler's estimate (the provider only
   // reports an aggregate). `totalTokens` prefers the provider's ACTUAL input
   // size of the FINAL request — read from the live provider-response trace's
-  // LAST step (multi-step tool turns re-send the whole context per step, so the
-  // aggregate `usage.inputTokens` SUMS steps: 3 steps × ~63k ≈ 190k reported
-  // against a 100k budget — a false 190% reading. The last step's input is the
-  // true final context size; for single-step turns it equals the aggregate).
-  // Else the assembler's estimate — metrics honesty: never blend the two and
-  // claim it was measured. `budgetTokens` is 0 when the profile has no explicit
-  // context budget (the meter renders an unmetered bar). `reserveTokens` clamps
-  // negatives to 0 (maxTokens -1 = "model decides" = no explicit reserve).
+  // LAST step — the aggregate `usage.inputTokens` SUMS steps (multi-step turns
+  // re-send the whole context per step: 3 × ~63k ≈ 190k against a 100k budget —
+  // a false 190% reading; the last step's input is the true final size).
+  // Else the assembler's estimate — never blend the two and claim it was
+  // measured. `budgetTokens` is 0 with no explicit budget (unmetered bar);
+  // `reserveTokens` clamps negatives to 0 (maxTokens -1 = model decides).
   // Persisting is best-effort: a failure logs and never fails the turn.
   const traceSteps = mappedState.providerResponse.steps;
   const lastStepInputTokens = traceSteps.length > 0
@@ -757,11 +758,10 @@ type TurnSegment =
 
 /** Persist the assistant half of the turn as chronologically ordered rows: a
  *  non-empty text segment → an assistant text row; a RUN of consecutive
- *  tool-call segments (parallel calls in one step) → one assistant row
- *  carrying them in `toolCallsJson`; a tool-result segment → one tool row.
- *  The user message was already persisted before streaming. Each write is
- *  independent (no transaction) so a failure on one does not lose the others —
- *  the messages are append-only and ordered by createdAt. */
+ *  tool-call segments (parallel calls in one step) → one assistant row in
+ *  `toolCallsJson`; a tool-result segment → one tool row. Each write is
+ *  independent (no transaction) so a failure loses only itself (append-only,
+ *  ordered by createdAt). */
 async function persistTurn(
   deps: ExperienceCopilotStreamDeps,
   threadId: string,

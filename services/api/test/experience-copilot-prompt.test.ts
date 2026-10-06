@@ -139,6 +139,34 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     expect(result.systemMessage).toContain("discovery failed");
   });
 
+  test("SS-4B: contract derivation is SKIPPED while the script is untrusted — honest skip note, no summary fields", async () => {
+    // VALID_RULES derive successfully on the trusted path (pinned above), so
+    // the absence of the contract-only rendering ("choose method:") proves
+    // deriveContract never RAN — no imported code executes during assembly.
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+      rulesTrusted: false,
+    });
+    expect(result.systemMessage).toContain("Discovered experience definition");
+    expect(result.systemMessage).toContain(
+      "not derived: script is imported and not yet enabled",
+    );
+    expect(result.systemMessage).not.toContain("choose method:");
+  });
+
+  test("SS-4B: rulesTrusted true (default parity) still derives the contract", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+      rulesTrusted: true,
+    });
+    expect(result.systemMessage).toContain("choose method: absent");
+    expect(result.systemMessage).not.toContain("not derived: script is imported");
+  });
+
   test("visual, bound visuals, and test feedback surface when present", async () => {
     const result = await assembleExperienceCopilotPrompt({
       history: [],

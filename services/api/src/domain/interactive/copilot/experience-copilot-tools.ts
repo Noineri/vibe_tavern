@@ -28,6 +28,14 @@
  * The closure working-state composes across calls in one turn (a later call
  * sees earlier mutations), serialized through a non-poisoning queue so a
  * rejected call cannot corrupt the buffers or block a later one.
+ *
+ * SS-4B trust gate (SCRIPT_SAFETY_PLAN decision 10): while the thread's
+ * script is UNTRUSTED (imported and never enabled — the stream passes
+ * `rulesTrusted: false`), its code NEVER executes here: `run_test`/
+ * `run_simulate` refuse with a structured reason the model relays to the
+ * user, and rules proposals are accepted WITHOUT the validation run,
+ * carrying a «not validated» marker. After the first enable everything runs
+ * exactly as before (trusted default).
  */
 
 import { tool, type ToolSet } from "ai";
@@ -142,6 +150,16 @@ export interface ExperienceCopilotBindingSuggestion {
   readonly reason: string;
 }
 
+/** The `write_buffer`/`edit_buffer` result: the proposal triple plus the
+ *  optional SS-4B «not validated» marker, present only when the sandbox run
+ *  was skipped because the thread's script is untrusted (imported and never
+ *  enabled). The wire schema (`experienceCopilotToolOutputSchema`) is zod
+ *  strip-mode, so the FRONTEND drops the marker — its audience is the MODEL,
+ *  which reads it in the tool-result JSON and relays it to the user. */
+export type ExperienceCopilotBufferOutput = ExperienceCopilotToolOutput & {
+  readonly notValidated?: string;
+};
+
 /** Result envelope for the `todo` tool (TAG-3). Success carries the rewritten
  *  list plus the collapsed-panel summary the frontend renders (`activeTitle` +
  *  `remaining`); a `saveTodo` persistence failure returns `ok:false` (NOT a
@@ -177,6 +195,24 @@ const CONSOLE_TAIL_MAX = 20;
 /** Max chars of the projected state kept in `stateSummary` (avoids dumping the
  *  whole 256KB state into the model context). */
 const STATE_SUMMARY_MAX = 1500;
+
+// ─── SS-4B trust gate (SCRIPT_SAFETY_PLAN decisions 10/13) ───────────────────
+//
+// An imported script that has never been enabled is UNTRUSTED: its code must
+// not execute inside the copilot — not in run_test/run_simulate, not in the
+// write/edit validation run. The stream derives the flag from the script row
+// (`origin === 'imported' && firstEnabledAt === null`) and passes it in; after
+// the first enable the flag flips to true and every tool behaves as before.
+
+/** Tester-style error code for the structured run refusal (matches the
+ *  snake_case convention of `script_not_enabled`/`validation_error`). */
+const UNTRUSTED_SCRIPT_ERROR_CODE = "script_not_trusted";
+/** The model-visible refusal reason — the model relays it to the user. */
+const UNTRUSTED_SCRIPT_REFUSAL_MESSAGE =
+  "script is imported and never enabled — enable it in the editor first: its code does not run (not even for tests) until the user reviews and enables it through the import-warning flow; tell the user this";
+/** Marker riding on accepted-but-unvalidated rules proposals (EN rendering of
+ *  the owner's marker wording: not validated — imported, not enabled). */
+const NOT_VALIDATED_MARKER = "not validated: script is imported and not yet enabled";
 
 // ─── Digest helpers ──────────────────────────────────────────────────────────
 
@@ -218,6 +254,11 @@ function summarizeState(state: unknown): string {
  *   script's rules at turn start). When absent, the model must `write_buffer`
  *   before `run_test`/`run_simulate` can run.
  * @param opts.visual  Seed visual source for the working buffer.
+ * @param opts.rulesTrusted  SS-4B trust flag for the thread's script (false =
+ *   imported and never enabled). When false, `run_test`/`run_simulate` refuse
+ *   with a structured reason and rules proposals skip validation (accepted
+ *   with a «not validated» marker) — imported code never executes. Default
+ *   true: trusted scripts behave exactly as before.
  * @param opts.toolSet Optional inclusion map for the seven authoring/diagnostic
  *   tools (default: all on). `read_skill_file` is always included, mirroring
  *   the Co-Author convention (it is the universal read-only skill channel).
@@ -230,11 +271,13 @@ function summarizeState(state: unknown): string {
 export function buildExperienceCopilotTools(opts: {
   rules?: string;
   visual?: string;
+  rulesTrusted?: boolean;
   toolSet?: Record<string, boolean>;
   saveTodo?: (items: readonly CopilotTodoItem[]) => Promise<void>;
   skillRoots?: readonly string[];
 } = {}): ToolSet {
   const { toolSet, skillRoots, saveTodo } = opts;
+  const rulesTrusted = opts.rulesTrusted ?? true;
 
   // ── Turn-local composable buffer state ─────────────────────────────────────
   // Two named text buffers (rules/visual) seeded from the turn-start source.
@@ -266,8 +309,17 @@ export function buildExperienceCopilotTools(opts: {
    * self-corrects in the same turn — the same throw-from-execute pattern the
    * Co-Author tools use for validation failures. No guard for the visual buffer
    * (no validator exists).
+   *
+   * SS-4B: while the script is untrusted the sandbox run is SKIPPED — the
+   * proposal is accepted and the returned marker (spread onto the tool result)
+   * tells the model it was not validated, because imported code must not
+   * execute in the copilot before the user's first enable.
    */
-  function validateRules(proposed: string, toolName: string): void {
+  function validateRules(proposed: string, toolName: string): { readonly notValidated?: string } {
+    if (!rulesTrusted) {
+      logger.info("%s validation SKIPPED — untrusted script (imported, never enabled)", toolName);
+      return { notValidated: NOT_VALIDATED_MARKER };
+    }
     const test = runExperienceTest({ rulesCode: proposed, actions: [] });
     if (!test.ok) {
       const kind = test.error.kind !== undefined ? ` kind=${test.error.kind}` : "";
@@ -275,6 +327,7 @@ export function buildExperienceCopilotTools(opts: {
         `${toolName}: proposed rules failed validation — code=${test.error.code}${kind} message=${test.error.message}`,
       );
     }
+    return {};
   }
 
   const allTools = {
@@ -297,7 +350,7 @@ export function buildExperienceCopilotTools(opts: {
           .max(200)
           .describe("One-line description of what this change does, shown above the Apply action."),
       }),
-      execute: async ({ target, content, summary }): Promise<ExperienceCopilotToolOutput> =>
+      execute: async ({ target, content, summary }): Promise<ExperienceCopilotBufferOutput> =>
         runQueued(async () => {
           const toolName = "write_buffer";
           if (!content.trim()) {
@@ -318,9 +371,11 @@ export function buildExperienceCopilotTools(opts: {
                   `Use edit_buffer with exact {search, replace} edits to refine the composed result.`,
               );
             }
-            validateRules(content, toolName);
+            const marker = validateRules(content, toolName);
             workingRules = content; // advance ONLY on success — atomic on failure
             rulesMutationCount += 1;
+            logger.info("%s OK target=%s len=%d", toolName, target, content.length);
+            return { target, proposed: content, summary, ...marker };
           } else {
             if (visualMutationCount > 0) {
               logger.warn("%s REJECTED late whole-buffer visual rewrite after %d mutation(s)", toolName, visualMutationCount);
@@ -332,9 +387,9 @@ export function buildExperienceCopilotTools(opts: {
             }
             workingVisual = content; // no validator for the visual buffer
             visualMutationCount += 1;
+            logger.info("%s OK target=%s len=%d", toolName, target, content.length);
+            return { target, proposed: content, summary };
           }
-          logger.info("%s OK target=%s len=%d", toolName, target, content.length);
-          return { target, proposed: content, summary };
         }),
     }),
 
@@ -362,7 +417,7 @@ export function buildExperienceCopilotTools(opts: {
           .max(200)
           .describe("One-line description of what these edits change, shown above the Apply action."),
       }),
-      execute: async ({ target, edits, summary }): Promise<ExperienceCopilotToolOutput> =>
+      execute: async ({ target, edits, summary }): Promise<ExperienceCopilotBufferOutput> =>
         runQueued(async () => {
           const toolName = "edit_buffer";
           logger.info("%s IN target=%s edits=%d summary=%s", toolName, target, edits.length, summary);
@@ -377,13 +432,14 @@ export function buildExperienceCopilotTools(opts: {
           // throws and the working buffer is left untouched.
           const proposed = applyExactEditsToBody(current, edits, toolName);
           if (target === "rules") {
-            validateRules(proposed, toolName);
+            const marker = validateRules(proposed, toolName);
             workingRules = proposed;
             rulesMutationCount += 1;
-          } else {
-            workingVisual = proposed;
-            visualMutationCount += 1;
+            logger.info("%s OK target=%s len=%d", toolName, target, proposed.length);
+            return { target, proposed, summary, ...marker };
           }
+          workingVisual = proposed;
+          visualMutationCount += 1;
           logger.info("%s OK target=%s len=%d", toolName, target, proposed.length);
           return { target, proposed, summary };
         }),
@@ -398,6 +454,17 @@ export function buildExperienceCopilotTools(opts: {
       inputSchema: z.object({}),
       execute: async (): Promise<ExperienceCopilotRunTestDigest> => {
         const toolName = "run_test";
+        // SS-4B trust gate FIRST: an imported, never-enabled script is never
+        // executed — not even for a read-only test. Structured refusal (not a
+        // throw) so the model can relay the reason to the user in the same turn.
+        if (!rulesTrusted) {
+          logger.warn("%s REFUSED untrusted script (imported, never enabled)", toolName);
+          return {
+            ok: false,
+            errorCode: UNTRUSTED_SCRIPT_ERROR_CODE,
+            errorMessage: UNTRUSTED_SCRIPT_REFUSAL_MESSAGE,
+          };
+        }
         if (workingRules === undefined) {
           logger.warn("%s REJECTED no rules buffer in working state", toolName);
           throw new Error(
@@ -436,6 +503,16 @@ export function buildExperienceCopilotTools(opts: {
       inputSchema: z.object({}),
       execute: async (): Promise<ExperienceCopilotRunSimulateDigest> => {
         const toolName = "run_simulate";
+        // SS-4B trust gate FIRST (same as run_test): untrusted scripts are
+        // never executed — structured refusal, never a throw.
+        if (!rulesTrusted) {
+          logger.warn("%s REFUSED untrusted script (imported, never enabled)", toolName);
+          return {
+            ok: false,
+            errorCode: UNTRUSTED_SCRIPT_ERROR_CODE,
+            errorMessage: UNTRUSTED_SCRIPT_REFUSAL_MESSAGE,
+          };
+        }
         if (workingRules === undefined) {
           logger.warn("%s REJECTED no rules buffer in working state", toolName);
           throw new Error(
