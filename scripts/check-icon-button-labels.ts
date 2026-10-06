@@ -32,7 +32,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 /** Snapshot of the tree on 2026-10-01. Lower after cleanups, never raise. */
-export const ICON_BUTTON_LABEL_BUDGET = 71;
+export const ICON_BUTTON_LABEL_BUDGET = 70;
 
 const ROOT = join(import.meta.dir, "..");
 const WEB_SRC = join(ROOT, "apps", "web", "src");
