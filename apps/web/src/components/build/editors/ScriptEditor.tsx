@@ -14,6 +14,7 @@ import { SaveButton } from "../../shared/SaveBar.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { SCRIPT_TEMPLATES, templateScriptKind } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
+import { scriptSafetyLint } from "../../../lib/script-safety-lint.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
@@ -193,6 +194,16 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     : null;
   const draftDirty = isScriptDraftDirty(activeDraft);
   const draftSaveState = activeDraft?.saveState ?? "idle";
+
+  // SS-5: suspicion lint over the live code buffer. Kind is immutable after
+  // creation; the prompt/dice split is all this editor ever hosts (interactive
+  // scripts are owned by the Experience editor). Messages resolve via the
+  // non-React getTDynamic path at lint time.
+  const activeScriptKind = activeScript?.scriptKind === "dice" ? "dice" : "prompt";
+  const scriptSafetyExtensions = useMemo(
+    () => scriptSafetyLint(activeScriptKind),
+    [activeScriptKind],
+  );
 
   const updateDraft = (patch: Partial<ScriptDraftValues>) => {
     if (!activeScriptRecord) return;
@@ -632,6 +643,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
             onChange={(code) => updateDraft({ code })}
             minHeight={isMobile ? "220px" : "300px"}
             scrollMode={isMobile ? "page" : "inner"}
+            extensions={scriptSafetyExtensions}
           />
         </div>
       </div>

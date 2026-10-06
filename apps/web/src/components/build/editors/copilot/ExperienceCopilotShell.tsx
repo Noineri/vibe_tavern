@@ -296,7 +296,6 @@ export function ExperienceCopilotShell({
     [contextLinks, handleSetContextLinks],
   );
 
-
   // ── Provider / model selection (persisted binding, then controlled) ───────
   // The selection lives in server-side uiSettings (copilotProviderId /
   // copilotModelName — the Co-Author binding pattern) so it survives leaving
@@ -1244,6 +1243,7 @@ export function ExperienceCopilotShell({
             onDismissPending={codeBuffer === "rules" ? dismissPendingRules : dismissPendingVisual}
             onCancelRound={codeBuffer === "rules" ? cancelRoundRules : cancelRoundVisual}
             fullscreenLabel={codeBuffer === "rules" ? t("experience_copilot_rules") : t("experience_copilot_visual")}
+            scriptKind={codeBuffer === "rules" ? "interactive" : undefined}
           />
         </>
       )}

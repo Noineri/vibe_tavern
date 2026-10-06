@@ -1,7 +1,9 @@
 import { useMemo } from "react";
+import type { ScriptKind } from "@vibe-tavern/domain";
 import { buildLineDiff, type TextDiffSummary } from "../../../shared/TextDiffPreview.js";
 import { allHunkIds, groupHunks, mergeSelectedBody, type DiffHunk } from "../../../../lib/coauthor-hunk-merge.js";
 import { cn } from "../../../../lib/cn.js";
+import { scriptSafetyLint } from "../../../../lib/script-safety-lint.js";
 import { CodeEditor } from "../../../shared/CodeEditor.js";
 import { MobileExpandCodeEditor } from "../../../shared/MobileExpandCodeEditor.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
@@ -219,6 +221,10 @@ export interface ExperienceCopilotEditorPanelProps {
   /** Header label for the mobile fullscreen editor (buffer name; the shared
    *  wrapper falls back to a generic label when omitted). */
   fullscreenLabel?: string;
+  /** When set, the panel lints this buffer as a VT script of the given kind
+   *  (SS-5). The shell passes `interactive` for the rules buffer and `undefined`
+   *  for the visual buffer (HTML — not a script). */
+  scriptKind?: ScriptKind;
 }
 
 export function ExperienceCopilotEditorPanel({
@@ -234,6 +240,7 @@ export function ExperienceCopilotEditorPanel({
   onDismissPending,
   onCancelRound,
   fullscreenLabel,
+  scriptKind,
 }: ExperienceCopilotEditorPanelProps) {
   const { t } = useT();
   // Mobile (4a follow-up): CodeMirror runs in page-scroll mode on phones —
@@ -261,9 +268,14 @@ export function ExperienceCopilotEditorPanel({
   );
   // Fresh identity per (specs, resolved) change so CodeEditor's compartment
   // (CD-4) reconfigures — the only way an accept/dismiss repaints without a
-  // doc change.
-  const extensions = useMemo(
-    () =>
+  // doc change. The script-safety linter (SS-5) rides the same array so it
+  // reconfigures with the diff decorations instead of fighting for the slot.
+  const lintExtensions = useMemo(
+    () => (scriptKind !== undefined ? scriptSafetyLint(scriptKind) : []),
+    [scriptKind],
+  );
+  const extensions = useMemo(() => {
+    const reviewExtensions =
       review !== null && specs.length > 0
         ? copilotDiffExtensions({
             specs,
@@ -274,9 +286,9 @@ export function ExperienceCopilotEditorPanel({
             dismissAriaLabel: t("copilot_review_dismiss_hunk"),
             onDismissHunk,
           })
-        : [],
-    [review, specs, resolvedHunkIds, onAcceptHunk, onDismissHunk, t],
-  );
+        : [];
+    return [...reviewExtensions, ...lintExtensions];
+  }, [review, specs, resolvedHunkIds, onAcceptHunk, onDismissHunk, t, lintExtensions]);
 
   const docValue = review !== null ? review.proposed : value;
   const readOnly = isSending || review !== null;
