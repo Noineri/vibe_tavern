@@ -12,7 +12,7 @@
     },
     "apps/web": {
       "name": "@vibe-tavern/web",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
         "@codemirror/autocomplete": "^6.20.3",
@@ -87,7 +87,7 @@
     },
     "packages/api-contracts": {
       "name": "@vibe-tavern/api-contracts",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "dependencies": {
         "@vibe-tavern/domain": "workspace:*",
         "zod": "catalog:",
@@ -98,7 +98,7 @@
     },
     "packages/db": {
       "name": "@vibe-tavern/db",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "dependencies": {
         "@vibe-tavern/domain": "workspace:*",
         "drizzle-orm": "^0.45.2",
@@ -110,14 +110,17 @@
     },
     "packages/domain": {
       "name": "@vibe-tavern/domain",
-      "version": "1.4.0",
+      "version": "1.4.1",
+      "dependencies": {
+        "acorn": "^8.19.0",
+      },
       "devDependencies": {
         "@types/bun": "catalog:",
       },
     },
     "packages/import-export": {
       "name": "@vibe-tavern/import-export",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "dependencies": {
         "@vibe-tavern/domain": "workspace:*",
       },
@@ -127,7 +130,7 @@
     },
     "packages/prompt-pipeline": {
       "name": "@vibe-tavern/prompt-pipeline",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "dependencies": {
         "@vibe-tavern/domain": "workspace:*",
       },
@@ -137,7 +140,7 @@
     },
     "services/api": {
       "name": "@vibe-tavern/api",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "dependencies": {
         "@agnai/web-tokenizers": "^0.1.6-pre3",
         "@ai-sdk/anthropic": "^4.0.53",
@@ -669,6 +672,8 @@
     "@vibe-tavern/web": ["@vibe-tavern/web@workspace:apps/web"],
 
     "@workflow/serde": ["@workflow/serde@4.1.0", "", {}, "sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ=="],
+
+    "acorn": ["acorn@8.19.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw=="],
 
     "adm-zip": ["adm-zip@0.6.1", "", {}, "sha512-Xwrja8nx9e5o2N1my4DsKCeKpdrnACyr1wtbPxBDgGzKzKyE9kRtBFA8mWldI+RVlD7CBZNWY/wQ2+ydwOR6kQ=="],
 
