@@ -11,9 +11,17 @@ How Vibe Tavern maps sampler settings onto local-LLM backends. Written from the 
 | `llamacpp_native` | llama.cpp server (`llamacpp`), Unsloth | `adaptiveTarget`, `adaptiveDecay` (adaptive-p), `dynatempRange`, `dynatempExponent`, `topNSigma`, `smoothingFactor`, `dryPenaltyLastN` |
 | `openai_local` | LM Studio (`lmstudio`), vLLM, and the other local OpenAI-compatible presets | — |
 | `koboldcpp_native` | KoboldCPP | `bannedStrings` (antislop), `drySequenceBreakers` |
+| `novelai_oa` | NovelAI `/oa/v1` (Xialong / GLM-4.6) | `topK`, `minP`, `thinkingMode` — the entire editor surface is four knobs; no penalties, no seed, no unified_* |
+| `novelai_native` | NovelAI native `/ai/generate` (Kayra / Erato) | `topA`, `minP`, `typicalP`, `tfsZ`, mirostat τ/η, the repetition-penalty family (+ slope, `phraseRepPen`), `unifiedLinear`/`unifiedQuad`/`unifiedConf` |
 | (cloud sets) | OpenAI/Anthropic/Google/etc. | cloud-native knobs only |
 
 KoboldCPP native uses `/api/v1/generate` (text completion), so its samplers travel as native request fields, not provider options.
+
+NovelAI splits one brand into two sets. The `/oa/v1` route (Xialong / GLM-4.6) rides the OpenAI-compatible emission with exactly the knobs NovelAI's own GLM-4.6 editor exposes — Temperature, Top-K, Top-P, Min-P, stops, and the `enable_thinking` switch (`thinkingMode`); nothing else exists on that route (no penalties, no seed, no unified_*).
+Evidence: NovelAI's editor surface plus a Xialong story file from their Discord, owner ruling 2026-10-05.
+The native `/ai/generate` route (Kayra / Erato) emits the `text.RequestParameters` wire: samplers travel as native fields plus a fixed `order` array (base `[1,5,0,2,3,4]` filtered to active ids, mirostat appended only off-default), penalties are emitted only off-neutral, `min_length: 1` and `prefix: "vanilla"` ride every call.
+Stop sequences NEVER ride the native wire — the API takes token-id arrays from the model's own tokenizer, so VT matches stops client-side (blocking cut + streaming hold-back/abort).
+Evidence: NovelAI's API spec + community KB, per NOVELAI_PROVIDER_PLAN NAI-3a.
 
 ## Emission rules (sampler-mapper)
 
@@ -33,3 +41,4 @@ The mapper translates profile columns into provider options per protocol branch.
 ## Live-probe provenance
 
 The conventions above were probed live (llama-server b10786, KoboldCPP 1.120, LM Studio 0.4.23, shared Qwen2.5-0.5B Q4_K_M — 2026-09-03/09; rig at `N:/janitor_characters/tmp/llm-probe/`). Probe details and failure transcripts: see the samplers report in the planning repo. Not yet live-probed: the tail-only chain (chain emitted for `top_n_sigma`/DRY window without adaptive-p) and chainless dynatemp/smoothing application.
+NovelAI (both routes, 2026-10-05) is documented, not live-probed: the evidence is NovelAI's own API docs, their editor surface, and their client bundle; the decision trail lives in `vibe_tavern_plan/plans/NOVELAI_PROVIDER_PLAN.md`.
