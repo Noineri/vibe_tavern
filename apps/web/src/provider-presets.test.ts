@@ -23,17 +23,15 @@ describe("provider preset transport classifications", () => {
   test("NovelAI (/oa/v1) rides the cloud group and requires a key for its model list (NAI-2a)", () => {
     const novelai = PROVIDER_PRESETS.find((preset) => preset.id === "novelai_oa");
     expect(novelai).toBeDefined();
-    expect(novelai!.label).toBe("NovelAI");
     expect(novelai!.type).toBe("openai_compat");
     expect(novelai!.baseUrl).toBe("https://text.novelai.net/oa/v1");
     expect(novelai!.group).toBe("cloud");
     expect(novelai!.requiresAuthForModels).toBe(true);
   });
 
-  test("NovelAI (native) rides the native group (hosted native protocol, alongside Anthropic/Google — owner 2026-10-06), requires a key for its model list, and defaults to 150 max tokens (NAI-3c)", () => {
+  test("NovelAI rides the native group without a redundant label suffix (the section is the qualifier — owner 2026-10-06), requires a key for its model list, and defaults to 150 max tokens (NAI-3c)", () => {
     const novelai = PROVIDER_PRESETS.find((preset) => preset.id === "novelai");
     expect(novelai).toBeDefined();
-    expect(novelai!.label).toBe("NovelAI (native)");
     expect(novelai!.type).toBe("novelai");
     expect(novelai!.baseUrl).toBe("https://text.novelai.net");
     expect(novelai!.group).toBe("native");
