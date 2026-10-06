@@ -17,6 +17,8 @@
 
 import type { JSONValue } from "@ai-sdk/provider";
 import {
+  PHRASE_REP_PEN,
+  PROVIDER_PROFILE_GENERATION_DEFAULTS,
   PROVIDER_TYPE,
   normalizeProviderType,
   resolveLogitBiasSupport,
@@ -86,6 +88,28 @@ const LLAMACPP_SAMPLER_CHAIN_BASE = [
 
 const LLAMACPP_SAMPLER_CHAIN = [...LLAMACPP_SAMPLER_CHAIN_BASE, "adaptive_p"] as const;
 
+/** NovelAI native `order` sampler ids — WHICH samplers run on /ai/generate
+ *  (SillyTavern nai-settings.js:71-82; spec text.RequestParameters.order).
+ *  6 = cfg and 7 = top_g are deprecated (community KB; owner ruling
+ *  2026-10-05, withdrawn) and never emitted. `as const` object, not an
+ *  enum (project rule). */
+const NOVELAI_SAMPLER_ID = {
+  temperature: 0,
+  topK: 1,
+  topP: 2,
+  tfs: 3,
+  topA: 4,
+  typicalP: 5,
+  mirostat: 8,
+  math1: 9,
+  minP: 10,
+} as const;
+
+/** SillyTavern's `default_order` for the base samplers — the emitted order
+ *  starts from this sequence filtered to the active samplers, then appends
+ *  mirostat (8), math1 (9), min_p (10) in that order (NAI-3b). */
+const NOVELAI_BASE_ORDER = [1, 5, 0, 2, 3, 4] as const;
+
 /** Emit the adaptive-p request fields for one provider bag. Shared by the
  *  llama.cpp/unsloth (llama-server) and koboldcpp (native request fields)
  *  branches. `adaptiveTarget` values < 0 mean disabled (llama.cpp's default
@@ -146,6 +170,49 @@ function emitLlamaNumericTailOptions(
   if (can("dryPenaltyLastN") && profile.dryPenaltyLastN != null && profile.dryPenaltyLastN > 0) {
     providerOpts.dry_penalty_last_n = profile.dryPenaltyLastN;
   }
+}
+
+/** Build NovelAI's native `order` — the ids of the samplers that RUN
+ *  (NOVELAI_PROVIDER_PLAN NAI-3b; SillyTavern nai-settings.js
+ *  `default_order`). A sampler enters the order only when non-neutral:
+ *  temperature always; top_k > 0; top_p < 1; tfs < 1; top_a > 0;
+ *  typical_p < 1; min_p > 0; math1 (Unified) when any of Linear ≠ 1 /
+ *  Quad ≠ 0 / Conf ≠ 0; mirostat only when tau > 0 AND differs from the
+ *  profile default 5.0 — mirostat has no neutral value, so an untouched
+ *  default must not silently turn the sampler on. */
+export function buildNovelaiOrder(
+  profile: StoredProviderProfileRecord,
+  can: (field: SamplerFieldId) => boolean,
+): number[] {
+  const active = new Set<number>([NOVELAI_SAMPLER_ID.temperature]);
+  if (can("topK") && profile.topK != null && profile.topK > 0) active.add(NOVELAI_SAMPLER_ID.topK);
+  if (can("topP") && profile.topP != null && profile.topP < 1) active.add(NOVELAI_SAMPLER_ID.topP);
+  if (can("tfsZ") && profile.tfsZ != null && profile.tfsZ < 1) active.add(NOVELAI_SAMPLER_ID.tfs);
+  if (can("topA") && profile.topA != null && profile.topA > 0) active.add(NOVELAI_SAMPLER_ID.topA);
+  if (can("typicalP") && profile.typicalP != null && profile.typicalP < 1) active.add(NOVELAI_SAMPLER_ID.typicalP);
+  if (
+    can("mirostatTau") &&
+    profile.mirostatTau != null &&
+    profile.mirostatTau > 0 &&
+    profile.mirostatTau !== PROVIDER_PROFILE_GENERATION_DEFAULTS.mirostatTau
+  ) {
+    active.add(NOVELAI_SAMPLER_ID.mirostat);
+  }
+  if (
+    (can("unifiedLinear") && profile.unifiedLinear != null && profile.unifiedLinear !== 1) ||
+    (can("unifiedQuad") && profile.unifiedQuad != null && profile.unifiedQuad !== 0) ||
+    (can("unifiedConf") && profile.unifiedConf != null && profile.unifiedConf !== 0)
+  ) {
+    active.add(NOVELAI_SAMPLER_ID.math1);
+  }
+  if (can("minP") && profile.minP != null && profile.minP > 0) active.add(NOVELAI_SAMPLER_ID.minP);
+  const order: number[] = NOVELAI_BASE_ORDER.filter((id) => active.has(id));
+  // Tail samplers: mirostat (8), math1 (9), min_p (10) — appended in that
+  // order after the base sequence.
+  for (const id of [NOVELAI_SAMPLER_ID.mirostat, NOVELAI_SAMPLER_ID.math1, NOVELAI_SAMPLER_ID.minP]) {
+    if (active.has(id)) order.push(id);
+  }
+  return order;
 }
 
 /** Map the stored reasoning-effort value onto the concrete levels the SDK
@@ -432,6 +499,83 @@ export function buildSamplerConfig(
       if (Object.keys(providerOpts).length > 0) {
         config.providerOptions = { koboldcpp: providerOpts };
       }
+      break;
+    }
+
+    // -- NovelAI native /ai/generate (Kayra / Erato) -------------------------
+    case PROVIDER_TYPE.novelai: {
+      // Native parameter names ride providerOptions.novelai — the adapter
+      // spreads them into the request's `parameters` (NAI-3a). `order` lists
+      // the sampler ids that RUN; a sampler's own parameters are sent only
+      // when its id is in that order (NAI-3b). Temperature rides the native
+      // `temperature` field the adapter already sets; stop sequences are
+      // matched client-side in the adapter (the native API takes token-id
+      // arrays — never mapped here); thinkingMode has no native parameter
+      // (OpenAI-compatible route only) and is deliberately not mapped.
+      // Named deviation from SillyTavern: no hard-coded per-model token-id
+      // lists (bad_words_ids / logit_bias_exp / repetition_penalty_whitelist)
+      // — tokenizer-specific magic numbers with no NovelAI documentation.
+      const order = buildNovelaiOrder(profile, can);
+      // `order` is always present (temperature always runs), so the bag is
+      // never empty — unlike the sibling branches no emptiness guard is
+      // needed.
+      const providerOpts: Record<string, JSONValue> = { order };
+      if (order.includes(NOVELAI_SAMPLER_ID.topK) && profile.topK != null) {
+        providerOpts.top_k = profile.topK;
+      }
+      if (order.includes(NOVELAI_SAMPLER_ID.topP) && profile.topP != null) {
+        providerOpts.top_p = profile.topP;
+      }
+      if (order.includes(NOVELAI_SAMPLER_ID.tfs) && profile.tfsZ != null) {
+        providerOpts.tail_free_sampling = profile.tfsZ;
+      }
+      if (order.includes(NOVELAI_SAMPLER_ID.topA) && profile.topA != null) {
+        providerOpts.top_a = profile.topA;
+      }
+      if (order.includes(NOVELAI_SAMPLER_ID.typicalP) && profile.typicalP != null) {
+        providerOpts.typical_p = profile.typicalP;
+      }
+      // mirostat (8): both of its parameters — tau and learning rate — go
+      // together when the sampler runs.
+      if (order.includes(NOVELAI_SAMPLER_ID.mirostat)) {
+        if (profile.mirostatTau != null) providerOpts.mirostat_tau = profile.mirostatTau;
+        if (profile.mirostatEta != null) providerOpts.mirostat_lr = profile.mirostatEta;
+      }
+      // math1 (9) = Unified Linear / Quad / Conf (spec text.RequestParameters:
+      // Configures Unified Linear / Quad / Conf) — all three parameters go
+      // together.
+      if (order.includes(NOVELAI_SAMPLER_ID.math1)) {
+        if (profile.unifiedLinear != null) providerOpts.math1_temp = profile.unifiedLinear;
+        if (profile.unifiedQuad != null) providerOpts.math1_quad = profile.unifiedQuad;
+        if (profile.unifiedConf != null) providerOpts.math1_quad_entropy_scale = profile.unifiedConf;
+      }
+      if (order.includes(NOVELAI_SAMPLER_ID.minP) && profile.minP != null) {
+        providerOpts.min_p = profile.minP;
+      }
+      // Repetition-penalty family — penalties are not order-id samplers; each
+      // parameter rides its own off value (profile field docs: repetition
+      // penalty 1.0 = off, range 0 = off, slope 0 = off, freq/presence 0 =
+      // off, phrase "off" = not applied), so a neutral profile sends none of
+      // them and NovelAI applies its own defaults.
+      if (can("repetitionPenalty") && profile.repetitionPenalty != null && profile.repetitionPenalty !== 1.0) {
+        providerOpts.repetition_penalty = profile.repetitionPenalty;
+      }
+      if (can("repeatLastN") && profile.repeatLastN != null && profile.repeatLastN > 0) {
+        providerOpts.repetition_penalty_range = profile.repeatLastN;
+      }
+      if (can("repetitionPenaltySlope") && profile.repetitionPenaltySlope != null && profile.repetitionPenaltySlope !== 0) {
+        providerOpts.repetition_penalty_slope = profile.repetitionPenaltySlope;
+      }
+      if (can("frequencyPenalty") && profile.frequencyPenalty != null && profile.frequencyPenalty !== 0) {
+        providerOpts.repetition_penalty_frequency = profile.frequencyPenalty;
+      }
+      if (can("presencePenalty") && profile.presencePenalty != null && profile.presencePenalty !== 0) {
+        providerOpts.repetition_penalty_presence = profile.presencePenalty;
+      }
+      if (can("phraseRepPen") && profile.phraseRepPen != null && profile.phraseRepPen !== PHRASE_REP_PEN.off) {
+        providerOpts.phrase_rep_pen = profile.phraseRepPen;
+      }
+      config.providerOptions = { novelai: providerOpts };
       break;
     }
 

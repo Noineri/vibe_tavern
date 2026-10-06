@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { buildSamplerConfig } from "../src/infrastructure/ai/sampler-mapper.js";
+import { PROVIDER_PROFILE_GENERATION_DEFAULTS } from "@vibe-tavern/domain";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 
 /** Minimal profile factory — override only what matters for the test. */
@@ -587,6 +588,126 @@ describe("buildSamplerConfig", () => {
           }
         }
       }
+    });
+  });
+
+  // ─── NovelAI native /ai/generate (novelai_native — Kayra / Erato) ─────
+
+  describe("novelai (native)", () => {
+    /** Neutral profile for the native route: every sampler field at its
+     *  documented default (PROVIDER_PROFILE_GENERATION_DEFAULTS — the source
+     *  the plan's neutral rules cite; top_k 0, top_p 1, tfs 1, top_a 0,
+     *  typical_p 1, min_p 0, unified 1/0/0, mirostatTau 5.0), custom samplers
+     *  on. */
+    function neutral(
+      overrides: Partial<StoredProviderProfileRecord> = {},
+    ): StoredProviderProfileRecord {
+      return profile("novelai", {
+        ...PROVIDER_PROFILE_GENERATION_DEFAULTS,
+        customSamplers: true,
+        ...overrides,
+      });
+    }
+
+    function nativeOpts(config: ReturnType<typeof buildSamplerConfig>): Record<string, unknown> {
+      return config.providerOptions!.novelai as Record<string, unknown>;
+    }
+
+    it("neutral profile: order [0] and no sampler params", () => {
+      const config = buildSamplerConfig(neutral());
+      expect(config.temperature).toBe(1.0);
+      expect(config.maxOutputTokens).toBe(2000);
+      // Only `order` — every sampler/penalty sits at its documented off value.
+      expect(nativeOpts(config)).toEqual({ order: [0] });
+    });
+
+    it("partial (top_p 0.9, min_p 0.12): order [0, 2, 10] — base-order positions [0, 2] + appended 10; only their params", () => {
+      const config = buildSamplerConfig(neutral({ topP: 0.9, minP: 0.12 }));
+      const providerOpts = nativeOpts(config);
+      expect(providerOpts.order).toEqual([0, 2, 10]);
+      expect(providerOpts.top_p).toBe(0.9);
+      expect(providerOpts.min_p).toBe(0.12);
+      expect(providerOpts.top_k).toBeUndefined();
+      expect(providerOpts.typical_p).toBeUndefined();
+      expect(providerOpts.tail_free_sampling).toBeUndefined();
+      expect(providerOpts.top_a).toBeUndefined();
+      expect(providerOpts.mirostat_tau).toBeUndefined();
+      expect(providerOpts.mirostat_lr).toBeUndefined();
+      expect(providerOpts.math1_temp).toBeUndefined();
+    });
+
+    it("full: every sampler active — order [1, 5, 0, 2, 3, 4] then 8, 9, 10; all native parameter names", () => {
+      const config = buildSamplerConfig(neutral({
+        topK: 40,
+        topP: 0.9,
+        topA: 0.1,
+        minP: 0.12,
+        typicalP: 0.9,
+        tfsZ: 0.9,
+        mirostatTau: 4,
+        mirostatEta: 0.15,
+        unifiedLinear: 0.9,
+        unifiedQuad: 0.4,
+        unifiedConf: 0.3,
+        repetitionPenalty: 1.1,
+        repeatLastN: 1024,
+        repetitionPenaltySlope: 0.1,
+        frequencyPenalty: 0.2,
+        presencePenalty: 0.1,
+        phraseRepPen: "light",
+      }));
+      expect(nativeOpts(config)).toEqual({
+        order: [1, 5, 0, 2, 3, 4, 8, 9, 10],
+        top_k: 40,
+        typical_p: 0.9,
+        top_p: 0.9,
+        tail_free_sampling: 0.9,
+        top_a: 0.1,
+        mirostat_tau: 4,
+        mirostat_lr: 0.15,
+        math1_temp: 0.9,
+        math1_quad: 0.4,
+        math1_quad_entropy_scale: 0.3,
+        min_p: 0.12,
+        repetition_penalty: 1.1,
+        repetition_penalty_range: 1024,
+        repetition_penalty_slope: 0.1,
+        repetition_penalty_frequency: 0.2,
+        repetition_penalty_presence: 0.1,
+        phrase_rep_pen: "light",
+      });
+    });
+
+    it("top_g / cfg_scale / cfg_uc never present (deprecated — withdrawn by owner ruling)", () => {
+      const config = buildSamplerConfig(neutral({ topP: 0.9, minP: 0.12, topK: 40, topA: 0.1 }));
+      const providerOpts = nativeOpts(config);
+      expect(providerOpts.top_g).toBeUndefined();
+      expect(providerOpts.cfg_scale).toBeUndefined();
+      expect(providerOpts.cfg_uc).toBeUndefined();
+    });
+
+    it("Unified absent at 1/0/0: id 9 not in order, no math1_* params", () => {
+      const config = buildSamplerConfig(neutral({ topP: 0.9 }));
+      const providerOpts = nativeOpts(config);
+      expect((providerOpts.order as number[]).includes(9)).toBe(false);
+      expect(providerOpts.math1_temp).toBeUndefined();
+      expect(providerOpts.math1_quad).toBeUndefined();
+      expect(providerOpts.math1_quad_entropy_scale).toBeUndefined();
+    });
+
+    it("mirostat stays out of the order at the untouched default tau 5.0 (no neutral value — user must set it)", () => {
+      const config = buildSamplerConfig(neutral({ mirostatTau: 5.0, mirostatEta: 0.2, topP: 0.9 }));
+      const providerOpts = nativeOpts(config);
+      expect(providerOpts.order).toEqual([0, 2]);
+      expect(providerOpts.mirostat_tau).toBeUndefined();
+      expect(providerOpts.mirostat_lr).toBeUndefined();
+    });
+
+    it("custom samplers off: no providerOptions at all — only temperature / max tokens reach the wire (as for KoboldCPP)", () => {
+      const config = buildSamplerConfig(neutral({ customSamplers: false }));
+      expect(config.providerOptions).toBeUndefined();
+      expect(config.temperature).toBe(1.0);
+      expect(config.maxOutputTokens).toBe(2000);
     });
   });
 
