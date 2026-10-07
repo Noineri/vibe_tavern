@@ -36,6 +36,8 @@ The script step is the only pipeline stage that runs **arbitrary user code**. Ev
 | `scopeType` | `global` / `entity` / `chat` — the script's scope. `global` fires everywhere; `entity` means the owners are its `script_links` rows (empty list = bound to nobody, fires nowhere); `chat` is 1:1 via the `chatId` FK (collapsed from two entity scope values 2026-09) |
 | `sortOrder` | Execution order within a turn — ascending. The resolver sorts the active set by this before running |
 | `enabled` | Master switch. Disabled scripts are never loaded by the resolver |
+| `origin` | Immutable provenance: `in_app` for scripts created inside VT, `imported` for external code. Migration 0110 backfilled existing rows as `in_app` |
+| `firstEnabledAt` | One-time trust marker for imported scripts. `origin='imported' && firstEnabledAt===null` is untrusted; the first disabled→enabled transition stamps it and later edits/disables never clear it |
 | `code` | Raw JavaScript source, run verbatim in `node:vm` |
 | `chatId` | Chat-scope FK (1:1 with a chat). The character/persona home-FK columns were dropped by migration 0107 (`LORE_SCRIPT_OWNERS_AS_LINKS`) — every character/persona owner is a plain `script_links` row |
 | `extensions` | Free-form JSON bag (`extensions_json` column). Not read by the engine; available for editor metadata |
@@ -123,6 +125,40 @@ Injected host-realm objects expose host constructors: chains such as `Object.con
 The 5-second VM timeout bounds synchronous CPU execution only; Promise continuations can run after `executeScripts` returns and therefore outside the timeout window.
 
 This posture applies to both `script-sandbox.ts` and `dice-script-sandbox.ts`, which use the same `runInNewContext` API.
+
+---
+
+## Import Safety
+
+### Provenance and trust
+
+Every script has immutable provenance (`origin`) and imported scripts have a one-time trust marker (`firstEnabledAt`).
+Scripts created inside VT, including copilot-created scripts, use `origin='in_app'` and are trusted immediately; migration 0110 gave the same provenance to every pre-existing row.
+Every external import path for prompt, dice, and interactive scripts stamps `origin='imported'` and forces `enabled=false`, including the mini-app bundle path that creates its rules script through `createScript`.
+An imported script is untrusted while `firstEnabledAt` is null; its first explicit disabled→enabled transition stamps the timestamp exactly once.
+Editing, disabling, or re-enabling a trusted script never revokes or restamps trust.
+Copies inherit the source provenance but never its trust timestamp, so imported-origin copies start disabled and untrusted; bulk character/persona duplication reports how many previously enabled imported copies were turned off rather than doing so silently.
+Acknowledging a one-off test warning permits that request but does not stamp trust — only explicit enable does.
+
+### Detector and warning policy
+
+`packages/domain/src/script-safety.ts` owns the pure `analyzeScriptSource(code, kind)` detector and the single executable `ALLOWED_SCRIPT_GLOBALS` registry for prompt, dice, and interactive sandboxes.
+It parses with Acorn, reports stable rule ids and source locations, and treats syntax errors as the editors' responsibility rather than inventing safety findings.
+The rule families cover host-reference escape primitives, string-to-code/module loading, out-of-surface globals, masking, and obfuscation; their evidence and intended limits live in `vibe_tavern_plan/reports/SCRIPT_SAFETY_DETECTOR_RESEARCH.md`, while the human-readable surface inventory lives in `vibe_tavern_plan/reference/SCRIPT_ALLOWED_SURFACE_REGISTRY.md`.
+Editor linting runs for all origins: `info` findings are inline hints only, while `warning` and `critical` findings are highlighted and can trigger the findings modal on explicit actions for any imported script.
+The findings modal is origin-based and cannot be suppressed, so it still appears for trusted imports and when the general warning preference is off; it takes precedence over the plain import warning and can jump to the first finding in the real editor.
+A clean untrusted import gets the plain warning on enable or explicit test unless `suppressImportWarnings` is stored server-side; in-app scripts never get either modal.
+The detector is a user-assist layer, not a security boundary: static analysis cannot prove code safe or see every dormant/steered behavior, and [AD-024](./decisions.md#ad-024-retain-nodevm-for-compatible-script-execution) still defines `node:vm` as compatibility isolation rather than confinement.
+
+### Execution gates
+
+`apps/web/src/lib/script-execution-guard.ts` is the shared web decision source for trust, execution intent, suppression, and blocking findings.
+Automatic discovery in the Playground, experience setup, and chat assignment sends no request for an untrusted import and shows the shared unavailable-until-enabled state instead.
+The experience copilot likewise refuses test/simulate tools, skips execution-based proposal validation, and omits rules-contract derivation while the imported script is untrusted.
+Explicit enable, validation, Start/Restart, Discover, and Auto-run actions use the shared warning decision; Cancel and Show in code execute nothing, while Confirm consumes the pending action once.
+Persisted script tests call `POST /scripts/:scriptId/test`, whose server independently rejects an imported never-enabled script unless `warningAcknowledged: true`; the stateless Playground endpoints have no acknowledgement field and remain client-guarded.
+Interactive session start also rejects a selected rules script whose own `enabled` flag is false, regardless of the chat-level experience toggle.
+After the first enable, automatic execution returns to normal and clean explicit actions become modal-free, but warning/critical detector findings remain visible and unsilenceable for imported provenance.
 
 ---
 
@@ -276,11 +312,14 @@ Where a user expects to run an ST extension script unmodified in VT: it will not
   - `services/api/src/domain/prompt/prompt-assembly-service.ts` — pipeline integration; script output → `assemblePrompt` + trace
   - `packages/prompt-pipeline/src/assemble.ts` — `scriptInjections` → `in_chat` layers at depth 0
   - `packages/domain/src/entities.ts` — `Script` entity
+  - `packages/domain/src/script-safety.ts` — Acorn-backed detector, rule registry, and per-kind allowed surface
   - `packages/db/src/db-schema.ts` — `scripts`, `script_links` tables; `chats.script_state_json`
   - `packages/db/src/stores/script-store.ts` — CRUD + link management + `listAllEnabledForChat` (resolver entry point)
   - `packages/db/src/stores/chat-store.ts` — `updateScriptState` (per-chat state persistence)
   - `services/api/src/api/routes/script.ts` + `adapters/script-adapter.ts` — HTTP routes + adapter
   - `apps/web/src/components/build/editors/ScriptEditor.tsx` — UI (`useScriptPanel`)
+  - `apps/web/src/lib/script-execution-guard.ts` — shared automatic/explicit trust and warning decision
+  - `apps/web/src/lib/script-safety-lint.ts` — detector findings → localized CodeMirror diagnostics
   - `apps/web/src/components/build/editors/script-templates/` — shipped template bodies + typed registry
   - `apps/web/src/components/shared/LinkBindingPopover.tsx` + `BoundResourcesField.tsx` — binding UI (shared with lorebooks)
 
@@ -288,6 +327,10 @@ Where a user expects to run an ST extension script unmodified in VT: it will not
   - `services/api/test/script-sandbox.test.ts` — engine compatibility, confinement-posture, and invariant characterization
   - `services/api/test/script-templates.test.ts` — template coverage (23 tests, 2 REGRESSION)
   - `packages/db/test/script-store.test.ts` — store CRUD + link management + FK∪junction resolution
+  - `packages/domain/test/script-safety.test.ts` — legitimate corpus, rule-family fixtures, and allowlist contract
+  - `apps/web/src/lib/script-execution-guard.test.ts` — trust × execution-intent matrix
 
 - **Planning repo** (`vibe_tavern_plan/`)
   - `reports/script-link-binding-gap.md` — the M:N link-binding gap analysis + execution log (the `script_links` junction shipped from this report)
+  - `reports/SCRIPT_SAFETY_DETECTOR_RESEARCH.md` — detector evidence, masking limits, and severity policy
+  - `reference/SCRIPT_ALLOWED_SURFACE_REGISTRY.md` — human-readable prompt/dice/interactive sandbox surface inventory
