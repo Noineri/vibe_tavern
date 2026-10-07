@@ -51,6 +51,7 @@ import type Resources from "../../../i18n/resources.js";
 import { listAllScripts, testScript } from "../../../api/script-api.js";
 import { listExperienceVisuals } from "../../../api/experience-api.js";
 import { listPersonas } from "../../../api/persona-api.js";
+import { SCRIPT_SAFETY_AUTO_SKIP_MESSAGE_KEY, scriptExecutionGuard } from "../../../lib/script-execution-guard.js";
 import type { ExperienceConfigUpdateRequest, ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
 
 type TKey = keyof Resources["en"];
@@ -232,6 +233,33 @@ export function ExperienceAssignment({
     return () => { cancelled = true; };
   }, []);
 
+  const interactiveScripts = scriptsLoad.status === "ok" ? scriptsLoad.items : null;
+
+  // SS-7B3 (SCRIPT_SAFETY_PLAN decision 13d): the automatic discovery below
+  // reuses THIS already-loaded interactive-script list as its single source of
+  // script trust — no duplicate fetch. While the list is unresolved the
+  // discovery waits (fail closed, never assumes in_app); once loaded, the
+  // selected record routes through the shared scriptExecutionGuard, so an
+  // imported never-enabled script sends NO testScript request and renders the
+  // shared localized unavailable-until-enable state instead (explicit flows
+  // are SS-7B4). A selected id the loaded list no longer contains is the
+  // authoritative "missing" case — its own state renders and no request goes
+  // out for a script the list no longer knows.
+  const selectedScript =
+    scriptId !== null && interactiveScripts !== null
+      ? (interactiveScripts.find((s) => s.id === scriptId) ?? null)
+      : null;
+  const autoDiscoverySkipped =
+    scriptId !== null &&
+    selectedScript !== null &&
+    scriptExecutionGuard({
+      script: selectedScript,
+      code: selectedScript.code,
+      kind: "interactive",
+      intent: "automatic",
+      suppressImportWarnings: null,
+    }).kind === "skip-auto";
+
   // Discover the selected script's interactive definition via the shared
   // script-test endpoint (IR-12 sandbox registration). The cancellation flag
   // plus the scriptId carried in DiscoveryState make stale results harmless:
@@ -239,6 +267,13 @@ export function ExperienceAssignment({
   // against it.
   useEffect(() => {
     if (scriptId === null) {
+      setDiscovery({ status: "idle" });
+      return;
+    }
+    // SS-7B3: wait for the record (list not yet loaded) and never send the
+    // automatic request for a missing or untrusted-import script — the render
+    // shows the missing / shared auto-skip state instead.
+    if (interactiveScripts === null || selectedScript === null || autoDiscoverySkipped) {
       setDiscovery({ status: "idle" });
       return;
     }
@@ -271,7 +306,7 @@ export function ExperienceAssignment({
         });
       });
     return () => { cancelled = true; };
-  }, [scriptId]);
+  }, [scriptId, interactiveScripts, selectedScript, autoDiscoverySkipped]);
 
   // The discovery rendered below is ALWAYS the one for the current selection:
   // between a scriptId prop change and the effect's "loading" write, the state
@@ -283,7 +318,6 @@ export function ExperienceAssignment({
     return { status: "loading", scriptId };
   })();
 
-  const interactiveScripts = scriptsLoad.status === "ok" ? scriptsLoad.items : null;
   // "Missing" can only be asserted once the list loaded; a failed list leaves
   // the discovery error states to carry the message.
   const scriptMissing =
@@ -395,6 +429,10 @@ export function ExperienceAssignment({
       {scriptId !== null && scriptsLoad.status === "ok" && scriptsLoad.items.length > 0 && (
         scriptMissing ? (
           <DiscoveryError title={t("experience_assign_script_missing")} />
+        ) : autoDiscoverySkipped ? (
+          <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t4" data-testid="experience-assign-auto-skip">
+            {t(SCRIPT_SAFETY_AUTO_SKIP_MESSAGE_KEY)}
+          </p>
         ) : activeDiscovery.status === "loading" ? (
           <p className="font-ui text-[12px] text-t4">{t("experience_assign_discovering")}</p>
         ) : activeDiscovery.status === "error" ? (
