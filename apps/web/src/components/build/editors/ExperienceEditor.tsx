@@ -70,7 +70,6 @@ import {
   createExperienceVisual,
   deleteExperienceVisual,
   listExperienceVisuals,
-  runExperienceTest,
   updateExperienceVisual,
 } from "../../../api/experience-api.js";
 import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
@@ -86,6 +85,7 @@ import {
   VISUAL_API_VERSION,
 } from "./experience-local-helpers.js";
 import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/ExperienceCopilotShell.js";
+import { useExperienceRulesValidation } from "./use-experience-rules-validation.js";
 import { ExperienceManagementControls } from "./ExperienceManagementControls.js";
 import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
 import { ExperienceCardPreview } from "./ExperienceCardPreview.js";
@@ -146,10 +146,6 @@ export function ExperienceEditor() {
   const [activeVisualId, setActiveVisualId] = useState<string | null>(null);
   const [apiRefOpen, setApiRefOpen] = useState(false);
   const [visualApiRefOpen, setVisualApiRefOpen] = useState(false);
-  // IR-90E: compact friendly validation result (reuses the wizard's pattern).
-  const [rulesValid, setRulesValid] = useState<boolean | null>(null);
-  const [rulesValidationError, setRulesValidationError] = useState<string | null>(null);
-  const [validating, setValidating] = useState(false);
 
   // IR-90A: explicit destructive delete for a saved/pending visual, confirmed
   // via the shared DestructiveConfirmModal. A failed delete keeps the visual
@@ -479,49 +475,11 @@ export function ExperienceEditor() {
     }
   };
 
-  // IR-90E: monotonic validation token. Changing the active script or its
-  // source invalidates every in-flight validation so a stale promise can
-  // never set valid/invalid or leave loading true after a switch/edit.
-  const validationTokenRef = useRef(0);
-
-  // IR-90E: fail-closed validation — clear stale "valid" state AND loading
-  // whenever the active script or its source code changes. The editor must
-  // never show valid for a new or edited source without explicit re-validation.
-  useEffect(() => {
-    validationTokenRef.current += 1;
-    setRulesValid(null);
-    setRulesValidationError(null);
-    setValidating(false);
-  }, [activeScriptId, activeScript?.code]);
-
-  // IR-90E: compact friendly rules validation (reuses the wizard's
-  // runExperienceTest discovery pattern — same API, same presentation shape).
-  const handleValidateRules = useCallback(async () => {
-    if (!activeScript || activeScript.code.trim() === "") return;
-    const token = ++validationTokenRef.current;
-    setValidating(true);
-    setRulesValidationError(null);
-    try {
-      await runExperienceTest({
-        rulesCode: activeScript.code,
-        settings: {},
-        participants: [],
-        capabilityGrants: [],
-        actions: [],
-      });
-      if (validationTokenRef.current !== token) return;
-      setRulesValid(true);
-    } catch (error) {
-      if (validationTokenRef.current !== token) return;
-      setRulesValid(false);
-      const msg = error instanceof Error ? error.message : String(error);
-      setRulesValidationError(msg);
-    } finally {
-      if (validationTokenRef.current === token) {
-        setValidating(false);
-      }
-    }
-  }, [activeScript?.code]);
+  // IR-90E: the rules validation state + handler live in the extracted hook
+  // (SS-7B2 extraction-only move — the monotonic stale-result guard is
+  // preserved verbatim there).
+  const { rulesValid, rulesValidationError, validating, handleValidateRules } =
+    useExperienceRulesValidation({ activeScript, activeScriptId });
 
   const handleNewVisualFromStarter = (starter: VisualStarter) => {
     setActiveVisualId(createPendingVisual({
@@ -1013,6 +971,7 @@ export function ExperienceEditor() {
       <div className="flex min-h-0 flex-1">
         <ExperienceCopilotShell
           scriptId={activeScript.id}
+          script={activeScript}
           assignedProfileId={activeScript.copilotProfileId ?? null}
           creationMode={creationMode}
           onStepChange={handleStepChange}

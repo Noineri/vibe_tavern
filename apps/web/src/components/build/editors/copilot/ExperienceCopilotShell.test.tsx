@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { wireUiSettings } from "../../../../../test/wire-fixtures.js";
 import type { ReactElement, ReactNode } from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
@@ -1978,5 +1978,51 @@ describe("ExperienceCopilotShell — E6 mobile management surfaces (MOBILE_DEFEC
     expect(desktop.queryByTestId("copilot-mobile-back")).toBeNull();
     expect(desktop.queryByTestId("copilot-edit-tab-header")).toBeNull();
     expect(desktop.container.querySelector('[role="tablist"] span[aria-hidden]')).toBeNull();
+  });
+});
+
+// ── SS-7B2: script trust threading to the inline playground ─────────────
+
+describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
+  it("threads an untrusted import: the playground renders the shared auto-skip state and no discovery POST fires", async () => {
+    const { getByRole, getByTestId, queryByTestId } = renderShell({
+      script: { origin: "imported", firstEnabledAt: null },
+    });
+    await flushSessionLoad();
+
+    jest.useFakeTimers();
+    try {
+      fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+
+      // The shared localized auto-skip state renders (identity i18n — the
+      // shared message key verbatim) instead of the discovery-driven no-fields
+      // line: the editor-threaded trust data reached the playground.
+      expect(getByTestId("playground-auto-skip").textContent).toBe("script_safety_checks_after_enabling");
+      expect(queryByTestId("playground-no-fields")).toBeNull();
+
+      // Advance past the debounce deterministically: the auto-derive POST
+      // would have fired by now if the guard had not skipped it.
+      await act(async () => {
+        jest.advanceTimersByTime(600);
+      });
+      expect(apiCalls("POST", /\/api\/experience\/test\/run$/)).toHaveLength(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("in-app parity: the playground's debounced auto-discovery POSTs as before", async () => {
+    const { getByRole, queryByTestId } = renderShell({
+      script: { origin: "in_app", firstEnabledAt: null },
+    });
+    await flushSessionLoad();
+
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+
+    await waitFor(
+      () => expect(apiCalls("POST", /\/api\/experience\/test\/run$/).length).toBeGreaterThanOrEqual(1),
+      { timeout: 4000 },
+    );
+    expect(queryByTestId("playground-auto-skip")).toBeNull();
   });
 });

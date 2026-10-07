@@ -40,6 +40,7 @@ import { listPersonas } from "../../../../api/persona-api.js";
 import { listAllLorebooks } from "../../../../api/lorebook-api.js";
 import { listAllScripts } from "../../../../api/script-api.js";
 import { listCoauthorSkills } from "../../../../api/skill-api.js";
+import type { ScriptRecord } from "../../../../api/types.js";
 import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
 import type { MentionAutocompleteItem } from "../../../shared/mention-autocomplete-query.js";
 import { ExperienceSessionSwitcher } from "./ExperienceSessionSwitcher.js";
@@ -49,6 +50,7 @@ import { CopilotProfileModal } from "./CopilotProfileModal.js";
 import { ExperienceCopilotMessageList } from "./ExperienceCopilotMessageList.js";
 import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
 import { ExperienceCopilotMobileInputArea } from "./ExperienceCopilotMobileInputArea.js";
+import { TabButton, ToolbarButton } from "./experience-copilot-buttons.js";
 import type { CopilotContextPillItem } from "./CopilotContextPills.js";
 import {
   allReviewHunkIds,
@@ -96,6 +98,11 @@ import { mergeSelectedBody } from "../../../../lib/coauthor-hunk-merge.js";
 
 export interface ExperienceCopilotShellProps {
   scriptId: string;
+  /** SS-7B2: the selected rules script's trust data (origin/firstEnabledAt),
+   *  threaded from the editor to the inline playground so its debounced
+   *  AUTOMATIC discovery can route through the script execution guard.
+   *  Optional — the pre-threading behavior applies when absent. */
+  script?: Pick<ScriptRecord, "origin" | "firstEnabledAt"> | null;
   /** Canonical rules buffer (the active script's code). Controlled. */
   rulesCode: string;
   onRulesChange: (code: string) => void;
@@ -163,6 +170,7 @@ export type ExperienceCopilotStep = "rules" | "appearance" | "try";
 
 export function ExperienceCopilotShell({
   scriptId,
+  script = null,
   rulesCode,
   onRulesChange,
   visualSource,
@@ -980,7 +988,7 @@ export function ExperienceCopilotShell({
   // IR-90A: exactly one ExperiencePlayground element is shared by the inline
   // Try tab in both modes (the old sandbox modal is gone, XU-6). A single
   // instance ever mounts.
-  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} scriptId={scriptId} onSendToCopilot={handleSendToCopilot} />;
+  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} scriptId={scriptId} script={script} onSendToCopilot={handleSendToCopilot} />;
 
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
   const chatPane = (
@@ -1331,56 +1339,6 @@ export function ExperienceCopilotShell({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">{editorPane}</div>
       {modals}
     </div>
-  );
-}
-
-interface TabButtonProps {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  /** E6: pending-attention dot (co-author Doc-tab primitive, CA-14). */
-  badge?: boolean;
-  /** E6: one-shot pulse on the clean→dirty edge (`coauthor-tab-pulse`). */
-  pulse?: boolean;
-}
-
-function TabButton({ label, active, onClick, badge = false, pulse = false }: TabButtonProps) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={cn(
-        "relative flex min-h-0 min-w-0 flex-1 items-center justify-center gap-1.5 py-2.5 font-ui text-[0.9rem] font-medium transition-colors",
-        active ? "border-b-2 border-accent text-t1" : "border-b-2 border-transparent text-t3",
-        pulse && "coauthor-tab-pulse",
-      )}
-    >
-      {label}
-      {badge && <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />}
-    </button>
-  );
-}
-
-interface ToolbarButtonProps {
-  label: string;
-  icon: ReactNode;
-  onClick: () => void;
-  testId: string;
-}
-
-function ToolbarButton({ label, icon, onClick, testId }: ToolbarButtonProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      data-testid={testId}
-      className="flex items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 py-1.5 font-ui text-[12px] font-medium text-t2 transition-colors hover:bg-s2 hover:text-t1"
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
   );
 }
 

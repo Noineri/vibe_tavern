@@ -35,7 +35,7 @@
  * AutoTextarea is stubbed to a plain textarea. The blob-URL spy pattern
  * mirrors ExperienceFrame.test.tsx (happy-dom must not navigate the iframe).
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ChangeEvent, ReactNode } from "react";
 import type { ExperienceSetupFieldDto } from "@vibe-tavern/api-contracts";
@@ -1883,5 +1883,79 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
     expect(await utils.findByText("experience_playground_no_visual")).toBeTruthy();
     expect(await utils.findByText("experience_playground_realtime_no_visual")).toBeTruthy();
     expect(await utils.findByText("experience_playground_realtime_badge")).toBeTruthy();
+  });
+});
+
+// ─── SS-7B2: automatic discovery guard ──────────────────────────────────
+// The debounced auto-derive discovery is AUTOMATIC script execution: it routes
+// through scriptExecutionGuard, so an imported never-enabled script renders
+// the shared localized auto-skip state and sends NO discovery request, while
+// trusted/in-app scripts keep the exact pre-B2 discovery behavior (the
+// standalone panel without trust data is the same parity case — every other
+// test in this file renders without `script` and discovery fires).
+
+describe("ExperiencePlayground — automatic discovery guard (SS-7B2)", () => {
+  it("untrusted import: renders the shared localized auto-skip state and sends NO discovery request", async () => {
+    jest.useFakeTimers();
+    try {
+      runExperienceTest.mockImplementation(async () => makeTestRunData());
+      const utils = render(
+        <ExperiencePlayground
+          code={VALID_CODE}
+          visualSource={null}
+          script={{ origin: "imported", firstEnabledAt: null }}
+        />,
+      );
+
+      // The shared localized state renders INSTEAD of the discovery-driven
+      // no-fields line (identity i18n — the shared message key verbatim).
+      expect(utils.getByTestId("playground-auto-skip").textContent).toBe("script_safety_checks_after_enabling");
+      expect(utils.queryByTestId("playground-no-fields")).toBeNull();
+
+      // Advance past the debounce deterministically: a would-be request has
+      // had time to fire, without adding a real sleep to the suite.
+      await act(async () => {
+        jest.advanceTimersByTime(600);
+      });
+      expect(runExperienceTest).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("trusted import: the debounced discovery proceeds (parity with the pre-guard behavior)", async () => {
+    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    const utils = render(
+      <ExperiencePlayground
+        code={VALID_CODE}
+        visualSource={null}
+        script={{ origin: "imported", firstEnabledAt: "2026-01-01T00:00:00.000Z" }}
+      />,
+    );
+
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    // No skip state — the discovery-driven UI renders as before (the derived
+    // 2-seat roster pins that the discovery actually landed).
+    expect(utils.queryByTestId("playground-auto-skip")).toBeNull();
+    await waitFor(() => {
+      expect(utils.container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
+    });
+  });
+
+  it("in-app script: the debounced discovery proceeds (parity with the pre-guard behavior)", async () => {
+    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    const utils = render(
+      <ExperiencePlayground
+        code={VALID_CODE}
+        visualSource={null}
+        script={{ origin: "in_app", firstEnabledAt: null }}
+      />,
+    );
+
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    expect(utils.queryByTestId("playground-auto-skip")).toBeNull();
+    await waitFor(() => {
+      expect(utils.container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
+    });
   });
 });
