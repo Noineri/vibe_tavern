@@ -40,6 +40,7 @@
  * server-side session is ephemeral process memory owned by the IR-84A driver).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT,
   EXPERIENCE_CAPABILITY,
@@ -116,12 +117,15 @@ import {
 } from "../../experience/setup-fields.js";
 import {
   buildPlaygroundDigest,
+  buildPlaygroundLogDigest,
   buildRealtimeLoopDigest,
   buildRunTestDigest,
   buildRunTestErrorDigest,
   buildSimulateDigest,
   type CopilotDigest,
+  type PlaygroundSessionLog,
 } from "../../../lib/experience-copilot-digest.js";
+import { copyText } from "../../../lib/clipboard.js";
 import {
   loadPlaygroundConfig,
   savePlaygroundConfig,
@@ -217,6 +221,11 @@ const CAPABILITY_LABEL_KEY = {
 
 /** LOBBY-A (EXPERIENCE_ENGINE_LOBBY_REPORT fix step 1): the setup-field discovery debounce. The unsaved rules buffer changes per keystroke; the pre-LOBBY-A auto-derive fired a compile per keystroke while the roster was untouched. The debounce coalesces that churn AND is what makes it affordable to keep discovering (for the declared setup fields) even after the roster is user-owned. */
 const DISCOVERY_DEBOUNCE_MS = 400;
+
+/** Grounding step 6 (EXPERIENCE_COPILOT_GROUNDING_REPORT): the empty
+ *  whole-session log. Shared by the state initializer, Reset, and the start
+ *  failure paths (the log is always replaced wholesale, never mutated). */
+const EMPTY_SESSION_LOG: PlaygroundSessionLog = { events: [], effects: [], console: [], turns: 0 };
 
 // ─── Normalization helpers (no `as any`; the wire details record is unknown) ──
 
@@ -398,6 +407,18 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
   const [definition, setDefinition] = useState<ExperienceTestDefinition | null>(null);
   const [error, setError] = useState<PlaygroundErrorView | null>(null);
   const [busy, setBusy] = useState<"start" | "advance" | null>(null);
+  // Grounding step 6: the whole-session LOG accumulator. The server returns
+  // every event on start but only the CURRENT turn's events/effects/console on
+  // advance and timer beats (D5.3), so the full log is stitched client-side.
+  // Replaced on start, appended on every advance/timer-beat response, cleared
+  // on Reset; the status-strip "send log" / "copy log" buttons feed it to
+  // buildPlaygroundLogDigest.
+  const [sessionLog, setSessionLog] = useState<PlaygroundSessionLog>(EMPTY_SESSION_LOG);
+  /** Grounding step 6: the launch context the CURRENT session was started
+   *  with (the exact roster/grants/seed sent) — captured at start so the log
+   *  describes how the session RAN, not the since-edited live config. Cleared
+   *  on Reset alongside the log. */
+  const [logLaunchContext, setLogLaunchContext] = useState<ExperienceCopilotLaunchContext | null>(null);
   const [appliedCount, setAppliedCount] = useState(0);
   // RM-9: the discovered manifest's realtime signal (tickMs). Null = turn
   // mode — the classic server-driven flow, byte-identical to pre-RM-9.
@@ -773,6 +794,15 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
           humanAction,
         });
         setSession(data);
+        // Grounding step 6: advance responses carry only THIS turn's
+        // events/effects/console — stitch them onto the session log (one human
+        // turn applied).
+        setSessionLog((prev) => ({
+          events: [...prev.events, ...data.events],
+          effects: [...prev.effects, ...data.effects],
+          console: [...prev.console, ...data.console],
+          turns: prev.turns + 1,
+        }));
         return { ok: true, data };
       } catch (advanceError) {
         const view = toPlaygroundError(advanceError);
@@ -881,6 +911,16 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
       setAppliedCount(0);
       setRequestId("pg-req-1");
       setExpectedRevision(String(data.revision));
+      // Grounding step 6: the log starts from THIS session's start envelope
+      // (start carries every event so far) and the launch context is captured
+      // as actually sent — the exact roster/grants/seed the session ran with.
+      setSessionLog({ events: data.events, effects: data.effects, console: data.console, turns: 0 });
+      setLogLaunchContext({
+        participants,
+        capabilityGrants: [...grants],
+        ...(launchSeed !== "" ? { seed: launchSeed } : {}),
+        ...(humanSeatId !== "" ? { humanSeatId } : {}),
+      });
       // RM-9: realtime mode latches the frame loop config — from here the
       // round runs entirely INSIDE the sandboxed frame (no advance/timer
       // round-trips; the server start above only ran `create` in the real
@@ -898,6 +938,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
         if (!built.ok) {
           setSession(null);
           setDefinition(null);
+          setSessionLog(EMPTY_SESSION_LOG);
+          setLogLaunchContext(null);
           setError({ message: built.message, console: [] });
           return;
         }
@@ -909,6 +951,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
     } catch (startError) {
       setSession(null);
       setDefinition(null);
+      setSessionLog(EMPTY_SESSION_LOG);
+      setLogLaunchContext(null);
       setError(toPlaygroundError(startError));
     } finally {
       setBusy(null);
@@ -928,6 +972,10 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
     setRequestId("pg-req-1");
     setExpectedRevision("0");
     setFrameReady(false);
+    // Grounding step 6: Reset also clears the whole-session log and its
+    // captured launch context — the next session's log starts clean.
+    setSessionLog(EMPTY_SESSION_LOG);
+    setLogLaunchContext(null);
     // RM-9: a reset also buries the round — the latched loop config and any
     // finished-round claim go with the session (the frame unmounts, so the
     // loop dies with it; a stopped round is lost by design).
@@ -1157,6 +1205,16 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
           data.revision >= current.revision
         ) {
           setSession(data);
+          // Grounding step 6: beat responses carry only this beat's
+          // events/effects/console — stitch them onto the session log. A tick
+          // is not a human turn, so `turns` is untouched. A stale-dropped tick
+          // returns empty deltas, so nothing is double-counted.
+          setSessionLog((prev) => ({
+            events: [...prev.events, ...data.events],
+            effects: [...prev.effects, ...data.effects],
+            console: [...prev.console, ...data.console],
+            turns: prev.turns,
+          }));
         }
       })
       .catch((beatError: unknown) => {
@@ -1264,6 +1322,46 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
       onSendToCopilot(buildRunTestDigest(testerResult));
     } else if (simResult !== null) {
       onSendToCopilot(buildSimulateDigest(simResult));
+    }
+  };
+
+  /** Grounding step 6: the WHOLE-session log digest for the status-strip
+   *  "send log" / "copy log" buttons. Turn sessions send the accumulated log
+   *  (every event across start + advances + timer beats); a realtime round
+   *  sends the loop digest — the frame loop is the round's authority, and the
+   *  turn-session shape would lie (RM-13). */
+  const buildSessionLogDigest = (live: ExperiencePlaygroundData): CopilotDigest =>
+    realtimeRound !== null
+      ? buildRealtimeLoopDigest({
+          realtime: { tickMs: realtimeRound.tickMs, seed: realtimeRound.seed },
+          diag: loopDiag,
+          claim: roundClaim,
+          definition,
+          error,
+        })
+      : buildPlaygroundLogDigest({
+          session: live,
+          sessionLog,
+          definition,
+          error,
+          launchContext: logLaunchContext,
+        });
+
+  /** Grounding step 6: push the whole-session log into the copilot thread. */
+  const handleSendLogToCopilot = () => {
+    if (onSendToCopilot === undefined || session === null) return;
+    onSendToCopilot(buildSessionLogDigest(session));
+  };
+
+  /** Grounding step 6: copy the log digest's text to the clipboard with the
+   *  honest result feedback (the TrackerConfig copy pattern). */
+  const handleCopyLog = async () => {
+    if (session === null) return;
+    const result = await copyText(buildSessionLogDigest(session).text);
+    if (result.ok) {
+      toast.success(t("copied"));
+    } else {
+      toast.error(t("experience_playground_copy_log_failed"));
     }
   };
 
@@ -1622,7 +1720,27 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                   </span>
                 )}
                 {busy !== null && <span className="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
-                <div className="ml-auto flex items-center gap-2">
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  {onSendToCopilot !== undefined && (
+                    <button
+                      type="button"
+                      data-testid="playground-send-log"
+                      className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                      disabled={busy !== null}
+                      onClick={handleSendLogToCopilot}
+                    >
+                      {t("experience_playground_send_log")}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    data-testid="playground-copy-log"
+                    className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                    disabled={busy !== null}
+                    onClick={() => { void handleCopyLog(); }}
+                  >
+                    {t("experience_playground_copy_log")}
+                  </button>
                   <button
                     type="button"
                     className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"

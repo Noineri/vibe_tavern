@@ -311,6 +311,25 @@ mock.module("../../shared/auto-textarea.js", () => ({
   ),
 }));
 
+// Grounding step 6: the status-strip copy-log button routes through the real
+// copyText helper and toasts the result — both are observable boundaries here.
+const realClipboard = await import("../../../lib/clipboard.js");
+const copyText = mock((_text: string): Promise<import("../../../lib/clipboard.js").CopyResult> =>
+  Promise.resolve({ ok: true }),
+);
+mock.module("../../../lib/clipboard.js", () => ({
+  ...realClipboard,
+  copyText,
+}));
+
+const realSonner = await import("sonner");
+const toastSuccess = mock();
+const toastError = mock();
+mock.module("sonner", () => ({
+  ...realSonner,
+  toast: { ...realSonner.toast, success: toastSuccess, error: toastError },
+}));
+
 const { ExperienceApiError } = realExperienceApi;
 
 let ExperiencePlayground: typeof import("./ExperiencePlayground.js").ExperiencePlayground;
@@ -344,6 +363,10 @@ beforeEach(() => {
   advanceExperiencePlayground.mockImplementation(async () => makeAdvanceData());
   useScriptDraftStore.getState().resetAll();
   useExperienceVisualDraftStore.getState().resetAll();
+  copyText.mockClear();
+  copyText.mockImplementation(async () => ({ ok: true }));
+  toastSuccess.mockClear();
+  toastError.mockClear();
   createdBlobs.length = 0;
   revokedUrls.length = 0;
   restoreUrl();
@@ -1098,6 +1121,126 @@ describe("ExperiencePlayground — send diagnostics to assistant (ER-14)", () =>
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
     expandDiagnostics(utils);
     expect(queryByTestId("playground-send-to-copilot")).toBeNull();
+  });
+});
+
+// ── Grounding step 6: sandbox log channel ─────────────────────────────
+
+describe("ExperiencePlayground — sandbox log channel (grounding step 6)", () => {
+  /** Click the legal-action button showing `label`, waiting for it to be
+   *  enabled (a click on a busy-disabled button is a silent no-op). The label
+   *  text lives in a span INSIDE the button, so resolve the owning button. */
+  async function clickLegalAction(getByText: (text: string) => HTMLElement, label: string): Promise<void> {
+    const btn = () => getByText(label).closest("button") as HTMLButtonElement;
+    await waitFor(() => expect(btn().disabled).toBe(false));
+    fireEvent.click(btn());
+  }
+
+  it("renders both log buttons with a live session and no error; send-log posts a digest with every event of a two-turn session", async () => {
+    startExperiencePlayground.mockImplementation(async () =>
+      makeStartData({ events: [{ visibility: "public", type: "created" }] }),
+    );
+    // Distinct per-turn event deltas: the server returns only the CURRENT
+    // turn's events on advance, so the accumulator must stitch both turns.
+    let advanceNo = 0;
+    advanceExperiencePlayground.mockImplementation(async () => {
+      advanceNo += 1;
+      return makeAdvanceData({
+        events:
+          advanceNo === 1
+            ? [{ visibility: "public", type: "scored_t1" }]
+            : [{ visibility: "public", type: "scored_t2" }, { visibility: "public", type: "turn_passed_t2" }],
+      });
+    });
+    const onSendToCopilot = mock();
+    const { getByText, getByTestId, queryByTestId } = render(
+      <ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />,
+    );
+
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(getByTestId("playground-send-log")).toBeTruthy());
+    expect(getByTestId("playground-copy-log")).toBeTruthy();
+    expect(getByTestId("playground-send-log")!.textContent).toBe("experience_playground_send_log");
+    expect(getByTestId("playground-copy-log")!.textContent).toBe("experience_playground_copy_log");
+    // No error → the error-panel button stays absent (its digest path is untouched).
+    expect(queryByTestId("playground-error-ask-copilot")).toBeNull();
+
+    // Two human turns through the legal-action button.
+    await clickLegalAction(getByText, "Score");
+    await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(1));
+    await clickLegalAction(getByText, "Score");
+    await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(getByTestId("playground-send-log"));
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.ok).toBe(true);
+    expect(digest.feedback.turns).toBe(2);
+    expect(digest.feedback.eventsTotal).toBe(4);
+    expect((digest.feedback.events as Array<{ type: string }>).map((e) => e.type)).toEqual([
+      "created",
+      "scored_t1",
+      "scored_t2",
+      "turn_passed_t2",
+    ]);
+  });
+
+  it("copy-log always renders (standalone use) and copies the log text; toasts success and the localized failure", async () => {
+    startExperiencePlayground.mockImplementation(async () =>
+      makeStartData({ events: [{ visibility: "public", type: "created" }] }),
+    );
+    const { getByText, getByTestId, queryByTestId } = renderPlayground();
+
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(getByTestId("playground-copy-log")).toBeTruthy());
+    // No copilot callback → no send-log button, but copy-log remains.
+    expect(queryByTestId("playground-send-log")).toBeNull();
+
+    copyText.mockImplementationOnce(async () => ({ ok: true }));
+    fireEvent.click(getByTestId("playground-copy-log"));
+    await waitFor(() => expect(copyText).toHaveBeenCalledTimes(1));
+    const copied = copyText.mock.calls[0][0] as string;
+    expect(copied).toContain("Playground session log");
+    expect(copied).toContain("public/created");
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("copied"));
+    expect(toastError).not.toHaveBeenCalled();
+
+    copyText.mockImplementationOnce(async () => ({ ok: false, error: "rejected" }));
+    fireEvent.click(getByTestId("playground-copy-log"));
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("experience_playground_copy_log_failed"),
+    );
+  });
+
+  it("Reset clears the accumulator — a restarted session's log carries only its own events", async () => {
+    startExperiencePlayground.mockImplementation(async () =>
+      makeStartData({ events: [{ visibility: "public", type: "created" }] }),
+    );
+    advanceExperiencePlayground.mockImplementation(async () =>
+      makeAdvanceData({ events: [{ visibility: "public", type: "scored_t1" }] }),
+    );
+    const onSendToCopilot = mock();
+    const { getByText, getByTestId, queryByTestId } = render(
+      <ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />,
+    );
+
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(getByTestId("playground-send-log")).toBeTruthy());
+    await clickLegalAction(getByText, "Score");
+    await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    // Reset tears the session down — the log buttons go with it.
+    fireEvent.click(getByText("experience_playground_reset"));
+    await waitFor(() => expect(queryByTestId("playground-send-log")).toBeNull());
+
+    // A fresh session's log starts clean: only the new start envelope's events.
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(getByTestId("playground-send-log")).toBeTruthy());
+    fireEvent.click(getByTestId("playground-send-log"));
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.eventsTotal).toBe(1);
+    expect((digest.feedback.events as Array<{ type: string }>)[0]!.type).toBe("created");
   });
 });
 
@@ -1974,6 +2117,28 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
     expect(await utils.findByText("experience_playground_no_visual")).toBeTruthy();
     expect(await utils.findByText("experience_playground_realtime_no_visual")).toBeTruthy();
     expect(await utils.findByText("experience_playground_realtime_badge")).toBeTruthy();
+  });
+
+  it("send-log sends the REALTIME loop digest, not the turn log (grounding step 6)", async () => {
+    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData());
+    const onSendToCopilot = mock();
+    const utils = render(
+      <ExperiencePlayground code={REALTIME_CODE} visualSource={VISUAL_SOURCE} onSendToCopilot={onSendToCopilot} />,
+    );
+    await waitFor(() => {
+      expect(utils.container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
+    });
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(await utils.findByText("experience_playground_realtime_badge")).toBeTruthy();
+
+    fireEvent.click(utils.getByTestId("playground-send-log"));
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.mode).toBe("realtime");
+    expect(digest.feedback.turns).toBeUndefined();
   });
 });
 
