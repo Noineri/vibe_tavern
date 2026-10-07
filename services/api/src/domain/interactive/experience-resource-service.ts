@@ -311,9 +311,11 @@ export class ExperienceResourceService {
     await this.stores.experienceResources.deleteVisual(id);
     // Fix item 12: deleting a built-in visual records a dismissal so the seed
     // never re-creates/re-binds what the user explicitly removed.
-    const entry = BUILTIN_EXPERIENCE_CATALOG.find((e) => e.visualStableKey === existing.stableKey);
+    const entry = BUILTIN_EXPERIENCE_CATALOG.find((candidate) =>
+      candidate.visuals.some((visual) => visual.stableKey === existing.stableKey),
+    );
     if (entry !== undefined) {
-      await this.stores.experienceResources.dismissBuiltinExperience(entry.id, entry.visualStableKey);
+      await this.stores.experienceResources.dismissBuiltinExperience(entry.id, existing.stableKey!);
     }
     return ok(undefined);
   }

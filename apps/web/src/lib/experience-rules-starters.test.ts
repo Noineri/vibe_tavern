@@ -111,6 +111,16 @@ function starterCaps(id: string): ExperienceCapabilityContext {
       ],
     };
   }
+  // The Messenger declares `participants` + `model` and keys its lobby actions
+  // on a roster (its characters bind to model seats by label).
+  if (id === "model_conversation") {
+    return {
+      participants: [
+        { id: "human_1", label: "You", controller: "human" },
+        { id: "ai_seat", label: "AI", controller: "model" },
+      ],
+    };
+  }
   if (id === "card") return { random: createDeterministicRandom(42) };
   return {};
 }
@@ -129,8 +139,14 @@ describe("rules starter catalog — real kernel boundary", () => {
       expect(created.ok).toBe(true);
       if (!created.ok) throw new Error(created.message);
 
-      const viewer = starter.id === "round"
-        ? { kind: "human" as const, participantId: "p1" }
+      // Behavior change (report step 4a, owner replaced the built-ins
+      // 2026-10-06): the Model Conversation starter is the owner's Messenger,
+      // whose `actions()` returns [] for an observer and needs a participants
+      // roster — was an observer/empty-roster drive, now a human + model roster
+      // driven from the human seat.
+      const humanSeatId = starter.id === "round" ? "p1" : starter.id === "model_conversation" ? "human_1" : null;
+      const viewer = humanSeatId !== null
+        ? { kind: "human" as const, participantId: humanSeatId }
         : { kind: "observer" as const };
       const projection = runProject(starter.source, scriptName, created.value, viewer, caps);
       expect(projection.ok).toBe(true);
@@ -141,13 +157,21 @@ describe("rules starter catalog — real kernel boundary", () => {
       if (!legal.ok) throw new Error(legal.message);
       expect(legal.value.length).toBeGreaterThan(0);
 
-      const first = legal.value[0];
+      // The single transition uses an action that is legal in the starter's
+      // initial state. The Messenger's lobby offers `create_character` (its
+      // `reply` needs an existing character + chat first); every other starter
+      // drives its first exposed action.
+      const first = starter.id === "model_conversation"
+        ? legal.value.find((a) => a.type === "create_character")
+        : legal.value[0];
       if (!first) throw new Error("starter returned no legal action");
       const transition = runReduce(starter.source, scriptName, created.value, {
         type: first.type,
         requestId: `req_${starter.id}`,
         expectedRevision: 0,
-        ...(starter.id === "model_conversation" ? { payload: "Hello" } : {}),
+        ...(starter.id === "model_conversation"
+          ? { payload: { name: "Ada", model: "AI" } }
+          : {}),
       }, caps);
       expect(transition.ok).toBe(true);
       if (!transition.ok) throw new Error(transition.message);

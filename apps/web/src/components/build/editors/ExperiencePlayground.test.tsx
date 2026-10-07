@@ -907,7 +907,11 @@ describe("ExperiencePlayground", () => {
     expect(iframe!.getAttribute("sandbox")).not.toContain("allow-same-origin");
     expect(createdBlobs.length).toBeGreaterThanOrEqual(1);
     const doc = await createdBlobs[createdBlobs.length - 1]!.text();
-    expect(doc).toContain("xp-conv");
+    // The REAL shipped Messenger visual (report step 4a re-pin: was the retired
+    // compact visual's "xp-conv" class; now the messenger's shell root + tab
+    // bar — basis: owner replaced the built-ins 2026-10-06).
+    expect(doc).toContain("id=\"xp-root\"");
+    expect(doc).toContain("xp-tabs");
 
     expect(await findByText("experience_playground_status_your_turn")).toBeTruthy();
     expect(await findByText("experience_playground_turn_title")).toBeTruthy();

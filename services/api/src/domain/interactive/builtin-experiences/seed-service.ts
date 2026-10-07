@@ -27,9 +27,13 @@
  * `skipped` and the caller (BE-4) logs them — startup is never crashed by a
  * bad built-in.
  */
-import type { StoreContainer } from "@vibe-tavern/db";
+import type { ExperienceVisualRow, StoreContainer } from "@vibe-tavern/db";
+import { log } from "@vibe-tavern/domain";
 
 import { BUILTIN_EXPERIENCE_CATALOG, type BuiltinExperienceEntry } from "./index.js";
+import { discoverExperienceDefinition } from "../experience-kernel.js";
+
+const logger = log.tag("builtin-experiences.seed");
 
 /** Outcome of seeding the whole catalog. */
 export interface BuiltinSeedResult {
@@ -84,23 +88,28 @@ async function seedOneBuiltin(
 ): Promise<boolean> {
   let synced = false;
 
-  // 1. Visual first — its id is needed for the script's defaultVisualId.
-  let visual = await stores.experienceResources.ensureVisualByKey(entry.visualStableKey, {
-    name: entry.displayName,
-    source: entry.visualSource,
-    apiVersion: 1,
-    compatibleManifestIds: [entry.manifestId],
-    scopeType: "global",
-  });
-  // Source sync: app-owned rows mirror the catalog (see the header comment).
-  if (visual.source !== entry.visualSource || visual.name !== entry.displayName) {
-    visual = await stores.experienceResources.updateVisual(visual.id, {
-      name: entry.displayName,
-      source: entry.visualSource,
+  // 1. Visuals first — the first catalog visual is the default.
+  const visuals: ExperienceVisualRow[] = [];
+  for (const catalogVisual of entry.visuals) {
+    let visual = await stores.experienceResources.ensureVisualByKey(catalogVisual.stableKey, {
+      name: catalogVisual.name,
+      source: catalogVisual.source,
+      apiVersion: 1,
       compatibleManifestIds: [entry.manifestId],
+      scopeType: "global",
     });
-    synced = true;
+    if (visual.source !== catalogVisual.source || visual.name !== catalogVisual.name) {
+      visual = await stores.experienceResources.updateVisual(visual.id, {
+        name: catalogVisual.name,
+        source: catalogVisual.source,
+        compatibleManifestIds: [entry.manifestId],
+      });
+      synced = true;
+    }
+    visuals.push(visual);
   }
+  const defaultVisual = visuals[0];
+  if (defaultVisual === undefined) throw new Error(`Built-in '${entry.id}' has no visuals`);
 
   // 2. Interactive script — idempotent via creationIntentId "builtin:<id>".
   //    enabled + global + builtinId so it is playable app-wide and identifiable
@@ -113,11 +122,28 @@ async function seedOneBuiltin(
     enabled: true,
     creationIntentId: `builtin:${entry.id}`,
     scopeType: "global",
-    defaultVisualId: visual.id,
+    defaultVisualId: defaultVisual.id,
     extensions: { builtinId: entry.id, builtin: true },
   });
   // Source sync for the rules side (same mirror semantics as the visual).
   if (script.code !== entry.rulesSource || script.name !== entry.displayName) {
+    const oldDiscovery = discoverExperienceDefinition(script.code, `${entry.id}:old.js`);
+    const newDiscovery = discoverExperienceDefinition(entry.rulesSource, `${entry.id}:new.js`);
+    if (oldDiscovery.ok && newDiscovery.ok) {
+      const oldCapabilities = new Set(oldDiscovery.definition.declaredCapabilities.map((item) => item.capability));
+      const addedCapabilities = newDiscovery.definition.declaredCapabilities
+        .map((item) => item.capability)
+        .filter((capability) => !oldCapabilities.has(capability));
+      if (addedCapabilities.length > 0) {
+        const chatCount = await stores.experienceResources.addGrantsForScript(script.id, addedCapabilities);
+        logger.info(
+          "%s added capabilities=%s syncedChats=%d",
+          entry.id,
+          addedCapabilities.join(","),
+          chatCount,
+        );
+      }
+    }
     script = await stores.scripts.update(script.id, {
       name: entry.displayName,
       description: entry.description,
@@ -130,7 +156,9 @@ async function seedOneBuiltin(
   //    default is already set above so bindVisual will not change it. On a
   //    fresh DB this creates the junction row so "primary ∈ bound set" holds;
   //    on a re-seed it is a no-op (composite-PK conflict is ignored).
-  await stores.scripts.bindVisual(script.id, visual.id);
+  for (const visual of visuals) {
+    await stores.scripts.bindVisual(script.id, visual.id);
+  }
 
   return synced;
 }

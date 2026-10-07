@@ -264,6 +264,37 @@ export class ExperienceResourceStore {
   }
 
   /**
+   * Append capabilities newly declared by an app-owned built-in to every chat
+   * currently assigned to that script. Existing grants and their order stay
+   * untouched; capabilities the user removed while already declared are never
+   * re-added because the seed only passes declaration-set additions.
+   */
+  async addGrantsForScript(scriptId: string, capabilities: readonly string[]): Promise<number> {
+    if (capabilities.length === 0) return 0;
+    const rows = await this.db
+      .select()
+      .from(experienceChatConfigs)
+      .where(eq(experienceChatConfigs.scriptId, scriptId))
+      .all();
+    let changed = 0;
+    for (const row of rows) {
+      const current = parseStringArray(row.capabilityGrantsJson);
+      const additions = capabilities.filter((capability) => !current.includes(capability));
+      if (additions.length === 0) continue;
+      await this.db
+        .update(experienceChatConfigs)
+        .set({
+          capabilityGrantsJson: JSON.stringify([...current, ...additions]),
+          updatedAt: this.clock.now(),
+        })
+        .where(eq(experienceChatConfigs.id, row.id))
+        .run();
+      changed += 1;
+    }
+    return changed;
+  }
+
+  /**
    * List visuals visible to a scope. Global visuals are always returned; a
    * character/persona/chat scope additionally returns its directly-owned visual.
    * (Visual→rules BINDING is the `script_visuals` junction managed by

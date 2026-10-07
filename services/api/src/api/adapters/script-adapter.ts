@@ -91,7 +91,7 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		const entry = builtinId === null ? undefined : BUILTIN_EXPERIENCE_CATALOG.find((e) => e.id === builtinId);
 		await this.stores.scripts.delete(scriptId);
 		if (entry !== undefined) {
-			await this.stores.experienceResources.dismissBuiltinExperience(entry.id, entry.visualStableKey);
+			await this.stores.experienceResources.dismissBuiltinExperience(entry.id, entry.visuals[0]!.stableKey);
 		}
 	};
 
@@ -158,10 +158,14 @@ export class ScriptAdapter implements ScriptRuntimeApi {
 		// Fix item 12: unbinding a built-in visual records a dismissal so the
 		// seed never re-binds it on the next startup.
 		const visual = await this.stores.experienceResources.getVisualById(visualId);
-		const entry = visual === null ? undefined : BUILTIN_EXPERIENCE_CATALOG.find((e) => e.visualStableKey === visual.stableKey);
+		const entry = visual === null
+			? undefined
+			: BUILTIN_EXPERIENCE_CATALOG.find((candidate) =>
+				candidate.visuals.some((builtinVisual) => builtinVisual.stableKey === visual.stableKey),
+			);
 		await this.stores.scripts.unbindVisual(scriptId, visualId);
 		if (entry !== undefined) {
-			await this.stores.experienceResources.dismissBuiltinExperience(entry.id, entry.visualStableKey);
+			await this.stores.experienceResources.dismissBuiltinExperience(entry.id, visual!.stableKey!);
 		}
 	};
 }

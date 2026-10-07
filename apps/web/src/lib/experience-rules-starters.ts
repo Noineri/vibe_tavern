@@ -219,13 +219,13 @@ export const RULES_STARTERS: readonly RulesStarter[] = Object.freeze([
   Object.freeze({
     id: "model_conversation",
     label: "Model Conversation",
-    description: "A human and model conversation: the human replies, the AI replies in turn. Uses the participants and model capabilities.",
+    description: "A messenger with your profile, characters bound to model seats, and one-on-one or group chats; each character replies through its own model while you wait.",
     source: MODEL_CONVERSATION_SOURCE,
   }),
   Object.freeze({
     id: "breakout_arcade",
     label: "Breakout (Realtime)",
-    description: "A realtime arcade loop: bounce the ball off the paddle, clear the brick wall. Demonstrates update(context, dt), frame-local actLocal inputs, and a replay-verified realtime commit.",
+    description: "A realtime arcade loop with power-ups: bounce the ball off the paddle and clear the brick wall (3 balls). Demonstrates update(context, dt), frame-local actLocal inputs, seeded randomness and a replay-verified realtime commit.",
     source: BREAKOUT_RULES_SOURCE,
   }),
   Object.freeze({
