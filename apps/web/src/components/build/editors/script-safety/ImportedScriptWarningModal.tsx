@@ -6,61 +6,14 @@ import { modalPanelCls } from "../../../shared/modal-helpers.js";
 import { Modal } from "../../../shared/Modal.js";
 import { Toggle } from "../../../shared/Toggle.js";
 import { useScriptSafetySettingsStore } from "../../../../stores/script-safety-settings-store.js";
-import type { ScriptKind } from "@vibe-tavern/domain";
-import { analyzeScriptSource, type ScriptSafetyFinding } from "@vibe-tavern/domain/script-safety";
-import type { ScriptRecord } from "../../../../api/types.js";
-import { isUntrustedImport } from "./ScriptSafetyBanner.js";
-import { blockingFindings } from "./FindingsWarningModal.js";
+import { scriptSafetyWarningFlow } from "../../../../lib/script-execution-guard.js";
+import type {
+  ScriptSafetyWarningFlow,
+  ScriptSafetyWarningIntent,
+} from "../../../../lib/script-execution-guard.js";
 
-/** The honest verb of the confirmed action — drives the confirm label. */
-export type ScriptSafetyWarningIntent = "enable" | "test";
-
-/** Which warning surface (if any) an enable/test attempt must pass through
- *  before the action proceeds. The SINGLE source of the SS-7 state matrix —
- *  every wiring site (ScriptEditor / ScriptTester / DiceScriptTester /
- *  ExperienceEditor) calls THIS function; a hand-rolled copy is a defect.
- *
- *  Matrix (plan decisions 3/4/11 + the Non-negotiable constraints):
- *  - `in_app` scripts: NEVER a modal (decision 6 — highlights only, and the
- *    detector is not even run for them here).
- *  - imported + `warning`+ findings: the FINDINGS modal ALONE (decision 11 —
- *    it carries the honest warning text exactly when the plain warning would
- *    also have fired: untrusted and not suppressed).
- *  - imported + untrusted + no blocking findings + not suppressed: the PLAIN
- *    warning with the «don't show again» checkbox.
- *  - imported + untrusted + suppressed (+ no blocking findings): no modal, but
- *    the stored suppression IS the acknowledgement — a test run still rides
- *    the acknowledged path (`warningAcknowledged: true`, decision 14: the
- *    server refuses untrusted scripts without the flag).
- *  - imported + trusted + no blocking findings: no modal, unacknowledged
- *    (the plain warning never fires for already-enabled scripts). */
-export type ScriptSafetyWarningFlow =
-  | { kind: "none"; warningAcknowledged: boolean }
-  | { kind: "plain" }
-  | { kind: "findings"; findings: readonly ScriptSafetyFinding[]; showHonestWarning: boolean };
-
-export function scriptSafetyWarningFlow(input: {
-  script: Pick<ScriptRecord, "origin" | "firstEnabledAt"> | null;
-  code: string;
-  kind: ScriptKind;
-  /** The server suppress flag; `null` = not loaded yet → fail OPEN (the
-   *  honest warning shows — a slow or failed fetch can never silence it). */
-  suppressImportWarnings: boolean | null;
-}): ScriptSafetyWarningFlow {
-  // in_app scripts never get modals — skip the detector parse entirely.
-  if (input.script?.origin !== "imported") return { kind: "none", warningAcknowledged: false };
-  const untrusted = isUntrustedImport(input.script);
-  const findings = blockingFindings(analyzeScriptSource(input.code, input.kind));
-  if (findings.length > 0) {
-    return {
-      kind: "findings",
-      findings,
-      showHonestWarning: untrusted && input.suppressImportWarnings !== true,
-    };
-  }
-  if (untrusted && input.suppressImportWarnings !== true) return { kind: "plain" };
-  return { kind: "none", warningAcknowledged: untrusted };
-}
+export { scriptSafetyWarningFlow };
+export type { ScriptSafetyWarningFlow, ScriptSafetyWarningIntent };
 
 interface ImportedScriptWarningModalProps {
   /** The honest verb of the confirmed action — «Enable anyway» vs «Run again». */

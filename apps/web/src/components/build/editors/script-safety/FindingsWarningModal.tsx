@@ -3,19 +3,14 @@ import { useT } from "../../../../i18n/context.js";
 import { cn } from "../../../../lib/cn.js";
 import { modalPanelCls } from "../../../shared/modal-helpers.js";
 import { Modal } from "../../../shared/Modal.js";
+import { blockingFindings } from "../../../../lib/script-execution-guard.js";
+import type { ScriptSafetyWarningIntent } from "../../../../lib/script-execution-guard.js";
 import { scriptSafetyRuleI18nKey } from "../../../../lib/script-safety-lint.js";
 import { Text, type Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin } from "@codemirror/view";
 import type { ScriptSafetyFinding } from "@vibe-tavern/domain/script-safety";
-import type { ScriptSafetyWarningIntent } from "./ImportedScriptWarningModal.js";
 
-/** Findings that OPEN the modal: `warning` and above (SS-7 threshold per plan
- *  item 12 — `info`-level findings highlight in the editor only). The single
- *  derivation: `scriptSafetyWarningFlow` and every wiring site filter through
- *  THIS function, never a hand-rolled copy. */
-export function blockingFindings(findings: readonly ScriptSafetyFinding[]): ScriptSafetyFinding[] {
-  return findings.filter((f) => f.severity === "warning" || f.severity === "critical");
-}
+export { blockingFindings };
 
 /** Clamp a 1-based finding line onto the live document (1..doc.lines) and
  *  return the absolute 0-based offset of that line's start — the jump target

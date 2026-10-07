@@ -1,15 +1,11 @@
 import { useEffect } from "react";
 import type { ScriptRecord } from "../../../../api/types.js";
 import { cn } from "../../../../lib/cn.js";
+import { isUntrustedImport } from "../../../../lib/script-execution-guard.js";
 import { useT } from "../../../../i18n/context.js";
 import { useScriptSafetySettingsStore } from "../../../../stores/script-safety-settings-store.js";
 
-/** UNTRUSTED = imported and never enabled (SCRIPT_SAFETY_PLAN, SS-6). The
- *  single source for the trust predicate shared by the banner and the
- *  ExperienceEditor enable-lock. */
-export function isUntrustedImport(script: Pick<ScriptRecord, "origin" | "firstEnabledAt"> | null): boolean {
-  return script !== null && script.origin === "imported" && script.firstEnabledAt === null;
-}
+export { isUntrustedImport };
 
 interface ScriptSafetyBannerProps {
   script: Pick<ScriptRecord, "origin" | "firstEnabledAt">;

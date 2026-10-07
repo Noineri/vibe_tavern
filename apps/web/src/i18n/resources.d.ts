@@ -2733,6 +2733,7 @@ export default interface Resources {
     "script_running": "Running...",
     "script_safety_banner_imported": "Imported script — review the code before enabling.",
     "script_safety_banner_show_warnings": "Show warnings again",
+    "script_safety_checks_after_enabling": "Checks are available after enabling.",
     "script_safety_duplicate_disabled": "Duplication turned off {count} imported scripts",
     "script_safety_duplicate_disabled_one": "Duplication turned off {count} imported script",
     "script_safety_duplicate_disabled_other": "Duplication turned off {count} imported scripts",

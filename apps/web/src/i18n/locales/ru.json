@@ -1817,6 +1817,7 @@
 	"script_safety_rule_obfuscation_known_signature": "Известная сигнатура обфускатора",
 	"script_safety_banner_imported": "Импортированный скрипт — перед включением просмотрите код.",
 	"script_safety_banner_show_warnings": "Снова показывать предупреждения",
+	"script_safety_checks_after_enabling": "Проверки доступны после включения.",
 	"script_safety_duplicate_disabled": "Дублирование выключило {count} импортированных скриптов",
 	"script_safety_duplicate_disabled_one": "Дублирование выключило {count} импортированный скрипт",
 	"script_safety_duplicate_disabled_few": "Дублирование выключило {count} импортированных скрипта",
