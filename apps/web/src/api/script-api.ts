@@ -18,7 +18,7 @@ export async function listParticipatingScripts(chatId: string): Promise<ScriptRe
   return unwrapRpc(await client.api.scripts.participating.$get({ query: { chatId } }));
 }
 
-export async function createScript(body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; links?: Array<{ targetType: "character" | "persona"; targetId: string }>; chatId?: string; enabled?: boolean; sortOrder?: number }): Promise<ScriptRecord> {
+export async function createScript(body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; links?: Array<{ targetType: "character" | "persona"; targetId: string }>; chatId?: string; enabled?: boolean; sortOrder?: number; origin?: "imported" }): Promise<ScriptRecord> {
   const response = await client.api.scripts.$post({ json: body });
   return unwrapRpc(response);
 }

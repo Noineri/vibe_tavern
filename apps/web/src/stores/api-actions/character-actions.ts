@@ -109,7 +109,7 @@ export async function exportCharacterAction(characterId: string): Promise<Record
   return await exportCharacter(characterId);
 }
 
-export async function duplicateCharacterAction(characterId: string): Promise<ImportJsonResponse> {
+export async function duplicateCharacterAction(characterId: string): Promise<ImportJsonResponse & { disabledImportedScripts: number }> {
   const result = await duplicateCharacter(characterId);
   void fetchBootstrapAction({ silent: true });
   return result;

@@ -22,6 +22,7 @@ import {
   BREAKOUT_RULES_SOURCE,
   CONVERSATION_RULES_SOURCE as MODEL_CONVERSATION_SOURCE,
 } from "@vibe-tavern/domain/builtins";
+import type { ScriptRecord } from "../api/types.js";
 
 /** One shipped rules starter. */
 export interface RulesStarter {
@@ -244,6 +245,9 @@ export interface InteractiveRulesDraftValues {
   code: string;
   scriptKind: "interactive";
   enabled: false;
+  /** Provenance a duplicated mini-app inherits from its source (decision 9).
+   *  Trust is NEVER inherited — a fresh copy starts disabled regardless. */
+  origin: ScriptRecord["origin"];
 }
 
 export function rulesStarterToDraftValues(starter: RulesStarter): InteractiveRulesDraftValues {
@@ -253,12 +257,14 @@ export function rulesStarterToDraftValues(starter: RulesStarter): InteractiveRul
     code: starter.source,
     scriptKind: "interactive",
     enabled: false,
+    origin: "in_app",
   };
 }
 
-/** Copy an existing source into a new, explicitly untrusted interactive draft. */
+/** Copy an existing source into a new, explicitly untrusted interactive draft.
+ *  The source's origin is inherited (decision 9); trust is not. */
 export function duplicateRulesValues(
-  source: Pick<InteractiveRulesDraftValues, "name" | "description" | "code">,
+  source: Pick<InteractiveRulesDraftValues, "name" | "description" | "code" | "origin">,
 ): InteractiveRulesDraftValues {
   return {
     name: source.name,
@@ -266,5 +272,6 @@ export function duplicateRulesValues(
     code: source.code,
     scriptKind: "interactive",
     enabled: false,
+    origin: source.origin,
   };
 }

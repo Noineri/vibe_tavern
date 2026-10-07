@@ -165,6 +165,7 @@ describe("rules starter duplication — values are independent copies", () => {
       code: starter.source,
       scriptKind: "interactive",
       enabled: false,
+      origin: "in_app",
     });
     // Mutating the copy must not affect the frozen starter.
     values.name = "Changed";
@@ -174,7 +175,7 @@ describe("rules starter duplication — values are independent copies", () => {
   });
 
   it("duplicateRulesValues produces a deep copy independent of the source", () => {
-    const original = { name: "Original", description: "Description", code: "original code" };
+    const original = { name: "Original", description: "Description", code: "original code", origin: "imported" as const };
     const copy = duplicateRulesValues(original);
     expect(copy).toEqual({ ...original, scriptKind: "interactive", enabled: false });
     expect(copy).not.toBe(original);
@@ -190,6 +191,7 @@ describe("rules starter duplication — values are independent copies", () => {
     const values = rulesStarterToDraftValues(starter);
     expect(values.scriptKind).toBe("interactive");
     expect(values.enabled).toBe(false);
+    expect(values.origin).toBe("in_app");
     expect(values.code).toContain("context.experience.register");
   });
 });

@@ -1062,7 +1062,9 @@ describe("ExperienceEditor", () => {
   });
 
   it("locks enabling while the source is changed and allows it after saving the exact reviewed source", async () => {
-    serverScripts = [{ ...baseScript }];
+    // SS-6 (decision 8): the lock fires only for imported never-enabled
+    // scripts — use an imported untrusted fixture for the lock boundary.
+    serverScripts = [{ ...baseScript, origin: "imported" }];
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     const [rulesView] = await codeViews(container);
@@ -1097,7 +1099,7 @@ describe("ExperienceEditor", () => {
     expect(await findByText("experience_editor_enabled")).toBeTruthy();
   });
 
-  it("drops an enabled script to untrusted when its source is edited (store invariant surfaced)", async () => {
+  it("drops an enabled in-app script to disabled locally on edit but never locks (decision 8)", async () => {
     serverScripts = [{ ...baseScript, enabled: true }];
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
@@ -1107,20 +1109,20 @@ describe("ExperienceEditor", () => {
     expect(await findByText("experience_editor_enabled")).toBeTruthy();
 
     replaceCode(rulesView, EXISTING_CODE + "\n// invalidate trust");
+    // The store still forces enabled=false locally (aria-checked=false), but
+    // an in-app script's toggle is never LOCKED (decision 8).
     expect(await findByText("experience_editor_disabled")).toBeTruthy();
     const toggle = getByRole("switch") as HTMLButtonElement;
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(toggle.disabled).toBe(true);
+    expect(toggle.disabled).toBe(false);
     // Never auto-saved: the trust drop is local until an explicit save.
     expect(updateScript).not.toHaveBeenCalled();
   });
 
-  it("duplicates an existing script as an independent, untrusted copy", async () => {
-    // IR-90C: the starter-pick path now opens the wizard, so the duplicate-
-    // from-starter half moved there. The duplicate-from-existing boundary is
-    // unchanged: duplication produces an independent, explicitly untrusted
-    // local-id copy whose edits never touch the source.
-    serverScripts = [{ ...baseScript, enabled: true }];
+  it("duplicates an imported script as an independent untrusted copy inheriting its origin", async () => {
+    // Decision 9: «Дублировать» inherits the source's ORIGIN but never its
+    // trust — a copy of an imported script starts untrusted and locked.
+    serverScripts = [{ ...baseScript, enabled: true, origin: "imported" }];
     const { findByText, getAllByRole, getByRole, container } = render(<ExperienceEditor />);
 
     fireEvent.click(await findByText("Existing Rules"));
@@ -1133,8 +1135,15 @@ describe("ExperienceEditor", () => {
     expect(dupOfExisting).toBeTruthy();
     expect(dupOfExisting?.[1].values.name).toBe("Existing Rules");
     expect(dupOfExisting?.[1].values.enabled).toBe(false);
-    // The toggle is locked for the duplicate: its source was never saved.
+    // The duplicate is an imported never-enabled script → the toggle locks.
     expect((getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
+
+    // First save = CREATE; it must carry the inherited `imported` origin so
+    // the server keeps the copy untrusted (and disabled).
+    fireEvent.click(getByRole("button", { name: "save" }));
+    await waitFor(() => {
+      expect(createScript).toHaveBeenCalledWith(expect.objectContaining({ origin: "imported" }));
+    });
 
     // Editing the duplicate never touches the original saved script's draft.
     const dupId = dupOfExisting?.[0];
@@ -1143,6 +1152,19 @@ describe("ExperienceEditor", () => {
       useScriptDraftStore.getState().patch(dupId, { code: EXISTING_CODE + "\n// dup edit" });
     });
     expect(useScriptDraftStore.getState().drafts["srv_1"]?.values.code).toBe(EXISTING_CODE);
+  });
+
+  it("duplicates an in-app script as a trusted copy (toggle stays free)", async () => {
+    // Decision 9 + 8: an in-app source inherits `in_app` origin, so the copy
+    // is trusted immediately and its toggle never locks.
+    serverScripts = [{ ...baseScript, enabled: true }];
+    const { findByText, getAllByRole, getByRole, container } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    const [dupExistingButton] = getAllByRole("button", { name: "experience_editor_duplicate" });
+    if (!dupExistingButton) throw new Error("duplicate button missing");
+    fireEvent.click(dupExistingButton);
+    expect((getByRole("switch") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("duplicates a visual without sharing the compatibleManifestIds array", async () => {
@@ -1916,7 +1938,7 @@ describe("ExperienceEditor — mini-app import/export", () => {
     });
 
     await waitFor(() => expect(createScript).toHaveBeenCalled());
-    expect(createScript.mock.calls[0][0]).toMatchObject({ name: "Imported App", scriptKind: "interactive", enabled: true });
+    expect(createScript.mock.calls[0][0]).toMatchObject({ name: "Imported App", scriptKind: "interactive", enabled: false, origin: "imported" });
     expect(createExperienceVisual).toHaveBeenCalledTimes(2);
     // Default (skin-b) bound FIRST — the store promotes the first bind to primary.
     expect(bindScriptVisual.mock.calls.map((c) => c[1])).toEqual(["vis_imp_skin-b", "vis_imp_skin-a"]);

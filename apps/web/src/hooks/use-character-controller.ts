@@ -261,7 +261,12 @@ export function useCharacterController(): CharacterControllerActions {
 
   async function handleDuplicatePersona(personaId: string): Promise<void> {
     try {
-      await duplicatePersonaAction(personaId);
+      const result = await duplicatePersonaAction(personaId);
+      // Decision 15 (never silently off): a copy of an imported script is
+      // born disabled (trust never inherits) — surface the count.
+      if (result.disabledImportedScripts > 0) {
+        toast.warning(getT()("script_safety_duplicate_disabled", { count: result.disabledImportedScripts }));
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("failed_to_duplicate"));
     }
@@ -346,6 +351,11 @@ export function useCharacterController(): CharacterControllerActions {
         writeSnapshot(result.activeChatId, result.snapshot);
       }
       toast.success(getT()("character_duplicated"));
+      // Decision 15 (never silently off): a copy of an imported script is
+      // born disabled (trust never inherits) — surface the count.
+      if (result.disabledImportedScripts > 0) {
+        toast.warning(getT()("script_safety_duplicate_disabled", { count: result.disabledImportedScripts }));
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : getT()("failed_to_duplicate"));
     }

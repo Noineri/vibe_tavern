@@ -46,7 +46,7 @@ export async function deletePersonaAction(personaId: string): Promise<void> {
   void fetchPersonasAction();
 }
 
-export async function duplicatePersonaAction(personaId: string): Promise<PersonaRecord> {
+export async function duplicatePersonaAction(personaId: string): Promise<PersonaRecord & { disabledImportedScripts: number }> {
   const result = await duplicatePersona(personaId);
   void fetchPersonasAction();
   return result;

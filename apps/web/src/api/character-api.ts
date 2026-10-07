@@ -53,7 +53,7 @@ export async function createCharacter(input: {
   return unwrapRpc(response);
 }
 
-export async function duplicateCharacter(characterId: string): Promise<ImportJsonResponse> {
+export async function duplicateCharacter(characterId: string): Promise<ImportJsonResponse & { disabledImportedScripts: number }> {
   const response = await client.api.characters[":characterId"].duplicate.$post({ param: { characterId } });
   return unwrapRpc(response);
 }

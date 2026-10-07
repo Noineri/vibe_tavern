@@ -15,6 +15,7 @@ import { Toggle } from "../../shared/Toggle.js";
 import { SCRIPT_TEMPLATES, templateScriptKind } from "./script-templates/index.js";
 import { cn } from "../../../lib/cn.js";
 import { scriptSafetyLint } from "../../../lib/script-safety-lint.js";
+import { ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
@@ -588,6 +589,11 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
           </div>
         </div>
       </div>
+
+      {/* Imported-script banner (SS-6): near the enable toggle, above the
+          code. Renders only for untrusted imports — no layout shift for
+          trusted/in-app scripts. */}
+      <ScriptSafetyBanner script={activeScript} />
 
       {/* Description */}
       <div style={{ marginBottom: 16 }}>

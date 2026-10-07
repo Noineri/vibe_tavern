@@ -45,7 +45,7 @@ export async function deletePersona(personaId: string): Promise<void> {
   if (!response.ok) throw await unwrapError(response);
 }
 
-export async function duplicatePersona(personaId: string): Promise<PersonaRecord> {
+export async function duplicatePersona(personaId: string): Promise<PersonaRecord & { disabledImportedScripts: number }> {
   const response = await client.api.personas[":personaId"].duplicate.$post({ param: { personaId } });
   return unwrapRpc(response);
 }

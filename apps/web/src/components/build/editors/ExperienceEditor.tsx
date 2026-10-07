@@ -20,16 +20,13 @@
  *    Typing never hits the server; Save creates (first save) or patches
  *    (later saves) exactly one snapshot; a failed save keeps the buffer dirty
  *    and retryable; edits made mid-save survive the reconciliation.
- *  - The IR-81A interactive trust model, surfaced: interactive rules execute
- *    with host permissions, so `enabled` is an exact-source trust signal. A
- *    changed (or never-saved) source renders as "Not trusted" and the enable
- *    toggle stays LOCKED — enabling only succeeds when the visible source is
- *    exactly the saved one. The store already forces `enabled = false` on any
- *    code change; this UI makes that invariant visible and never silently
- *    auto-enables.
- *  - Duplication: from a starter (the picker) or from the current buffer
- *    (rules via `duplicateRulesValues`, visuals via `duplicateVisualDraftValues`)
- *    — always a fresh, explicitly untrusted copy; the source is never mutated.
+ *  - The IR-81A trust model: interactive rules run with host permissions, so
+ *    `enabled` is an exact-source trust signal; a dirty source forces
+ *    `enabled = false` locally until saved. SS-6 (decision 8): the toggle LOCK
+ *    fires only for imported scripts never yet enabled — in-app and trusted
+ *    scripts edit freely.
+ *  - Duplication (starter picker or current buffer) is always a fresh untrusted
+ *    copy inheriting the source's origin, never its trust or shared references.
  *  - The package contract at hand via `InteractiveApiReference`.
  *
  * IR-81D: the stateless InteractiveTester drives the unsaved rules buffer
@@ -91,6 +88,7 @@ import {
 import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/ExperienceCopilotShell.js";
 import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
 import { ExperienceCardPreview } from "./ExperienceCardPreview.js";
+import { isUntrustedImport, ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
 import {
   buildMiniAppBundle,
   importMiniAppBundle,
@@ -441,14 +439,13 @@ export function ExperienceEditor() {
 
   // ── Trust model (IR-81A) ─────────────────────────────────────────────────
   // Enabling is allowed only when the visible source is EXACTLY the saved one
-  // (and the script exists server-side at all). The store independently
-  // forces enabled=false on any code change; this UI locks the toggle and
-  // explains why, so an edit can never silently carry trust forward.
+  // (and the script exists server-side at all). The store forces enabled=false
+  // on code change; the lock fires only for imported never-enabled scripts (SS-6).
   const scriptCodeTrusted = !isNewScript
     && activeScriptDraft !== null
     && activeScriptDraft.values.code === activeScriptDraft.base.code;
   const scriptEnabled = activeScript?.enabled ?? false;
-  const enableLocked = !scriptEnabled && !scriptCodeTrusted;
+  const enableLocked = !scriptEnabled && !scriptCodeTrusted && isUntrustedImport(activeScript);
 
   // ── Draft creation (starter pick / blank / duplicate) ────────────────────
   /** Seed a pending rules buffer from explicit values. The draft base is
@@ -643,14 +640,14 @@ export function ExperienceEditor() {
     setChosenRulesStarterId(starter.id);
   };
 
-  /** Duplicate the CURRENT rules buffer (including unsaved edits) as a fresh,
-   *  explicitly untrusted pending draft. The source row is never mutated. */
+  /** Duplicate the rules buffer as a fresh untrusted draft inheriting the source's origin (decision 9). */
   const handleDuplicateScript = () => {
     if (!activeScript) return;
     const values = duplicateRulesValues({
       name: activeScript.name,
       description: activeScript.description,
       code: activeScript.code,
+      origin: activeScript.origin,
     });
     setActiveScriptId(createPendingRules(values));
   };
@@ -756,8 +753,7 @@ export function ExperienceEditor() {
     if (!submitted) return;
     if (isLocalId(activeScriptId)) {
       // First save = CREATE. On success the local buffer migrates to the real
-      // row id; edits made while the create was in flight are re-applied as a
-      // dirty patch against the new base (mirrors completeSave semantics).
+      // row id; mid-flight edits re-apply as a dirty patch (mirrors completeSave).
       try {
         const created = await createScript({
           name: submitted.name,
@@ -766,6 +762,8 @@ export function ExperienceEditor() {
           scriptKind: "interactive",
           enabled: submitted.enabled,
           scopeType: "global",
+          // SS-6 (decision 9): a duplicated imported mini-app inherits origin.
+          ...(activeScriptRecord?.origin === "imported" ? { origin: "imported" } : {}),
         });
         const localId = activeScriptId;
         const latest = useScriptDraftStore.getState().drafts[localId]?.values ?? submitted;
@@ -788,7 +786,7 @@ export function ExperienceEditor() {
     } catch (error) {
       failScriptSave(activeScriptId, errorMessage(error));
     }
-  }, [activeScriptId, prepareScriptSave, removeScriptDraft, ensureScriptDraft, patchScriptDraft, completeScriptSave, failScriptSave]);
+  }, [activeScriptId, activeScriptRecord, prepareScriptSave, removeScriptDraft, ensureScriptDraft, patchScriptDraft, completeScriptSave, failScriptSave]);
 
   const handleSaveVisual = useCallback(async () => {
     if (!activeVisualId) return;
@@ -1050,6 +1048,7 @@ export function ExperienceEditor() {
         </div>
       )}
       {!isMobile && trustBlockedHint}
+      {!isMobile && <ScriptSafetyBanner script={activeScript} className="mx-3" />}
 
       {/* XU-6 creation stepper: a slim presentational strip above the editor
           pane. The active step mirrors the shell's current position (reported
@@ -1106,6 +1105,7 @@ export function ExperienceEditor() {
               <>
                 <div className="flex flex-wrap items-center gap-2 px-3 py-2">{managementControls}</div>
                 {trustBlockedHint}
+                <ScriptSafetyBanner script={activeScript} className="mx-3" />
               </>
             ) : undefined
           }
