@@ -22,6 +22,7 @@
  */
 
 import { z } from "zod";
+import { experiencePlaygroundStartRequestSchema } from "./interactive-schema.js";
 
 /**
  * Which buffer a copilot proposed edit lands on. Drives which editor surface
@@ -90,6 +91,18 @@ export const experienceCopilotStreamAnswerSchema = z
   });
 export type ExperienceCopilotStreamAnswer = z.infer<typeof experienceCopilotStreamAnswerSchema>;
 
+/** The Try sandbox context copied into copilot test and validation tools. The
+ * participant/grant/seed/seat fields reuse the playground-start wire schemas so
+ * the two execution paths cannot drift into separate roster contracts. */
+export const experienceCopilotLaunchContextSchema = z.object({
+  participants: experiencePlaygroundStartRequestSchema.shape.participants,
+  capabilityGrants: experiencePlaygroundStartRequestSchema.shape.capabilityGrants,
+  settings: z.record(z.string(), z.unknown()).optional(),
+  seed: experiencePlaygroundStartRequestSchema.shape.seed,
+  humanSeatId: experiencePlaygroundStartRequestSchema.shape.humanSeatId,
+}).strict();
+export type ExperienceCopilotLaunchContext = z.infer<typeof experienceCopilotLaunchContextSchema>;
+
 /**
  * Request body for the experience-copilot stream endpoint (ER-6),
  * `POST /api/experience-copilot/:threadId/stream`. Mirrors the AI-assistant's
@@ -118,6 +131,7 @@ export const experienceCopilotStreamRequestSchema = z
     rules: z.string().max(200_000).optional(),
     visual: z.string().max(200_000).optional(),
     testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
+    launchContext: experienceCopilotLaunchContextSchema.optional(),
     answer: experienceCopilotStreamAnswerSchema.optional(),
   })
   .superRefine((val, ctx) => {

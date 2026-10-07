@@ -1098,6 +1098,11 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     const body = streamCalls()[0]!.body!;
     expect(body.testFeedback).toMatchObject({ ok: true, status: "active" });
+    expect(body.launchContext).toEqual({
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: ["participants"],
+      settings: {},
+    });
     expect(body.step).not.toBe("test");
     expect(typeof body.content).toBe("string");
     expect((body.content as string).length).toBeGreaterThan(0);
@@ -1133,6 +1138,15 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     const body = streamCalls()[0]!.body!;
     expect(body.testFeedback).toMatchObject({ ok: true, status: "active", revision: 0 });
+    expect(body.launchContext).toMatchObject({
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: [],
+      settings: {},
+    });
+    const startBody = apiCalls("POST", /\/api\/experience\/playground\/start$/)[0]!.body!;
+    expect((body.launchContext as { seed?: string }).seed).toBe(
+      (startBody as { seed?: string }).seed,
+    );
   });
 });
 

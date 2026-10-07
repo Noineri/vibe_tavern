@@ -1,6 +1,9 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import type { LanguageModel } from "ai";
-import type { CopilotProfile } from "@vibe-tavern/api-contracts";
+import type {
+  CopilotProfile,
+  ExperienceCopilotLaunchContext,
+} from "@vibe-tavern/api-contracts";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotThread,
@@ -1329,7 +1332,10 @@ function makeTrustScript(origin: "in_app" | "imported", firstEnabledAt: string |
 }
 
 /** Run one turn against a script row and return the opts streamText received. */
-async function runTrustTurn(script: ScriptRow): Promise<TrustStreamCapture> {
+async function runTrustTurn(
+  script: ScriptRow,
+  launchContext?: ExperienceCopilotLaunchContext,
+): Promise<TrustStreamCapture> {
   const store = createFakeStore(makeThread("script_1"));
   let captured: TrustStreamCapture | undefined;
   streamTextImpl = (opts: unknown) => {
@@ -1338,7 +1344,12 @@ async function runTrustTurn(script: ScriptRow): Promise<TrustStreamCapture> {
   };
   await collect(
     streamExperienceCopilot(
-      { threadId: "thread_1", content: "test it", providerProfileId: "prov_1" },
+      {
+        threadId: "thread_1",
+        content: "test it",
+        providerProfileId: "prov_1",
+        ...(launchContext !== undefined ? { launchContext } : {}),
+      },
       makeDeps(store, { getScript: async () => script }),
     ),
   );
@@ -1389,5 +1400,27 @@ describe("streamExperienceCopilot — SS-4B trust threading", () => {
     expect(captured.messages[0].content).toContain("choose method: absent");
     const digest = (await captured.tools.run_test.execute({}, null)) as { ok: boolean };
     expect(digest.ok).toBe(true);
+  });
+
+  it("threads the request launch context into the built diagnostic tools", async () => {
+    const captured = await runTrustTurn(makeTrustScript("in_app", null), {
+      participants: [{ id: "owner", label: "Owner", controller: "human" }],
+      capabilityGrants: [],
+      settings: { fromSandbox: true },
+      seed: "sandbox-seed",
+      humanSeatId: "owner",
+    });
+
+    const digest = (await captured.tools.run_test.execute({}, null)) as {
+      ok: boolean;
+      launchContext?: unknown;
+    };
+    expect(digest.ok).toBe(true);
+    expect(digest.launchContext).toEqual({
+      source: "sandbox",
+      seats: [{ id: "owner", controller: "human" }],
+      grants: [],
+      seed: "sandbox-seed",
+    });
   });
 });

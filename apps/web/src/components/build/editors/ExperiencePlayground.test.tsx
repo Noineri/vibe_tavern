@@ -38,7 +38,11 @@
 import { beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ChangeEvent, ReactNode } from "react";
-import type { ExperienceSetupFieldDto } from "@vibe-tavern/api-contracts";
+import type {
+  ExperienceCopilotLaunchContext,
+  ExperienceSetupFieldDto,
+} from "@vibe-tavern/api-contracts";
+import { savePlaygroundConfig } from "../../../lib/playground-config-persistence.js";
 
 import type {
   ExperiencePlaygroundData,
@@ -350,7 +354,12 @@ beforeEach(() => {
 function renderPlayground(
   code: string = VALID_CODE,
   visualSource: string | null = null,
-  props: { scriptId?: string; script?: { origin: "in_app" | "imported"; firstEnabledAt: string | null }; onShowInCode?: (line: number) => void } = {},
+  props: {
+    scriptId?: string;
+    script?: { origin: "in_app" | "imported"; firstEnabledAt: string | null };
+    onShowInCode?: (line: number) => void;
+    onLaunchContextChange?: (context: ExperienceCopilotLaunchContext) => void;
+  } = {},
 ) {
   const utils = render(<ExperiencePlayground code={code} visualSource={visualSource} {...props} />);
   return utils;
@@ -1138,6 +1147,84 @@ describe("ExperiencePlayground — error copilot escape hatch (XU-3)", () => {
 });
 
 // ── Fix item 9a: config persistence ─────────────────────────────────────────
+
+describe("ExperiencePlayground — copilot launch context", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("reports the exact persisted roster, grants, settings, manual seed, and selected seat", async () => {
+    savePlaygroundConfig("script-context", {
+      seats: [
+        { id: "you", label: "You", controller: "human" },
+        { id: "bot", label: "Bot", controller: "script" },
+      ],
+      grants: ["participants"],
+      seed: "manual-seed",
+      settingsJson: JSON.stringify({ rounds: 3 }),
+      humanSeatId: "you",
+      randomStart: false,
+    });
+    const contexts: ExperienceCopilotLaunchContext[] = [];
+
+    renderPlayground(VALID_CODE, null, {
+      scriptId: "script-context",
+      onLaunchContextChange: (context) => contexts.push(context),
+    });
+
+    await waitFor(() => expect(contexts.length).toBeGreaterThan(0));
+    expect(contexts.at(-1)).toEqual({
+      participants: [
+        { id: "you", label: "You", controller: "human" },
+        { id: "bot", label: "Bot", controller: "script" },
+      ],
+      capabilityGrants: ["participants"],
+      settings: { rounds: 3 },
+      seed: "manual-seed",
+      humanSeatId: "you",
+    });
+  });
+
+  it("omits invalid settings and an as-yet unused random seed", async () => {
+    savePlaygroundConfig("script-invalid-context", {
+      seats: [{ id: "you", label: "You", controller: "human" }],
+      grants: [],
+      seed: "ignored-manual-seed",
+      settingsJson: "{broken",
+      humanSeatId: "",
+      randomStart: true,
+    });
+    const contexts: ExperienceCopilotLaunchContext[] = [];
+
+    renderPlayground(VALID_CODE, null, {
+      scriptId: "script-invalid-context",
+      onLaunchContextChange: (context) => contexts.push(context),
+    });
+
+    await waitFor(() => expect(contexts.length).toBeGreaterThan(0));
+    const context = contexts.at(-1)!;
+    expect("settings" in context).toBe(false);
+    expect("seed" in context).toBe(false);
+  });
+
+  it("reports the generated random seed only after a launch and matches the Start request", async () => {
+    const contexts: ExperienceCopilotLaunchContext[] = [];
+    const { getByText } = renderPlayground(VALID_CODE, null, {
+      onLaunchContextChange: (context) => contexts.push(context),
+    });
+
+    await waitFor(() => expect(contexts.length).toBeGreaterThan(0));
+    expect("seed" in contexts.at(-1)!).toBe(false);
+
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    const startBody = startExperiencePlayground.mock.calls[0][0] as { seed?: string };
+    expect(startBody.seed).toBeTruthy();
+    await waitFor(() => {
+      expect(contexts.some((context) => context.seed === startBody.seed)).toBe(true);
+    });
+  });
+});
 
 describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
   beforeEach(() => {

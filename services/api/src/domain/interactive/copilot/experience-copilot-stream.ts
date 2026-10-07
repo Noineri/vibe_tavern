@@ -43,67 +43,25 @@ import {
   resolveDigestBoundary,
   type ExperienceCopilotHistoryMessage,
   type ExperienceCopilotPromptMessage,
-  type ExperienceCopilotStep,
   type ExperienceCopilotTestFeedback,
 } from "./experience-copilot-prompt.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "./copilot-limits.js";
 import { buildExperienceCopilotTools } from "./experience-copilot-tools.js";
 import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
 import { renderAttachedContext, type CopilotContextItem } from "./experience-copilot-context.js";
-import type { ExperienceCopilotContextLink } from "@vibe-tavern/api-contracts";
-
-// ─── Request / response types ────────────────────────────────────────────────
-
-/** Answer to a pending `ask_user` question (TAG-5 split-turn, style B). The
- *  continuation turn runs with NO new user row — this answer is persisted as
- *  the answered ask tool-result instead, and the model resumes the logical
- *  turn from there. Wire twin of the api-contracts
- *  `experienceCopilotStreamAnswerSchema` (kept structural — the domain does
- *  not import the contracts for its own request type). */
-export interface ExperienceCopilotStreamAnswer {
-  /** The awaiting `ask_user` tool-result row being answered (in this thread). */
-  toolCallId: string;
-  /** The user's answer text (a tapped chip's label or free text). Mutually
-   *  exclusive with `skipped` (wire-enforced). */
-  text?: string;
-  /** The user pressed skip. Mutually exclusive with `text`. */
-  skipped?: boolean;
-}
-
-export interface ExperienceCopilotStreamRequest {
-  /** The copilot thread id (path param on the route). */
-  threadId: string;
-  /** User's message text for this turn. Exactly-one-of with `answer` (the
-   *  wire schema enforces it; the stream also guards direct domain callers). */
-  content?: string;
-  /** Answer to a pending `ask_user` question (TAG-5 split-turn): when set, NO
-   *  user row is appended — the referenced awaiting tool-result row is
-   *  rewritten with the answer and the turn continues the question turn. */
-  answer?: ExperienceCopilotStreamAnswer;
-  /** Provider profile ID to use. */
-  providerProfileId: string;
-  /** Model name override (optional, uses profile default). */
-  model?: string;
-  /** The current authoring step (inline 3-step creation flow). Default "rules". */
-  step?: ExperienceCopilotStep;
-  /** The LIVE rules draft the user is editing (the editor sends the current
-   *  unsaved source). Preferred over the last-persisted buffer so the model is
-   *  never blind to in-progress edits. */
-  rules?: string;
-  /** The LIVE visual draft the user is editing (see `rules`). */
-  visual?: string;
-  /** The latest test/simulate digest the user sent back from the test panel.
-   *  Loosely typed on the wire (`Record<string, unknown>`) because the digest
-   *  shapes live in the backend domain — ER-7 will lift them into wire
-   *  contracts. Cast to {@link ExperienceCopilotTestFeedback} at the assembler. */
-  testFeedback?: Record<string, unknown> | null;
-}
-
-/** SSE event the route forwards verbatim via `streamSSE`. */
-export interface ExperienceCopilotStreamEvent {
-  event: string;
-  data: string;
-}
+import type {
+  ExperienceCopilotContextLink,
+  ExperienceCopilotStep,
+} from "@vibe-tavern/api-contracts";
+import type {
+  ExperienceCopilotStreamEvent,
+  ExperienceCopilotStreamRequest,
+} from "./experience-copilot-stream-contract.js";
+export type {
+  ExperienceCopilotStreamAnswer,
+  ExperienceCopilotStreamEvent,
+  ExperienceCopilotStreamRequest,
+} from "./experience-copilot-stream-contract.js";
 
 /** Persisted tool-call row, serialized into `tool_calls_json` on an assistant
  *  message. `providerOptions` are intentionally omitted — they are not needed
@@ -530,6 +488,7 @@ export async function* streamExperienceCopilot(
     ...(rules ? { rules } : {}),
     ...(visual !== undefined ? { visual } : {}),
     rulesTrusted: context.rulesTrusted,
+    ...(request.launchContext !== undefined ? { launchContext: request.launchContext } : {}),
     toolSet: copilotProfile.toolSet,
     skillRoots: assembled.skillRoots,
     // TAG-6: the todo tool's full-list rewrite persists onto the thread row via

@@ -4,6 +4,7 @@ import type {
   CopilotTodoItem,
   ExperienceCopilotContextLink,
   ExperienceCopilotContextTargetType,
+  ExperienceCopilotLaunchContext,
   ExperienceCopilotMessageWire,
   ExperienceCopilotThreadWire,
 } from "@vibe-tavern/api-contracts";
@@ -349,6 +350,12 @@ export function ExperienceCopilotShell({
   // send as `testFeedback` (survives history compaction as a system-level JSON
   // context section), so a manual follow-up also carries it.
   const [testFeedback, setTestFeedback] = useState<Record<string, unknown> | undefined>(undefined);
+  // The playground reports its live launch configuration into a ref: changes
+  // never re-render the shell, while every send reads the freshest context.
+  const launchContextRef = useRef<ExperienceCopilotLaunchContext | undefined>(undefined);
+  const handleLaunchContextChange = useCallback((context: ExperienceCopilotLaunchContext) => {
+    launchContextRef.current = context;
+  }, []);
   // UX 2026-08-16 remark 6 — prefill handed to the chat input on "send to
   // copilot" (see handleSendToCopilot). Object identity is the trigger.
   const [inputPrefill, setInputPrefill] = useState<{ text: string } | null>(null);
@@ -997,7 +1004,7 @@ export function ExperienceCopilotShell({
   // IR-90A: exactly one ExperiencePlayground element is shared by the inline
   // Try tab in both modes (the old sandbox modal is gone, XU-6). A single
   // instance ever mounts.
-  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} scriptId={scriptId} script={script} onSendToCopilot={handleSendToCopilot} onShowInCode={(line) => setRulesRevealLine({ line })} />;
+  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} scriptId={scriptId} script={script} onSendToCopilot={handleSendToCopilot} onShowInCode={(line) => setRulesRevealLine({ line })} onLaunchContextChange={handleLaunchContextChange} />;
 
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
   const chatPane = (
@@ -1079,6 +1086,9 @@ export function ExperienceCopilotShell({
                 visual: visualSource,
                 step: editorBuffer === "sandbox" ? "test" : codeBuffer === "visual" ? "visual" : "rules",
                 ...(testFeedback !== undefined ? { testFeedback } : {}),
+                ...(launchContextRef.current !== undefined
+                  ? { launchContext: launchContextRef.current }
+                  : {}),
               });
             }}
           />
@@ -1093,6 +1103,9 @@ export function ExperienceCopilotShell({
                   visual: visualSource,
                   step: editorBuffer === "sandbox" ? "test" : codeBuffer === "visual" ? "visual" : "rules",
                   ...(testFeedback !== undefined ? { testFeedback } : {}),
+                  ...(launchContextRef.current !== undefined
+                    ? { launchContext: launchContextRef.current }
+                    : {}),
                 });
               }}
               onCancel={ctrl.handleCancel}
@@ -1115,6 +1128,9 @@ export function ExperienceCopilotShell({
                   visual: visualSource,
                   step: editorBuffer === "sandbox" ? "test" : codeBuffer === "visual" ? "visual" : "rules",
                   ...(testFeedback !== undefined ? { testFeedback } : {}),
+                  ...(launchContextRef.current !== undefined
+                    ? { launchContext: launchContextRef.current }
+                    : {}),
                 });
               }}
               onCancel={ctrl.handleCancel}

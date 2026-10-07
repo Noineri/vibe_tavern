@@ -192,6 +192,17 @@ describe("runExperienceTest — real kernel (stateless)", () => {
     expect(m.turnOwners).toEqual(["bot"]);
   });
 
+  test("humanSeatId projects for the selected sandbox seat instead of the first human", () => {
+    const res = runExperienceTest({
+      rulesCode: TURN_HANDOFF_SOURCE,
+      participants: [youHuman, botScript],
+      humanSeatId: "bot",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.projection.actions.map((action) => action.type)).toEqual(["pass"]);
+  });
+
   test("one action reduces through the real kernel and bumps the host revision", () => {
     const res = runExperienceTest({
       rulesCode: COUNTER_SOURCE,

@@ -57,6 +57,37 @@ describe("experienceCopilotStreamRequestSchema (ER-6)", () => {
       providerProfileId: "p1",
     });
   });
+
+  test("accepts the Try sandbox launch context", () => {
+    const launchContext = {
+      participants: [
+        { id: "you", label: "You", controller: "human" as const },
+        { id: "bot", label: "Bot", controller: "script" as const },
+      ],
+      capabilityGrants: ["participants" as const],
+      settings: { targetScore: 5 },
+      seed: "round-seed",
+      humanSeatId: "you",
+    };
+
+    expect(experienceCopilotStreamRequestSchema.parse({
+      content: "test this",
+      providerProfileId: "p1",
+      launchContext,
+    }).launchContext).toEqual(launchContext);
+  });
+
+  test("rejects an unknown launch-context capability", () => {
+    expect(() => experienceCopilotStreamRequestSchema.parse({
+      content: "test this",
+      providerProfileId: "p1",
+      launchContext: {
+        participants: [],
+        capabilityGrants: ["network"],
+        settings: {},
+      },
+    })).toThrow();
+  });
 });
 
 // ─── TAG-5: split-turn answer mode on the stream request body ─────────────────

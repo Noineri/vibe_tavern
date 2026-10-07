@@ -49,7 +49,10 @@ import {
   type ExperienceCapability,
   type ExperienceController,
 } from "@vibe-tavern/domain";
-import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
+import type {
+  ExperienceActionDto,
+  ExperienceCopilotLaunchContext,
+} from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
@@ -323,9 +326,11 @@ interface ExperiencePlaygroundProps {
   onSendToCopilot?: (digest: CopilotDigest) => void;
   /** SS-7B4: opens the Rules editor at a finding from this inline Try surface. */
   onShowInCode?: (line: number) => void;
+  /** Latest roster/grants/settings/seed for copilot diagnostics. */
+  onLaunchContextChange?: (context: ExperienceCopilotLaunchContext) => void;
 }
 
-export function ExperiencePlayground({ code, visualSource, scriptId, script, onSendToCopilot, onShowInCode }: ExperiencePlaygroundProps) {
+export function ExperiencePlayground({ code, visualSource, scriptId, script, onSendToCopilot, onShowInCode, onLaunchContextChange }: ExperiencePlaygroundProps) {
   const { t } = useT();
 
   // Play context (local only). Fix item 9a: lazily rehydrated from the
@@ -485,6 +490,24 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
         ? { modelId: seat.modelId }
         : {}),
     }));
+
+  useEffect(() => {
+    if (onLaunchContextChange === undefined) return;
+    const parsed = parseOptionalJsonDiagnosed(settingsJson);
+    const parsedSettings = parsed.ok
+      ? parsed.present
+        ? asSettingsObject(parsed.value)
+        : {}
+      : null;
+    const activeSeed = randomStart ? lastUsedSeed.trim() : seed.trim();
+    onLaunchContextChange({
+      participants,
+      capabilityGrants: [...grants],
+      ...(parsedSettings !== null ? { settings: parsedSettings } : {}),
+      ...(activeSeed !== "" ? { seed: activeSeed } : {}),
+      ...(humanSeatId !== "" ? { humanSeatId } : {}),
+    });
+  }, [participants, grants, settingsJson, seed, lastUsedSeed, randomStart, humanSeatId, onLaunchContextChange]);
 
   const updateSeat = (index: number, patch: Partial<PlaygroundSeat>) => {
     setSeatsTouched(true);

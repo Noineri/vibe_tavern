@@ -40,13 +40,23 @@
 
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
-import { applyExactEditsToBody, log } from "@vibe-tavern/domain";
+import {
+  DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT,
+  applyExactEditsToBody,
+  deriveDefaultLaunchContext,
+  log,
+  type ExperienceCapability,
+  type ExperienceController,
+  type ExperienceParticipant,
+} from "@vibe-tavern/domain";
 import {
   copilotTodoListSchema,
   type CopilotTodoItem,
+  type ExperienceCopilotLaunchContext,
   type ExperienceCopilotToolOutput,
   type ExperienceSeatLegalityMatrix,
 } from "@vibe-tavern/api-contracts";
+import { discoverExperienceDefinition } from "../experience-kernel.js";
 import {
   runExperienceTest,
   simulateExperienceTest,
@@ -67,6 +77,25 @@ const logger = log.tag("exp-copilot.tool");
 // `@vibe-tavern/api-contracts` alongside the tool-output schema. The proposing
 // tools return {@link ExperienceCopilotToolOutput} (defined in api-contracts).
 
+export interface ExperienceCopilotLaunchContextDigest {
+  readonly source: "sandbox" | "derived";
+  readonly seats: ReadonlyArray<{
+    readonly id: string;
+    readonly controller: ExperienceController;
+  }>;
+  readonly grants: readonly ExperienceCapability[];
+  readonly seed?: string;
+}
+
+interface ResolvedExperienceCopilotLaunchContext {
+  readonly source: "sandbox" | "derived";
+  readonly participants: readonly ExperienceParticipant[];
+  readonly capabilityGrants: readonly ExperienceCapability[];
+  readonly settings: Record<string, unknown>;
+  readonly seed?: string;
+  readonly humanSeatId?: string;
+}
+
 /** A create-only test digest: the model reasons over status, legal actions, a
  *  capped state snapshot, and the console tail; on failure it gets the typed
  *  error code/kind/message to self-correct in the same turn. */
@@ -79,16 +108,14 @@ export interface ExperienceCopilotRunTestDigest {
   /** `type` of each legal action the human seat may submit next. */
   readonly legalActionTypes?: string[];
   /** Per-seat legality matrix (one entry per roster participant + the current
-   *  turn owners) — present when the run carried a roster. The copilot's own
-   *  `run_test` tool runs create-only with an empty roster (the projection's
-   *  `legalActionTypes` already covers that case), so today this arrives via
-   *  the frontend-pushed tester digest; kept in this interface so both digest
-   *  sources stay shape-compatible. */
+   *  turn owners) for the resolved sandbox or capability-derived roster. */
   readonly seatLegality?: ExperienceSeatLegalityMatrix;
   /** Compact JSON snapshot of the projected state (capped). */
   readonly stateSummary?: string;
   /** Last few flattened console entries (`level: args…`). */
   readonly consoleTail?: string[];
+  /** The exact sandbox context used, or the capability-derived fallback. */
+  readonly launchContext?: ExperienceCopilotLaunchContextDigest;
   /** Tester error code (failure path), e.g. `vm_error`/`validation_error`. */
   readonly errorCode?: string;
   /** Kernel/sandbox error kind (failure path), e.g. `syntax`/`missing_method`. */
@@ -108,6 +135,8 @@ export interface ExperienceCopilotRunSimulateDigest {
   readonly status?: string;
   readonly revision?: number;
   readonly consoleTail?: string[];
+  /** The exact sandbox context used, or the capability-derived fallback. */
+  readonly launchContext?: ExperienceCopilotLaunchContextDigest;
   readonly errorCode?: string;
   readonly errorKind?: string;
   readonly errorMessage?: string;
@@ -237,6 +266,20 @@ function summarizeState(state: unknown): string {
   return s.length > STATE_SUMMARY_MAX ? `${s.slice(0, STATE_SUMMARY_MAX)}\u2026` : s;
 }
 
+function launchContextDigest(
+  context: ResolvedExperienceCopilotLaunchContext,
+): ExperienceCopilotLaunchContextDigest {
+  return {
+    source: context.source,
+    seats: context.participants.map((participant) => ({
+      id: participant.id,
+      controller: participant.controller,
+    })),
+    grants: [...context.capabilityGrants],
+    ...(context.seed !== undefined ? { seed: context.seed } : {}),
+  };
+}
+
 // ─── Tool set ───────────────────────────────────────────────────────────────
 
 /**
@@ -259,6 +302,8 @@ function summarizeState(state: unknown): string {
  *   with a structured reason and rules proposals skip validation (accepted
  *   with a «not validated» marker) — imported code never executes. Default
  *   true: trusted scripts behave exactly as before.
+ * @param opts.launchContext Latest Try-panel roster, grants, settings and seed.
+ *   When absent, each rules body gets the shared capability-derived default.
  * @param opts.toolSet Optional inclusion map for the seven authoring/diagnostic
  *   tools (default: all on). `read_skill_file` is always included, mirroring
  *   the Co-Author convention (it is the universal read-only skill channel).
@@ -272,12 +317,45 @@ export function buildExperienceCopilotTools(opts: {
   rules?: string;
   visual?: string;
   rulesTrusted?: boolean;
+  launchContext?: ExperienceCopilotLaunchContext;
   toolSet?: Record<string, boolean>;
   saveTodo?: (items: readonly CopilotTodoItem[]) => Promise<void>;
   skillRoots?: readonly string[];
 } = {}): ToolSet {
   const { toolSet, skillRoots, saveTodo } = opts;
   const rulesTrusted = opts.rulesTrusted ?? true;
+
+  /** Resolve the context independently for each working rules body: explicit
+   *  sandbox state wins verbatim; otherwise discovery supplies the declared
+   *  capabilities for the shared domain default. Discovery failure uses the
+   *  same safe human-only fallback as the Try panel. */
+  function resolveLaunchContext(rulesCode: string): ResolvedExperienceCopilotLaunchContext {
+    if (opts.launchContext !== undefined) {
+      return {
+        source: "sandbox",
+        participants: opts.launchContext.participants,
+        capabilityGrants: opts.launchContext.capabilityGrants,
+        settings: opts.launchContext.settings ?? {},
+        ...(opts.launchContext.seed !== undefined ? { seed: opts.launchContext.seed } : {}),
+        ...(opts.launchContext.humanSeatId !== undefined
+          ? { humanSeatId: opts.launchContext.humanSeatId }
+          : {}),
+      };
+    }
+
+    const discovery = discoverExperienceDefinition(rulesCode, "Experience Copilot");
+    const derived = discovery.ok
+      ? deriveDefaultLaunchContext(
+          discovery.definition.declaredCapabilities.map((entry) => entry.capability),
+        )
+      : DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT;
+    return {
+      source: "derived",
+      participants: derived.participants,
+      capabilityGrants: derived.capabilityGrants,
+      settings: {},
+    };
+  }
 
   // ── Turn-local composable buffer state ─────────────────────────────────────
   // Two named text buffers (rules/visual) seeded from the turn-start source.
@@ -320,11 +398,23 @@ export function buildExperienceCopilotTools(opts: {
       logger.info("%s validation SKIPPED — untrusted script (imported, never enabled)", toolName);
       return { notValidated: NOT_VALIDATED_MARKER };
     }
-    const test = runExperienceTest({ rulesCode: proposed, actions: [] });
+    const launchContext = resolveLaunchContext(proposed);
+    const test = runExperienceTest({
+      rulesCode: proposed,
+      settings: launchContext.settings,
+      participants: launchContext.participants,
+      capabilityGrants: launchContext.capabilityGrants,
+      ...(launchContext.seed !== undefined ? { seed: launchContext.seed } : {}),
+      ...(launchContext.humanSeatId !== undefined
+        ? { humanSeatId: launchContext.humanSeatId }
+        : {}),
+      actions: [],
+    });
     if (!test.ok) {
       const kind = test.error.kind !== undefined ? ` kind=${test.error.kind}` : "";
       throw new Error(
-        `${toolName}: proposed rules failed validation — code=${test.error.code}${kind} message=${test.error.message}`,
+        `${toolName}: proposed rules failed validation — code=${test.error.code}${kind} message=${test.error.message} `
+          + `launchContext=${JSON.stringify(launchContextDigest(launchContext))}`,
       );
     }
     return {};
@@ -447,10 +537,12 @@ export function buildExperienceCopilotTools(opts: {
 
     run_test: tool({
       description:
-        "Run a CREATE-ONLY test of the CURRENT working rules buffer: discover the definition, create the initial state, project for the viewer, and list the legal actions. " +
-        "Returns a condensed digest (status, revision, legal action types, a capped state snapshot, and the console tail) so you can verify the rules bootstrap correctly. " +
+        "Run a CREATE-ONLY test of the CURRENT working rules buffer: discover the definition, create the initial state, project it for one seat, and list the legal actions. " +
+        "It runs with the Try-it panel's roster, grants, settings and seed when the user has the panel open; otherwise with the default roster derived from the declared capabilities (one human seat, plus an AI seat for participants + model). " +
+        "The digest's `launchContext` says which (`source: \"sandbox\"` or `source: \"derived\"`) and lists the seats, grants and seed. " +
+        "Returns a condensed digest: status, revision, the legal action types for the projected seat (the user's seat, or the first human seat), `seatLegality` (which seats can act — who owns the turn), a capped state snapshot and the console tail. " +
         "On failure, returns the typed error code/kind/message to self-correct. Read-only — it NEVER mutates the working buffers. " +
-        "Use this after writing/editing rules to confirm they are valid and to see what actions are available before the user binds the source.",
+        "Use it after every rules edit to confirm the rules bootstrap and that exactly the right seat can act.",
       inputSchema: z.object({}),
       execute: async (): Promise<ExperienceCopilotRunTestDigest> => {
         const toolName = "run_test";
@@ -472,7 +564,19 @@ export function buildExperienceCopilotTools(opts: {
           );
         }
         logger.info("%s IN rulesLen=%d", toolName, workingRules.length);
-        const result = runExperienceTest({ rulesCode: workingRules, actions: [] });
+        const launchContext = resolveLaunchContext(workingRules);
+        const digestContext = launchContextDigest(launchContext);
+        const result = runExperienceTest({
+          rulesCode: workingRules,
+          settings: launchContext.settings,
+          participants: launchContext.participants,
+          capabilityGrants: launchContext.capabilityGrants,
+          ...(launchContext.seed !== undefined ? { seed: launchContext.seed } : {}),
+          ...(launchContext.humanSeatId !== undefined
+            ? { humanSeatId: launchContext.humanSeatId }
+            : {}),
+          actions: [],
+        });
         if (result.ok) {
           logger.info("%s OK status=%s revision=%d legalActions=%d", toolName, result.data.status, result.data.revision, result.data.projection.actions.length);
           return {
@@ -480,8 +584,10 @@ export function buildExperienceCopilotTools(opts: {
             status: result.data.status,
             revision: result.data.revision,
             legalActionTypes: result.data.projection.actions.map((a) => a.type),
+            seatLegality: result.data.seatLegality,
             stateSummary: summarizeState(result.data.projection.state),
             consoleTail: consoleTail(result.data.console),
+            launchContext: digestContext,
           };
         }
         logger.warn("%s FAIL code=%s kind=%s", toolName, result.error.code, result.error.kind ?? "(none)");
@@ -491,6 +597,7 @@ export function buildExperienceCopilotTools(opts: {
           errorKind: result.error.kind,
           errorMessage: result.error.message,
           consoleTail: consoleTail(result.error.console),
+          launchContext: digestContext,
         };
       },
     }),
@@ -498,8 +605,11 @@ export function buildExperienceCopilotTools(opts: {
     run_simulate: tool({
       description:
         "Run a bounded SIMULATION of the CURRENT working rules buffer: discover, create, then auto-advance script-controlled seats via the real `choose` until a human/model boundary, a terminal status, no legal action, or a host bound is reached. " +
-        "Returns a diagnostic digest (stop reason, iteration count, status, console tail) telling you whether the rules auto-terminate or stall. Read-only — it NEVER mutates the working buffers. " +
-        "Use this to sanity-check that a rules package terminates or advances sensibly under automated play before the user binds the source.",
+        "It runs with the same roster, grants, settings and seed as run_test (see the digest's `launchContext`). " +
+        "Returns a diagnostic digest (stop reason, iteration count, status, console tail, `launchContext`). " +
+        "`no_legal_action` means no seat in the echoed roster can act — a real stall only when that roster has seats. " +
+        "Read-only — it NEVER mutates the working buffers. " +
+        "Use it once script-controlled seats or automated flow exist, to check that the rules terminate or hand the turn back to a human.",
       inputSchema: z.object({}),
       execute: async (): Promise<ExperienceCopilotRunSimulateDigest> => {
         const toolName = "run_simulate";
@@ -520,7 +630,15 @@ export function buildExperienceCopilotTools(opts: {
           );
         }
         logger.info("%s IN rulesLen=%d", toolName, workingRules.length);
-        const result = simulateExperienceTest({ rulesCode: workingRules });
+        const launchContext = resolveLaunchContext(workingRules);
+        const digestContext = launchContextDigest(launchContext);
+        const result = simulateExperienceTest({
+          rulesCode: workingRules,
+          settings: launchContext.settings,
+          participants: launchContext.participants,
+          capabilityGrants: launchContext.capabilityGrants,
+          ...(launchContext.seed !== undefined ? { seed: launchContext.seed } : {}),
+        });
         if (result.ok) {
           logger.info("%s OK stopReason=%s iterations=%d", toolName, result.data.stopReason, result.data.iterations);
           return {
@@ -530,6 +648,7 @@ export function buildExperienceCopilotTools(opts: {
             status: result.data.status,
             revision: result.data.revision,
             consoleTail: consoleTail(result.data.console),
+            launchContext: digestContext,
           };
         }
         logger.warn("%s FAIL code=%s kind=%s", toolName, result.error.code, result.error.kind ?? "(none)");
@@ -539,6 +658,7 @@ export function buildExperienceCopilotTools(opts: {
           errorKind: result.error.kind,
           errorMessage: result.error.message,
           consoleTail: consoleTail(result.error.console),
+          launchContext: digestContext,
         };
       },
     }),

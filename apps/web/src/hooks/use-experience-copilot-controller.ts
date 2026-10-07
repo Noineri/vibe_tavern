@@ -18,6 +18,7 @@ import {
   experienceCopilotToolOutputSchema,
   experienceCopilotContextMetricsSchema,
   type ExperienceCopilotStep,
+  type ExperienceCopilotLaunchContext,
   type ExperienceCopilotContextMetrics,
   type CopilotTodoItem,
 } from "@vibe-tavern/api-contracts";
@@ -70,6 +71,8 @@ export interface ExperienceCopilotSendOptions {
    *  (ER-14). Carried on the body as `testFeedback` and rendered as a JSON
    *  context section by the backend (surviving history compaction). */
   testFeedback?: Record<string, unknown> | null;
+  /** Latest Try-panel execution context; backend tools use it verbatim. */
+  launchContext?: ExperienceCopilotLaunchContext;
 }
 
 export interface ExperienceCopilotController {
@@ -366,6 +369,7 @@ export function useExperienceCopilotController(
             ...(opts?.visual !== undefined ? { visual: opts.visual } : {}),
             ...(opts?.step ? { step: opts.step } : {}),
             ...(opts?.testFeedback !== undefined ? { testFeedback: opts.testFeedback } : {}),
+            ...(opts?.launchContext !== undefined ? { launchContext: opts.launchContext } : {}),
           },
           {
             signal: controller.signal,
@@ -459,6 +463,7 @@ export function useExperienceCopilotController(
             ...(opts?.visual !== undefined ? { visual: opts.visual } : {}),
             ...(opts?.step ? { step: opts.step } : {}),
             ...(opts?.testFeedback !== undefined ? { testFeedback: opts.testFeedback } : {}),
+            ...(opts?.launchContext !== undefined ? { launchContext: opts.launchContext } : {}),
           },
           {
             signal: controller.signal,
