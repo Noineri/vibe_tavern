@@ -88,6 +88,93 @@ describe("Markdown — plain variant omits chat-only transforms", () => {
   });
 });
 
+describe("Markdown — underscore custom-tag compatibility", () => {
+  const CUSTOM_TAG_SOURCE = "<internal_states><details><summary>State</summary>Visible content</details></internal_states>";
+  const ESCAPED_CUSTOM_TAG_SOURCE = "&lt;internal_states&gt;escaped&lt;/internal_states&gt;";
+  const MULTILINE_UNDERSCORE_SOURCE = [
+    "<!-- GFX_START -->",
+    "<internal_states>",
+    "<details><summary>State</summary>Visible content</details>",
+    "</internal_states>",
+    "<!-- GFX_END -->",
+  ].join("\n");
+  const MULTILINE_HYPHEN_SOURCE = MULTILINE_UNDERSCORE_SOURCE.replaceAll("internal_states", "internal-states");
+
+  it("unwraps underscore custom tags in chat while keeping supported child markup", () => {
+    const { container } = render(<Markdown text={CUSTOM_TAG_SOURCE} />);
+    expect(container.querySelector("details")).not.toBeNull();
+    expect(container.textContent).toContain("Visible content");
+    expect(container.textContent).not.toContain("<internal_states>");
+    expect(container.getElementsByTagName("internal_states")).toHaveLength(0);
+  });
+
+  it("matches the native hyphen-tag block shape without an empty paragraph", () => {
+    const underscore = render(<Markdown text={MULTILINE_UNDERSCORE_SOURCE} />);
+    const hyphen = render(<Markdown text={MULTILINE_HYPHEN_SOURCE} />);
+    expect(underscore.container.innerHTML).toBe(hyphen.container.innerHTML);
+    expect(underscore.container.querySelector("p:empty")).toBeNull();
+    expect(underscore.container.textContent).not.toContain("<internal_states>");
+  });
+
+  it("keeps underscore custom tags literal in inline and fenced code", () => {
+    const source = [
+      "`<internal_states>inline</internal_states>`",
+      "",
+      "```text",
+      "<internal_states>fenced</internal_states>",
+      "```",
+    ].join("\n");
+    const { container } = render(<Markdown text={source} />);
+    expect(container.textContent).toContain("<internal_states>inline</internal_states>");
+    expect(container.textContent).toContain("<internal_states>fenced</internal_states>");
+  });
+
+  it("keeps explicitly escaped underscore tags literal", () => {
+    const { container } = render(<Markdown text={ESCAPED_CUSTOM_TAG_SOURCE} />);
+    expect(container.textContent).toContain("<internal_states>escaped</internal_states>");
+  });
+
+  it("keeps an escaped tag literal while unwrapping a later literal tag", () => {
+    const source = "&lt;internal_states&gt;escaped&lt;/internal_states&gt; <internal_states><strong>literal</strong></internal_states>";
+    const { container } = render(<Markdown text={source} />);
+    expect(container.textContent).toContain("<internal_states>escaped</internal_states>");
+    expect(container.querySelector("strong")?.textContent).toBe("literal");
+    expect(container.textContent).not.toContain("<internal_states><strong>");
+  });
+
+  for (const [name, source] of [
+    ["case-insensitive named entities", "&LT;internal_states&GT;escaped&LT;/internal_states&GT; <internal_states><strong>literal</strong></internal_states>"],
+    ["decimal numeric entities", "&#60;internal_states&#62;escaped&#60;/internal_states&#62; <internal_states><strong>literal</strong></internal_states>"],
+    ["hexadecimal numeric entities", "&#x3C;internal_states&#x3E;escaped&#x3C;/internal_states&#x3E; <internal_states><strong>literal</strong></internal_states>"],
+    ["Markdown backslash escapes", "\\<internal_states>escaped\\</internal_states> <internal_states><strong>literal</strong></internal_states>"],
+  ] as const) {
+    it(`keeps ${name} literal beside a later wrapper`, () => {
+      const { container } = render(<Markdown text={source} />);
+      expect(container.textContent).toContain("<internal_states>escaped</internal_states>");
+      expect(container.querySelector("strong")?.textContent).toBe("literal");
+    });
+  }
+
+  it("leaves a hostile escaped-tag sentinel lookalike as text", () => {
+    const source = "\uE000vt-escaped-tag:%E0%A4\uE001";
+    const { container } = render(<Markdown text={source} />);
+    expect(container.textContent).toBe(source);
+  });
+
+  it("does not apply the compatibility transform to plain Markdown", () => {
+    const { container } = render(<Markdown text={CUSTOM_TAG_SOURCE} variant="plain" />);
+    expect(container.textContent).toContain("<internal_states>");
+  });
+
+  it("keeps sanitizer protections for child elements and attributes", () => {
+    const { container } = render(<Markdown text={'<internal_states><a href="javascript:alert(1)" onclick="alert(1)">safe</a></internal_states>'} />);
+    const link = container.querySelector("a");
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute("href")).toBe("#");
+    expect(link!.getAttribute("onclick")).toBeNull();
+  });
+});
+
 describe("Markdown — empty input", () => {
   it("renders nothing for an empty string", () => {
     const { container } = render(<Markdown text="" />);

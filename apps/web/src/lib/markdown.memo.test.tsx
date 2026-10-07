@@ -97,11 +97,11 @@ describe("Markdown — streaming updates still propagate", () => {
 });
 
 describe("Markdown — variant selects the rehype list", () => {
-  it("gives the chat variant two more rehype plugins than the plain one", () => {
+  it("gives the chat variant three more rehype plugins than the plain one", () => {
     render(<Parent text="chat text" variant="chat" />);
     render(<Parent text="plain text" variant="plain" />);
 
     expect(seamCalls).toHaveLength(2);
-    expect(pluginCount(seamCalls[0]?.rehypePlugins)).toBe(pluginCount(seamCalls[1]?.rehypePlugins) + 2);
+    expect(pluginCount(seamCalls[0]?.rehypePlugins)).toBe(pluginCount(seamCalls[1]?.rehypePlugins) + 3);
   });
 });
