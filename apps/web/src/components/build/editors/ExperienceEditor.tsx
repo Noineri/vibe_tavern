@@ -86,9 +86,17 @@ import {
   VISUAL_API_VERSION,
 } from "./experience-local-helpers.js";
 import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/ExperienceCopilotShell.js";
+import { ExperienceManagementControls } from "./ExperienceManagementControls.js";
 import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
 import { ExperienceCardPreview } from "./ExperienceCardPreview.js";
 import { isUntrustedImport, ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
+import {
+  ImportedScriptWarningModal,
+  scriptSafetyWarningFlow,
+  type ScriptSafetyWarningFlow,
+} from "./script-safety/ImportedScriptWarningModal.js";
+import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
+import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
 import {
   buildMiniAppBundle,
   importMiniAppBundle,
@@ -119,136 +127,6 @@ function errorMessage(error: unknown): string {
 /** XU-6 creation stepper: the authoring order the shell reports (rules →
  *  appearance → try). */
 const CREATION_STEP_ORDER: readonly ExperienceCopilotStep[] = ["rules", "appearance", "try"];
-
-/** E6 (MOBILE_DEFECTS_ROUND_2): the editor's management cluster (name input,
- *  trust pill + toggle, save-state, save, duplicate, delete) as ONE component
- *  rendered both in the desktop top bar and as the mobile Edit-tab header —
- *  the two surfaces cannot drift. Module-level (not an inner function) so the
- *  name input keeps focus across parent re-renders. */
-interface ExperienceManagementControlsProps {
-  name: string;
-  onNameChange: (name: string) => void;
-  scriptEnabled: boolean;
-  enableLocked: boolean;
-  onToggle: (enabled: boolean) => void;
-  scriptSaveState: ScriptDraftSaveState;
-  scriptDirty: boolean;
-  saveError: string | null;
-  isMobile: boolean;
-  resetKey: string | null;
-  onSave: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-  canDelete: boolean;
-}
-
-function ExperienceManagementControls({
-  name,
-  onNameChange,
-  scriptEnabled,
-  enableLocked,
-  onToggle,
-  scriptSaveState,
-  scriptDirty,
-  saveError,
-  isMobile,
-  resetKey,
-  onSave,
-  onDuplicate,
-  onDelete,
-  canDelete,
-}: ExperienceManagementControlsProps) {
-  const { t } = useT();
-  return (
-    <>
-      <TextInput
-        className="min-w-0 max-md:w-auto flex-1 !text-[15px] font-semibold"
-        type="text"
-        value={name}
-        onChange={(e) => onNameChange(e.target.value)}
-        placeholder={t("script_name")}
-      />
-
-      {/* The action cluster (pill → delete) is a flat `display:contents`
-          group on desktop — a single flex-wrap row with the name — and becomes
-          a nested flex row on mobile, so the header composes into exactly two
-          rows: [name] / [status, toggle, save(flex-1), duplicate, delete].
-          (A plain `flex-1` on the name cannot force this: basis-0 lets the
-          shrink-0 pill/toggle squeeze onto row 1 at 40px of leftover width.) */}
-      <div className="contents max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-1.5">
-        <CustomTooltip content={t("experience_editor_trust_hint")}>
-          <span
-            className={cn(
-              "shrink-0 cursor-help rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase",
-              scriptEnabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text",
-            )}
-          >
-            {/* Mobile: the status pill uses the short form ('on/off')
-                below 768px so the whole action cluster fits one row; desktop
-                keeps the full word. */}
-            {t(
-              scriptEnabled
-                ? isMobile ? "experience_editor_enabled_short" : "experience_editor_enabled"
-                : isMobile ? "experience_editor_disabled_short" : "experience_editor_disabled",
-            )}
-          </span>
-        </CustomTooltip>
-        <Toggle
-          checked={scriptEnabled}
-          disabled={enableLocked}
-          onChange={onToggle}
-        />
-
-        {/* Save-state text is desktop-only: on mobile the state is conveyed by
-            the SaveButton's visual state + the Edit-tab dirty badge (E6). */}
-        <span
-          className={cn("shrink-0 max-md:hidden font-ui text-[12px]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
-          title={saveError ?? undefined}
-        >
-          {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
-        </span>
-        <SaveButton
-          icon={isMobile ? <Ic.floppy /> : undefined}
-          dirty={scriptDirty}
-          saveState={scriptSaveState}
-          resetKey={resetKey}
-          onClick={onSave}
-          label={scriptSaveState === "error" ? t("retry") : t("save")}
-        />
-
-        {/* The icon pair moves as ONE unit (display:contents on desktop) so
-            mobile wrapping never strands a lone icon on its own row. */}
-        <div className="contents max-md:flex max-md:gap-1.5">
-          <CustomTooltip content={t("experience_editor_duplicate")}>
-            <button
-              type="button"
-              aria-label={t("experience_editor_duplicate")}
-              className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
-              onClick={onDuplicate}
-            >
-              <Ic.copy />
-            </button>
-          </CustomTooltip>
-          {/* IR-90A: delete the experience (its rules script). Reachable only for
-              a saved script — an unsaved/local draft is discarded by navigating
-              back. */}
-          {canDelete && (
-            <CustomTooltip content={t("experience_editor_delete")}>
-              <button
-                type="button"
-                aria-label={t("experience_editor_delete")}
-                className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2"
-                onClick={onDelete}
-              >
-                <Ic.del />
-              </button>
-            </CustomTooltip>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
 
 // ── Component ──────────────────────────────────────────────────────────────
 
@@ -446,6 +324,45 @@ export function ExperienceEditor() {
     && activeScriptDraft.values.code === activeScriptDraft.base.code;
   const scriptEnabled = activeScript?.enabled ?? false;
   const enableLocked = !scriptEnabled && !scriptCodeTrusted && isUntrustedImport(activeScript);
+
+  // ── SS-7: first-enable warning flow (the shared matrix — see the flow's
+  // doc comment) + the «Show in code» reveal request threaded into the shell
+  // (a fresh object per jump so the editor compartment reconfigures once). ──
+  const [scriptWarningFlow, setScriptWarningFlow] = useState<ScriptSafetyWarningFlow | null>(null);
+  const [pendingEnableScript, setPendingEnableScript] = useState<(() => void) | null>(null);
+  const [revealRulesLine, setRevealRulesLine] = useState<{ line: number } | null>(null);
+
+  const confirmScriptWarning = () => {
+    const action = pendingEnableScript;
+    setScriptWarningFlow(null);
+    setPendingEnableScript(null);
+    action?.();
+  };
+  const cancelScriptWarning = () => {
+    setScriptWarningFlow(null);
+    setPendingEnableScript(null);
+  };
+
+  const handleToggleScriptEnabled = (enabled: boolean) => {
+    if (!enabled) {
+      updateScriptDraft({ enabled: false });
+      return;
+    }
+    // Store read at attempt time via getState — the banner may have flipped
+    // the suppress setting since this render (never a stale closure).
+    const flow = scriptSafetyWarningFlow({
+      script: activeScript,
+      code: activeScript?.code ?? "",
+      kind: "interactive",
+      suppressImportWarnings: useScriptSafetySettingsStore.getState().suppressImportWarnings,
+    });
+    if (flow.kind === "none") {
+      updateScriptDraft({ enabled: true });
+      return;
+    }
+    setScriptWarningFlow(flow);
+    setPendingEnableScript(() => () => updateScriptDraft({ enabled: true }));
+  };
 
   // ── Draft creation (starter pick / blank / duplicate) ────────────────────
   /** Seed a pending rules buffer from explicit values. The draft base is
@@ -1016,7 +933,7 @@ export function ExperienceEditor() {
       onNameChange={(name) => updateScriptDraft({ name })}
       scriptEnabled={scriptEnabled}
       enableLocked={enableLocked}
-      onToggle={(enabled) => updateScriptDraft({ enabled })}
+      onToggle={handleToggleScriptEnabled}
       scriptSaveState={scriptSaveState}
       scriptDirty={scriptDirty}
       saveError={activeScriptDraft?.error ?? null}
@@ -1112,6 +1029,7 @@ export function ExperienceEditor() {
           editTabDirty={scriptDirty}
           rulesCode={activeScript.code}
           onRulesChange={(code) => updateScriptDraft({ code })}
+          revealRulesLine={revealRulesLine}
           visualSource={activeVisual?.source ?? ""}
           onVisualChange={(source) => updateVisualDraft({ source })}
           rulesToolbar={
@@ -1409,6 +1327,31 @@ export function ExperienceEditor() {
           onCancel={() => setExperienceDeleteOpen(false)}
           secondaryLabel={activeVisualId ? t("experience_editor_delete_rules_only") : undefined}
           onSecondary={activeVisualId ? () => void handleDeleteExperience("rules") : undefined}
+        />
+      )}
+
+      {/* SS-7: the first-enable warning surfaces. Only one can be open — the
+          flow is a single discriminated union; plain shows when there are no
+          blocking findings, findings shows ALONE otherwise (decision 11 — it
+          carries the honest text when the plain warning would also fire). */}
+      {scriptWarningFlow?.kind === "plain" && (
+        <ImportedScriptWarningModal
+          intent="enable"
+          onConfirm={confirmScriptWarning}
+          onCancel={cancelScriptWarning}
+        />
+      )}
+      {scriptWarningFlow?.kind === "findings" && (
+        <FindingsWarningModal
+          findings={scriptWarningFlow.findings}
+          showHonestWarning={scriptWarningFlow.showHonestWarning}
+          intent="enable"
+          onShowInCode={(line) => {
+            cancelScriptWarning();
+            setRevealRulesLine({ line });
+          }}
+          onConfirm={confirmScriptWarning}
+          onCancel={cancelScriptWarning}
         />
       )}
     </div>

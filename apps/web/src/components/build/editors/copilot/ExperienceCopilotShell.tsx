@@ -137,6 +137,9 @@ export interface ExperienceCopilotShellProps {
    *  but deliberately WITHOUT auto-switch — the user just chose to Apply,
    *  yanking them to the edit tab would be noise. */
   editTabDirty?: boolean;
+  /** SS-7: «Show in code» — reveal a finding line in the RULES editor
+   *  (fresh object per request; switches to Rules when Visual is active). */
+  revealRulesLine?: { line: number } | null;
 }
 
 type MobileTab = "chat" | "edit";
@@ -172,6 +175,7 @@ export function ExperienceCopilotShell({
   onBack,
   editTabHeader,
   editTabDirty = false,
+  revealRulesLine = null,
 }: ExperienceCopilotShellProps) {
   const isMobile = useIsMobile();
   const { t } = useT();
@@ -300,8 +304,7 @@ export function ExperienceCopilotShell({
   // The selection lives in server-side uiSettings (copilotProviderId /
   // copilotModelName — the Co-Author binding pattern) so it survives leaving
   // the editor and reloads. A dangling id (deleted profile) is ignored → the
-  // first-available default below takes over, mirroring resolveCoauthorBinding's
-  // dangling-fallback semantics.
+  // first-available default takes over (resolveCoauthorBinding semantics).
   const savedCopilotBinding = useBootstrapStore((s) => s.data?.uiSettings);
   const profiles = useProviderDataStore((s) => s.profiles);
   const [providerProfileId, setProviderProfileId] = useState<string | null>(null);
@@ -311,21 +314,23 @@ export function ExperienceCopilotShell({
   // ── UI-only tab state ────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
   // XU-5: the editor pane defaults to the live preview when a visual exists,
-  // else to the code pane. The choice is seeded ONCE at mount — a later manual
-  // switch wins and is never fought by an effect.
+  // else to the code pane. Seeded ONCE at mount — a later manual switch wins.
   const [editorBuffer, setEditorBuffer] = useState<EditorBuffer>(
     () => (visualSource.trim() !== "" ? "preview" : "code"),
   );
   const [codeBuffer, setCodeBuffer] = useState<CodeBuffer>("rules");
+
+  // SS-7: reveal requests land on the RULES editor (the reveal extension only
+  // exists there) — switch to it if the enable came from the Visual buffer.
+  useEffect(() => { if (revealRulesLine) setCodeBuffer("rules"); }, [revealRulesLine]);
 
   // ── Toolbar modal open state (profile) ──────────────────────────────────
   const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   // ER-14: the latest test/simulate digest the user sent back from the test
   // panel (set by `handleSendToCopilot`). Carried on EVERY subsequent copilot
-  // send (desktop + mobile InputArea) as `testFeedback` so a manual follow-up
-  // message also carries the latest test feedback (it survives history
-  // compaction as a system-level JSON context section).
+  // send as `testFeedback` (survives history compaction as a system-level JSON
+  // context section), so a manual follow-up also carries it.
   const [testFeedback, setTestFeedback] = useState<Record<string, unknown> | undefined>(undefined);
   // UX 2026-08-16 remark 6 — prefill handed to the chat input on "send to
   // copilot" (see handleSendToCopilot). Object identity is the trigger.
@@ -454,14 +459,12 @@ export function ExperienceCopilotShell({
 
   // ── Review state (CD-2/CD-3): freeze, snapshots, revert ────────────────
   // The live turn's activities feed the review hook (proposal aggregation);
-  // the SAME store read the MessageList does, subscribed here so the shell
-  // doesn't reach into the store from inside the toolbar render.
+  // the SAME store read the MessageList does — never from inside a render.
   const turnActivities = useExperienceCopilotTurnStore(
     useShallow((s) => (threadId ? s.turnsByThread[threadId] ?? EMPTY_ACTIVITIES : EMPTY_ACTIVITIES)),
   );
   // TAG-8: the session-scoped step plan for the pinned panel. The store
-  // replaces the array immutably on every `todo` rewrite, so a plain
-  // reference selector is render-exact (no useShallow / JSON blob needed).
+  // replaces the array immutably per rewrite — a reference selector is exact.
   const threadTodoItems = useExperienceCopilotTurnStore((s) =>
     threadId ? s.todoByThread[threadId] ?? EMPTY_TODO : EMPTY_TODO,
   );
@@ -531,8 +534,7 @@ export function ExperienceCopilotShell({
   // review. The controller clears the live turn store at send start (the
   // audit feed stays per-turn, and history cards un-hide), so the still-pending
   // proposal is captured here before the send — it keeps hanging until the
-  // model revises it (the live proposal wins per buffer, last-wins) or the
-  // user resolves it by hand (accept / revert). Nothing is auto-applied.
+  // model revises it or the user resolves it by hand. Nothing is auto-applied.
   const dangling = round.dangling;
   const proposalRef = useRef(review.proposal);
   const proposalBaseRef = useRef(review.proposalBase);
@@ -617,9 +619,9 @@ export function ExperienceCopilotShell({
 
   // CD-8 conflict semantics. Clean path: the buffer is exactly the hybrid the
   // accept flow expects → rebuild from the snapshot base (mergeSelectedBody).
-  // Drift path (the buffer changed outside the review — e.g. a template tool):
-  // anchor the clicked hunks onto the CURRENT buffer; hunks whose old text no
-  // longer appears are CONFLICTING — skipped (stay pending), never blocking
+  // Drift path (buffer changed outside the review — e.g. a template tool):
+  // anchor the clicked hunks onto the CURRENT buffer; a hunk whose old text
+  // no longer appears is CONFLICTING — skipped (stay pending), never blocking
   // the rest, announced with a toast. No silent rebase, ever.
   const acceptHunks = useCallback(
     (
@@ -802,8 +804,7 @@ export function ExperienceCopilotShell({
   // ER-14: copy a test/simulate/playground digest into the copilot chat input.
   // UX 2026-08-16 remark 6: this must NOT dispatch the turn — the button copies
   // the digest text into the input and the user sends it themselves. The
-  // structured `feedback` is still captured now so the next manual send carries
-  // it (testFeedback survives until overwritten, per ER-14).
+  // structured `feedback` is captured now so the next manual send carries it.
   const handleSendToCopilot = useCallback(
     (digest: CopilotDigest) => {
       setTestFeedback(digest.feedback);
@@ -875,9 +876,9 @@ export function ExperienceCopilotShell({
   );
 
   // ── Mobile auto-switch on proposal ───────────────────────────────────────
-  // A proposal becomes reviewable in the Chat pane (activity cards + Apply), so
-  // when one lands on mobile the surface jumps there. Ref-guarded edge mirroring
-  // CoauthorMode's `useCoauthorMobileTab`, without the pulse polish.
+  // A proposal becomes reviewable in the Chat pane (activity cards + Apply),
+  // so when one lands on mobile the surface jumps there. Ref-guarded edge
+  // mirroring CoauthorMode's `useCoauthorMobileTab`.
   const hasProposal = useExperienceCopilotTurnStore((s) => {
     if (!threadId) return false;
     const activities = s.turnsByThread[threadId] ?? [];
@@ -895,11 +896,9 @@ export function ExperienceCopilotShell({
   }, [hasProposal, isMobile]);
 
   // ── E6: Edit-tab dirty badge + one-shot pulse ───────────────────────
-  // Ref-guarded clean→dirty edge (same shape as the proposal edge above and
-  // co-author's useCoauthorMobileTab, CA-14): the dot appears while dirty and
-  // the user is on Chat; the pulse plays once per edge. NO auto-switch —
-  // unlike the proposal edge (where review is a mandatory step), an Apply
-  // the user just chose doesn't justify yanking them off the chat tab.
+  // Ref-guarded clean→dirty edge (proposal edge above, CA-14): the dot shows
+  // while dirty and on Chat; the pulse plays once per edge. NO auto-switch —
+  // a user-chosen Apply doesn't yank them off the chat tab.
   const [editTabPulse, setEditTabPulse] = useState(false);
   const prevEditTabDirty = useRef(editTabDirty);
   useEffect(() => {
@@ -969,7 +968,7 @@ export function ExperienceCopilotShell({
 
   // XU-6: the creation stepper in the parent mirrors the shell's current
   // authoring position. `appearance` maps to the Visual code buffer; `try` to
-  // the inline sandbox tab; anything else is the Rules position.
+  // the inline sandbox tab; anything else is Rules.
   const activeStep = useMemo<ExperienceCopilotStep>(
     () => (editorBuffer === "sandbox" ? "try" : codeBuffer === "visual" ? "appearance" : "rules"),
     [editorBuffer, codeBuffer],
@@ -1244,6 +1243,7 @@ export function ExperienceCopilotShell({
             onCancelRound={codeBuffer === "rules" ? cancelRoundRules : cancelRoundVisual}
             fullscreenLabel={codeBuffer === "rules" ? t("experience_copilot_rules") : t("experience_copilot_visual")}
             scriptKind={codeBuffer === "rules" ? "interactive" : undefined}
+            revealLine={codeBuffer === "rules" ? revealRulesLine : undefined}
           />
         </>
       )}
@@ -1252,9 +1252,9 @@ export function ExperienceCopilotShell({
 
   // ── Toolbar modals (profile only) ────────────────────────────────────────
   // XU-5/XU-6: the preview moved OUT of a modal into the editor's default tab
-  // (the inline `ExperienceFrame`), and the sandbox became the inline Try tab
-  // in BOTH modes (quote 10) — so no sandbox modal remains. The rules tester
-  // was absorbed into the sandbox's diagnostics (XU-4).
+  // (the inline `ExperienceFrame`), the sandbox became the inline Try tab in
+  // BOTH modes (quote 10), and the rules tester was absorbed into the
+  // sandbox's diagnostics (XU-4) — so no sandbox modal remains.
   const modals = (
     <>
       <CopilotProfileModal

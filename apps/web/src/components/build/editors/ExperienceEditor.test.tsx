@@ -128,6 +128,20 @@ const realExperienceApi = await import("../../../api/experience-api.js");
 const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
+const realSettingsApi = await import("../../../api/settings-api.js");
+
+// SS-7: the script-safety settings singleton (the suppression flag) — the
+// warning flow reads it at attempt time; tests seed the store directly.
+const getScriptSafetySettings = mock(async () => ({ suppressImportWarnings: false, updatedAt: "" }));
+const updateScriptSafetySettings = mock(async (input: { suppressImportWarnings: boolean }) => ({
+	suppressImportWarnings: input.suppressImportWarnings,
+	updatedAt: "",
+}));
+mock.module("../../../api/settings-api.js", () => ({
+	...realSettingsApi,
+	getScriptSafetySettings,
+	updateScriptSafetySettings,
+}));
 
 // Follow-up round 3 (mobile script header): drive `useIsMobile` from a test
 // flag — SAFE mock (capture real module first, spread, override the one hook).
@@ -1065,7 +1079,7 @@ describe("ExperienceEditor", () => {
     // SS-6 (decision 8): the lock fires only for imported never-enabled
     // scripts — use an imported untrusted fixture for the lock boundary.
     serverScripts = [{ ...baseScript, origin: "imported" }];
-    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    const { container, findByText, findAllByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     const [rulesView] = await codeViews(container);
     if (!rulesView) throw new Error("rules editor missing");
@@ -1087,8 +1101,13 @@ describe("ExperienceEditor", () => {
     });
 
     // Enabling is a separate explicit action, persisted by a second save that
-    // names the exact same source.
+    // names the exact same source. SS-7 behavior change: the enable attempt on
+    // an imported never-enabled script routes through the plain first-enable
+    // warning modal — the draft flips on only after the confirm-anyway button.
     fireEvent.click(getByRole("switch"));
+    expect((await findAllByText("script_safety_warning_body")).length).toBe(2);
+    expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(await findByText("script_safety_warning_confirm_enable"));
     fireEvent.click(getByRole("button", { name: "save" }));
     await waitFor(() => {
       expect(updateScript).toHaveBeenCalledWith("srv_1", expect.objectContaining({
@@ -1992,5 +2011,92 @@ describe("ExperienceEditor — mini-app import/export", () => {
       if (hadCreate) delete (URL as unknown as Record<string, unknown>).createObjectURL;
       if (hadRevoke) delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
     }
+  });
+});
+
+// ── SS-7: the first-enable warning flow on the mini-app enable toggle ─────
+// The matrix itself lives in scriptSafetyWarningFlow's own suite; these pin
+// the ExperienceEditor-side wiring, including the «Show in code» reveal
+// threading through ExperienceCopilotShell → EditorPanel into the REAL
+// CodeMirror rules editor.
+const { useScriptSafetySettingsStore } = await import("../../../stores/script-safety-settings-store.js");
+const { within } = await import("@testing-library/react");
+
+describe("ExperienceEditor SS-7 enable warning flow", () => {
+  const FINDINGS_CODE = EXISTING_CODE + "\neval('x');";
+
+  beforeEach(() => {
+    // Seed the loaded sentinel so the banner's load() is a no-op.
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
+  });
+
+  it("cancel leaves the untrusted import disabled (plain warning blocks the enable)", async () => {
+    serverScripts = [{ ...baseScript, origin: "imported" }];
+    const { container, findByText, findAllByText, getByRole, getByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    // Clean saved source → the toggle is unlocked; enabling opens the plain
+    // first-enable warning.
+    fireEvent.click(getByRole("switch"));
+    expect((await findAllByText("script_safety_warning_body")).length).toBe(2);
+    fireEvent.click(within(getByTestId("script-safety-warning-modal")).getByText("cancel"));
+    expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("false");
+    expect(updateScript).not.toHaveBeenCalled();
+  });
+
+  it("a suppressed untrusted import enables directly, no modal", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    serverScripts = [{ ...baseScript, origin: "imported" }];
+    const { container, findByText, queryAllByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("switch"));
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
+    expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("an in-app script enables with no modal (decision 6)", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, queryAllByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("switch"));
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
+    expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("findings fire the findings modal ALONE (honest text inside); «Show in code» jumps the REAL rules editor through the shell", async () => {
+    serverScripts = [{ ...baseScript, origin: "imported", code: FINDINGS_CODE }];
+    const { container, findByText, findAllByText, queryAllByText, getByRole, getByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    const [rulesView] = await codeViews(container);
+    if (!rulesView) throw new Error("rules editor missing");
+
+    fireEvent.click(getByRole("switch"));
+    expect((await findAllByText("script_safety_findings_title")).length).toBe(2);
+    // Honest text rides inside the findings modal (decision 11) — exactly
+    // once: the visible paragraph (the sr-only pair is the findings intro).
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(1);
+    expect(queryAllByText("script_safety_rule_unsafe_eval")).toHaveLength(1);
+
+    fireEvent.click(within(getByTestId("script-safety-findings-modal")).getByText("script_safety_findings_show_in_code"));
+    // Modal closed; the reveal request threaded ExperienceEditor → shell →
+    // panel → the rules CodeMirror: the caret lands on line 2 (the eval).
+    expect(queryAllByText("script_safety_findings_title")).toHaveLength(0);
+    await waitFor(() => {
+      expect(rulesView.state.selection.main.head).toBe(rulesView.state.doc.line(2).from);
+    });
+  });
+
+  it("a TRUSTED import with findings re-enables through the findings modal — without the honest text (origin-based)", async () => {
+    serverScripts = [{ ...baseScript, origin: "imported", firstEnabledAt: "2026-01-01T00:00:00.000Z", code: FINDINGS_CODE }];
+    const { container, findByText, findAllByText, queryAllByText, getByRole, getByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("switch"));
+    expect((await findAllByText("script_safety_findings_title")).length).toBe(2);
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
+    fireEvent.click(within(getByTestId("script-safety-findings-modal")).getByText("script_safety_warning_confirm_enable"));
+    expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("true");
   });
 });

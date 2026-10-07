@@ -16,6 +16,13 @@ import { SCRIPT_TEMPLATES, templateScriptKind } from "./script-templates/index.j
 import { cn } from "../../../lib/cn.js";
 import { scriptSafetyLint } from "../../../lib/script-safety-lint.js";
 import { ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
+import {
+  ImportedScriptWarningModal,
+  scriptSafetyWarningFlow,
+  type ScriptSafetyWarningFlow,
+} from "./script-safety/ImportedScriptWarningModal.js";
+import { FindingsWarningModal, scriptSafetyRevealLine } from "./script-safety/FindingsWarningModal.js";
+import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { useT } from "../../../i18n/context.js";
@@ -201,9 +208,17 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
   // scripts are owned by the Experience editor). Messages resolve via the
   // non-React getTDynamic path at lint time.
   const activeScriptKind = activeScript?.scriptKind === "dice" ? "dice" : "prompt";
+  // SS-7: «Show in code» — a FRESH object per jump reconfigures the extensions
+  // compartment (CD-4) so the reveal extension fires exactly once per request.
+  // Memoized separately: later spec/kind changes must never re-fire the jump.
+  const [revealLine, setRevealLine] = useState<{ line: number } | null>(null);
+  const scriptSafetyRevealExtensions = useMemo(
+    () => (revealLine ? [scriptSafetyRevealLine(revealLine.line)] : []),
+    [revealLine],
+  );
   const scriptSafetyExtensions = useMemo(
-    () => scriptSafetyLint(activeScriptKind),
-    [activeScriptKind],
+    () => [...scriptSafetyLint(activeScriptKind), ...scriptSafetyRevealExtensions],
+    [activeScriptKind, scriptSafetyRevealExtensions],
   );
 
   const updateDraft = (patch: Partial<ScriptDraftValues>) => {
@@ -212,6 +227,45 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
     // even an edit in the first painted frame cannot be dropped.
     ensureDraft(activeScriptRecord);
     patchDraft(activeScriptRecord.id, patch);
+  };
+
+  // ── SS-7: first-enable warning flow ─────────────────────────
+  // The enable toggle routes through the shared matrix (scriptSafetyWarningFlow
+  // is the single source). A modal result releases the pending enable; cancel
+  // leaves the script disabled. Disabling never warns.
+  const [warningFlow, setWarningFlow] = useState<ScriptSafetyWarningFlow | null>(null);
+  const [pendingEnable, setPendingEnable] = useState<(() => void) | null>(null);
+
+  const confirmWarningFlow = () => {
+    const action = pendingEnable;
+    setWarningFlow(null);
+    setPendingEnable(null);
+    action?.();
+  };
+  const cancelWarningFlow = () => {
+    setWarningFlow(null);
+    setPendingEnable(null);
+  };
+
+  const handleToggleEnabled = (enabled: boolean) => {
+    if (!enabled) {
+      updateDraft({ enabled: false });
+      return;
+    }
+    // Store read at attempt time via getState — the banner may have flipped
+    // the suppress setting since this render (never a stale closure).
+    const flow = scriptSafetyWarningFlow({
+      script: activeScript,
+      code: activeScript?.code ?? "",
+      kind: activeScriptKind,
+      suppressImportWarnings: useScriptSafetySettingsStore.getState().suppressImportWarnings,
+    });
+    if (flow.kind === "none") {
+      updateDraft({ enabled: true });
+      return;
+    }
+    setWarningFlow(flow);
+    setPendingEnable(() => () => updateDraft({ enabled: true }));
   };
 
   // ── Link binding (forward direction: bind THIS script to characters/personas).
@@ -477,6 +531,29 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
           personaId: personaId ?? undefined,
         }}
       />
+      {/* SS-7: the first-enable warning surfaces. Only one can be open — the
+          flow is a single discriminated union; plain shows when there are no
+          blocking findings, findings shows ALONE otherwise (decision 11). */}
+      {warningFlow?.kind === "plain" && (
+        <ImportedScriptWarningModal
+          intent="enable"
+          onConfirm={confirmWarningFlow}
+          onCancel={cancelWarningFlow}
+        />
+      )}
+      {warningFlow?.kind === "findings" && (
+        <FindingsWarningModal
+          findings={warningFlow.findings}
+          showHonestWarning={warningFlow.showHonestWarning}
+          intent="enable"
+          onShowInCode={(line) => {
+            cancelWarningFlow();
+            setRevealLine({ line });
+          }}
+          onConfirm={confirmWarningFlow}
+          onCancel={cancelWarningFlow}
+        />
+      )}
     </>
   );
 
@@ -573,7 +650,7 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
       <div className="flex flex-col gap-3" style={{ marginBottom: 16 }}>
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1"><TextInput value={activeScript.name} onChange={(e) => updateDraft({ name: e.target.value })} placeholder={t("script_name")} /></div>
-          <Toggle checked={activeScript.enabled} onChange={(enabled) => updateDraft({ enabled })} />
+          <Toggle checked={activeScript.enabled} onChange={handleToggleEnabled} />
           <CustomTooltip content={t("delete_script_confirm")}>
             <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2" onClick={() => setConfirmDeleteId(activeScript.id)}><Ic.del /></div>
           </CustomTooltip>
@@ -665,9 +742,9 @@ export function useScriptPanel({ characterId, chatId, personaId, scope, ownerId,
       </div>
 
       {activeScript.scriptKind === "dice" ? (
-        <DiceScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "entity" && !personaId ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+        <DiceScriptTester scriptId={activeScriptId} code={activeScript.code} script={activeScript} onRevealLine={(line) => setRevealLine({ line })} isMobile={isMobile} characterName={scope === "entity" && !personaId ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
       ) : (
-        <ScriptTester scriptId={activeScriptId} code={activeScript.code} isMobile={isMobile} characterName={scope === "entity" && !personaId ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
+        <ScriptTester scriptId={activeScriptId} code={activeScript.code} script={activeScript} onRevealLine={(line) => setRevealLine({ line })} isMobile={isMobile} characterName={scope === "entity" && !personaId ? allCharacters.find(x => x.id === characterId)?.name : undefined} />
       )}
     </div>
   ) : (

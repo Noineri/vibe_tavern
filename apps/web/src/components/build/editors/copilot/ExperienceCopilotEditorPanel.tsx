@@ -6,6 +6,7 @@ import { cn } from "../../../../lib/cn.js";
 import { scriptSafetyLint } from "../../../../lib/script-safety-lint.js";
 import { CodeEditor } from "../../../shared/CodeEditor.js";
 import { MobileExpandCodeEditor } from "../../../shared/MobileExpandCodeEditor.js";
+import { scriptSafetyRevealLine } from "../script-safety/FindingsWarningModal.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { GeneratingScrim } from "../../../shared/generation-feedback.js";
 import { computeDiffDecorationSpecs, copilotDiffExtensions } from "./CopilotDiffDecorations.js";
@@ -225,6 +226,11 @@ export interface ExperienceCopilotEditorPanelProps {
    *  (SS-5). The shell passes `interactive` for the rules buffer and `undefined`
    *  for the visual buffer (HTML — not a script). */
   scriptKind?: ScriptKind;
+  /** SS-7: «Show in code» — when set (FRESH object per request), the editor
+   *  jumps the caret to that 1-based line exactly once. Memoized separately
+   *  from the review specs so a reconfigure from accepting hunks never
+   *  re-fires the jump. */
+  revealLine?: { line: number } | null;
 }
 
 export function ExperienceCopilotEditorPanel({
@@ -241,6 +247,7 @@ export function ExperienceCopilotEditorPanel({
   onCancelRound,
   fullscreenLabel,
   scriptKind,
+  revealLine,
 }: ExperienceCopilotEditorPanelProps) {
   const { t } = useT();
   // Mobile (4a follow-up): CodeMirror runs in page-scroll mode on phones —
@@ -274,6 +281,12 @@ export function ExperienceCopilotEditorPanel({
     () => (scriptKind !== undefined ? scriptSafetyLint(scriptKind) : []),
     [scriptKind],
   );
+  // SS-7: the reveal extension, memoized on its own request identity so the
+  // jump fires once per request regardless of later spec recomputes.
+  const revealExtensions = useMemo(
+    () => (revealLine ? [scriptSafetyRevealLine(revealLine.line)] : []),
+    [revealLine],
+  );
   const extensions = useMemo(() => {
     const reviewExtensions =
       review !== null && specs.length > 0
@@ -287,8 +300,8 @@ export function ExperienceCopilotEditorPanel({
             onDismissHunk,
           })
         : [];
-    return [...reviewExtensions, ...lintExtensions];
-  }, [review, specs, resolvedHunkIds, onAcceptHunk, onDismissHunk, t, lintExtensions]);
+    return [...reviewExtensions, ...lintExtensions, ...revealExtensions];
+  }, [review, specs, resolvedHunkIds, onAcceptHunk, onDismissHunk, t, lintExtensions, revealExtensions]);
 
   const docValue = review !== null ? review.proposed : value;
   const readOnly = isSending || review !== null;

@@ -54,6 +54,20 @@ const realMobileHook = await import("../../../hooks/use-mobile.js");
 const realAiAssistantModal = await import("../../shared/AiAssistantModal.js");
 const realLinkBindingPopover = await import("../../shared/LinkBindingPopover.js");
 const realTooltip = await import("../../shared/Tooltip.js");
+const realSettingsApi = await import("../../../api/settings-api.js");
+
+// SS-7: the script-safety settings singleton (the suppression flag) — the
+// warning flow reads it at attempt time; seed the store directly per test.
+const getScriptSafetySettings = mock(async () => ({ suppressImportWarnings: false, updatedAt: "" }));
+const updateScriptSafetySettings = mock(async (input: { suppressImportWarnings: boolean }) => ({
+	suppressImportWarnings: input.suppressImportWarnings,
+	updatedAt: "",
+}));
+mock.module("../../../api/settings-api.js", () => ({
+	...realSettingsApi,
+	getScriptSafetySettings,
+	updateScriptSafetySettings,
+}));
 
 let testCharacters: AppCharacterEntry[] = [];
 
@@ -645,5 +659,104 @@ describe("useScriptPanel create/import owner boundary (LORE_SCRIPT_OWNERS_AS_LIN
     expect(body.scopeType).toBe("entity");
     expect("characterId" in body).toBe(false);
     expect("personaId" in body).toBe(false);
+  });
+});
+
+
+// ── SS-7: the first-enable warning flow on the prompt/dice enable toggle ───
+// The matrix itself lives in scriptSafetyWarningFlow's own suite; these pin
+// the EDITOR-side wiring: the toggle is guarded, the modal releases the
+// pending enable, cancel leaves the script disabled, and «Show in code»
+// jumps the REAL CodeMirror caret to the finding line.
+const { useScriptSafetySettingsStore } = await import("../../../stores/script-safety-settings-store.js");
+
+describe("useScriptPanel SS-7 enable warning flow", () => {
+  const CLEAN = "context.state.set('x', 1);";
+  const FINDINGS_CODE = CLEAN + "\neval('y');";
+
+  beforeEach(() => {
+    // Seed the loaded sentinel so the banner's load() is a no-op.
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
+  });
+
+  async function openUntrustedImport(overrides: Partial<ScriptRecord> = {}) {
+    serverScript = { ...baseScript, enabled: false, origin: "imported", firstEnabledAt: null, code: CLEAN, ...overrides };
+    const view = render(<Harness />);
+    // openEditor performs the list→editor navigation click itself.
+    const editor = await openEditor(view.container, (text) => view.findByText(text));
+    return { ...view, editor };
+  }
+
+  it("enabling an untrusted import is blocked by the plain warning; confirm enables and Save persists it", async () => {
+    const { getByRole, getAllByRole, getByText, queryAllByText, editor } = await openUntrustedImport();
+    expect(editor.state.doc.toString()).toBe(CLEAN);
+
+    fireEvent.click(getByRole("switch"));
+    // The honest warning blocks (visible copy + the Modal's sr-only pair).
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(2);
+    // The modal's own suppress toggle is a second switch — the EDITOR's
+    // switch stays aria-checked=false until the modal is confirmed.
+    expect(getAllByRole("switch").every((el) => el.getAttribute("aria-checked") !== "true")).toBe(true);
+    expect(updateScript).not.toHaveBeenCalled();
+
+    fireEvent.click(getByText("script_safety_warning_confirm_enable"));
+    // The pending enable released: the draft flips on; Save persists it.
+    expect(getByRole("switch").getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(getByRole("button", { name: "save" }));
+    await waitFor(() => {
+      expect(updateScript).toHaveBeenCalledWith("s1", expect.objectContaining({ enabled: true }));
+    });
+  });
+
+  it("cancel leaves the untrusted import disabled", async () => {
+    const { getByRole, getByText } = await openUntrustedImport();
+    fireEvent.click(getByRole("switch"));
+    fireEvent.click(getByText("cancel"));
+    expect(getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    expect(updateScript).not.toHaveBeenCalled();
+  });
+
+  it("no modal for an in-app script (direct enable)", async () => {
+    serverScript = { ...baseScript, enabled: false, origin: "in_app" };
+    const view = render(<Harness />);
+    await openEditor(view.container, (text) => view.findByText(text));
+    fireEvent.click(view.getByRole("switch"));
+    expect(view.queryByText("script_safety_warning_body")).toBeNull();
+    expect(view.getByRole("switch").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("a suppressed untrusted import enables with no modal", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    const { getByRole, queryAllByText } = await openUntrustedImport();
+    fireEvent.click(getByRole("switch"));
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
+    expect(getByRole("switch").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("findings fire the findings modal ALONE with the honest text; «Show in code» closes it and jumps the real editor caret", async () => {
+    const { getByRole, getByText, queryAllByText, editor } = await openUntrustedImport({ code: FINDINGS_CODE });
+    fireEvent.click(getByRole("switch"));
+    expect(queryAllByText("script_safety_findings_title")).toHaveLength(2);
+    // Honest text rides inside the findings modal (decision 11) — exactly
+    // once (visible paragraph; the sr-only pair describes the findings intro).
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(1);
+    expect(getByText("script_safety_rule_unsafe_eval")).toBeTruthy();
+
+    fireEvent.click(getByText("script_safety_findings_show_in_code"));
+    // Modal closed; the reveal extension moved the caret to line 2's start.
+    expect(queryAllByText("script_safety_findings_title")).toHaveLength(0);
+    await waitFor(() => {
+      expect(editor.state.selection.main.head).toBe(editor.state.doc.line(2).from);
+    });
+  });
+
+  it("a TRUSTED import with findings re-enables through the findings modal — without the honest text", async () => {
+    const { getByRole, queryAllByText } = await openUntrustedImport({
+      code: FINDINGS_CODE,
+      firstEnabledAt: "2026-01-01T00:00:00.000Z",
+    });
+    fireEvent.click(getByRole("switch"));
+    expect(queryAllByText("script_safety_findings_title")).toHaveLength(2);
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
   });
 });

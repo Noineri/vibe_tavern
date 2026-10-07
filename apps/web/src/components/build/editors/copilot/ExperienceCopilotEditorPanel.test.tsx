@@ -361,3 +361,55 @@ describe("ExperienceCopilotEditorPanel — mobile editor surface", () => {
     expect(container.querySelectorAll(".cm-editor").length).toBe(1);
   });
 });
+
+describe("SS-7 revealLine (Show in code jump)", () => {
+  it("moves the caret to the revealed line once per request identity", async () => {
+    const { EditorView } = await import("@codemirror/view");
+    const props = {
+      value: "a\nb\nc",
+      onChange: mock(),
+      isSending: false,
+      review: null,
+      acceptedHunkIds: new Set<number>(),
+      dismissedHunkIds: new Set<number>(),
+      onAcceptHunk: mock(),
+      onAcceptAll: mock(),
+      onDismissHunk: mock(),
+      onDismissPending: mock(),
+      onCancelRound: mock(),
+    };
+    const view = render(<ExperienceCopilotEditorPanel {...props} revealLine={{ line: 2 }} />);
+    const find = () => EditorView.findFromDOM(view.container.querySelector<HTMLElement>(".cm-editor")!);
+    // The reveal extension fires once installed (a frame later).
+    await waitForIt(() => {
+      const cm = find();
+      if (!cm) throw new Error("editor missing");
+      expect(cm.state.selection.main.head).toBe(cm.state.doc.line(2).from);
+    });
+
+    // A SECOND fresh request re-jumps to the new line (identity reconfigures
+    // the compartment — the closure guard only dedupes re-instantiations of
+    // the SAME request).
+    view.rerender(<ExperienceCopilotEditorPanel {...props} revealLine={{ line: 3 }} />);
+    await waitForIt(() => {
+      const cm = find();
+      if (!cm) throw new Error("editor missing");
+      expect(cm.state.selection.main.head).toBe(cm.state.doc.line(3).from);
+    });
+  });
+});
+
+/** Small waitFor helper (the file does not import RTL waitFor). */
+async function waitForIt(check: () => void, attempts = 20) {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      check();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  throw lastError;
+}
