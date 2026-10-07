@@ -515,9 +515,13 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // one-shot raw-code-generator role header, validated-contract section and
     // output-format constraints were deleted/replaced with tool-based ones
     // (write_buffer/edit_buffer), and the canonical-examples list gained
-    // Breakout. An intentional system-prompt content change, not drift.
+    // Breakout. Re-captured again (2026-10-07, Experience Copilot Grounding
+    // Report step 4 / P3): interactive-rules.md now documents real turn-owner
+    // selection, script-seat choose requirements, model-effect delivery,
+    // helper contracts, all six starters, and the corrected Round example.
+    // Intentional system-prompt content changes, not drift.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("b854c5339f78220fe4cbcacc96da7f9c9ea4aa252f335723044b2d28deefc694");
+      .toBe("1bc266703b69c75563b640e3fec48c50ce515dedbad4d19db24fb2729eeaa079");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -639,9 +643,10 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     // Re-captured for #16 (context economy): base.md shrunk to role + skill pointer + hard constraints, and the system message was reordered cache-first (stable role/catalog/refs prefix, volatile context package at the tail) — see the
     // zero-digest pin's trail. Re-captured again (2026-10-07, Experience
     // Copilot Grounding Report step 3 / P2): interactive-visual.md became a
-    // pure visual-bridge reference — see the zero-digest pin's trail.)
+    // pure visual-bridge reference. Re-captured again for step 4 / P3's
+    // interactive-rules grounding corrections — see the zero-digest trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("b854c5339f78220fe4cbcacc96da7f9c9ea4aa252f335723044b2d28deefc694");
+      .toBe("1bc266703b69c75563b640e3fec48c50ce515dedbad4d19db24fb2729eeaa079");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -707,9 +712,10 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // playground-timers asset update — see the zero-digest pin's trail.
     // Re-captured again (2026-10-07, Experience Copilot Grounding Report
     // step 3 / P2): interactive-visual.md became a pure visual-bridge
-    // reference — see the zero-digest pin's trail.)
+    // reference. Re-captured again for step 4 / P3's interactive-rules
+    // grounding corrections — see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("b854c5339f78220fe4cbcacc96da7f9c9ea4aa252f335723044b2d28deefc694");
+      .toBe("1bc266703b69c75563b640e3fec48c50ce515dedbad4d19db24fb2729eeaa079");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {

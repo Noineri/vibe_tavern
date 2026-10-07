@@ -129,7 +129,9 @@ describe("rules starter catalog — real kernel boundary", () => {
       expect(created.ok).toBe(true);
       if (!created.ok) throw new Error(created.message);
 
-      const viewer = { kind: "observer" as const };
+      const viewer = starter.id === "round"
+        ? { kind: "human" as const, participantId: "p1" }
+        : { kind: "observer" as const };
       const projection = runProject(starter.source, scriptName, created.value, viewer, caps);
       expect(projection.ok).toBe(true);
       if (!projection.ok) throw new Error(projection.message);
@@ -151,6 +153,7 @@ describe("rules starter catalog — real kernel boundary", () => {
       if (!transition.ok) throw new Error(transition.message);
     });
   }
+
 });
 
 // ─── Duplication independence ────────────────────────────────────────────────
