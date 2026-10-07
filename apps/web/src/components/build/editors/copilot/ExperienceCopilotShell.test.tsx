@@ -2025,4 +2025,30 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
     );
     expect(queryByTestId("playground-auto-skip")).toBeNull();
   });
+
+  it("playground findings Show in code leaves Try, opens Rules, and refreshes the same-line reveal", async () => {
+    const { container, findByTestId, getByRole, getByText } = renderShell({
+      rulesCode: "const safe = 1;\nconst value = eval('x');",
+      script: { origin: "imported", firstEnabledAt: null },
+    });
+    await flushSessionLoad();
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByText("experience_playground_start"));
+    await findByTestId("script-safety-findings-modal");
+    fireEvent.click(getByText("script_safety_findings_show_in_code"));
+
+    await waitFor(() => expect(getByRole("radio", { name: "experience_copilot_code" }).getAttribute("aria-checked")).toBe("true"));
+    const firstView = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
+    if (!firstView) throw new Error("rules editor missing");
+    const findingPosition = firstView.state.doc.line(2).from;
+    expect(firstView.state.selection.main.head).toBe(findingPosition);
+
+    firstView.dispatch({ selection: { anchor: 0 } });
+    expect(firstView.state.selection.main.head).toBe(0);
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByText("experience_playground_start"));
+    await findByTestId("script-safety-findings-modal");
+    fireEvent.click(getByText("script_safety_findings_show_in_code"));
+    await waitFor(() => expect(EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)?.state.selection.main.head).toBe(findingPosition));
+  });
 });

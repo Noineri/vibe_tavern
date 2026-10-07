@@ -350,7 +350,7 @@ beforeEach(() => {
 function renderPlayground(
   code: string = VALID_CODE,
   visualSource: string | null = null,
-  props: { scriptId?: string } = {},
+  props: { scriptId?: string; script?: { origin: "in_app" | "imported"; firstEnabledAt: string | null }; onShowInCode?: (line: number) => void } = {},
 ) {
   const utils = render(<ExperiencePlayground code={code} visualSource={visualSource} {...props} />);
   return utils;
@@ -1893,6 +1893,95 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
 // trusted/in-app scripts keep the exact pre-B2 discovery behavior (the
 // standalone panel without trust data is the same parity case — every other
 // test in this file renders without `script` and discovery fires).
+
+const { useScriptSafetySettingsStore } = await import("../../../stores/script-safety-settings-store.js");
+
+// SS-7B4: all explicit controls route through the real warning modals before
+// their existing request implementations; endpoint payloads remain unchanged.
+describe("ExperiencePlayground — explicit guard (SS-7B4)", () => {
+  beforeEach(() => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
+  });
+
+  it("Start cancels with no request and a double confirm starts exactly once", async () => {
+    const utils = renderPlayground(VALID_CODE, null, { script: { origin: "imported", firstEnabledAt: null } });
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await utils.findByTestId("script-safety-warning-modal");
+    fireEvent.click(utils.getByText("cancel"));
+    expect(startExperiencePlayground).not.toHaveBeenCalled();
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await utils.findByTestId("script-safety-warning-modal");
+    const confirm = utils.getByText("script_safety_warning_confirm_run");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+  });
+
+  it("Restart, Discover, and Auto-run each wait for their explicit confirmation", async () => {
+    const utils = renderPlayground(VALID_CODE, null, { script: { origin: "in_app", firstEnabledAt: null } });
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    utils.rerender(<ExperiencePlayground code={VALID_CODE} visualSource={null} script={{ origin: "imported", firstEnabledAt: null }} />);
+    expandDiagnostics(utils);
+
+    fireEvent.click(utils.getByText("experience_playground_restart"));
+    await utils.findByTestId("script-safety-warning-modal");
+    fireEvent.click(utils.getByText("cancel"));
+    expect(startExperiencePlayground).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(utils.getByText("experience_tester_run"));
+    await utils.findByTestId("script-safety-warning-modal");
+    fireEvent.click(utils.getByText("script_safety_warning_confirm_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(utils.getByText("experience_tester_simulate"));
+    await utils.findByTestId("script-safety-warning-modal");
+    fireEvent.click(utils.getByText("script_safety_warning_confirm_run"));
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest.mock.calls[0]?.[0]).not.toHaveProperty("warningAcknowledged");
+  });
+
+  it("suppressed clean imports run directly while findings show in code without a request", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    const clean = renderPlayground(VALID_CODE, null, { script: { origin: "imported", firstEnabledAt: null } });
+    fireEvent.click(clean.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(clean.queryByTestId("script-safety-warning-modal")).toBeNull();
+    clean.unmount();
+
+    startExperiencePlayground.mockClear();
+    const onShowInCode = mock();
+    const findings = renderPlayground(`${VALID_CODE}\neval('x');`, null, { script: { origin: "imported", firstEnabledAt: null }, onShowInCode });
+    fireEvent.click(findings.getByText("experience_playground_start"));
+    await findings.findByTestId("script-safety-findings-modal");
+    fireEvent.click(findings.getByText("script_safety_findings_show_in_code"));
+    expect(onShowInCode).toHaveBeenCalledWith(2);
+    expect(startExperiencePlayground).not.toHaveBeenCalled();
+  });
+
+  it("trusted findings override suppression and confirm Start exactly once", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    const utils = renderPlayground(`${VALID_CODE}\neval('x');`, null, {
+      script: { origin: "imported", firstEnabledAt: "2026-10-05T00:00:00.000Z" },
+    });
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await utils.findByTestId("script-safety-findings-modal");
+    expect(utils.queryByTestId("script-safety-warning-modal")).toBeNull();
+
+    const confirm = utils.getByText("script_safety_warning_confirm_run");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+  });
+
+  it("in-app Start remains modal-free", async () => {
+    const utils = renderPlayground(VALID_CODE, null, { script: { origin: "in_app", firstEnabledAt: null } });
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(utils.queryByTestId("script-safety-warning-modal")).toBeNull();
+  });
+});
 
 describe("ExperiencePlayground — automatic discovery guard (SS-7B2)", () => {
   it("untrusted import: renders the shared localized auto-skip state and sends NO discovery request", async () => {

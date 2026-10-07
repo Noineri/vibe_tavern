@@ -327,10 +327,19 @@ export function ExperienceCopilotShell({
     () => (visualSource.trim() !== "" ? "preview" : "code"),
   );
   const [codeBuffer, setCodeBuffer] = useState<CodeBuffer>("rules");
+  const [rulesRevealLine, setRulesRevealLine] = useState(revealRulesLine);
 
-  // SS-7: reveal requests land on the RULES editor (the reveal extension only
-  // exists there) — switch to it if the enable came from the Visual buffer.
-  useEffect(() => { if (revealRulesLine) setCodeBuffer("rules"); }, [revealRulesLine]);
+  // SS-7B4: reveal requests from either the editor or the inline Try surface
+  // land on the RULES editor, so leave Preview/Try and switch the code buffer.
+  useEffect(() => {
+    if (!revealRulesLine) return;
+    setRulesRevealLine(revealRulesLine);
+  }, [revealRulesLine]);
+  useEffect(() => {
+    if (!rulesRevealLine) return;
+    setEditorBuffer("code");
+    setCodeBuffer("rules");
+  }, [rulesRevealLine]);
 
   // ── Toolbar modal open state (profile) ──────────────────────────────────
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -988,7 +997,7 @@ export function ExperienceCopilotShell({
   // IR-90A: exactly one ExperiencePlayground element is shared by the inline
   // Try tab in both modes (the old sandbox modal is gone, XU-6). A single
   // instance ever mounts.
-  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} scriptId={scriptId} script={script} onSendToCopilot={handleSendToCopilot} />;
+  const playground = <ExperiencePlayground code={rulesCode} visualSource={visualSource || null} scriptId={scriptId} script={script} onSendToCopilot={handleSendToCopilot} onShowInCode={(line) => setRulesRevealLine({ line })} />;
 
   // ── Pane content (shared between desktop/mobile, mounted by branch) ──────
   const chatPane = (
@@ -1251,7 +1260,7 @@ export function ExperienceCopilotShell({
             onCancelRound={codeBuffer === "rules" ? cancelRoundRules : cancelRoundVisual}
             fullscreenLabel={codeBuffer === "rules" ? t("experience_copilot_rules") : t("experience_copilot_visual")}
             scriptKind={codeBuffer === "rules" ? "interactive" : undefined}
-            revealLine={codeBuffer === "rules" ? revealRulesLine : undefined}
+            revealLine={codeBuffer === "rules" ? rulesRevealLine : undefined}
           />
         </>
       )}

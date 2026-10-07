@@ -61,7 +61,11 @@ import { parseOptionalJsonDiagnosed } from "../../../lib/json-parse-diagnostic.j
 import {
   SCRIPT_SAFETY_AUTO_SKIP_MESSAGE_KEY,
   scriptExecutionGuard,
+  type ScriptSafetyWarningFlow,
 } from "../../../lib/script-execution-guard.js";
+import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
+import { ImportedScriptWarningModal } from "./script-safety/ImportedScriptWarningModal.js";
+import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
 import { useT } from "../../../i18n/context.js";
 import {
   ExperienceApiError,
@@ -322,9 +326,11 @@ interface ExperiencePlaygroundProps {
    *  posts the live session digest into the copilot thread. Undefined outside
    *  the shell (standalone playground use → no button). */
   onSendToCopilot?: (digest: CopilotDigest) => void;
+  /** SS-7B4: opens the Rules editor at a finding from this inline Try surface. */
+  onShowInCode?: (line: number) => void;
 }
 
-export function ExperiencePlayground({ code, visualSource, scriptId, script, onSendToCopilot }: ExperiencePlaygroundProps) {
+export function ExperiencePlayground({ code, visualSource, scriptId, script, onSendToCopilot, onShowInCode }: ExperiencePlaygroundProps) {
   const { t } = useT();
 
   // Play context (local only). Fix item 9a: lazily rehydrated from the
@@ -425,6 +431,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
   const [testerResult, setTesterResult] = useState<ExperienceTestRunData | null>(null);
   const [simResult, setSimResult] = useState<ExperienceTestSimulateData | null>(null);
   const [testerBusy, setTesterBusy] = useState<"run" | "simulate" | null>(null);
+  const [scriptWarningFlow, setScriptWarningFlow] = useState<ScriptSafetyWarningFlow | null>(null);
+  const pendingExplicitActionRef = useRef<(() => void) | null>(null);
 
   // IR-90E: provider/model loading for model seats (mirrors ExperienceSetupModal).
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfileRecord[] | null>(null);
@@ -640,6 +648,43 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
     suppressImportWarnings: null,
   });
   const autoDiscoverySkipped = autoDiscoveryDecision.kind === "skip-auto";
+
+  /** SS-7B4: explicit Try actions use the same trust/findings decision as the
+   * editor validation. Stateless endpoints deliberately receive no acknowledgement. */
+  const runExplicitAction = (action: () => void) => {
+    const decision = scriptExecutionGuard({
+      script: script ?? null,
+      code,
+      kind: "interactive",
+      intent: "explicit",
+      suppressImportWarnings: useScriptSafetySettingsStore.getState().suppressImportWarnings,
+    });
+    if (decision.kind === "ok") {
+      action();
+      return;
+    }
+    if (decision.kind === "warn") {
+      pendingExplicitActionRef.current = action;
+      setScriptWarningFlow(decision.flow);
+    }
+  };
+
+  const confirmExplicitAction = () => {
+    const action = pendingExplicitActionRef.current;
+    pendingExplicitActionRef.current = null;
+    setScriptWarningFlow(null);
+    action?.();
+  };
+
+  const cancelExplicitAction = () => {
+    pendingExplicitActionRef.current = null;
+    setScriptWarningFlow(null);
+  };
+
+  const showExplicitFindingInCode = (line: number) => {
+    cancelExplicitAction();
+    onShowInCode?.(line);
+  };
 
   // IR-90E: auto-derive an ordinary setup (roster + grants) from the discovered
   // definition when the panel opens and the user hasn't manually configured
@@ -1485,7 +1530,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
               type="button"
               className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
               disabled={busy !== null || code.trim() === ""}
-              onClick={() => void handleStart()}
+              onClick={() => runExplicitAction(() => { void handleStart(); })}
             >
               {Ic.caret("r")}
               {t("experience_playground_start")}
@@ -1575,7 +1620,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                     type="button"
                     className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                     disabled={busy !== null}
-                    onClick={handleRestart}
+                    onClick={() => runExplicitAction(handleRestart)}
                   >
                     {t("experience_playground_restart")}
                   </button>
@@ -1612,7 +1657,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                       type="button"
                       className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
                       disabled={busy !== null}
-                      onClick={handleRestart}
+                      onClick={() => runExplicitAction(handleRestart)}
                     >
                       {t("experience_restart_play_again")}
                     </button>
@@ -1740,7 +1785,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                         data-testid="playground-discover"
                         className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
                         disabled={testerBusy !== null || busy !== null || code.trim() === ""}
-                        onClick={() => void handleDiscover()}
+                        onClick={() => runExplicitAction(() => { void handleDiscover(); })}
                       >
                         {t("experience_tester_run")}
                       </button>
@@ -1749,7 +1794,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                         data-testid="playground-simulate"
                         className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                         disabled={testerBusy !== null || busy !== null || code.trim() === ""}
-                        onClick={() => void handleSimulate()}
+                        onClick={() => runExplicitAction(() => { void handleSimulate(); })}
                       >
                         {t("experience_tester_simulate")}
                       </button>
@@ -1946,6 +1991,23 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                 )}
               </div>
         </div>
+      {scriptWarningFlow?.kind === "plain" && (
+        <ImportedScriptWarningModal
+          intent="test"
+          onConfirm={confirmExplicitAction}
+          onCancel={cancelExplicitAction}
+        />
+      )}
+      {scriptWarningFlow?.kind === "findings" && (
+        <FindingsWarningModal
+          findings={scriptWarningFlow.findings}
+          showHonestWarning={scriptWarningFlow.showHonestWarning}
+          intent="test"
+          onShowInCode={showExplicitFindingInCode}
+          onConfirm={confirmExplicitAction}
+          onCancel={cancelExplicitAction}
+        />
+      )}
     </div>
   );
 }

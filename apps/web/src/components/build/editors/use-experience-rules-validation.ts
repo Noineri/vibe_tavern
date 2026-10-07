@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { runExperienceTest } from "../../../api/experience-api.js";
+import { testScript } from "../../../api/script-api.js";
 import type { ScriptRecord } from "../../../api/types.js";
+import { useT } from "../../../i18n/context.js";
+import { isLocalId } from "./experience-local-helpers.js";
 
 /**
  * The ExperienceEditor's token-guarded rules validation — an SS-7B2
@@ -23,7 +26,7 @@ export interface ExperienceRulesValidationState {
   readonly rulesValid: boolean | null;
   readonly rulesValidationError: string | null;
   readonly validating: boolean;
-  readonly handleValidateRules: () => Promise<void>;
+  readonly handleValidateRules: (warningAcknowledged?: boolean) => Promise<void>;
 }
 
 export function useExperienceRulesValidation({
@@ -31,6 +34,7 @@ export function useExperienceRulesValidation({
   activeScriptId,
 }: UseExperienceRulesValidationInput): ExperienceRulesValidationState {
   // IR-90E: compact friendly validation result (reuses the wizard's pattern).
+  const { t } = useT();
   const [rulesValid, setRulesValid] = useState<boolean | null>(null);
   const [rulesValidationError, setRulesValidationError] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
@@ -50,21 +54,31 @@ export function useExperienceRulesValidation({
     setValidating(false);
   }, [activeScriptId, activeScript?.code]);
 
-  // IR-90E: compact friendly rules validation (reuses the wizard's
-  // runExperienceTest discovery pattern — same API, same presentation shape).
-  const handleValidateRules = useCallback(async () => {
-    if (!activeScript || activeScript.code.trim() === "") return;
+  // IR-90E: local drafts use stateless discovery; persisted scripts use the
+  // script-aware test route so its import-warning acknowledgement is enforced.
+  const handleValidateRules = useCallback(async (warningAcknowledged = false) => {
+    if (!activeScript || activeScriptId === null || activeScript.code.trim() === "") return;
     const token = ++validationTokenRef.current;
     setValidating(true);
     setRulesValidationError(null);
     try {
-      await runExperienceTest({
-        rulesCode: activeScript.code,
-        settings: {},
-        participants: [],
-        capabilityGrants: [],
-        actions: [],
-      });
+      if (isLocalId(activeScriptId)) {
+        await runExperienceTest({
+          rulesCode: activeScript.code,
+          settings: {},
+          participants: [],
+          capabilityGrants: [],
+          actions: [],
+        });
+      } else {
+        const result = await testScript(activeScriptId, { code: activeScript.code, warningAcknowledged });
+        if (result.kind !== "interactive") {
+          throw new Error(t("experience_setup_discovery_error"));
+        }
+        if (result.discoveryError !== null || result.definition === null) {
+          throw new Error(result.discoveryError ?? t("experience_setup_discovery_error"));
+        }
+      }
       if (validationTokenRef.current !== token) return;
       setRulesValid(true);
     } catch (error) {
@@ -77,7 +91,7 @@ export function useExperienceRulesValidation({
         setValidating(false);
       }
     }
-  }, [activeScript?.code]);
+  }, [activeScript?.code, activeScriptId, t]);
 
   return { rulesValid, rulesValidationError, validating, handleValidateRules };
 }

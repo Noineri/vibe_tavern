@@ -78,6 +78,21 @@ function makeTestRunData(): ExperienceTestRunData {
   };
 }
 
+type InteractiveScriptTestResult = {
+  kind: "interactive";
+  definition: ExperienceTestRunData["definition"] | null;
+  discoveryError: string | null;
+};
+
+function makeScriptTestResult(overrides: Partial<InteractiveScriptTestResult> = {}): InteractiveScriptTestResult {
+  return {
+    kind: "interactive",
+    definition: makeTestRunData().definition,
+    discoveryError: null,
+    ...overrides,
+  };
+}
+
 const baseScript: ScriptRecord = {
   ...wireScript(),
   id: "srv_1",
@@ -122,6 +137,7 @@ const createExperienceVisual = mock((_body: Record<string, unknown>) => Promise.
 const updateExperienceVisual = mock((_id: string, _patch: Record<string, unknown>) => Promise.resolve<ExperienceVisualRow>({ ...baseVisual, compatibleManifestIds: [...baseVisual.compatibleManifestIds] }));
 const deleteExperienceVisual = mock((_id: string) => Promise.resolve<void>(undefined));
 const runExperienceTest = mock((_body: Record<string, unknown>) => Promise.resolve(makeTestRunData()));
+const testScript = mock((_id: string, _body: { code: string; warningAcknowledged: boolean }) => Promise.resolve(makeScriptTestResult()));
 
 const realScriptApi = await import("../../../api/script-api.js");
 const realExperienceApi = await import("../../../api/experience-api.js");
@@ -160,6 +176,7 @@ mock.module("../../../api/script-api.js", () => ({
   getScriptVisuals,
   bindScriptVisual,
   unbindScriptVisual,
+  testScript,
 }));
 
 mock.module("../../../api/experience-api.js", () => ({
@@ -315,6 +332,8 @@ beforeEach(() => {
   deleteExperienceVisual.mockClear();
   runExperienceTest.mockClear();
   runExperienceTest.mockImplementation(async () => makeTestRunData());
+  testScript.mockClear();
+  testScript.mockImplementation(async () => makeScriptTestResult());
   useScriptDraftStore.getState().resetAll();
   useExperienceVisualDraftStore.getState().resetAll();
   // XU-7: reset + install the IntersectionObserver stub before every render so
@@ -1367,30 +1386,45 @@ describe("ExperienceEditor", () => {
     fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
 
     await waitFor(() => {
-      expect(runExperienceTest).toHaveBeenCalledWith({
-        rulesCode: EXISTING_CODE,
-        settings: {},
-        participants: [],
-        capabilityGrants: [],
-        actions: [],
+      expect(testScript).toHaveBeenCalledWith("srv_1", {
+        code: EXISTING_CODE,
+        warningAcknowledged: false,
       });
     });
-    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+    expect(testScript).toHaveBeenCalledTimes(1);
     expect(await findByText("experience_wizard_rules_valid")).toBeTruthy();
   });
 
   it("shows validation failure with the error message", async () => {
     serverScripts = [{ ...baseScript }];
-    runExperienceTest.mockRejectedValueOnce(new Error("syntax error at line 1"));
+    testScript.mockRejectedValueOnce(new Error("syntax error at line 1"));
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
     fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
 
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
     expect(await findByText(/experience_wizard_rules_invalid/)).toBeTruthy();
     expect(await findByText(/syntax error at line 1/)).toBeTruthy();
+  });
+
+  it("treats an HTTP-success discovery error as invalid", async () => {
+    serverScripts = [{ ...baseScript }];
+    testScript.mockResolvedValueOnce(makeScriptTestResult({
+      definition: null,
+      discoveryError: "registration failed at line 1",
+    }));
+    const { container, findByText, getByRole, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
+    expect(await findByText(/experience_wizard_rules_invalid/)).toBeTruthy();
+    expect(await findByText(/registration failed at line 1/)).toBeTruthy();
+    expect(queryByText("experience_wizard_rules_valid")).toBeNull();
   });
 
   it("reveals the unified test surface (Try tab) from the editor", async () => {
@@ -1418,7 +1452,7 @@ describe("ExperienceEditor", () => {
 
     // Validate succeeds.
     fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
     expect(await findByText("experience_wizard_rules_valid")).toBeTruthy();
 
     // Edit the code — validation must clear immediately (fail-closed).
@@ -1436,9 +1470,9 @@ describe("ExperienceEditor", () => {
   // code-change effect.
   it("drops a stale validation result when the code changes before the promise resolves", async () => {
     serverScripts = [{ ...baseScript }];
-    let resolveTest: (value: ExperienceTestRunData) => void = () => {};
-    const deferred = new Promise<ExperienceTestRunData>((resolve) => { resolveTest = resolve; });
-    runExperienceTest.mockReturnValueOnce(deferred);
+    let resolveTest: (value: InteractiveScriptTestResult) => void = () => {};
+    const deferred = new Promise<InteractiveScriptTestResult>((resolve) => { resolveTest = resolve; });
+    testScript.mockReturnValueOnce(deferred);
 
     const { container, findByText, getByRole, queryByText } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
@@ -1447,13 +1481,13 @@ describe("ExperienceEditor", () => {
 
     // Start validation — the promise is deferred, so validation is in flight.
     fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
 
     // Edit the code while the stale request is still in flight.
     replaceCode(rulesView, EXISTING_CODE + "\n// race edit");
 
     // Now resolve the stale request with a typed fixture.
-    await act(async () => { resolveTest(makeTestRunData()); });
+    await act(async () => { resolveTest(makeScriptTestResult()); });
 
     // The stale result must NOT appear — no valid/invalid indicator.
     expect(queryByText("experience_wizard_rules_valid")).toBeNull();
@@ -2098,5 +2132,67 @@ describe("ExperienceEditor SS-7 enable warning flow", () => {
     expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
     fireEvent.click(within(getByTestId("script-safety-findings-modal")).getByText("script_safety_warning_confirm_enable"));
     expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("validating an untrusted import waits for confirm, cancels cleanly, and confirms once with acknowledgement", async () => {
+    serverScripts = [{ ...baseScript, origin: "imported" }];
+    const { container, findByText, getByRole, getByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    fireEvent.click(within(getByTestId("script-safety-warning-modal")).getByText("cancel"));
+    expect(testScript).not.toHaveBeenCalled();
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    const confirm = within(getByTestId("script-safety-warning-modal")).getByText("script_safety_warning_confirm_run");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
+    expect(testScript).toHaveBeenCalledWith("srv_1", { code: EXISTING_CODE, warningAcknowledged: true });
+  });
+
+  it("a suppressed clean import validates directly with acknowledgement", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    serverScripts = [{ ...baseScript, origin: "imported" }];
+    const { container, findByText, getByRole, queryByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    await waitFor(() => expect(testScript).toHaveBeenCalledWith("srv_1", { code: EXISTING_CODE, warningAcknowledged: true }));
+    expect(queryByTestId("script-safety-warning-modal")).toBeNull();
+  });
+
+  it("trusted findings override suppression; Show in code sends no request and confirm runs once", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    serverScripts = [{ ...baseScript, origin: "imported", firstEnabledAt: "2026-10-05T00:00:00.000Z", code: FINDINGS_CODE }];
+    const { container, findByText, getByRole, getByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    const [rulesView] = await codeViews(container);
+    if (!rulesView) throw new Error("rules editor missing");
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    fireEvent.click(within(getByTestId("script-safety-findings-modal")).getByText("script_safety_findings_show_in_code"));
+    expect(testScript).not.toHaveBeenCalled();
+    await waitFor(() => expect(rulesView.state.selection.main.head).toBe(rulesView.state.doc.line(2).from));
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    const confirm = within(getByTestId("script-safety-findings-modal")).getByText("script_safety_warning_confirm_run");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
+    expect(testScript).toHaveBeenCalledWith("srv_1", { code: FINDINGS_CODE, warningAcknowledged: true });
+  });
+
+  it("a local duplicate retains stateless validation instead of using the script-id endpoint", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, getAllByRole, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    const duplicate = getAllByRole("button", { name: "experience_editor_duplicate" })[0];
+    if (!duplicate) throw new Error("duplicate button missing");
+    fireEvent.click(duplicate);
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expect(testScript).not.toHaveBeenCalled();
   });
 });

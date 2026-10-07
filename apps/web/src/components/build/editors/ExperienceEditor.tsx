@@ -90,13 +90,14 @@ import { ExperienceManagementControls } from "./ExperienceManagementControls.js"
 import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
 import { ExperienceCardPreview } from "./ExperienceCardPreview.js";
 import { isUntrustedImport, ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
-import {
-  ImportedScriptWarningModal,
-  scriptSafetyWarningFlow,
-  type ScriptSafetyWarningFlow,
-} from "./script-safety/ImportedScriptWarningModal.js";
+import { ImportedScriptWarningModal } from "./script-safety/ImportedScriptWarningModal.js";
 import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
 import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
+import {
+  scriptExecutionGuard,
+  type ScriptSafetyWarningFlow,
+  type ScriptSafetyWarningIntent,
+} from "../../../lib/script-execution-guard.js";
 import {
   buildMiniAppBundle,
   importMiniAppBundle,
@@ -321,22 +322,43 @@ export function ExperienceEditor() {
   const scriptEnabled = activeScript?.enabled ?? false;
   const enableLocked = !scriptEnabled && !scriptCodeTrusted && isUntrustedImport(activeScript);
 
-  // ── SS-7: first-enable warning flow (the shared matrix — see the flow's
-  // doc comment) + the «Show in code» reveal request threaded into the shell
-  // (a fresh object per jump so the editor compartment reconfigures once). ──
+  // ── SS-7B4: explicit action warning flow + Rules reveal request. ─────────
   const [scriptWarningFlow, setScriptWarningFlow] = useState<ScriptSafetyWarningFlow | null>(null);
-  const [pendingEnableScript, setPendingEnableScript] = useState<(() => void) | null>(null);
+  const [scriptWarningIntent, setScriptWarningIntent] = useState<ScriptSafetyWarningIntent>("enable");
+  const pendingScriptActionRef = useRef<((warningAcknowledged: boolean) => void) | null>(null);
   const [revealRulesLine, setRevealRulesLine] = useState<{ line: number } | null>(null);
 
+  const runExplicitScriptAction = (
+    intent: ScriptSafetyWarningIntent,
+    action: (warningAcknowledged: boolean) => void,
+  ) => {
+    const decision = scriptExecutionGuard({
+      script: activeScript,
+      code: activeScript?.code ?? "",
+      kind: "interactive",
+      intent: "explicit",
+      suppressImportWarnings: useScriptSafetySettingsStore.getState().suppressImportWarnings,
+    });
+    if (decision.kind === "ok") {
+      action(decision.warningAcknowledged);
+      return;
+    }
+    if (decision.kind === "warn") {
+      pendingScriptActionRef.current = action;
+      setScriptWarningIntent(intent);
+      setScriptWarningFlow(decision.flow);
+    }
+  };
+
   const confirmScriptWarning = () => {
-    const action = pendingEnableScript;
+    const action = pendingScriptActionRef.current;
+    pendingScriptActionRef.current = null;
     setScriptWarningFlow(null);
-    setPendingEnableScript(null);
-    action?.();
+    action?.(true);
   };
   const cancelScriptWarning = () => {
+    pendingScriptActionRef.current = null;
     setScriptWarningFlow(null);
-    setPendingEnableScript(null);
   };
 
   const handleToggleScriptEnabled = (enabled: boolean) => {
@@ -344,20 +366,7 @@ export function ExperienceEditor() {
       updateScriptDraft({ enabled: false });
       return;
     }
-    // Store read at attempt time via getState — the banner may have flipped
-    // the suppress setting since this render (never a stale closure).
-    const flow = scriptSafetyWarningFlow({
-      script: activeScript,
-      code: activeScript?.code ?? "",
-      kind: "interactive",
-      suppressImportWarnings: useScriptSafetySettingsStore.getState().suppressImportWarnings,
-    });
-    if (flow.kind === "none") {
-      updateScriptDraft({ enabled: true });
-      return;
-    }
-    setScriptWarningFlow(flow);
-    setPendingEnableScript(() => () => updateScriptDraft({ enabled: true }));
+    runExplicitScriptAction("enable", () => updateScriptDraft({ enabled: true }));
   };
 
   // ── Draft creation (starter pick / blank / duplicate) ────────────────────
@@ -1036,7 +1045,7 @@ export function ExperienceEditor() {
                   type="button"
                   className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                   disabled={validating || activeScript.code.trim() === ""}
-                  onClick={() => void handleValidateRules()}
+                  onClick={() => runExplicitScriptAction("test", (warningAcknowledged) => { void handleValidateRules(warningAcknowledged); })}
                 >
                   <Ic.check />
                   {validating ? t("experience_wizard_validating") : t("experience_editor_validate_rules")}
@@ -1289,13 +1298,12 @@ export function ExperienceEditor() {
         />
       )}
 
-      {/* SS-7: the first-enable warning surfaces. Only one can be open — the
-          flow is a single discriminated union; plain shows when there are no
-          blocking findings, findings shows ALONE otherwise (decision 11 — it
-          carries the honest text when the plain warning would also fire). */}
+      {/* SS-7/7B4: explicit enable and validation warnings. Only one can be
+          open — the discriminated flow renders plain when there are no blocking
+          findings and findings ALONE otherwise (decision 11). */}
       {scriptWarningFlow?.kind === "plain" && (
         <ImportedScriptWarningModal
-          intent="enable"
+          intent={scriptWarningIntent}
           onConfirm={confirmScriptWarning}
           onCancel={cancelScriptWarning}
         />
@@ -1304,7 +1312,7 @@ export function ExperienceEditor() {
         <FindingsWarningModal
           findings={scriptWarningFlow.findings}
           showHonestWarning={scriptWarningFlow.showHonestWarning}
-          intent="enable"
+          intent={scriptWarningIntent}
           onShowInCode={(line) => {
             cancelScriptWarning();
             setRevealRulesLine({ line });
