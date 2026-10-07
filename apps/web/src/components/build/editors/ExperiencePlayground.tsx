@@ -1544,20 +1544,12 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
 
           <div className="grid gap-2 sm:grid-cols-2">
             <div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center">
                 <span className="flex items-center gap-1.5">
                   <label className={lblCls}>{t("experience_playground_seed_label")}</label>
                   <CustomTooltip content={t("experience_playground_seed_hint")}>
                     <span className="mt-px shrink-0 text-t3"><Ic.help /></span>
                   </CustomTooltip>
-                </span>
-                <span className="flex items-center gap-2">
-                  <Toggle
-                    checked={randomStart}
-                    onChange={handleRandomStartChange}
-                    aria-label={t("experience_playground_random_start")}
-                  />
-                  <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
                 </span>
               </div>
               <TextInput
@@ -1567,6 +1559,14 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                 disabled={randomStart}
                 onChange={(e) => setSeed(e.target.value)}
               />
+              <span className="mt-1.5 flex items-center gap-2">
+                <Toggle
+                  checked={randomStart}
+                  onChange={handleRandomStartChange}
+                  aria-label={t("experience_playground_random_start")}
+                />
+                <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
+              </span>
             </div>
             <div>
               <label className={lblCls}>{t("experience_playground_human_seat_label")}</label>
