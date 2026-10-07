@@ -41,8 +41,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT,
   EXPERIENCE_CAPABILITY,
   EXPERIENCE_CONTROLLER,
+  EXPERIENCE_LAUNCH_CAPABILITIES as CAPABILITIES,
+  deriveDefaultLaunchContext,
   type ExperienceCapability,
   type ExperienceController,
 } from "@vibe-tavern/domain";
@@ -195,14 +198,6 @@ const SHORT_ROLE_KEY = {
   [EXPERIENCE_CONTROLLER.script]: "experience_playground_role_short_script",
   [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_short_model",
 } as const;
-
-const CAPABILITIES = [
-  EXPERIENCE_CAPABILITY.participants,
-  EXPERIENCE_CAPABILITY.deterministicRandom,
-  EXPERIENCE_CAPABILITY.model,
-  EXPERIENCE_CAPABILITY.rpContext,
-  EXPERIENCE_CAPABILITY.rpAttachment,
-] as const;
 
 /** Friendly (non-technical) capability labels for the grant checkboxes (XU-3).
  *  The technical capability id (the wire string) stays reachable via the ⓘ
@@ -718,20 +713,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
           setDiscoveredRealtime(manifest.mode === "realtime" ? { tickMs: manifest.tickMs } : null);
           if (seatsTouched) return; // roster/grants are the user's explicit choice
           const declared = data.definition.declaredCapabilities.map((c) => c.capability);
-          const hasParticipants = declared.includes(EXPERIENCE_CAPABILITY.participants);
-          const hasModel = declared.includes(EXPERIENCE_CAPABILITY.model);
-          // Derive grants from the declared capabilities.
-          const derivedGrants = declared.filter((c): c is ExperienceCapability =>
-            CAPABILITIES.includes(c as ExperienceCapability));
-          setGrants(derivedGrants);
-          // Derive seats: a human seat is always present; add a model seat when
-          // both participants + model are declared.
-          if (hasParticipants && hasModel) {
-            setSeats([
-              { id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human },
-              { id: "ai", label: "AI", controller: EXPERIENCE_CONTROLLER.model },
-            ]);
-          }
+          const derived = deriveDefaultLaunchContext(declared);
+          setGrants(derived.capabilityGrants);
+          setSeats(derived.participants);
         })
         .catch(() => {
           if (cancelled) return;
@@ -741,8 +725,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
           setSetupFields([]);
           setDiscoveredRealtime(null);
           if (seatsTouched) return;
-          setSeats([{ id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human }]);
-          setGrants([]);
+          setSeats([...DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT.participants]);
+          setGrants([...DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT.capabilityGrants]);
         })
       .finally(() => { if (!cancelled) setDeriving(false); });
     }, DISCOVERY_DEBOUNCE_MS);
