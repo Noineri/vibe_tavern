@@ -1653,6 +1653,134 @@ describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
   });
 });
 
+// ── Grounding step 7: developer-diagnostics seed parity ─────────────────
+// The "Random start" toggle now governs the stateless diagnostics too:
+// ON — they run on the LAST launch's random seed so the result describes the
+// same game the author just played (the manual seed before any launch); OFF —
+// the manual seed, payload-identical to the pre-step-7 behavior. The tester
+// endpoints stay stateless: the seed is a request parameter picked
+// client-side by one shared diagnosticsSeed() helper.
+
+describe("ExperiencePlayground — diagnostics seed parity (grounding step 7)", () => {
+  it("random start ON, before any launch: both diagnostics fall back to the manual seed and the seed line names it", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole, getByPlaceholderText, getByTestId } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    // The manual seed input is only editable while the toggle is OFF:
+    // switch off, type, switch back on — the manual seed survives the toggle.
+    fireEvent.click(getByRole("switch")); // ON → OFF
+    fireEvent.change(getByPlaceholderText("experience_tester_seed_placeholder"), { target: { value: "manual-pre-launch" } });
+    fireEvent.click(getByRole("switch")); // OFF → ON
+
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    expect(runExperienceTest.mock.calls[1]?.[0]).toMatchObject({ seed: "manual-pre-launch" });
+    // The seed line at the top of the result block (identity i18n: the key
+    // verbatim, the value appended by the component's plain template).
+    await waitFor(() =>
+      expect(getByTestId("playground-discover-seed").textContent).toBe("experience_playground_diagnostics_seed: manual-pre-launch"),
+    );
+
+    fireEvent.click(getByText("experience_tester_simulate"));
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest.mock.calls[0]?.[0]).toMatchObject({ seed: "manual-pre-launch" });
+    await waitFor(() =>
+      expect(getByTestId("playground-simulate-seed").textContent).toBe("experience_playground_diagnostics_seed: manual-pre-launch"),
+    );
+  });
+
+  it("random start ON, after a launch: both diagnostics reuse the launch's random seed (the same game just played)", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByTestId } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    // Park on the landed session frame before driving the diagnostics.
+    expect(await utils.findByText("experience_playground_turn_title")).toBeTruthy();
+    const launchSeed = (startExperiencePlayground.mock.calls[0]![0] as { seed?: string }).seed;
+    expect(launchSeed).toBeTruthy();
+
+    expandDiagnostics(utils);
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    expect(runExperienceTest.mock.calls[1]?.[0]).toMatchObject({ seed: launchSeed });
+    await waitFor(() =>
+      expect(getByTestId("playground-discover-seed").textContent).toBe(`experience_playground_diagnostics_seed: ${launchSeed}`),
+    );
+
+    fireEvent.click(getByText("experience_tester_simulate"));
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest.mock.calls[0]?.[0]).toMatchObject({ seed: launchSeed });
+    await waitFor(() =>
+      expect(getByTestId("playground-simulate-seed").textContent).toBe(`experience_playground_diagnostics_seed: ${launchSeed}`),
+    );
+  });
+
+  it("random start OFF, empty manual seed: no seed key in either call and the seed line shows the none-sent marker", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole, getByTestId } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    fireEvent.click(getByRole("switch")); // ON → OFF
+
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    expect(runExperienceTest.mock.calls[1]?.[0]).not.toHaveProperty("seed");
+    await waitFor(() =>
+      expect(getByTestId("playground-discover-seed").textContent).toBe("experience_playground_diagnostics_seed: —"),
+    );
+
+    fireEvent.click(getByText("experience_tester_simulate"));
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest.mock.calls[0]?.[0]).not.toHaveProperty("seed");
+  });
+
+  it("random start OFF, typed manual seed: both diagnostics send it with the payload otherwise byte-identical", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole, getByPlaceholderText, getByTestId } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    fireEvent.click(getByRole("switch")); // ON → OFF
+    fireEvent.change(getByPlaceholderText("experience_tester_seed_placeholder"), { target: { value: "my-seed-42" } });
+
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    // The full discover body, byte-identical to the pre-step-7 manual-seed
+    // payload ("nothing else changed" with the toggle OFF).
+    expect(runExperienceTest.mock.calls[1]?.[0]).toEqual({
+      rulesCode: VALID_CODE,
+      settings: {},
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: [],
+      seed: "my-seed-42",
+      actions: [],
+    });
+    await waitFor(() =>
+      expect(getByTestId("playground-discover-seed").textContent).toBe("experience_playground_diagnostics_seed: my-seed-42"),
+    );
+
+    fireEvent.click(getByText("experience_tester_simulate"));
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest.mock.calls[0]?.[0]).toEqual({
+      rulesCode: VALID_CODE,
+      settings: {},
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: [],
+      seed: "my-seed-42",
+    });
+    await waitFor(() =>
+      expect(getByTestId("playground-simulate-seed").textContent).toBe("experience_playground_diagnostics_seed: my-seed-42"),
+    );
+  });
+});
+
 // ── LOBBY-A: declared setup fields render as the launch form ────────────────
 
 describe("ExperiencePlayground — setup form (LOBBY-A / EXPERIENCE_ENGINE_LOBBY_REPORT fix step 1)", () => {

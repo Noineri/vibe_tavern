@@ -451,6 +451,12 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
   // playground session (they stay available before/without a session).
   const [testerResult, setTesterResult] = useState<ExperienceTestRunData | null>(null);
   const [simResult, setSimResult] = useState<ExperienceTestSimulateData | null>(null);
+  /** Grounding step 7: the seed each diagnostics result RAN with, captured at
+   *  request time (the inputs may be edited after the result lands; the shown
+   *  seed must stay the one that ran). "" = no seed was sent (the server's
+   *  deterministic default). */
+  const [testerResultSeed, setTesterResultSeed] = useState("");
+  const [simResultSeed, setSimResultSeed] = useState("");
   const [testerBusy, setTesterBusy] = useState<"run" | "simulate" | null>(null);
   const [scriptWarningFlow, setScriptWarningFlow] = useState<ScriptSafetyWarningFlow | null>(null);
   const pendingExplicitActionRef = useRef<(() => void) | null>(null);
@@ -1034,11 +1040,23 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
     await submitAction(type, actionParticipantId !== "" ? actionParticipantId : undefined, payload);
   };
 
+  /** Grounding step 7: the seed the stateless diagnostics calls run with —
+   *  parity with the launch path (XU-2). "Random start" ON: the LAST
+   *  launch's random seed, falling back to the manual seed before anything
+   *  was launched (both resolved trimmed, the way the launch path resolves
+   *  its own seed); OFF: the manual seed verbatim (the pre-step-7 behavior). */
+  const diagnosticsSeed = (): string => {
+    if (!randomStart) return seed.trim();
+    const last = lastUsedSeed.trim();
+    return last !== "" ? last : seed.trim();
+  };
+
   /** XU-4: on-demand create-only discover over the STATELESS tester (the
    *  retired InteractiveTester's run path). Reuses the CURRENT roster/grants/
-   *  settings/manual-seed so the diagnostics reflect the same context a start
-   *  would use; the manual seed (not the random-start launch seed) keeps the
-   *  result reproducible, matching the tester. */
+   *  settings so the diagnostics reflect the same context a start would use,
+   *  and runs on {@link diagnosticsSeed} — with "Random start" on, the same
+   *  seed the author's current game runs on (grounding step 7), so the result
+   *  describes that game rather than a different random draw. */
   const handleDiscover = async () => {
     const settings = buildLaunchSettings();
     if (!settings.ok) {
@@ -1047,16 +1065,18 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
     }
     setTesterBusy("run");
     setError(null);
+    const runSeed = diagnosticsSeed();
     try {
       const data = await runExperienceTest({
         rulesCode: code,
         settings: settings.value,
         participants,
         capabilityGrants: [...grants],
-        ...(seed.trim() !== "" ? { seed: seed.trim() } : {}),
+        ...(runSeed !== "" ? { seed: runSeed } : {}),
         actions: [],
       });
       setTesterResult(data);
+      setTesterResultSeed(runSeed);
     } catch (runError) {
       setError(toPlaygroundError(runError));
     } finally {
@@ -1075,15 +1095,17 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
     }
     setTesterBusy("simulate");
     setError(null);
+    const simSeed = diagnosticsSeed();
     try {
       const data = await simulateExperienceTest({
         rulesCode: code,
         settings: settings.value,
         participants,
         capabilityGrants: [...grants],
-        ...(seed.trim() !== "" ? { seed: seed.trim() } : {}),
+        ...(simSeed !== "" ? { seed: simSeed } : {}),
       });
       setSimResult(data);
+      setSimResultSeed(simSeed);
     } catch (simError) {
       setError(toPlaygroundError(simError));
     } finally {
@@ -1926,8 +1948,26 @@ export function ExperiencePlayground({ code, visualSource, scriptId, script, onS
                       {testerBusy !== null && <span className="font-ui text-[12px] text-t3">{t("script_running")}</span>}
                     </div>
 
-                    {testerResult !== null && <TestRunResultBlock result={testerResult} />}
-                    {simResult !== null && <TestSimulateResultBlock result={simResult} />}
+                    {/* Grounding step 7: the seed this result RAN with
+                        (captured at request time; "—" = none sent, the
+                        server deterministic default) — owner-specified line
+                        treatment, top of the result block. */}
+                    {testerResult !== null && (
+                      <>
+                        <p className="text-[12px] text-t3" data-testid="playground-discover-seed">
+                          {`${t("experience_playground_diagnostics_seed")}: ${testerResultSeed === "" ? "—" : testerResultSeed}`}
+                        </p>
+                        <TestRunResultBlock result={testerResult} />
+                      </>
+                    )}
+                    {simResult !== null && (
+                      <>
+                        <p className="text-[12px] text-t3" data-testid="playground-simulate-seed">
+                          {`${t("experience_playground_diagnostics_seed")}: ${simResultSeed === "" ? "—" : simResultSeed}`}
+                        </p>
+                        <TestSimulateResultBlock result={simResult} />
+                      </>
+                    )}
 
                     {/* ER-14 (absorbed): send the latest tester digest (discover
                         result → simulate result) to the copilot. */}

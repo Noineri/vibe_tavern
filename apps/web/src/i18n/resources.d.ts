@@ -878,6 +878,7 @@ export default interface Resources {
     "experience_playground_copy_log_failed": "Failed to copy log",
     "experience_playground_diagnostics": "Developer diagnostics",
     "experience_playground_diagnostics_hint": "Raw state, actions, events, effects, revision, request id, payload JSON, and console output from the kernel.",
+    "experience_playground_diagnostics_seed": "Seed",
     "experience_playground_error_ask_copilot": "Ask the copilot about this error",
     "experience_playground_error_tech_details": "Technical details",
     "experience_playground_error_title": "Playground error",

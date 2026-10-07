@@ -2740,6 +2740,7 @@
 	"experience_playground_rt_not_booted_hint": "Луп не прислал ни одного события — раунд не загрузился во фрейме (проверь правила/визуал на ошибку запуска).",
 	"experience_playground_rt_no_view": "Проекции ещё нет (луп загрузился, но ни один view не пришёл).",
 	"experience_playground_diagnostics_hint": "Сырое состояние, действия, события, эффекты, ревизия, идентификатор запроса, JSON полезной нагрузки и вывод консоли из ядра.",
+	"experience_playground_diagnostics_seed": "Зерно",
 	"experience_playground_role_human": "Я играю сам",
 	"experience_playground_role_model": "ИИ-персонаж",
 	"experience_playground_role_script": "Автомат (по правилам)",
