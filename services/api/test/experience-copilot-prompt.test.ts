@@ -519,9 +519,13 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // Report step 4 / P3): interactive-rules.md now documents real turn-owner
     // selection, script-seat choose requirements, model-effect delivery,
     // helper contracts, all six starters, and the corrected Round example.
+    // Re-captured again (2026-10-07, Experience Copilot Grounding Report
+    // step 8 / P5): user-flow.md's sandbox actions now name the session-log
+    // buttons ("Send log to assistant" / "Copy log" / "Ask the copilot about
+    // this error") and the live-only Developer-diagnostics digest button.
     // Intentional system-prompt content changes, not drift.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("1bc266703b69c75563b640e3fec48c50ce515dedbad4d19db24fb2729eeaa079");
+      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -644,9 +648,11 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     // zero-digest pin's trail. Re-captured again (2026-10-07, Experience
     // Copilot Grounding Report step 3 / P2): interactive-visual.md became a
     // pure visual-bridge reference. Re-captured again for step 4 / P3's
-    // interactive-rules grounding corrections — see the zero-digest trail.)
+    // interactive-rules grounding corrections — see the zero-digest trail.
+    // Re-captured again for step 8 / P5's user-flow log-button corrections —
+    // see the zero-digest trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("1bc266703b69c75563b640e3fec48c50ce515dedbad4d19db24fb2729eeaa079");
+      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -713,9 +719,11 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // Re-captured again (2026-10-07, Experience Copilot Grounding Report
     // step 3 / P2): interactive-visual.md became a pure visual-bridge
     // reference. Re-captured again for step 4 / P3's interactive-rules
-    // grounding corrections — see the zero-digest pin's trail.)
+    // grounding corrections — see the zero-digest pin's trail. Re-captured
+    // again for step 8 / P5's user-flow log-button corrections — see the
+    // zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("1bc266703b69c75563b640e3fec48c50ce515dedbad4d19db24fb2729eeaa079");
+      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {
