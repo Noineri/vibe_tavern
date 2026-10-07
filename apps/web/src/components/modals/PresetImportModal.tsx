@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../i18n/context.js";
 import { cn } from "../../lib/cn.js";
 import { Modal } from "../shared/Modal.js";
+import { modalPanelCls } from "../shared/modal-helpers.js";
 import { Icons } from "../shared/icons.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { Dropzone } from "../shared/dropzone.js";
@@ -217,14 +218,12 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
   return (
     <Modal open={true} onClose={onClose}>
       <div className={cn(
-        // glass-blur-under (not bg-surface): --surface is translucent in glass
-        // themes, which made this shell see-through (owner defect 2026-09-10).
-        // The class paints an opaque-in-solid-themes --glass-bg fill + frost on
-        // a z:-1 ::before — byte-identical to bg-surface in opaque themes.
-        "glass-blur-under flex flex-col overflow-hidden",
+        // Panel chrome: modalPanelCls (glass-safe single source — see its
+        // comment for the bg-surface rationale); mobile stays chromeless.
+        "flex flex-col",
         isMobile
-          ? "w-full h-full"
-          : "max-h-[calc(100vh-60px)] w-[640px] max-w-[calc(100vw-32px)] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+          ? "glass-blur-under h-full w-full overflow-hidden"
+          : cn(modalPanelCls, "max-h-[calc(100vh-60px)] w-[640px] max-w-[calc(100vw-32px)]")
       )}>
         {/* Header */}
         <div className="shrink-0 px-5 pt-[18px] pb-1">

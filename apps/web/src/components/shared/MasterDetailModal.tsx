@@ -3,6 +3,7 @@ import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { Modal } from "./Modal.js";
+import { modalPanelCls } from "./modal-helpers.js";
 import { Icons } from "./icons.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { SegmentedControl } from "./SegmentedControl.js";
@@ -195,7 +196,9 @@ export function MasterDetailModal<T extends string = string>({
   detailContent,
   footer,
   onBack,
-  containerClassName = "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[880px] w-[1080px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]",
+  // Sizes only — the panel chrome rides modalPanelCls at the composition
+  // below, so a custom containerClassName can never drop the canon shape.
+  containerClassName = "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[880px] w-[1080px]",
   masterClassName = "flex w-[220px] shrink-0 flex-col border-r border-border",
   detailClassName = "p-6",
   mobileDetailClassName = "p-4",
@@ -310,8 +313,12 @@ export function MasterDetailModal<T extends string = string>({
             // fill + frost to a z:-1 ::before underlayer — same frost rect and
             // look, panel itself keeps backdrop-filter: none. Opaque themes
             // remain byte-identical (--glass-bg == --surface, blur 0).
-            "glass-blur-under flex flex-col overflow-hidden",
-            isMobile ? "h-[100dvh] w-[100dvw]" : containerClassName,
+            // The chrome half lives in modalPanelCls (desktop-only); mobile
+            // stays a chromeless glass fullscreen.
+            "flex flex-col",
+            isMobile
+              ? "glass-blur-under h-[100dvh] w-[100dvw] overflow-hidden"
+              : cn(modalPanelCls, containerClassName),
           )}
           onClick={(e) => e.stopPropagation()}
         >

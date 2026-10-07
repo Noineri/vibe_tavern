@@ -6,6 +6,7 @@ import type { BuildCharacterDraft } from '@vibe-tavern/api-contracts';
 import { Ic } from '../shared/icons';
 import { cn } from '../../lib/cn';
 import { Modal } from "../shared/Modal.js";
+import { modalPanelCls } from "../shared/modal-helpers.js";
 import { useIsMobile } from '../../hooks/use-mobile.js';
 import { CustomTooltip } from '../shared/Tooltip.js';
 import { useT } from '../../i18n/context.js';
@@ -136,7 +137,7 @@ export function CreateCharacterModal({ onClose, onSave }: CreateCharacterModalPr
   return (
     <Modal open={true} onClose={onClose}>
 
-      <div className={cn("glass-blur-under flex flex-col overflow-hidden", isMobile ? "w-full h-full" : "max-h-[90vh] w-[600px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
+      <div className={cn("flex flex-col", isMobile ? "glass-blur-under h-full w-full overflow-hidden" : cn(modalPanelCls, "max-h-[90vh] w-[600px]"))}>
         {/* Header */}
         <div className={cn("shrink-0 border-b border-border", isMobile ? "px-4 pt-4 pb-3" : "px-5 pt-[18px] pb-4")}>
           <div className="flex items-start justify-between">

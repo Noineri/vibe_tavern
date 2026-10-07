@@ -5,6 +5,7 @@ import type { ChatId } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
+import { modalPanelCls } from "../shared/modal-helpers.js";
 import { Dropzone } from "../shared/dropzone.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
@@ -478,7 +479,7 @@ function ImportModalFrame(props: { title: string; subtitle: string; onClose: () 
   const isMobile = useIsMobile();
   return (
     <Modal open={true} onClose={props.onClose}>
-      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] w-[500px] max-w-[calc(100vw-32px)] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
+      <div className={cn("flex flex-col", isMobile ? "glass-blur-under h-full w-full overflow-hidden" : cn(modalPanelCls, "max-h-[calc(100vh-60px)] w-[500px] max-w-[calc(100vw-32px)]"))}>
         <div className={cn("shrink-0", isMobile ? "px-4 pt-4" : "px-5 pt-[18px]")}>
           <div className="flex items-start justify-between">
             <div>
