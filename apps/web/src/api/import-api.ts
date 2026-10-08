@@ -11,6 +11,9 @@ export async function importJson(input: {
   chatId?: ChatId;
   skipExisting?: boolean;
   importEmbeddedBook?: boolean;
+  // Card `regex_scripts` Profile master switch (RXU-24, mirrors
+  // importJsonSchema): omitted keeps the server default (off).
+  enableImportedRegexProfile?: boolean;
   lean?: boolean;
 }): Promise<ImportJsonResponse> {
   const response = await client.api.import.json.$post({ json: input });
@@ -32,7 +35,9 @@ export interface BatchImportItemResult {
  * ImportModals Phase 1.
  */
 export async function importJsonBatch(input: {
-  items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: ChatId; skipExisting?: boolean; importEmbeddedBook?: boolean }>;
+  // Per-item `enableImportedRegexProfile` (RXU-24): the server fans each item
+  // out through importJson, so the activation choice rides per item.
+  items: Array<{ fileName: string; jsonText?: string; monolithText?: string; chatId?: ChatId; skipExisting?: boolean; importEmbeddedBook?: boolean; enableImportedRegexProfile?: boolean }>;
   lean?: boolean;
 }): Promise<{ results: BatchImportItemResult[] }> {
   const response = await client.api.import.batch.$post({ json: input });

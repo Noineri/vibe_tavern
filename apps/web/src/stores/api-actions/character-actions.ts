@@ -85,6 +85,9 @@ export async function importCharacterAction(input: {
   monolithText?: string;
   chatId?: ChatId;
   importEmbeddedBook?: boolean;
+  // Card `regex_scripts` Profile master switch (RXU-24): forwarded as-is —
+  // omitted stays omitted, the server boundary owns the default (off).
+  enableImportedRegexProfile?: boolean;
 }): Promise<ImportJsonResponse> {
   const result = await importJson(input);
   if (result.snapshot) {
