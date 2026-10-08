@@ -99,6 +99,102 @@ describe("R-13 regex profile routes", () => {
 		expect(bad.status).toBe(400);
 	});
 
+	test("POST /api/regex/profiles/bundle creates the complete profile and its member rules", async () => {
+		let received: unknown;
+		const createdProfile = profile("pf_bundle", { disabled: true });
+		const createdRules = [
+			preset("rx_1", { profileId: createdProfile.id }),
+			preset("rx_2", { disabled: true, profileId: createdProfile.id }),
+		];
+		const runtime = mockRegex({
+			createRegexProfileBundle: async (body) => {
+				received = body;
+				return { profile: createdProfile, rules: createdRules };
+			},
+		});
+		const app = createRegexRoutes(runtime);
+		const res = await app.request("/api/regex/profiles/bundle", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				name: "Imported bundle",
+				disabled: true,
+				links: [{ targetType: "character", targetId: "char_1" }],
+				rules: [
+					{ name: "Enabled rule", findRegex: "/enabled/g" },
+					{ name: "Disabled rule", findRegex: "/disabled/g", disabled: true },
+				],
+			}),
+		});
+		expect(res.status).toBe(201);
+		expect(received).toMatchObject({
+			name: "Imported bundle",
+			disabled: true,
+			links: [{ targetType: "character", targetId: "char_1" }],
+		});
+		expect(await res.json()).toEqual({ profile: createdProfile, rules: createdRules });
+	});
+
+	test("POST /api/regex/profiles/bundle rejects global profiles with links", async () => {
+		const runtime = mockRegex({
+			createRegexProfileBundle: async () => {
+				throw new Error("runtime must not receive invalid bundles");
+			},
+		});
+		const app = createRegexRoutes(runtime);
+		const res = await app.request("/api/regex/profiles/bundle", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				name: "Global bundle",
+				disabled: false,
+				isGlobal: true,
+				links: [{ targetType: "preset", targetId: "preset_1" }],
+				rules: [{ name: "Rule", findRegex: "/rule/g" }],
+			}),
+		});
+		expect(res.status).toBe(400);
+		expect(await res.json()).toMatchObject({ success: false });
+	});
+
+	test("POST /api/regex/profiles/bundle surfaces a failed atomic store write", async () => {
+		const runtime = mockRegex({
+			createRegexProfileBundle: async () => {
+				throw new Error("injected bundle write failure");
+			},
+		});
+		const app = createRegexRoutes(runtime);
+		const res = await app.request("/api/regex/profiles/bundle", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				name: "Atomic bundle",
+				disabled: false,
+				rules: [{ name: "Rule", findRegex: "/rule/g" }],
+			}),
+		});
+		expect(res.status).toBe(500);
+		expect(await res.text()).toBe("Internal Server Error");
+	});
+
+	test("POST /api/regex/presets passes an optional profileId through unchanged", async () => {
+		let received: unknown;
+		const runtime = mockRegex({
+			createRegexPreset: async (body) => {
+				received = body;
+				return preset("rx_profiled", { profileId: brandId<RegexProfileId>("pf_1") });
+			},
+		});
+		const app = createRegexRoutes(runtime);
+		const res = await app.request("/api/regex/presets", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name: "Profiled rule", findRegex: "/profiled/g", profileId: "pf_1" }),
+		});
+		expect(res.status).toBe(201);
+		expect(received).toMatchObject({ profileId: "pf_1" });
+	});
+
 	test("PATCH /api/regex/profiles/:id updates the profile", async () => {
 		let patchedId = "";
 		const runtime = mockRegex({

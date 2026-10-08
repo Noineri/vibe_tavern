@@ -62,7 +62,7 @@ import type {
 } from "@vibe-tavern/db";
 import type { CoauthorTransport, ModelFavoriteScope, ModelSettingsOverlay } from "@vibe-tavern/domain";
 import type { LorebookRow, LoreEntryRow, ScriptRow } from "@vibe-tavern/db";
-import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexProfileInput, UpdateRegexProfileInput, ScriptSafetySettings, UpdateScriptSafetySettings } from "@vibe-tavern/api-contracts";
+import type { RegenerateOverride, CoauthorApplyRequest, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexProfileInput, UpdateRegexProfileInput, CreateRegexProfileBundleInput, ScriptSafetySettings, UpdateScriptSafetySettings } from "@vibe-tavern/api-contracts";
 import type { ProviderProbeResult, ProviderModelOption, TestChatResult } from "../../domain/providers/provider-gateway.js";
 import type { GenerateChatSummaryResult, SummarizeChatResult } from "../../domain/chat/chat-summary-service.js";
 import type { LorebookImportResult } from "../../domain/lorebook/lorebook-import-service.js";
@@ -349,6 +349,7 @@ export interface RegexRuntimeApi {
 	listAllRegexProfiles: () => Promise<RegexProfile[]>;
 	getRegexProfile: (id: string) => Promise<RegexProfile | null>;
 	createRegexProfile: (body: CreateRegexProfileInput) => Promise<RegexProfile>;
+	createRegexProfileBundle: (body: CreateRegexProfileBundleInput) => Promise<{ profile: RegexProfile; rules: RegexPreset[] }>;
 	updateRegexProfile: (id: string, body: UpdateRegexProfileInput) => Promise<RegexProfile | null>;
 	deleteRegexProfile: (id: string, mode: "keep" | "cascade") => Promise<void>;
 	attachRegexRule: (profileId: string, ruleId: string) => Promise<RegexPreset | null>;
