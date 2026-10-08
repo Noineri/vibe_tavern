@@ -7,11 +7,22 @@ import { Icons } from "../shared/icons.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { Dropzone } from "../shared/dropzone.js";
 import { InlineRenameInput } from "../shared/InlineRenameInput.js";
+import { Toggle } from "../shared/Toggle.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
-import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock, type VibeTavernPresetExtension } from "@vibe-tavern/import-export";
+import { parseStPreset, stBlockToCanvasEntry, synthesizeCanvasEntry, type ParsedStPreset, type StPresetBlock } from "@vibe-tavern/import-export";
 import { findDroppedStMacroWarnings } from "@vibe-tavern/prompt-pipeline";
 import { inferSlot } from "@vibe-tavern/domain";
 import type { CustomInjection, PromptOrderEntry, PromptSlot } from "@vibe-tavern/domain";
+import {
+  presetRegexImportPlan,
+  summarizeRegexImportRules,
+  type PresetImportResult,
+  type PresetRegexImportPlan,
+} from "./preset-import-flow.js";
+
+// Re-exported for existing importers (PresetImportModalHost) — the contract
+// itself lives in preset-import-flow.ts next to its Regex bundle sequence.
+export type { PresetImportResult } from "./preset-import-flow.js";
 
 type TargetMapping = "system" | "post" | "authors" | "nsfw" | "enhanceDefinitions" | "injection";
 
@@ -23,22 +34,6 @@ const TARGET_BADGE: Record<TargetMapping, { cls: string; key: string }> = {
   enhanceDefinitions: { cls: "bg-cyan-500/15 text-cyan-400", key: "preset_import_target_enhance_defs" },
   injection: { cls: "bg-emerald-500/15 text-emerald-400", key: "preset_import_target_injection" },
 };
-
-export interface PresetImportResult {
-  system: string[];
-  post: string[];
-  authors: string[];
-  authorsRole?: "system" | "user" | "assistant";
-  nsfw: string[];
-  enhanceDefinitions: string[];
-  injections: CustomInjection[];
-  promptOrder: PromptOrderEntry[];
-  /** Present when the source file was exported by Vibe Tavern (carries the
-   *  full DTO under `_vibe_tavern`). The consumer imports losslessly from it. */
-  vibeTavern?: VibeTavernPresetExtension;
-  target: 'current' | 'new';
-  newPresetName?: string;
-}
 
 interface PresetImportModalProps {
   onClose: () => void;
@@ -84,6 +79,9 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
   const [parsed, setParsed] = useState<ParsedStPreset | null>(null);
   const [importTarget, setImportTarget] = useState<"current" | "new">("current");
   const [newPresetName, setNewPresetName] = useState("");
+  // RXU-21: "Enable Profile after import" — defaulted OFF (owner decision,
+  // quoted verbatim in the plan); re-seeded to off for every freshly parsed file.
+  const [enableRegexProfile, setEnableRegexProfile] = useState(false);
   const isMobile = useIsMobile();
 
   function handleFile(file?: File | null) {
@@ -94,6 +92,7 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
       try {
         const preset = parseStPreset(reader.result as string);
         setParsed(preset);
+        setEnableRegexProfile(false);
         setPhase("preview");
       } catch (e) {
         setErrorMsg(e instanceof Error ? e.message : t("preset_import_parse_error"));
@@ -148,6 +147,19 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
     return c;
   }, [blockInfos]);
 
+  // RXU-21: the Regex Profile plan driving both the preview card and the
+  // regex fields on the emitted result (one derivation, via the flow module).
+  const regexPlan = useMemo(
+    () => parsed
+      ? presetRegexImportPlan({
+        regexScripts: parsed.regexScripts,
+        enableRegexProfile,
+        regexProfileName: parsed.name,
+      })
+      : null,
+    [parsed, enableRegexProfile],
+  );
+
   function handleImport() {
     if (!parsed) return;
 
@@ -161,6 +173,12 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
         injections: [], promptOrder: [],
         vibeTavern: parsed.vibeTavern,
         target: importTarget, newPresetName: newPresetName || undefined,
+        // RXU-21: VT-native files carry embedded Regex through the SAME
+        // profile path as ST files (the parser reads extensions.regex_scripts
+        // for both shapes).
+        regexScripts: parsed.regexScripts,
+        enableRegexProfile,
+        regexProfileName: parsed.name,
       });
       return;
     }
@@ -180,6 +198,9 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
       system: [], post: [], authors: [], nsfw: [], enhanceDefinitions: [],
       injections: [], promptOrder: canvas,
       target: importTarget, newPresetName: newPresetName || undefined,
+      regexScripts: parsed.regexScripts,
+      enableRegexProfile,
+      regexProfileName: parsed.name,
     };
 
     for (const info of blockInfos) {
@@ -304,6 +325,17 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
                 </div>
               )}
             </div>
+
+            {/* RXU-21: the Regex Profile preview card — renders ONLY when the
+                file embeds Regex rules; importing creates exactly ONE Profile
+                bound to the imported preset (never per-rule switches). */}
+            {regexPlan && (
+              <RegexProfileImportCard
+                plan={regexPlan}
+                enable={enableRegexProfile}
+                onEnableChange={setEnableRegexProfile}
+              />
+            )}
           </div>
         )}
 
@@ -351,6 +383,83 @@ export function PresetImportModal({ onClose, onImport, initialFile }: PresetImpo
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ── RXU-21: Regex Profile preview card ───────────────────────────────────────
+
+/** Preview of the ONE Profile this import will create: name (derived from
+ *  the preset name), state summary, the fixed preset scope, and the
+ *  default-off «Enable Profile after import» master toggle. The optional
+ *  rules disclosure is information only — no per-rule review or editing
+ *  (importing never requires enabling rules one by one). */
+function RegexProfileImportCard({
+  plan,
+  enable,
+  onEnableChange,
+}: {
+  plan: PresetRegexImportPlan;
+  enable: boolean;
+  onEnableChange: (next: boolean) => void;
+}) {
+  const { t } = useT();
+  const isMobile = useIsMobile();
+  const [expanded, setExpanded] = useState(false);
+  const counts = summarizeRegexImportRules(plan.rules);
+  return (
+    <div className={cn(
+      "border-b border-border",
+      !isMobile && "shrink-0",
+      isMobile ? "px-3 py-3" : "px-5 py-3"
+    )}>
+      {/* Row 1: card title + fixed scope label (wraps — RU runs long, AD-022). */}
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <span className="font-ui text-[calc(var(--ui-fs)-1px)] font-medium text-t1">{t("regexImport.cardTitle")}</span>
+        <span className={cn("rounded px-2 py-0.5 font-ui text-[calc(var(--ui-fs)-2px)]", "bg-accent-dim text-accent-t")}>
+          {t("regexImport.scopePreset")}
+        </span>
+      </div>
+      {/* Row 2: profile name (derived from the preset name — identification
+          context, so the user-data name may ellipsize). */}
+      <div className="mt-1 truncate font-ui text-[calc(var(--ui-fs)-2px)] text-t2">{plan.profileName}</div>
+      {/* Row 3: state summary. */}
+      <div className="mt-0.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
+        {t("regexImport.profileSummary", { n: counts.total, enabled: counts.enabled, disabled: counts.disabled })}
+      </div>
+      {/* Row 4: the master toggle — the ONLY bundle-level gate (label pairs
+          with the switch via htmlFor, the RegexPresetEditor «Active» idiom). */}
+      <div className="mt-2.5 flex items-center justify-between gap-3">
+        <label
+          htmlFor="preset-import-regex-enable"
+          className="cursor-pointer select-none font-ui text-[calc(var(--ui-fs)-2px)] text-t2"
+        >
+          {t("regexImport.enableAfterImport")}
+        </label>
+        <Toggle
+          id="preset-import-regex-enable"
+          checked={enable}
+          onChange={onEnableChange}
+        />
+      </div>
+      {/* Row 5: optional information-only rule disclosure. */}
+      <button
+        type="button"
+        className="mt-2 cursor-pointer font-ui text-[calc(var(--ui-fs)-3px)] text-accent hover:underline"
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded ? t("regexImport.hideRules") : t("regexImport.showRules")}
+      </button>
+      {expanded && (
+        <ul className="mt-1.5 flex flex-col gap-1">
+          {plan.rules.map((rule, index) => (
+            <li key={`${rule.name}-${index}`} className="flex items-center gap-2 font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
+              <div className={cn("h-1.5 w-1.5 shrink-0 rounded-full", rule.disabled ? "bg-t4" : "bg-accent")} />
+              <span className="truncate">{rule.name}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

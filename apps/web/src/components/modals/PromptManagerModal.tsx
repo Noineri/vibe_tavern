@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CustomInjection, GenerationFormat, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
+import type { GenerationFormat, PromptPresetDto } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import { DestructiveConfirmModal } from "../shared/destructive-confirm-modal.js";
@@ -9,7 +9,19 @@ import { SaveButton } from "../shared/SaveBar.js";
 import { useModalStore } from "../../stores/modal-store.js";
 import { PresetList, PromptFields } from "../settings/prompt/index.js";
 import { PromptOrderCanvas, type CharacterCanvasDraft } from "../settings/prompt/InjectionTable.js";
-import type { PresetImportResult } from "./PresetImportModal.js";
+import type { PresetImportResult } from "./preset-import-flow.js";
+import {
+  buildStPresetCreatePayload,
+  createPresetRegexProfile,
+  createPresetWithRegexProfile,
+  mergeStImportIntoDraft,
+  parseAiAssistantPrompts,
+  presetRegexImportPlan,
+  vtImportDraft,
+  type DraftData,
+  type PresetCreateWithRegexOutcome,
+  type PresetRegexImportPlan,
+} from "./preset-import-flow.js";
 import { PresetImportModalHost } from "./PresetImportModalHost.js";
 import { serializeStPreset, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
@@ -34,6 +46,7 @@ import { RegexProfileEditor } from "../settings/prompt/RegexProfileEditor.js";
 import {
   listAllRegexPresets,
   createRegexPreset,
+  createRegexProfileBundle,
   updateRegexPreset,
   deleteRegexPreset,
   getRegexLinks,
@@ -92,30 +105,9 @@ export async function importStandaloneRegexText(
 
 type PromptManagerTab = "presets" | "regex" | "service" | "images";
 
-export type DraftData = {
-  name: string;
-  system: string;
-  jailbreak: string;
-  prefill: string;
-  authorsNote: string;
-  authorsNoteDepth: number;
-  authorsNotePosition: "in_prompt" | "in_chat" | "after_chat";
-  authorsNoteRole: "system" | "user" | "assistant";
-  summary: string;
-  tools: string;
-  nsfw: string;
-  enhanceDefinitions: string;
-  scriptAiSystemPrompt: string;
-  aiAssistantPrompts: Record<string, string>;
-  customInjections: CustomInjection[];
-  promptOrder: PromptOrderEntry[];
-  advancedMode: boolean;
-  mergeConsecutiveRoles: boolean;
-  /** Per-send prefill entry point (LS-8): gates the chat input's one-shot prefill UI. */
-  perSendPrefillEnabled: boolean;
-  /** Generation format (LS-3a). Null = never configured (= auto). */
-  generationFormat: GenerationFormat | null;
-};
+// The draft shape moved to preset-import-flow.ts with its import-path
+// builders (RXU-21 extraction); re-exported for existing importers/tests.
+export type { DraftData } from "./preset-import-flow.js";
 
 interface PromptManagerModalProps {
   presets: PromptPresetDto[];
@@ -204,26 +196,7 @@ export function buildDuplicatePayload(draft: DraftData, fallbackName: string) {
   };
 }
 
-function mergePromptOrder(current: PromptOrderEntry[], imported: PromptOrderEntry[]): PromptOrderEntry[] {
-  const map = new Map(current.map((entry) => [entry.identifier, entry]));
-  for (const entry of imported) {
-    map.set(entry.identifier, { ...map.get(entry.identifier), ...entry });
-  }
-  return Array.from(map.values()).sort((a, b) => (a.order ?? 10_000) - (b.order ?? 10_000));
-}
 
-function parseAiAssistantPrompts(raw: string | undefined | null): Record<string, string> {
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return Object.fromEntries(
-        Object.entries(parsed).filter(([, v]) => typeof v === "string"),
-      ) as Record<string, string>;
-    }
-  } catch { /* ignore */ }
-  return {};
-}
 
 export function PromptManagerModal(input: PromptManagerModalProps) {
   const isOpen = useModalStore((s) => s.isPromptManagerOpen);
@@ -994,7 +967,48 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     void input.onDelete(deleteId);
   };
 
+  // ─── RXU-21: embedded-Regex Profile for preset imports ──────────────────
+
+  /** Refresh the Regex tab's local lists after a bundle lands. The lazy
+   *  loader re-fetches on first tab activation anyway (idempotent) — this
+   *  keeps an already-open tab from showing a stale list, and invalidates
+   *  the display-regex cache so the new rules apply immediately. */
+  async function refreshRegexListsAfterImport() {
+    try {
+      const [rules, profiles] = await Promise.all([listAllRegexPresets(), listAllRegexProfiles()]);
+      setRegexPresets(rules.sort((a, b) => a.sortOrder - b.sortOrder));
+      setRegexProfiles(profiles.sort((a, b) => a.sortOrder - b.sortOrder));
+      invalidateActiveRegexPresets();
+    } catch {
+      // Non-fatal: the next Regex tab entry reloads both lists.
+    }
+  }
+
+  /** Import target "current": the preset already exists, so the ONE Regex
+   *  Profile binds straight to it. No compensation applies (the preset is
+   *  not this import's to delete) — a bundle failure only surfaces. */
+  function importRegexIntoExistingPreset(plan: PresetRegexImportPlan | null, presetId: string | null) {
+    if (!plan || !presetId) return;
+    void createPresetRegexProfile(plan, presetId, createRegexProfileBundle)
+      .then(() => refreshRegexListsAfterImport())
+      .catch(() => toast.error(t("regexImport.bundleFailed")));
+  }
+
+  /** Import target "new" outcome: select the new preset on success (plus a
+   *  Regex list refresh when a bundle landed); surface bundle failures (the
+   *  preset itself is already gone — compensated in the flow module). */
+  function handlePresetCreateOutcome(outcome: PresetCreateWithRegexOutcome, plan: PresetRegexImportPlan | null) {
+    if (outcome.ok) {
+      input.setActivePresetId(outcome.presetId);
+      if (plan) void refreshRegexListsAfterImport();
+    } else if (outcome.reason === "regexBundleFailed") {
+      // Preset-create failures are already toasted by the preset controller.
+      toast.error(t("regexImport.bundleFailedRolledBack"));
+    }
+  }
+
   const handleImportPreset = (result: PresetImportResult) => {
+    const plan = presetRegexImportPlan(result);
     // Lossless path: the file was exported by Vibe Tavern and carries the full
     // DTO under _vibe_tavern. Restore every field directly (no block projection,
     // no merge) — this is the only path that preserves VT-only fields
@@ -1003,86 +1017,40 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     if (result.vibeTavern) {
       const ext = result.vibeTavern;
       if (result.target === 'new') {
-        void input.onCreate({
-          ...ext,
-          name: result.newPresetName || ext.name,
-        }).then((created) => {
-          if (created?.id) input.setActivePresetId(created.id);
-        });
+        // RXU-21: preset FIRST, then the Regex Profile bundle bound to it —
+        // a bundle failure removes the preset again (compensation).
+        void createPresetWithRegexProfile({
+          createPreset: () => input.onCreate({ ...ext, name: result.newPresetName || ext.name }),
+          deletePreset: (presetId) => input.onDelete(presetId),
+          plan,
+          createBundle: createRegexProfileBundle,
+        }).then((outcome) => handlePresetCreateOutcome(outcome, plan));
       } else {
         // Replace the current preset's editable fields wholesale (reviewed via
         // the draft; user clicks Save to commit, so it is not immediately
-        // destructive). aiAssistantPrompts is a JSON string in the DTO but a
-        // parsed Record in the draft — convert via the same helper the load
-        // path uses.
-        setDraft({
-          name: ext.name,
-          system: ext.system,
-          jailbreak: ext.jailbreak,
-          prefill: ext.prefill,
-          authorsNote: ext.authorsNote,
-          authorsNoteDepth: ext.authorsNoteDepth,
-          authorsNotePosition: ext.authorsNotePosition,
-          authorsNoteRole: ext.authorsNoteRole,
-          summary: ext.summary,
-          tools: ext.tools,
-          nsfw: ext.nsfw,
-          enhanceDefinitions: ext.enhanceDefinitions,
-          scriptAiSystemPrompt: ext.scriptAiSystemPrompt,
-          aiAssistantPrompts: parseAiAssistantPrompts(ext.aiAssistantPrompts),
-          customInjections: ext.customInjections,
-          promptOrder: ext.promptOrder,
-          advancedMode: ext.advancedMode,
-          mergeConsecutiveRoles: ext.mergeConsecutiveRoles ?? false,
-          perSendPrefillEnabled: ext.perSendPrefillEnabled ?? false,
-          generationFormat: ext.generationFormat ?? null,
-        });
+        // destructive) — the draft shape comes from the flow module now.
+        setDraft(vtImportDraft(ext));
         setDirty(true);
         setSaveState("idle");
+        importRegexIntoExistingPreset(plan, input.activePresetId);
       }
       setPresetImportFile(undefined);
       return;
     }
     if (result.target === 'new') {
       const name = result.newPresetName || `${t('imported_preset')} ${new Date().toLocaleDateString()}`;
-      void input.onCreate({
-        name,
-        system: result.system.join("\n\n"),
-        jailbreak: result.post.join("\n\n"),
-        authorsNote: result.authors.join("\n\n"),
-        nsfw: result.nsfw.join("\n\n"),
-        enhanceDefinitions: result.enhanceDefinitions.join("\n\n"),
-        prefill: "",
-        authorsNoteDepth: 4,
-        authorsNotePosition: "in_chat",
-        authorsNoteRole: result.authorsRole ?? "system",
-        summary: "",
-        tools: "",
-        scriptAiSystemPrompt: "",
-        customInjections: result.injections,
-        promptOrder: result.promptOrder,
-        advancedMode: true,
-      }).then((created) => {
-        if (created?.id) input.setActivePresetId(created.id);
-      });
+      // RXU-21: preset FIRST, then bundle (see the VT branch above).
+      void createPresetWithRegexProfile({
+        createPreset: () => input.onCreate(buildStPresetCreatePayload(result, name)),
+        deletePreset: (presetId) => input.onDelete(presetId),
+        plan,
+        createBundle: createRegexProfileBundle,
+      }).then((outcome) => handlePresetCreateOutcome(outcome, plan));
     } else {
-      setDraft((d) => {
-        const next = { ...d };
-        if (result.system.length) next.system = d.system + (d.system ? "\n\n" : "") + result.system.join("\n\n");
-        if (result.post.length) next.jailbreak = d.jailbreak + (d.jailbreak ? "\n\n" : "") + result.post.join("\n\n");
-        if (result.authors.length) {
-          next.authorsNote = d.authorsNote + (d.authorsNote ? "\n\n" : "") + result.authors.join("\n\n");
-          next.authorsNoteRole = result.authorsRole ?? d.authorsNoteRole;
-        }
-        if (result.nsfw.length) next.nsfw = d.nsfw + (d.nsfw ? "\n\n" : "") + result.nsfw.join("\n\n");
-        if (result.enhanceDefinitions.length) next.enhanceDefinitions = d.enhanceDefinitions + (d.enhanceDefinitions ? "\n\n" : "") + result.enhanceDefinitions.join("\n\n");
-        if (result.injections.length) next.customInjections = [...d.customInjections, ...result.injections];
-        if (result.promptOrder.length) next.promptOrder = mergePromptOrder(d.promptOrder, result.promptOrder);
-        if (result.injections.length || result.promptOrder.length) next.advancedMode = true;
-        return next;
-      });
+      setDraft((d) => mergeStImportIntoDraft(d, result));
       setDirty(true);
       setSaveState("idle");
+      importRegexIntoExistingPreset(plan, input.activePresetId);
     }
     setPresetImportFile(undefined);
   };

@@ -16,6 +16,12 @@ import type { ReactNode } from "react";
 import React from "react";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { SERVICE_PROMPT_FIELD_KEYS, type ServicePromptFieldKey } from "@vibe-tavern/domain";
+import { serializeStPreset, type RegexScriptImportDraft } from "@vibe-tavern/import-export";
+import {
+  createPresetRegexProfile,
+  createPresetWithRegexProfile,
+  summarizeRegexImportRules,
+} from "./preset-import-flow.js";
 import type {
   ImagePromptFamilyInfoValue,
   ImagePromptTemplateRowKeyValue,
@@ -44,6 +50,10 @@ const loadPromptCanvasLoreEntries = mock(realPromptCanvasLore.loadPromptCanvasLo
 const realRegexApi = await import("../../api/regex-api.js");
 const listAllRegexPresetsMock = mock(realRegexApi.listAllRegexPresets);
 const createRegexPresetMock = mock(realRegexApi.createRegexPreset);
+const createRegexProfileBundleMock = mock(async (body: Parameters<typeof realRegexApi.createRegexProfileBundle>[0]) => ({
+  profile: { id: "prof_bundle", name: body?.name ?? "Bundle", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 },
+  rules: [],
+}) as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>);
 const listAllRegexProfilesMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.listAllRegexProfiles>>);
 const createRegexProfileMock = mock(async (body: unknown) => ({ id: "p_new", name: (body as { name?: string })?.name ?? "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>));
 const attachRegexRuleMock = mock(async (_a: unknown, _b: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.attachRegexRule>>);
@@ -72,6 +82,11 @@ const listImagePromptTemplatesMock = mock(async () => makeImagePromptTemplates()
 const listImagePromptFamiliesMock = mock(realImageGenApi.listImagePromptFamilies);
 const realDownload = await import("../../lib/download.js");
 const downloadTextFileMock = mock(realDownload.downloadTextFile);
+// RXU-21: the bundle-failure toast is part of the surfaced failure contract —
+// captured (not asserted) for every other test in this file.
+const realSonner = await import("sonner");
+const toastErrorMock = mock(() => {});
+mock.module("sonner", () => ({ ...realSonner, toast: { ...realSonner.toast, error: toastErrorMock } }));
 
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
@@ -105,6 +120,7 @@ mock.module("../../api/regex-api.js", () => {
     ...realRegexApi,
     listAllRegexPresets: listAllRegexPresetsMock,
     createRegexPreset: createRegexPresetMock,
+    createRegexProfileBundle: createRegexProfileBundleMock,
     listAllRegexProfiles: listAllRegexProfilesMock,
     createRegexProfile: createRegexProfileMock,
     attachRegexRule: attachRegexRuleMock,
@@ -155,6 +171,11 @@ afterEach(async () => {
   loadPromptCanvasLoreEntries.mockReset();
   listAllRegexPresetsMock.mockReset();
   createRegexPresetMock.mockReset();
+  createRegexProfileBundleMock.mockReset();
+  createRegexProfileBundleMock.mockImplementation(async (body: Parameters<typeof realRegexApi.createRegexProfileBundle>[0]) => ({
+    profile: { id: "prof_bundle", name: body?.name ?? "Bundle", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 },
+    rules: [],
+  }) as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>);
   listAllRegexProfilesMock.mockReset();
   listAllRegexProfilesMock.mockResolvedValue([]);
   createRegexProfileMock.mockReset();
@@ -189,6 +210,7 @@ afterEach(async () => {
   getImagePromptProfileDetailMock.mockReset();
   getImagePromptProfileDetailMock.mockImplementation(async (id: string) => makeImagePromptProfileDetail(id));
   downloadTextFileMock.mockReset();
+  toastErrorMock.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
 
@@ -1307,6 +1329,332 @@ describe("PromptManagerModal — manual rule drafts (RXU-14)", () => {
     await waitFor(() => expect(useModalStore.getState().isPromptManagerOpen).toBe(false));
     expect(createRegexPresetMock).not.toHaveBeenCalled();
     expect(attachRegexRuleMock).not.toHaveBeenCalled();
+  });
+});
+
+// ── RXU-21: preset-import Regex Profile (one Profile per import) ────────
+
+describe("preset-import-flow — Regex bundle sequence (RXU-21)", () => {
+  function importDraft(name: string, disabled: boolean): RegexScriptImportDraft {
+    return {
+      name,
+      findRegex: "/x/g",
+      replaceString: "",
+      trimStrings: [],
+      substituteRegex: 0,
+      disabled,
+      markdownOnly: false,
+      promptOnly: false,
+      runOnEdit: false,
+      minDepth: null,
+      maxDepth: null,
+      placement: [2],
+      isGlobal: false,
+      sortOrder: 0,
+      profileId: null,
+      sourceScript: { scriptName: name },
+    };
+  }
+
+  test("summarizeRegexImportRules counts mixed source states (N · X enabled · Y disabled)", () => {
+    expect(summarizeRegexImportRules([])).toEqual({ total: 0, enabled: 0, disabled: 0 });
+    expect(summarizeRegexImportRules([importDraft("only", false)])).toEqual({ total: 1, enabled: 1, disabled: 0 });
+    expect(summarizeRegexImportRules([
+      importDraft("on", false),
+      importDraft("off", true),
+      importDraft("on2", false),
+    ])).toEqual({ total: 3, enabled: 2, disabled: 1 });
+  });
+
+  test("createPresetRegexProfile: toggle OFF → master disabled true; toggle ON → disabled false — both positions explicit", async () => {
+    const rules = [importDraft("on", false), importDraft("off", true)];
+    const bodies: Array<Parameters<typeof realRegexApi.createRegexProfileBundle>[0]> = [];
+    const createBundle = async (body: Parameters<typeof realRegexApi.createRegexProfileBundle>[0]) => {
+      bodies.push(body);
+      return { profile: { id: "p1" }, rules: [] } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>;
+    };
+
+    // Toggle OFF (the default): the master switch is disabled — source-
+    // enabled rules stay enabled but are gated by the disabled Profile.
+    await createPresetRegexProfile({ rules, enableProfile: false, profileName: "P" }, "preset-9", createBundle);
+    expect(bodies[0]).toMatchObject({
+      name: "P",
+      disabled: true,
+      links: [{ targetType: "preset", targetId: "preset-9" }],
+    });
+    expect(bodies[0].rules.map((rule) => rule.disabled)).toEqual([false, true]);
+
+    // Toggle ON: the Profile is active immediately; source-disabled rules
+    // stay disabled (their own flags are untouched).
+    await createPresetRegexProfile({ rules, enableProfile: true, profileName: "P" }, "preset-9", createBundle);
+    expect(bodies[1].disabled).toBe(false);
+    expect(bodies[1].rules.map((rule) => rule.disabled)).toEqual([false, true]);
+
+    // Import-only channels never reach the API body (membership is
+    // bundle-owned; sourceScript is a preview-channel detail).
+    for (const key of ["sourceScript", "profileId"] as const) {
+      expect(key in (bodies[0].rules[0] as unknown as Record<string, unknown>)).toBe(false);
+    }
+  });
+
+  test("createPresetWithRegexProfile without rules: create only — no bundle call, no compensation", async () => {
+    const createPreset = mock(async () => ({ id: "p_new" }));
+    const deletePreset = mock(async () => {});
+    const createBundle = mock(async () => { throw new Error("must not be called"); });
+
+    const outcome = await createPresetWithRegexProfile({
+      createPreset, deletePreset, plan: null, createBundle,
+    });
+
+    expect(outcome).toEqual({ ok: true, presetId: "p_new" });
+    expect(createBundle).not.toHaveBeenCalled();
+    expect(deletePreset).not.toHaveBeenCalled();
+  });
+
+  test("createPresetWithRegexProfile: bundle failure → compensation delete, regexBundleFailed outcome, single bundle call", async () => {
+    const createPreset = mock(async () => ({ id: "p_new" }));
+    const deletePreset = mock(async () => {});
+    const createBundle = mock(async () => {
+      throw new Error("bundle boom");
+    });
+
+    const outcome = await createPresetWithRegexProfile({
+      createPreset,
+      deletePreset,
+      plan: { rules: [importDraft("on", false)], enableProfile: false, profileName: "P" },
+      createBundle,
+    });
+
+    expect(outcome).toEqual({ ok: false, reason: "regexBundleFailed" });
+    expect(createPreset).toHaveBeenCalledTimes(1);
+    expect(createBundle).toHaveBeenCalledTimes(1); // no partial retry
+    expect(deletePreset).toHaveBeenCalledWith("p_new"); // the preset is rolled back
+  });
+
+  test("createPresetWithRegexProfile: preset-create failure → no bundle, no delete", async () => {
+    const createPreset = mock(async () => null);
+    const deletePreset = mock(async () => {});
+    const createBundle = mock(async () => ({ profile: { id: "x" }, rules: [] } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>));
+
+    const outcome = await createPresetWithRegexProfile({
+      createPreset,
+      deletePreset,
+      plan: { rules: [importDraft("on", false)], enableProfile: false, profileName: "P" },
+      createBundle,
+    });
+
+    expect(outcome).toEqual({ ok: false, reason: "presetCreateFailed" });
+    expect(createBundle).not.toHaveBeenCalled();
+    expect(deletePreset).not.toHaveBeenCalled();
+  });
+});
+
+describe("PromptManagerModal — preset import Regex Profile wiring (RXU-21)", () => {
+  /** ST preset file embedding 3 rules with MIXED source states. */
+  function stPresetFileWithRegex(): File {
+    return new File([
+      JSON.stringify({
+        name: "Regex bundle preset",
+        prompts: [
+          { identifier: "main", name: "Main", role: "system", content: "System text", injection_position: 0, injection_depth: 4, injection_order: 100, enabled: true },
+        ],
+        extensions: {
+          regex_scripts: [
+            { scriptName: "On rule", findRegex: "/x/g", replaceString: "", disabled: false },
+            { scriptName: "Off rule", findRegex: "/y/g", replaceString: "", disabled: true },
+            { scriptName: "Second on", findRegex: "/z/g", replaceString: "", disabled: false },
+          ],
+        },
+      }),
+    ], "regex-preset.json", { type: "application/json" });
+  }
+
+  /** VT-native export (full DTO under `_vibe_tavern`) embedding one disabled
+   *  rule — built with the real serializer (rides the real export shape). */
+  function vtPresetFileWithRegex(): File {
+    const dto: PromptPresetDto = {
+      id: "vt-1",
+      name: "VT source",
+      system: "VT lossless system",
+      jailbreak: "jb",
+      prefill: "",
+      authorsNote: "",
+      authorsNoteDepth: 4,
+      authorsNotePosition: "in_chat",
+      authorsNoteRole: "system",
+      summary: "",
+      tools: "",
+      nsfw: "",
+      enhanceDefinitions: "",
+      scriptAiSystemPrompt: "",
+      aiAssistantPrompts: "{}",
+      customInjections: [],
+      promptOrder: [],
+      advancedMode: false,
+      mergeConsecutiveRoles: false,
+      perSendPrefillEnabled: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    return new File([
+      serializeStPreset(dto, [{
+        name: "VT rule", findRegex: "/y/g", replaceString: "", trimStrings: [],
+        substituteRegex: 0, disabled: true, markdownOnly: false, promptOnly: false,
+        runOnEdit: false, minDepth: null, maxDepth: null, placement: [2],
+        isGlobal: false, sortOrder: 0, profileId: null,
+      }]),
+    ], "vt-preset.json", { type: "application/json" });
+  }
+
+  function renderManager(overrides: Partial<Parameters<typeof PromptManagerModal>[0]> = {}) {
+    const onCreate = mock(async () => ({ id: "preset_new" }));
+    const onDelete = mock(async () => true);
+    const setActivePresetId = mock();
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={setActivePresetId}
+        onCreate={onCreate}
+        onUpdate={mock(async () => true)}
+        onDelete={onDelete}
+        onReorder={mock(async () => true)}
+        {...overrides}
+      />,
+    );
+    return { view, onCreate, onDelete, setActivePresetId };
+  }
+
+  /** Simple-mode preset: the target-"current" tests assert on the system
+   *  textarea, which advanced mode hides behind the canvas (SP-7). */
+  function simplePreset(): PromptPresetDto {
+    return { ...advancedPreset(), advancedMode: false };
+  }
+
+  /** Open the presets-tab import flow and feed `file` into the preview. The
+   *  LAST file input in the body is the import modal's Dropzone (its portal
+   *  renders after the list's hidden import input). */
+  async function openPresetImportPreview(
+    view: ReturnType<typeof render>,
+    file: File,
+    previewName: string,
+  ) {
+    fireEvent.click(within(view.baseElement).getByText("import_preset_btn"));
+    const inputs = view.baseElement.querySelectorAll("input[type='file']");
+    expect(inputs.length).toBeGreaterThan(1); // list input + Dropzone input
+    fireEvent.change(inputs[inputs.length - 1]!, { target: { files: [file] } });
+    await waitFor(() =>
+      expect(within(view.baseElement).getAllByText(`${previewName}.json`).length).toBeGreaterThan(0)
+    );
+  }
+
+  test("ST import, target new, toggle OFF (default): preset FIRST, then ONE bundle bound to the new preset", async () => {
+    const { view, onCreate, onDelete, setActivePresetId } = renderManager();
+    await openPresetImportPreview(view, stPresetFileWithRegex(), "Regex bundle preset");
+    const q = within(view.baseElement);
+
+    // The card is present with the default-off master toggle (the preview
+    // boundary itself is pinned in PresetImportModal.test).
+    expect(q.getByRole("switch", { name: "regexImport.enableAfterImport" }).getAttribute("aria-checked")).toBe("false");
+
+    // Target "new" so the preset is created by THIS import (compensation path).
+    fireEvent.click(q.getByText("preset_import_to_new"));
+    await waitFor(() => expect(q.getByPlaceholderText("preset_import_new_name_placeholder")).toBeTruthy());
+
+    fireEvent.click(q.getByText("preset_import_btn"));
+
+    await waitFor(() => expect(createRegexProfileBundleMock).toHaveBeenCalledTimes(1));
+    // Preset FIRST: onCreate resolved before the bundle fired.
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    const body = createRegexProfileBundleMock.mock.calls[0][0];
+    expect(body).toMatchObject({
+      name: "Regex bundle preset",
+      disabled: true, // toggle OFF → master disabled
+      links: [{ targetType: "preset", targetId: "preset_new" }],
+    });
+    // Source-faithful rules: source states intact under the disabled master.
+    expect(body.rules.map((rule: { disabled?: boolean }) => rule.disabled)).toEqual([false, true, false]);
+    // Success: the new preset is selected, nothing is deleted, the Regex
+    // lists refresh (the display-regex cache invalidation rides the refresh).
+    await waitFor(() => expect(setActivePresetId).toHaveBeenCalledWith("preset_new"));
+    expect(onDelete).not.toHaveBeenCalled();
+    await waitFor(() => expect(listAllRegexPresetsMock.mock.calls.length).toBeGreaterThan(0));
+  });
+
+  test("ST import bundle failure: the just-created preset is rolled back and the failure is surfaced", async () => {
+    createRegexProfileBundleMock.mockRejectedValueOnce(new Error("bundle boom"));
+    const { view, onDelete, setActivePresetId } = renderManager();
+    await openPresetImportPreview(view, stPresetFileWithRegex(), "Regex bundle preset");
+    const q = within(view.baseElement);
+    fireEvent.click(q.getByText("preset_import_to_new"));
+    await waitFor(() => expect(q.getByPlaceholderText("preset_import_new_name_placeholder")).toBeTruthy());
+    fireEvent.click(q.getByText("preset_import_btn"));
+
+    // Compensation: delete called with the newly created preset id.
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith("preset_new"));
+    // The rolled-back import never selects the preset, and the failure toast
+    // states the rollback.
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("regexImport.bundleFailedRolledBack"));
+    expect(setActivePresetId).not.toHaveBeenCalled();
+    // No partial rows: exactly one bundle attempt, never retried.
+    expect(createRegexProfileBundleMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("VT-native import, target current, toggle ON: bundle binds the EXISTING preset with an active master", async () => {
+    const { view, onCreate } = renderManager({ presets: [simplePreset()] });
+    await openPresetImportPreview(view, vtPresetFileWithRegex(), "VT source");
+    const q = within(view.baseElement);
+
+    // Toggle ON before confirming: source-enabled rules work immediately.
+    fireEvent.click(q.getByRole("switch", { name: "regexImport.enableAfterImport" }));
+    expect(q.getByRole("switch", { name: "regexImport.enableAfterImport" }).getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(q.getByText("preset_import_btn"));
+
+    await waitFor(() => expect(createRegexProfileBundleMock).toHaveBeenCalledTimes(1));
+    const body = createRegexProfileBundleMock.mock.calls[0][0];
+    expect(body).toMatchObject({
+      name: "VT source",
+      disabled: false, // toggle ON → active master
+      links: [{ targetType: "preset", targetId: "preset-1" }], // EXISTING preset
+    });
+    // Source-disabled rule stays disabled even under the active Profile.
+    expect(body.rules.map((rule: { disabled?: boolean }) => rule.disabled)).toEqual([true]);
+    // Target "current" creates no preset — only the bundle fired.
+    expect(onCreate).not.toHaveBeenCalled();
+    // The VT lossless draft replacement ran (the system field now carries
+    // the imported DTO's system verbatim — plain value check per R8).
+    const system = q.getByPlaceholderText("system_prompt_placeholder") as HTMLTextAreaElement;
+    await waitFor(() => expect(system.value).toBe("VT lossless system"));
+  });
+
+  test("zero embedded rules: the import stays regex-free — zero regex API calls", async () => {
+    const plain = new File([
+      JSON.stringify({
+        name: "Plain preset",
+        prompts: [
+          { identifier: "main", name: "Main", role: "system", content: "text", injection_position: 0, injection_depth: 4, injection_order: 100, enabled: true },
+        ],
+      }),
+    ], "plain.json", { type: "application/json" });
+    const { view, onCreate } = renderManager({ presets: [simplePreset()] });
+    await openPresetImportPreview(view, plain, "Plain preset");
+    const q = within(view.baseElement);
+    // No card at all.
+    expect(q.queryByRole("switch")).toBeNull();
+
+    fireEvent.click(q.getByText("preset_import_btn"));
+
+    // Default target is "current": the draft merge fires (the system field
+    // appends the imported block), nothing else does. Plain value check —
+    // getByDisplayValue's normalizer collapses the newlines (R8 idiom).
+    const system = q.getByPlaceholderText("system_prompt_placeholder") as HTMLTextAreaElement;
+    await waitFor(() => expect(system.value).toBe("sys\n\ntext"));
+    expect(createRegexProfileBundleMock).not.toHaveBeenCalled();
+    expect(createRegexPresetMock).not.toHaveBeenCalled();
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(toastErrorMock).not.toHaveBeenCalled();
   });
 });
 
