@@ -10,7 +10,7 @@ import { generateText, isStepCount } from "ai";
 import type { ProviderMetadata } from "ai";
 import type { ExtractedToolCall, ExtractedToolResult, GenerationResult } from "./provider-execution-types.js";
 import type { ProviderExecutionInput } from "./provider-execution-types.js";
-import { resolveModel, resolveCompletionFormatHandoff, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
+import { resolveModel, resolveCompletionFormatHandoff, toSdkMessages, prepareSdkMessages, prepareProviderTools } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import { COAUTHOR_TRANSPORT, normalizeProviderType } from "@vibe-tavern/domain";
 import { wrapProviderExecutionError } from "./provider-error-wrapper.js";
@@ -230,6 +230,7 @@ export async function nonstreamingProviderExecute(
     // Default store:true assumes previousResponseId chaining we don't do.
     const responsesProviderOptions =
       input.transport === COAUTHOR_TRANSPORT.responses ? { openai: { store: false } } : undefined;
+    const providerTools = prepareProviderTools(input.tools);
     logSendDebug("provider.nonstream.samplerConfig", {
       providerType: input.profile.providerPreset,
       samplerConfig,
@@ -252,8 +253,8 @@ export async function nonstreamingProviderExecute(
       include: { responseBody: true },
       ...samplerConfig,
       ...(responsesProviderOptions ? { providerOptions: responsesProviderOptions } : {}),
-      ...(input.tools ? { tools: input.tools } : {}),
-      ...(input.tools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
+      ...(providerTools ? { tools: providerTools } : {}),
+      ...(providerTools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
     });
 
     logSendDebug("provider.nonstream.result", {

@@ -1,6 +1,9 @@
 import { describe, it, expect, mock, afterEach } from "bun:test";
+import { asSchema, tool } from "ai";
+import { z } from "zod";
 import { COAUTHOR_TRANSPORT, GENERATION_MODE } from "@vibe-tavern/domain";
 import {
+  prepareProviderTools,
   resolveModel,
   toSdkMessages,
   prepareSdkMessages,
@@ -28,6 +31,35 @@ let routeCreateOpenAIToSpy = false;
 
 afterEach(() => {
   mock.restore();
+});
+
+describe("prepareProviderTools", () => {
+  it("rewrites nullable type arrays recursively while retaining Zod validation", async () => {
+    const preparedTool = prepareProviderTools({
+      probe: tool({
+        inputSchema: z.object({
+          inherited: z.boolean().nullable(),
+          nested: z.object({ id: z.string().nullable() }),
+        }),
+        execute: async (input) => input,
+      }),
+    })?.probe;
+    if (!preparedTool) throw new Error("prepared probe tool is missing");
+
+    const schema = asSchema(preparedTool.inputSchema);
+    const json = await schema.jsonSchema as {
+      properties?: {
+        inherited?: Record<string, unknown>;
+        nested?: { properties?: { id?: Record<string, unknown> } };
+      };
+    };
+    expect(json.properties?.inherited?.type).toBeUndefined();
+    expect(json.properties?.inherited?.anyOf).toEqual([{ type: "boolean" }, { type: "null" }]);
+    expect(json.properties?.nested?.properties?.id?.anyOf).toEqual([{ type: "string" }, { type: "null" }]);
+
+    expect(await schema.validate?.({ inherited: null, nested: { id: null } })).toMatchObject({ success: true });
+    expect(await schema.validate?.({ inherited: "yes", nested: { id: null } })).toMatchObject({ success: false });
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
