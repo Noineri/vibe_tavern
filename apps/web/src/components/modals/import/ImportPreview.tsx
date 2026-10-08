@@ -10,6 +10,7 @@
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 import { Toggle } from "../../shared/Toggle.js";
+import { RegexImportProfileCard } from "./RegexImportProfileCard.js";
 import {
   initial,
   truncate,
@@ -21,10 +22,14 @@ export function CharacterImportPreview({
   preview,
   importEmbeddedBook = false,
   onImportEmbeddedBookChange,
+  enableImportedRegexProfile = false,
+  onEnableImportedRegexProfileChange,
 }: {
   preview: CharacterPreview;
   importEmbeddedBook?: boolean;
   onImportEmbeddedBookChange?: (enabled: boolean) => void;
+  enableImportedRegexProfile?: boolean;
+  onEnableImportedRegexProfileChange?: (enabled: boolean) => void;
 }) {
   const { t } = useT();
   return (
@@ -53,6 +58,14 @@ export function CharacterImportPreview({
             aria-label={t("import_embedded_lorebook")}
           />
         </div>
+      )}
+      {preview.regexScripts && preview.regexScripts.length > 0 && onEnableImportedRegexProfileChange && (
+        <RegexImportProfileCard
+          rules={preview.regexScripts}
+          enableProfile={enableImportedRegexProfile}
+          onEnableProfileChange={onEnableImportedRegexProfileChange}
+          toggleId="character-import-regex-enable"
+        />
       )}
     </div>
   );

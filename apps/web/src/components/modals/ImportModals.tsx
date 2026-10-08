@@ -30,7 +30,7 @@ import { ImportModalFooter } from "./import/ImportModalFooter.js";
 interface ImportModalCommonProps {
   isImporting: boolean;
   onClose: () => void;
-  onImportFiles: (files: File[], options?: { importEmbeddedBook?: boolean }) => void;
+  onImportFiles: (files: File[], options?: { importEmbeddedBook?: boolean; enableImportedRegexProfile?: boolean }) => void;
   /** Library imports can opt into the embedded-card-lore confirmation. */
   showEmbeddedBookImport?: boolean;
 }
@@ -339,6 +339,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
   const [parsing, setParsing] = useState(false);
   const [preview, setPreview] = useState<CharacterPreview | null>(null);
   const [importEmbeddedBook, setImportEmbeddedBook] = useState(false);
+  const [enableImportedRegexProfile, setEnableImportedRegexProfile] = useState(false);
   const [stMode, setStMode] = useState(false);
   useEffect(() => () => {
     if (preview?.avatarUrl) URL.revokeObjectURL(preview.avatarUrl);
@@ -348,6 +349,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
     if (!file) return;
     setParsing(true);
     setImportEmbeddedBook(false);
+    setEnableImportedRegexProfile(false);
     setPreview((current) => {
       if (current?.avatarUrl) URL.revokeObjectURL(current.avatarUrl);
       return null;
@@ -363,7 +365,10 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
 
   function confirm(): void {
     if (!preview || input.isImporting) return;
-    input.onImportFiles([preview.file], { importEmbeddedBook });
+    input.onImportFiles([preview.file], {
+      importEmbeddedBook,
+      ...(preview.regexScripts && preview.regexScripts.length > 0 && enableImportedRegexProfile ? { enableImportedRegexProfile: true } : {}),
+    });
     input.onClose();
   }
 
@@ -400,6 +405,8 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
             preview={preview}
             importEmbeddedBook={importEmbeddedBook}
             onImportEmbeddedBookChange={input.showEmbeddedBookImport ? setImportEmbeddedBook : undefined}
+            enableImportedRegexProfile={enableImportedRegexProfile}
+            onEnableImportedRegexProfileChange={setEnableImportedRegexProfile}
           />
         )}
       </div>

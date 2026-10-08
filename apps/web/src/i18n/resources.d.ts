@@ -2412,6 +2412,7 @@ export default interface Resources {
     "regexImport.profileName": "Profile name",
     "regexImport.profileSummary": "Rules: {n} · enabled: {enabled} · disabled: {disabled}",
     "regexImport.scopeAllChats": "All chats",
+    "regexImport.scopeCharacter": "Imported character",
     "regexImport.scopeCharacterUnavailable": "Open a character chat to use this scope.",
     "regexImport.scopeCurrentCharacter": "Current character",
     "regexImport.scopeCurrentPreset": "Current prompt preset",

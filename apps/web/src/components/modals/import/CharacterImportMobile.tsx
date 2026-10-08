@@ -36,8 +36,8 @@ import { ImportPreviewModal } from "./ImportPreviewModal.js";
 export interface CharacterImportMobileProps {
   /** True while the backend is ingesting the confirmed file; disables confirm. */
   isImporting: boolean;
-  /** Called with `[file]` and the embedded-lore choice when the user confirms. */
-  onImportFiles: (files: File[], options?: { importEmbeddedBook?: boolean }) => void;
+  /** Called with `[file]` and preview choices when the user confirms. */
+  onImportFiles: (files: File[], options?: { importEmbeddedBook?: boolean; enableImportedRegexProfile?: boolean }) => void;
 }
 
 export interface CharacterImportMobileHandle {
@@ -50,6 +50,7 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
     const { t } = useT();
     const [preview, setPreview] = useState<CharacterPreview | null>(null);
     const [importEmbeddedBook, setImportEmbeddedBook] = useState(false);
+    const [enableImportedRegexProfile, setEnableImportedRegexProfile] = useState(false);
     // Monotonic pick generation: only the latest selection may commit its
     // parse result. `mountedRef` additionally blocks commits after unmount.
     const pickIdRef = useRef(0);
@@ -76,6 +77,7 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
         // no new preview is set and no modal opens (per spec).
         const pickId = ++pickIdRef.current;
         setImportEmbeddedBook(false);
+        setEnableImportedRegexProfile(false);
         setPreview(null);
         try {
           const parsed = await parseCharacterFile(file);
@@ -103,7 +105,10 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
 
     function handleConfirm(): void {
       if (!preview || isImporting) return;
-      onImportFiles([preview.file], { importEmbeddedBook });
+      onImportFiles([preview.file], {
+        importEmbeddedBook,
+        ...(preview.regexScripts && preview.regexScripts.length > 0 && enableImportedRegexProfile ? { enableImportedRegexProfile: true } : {}),
+      });
       // Clearing transitions the URL to undefined → effect cleanup revokes.
       setPreview(null);
     }
@@ -125,6 +130,8 @@ export const CharacterImportMobile = forwardRef<CharacterImportMobileHandle, Cha
                 preview={preview}
                 importEmbeddedBook={importEmbeddedBook}
                 onImportEmbeddedBookChange={setImportEmbeddedBook}
+                enableImportedRegexProfile={enableImportedRegexProfile}
+                onEnableImportedRegexProfileChange={setEnableImportedRegexProfile}
               />
             }
             isImporting={isImporting}

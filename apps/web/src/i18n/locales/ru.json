@@ -3176,6 +3176,7 @@
 	"regexImport.cardTitle": "Regex-профиль",
 	"regexImport.profileSummary": "Правил: {n} · включено: {enabled} · отключено: {disabled}",
 	"regexImport.scopePreset": "Импортированный пресет промптов",
+	"regexImport.scopeCharacter": "Импортированный персонаж",
 	"regexImport.enableAfterImport": "Включить профиль после импорта",
 	"regexImport.showRules": "Показать правила",
 	"regexImport.hideRules": "Скрыть правила",

@@ -3134,6 +3134,7 @@
 	"regexImport.cardTitle": "Regex profile",
 	"regexImport.profileSummary": "Rules: {n} · enabled: {enabled} · disabled: {disabled}",
 	"regexImport.scopePreset": "Imported prompt preset",
+	"regexImport.scopeCharacter": "Imported character",
 	"regexImport.enableAfterImport": "Enable Profile after import",
 	"regexImport.showRules": "Show rules",
 	"regexImport.hideRules": "Hide rules",

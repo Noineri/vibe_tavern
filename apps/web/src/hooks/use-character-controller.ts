@@ -288,6 +288,9 @@ export function useCharacterController(): CharacterControllerActions {
       const imported = await importFile(firstFile, {
         chatId: getActiveChatId() ?? undefined,
         importEmbeddedBook: options?.importEmbeddedBook,
+        ...(options?.enableImportedRegexProfile !== undefined
+          ? { enableImportedRegexProfile: options.enableImportedRegexProfile }
+          : {}),
       });
 
       if (imported.snapshot) writeSnapshot(imported.activeChatId, imported.snapshot);
