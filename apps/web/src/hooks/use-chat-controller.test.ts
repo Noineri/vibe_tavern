@@ -345,6 +345,7 @@ describe("useChatController — Co-Author send gate", () => {
       data: { uiSettings: { coauthorProviderId: "p_co" } } as never,
     });
     const bundle: CoauthorLoreBundle = {
+      revision: 7,
       lorebooks: [],
       entries: [{
         id: "entry-existing",

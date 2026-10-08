@@ -297,6 +297,13 @@ export type CoauthorDraftLoreEntry = z.infer<typeof coauthorDraftLoreEntrySchema
  * {@link coauthorLoreBundleOutputSchema} and of the loreBundle Apply field.
  */
 export const coauthorLoreBundleSchema = z.object({
+  /**
+   * Monotonic request-local draft revision. Every new lore-tool snapshot carries
+   * it so consumers can select the newest cumulative graph even when parallel
+   * delegate calls complete out of tool-call order. Optional for historical
+   * persisted tool-result rows that predate this field.
+   */
+  revision: z.number().int().min(0).optional(),
   lorebooks: z.array(coauthorDraftLorebookSchema),
   entries: z.array(coauthorDraftLoreEntrySchema),
 });

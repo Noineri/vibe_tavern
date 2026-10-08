@@ -48,6 +48,7 @@ describe("useCoauthorTurnStore", () => {
 
   it("CE-B1: recognizes a persisted-lore add result by its wire shape", () => {
     const bundle: CoauthorLoreBundle = {
+      revision: 7,
       lorebooks: [],
       entries: [{
         id: "entry-new",
