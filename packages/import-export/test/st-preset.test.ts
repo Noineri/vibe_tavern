@@ -443,7 +443,7 @@ test("parseStPreset — ignores a malformed _vibe_tavern (non-array promptOrder)
 const REGEX_MAIN_PROMPT = { identifier: "main", name: "Main", role: "system", content: "hi", injection_position: 0, injection_depth: 0, injection_order: 0, enabled: true };
 const REGEX_ORDER = [{ character_id: 100001, order: [{ identifier: "main", enabled: true }] }];
 
-test("parseStPreset — extracts extensions.regex_scripts into security-gated drafts", () => {
+test("parseStPreset — extracts extensions.regex_scripts with source states preserved", () => {
   const json = JSON.stringify({
     name: "With regex",
     prompts: [REGEX_MAIN_PROMPT],
@@ -451,14 +451,15 @@ test("parseStPreset — extracts extensions.regex_scripts into security-gated dr
     extensions: {
       regex_scripts: [
         { scriptName: "Embedded", findRegex: "/<x>.*?<\/x>/g", replaceString: "", disabled: false, placement: [1] },
+        { scriptName: "Embedded off", findRegex: "/<y>.*?<\/y>/g", replaceString: "", disabled: true },
       ],
     },
   });
   const parsed = parseStPreset(json);
-  expect(parsed.regexScripts).toHaveLength(1);
+  expect(parsed.regexScripts).toHaveLength(2);
   expect(parsed.regexScripts[0].name).toBe("Embedded");
-  // Security gate: the file claims disabled:false, import lands true.
-  expect(parsed.regexScripts[0].disabled).toBe(true);
+  // Source fidelity: each script's own disabled flag comes through verbatim.
+  expect(parsed.regexScripts.map((d) => d.disabled)).toEqual([false, true]);
 });
 
 test("parseStPreset — top-level regex_scripts is the fallback key", () => {
@@ -505,10 +506,27 @@ test("parseStPreset — malformed regex_scripts degrades to [] without throwing"
 
 test("serializeStPreset — with regexScripts writes ST-readable extensions.regex_scripts", () => {
   const dto = makeDto();
-  const out = JSON.parse(serializeStPreset(dto, [
+  const rules = [
     {
-      name: "Exported",
+      name: "Exported on",
       findRegex: "/e/g",
+      replaceString: "",
+      trimStrings: [],
+      substituteRegex: 0,
+      disabled: false,
+      markdownOnly: false,
+      promptOnly: false,
+      runOnEdit: true,
+      minDepth: null,
+      maxDepth: null,
+      placement: [2],
+      isGlobal: false,
+      sortOrder: 0,
+      profileId: null,
+    },
+    {
+      name: "Exported off",
+      findRegex: "/f/g",
       replaceString: "",
       trimStrings: [],
       substituteRegex: 0,
@@ -520,42 +538,28 @@ test("serializeStPreset — with regexScripts writes ST-readable extensions.rege
       maxDepth: null,
       placement: [2],
       isGlobal: false,
-      sortOrder: 0,
-      sourceScript: {},
+      sortOrder: 1,
+      profileId: null,
     },
-  ]));
+  ];
+  const out = JSON.parse(serializeStPreset(dto, rules));
   const scripts = out.extensions?.regex_scripts;
   expect(Array.isArray(scripts)).toBe(true);
-  expect(scripts[0].scriptName).toBe("Exported");
+  expect(scripts[0].scriptName).toBe("Exported on");
   expect(scripts[0].findRegex).toBe("/e/g");
-  expect(scripts[0].disabled).toBe(true);
-  // Draft-only fields must not leak into the ST shape.
+  // Each rule's own disabled flag is written verbatim (mixed states survive).
+  expect(scripts.map((s: { disabled: boolean }) => s.disabled)).toEqual([false, true]);
+  // Rule-only fields must not leak into the ST shape.
   expect("sourceScript" in scripts[0]).toBe(false);
   expect("isGlobal" in scripts[0]).toBe(false);
 
   // Full round-trip: the written preset re-imports with its embedded regex
-  // recovered (parser reads the same key the serializer writes).
-  const reparsed = parseStPreset(serializeStPreset(dto, [
-    {
-      name: "Exported",
-      findRegex: "/e/g",
-      replaceString: "",
-      trimStrings: [],
-      substituteRegex: 0,
-      disabled: true,
-      markdownOnly: false,
-      promptOnly: false,
-      runOnEdit: true,
-      minDepth: null,
-      maxDepth: null,
-      placement: [2],
-      isGlobal: false,
-      sortOrder: 0,
-      sourceScript: {},
-    },
-  ]));
-  expect(reparsed.regexScripts).toHaveLength(1);
-  expect(reparsed.regexScripts[0].name).toBe("Exported");
+  // recovered (parser reads the same key the serializer writes) and each
+  // rule's enabled/disabled state intact.
+  const reparsed = parseStPreset(serializeStPreset(dto, rules));
+  expect(reparsed.regexScripts).toHaveLength(2);
+  expect(reparsed.regexScripts.map((d) => d.name)).toEqual(["Exported on", "Exported off"]);
+  expect(reparsed.regexScripts.map((d) => d.disabled)).toEqual([false, true]);
 });
 
 test("serializeStPreset — without the regex param output has no extensions key (backward compat)", () => {

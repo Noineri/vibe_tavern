@@ -81,25 +81,49 @@ test("parseStandaloneRegexJson — skips meaningless entries inside a valid arra
   expect(drafts[0].sortOrder).toBe(0);
 });
 
-// ── Security gate ──────────────────────────────────────────────────────────
+// ── Source fidelity ───────────────────────────────────────────────────────
 
-test("parseStandaloneRegexJson — security gate: disabled:false in file lands true, never global", async () => {
-  const text = await loadFixtureText(TRIM_INCOMPLETE); // fixture has disabled:false
+test("parseStandaloneRegexJson — source fidelity: disabled mirrors the file", async () => {
+  const text = await loadFixtureText(TRIM_INCOMPLETE); // fixture ships disabled:false
   const drafts = parseStandaloneRegexJson(text);
   expect(drafts).toHaveLength(1);
-  expect(drafts[0].disabled).toBe(true);
+  expect(drafts[0].disabled).toBe(false);
   expect(drafts[0].isGlobal).toBe(false);
 
-  const explicit = parseStandaloneRegexJson(
-    JSON.stringify([{ scriptName: "x", findRegex: "/a/g", disabled: false }]),
+  // Every orientation survives parsing verbatim; absent means enabled (ST default).
+  const mixed = parseStandaloneRegexJson(
+    JSON.stringify([
+      { scriptName: "x", findRegex: "/a/g", disabled: true },
+      { scriptName: "y", findRegex: "/b/g", disabled: false },
+      { scriptName: "z", findRegex: "/c/g" },
+    ]),
   );
-  expect(explicit[0].disabled).toBe(true);
+  expect(mixed.map((d) => d.disabled)).toEqual([true, false, false]);
+});
+
+test("parseStandaloneRegexJson — mixed disabled states across array, wrapper, and single shapes", () => {
+  const arrayShape = JSON.stringify([
+    { scriptName: "on", findRegex: "/a/g", disabled: false },
+    { scriptName: "off", findRegex: "/b/g", disabled: true },
+  ]);
+  expect(parseStandaloneRegexJson(arrayShape).map((d) => d.disabled)).toEqual([false, true]);
+
+  const wrapperShape = JSON.stringify({
+    scripts: [
+      { scriptName: "on", findRegex: "/a/g", disabled: false },
+      { scriptName: "off", findRegex: "/b/g", disabled: true },
+    ],
+  });
+  expect(parseStandaloneRegexJson(wrapperShape).map((d) => d.disabled)).toEqual([false, true]);
+
+  const singleShape = JSON.stringify({ scriptName: "off", findRegex: "/a/g", disabled: true });
+  expect(parseStandaloneRegexJson(singleShape).map((d) => d.disabled)).toEqual([true]);
 });
 
 // ── Round-trip ─────────────────────────────────────────────────────────────
 
-test("round-trip — serialize → parse ≡ input minus sourceScript", async () => {
-  const first = parseStandaloneRegexJson(await loadFixtureText(TRIM_INCOMPLETE));
+test("round-trip — serialize → parse ≡ input minus sourceScript (mixed states)", async () => {
+  const first = parseStandaloneRegexJson(await loadFixtureText(TRIM_INCOMPLETE)); // disabled:false
   const second = parseStandaloneRegexJson(
     JSON.stringify([
       {
@@ -108,7 +132,7 @@ test("round-trip — serialize → parse ≡ input minus sourceScript", async ()
         replaceString: "$1",
         trimStrings: [" ", "-"],
         placement: [2],
-        disabled: false,
+        disabled: true,
         markdownOnly: true,
         promptOnly: false,
         runOnEdit: false,
@@ -120,9 +144,14 @@ test("round-trip — serialize → parse ≡ input minus sourceScript", async ()
   );
 
   const all = [...first, ...second];
+  // Mixed source states go IN ...
+  expect(all.map((d) => d.disabled)).toEqual([false, true]);
+
   const serialized = serializeStandaloneRegexJson(all);
   const reparsed = parseStandaloneRegexJson(serialized);
 
+  // ... and come back OUT unchanged through serialize → parse.
+  expect(reparsed.map((d) => d.disabled)).toEqual([false, true]);
   expect(reparsed).toHaveLength(all.length);
   for (let i = 0; i < all.length; i++) {
     const { sourceScript: _dropped, ...expected } = all[i];
@@ -154,6 +183,7 @@ test("serializeStandaloneRegexJson — output parses as plain JSON array of ST-s
       placement: [2],
       isGlobal: false,
       sortOrder: 0,
+      profileId: null,
     },
   ]);
   const parsed: unknown = JSON.parse(out);
@@ -161,8 +191,10 @@ test("serializeStandaloneRegexJson — output parses as plain JSON array of ST-s
   const entry = (parsed as Array<Record<string, unknown>>)[0];
   expect(entry.scriptName).toBe("Solo");
   expect(entry.findRegex).toBe("/a/g");
-  // Draft-only fields must not leak into the ST shape.
+  expect(entry.disabled).toBe(true);
+  // Rule-only fields must not leak into the ST shape.
   expect("sourceScript" in entry).toBe(false);
   expect("name" in entry).toBe(false);
   expect("isGlobal" in entry).toBe(false);
+  expect("profileId" in entry).toBe(false);
 });

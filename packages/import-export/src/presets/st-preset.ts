@@ -7,7 +7,11 @@ import type {
 } from "@vibe-tavern/domain";
 import { DEFAULT_PROMPT_ORDER, inferSlot, slotToStFields } from "@vibe-tavern/domain";
 
-import { normalizeStRegexScript, type RegexScriptImportDraft } from "../cards/regex-scripts.js";
+import {
+  normalizeStRegexScript,
+  type RegexRuleExport,
+  type RegexScriptImportDraft,
+} from "../cards/regex-scripts.js";
 
 export interface StPresetBlock {
   identifier: string;
@@ -94,8 +98,8 @@ export interface ParsedStPreset {
    *  extension key). Carries the full VT DTO for lossless VT→VT import. */
   vibeTavern?: VibeTavernPresetExtension;
   /** Regex scripts embedded in the preset (`extensions.regex_scripts`, or
-   *  top-level `regex_scripts` fallback). Always security-gated
-   *  (`disabled: true`) by the shared normalizer. Empty when absent. */
+   *  top-level `regex_scripts` fallback). Source-faithful (`disabled` mirrors
+   *  the source file) via the shared normalizer. Empty when absent. */
   regexScripts: RegexScriptImportDraft[];
 }
 
@@ -189,8 +193,8 @@ export function parseStPreset(jsonText: string): ParsedStPreset {
  *
  * `extensions.regex_scripts` is preferred (where ST itself nests extension
  * data); top-level `regex_scripts` is the fallback — shared preset files use
- * both key styles. Never throws; malformed arrays yield []. Every draft is
- * security-gated by {@link normalizeStRegexScript}.
+ * both key styles. Never throws; malformed arrays yield []. Drafts are
+ * source-faithful via {@link normalizeStRegexScript}.
  */
 function extractPresetRegexScripts(data: StPresetJson): RegexScriptImportDraft[] {
   const raw = Array.isArray(data.extensions?.regex_scripts)
@@ -534,7 +538,7 @@ function buildContentBlock(
  * source preset's `advancedMode` is false (empty canvas) by falling back to
  * `DEFAULT_PROMPT_ORDER`.
  */
-export function serializeStPreset(dto: PromptPresetDto, regexScripts?: RegexScriptImportDraft[]): string {
+export function serializeStPreset(dto: PromptPresetDto, regexScripts?: RegexRuleExport[]): string {
   const canvasMap = new Map<string, PromptOrderEntry>();
   for (const entry of dto.promptOrder) canvasMap.set(entry.identifier, entry);
 
@@ -609,9 +613,10 @@ export function serializeStPreset(dto: PromptPresetDto, regexScripts?: RegexScri
   return JSON.stringify(out, null, 2);
 }
 
-/** Map an import draft back onto the plain ST `RegexScriptData` shape that
- *  both ST and VT re-import. Strips the draft-only `sourceScript` channel. */
-function toStRegexScriptOut(draft: RegexScriptImportDraft): Record<string, unknown> {
+/** Map a Rule onto the plain ST `RegexScriptData` shape that both ST and VT
+ *  re-import. Strips the import-only `sourceScript` channel when given a
+ *  draft. */
+function toStRegexScriptOut(draft: RegexRuleExport): Record<string, unknown> {
   return {
     scriptName: draft.name,
     findRegex: draft.findRegex,

@@ -5,6 +5,10 @@ import {
   type ImportedCharacterCardBundle,
 } from "../src/cards/chara-card-v3.js";
 import { extractCardRegexScripts, type RegexScriptImportDraft } from "../src/cards/regex-scripts.js";
+import {
+  parseStandaloneRegexJson,
+  serializeStandaloneRegexJson,
+} from "../src/presets/standalone-regex.js";
 import { REGEX_PLACEMENT, REGEX_SUBSTITUTE } from "@vibe-tavern/domain";
 
 // ── Fixtures (real card data, cross-repo test assets) ──────────────────────
@@ -75,11 +79,16 @@ test("extractCardRegexScripts — malformed fields fall back to defaults", () =>
   expect(d.runOnEdit).toBe(true); // default when absent
 });
 
-test("extractCardRegexScripts — SECURITY GATE: always disabled regardless of card flag", () => {
+test("extractCardRegexScripts — source fidelity: disabled mirrors the card script", () => {
   const drafts = extractCardRegexScripts({
-    regex_scripts: [{ findRegex: "/a/g", disabled: false }],
+    regex_scripts: [
+      { findRegex: "/a/g", disabled: false },
+      { findRegex: "/b/g", disabled: true },
+      { findRegex: "/c/g" }, // absent → enabled (ST's own default)
+      { findRegex: "/d/g", disabled: "garbage" }, // non-boolean → enabled
+    ],
   });
-  expect(drafts[0]!.disabled).toBe(true);
+  expect(drafts.map((d) => d.disabled)).toEqual([false, true, false, false]);
 });
 
 test("extractCardRegexScripts — full ST field mapping + lossless sourceScript", () => {
@@ -110,6 +119,7 @@ test("extractCardRegexScripts — full ST field mapping + lossless sourceScript"
   expect(d.markdownOnly).toBe(true);
   expect(d.promptOnly).toBe(false);
   expect(d.runOnEdit).toBe(false);
+  expect(d.disabled).toBe(false); // source fidelity: the card's own flag
   expect(d.substituteRegex).toBe(REGEX_SUBSTITUTE.Escaped);
   expect(d.minDepth).toBe(0);
   expect(d.maxDepth).toBe(2);
@@ -132,7 +142,7 @@ test("extractCardRegexScripts — sortOrder follows array index across drafts", 
 
 // ── Real fixture card (V3 with 3 embedded scripts) ─────────────────────────
 
-test("fixture card yields exactly 3 drafts, names/placements correct, ALL disabled", async () => {
+test("fixture card yields exactly 3 drafts, names/placements correct, source states preserved", async () => {
   const card = await loadCard(CARD_WITH_REGEX);
   const bundle = importBundle(card);
 
@@ -151,9 +161,10 @@ test("fixture card yields exactly 3 drafts, names/placements correct, ALL disabl
     REGEX_PLACEMENT.UserInput,
     REGEX_PLACEMENT.AiOutput,
   ]);
-  // The card says disabled:false — the gate overrides to true. ALWAYS.
+  // Source fidelity: every fixture script ships disabled:false in the card,
+  // so every draft parses enabled — no parser-side activation policy.
   for (const draft of bundle.regexScripts) {
-    expect(draft.disabled).toBe(true);
+    expect(draft.disabled).toBe(false);
   }
 });
 
@@ -177,7 +188,7 @@ test("bundle.extensions still carries the RAW regex_scripts after extraction (lo
   expect(Array.isArray(raw)).toBe(true);
   const first = (raw as Array<Record<string, unknown>>)[0]!;
   expect(first.scriptName).toBe("Strip thinking tags");
-  expect(first.disabled).toBe(false); // raw copy is UNTOUCHED — gate lives only in drafts
+  expect(first.disabled).toBe(false); // raw copy is UNTOUCHED — parsing never rewrites extensions
 });
 
 // ── V2 path (extensions at top level) ──────────────────────────────────────
@@ -194,7 +205,7 @@ test("pure-V2 card (no data block) extracts top-level extensions.regex_scripts",
   const bundle = importBundle(v2card);
   expect(bundle.regexScripts).toHaveLength(1);
   expect(bundle.regexScripts[0]!.name).toBe("from v2");
-  expect(bundle.regexScripts[0]!.disabled).toBe(true);
+  expect(bundle.regexScripts[0]!.disabled).toBe(false); // no disabled field → enabled
 });
 
 test("hybrid card: data.extensions wins over stale top-level copy; fallback applies when data has none", () => {
@@ -215,4 +226,19 @@ test("hybrid card: data.extensions wins over stale top-level copy; fallback appl
     data: { name: "Hybrid2", extensions: {} },
   });
   expect(topLevelOnly.regexScripts.map((d) => d.name)).toEqual(["at-top-level"]);
+});
+
+// ── Round-trip: card drafts → standalone JSON → parse ─────────────────────
+
+test("round-trip — extracted card drafts serialize and re-parse with states preserved", () => {
+  const drafts = extractCardRegexScripts({
+    regex_scripts: [
+      { findRegex: "/a/g", scriptName: "enabled one", disabled: false },
+      { findRegex: "/b/g", scriptName: "disabled one", disabled: true },
+    ],
+  });
+  const reparsed = parseStandaloneRegexJson(serializeStandaloneRegexJson(drafts));
+  expect(reparsed.map((d) => d.name)).toEqual(["enabled one", "disabled one"]);
+  // Enabled/disabled survives the serialize → parse round trip verbatim.
+  expect(reparsed.map((d) => d.disabled)).toEqual([false, true]);
 });

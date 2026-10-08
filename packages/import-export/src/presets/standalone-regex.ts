@@ -5,20 +5,20 @@
  * `RegexScriptData` object (the common ST export shape) or an ARRAY of them;
  * `{ "scripts": [...] }` wrappers also occur. This module parses all three
  * shapes into the shared {@link RegexScriptImportDraft} drafts and serializes
- * drafts back to an ST-importable JSON array.
+ * Rules back to an ST-importable JSON array.
  *
- * SECURITY GATE (plan non-negotiable): every parsed draft lands
- * `disabled: true` via the shared {@link normalizeStRegexScript} — review
- * before trust, identical to card/preset embedded scripts. Serialized output
- * preserves each draft's own `disabled` flag verbatim (round-trip fidelity).
+ * Source fidelity (RXU-11): parsed drafts carry each script's own `disabled`
+ * value via the shared {@link normalizeStRegexScript}; serialized output
+ * preserves the flag verbatim, so round trips are state-lossless.
  *
  * NEVER throws: malformed input yields [].
  */
 
-import { normalizeStRegexScript, type RegexScriptImportDraft } from "../cards/regex-scripts.js";
-
-/** A draft with its lossless source channel stripped — what serialization accepts. */
-export type StandaloneRegexScriptOut = Omit<RegexScriptImportDraft, "sourceScript">;
+import {
+  normalizeStRegexScript,
+  type RegexRuleExport,
+  type RegexScriptImportDraft,
+} from "../cards/regex-scripts.js";
 
 /**
  * Parse a standalone regex-script JSON payload into importable drafts.
@@ -56,15 +56,16 @@ function extractRawList(raw: unknown): unknown[] {
 }
 
 /**
- * Serialize drafts to an ST-importable JSON array of plain
- * `RegexScriptData`-shaped objects (strips the draft-only `sourceScript`).
+ * Serialize Rules to an ST-importable JSON array of plain
+ * `RegexScriptData`-shaped objects. Accepts the neutral {@link RegexRuleExport}
+ * shape; import drafts (Rule + lossless `sourceScript`) are accepted too —
+ * the channel is simply not emitted.
  *
- * Round-trip guarantee: `parseStandaloneRegexJson(serializeStandaloneRegexJson(drafts))`
- * yields drafts equal to the inputs minus `sourceScript`.
+ * Round-trip guarantee: `parseStandaloneRegexJson(serializeStandaloneRegexJson(rules))`
+ * yields drafts equal to the inputs minus `sourceScript`, with every
+ * enabled/disabled flag preserved.
  */
-export function serializeStandaloneRegexJson(
-  drafts: Array<StandaloneRegexScriptOut | RegexScriptImportDraft>,
-): string {
+export function serializeStandaloneRegexJson(drafts: RegexRuleExport[]): string {
   const out = drafts.map((draft) => ({
     scriptName: draft.name,
     findRegex: draft.findRegex,

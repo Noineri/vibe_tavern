@@ -6,10 +6,12 @@
  * them into importable {@link RegexScriptImportDraft} drafts for the
  * offer-to-save flow.
  *
- * SECURITY GATE (plan non-negotiable): every draft lands `disabled: true` —
- * the same review-before-trust gate ST applies to shared cards — regardless of
- * what the embedded script claims. The caller stamps createdAt/updatedAt and
- * a fresh id when persisting an accepted draft as a RegexPreset.
+ * Source fidelity (REGEX_RULE_PROFILE_UX_PORTABILITY_PLAN, RXU-11): parsing
+ * is faithful to the source — each draft carries the source script's own
+ * `disabled` value exactly. No activation policy lives in the parser;
+ * import flows own what a draft lands as when persisted. The caller stamps
+ * createdAt/updatedAt and a fresh id when persisting an accepted draft as a
+ * RegexPreset.
  *
  * Extraction is ADDITIVE, never destructive: extensions keep carrying the raw
  * `regex_scripts` array so a round-trip re-export of the card is lossless.
@@ -27,8 +29,19 @@ import {
 
 import { isRecord } from "../shared.js";
 
-/** A RegexPreset-shaped draft with timestamps left to the caller. */
-export type RegexScriptImportDraft = Omit<RegexPreset, "id" | "createdAt" | "updatedAt"> & {
+/**
+ * A Rule in its neutral, serialization-facing shape: a `RegexPreset` minus
+ * persistence fields (id, createdAt, updatedAt) and the import-only
+ * `sourceScript` channel. Carries NO import policy — enabled/disabled is the
+ * Rule's own state. Import drafts are structurally assignable to this type,
+ * so parsers and serializers share one Rule shape (RXU-11).
+ */
+export type RegexRuleExport = Omit<RegexPreset, "id" | "createdAt" | "updatedAt">;
+
+/** A Rule-shaped import draft: the neutral export shape plus the lossless
+ *  source channel. Timestamps are left to the caller; `disabled` mirrors the
+ *  source script's own value. */
+export type RegexScriptImportDraft = RegexRuleExport & {
   /** The ORIGINAL embedded ST script object — lossless channel so the
    *  offer-to-save UI can show raw details without re-parsing extensions. */
   sourceScript: Record<string, unknown>;
@@ -82,8 +95,10 @@ function parseScriptName(value: unknown): string {
  * instead of rejecting the whole script. Unknown extra fields are preserved
  * via {@link RegexScriptImportDraft.sourceScript}.
  *
- * SECURITY GATE (plan non-negotiable): every draft lands `disabled: true`
- * regardless of what the embedded script claims; `isGlobal` is always false.
+ * Source fidelity (RXU-11): the draft's `disabled` mirrors the source
+ * script's own value (absent → false, ST's enabled default); `isGlobal` is
+ * always false — profile scope is a VT-native concept, never trusted from
+ * card data.
  *
  * @param index assigned to the returned draft's `sortOrder` (callers decide
  *              the semantics: raw array position or accepted-so-far count).
@@ -102,8 +117,8 @@ export function normalizeStRegexScript(raw: unknown, index: number): RegexScript
     replaceString: typeof raw.replaceString === "string" ? raw.replaceString : "",
     trimStrings: parseTrimStrings(raw.trimStrings),
     substituteRegex: parseSubstituteRegex(raw.substituteRegex),
-    // Security gate: embedded scripts are untrusted until reviewed.
-    disabled: true,
+    // Source fidelity: the source script's own flag, absent → false (enabled).
+    disabled: asBool(raw.disabled),
     markdownOnly: asBool(raw.markdownOnly),
     promptOnly: asBool(raw.promptOnly),
     runOnEdit: raw.runOnEdit === undefined ? true : asBool(raw.runOnEdit),
