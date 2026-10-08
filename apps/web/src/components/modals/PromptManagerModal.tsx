@@ -23,7 +23,8 @@ import {
   type PresetRegexImportPlan,
 } from "./preset-import-flow.js";
 import { PresetImportModalHost } from "./PresetImportModalHost.js";
-import { serializeStPreset, parseStandaloneRegexJson, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
+import { RegexImportModal } from "./RegexImportModal.js";
+import { serializeStPreset, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
@@ -66,42 +67,6 @@ import { applyTargetFlags, type RegexPlacement, type RegexSubstituteMode } from 
 import { toast } from "sonner";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
-
-/**
- * RX-16 UI surface: import standalone ST regex JSON as presets.
- *
- * Pure seam (unit-testable without the DOM): parse + create via the injected
- * creator. Every imported preset lands `disabled: true` — the security gate
- * is already enforced by the parser, but we assert it here too so this import
- * path can never re-enable a script. Returns the created count; callers
- * surface 0 / failures as a non-blocking message.
- */
-export async function importStandaloneRegexText(
-  jsonText: string,
-  create: (body: Parameters<typeof createRegexPreset>[0]) => Promise<RegexPresetRecord>,
-): Promise<number> {
-  const drafts = parseStandaloneRegexJson(jsonText);
-  let created = 0;
-  for (const draft of drafts) {
-    await create({
-      name: draft.name,
-      findRegex: draft.findRegex,
-      replaceString: draft.replaceString,
-      trimStrings: draft.trimStrings,
-      substituteRegex: draft.substituteRegex,
-      disabled: true,
-      markdownOnly: draft.markdownOnly,
-      promptOnly: draft.promptOnly,
-      runOnEdit: draft.runOnEdit,
-      minDepth: draft.minDepth,
-      maxDepth: draft.maxDepth,
-      placement: draft.placement,
-      isGlobal: draft.isGlobal,
-    });
-    created += 1;
-  }
-  return created;
-}
 
 type PromptManagerTab = "presets" | "regex" | "service" | "images";
 
@@ -333,6 +298,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     setSaveState("idle");
   }
   const [presetImportFile, setPresetImportFile] = useState<File | null | undefined>(undefined);
+  const [regexImportFile, setRegexImportFile] = useState<File | undefined>(undefined);
   const isMobile = useIsMobile();
   const activePreset = input.presets.find((p) => p.id === input.activePresetId) ?? null;
 
@@ -582,35 +548,16 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       });
   }
 
-  // RX-16 UI surface: standalone ST regex JSON import. Hidden file input
-  // reads text → the pure helper parses + creates (all disabled) → the list
-  // refreshes and the display-regex cache is invalidated so a newly-created
-  // preset is picked up immediately.
-  function handleRegexImportFile(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      void handleRegexImportText(String(reader.result ?? ""));
-    };
-    reader.onerror = () => {
-      toast.error(t("promptManager.regex.importFailed"));
-    };
-    reader.readAsText(file);
-  }
-
-  async function handleRegexImportText(jsonText: string) {
-    try {
-      const created = await importStandaloneRegexText(jsonText, createRegexPreset);
-      if (created === 0) {
-        toast.error(t("promptManager.regex.importNone"));
-        return;
-      }
-      const refreshed = await listAllRegexPresets();
-      setRegexPresets(refreshed.sort((a, b) => a.sortOrder - b.sortOrder));
-      invalidateActiveRegexPresets();
-      toast.success(t("promptManager.regex.imported", { n: String(created) }));
-    } catch {
-      toast.error(t("promptManager.regex.importFailed"));
-    }
+  /** A successful standalone import returns the complete atomic bundle, so
+   *  local lists and the selected Profile update without a follow-up fetch. */
+  function handleStandaloneRegexImported(result: { profile: RegexProfileRecord; rules: RegexPresetRecord[] }) {
+    setRegexPresets((previous) => [...previous, ...result.rules].sort((a, b) => a.sortOrder - b.sortOrder));
+    setRegexProfiles((previous) => [...previous, result.profile].sort((a, b) => a.sortOrder - b.sortOrder));
+    setActiveRegexPresetId(null);
+    setActiveRegexProfileId(result.profile.id);
+    setExpandedProfileIds((previous) => new Set(previous).add(result.profile.id));
+    invalidateActiveRegexPresets();
+    toast.success(t("promptManager.regex.imported", { n: String(result.rules.length) }));
   }
 
   function handleRegexRename(id: string, newName: string) {
@@ -1059,6 +1006,16 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
 
   return (
     <>
+      {regexImportFile && (
+        <RegexImportModal
+          file={regexImportFile}
+          currentPresetId={input.activePresetId}
+          currentCharacterId={input.loreContext?.characterId ?? null}
+          onClose={() => setRegexImportFile(undefined)}
+          onImport={createRegexProfileBundle}
+          onImported={handleStandaloneRegexImported}
+        />
+      )}
       <PresetImportModalHost
         file={presetImportFile}
         onClose={() => setPresetImportFile(undefined)}
@@ -1118,7 +1075,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         );
       })()}
 
-      {/* RX-16 UI surface: hidden file input for standalone regex JSON import. */}
+      {/* Standalone Regex import opens the Profile bundle preview. */}
       <input
         ref={regexImportInputRef}
         type="file"
@@ -1126,7 +1083,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) handleRegexImportFile(file);
+          if (file) setRegexImportFile(file);
           e.target.value = "";
         }}
       />
