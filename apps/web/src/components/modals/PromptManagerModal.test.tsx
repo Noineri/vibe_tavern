@@ -995,31 +995,6 @@ describe("PromptManagerModal — regex profiles (R-13b)", () => {
     expect((createRegexProfileMock.mock.calls[0][0] as unknown as { name: string }).name).toBe("MyProf");
   });
 
-  test("creating a new rule under an expanded profile makes it appear in the member list (regression: map-over-never-added state dropped the rule)", async () => {
-    listAllRegexPresetsMock.mockResolvedValue([]);
-    listAllRegexProfilesMock.mockResolvedValue([profileRecord("p1", "Bundle")]);
-    getRegexProfileLinksMock.mockResolvedValue([]);
-    createRegexPresetMock.mockResolvedValue(regexRecord("rx_new", "NewInProf"));
-    attachRegexRuleMock.mockResolvedValue(regexRecord("rx_new", "NewInProf", "p1"));
-    useModalStore.setState({ isPromptManagerOpen: true });
-    const view = render(
-      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
-    );
-    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    // Expand the profile → the “+ new rule” member button appears.
-    fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
-    await waitFor(() => expect(within(view.baseElement).getByText("promptManager.regex.memberNewRule")).toBeTruthy());
-    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.memberNewRule"));
-    const input = within(view.baseElement).getByPlaceholderText("promptManager.regex.newNamePlaceholder") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "NewInProf" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => { expect(attachRegexRuleMock).toHaveBeenCalledWith("p1", "rx_new"); });
-    // THE regression pin: the created rule must land in the list state and
-    // render as a member row (the old map() over never-added state dropped it).
-    await waitFor(() => { expect(within(view.baseElement).getByText("NewInProf")).toBeTruthy(); });
-  });
-
   test("member rule's status dot reflects the PROFILE gate: enabled-but-unbound profile → red dot on both the profile row and its member (R-13b owner spec)", async () => {
     // Enabled, non-global, zero profile links → applies in NO chat: the
     // profile row dot is red AND the member's dot must be red too (a green
@@ -1161,6 +1136,177 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed).toHaveLength(2);
     expect(parsed.every((o) => typeof o.scriptName === "string")).toBe(true);
+  });
+});
+
+// ── RXU-14: manual rule creation from empty local drafts ───────────────
+describe("PromptManagerModal — manual rule drafts (RXU-14)", () => {
+  function regexRecord(id: string, name: string, profileId: string | null = null): RegexPresetRecord {
+    return {
+      id: brandId<RegexPresetId>(id), name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId: profileId === null ? null : brandId<RegexProfileId>(profileId), createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+  }
+  function profileRecord(id: string, name: string): RegexProfileRecord {
+    return { id: brandId<RegexProfileId>(id), name, disabled: false, isGlobal: true, sortOrder: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+  }
+
+  async function openRegexTab(presets: RegexPresetRecord[], profiles: RegexProfileRecord[] = []) {
+    listAllRegexPresetsMock.mockResolvedValue(presets);
+    listAllRegexProfilesMock.mockResolvedValue(profiles);
+    getRegexProfileLinksMock.mockResolvedValue([]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(listAllRegexPresetsMock).toHaveBeenCalled());
+    return view;
+  }
+
+  /** Open a standalone draft via the master list's inline "+ New" entry. */
+  async function openStandaloneDraft(view: ReturnType<typeof render>, name: string) {
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.newPreset"));
+    const input = within(view.baseElement).getByPlaceholderText("promptManager.regex.newNamePlaceholder") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: name } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    // The draft editor mounts: name seeded, find EMPTY, Active OFF.
+    await waitFor(() => expect(within(view.baseElement).getByLabelText("promptManager.regex.fieldFind")).toBeTruthy());
+  }
+
+  test("opening a draft makes ZERO write calls, adds no list row, and starts empty + disabled", async () => {
+    const view = await openRegexTab([regexRecord("rx_a", "Existing")]);
+    const listReadsBefore = listAllRegexPresetsMock.mock.calls.length;
+    await openStandaloneDraft(view, "Fresh");
+
+    // Zero writes and no extra reads for opening the draft.
+    expect(createRegexPresetMock).not.toHaveBeenCalled();
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+    expect(updateRegexProfileMock).not.toHaveBeenCalled();
+    expect(listAllRegexPresetsMock).toHaveBeenCalledTimes(listReadsBefore);
+
+    const q = within(view.baseElement);
+    // The seeded name lives ONLY in the editor input — no phantom list row.
+    expect(q.getByDisplayValue("Fresh")).toBeTruthy();
+    expect(q.queryByText("Fresh")).toBeNull();
+    // Draft starts empty (owner correction quoted in the RXU-14 plan).
+    expect((q.getByLabelText("promptManager.regex.fieldFind") as HTMLTextAreaElement).value).toBe("");
+    expect((q.getByLabelText("promptManager.regex.fieldReplace") as HTMLTextAreaElement).value).toBe("");
+    // Agreed manual default: Active OFF until the user opts in.
+    expect(q.getByRole("switch", { name: "promptManager.regex.fieldActive" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  test("Save stays disabled with field feedback while name or regex is invalid — zero writes", async () => {
+    const view = await openRegexTab([]);
+    await openStandaloneDraft(view, "Blocked");
+    const q = within(view.baseElement);
+
+    // Name valid, find EMPTY → find feedback, Save disabled.
+    expect(q.getByText("promptManager.regex.draftFindRequired")).toBeTruthy();
+    let save = q.getByRole("button", { name: "save" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+
+    // Type a broken pattern → still blocked.
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldFind"), { target: { value: "/[unclosed/g" } });
+    await waitFor(() => expect(save.disabled).toBe(true));
+    expect(q.getByText("promptManager.regex.draftFindRequired")).toBeTruthy();
+
+    // Clear the name → name feedback.
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldName"), { target: { value: "" } });
+    await waitFor(() => expect(q.getByText("promptManager.regex.draftNameRequired")).toBeTruthy());
+
+    // A blocked Save never reaches the server.
+    fireEvent.click(q.getByRole("button", { name: "save" }));
+    expect(createRegexPresetMock).not.toHaveBeenCalled();
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+  });
+
+  test("first valid Save creates the Rule ONCE with the exact payload, then it appears in the list", async () => {
+    const view = await openRegexTab([regexRecord("rx_a", "Existing")]);
+    await openStandaloneDraft(view, "My Stripper");
+    const q = within(view.baseElement);
+    createRegexPresetMock.mockResolvedValue(regexRecord("rx_new", "My Stripper"));
+
+    // No row until Save (the name exists only as the input's value).
+    expect(q.queryByText("My Stripper")).toBeNull();
+
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldFind"), { target: { value: "/<think>[\\s\\S]*?<\\/think>/g" } });
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldReplace"), { target: { value: "" } });
+    const save = q.getByRole("button", { name: "save" }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+
+    await waitFor(() => expect(createRegexPresetMock).toHaveBeenCalledTimes(1));
+    const body = createRegexPresetMock.mock.calls[0][0] as unknown as Record<string, unknown>;
+    // Fields exactly as typed in the empty-started draft; born disabled; standalone.
+    expect(body).toMatchObject({
+      name: "My Stripper",
+      findRegex: "/<think>[\\s\\S]*?<\\/think>/g",
+      replaceString: "",
+      trimStrings: [],
+      substituteRegex: 0,
+      disabled: true,
+      isGlobal: false,
+      placement: [2],
+      minDepth: null,
+      maxDepth: null,
+      markdownOnly: false,
+      promptOnly: false,
+    });
+    expect("profileId" in body).toBe(false);
+    // ONE write — no create-then-attach.
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+    expect(updateRegexProfileMock).not.toHaveBeenCalled();
+    // The saved rule (and only it) renders as a list row.
+    await waitFor(() => expect(q.getByText("My Stripper")).toBeTruthy());
+  });
+
+  test("a draft opened inside a Profile saves ONCE with profileId and lands as a member row", async () => {
+    const view = await openRegexTab([], [profileRecord("p1", "Bundle")]);
+    const q = within(view.baseElement);
+    createRegexPresetMock.mockResolvedValue(regexRecord("rx_new", "InProf", "p1"));
+
+    // Expand the profile → inline "+ New rule" member entry.
+    fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
+    await waitFor(() => expect(q.getByText("promptManager.regex.memberNewRule")).toBeTruthy());
+    fireEvent.click(q.getByText("promptManager.regex.memberNewRule"));
+    const input = q.getByPlaceholderText("promptManager.regex.newNamePlaceholder") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "InProf" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // Draft editor mounted with the member chip (intended destination shown).
+    await waitFor(() => expect(q.getByText("promptManager.regex.memberViaProfile")).toBeTruthy());
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldFind"), { target: { value: "/x/g" } });
+    const save = q.getByRole("button", { name: "save" }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+
+    // ONE create carrying the intended profileId — the attach endpoint is
+    // never used for manual creation anymore.
+    await waitFor(() => expect(createRegexPresetMock).toHaveBeenCalledTimes(1));
+    const body = createRegexPresetMock.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(body.name).toBe("InProf");
+    expect(body.profileId).toBe("p1");
+    expect(body.disabled).toBe(true);
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+    // The created rule lands in state and renders as the profile's member.
+    await waitFor(() => expect(q.getByText("InProf")).toBeTruthy());
+  });
+
+  test("closing the modal discards a dirty draft with ZERO writes and no phantom row", async () => {
+    const view = await openRegexTab([]);
+    await openStandaloneDraft(view, "Doomed");
+    const q = within(view.baseElement);
+    // Make the draft dirty AND valid — a state worth protecting with the
+    // unsaved-changes guard, then confirm the discard.
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldFind"), { target: { value: "/x/g" } });
+
+    fireEvent.click(q.getAllByText("close")[0]);
+    await waitFor(() => expect(q.getByText("unsaved_changes_title")).toBeTruthy());
+    fireEvent.click(q.getByText("close_without_saving"));
+
+    await waitFor(() => expect(useModalStore.getState().isPromptManagerOpen).toBe(false));
+    expect(createRegexPresetMock).not.toHaveBeenCalled();
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
   });
 });
 

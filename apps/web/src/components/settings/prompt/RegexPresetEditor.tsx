@@ -13,6 +13,7 @@ import { TextInput } from "../../shared/text-input.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget, promptPresetToLinkTarget } from "../../../lib/link-targets.js";
 import { RegexAiAssistantModal } from "./RegexAiAssistantModal.js";
+import { regexDraftSaveIssue, type RegexPresetDraft } from "./regex-rule-draft.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useMacroContext } from "../../../stores/chat-selectors.js";
@@ -29,52 +30,6 @@ import type Resources from "../../../i18n/resources.js";
  *  `t()` calls stay compile-checked (no `tDynamic` escape hatch needed). */
 type I18nKey = keyof Resources["en"];
 
-export interface RegexPresetDraft {
-  name: string;
-  findRegex: string;
-  replaceString: string;
-  trimStrings: string;
-  substituteRegex: RegexSubstituteMode;
-  placement: RegexPlacement[];
-  minDepth: string;
-  maxDepth: string;
-  isGlobal: boolean;
-  disabled: boolean;
-  applyTarget: RegexApplyTarget;
-}
-
-export function regexDraftFromRecord(p: RegexPresetRecord): RegexPresetDraft {
-  return {
-    name: p.name,
-    findRegex: p.findRegex,
-    replaceString: p.replaceString,
-    trimStrings: p.trimStrings.join("\n"),
-    substituteRegex: p.substituteRegex as RegexSubstituteMode,
-    placement: [...p.placement] as RegexPlacement[],
-    minDepth: p.minDepth === null ? "" : String(p.minDepth),
-    maxDepth: p.maxDepth === null ? "" : String(p.maxDepth),
-    isGlobal: p.isGlobal,
-    disabled: p.disabled,
-    applyTarget: regexApplyTargetOf(p),
-  };
-}
-
-export function emptyRegexDraft(): RegexPresetDraft {
-  return {
-    name: "",
-    findRegex: "",
-    replaceString: "",
-    trimStrings: "",
-    substituteRegex: 0,
-    placement: [REGEX_PLACEMENT.AiOutput],
-    minDepth: "",
-    maxDepth: "",
-    isGlobal: false,
-    disabled: false,
-    applyTarget: "persist",
-  };
-}
-
 interface RegexPresetEditorProps {
   /** The saved preset being edited, or null for a new preset. */
   preset: RegexPresetRecord | null;
@@ -90,6 +45,10 @@ interface RegexPresetEditorProps {
   onLinksChanged?: (presetId: string, linkCount: number) => void;
   /** R-13c: when the rule belongs to a profile, show the profile chip instead of the own scope block. */
   profileName?: string | null;
+  /** RXU-14: the intended destination Profile of an UNSAVED new-rule draft
+   *  (null/undefined = standalone). A preset record's own `profileId` wins
+   *  when present; this only routes a draft into the member chip. */
+  draftProfileId?: string | null;
 }
 
 const PLACEMENT_OPTIONS: Array<{ code: RegexPlacement; labelKey: I18nKey }> = [
@@ -151,11 +110,17 @@ const MESSAGE_PLACEMENTS: RegexPlacement[] = [REGEX_PLACEMENT.UserInput, REGEX_P
  * fields (mono at input size) → live test pane with macro substitution,
  * no-match/empty distinction and an honesty disclaimer.
  */
-export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange, onLinksChanged, profileName }: RegexPresetEditorProps) {
+export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange, onLinksChanged, profileName, draftProfileId }: RegexPresetEditorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [testInput, setTestInput] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
+  // RXU-14: field-level Save gate — only a NEW rule draft is blocked from its
+  // first persistence (a saved record keeps its existing update flow).
+  const draftSaveIssue = preset === null ? regexDraftSaveIssue(draft) : null;
+  // Membership for the R-13c chip: a saved record's own profile, or the
+  // intended destination of an unsaved draft (RXU-14).
+  const memberProfileId = preset?.profileId ?? draftProfileId ?? null;
 
   // ── Bindings (RX-12) ──
   // Forward-direction binding: this preset → characters + prompt presets.
@@ -370,6 +335,11 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
             onChange={(e) => update("name", e.target.value)}
             placeholder={t("promptManager.regex.namePlaceholder")}
           />
+          {draftSaveIssue?.field === "name" && (
+            <div role="alert" className="mt-1 font-ui text-[11px] text-danger">
+              {t("promptManager.regex.draftNameRequired")}
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2 pb-[7px]">
           <button
@@ -403,7 +373,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
 
       {/* R-13c: member rule — chip replaces the own scope block. The rule's
           own isGlobal/bindings are shadowed by the profile gate. */}
-      {preset?.profileId ? (
+      {memberProfileId ? (
         <div>
           <div className={lblCls}>{t("promptManager.regex.scopeLabel")}</div>
           <div className="flex items-center gap-2 rounded-md border border-border bg-s2 px-3 py-2">
@@ -564,6 +534,11 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           maxRows={6}
         />
         <div className="mt-1 font-ui text-[11px] text-t4">{t("promptManager.regex.findHint")}</div>
+        {draftSaveIssue?.field === "findRegex" && (
+          <div role="alert" className="mt-1 font-ui text-[11px] text-danger">
+            {t("promptManager.regex.draftFindRequired")}
+          </div>
+        )}
       </div>
 
       <div>

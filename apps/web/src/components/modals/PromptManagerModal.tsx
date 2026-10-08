@@ -28,7 +28,8 @@ import {
   type CanvasSummaryEntry,
 } from "../../lib/prompt-canvas-summary.js";
 import { RegexPresetList } from "../settings/prompt/RegexPresetList.js";
-import { RegexPresetEditor, regexDraftFromRecord, emptyRegexDraft, type RegexPresetDraft } from "../settings/prompt/RegexPresetEditor.js";
+import { RegexPresetEditor } from "../settings/prompt/RegexPresetEditor.js";
+import { regexDraftFromRecord, useRegexRuleDraft, emptyRegexDraft, type RegexPresetDraft } from "../settings/prompt/regex-rule-draft.js";
 import { RegexProfileEditor } from "../settings/prompt/RegexProfileEditor.js";
 import {
   listAllRegexPresets,
@@ -387,6 +388,15 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [expandedProfileIds, setExpandedProfileIds] = useState<Set<string>>(new Set());
   const [regexProfileLinkCounts, setRegexProfileLinkCounts] = useState<Record<string, number | undefined>>({});
 
+  // RXU-14: manual Rule creation is a LOCAL draft — no placeholder is
+  // persisted and no list row exists until the first valid Save.
+  const regexRuleDraft = useRegexRuleDraft({
+    isOpen,
+    setRegexDraft, setRegexDirty, setRegexSaveState,
+    setActiveRegexPresetId, setActiveRegexProfileId,
+    setRegexPresets, setExpandedProfileIds,
+  });
+
   const activeRegexPreset = regexPresets.find((p) => p.id === activeRegexPresetId) ?? null;
   const activeRegexProfile = regexProfiles.find((p) => p.id === activeRegexProfileId) ?? null;
 
@@ -417,8 +427,12 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       .catch(() => {});
   }, [activeTab, activeRegexPresetId, listAllRegexPresets]);
 
-  // Sync the editor draft when the selected regex preset changes.
+  // Sync the editor draft when the selected regex preset changes. An open
+  // new-rule draft (RXU-14) owns the editor state — the draft opens with
+  // `activeRegexPresetId` cleared, which is exactly what re-triggers this
+  // effect, so it must not clobber the seeded fields.
   useEffect(() => {
+    if (regexRuleDraft.draft) return;
     if (activeRegexPreset) {
       setRegexDraft(regexDraftFromRecord(activeRegexPreset));
     } else {
@@ -485,11 +499,13 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   }
 
   function handleRegexSelect(id: string) {
+    regexRuleDraft.discard();
     setActiveRegexPresetId(id);
     setActiveRegexProfileId(null);
   }
 
   function handleRegexProfileSelect(id: string) {
+    regexRuleDraft.discard();
     setActiveRegexProfileId(id);
     setActiveRegexPresetId(null);
     setRegexDirty(false);
@@ -624,22 +640,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     }
   }
 
-  function handleRegexAdd(name: string) {
-    const flags = applyTargetFlags("persist");
-    void createRegexPreset({
-      name,
-      findRegex: "/.*/g",
-      replaceString: "",
-      markdownOnly: flags.markdownOnly,
-      promptOnly: flags.promptOnly,
-    }).then((created) => {
-      setRegexPresets((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder));
-      setActiveRegexPresetId(created.id);
-      setActiveRegexProfileId(null);
-      invalidateActiveRegexPresets();
-    });
-  }
-
   function handleRegexRename(id: string, newName: string) {
     void updateRegexPreset(id, { name: newName }).then((updated) => {
       if (updated) {
@@ -732,30 +732,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       if (updated) setRegexProfiles((prev) => prev.map((p) => (p.id === id ? updated : p)));
     });
   }
-  function handleRegexAddRuleToProfile(profileId: string, name: string) {
-    const flags = applyTargetFlags("persist");
-    void createRegexPreset({
-      name,
-      findRegex: "/.*/g",
-      replaceString: "",
-      markdownOnly: flags.markdownOnly,
-      promptOnly: flags.promptOnly,
-    }).then((created) => {
-      void attachRegexRule(profileId, created.id).then((attached) => {
-        // `created` was never added to state, so a map() "replace" finds
-        // nothing and the new rule silently vanishes from the list (it exists
-        // on the server only — "rule not created" symptom). Append the record
-        // attach returned (it carries profileId); the flat builder groups
-        // members by profileId regardless of array position, so append order
-        // is safe.
-        setRegexPresets((prev) => [...prev, attached ?? created].sort((a, b) => a.sortOrder - b.sortOrder));
-        setActiveRegexPresetId(attached?.id ?? created.id);
-        setActiveRegexProfileId(null);
-        setExpandedProfileIds((prev) => new Set([...prev, profileId]));
-        invalidateActiveRegexPresets();
-      });
-    });
-  }
   const handleRegexToggleProfile = useCallback((id: string) => {
     setExpandedProfileIds((prev) => {
       const next = new Set(prev);
@@ -813,6 +789,12 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   }
 
   function handleRegexSave() {
+    // RXU-14: a new-rule draft's first Save is ONE create (directly in its
+    // intended Profile); the saved-record update flow follows below.
+    if (regexRuleDraft.draft) {
+      regexRuleDraft.save(regexDraft);
+      return;
+    }
     if (!activeRegexPresetId || !regexDirty) return;
     setRegexSaveState("saving");
     const flags = applyTargetFlags(regexDraft.applyTarget);
@@ -1291,9 +1273,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onToggleProfile={handleRegexToggleProfile}
                   onSelect={handleRegexSelect}
                   onSelectProfile={handleRegexProfileSelect}
-                  onAdd={handleRegexAdd}
+                  onAdd={(name) => regexRuleDraft.open(name, null)}
                   onAddProfile={handleRegexProfileAdd}
-                  onAddRuleToProfile={handleRegexAddRuleToProfile}
+                  onAddRuleToProfile={(profileId, name) => regexRuleDraft.open(name, profileId)}
                   onRename={handleRegexRename}
                   onRenameProfile={handleRegexProfileRename}
                   onReorder={handleRegexReorder}
@@ -1343,6 +1325,17 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   setRegexLinkCounts((prev) => ({ ...prev, [presetId]: count }))
                 }
                 profileName={activeRegexPreset.profileId ? (regexProfiles.find((p) => p.id === activeRegexPreset.profileId)?.name ?? null) : null}
+              />
+            ) : regexRuleDraft.draft ? (
+              // RXU-14: an unsaved new-rule draft reuses the same editor with
+              // no preset record — bindings are hidden (nothing to bind yet)
+              // and the Active toggle edits the draft until first Save.
+              <RegexPresetEditor
+                preset={null}
+                draft={regexDraft}
+                onDraftChange={handleRegexDraftChange}
+                profileName={regexRuleDraft.draft.profileId ? (regexProfiles.find((p) => p.id === regexRuleDraft.draft?.profileId)?.name ?? null) : null}
+                draftProfileId={regexRuleDraft.draft.profileId}
               />
             ) : regexLoadState === "loading" ? (
               <div className="flex h-full items-center justify-center p-5">
@@ -1432,6 +1425,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   saveState={regexSaveState}
                   resetKey={activeRegexPresetId}
                   onClick={handleRegexSave}
+                  disabled={regexRuleDraft.draft ? regexRuleDraft.saveBlocked(regexDraft) : false}
                   label={t("save")}
                 />
               }

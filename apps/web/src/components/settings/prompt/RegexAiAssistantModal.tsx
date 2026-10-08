@@ -24,7 +24,7 @@ import type Resources from "../../../i18n/resources.js";
 
 /** A statically-known i18n key — keeps the archetype/label tables compile-checked. */
 type I18nKey = keyof Resources["en"];
-import type { RegexPresetDraft } from "./RegexPresetEditor.js";
+import type { RegexPresetDraft } from "./regex-rule-draft.js";
 import { compileRegexScript, parseFindRegex } from "@vibe-tavern/prompt-pipeline";
 import { brandId, type RegexPreset } from "@vibe-tavern/domain";
 

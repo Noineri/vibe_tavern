@@ -2070,6 +2070,8 @@ export default interface Resources {
     "promptManager.regex.depthN": "N",
     "promptManager.regex.depthNoteHidden": "Depth applies to messages only — the selected hooks do not use it",
     "promptManager.regex.depthTo": "To",
+    "promptManager.regex.draftFindRequired": "Enter a valid regex (/pattern/flags) to save.",
+    "promptManager.regex.draftNameRequired": "Name is required to save.",
     "promptManager.regex.emptySub": "Create a named find/replace script to transform text at hooks",
     "promptManager.regex.emptyTitle": "No regex presets yet",
     "promptManager.regex.expandProfile": "Expand profile",

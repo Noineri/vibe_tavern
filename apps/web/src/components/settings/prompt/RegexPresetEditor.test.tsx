@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useState } from "react";
-import type { RegexPresetDraft } from "./RegexPresetEditor.js";
+import type { RegexPresetDraft } from "./regex-rule-draft.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
@@ -43,13 +43,16 @@ mock.module("../../shared/Tooltip.js", () => ({
 }));
 
 let RegexPresetEditor: typeof import("./RegexPresetEditor.js").RegexPresetEditor;
-let emptyRegexDraft: typeof import("./RegexPresetEditor.js").emptyRegexDraft;
-let regexDraftFromRecord: typeof import("./RegexPresetEditor.js").regexDraftFromRecord;
+let emptyRegexDraft: typeof import("./regex-rule-draft.js").emptyRegexDraft;
+let regexDraftFromRecord: typeof import("./regex-rule-draft.js").regexDraftFromRecord;
+let regexDraftSaveIssue: typeof import("./regex-rule-draft.js").regexDraftSaveIssue;
 beforeAll(async () => {
   const mod = await import("./RegexPresetEditor.js");
   RegexPresetEditor = mod.RegexPresetEditor;
-  emptyRegexDraft = mod.emptyRegexDraft;
-  regexDraftFromRecord = mod.regexDraftFromRecord;
+  const draftMod = await import("./regex-rule-draft.js");
+  emptyRegexDraft = draftMod.emptyRegexDraft;
+  regexDraftFromRecord = draftMod.regexDraftFromRecord;
+  regexDraftSaveIssue = draftMod.regexDraftSaveIssue;
 });
 
 import type { RegexPresetRecord } from "../../../api/types.js";
@@ -308,6 +311,83 @@ describe("RegexPresetEditor — R-7 redesign", () => {
     expect(await second.findByText("Deep RP")).toBeTruthy();
     await new Promise((r) => setTimeout(r, 50)); // let the links state settle
     expect(second.queryByText("promptManager.regex.bindingsDeadZone")).toBeNull();
+  });
+});
+
+// ── RXU-14: new-rule draft gate, feedback, and member chip ───────────────
+describe("RegexPresetEditor — new-rule draft (RXU-14)", () => {
+  beforeEach(() => {
+    getRegexLinksMock.mockReset();
+    getRegexLinksMock.mockResolvedValue([]);
+    listPromptPresetsMock.mockReset();
+    listPromptPresetsMock.mockResolvedValue([]);
+    setRegexLinksMock.mockReset();
+  });
+
+  it("pure gate: a non-empty name AND a compilable find pattern are required", () => {
+    // Empty draft → name blocks first.
+    expect(regexDraftSaveIssue(emptyRegexDraft())?.field).toBe("name");
+    // Name present, find missing → find blocks ("" compiles but is not a Rule).
+    expect(regexDraftSaveIssue({ ...emptyRegexDraft(), name: "A" })?.field).toBe("findRegex");
+    // Broken /pattern/flags → find blocks.
+    expect(regexDraftSaveIssue({ ...emptyRegexDraft(), name: "A", findRegex: "/[unclosed/g" })?.field).toBe("findRegex");
+    // Delimited and bare (whole-string) patterns both pass.
+    expect(regexDraftSaveIssue({ ...emptyRegexDraft(), name: "A", findRegex: "/x/g" })).toBeNull();
+    expect(regexDraftSaveIssue({ ...emptyRegexDraft(), name: "A", findRegex: "abc" })).toBeNull();
+  });
+
+  it("draft mode shows field-level feedback for the blocking field only", () => {
+    // Both invalid → the name issue is the visible blocker.
+    const first = render(<RegexPresetEditor preset={null} draft={emptyRegexDraft()} onDraftChange={mock()} />);
+    expect(first.getByText("promptManager.regex.draftNameRequired")).toBeTruthy();
+    expect(first.queryByText("promptManager.regex.draftFindRequired")).toBeNull();
+    first.unmount();
+
+    // Name present, find broken → find feedback only.
+    const second = render(
+      <RegexPresetEditor preset={null} draft={{ ...emptyRegexDraft(), name: "A", findRegex: "/[unclosed/g" }} onDraftChange={mock()} />,
+    );
+    expect(second.queryByText("promptManager.regex.draftNameRequired")).toBeNull();
+    expect(second.getByText("promptManager.regex.draftFindRequired")).toBeTruthy();
+    second.unmount();
+
+    // Fully valid draft → no feedback at all.
+    const third = render(
+      <RegexPresetEditor preset={null} draft={{ ...emptyRegexDraft(), name: "A", findRegex: "/x/g" }} onDraftChange={mock()} />,
+    );
+    expect(third.queryByText("promptManager.regex.draftNameRequired")).toBeNull();
+    expect(third.queryByText("promptManager.regex.draftFindRequired")).toBeNull();
+  });
+
+  it("saved-record editing never shows the draft gate feedback", () => {
+    // A saved record with a broken pattern keeps its existing update flow —
+    // the gate exists only for a draft's FIRST persistence.
+    const record = baseRecord({ findRegex: "/[unclosed/g" });
+    const view = render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
+    expect(view.queryByText("promptManager.regex.draftNameRequired")).toBeNull();
+    expect(view.queryByText("promptManager.regex.draftFindRequired")).toBeNull();
+  });
+
+  it("a profile-scoped draft shows the member chip instead of own scope controls", () => {
+    const view = render(
+      <RegexPresetEditor
+        preset={null}
+        draft={{ ...emptyRegexDraft(), name: "A" }}
+        onDraftChange={mock()}
+        profileName="Bundle"
+        draftProfileId="p1"
+      />,
+    );
+    expect(view.getByText("promptManager.regex.memberViaProfile")).toBeTruthy();
+    expect(view.queryByText("promptManager.regex.scopeAll")).toBeNull();
+  });
+
+  it("a standalone draft keeps the own scope controls", () => {
+    const view = render(
+      <RegexPresetEditor preset={null} draft={{ ...emptyRegexDraft(), name: "A" }} onDraftChange={mock()} />,
+    );
+    expect(view.queryByText("promptManager.regex.memberViaProfile")).toBeNull();
+    expect(view.getByText("promptManager.regex.scopeLabel")).toBeTruthy();
   });
 });
 
