@@ -43,6 +43,9 @@ interface BoundResourcesFieldProps {
   lorebookCaption?: string;
   /** CE-C3: symmetric caption for the script section. */
   scriptCaption?: string;
+  /** Increment after an external mutation (for example Co-Author Apply) to
+   *  refresh both the available resources and this entity's bound sets. */
+  refreshToken?: number;
 }
 
 /**
@@ -55,7 +58,7 @@ export function isScriptOfferableForEntityLink(sc: Pick<ScriptRecord, "scopeType
   return sc.scopeType !== "global";
 }
 
-export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCaption, scriptCaption }: BoundResourcesFieldProps) {
+export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCaption, scriptCaption, refreshToken = 0 }: BoundResourcesFieldProps) {
   const { t } = useT();
   const [allLorebooks, setAllLorebooks] = useState<LorebookRecord[]>([]);
   const [boundIds, setBoundIds] = useState<Set<string>>(new Set());
@@ -115,7 +118,7 @@ export function BoundResourcesField({ entityKind, entityId, isMobile, lorebookCa
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, refreshToken]);
 
   const targets = allLorebooks.map(lorebookToLinkTarget);
   // MUI step 13: global scripts are not OFFERED here. Legacy links made before

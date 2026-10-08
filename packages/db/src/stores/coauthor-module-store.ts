@@ -160,6 +160,18 @@ function parseToolSet(text: string): Partial<Record<string, boolean>> {
       raw.write_profile = raw.edit_profile;
       delete raw.edit_profile;
     }
+    // CE-B1's persisted-lore tools shipped in the executor before they were
+    // added to the module contract/editor. Existing lore-authoring modules
+    // therefore cannot carry these keys even though their omission was never a
+    // user choice. Fill only absent flags; an explicit false from the now-
+    // available toggles remains an intentional opt-out.
+    if (raw.create_lorebook === true && raw.edit_lorebook === undefined) {
+      raw.edit_lorebook = true;
+    }
+    if (raw.create_lore_entry === true) {
+      if (raw.edit_lore_entry === undefined) raw.edit_lore_entry = true;
+      if (raw.add_lore_entry === undefined) raw.add_lore_entry = true;
+    }
     return raw;
   } catch {
     return {};

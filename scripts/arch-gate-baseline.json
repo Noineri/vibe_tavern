@@ -39,7 +39,7 @@
     "apps/web/src/components/settings/provider/imagegen/ImageGenPane.tsx": 1967,
     "apps/web/src/components/settings/provider/ProviderSamplerPanel.tsx": 1164,
     "apps/web/src/components/settings/provider/tts/TtsProfileEditor.tsx": 1014,
-    "apps/web/src/hooks/use-chat-controller.ts": 1032,
+    "apps/web/src/hooks/use-chat-controller.ts": 1028,
     "apps/web/src/hooks/use-image-profiles.ts": 867,
     "apps/web/src/lib/experience-kernel-frame.ts": 946,
     "apps/web/src/lib/tts/tts-orchestrator.ts": 1050,

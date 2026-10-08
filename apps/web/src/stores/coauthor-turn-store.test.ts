@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import { extractPersistedCoauthorActivities, useCoauthorTurnStore } from "./coauthor-turn-store.js";
+import type { CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
 import type { AppMessage } from "../api/types.js";
 
 describe("useCoauthorTurnStore", () => {
@@ -42,6 +43,49 @@ describe("useCoauthorTurnStore", () => {
       summary: "Updated examples",
       greetingIndex: undefined,
       isAdd: undefined,
+    }]);
+  });
+
+  it("CE-B1: recognizes a persisted-lore add result by its wire shape", () => {
+    const bundle: CoauthorLoreBundle = {
+      lorebooks: [],
+      entries: [{
+        id: "entry-new",
+        lorebookId: "lorebook-existing",
+        title: "New entry",
+        content: "Proposed content.",
+        keys: ["new"],
+        secondaryKeys: [],
+        constant: false,
+        position: "before_char",
+        depth: 4,
+        enabled: true,
+        parentMode: "persisted",
+      }],
+    };
+    const messages = [
+      { id: "user_new", role: "user", content: "extend the existing lorebook" },
+      {
+        id: "assistant_call",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_add", name: "add_lore_entry", args: { lorebookId: "lorebook-existing" } }],
+      },
+      {
+        id: "tool_add",
+        role: "tool",
+        toolCallId: "call_add",
+        content: JSON.stringify({ target: "lore_bundle", bundle, summary: "Added entry." }),
+      },
+    ] as AppMessage[];
+
+    expect(extractPersistedCoauthorActivities(messages)).toEqual([{
+      toolCallId: "call_add",
+      toolName: "add_lore_entry",
+      args: { lorebookId: "lorebook-existing" },
+      status: "done",
+      summary: "Added entry.",
+      loreBundle: bundle,
     }]);
   });
 

@@ -23,7 +23,7 @@ import { useDomEnv } from "../../../test/dom-env.js";
 
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
-import type { AppCharacter } from "../../api/types.js";
+import type { AppCharacter, LorebookRecord } from "../../api/types.js";
 import type { BootstrapData } from "../../stores/api-actions/bootstrap-actions.js";
 import type { CoauthorToolActivity } from "../../stores/coauthor-turn-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
@@ -43,6 +43,8 @@ const realScriptApi = await import("../../api/script-api.js");
 const realCharacterApi = await import("../../api/character-api.js");
 const realRegexApi = await import("../../api/regex-api.js");
 const realChatStore = await import("../../stores/chat-store.js");
+const listAllLorebooksMock = mock((): Promise<LorebookRecord[]> => Promise.resolve([]));
+const listCharacterLorebooksMock = mock((): Promise<LorebookRecord[]> => Promise.resolve([]));
 
 /** Shared Checkbox exposes its state via aria-checked (role="checkbox"), not input.checked. */
 const ariaChecked = (el: Element) => el.getAttribute("aria-checked") === "true";
@@ -75,13 +77,13 @@ mock.module("../shared/Tooltip.js", () => ({
 // spread first so every other export stays intact.
 mock.module("../../api/lorebook-api.js", () => ({
 	...realLorebookApi,
-	listAllLorebooks: () => Promise.resolve([]),
+	listAllLorebooks: listAllLorebooksMock,
 	getLorebookLinks: () => Promise.resolve([]),
 	setLorebookLinks: () => Promise.resolve([]),
 }));
 mock.module("../../api/character-api.js", () => ({
 	...realCharacterApi,
-	listCharacterLorebooks: () => Promise.resolve([]),
+	listCharacterLorebooks: listCharacterLorebooksMock,
 	listCharacterScripts: () => Promise.resolve([]),
 }));
 mock.module("../../api/persona-api.js", () => ({
@@ -192,6 +194,10 @@ describe("CoauthorCharacterForm", () => {
 	beforeEach(() => {
 		globalThis.fetch = realFetch;
 		toast.warning = realToastWarning;
+		listAllLorebooksMock.mockReset();
+		listAllLorebooksMock.mockResolvedValue([]);
+		listCharacterLorebooksMock.mockReset();
+		listCharacterLorebooksMock.mockResolvedValue([]);
 	});
 
 	afterEach(() => {
@@ -620,6 +626,88 @@ describe("CoauthorCharacterForm", () => {
 		});
 		await waitFor(() => {
 			expect(useCoauthorTurnStore.getState().getActivities(TEST_CHAT)).toEqual([]);
+		});
+	});
+
+	it("CE-B2: Apply preserves generated keys for entries whose lorebook is already persisted", async () => {
+		__isSending = false;
+		seedReviewing();
+		const generatedKeys = ["skinwalker", "mimic", "consume memories"];
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, {
+			toolCallId: "keys-1",
+			toolName: "ai_generate_lore_keys",
+			status: "done",
+			summary: "Generated keys.",
+			loreBundle: {
+				// Re-delegation imports only the persisted entry. Its existing parent
+				// is intentionally absent from the proposal graph.
+				lorebooks: [],
+				entries: [{
+					id: "e-persisted",
+					lorebookId: "lb-persisted",
+					title: "Skinwalker Biology & Evolution",
+					content: "Existing content.",
+					keys: generatedKeys,
+					secondaryKeys: ["host"],
+					constant: false,
+					position: "before_char",
+					depth: 4,
+					enabled: true,
+					mode: "edit",
+					parentMode: "persisted",
+				}],
+			},
+		});
+
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
+			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { getByRole, getByText } = render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(ariaChecked(getByRole("checkbox"))).toBe(true));
+		fireEvent.click(getByText("coauthor.review.apply"));
+
+		await waitFor(() => {
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			const body = JSON.parse(String(call[1]?.body ?? "{}"));
+			expect(body.loreBundle.lorebooks).toEqual([]);
+			expect(body.loreBundle.entries).toHaveLength(1);
+			expect(body.loreBundle.entries[0].keys).toEqual(generatedKeys);
+			expect(body.loreBundle.entries[0].secondaryKeys).toEqual(["host"]);
+		});
+	});
+
+	it("CTX-L3: applying lore refreshes the Co-Author lorebook option and binding lists", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+
+		const fetchMock = mock((_u: unknown, _i: unknown) =>
+			Promise.resolve({ ok: true, status: 200, json: async () => ({ character: makeCharacter(), corrections: [] }), text: async () => "" }),
+		);
+		globalThis.fetch = fetchMock as never;
+
+		const { getByText } = render(<CoauthorCharacterForm />);
+		await waitFor(() => {
+			expect(listAllLorebooksMock).toHaveBeenCalledTimes(2);
+			expect(listCharacterLorebooksMock).toHaveBeenCalledTimes(1);
+		});
+		const createdLorebook = {
+			id: "lb2",
+			name: "Char Lore",
+			description: "",
+			scopeType: "entity",
+			enabled: true,
+		} as LorebookRecord;
+		listAllLorebooksMock.mockResolvedValue([createdLorebook]);
+		listCharacterLorebooksMock.mockResolvedValue([createdLorebook]);
+
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => {
+			expect(listAllLorebooksMock.mock.calls.length).toBeGreaterThan(2);
+			expect(listCharacterLorebooksMock.mock.calls.length).toBeGreaterThan(1);
 		});
 	});
 
