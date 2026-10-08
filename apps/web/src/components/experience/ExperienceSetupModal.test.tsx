@@ -190,6 +190,7 @@ function makeConfig(over: Partial<ExperienceChatConfigRow> = {}): ExperienceChat
     chatId: CHAT_ID,
     enabled: true,
     scriptId: "s1",
+    scriptName: "Script One",
     visualId: null,
     capabilityGrants: [],
     contextMode: "none",

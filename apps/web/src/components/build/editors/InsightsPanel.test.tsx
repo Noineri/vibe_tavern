@@ -54,6 +54,7 @@ function makeConfig(over: Partial<ExperienceChatConfigRow> & { chatId: string })
     chatId: over.chatId,
     enabled: over.enabled ?? false,
     scriptId: over.scriptId ?? null,
+    scriptName: over.scriptName ?? null,
     visualId: over.visualId ?? null,
     capabilityGrants: over.capabilityGrants ?? [],
     contextMode: over.contextMode ?? "none",
