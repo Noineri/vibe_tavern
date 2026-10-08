@@ -1,11 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { sql } from "drizzle-orm";
 
 import { REGEX_PLACEMENT, REGEX_SUBSTITUTE, brandId, type RegexProfileId } from "@vibe-tavern/domain";
 
 import { createDb } from "../src/db-connection.js";
-import { regexPresets } from "../src/db-schema.js";
+import { regexPresets, regexProfileLinks } from "../src/db-schema.js";
 import { RegexStore } from "../src/stores/regex-store.js";
-import type { CreateRegexPresetData, CreateRegexProfileData } from "../src/stores/regex-store.js";
+import type {
+  CreateRegexPresetData,
+  CreateRegexProfileData,
+  CreateRegexBundleRuleData,
+  CreateRegexProfileBundleData,
+} from "../src/stores/regex-store.js";
 import type { StoreClock, StoreIdGenerator } from "../src/persistence.js";
 
 const fixedClock: StoreClock = { now: () => "2026-08-25T00:00:00.000Z" };
@@ -42,6 +48,40 @@ function baseInput(overrides: Partial<CreateRegexPresetData> = {}): CreateRegexP
 
 function baseProfile(overrides: Partial<CreateRegexProfileData> = {}): CreateRegexProfileData {
 	return { name: `profile_${++inputCounter}`, disabled: false, isGlobal: false, sortOrder: 0, ...overrides };
+}
+
+/** Bundle member input — no `profileId`: the bundle owns membership (RXU-12). */
+function bundleRule(overrides: Partial<CreateRegexBundleRuleData> = {}): CreateRegexBundleRuleData {
+	inputCounter += 1;
+	return {
+		name: `rule_${inputCounter}`,
+		findRegex: "/foo/g",
+		replaceString: "bar",
+		trimStrings: [],
+		substituteRegex: REGEX_SUBSTITUTE.None,
+		disabled: false,
+		markdownOnly: false,
+		promptOnly: false,
+		runOnEdit: true,
+		minDepth: null,
+		maxDepth: null,
+		placement: [REGEX_PLACEMENT.AiOutput],
+		isGlobal: false,
+		sortOrder: 0,
+		...overrides,
+	};
+}
+
+function baseBundle(overrides: Partial<CreateRegexProfileBundleData> = {}): CreateRegexProfileBundleData {
+	return {
+		name: `bundle_${++inputCounter}`,
+		disabled: false,
+		isGlobal: false,
+		sortOrder: 0,
+		links: [],
+		rules: [bundleRule()],
+		...overrides,
+	};
 }
 
 describe("RegexStore CRUD", () => {
@@ -480,5 +520,168 @@ describe("resolveActiveRegexPresets — R-13 profile gating matrix", () => {
 		await store.attachRule(profile.id, member.id);
 		const resolved = await store.resolveActiveRegexPresets({ characterId: null, presetId: null });
 		expect(resolved.map((p) => p.name)).toEqual(["solo-a", "member", "solo-b"]);
+	});
+});
+
+// ── RXU-12 (REGEX_RULE_PROFILE_UX_PORTABILITY): atomic Profile bundles ──
+// One transaction creates the Profile + its links + every member rule BORN
+// with the profileId on insert, or nothing. Rollback at each write stage is
+// proven with the repo's RAISE(ABORT) trigger idiom (reorder-rollback.test.ts):
+// a trigger kills exactly one stage's INSERT; the whole bundle must vanish.
+describe("RegexStore.createProfileBundle — atomic bundle creation (RXU-12)", () => {
+	test("one-rule bundle: profile + rule committed, rule born with the profile id on insert", async () => {
+		const { store } = await setup();
+		const result = await store.createProfileBundle(baseBundle({ name: "solo" }));
+		expect(result.profile.id).toStartWith("regex_profile_");
+		expect(result.rules).toHaveLength(1);
+		const rule = result.rules[0]!;
+		// Born in the profile — the initial INSERT already carries the id.
+		expect(rule.profileId).toBe(brandId<RegexProfileId>(result.profile.id));
+		// The returned bundle is the committed state, not a pre-commit frame.
+		expect(await store.getProfileById(result.profile.id)).toEqual(result.profile);
+		expect(await store.getById(rule.id)).toEqual(rule);
+		expect(await store.listProfileMemberIds(result.profile.id)).toEqual([rule.id]);
+	});
+
+	test("many-rule bundle: order preserved, mixed source states survive insert (no normalization)", async () => {
+		const { store } = await setup();
+		const result = await store.createProfileBundle(
+			baseBundle({
+				rules: [
+					bundleRule({ name: "on-a", disabled: false, sortOrder: 2 }),
+					bundleRule({ name: "off-b", disabled: true, sortOrder: 1 }),
+					bundleRule({ name: "on-c", disabled: false, sortOrder: 3 }),
+					bundleRule({ name: "off-d", disabled: true, sortOrder: 0 }),
+				],
+			}),
+		);
+		expect(result.rules.map((r) => r.name)).toEqual(["on-a", "off-b", "on-c", "off-d"]);
+		expect(result.rules.map((r) => r.disabled)).toEqual([false, true, false, true]);
+		for (const r of result.rules) {
+			// Source state + membership round-trip from the DB, per rule.
+			const reloaded = await store.getById(r.id);
+			expect(reloaded!.disabled).toBe(r.disabled);
+			expect(reloaded!.profileId).toBe(brandId<RegexProfileId>(result.profile.id));
+		}
+	});
+
+	test("active global bundle: enabled members fire for every chat, disabled members do not", async () => {
+		const { store } = await setup();
+		await store.createProfileBundle(
+			baseBundle({
+				name: "active-global",
+				disabled: false,
+				isGlobal: true,
+				rules: [bundleRule({ name: "on" }), bundleRule({ name: "off", disabled: true })],
+			}),
+		);
+		expect((await store.resolveActiveRegexPresets({ characterId: null, presetId: null })).map((p) => p.name)).toEqual(["on"]);
+	});
+
+	test("inactive bundle: master switch off keeps every member inert while rows persist", async () => {
+		const { store } = await setup();
+		await store.createProfileBundle(
+			baseBundle({ disabled: true, isGlobal: true, rules: [bundleRule({ name: "sleepy" })] }),
+		);
+		expect(await store.resolveActiveRegexPresets({ characterId: null, presetId: null })).toEqual([]);
+		// Inert, not absent — the bundle committed complete.
+		expect((await store.listAll()).map((p) => p.name)).toEqual(["sleepy"]);
+		expect(await store.listProfiles()).toHaveLength(1);
+	});
+
+	test("character-linked bundle fires for its character only; duplicate links dedup (composite PK)", async () => {
+		const { store } = await setup();
+		const { profile } = await store.createProfileBundle(
+			baseBundle({
+				name: "char-scoped",
+				links: [
+					{ targetType: "character", targetId: "char_1" },
+					{ targetType: "character", targetId: "char_1" },
+				],
+				rules: [bundleRule({ name: "member" })],
+			}),
+		);
+		const links = await store.getProfileLinks(profile.id);
+		expect(links).toHaveLength(1); // deduped before insert — a mid-tx PK violation would abort the bundle
+		expect(links[0]).toMatchObject({ targetType: "character", targetId: "char_1" });
+		expect((await store.resolveActiveRegexPresets({ characterId: "char_1", presetId: null })).map((p) => p.name)).toEqual(["member"]);
+		expect(await store.resolveActiveRegexPresets({ characterId: "char_other", presetId: null })).toEqual([]);
+	});
+
+	test("preset-linked bundle fires for its prompt preset only", async () => {
+		const { store } = await setup();
+		await store.createProfileBundle(
+			baseBundle({
+				name: "preset-scoped",
+				links: [{ targetType: "preset", targetId: "preset_9" }],
+				rules: [bundleRule({ name: "p-member" })],
+			}),
+		);
+		expect((await store.resolveActiveRegexPresets({ characterId: null, presetId: "preset_9" })).map((p) => p.name)).toEqual(["p-member"]);
+		expect(await store.resolveActiveRegexPresets({ characterId: null, presetId: "preset_other" })).toEqual([]);
+	});
+
+	test("unbound bundle (non-global, no links) never fires anywhere", async () => {
+		const { store } = await setup();
+		await store.createProfileBundle(baseBundle({ name: "unbound", rules: [bundleRule({ name: "adrift" })] }));
+		expect(await store.resolveActiveRegexPresets({ characterId: null, presetId: null })).toEqual([]);
+		expect(await store.resolveActiveRegexPresets({ characterId: "char_1", presetId: "preset_9" })).toEqual([]);
+	});
+
+	test("rollback at the PROFILE write: zero rows in all three tables", async () => {
+		const { store, db } = await setup();
+		db.run(
+			sql`CREATE TRIGGER fail_bundle_profile BEFORE INSERT ON regex_profiles WHEN NEW.name = 'doomed_bundle' BEGIN SELECT RAISE(ABORT, 'injected profile boom'); END`,
+		);
+		await expect(
+			store.createProfileBundle(
+				baseBundle({
+					name: "doomed_bundle",
+					links: [{ targetType: "character", targetId: "char_1" }],
+					rules: [bundleRule({ name: "r1" }), bundleRule({ name: "r2" })],
+				}),
+			),
+		).rejects.toThrow("injected profile boom");
+		expect(await store.listProfiles()).toEqual([]);
+		expect(await store.listAll()).toEqual([]);
+		expect(db.select().from(regexProfileLinks).all()).toEqual([]);
+	});
+
+	test("rollback at the LINK write: the already-inserted profile row vanishes too", async () => {
+		const { store, db } = await setup();
+		db.run(
+			sql`CREATE TRIGGER fail_bundle_link BEFORE INSERT ON regex_profile_links WHEN NEW.target_id = 'char_1' BEGIN SELECT RAISE(ABORT, 'injected link boom'); END`,
+		);
+		await expect(
+			store.createProfileBundle(
+				baseBundle({
+					name: "linked",
+					links: [{ targetType: "character", targetId: "char_1" }],
+					rules: [bundleRule()],
+				}),
+			),
+		).rejects.toThrow("injected link boom");
+		expect(await store.listProfiles()).toEqual([]); // profile write rolled back with the failed link
+		expect(await store.listAll()).toEqual([]);
+		expect(db.select().from(regexProfileLinks).all()).toEqual([]);
+	});
+
+	test("rollback at a LATER-RULE write: profile, links, and earlier rules all vanish", async () => {
+		const { store, db } = await setup();
+		db.run(
+			sql`CREATE TRIGGER fail_bundle_rule BEFORE INSERT ON regex_presets WHEN NEW.name = 'late_bomb' BEGIN SELECT RAISE(ABORT, 'injected rule boom'); END`,
+		);
+		await expect(
+			store.createProfileBundle(
+				baseBundle({
+					name: "multi",
+					links: [{ targetType: "preset", targetId: "preset_9" }],
+					rules: [bundleRule({ name: "early_ok" }), bundleRule({ name: "late_bomb" })],
+				}),
+			),
+		).rejects.toThrow("injected rule boom");
+		expect((await store.listAll()).map((p) => p.name)).toEqual([]); // early_ok rolled back
+		expect(await store.listProfiles()).toEqual([]);
+		expect(db.select().from(regexProfileLinks).all()).toEqual([]);
 	});
 });
