@@ -96,6 +96,7 @@ import type { ImageGenAdapterConfig, ImageGenGenerateRequest } from "../../domai
 import { IMAGE_GENERATION_CLOUD_TIMEOUT_MS, withImageGenTimeoutMs } from "../../domain/imagegen/imagegen-backend.js";
 import { TEST_CHAT_TIMEOUT_MS } from "../../domain/providers/provider-transport.js";
 import { createImageGenBackend, IMAGE_GEN_FAMILY_DETECTION_BACKENDS } from "../../domain/imagegen/imagegen-registry.js";
+import { clearHordeQueueState, getHordeQueueState, setHordeQueueState } from "../../domain/imagegen/horde-queue-state.js";
 import { clearImageGenRunPhase, getImageGenRunPhase, setImageGenRunPhase } from "../../domain/imagegen/run-phase.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
@@ -702,7 +703,8 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // swipe-regenerated run showed no progress because the gate read a
     // pre-CG-C1 mirror; the registry's current truth is the only source).
     if (!IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsLiveProgress) {
-      return phase === undefined ? null : { phase };
+      const queueState = getHordeQueueState(id);
+      return phase === undefined ? null : { phase, ...(queueState !== undefined ? { state: queueState } : {}) };
     }
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     // Interface-driven second gate: a backend without the progress method
@@ -838,14 +840,13 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   // ── Generate (image message slot) ───────────────────────────────────────
 
   generateImageGen: ImageGenRuntimeApi["generateImageGen"] = async (chatId, body, signal) => {
-    // MR-11: the phase registry must never leak a stale phase past the
-    // run's exit — every exit path (success, validation throw, abort,
-    // backend error) funnels through this finally. The phase itself is set
-    // inside the core once the profile resolves.
+    // MR-11: every exit funnels through this finally so the phase cannot
+    // leak into the next run; the core sets it once the profile resolves.
     try {
       return await this.generateImageGenCore(chatId, body, signal);
     } finally {
       clearImageGenRunPhase(body.profileId);
+      clearHordeQueueState(body.profileId);
     }
   };
 
@@ -1104,10 +1105,9 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
         : {}),
       ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
       ...(hires !== undefined ? { hires } : {}),
-      // MR-11: the backend announces the moment its progress surface
-      // reflects THIS run's job — the phase flips to "steps" exactly there
-      // (no percent before real steps; no inherited stale snapshot).
+      // MR-11: flip to steps only once the progress surface reflects this run.
       onJobStarted: () => setImageGenRunPhase(profile.id, "steps"),
+      onQueueState: (state) => setHordeQueueState(profile.id, state),
       ...(signal !== undefined ? { signal } : {}),
     };
 
@@ -1119,9 +1119,9 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // advisory caps must never outlive their truth).
     const runBackend = async (): Promise<Awaited<ReturnType<typeof backend.generate>>> => {
       try {
-        // Owner 2026-09-14: LOCAL backends have NO generation timeout
-        // (explicit cancel only); CLOUD backends carry the 3-minute budget.
-        const generated = profile.capabilities.localExecution
+        // Owner 2026-09-14: LOCAL backends have NO generation timeout (explicit cancel only); CLOUD backends carry the
+        // 3-minute budget. PE-7a (owner 2026-09-18): aihorde joins the no-budget side — silence, not queue length, aborts it.
+        const generated = profile.capabilities.localExecution || profile.backend === IMAGE_GEN_BACKENDS.Aihorde
           ? await backend.generate(request)
           : await withImageGenTimeoutMs(
               signal,

@@ -52,7 +52,13 @@ mock.module("../../stores/api-actions/chat-actions.js", () => ({
 mock.module("../../i18n/context.js", () => ({
   ...realI18n,
   useT: () => ({
-    t: (key: string) => key,
+    t: (key: string, values?: Record<string, number>) => {
+      if (key === "image_gen_horde_queue") {
+        return `In queue: position ${values?.position} · ~${values?.minutes}m`;
+      }
+      if (key === "image_gen_horde_drawing") return "Drawing…";
+      return key;
+    },
     tDynamic: (key: string) => key,
     locale: "en",
     setLocale: () => {},
@@ -93,7 +99,37 @@ describe("ImageGenProgressRow (PG-2)", () => {
     expect(view.queryByTestId("image-gen-progress-row")).toBeNull();
   });
 
-  it("cloud run past the prompt phase: the plain Generating pulse, no bar", () => {
+  it("cloud queue state renders its position and rounded ETA, with no bar", async () => {
+    setRunning(false);
+    served = { state: "queue:2:300" };
+    const view = renderRow("chat-1");
+    await waitFor(() =>
+      expect(view.getByTestId("image-gen-progress-row").textContent).toContain("In queue: position 2 · ~5m"),
+    );
+    expect(view.queryByTestId("image-gen-progress-bar")).toBeNull();
+    expect(view.queryByTestId("image-gen-progress-preview")).toBeNull();
+  });
+
+  it("cloud drawing state renders its dynamic label", async () => {
+    setRunning(false);
+    served = { state: "drawing" };
+    const view = renderRow("chat-1");
+    await waitFor(() =>
+      expect(view.getByTestId("image-gen-progress-row").textContent).toContain("Drawing…"),
+    );
+  });
+
+  it("cloud snapshot without queue state keeps the static Generating pulse", async () => {
+    setRunning(false);
+    served = {};
+    const view = renderRow("chat-1");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(view.getByTestId("image-gen-progress-row").textContent).toContain("image_gen_generating");
+  });
+
+  it("cloud run without a snapshot keeps the static Generating pulse", () => {
     setRunning(false);
     const view = renderRow("chat-1");
     const row = view.getByTestId("image-gen-progress-row");

@@ -593,6 +593,8 @@
 	"image_gen_no_profiles": "No image generation profiles yet",
 	"image_gen_open_settings": "Open settings",
 	"image_gen_generating": "Generating…",
+	"image_gen_horde_queue": "In queue: position {position} · ~{minutes}m",
+	"image_gen_horde_drawing": "Drawing…",
 	"image_gen_phase_prompt": "Writing prompt…",
 	"image_gen_phase_starting": "Starting…",
 	"image_gen_chip_model_label": "Model",
