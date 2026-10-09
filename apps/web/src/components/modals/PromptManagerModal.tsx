@@ -45,6 +45,7 @@ import { RegexPresetEditor } from "../settings/prompt/RegexPresetEditor.js";
 import { regexDraftFromRecord, useRegexRuleDraft, emptyRegexDraft, type RegexPresetDraft } from "../settings/prompt/regex-rule-draft.js";
 import { RegexProfileEditor } from "../settings/prompt/RegexProfileEditor.js";
 import { makeRegexProfileAttachmentHandler } from "../settings/prompt/profile-member-workflows.js";
+import { makeRegexProfileAssignmentHandler } from "../settings/prompt/regex-profile-assignment.js";
 import {
   listAllRegexPresets,
   createRegexPreset,
@@ -161,8 +162,6 @@ export function buildDuplicatePayload(draft: DraftData, fallbackName: string) {
     name: `${draft.name || fallbackName} (copy)`,
   };
 }
-
-
 
 export function PromptManagerModal(input: PromptManagerModalProps) {
   const isOpen = useModalStore((s) => s.isPromptManagerOpen);
@@ -662,12 +661,11 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     });
   }, []);
   const handleRegexAttach = makeRegexProfileAttachmentHandler({ attach: attachRegexRule, setRules: setRegexPresets, setExpandedProfileIds, onAttached: invalidateActiveRegexPresets });
-  function handleRegexDetach(ruleId: string) {
-    void detachRegexRule(ruleId).then((updated) => {
-      if (updated) setRegexPresets((prev) => prev.map((p) => p.id === ruleId ? updated : p));
-      invalidateActiveRegexPresets();
-    });
-  }
+  const regexProfileAssignment = makeRegexProfileAssignmentHandler({
+    attach: attachRegexRule, detach: detachRegexRule, setRules: setRegexPresets, setExpandedProfileIds,
+    onConfirmed: invalidateActiveRegexPresets,
+    onFailed: () => toast.error(t("promptManager.regex.profileAssignmentFailed")),
+  });
   function handleRegexProfileReorder(updates: Array<{ id: string; sortOrder: number }>) {
     for (const u of updates) {
       void updateRegexProfile(u.id, { sortOrder: u.sortOrder }).then((updated) => {
@@ -1170,7 +1168,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onReorder={handleRegexReorder}
                   onReorderProfiles={handleRegexProfileReorder}
                   onAttach={handleRegexAttach}
-                  onDetach={handleRegexDetach}
+                  onDetach={regexProfileAssignment.detach}
                   onImportRegex={() => regexImportInputRef.current?.click()}
                 />
               )
@@ -1217,6 +1215,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   setRegexLinkCounts((prev) => ({ ...prev, [presetId]: count }))
                 }
                 profileName={activeRegexPreset.profileId ? (regexProfiles.find((p) => p.id === activeRegexPreset.profileId)?.name ?? null) : null}
+                profiles={regexProfiles}
+                onProfileAssignment={(profileId) => regexProfileAssignment.assign(activeRegexPreset.id, profileId)}
               />
             ) : regexRuleDraft.draft ? (
               // RXU-14: an unsaved new-rule draft reuses the same editor with

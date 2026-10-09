@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { RegexPresetDraft } from "./regex-rule-draft.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
@@ -8,6 +8,7 @@ const { render, screen } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
 const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
+const realDropdownSelect = await import("../../shared/DropdownSelect.js");
 const realRegexApi = await import("../../../api/regex-api.js");
 const realPresetApi = await import("../../../api/preset-api.js");
 
@@ -39,7 +40,25 @@ mock.module("../../../i18n/context.js", () => ({
 
 mock.module("../../shared/Tooltip.js", () => ({
   ...realTooltip,
-  CustomTooltip: ({ content, children }: { content?: string; children: React.ReactNode }) => <>{children}</>,
+  CustomTooltip: ({ content, children }: { content?: string; children: ReactNode }) => <>{children}</>,
+}));
+
+mock.module("../../shared/DropdownSelect.js", () => ({
+  ...realDropdownSelect,
+  DropdownSelect: ({
+    value, options, defaultOption, onChange, triggerTestId,
+  }: {
+    value: string;
+    options: Array<{ id: string; label: ReactNode }>;
+    defaultOption?: string;
+    onChange: (value: string) => void;
+    triggerTestId?: string;
+  }) => (
+    <select data-testid={triggerTestId} value={value} onChange={(event) => onChange(event.target.value)}>
+      {defaultOption && <option value="">{defaultOption}</option>}
+      {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+    </select>
+  ),
 }));
 
 let RegexPresetEditor: typeof import("./RegexPresetEditor.js").RegexPresetEditor;
@@ -162,6 +181,54 @@ describe("RegexPresetEditor", () => {
   it("hides the bindings row for a new unsaved preset (nothing to bind yet)", () => {
     render(<RegexPresetEditor preset={null} draft={emptyRegexDraft()} onDraftChange={mock()} />);
     expect(screen.queryByText("promptManager.regex.bindingsLabel")).toBeNull();
+  });
+
+  it("lists Standalone and every Profile with the current membership selected", () => {
+    const profile = baseRecord({ profileId: brandId("p1") });
+    const view = render(
+      <RegexPresetEditor
+        preset={profile}
+        draft={regexDraftFromRecord(profile)}
+        onDraftChange={mock()}
+        profiles={[{ id: "p1", name: "Current Profile" }, { id: "p2", name: "Other Profile" }]}
+      />,
+    );
+    const assignment = view.getByTestId("regex-profile-assignment") as HTMLSelectElement;
+    expect(assignment.value).toBe("p1");
+    expect([...assignment.options].map((option) => option.text)).toEqual([
+      "promptManager.regex.profileStandalone", "Current Profile", "Other Profile",
+    ]);
+  });
+
+  it("delegates Profile and Standalone assignments without diverging from the confirmed record", async () => {
+    const onProfileAssignment = mock(async () => {});
+    const profile = baseRecord({ profileId: brandId("p1") });
+    const user = userEvent.setup();
+    const view = render(
+      <RegexPresetEditor
+        preset={profile}
+        draft={regexDraftFromRecord(profile)}
+        onDraftChange={mock()}
+        profiles={[{ id: "p1", name: "Current Profile" }, { id: "p2", name: "Other Profile" }]}
+        onProfileAssignment={onProfileAssignment}
+      />,
+    );
+    const assignment = view.getByTestId("regex-profile-assignment") as HTMLSelectElement;
+    await user.selectOptions(assignment, "p2");
+    expect(onProfileAssignment).toHaveBeenLastCalledWith("p2");
+    expect(assignment.value).toBe("p1");
+    await user.selectOptions(assignment, "");
+    expect(onProfileAssignment).toHaveBeenLastCalledWith(null);
+    expect(assignment.value).toBe("p1");
+  });
+
+  it("renders translated group headings for Rule editing", () => {
+    const view = render(<RegexPresetEditor preset={baseRecord()} draft={regexDraftFromRecord(baseRecord())} onDraftChange={mock()} />);
+    expect(view.getByText("promptManager.regex.sectionIdentityReplacement")).toBeTruthy();
+    expect(view.getByText("promptManager.regex.sectionExecutionConditions")).toBeTruthy();
+    expect(view.getByText("promptManager.regex.sectionAvailabilityScope")).toBeTruthy();
+    expect(view.getByText("promptManager.regex.sectionLiveTest")).toBeTruthy();
+    expect(view.queryByText("Regex Preset")).toBeNull();
   });
 });
 

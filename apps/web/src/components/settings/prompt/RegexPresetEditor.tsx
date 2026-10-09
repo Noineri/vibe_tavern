@@ -10,6 +10,7 @@ import { ToggleChips } from "../../shared/ToggleChips.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
+import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget, promptPresetToLinkTarget } from "../../../lib/link-targets.js";
 import { RegexAiAssistantModal } from "./RegexAiAssistantModal.js";
@@ -49,6 +50,12 @@ interface RegexPresetEditorProps {
    *  (null/undefined = standalone). A preset record's own `profileId` wins
    *  when present; this only routes a draft into the member chip. */
   draftProfileId?: string | null;
+  /** Every Profile available as a saved Rule's canonical assignment. */
+  profiles?: Array<{ id: string; name: string }>;
+  /** Persists a saved Rule's Profile assignment. The parent applies only the
+   * server-confirmed record, so this controlled selector visibly restores its
+   * prior value when the operation rejects. */
+  onProfileAssignment?: (profileId: string | null) => Promise<void>;
 }
 
 const PLACEMENT_OPTIONS: Array<{ code: RegexPlacement; labelKey: I18nKey }> = [
@@ -110,7 +117,10 @@ const MESSAGE_PLACEMENTS: RegexPlacement[] = [REGEX_PLACEMENT.UserInput, REGEX_P
  * fields (mono at input size) → live test pane with macro substitution,
  * no-match/empty distinction and an honesty disclaimer.
  */
-export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange, onLinksChanged, profileName, draftProfileId }: RegexPresetEditorProps) {
+export function RegexPresetEditor({
+  preset, draft, onDraftChange, onActiveChange, onLinksChanged, profileName, draftProfileId,
+  profiles = [], onProfileAssignment,
+}: RegexPresetEditorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [testInput, setTestInput] = useState("");
@@ -212,6 +222,11 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
       return;
     }
     update("disabled", !nextActive);
+  };
+
+  const handleProfileAssignment = (profileId: string) => {
+    if (!preset || profileId === (preset.profileId ?? "")) return;
+    void onProfileAssignment?.(profileId || null);
   };
 
   const togglePlacement = (code: RegexPlacement) => {
@@ -324,6 +339,10 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
 
   return (
     <div className="flex flex-col gap-4">
+      <section className="flex flex-col gap-4">
+        <h3 className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+          {t("promptManager.regex.sectionIdentityReplacement")}
+        </h3>
       {/* Name + Active (R-7): the toggle is positive-polarity and, for a
           saved preset, applies instantly — see handleActiveToggle. */}
       <div className="flex items-end gap-4">
@@ -368,6 +387,26 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
             <span className="h-[6px] w-[6px] rounded-full bg-danger" />
             {t("promptManager.regex.badgeNotApplied")}
           </span>
+        </div>
+      )}
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <h3 className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+          {t("promptManager.regex.sectionAvailabilityScope")}
+        </h3>
+      {preset && (
+        <div>
+          <div className={lblCls}>{t("promptManager.regex.profileLabel")}</div>
+          <DropdownSelect
+            value={preset.profileId ?? ""}
+            options={profiles.map((profile) => ({ id: profile.id, label: profile.name }))}
+            defaultOption={t("promptManager.regex.profileStandalone")}
+            searchable={false}
+            onChange={handleProfileAssignment}
+            triggerClassName="flex min-h-11 w-full items-center justify-between gap-2 rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] font-ui text-[13px] text-t1 transition-colors duration-150 hover:border-accent"
+            triggerTestId="regex-profile-assignment"
+          />
         </div>
       )}
 
@@ -429,7 +468,12 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           )}
         </>
       )}
+      </section>
 
+      <section className="flex flex-col gap-4">
+        <h3 className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+          {t("promptManager.regex.sectionExecutionConditions")}
+        </h3>
       {/* How it triggers (R-7): placement chips → depth modes → apply-target. */}
       <div>
         <div className={lblCls}>{t("promptManager.regex.behaviorLabel")}</div>
@@ -519,7 +563,12 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           </div>
         </div>
       </div>
+      </section>
 
+      <section className="flex flex-col gap-4">
+        <h3 className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+          {t("promptManager.regex.sectionRuleReplacement")}
+        </h3>
       {/* Rule fields (R-7): mono via the canonical field tokens (FS-5) — the
           same mono variant the shared AutoTextarea exposes. */}
       <div>
@@ -584,7 +633,12 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           }))}
         />
       </div>
+      </section>
 
+      <section className="flex flex-col gap-4">
+        <h3 className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+          {t("promptManager.regex.sectionLiveTest")}
+        </h3>
       {/* Live test pane (R-7): macro-substituted run, no-match vs match
           distinction, and an honesty disclaimer — the pane does not simulate
           scope, bindings or depth. */}
@@ -634,6 +688,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           )}
         </div>
       </div>
+      </section>
       <RegexAiAssistantModal isOpen={aiOpen} onClose={() => setAiOpen(false)} currentRule={draft} onApply={(patch) => onDraftChange({ ...draft, ...patch })} />
     </div>
   );

@@ -32,6 +32,7 @@ import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
 import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
 import type { DraftData } from "./PromptManagerModal.js";
 import { useModalStore } from "../../stores/modal-store.js";
+import { makeRegexProfileAssignmentHandler } from "../settings/prompt/regex-profile-assignment.js";
 
 class TestBoundary extends React.Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
@@ -57,6 +58,7 @@ const createRegexProfileBundleMock = mock(async (body: Parameters<typeof realReg
 const listAllRegexProfilesMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.listAllRegexProfiles>>);
 const createRegexProfileMock = mock(async (body: unknown) => ({ id: "p_new", name: (body as { name?: string })?.name ?? "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>));
 const attachRegexRuleMock = mock(async (_a: unknown, _b: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.attachRegexRule>>);
+const detachRegexRuleMock = mock(async (_id: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.detachRegexRule>>);
 const getRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.getRegexProfileLinks>>);
 const updateRegexProfileMock = mock(async (id: string, body: { name?: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }) => {
   // Merge over a base record so every field stays a primitive (a naive
@@ -125,6 +127,7 @@ mock.module("../../api/regex-api.js", () => {
     listAllRegexProfiles: listAllRegexProfilesMock,
     createRegexProfile: createRegexProfileMock,
     attachRegexRule: attachRegexRuleMock,
+    detachRegexRule: detachRegexRuleMock,
     getRegexProfileLinks: getRegexProfileLinksMock,
     updateRegexProfile: updateRegexProfileMock,
     deleteRegexProfile: deleteRegexProfileMock,
@@ -181,6 +184,7 @@ afterEach(async () => {
   createRegexProfileMock.mockReset();
   createRegexProfileMock.mockResolvedValue({ id: "p_new", name: "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>);
   attachRegexRuleMock.mockReset();
+  detachRegexRuleMock.mockReset();
   getRegexProfileLinksMock.mockReset();
   getRegexProfileLinksMock.mockResolvedValue([]);
   updateRegexProfileMock.mockReset();
@@ -974,7 +978,7 @@ describe("PromptManagerModal — regex profiles (R-13b)", () => {
       <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
     );
     fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
-    await waitFor(() => expect(within(view.baseElement).getByText("UnboundProf")).toBeTruthy());
+    await waitFor(() => expect(within(view.baseElement).getAllByText("UnboundProf")[0]).toBeTruthy());
     // Expand the profile so the member row renders.
     fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
     await waitFor(() => expect(within(view.baseElement).getByText("MemRule")).toBeTruthy());
@@ -1011,8 +1015,8 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
 
   test("selecting a profile renders the profile pane (name field, export button)", async () => {
     const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    const profileEl = within(view.baseElement).getByText("Bundle");
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle")[0]).toBeTruthy());
+    const profileEl = within(view.baseElement).getAllByText("Bundle")[0];
     await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
     await waitFor(() => expect((within(view.baseElement).getByDisplayValue("Bundle") as HTMLInputElement).value).toBe("Bundle"));
     expect(within(view.baseElement).getByText("promptManager.regex.profileExport")).toBeTruthy();
@@ -1023,8 +1027,8 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
     const view = await openRegexTab([profileRecord("p1", "Bundle", { disabled: false })], []);
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    const profileEl = within(view.baseElement).getByText("Bundle");
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle")[0]).toBeTruthy());
+    const profileEl = within(view.baseElement).getAllByText("Bundle")[0];
     await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
     await waitFor(() => expect(within(view.baseElement).getByDisplayValue("Bundle")).toBeTruthy());
     const switches = within(view.baseElement).getAllByRole("switch");
@@ -1041,8 +1045,8 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
   test("delete profile dialog offers BOTH options and chosen one calls deleteRegexProfile with right mode", async () => {
     const presets = [regexRecord("r1", "R1", "p1"), regexRecord("r2", "R2", "p1")];
     const view = await openRegexTab([profileRecord("p1", "Bundle")], presets);
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    const profileEl = within(view.baseElement).getByText("Bundle");
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle")[0]).toBeTruthy());
+    const profileEl = within(view.baseElement).getAllByText("Bundle")[0];
     await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
     await waitFor(() => expect(within(view.baseElement).getByDisplayValue("Bundle")).toBeTruthy());
     await act(async () => { fireEvent.click(within(view.baseElement).getByText("promptManager.regex.profileDelete")); });
@@ -1063,7 +1067,7 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
 
   test("member rule editor shows chip instead of own scope segmented control", async () => {
     const view = await openRegexTab([profileRecord("p1", "Bundle")], [regexRecord("r1", "MemRule", "p1", { isGlobal: false })]);
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle")[0]).toBeTruthy());
     await act(async () => { fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]); });
     await waitFor(() => expect(within(view.baseElement).getByText("MemRule")).toBeTruthy());
     const memEl = within(view.baseElement).getByText("MemRule");
@@ -1089,8 +1093,8 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
       regexRecord("r1", "R1", "p1", { findRegex: "/a/g", replaceString: "x" }),
       regexRecord("r2", "R2", "p1", { findRegex: "/b/g", replaceString: "y" }),
     ]);
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    const profileEl = within(view.baseElement).getByText("Bundle");
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle")[0]).toBeTruthy());
+    const profileEl = within(view.baseElement).getAllByText("Bundle")[0];
     await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
     await waitFor(() => expect(within(view.baseElement).getByDisplayValue("Bundle")).toBeTruthy());
     await act(async () => { fireEvent.click(within(view.baseElement).getByText("promptManager.regex.profileExport")); });
@@ -1334,6 +1338,65 @@ describe("PromptManagerModal — Profile member workflows (RXU-42)", () => {
       expect(q.getByText("promptManager.regex.profileMemberCount:2")).toBeTruthy();
     });
     expect((q.getByDisplayValue("Bundle") as HTMLInputElement).value).toBe("Bundle");
+  });
+});
+
+// ── RXU-43: explicit Profile assignment ─────────────────────────────────
+describe("PromptManagerModal — explicit Profile assignment (RXU-43)", () => {
+  function regexRecord(id: string, profileId: string | null): RegexPresetRecord {
+    return {
+      id: brandId<RegexPresetId>(id), name: "Rule", findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId: profileId === null ? null : brandId<RegexProfileId>(profileId), createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+  }
+  function assignmentHost(initial: RegexPresetRecord) {
+    let rules = [initial];
+    const onConfirmed = mock(() => {});
+    const onFailed = mock(() => {});
+    const handler = makeRegexProfileAssignmentHandler({
+      attach: attachRegexRuleMock,
+      detach: detachRegexRuleMock,
+      setRules: (next) => { rules = typeof next === "function" ? next(rules) : next; },
+      setExpandedProfileIds: mock(() => {}),
+      onConfirmed,
+      onFailed,
+    });
+    return { handler, onConfirmed, onFailed, rules: () => rules };
+  }
+
+  test("attaching a Profile updates local state only from the confirmed Rule", async () => {
+    const host = assignmentHost(regexRecord("rule-1", "p1"));
+    attachRegexRuleMock.mockResolvedValue(regexRecord("rule-1", "p2"));
+
+    await host.handler.assign("rule-1", "p2");
+
+    expect(attachRegexRuleMock).toHaveBeenCalledWith("p2", "rule-1");
+    expect(host.rules()[0].profileId).toBe(brandId<RegexProfileId>("p2"));
+    expect(host.onConfirmed).toHaveBeenCalledTimes(1);
+  });
+
+  test("selecting Standalone detaches the Rule only after confirmation", async () => {
+    const host = assignmentHost(regexRecord("rule-1", "p1"));
+    detachRegexRuleMock.mockResolvedValue(regexRecord("rule-1", null));
+
+    await host.handler.detach("rule-1");
+
+    expect(detachRegexRuleMock).toHaveBeenCalledWith("rule-1");
+    expect(host.rules()[0].profileId).toBeNull();
+    expect(host.onConfirmed).toHaveBeenCalledTimes(1);
+  });
+
+  test("failed attach or detach preserves the confirmed Profile and reports an error", async () => {
+    const attachFailure = assignmentHost(regexRecord("rule-1", "p1"));
+    attachRegexRuleMock.mockRejectedValue(new Error("offline"));
+    await attachFailure.handler.assign("rule-1", "p2");
+    expect(attachFailure.rules()[0].profileId).toBe(brandId<RegexProfileId>("p1"));
+    expect(attachFailure.onFailed).toHaveBeenCalledTimes(1);
+
+    const detachFailure = assignmentHost(regexRecord("rule-1", "p1"));
+    detachRegexRuleMock.mockRejectedValue(new Error("offline"));
+    await detachFailure.handler.detach("rule-1");
+    expect(detachFailure.rules()[0].profileId).toBe(brandId<RegexProfileId>("p1"));
+    expect(detachFailure.onFailed).toHaveBeenCalledTimes(1);
   });
 });
 
