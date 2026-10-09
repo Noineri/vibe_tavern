@@ -25,7 +25,7 @@ import {
 import { buildDuplicatePayload, emptyDraft, toCharacterCanvasDraft, type CharacterCanvasFields } from "./prompt-manager-draft.js";
 import { PresetImportModalHost } from "./PresetImportModalHost.js";
 import { RegexImportModal } from "./RegexImportModal.js";
-import { serializeStPreset, serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
+import { serializeStandaloneRegexJson } from "@vibe-tavern/import-export";
 import { CustomTooltip } from "../shared/Tooltip.js";
 import { MasterDetailModal, MasterDetailMobileDrillDown, MasterDetailFooter } from "../shared/MasterDetailModal.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
@@ -48,6 +48,7 @@ import { RegexProfileEditor } from "../settings/prompt/RegexProfileEditor.js";
 import { ProfileAutosaveFooter, useProfileAutosave } from "../settings/prompt/profile-autosave.js";
 import { makeRegexProfileAttachmentHandler } from "../settings/prompt/profile-member-workflows.js";
 import { makeRegexProfileAssignmentHandler } from "../settings/prompt/regex-profile-assignment.js";
+import { exportPromptPresetWithRegex } from "./prompt-preset-regex-export.js";
 import {
   listAllRegexPresets,
   createRegexPreset,
@@ -800,19 +801,13 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
 
   const handleExportPreset = () => {
     if (!activePreset) return;
-    // Export the SAVED preset (full DTO), not the possibly-dirty draft — a
-    // shareable file should represent persisted state. Users save first to
-    // export edits (Save sits right next to this action).
-    const json = serializeStPreset(activePreset);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${(activePreset.name || "preset").replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    void exportPromptPresetWithRegex({
+      preset: activePreset,
+      rules: regexPresets,
+      profiles: regexProfiles,
+      getRuleLinks: getRegexLinks,
+      getProfileLinks: getRegexProfileLinks,
+    }).catch(() => toast.error(t("promptManager.regex.exportFailed")));
   };
 
   const handleAdd = (name: string) => {
