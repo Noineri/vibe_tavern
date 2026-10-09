@@ -17,17 +17,18 @@ export function EmptyState(input: EmptyStateProps) {
       <div className="empty-title">{input.title}</div>
       {input.sub && <div className="empty-sub">{input.sub}</div>}
       {input.cta && (
-        <div className="empty-cta" onClick={input.onCta}>
+        <button type="button" className="empty-cta" onClick={input.onCta}>
           {input.cta}
-        </div>
+        </button>
       )}
       {input.secondaryCta && (
-        <div 
-          className="empty-cta text-t2 hover:text-t1 bg-transparent border-transparent shadow-none" 
+        <button
+          type="button"
+          className="empty-cta text-t2 hover:text-t1 bg-transparent border-transparent shadow-none"
           onClick={input.onSecondaryCta}
         >
           {input.secondaryCta}
-        </div>
+        </button>
       )}
     </div>
   );

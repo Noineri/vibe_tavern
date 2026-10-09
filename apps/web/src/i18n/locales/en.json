@@ -1164,6 +1164,7 @@
 	"bound_scripts_section": "Scripts",
 	"create_new_persona": "Create new persona",
 	"close": "Close",
+	"master_detail_open": "Open details",
 	"delete_failed": "Delete failed.",
 	"persona_selection": "Switch Persona",
 	"manage_personas": "Manage Personas",

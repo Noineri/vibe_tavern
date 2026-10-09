@@ -1176,6 +1176,7 @@
 	"bound_scripts_section": "Скрипты",
 	"create_new_persona": "Создать новую персону",
 	"close": "Закрыть",
+	"master_detail_open": "Открыть подробности",
 	"delete_failed": "Ошибка удаления.",
 	"persona_selection": "Переключить персону",
 	"manage_personas": "Управление персонами",

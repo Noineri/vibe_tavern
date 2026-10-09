@@ -23,11 +23,22 @@ export function useMasterDetail() {
   return ctx;
 }
 
-export function MasterDetailMobileDrillDown({ onSelect, className }: { onSelect?: () => void; className?: string }) {
+export function MasterDetailMobileDrillDown({
+  onSelect,
+  ariaLabel,
+  className,
+}: {
+  onSelect?: () => void;
+  /** Overrides the generic mobile drill-down name with the selected item's name. */
+  ariaLabel?: string;
+  className?: string;
+}) {
   const { openDetail } = useMasterDetail();
+  const { t } = useT();
   return (
     <button
       type="button"
+      aria-label={ariaLabel ?? t("master_detail_open")}
       className={cn("shrink-0 px-2 text-t3 transition-colors hover:text-t1 md:hidden", className)}
       onClick={(e) => { 
         e.stopPropagation(); 
@@ -54,6 +65,10 @@ export interface MasterDetailFooterAction {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  /** Prevents the action from being activated. */
+  disabled?: boolean;
+  /** Applies destructive-action color treatment. */
+  destructive?: boolean;
 }
 
 export function MasterDetailFooter({
@@ -95,17 +110,27 @@ export function MasterDetailFooter({
           <button
             key={a.label}
             type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2",
+              a.destructive && "text-danger active:bg-danger/10",
+              a.disabled && "cursor-default opacity-50",
+            )}
             onClick={a.onClick}
             aria-label={a.label}
+            disabled={a.disabled}
           >
             {a.icon}
           </button>
         ) : (
           <span
             key={a.label}
-            className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-            onClick={a.onClick}
+            className={cn(
+              "flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1",
+              a.destructive && "text-danger hover:text-danger",
+              a.disabled && "pointer-events-none cursor-default opacity-50",
+            )}
+            onClick={a.disabled ? undefined : a.onClick}
+            aria-disabled={a.disabled || undefined}
           >
             {a.icon} {a.label}
           </span>

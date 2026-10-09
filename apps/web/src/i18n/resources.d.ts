@@ -1688,6 +1688,7 @@ export default interface Resources {
     "manage": "Manage",
     "manage_personas": "Manage Personas",
     "map_to_placeholder": "Map to…",
+    "master_detail_open": "Open details",
     "match_src_character_alt_greetings": "Alternate Greetings",
     "match_src_chat_dynamic_prompt": "Chat Dynamic Prompt",
     "match_src_chat_messages": "Chat Messages",

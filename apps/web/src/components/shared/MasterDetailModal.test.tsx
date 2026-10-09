@@ -43,8 +43,9 @@ mock.module("./Tooltip.js", () => ({
 
 let MasterDetailModal: typeof import("./MasterDetailModal.js").MasterDetailModal;
 let MasterDetailFooter: typeof import("./MasterDetailModal.js").MasterDetailFooter;
+let MasterDetailMobileDrillDown: typeof import("./MasterDetailModal.js").MasterDetailMobileDrillDown;
 beforeAll(async () => {
-  ({ MasterDetailModal, MasterDetailFooter } = await import("./MasterDetailModal.js"));
+  ({ MasterDetailModal, MasterDetailFooter, MasterDetailMobileDrillDown } = await import("./MasterDetailModal.js"));
 });
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -215,6 +216,32 @@ describe("MasterDetailModal — mobile", () => {
   });
 });
 
+describe("MasterDetailMobileDrillDown", () => {
+  it("provides a generic name by default and accepts an item-specific override", () => {
+    isMobile = true;
+    const { getByRole, getByTestId } = render(
+      <MasterDetailModal
+        isOpen={true}
+        onClose={() => {}}
+        title="Test"
+        masterContent={(
+          <>
+            <MasterDetailMobileDrillDown />
+            <MasterDetailMobileDrillDown ariaLabel="Open Alpha profile" />
+          </>
+        )}
+        detailContent={<div data-testid="detail">Detail</div>}
+      />,
+    );
+
+    const generic = getByRole("button", { name: "master_detail_open" });
+    expect(generic.className).toBe("shrink-0 px-2 text-t3 transition-colors hover:text-t1 md:hidden");
+    const named = getByRole("button", { name: "Open Alpha profile" });
+    fireEvent.click(named);
+    expect(getByTestId("detail")).toBeTruthy();
+  });
+});
+
 // ── Frost layer (R-8) ─────────────────────────────────────────────────────
 // Any non-none backdrop-filter on the panel — even blur(0) in opaque themes —
 // makes the panel a containing block for position:fixed descendants, so
@@ -346,6 +373,57 @@ describe("MasterDetailModal — header tabs", () => {
 // ── MasterDetailFooter (SP-11) ──────────────────────────────────────────
 
 describe("MasterDetailFooter — footer chrome primitive", () => {
+  it("preserves the complete default action DOM and composed class strings", () => {
+    isMobile = false;
+    const { container } = render(
+      <MasterDetailFooter
+        actions={[{ icon: <span>+</span>, label: "Add", onClick: () => {} }]}
+      />,
+    );
+
+    expect(container.innerHTML).toBe(
+      '<div class="flex shrink-0 items-center gap-2.5 border-t border-border py-3.5 px-5"><span class="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"><span>+</span> Add</span><div class="ml-auto flex min-w-0 items-center gap-2.5"></div></div>',
+    );
+  });
+
+  it("adds baked destructive and disabled treatments without changing default actions", () => {
+    isMobile = false;
+    let deleteCalls = 0;
+    let archiveCalls = 0;
+    const { getByText } = render(
+      <MasterDetailFooter
+        actions={[
+          { icon: <span>!</span>, label: "Delete", onClick: () => { deleteCalls += 1; }, destructive: true },
+          { icon: <span>+</span>, label: "Archive", onClick: () => { archiveCalls += 1; }, disabled: true },
+        ]}
+      />,
+    );
+
+    const destructive = getByText("Delete");
+    const disabled = getByText("Archive");
+    expect(destructive.className).toBe("flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1 text-danger hover:text-danger");
+    expect(disabled.className).toBe("flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1 pointer-events-none cursor-default opacity-50");
+    expect(disabled.getAttribute("aria-disabled")).toBe("true");
+
+    fireEvent.click(destructive);
+    fireEvent.click(disabled);
+    expect(deleteCalls).toBe(1);
+    expect(archiveCalls).toBe(0);
+  });
+
+  it("uses native disabled buttons for disabled mobile actions", () => {
+    isMobile = true;
+    const { getByRole } = render(
+      <MasterDetailFooter
+        actions={[{ icon: <span>!</span>, label: "Delete", onClick: () => {}, destructive: true, disabled: true }]}
+      />,
+    );
+
+    const action = getByRole("button", { name: "Delete" });
+    expect(action.getAttribute("disabled")).toBe("");
+    expect(action.className).toBe("flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2 text-danger active:bg-danger/10 cursor-default opacity-50");
+  });
+
   it("desktop: icon-text actions left, Close + right slot in ml-auto group", () => {
     isMobile = false;
     let closed = false;
