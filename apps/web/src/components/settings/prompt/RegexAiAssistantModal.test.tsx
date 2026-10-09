@@ -23,24 +23,32 @@ useDomEnv();
 
 const { render, fireEvent, act, waitFor } = await import("@testing-library/react");
 
-// i18n passthrough: keys verbatim, interpolated values appended so counts are
-// assertable (`regexAssistant.removedCount` + the numeric value).
+// i18n is mocked rather than initialized (R13). The mobile case uses the
+// committed Russian action strings without mutating process-global locale state.
+let useRussianLabels = false;
+const RUSSIAN_LABELS: Record<string, string> = {
+	cancel_btn: "\u041e\u0442\u043c\u0435\u043d\u0430",
+	"regexAssistant.generate": "\u0421\u0433\u0435\u043d\u0435\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c",
+	"regexAssistant.generating": "\u0413\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u044f\u2026",
+	"regexAssistant.refine": "\u0423\u0442\u043e\u0447\u043d\u0438\u0442\u044c",
+	"regexAssistant.apply": "\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c \u043a \u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a\u0443",
+};
+const localized = (key: string, opts?: Record<string, unknown>) => {
+	const label = useRussianLabels ? (RUSSIAN_LABELS[key] ?? key) : key;
+	return opts && opts.count !== undefined ? `${label}:${String(opts.count)}` : label;
+};
 const realI18n = await import("../../../i18n/context.js");
 mock.module("../../../i18n/context.js", () => ({
 	...realI18n,
-	useT: () => ({
-		t: (key: string, opts?: Record<string, unknown>) =>
-			opts && opts.count !== undefined ? `${key}:${String(opts.count)}` : key,
-		tDynamic: (key: string, opts?: Record<string, unknown>) =>
-			opts && opts.count !== undefined ? `${key}:${String(opts.count)}` : key,
-	}),
+	useT: () => ({ t: localized, tDynamic: localized }),
 }));
 
-// Desktop chrome (Modal, not BottomSheet) — stable for assertions.
+// Tests select the desktop modal or mobile sheet deterministically.
+let isMobile = false;
 const realUseMobile = await import("../../../hooks/use-mobile.js");
 mock.module("../../../hooks/use-mobile.js", () => ({
 	...realUseMobile,
-	useIsMobile: () => false,
+	useIsMobile: () => isMobile,
 }));
 
 // The assistant runner is transport-adjacent (fetches provider models,
@@ -87,6 +95,8 @@ beforeAll(async () => {
 afterEach(() => {
 	// Call-count assertions (auto-refine ≤2) must not see earlier tests' calls.
 	assistMock.mockClear();
+	isMobile = false;
+	useRussianLabels = false;
 });
 
 /** Type into a React-controlled textarea the way React 19 actually notices
@@ -208,6 +218,57 @@ describe("RegexAiAssistantModal", () => {
 		expect(patch.applyTarget).toBe("persist");
 		expect(patch.findRegex).toBe("/[\\u200B\\u200C\\u200D]/gu");
 		expect(closed).toBe(true);
+	});
+
+	it("disables every footer action while a refinement stream is in flight", async () => {
+		setProfiles(1);
+		assistMock.mockImplementation(async () => ({ draft: zwspDraft() }));
+		let closed = false;
+		const { baseElement, getByText, getByRole } = render(
+			<RegexAiAssistantModal isOpen={true} onClose={() => { closed = true; }} onApply={() => {}} />,
+		);
+		await act(async () => {
+			await typeInto(baseElement.querySelector("textarea")!, "remove invisible characters");
+		});
+		await act(async () => {
+			fireEvent.click(getByText("regexAssistant.generate"));
+		});
+		await waitFor(() => expect(baseElement.textContent).toContain("Гигиена невидимых символов"));
+
+		let resolveRefinement: ((value: { draft: Record<string, unknown> }) => void) | undefined;
+		assistMock.mockImplementation(() => new Promise((resolve) => { resolveRefinement = resolve; }));
+		fireEvent.click(getByText("regexAssistant.refine"));
+		await waitFor(() => expect(getByRole("button", { name: "regexAssistant.generating" }).getAttribute("disabled")).toBe(""));
+		const footer = getByRole("button", { name: "regexAssistant.generating" }).parentElement!;
+		const footerAction = (label: string) => Array.from(footer.querySelectorAll("button")).find((button) => button.textContent === label)!;
+		expect(footerAction("cancel_btn").getAttribute("disabled")).toBe("");
+		expect(footerAction("regexAssistant.refine").getAttribute("disabled")).toBe("");
+		expect(footerAction("regexAssistant.apply").getAttribute("disabled")).toBe("");
+		fireEvent.click(footerAction("cancel_btn"));
+		expect(closed).toBe(false);
+
+		await act(async () => {
+			resolveRefinement?.({ draft: zwspDraft() });
+		});
+		await waitFor(() => expect(getByRole("button", { name: "regexAssistant.generate" }).getAttribute("disabled")).toBeNull());
+	});
+
+	it("stacks Russian footer actions at mobile touch size without truncation", async () => {
+		isMobile = true;
+		useRussianLabels = true;
+		setProfiles(1);
+		const { getAllByRole } = render(<Harness onApply={() => {}} />);
+		const generate = getAllByRole("button", { name: RUSSIAN_LABELS["regexAssistant.generate"] })[0]!;
+		const footer = generate.parentElement!;
+		const cancel = Array.from(footer.querySelectorAll("button")).find((button) => button.textContent === RUSSIAN_LABELS.cancel_btn)!;
+		expect(footer.className).toContain("flex-wrap");
+		expect(footer.className).toContain("safe-area-inset-bottom");
+		for (const action of [cancel, generate]) {
+			expect(action.className).toContain("max-md:h-11");
+			expect(action.className).toContain("max-md:w-full");
+			expect(action.className).not.toContain("truncate");
+		}
+		expect(footer.textContent).toContain(RUSSIAN_LABELS["regexAssistant.generate"]);
 	});
 
 	it("auto-refine fires at most 2 times on no-match with a user sample", async () => {

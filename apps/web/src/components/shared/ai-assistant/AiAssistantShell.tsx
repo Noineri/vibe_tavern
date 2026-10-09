@@ -3,6 +3,17 @@ import { Icons } from "../icons.js";
 import { cn } from "../../../lib/cn.js";
 import { useT } from "../../../i18n/context.js";
 
+export interface AiAssistantShellFooterAction {
+  label: string;
+  onClick: () => void;
+  /** Prevents the action from being activated. */
+  disabled?: boolean;
+  /** Prevents activation and exposes the in-flight action state. */
+  busy?: boolean;
+  /** Replaces the visible label while the action is busy. */
+  busyLabel?: string;
+}
+
 export interface AiAssistantShellProps {
   /** Title node on the left of the header — a plain span for AiAssistantModal,
    *  a rich icon+title block for the message AI editor. */
@@ -16,8 +27,12 @@ export interface AiAssistantShellProps {
   noProvidersLabel: string;
   /** Optional slot between title and close button (e.g. the MAE mode toggle). */
   headerExtra?: ReactNode;
-  /** Footer actions; when omitted/undefined the footer row is not rendered. */
+  /** Legacy custom footer slot; preserves existing consumer output exactly. */
   footer?: ReactNode;
+  /** Compact emphasized action, stacked full-width with secondary actions on mobile. */
+  primaryAction?: AiAssistantShellFooterAction;
+  /** Compact supporting actions, stacked full-width on mobile. */
+  secondaryActions?: AiAssistantShellFooterAction[];
   children: ReactNode;
 }
 
@@ -27,10 +42,11 @@ export interface AiAssistantShellProps {
  * headerExtra + close button with streaming disable), the scrollable content
  * container with the no-providers guard, and the footer action row.
  *
- * Owns NO business logic and NO body markup — body, footer buttons, and
- * header-extra stay per-modal via slots, because the two modals' operational
- * contracts diverge (polymorphic free-text generator vs guarded chat-variant
- * editor) and must not be merged. The outer bordered container and the
+ * Owns NO business logic and NO body markup — body and header-extra stay
+ * per-modal via slots, because the two modals' operational contracts diverge
+ * (polymorphic free-text generator vs guarded chat-variant editor) and must
+ * not be merged. Footer controls may use the structured action contract;
+ * legacy custom footer slots remain available for existing consumers. The outer bordered container and the
  * Modal/BottomSheet wrapper stay per-modal too: they legitimately diverge
  * (per-mode widths, mobile bottom-sheet path, MAE container classes), unlike
  * the header/content/footer chrome which was byte-identical.
@@ -43,9 +59,12 @@ export function AiAssistantShell({
   noProvidersLabel,
   headerExtra,
   footer,
+  primaryAction,
+  secondaryActions,
   children,
 }: AiAssistantShellProps) {
   const { t } = useT();
+  const hasStructuredFooter = primaryAction !== undefined || Boolean(secondaryActions?.length);
   return (
     <>
       {/* Header */}
@@ -75,11 +94,40 @@ export function AiAssistantShell({
       </div>
 
       {/* Footer */}
-      {footer && (
+      {hasStructuredFooter ? (
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border px-5 py-3 max-md:px-3 max-md:pt-2.5 max-md:pb-[calc(env(safe-area-inset-bottom,0px)+0.625rem)]">
+          {secondaryActions?.map((action) => {
+            const disabled = action.disabled || action.busy;
+            return (
+              <button
+                key={action.label}
+                type="button"
+                className="h-[37px] cursor-pointer rounded-md border border-border bg-surface px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-not-allowed disabled:opacity-50 max-md:h-11 max-md:w-full"
+                disabled={disabled}
+                aria-busy={action.busy || undefined}
+                onClick={action.onClick}
+              >
+                {action.busy && action.busyLabel ? action.busyLabel : action.label}
+              </button>
+            );
+          })}
+          {primaryAction && (
+            <button
+              type="button"
+              className="h-[37px] cursor-pointer rounded-md bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-on-accent transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 max-md:h-11 max-md:w-full"
+              disabled={primaryAction.disabled || primaryAction.busy}
+              aria-busy={primaryAction.busy || undefined}
+              onClick={primaryAction.onClick}
+            >
+              {primaryAction.busy && primaryAction.busyLabel ? primaryAction.busyLabel : primaryAction.label}
+            </button>
+          )}
+        </div>
+      ) : footer ? (
         <div className="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-3">
           {footer}
         </div>
-      )}
+      ) : null}
     </>
   );
 }
