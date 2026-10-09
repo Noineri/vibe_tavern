@@ -1119,9 +1119,9 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // advisory caps must never outlive their truth).
     const runBackend = async (): Promise<Awaited<ReturnType<typeof backend.generate>>> => {
       try {
-        // Owner 2026-09-14: LOCAL backends have NO generation timeout
-        // (explicit cancel only); CLOUD backends carry the 3-minute budget.
-        const generated = profile.capabilities.localExecution
+        // Owner 2026-09-14: LOCAL backends have NO generation timeout (explicit cancel only); CLOUD backends carry the
+        // 3-minute budget. PE-7a (owner 2026-09-18): aihorde joins the no-budget side — silence, not queue length, aborts it.
+        const generated = profile.capabilities.localExecution || profile.backend === IMAGE_GEN_BACKENDS.Aihorde
           ? await backend.generate(request)
           : await withImageGenTimeoutMs(
               signal,

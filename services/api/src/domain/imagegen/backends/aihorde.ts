@@ -47,11 +47,13 @@
  *   r2:true — https-prefixed entries download server-side, everything
  *   else decodes), `seed` (string), `censored` (true = the worker's
  *   safety filter blanked it → typed error).
- * - UX caveat (surfaced to the owner, NOT silently worked around):
- *   crowdsourced queues can run MINUTES anonymous — the shared 3-minute
- *   cloud timeout can cut a slow queue off; the poll forwards the
- *   caller's abort and best-effort-cancels the horde request on the way
- *  out.
+ * - UX caveat → PE-7a resolution (owner 2026-09-18 ruling): crowdsourced
+ *   queues run MINUTES anonymous, so generation rides the adapter's
+ *   no-total-budget path (a slow queue is legitimate); instead EVERY
+ *   generation-path fetch (submit, check, status, R2 download) carries
+ *   a per-fetch inactivity guard — silence, not queue length, is what
+ *   aborts. The poll forwards the caller's abort and best-effort-
+ *   cancels the horde request on the way out.
  */
 
 import { IMAGE_GEN_BACKENDS } from "@vibe-tavern/domain";
@@ -88,6 +90,23 @@ export class HordeImageConfigError extends Error {
     this.name = "HordeImageConfigError";
   }
 }
+
+/** PE-7a: a generation-path fetch expired its per-fetch inactivity
+ *  budget — the endpoint went SILENT (no response at all). Distinct from
+ *  both queue duration (a slow horde queue keeps polling) and the
+ *  caller's abort (plain AbortError — user cancel). */
+export class HordeEndpointSilentError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "HordeEndpointSilentError";
+  }
+}
+
+/** PE-7a per-fetch inactivity budgets (owner-ruled): JSON fetches
+ *  (submit, check, status) get 45 s; the R2 image download (payloads can
+ *  be large) gets 120 s. Exported so tests pin the numbers. */
+export const HORDE_JSON_FETCH_INACTIVITY_MS = 45_000;
+export const HORDE_DOWNLOAD_INACTIVITY_MS = 120_000;
 
 // ─── Documented surface (live swagger 2026-09-18) ───────────────────────────
 
@@ -166,6 +185,40 @@ async function fetchOrWrap(
   }
 }
 
+/** PE-7a: one generation-path fetch under the inactivity guard. The
+ *  caller's signal composes with a per-fetch timer (`AbortSignal.any`);
+ *  a TIMER-caused expiry surfaces as the typed HordeEndpointSilentError
+ *  (timer fired iff the caller did NOT abort — the withImageGenTimeoutMs
+ *  distinction), while the caller's abort propagates as the plain
+ *  AbortError (fetchOrWrap rethrows it untouched, the route reads user
+ *  cancel). The poll WAIT between iterations is deliberately NOT
+ *  guarded — inactivity means a fetch that never resolves, not queue
+ *  duration. */
+async function fetchWithInactivityGuard(
+  transport: typeof fetch,
+  url: string,
+  init: RequestInit,
+  operation: string,
+  inactivityMs: number,
+): Promise<Response> {
+  const caller = init.signal ?? undefined;
+  const timer = new AbortController();
+  const timerId = setTimeout(() => timer.abort(), inactivityMs);
+  const signal = caller === undefined ? timer.signal : AbortSignal.any([caller, timer.signal]);
+  try {
+    return await fetchOrWrap(transport, url, { ...init, signal }, operation);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError" && !(caller?.aborted ?? false)) {
+      throw new HordeEndpointSilentError(
+        `AI Horde endpoint went silent (no response within ${Math.floor(inactivityMs / 1000)}s) — ${operation}`,
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timerId);
+  }
+}
+
 function hordeHeaders(apiKey: string, json: boolean): Record<string, string> {
   const headers: Record<string, string> = {
     apikey: apiKey,
@@ -199,6 +252,10 @@ function sniffImageMime(bytes: Buffer): string | null {
 
 interface HordeWaitControl {
   wait: (ms: number) => Promise<void>;
+  /** Test seam (PE-7a): overrides the check fetches' inactivity budget —
+   *  tests pass 0 so the guard fires on the next macrotask (never a real
+   *  wait); production callers omit it (the owner-ruled 45 s). */
+  checkInactivityMs?: number;
 }
 
 /** The default wait — a real sleep (the seam exists so tests inject a
@@ -209,7 +266,8 @@ const defaultWaitControl: HordeWaitControl = {
 
 /** Poll the light check endpoint until done (or faulted / impossible).
  *  Cadence: 3 s doubling to a 15 s cap (the dashscope precedent).
- *  Exported as the test seam — inject `wait` to run instantly. */
+ *  Exported as the test seam — inject `wait` to run instantly and
+ *  `checkInactivityMs` to fire the per-fetch silence guard at once. */
 export async function pollHordeGeneration(
   transport: typeof fetch,
   endpoint: string,
@@ -219,11 +277,12 @@ export async function pollHordeGeneration(
 ): Promise<void> {
   let delay = 3000;
   for (;;) {
-    const check = await fetchOrWrap(
+    const check = await fetchWithInactivityGuard(
       transport,
       `${endpoint}/v2/generate/check/${id}`,
       { method: "GET", headers: hordeHeaders(HORDE_ANONYMOUS_API_KEY, false), signal },
       "status check",
+      control.checkInactivityMs ?? HORDE_JSON_FETCH_INACTIVITY_MS,
     );
     if (!check.ok) {
       const excerpt = await readProviderErrorBody(check);
@@ -302,7 +361,7 @@ registerImageGenBackend(
     return {
       async generate(request: ImageGenGenerateRequest): Promise<ImageGenGenerateResult> {
         const model = request.model?.trim() || parsed.model;
-        const submit = await fetchOrWrap(
+        const submit = await fetchWithInactivityGuard(
           parsed.fetch,
           `${parsed.endpoint}/v2/generate/async`,
           {
@@ -312,6 +371,7 @@ registerImageGenBackend(
             signal: request.signal,
           },
           "generation submit",
+          HORDE_JSON_FETCH_INACTIVITY_MS,
         );
         if (!submit.ok) {
           const excerpt = await readProviderErrorBody(submit);
@@ -332,11 +392,12 @@ registerImageGenBackend(
           await cancelHordeRequest(parsed.fetch, parsed.endpoint, id);
           throw error;
         }
-        const status = await fetchOrWrap(
+        const status = await fetchWithInactivityGuard(
           parsed.fetch,
           `${parsed.endpoint}/v2/generate/status/${id}`,
           { method: "GET", headers: hordeHeaders(parsed.apiKey, false), signal: request.signal },
           "status fetch",
+          HORDE_JSON_FETCH_INACTIVITY_MS,
         );
         if (!status.ok) {
           const excerpt = await readProviderErrorBody(status);
@@ -360,11 +421,12 @@ registerImageGenBackend(
         }
         let bytes: Buffer;
         if (/^https?:\/\//i.test(img)) {
-          const download = await fetchOrWrap(
+          const download = await fetchWithInactivityGuard(
             parsed.fetch,
             img,
             { method: "GET", signal: request.signal },
             "image download",
+            HORDE_DOWNLOAD_INACTIVITY_MS,
           );
           if (!download.ok) {
             throw new HordeImageError(

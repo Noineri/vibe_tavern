@@ -16,7 +16,13 @@ import {
   mapIdeogramResolution,
 } from "../src/domain/imagegen/backends/ideogram.js";
 import "../src/domain/imagegen/backends/cloudflare.js";
-import { pollHordeGeneration, snapHordeDimension } from "../src/domain/imagegen/backends/aihorde.js";
+import {
+  HORDE_DOWNLOAD_INACTIVITY_MS,
+  HORDE_JSON_FETCH_INACTIVITY_MS,
+  HordeEndpointSilentError,
+  pollHordeGeneration,
+  snapHordeDimension,
+} from "../src/domain/imagegen/backends/aihorde.js";
 import "../src/domain/imagegen/backends/aihorde.js";
 import { createImageGenBackend } from "../src/domain/imagegen/imagegen-registry.js";
 // Import-time side-effect registrations are the production wiring.
@@ -796,6 +802,84 @@ describe("aihorde native arm (async submit→poll→status, anonymous tier)", ()
     });
     expect(checks).toBe(5);
     expect(waits).toEqual([3000, 6000, 12000, 15000]); // doubling, capped at 15s
+  });
+
+  it("PE-7a: a check fetch that never settles fails fast with HordeEndpointSilentError (inactivity, not queue length)", async () => {
+    // A hung connection with real fetch semantics: the promise parks
+    // forever and rejects ONLY when its signal aborts.
+    const transport: typeof fetch = (_url, init) =>
+      new Promise<Response>((_, reject) => {
+        const signal = init?.signal;
+        if (signal?.aborted) {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+          return;
+        }
+        signal?.addEventListener("abort", () =>
+          reject(new DOMException("The operation was aborted.", "AbortError")),
+        );
+      });
+    let caught: unknown;
+    try {
+      await pollHordeGeneration(transport, BASE, "req-silent", undefined, {
+        wait: () => Promise.resolve(), // never reached — the first check hangs
+        checkInactivityMs: 0, // fire the guard on the next macrotask, no real wait
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(HordeEndpointSilentError);
+    expect((caught as HordeEndpointSilentError).message).toContain("went silent");
+    expect((caught as HordeEndpointSilentError).message).toContain("status check");
+  });
+
+  it("PE-7a pin: user cancel mid-poll aborts as the plain AbortError and the best-effort DELETE cancel still fires", async () => {
+    const controller = new AbortController();
+    let cancelled = false;
+    let checkStarted!: () => void;
+    const checkInFlight = new Promise<void>((resolve) => {
+      checkStarted = resolve;
+    });
+    const transport: typeof fetch = (url, init) => {
+      const u = String(url);
+      if (u.endsWith("/v2/generate/async")) {
+        return Promise.resolve(jsonResponse({ id: "req-cancel" }));
+      }
+      if (u.includes("/v2/generate/check/")) {
+        // The in-flight check parks until the user's abort (real fetch
+        // semantics) — the cancel lands mid-poll, deterministically.
+        checkStarted();
+        return new Promise<Response>((_, reject) => {
+          const signal = init?.signal;
+          if (signal?.aborted) {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+            return;
+          }
+          signal?.addEventListener("abort", () =>
+            reject(new DOMException("The operation was aborted.", "AbortError")),
+          );
+        });
+      }
+      if (u.includes("/v2/generate/status/") && init?.method === "DELETE") {
+        cancelled = true;
+        return Promise.resolve(jsonResponse({ id: "req-cancel" }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    };
+    const generation = make(transport).generate({ prompt: "p", signal: controller.signal });
+    await checkInFlight; // the first check is parked — the user cancels now
+    controller.abort();
+    const caught = await generation.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(caught instanceof Error && caught.name === "AbortError").toBe(true);
+    expect(caught instanceof HordeEndpointSilentError).toBe(false);
+    expect(cancelled).toBe(true); // best-effort DELETE fired on the way out
+  });
+
+  it("PE-7a lockstep: 45s JSON fetch inactivity, 120s image download inactivity", () => {
+    expect(HORDE_JSON_FETCH_INACTIVITY_MS).toBe(45_000);
+    expect(HORDE_DOWNLOAD_INACTIVITY_MS).toBe(120_000);
   });
 
   it("snapHordeDimension pins the documented 64-multiple grid clamp", () => {
