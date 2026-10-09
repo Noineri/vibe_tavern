@@ -59,6 +59,7 @@ const listAllRegexProfilesMock = mock(async () => [] as unknown as Awaited<Retur
 const createRegexProfileMock = mock(async (body: unknown) => ({ id: "p_new", name: (body as { name?: string })?.name ?? "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>));
 const attachRegexRuleMock = mock(async (_a: unknown, _b: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.attachRegexRule>>);
 const detachRegexRuleMock = mock(async (_id: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.detachRegexRule>>);
+const getRegexLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.getRegexLinks>>);
 const getRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.getRegexProfileLinks>>);
 const updateRegexProfileMock = mock(async (id: string, body: { name?: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }) => {
   // Merge over a base record so every field stays a primitive (a naive
@@ -128,6 +129,7 @@ mock.module("../../api/regex-api.js", () => {
     createRegexProfile: createRegexProfileMock,
     attachRegexRule: attachRegexRuleMock,
     detachRegexRule: detachRegexRuleMock,
+    getRegexLinks: getRegexLinksMock,
     getRegexProfileLinks: getRegexProfileLinksMock,
     updateRegexProfile: updateRegexProfileMock,
     deleteRegexProfile: deleteRegexProfileMock,
@@ -187,6 +189,8 @@ afterEach(async () => {
   createRegexProfileMock.mockResolvedValue({ id: "p_new", name: "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>);
   attachRegexRuleMock.mockReset();
   detachRegexRuleMock.mockReset();
+  getRegexLinksMock.mockReset();
+  getRegexLinksMock.mockResolvedValue([]);
   getRegexProfileLinksMock.mockReset();
   getRegexProfileLinksMock.mockResolvedValue([]);
   updateRegexProfileMock.mockReset();
@@ -962,6 +966,27 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
       maxDepth: null,
       placement: [2, 5],
     });
+  });
+
+  test("preset export without Regex remains a normal ST preset export", async () => {
+    const view = await openRegexTabWith([]);
+    fireEvent.click(within(view.baseElement).getByText("promptManager.tabPresets"));
+    fireEvent.click(within(view.baseElement).getByText("export_preset_btn"));
+
+    await waitFor(() => expect(downloadTextFileMock).toHaveBeenCalledTimes(1));
+    const [, json] = downloadTextFileMock.mock.calls[0] as [string, string, string];
+    const parsed = JSON.parse(json) as { extensions?: { regex_scripts?: unknown } };
+    expect(parsed.extensions?.regex_scripts).toBeUndefined();
+  });
+
+  test("a Regex link-resolution failure prevents preset download and surfaces exportFailed", async () => {
+    getRegexLinksMock.mockRejectedValue(new Error("offline"));
+    const view = await openRegexTabWith([fullRecord("rx_1", "Alpha Strip")]);
+    fireEvent.click(within(view.baseElement).getByText("promptManager.tabPresets"));
+    fireEvent.click(within(view.baseElement).getByText("export_preset_btn"));
+
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("promptManager.regex.exportFailed"));
+    expect(downloadTextFileMock).not.toHaveBeenCalled();
   });
 });
 
