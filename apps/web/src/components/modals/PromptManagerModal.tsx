@@ -803,8 +803,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     if (!activePreset) return;
     void exportPromptPresetWithRegex({
       preset: activePreset,
-      rules: regexPresets,
-      profiles: regexProfiles,
+      listRules: listAllRegexPresets,
+      listProfiles: listAllRegexProfiles,
       getRuleLinks: getRegexLinks,
       getProfileLinks: getRegexProfileLinks,
     }).catch(() => toast.error(t("promptManager.regex.exportFailed")));
