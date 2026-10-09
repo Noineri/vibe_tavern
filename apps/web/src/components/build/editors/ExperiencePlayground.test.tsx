@@ -35,10 +35,14 @@
  * AutoTextarea is stubbed to a plain textarea. The blob-URL spy pattern
  * mirrors ExperienceFrame.test.tsx (happy-dom must not navigate the iframe).
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ChangeEvent, ReactNode } from "react";
-import type { ExperienceSetupFieldDto } from "@vibe-tavern/api-contracts";
+import type {
+  ExperienceCopilotLaunchContext,
+  ExperienceSetupFieldDto,
+} from "@vibe-tavern/api-contracts";
+import { savePlaygroundConfig } from "../../../lib/playground-config-persistence.js";
 
 import type {
   ExperiencePlaygroundData,
@@ -307,6 +311,25 @@ mock.module("../../shared/auto-textarea.js", () => ({
   ),
 }));
 
+// Grounding step 6: the status-strip copy-log button routes through the real
+// copyText helper and toasts the result — both are observable boundaries here.
+const realClipboard = await import("../../../lib/clipboard.js");
+const copyText = mock((_text: string): Promise<import("../../../lib/clipboard.js").CopyResult> =>
+  Promise.resolve({ ok: true }),
+);
+mock.module("../../../lib/clipboard.js", () => ({
+  ...realClipboard,
+  copyText,
+}));
+
+const realSonner = await import("sonner");
+const toastSuccess = mock();
+const toastError = mock();
+mock.module("sonner", () => ({
+  ...realSonner,
+  toast: { ...realSonner.toast, success: toastSuccess, error: toastError },
+}));
+
 const { ExperienceApiError } = realExperienceApi;
 
 let ExperiencePlayground: typeof import("./ExperiencePlayground.js").ExperiencePlayground;
@@ -340,6 +363,10 @@ beforeEach(() => {
   advanceExperiencePlayground.mockImplementation(async () => makeAdvanceData());
   useScriptDraftStore.getState().resetAll();
   useExperienceVisualDraftStore.getState().resetAll();
+  copyText.mockClear();
+  copyText.mockImplementation(async () => ({ ok: true }));
+  toastSuccess.mockClear();
+  toastError.mockClear();
   createdBlobs.length = 0;
   revokedUrls.length = 0;
   restoreUrl();
@@ -350,7 +377,12 @@ beforeEach(() => {
 function renderPlayground(
   code: string = VALID_CODE,
   visualSource: string | null = null,
-  props: { scriptId?: string } = {},
+  props: {
+    scriptId?: string;
+    script?: { origin: "in_app" | "imported"; firstEnabledAt: string | null };
+    onShowInCode?: (line: number) => void;
+    onLaunchContextChange?: (context: ExperienceCopilotLaunchContext) => void;
+  } = {},
 ) {
   const utils = render(<ExperiencePlayground code={code} visualSource={visualSource} {...props} />);
   return utils;
@@ -898,7 +930,11 @@ describe("ExperiencePlayground", () => {
     expect(iframe!.getAttribute("sandbox")).not.toContain("allow-same-origin");
     expect(createdBlobs.length).toBeGreaterThanOrEqual(1);
     const doc = await createdBlobs[createdBlobs.length - 1]!.text();
-    expect(doc).toContain("xp-conv");
+    // The REAL shipped Messenger visual (report step 4a re-pin: was the retired
+    // compact visual's "xp-conv" class; now the messenger's shell root + tab
+    // bar — basis: owner replaced the built-ins 2026-10-06).
+    expect(doc).toContain("id=\"xp-root\"");
+    expect(doc).toContain("xp-tabs");
 
     expect(await findByText("experience_playground_status_your_turn")).toBeTruthy();
     expect(await findByText("experience_playground_turn_title")).toBeTruthy();
@@ -1088,6 +1124,126 @@ describe("ExperiencePlayground — send diagnostics to assistant (ER-14)", () =>
   });
 });
 
+// ── Grounding step 6: sandbox log channel ─────────────────────────────
+
+describe("ExperiencePlayground — sandbox log channel (grounding step 6)", () => {
+  /** Click the legal-action button showing `label`, waiting for it to be
+   *  enabled (a click on a busy-disabled button is a silent no-op). The label
+   *  text lives in a span INSIDE the button, so resolve the owning button. */
+  async function clickLegalAction(getByText: (text: string) => HTMLElement, label: string): Promise<void> {
+    const btn = () => getByText(label).closest("button") as HTMLButtonElement;
+    await waitFor(() => expect(btn().disabled).toBe(false));
+    fireEvent.click(btn());
+  }
+
+  it("renders both log buttons with a live session and no error; send-log posts a digest with every event of a two-turn session", async () => {
+    startExperiencePlayground.mockImplementation(async () =>
+      makeStartData({ events: [{ visibility: "public", type: "created" }] }),
+    );
+    // Distinct per-turn event deltas: the server returns only the CURRENT
+    // turn's events on advance, so the accumulator must stitch both turns.
+    let advanceNo = 0;
+    advanceExperiencePlayground.mockImplementation(async () => {
+      advanceNo += 1;
+      return makeAdvanceData({
+        events:
+          advanceNo === 1
+            ? [{ visibility: "public", type: "scored_t1" }]
+            : [{ visibility: "public", type: "scored_t2" }, { visibility: "public", type: "turn_passed_t2" }],
+      });
+    });
+    const onSendToCopilot = mock();
+    const { getByText, getByTestId, queryByTestId } = render(
+      <ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />,
+    );
+
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(getByTestId("playground-send-log")).toBeTruthy());
+    expect(getByTestId("playground-copy-log")).toBeTruthy();
+    expect(getByTestId("playground-send-log")!.textContent).toBe("experience_playground_send_log");
+    expect(getByTestId("playground-copy-log")!.textContent).toBe("experience_playground_copy_log");
+    // No error → the error-panel button stays absent (its digest path is untouched).
+    expect(queryByTestId("playground-error-ask-copilot")).toBeNull();
+
+    // Two human turns through the legal-action button.
+    await clickLegalAction(getByText, "Score");
+    await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(1));
+    await clickLegalAction(getByText, "Score");
+    await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(getByTestId("playground-send-log"));
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.ok).toBe(true);
+    expect(digest.feedback.turns).toBe(2);
+    expect(digest.feedback.eventsTotal).toBe(4);
+    expect((digest.feedback.events as Array<{ type: string }>).map((e) => e.type)).toEqual([
+      "created",
+      "scored_t1",
+      "scored_t2",
+      "turn_passed_t2",
+    ]);
+  });
+
+  it("copy-log always renders (standalone use) and copies the log text; toasts success and the localized failure", async () => {
+    startExperiencePlayground.mockImplementation(async () =>
+      makeStartData({ events: [{ visibility: "public", type: "created" }] }),
+    );
+    const { getByText, getByTestId, queryByTestId } = renderPlayground();
+
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(getByTestId("playground-copy-log")).toBeTruthy());
+    // No copilot callback → no send-log button, but copy-log remains.
+    expect(queryByTestId("playground-send-log")).toBeNull();
+
+    copyText.mockImplementationOnce(async () => ({ ok: true }));
+    fireEvent.click(getByTestId("playground-copy-log"));
+    await waitFor(() => expect(copyText).toHaveBeenCalledTimes(1));
+    const copied = copyText.mock.calls[0][0] as string;
+    expect(copied).toContain("Playground session log");
+    expect(copied).toContain("public/created");
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("copied"));
+    expect(toastError).not.toHaveBeenCalled();
+
+    copyText.mockImplementationOnce(async () => ({ ok: false, error: "rejected" }));
+    fireEvent.click(getByTestId("playground-copy-log"));
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("experience_playground_copy_log_failed"),
+    );
+  });
+
+  it("Reset clears the accumulator — a restarted session's log carries only its own events", async () => {
+    startExperiencePlayground.mockImplementation(async () =>
+      makeStartData({ events: [{ visibility: "public", type: "created" }] }),
+    );
+    advanceExperiencePlayground.mockImplementation(async () =>
+      makeAdvanceData({ events: [{ visibility: "public", type: "scored_t1" }] }),
+    );
+    const onSendToCopilot = mock();
+    const { getByText, getByTestId, queryByTestId } = render(
+      <ExperiencePlayground code={VALID_CODE} visualSource={null} onSendToCopilot={onSendToCopilot} />,
+    );
+
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(getByTestId("playground-send-log")).toBeTruthy());
+    await clickLegalAction(getByText, "Score");
+    await waitFor(() => expect(advanceExperiencePlayground).toHaveBeenCalledTimes(1));
+
+    // Reset tears the session down — the log buttons go with it.
+    fireEvent.click(getByText("experience_playground_reset"));
+    await waitFor(() => expect(queryByTestId("playground-send-log")).toBeNull());
+
+    // A fresh session's log starts clean: only the new start envelope's events.
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(getByTestId("playground-send-log")).toBeTruthy());
+    fireEvent.click(getByTestId("playground-send-log"));
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.eventsTotal).toBe(1);
+    expect((digest.feedback.events as Array<{ type: string }>)[0]!.type).toBe("created");
+  });
+});
+
 // ── XU-3: error copilot escape hatch + technical-details disclosure ─────────
 
 describe("ExperiencePlayground — error copilot escape hatch (XU-3)", () => {
@@ -1138,6 +1294,84 @@ describe("ExperiencePlayground — error copilot escape hatch (XU-3)", () => {
 });
 
 // ── Fix item 9a: config persistence ─────────────────────────────────────────
+
+describe("ExperiencePlayground — copilot launch context", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("reports the exact persisted roster, grants, settings, manual seed, and selected seat", async () => {
+    savePlaygroundConfig("script-context", {
+      seats: [
+        { id: "you", label: "You", controller: "human" },
+        { id: "bot", label: "Bot", controller: "script" },
+      ],
+      grants: ["participants"],
+      seed: "manual-seed",
+      settingsJson: JSON.stringify({ rounds: 3 }),
+      humanSeatId: "you",
+      randomStart: false,
+    });
+    const contexts: ExperienceCopilotLaunchContext[] = [];
+
+    renderPlayground(VALID_CODE, null, {
+      scriptId: "script-context",
+      onLaunchContextChange: (context) => contexts.push(context),
+    });
+
+    await waitFor(() => expect(contexts.length).toBeGreaterThan(0));
+    expect(contexts.at(-1)).toEqual({
+      participants: [
+        { id: "you", label: "You", controller: "human" },
+        { id: "bot", label: "Bot", controller: "script" },
+      ],
+      capabilityGrants: ["participants"],
+      settings: { rounds: 3 },
+      seed: "manual-seed",
+      humanSeatId: "you",
+    });
+  });
+
+  it("omits invalid settings and an as-yet unused random seed", async () => {
+    savePlaygroundConfig("script-invalid-context", {
+      seats: [{ id: "you", label: "You", controller: "human" }],
+      grants: [],
+      seed: "ignored-manual-seed",
+      settingsJson: "{broken",
+      humanSeatId: "",
+      randomStart: true,
+    });
+    const contexts: ExperienceCopilotLaunchContext[] = [];
+
+    renderPlayground(VALID_CODE, null, {
+      scriptId: "script-invalid-context",
+      onLaunchContextChange: (context) => contexts.push(context),
+    });
+
+    await waitFor(() => expect(contexts.length).toBeGreaterThan(0));
+    const context = contexts.at(-1)!;
+    expect("settings" in context).toBe(false);
+    expect("seed" in context).toBe(false);
+  });
+
+  it("reports the generated random seed only after a launch and matches the Start request", async () => {
+    const contexts: ExperienceCopilotLaunchContext[] = [];
+    const { getByText } = renderPlayground(VALID_CODE, null, {
+      onLaunchContextChange: (context) => contexts.push(context),
+    });
+
+    await waitFor(() => expect(contexts.length).toBeGreaterThan(0));
+    expect("seed" in contexts.at(-1)!).toBe(false);
+
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    const startBody = startExperiencePlayground.mock.calls[0][0] as { seed?: string };
+    expect(startBody.seed).toBeTruthy();
+    await waitFor(() => {
+      expect(contexts.some((context) => context.seed === startBody.seed)).toBe(true);
+    });
+  });
+});
 
 describe("ExperiencePlayground — config persistence (fix item 9a)", () => {
   beforeEach(() => {
@@ -1416,6 +1650,134 @@ describe("ExperiencePlayground — absorbed tester (XU-4)", () => {
     expect(digest.feedback.legalActionTypes).toEqual(["score", "pass"]);
     expect(typeof digest.text).toBe("string");
     expect(digest.text.length).toBeGreaterThan(0);
+  });
+});
+
+// ── Grounding step 7: developer-diagnostics seed parity ─────────────────
+// The "Random start" toggle now governs the stateless diagnostics too:
+// ON — they run on the LAST launch's random seed so the result describes the
+// same game the author just played (the manual seed before any launch); OFF —
+// the manual seed, payload-identical to the pre-step-7 behavior. The tester
+// endpoints stay stateless: the seed is a request parameter picked
+// client-side by one shared diagnosticsSeed() helper.
+
+describe("ExperiencePlayground — diagnostics seed parity (grounding step 7)", () => {
+  it("random start ON, before any launch: both diagnostics fall back to the manual seed and the seed line names it", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole, getByPlaceholderText, getByTestId } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    // The manual seed input is only editable while the toggle is OFF:
+    // switch off, type, switch back on — the manual seed survives the toggle.
+    fireEvent.click(getByRole("switch")); // ON → OFF
+    fireEvent.change(getByPlaceholderText("experience_tester_seed_placeholder"), { target: { value: "manual-pre-launch" } });
+    fireEvent.click(getByRole("switch")); // OFF → ON
+
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    expect(runExperienceTest.mock.calls[1]?.[0]).toMatchObject({ seed: "manual-pre-launch" });
+    // The seed line at the top of the result block (identity i18n: the key
+    // verbatim, the value appended by the component's plain template).
+    await waitFor(() =>
+      expect(getByTestId("playground-discover-seed").textContent).toBe("experience_playground_diagnostics_seed: manual-pre-launch"),
+    );
+
+    fireEvent.click(getByText("experience_tester_simulate"));
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest.mock.calls[0]?.[0]).toMatchObject({ seed: "manual-pre-launch" });
+    await waitFor(() =>
+      expect(getByTestId("playground-simulate-seed").textContent).toBe("experience_playground_diagnostics_seed: manual-pre-launch"),
+    );
+  });
+
+  it("random start ON, after a launch: both diagnostics reuse the launch's random seed (the same game just played)", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByTestId } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    // Park on the landed session frame before driving the diagnostics.
+    expect(await utils.findByText("experience_playground_turn_title")).toBeTruthy();
+    const launchSeed = (startExperiencePlayground.mock.calls[0]![0] as { seed?: string }).seed;
+    expect(launchSeed).toBeTruthy();
+
+    expandDiagnostics(utils);
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    expect(runExperienceTest.mock.calls[1]?.[0]).toMatchObject({ seed: launchSeed });
+    await waitFor(() =>
+      expect(getByTestId("playground-discover-seed").textContent).toBe(`experience_playground_diagnostics_seed: ${launchSeed}`),
+    );
+
+    fireEvent.click(getByText("experience_tester_simulate"));
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest.mock.calls[0]?.[0]).toMatchObject({ seed: launchSeed });
+    await waitFor(() =>
+      expect(getByTestId("playground-simulate-seed").textContent).toBe(`experience_playground_diagnostics_seed: ${launchSeed}`),
+    );
+  });
+
+  it("random start OFF, empty manual seed: no seed key in either call and the seed line shows the none-sent marker", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole, getByTestId } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    fireEvent.click(getByRole("switch")); // ON → OFF
+
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    expect(runExperienceTest.mock.calls[1]?.[0]).not.toHaveProperty("seed");
+    await waitFor(() =>
+      expect(getByTestId("playground-discover-seed").textContent).toBe("experience_playground_diagnostics_seed: —"),
+    );
+
+    fireEvent.click(getByText("experience_tester_simulate"));
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest.mock.calls[0]?.[0]).not.toHaveProperty("seed");
+  });
+
+  it("random start OFF, typed manual seed: both diagnostics send it with the payload otherwise byte-identical", async () => {
+    const utils = renderPlayground();
+    const { getByText, getByRole, getByPlaceholderText, getByTestId } = utils;
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    fireEvent.click(getByRole("switch")); // ON → OFF
+    fireEvent.change(getByPlaceholderText("experience_tester_seed_placeholder"), { target: { value: "my-seed-42" } });
+
+    runExperienceTest.mockImplementationOnce(async () => makeDiscoverData());
+    expandDiagnostics(utils);
+    fireEvent.click(getByText("experience_tester_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(2));
+    // The full discover body, byte-identical to the pre-step-7 manual-seed
+    // payload ("nothing else changed" with the toggle OFF).
+    expect(runExperienceTest.mock.calls[1]?.[0]).toEqual({
+      rulesCode: VALID_CODE,
+      settings: {},
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: [],
+      seed: "my-seed-42",
+      actions: [],
+    });
+    await waitFor(() =>
+      expect(getByTestId("playground-discover-seed").textContent).toBe("experience_playground_diagnostics_seed: my-seed-42"),
+    );
+
+    fireEvent.click(getByText("experience_tester_simulate"));
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest.mock.calls[0]?.[0]).toEqual({
+      rulesCode: VALID_CODE,
+      settings: {},
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: [],
+      seed: "my-seed-42",
+    });
+    await waitFor(() =>
+      expect(getByTestId("playground-simulate-seed").textContent).toBe("experience_playground_diagnostics_seed: my-seed-42"),
+    );
   });
 });
 
@@ -1883,5 +2245,190 @@ describe("ExperiencePlayground — realtime rounds (RM-9)", () => {
     expect(await utils.findByText("experience_playground_no_visual")).toBeTruthy();
     expect(await utils.findByText("experience_playground_realtime_no_visual")).toBeTruthy();
     expect(await utils.findByText("experience_playground_realtime_badge")).toBeTruthy();
+  });
+
+  it("send-log sends the REALTIME loop digest, not the turn log (grounding step 6)", async () => {
+    runExperienceTest.mockImplementation(async () => makeRealtimeDiscovery());
+    startExperiencePlayground.mockImplementation(async () => makeRealtimeStartData());
+    const onSendToCopilot = mock();
+    const utils = render(
+      <ExperiencePlayground code={REALTIME_CODE} visualSource={VISUAL_SOURCE} onSendToCopilot={onSendToCopilot} />,
+    );
+    await waitFor(() => {
+      expect(utils.container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
+    });
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(await utils.findByText("experience_playground_realtime_badge")).toBeTruthy();
+
+    fireEvent.click(utils.getByTestId("playground-send-log"));
+    expect(onSendToCopilot).toHaveBeenCalledTimes(1);
+    const digest = onSendToCopilot.mock.calls[0][0];
+    expect(digest.feedback.mode).toBe("realtime");
+    expect(digest.feedback.turns).toBeUndefined();
+  });
+});
+
+// ─── SS-7B2: automatic discovery guard ──────────────────────────────────
+// The debounced auto-derive discovery is AUTOMATIC script execution: it routes
+// through scriptExecutionGuard, so an imported never-enabled script renders
+// the shared localized auto-skip state and sends NO discovery request, while
+// trusted/in-app scripts keep the exact pre-B2 discovery behavior (the
+// standalone panel without trust data is the same parity case — every other
+// test in this file renders without `script` and discovery fires).
+
+const { useScriptSafetySettingsStore } = await import("../../../stores/script-safety-settings-store.js");
+
+// SS-7B4: all explicit controls route through the real warning modals before
+// their existing request implementations; endpoint payloads remain unchanged.
+describe("ExperiencePlayground — explicit guard (SS-7B4)", () => {
+  beforeEach(() => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
+  });
+
+  it("Start cancels with no request and a double confirm starts exactly once", async () => {
+    const utils = renderPlayground(VALID_CODE, null, { script: { origin: "imported", firstEnabledAt: null } });
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await utils.findByTestId("script-safety-warning-modal");
+    fireEvent.click(utils.getByText("cancel"));
+    expect(startExperiencePlayground).not.toHaveBeenCalled();
+
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await utils.findByTestId("script-safety-warning-modal");
+    const confirm = utils.getByText("script_safety_warning_confirm_run");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+  });
+
+  it("Restart, Discover, and Auto-run each wait for their explicit confirmation", async () => {
+    const utils = renderPlayground(VALID_CODE, null, { script: { origin: "in_app", firstEnabledAt: null } });
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    utils.rerender(<ExperiencePlayground code={VALID_CODE} visualSource={null} script={{ origin: "imported", firstEnabledAt: null }} />);
+    expandDiagnostics(utils);
+
+    fireEvent.click(utils.getByText("experience_playground_restart"));
+    await utils.findByTestId("script-safety-warning-modal");
+    fireEvent.click(utils.getByText("cancel"));
+    expect(startExperiencePlayground).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(utils.getByText("experience_tester_run"));
+    await utils.findByTestId("script-safety-warning-modal");
+    fireEvent.click(utils.getByText("script_safety_warning_confirm_run"));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(utils.getByText("experience_tester_simulate"));
+    await utils.findByTestId("script-safety-warning-modal");
+    fireEvent.click(utils.getByText("script_safety_warning_confirm_run"));
+    await waitFor(() => expect(simulateExperienceTest).toHaveBeenCalledTimes(1));
+    expect(simulateExperienceTest.mock.calls[0]?.[0]).not.toHaveProperty("warningAcknowledged");
+  });
+
+  it("suppressed clean imports run directly while findings show in code without a request", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    const clean = renderPlayground(VALID_CODE, null, { script: { origin: "imported", firstEnabledAt: null } });
+    fireEvent.click(clean.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(clean.queryByTestId("script-safety-warning-modal")).toBeNull();
+    clean.unmount();
+
+    startExperiencePlayground.mockClear();
+    const onShowInCode = mock();
+    const findings = renderPlayground(`${VALID_CODE}\neval('x');`, null, { script: { origin: "imported", firstEnabledAt: null }, onShowInCode });
+    fireEvent.click(findings.getByText("experience_playground_start"));
+    await findings.findByTestId("script-safety-findings-modal");
+    fireEvent.click(findings.getByText("script_safety_findings_show_in_code"));
+    expect(onShowInCode).toHaveBeenCalledWith(2);
+    expect(startExperiencePlayground).not.toHaveBeenCalled();
+  });
+
+  it("trusted findings override suppression and confirm Start exactly once", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    const utils = renderPlayground(`${VALID_CODE}\neval('x');`, null, {
+      script: { origin: "imported", firstEnabledAt: "2026-10-05T00:00:00.000Z" },
+    });
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await utils.findByTestId("script-safety-findings-modal");
+    expect(utils.queryByTestId("script-safety-warning-modal")).toBeNull();
+
+    const confirm = utils.getByText("script_safety_warning_confirm_run");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+  });
+
+  it("in-app Start remains modal-free", async () => {
+    const utils = renderPlayground(VALID_CODE, null, { script: { origin: "in_app", firstEnabledAt: null } });
+    fireEvent.click(utils.getByText("experience_playground_start"));
+    await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));
+    expect(utils.queryByTestId("script-safety-warning-modal")).toBeNull();
+  });
+});
+
+describe("ExperiencePlayground — automatic discovery guard (SS-7B2)", () => {
+  it("untrusted import: renders the shared localized auto-skip state and sends NO discovery request", async () => {
+    jest.useFakeTimers();
+    try {
+      runExperienceTest.mockImplementation(async () => makeTestRunData());
+      const utils = render(
+        <ExperiencePlayground
+          code={VALID_CODE}
+          visualSource={null}
+          script={{ origin: "imported", firstEnabledAt: null }}
+        />,
+      );
+
+      // The shared localized state renders INSTEAD of the discovery-driven
+      // no-fields line (identity i18n — the shared message key verbatim).
+      expect(utils.getByTestId("playground-auto-skip").textContent).toBe("script_safety_checks_after_enabling");
+      expect(utils.queryByTestId("playground-no-fields")).toBeNull();
+
+      // Advance past the debounce deterministically: a would-be request has
+      // had time to fire, without adding a real sleep to the suite.
+      await act(async () => {
+        jest.advanceTimersByTime(600);
+      });
+      expect(runExperienceTest).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("trusted import: the debounced discovery proceeds (parity with the pre-guard behavior)", async () => {
+    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    const utils = render(
+      <ExperiencePlayground
+        code={VALID_CODE}
+        visualSource={null}
+        script={{ origin: "imported", firstEnabledAt: "2026-01-01T00:00:00.000Z" }}
+      />,
+    );
+
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    // No skip state — the discovery-driven UI renders as before (the derived
+    // 2-seat roster pins that the discovery actually landed).
+    expect(utils.queryByTestId("playground-auto-skip")).toBeNull();
+    await waitFor(() => {
+      expect(utils.container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
+    });
+  });
+
+  it("in-app script: the debounced discovery proceeds (parity with the pre-guard behavior)", async () => {
+    runExperienceTest.mockImplementation(async () => makeTestRunData());
+    const utils = render(
+      <ExperiencePlayground
+        code={VALID_CODE}
+        visualSource={null}
+        script={{ origin: "in_app", firstEnabledAt: null }}
+      />,
+    );
+
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    expect(utils.queryByTestId("playground-auto-skip")).toBeNull();
+    await waitFor(() => {
+      expect(utils.container.querySelectorAll('[data-testid="playground-seat-id"]').length).toBe(2);
+    });
   });
 });

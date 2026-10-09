@@ -78,6 +78,21 @@ function makeTestRunData(): ExperienceTestRunData {
   };
 }
 
+type InteractiveScriptTestResult = {
+  kind: "interactive";
+  definition: ExperienceTestRunData["definition"] | null;
+  discoveryError: string | null;
+};
+
+function makeScriptTestResult(overrides: Partial<InteractiveScriptTestResult> = {}): InteractiveScriptTestResult {
+  return {
+    kind: "interactive",
+    definition: makeTestRunData().definition,
+    discoveryError: null,
+    ...overrides,
+  };
+}
+
 const baseScript: ScriptRecord = {
   ...wireScript(),
   id: "srv_1",
@@ -122,12 +137,27 @@ const createExperienceVisual = mock((_body: Record<string, unknown>) => Promise.
 const updateExperienceVisual = mock((_id: string, _patch: Record<string, unknown>) => Promise.resolve<ExperienceVisualRow>({ ...baseVisual, compatibleManifestIds: [...baseVisual.compatibleManifestIds] }));
 const deleteExperienceVisual = mock((_id: string) => Promise.resolve<void>(undefined));
 const runExperienceTest = mock((_body: Record<string, unknown>) => Promise.resolve(makeTestRunData()));
+const testScript = mock((_id: string, _body: { code: string; warningAcknowledged: boolean }) => Promise.resolve(makeScriptTestResult()));
 
 const realScriptApi = await import("../../../api/script-api.js");
 const realExperienceApi = await import("../../../api/experience-api.js");
 const realI18nContext = await import("../../../i18n/context.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realMobileHook = await import("../../../hooks/use-mobile.js");
+const realSettingsApi = await import("../../../api/settings-api.js");
+
+// SS-7: the script-safety settings singleton (the suppression flag) — the
+// warning flow reads it at attempt time; tests seed the store directly.
+const getScriptSafetySettings = mock(async () => ({ suppressImportWarnings: false, updatedAt: "" }));
+const updateScriptSafetySettings = mock(async (input: { suppressImportWarnings: boolean }) => ({
+	suppressImportWarnings: input.suppressImportWarnings,
+	updatedAt: "",
+}));
+mock.module("../../../api/settings-api.js", () => ({
+	...realSettingsApi,
+	getScriptSafetySettings,
+	updateScriptSafetySettings,
+}));
 
 // Follow-up round 3 (mobile script header): drive `useIsMobile` from a test
 // flag — SAFE mock (capture real module first, spread, override the one hook).
@@ -146,6 +176,7 @@ mock.module("../../../api/script-api.js", () => ({
   getScriptVisuals,
   bindScriptVisual,
   unbindScriptVisual,
+  testScript,
 }));
 
 mock.module("../../../api/experience-api.js", () => ({
@@ -301,6 +332,8 @@ beforeEach(() => {
   deleteExperienceVisual.mockClear();
   runExperienceTest.mockClear();
   runExperienceTest.mockImplementation(async () => makeTestRunData());
+  testScript.mockClear();
+  testScript.mockImplementation(async () => makeScriptTestResult());
   useScriptDraftStore.getState().resetAll();
   useExperienceVisualDraftStore.getState().resetAll();
   // XU-7: reset + install the IntersectionObserver stub before every render so
@@ -1062,8 +1095,10 @@ describe("ExperienceEditor", () => {
   });
 
   it("locks enabling while the source is changed and allows it after saving the exact reviewed source", async () => {
-    serverScripts = [{ ...baseScript }];
-    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    // SS-6 (decision 8): the lock fires only for imported never-enabled
+    // scripts — use an imported untrusted fixture for the lock boundary.
+    serverScripts = [{ ...baseScript, origin: "imported" }];
+    const { container, findByText, findAllByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     const [rulesView] = await codeViews(container);
     if (!rulesView) throw new Error("rules editor missing");
@@ -1085,8 +1120,13 @@ describe("ExperienceEditor", () => {
     });
 
     // Enabling is a separate explicit action, persisted by a second save that
-    // names the exact same source.
+    // names the exact same source. SS-7 behavior change: the enable attempt on
+    // an imported never-enabled script routes through the plain first-enable
+    // warning modal — the draft flips on only after the confirm-anyway button.
     fireEvent.click(getByRole("switch"));
+    expect((await findAllByText("script_safety_warning_body")).length).toBe(2);
+    expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(await findByText("script_safety_warning_confirm_enable"));
     fireEvent.click(getByRole("button", { name: "save" }));
     await waitFor(() => {
       expect(updateScript).toHaveBeenCalledWith("srv_1", expect.objectContaining({
@@ -1097,7 +1137,7 @@ describe("ExperienceEditor", () => {
     expect(await findByText("experience_editor_enabled")).toBeTruthy();
   });
 
-  it("drops an enabled script to untrusted when its source is edited (store invariant surfaced)", async () => {
+  it("drops an enabled in-app script to disabled locally on edit but never locks (decision 8)", async () => {
     serverScripts = [{ ...baseScript, enabled: true }];
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
@@ -1107,20 +1147,20 @@ describe("ExperienceEditor", () => {
     expect(await findByText("experience_editor_enabled")).toBeTruthy();
 
     replaceCode(rulesView, EXISTING_CODE + "\n// invalidate trust");
+    // The store still forces enabled=false locally (aria-checked=false), but
+    // an in-app script's toggle is never LOCKED (decision 8).
     expect(await findByText("experience_editor_disabled")).toBeTruthy();
     const toggle = getByRole("switch") as HTMLButtonElement;
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(toggle.disabled).toBe(true);
+    expect(toggle.disabled).toBe(false);
     // Never auto-saved: the trust drop is local until an explicit save.
     expect(updateScript).not.toHaveBeenCalled();
   });
 
-  it("duplicates an existing script as an independent, untrusted copy", async () => {
-    // IR-90C: the starter-pick path now opens the wizard, so the duplicate-
-    // from-starter half moved there. The duplicate-from-existing boundary is
-    // unchanged: duplication produces an independent, explicitly untrusted
-    // local-id copy whose edits never touch the source.
-    serverScripts = [{ ...baseScript, enabled: true }];
+  it("duplicates an imported script as an independent untrusted copy inheriting its origin", async () => {
+    // Decision 9: «Дублировать» inherits the source's ORIGIN but never its
+    // trust — a copy of an imported script starts untrusted and locked.
+    serverScripts = [{ ...baseScript, enabled: true, origin: "imported" }];
     const { findByText, getAllByRole, getByRole, container } = render(<ExperienceEditor />);
 
     fireEvent.click(await findByText("Existing Rules"));
@@ -1133,8 +1173,15 @@ describe("ExperienceEditor", () => {
     expect(dupOfExisting).toBeTruthy();
     expect(dupOfExisting?.[1].values.name).toBe("Existing Rules");
     expect(dupOfExisting?.[1].values.enabled).toBe(false);
-    // The toggle is locked for the duplicate: its source was never saved.
+    // The duplicate is an imported never-enabled script → the toggle locks.
     expect((getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
+
+    // First save = CREATE; it must carry the inherited `imported` origin so
+    // the server keeps the copy untrusted (and disabled).
+    fireEvent.click(getByRole("button", { name: "save" }));
+    await waitFor(() => {
+      expect(createScript).toHaveBeenCalledWith(expect.objectContaining({ origin: "imported" }));
+    });
 
     // Editing the duplicate never touches the original saved script's draft.
     const dupId = dupOfExisting?.[0];
@@ -1143,6 +1190,19 @@ describe("ExperienceEditor", () => {
       useScriptDraftStore.getState().patch(dupId, { code: EXISTING_CODE + "\n// dup edit" });
     });
     expect(useScriptDraftStore.getState().drafts["srv_1"]?.values.code).toBe(EXISTING_CODE);
+  });
+
+  it("duplicates an in-app script as a trusted copy (toggle stays free)", async () => {
+    // Decision 9 + 8: an in-app source inherits `in_app` origin, so the copy
+    // is trusted immediately and its toggle never locks.
+    serverScripts = [{ ...baseScript, enabled: true }];
+    const { findByText, getAllByRole, getByRole, container } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    const [dupExistingButton] = getAllByRole("button", { name: "experience_editor_duplicate" });
+    if (!dupExistingButton) throw new Error("duplicate button missing");
+    fireEvent.click(dupExistingButton);
+    expect((getByRole("switch") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("duplicates a visual without sharing the compatibleManifestIds array", async () => {
@@ -1326,30 +1386,45 @@ describe("ExperienceEditor", () => {
     fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
 
     await waitFor(() => {
-      expect(runExperienceTest).toHaveBeenCalledWith({
-        rulesCode: EXISTING_CODE,
-        settings: {},
-        participants: [],
-        capabilityGrants: [],
-        actions: [],
+      expect(testScript).toHaveBeenCalledWith("srv_1", {
+        code: EXISTING_CODE,
+        warningAcknowledged: false,
       });
     });
-    expect(runExperienceTest).toHaveBeenCalledTimes(1);
+    expect(testScript).toHaveBeenCalledTimes(1);
     expect(await findByText("experience_wizard_rules_valid")).toBeTruthy();
   });
 
   it("shows validation failure with the error message", async () => {
     serverScripts = [{ ...baseScript }];
-    runExperienceTest.mockRejectedValueOnce(new Error("syntax error at line 1"));
+    testScript.mockRejectedValueOnce(new Error("syntax error at line 1"));
     const { container, findByText, getByRole } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
     await codeViews(container);
 
     fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
 
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
     expect(await findByText(/experience_wizard_rules_invalid/)).toBeTruthy();
     expect(await findByText(/syntax error at line 1/)).toBeTruthy();
+  });
+
+  it("treats an HTTP-success discovery error as invalid", async () => {
+    serverScripts = [{ ...baseScript }];
+    testScript.mockResolvedValueOnce(makeScriptTestResult({
+      definition: null,
+      discoveryError: "registration failed at line 1",
+    }));
+    const { container, findByText, getByRole, queryByText } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
+    expect(await findByText(/experience_wizard_rules_invalid/)).toBeTruthy();
+    expect(await findByText(/registration failed at line 1/)).toBeTruthy();
+    expect(queryByText("experience_wizard_rules_valid")).toBeNull();
   });
 
   it("reveals the unified test surface (Try tab) from the editor", async () => {
@@ -1377,7 +1452,7 @@ describe("ExperienceEditor", () => {
 
     // Validate succeeds.
     fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
     expect(await findByText("experience_wizard_rules_valid")).toBeTruthy();
 
     // Edit the code — validation must clear immediately (fail-closed).
@@ -1395,9 +1470,9 @@ describe("ExperienceEditor", () => {
   // code-change effect.
   it("drops a stale validation result when the code changes before the promise resolves", async () => {
     serverScripts = [{ ...baseScript }];
-    let resolveTest: (value: ExperienceTestRunData) => void = () => {};
-    const deferred = new Promise<ExperienceTestRunData>((resolve) => { resolveTest = resolve; });
-    runExperienceTest.mockReturnValueOnce(deferred);
+    let resolveTest: (value: InteractiveScriptTestResult) => void = () => {};
+    const deferred = new Promise<InteractiveScriptTestResult>((resolve) => { resolveTest = resolve; });
+    testScript.mockReturnValueOnce(deferred);
 
     const { container, findByText, getByRole, queryByText } = render(<ExperienceEditor />);
     fireEvent.click(await findByText("Existing Rules"));
@@ -1406,13 +1481,13 @@ describe("ExperienceEditor", () => {
 
     // Start validation — the promise is deferred, so validation is in flight.
     fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
-    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
 
     // Edit the code while the stale request is still in flight.
     replaceCode(rulesView, EXISTING_CODE + "\n// race edit");
 
     // Now resolve the stale request with a typed fixture.
-    await act(async () => { resolveTest(makeTestRunData()); });
+    await act(async () => { resolveTest(makeScriptTestResult()); });
 
     // The stale result must NOT appear — no valid/invalid indicator.
     expect(queryByText("experience_wizard_rules_valid")).toBeNull();
@@ -1916,7 +1991,7 @@ describe("ExperienceEditor — mini-app import/export", () => {
     });
 
     await waitFor(() => expect(createScript).toHaveBeenCalled());
-    expect(createScript.mock.calls[0][0]).toMatchObject({ name: "Imported App", scriptKind: "interactive", enabled: true });
+    expect(createScript.mock.calls[0][0]).toMatchObject({ name: "Imported App", scriptKind: "interactive", enabled: false, origin: "imported" });
     expect(createExperienceVisual).toHaveBeenCalledTimes(2);
     // Default (skin-b) bound FIRST — the store promotes the first bind to primary.
     expect(bindScriptVisual.mock.calls.map((c) => c[1])).toEqual(["vis_imp_skin-b", "vis_imp_skin-a"]);
@@ -1970,5 +2045,154 @@ describe("ExperienceEditor — mini-app import/export", () => {
       if (hadCreate) delete (URL as unknown as Record<string, unknown>).createObjectURL;
       if (hadRevoke) delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
     }
+  });
+});
+
+// ── SS-7: the first-enable warning flow on the mini-app enable toggle ─────
+// The matrix itself lives in scriptSafetyWarningFlow's own suite; these pin
+// the ExperienceEditor-side wiring, including the «Show in code» reveal
+// threading through ExperienceCopilotShell → EditorPanel into the REAL
+// CodeMirror rules editor.
+const { useScriptSafetySettingsStore } = await import("../../../stores/script-safety-settings-store.js");
+const { within } = await import("@testing-library/react");
+
+describe("ExperienceEditor SS-7 enable warning flow", () => {
+  const FINDINGS_CODE = EXISTING_CODE + "\neval('x');";
+
+  beforeEach(() => {
+    // Seed the loaded sentinel so the banner's load() is a no-op.
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
+  });
+
+  it("cancel leaves the untrusted import disabled (plain warning blocks the enable)", async () => {
+    serverScripts = [{ ...baseScript, origin: "imported" }];
+    const { container, findByText, findAllByText, getByRole, getByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    // Clean saved source → the toggle is unlocked; enabling opens the plain
+    // first-enable warning.
+    fireEvent.click(getByRole("switch"));
+    expect((await findAllByText("script_safety_warning_body")).length).toBe(2);
+    fireEvent.click(within(getByTestId("script-safety-warning-modal")).getByText("cancel"));
+    expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("false");
+    expect(updateScript).not.toHaveBeenCalled();
+  });
+
+  it("a suppressed untrusted import enables directly, no modal", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    serverScripts = [{ ...baseScript, origin: "imported" }];
+    const { container, findByText, queryAllByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("switch"));
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
+    expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("an in-app script enables with no modal (decision 6)", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, queryAllByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("switch"));
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
+    expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("findings fire the findings modal ALONE (honest text inside); «Show in code» jumps the REAL rules editor through the shell", async () => {
+    serverScripts = [{ ...baseScript, origin: "imported", code: FINDINGS_CODE }];
+    const { container, findByText, findAllByText, queryAllByText, getByRole, getByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    const [rulesView] = await codeViews(container);
+    if (!rulesView) throw new Error("rules editor missing");
+
+    fireEvent.click(getByRole("switch"));
+    expect((await findAllByText("script_safety_findings_title")).length).toBe(2);
+    // Honest text rides inside the findings modal (decision 11) — exactly
+    // once: the visible paragraph (the sr-only pair is the findings intro).
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(1);
+    expect(queryAllByText("script_safety_rule_unsafe_eval")).toHaveLength(1);
+
+    fireEvent.click(within(getByTestId("script-safety-findings-modal")).getByText("script_safety_findings_show_in_code"));
+    // Modal closed; the reveal request threaded ExperienceEditor → shell →
+    // panel → the rules CodeMirror: the caret lands on line 2 (the eval).
+    expect(queryAllByText("script_safety_findings_title")).toHaveLength(0);
+    await waitFor(() => {
+      expect(rulesView.state.selection.main.head).toBe(rulesView.state.doc.line(2).from);
+    });
+  });
+
+  it("a TRUSTED import with findings re-enables through the findings modal — without the honest text (origin-based)", async () => {
+    serverScripts = [{ ...baseScript, origin: "imported", firstEnabledAt: "2026-01-01T00:00:00.000Z", code: FINDINGS_CODE }];
+    const { container, findByText, findAllByText, queryAllByText, getByRole, getByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("switch"));
+    expect((await findAllByText("script_safety_findings_title")).length).toBe(2);
+    expect(queryAllByText("script_safety_warning_body")).toHaveLength(0);
+    fireEvent.click(within(getByTestId("script-safety-findings-modal")).getByText("script_safety_warning_confirm_enable"));
+    expect((getByRole("switch") as HTMLButtonElement).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("validating an untrusted import waits for confirm, cancels cleanly, and confirms once with acknowledgement", async () => {
+    serverScripts = [{ ...baseScript, origin: "imported" }];
+    const { container, findByText, getByRole, getByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    fireEvent.click(within(getByTestId("script-safety-warning-modal")).getByText("cancel"));
+    expect(testScript).not.toHaveBeenCalled();
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    const confirm = within(getByTestId("script-safety-warning-modal")).getByText("script_safety_warning_confirm_run");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
+    expect(testScript).toHaveBeenCalledWith("srv_1", { code: EXISTING_CODE, warningAcknowledged: true });
+  });
+
+  it("a suppressed clean import validates directly with acknowledgement", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    serverScripts = [{ ...baseScript, origin: "imported" }];
+    const { container, findByText, getByRole, queryByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    await waitFor(() => expect(testScript).toHaveBeenCalledWith("srv_1", { code: EXISTING_CODE, warningAcknowledged: true }));
+    expect(queryByTestId("script-safety-warning-modal")).toBeNull();
+  });
+
+  it("trusted findings override suppression; Show in code sends no request and confirm runs once", async () => {
+    useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+    serverScripts = [{ ...baseScript, origin: "imported", firstEnabledAt: "2026-10-05T00:00:00.000Z", code: FINDINGS_CODE }];
+    const { container, findByText, getByRole, getByTestId } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    const [rulesView] = await codeViews(container);
+    if (!rulesView) throw new Error("rules editor missing");
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    fireEvent.click(within(getByTestId("script-safety-findings-modal")).getByText("script_safety_findings_show_in_code"));
+    expect(testScript).not.toHaveBeenCalled();
+    await waitFor(() => expect(rulesView.state.selection.main.head).toBe(rulesView.state.doc.line(2).from));
+
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    const confirm = within(getByTestId("script-safety-findings-modal")).getByText("script_safety_warning_confirm_run");
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(testScript).toHaveBeenCalledTimes(1));
+    expect(testScript).toHaveBeenCalledWith("srv_1", { code: FINDINGS_CODE, warningAcknowledged: true });
+  });
+
+  it("a local duplicate retains stateless validation instead of using the script-id endpoint", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, getAllByRole, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    await codeViews(container);
+    const duplicate = getAllByRole("button", { name: "experience_editor_duplicate" })[0];
+    if (!duplicate) throw new Error("duplicate button missing");
+    fireEvent.click(duplicate);
+    fireEvent.click(getByRole("button", { name: "experience_editor_validate_rules" }));
+    await waitFor(() => expect(runExperienceTest).toHaveBeenCalledTimes(1));
+    expect(testScript).not.toHaveBeenCalled();
   });
 });

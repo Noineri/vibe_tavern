@@ -46,6 +46,9 @@ export function createRegexRoutes(runtime: RegexRuntimeApi) {
     .get("/api/regex/profiles/all", async (c) => {
       return c.json(await runtime.listAllRegexProfiles());
     })
+    .post("/api/regex/profiles/bundle", zValidator("json", schemas.createRegexProfileBundleSchema), async (c) => {
+      return c.json(await runtime.createRegexProfileBundle(c.req.valid("json")), 201);
+    })
     .get("/api/regex/profiles/:id", async (c) => {
       const profile = await runtime.getRegexProfile(c.req.param("id"));
       if (!profile) return c.json({ error: "Regex profile not found" }, 404);

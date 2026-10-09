@@ -5,7 +5,15 @@ import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { codeQuoteCls } from "../../../lib/field-tokens.js";
 import { testScript } from "../../../api/script-api.js";
+import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
+import {
+  ImportedScriptWarningModal,
+  scriptSafetyWarningFlow,
+  type ScriptSafetyWarningFlow,
+} from "./script-safety/ImportedScriptWarningModal.js";
+import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
 import type { PromptScriptTestResult } from "@vibe-tavern/api-contracts";
+import type { ScriptRecord } from "../../../api/types.js";
 
 /**
  * Script test panel — extracted from `useScriptPanel`
@@ -35,9 +43,15 @@ interface ScriptTesterProps {
 	code: string;
 	isMobile: boolean;
 	characterName?: string;
+	/** SS-7: the script record's origin/trust — drives the warning flow on run.
+	 *  `null`/omitted (no record) never warns, matching isUntrustedImport(null). */
+	script?: Pick<ScriptRecord, "origin" | "firstEnabledAt"> | null;
+	/** SS-7: «Show in code» from the findings modal — the host reveals the line
+	 *  in ITS code editor (the tester renders below it in the same panel). */
+	onRevealLine?: (line: number) => void;
 }
 
-export function ScriptTester({ scriptId, code, isMobile, characterName }: ScriptTesterProps) {
+export function ScriptTester({ scriptId, code, isMobile, characterName, script = null, onRevealLine }: ScriptTesterProps) {
 	const { t } = useT();
 	const [testInput, setTestInput] = useState("");
 	const [testAdvanced, setTestAdvanced] = useState(false);
@@ -48,6 +62,17 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 	const [testPersonaDesc, setTestPersonaDesc] = useState("");
 	const [testResult, setTestResult] = useState<TestResult | null>(null);
 	const [testingScript, setTestingScript] = useState(false);
+	// SS-7: the warning surface a run must pass through before it is sent. The
+	// test-run warning REPEATS on every run of an imported never-enabled script
+	// until first enable or the suppress checkbox — intended (decision 11).
+	const [pendingFlow, setPendingFlow] = useState<ScriptSafetyWarningFlow | null>(null);
+	const loadSafetySettings = useScriptSafetySettingsStore((s) => s.load);
+
+	// Self-sufficient suppress state (the store is single-flight; the banner's
+	// load above this panel is the same one). Fail-open: unread → warn.
+	useEffect(() => {
+		void loadSafetySettings();
+	}, [loadSafetySettings]);
 
 	// Pre-fill the character-name field from the snapshot when the editor is
 	// scoped to a character (P2). `prev || name` keeps any value the user
@@ -56,7 +81,7 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 		if (characterName) setTestCharName((prev) => prev || characterName);
 	}, [characterName]);
 
-	const handleTestScript = async () => {
+	const handleTestScript = async (warningAcknowledged: boolean) => {
 		if (!scriptId || !testInput.trim()) return;
 		// Multi-line input: each non-empty line becomes a user message so
 		// messageCount reflects the conversation length (P2).
@@ -67,6 +92,7 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 			.map((content) => ({ role: "user", content }));
 		if (messages.length === 0) return;
 		const payload: Parameters<typeof testScript>[1] = { messages, code };
+		if (warningAcknowledged) payload.warningAcknowledged = true;
 		if (testCharName.trim()) payload.characterName = testCharName.trim();
 		if (testCharPersonality.trim()) payload.characterPersonality = testCharPersonality;
 		if (testCharScenario.trim()) payload.characterScenario = testCharScenario;
@@ -88,7 +114,22 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 	};
 
 	const runTest = () => {
-		void handleTestScript();
+		if (!scriptId || !testInput.trim()) return;
+		// SS-7: route the run through the shared warning matrix. Decision 14: a
+		// run of an untrusted import only proceeds on the acknowledged path —
+		// the suppress setting itself counts as acknowledgement (decision 3:
+		// repeats stop "until first enable or the checkbox").
+		const flow = scriptSafetyWarningFlow({
+			script,
+			code,
+			kind: "prompt",
+			suppressImportWarnings: useScriptSafetySettingsStore.getState().suppressImportWarnings,
+		});
+		if (flow.kind === "none") {
+			void handleTestScript(flow.warningAcknowledged);
+			return;
+		}
+		setPendingFlow(flow);
 	};
 
 	return (
@@ -251,6 +292,36 @@ export function ScriptTester({ scriptId, code, isMobile, characterName }: Script
 				);
 			})()}
 			{testingScript && <div className="mt-3 text-center font-ui text-[12px] text-t3">{t("script_running")}</div>}
+
+			{/* SS-7: the warning surface gating this run (portal-rendered; only one
+		    of the two can be open — plain when no blocking findings, findings
+		    alone otherwise, decision 11). */}
+			{pendingFlow?.kind === "plain" && (
+				<ImportedScriptWarningModal
+					intent="test"
+					onConfirm={() => {
+						setPendingFlow(null);
+						void handleTestScript(true);
+					}}
+					onCancel={() => setPendingFlow(null)}
+				/>
+			)}
+			{pendingFlow?.kind === "findings" && (
+				<FindingsWarningModal
+					findings={pendingFlow.findings}
+					showHonestWarning={pendingFlow.showHonestWarning}
+					intent="test"
+					onShowInCode={(line) => {
+						setPendingFlow(null);
+						onRevealLine?.(line);
+					}}
+					onConfirm={() => {
+						setPendingFlow(null);
+						void handleTestScript(true);
+					}}
+					onCancel={() => setPendingFlow(null)}
+				/>
+			)}
 		</div>
 	);
 }

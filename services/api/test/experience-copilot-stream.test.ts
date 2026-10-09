@@ -1,6 +1,9 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import type { LanguageModel } from "ai";
-import type { CopilotProfile } from "@vibe-tavern/api-contracts";
+import type {
+  CopilotProfile,
+  ExperienceCopilotLaunchContext,
+} from "@vibe-tavern/api-contracts";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotThread,
@@ -441,6 +444,8 @@ describe("experience-copilot stream (ER-6)", () => {
       code: "context.experience.register({ manifest: { id: 'dice', name: 'Dice' } });",
       enabled: true,
       scriptKind: "interactive",
+      origin: "in_app",
+      firstEnabledAt: null,
       creationIntentId: null,
       scopeType: "global",
       sortOrder: 0,
@@ -448,6 +453,7 @@ describe("experience-copilot stream (ER-6)", () => {
       personaId: null,
       chatId: null,
       defaultVisualId: "vis_1",
+      copilotProfileId: null,
       extensions: {},
       createdAt: "2025-01-01T00:00:00.000Z",
       updatedAt: "2025-01-01T00:00:00.000Z",
@@ -496,9 +502,11 @@ describe("experience-copilot stream (ER-6)", () => {
     const script: ScriptRow = {
       id: "script_1", name: "Dice", description: "",
       code: "DB RULES BODY", enabled: true, scriptKind: "interactive",
+      origin: "in_app", firstEnabledAt: null,
       creationIntentId: null, scopeType: "global", sortOrder: 0,
       characterId: null, personaId: null, chatId: null, defaultVisualId: "vis_1",
-      extensions: {}, createdAt: "2025-01-01T00:00:00.000Z", updatedAt: "2025-01-01T00:00:00.000Z",
+      copilotProfileId: null, extensions: {},
+      createdAt: "2025-01-01T00:00:00.000Z", updatedAt: "2025-01-01T00:00:00.000Z",
     };
     const visual: ExperienceVisualRow = {
       id: "vis_1", name: "Dice Visual", source: "DB VISUAL BODY", sourceHash: "hash",
@@ -1266,5 +1274,153 @@ describe("experience-copilot stream — todo wiring (TAG-6)", () => {
     );
 
     expect(captured!.messages![0].content).not.toContain("Current step plan");
+  });
+});
+
+// ─── SS-4B: script trust threading (origin + firstEnabledAt → rulesTrusted) ──
+//
+// The stream derives the trust flag ONCE where the script row is loaded and
+// threads it into BOTH the prompt assembler (contract derivation skipped, honest
+// skip note) and the tool factory (run_test/run_simulate refuse, rules
+// proposals skip validation). An imported script becomes trusted at its first
+// explicit enable (firstEnabledAt stamped); in_app rows are always trusted.
+
+/** Valid counter rules — derivable, so a trusted turn renders the contract
+ *  section ("choose method: ...") and an untrusted one must NOT. */
+const TRUST_VALID_RULES = `context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "counter", name: "Counter" },
+  capabilities: [],
+  create() { return { count: 0 }; },
+  project(context) { return { count: context.state.count }; },
+  actions() { return [{ type: "increment" }]; },
+  reduce(context, action) {
+    if (action.type === "increment") return { state: { count: context.state.count + 1 }, status: "active", events: [] };
+    return { state: context.state, status: "active", events: [] };
+  }
+});`;
+
+/** Structural view of the opts the fake streamText receives — enough to assert
+ *  the assembled system message and to EXECUTE a captured tool directly. */
+interface TrustStreamCapture {
+  messages: Array<{ role: string; content: string }>;
+  tools: Record<string, { execute: (input: unknown, toolCtx: unknown) => Promise<unknown> }>;
+}
+
+function makeTrustScript(origin: "in_app" | "imported", firstEnabledAt: string | null): ScriptRow {
+  return {
+    id: "script_1",
+    name: "Trust fixture",
+    description: "",
+    code: TRUST_VALID_RULES,
+    enabled: firstEnabledAt !== null,
+    scriptKind: "interactive",
+    origin,
+    firstEnabledAt,
+    creationIntentId: null,
+    scopeType: "global",
+    sortOrder: 0,
+    characterId: null,
+    personaId: null,
+    chatId: null,
+    defaultVisualId: null,
+    copilotProfileId: null,
+    extensions: {},
+    createdAt: "2025-01-01T00:00:00.000Z",
+    updatedAt: "2025-01-01T00:00:00.000Z",
+  };
+}
+
+/** Run one turn against a script row and return the opts streamText received. */
+async function runTrustTurn(
+  script: ScriptRow,
+  launchContext?: ExperienceCopilotLaunchContext,
+): Promise<TrustStreamCapture> {
+  const store = createFakeStore(makeThread("script_1"));
+  let captured: TrustStreamCapture | undefined;
+  streamTextImpl = (opts: unknown) => {
+    captured = opts as TrustStreamCapture;
+    return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+  };
+  await collect(
+    streamExperienceCopilot(
+      {
+        threadId: "thread_1",
+        content: "test it",
+        providerProfileId: "prov_1",
+        ...(launchContext !== undefined ? { launchContext } : {}),
+      },
+      makeDeps(store, { getScript: async () => script }),
+    ),
+  );
+  return captured!;
+}
+
+describe("streamExperienceCopilot — SS-4B trust threading", () => {
+  it("imported never-enabled script → prompt skips the contract summary and run_test refuses", async () => {
+    const captured = await runTrustTurn(makeTrustScript("imported", null));
+
+    // Prompt side: the honest skip note replaces the contract summary (with
+    // VALID rules, a trusted turn would render "choose method: absent").
+    const system = captured.messages[0];
+    expect(system.role).toBe("system");
+    expect(system.content).toContain("not derived: script is imported and not yet enabled");
+    expect(system.content).not.toContain("choose method:");
+
+    // Tool side: the built run_test refuses the untrusted script (structured
+    // digest, never a throw) — imported code never executes.
+    const digest = (await captured.tools.run_test.execute({}, null)) as {
+      ok: boolean;
+      errorCode?: string;
+      errorMessage?: string;
+    };
+    expect(digest.ok).toBe(false);
+    expect(digest.errorCode).toBe("script_not_trusted");
+    expect(digest.errorMessage).toContain("imported and never enabled");
+  });
+
+  it("imported script after the first enable → contract derived and run_test executes (parity)", async () => {
+    const captured = await runTrustTurn(makeTrustScript("imported", "2025-01-02T00:00:00.000Z"));
+
+    expect(captured.messages[0].content).toContain("choose method: absent");
+    expect(captured.messages[0].content).not.toContain("not derived: script is imported");
+
+    const digest = (await captured.tools.run_test.execute({}, null)) as {
+      ok: boolean;
+      errorCode?: string;
+      legalActionTypes?: string[];
+    };
+    expect(digest.ok).toBe(true);
+    expect(digest.legalActionTypes).toEqual(["increment"]);
+  });
+
+  it("in_app script with no firstEnabledAt is trusted (origin alone never gates)", async () => {
+    const captured = await runTrustTurn(makeTrustScript("in_app", null));
+
+    expect(captured.messages[0].content).toContain("choose method: absent");
+    const digest = (await captured.tools.run_test.execute({}, null)) as { ok: boolean };
+    expect(digest.ok).toBe(true);
+  });
+
+  it("threads the request launch context into the built diagnostic tools", async () => {
+    const captured = await runTrustTurn(makeTrustScript("in_app", null), {
+      participants: [{ id: "owner", label: "Owner", controller: "human" }],
+      capabilityGrants: [],
+      settings: { fromSandbox: true },
+      seed: "sandbox-seed",
+      humanSeatId: "owner",
+    });
+
+    const digest = (await captured.tools.run_test.execute({}, null)) as {
+      ok: boolean;
+      launchContext?: unknown;
+    };
+    expect(digest.ok).toBe(true);
+    expect(digest.launchContext).toEqual({
+      source: "sandbox",
+      seats: [{ id: "owner", controller: "human" }],
+      grants: [],
+      seed: "sandbox-seed",
+    });
   });
 });

@@ -39,14 +39,21 @@
  * any chat/session. Reset tears the session + frame down client-side (the
  * server-side session is ephemeral process memory owned by the IR-84A driver).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
+  DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT,
   EXPERIENCE_CAPABILITY,
   EXPERIENCE_CONTROLLER,
+  EXPERIENCE_LAUNCH_CAPABILITIES as CAPABILITIES,
+  deriveDefaultLaunchContext,
   type ExperienceCapability,
   type ExperienceController,
 } from "@vibe-tavern/domain";
-import type { ExperienceActionDto } from "@vibe-tavern/api-contracts";
+import type {
+  ExperienceActionDto,
+  ExperienceCopilotLaunchContext,
+} from "@vibe-tavern/api-contracts";
 import { Ic } from "../../shared/icons.js";
 import { Checkbox } from "../../shared/Checkbox.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
@@ -58,6 +65,14 @@ import { TextInput } from "../../shared/text-input.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { cn } from "../../../lib/cn.js";
 import { parseOptionalJsonDiagnosed } from "../../../lib/json-parse-diagnostic.js";
+import {
+  SCRIPT_SAFETY_AUTO_SKIP_MESSAGE_KEY,
+  scriptExecutionGuard,
+  type ScriptSafetyWarningFlow,
+} from "../../../lib/script-execution-guard.js";
+import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
+import { ImportedScriptWarningModal } from "./script-safety/ImportedScriptWarningModal.js";
+import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
 import { useT } from "../../../i18n/context.js";
 import {
   ExperienceApiError,
@@ -74,11 +89,11 @@ import type {
   ExperienceParticipant,
   ExperiencePlaygroundAdvanceRequest,
   ExperiencePlaygroundData,
-  ExperienceSeatLegalityMatrix,
   ExperienceTestConsoleEntry,
   ExperienceTestDefinition,
   ExperienceTestRunData,
   ExperienceTestSimulateData,
+  ScriptRecord,
 } from "../../../api/types.js";
 import {
   ExperienceFrame,
@@ -102,16 +117,28 @@ import {
 } from "../../experience/setup-fields.js";
 import {
   buildPlaygroundDigest,
+  buildPlaygroundLogDigest,
   buildRealtimeLoopDigest,
   buildRunTestDigest,
   buildRunTestErrorDigest,
   buildSimulateDigest,
   type CopilotDigest,
+  type PlaygroundSessionLog,
 } from "../../../lib/experience-copilot-digest.js";
+import { copyText } from "../../../lib/clipboard.js";
 import {
   loadPlaygroundConfig,
   savePlaygroundConfig,
 } from "../../../lib/playground-config-persistence.js";
+import {
+  blockCls,
+  blockLabelCls,
+  ConsoleBlock,
+  JsonBlock,
+  RealtimeLoopDiagSection,
+  TestRunResultBlock,
+  TestSimulateResultBlock,
+} from "./experience-playground-results.js";
 
 // ─── Local types + constants ────────────────────────────────────────────────
 //
@@ -179,14 +206,6 @@ const SHORT_ROLE_KEY = {
   [EXPERIENCE_CONTROLLER.model]: "experience_playground_role_short_model",
 } as const;
 
-const CAPABILITIES = [
-  EXPERIENCE_CAPABILITY.participants,
-  EXPERIENCE_CAPABILITY.deterministicRandom,
-  EXPERIENCE_CAPABILITY.model,
-  EXPERIENCE_CAPABILITY.rpContext,
-  EXPERIENCE_CAPABILITY.rpAttachment,
-] as const;
-
 /** Friendly (non-technical) capability labels for the grant checkboxes (XU-3).
  *  The technical capability id (the wire string) stays reachable via the ⓘ
  *  tooltip next to each label — non-technical authors never see raw ids inline.
@@ -202,6 +221,11 @@ const CAPABILITY_LABEL_KEY = {
 
 /** LOBBY-A (EXPERIENCE_ENGINE_LOBBY_REPORT fix step 1): the setup-field discovery debounce. The unsaved rules buffer changes per keystroke; the pre-LOBBY-A auto-derive fired a compile per keystroke while the roster was untouched. The debounce coalesces that churn AND is what makes it affordable to keep discovering (for the declared setup fields) even after the roster is user-owned. */
 const DISCOVERY_DEBOUNCE_MS = 400;
+
+/** Grounding step 6 (EXPERIENCE_COPILOT_GROUNDING_REPORT): the empty
+ *  whole-session log. Shared by the state initializer, Reset, and the start
+ *  failure paths (the log is always replaced wholesale, never mutated). */
+const EMPTY_SESSION_LOG: PlaygroundSessionLog = { events: [], effects: [], console: [], turns: 0 };
 
 // ─── Normalization helpers (no `as any`; the wire details record is unknown) ──
 
@@ -254,11 +278,6 @@ function toPlaygroundError(error: unknown): PlaygroundErrorView {
 }
 
 
-// ─── Small render helpers ────────────────────────────────────────────────────
-
-const blockCls = "rounded-md border border-border bg-bg";
-const blockLabelCls = "text-[11px] font-semibold uppercase tracking-[0.06em] text-t3";
-
 /** Slugify a participant name into a stable seat id: lowercase, latin
  *  alphanumerics + dashes only, "seat" fallback for an empty name. */
 function slugifyId(name: string): string {
@@ -289,361 +308,6 @@ function seatInitial(seat: PlaygroundSeat): string {
   return source === "" ? "?" : source.charAt(0).toUpperCase();
 }
 
-function JsonBlock({ value }: { value: unknown }) {
-  return (
-    <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] leading-[1.5] text-t2">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  );
-}
-
-function ConsoleBlock({ entries, label }: { entries: readonly ExperienceTestConsoleEntry[]; label: string }) {
-  if (entries.length === 0) return null;
-  return (
-    <div className={cn(blockCls, "mt-2")} style={{ padding: 10 }}>
-      <div className={blockLabelCls}>{label}</div>
-      <div className="mt-1 space-y-0.5">
-        {entries.map((entry, i) => (
-          <div key={i} className="flex items-start gap-2">
-            <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3")}>{entry.level}</span>
-            <pre className="flex-1 whitespace-pre-wrap font-mono text-[12px] text-t2">{entry.args.join(" ")}</pre>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** RM-13: the realtime loop diagnostics section — the LOOP's own
- *  observability sample replaces the turn-session vocabulary (revision /
- *  stopReason / create() snapshot) which is a frozen lie for realtime rounds.
- *  Everything here comes from the in-frame channel: the latest sampled
- *  projection, the round-log event tail (round_started = the boot signal),
- *  loop errors, and the piped frame console. */
-function RealtimeLoopDiagSection(props: {
-  readonly tickMs: number;
-  readonly seed: number;
-  readonly diag: LoopDiagSample | null;
-  readonly finished: boolean;
-}): ReactNode {
-  const { tickMs, seed, diag, finished } = props;
-  const { t } = useT();
-  const booted = diag !== null;
-  const statusLabel = !booted
-    ? t("experience_playground_rt_not_booted")
-    : finished || diag.final
-      ? t("experience_playground_rt_finished")
-      : t("experience_playground_rt_running");
-  return (
-    <div className={blockCls} style={{ padding: 10 }} data-testid="playground-realtime-diag">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className={blockLabelCls}>{t("experience_playground_rt_diag_title")}</span>
-        <span className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[10px] text-accent-t">realtime · tick {tickMs}ms · seed {seed}</span>
-        <span
-          className={cn(
-            "rounded px-1.5 py-0.5 font-ui text-[10px]",
-            !booted ? "bg-danger-dim text-danger-text" : finished || diag.final ? "bg-s3 text-t3" : "bg-success-dim text-success-text",
-          )}
-          data-testid="playground-realtime-diag-status"
-        >
-          {statusLabel}
-        </span>
-      </div>
-      {!booted ? (
-        <p className="mt-1.5 font-ui text-[11px] italic text-t3">{t("experience_playground_rt_not_booted_hint")}</p>
-      ) : (
-        <div className="mt-2 space-y-2">
-          <div>
-            <div className={blockLabelCls}>{t("experience_playground_rt_live_view")}</div>
-            {diag.view !== undefined ? (
-              <JsonBlock value={diag.view} />
-            ) : (
-              <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_playground_rt_no_view")}</p>
-            )}
-          </div>
-          <div>
-            <div className={blockLabelCls}>{t("experience_playground_rt_events")}</div>
-            {diag.events.length === 0 ? (
-              <p className="mt-1 font-ui text-[11px] italic text-t3">—</p>
-            ) : (
-              <div className="mt-1 space-y-0.5">
-                {diag.events.map((event, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className="shrink-0 rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">
-                      {typeof event === "object" && event !== null && "kind" in event ? String((event as { kind: unknown }).kind) : "event"}
-                    </span>
-                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event)}</pre>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          {diag.errors.length > 0 && (
-            <div>
-              <div className={blockLabelCls}>{t("experience_playground_rt_errors")}</div>
-              <div className="mt-1 space-y-0.5">
-                {diag.errors.map((err, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className="shrink-0 rounded bg-danger-dim px-1.5 py-0.5 font-mono text-[10px] text-danger-text">
-                      {typeof err === "object" && err !== null && "kind" in err ? String((err as { kind: unknown }).kind) : "error"}
-                    </span>
-                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-danger-text">{JSON.stringify(err)}</pre>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {diag.console.length > 0 && (
-            <div>
-              <div className={blockLabelCls}>{t("experience_playground_rt_console")}</div>
-              <div className="mt-1 space-y-0.5">
-                {diag.console.map((entry, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span
-                      className={cn(
-                        "shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase",
-                        entry.level === "error" ? "bg-danger-dim text-danger-text" : entry.level === "warn" ? "bg-s3 text-t2" : "bg-s3 text-t3",
-                      )}
-                    >
-                      {entry.level}
-                    </span>
-                    <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{entry.text}</pre>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** The per-seat legality matrix (EXPERIENCE_TURN_LEGALITY_DIAGNOSTICS_REPORT
- *  step 3): one compact row per roster seat — its legal action types (or the
- *  actions() error) — with the current turn owners highlighted. Absorbed from
- *  the retired InteractiveTester (XU-4); renders only when the run carried a
- *  roster AND the server supplied the matrix (older builds omit it). */
-function SeatLegalityBlock({ matrix, completed }: { matrix: ExperienceSeatLegalityMatrix; completed: boolean }) {
-  const { t } = useT();
-  if (matrix.seats.length === 0) return null;
-  return (
-    <div className={blockCls} style={{ padding: 10 }}>
-      <div className={blockLabelCls}>{t("experience_tester_seat_legality")}</div>
-      <div className="mt-1 space-y-1">
-        {matrix.seats.map((seat) => {
-          const owner = matrix.turnOwners.includes(seat.participantId);
-          return (
-            <div key={seat.participantId} className="flex flex-wrap items-center gap-2">
-              <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px]", owner ? "bg-accent-dim text-accent-t" : "bg-s3 text-t3")}>
-                {seat.label} · {seat.controller}
-              </span>
-              {seat.error !== undefined ? (
-                <span className="font-mono text-[10px] text-danger-text">actions() error: {seat.error}</span>
-              ) : seat.actionTypes.length === 0 ? (
-                <span className="font-ui text-[11px] italic text-t3">{t("experience_tester_no_actions")}</span>
-              ) : (
-                <span className="flex flex-wrap gap-1">
-                  {seat.actionTypes.map((type) => (
-                    <span key={type} className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">{type}</span>
-                  ))}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-1.5 font-ui text-[11px] text-t3">
-        {t("experience_tester_turn")}:{" "}
-        <span className="font-mono text-t2">
-          {matrix.turnOwners.length > 0 ? matrix.turnOwners.join(", ") : completed ? "— (completed)" : "—"}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/** XU-4: the retired InteractiveTester's create-only discover result, rendered
- *  verbatim in information content (definition summary, projection, legal
- *  actions, seat legality, events/effects/steps/console). Reuses this file's
- *  `JsonBlock`/`ConsoleBlock`. */
-function TestRunResultBlock({ result }: { result: ExperienceTestRunData }) {
-  const { t } = useT();
-  return (
-    <div className="mt-2 space-y-2">
-      <div className={blockCls} style={{ padding: 10 }}>
-        <div className={blockLabelCls}>{t("experience_tester_definition")}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-[12px] text-t1">
-          <span className="font-semibold">{result.definition.manifest.name}</span>
-          <span className="font-mono text-[11px] text-t3">({result.definition.manifest.id})</span>
-          <span className="text-[11px] text-t3">· apiVersion {result.definition.apiVersion}</span>
-          {result.definition.hasChoose && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">choose ✓</span>}
-          {result.definition.hasFlavor && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t2">flavor ✓</span>}
-          {result.definition.setup !== undefined && (
-            <span className="rounded bg-s3 px-1.5 py-0.5 font-ui text-[10px] text-t2">
-              {t("experience_tester_setup_fields")}: {result.definition.setup.fields.length}
-            </span>
-          )}
-        </div>
-        <div className="mt-1 font-ui text-[11px] text-t3">
-          {result.definition.declaredCapabilities.length > 0
-            ? result.definition.declaredCapabilities.map((c) => c.capability).join(", ")
-            : t("experience_assign_no_capabilities")}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
-        <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{result.revision}</span></span>
-        <span>{t("experience_tester_status")}: <span className="font-mono text-t2">{result.status}</span></span>
-      </div>
-
-      <div className={blockCls} style={{ padding: 10 }}>
-        <div className={blockLabelCls}>{t("experience_tester_projection")}</div>
-        <JsonBlock value={result.projection.state} />
-      </div>
-
-      <div className={blockCls} style={{ padding: 10 }}>
-        <div className={blockLabelCls}>{t("experience_tester_final_state")}</div>
-        <JsonBlock value={result.finalState} />
-      </div>
-
-      <div className={blockCls} style={{ padding: 10 }}>
-        <div className={blockLabelCls}>{t("experience_tester_legal_actions")}</div>
-        {result.projection.actions.length === 0 ? (
-          <p className="mt-1 font-ui text-[11px] italic text-t3">{t("experience_tester_no_actions")}</p>
-        ) : (
-          <div className="mt-1 space-y-1">
-            {result.projection.actions.map((action, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2">
-                <span className="rounded bg-accent-dim px-1.5 py-0.5 font-mono text-[10px] text-accent-t">{action.type}</span>
-                {action.label !== undefined && <span className="font-ui text-[11px] text-t2">{action.label}</span>}
-                {action.participantId !== undefined && <span className="font-mono text-[10px] text-t3">@{action.participantId}</span>}
-                {action.allowsText === true && <span className="rounded bg-s3 px-1.5 py-0.5 font-mono text-[10px] text-t3">text</span>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <SeatLegalityBlock matrix={result.seatLegality} completed={result.status === "completed"} />
-
-      {result.events.length > 0 && (
-        <div className={blockCls} style={{ padding: 10 }}>
-          <div className={blockLabelCls}>{t("experience_tester_events")}</div>
-          <div className="mt-1 space-y-1">
-            {result.events.map((event, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
-                <span className="font-mono text-[11px] text-t2">{event.type}</span>
-                {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event.detail)}</pre>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {result.effects.length > 0 && (
-        <div className={blockCls} style={{ padding: 10 }}>
-          <div className={blockLabelCls}>{t("experience_tester_effects")}</div>
-          <div className="mt-1 space-y-1">
-            {result.effects.map((effect, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[10px] uppercase text-warning-text">{effect.kind}</span>
-                <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(effect.request)}</pre>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {result.steps.length > 0 && (
-        <div className={blockCls} style={{ padding: 10 }}>
-          <div className={blockLabelCls}>{t("experience_tester_steps")}</div>
-          <div className="mt-1 space-y-1">
-            {result.steps.map((step, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-t2">
-                <span className="text-t3">{step.requestId}</span>
-                <span className="rounded bg-accent-dim px-1.5 py-0.5 text-[10px] text-accent-t">{step.actionType}</span>
-                <span>→ rev {step.revision} · {step.status}</span>
-                {step.replayed && <span className="rounded bg-warning-dim px-1.5 py-0.5 text-[10px] uppercase text-warning-text">{t("experience_tester_replayed")}</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <ConsoleBlock entries={result.console} label={t("script_test_console")} />
-    </div>
-  );
-}
-
-/** XU-4: the retired InteractiveTester's bounded-simulation result. The typed
- *  stop reason + bounds summary, followed by the accumulated events/effects/
- *  steps/console (the simulate envelope carries them all). */
-function TestSimulateResultBlock({ result }: { result: ExperienceTestSimulateData }) {
-  const { t } = useT();
-  return (
-    <div className="mt-2 space-y-2">
-      <div className={blockCls} style={{ padding: 10 }}>
-        <div className={blockLabelCls}>{t("experience_tester_simulate")}</div>
-        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 font-ui text-[11px] text-t3">
-          <span>{t("experience_tester_sim_stop_reason")}: <span className="font-mono text-t2">{result.stopReason}</span></span>
-          <span>{t("experience_tester_sim_iterations")}: <span className="font-mono text-t2">{result.iterations}</span></span>
-          <span>{t("experience_tester_revision")}: <span className="font-mono text-t2">{result.revision}</span></span>
-          <span>{t("experience_tester_status")}: <span className="font-mono text-t2">{result.status}</span></span>
-        </div>
-      </div>
-
-      {result.events.length > 0 && (
-        <div className={blockCls} style={{ padding: 10 }}>
-          <div className={blockLabelCls}>{t("experience_tester_events")}</div>
-          <div className="mt-1 space-y-1">
-            {result.events.map((event, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <span className={cn("shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase", event.visibility === "public" ? "bg-success-dim text-success-text" : "bg-s3 text-t3")}>{event.visibility}</span>
-                <span className="font-mono text-[11px] text-t2">{event.type}</span>
-                {event.detail !== undefined && <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(event.detail)}</pre>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {result.effects.length > 0 && (
-        <div className={blockCls} style={{ padding: 10 }}>
-          <div className={blockLabelCls}>{t("experience_tester_effects")}</div>
-          <div className="mt-1 space-y-1">
-            {result.effects.map((effect, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <span className="shrink-0 rounded bg-warning-dim px-1.5 py-0.5 font-mono text-[10px] uppercase text-warning-text">{effect.kind}</span>
-                <pre className="flex-1 whitespace-pre-wrap font-mono text-[10px] text-t3">{JSON.stringify(effect.request)}</pre>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {result.steps.length > 0 && (
-        <div className={blockCls} style={{ padding: 10 }}>
-          <div className={blockLabelCls}>{t("experience_tester_steps")}</div>
-          <div className="mt-1 space-y-1">
-            {result.steps.map((step, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-t2">
-                <span className="text-t3">{step.requestId}</span>
-                <span className="rounded bg-accent-dim px-1.5 py-0.5 text-[10px] text-accent-t">{step.actionType}</span>
-                <span>→ rev {step.revision} · {step.status}</span>
-                {step.replayed && <span className="rounded bg-warning-dim px-1.5 py-0.5 text-[10px] uppercase text-warning-text">{t("experience_tester_replayed")}</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <ConsoleBlock entries={result.console} label={t("script_test_console")} />
-    </div>
-  );
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 interface ExperiencePlaygroundProps {
@@ -657,14 +321,25 @@ interface ExperiencePlaygroundProps {
    *  absent (the standalone panel use), nothing persists — the pre-9a
    *  behavior. */
   scriptId?: string;
+  /** SS-7B2: the owning rules script's trust data (origin/firstEnabledAt),
+   *  threaded from the ExperienceEditor through the copilot shell. The
+   *  debounced AUTOMATIC discovery routes it through the script execution
+   *  guard: an imported never-enabled script sends NO discovery request and
+   *  renders the shared localized auto-skip state instead. Absent (the
+   *  standalone panel use) keeps the pre-B2 discovery behavior. */
+  script?: Pick<ScriptRecord, "origin" | "firstEnabledAt"> | null;
   /** ER-14: when provided (by the copilot shell), a "Send diagnostics to
    *  assistant" button appears INSIDE the Developer-diagnostics disclosure and
    *  posts the live session digest into the copilot thread. Undefined outside
    *  the shell (standalone playground use → no button). */
   onSendToCopilot?: (digest: CopilotDigest) => void;
+  /** SS-7B4: opens the Rules editor at a finding from this inline Try surface. */
+  onShowInCode?: (line: number) => void;
+  /** Latest roster/grants/settings/seed for copilot diagnostics. */
+  onLaunchContextChange?: (context: ExperienceCopilotLaunchContext) => void;
 }
 
-export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCopilot }: ExperiencePlaygroundProps) {
+export function ExperiencePlayground({ code, visualSource, scriptId, script, onSendToCopilot, onShowInCode, onLaunchContextChange }: ExperiencePlaygroundProps) {
   const { t } = useT();
 
   // Play context (local only). Fix item 9a: lazily rehydrated from the
@@ -732,6 +407,18 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   const [definition, setDefinition] = useState<ExperienceTestDefinition | null>(null);
   const [error, setError] = useState<PlaygroundErrorView | null>(null);
   const [busy, setBusy] = useState<"start" | "advance" | null>(null);
+  // Grounding step 6: the whole-session LOG accumulator. The server returns
+  // every event on start but only the CURRENT turn's events/effects/console on
+  // advance and timer beats (D5.3), so the full log is stitched client-side.
+  // Replaced on start, appended on every advance/timer-beat response, cleared
+  // on Reset; the status-strip "send log" / "copy log" buttons feed it to
+  // buildPlaygroundLogDigest.
+  const [sessionLog, setSessionLog] = useState<PlaygroundSessionLog>(EMPTY_SESSION_LOG);
+  /** Grounding step 6: the launch context the CURRENT session was started
+   *  with (the exact roster/grants/seed sent) — captured at start so the log
+   *  describes how the session RAN, not the since-edited live config. Cleared
+   *  on Reset alongside the log. */
+  const [logLaunchContext, setLogLaunchContext] = useState<ExperienceCopilotLaunchContext | null>(null);
   const [appliedCount, setAppliedCount] = useState(0);
   // RM-9: the discovered manifest's realtime signal (tickMs). Null = turn
   // mode — the classic server-driven flow, byte-identical to pre-RM-9.
@@ -764,7 +451,15 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   // playground session (they stay available before/without a session).
   const [testerResult, setTesterResult] = useState<ExperienceTestRunData | null>(null);
   const [simResult, setSimResult] = useState<ExperienceTestSimulateData | null>(null);
+  /** Grounding step 7: the seed each diagnostics result RAN with, captured at
+   *  request time (the inputs may be edited after the result lands; the shown
+   *  seed must stay the one that ran). "" = no seed was sent (the server's
+   *  deterministic default). */
+  const [testerResultSeed, setTesterResultSeed] = useState("");
+  const [simResultSeed, setSimResultSeed] = useState("");
   const [testerBusy, setTesterBusy] = useState<"run" | "simulate" | null>(null);
+  const [scriptWarningFlow, setScriptWarningFlow] = useState<ScriptSafetyWarningFlow | null>(null);
+  const pendingExplicitActionRef = useRef<(() => void) | null>(null);
 
   // IR-90E: provider/model loading for model seats (mirrors ExperienceSetupModal).
   const [providerProfiles, setProviderProfiles] = useState<ProviderProfileRecord[] | null>(null);
@@ -822,6 +517,24 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
         ? { modelId: seat.modelId }
         : {}),
     }));
+
+  useEffect(() => {
+    if (onLaunchContextChange === undefined) return;
+    const parsed = parseOptionalJsonDiagnosed(settingsJson);
+    const parsedSettings = parsed.ok
+      ? parsed.present
+        ? asSettingsObject(parsed.value)
+        : {}
+      : null;
+    const activeSeed = randomStart ? lastUsedSeed.trim() : seed.trim();
+    onLaunchContextChange({
+      participants,
+      capabilityGrants: [...grants],
+      ...(parsedSettings !== null ? { settings: parsedSettings } : {}),
+      ...(activeSeed !== "" ? { seed: activeSeed } : {}),
+      ...(humanSeatId !== "" ? { humanSeatId } : {}),
+    });
+  }, [participants, grants, settingsJson, seed, lastUsedSeed, randomStart, humanSeatId, onLaunchContextChange]);
 
   const updateSeat = (index: number, patch: Partial<PlaygroundSeat>) => {
     setSeatsTouched(true);
@@ -962,6 +675,62 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     if (merged !== base) setSettingsJson(JSON.stringify(merged));
   };
 
+  // SS-7B2 (SCRIPT_SAFETY_PLAN): the debounced discovery below is AUTOMATIC
+  // script execution — it routes through the shared scriptExecutionGuard, so
+  // an imported never-enabled script sends NO discovery request and renders
+  // the shared localized auto-skip state instead (explicit Validate / Start /
+  // Restart / Discover / Auto-run stay untouched — they are SS-7B4). The
+  // decision derives from the script's trust fields only and is reduced to a
+  // boolean before it reaches the effect deps, so the unstable merged-record
+  // identity threaded from the editor cannot re-fire the discovery. The
+  // automatic branch of the guard never consults the suppress flag; null is
+  // the honest "not loaded here" value.
+  const autoDiscoveryDecision = scriptExecutionGuard({
+    script: script ?? null,
+    code,
+    kind: "interactive",
+    intent: "automatic",
+    suppressImportWarnings: null,
+  });
+  const autoDiscoverySkipped = autoDiscoveryDecision.kind === "skip-auto";
+
+  /** SS-7B4: explicit Try actions use the same trust/findings decision as the
+   * editor validation. Stateless endpoints deliberately receive no acknowledgement. */
+  const runExplicitAction = (action: () => void) => {
+    const decision = scriptExecutionGuard({
+      script: script ?? null,
+      code,
+      kind: "interactive",
+      intent: "explicit",
+      suppressImportWarnings: useScriptSafetySettingsStore.getState().suppressImportWarnings,
+    });
+    if (decision.kind === "ok") {
+      action();
+      return;
+    }
+    if (decision.kind === "warn") {
+      pendingExplicitActionRef.current = action;
+      setScriptWarningFlow(decision.flow);
+    }
+  };
+
+  const confirmExplicitAction = () => {
+    const action = pendingExplicitActionRef.current;
+    pendingExplicitActionRef.current = null;
+    setScriptWarningFlow(null);
+    action?.();
+  };
+
+  const cancelExplicitAction = () => {
+    pendingExplicitActionRef.current = null;
+    setScriptWarningFlow(null);
+  };
+
+  const showExplicitFindingInCode = (line: number) => {
+    cancelExplicitAction();
+    onShowInCode?.(line);
+  };
+
   // IR-90E: auto-derive an ordinary setup (roster + grants) from the discovered
   // definition when the panel opens and the user hasn't manually configured
   // seats. Uses the REAL runExperienceTest discovery (not brittle text parsing)
@@ -975,6 +744,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
   // untouched flag.
   useEffect(() => {
     if (code.trim() === "") return;
+    // SS-7B2: untrusted imports never run the automatic discovery — the
+    // shared localized auto-skip state replaces the discovery-driven UI.
+    if (autoDiscoverySkipped) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       if (cancelled) return;
@@ -991,20 +763,9 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
           setDiscoveredRealtime(manifest.mode === "realtime" ? { tickMs: manifest.tickMs } : null);
           if (seatsTouched) return; // roster/grants are the user's explicit choice
           const declared = data.definition.declaredCapabilities.map((c) => c.capability);
-          const hasParticipants = declared.includes(EXPERIENCE_CAPABILITY.participants);
-          const hasModel = declared.includes(EXPERIENCE_CAPABILITY.model);
-          // Derive grants from the declared capabilities.
-          const derivedGrants = declared.filter((c): c is ExperienceCapability =>
-            CAPABILITIES.includes(c as ExperienceCapability));
-          setGrants(derivedGrants);
-          // Derive seats: a human seat is always present; add a model seat when
-          // both participants + model are declared.
-          if (hasParticipants && hasModel) {
-            setSeats([
-              { id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human },
-              { id: "ai", label: "AI", controller: EXPERIENCE_CONTROLLER.model },
-            ]);
-          }
+          const derived = deriveDefaultLaunchContext(declared);
+          setGrants(derived.capabilityGrants);
+          setSeats(derived.participants);
         })
         .catch(() => {
           if (cancelled) return;
@@ -1014,13 +775,13 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
           setSetupFields([]);
           setDiscoveredRealtime(null);
           if (seatsTouched) return;
-          setSeats([{ id: "you", label: "You", controller: EXPERIENCE_CONTROLLER.human }]);
-          setGrants([]);
+          setSeats([...DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT.participants]);
+          setGrants([...DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT.capabilityGrants]);
         })
       .finally(() => { if (!cancelled) setDeriving(false); });
     }, DISCOVERY_DEBOUNCE_MS);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [code, seatsTouched]);
+  }, [code, seatsTouched, autoDiscoverySkipped]);
 
   /** The ONE advance path (host chrome AND frame actions): apply one human
    *  action to the live session, then let the driver advance script seats.
@@ -1039,6 +800,15 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
           humanAction,
         });
         setSession(data);
+        // Grounding step 6: advance responses carry only THIS turn's
+        // events/effects/console — stitch them onto the session log (one human
+        // turn applied).
+        setSessionLog((prev) => ({
+          events: [...prev.events, ...data.events],
+          effects: [...prev.effects, ...data.effects],
+          console: [...prev.console, ...data.console],
+          turns: prev.turns + 1,
+        }));
         return { ok: true, data };
       } catch (advanceError) {
         const view = toPlaygroundError(advanceError);
@@ -1147,6 +917,16 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       setAppliedCount(0);
       setRequestId("pg-req-1");
       setExpectedRevision(String(data.revision));
+      // Grounding step 6: the log starts from THIS session's start envelope
+      // (start carries every event so far) and the launch context is captured
+      // as actually sent — the exact roster/grants/seed the session ran with.
+      setSessionLog({ events: data.events, effects: data.effects, console: data.console, turns: 0 });
+      setLogLaunchContext({
+        participants,
+        capabilityGrants: [...grants],
+        ...(launchSeed !== "" ? { seed: launchSeed } : {}),
+        ...(humanSeatId !== "" ? { humanSeatId } : {}),
+      });
       // RM-9: realtime mode latches the frame loop config — from here the
       // round runs entirely INSIDE the sandboxed frame (no advance/timer
       // round-trips; the server start above only ran `create` in the real
@@ -1164,6 +944,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
         if (!built.ok) {
           setSession(null);
           setDefinition(null);
+          setSessionLog(EMPTY_SESSION_LOG);
+          setLogLaunchContext(null);
           setError({ message: built.message, console: [] });
           return;
         }
@@ -1175,6 +957,8 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     } catch (startError) {
       setSession(null);
       setDefinition(null);
+      setSessionLog(EMPTY_SESSION_LOG);
+      setLogLaunchContext(null);
       setError(toPlaygroundError(startError));
     } finally {
       setBusy(null);
@@ -1194,6 +978,10 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     setRequestId("pg-req-1");
     setExpectedRevision("0");
     setFrameReady(false);
+    // Grounding step 6: Reset also clears the whole-session log and its
+    // captured launch context — the next session's log starts clean.
+    setSessionLog(EMPTY_SESSION_LOG);
+    setLogLaunchContext(null);
     // RM-9: a reset also buries the round — the latched loop config and any
     // finished-round claim go with the session (the frame unmounts, so the
     // loop dies with it; a stopped round is lost by design).
@@ -1252,11 +1040,23 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     await submitAction(type, actionParticipantId !== "" ? actionParticipantId : undefined, payload);
   };
 
+  /** Grounding step 7: the seed the stateless diagnostics calls run with —
+   *  parity with the launch path (XU-2). "Random start" ON: the LAST
+   *  launch's random seed, falling back to the manual seed before anything
+   *  was launched (both resolved trimmed, the way the launch path resolves
+   *  its own seed); OFF: the manual seed verbatim (the pre-step-7 behavior). */
+  const diagnosticsSeed = (): string => {
+    if (!randomStart) return seed.trim();
+    const last = lastUsedSeed.trim();
+    return last !== "" ? last : seed.trim();
+  };
+
   /** XU-4: on-demand create-only discover over the STATELESS tester (the
    *  retired InteractiveTester's run path). Reuses the CURRENT roster/grants/
-   *  settings/manual-seed so the diagnostics reflect the same context a start
-   *  would use; the manual seed (not the random-start launch seed) keeps the
-   *  result reproducible, matching the tester. */
+   *  settings so the diagnostics reflect the same context a start would use,
+   *  and runs on {@link diagnosticsSeed} — with "Random start" on, the same
+   *  seed the author's current game runs on (grounding step 7), so the result
+   *  describes that game rather than a different random draw. */
   const handleDiscover = async () => {
     const settings = buildLaunchSettings();
     if (!settings.ok) {
@@ -1265,16 +1065,18 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     }
     setTesterBusy("run");
     setError(null);
+    const runSeed = diagnosticsSeed();
     try {
       const data = await runExperienceTest({
         rulesCode: code,
         settings: settings.value,
         participants,
         capabilityGrants: [...grants],
-        ...(seed.trim() !== "" ? { seed: seed.trim() } : {}),
+        ...(runSeed !== "" ? { seed: runSeed } : {}),
         actions: [],
       });
       setTesterResult(data);
+      setTesterResultSeed(runSeed);
     } catch (runError) {
       setError(toPlaygroundError(runError));
     } finally {
@@ -1293,15 +1095,17 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
     }
     setTesterBusy("simulate");
     setError(null);
+    const simSeed = diagnosticsSeed();
     try {
       const data = await simulateExperienceTest({
         rulesCode: code,
         settings: settings.value,
         participants,
         capabilityGrants: [...grants],
-        ...(seed.trim() !== "" ? { seed: seed.trim() } : {}),
+        ...(simSeed !== "" ? { seed: simSeed } : {}),
       });
       setSimResult(data);
+      setSimResultSeed(simSeed);
     } catch (simError) {
       setError(toPlaygroundError(simError));
     } finally {
@@ -1423,6 +1227,16 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
           data.revision >= current.revision
         ) {
           setSession(data);
+          // Grounding step 6: beat responses carry only this beat's
+          // events/effects/console — stitch them onto the session log. A tick
+          // is not a human turn, so `turns` is untouched. A stale-dropped tick
+          // returns empty deltas, so nothing is double-counted.
+          setSessionLog((prev) => ({
+            events: [...prev.events, ...data.events],
+            effects: [...prev.effects, ...data.effects],
+            console: [...prev.console, ...data.console],
+            turns: prev.turns,
+          }));
         }
       })
       .catch((beatError: unknown) => {
@@ -1530,6 +1344,46 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
       onSendToCopilot(buildRunTestDigest(testerResult));
     } else if (simResult !== null) {
       onSendToCopilot(buildSimulateDigest(simResult));
+    }
+  };
+
+  /** Grounding step 6: the WHOLE-session log digest for the status-strip
+   *  "send log" / "copy log" buttons. Turn sessions send the accumulated log
+   *  (every event across start + advances + timer beats); a realtime round
+   *  sends the loop digest — the frame loop is the round's authority, and the
+   *  turn-session shape would lie (RM-13). */
+  const buildSessionLogDigest = (live: ExperiencePlaygroundData): CopilotDigest =>
+    realtimeRound !== null
+      ? buildRealtimeLoopDigest({
+          realtime: { tickMs: realtimeRound.tickMs, seed: realtimeRound.seed },
+          diag: loopDiag,
+          claim: roundClaim,
+          definition,
+          error,
+        })
+      : buildPlaygroundLogDigest({
+          session: live,
+          sessionLog,
+          definition,
+          error,
+          launchContext: logLaunchContext,
+        });
+
+  /** Grounding step 6: push the whole-session log into the copilot thread. */
+  const handleSendLogToCopilot = () => {
+    if (onSendToCopilot === undefined || session === null) return;
+    onSendToCopilot(buildSessionLogDigest(session));
+  };
+
+  /** Grounding step 6: copy the log digest's text to the clipboard with the
+   *  honest result feedback (the TrackerConfig copy pattern). */
+  const handleCopyLog = async () => {
+    if (session === null) return;
+    const result = await copyText(buildSessionLogDigest(session).text);
+    if (result.ok) {
+      toast.success(t("copied"));
+    } else {
+      toast.error(t("experience_playground_copy_log_failed"));
     }
   };
 
@@ -1690,20 +1544,12 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
 
           <div className="grid gap-2 sm:grid-cols-2">
             <div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center">
                 <span className="flex items-center gap-1.5">
                   <label className={lblCls}>{t("experience_playground_seed_label")}</label>
                   <CustomTooltip content={t("experience_playground_seed_hint")}>
                     <span className="mt-px shrink-0 text-t3"><Ic.help /></span>
                   </CustomTooltip>
-                </span>
-                <span className="flex items-center gap-2">
-                  <Toggle
-                    checked={randomStart}
-                    onChange={handleRandomStartChange}
-                    aria-label={t("experience_playground_random_start")}
-                  />
-                  <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
                 </span>
               </div>
               <TextInput
@@ -1713,6 +1559,14 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                 disabled={randomStart}
                 onChange={(e) => setSeed(e.target.value)}
               />
+              <span className="mt-1.5 flex items-center gap-2">
+                <Toggle
+                  checked={randomStart}
+                  onChange={handleRandomStartChange}
+                  aria-label={t("experience_playground_random_start")}
+                />
+                <span className="font-ui text-[12px] text-t2">{t("experience_playground_random_start")}</span>
+              </span>
             </div>
             <div>
               <label className={lblCls}>{t("experience_playground_human_seat_label")}</label>
@@ -1731,6 +1585,15 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
           </div>
           <div className="mt-2">
             <label className={lblCls}>{t("experience_setup_settings_label")}</label>
+            {/* SS-7B2: the shared localized auto-skip state — an untrusted
+                import's automatic discovery is skipped, so this line replaces
+                the discovery-driven form / no-fields UI (the advanced JSON
+                disclosure below stays reachable for technical users). */}
+            {autoDiscoverySkipped && (
+              <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-t3" data-testid="playground-auto-skip">
+                {t(SCRIPT_SAFETY_AUTO_SKIP_MESSAGE_KEY)}
+              </p>
+            )}
             {/* LOBBY-A: the package's declared setup fields render as a real
                 form (author defaults seeded into the JSON). The raw JSON
                 textarea is ALWAYS under a collapsed "advanced" disclosure
@@ -1753,7 +1616,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                 ))}
               </div>
             )}
-            {setupFields.length === 0 && (
+            {!autoDiscoverySkipped && setupFields.length === 0 && (
               <p className="mt-1.5 font-ui text-[11px] leading-relaxed text-t3" data-testid="playground-no-fields">
                 {t("experience_playground_no_fields")}
               </p>
@@ -1794,7 +1657,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
               type="button"
               className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
               disabled={busy !== null || code.trim() === ""}
-              onClick={() => void handleStart()}
+              onClick={() => runExplicitAction(() => { void handleStart(); })}
             >
               {Ic.caret("r")}
               {t("experience_playground_start")}
@@ -1879,12 +1742,32 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                   </span>
                 )}
                 {busy !== null && <span className="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
-                <div className="ml-auto flex items-center gap-2">
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  {onSendToCopilot !== undefined && (
+                    <button
+                      type="button"
+                      data-testid="playground-send-log"
+                      className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                      disabled={busy !== null}
+                      onClick={handleSendLogToCopilot}
+                    >
+                      {t("experience_playground_send_log")}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    data-testid="playground-copy-log"
+                    className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
+                    disabled={busy !== null}
+                    onClick={() => { void handleCopyLog(); }}
+                  >
+                    {t("experience_playground_copy_log")}
+                  </button>
                   <button
                     type="button"
                     className="h-8 cursor-pointer rounded-md border border-border bg-bg px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                     disabled={busy !== null}
-                    onClick={handleRestart}
+                    onClick={() => runExplicitAction(handleRestart)}
                   >
                     {t("experience_playground_restart")}
                   </button>
@@ -1921,7 +1804,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                       type="button"
                       className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
                       disabled={busy !== null}
-                      onClick={handleRestart}
+                      onClick={() => runExplicitAction(handleRestart)}
                     >
                       {t("experience_restart_play_again")}
                     </button>
@@ -2049,7 +1932,7 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                         data-testid="playground-discover"
                         className="h-8 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all disabled:cursor-default disabled:opacity-40"
                         disabled={testerBusy !== null || busy !== null || code.trim() === ""}
-                        onClick={() => void handleDiscover()}
+                        onClick={() => runExplicitAction(() => { void handleDiscover(); })}
                       >
                         {t("experience_tester_run")}
                       </button>
@@ -2058,15 +1941,33 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                         data-testid="playground-simulate"
                         className="h-8 cursor-pointer rounded-md border border-border bg-s3 px-4 font-ui text-xs font-medium text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                         disabled={testerBusy !== null || busy !== null || code.trim() === ""}
-                        onClick={() => void handleSimulate()}
+                        onClick={() => runExplicitAction(() => { void handleSimulate(); })}
                       >
                         {t("experience_tester_simulate")}
                       </button>
                       {testerBusy !== null && <span className="font-ui text-[12px] text-t3">{t("script_running")}</span>}
                     </div>
 
-                    {testerResult !== null && <TestRunResultBlock result={testerResult} />}
-                    {simResult !== null && <TestSimulateResultBlock result={simResult} />}
+                    {/* Grounding step 7: the seed this result RAN with
+                        (captured at request time; "—" = none sent, the
+                        server deterministic default) — owner-specified line
+                        treatment, top of the result block. */}
+                    {testerResult !== null && (
+                      <>
+                        <p className="text-[12px] text-t3" data-testid="playground-discover-seed">
+                          {`${t("experience_playground_diagnostics_seed")}: ${testerResultSeed === "" ? "—" : testerResultSeed}`}
+                        </p>
+                        <TestRunResultBlock result={testerResult} />
+                      </>
+                    )}
+                    {simResult !== null && (
+                      <>
+                        <p className="text-[12px] text-t3" data-testid="playground-simulate-seed">
+                          {`${t("experience_playground_diagnostics_seed")}: ${simResultSeed === "" ? "—" : simResultSeed}`}
+                        </p>
+                        <TestSimulateResultBlock result={simResult} />
+                      </>
+                    )}
 
                     {/* ER-14 (absorbed): send the latest tester digest (discover
                         result → simulate result) to the copilot. */}
@@ -2255,6 +2156,23 @@ export function ExperiencePlayground({ code, visualSource, scriptId, onSendToCop
                 )}
               </div>
         </div>
+      {scriptWarningFlow?.kind === "plain" && (
+        <ImportedScriptWarningModal
+          intent="test"
+          onConfirm={confirmExplicitAction}
+          onCancel={cancelExplicitAction}
+        />
+      )}
+      {scriptWarningFlow?.kind === "findings" && (
+        <FindingsWarningModal
+          findings={scriptWarningFlow.findings}
+          showHonestWarning={scriptWarningFlow.showHonestWarning}
+          intent="test"
+          onShowInCode={showExplicitFindingInCode}
+          onConfirm={confirmExplicitAction}
+          onCancel={cancelExplicitAction}
+        />
+      )}
     </div>
   );
 }

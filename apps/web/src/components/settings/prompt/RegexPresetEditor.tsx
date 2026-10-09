@@ -10,9 +10,11 @@ import { ToggleChips } from "../../shared/ToggleChips.js";
 import { NumberInput } from "../../shared/NumberInput.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
+import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
 import { characterToLinkTarget, promptPresetToLinkTarget } from "../../../lib/link-targets.js";
 import { RegexAiAssistantModal } from "./RegexAiAssistantModal.js";
+import { regexDraftSaveIssue, type RegexPresetDraft } from "./regex-rule-draft.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { useMacroContext } from "../../../stores/chat-selectors.js";
@@ -22,58 +24,13 @@ import { listPromptPresets } from "../../../api/preset-api.js";
 import { compileRegexScript, parseFindRegex, createValueEscapingMacroSource } from "@vibe-tavern/prompt-pipeline";
 import { replaceUiMacros } from "../../../lib/macros.js";
 import { applyTargetFlags, regexApplyTargetOf, brandId, REGEX_PLACEMENT, type RegexApplyTarget, type RegexPlacement, type RegexPreset, type RegexSubstituteMode } from "@vibe-tavern/domain";
-import type { RegexPresetRecord } from "../../../api/types.js";
+import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
+import { regexRuleAvailability } from "../../../lib/regex-availability.js";
 import type Resources from "../../../i18n/resources.js";
 
 /** A statically-known i18n key — the option tables below carry these so
  *  `t()` calls stay compile-checked (no `tDynamic` escape hatch needed). */
 type I18nKey = keyof Resources["en"];
-
-export interface RegexPresetDraft {
-  name: string;
-  findRegex: string;
-  replaceString: string;
-  trimStrings: string;
-  substituteRegex: RegexSubstituteMode;
-  placement: RegexPlacement[];
-  minDepth: string;
-  maxDepth: string;
-  isGlobal: boolean;
-  disabled: boolean;
-  applyTarget: RegexApplyTarget;
-}
-
-export function regexDraftFromRecord(p: RegexPresetRecord): RegexPresetDraft {
-  return {
-    name: p.name,
-    findRegex: p.findRegex,
-    replaceString: p.replaceString,
-    trimStrings: p.trimStrings.join("\n"),
-    substituteRegex: p.substituteRegex as RegexSubstituteMode,
-    placement: [...p.placement] as RegexPlacement[],
-    minDepth: p.minDepth === null ? "" : String(p.minDepth),
-    maxDepth: p.maxDepth === null ? "" : String(p.maxDepth),
-    isGlobal: p.isGlobal,
-    disabled: p.disabled,
-    applyTarget: regexApplyTargetOf(p),
-  };
-}
-
-export function emptyRegexDraft(): RegexPresetDraft {
-  return {
-    name: "",
-    findRegex: "",
-    replaceString: "",
-    trimStrings: "",
-    substituteRegex: 0,
-    placement: [REGEX_PLACEMENT.AiOutput],
-    minDepth: "",
-    maxDepth: "",
-    isGlobal: false,
-    disabled: false,
-    applyTarget: "persist",
-  };
-}
 
 interface RegexPresetEditorProps {
   /** The saved preset being edited, or null for a new preset. */
@@ -84,12 +41,25 @@ interface RegexPresetEditorProps {
    *  `disabled` on the server immediately (never blocked by a dirty draft) and
    *  syncs list + draft. Without a preset the toggle edits the draft alone. */
   onActiveChange?: (nextActive: boolean) => void;
-  /** Notify the parent that this preset's binding count changed (R-7 list
-   *  badge: "Not applied" needs to know non-global presets with zero
-   *  links). Called after the links PUT resolves. */
+  /** Notify the parent that this preset's binding count changed after the
+   * links PUT resolves. */
   onLinksChanged?: (presetId: string, linkCount: number) => void;
-  /** R-13c: when the rule belongs to a profile, show the profile chip instead of the own scope block. */
-  profileName?: string | null;
+  /** RXU-14: the intended destination Profile of an UNSAVED new-rule draft
+   *  (null/undefined = standalone). A preset record's own `profileId` wins
+   *  when present; this only routes a draft into the member chip. */
+  draftProfileId?: string | null;
+  /** Every Profile available as a saved Rule's canonical assignment. Full
+   * records: the availability model reads `disabled`/`isGlobal` for the
+   * member-unbound case (the selector maps only id/name). */
+  profiles?: Array<RegexProfileRecord>;
+  /** Per-profile link counts from the parent (undefined = not loaded yet) —
+   * a member Rule's unbound status mirrors its PROFILE's count, never the
+   * rule's own dormant links (RXU-31 model contract). */
+  profileLinkCounts?: Record<string, number | undefined>;
+  /** Persists a saved Rule's Profile assignment. The parent applies only the
+   * server-confirmed record, so this controlled selector visibly restores its
+   * prior value when the operation rejects. */
+  onProfileAssignment?: (profileId: string | null) => Promise<void>;
 }
 
 const PLACEMENT_OPTIONS: Array<{ code: RegexPlacement; labelKey: I18nKey }> = [
@@ -151,11 +121,25 @@ const MESSAGE_PLACEMENTS: RegexPlacement[] = [REGEX_PLACEMENT.UserInput, REGEX_P
  * fields (mono at input size) → live test pane with macro substitution,
  * no-match/empty distinction and an honesty disclaimer.
  */
-export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange, onLinksChanged, profileName }: RegexPresetEditorProps) {
+export function RegexPresetEditor({
+  preset, draft, onDraftChange, onActiveChange, onLinksChanged, draftProfileId,
+  profiles = [], profileLinkCounts = {}, onProfileAssignment,
+}: RegexPresetEditorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [testInput, setTestInput] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
+  // RXU-14: field-level Save gate — only a NEW rule draft is blocked from its
+  // first persistence (a saved record keeps its existing update flow).
+  const draftSaveIssue = preset === null ? regexDraftSaveIssue(draft) : null;
+  // Membership for the R-13c chip: a saved record's own profile, or the
+  // intended destination of an unsaved draft (RXU-14).
+  const memberProfileId = preset?.profileId ?? draftProfileId ?? null;
+  // Membership display derives in the editor so saved Rules and local drafts
+  // share one lookup instead of making the modal fork profile-name ternaries.
+  const effectiveProfileName = memberProfileId
+    ? profiles.find((profile) => profile.id === memberProfileId)?.name ?? null
+    : null;
 
   // ── Bindings (RX-12) ──
   // Forward-direction binding: this preset → characters + prompt presets.
@@ -167,21 +151,35 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
   const allCharacters = useAllCharacters();
   const macroContext = useMacroContext();
   const [bindLinks, setBindLinks] = useState<Array<{ targetType: "character" | "preset"; targetId: string }>>([]);
+  const [linksLoaded, setLinksLoaded] = useState(false);
+  const [promptPresetsLoaded, setPromptPresetsLoaded] = useState(false);
   const [promptPresets, setPromptPresets] = useState<Array<{ id: string; name: string; updatedAt?: string }>>([]);
   const presetId = preset?.id ?? null;
 
   useEffect(() => {
     setBindLinks([]);
+    setLinksLoaded(false);
+    setPromptPresetsLoaded(false);
     if (!presetId) return;
     let cancelled = false;
     // Load failures degrade to an empty binding row (non-blocking) — the user
     // can retry by reselecting the preset.
     getRegexLinks(presetId)
-      .then((rows) => { if (!cancelled) setBindLinks(rows.map((r) => ({ targetType: r.targetType, targetId: r.targetId }))); })
-      .catch(() => { if (!cancelled) setBindLinks([]); });
+      .then((rows) => {
+        if (!cancelled) {
+          setBindLinks(rows.map((row) => ({ targetType: row.targetType, targetId: row.targetId })));
+          setLinksLoaded(true);
+        }
+      })
+      .catch(() => { if (!cancelled) { setBindLinks([]); setLinksLoaded(true); } });
     listPromptPresets()
-      .then((list) => { if (!cancelled) setPromptPresets(list.map((p) => ({ id: p.id, name: p.name, updatedAt: p.updatedAt }))); })
-      .catch(() => { if (!cancelled) setPromptPresets([]); });
+      .then((list) => {
+        if (!cancelled) {
+          setPromptPresets(list.map((promptPreset) => ({ id: promptPreset.id, name: promptPreset.name, updatedAt: promptPreset.updatedAt })));
+          setPromptPresetsLoaded(true);
+        }
+      })
+      .catch(() => { if (!cancelled) { setPromptPresets([]); setPromptPresetsLoaded(true); } });
     return () => { cancelled = true; };
   }, [presetId]);
 
@@ -209,10 +207,20 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
     [bindLinks, resolvableIds],
   );
 
-  // "Not applied" (R-7 owner follow-up): enabled + bind mode + zero
-  // resolvable links — the list's red dot spelled out under the name.
-  // Mirrors the bindings dead-zone condition exactly.
-  const notApplied = presetId !== null && !draft.isGlobal && !draft.disabled && effectiveBindCount === 0;
+  // RXU-31 is the sole availability derivation. Standalone Rules use their
+  // own resolved bindings only after both sources have loaded. Member Rules
+  // ignore dormant own links and mirror the Profile's disabled/global/link
+  // gate; an unknown Profile count is loading, never a transient red reason.
+  const memberProfile = memberProfileId ? profiles.find((profile) => profile.id === memberProfileId) ?? null : null;
+  const ruleAvailability = preset
+    ? regexRuleAvailability({
+        rule: { ...preset, disabled: draft.disabled, isGlobal: draft.isGlobal },
+        ruleLinkCount: memberProfileId ? undefined : linksLoaded && promptPresetsLoaded ? effectiveBindCount : undefined,
+        profile: memberProfile,
+        profileLinkCount: memberProfile ? profileLinkCounts[memberProfile.id] : undefined,
+      })
+    : null;
+  const isUnbound = ruleAvailability?.kind === "unbound";
 
   const handleSetBindLinks = (next: LinkBindingRecord[]) => {
     if (!presetId) return;
@@ -247,6 +255,11 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
       return;
     }
     update("disabled", !nextActive);
+  };
+
+  const handleProfileAssignment = (profileId: string) => {
+    if (!preset || profileId === (preset.profileId ?? "")) return;
+    void onProfileAssignment?.(profileId || null);
   };
 
   const togglePlacement = (code: RegexPlacement) => {
@@ -359,57 +372,88 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
 
   return (
     <div className="flex flex-col gap-4">
+      <section className="flex flex-col gap-4">
+        <h3 className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+          {t("promptManager.regex.sectionIdentityReplacement")}
+        </h3>
       {/* Name + Active (R-7): the toggle is positive-polarity and, for a
           saved preset, applies instantly — see handleActiveToggle. */}
-      <div className="flex items-end gap-4">
-        <div className="min-w-0 flex-1">
-          <label className={lblCls} htmlFor="regex-name">{t("promptManager.regex.fieldName")}</label>
-          <TextInput
-            id="regex-name"
-            value={draft.name}
-            onChange={(e) => update("name", e.target.value)}
-            placeholder={t("promptManager.regex.namePlaceholder")}
-          />
+      <div>
+        <div className="flex items-end gap-4" data-testid="regex-name-controls-row">
+          <div className="min-w-0 flex-1">
+            <label className={lblCls} htmlFor="regex-name">{t("promptManager.regex.fieldName")}</label>
+            <TextInput
+              id="regex-name"
+              value={draft.name}
+              onChange={(e) => update("name", e.target.value)}
+              placeholder={t("promptManager.regex.namePlaceholder")}
+            />
+          </div>
+          <div className="flex shrink-0 items-center gap-2 pb-[7px]">
+            <button
+              type="button"
+              className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+              onClick={() => setAiOpen(true)}
+            >
+              <Ic.brain /> {t("regexAssistant.open")}
+            </button>
+            <Toggle
+              id="regex-active"
+              checked={!draft.disabled}
+              onChange={handleActiveToggle}
+            />
+            <label htmlFor="regex-active" className="cursor-pointer font-ui text-[calc(var(--ui-fs)-1px)] text-t2 select-none">
+              {t("promptManager.regex.fieldActive")}
+            </label>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2 pb-[7px]">
-          <button
-            type="button"
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
-            onClick={() => setAiOpen(true)}
-          >
-            <Ic.brain /> {t("regexAssistant.open")}
-          </button>
-          <Toggle
-            id="regex-active"
-            checked={!draft.disabled}
-            onChange={handleActiveToggle}
-          />
-          <label htmlFor="regex-active" className="cursor-pointer font-ui text-[calc(var(--ui-fs)-1px)] text-t2 select-none">
-            {t("promptManager.regex.fieldActive")}
-          </label>
-        </div>
+        {draftSaveIssue?.field === "name" && (
+          <div role="alert" className="mt-1 font-ui text-[11px] text-danger">
+            {t("promptManager.regex.draftNameRequired")}
+          </div>
+        )}
       </div>
       {/* Badge lives OUTSIDE the name/toggle row: inside it, its height
           pushes the items-end-aligned Toggle down (owner report). Full-width
           row below keeps the Toggle level with the name input. */}
-      {notApplied && (
+      {isUnbound && (
         <div className="-mt-2">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-2 py-px font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-danger-text select-none">
             <span className="h-[6px] w-[6px] rounded-full bg-danger" />
-            {t("promptManager.regex.badgeNotApplied")}
+            {t("promptManager.regex.availabilityUnbound")}
           </span>
+        </div>
+      )}
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <h3 className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+          {t("promptManager.regex.sectionAvailabilityScope")}
+        </h3>
+      {preset && (
+        <div>
+          <div className={lblCls}>{t("promptManager.regex.profileLabel")}</div>
+          <DropdownSelect
+            value={preset.profileId ?? ""}
+            options={profiles.map((profile) => ({ id: profile.id, label: profile.name }))}
+            defaultOption={t("promptManager.regex.profileStandalone")}
+            searchable={false}
+            onChange={handleProfileAssignment}
+            triggerClassName="flex min-h-11 w-full items-center justify-between gap-2 rounded-[6px] border border-border bg-s2 px-[13px] py-[7px] font-ui text-[13px] text-t1 transition-colors duration-150 hover:border-accent"
+            triggerTestId="regex-profile-assignment"
+          />
         </div>
       )}
 
       {/* R-13c: member rule — chip replaces the own scope block. The rule's
           own isGlobal/bindings are shadowed by the profile gate. */}
-      {preset?.profileId ? (
+      {memberProfileId ? (
         <div>
           <div className={lblCls}>{t("promptManager.regex.scopeLabel")}</div>
           <div className="flex items-center gap-2 rounded-md border border-border bg-s2 px-3 py-2">
             <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-success" />
             <span className="font-ui text-[calc(var(--ui-fs)-2px)] text-t2">
-              {t("promptManager.regex.memberViaProfile", { name: profileName ?? "" })}
+              {t("promptManager.regex.memberViaProfile", { name: effectiveProfileName ?? "" })}
             </span>
             {(draft.isGlobal || effectiveBindCount > 0) && (
               <CustomTooltip content={t("promptManager.regex.memberShadowed")}>
@@ -459,7 +503,12 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           )}
         </>
       )}
+      </section>
 
+      <section className="flex flex-col gap-4">
+        <h3 className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+          {t("promptManager.regex.sectionExecutionConditions")}
+        </h3>
       {/* How it triggers (R-7): placement chips → depth modes → apply-target. */}
       <div>
         <div className={lblCls}>{t("promptManager.regex.behaviorLabel")}</div>
@@ -549,7 +598,12 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           </div>
         </div>
       </div>
+      </section>
 
+      <section className="flex flex-col gap-4">
+        <h3 className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+          {t("promptManager.regex.sectionRuleReplacement")}
+        </h3>
       {/* Rule fields (R-7): mono via the canonical field tokens (FS-5) — the
           same mono variant the shared AutoTextarea exposes. */}
       <div>
@@ -564,6 +618,11 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           maxRows={6}
         />
         <div className="mt-1 font-ui text-[11px] text-t4">{t("promptManager.regex.findHint")}</div>
+        {draftSaveIssue?.field === "findRegex" && (
+          <div role="alert" className="mt-1 font-ui text-[11px] text-danger">
+            {t("promptManager.regex.draftFindRequired")}
+          </div>
+        )}
       </div>
 
       <div>
@@ -609,7 +668,12 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           }))}
         />
       </div>
+      </section>
 
+      <section className="flex flex-col gap-4">
+        <h3 className="font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2">
+          {t("promptManager.regex.sectionLiveTest")}
+        </h3>
       {/* Live test pane (R-7): macro-substituted run, no-match vs match
           distinction, and an honesty disclaimer — the pane does not simulate
           scope, bindings or depth. */}
@@ -659,6 +723,7 @@ export function RegexPresetEditor({ preset, draft, onDraftChange, onActiveChange
           )}
         </div>
       </div>
+      </section>
       <RegexAiAssistantModal isOpen={aiOpen} onClose={() => setAiOpen(false)} currentRule={draft} onApply={(patch) => onDraftChange({ ...draft, ...patch })} />
     </div>
   );

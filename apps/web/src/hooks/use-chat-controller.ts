@@ -390,21 +390,17 @@ export function useChatController(): ChatControllerActions {
             });
             return;
           }
-          // CTX-L3: a lore_bundle result is a distinct PROPOSAL arm (the
-          // cumulative lore draft). Recognize it before the profile/greeting
-          // parse (which would otherwise flag it an error). The five lore tools
-          // all return {target:"lore_bundle", bundle, summary}.
-          if (
-            info.toolName === "create_lorebook" || info.toolName === "create_lore_entry"
-            || info.toolName === "set_lore_activation" || info.toolName === "ai_write_lore_entry"
-            || info.toolName === "ai_generate_lore_keys"
-          ) {
-            const lore = coauthorLoreBundleOutputSchema.safeParse(info.output);
+          // CTX-L3/CE-B1: a lore_bundle is a distinct proposal arm. Its wire
+          // discriminator, rather than a parallel tool-name list, recognizes
+          // every current and future lore tool before the profile/greeting parse.
+          const lore = coauthorLoreBundleOutputSchema.safeParse(info.output);
+          if (lore.success) {
             useCoauthorTurnStore.getState().upsertActivity(chatId, {
               toolCallId: info.toolCallId,
               toolName: info.toolName,
-              status: info.isError || !lore.success ? "error" : "done",
-              ...(lore.success ? { loreBundle: lore.data.bundle, summary: lore.data.summary } : {}),
+              status: info.isError ? "error" : "done",
+              loreBundle: lore.data.bundle,
+              summary: lore.data.summary,
             });
             return;
           }

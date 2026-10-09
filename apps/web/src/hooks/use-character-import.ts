@@ -9,6 +9,9 @@ import { fetchBootstrapAction } from "../stores/api-actions/bootstrap-actions.js
 export interface CharacterImportOptions {
   chatId?: ChatId;
   importEmbeddedBook?: boolean;
+  // Card `regex_scripts` Profile master switch (RXU-24): omitted stays
+  // omitted (the server boundary owns the default), never coerced to false.
+  enableImportedRegexProfile?: boolean;
 }
 
 export function useCharacterImport() {
@@ -67,6 +70,11 @@ export function useCharacterImport() {
         monolithText,
         chatId: options?.chatId,
         importEmbeddedBook: options?.importEmbeddedBook,
+        // Conditionally present: an omitted option must stay absent from the
+        // body (not false) so the server default owns no-Regex behavior.
+        ...(options?.enableImportedRegexProfile !== undefined
+          ? { enableImportedRegexProfile: options.enableImportedRegexProfile }
+          : {}),
       });
 
       // Upload the PNG as the character's folder-resident avatar

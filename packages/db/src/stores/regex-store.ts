@@ -29,14 +29,19 @@ import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../
 // ─── Input types ──────────────────────────────────────────────────────────────
 
 /** Creation input — the full domain shape minus store-generated columns.
- *  `profileId` stays optional: membership is a store operation (attach/detach),
- *  creation always starts standalone. */
+ *  `profileId` stays optional: absent/null = standalone; a present id births
+ *  the rule directly inside that profile (RXU-12 manual-save + bundle paths). */
 export type CreateRegexPresetData = Omit<
   RegexPreset,
   'id' | 'createdAt' | 'updatedAt' | 'profileId'
 > & {
   profileId?: RegexProfileId | null;
 };
+
+/** Bundle member input (RXU-12) — a create input minus membership: the bundle
+ *  owns it, every member rule is BORN with the new profile's id in its INSERT
+ *  (never create-then-attach inside a bundle). */
+export type CreateRegexBundleRuleData = Omit<CreateRegexPresetData, 'profileId'>;
 
 /** Update patch — every field optional except immutable identity/timestamps. */
 export type UpdateRegexPresetData = Partial<Omit<RegexPreset, 'id' | 'createdAt'>>;
@@ -46,6 +51,21 @@ export type CreateRegexProfileData = Omit<RegexProfile, 'id' | 'createdAt' | 'up
 
 /** Update patch for a profile — every field optional except identity/timestamps. */
 export type UpdateRegexProfileData = Partial<Omit<RegexProfile, 'id' | 'createdAt'>>;
+
+/** One atomic Profile-bundle creation input (RXU-12): profile fields + scope
+ *  links + member rules, landing in a single transaction or not at all. */
+export type CreateRegexProfileBundleData = CreateRegexProfileData & {
+  /** Scope links (character/preset targets); empty = unbound unless global. */
+  links?: Array<{ targetType: RegexTargetType; targetId: string }>;
+  /** One or more member rules, born with the new profile's id on insert. */
+  rules: CreateRegexBundleRuleData[];
+};
+
+/** Complete committed result of an atomic bundle creation. */
+export interface RegexProfileBundleResult {
+  profile: RegexProfile;
+  rules: RegexPreset[];
+}
 
 /** Profile deletion mode (R-13, owner-approved): `keep` = member rules survive
  *  as standalone (folder metaphor); `cascade` = members are deleted with their
@@ -138,27 +158,7 @@ export class RegexStore {
     const now = this.clock.now();
     const [row] = await this.db
       .insert(regexPresets)
-      .values({
-        id,
-        name: input.name,
-        findRegex: input.findRegex,
-        replaceString: input.replaceString,
-        trimStringsJson: JSON.stringify(input.trimStrings),
-        substituteRegex: input.substituteRegex,
-        disabled: input.disabled ? 1 : 0,
-        markdownOnly: input.markdownOnly ? 1 : 0,
-        promptOnly: input.promptOnly ? 1 : 0,
-        runOnEdit: input.runOnEdit ? 1 : 0,
-        minDepth: input.minDepth,
-        maxDepth: input.maxDepth,
-        placementJson: JSON.stringify(input.placement),
-        isGlobal: input.isGlobal ? 1 : 0,
-        sortOrder: input.sortOrder,
-        // Membership is store-managed: creation always starts standalone.
-        profileId: input.profileId ?? null,
-        createdAt: now,
-        updatedAt: now,
-      })
+      .values(this.presetInsertValues(input, id, now, input.profileId ?? null))
       .returning();
     return this.mapRow(row!);
   }
@@ -478,7 +478,8 @@ export class RegexStore {
     return row ? this.mapProfileRow(row) : null;
   }
 
-  /** Create a profile. Rules join it via attachRule — never at creation. */
+  /** Create a profile. Rules join it via attachRule — or land with it in one
+   *  atomic write via {@link RegexStore.createProfileBundle}. */
   async createProfile(input: CreateRegexProfileData): Promise<RegexProfile> {
     const id = this.idGen.next('regex_profile');
     const now = this.clock.now();
@@ -495,6 +496,78 @@ export class RegexStore {
       })
       .returning();
     return this.mapProfileRow(row!);
+  }
+
+  /**
+   * Create a COMPLETE profile bundle in ONE synchronous bun:sqlite transaction
+   * (RXU-12, REGEX_RULE_PROFILE_UX_PORTABILITY): the profile row, its scope
+   * links, and every member rule — each rule BORN with the new profile's id in
+   * its INSERT (no create-then-attach inside the bundle). Any write failure —
+   * profile, link, or rule — throws and rolls the ENTIRE bundle back, so no
+   * partial profile ever appears; the committed `{ profile, rules }` is
+   * returned only after commit. Scope policy (global ⇒ no links;
+   * character/preset targets only) is enforced by
+   * `createRegexProfileBundleSchema` at the contract layer; this method writes
+   * what it is given (links are deduped for the composite PK, mirroring
+   * `setProfileLinks`). The callback is deliberately synchronous — see the
+   * `DbTransaction` note (an `await` inside would commit before a later throw)
+   * — inserts go in via `.run()` (returning() is a non-tx idiom here), and the
+   * complete bundle is read back from the committed state (ChatStore.create
+   * pattern), so the returned entities are exactly what landed.
+   */
+  async createProfileBundle(input: CreateRegexProfileBundleData): Promise<RegexProfileBundleResult> {
+    // Dedup by (targetType, targetId) BEFORE the first insert: the composite
+    // PK would reject a duplicate tuple mid-transaction (setProfileLinks trap).
+    const seen = new Set<string>();
+    const uniqueLinks: Array<{ targetType: RegexTargetType; targetId: string }> = [];
+    for (const link of input.links ?? []) {
+      const key = JSON.stringify([link.targetType, link.targetId]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      uniqueLinks.push(link);
+    }
+
+    const profileId = this.idGen.next('regex_profile');
+    const now = this.clock.now();
+
+    const ruleIds = this.db.transaction((tx) => {
+      tx.insert(regexProfiles)
+        .values({
+          id: profileId,
+          name: input.name,
+          disabled: input.disabled ? 1 : 0,
+          isGlobal: input.isGlobal ? 1 : 0,
+          sortOrder: input.sortOrder,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      for (const link of uniqueLinks) {
+        tx.insert(regexProfileLinks)
+          .values({ regexProfileId: profileId, targetType: link.targetType, targetId: link.targetId })
+          .run();
+      }
+      const ids: string[] = [];
+      for (const rule of input.rules) {
+        const ruleId = this.idGen.next('regex_preset');
+        tx.insert(regexPresets)
+          .values(this.presetInsertValues(rule, ruleId, now, brandId<RegexProfileId>(profileId)))
+          .run();
+        ids.push(ruleId);
+      }
+      return ids;
+    });
+
+    // Read the complete bundle back from the committed state (ChatStore.create
+    // pattern) — one row→entity mapping source, and the return value is by
+    // construction what the transaction landed.
+    const profile = await this.getProfileById(profileId);
+    const rules: RegexPreset[] = [];
+    for (const ruleId of ruleIds) {
+      const rule = await this.getById(ruleId);
+      rules.push(rule!);
+    }
+    return { profile: profile!, rules };
   }
 
   /** Patch-apply update; bumps `updatedAt`. Returns null when id is unknown. */
@@ -651,6 +724,36 @@ export class RegexStore {
   }
 
   // ─── Row mapper ────────────────────────────────────────────────────────────
+
+  /** Shared rule INSERT column mapping — the ONE derivation of how a rule
+   *  creation input becomes a row (used by `create` and the bundle's members). */
+  private presetInsertValues(
+    input: CreateRegexBundleRuleData,
+    id: string,
+    now: string,
+    profileId: RegexProfileId | null,
+  ): typeof regexPresets.$inferInsert {
+    return {
+      id,
+      name: input.name,
+      findRegex: input.findRegex,
+      replaceString: input.replaceString,
+      trimStringsJson: JSON.stringify(input.trimStrings),
+      substituteRegex: input.substituteRegex,
+      disabled: input.disabled ? 1 : 0,
+      markdownOnly: input.markdownOnly ? 1 : 0,
+      promptOnly: input.promptOnly ? 1 : 0,
+      runOnEdit: input.runOnEdit ? 1 : 0,
+      minDepth: input.minDepth,
+      maxDepth: input.maxDepth,
+      placementJson: JSON.stringify(input.placement),
+      isGlobal: input.isGlobal ? 1 : 0,
+      sortOrder: input.sortOrder,
+      profileId,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
 
   private mapProfileRow(row: typeof regexProfiles.$inferSelect): RegexProfile {
     return {

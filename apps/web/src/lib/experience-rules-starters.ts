@@ -22,6 +22,7 @@ import {
   BREAKOUT_RULES_SOURCE,
   CONVERSATION_RULES_SOURCE as MODEL_CONVERSATION_SOURCE,
 } from "@vibe-tavern/domain/builtins";
+import type { ScriptRecord } from "../api/types.js";
 
 /** One shipped rules starter. */
 export interface RulesStarter {
@@ -49,33 +50,47 @@ const ROUND_SOURCE = [
   '  manifest: { id: "round", name: "Round" },',
   "  capabilities: [{ capability: 'participants', reason: 'per-player turns and scores' }],",
   "  create(context) {",
+  "    var ids = context.participants.map(function (p) { return p.id; });",
   "    var names = context.participants.map(function (p) { return p.label || p.id; });",
-  "    return { round: 1, turn: 0, scores: names.map(function () { return 0; }), names: names };",
+  "    return { round: 1, turn: 0, ids: ids, names: names, scores: ids.map(function () { return 0; }) };",
   "  },",
   "  project(context) {",
+  "    var s = context.state;",
   "    return {",
-  "      round: context.state.round,",
-  "      activePlayer: context.state.names[context.state.turn] || context.state.names[0],",
-  "      scores: context.state.scores.slice(),",
-  "      names: context.state.names.slice()",
+  "      round: s.round,",
+  "      activePlayer: s.names[s.turn] || s.names[0],",
+  "      scores: s.scores.slice(),",
+  "      names: s.names.slice()",
   "    };",
   "  },",
-  "  actions() {",
+  "  actions(context, viewer) {",
+  "    var s = context.state;",
+  "    // Only the seat that owns the turn may act; every other seat gets [].",
+  "    if (!viewer || viewer.participantId !== s.ids[s.turn]) return [];",
   "    return [",
   "      { type: 'score', label: 'Score' },",
   "      { type: 'pass', label: 'Pass turn' }",
   "    ];",
   "  },",
+  "  choose(context) {",
+  "    // A script seat scores up to the round number, then passes the turn.",
+  "    var s = context.state;",
+  "    return { type: s.scores[s.turn] < s.round ? 'score' : 'pass' };",
+  "  },",
   "  reduce(context, action) {",
   "    var s = context.state;",
+  "    // Defensive re-check: a move from a seat that does not own the turn changes nothing.",
+  "    if (action.participantId !== s.ids[s.turn]) {",
+  "      return { state: s, status: 'active', events: [] };",
+  "    }",
   "    if (action.type === 'score') {",
   "      var scores = s.scores.slice(); scores[s.turn] += 1;",
-  "      return { state: { round: s.round, turn: s.turn, scores: scores, names: s.names }, status: 'active', events: [{ visibility: 'public', type: 'scored' }] };",
+  "      return { state: { round: s.round, turn: s.turn, ids: s.ids, names: s.names, scores: scores }, status: 'active', events: [{ visibility: 'public', type: 'scored' }] };",
   "    }",
   "    if (action.type === 'pass') {",
-  "      var next = (s.turn + 1) % s.names.length;",
+  "      var next = (s.turn + 1) % s.ids.length;",
   "      var round = next === 0 ? s.round + 1 : s.round;",
-  "      return { state: { round: round, turn: next, scores: s.scores.slice(), names: s.names }, status: 'active', events: [{ visibility: 'public', type: 'turn_passed' }] };",
+  "      return { state: { round: round, turn: next, ids: s.ids, names: s.names, scores: s.scores.slice() }, status: 'active', events: [{ visibility: 'public', type: 'turn_passed' }] };",
   "    }",
   "    return { state: s, status: 'active', events: [] };",
   "  }",
@@ -204,13 +219,13 @@ export const RULES_STARTERS: readonly RulesStarter[] = Object.freeze([
   Object.freeze({
     id: "model_conversation",
     label: "Model Conversation",
-    description: "A human and model conversation: the human replies, the AI replies in turn. Uses the participants and model capabilities.",
+    description: "A messenger with your profile, characters bound to model seats, and one-on-one or group chats; each character replies through its own model while you wait.",
     source: MODEL_CONVERSATION_SOURCE,
   }),
   Object.freeze({
     id: "breakout_arcade",
     label: "Breakout (Realtime)",
-    description: "A realtime arcade loop: bounce the ball off the paddle, clear the brick wall. Demonstrates update(context, dt), frame-local actLocal inputs, and a replay-verified realtime commit.",
+    description: "A realtime arcade loop with power-ups: bounce the ball off the paddle and clear the brick wall (3 balls). Demonstrates update(context, dt), frame-local actLocal inputs, seeded randomness and a replay-verified realtime commit.",
     source: BREAKOUT_RULES_SOURCE,
   }),
   Object.freeze({
@@ -244,6 +259,9 @@ export interface InteractiveRulesDraftValues {
   code: string;
   scriptKind: "interactive";
   enabled: false;
+  /** Provenance a duplicated mini-app inherits from its source (decision 9).
+   *  Trust is NEVER inherited — a fresh copy starts disabled regardless. */
+  origin: ScriptRecord["origin"];
 }
 
 export function rulesStarterToDraftValues(starter: RulesStarter): InteractiveRulesDraftValues {
@@ -253,12 +271,14 @@ export function rulesStarterToDraftValues(starter: RulesStarter): InteractiveRul
     code: starter.source,
     scriptKind: "interactive",
     enabled: false,
+    origin: "in_app",
   };
 }
 
-/** Copy an existing source into a new, explicitly untrusted interactive draft. */
+/** Copy an existing source into a new, explicitly untrusted interactive draft.
+ *  The source's origin is inherited (decision 9); trust is not. */
 export function duplicateRulesValues(
-  source: Pick<InteractiveRulesDraftValues, "name" | "description" | "code">,
+  source: Pick<InteractiveRulesDraftValues, "name" | "description" | "code" | "origin">,
 ): InteractiveRulesDraftValues {
   return {
     name: source.name,
@@ -266,5 +286,6 @@ export function duplicateRulesValues(
     code: source.code,
     scriptKind: "interactive",
     enabled: false,
+    origin: source.origin,
   };
 }

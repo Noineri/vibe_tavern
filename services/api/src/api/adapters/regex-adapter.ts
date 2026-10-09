@@ -1,6 +1,6 @@
 import type { RegexRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
-import type { CreateRegexPresetInput, CreateRegexProfileInput, UpdateRegexPresetInput, UpdateRegexProfileInput } from "@vibe-tavern/api-contracts";
+import type { CreateRegexPresetInput, CreateRegexProfileInput, CreateRegexProfileBundleInput, UpdateRegexPresetInput, UpdateRegexProfileInput } from "@vibe-tavern/api-contracts";
 import { applyTargetFlags } from "@vibe-tavern/domain";
 
 export class RegexAdapter implements RegexRuntimeApi {
@@ -62,6 +62,16 @@ export class RegexAdapter implements RegexRuntimeApi {
 
 	createRegexProfile = (body: CreateRegexProfileInput) =>
 		this.stores.regex.createProfile(body);
+
+	createRegexProfileBundle: RegexRuntimeApi["createRegexProfileBundle"] = (body: CreateRegexProfileBundleInput) =>
+		this.stores.regex.createProfileBundle({
+			...body,
+			rules: body.rules.map((rule) => ({
+				...rule,
+				minDepth: rule.minDepth ?? null,
+				maxDepth: rule.maxDepth ?? null,
+			})),
+		});
 
 	updateRegexProfile = (id: string, body: UpdateRegexProfileInput) =>
 		this.stores.regex.updateProfile(id, body);

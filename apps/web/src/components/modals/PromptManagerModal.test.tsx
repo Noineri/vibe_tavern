@@ -11,11 +11,17 @@ useDomEnv();
  * to the copy leak back into the source's in-memory state. The pure helper is
  * exported precisely so this invariant has a direct unit test (no RTL render).
  */
-import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeAll, describe, expect, jest, mock, test } from "bun:test";
 import type { ReactNode } from "react";
 import React from "react";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
 import { SERVICE_PROMPT_FIELD_KEYS, type ServicePromptFieldKey } from "@vibe-tavern/domain";
+import { serializeStPreset, type RegexScriptImportDraft } from "@vibe-tavern/import-export";
+import {
+  createPresetRegexProfile,
+  createPresetWithRegexProfile,
+  summarizeRegexImportRules,
+} from "./preset-import-flow.js";
 import type {
   ImagePromptFamilyInfoValue,
   ImagePromptTemplateRowKeyValue,
@@ -26,6 +32,7 @@ import type { RegexPresetRecord, RegexProfileRecord } from "../../api/types.js";
 import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
 import type { DraftData } from "./PromptManagerModal.js";
 import { useModalStore } from "../../stores/modal-store.js";
+import { makeRegexProfileAssignmentHandler } from "../settings/prompt/regex-profile-assignment.js";
 
 class TestBoundary extends React.Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
@@ -44,9 +51,14 @@ const loadPromptCanvasLoreEntries = mock(realPromptCanvasLore.loadPromptCanvasLo
 const realRegexApi = await import("../../api/regex-api.js");
 const listAllRegexPresetsMock = mock(realRegexApi.listAllRegexPresets);
 const createRegexPresetMock = mock(realRegexApi.createRegexPreset);
+const createRegexProfileBundleMock = mock(async (body: Parameters<typeof realRegexApi.createRegexProfileBundle>[0]) => ({
+  profile: { id: "prof_bundle", name: body?.name ?? "Bundle", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 },
+  rules: [],
+}) as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>);
 const listAllRegexProfilesMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.listAllRegexProfiles>>);
 const createRegexProfileMock = mock(async (body: unknown) => ({ id: "p_new", name: (body as { name?: string })?.name ?? "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>));
 const attachRegexRuleMock = mock(async (_a: unknown, _b: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.attachRegexRule>>);
+const detachRegexRuleMock = mock(async (_id: unknown) => null as unknown as Awaited<ReturnType<typeof realRegexApi.detachRegexRule>>);
 const getRegexProfileLinksMock = mock(async () => [] as unknown as Awaited<ReturnType<typeof realRegexApi.getRegexProfileLinks>>);
 const updateRegexProfileMock = mock(async (id: string, body: { name?: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }) => {
   // Merge over a base record so every field stays a primitive (a naive
@@ -72,11 +84,17 @@ const listImagePromptTemplatesMock = mock(async () => makeImagePromptTemplates()
 const listImagePromptFamiliesMock = mock(realImageGenApi.listImagePromptFamilies);
 const realDownload = await import("../../lib/download.js");
 const downloadTextFileMock = mock(realDownload.downloadTextFile);
+// RXU-21: the bundle-failure toast is part of the surfaced failure contract —
+// captured (not asserted) for every other test in this file.
+const realSonner = await import("sonner");
+const toastErrorMock = mock(() => {});
+mock.module("sonner", () => ({ ...realSonner, toast: { ...realSonner.toast, error: toastErrorMock } }));
 
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
   useT: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: { count?: number }) =>
+      key === "promptManager.regex.profileMemberCount" ? `${key}:${options?.count ?? 0}` : key,
     tDynamic: (key: string) => key,
     locale: "en",
     setLocale: () => {},
@@ -105,9 +123,11 @@ mock.module("../../api/regex-api.js", () => {
     ...realRegexApi,
     listAllRegexPresets: listAllRegexPresetsMock,
     createRegexPreset: createRegexPresetMock,
+    createRegexProfileBundle: createRegexProfileBundleMock,
     listAllRegexProfiles: listAllRegexProfilesMock,
     createRegexProfile: createRegexProfileMock,
     attachRegexRule: attachRegexRuleMock,
+    detachRegexRule: detachRegexRuleMock,
     getRegexProfileLinks: getRegexProfileLinksMock,
     updateRegexProfile: updateRegexProfileMock,
     deleteRegexProfile: deleteRegexProfileMock,
@@ -142,24 +162,31 @@ mock.module("../../lib/download.js", () => ({
 const { act, cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 
 let PromptManagerModal: typeof import("./PromptManagerModal.js").PromptManagerModal;
-let buildDuplicatePayload: typeof import("./PromptManagerModal.js").buildDuplicatePayload;
-let importStandaloneRegexText: typeof import("./PromptManagerModal.js").importStandaloneRegexText;
+let buildDuplicatePayload: typeof import("./prompt-manager-draft.js").buildDuplicatePayload;
 
 beforeAll(async () => {
-  ({ PromptManagerModal, buildDuplicatePayload, importStandaloneRegexText } = await import("./PromptManagerModal.js"));
+  ({ PromptManagerModal } = await import("./PromptManagerModal.js"));
+  ({ buildDuplicatePayload } = await import("./prompt-manager-draft.js"));
 });
 
 afterEach(async () => {
+  jest.useRealTimers();
   await act(async () => {});
   cleanup();
   loadPromptCanvasLoreEntries.mockReset();
   listAllRegexPresetsMock.mockReset();
   createRegexPresetMock.mockReset();
+  createRegexProfileBundleMock.mockReset();
+  createRegexProfileBundleMock.mockImplementation(async (body: Parameters<typeof realRegexApi.createRegexProfileBundle>[0]) => ({
+    profile: { id: "prof_bundle", name: body?.name ?? "Bundle", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 },
+    rules: [],
+  }) as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>);
   listAllRegexProfilesMock.mockReset();
   listAllRegexProfilesMock.mockResolvedValue([]);
   createRegexProfileMock.mockReset();
   createRegexProfileMock.mockResolvedValue({ id: "p_new", name: "new", disabled: false, isGlobal: false, sortOrder: 0, createdAt: 0, updatedAt: 0 } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfile>>);
   attachRegexRuleMock.mockReset();
+  detachRegexRuleMock.mockReset();
   getRegexProfileLinksMock.mockReset();
   getRegexProfileLinksMock.mockResolvedValue([]);
   updateRegexProfileMock.mockReset();
@@ -189,6 +216,7 @@ afterEach(async () => {
   getImagePromptProfileDetailMock.mockReset();
   getImagePromptProfileDetailMock.mockImplementation(async (id: string) => makeImagePromptProfileDetail(id));
   downloadTextFileMock.mockReset();
+  toastErrorMock.mockReset();
   useModalStore.setState({ isPromptManagerOpen: false });
 });
 
@@ -730,61 +758,6 @@ describe("PromptManagerModal — chatDynamicPrompt save (Wave 6)", () => {
 });
 
 /**
- * importStandaloneRegexText — RX-16 UI surface (standalone ST regex JSON).
- *
- * Pure-seam pins (no file input, no DOM): a valid array JSON creates one
- * preset per script with the security gate enforced (disabled: true
- * regardless of the file's claim); garbage yields zero calls and zero
- * created. The injected `create` double is the only boundary under test —
- * the parser itself is pinned in packages/import-export tests.
- */
-describe("importStandaloneRegexText (RX-16)", () => {
-  test("valid array JSON → create called once per script, all disabled", async () => {
-    const calls: Array<unknown> = [];
-    const created = await importStandaloneRegexText(
-      JSON.stringify([
-        { scriptName: "A", findRegex: "/a/g", replaceString: "", disabled: false },
-        { scriptName: "B", findRegex: "/b/g", replaceString: "x", disabled: false },
-      ]),
-      async (body) => {
-        calls.push(body);
-        return { id: `rx_${calls.length}` } as never;
-      },
-    );
-
-    expect(created).toBe(2);
-    expect(calls).toHaveLength(2);
-    expect((calls[0] as { name?: string })?.name).toBe("A");
-    expect((calls[1] as { name?: string })?.name).toBe("B");
-    // Security gate: never trust the file's `disabled: false`.
-    expect(calls.every((c) => (c as { disabled?: boolean }).disabled === true)).toBe(true);
-  });
-
-  test("garbage JSON → zero creates, no throw", async () => {
-    const calls: unknown[] = [];
-    const created = await importStandaloneRegexText("{ not json", async (body) => {
-      calls.push(body);
-      return { id: "rx_1" } as never;
-    });
-    expect(created).toBe(0);
-    expect(calls).toHaveLength(0);
-  });
-
-  test("single-object shape (the common ST export) is accepted", async () => {
-    const calls: Array<unknown> = [];
-    const created = await importStandaloneRegexText(
-      JSON.stringify({ scriptName: "Solo", findRegex: "/s/g", replaceString: "" }),
-      async (body) => {
-        calls.push(body);
-        return { id: "rx_1" } as never;
-      },
-    );
-    expect(created).toBe(1);
-    expect((calls[0] as { name?: string })?.name).toBe("Solo");
-  });
-});
-
-/**
  * R-1 regression (REGEX_V13_FOLLOWUP): the regex tab's lazy-load effect must
  * actually populate the list when the regex tab becomes active. The original
  * bug: the effect had `regexLoadState` in its deps AND called
@@ -843,6 +816,43 @@ describe("PromptManagerModal — regex tab lazy-load (R-1)", () => {
       expect(listAllRegexPresetsMock).toHaveBeenCalled();
       expect(within(view.baseElement).getByText("Alpha Strip")).toBeTruthy();
       expect(within(view.baseElement).getByText("Beta Wrap")).toBeTruthy();
+    });
+  });
+
+  test("reopening the modal refetches the regex list (imported rules appear without a page reload)", async () => {
+    // Owner report 2026-10-09: the modal is mounted ONCE in AppShell, so the
+    // once-per-mount fetch guard meant once per PAGE LIFETIME — rules created
+    // while the modal was closed (card import with an embedded regex bundle)
+    // stayed invisible until a full reload. The guard must rearm on close.
+    listAllRegexPresetsMock.mockResolvedValue([regexRecord("rx_a", "Alpha Strip")]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    const q = within(view.baseElement);
+    fireEvent.click(q.getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(q.getByText("Alpha Strip")).toBeTruthy());
+    listAllRegexPresetsMock.mockClear();
+
+    // Close → an import persists a new rule server-side → reopen. The tab
+    // state survives (still "regex"), so the refetch must fire on the open
+    // transition itself — the guard rearmed while the modal was closed.
+    useModalStore.setState({ isPromptManagerOpen: false });
+    await act(async () => {}); // let the close transition flush (rearm)
+    listAllRegexPresetsMock.mockResolvedValue([regexRecord("rx_a", "Alpha Strip"), regexRecord("rx_imp", "Imported Bundle")]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    await waitFor(() => {
+      expect(listAllRegexPresetsMock).toHaveBeenCalled();
+      expect(q.getByText("Imported Bundle")).toBeTruthy();
     });
   });
 });
@@ -995,35 +1005,9 @@ describe("PromptManagerModal — regex profiles (R-13b)", () => {
     expect((createRegexProfileMock.mock.calls[0][0] as unknown as { name: string }).name).toBe("MyProf");
   });
 
-  test("creating a new rule under an expanded profile makes it appear in the member list (regression: map-over-never-added state dropped the rule)", async () => {
-    listAllRegexPresetsMock.mockResolvedValue([]);
-    listAllRegexProfilesMock.mockResolvedValue([profileRecord("p1", "Bundle")]);
-    getRegexProfileLinksMock.mockResolvedValue([]);
-    createRegexPresetMock.mockResolvedValue(regexRecord("rx_new", "NewInProf"));
-    attachRegexRuleMock.mockResolvedValue(regexRecord("rx_new", "NewInProf", "p1"));
-    useModalStore.setState({ isPromptManagerOpen: true });
-    const view = render(
-      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
-    );
-    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    // Expand the profile → the “+ new rule” member button appears.
-    fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
-    await waitFor(() => expect(within(view.baseElement).getByText("promptManager.regex.memberNewRule")).toBeTruthy());
-    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.memberNewRule"));
-    const input = within(view.baseElement).getByPlaceholderText("promptManager.regex.newNamePlaceholder") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "NewInProf" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => { expect(attachRegexRuleMock).toHaveBeenCalledWith("p1", "rx_new"); });
-    // THE regression pin: the created rule must land in the list state and
-    // render as a member row (the old map() over never-added state dropped it).
-    await waitFor(() => { expect(within(view.baseElement).getByText("NewInProf")).toBeTruthy(); });
-  });
-
-  test("member rule's status dot reflects the PROFILE gate: enabled-but-unbound profile → red dot on both the profile row and its member (R-13b owner spec)", async () => {
-    // Enabled, non-global, zero profile links → applies in NO chat: the
-    // profile row dot is red AND the member's dot must be red too (a green
-    // member dot would claim the rule fires while the gate keeps it dead).
+  test("member rule status reflects the PROFILE gate: enabled-but-unbound profile → Unbound on both the profile row and its member (R-13b owner spec)", async () => {
+    // Enabled, non-global, zero profile links → applies in NO chat: both rows
+    // must state Unbound; an active member badge would contradict the profile gate.
     const unboundProfile: RegexProfileRecord = { id: brandId<RegexProfileId>("pu"), name: "UnboundProf", disabled: false, isGlobal: false, sortOrder: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
     listAllRegexPresetsMock.mockResolvedValue([regexRecord("m1", "MemRule", "pu")]);
     listAllRegexProfilesMock.mockResolvedValue([unboundProfile]);
@@ -1033,13 +1017,13 @@ describe("PromptManagerModal — regex profiles (R-13b)", () => {
       <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
     );
     fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
-    await waitFor(() => expect(within(view.baseElement).getByText("UnboundProf")).toBeTruthy());
+    await waitFor(() => expect(within(view.baseElement).getAllByText("UnboundProf")[0]).toBeTruthy());
     // Expand the profile so the member row renders.
     fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
     await waitFor(() => expect(within(view.baseElement).getByText("MemRule")).toBeTruthy());
-    // Both the profile row and the member row carry the red "unbound" dot.
+    // Both the profile row and member row expose the same accessible status.
     await waitFor(() => {
-      expect(view.getAllByLabelText("promptManager.regex.badgeUnboundReason").length).toBe(2);
+      expect(view.getAllByLabelText("promptManager.regex.availabilityUnbound").length).toBe(2);
     });
   });
 });
@@ -1070,8 +1054,8 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
 
   test("selecting a profile renders the profile pane (name field, export button)", async () => {
     const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    const profileEl = within(view.baseElement).getByText("Bundle");
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle")[0]).toBeTruthy());
+    const profileEl = within(view.baseElement).getAllByText("Bundle")[0];
     await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
     await waitFor(() => expect((within(view.baseElement).getByDisplayValue("Bundle") as HTMLInputElement).value).toBe("Bundle"));
     expect(within(view.baseElement).getByText("promptManager.regex.profileExport")).toBeTruthy();
@@ -1082,8 +1066,8 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
     const view = await openRegexTab([profileRecord("p1", "Bundle", { disabled: false })], []);
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    const profileEl = within(view.baseElement).getByText("Bundle");
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle")[0]).toBeTruthy());
+    const profileEl = within(view.baseElement).getAllByText("Bundle")[0];
     await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
     await waitFor(() => expect(within(view.baseElement).getByDisplayValue("Bundle")).toBeTruthy());
     const switches = within(view.baseElement).getAllByRole("switch");
@@ -1100,8 +1084,8 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
   test("delete profile dialog offers BOTH options and chosen one calls deleteRegexProfile with right mode", async () => {
     const presets = [regexRecord("r1", "R1", "p1"), regexRecord("r2", "R2", "p1")];
     const view = await openRegexTab([profileRecord("p1", "Bundle")], presets);
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    const profileEl = within(view.baseElement).getByText("Bundle");
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle")[0]).toBeTruthy());
+    const profileEl = within(view.baseElement).getAllByText("Bundle")[0];
     await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
     await waitFor(() => expect(within(view.baseElement).getByDisplayValue("Bundle")).toBeTruthy());
     await act(async () => { fireEvent.click(within(view.baseElement).getByText("promptManager.regex.profileDelete")); });
@@ -1122,7 +1106,7 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
 
   test("member rule editor shows chip instead of own scope segmented control", async () => {
     const view = await openRegexTab([profileRecord("p1", "Bundle")], [regexRecord("r1", "MemRule", "p1", { isGlobal: false })]);
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle")[0]).toBeTruthy());
     await act(async () => { fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]); });
     await waitFor(() => expect(within(view.baseElement).getByText("MemRule")).toBeTruthy());
     const memEl = within(view.baseElement).getByText("MemRule");
@@ -1148,8 +1132,8 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
       regexRecord("r1", "R1", "p1", { findRegex: "/a/g", replaceString: "x" }),
       regexRecord("r2", "R2", "p1", { findRegex: "/b/g", replaceString: "y" }),
     ]);
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    const profileEl = within(view.baseElement).getByText("Bundle");
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle")[0]).toBeTruthy());
+    const profileEl = within(view.baseElement).getAllByText("Bundle")[0];
     await act(async () => { fireEvent.pointerDown(profileEl); fireEvent.click(profileEl); });
     await waitFor(() => expect(within(view.baseElement).getByDisplayValue("Bundle")).toBeTruthy());
     await act(async () => { fireEvent.click(within(view.baseElement).getByText("promptManager.regex.profileExport")); });
@@ -1161,6 +1145,733 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed).toHaveLength(2);
     expect(parsed.every((o) => typeof o.scriptName === "string")).toBe(true);
+  });
+
+  test("Profile text edits debounce and coalesce into one autosave", async () => {
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
+    const q = within(view.baseElement);
+    await act(async () => { const profile = q.getAllByText("Bundle")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    const name = await waitFor(() => q.getByDisplayValue("Bundle")) as HTMLInputElement;
+    jest.useFakeTimers();
+    try {
+      fireEvent.change(name, { target: { value: "First" } });
+      fireEvent.change(name, { target: { value: "Final" } });
+      expect(updateRegexProfileMock).not.toHaveBeenCalled();
+
+      await act(async () => { jest.advanceTimersByTime(999); });
+      expect(updateRegexProfileMock).not.toHaveBeenCalled();
+      await act(async () => { jest.advanceTimersByTime(1); });
+
+      expect(updateRegexProfileMock).toHaveBeenCalledTimes(1);
+      expect(updateRegexProfileMock).toHaveBeenCalledWith("p1", { name: "Final" });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("Profile discrete controls save immediately", async () => {
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
+    const q = within(view.baseElement);
+    await act(async () => { const profile = q.getAllByText("Bundle")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    const toggle = await waitFor(() => q.getByRole("switch", { name: "promptManager.regex.fieldActive" }));
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(updateRegexProfileMock).toHaveBeenCalledWith("p1", { disabled: true }));
+  });
+
+  test("a failed Profile autosave rolls back the optimistic control and shows an error", async () => {
+    updateRegexProfileMock.mockRejectedValueOnce(new Error("offline"));
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
+    const q = within(view.baseElement);
+    await act(async () => { const profile = q.getAllByText("Bundle")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    const toggle = await waitFor(() => q.getByRole("switch", { name: "promptManager.regex.fieldActive" }));
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(updateRegexProfileMock).toHaveBeenCalledWith("p1", { disabled: true }));
+    await waitFor(() => expect(q.getByText("promptManager.regex.profileAutosaveFailed")).toBeTruthy());
+  });
+
+  test("flushes a pending Profile rename before switching selection", async () => {
+    let resolveSave: ((record: RegexProfileRecord) => void) | undefined;
+    updateRegexProfileMock.mockImplementationOnce(() => new Promise<RegexProfileRecord>((resolve) => { resolveSave = resolve; }));
+    const rule = regexRecord("rule-1", "Standalone");
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], [rule]);
+    const q = within(view.baseElement);
+    await act(async () => { const profile = q.getAllByText("Bundle")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    fireEvent.change(await waitFor(() => q.getByDisplayValue("Bundle")), { target: { value: "Renamed" } });
+
+    const standalone = q.getByText("Standalone");
+    fireEvent.pointerDown(standalone);
+    fireEvent.click(standalone);
+
+    await waitFor(() => expect(updateRegexProfileMock).toHaveBeenCalledWith("p1", { name: "Renamed" }));
+    expect(q.getByDisplayValue("Renamed")).toBeTruthy();
+    resolveSave?.(profileRecord("p1", "Renamed"));
+    await waitFor(() => expect(q.getByText("promptManager.regex.fieldFind")).toBeTruthy());
+  });
+
+  test("flushes a pending Profile rename before closing", async () => {
+    let resolveSave: ((record: RegexProfileRecord) => void) | undefined;
+    updateRegexProfileMock.mockImplementationOnce(() => new Promise<RegexProfileRecord>((resolve) => { resolveSave = resolve; }));
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
+    const q = within(view.baseElement);
+    await act(async () => { const profile = q.getAllByText("Bundle")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    fireEvent.change(await waitFor(() => q.getByDisplayValue("Bundle")), { target: { value: "Renamed" } });
+
+    fireEvent.click(q.getAllByText("close")[0]);
+
+    await waitFor(() => expect(updateRegexProfileMock).toHaveBeenCalledWith("p1", { name: "Renamed" }));
+    expect(useModalStore.getState().isPromptManagerOpen).toBe(true);
+    resolveSave?.(profileRecord("p1", "Renamed"));
+    await waitFor(() => expect(useModalStore.getState().isPromptManagerOpen).toBe(false));
+  });
+
+  test("Profile Export and Delete live only in the footer, and Export disables when empty", async () => {
+    const emptyView = await openRegexTab([profileRecord("p1", "Empty")], []);
+    const emptyQuery = within(emptyView.baseElement);
+    await act(async () => { const profile = emptyQuery.getAllByText("Empty")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    const editor = await waitFor(() => emptyQuery.getByTestId("regex-profile-editor"));
+    expect(within(editor).queryByText("promptManager.regex.profileExport")).toBeNull();
+    expect(within(editor).queryByText("promptManager.regex.profileDelete")).toBeNull();
+    expect(emptyQuery.getByText("promptManager.regex.profileExport").getAttribute("aria-disabled")).toBe("true");
+
+    cleanup();
+    const memberView = await openRegexTab([profileRecord("p2", "Filled")], [regexRecord("member", "Member", "p2")]);
+    const memberQuery = within(memberView.baseElement);
+    await act(async () => { const profile = memberQuery.getAllByText("Filled")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    await waitFor(() => expect(memberQuery.getByText("promptManager.regex.profileExport").getAttribute("aria-disabled")).toBeNull());
+    expect(memberQuery.getByText("promptManager.regex.profileDelete")).toBeTruthy();
+  });
+});
+
+// ── RXU-14: manual rule creation from empty local drafts ───────────────
+describe("PromptManagerModal — manual rule drafts (RXU-14)", () => {
+  function regexRecord(id: string, name: string, profileId: string | null = null): RegexPresetRecord {
+    return {
+      id: brandId<RegexPresetId>(id), name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId: profileId === null ? null : brandId<RegexProfileId>(profileId), createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+  }
+  function profileRecord(id: string, name: string): RegexProfileRecord {
+    return { id: brandId<RegexProfileId>(id), name, disabled: false, isGlobal: true, sortOrder: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+  }
+
+  async function openRegexTab(presets: RegexPresetRecord[], profiles: RegexProfileRecord[] = []) {
+    listAllRegexPresetsMock.mockResolvedValue(presets);
+    listAllRegexProfilesMock.mockResolvedValue(profiles);
+    getRegexProfileLinksMock.mockResolvedValue([]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(listAllRegexPresetsMock).toHaveBeenCalled());
+    return view;
+  }
+
+  /** Open a standalone draft via the master list's inline "+ New" entry. */
+  async function openStandaloneDraft(view: ReturnType<typeof render>, name: string) {
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.newPreset"));
+    const input = within(view.baseElement).getByPlaceholderText("promptManager.regex.newNamePlaceholder") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: name } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    // The draft editor mounts: name seeded, find EMPTY, Active OFF.
+    await waitFor(() => expect(within(view.baseElement).getByLabelText("promptManager.regex.fieldFind")).toBeTruthy());
+  }
+
+  test("opening a draft makes ZERO write calls, adds no list row, and starts empty + disabled", async () => {
+    const view = await openRegexTab([regexRecord("rx_a", "Existing")]);
+    const listReadsBefore = listAllRegexPresetsMock.mock.calls.length;
+    await openStandaloneDraft(view, "Fresh");
+
+    // Zero writes and no extra reads for opening the draft.
+    expect(createRegexPresetMock).not.toHaveBeenCalled();
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+    expect(updateRegexProfileMock).not.toHaveBeenCalled();
+    expect(listAllRegexPresetsMock).toHaveBeenCalledTimes(listReadsBefore);
+
+    const q = within(view.baseElement);
+    // The seeded name lives ONLY in the editor input — no phantom list row.
+    expect(q.getByDisplayValue("Fresh")).toBeTruthy();
+    expect(q.queryByText("Fresh")).toBeNull();
+    // Draft starts empty (owner correction quoted in the RXU-14 plan).
+    expect((q.getByLabelText("promptManager.regex.fieldFind") as HTMLTextAreaElement).value).toBe("");
+    expect((q.getByLabelText("promptManager.regex.fieldReplace") as HTMLTextAreaElement).value).toBe("");
+    // Agreed manual default: Active OFF until the user opts in.
+    expect(q.getByRole("switch", { name: "promptManager.regex.fieldActive" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  test("Save stays disabled with field feedback while name or regex is invalid — zero writes", async () => {
+    const view = await openRegexTab([]);
+    await openStandaloneDraft(view, "Blocked");
+    const q = within(view.baseElement);
+
+    // Name valid, find EMPTY → find feedback, Save disabled.
+    expect(q.getByText("promptManager.regex.draftFindRequired")).toBeTruthy();
+    let save = q.getByRole("button", { name: "save" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+
+    // Type a broken pattern → still blocked.
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldFind"), { target: { value: "/[unclosed/g" } });
+    await waitFor(() => expect(save.disabled).toBe(true));
+    expect(q.getByText("promptManager.regex.draftFindRequired")).toBeTruthy();
+
+    // Clear the name → name feedback.
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldName"), { target: { value: "" } });
+    await waitFor(() => expect(q.getByText("promptManager.regex.draftNameRequired")).toBeTruthy());
+
+    // A blocked Save never reaches the server.
+    fireEvent.click(q.getByRole("button", { name: "save" }));
+    expect(createRegexPresetMock).not.toHaveBeenCalled();
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+  });
+
+  test("first valid Save creates the Rule ONCE with the exact payload, then it appears in the list", async () => {
+    const view = await openRegexTab([regexRecord("rx_a", "Existing")]);
+    await openStandaloneDraft(view, "My Stripper");
+    const q = within(view.baseElement);
+    createRegexPresetMock.mockResolvedValue(regexRecord("rx_new", "My Stripper"));
+
+    // No row until Save (the name exists only as the input's value).
+    expect(q.queryByText("My Stripper")).toBeNull();
+
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldFind"), { target: { value: "/<think>[\\s\\S]*?<\\/think>/g" } });
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldReplace"), { target: { value: "" } });
+    const save = q.getByRole("button", { name: "save" }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+
+    await waitFor(() => expect(createRegexPresetMock).toHaveBeenCalledTimes(1));
+    const body = createRegexPresetMock.mock.calls[0][0] as unknown as Record<string, unknown>;
+    // Fields exactly as typed in the empty-started draft; born disabled; standalone.
+    expect(body).toMatchObject({
+      name: "My Stripper",
+      findRegex: "/<think>[\\s\\S]*?<\\/think>/g",
+      replaceString: "",
+      trimStrings: [],
+      substituteRegex: 0,
+      disabled: true,
+      isGlobal: false,
+      placement: [2],
+      minDepth: null,
+      maxDepth: null,
+      markdownOnly: false,
+      promptOnly: false,
+    });
+    expect("profileId" in body).toBe(false);
+    // ONE write — no create-then-attach.
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+    expect(updateRegexProfileMock).not.toHaveBeenCalled();
+    // The saved rule (and only it) renders as a list row.
+    await waitFor(() => expect(q.getByText("My Stripper")).toBeTruthy());
+  });
+
+  test("a draft opened inside a Profile saves ONCE with profileId and lands as a member row", async () => {
+    const view = await openRegexTab([], [profileRecord("p1", "Bundle")]);
+    const q = within(view.baseElement);
+    createRegexPresetMock.mockResolvedValue(regexRecord("rx_new", "InProf", "p1"));
+
+    // Owner ruling 2026-10-09: the list carries no duplicate quick-create —
+    // the draft opens through the Profile pane's «Create Rule» action.
+    const profileEntry = q.getAllByText("Bundle")[0]!;
+    await act(async () => { fireEvent.pointerDown(profileEntry); fireEvent.click(profileEntry); });
+    await waitFor(() => expect(q.getByRole("button", { name: "promptManager.regex.createRule" })).toBeTruthy());
+    fireEvent.click(q.getByRole("button", { name: "promptManager.regex.createRule" }));
+    const input = q.getByLabelText("promptManager.regex.fieldName") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "InProf" } });
+
+    // Draft editor mounted with the member chip (intended destination shown).
+    await waitFor(() => expect(q.getByText("promptManager.regex.memberViaProfile")).toBeTruthy());
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldFind"), { target: { value: "/x/g" } });
+    const save = q.getByRole("button", { name: "save" }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+
+    // ONE create carrying the intended profileId — the attach endpoint is
+    // never used for manual creation anymore.
+    await waitFor(() => expect(createRegexPresetMock).toHaveBeenCalledTimes(1));
+    const body = createRegexPresetMock.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(body.name).toBe("InProf");
+    expect(body.profileId).toBe("p1");
+    expect(body.disabled).toBe(true);
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+    // The created rule lands in state and renders as the profile's member.
+    await waitFor(() => expect(q.getByText("InProf")).toBeTruthy());
+  });
+
+  test("closing the modal discards a dirty draft with ZERO writes and no phantom row", async () => {
+    const view = await openRegexTab([]);
+    await openStandaloneDraft(view, "Doomed");
+    const q = within(view.baseElement);
+    // Make the draft dirty AND valid — a state worth protecting with the
+    // unsaved-changes guard, then confirm the discard.
+    fireEvent.change(q.getByLabelText("promptManager.regex.fieldFind"), { target: { value: "/x/g" } });
+
+    fireEvent.click(q.getAllByText("close")[0]);
+    await waitFor(() => expect(q.getByText("unsaved_changes_title")).toBeTruthy());
+    fireEvent.click(q.getByText("close_without_saving"));
+
+    await waitFor(() => expect(useModalStore.getState().isPromptManagerOpen).toBe(false));
+    expect(createRegexPresetMock).not.toHaveBeenCalled();
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+  });
+});
+
+// ── RXU-42: Profile member workflows ───────────────────────────────────
+describe("PromptManagerModal — Profile member workflows (RXU-42)", () => {
+  function profileRecord(id: string, name: string): RegexProfileRecord {
+    return { id: brandId<RegexProfileId>(id), name, disabled: false, isGlobal: true, sortOrder: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+  }
+  function regexRecord(id: string, name: string, profileId: string | null = null): RegexPresetRecord {
+    return {
+      id: brandId<RegexPresetId>(id), name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId: profileId === null ? null : brandId<RegexProfileId>(profileId), createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+  }
+  async function openProfile(presets: RegexPresetRecord[]) {
+    listAllRegexPresetsMock.mockResolvedValue(presets);
+    listAllRegexProfilesMock.mockResolvedValue([profileRecord("profile-1", "Bundle")]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle").length).toBeGreaterThan(0));
+    const profile = within(view.baseElement).getAllByText("Bundle")[0]!;
+    await act(async () => { fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    await waitFor(() => expect(within(view.baseElement).getByRole("button", { name: "promptManager.regex.createRule" })).toBeTruthy());
+    return view;
+  }
+
+  test("Create Rule opens an empty local draft bound to the selected Profile without a write", async () => {
+    const view = await openProfile([]);
+    const q = within(view.baseElement);
+    fireEvent.click(q.getByRole("button", { name: "promptManager.regex.createRule" }));
+
+    await waitFor(() => expect(q.getByText("promptManager.regex.memberViaProfile")).toBeTruthy());
+    expect((q.getByLabelText("promptManager.regex.fieldName") as HTMLInputElement).value).toBe("");
+    expect((q.getByLabelText("promptManager.regex.fieldFind") as HTMLTextAreaElement).value).toBe("");
+    expect(createRegexPresetMock).not.toHaveBeenCalled();
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+  });
+
+  test("Add existing (shared LinkBindingPopover) attaches a candidate immediately and keeps that Profile selected", async () => {
+    const member = regexRecord("member-1", "Existing member", "profile-1");
+    const standalone = regexRecord("standalone-1", "Standalone");
+    const secondStandalone = regexRecord("standalone-2", "Second standalone");
+    const view = await openProfile([member, standalone, secondStandalone]);
+    const q = within(view.baseElement);
+    attachRegexRuleMock.mockImplementation(async (_profileId, ruleId) => {
+      const id = String(ruleId);
+      return regexRecord(id, id === "standalone-1" ? "Standalone" : "Second standalone", "profile-1");
+    });
+
+    // Owner ruling 2026-10-09: no forked picker — the shared popover with
+    // immediate per-toggle membership (accessible name = pickerTitle). Rule
+    // names ALSO render as left-list rows — scope clicks to the popover
+    // body via the Radix popper wrapper.
+    const popoverChip = (name: string) => {
+      const el = q.getAllByText(name).find((node) => node.closest("[data-radix-popper-content-wrapper]"));
+      if (!el) throw new Error(`popover chip not found: ${name}`);
+      return el;
+    };
+    fireEvent.click(q.getByRole("button", { name: "promptManager.regex.pickerTitle" }));
+    fireEvent.click(popoverChip("Standalone"));
+    await act(async () => {});
+    fireEvent.click(popoverChip("Second standalone"));
+    await act(async () => {});
+
+    await waitFor(() => {
+      expect(attachRegexRuleMock).toHaveBeenCalledWith("profile-1", "standalone-1");
+      expect(attachRegexRuleMock).toHaveBeenCalledWith("profile-1", "standalone-2");
+      expect(q.getByText("promptManager.regex.profileMemberCount:3")).toBeTruthy();
+    });
+    expect((q.getByDisplayValue("Bundle") as HTMLInputElement).value).toBe("Bundle");
+  });
+});
+
+// ── RXU-43: explicit Profile assignment ─────────────────────────────────
+describe("PromptManagerModal — explicit Profile assignment (RXU-43)", () => {
+  function regexRecord(id: string, profileId: string | null): RegexPresetRecord {
+    return {
+      id: brandId<RegexPresetId>(id), name: "Rule", findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId: profileId === null ? null : brandId<RegexProfileId>(profileId), createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+  }
+  function assignmentHost(initial: RegexPresetRecord) {
+    let rules = [initial];
+    const onConfirmed = mock(() => {});
+    const onFailed = mock(() => {});
+    const handler = makeRegexProfileAssignmentHandler({
+      attach: attachRegexRuleMock,
+      detach: detachRegexRuleMock,
+      setRules: (next) => { rules = typeof next === "function" ? next(rules) : next; },
+      setExpandedProfileIds: mock(() => {}),
+      onConfirmed,
+      onFailed,
+    });
+    return { handler, onConfirmed, onFailed, rules: () => rules };
+  }
+
+  test("attaching a Profile updates local state only from the confirmed Rule", async () => {
+    const host = assignmentHost(regexRecord("rule-1", "p1"));
+    attachRegexRuleMock.mockResolvedValue(regexRecord("rule-1", "p2"));
+
+    await host.handler.assign("rule-1", "p2");
+
+    expect(attachRegexRuleMock).toHaveBeenCalledWith("p2", "rule-1");
+    expect(host.rules()[0].profileId).toBe(brandId<RegexProfileId>("p2"));
+    expect(host.onConfirmed).toHaveBeenCalledTimes(1);
+  });
+
+  test("selecting Standalone detaches the Rule only after confirmation", async () => {
+    const host = assignmentHost(regexRecord("rule-1", "p1"));
+    detachRegexRuleMock.mockResolvedValue(regexRecord("rule-1", null));
+
+    await host.handler.detach("rule-1");
+
+    expect(detachRegexRuleMock).toHaveBeenCalledWith("rule-1");
+    expect(host.rules()[0].profileId).toBeNull();
+    expect(host.onConfirmed).toHaveBeenCalledTimes(1);
+  });
+
+  test("failed attach or detach preserves the confirmed Profile and reports an error", async () => {
+    const attachFailure = assignmentHost(regexRecord("rule-1", "p1"));
+    attachRegexRuleMock.mockRejectedValue(new Error("offline"));
+    await attachFailure.handler.assign("rule-1", "p2");
+    expect(attachFailure.rules()[0].profileId).toBe(brandId<RegexProfileId>("p1"));
+    expect(attachFailure.onFailed).toHaveBeenCalledTimes(1);
+
+    const detachFailure = assignmentHost(regexRecord("rule-1", "p1"));
+    detachRegexRuleMock.mockRejectedValue(new Error("offline"));
+    await detachFailure.handler.detach("rule-1");
+    expect(detachFailure.rules()[0].profileId).toBe(brandId<RegexProfileId>("p1"));
+    expect(detachFailure.onFailed).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── RXU-21: preset-import Regex Profile (one Profile per import) ────────
+
+describe("preset-import-flow — Regex bundle sequence (RXU-21)", () => {
+  function importDraft(name: string, disabled: boolean): RegexScriptImportDraft {
+    return {
+      name,
+      findRegex: "/x/g",
+      replaceString: "",
+      trimStrings: [],
+      substituteRegex: 0,
+      disabled,
+      markdownOnly: false,
+      promptOnly: false,
+      runOnEdit: false,
+      minDepth: null,
+      maxDepth: null,
+      placement: [2],
+      isGlobal: false,
+      sortOrder: 0,
+      profileId: null,
+      sourceScript: { scriptName: name },
+    };
+  }
+
+  test("summarizeRegexImportRules counts mixed source states (N · X enabled · Y disabled)", () => {
+    expect(summarizeRegexImportRules([])).toEqual({ total: 0, enabled: 0, disabled: 0 });
+    expect(summarizeRegexImportRules([importDraft("only", false)])).toEqual({ total: 1, enabled: 1, disabled: 0 });
+    expect(summarizeRegexImportRules([
+      importDraft("on", false),
+      importDraft("off", true),
+      importDraft("on2", false),
+    ])).toEqual({ total: 3, enabled: 2, disabled: 1 });
+  });
+
+  test("createPresetRegexProfile: toggle OFF → master disabled true; toggle ON → disabled false — both positions explicit", async () => {
+    const rules = [importDraft("on", false), importDraft("off", true)];
+    const bodies: Array<Parameters<typeof realRegexApi.createRegexProfileBundle>[0]> = [];
+    const createBundle = async (body: Parameters<typeof realRegexApi.createRegexProfileBundle>[0]) => {
+      bodies.push(body);
+      return { profile: { id: "p1" }, rules: [] } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>;
+    };
+
+    // Toggle OFF (the default): the master switch is disabled — source-
+    // enabled rules stay enabled but are gated by the disabled Profile.
+    await createPresetRegexProfile({ rules, enableProfile: false, profileName: "P" }, "preset-9", createBundle);
+    expect(bodies[0]).toMatchObject({
+      name: "P",
+      disabled: true,
+      links: [{ targetType: "preset", targetId: "preset-9" }],
+    });
+    expect(bodies[0].rules.map((rule) => rule.disabled)).toEqual([false, true]);
+
+    // Toggle ON: the Profile is active immediately; source-disabled rules
+    // stay disabled (their own flags are untouched).
+    await createPresetRegexProfile({ rules, enableProfile: true, profileName: "P" }, "preset-9", createBundle);
+    expect(bodies[1].disabled).toBe(false);
+    expect(bodies[1].rules.map((rule) => rule.disabled)).toEqual([false, true]);
+
+    // Import-only channels never reach the API body (membership is
+    // bundle-owned; sourceScript is a preview-channel detail).
+    for (const key of ["sourceScript", "profileId"] as const) {
+      expect(key in (bodies[0].rules[0] as unknown as Record<string, unknown>)).toBe(false);
+    }
+  });
+
+  test("createPresetWithRegexProfile without rules: create only — no bundle call, no compensation", async () => {
+    const createPreset = mock(async () => ({ id: "p_new" }));
+    const deletePreset = mock(async () => {});
+    const createBundle = mock(async () => { throw new Error("must not be called"); });
+
+    const outcome = await createPresetWithRegexProfile({
+      createPreset, deletePreset, plan: null, createBundle,
+    });
+
+    expect(outcome).toEqual({ ok: true, presetId: "p_new" });
+    expect(createBundle).not.toHaveBeenCalled();
+    expect(deletePreset).not.toHaveBeenCalled();
+  });
+
+  test("createPresetWithRegexProfile: bundle failure → compensation delete, regexBundleFailed outcome, single bundle call", async () => {
+    const createPreset = mock(async () => ({ id: "p_new" }));
+    const deletePreset = mock(async () => {});
+    const createBundle = mock(async () => {
+      throw new Error("bundle boom");
+    });
+
+    const outcome = await createPresetWithRegexProfile({
+      createPreset,
+      deletePreset,
+      plan: { rules: [importDraft("on", false)], enableProfile: false, profileName: "P" },
+      createBundle,
+    });
+
+    expect(outcome).toEqual({ ok: false, reason: "regexBundleFailed" });
+    expect(createPreset).toHaveBeenCalledTimes(1);
+    expect(createBundle).toHaveBeenCalledTimes(1); // no partial retry
+    expect(deletePreset).toHaveBeenCalledWith("p_new"); // the preset is rolled back
+  });
+
+  test("createPresetWithRegexProfile: preset-create failure → no bundle, no delete", async () => {
+    const createPreset = mock(async () => null);
+    const deletePreset = mock(async () => {});
+    const createBundle = mock(async () => ({ profile: { id: "x" }, rules: [] } as unknown as Awaited<ReturnType<typeof realRegexApi.createRegexProfileBundle>>));
+
+    const outcome = await createPresetWithRegexProfile({
+      createPreset,
+      deletePreset,
+      plan: { rules: [importDraft("on", false)], enableProfile: false, profileName: "P" },
+      createBundle,
+    });
+
+    expect(outcome).toEqual({ ok: false, reason: "presetCreateFailed" });
+    expect(createBundle).not.toHaveBeenCalled();
+    expect(deletePreset).not.toHaveBeenCalled();
+  });
+});
+
+describe("PromptManagerModal — preset import Regex Profile wiring (RXU-21)", () => {
+  /** ST preset file embedding 3 rules with MIXED source states. */
+  function stPresetFileWithRegex(): File {
+    return new File([
+      JSON.stringify({
+        name: "Regex bundle preset",
+        prompts: [
+          { identifier: "main", name: "Main", role: "system", content: "System text", injection_position: 0, injection_depth: 4, injection_order: 100, enabled: true },
+        ],
+        extensions: {
+          regex_scripts: [
+            { scriptName: "On rule", findRegex: "/x/g", replaceString: "", disabled: false },
+            { scriptName: "Off rule", findRegex: "/y/g", replaceString: "", disabled: true },
+            { scriptName: "Second on", findRegex: "/z/g", replaceString: "", disabled: false },
+          ],
+        },
+      }),
+    ], "regex-preset.json", { type: "application/json" });
+  }
+
+  /** VT-native export (full DTO under `_vibe_tavern`) embedding one disabled
+   *  rule — built with the real serializer (rides the real export shape). */
+  function vtPresetFileWithRegex(): File {
+    const dto: PromptPresetDto = {
+      id: "vt-1",
+      name: "VT source",
+      system: "VT lossless system",
+      jailbreak: "jb",
+      prefill: "",
+      authorsNote: "",
+      authorsNoteDepth: 4,
+      authorsNotePosition: "in_chat",
+      authorsNoteRole: "system",
+      summary: "",
+      tools: "",
+      nsfw: "",
+      enhanceDefinitions: "",
+      scriptAiSystemPrompt: "",
+      aiAssistantPrompts: "{}",
+      customInjections: [],
+      promptOrder: [],
+      advancedMode: false,
+      mergeConsecutiveRoles: false,
+      perSendPrefillEnabled: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    return new File([
+      serializeStPreset(dto, [{
+        name: "VT rule", findRegex: "/y/g", replaceString: "", trimStrings: [],
+        substituteRegex: 0, disabled: true, markdownOnly: false, promptOnly: false,
+        runOnEdit: false, minDepth: null, maxDepth: null, placement: [2],
+        isGlobal: false, sortOrder: 0, profileId: null,
+      }]),
+    ], "vt-preset.json", { type: "application/json" });
+  }
+
+  function renderManager(overrides: Partial<Parameters<typeof PromptManagerModal>[0]> = {}) {
+    const onCreate = mock(async () => ({ id: "preset_new" }));
+    const onDelete = mock(async () => true);
+    const setActivePresetId = mock();
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={setActivePresetId}
+        onCreate={onCreate}
+        onUpdate={mock(async () => true)}
+        onDelete={onDelete}
+        onReorder={mock(async () => true)}
+        {...overrides}
+      />,
+    );
+    return { view, onCreate, onDelete, setActivePresetId };
+  }
+
+  /** Simple-mode preset: the target-"current" tests assert on the system
+   *  textarea, which advanced mode hides behind the canvas (SP-7). */
+  function simplePreset(): PromptPresetDto {
+    return { ...advancedPreset(), advancedMode: false };
+  }
+
+  /** Open the presets-tab import flow and feed `file` into the preview. The
+   *  LAST file input in the body is the import modal's Dropzone (its portal
+   *  renders after the list's hidden import input). */
+  async function openPresetImportPreview(
+    view: ReturnType<typeof render>,
+    file: File,
+    previewName: string,
+  ) {
+    fireEvent.click(within(view.baseElement).getByText("import_preset_btn"));
+    const inputs = view.baseElement.querySelectorAll("input[type='file']");
+    expect(inputs.length).toBeGreaterThan(1); // list input + Dropzone input
+    fireEvent.change(inputs[inputs.length - 1]!, { target: { files: [file] } });
+    await waitFor(() =>
+      expect(within(view.baseElement).getAllByText(`${previewName}.json`).length).toBeGreaterThan(0)
+    );
+  }
+
+  test("ST import, target new, toggle OFF (default): preset FIRST, then ONE bundle bound to the new preset", async () => {
+    const { view, onCreate, onDelete, setActivePresetId } = renderManager();
+    await openPresetImportPreview(view, stPresetFileWithRegex(), "Regex bundle preset");
+    const q = within(view.baseElement);
+
+    // The card is present with the default-off master toggle (the preview
+    // boundary itself is pinned in PresetImportModal.test).
+    expect(q.getByRole("switch", { name: "regexImport.enableAfterImport" }).getAttribute("aria-checked")).toBe("false");
+
+    // Target "new" so the preset is created by THIS import (compensation path).
+    fireEvent.click(q.getByText("preset_import_to_new"));
+    await waitFor(() => expect(q.getByPlaceholderText("preset_import_new_name_placeholder")).toBeTruthy());
+
+    fireEvent.click(q.getByText("preset_import_btn"));
+
+    await waitFor(() => expect(createRegexProfileBundleMock).toHaveBeenCalledTimes(1));
+    // Preset FIRST: onCreate resolved before the bundle fired.
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    const body = createRegexProfileBundleMock.mock.calls[0][0];
+    expect(body).toMatchObject({
+      name: "Regex bundle preset",
+      disabled: true, // toggle OFF → master disabled
+      links: [{ targetType: "preset", targetId: "preset_new" }],
+    });
+    // Source-faithful rules: source states intact under the disabled master.
+    expect(body.rules.map((rule: { disabled?: boolean }) => rule.disabled)).toEqual([false, true, false]);
+    // Success: the new preset is selected, nothing is deleted, the Regex
+    // lists refresh (the display-regex cache invalidation rides the refresh).
+    await waitFor(() => expect(setActivePresetId).toHaveBeenCalledWith("preset_new"));
+    expect(onDelete).not.toHaveBeenCalled();
+    await waitFor(() => expect(listAllRegexPresetsMock.mock.calls.length).toBeGreaterThan(0));
+  });
+
+  test("ST import bundle failure: the just-created preset is rolled back and the failure is surfaced", async () => {
+    createRegexProfileBundleMock.mockRejectedValueOnce(new Error("bundle boom"));
+    const { view, onDelete, setActivePresetId } = renderManager();
+    await openPresetImportPreview(view, stPresetFileWithRegex(), "Regex bundle preset");
+    const q = within(view.baseElement);
+    fireEvent.click(q.getByText("preset_import_to_new"));
+    await waitFor(() => expect(q.getByPlaceholderText("preset_import_new_name_placeholder")).toBeTruthy());
+    fireEvent.click(q.getByText("preset_import_btn"));
+
+    // Compensation: delete called with the newly created preset id.
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith("preset_new"));
+    // The rolled-back import never selects the preset, and the failure toast
+    // states the rollback.
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("regexImport.bundleFailedRolledBack"));
+    expect(setActivePresetId).not.toHaveBeenCalled();
+    // No partial rows: exactly one bundle attempt, never retried.
+    expect(createRegexProfileBundleMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("VT-native import, target current, toggle ON: bundle binds the EXISTING preset with an active master", async () => {
+    const { view, onCreate } = renderManager({ presets: [simplePreset()] });
+    await openPresetImportPreview(view, vtPresetFileWithRegex(), "VT source");
+    const q = within(view.baseElement);
+
+    // Toggle ON before confirming: source-enabled rules work immediately.
+    fireEvent.click(q.getByRole("switch", { name: "regexImport.enableAfterImport" }));
+    expect(q.getByRole("switch", { name: "regexImport.enableAfterImport" }).getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(q.getByText("preset_import_btn"));
+
+    await waitFor(() => expect(createRegexProfileBundleMock).toHaveBeenCalledTimes(1));
+    const body = createRegexProfileBundleMock.mock.calls[0][0];
+    expect(body).toMatchObject({
+      name: "VT source",
+      disabled: false, // toggle ON → active master
+      links: [{ targetType: "preset", targetId: "preset-1" }], // EXISTING preset
+    });
+    // Source-disabled rule stays disabled even under the active Profile.
+    expect(body.rules.map((rule: { disabled?: boolean }) => rule.disabled)).toEqual([true]);
+    // Target "current" creates no preset — only the bundle fired.
+    expect(onCreate).not.toHaveBeenCalled();
+    // The VT lossless draft replacement ran (the system field now carries
+    // the imported DTO's system verbatim — plain value check per R8).
+    const system = q.getByPlaceholderText("system_prompt_placeholder") as HTMLTextAreaElement;
+    await waitFor(() => expect(system.value).toBe("VT lossless system"));
+  });
+
+  test("zero embedded rules: the import stays regex-free — zero regex API calls", async () => {
+    const plain = new File([
+      JSON.stringify({
+        name: "Plain preset",
+        prompts: [
+          { identifier: "main", name: "Main", role: "system", content: "text", injection_position: 0, injection_depth: 4, injection_order: 100, enabled: true },
+        ],
+      }),
+    ], "plain.json", { type: "application/json" });
+    const { view, onCreate } = renderManager({ presets: [simplePreset()] });
+    await openPresetImportPreview(view, plain, "Plain preset");
+    const q = within(view.baseElement);
+    // No card at all.
+    expect(q.queryByRole("switch")).toBeNull();
+
+    fireEvent.click(q.getByText("preset_import_btn"));
+
+    // Default target is "current": the draft merge fires (the system field
+    // appends the imported block), nothing else does. Plain value check —
+    // getByDisplayValue's normalizer collapses the newlines (R8 idiom).
+    const system = q.getByPlaceholderText("system_prompt_placeholder") as HTMLTextAreaElement;
+    await waitFor(() => expect(system.value).toBe("sys\n\ntext"));
+    expect(createRegexProfileBundleMock).not.toHaveBeenCalled();
+    expect(createRegexPresetMock).not.toHaveBeenCalled();
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(toastErrorMock).not.toHaveBeenCalled();
   });
 });
 

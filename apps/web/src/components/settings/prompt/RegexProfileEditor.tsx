@@ -3,7 +3,7 @@ import { useT } from "../../../i18n/context.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
-import { characterToLinkTarget, promptPresetToLinkTarget } from "../../../lib/link-targets.js";
+import { characterToLinkTarget, promptPresetToLinkTarget, regexToLinkTarget } from "../../../lib/link-targets.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -11,8 +11,11 @@ import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { getRegexProfileLinks, setRegexProfileLinks } from "../../../api/regex-api.js";
 import { listPromptPresets } from "../../../api/preset-api.js";
 import { invalidateActiveRegexPresets } from "../../../hooks/use-active-regex-presets.js";
-import type { RegexProfileRecord } from "../../../api/types.js";
-import { Icons } from "../../shared/icons.js";
+import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
+import { regexProfileAvailability } from "../../../lib/regex-availability.js";
+import { AddButton } from "../../shared/add-button.js";
+import { EmptyState } from "../../shared/empty-state.js";
+import { Icons, Ic } from "../../shared/icons.js";
 
 const SCOPE_OPTIONS = [
   { value: "all", labelKey: "promptManager.regex.scopeAll" as const },
@@ -22,23 +25,70 @@ const SCOPE_OPTIONS = [
 interface RegexProfileEditorProps {
   profile: RegexProfileRecord;
   memberCount: number;
-  onNameCommit: (newName: string) => void;
+  rules: RegexPresetRecord[];
+  onCreateRule: () => void;
+  onAttachRules: (ruleIds: string[]) => void;
+  onDetachRules: (ruleIds: string[]) => void;
+  onNameChange: (nextName: string) => void;
   onActiveToggle: (nextActive: boolean) => void;
   onScopeChange: (nextIsGlobal: boolean) => void;
   onLinksChanged?: (profileId: string, count: number) => void;
-  onExport: () => void;
-  onDeleteClick: () => void;
+}
+
+function ProfileMemberActions({
+  memberLinks,
+  ruleTargets,
+  onCreateRule,
+  onSetMemberLinks,
+}: Pick<RegexProfileEditorProps, "onCreateRule"> & {
+  memberLinks: LinkBindingRecord[];
+  ruleTargets: LinkTarget[];
+  onSetMemberLinks: (next: LinkBindingRecord[]) => void;
+}) {
+  const { t } = useT();
+  const isMobile = useIsMobile();
+  return (
+    <div className="flex flex-wrap gap-2">
+      <AddButton onClick={onCreateRule}>
+        <Ic.plus />
+        {t("promptManager.regex.createRule")}
+      </AddButton>
+      {/* Owner ruling 2026-10-09: «Add existing» rides the shared
+          LinkBindingPopover — NO forked picker (the RXU-41 fork duplicated
+          the primitive one-to-one). showPills=false: the member ROWS live in
+          the left list, this surface is the add trigger + picker only (the
+          Dice assignment-row precedent). Immediate per-toggle membership —
+          the lorebook-pill canon; toggling an active member chip detaches
+          it back to Standalone. */}
+      <LinkBindingPopover
+        links={memberLinks}
+        characters={[]}
+        personas={[]}
+        presets={[]}
+        regexes={ruleTargets}
+        onSetLinks={onSetMemberLinks}
+        t={t}
+        isMobile={isMobile}
+        showPills={false}
+        triggerLabel={t("promptManager.regex.pickerTrigger")}
+        tooltipLabel={t("promptManager.regex.pickerTitle")}
+        emptyLabel={t("promptManager.regex.pickerEmptySub")}
+      />
+    </div>
+  );
 }
 
 export function RegexProfileEditor({
   profile,
   memberCount,
-  onNameCommit,
+  rules,
+  onCreateRule,
+  onAttachRules,
+  onDetachRules,
+  onNameChange,
   onActiveToggle,
   onScopeChange,
   onLinksChanged,
-  onExport,
-  onDeleteClick,
 }: RegexProfileEditorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -48,33 +98,35 @@ export function RegexProfileEditor({
     setName(profile.name);
   }, [profile.id, profile.name]);
 
-  const commitName = () => {
-    const trimmed = name.trim();
-    if (trimmed && trimmed !== profile.name) onNameCommit(trimmed);
-    else setName(profile.name);
-  };
 
   // ── Bindings ──
   const allCharacters = useAllCharacters();
   const [bindLinks, setBindLinks] = useState<LinkBindingRecord[]>([]);
+  const [linksLoaded, setLinksLoaded] = useState(false);
+  const [promptPresetsLoaded, setPromptPresetsLoaded] = useState(false);
   const [promptPresets, setPromptPresets] = useState<Array<{ id: string; name: string; updatedAt?: string }>>([]);
 
   useEffect(() => {
     setBindLinks([]);
+    setLinksLoaded(false);
+    setPromptPresetsLoaded(false);
     let cancelled = false;
     getRegexProfileLinks(profile.id)
       .then((rows) => {
-        if (!cancelled) setBindLinks(rows.map((r) => ({ targetType: r.targetType, targetId: r.targetId })));
+        if (!cancelled) { setBindLinks(rows.map((r) => ({ targetType: r.targetType, targetId: r.targetId }))); setLinksLoaded(true); }
       })
       .catch(() => {
-        if (!cancelled) setBindLinks([]);
+        if (!cancelled) { setBindLinks([]); setLinksLoaded(true); }
       });
     listPromptPresets()
       .then((list) => {
-        if (!cancelled) setPromptPresets(list.map((p) => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })));
+        if (!cancelled) {
+          setPromptPresets(list.map((promptPreset) => ({ id: promptPreset.id, name: promptPreset.name, updatedAt: promptPreset.updatedAt })));
+          setPromptPresetsLoaded(true);
+        }
       })
       .catch(() => {
-        if (!cancelled) setPromptPresets([]);
+        if (!cancelled) { setPromptPresets([]); setPromptPresetsLoaded(true); }
       });
     return () => {
       cancelled = true;
@@ -102,7 +154,15 @@ export function RegexProfileEditor({
     [bindLinks, resolvableIds],
   );
 
-  const notApplied = !profile.isGlobal && !profile.disabled && effectiveBindCount === 0;
+  // RXU-31 is the sole availability derivation. Unbound means enabled,
+  // non-global, and CONFIRMED zero resolvable links; until links and prompt
+  // preset targets resolve, undefined yields loading and no false red reason.
+  const profileAvailability = regexProfileAvailability(
+    profile,
+    [],
+    linksLoaded && promptPresetsLoaded ? effectiveBindCount : undefined,
+  );
+  const isUnbound = profileAvailability.kind === "unbound";
 
   const handleSetBindLinks = (next: LinkBindingRecord[]) => {
     const prev = bindLinks;
@@ -123,8 +183,35 @@ export function RegexProfileEditor({
 
   const isActive = !profile.disabled;
 
+  // ── Member pick via the shared LinkBindingPopover (immediate toggles).
+  // Targets = attach candidates (Standalone Rules) + this Profile's own
+  // members (so an active chip can be toggled OFF back to Standalone);
+  // other Profiles' members never appear here.
+  const memberLinks: LinkBindingRecord[] = useMemo(
+    () => rules
+      .filter((r) => r.profileId === profile.id)
+      .map((r) => ({ targetType: "regex" as const, targetId: r.id })),
+    [rules, profile.id],
+  );
+  const ruleTargets: LinkTarget[] = useMemo(
+    () => rules
+      .filter((r) => r.profileId === null || r.profileId === profile.id)
+      .map(regexToLinkTarget),
+    [rules, profile.id],
+  );
+  const handleSetMemberLinks = (next: LinkBindingRecord[]) => {
+    const currentIds = new Set(memberLinks.map((l) => l.targetId));
+    const nextIds = new Set(
+      next.filter((l) => l.targetType === "regex").map((l) => l.targetId),
+    );
+    const added = [...nextIds].filter((id) => !currentIds.has(id));
+    const removed = [...currentIds].filter((id) => !nextIds.has(id));
+    if (added.length > 0) onAttachRules(added);
+    if (removed.length > 0) onDetachRules(removed);
+  };
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" data-testid="regex-profile-editor">
       {/* Name + Active toggle */}
       <div className="flex items-end gap-4">
         <div className="min-w-0 flex-1">
@@ -134,10 +221,13 @@ export function RegexProfileEditor({
           <TextInput
             id="regex-profile-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={commitName}
+            onChange={(e) => {
+              const nextName = e.target.value;
+              setName(nextName);
+              const trimmed = nextName.trim();
+              if (trimmed) onNameChange(trimmed);
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") commitName();
               if (e.key === "Escape") setName(profile.name);
             }}
             placeholder={t("promptManager.regex.newProfilePlaceholder")}
@@ -151,11 +241,11 @@ export function RegexProfileEditor({
         </div>
       </div>
 
-      {notApplied && (
+      {isUnbound && (
         <div className="-mt-2">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-2 py-px font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-danger-text select-none">
             <span className="h-[6px] w-[6px] rounded-full bg-danger" />
-            {t("promptManager.regex.badgeNotApplied")}
+            {t("promptManager.regex.availabilityUnbound")}
           </span>
         </div>
       )}
@@ -198,31 +288,34 @@ export function RegexProfileEditor({
         </div>
       )}
 
-      {/* Member count hint */}
-      <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
-        {t("promptManager.regex.profileMemberCount", { count: memberCount })}
-      </div>
+      {memberCount === 0 ? (
+        <div className="flex flex-col gap-3" data-testid="regex-profile-members-empty-state">
+          <EmptyState
+            icon={<Icons.Terminal />}
+            title={t("promptManager.regex.profileMembersEmptyTitle")}
+            sub={t("promptManager.regex.profileMembersEmptySub")}
+          />
+          <ProfileMemberActions
+            memberLinks={memberLinks}
+            ruleTargets={ruleTargets}
+            onCreateRule={onCreateRule}
+            onSetMemberLinks={handleSetMemberLinks}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
+            {t("promptManager.regex.profileMemberCount", { count: memberCount })}
+          </div>
+          <ProfileMemberActions
+            memberLinks={memberLinks}
+            ruleTargets={ruleTargets}
+            onCreateRule={onCreateRule}
+            onSetMemberLinks={handleSetMemberLinks}
+          />
+        </>
+      )}
 
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={memberCount === 0}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s3 hover:text-t1 disabled:opacity-40 disabled:pointer-events-none"
-        >
-          <Icons.Download />
-          {t("promptManager.regex.profileExport")}
-        </button>
-        <button
-          type="button"
-          onClick={onDeleteClick}
-          className="inline-flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-danger transition-colors hover:bg-danger/20"
-        >
-          <Icons.Trash />
-          {t("promptManager.regex.profileDelete")}
-        </button>
-      </div>
     </div>
   );
 }

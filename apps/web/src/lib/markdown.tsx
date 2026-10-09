@@ -6,6 +6,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { PluggableList } from "unified";
 import { copyText } from "./clipboard.js";
+import { preserveEscapedUnderscoreTags, rehypeRestoreEscapedUnderscoreTags, remarkUnderscoreCustomTags } from "./markdown-underscore-tags.js";
 import { ImageBlock } from "../components/chat/ImageBlock.js";
 
 const sanitizeSchema = {
@@ -589,6 +590,11 @@ function extractText(children: React.ReactNode): string {
 // rebuilding the pipeline description each time.
 const REMARK_PLUGINS: PluggableList = [remarkGfm];
 
+const CHAT_REMARK_PLUGINS: PluggableList = [
+  ...REMARK_PLUGINS,
+  remarkUnderscoreCustomTags,
+];
+
 const BASE_REHYPE_PLUGINS: PluggableList = [
   rehypeRaw,
   [rehypeSanitize, sanitizeSchema],
@@ -596,6 +602,7 @@ const BASE_REHYPE_PLUGINS: PluggableList = [
 
 const CHAT_REHYPE_PLUGINS: PluggableList = [
   ...BASE_REHYPE_PLUGINS,
+  rehypeRestoreEscapedUnderscoreTags,
   rehypeQuotedText,
   rehypeSystemBanner,
 ];
@@ -603,16 +610,19 @@ const CHAT_REHYPE_PLUGINS: PluggableList = [
 export const Markdown: React.FC<MarkdownProps> = React.memo(({ text, className, variant = "chat" }: MarkdownProps) => {
   if (!text) return null;
 
-  const rehypePlugins = variant === "plain" ? BASE_REHYPE_PLUGINS : CHAT_REHYPE_PLUGINS;
+  const isPlain = variant === "plain";
+  const remarkPlugins = isPlain ? REMARK_PLUGINS : CHAT_REMARK_PLUGINS;
+  const rehypePlugins = isPlain ? BASE_REHYPE_PLUGINS : CHAT_REHYPE_PLUGINS;
+  const markdownText = isPlain ? text : preserveEscapedUnderscoreTags(text);
 
   return (
     <div className={className || "md-content"}>
       <ReactMarkdown
-        remarkPlugins={REMARK_PLUGINS}
+        remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
         components={components}
       >
-        {text}
+        {markdownText}
       </ReactMarkdown>
     </div>
   );

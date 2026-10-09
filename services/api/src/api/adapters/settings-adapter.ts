@@ -1,5 +1,7 @@
 import type { SettingsRuntimeApi } from "../contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
+import { ScriptSafetySettingsStore } from "@vibe-tavern/db";
+import type { UpdateScriptSafetySettings } from "@vibe-tavern/api-contracts";
 
 export class SettingsAdapter implements SettingsRuntimeApi {
 	constructor(private readonly stores: StoreContainer) {}
@@ -34,6 +36,15 @@ export class SettingsAdapter implements SettingsRuntimeApi {
 		...(typeof body.copilotProviderId === "string" || body.copilotProviderId === null ? { copilotProviderId: body.copilotProviderId } : {}),
 		...(typeof body.copilotModelName === "string" || body.copilotModelName === null ? { copilotModelName: body.copilotModelName } : {}),
 	});
+
+	// Script-safety singleton (SCRIPT_SAFETY_PLAN decision 3). The store is
+	// constructed from the shared db handle per call — the
+	// image-prompt-profile-adapter precedent — rather than growing
+	// StoreContainer for a settings-only surface.
+	getScriptSafetySettings = () => new ScriptSafetySettingsStore(this.stores.db).get();
+
+	updateScriptSafetySettings = (body: UpdateScriptSafetySettings) =>
+		new ScriptSafetySettingsStore(this.stores.db).upsert(body);
 }
 
 function isNonNegativeInteger(value: unknown): value is number {

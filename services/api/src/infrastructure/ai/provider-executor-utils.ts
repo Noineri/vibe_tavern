@@ -6,7 +6,9 @@
  * stream-provider-executor.ts and nonstreaming-provider-executor.ts.
  */
 
-import type { LanguageModel, ModelMessage, ToolCallPart, ToolContent, AssistantContent } from "ai";
+import { asSchema, jsonSchema } from "ai";
+import type { AssistantContent, LanguageModel, ModelMessage, ToolCallPart, ToolContent, ToolSet } from "ai";
+import type { JSONSchema7 } from "@ai-sdk/provider";
 import { COAUTHOR_TRANSPORT, GENERATION_MODE, PROVIDER_TYPE, normalizeProviderType, resolveNativeTextCompletion, type CoauthorTransport, type GenerationMode, type ProviderType, log } from "@vibe-tavern/domain";
 import { resolveProtocol } from "../../domain/providers/protocol-registry.js";
 import type { ProviderFetch } from "../../domain/providers/provider-fetch-factory.js";
@@ -43,6 +45,85 @@ export interface PreparedMessages {
   systemPrompt?: undefined;
   /** Prompt messages in trace order, mapped to SDK `ModelMessage[]`. */
   conversationMessages: ModelMessage[];
+}
+
+const JSON_SCHEMA_TYPES = new Set([
+  "array",
+  "boolean",
+  "integer",
+  "null",
+  "number",
+  "object",
+  "string",
+]);
+
+function isJsonSchemaType(value: unknown): value is string {
+  return typeof value === "string" && JSON_SCHEMA_TYPES.has(value);
+}
+
+/**
+ * Re-express JSON Schema's array-valued `type` union as `anyOf` recursively.
+ *
+ * Zod 4 emits nullable primitives as `type: ["boolean", "null"]`. That is
+ * valid JSON Schema and OpenAI accepts it, but protobuf-backed Gemini gateways
+ * commonly translate OpenAI-compatible tools into `FunctionDeclaration.parameters`,
+ * whose `Schema.type` field is singular. The gateway then rejects the whole
+ * request before generation with "Proto field is not repeating, cannot start
+ * list". `anyOf` is valid JSON Schema AND a repeated Gemini Schema field, so it
+ * preserves null semantics across both protocol families.
+ */
+function normalizeArrayValuedSchemaTypes(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(normalizeArrayValuedSchemaTypes);
+  }
+  if (!value || typeof value !== "object") return value;
+
+  const normalized = Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, normalizeArrayValuedSchemaTypes(child)]),
+  ) as Record<string, unknown>;
+  const schemaTypes = normalized.type;
+  if (!Array.isArray(schemaTypes) || schemaTypes.length === 0 || !schemaTypes.every(isJsonSchemaType)) {
+    return normalized;
+  }
+
+  delete normalized.type;
+  const typeAlternatives = schemaTypes.map((type) => ({ type }));
+  if (Array.isArray(normalized.anyOf)) {
+    const existingAllOf = Array.isArray(normalized.allOf) ? normalized.allOf : [];
+    normalized.allOf = [...existingAllOf, { anyOf: typeAlternatives }];
+  } else {
+    normalized.anyOf = typeAlternatives;
+  }
+  return normalized;
+}
+
+function normalizeToolJsonSchema(schema: JSONSchema7): JSONSchema7 {
+  return normalizeArrayValuedSchemaTypes(schema) as JSONSchema7;
+}
+
+/**
+ * Prepare function-tool schemas for the provider wire without changing their
+ * runtime validators or execute handlers. Provider-defined tools carry their
+ * own wire contract and therefore pass through untouched.
+ */
+export function prepareProviderTools(tools: ToolSet | undefined): ToolSet | undefined {
+  if (!tools) return undefined;
+
+  const prepared: ToolSet = {};
+  for (const [name, definition] of Object.entries(tools)) {
+    if (definition.type === "provider") {
+      prepared[name] = definition;
+      continue;
+    }
+
+    const sourceSchema = asSchema(definition.inputSchema);
+    const inputSchema = jsonSchema(
+      Promise.resolve(sourceSchema.jsonSchema).then(normalizeToolJsonSchema),
+      sourceSchema.validate ? { validate: sourceSchema.validate } : {},
+    );
+    prepared[name] = { ...definition, inputSchema };
+  }
+  return prepared;
 }
 
 // ---------------------------------------------------------------------------

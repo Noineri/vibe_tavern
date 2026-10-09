@@ -115,6 +115,48 @@ describe("CoauthorModuleStore (CS-24)", () => {
     expect(fetched?.toolSet).toEqual({ write_profile: true });
   });
 
+  test("legacy lore-authoring modules gain the persisted-book edit/add tools on read", async () => {
+    // These tools existed in the executor but were absent from the module
+    // contract, so older modules could not explicitly enable them. Preserve an
+    // explicit false once the toggles exist, but fill every formerly
+    // unrepresentable capability for a module that already authors lore.
+    const store = await mkStore();
+    const created = await store.create({
+      ...PAYLOAD,
+      toolSet: {
+        create_lorebook: true,
+        create_lore_entry: true,
+        edit_lorebook: false,
+      },
+    });
+    expect(created.toolSet).toMatchObject({
+      create_lorebook: true,
+      create_lore_entry: true,
+      edit_lorebook: false,
+      edit_lore_entry: true,
+      add_lore_entry: true,
+    });
+  });
+
+  test("explicit false persisted-lore flags remain opt-outs", async () => {
+    const store = await mkStore();
+    const created = await store.create({
+      ...PAYLOAD,
+      toolSet: {
+        create_lorebook: true,
+        create_lore_entry: true,
+        edit_lorebook: false,
+        edit_lore_entry: false,
+        add_lore_entry: false,
+      },
+    });
+    expect(created.toolSet).toMatchObject({
+      edit_lorebook: false,
+      edit_lore_entry: false,
+      add_lore_entry: false,
+    });
+  });
+
   test("getById returns null for a missing id", async () => {
     const store = await mkStore();
     expect(await store.getById("cmod_missing")).toBeNull();

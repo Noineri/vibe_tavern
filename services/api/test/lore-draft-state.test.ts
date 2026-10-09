@@ -25,7 +25,7 @@ describe("LoreDraftState — proposal-only draft engine (CTX-L1)", () => {
 	it("starts empty (Cancel / abandoned turn leaves no rows)", () => {
 		const draft = makeDraft();
 		expect(draft.isEmpty()).toBe(true);
-		expect(draft.snapshot()).toEqual({ lorebooks: [], entries: [] });
+		expect(draft.snapshot()).toEqual({ revision: 0, lorebooks: [], entries: [] });
 	});
 
 	it("createLorebook rejects an empty name and leaves the draft empty", async () => {
@@ -78,6 +78,15 @@ describe("LoreDraftState — proposal-only draft engine (CTX-L1)", () => {
 			logic: "and_any",
 			enabled: true,
 		});
+	});
+
+	it("increments a monotonic revision with every cumulative mutation snapshot", async () => {
+		const draft = makeDraft();
+		const first = await draft.createLorebook({ name: "Book" });
+		const second = await draft.createLoreEntry({ lorebookId: "lorebook_1" });
+		expect(first.revision).toBe(1);
+		expect(second.revision).toBe(2);
+		expect(draft.snapshot().revision).toBe(2);
 	});
 
 	it("returns the COMPLETE cumulative bundle from every mutation", async () => {

@@ -70,9 +70,22 @@ context.experience.register({
 - `project` (function, required): `(context, viewer) => projectedView`. Return what ONE viewer is allowed to see. `viewer` is `{ kind: "human"|"script"|"model"|"observer", participantId?: string }`. Hide private information here by computing the projection from `context.state` — an `observer` (and any seat that is not the viewer's own) must not receive hidden data.
 - `actions` (function, required): `(context, viewer) => actionDescriptors`. Return the legal moves for this viewer at this state. Each descriptor is `{ type: string, participantId?: string, label?: string, payloadSchema?: object, allowsText?: boolean }`. Return an empty array when no legal move exists. `allowsText: true` permits free-text payloads (e.g. a "say" action).
 - `reduce` (function, required): `(context, action) => transition`. `action` is `{ type, requestId, expectedRevision, participantId?, payload? }`. Return a transition (see below). This is the ONLY method that advances authoritative state.
-- `choose` (function, optional): `(context, { viewer, legal }) => chosenAction`. For a script-controlled seat's turn. Must return ONE action whose `type` matches a descriptor in `legal` (and `participantId` defaults to the viewer's seat). `context.chance` is available for a varied pick.
+- `choose` (function, optional — REQUIRED as soon as a script-controlled seat can own the turn): `(context, { viewer, legal }) => chosenAction`. The host calls it on a script seat's turn. Must return ONE action whose `type` matches a descriptor in `legal` (`participantId` defaults to the viewer's seat). A script seat that has legal actions while the rules define no `choose` stops the game with the error code `no_choose_method`. `context.chance` is available for a varied pick.
 - `flavor` (function, optional): `(context, viewer) => cosmeticData`. Display-time cosmetic data for one viewer. Never affects state; `context.chance` is available. Return `undefined` for no flavor.
 - `setup` (object, optional): `{ fields: [...] }`. Author-declared settings the host renders and validates before launch; the submitted values arrive as `create`'s `settings`. Each field is `{ id, label, description?, kind, ... }` where `kind` is `"text"` | `"number"` | `"boolean"` | `"select"` (select carries an `options: [{ value, label }]` array; fields may carry a `default`, `required`, and type bounds). Omit entirely when the experience needs no launch-time settings.
+
+# How the host picks whose turn it is
+The host keeps no turn variable of its own. After every transition it walks the roster (`context.participants`, in roster order) and calls `actions(context, viewer)` for each seat; the FIRST seat that gets a non-empty list acts next:
+- a `human` seat — the host waits for the user's move;
+- a `script` seat — the host calls `choose` and applies the chosen action through `reduce` (no `choose` → `no_choose_method`);
+- a `model` seat — the host waits for the model effect your `reduce` requested for that seat (see "Effects"); if you never requested one, the game waits forever.
+If no seat gets a non-empty list, the session is idle: it is waiting for an effect to deliver, or it is stuck.
+
+What this means for your rules:
+1. `actions(context, viewer)` returns `[]` for every seat that does not own the turn. Returning the same list to everyone gives the turn to the first seat in the roster forever — whatever your state says about whose turn it is.
+2. Gate by seat id, not by position or name: store the ids from `context.participants` in `create`, keep the current owner in state (for example `state.ids[state.turn]`), and compare it with `viewer.participantId`.
+3. `reduce` re-checks the owner: an action whose `action.participantId` is not the current owner returns the state unchanged with no events. Timer ticks and model replies arrive through `reduce` too, carrying the seat id they were requested for.
+4. Without the `participants` capability the rules cannot see the roster, so they cannot gate by seat — such a game is played by whoever holds the first human seat (hot seat). Declare `participants` as soon as the design has two sides.
 
 # Transition shape (what `reduce` returns)
 ```js
@@ -84,14 +97,17 @@ return {
     // visibility: "public" reaches the visual + report + Writer; "private" never leaves the runtime
   ],
   effects: [                   // OPTIONAL — durable effects the host runs out-of-band
-    { kind: "model", request: { viewer: "model_seat", mode: "text", instruction: "Reply to the conversation" } }
+    { kind: "model", request: { viewer: "<the model seat's id>", mode: "text", actionType: "reply", instruction: "Reply in character to the conversation." } }
   ]
 };
 ```
 `state` and every event/effect payload must be plain bounded JSON (numbers, strings, booleans, arrays, plain objects — no functions, no Dates, no circular refs). Deeply nested values are bounded; keep state reasonably small.
 
 Effects are durable async host operations; requesting one does NOT block `reduce` — return the transition with the effect, and the host fulfills it later, feeding the result back through a subsequent `reduce`. Never `await` anything; `reduce` is synchronous. Two kinds exist:
-- `{ kind: "model", request: { viewer, mode, instruction } }` — out-of-band AI generation for a model seat (requires the `model` capability).
+- `{ kind: "model", request: { viewer, mode, actionType?, instruction? } }` — out-of-band AI generation for a model seat (requires the `model` capability). `viewer` is the model seat's id from `context.participants`. Two modes:
+  - `mode: "text"` — the model writes a free-text reply. `actionType` is REQUIRED: the host feeds the reply back into `reduce` as `{ type: actionType, participantId: viewer, payload: { text } }`.
+  - `mode: "action"` — the model picks ONE of the actions `actions(context, viewer)` lists for that seat at that moment, so list them on the model seat's turn; when the chosen descriptor has a `payloadSchema`, the model supplies matching args. The host feeds it back as `{ type: <the chosen type>, participantId: viewer, payload: <args, when given> }`.
+  `instruction` is your extra direction for the model, appended to what it already receives (the seat's projected view and legal actions; the host adds the character and persona context). The reply is applied to the state AS IT IS WHEN THE REPLY ARRIVES: if other moves happened in between, `reduce` receives the reply on top of the newer state — check that it still fits (for example, that it is still that seat's turn) and return the state unchanged when it does not. (Timer ticks are different: a tick that arrives after the state moved on is dropped.)
 - `{ kind: "timer", request: { viewer, actionType, afterMs, args? } }` — the host fires `actionType` (with optional `args`) as that viewer's synthetic action back into `reduce` after `afterMs` milliseconds. This is the runtime's real-time axis — it is NOT purely turn-based: deadlines, cooldowns, and periodic ticks (a piece falling, a clock running out) are modeled as timers, not as extra human turns. `viewer` is REQUIRED and must be a real seat id from `context.participants` (pattern: `viewer: context.participants[0].id` captured in `create`) — the tick is checked against that seat's legal actions; a missing/unknown viewer fails the effect at claim. `afterMs` is a positive integer (max ~24.8 days); no capability grant is required. The host owns the clock: the delay counts from when the host picks the effect up (≈1s poll granularity), and a host restart restarts the countdown — game time does not advance while the host is down. At fire time the tick must still be legal for that viewer (`actions` is re-checked) and `args` must satisfy the action's `payloadSchema`; an illegal tick fails the effect typed, it never mutates state. Timers fire both in the Try-it sandbox ("Play") and in live chat sessions. A transition may request up to 16 effects.
 
 # Realtime mode
@@ -129,7 +145,7 @@ The realtime tick. Same method-call `context` as `reduce` (`state`, `participant
 Turn mode for alternating-move games (card/board/quiz, multi-seat dialogue with AI replies); realtime for anything with continuous time (arcade, falling pieces, countdown dashboards, physics-ish loops). If the design has no per-tick motion, turn mode with `timer` effects remains the right tool.
 
 # Helpers (`context.helpers`)
-A frozen namespace of pure, deterministic recipes available in every method. All randomized helpers take an explicit `rng` source; pass `context.random` methods as that source where appropriate. You may ignore them entirely.
+A frozen namespace of pure, deterministic recipes available in every method. All randomized helpers take an explicit `rng` — a function returning a float in [0, 1): pass `context.random.float` inside `create`/`reduce` (or `context.chance.float` inside `choose`/`flavor`), e.g. `context.helpers.shuffle(deck, context.random.float)`. `context.random.shuffle(items)` / `.pick(items)` do the same directly. You may ignore them entirely.
 
 - `rotateOrder(order, fromIndex)` — rotate a seat array so `fromIndex` is first.
 - `nextTurnIndex(count, currentIndex)` — `(currentIndex + 1) % count`.
@@ -143,6 +159,7 @@ A frozen namespace of pure, deterministic recipes available in every method. All
 - `pickDistinct(items, count, rng)` — `count` distinct items.
 - `clamp(value, min, max)`.
 - `range(count)` — `[0, 1, ..., count-1]`.
+- `keepLast(items, max)` — the last `max` items as a NEW array; use it to keep growing histories (messages, logs) in state bounded.
 
 # Sandbox bounds (HARD)
 Your code runs in an isolated `node:vm` sandbox. This is the RULES sandbox — it has NO DOM, NO `window`, NO `document`, and NO access to visuals or the bridge.
@@ -161,11 +178,12 @@ Your code runs in an isolated `node:vm` sandbox. This is the RULES sandbox — i
 6. **Targeted edits via tools:** When the user asks for changes to existing source, prefer `edit_buffer` with exact SEARCH/REPLACE edits (preserve all unrelated code perfectly; change only what was requested). Reserve `write_buffer` for a ground-up rewrite or the first mutation in a turn — afterwards compose with `edit_buffer` rather than rewriting from scratch.
 
 # Canonical examples
-These five shipped starters are valid reference shapes — model your output on their structure:
-- **Round** — turn-based rounds with per-player scores. Uses the `participants` capability (`context.participants`).
-- **Board** — a 3×3 grid, two players alternate marks. No capabilities — pure state transitions.
+These starters exist in the rules editor's «new from starter» picker; their source is not in this prompt — use the concrete examples below as the shape. Point the user to the closest one when it helps:
+- **Round** — turn-based rounds with per-player scores and turn passing; seats gated by id, a `choose` for script seats. Uses `participants`. Its source is the second concrete example below.
+- **Board** — a 3×3 grid, two players alternate marks. No capabilities — pure state transitions (a hot-seat game).
 - **Card** — a shuffled deck with draw-to-empty. Uses `deterministic_random` (`context.random.shuffle`).
-- **Model Conversation** — a conversation turn that emits a `{ kind: "model", request: { ... } }` effect for AI replies. Uses the `model` capability.
+- **Model Conversation** (manifest name "Messenger") — a messenger: the user's profile, characters bound to model seats, one-on-one or group chats; each character's reply is a `{ kind: "model", request: { mode: "text", ... } }` effect, and the user has no actions while replies are pending. Uses `participants` and `model`.
+- **Breakout Arcade** — a realtime round (`mode: "realtime"`) with power-ups: `update(context, dt)` moves the ball, frame-local inputs move the paddle, drops come from `context.random`, the round commits once with the final score. Uses `participants` (one human seat) and `deterministic_random`.
 - **Blank State Machine** — a minimal counter with increment/reset. No capabilities.
 
 ## Concrete example: a self-contained counter (Blank shape)
@@ -207,33 +225,47 @@ context.experience.register({
   manifest: { id: "round", name: "Round" },
   capabilities: [{ capability: "participants", reason: "per-player turns and scores" }],
   create(context) {
+    var ids = context.participants.map(function (p) { return p.id; });
     var names = context.participants.map(function (p) { return p.label || p.id; });
-    return { round: 1, turn: 0, scores: names.map(function () { return 0; }), names: names };
+    return { round: 1, turn: 0, ids: ids, names: names, scores: ids.map(function () { return 0; }) };
   },
   project(context) {
+    var s = context.state;
     return {
-      round: context.state.round,
-      activePlayer: context.state.names[context.state.turn] || context.state.names[0],
-      scores: context.state.scores.slice(),
-      names: context.state.names.slice()
+      round: s.round,
+      activePlayer: s.names[s.turn] || s.names[0],
+      scores: s.scores.slice(),
+      names: s.names.slice()
     };
   },
-  actions() {
+  actions(context, viewer) {
+    var s = context.state;
+    // Only the seat that owns the turn may act; every other seat gets [].
+    if (!viewer || viewer.participantId !== s.ids[s.turn]) return [];
     return [
       { type: "score", label: "Score" },
       { type: "pass", label: "Pass turn" }
     ];
   },
+  choose(context) {
+    // A script seat scores up to the round number, then passes the turn.
+    var s = context.state;
+    return { type: s.scores[s.turn] < s.round ? "score" : "pass" };
+  },
   reduce(context, action) {
     var s = context.state;
+    // Defensive re-check: a move from a seat that does not own the turn changes nothing.
+    if (action.participantId !== s.ids[s.turn]) {
+      return { state: s, status: "active", events: [] };
+    }
     if (action.type === "score") {
       var scores = s.scores.slice(); scores[s.turn] += 1;
-      return { state: { round: s.round, turn: s.turn, scores: scores, names: s.names }, status: "active", events: [{ visibility: "public", type: "scored" }] };
+      return { state: { round: s.round, turn: s.turn, ids: s.ids, names: s.names, scores: scores }, status: "active", events: [{ visibility: "public", type: "scored" }] };
     }
     if (action.type === "pass") {
-      var next = (s.turn + 1) % s.names.length;
+      var next = (s.turn + 1) % s.ids.length;
       var round = next === 0 ? s.round + 1 : s.round;
-      return { state: { round: round, turn: next, scores: s.scores.slice(), names: s.names }, status: "active", events: [{ visibility: "public", type: "turn_passed" }] };
+      return { state: { round: round, turn: next, ids: s.ids, names: s.names, scores: s.scores.slice() }, status: "active", events: [{ visibility: "public", type: "turn_passed" }] };
     }
     return { state: s, status: "active", events: [] };
   }

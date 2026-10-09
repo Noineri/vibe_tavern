@@ -52,8 +52,9 @@ export interface CoauthorProposal {
 	applyRequest: CoauthorApplyRequest;
 	/** The model's per-tool summaries (shown above Apply, in call order). */
 	summaries: string[];
-	/** CTX-L3: the complete cumulative lore draft (the LAST lore_bundle wins),
-	 *  for the structured lore review surface. `undefined` iff no lore tool fired. */
+	/** CTX-L3: the newest complete cumulative lore draft, selected by its
+	 *  request-local revision (or last call order for historical revision-less
+	 *  results), for the structured lore review surface. */
 	loreBundle?: CoauthorLoreBundle;
 }
 
@@ -174,19 +175,31 @@ export function aggregateCoauthorProposal(
 		applyRequest.alternateGreetings = proposedDraft.alternateGreetings;
 	}
 
-	// ── Lore (CTX-L3): the LAST lore_bundle wins (cumulative — each tool
-	//    returns the complete graph, so the latest carries every earlier op).
-	let lastLore: ProposedActivity | undefined;
+	// ── Lore (CTX-L3/CE-B3): every result carries a complete cumulative graph,
+	//    but parallel delegates may finish out of tool-call order. Prefer the
+	//    greatest request-local revision rather than the stable activity slot;
+	//    historical rows without revisions retain the original last-call fallback.
+	let newestLore: ProposedActivity | undefined;
+	let highestLoreRevision: number | undefined;
 	for (const a of finalized) {
-		if (a.target === "lore_bundle") lastLore = a;
+		if (a.target !== "lore_bundle" || !a.loreBundle) continue;
+		const revision = a.loreBundle.revision;
+		if (revision === undefined) {
+			if (highestLoreRevision === undefined) newestLore = a;
+			continue;
+		}
+		if (highestLoreRevision === undefined || revision >= highestLoreRevision) {
+			highestLoreRevision = revision;
+			newestLore = a;
+		}
 	}
-	if (lastLore?.loreBundle) {
+	if (newestLore?.loreBundle) {
 		// The wholesale (all-selected) bundle ships in applyRequest; the review UI
 		// narrows it via selectLoreBundle before the actual Apply fires.
-		applyRequest.loreBundle = lastLore.loreBundle;
+		applyRequest.loreBundle = newestLore.loreBundle;
 	}
 
-	return { hasProposal: true, proposedDraft, applyRequest, summaries, loreBundle: lastLore?.loreBundle };
+	return { hasProposal: true, proposedDraft, applyRequest, summaries, loreBundle: newestLore?.loreBundle };
 }
 
 /**

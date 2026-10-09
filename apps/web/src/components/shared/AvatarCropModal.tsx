@@ -2,6 +2,8 @@ import { useCallback, useMemo, useState } from "react";
 import Cropper from "react-easy-crop";
 import type { Area, Point } from "react-easy-crop";
 import { Modal } from "./Modal.js";
+import { modalPanelCls } from "./modal-helpers.js";
+import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 
 export interface AvatarCropResult {
@@ -128,7 +130,7 @@ export function AvatarCropModal({
   return (
     <Modal open={true} onClose={onCancel} hideOverlay={stacked}>
       <div
-        className="bg-surface border border-border2 rounded-xl max-w-[calc(100vw-32px)] max-h-[calc(100vh-60px)] flex flex-col shadow-[0_24px_60px_rgba(0,0,0,.5)] overflow-hidden"
+        className={cn(modalPanelCls, "flex max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] flex-col")}
         style={{ width: "420px" }}
       >
         {/* Header */}

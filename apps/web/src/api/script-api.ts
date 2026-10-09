@@ -18,7 +18,7 @@ export async function listParticipatingScripts(chatId: string): Promise<ScriptRe
   return unwrapRpc(await client.api.scripts.participating.$get({ query: { chatId } }));
 }
 
-export async function createScript(body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; links?: Array<{ targetType: "character" | "persona"; targetId: string }>; chatId?: string; enabled?: boolean; sortOrder?: number }): Promise<ScriptRecord> {
+export async function createScript(body: { name: string; description?: string; code?: string; scriptKind?: ScriptKind; creationIntentId?: string; scopeType: string; links?: Array<{ targetType: "character" | "persona"; targetId: string }>; chatId?: string; enabled?: boolean; sortOrder?: number; origin?: "imported" }): Promise<ScriptRecord> {
   const response = await client.api.scripts.$post({ json: body });
   return unwrapRpc(response);
 }
@@ -39,7 +39,7 @@ export async function deleteScript(scriptId: string): Promise<void> {
   if (!response.ok) throw await unwrapError(response);
 }
 
-export async function testScript(scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; personaName?: string; personaDescription?: string; lastMessage?: string }) {
+export async function testScript(scriptId: string, body: { code?: string; messages?: Array<{ role: string; content: string }>; characterName?: string; characterPersonality?: string; characterScenario?: string; personaName?: string; personaDescription?: string; lastMessage?: string; /** Import-warning acknowledgement (SCRIPT_SAFETY_PLAN decision 14, SS-7): set by the warning flow — required for a test run of an imported never-enabled script. */ warningAcknowledged?: boolean }) {
   const response = await client.api.scripts[":scriptId"].test.$post({ param: { scriptId }, json: body });
   return unwrapRpc(response);
 }

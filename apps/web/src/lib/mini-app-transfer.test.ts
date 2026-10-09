@@ -138,19 +138,19 @@ describe("importMiniAppBundle", () => {
   function makeDeps(existingNames: string[] = []): MiniAppImportDeps & {
     createdVisuals: Array<{ name: string; apiVersion: number }>;
     binds: Array<[string, string]>;
-    scriptCreated: Array<{ name: string; scopeType: string; enabled: boolean }>;
+    scriptCreated: Array<{ name: string; scopeType: string; enabled: boolean; origin?: "imported" }>;
   } {
     const createdVisuals: Array<{ name: string; apiVersion: number }> = [];
     const binds: Array<[string, string]> = [];
-    const scriptCreated: Array<{ name: string; scopeType: string; enabled: boolean }> = [];
+    const scriptCreated: Array<{ name: string; scopeType: string; enabled: boolean; origin?: "imported" }> = [];
     let visualSeq = 0;
     return {
       createdVisuals,
       binds,
       scriptCreated,
       listAllScripts: () => Promise.resolve(existingNames.map((name) => ({ name }))),
-      createScript: mock((body: { name: string; scopeType: string; enabled?: boolean }) => {
-        scriptCreated.push({ name: body.name, scopeType: body.scopeType, enabled: body.enabled ?? false });
+      createScript: mock((body: { name: string; scopeType: string; enabled?: boolean; origin?: "imported" }) => {
+        scriptCreated.push({ name: body.name, scopeType: body.scopeType, enabled: body.enabled ?? false, origin: body.origin });
         return Promise.resolve(makeScript({ id: "scr_new", name: body.name }));
       }),
       createExperienceVisual: mock((body: { name: string; apiVersion: number }) => {
@@ -192,6 +192,10 @@ describe("importMiniAppBundle", () => {
     ]);
     expect(result.script.id).toBe("scr_new");
     expect(result.visuals).toHaveLength(2);
+    // Import arrives disabled even though the bundle exported enabled=true
+    // (decision 2 + 9: imported scripts never forward the exported flag).
+    expect(deps.scriptCreated[0]?.enabled).toBe(false);
+    expect(deps.scriptCreated[0]?.origin).toBe("imported");
   });
 
   test("name collision appends the suffix; no collision keeps the name", async () => {
@@ -227,5 +231,8 @@ describe("importMiniAppBundle", () => {
     expect(deps.createdVisuals).toEqual([]);
     expect(deps.scriptCreated[0]?.scopeType).toBe("global");
     expect(deps.scriptCreated[0]?.enabled).toBe(false);
+    // Decision 9: a file-imported mini-app always carries imported provenance
+    // (the server forces it disabled regardless of the exported enabled flag).
+    expect(deps.scriptCreated[0]?.origin).toBe("imported");
   });
 });

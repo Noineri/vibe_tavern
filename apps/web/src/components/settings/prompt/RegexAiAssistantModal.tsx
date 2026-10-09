@@ -12,7 +12,6 @@ import { useAiAssistantRunner } from "../../shared/ai-assistant/use-ai-assistant
 import { useBootstrapStore } from "../../../stores/api-actions/bootstrap-actions.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { Icons } from "../../shared/icons.js";
-import { cn } from "../../../lib/cn.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { requestRegexAssist } from "../../../api/regex-assist-api.js";
 import type {
@@ -24,7 +23,7 @@ import type Resources from "../../../i18n/resources.js";
 
 /** A statically-known i18n key — keeps the archetype/label tables compile-checked. */
 type I18nKey = keyof Resources["en"];
-import type { RegexPresetDraft } from "./RegexPresetEditor.js";
+import type { RegexPresetDraft } from "./regex-rule-draft.js";
 import { compileRegexScript, parseFindRegex } from "@vibe-tavern/prompt-pipeline";
 import { brandId, type RegexPreset } from "@vibe-tavern/domain";
 
@@ -302,48 +301,27 @@ export function RegexAiAssistantModal({ isOpen, onClose, onApply, currentRule }:
 		</div>
 	);
 
-	const footer = (
-		<>
-			<button
-				type="button"
-				className="h-[37px] cursor-pointer rounded-md border border-border bg-surface px-[21px] font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-t2 transition-all hover:bg-s2 hover:text-t1"
-				onClick={onClose}
-			>
-				{t("cancel_btn")}
-			</button>
-			{draft && (
-				<button
-					type="button"
-					className="h-[37px] cursor-pointer rounded-md border border-border bg-s2 px-4 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-all hover:bg-s3 hover:text-t1"
-					onClick={() => void doGenerate({ testContext: lastTestResult })}
-				>
-					{t("regexAssistant.refine")}
-				</button>
-			)}
-			{draft && (
-				<button
-					type="button"
-					className="h-[37px] cursor-pointer rounded-md bg-accent px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium text-white transition-all hover:brightness-110"
-					onClick={handleApply}
-				>
-					{t("regexAssistant.apply")}
-				</button>
-			)}
-			<button
-				type="button"
-				className={cn(
-					"h-[37px] rounded-md px-4 font-ui text-[calc(var(--ui-fs)-2px)] font-medium transition-all",
-					task.trim() && !generating && runner.providerId
-						? "cursor-pointer bg-accent text-white hover:brightness-110"
-						: "cursor-not-allowed bg-s2 text-t4",
-				)}
-				disabled={!task.trim() || generating || !runner.providerId}
-				onClick={() => void doGenerate()}
-			>
-				{generating ? t("regexAssistant.generating") : t("regexAssistant.generate")}
-			</button>
-		</>
-	);
+	const secondaryActions = [
+		{
+			label: t("cancel_btn"),
+			onClick: onClose,
+			disabled: generating,
+		},
+		...(draft
+			? [
+				{
+					label: t("regexAssistant.refine"),
+					onClick: () => void doGenerate({ testContext: lastTestResult }),
+					disabled: generating,
+				},
+				{
+					label: t("regexAssistant.apply"),
+					onClick: handleApply,
+					disabled: generating,
+				},
+			]
+			: []),
+	];
 
 	const body = (
 		<AiAssistantShell
@@ -352,7 +330,14 @@ export function RegexAiAssistantModal({ isOpen, onClose, onApply, currentRule }:
 			streaming={generating}
 			providerCount={providerProfiles.length}
 			noProvidersLabel={t("regexAssistant.noProvider")}
-			footer={footer}
+			secondaryActions={secondaryActions}
+			primaryAction={{
+				label: t("regexAssistant.generate"),
+				busyLabel: t("regexAssistant.generating"),
+				onClick: () => void doGenerate(),
+				disabled: !task.trim() || !runner.providerId,
+				busy: generating,
+			}}
 		>
 			<div className="flex flex-col gap-4">
 				<AiAssistantConnectionFields

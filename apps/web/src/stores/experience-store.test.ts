@@ -139,6 +139,7 @@ function makeConfig(chatId: string): ExperienceChatConfigRow {
     chatId,
     enabled: true,
     scriptId: "script-1",
+    scriptName: "Rules One",
     visualId: "vis-1",
     capabilityGrants: [],
     contextMode: "none",

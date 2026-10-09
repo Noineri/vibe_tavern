@@ -139,6 +139,34 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     expect(result.systemMessage).toContain("discovery failed");
   });
 
+  test("SS-4B: contract derivation is SKIPPED while the script is untrusted — honest skip note, no summary fields", async () => {
+    // VALID_RULES derive successfully on the trusted path (pinned above), so
+    // the absence of the contract-only rendering ("choose method:") proves
+    // deriveContract never RAN — no imported code executes during assembly.
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+      rulesTrusted: false,
+    });
+    expect(result.systemMessage).toContain("Discovered experience definition");
+    expect(result.systemMessage).toContain(
+      "not derived: script is imported and not yet enabled",
+    );
+    expect(result.systemMessage).not.toContain("choose method:");
+  });
+
+  test("SS-4B: rulesTrusted true (default parity) still derives the contract", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+      rulesTrusted: true,
+    });
+    expect(result.systemMessage).toContain("choose method: absent");
+    expect(result.systemMessage).not.toContain("not derived: script is imported");
+  });
+
   test("visual, bound visuals, and test feedback surface when present", async () => {
     const result = await assembleExperienceCopilotPrompt({
       history: [],
@@ -481,9 +509,23 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // constraints, user-flow.md gained the realtime Play/live-run lines.
     // Re-captured once more: the context-economy constraint was REMOVED from
     // base.md by user decision (keep it out of the prompt) — mode-choice,
-    // round-commit determinism, and comment-the-code remain.
+    // round-commit determinism, and comment-the-code remain. Re-captured
+    // again (2026-10-07, Experience Copilot Grounding Report step 3 / P2):
+    // interactive-visual.md became a pure visual-bridge reference — the
+    // one-shot raw-code-generator role header, validated-contract section and
+    // output-format constraints were deleted/replaced with tool-based ones
+    // (write_buffer/edit_buffer), and the canonical-examples list gained
+    // Breakout. Re-captured again (2026-10-07, Experience Copilot Grounding
+    // Report step 4 / P3): interactive-rules.md now documents real turn-owner
+    // selection, script-seat choose requirements, model-effect delivery,
+    // helper contracts, all six starters, and the corrected Round example.
+    // Re-captured again (2026-10-07, Experience Copilot Grounding Report
+    // step 8 / P5): user-flow.md's sandbox actions now name the session-log
+    // buttons ("Send log to assistant" / "Copy log" / "Ask the copilot about
+    // this error") and the live-only Developer-diagnostics digest button.
+    // Intentional system-prompt content changes, not drift.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("7350e55bc21074ef2f6c98e68ed92e256fa93ef054c96b1b9cd1a403dadea2fd");
+      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -603,9 +645,14 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     // is total, not a substituted empty header. (Re-captured TAG-11: the
     // `grill-me` skill catalog entry is present in the baseline system message.
     // Re-captured for #16 (context economy): base.md shrunk to role + skill pointer + hard constraints, and the system message was reordered cache-first (stable role/catalog/refs prefix, volatile context package at the tail) — see the
-    // zero-digest pin's trail.)
+    // zero-digest pin's trail. Re-captured again (2026-10-07, Experience
+    // Copilot Grounding Report step 3 / P2): interactive-visual.md became a
+    // pure visual-bridge reference. Re-captured again for step 4 / P3's
+    // interactive-rules grounding corrections — see the zero-digest trail.
+    // Re-captured again for step 8 / P5's user-flow log-button corrections —
+    // see the zero-digest trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("7350e55bc21074ef2f6c98e68ed92e256fa93ef054c96b1b9cd1a403dadea2fd");
+      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -668,9 +715,15 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // The zero-attached system message is STILL the pinned pre-CX-3 SHA.
     // (Re-captured TAG-11: the `grill-me` skill catalog entry is present in the
     // zero-attached baseline system message. Re-captured again for the
-    // playground-timers asset update — see the zero-digest pin's trail.)
+    // playground-timers asset update — see the zero-digest pin's trail.
+    // Re-captured again (2026-10-07, Experience Copilot Grounding Report
+    // step 3 / P2): interactive-visual.md became a pure visual-bridge
+    // reference. Re-captured again for step 4 / P3's interactive-rules
+    // grounding corrections — see the zero-digest pin's trail. Re-captured
+    // again for step 8 / P5's user-flow log-button corrections — see the
+    // zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("7350e55bc21074ef2f6c98e68ed92e256fa93ef054c96b1b9cd1a403dadea2fd");
+      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {

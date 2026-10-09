@@ -79,6 +79,18 @@ Runtime validation + static types.
 - **Type inference** — `z.infer<typeof schema>` produces TypeScript types from schemas. No duplicate type definitions.
 - **Error messages** — structured validation errors with path info. Frontend can display field-level errors.
 
+### Acorn ^8
+
+ESTree parser used by `packages/domain/src/script-safety.ts` for static suspicion analysis of prompt, dice, and interactive script source.
+
+**Why Acorn:**
+- **Parse without executing** — the detector can inspect syntax, calls, globals, masking, and obfuscation shapes without evaluating user code.
+- **Shared AST contract** — one pure domain module feeds both web editor diagnostics and imported-script warning decisions.
+- **Small and dependency-free** — Acorn is the first and currently only runtime dependency of `@vibe-tavern/domain`; the package remains the workspace dependency leaf and imports no other VT package.
+- **Bundle containment** — web consumers import `@vibe-tavern/domain/script-safety` directly; the domain barrel deliberately does not re-export it, so Acorn is not pulled into the sandboxed experience-frame kernel bundle.
+
+This detector is a user-assist layer, not a confinement boundary; [AD-024](./decisions.md#ad-024-retain-nodevm-for-compatible-script-execution) still governs script execution.
+
 ### `@agnai/web-tokenizers` + `js-tiktoken`
 
 Token counting for context budget management and tokenizer-specific logit-bias tooling.
@@ -207,7 +219,7 @@ Bun workspace with 5 packages + 2 apps:
 
 ```
 vibe-tavern/
-├── packages/domain/          # Zero deps. Types, IDs, constants.
+├── packages/domain/          # Workspace leaf. Types, IDs, constants, and Acorn-backed script safety.
 ├── packages/api-contracts/   # Zod schemas + shared wire-DTO interfaces. Depends on domain only.
 ├── packages/db/              # Drizzle stores. Depends on domain.
 ├── packages/prompt-pipeline/ # Pure assembly function. Depends on domain.
@@ -216,7 +228,7 @@ vibe-tavern/
 └── apps/web/                 # Frontend SPA. Imports shared types from api-contracts; talks to api over HTTP.
 ```
 
-**Dependency rule:** Arrows point downward only. No cycles. `domain` is the leaf — zero imports from other packages.
+**Dependency rule:** Arrows point downward only. No cycles. `domain` is the workspace leaf — zero imports from other VT packages; Acorn is its sole third-party runtime dependency for shared script-safety parsing.
 
 **Why monorepo (not polyrepo):** Shared types between front and back. Single `bun install`. Atomic changes across packages (e.g., adding a DB column touches domain → db → api-contracts → api → web in one PR). The shared `api-contracts` package is what makes type drift between the two sides a compile error instead of a silent runtime bug — the wire-format DTO interfaces live there once and are imported by both the backend mappers and the frontend `api/types.ts`.
 

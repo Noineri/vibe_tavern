@@ -42,6 +42,7 @@ const testScript = mock(() => Promise.resolve({
 }));
 const realI18nContext = await import("../../../i18n/context.js");
 const realScriptApi = await import("../../../api/script-api.js");
+const realSettingsApi = await import("../../../api/settings-api.js");
 const realAutoTextarea = await import("../../shared/auto-textarea.js");
 
 // ── Module-boundary mocks (hoisted above the ScriptTester import) ────────
@@ -64,6 +65,19 @@ mock.module("../../../api/script-api.js", () => ({
 	testScript,
 }));
 
+// SS-7: the script-safety settings API (the suppression singleton) — the
+// real Zustand store stays; tests drive its state directly.
+const getScriptSafetySettings = mock(async () => ({ suppressImportWarnings: false, updatedAt: "" }));
+const updateScriptSafetySettings = mock(async (input: { suppressImportWarnings: boolean }) => ({
+	suppressImportWarnings: input.suppressImportWarnings,
+	updatedAt: "",
+}));
+mock.module("../../../api/settings-api.js", () => ({
+	...realSettingsApi,
+	getScriptSafetySettings,
+	updateScriptSafetySettings,
+}));
+
 // AutoTextarea sizes via scrollHeight in a useLayoutEffect; in happy-dom that
 // is 0 and irrelevant to the logic under test, so stub it to a plain textarea.
 mock.module("../../shared/auto-textarea.js", () => ({
@@ -74,6 +88,7 @@ mock.module("../../shared/auto-textarea.js", () => ({
 }));
 
 const mockTestScript = testScript;
+const { useScriptSafetySettingsStore } = await import("../../../stores/script-safety-settings-store.js");
 
 let ScriptTester: typeof import("./ScriptTester.js").ScriptTester;
 let render: typeof import("@testing-library/react").render;
@@ -93,6 +108,16 @@ function renderTester(props: Partial<Parameters<typeof ScriptTester>[0]> = {}) {
 describe("ScriptTester (characterization)", () => {
 	beforeEach(() => {
 		mockTestScript.mockReset();
+		mockTestScript.mockResolvedValue({
+			kind: "prompt",
+			personality: "",
+			scenario: "",
+			state: {},
+			injectedMessages: [],
+			console: [],
+			shared: {},
+			errors: [],
+		});
 	});
 
 	it("payload: a single-line input posts one user message to testScript", async () => {
@@ -185,5 +210,103 @@ describe("ScriptTester (characterization)", () => {
 		fireEvent.click(getByText("script_test_run"));
 		// No personality/scenario/injected/console/state/shared and no errors → warning.
 		expect(await findByText("script_test_no_effect")).toBeTruthy();
+	});
+});
+
+// ── SS-7: the warning flow gating test runs ────────────────────────────────
+// The full matrix lives in scriptSafetyWarningFlow's own suite; these tests
+// pin the RUN-side wiring: which modal blocks the request, what the request
+// carries on the acknowledged path, and the intended repetition.
+const UNTRUSTED_IMPORT = { origin: "imported" as const, firstEnabledAt: null };
+const TRUSTED_IMPORT = { origin: "imported" as const, firstEnabledAt: "2026-01-01T00:00:00.000Z" };
+const IN_APP = { origin: "in_app" as const, firstEnabledAt: null };
+
+describe("ScriptTester SS-7 warning flow", () => {
+	beforeEach(() => {
+		mockTestScript.mockReset();
+		mockTestScript.mockResolvedValue({
+			kind: "prompt",
+			personality: "",
+			scenario: "",
+			state: {},
+			injectedMessages: [],
+			console: [],
+			shared: {},
+			errors: [],
+		});
+		// Seed the loaded sentinel so the component's load() is a no-op.
+		useScriptSafetySettingsStore.setState({ suppressImportWarnings: false });
+	});
+
+	async function typeAndRun(view: ReturnType<typeof render>) {
+		await userEvent.setup().type(view.getByPlaceholderText("script_test_input_placeholder"), "hi");
+		fireEvent.click(view.getByText("script_test_run"));
+	}
+
+	it("an untrusted import is blocked by the plain warning until confirmed; the run then carries warningAcknowledged", async () => {
+		const view = renderTester({ script: UNTRUSTED_IMPORT });
+		await typeAndRun(view);
+		expect(view.getAllByText("script_safety_warning_body").length).toBe(2);
+		expect(mockTestScript).not.toHaveBeenCalled();
+		fireEvent.click(view.getByText("script_safety_warning_confirm_run"));
+		await waitFor(() => {
+			expect(mockTestScript).toHaveBeenCalledWith("script_1", expect.objectContaining({ warningAcknowledged: true }));
+		});
+	});
+
+	it("a suppressed untrusted import runs directly — the stored flag IS the acknowledgement (decision 14)", async () => {
+		useScriptSafetySettingsStore.setState({ suppressImportWarnings: true });
+		const view = renderTester({ script: UNTRUSTED_IMPORT });
+		await typeAndRun(view);
+		await waitFor(() => {
+			expect(mockTestScript).toHaveBeenCalledWith("script_1", expect.objectContaining({ warningAcknowledged: true }));
+		});
+		expect(view.queryByText("script_safety_warning_body")).toBeNull();
+	});
+
+	it("an in-app script runs without a modal and without the ack flag", async () => {
+		const view = renderTester({ script: IN_APP });
+		await typeAndRun(view);
+		// Exact-object match pins the ABSENCE of warningAcknowledged (the
+		// acknowledged path is imported-never-enabled only).
+		await waitFor(() => {
+			expect(mockTestScript).toHaveBeenCalledWith("script_1", { messages: [{ role: "user", content: "hi" }], code: "draft code" });
+		});
+		expect(view.queryByText("script_safety_warning_body")).toBeNull();
+	});
+
+	it("an untrusted import with findings gets the findings modal ALONE, honest text inside; cancel sends nothing", async () => {
+		const view = renderTester({ script: UNTRUSTED_IMPORT, code: "eval('x');" });
+		await typeAndRun(view);
+		expect(view.getAllByText("script_safety_findings_title").length).toBe(2);
+		expect(view.getByText("script_safety_warning_body")).toBeTruthy();
+		expect(view.getByText("script_safety_rule_unsafe_eval")).toBeTruthy();
+		fireEvent.click(view.getByText("cancel"));
+		expect(mockTestScript).not.toHaveBeenCalled();
+	});
+
+	it("a TRUSTED import with findings still gets the findings modal (origin-based) — without the honest text", async () => {
+		const view = renderTester({ script: TRUSTED_IMPORT, code: "eval('x');" });
+		await typeAndRun(view);
+		expect(view.getAllByText("script_safety_findings_title").length).toBe(2);
+		expect(view.queryByText("script_safety_warning_body")).toBeNull();
+	});
+
+	it("the warning REPEATS on the next run after a cancel (decision 11 — intended)", async () => {
+		const view = renderTester({ script: UNTRUSTED_IMPORT });
+		await typeAndRun(view);
+		fireEvent.click(view.getByText("cancel"));
+		expect(mockTestScript).not.toHaveBeenCalled();
+		await typeAndRun(view);
+		expect(view.getAllByText("script_safety_warning_body").length).toBe(2);
+	});
+
+	it("«Show in code» from the findings modal forwards the first line to the host", async () => {
+		const onRevealLine = mock((_line: number) => {});
+		const view = renderTester({ script: UNTRUSTED_IMPORT, code: "context.state.set('x', 1);\neval('y');", onRevealLine });
+		await typeAndRun(view);
+		fireEvent.click(view.getByText("script_safety_findings_show_in_code"));
+		expect(onRevealLine).toHaveBeenCalledWith(2);
+		expect(mockTestScript).not.toHaveBeenCalled();
 	});
 });

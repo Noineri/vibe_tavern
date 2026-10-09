@@ -222,7 +222,7 @@ export function ProxyManagerModal({ proxies, defaultProxyId, onCreate, onUpdate,
         subtitle={t("proxy_manager_subtitle")}
         detailTitle={draft?.name || t("proxy_manager_title")}
         dirty={dirty}
-        containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[600px] w-[760px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]"
+        containerClassName="max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[600px] w-[760px]"
         masterClassName="flex w-[220px] shrink-0 flex-col border-r border-border"
         detailClassName="p-5"
         mobileDetailClassName="p-4"

@@ -1,6 +1,7 @@
 import { eq, and, isNull } from 'drizzle-orm';
 import { log } from '@vibe-tavern/domain';
 import {
+  scripts,
   experienceVisuals,
   experienceChatConfigs,
   experiencePromptOverrides,
@@ -39,6 +40,11 @@ export interface ExperienceChatConfigRow {
   chatId: string;
   enabled: boolean;
   scriptId: string | null;
+  /** Derived display field (LEFT JOIN scripts.name) — the bound script's
+   * human name, so UI surfaces never fall back to the technical id. Null
+   * when scriptId is null (nothing bound, or the script row was deleted —
+   * the FK is SET NULL, so both stay consistent). */
+  scriptName: string | null;
   visualId: string | null;
   capabilityGrants: string[];
   contextMode: string;
@@ -264,6 +270,37 @@ export class ExperienceResourceStore {
   }
 
   /**
+   * Append capabilities newly declared by an app-owned built-in to every chat
+   * currently assigned to that script. Existing grants and their order stay
+   * untouched; capabilities the user removed while already declared are never
+   * re-added because the seed only passes declaration-set additions.
+   */
+  async addGrantsForScript(scriptId: string, capabilities: readonly string[]): Promise<number> {
+    if (capabilities.length === 0) return 0;
+    const rows = await this.db
+      .select()
+      .from(experienceChatConfigs)
+      .where(eq(experienceChatConfigs.scriptId, scriptId))
+      .all();
+    let changed = 0;
+    for (const row of rows) {
+      const current = parseStringArray(row.capabilityGrantsJson);
+      const additions = capabilities.filter((capability) => !current.includes(capability));
+      if (additions.length === 0) continue;
+      await this.db
+        .update(experienceChatConfigs)
+        .set({
+          capabilityGrantsJson: JSON.stringify([...current, ...additions]),
+          updatedAt: this.clock.now(),
+        })
+        .where(eq(experienceChatConfigs.id, row.id))
+        .run();
+      changed += 1;
+    }
+    return changed;
+  }
+
+  /**
    * List visuals visible to a scope. Global visuals are always returned; a
    * character/persona/chat scope additionally returns its directly-owned visual.
    * (Visual→rules BINDING is the `script_visuals` junction managed by
@@ -300,11 +337,12 @@ export class ExperienceResourceStore {
 
   async getConfigForChat(chatId: string): Promise<ExperienceChatConfigRow | null> {
     const row = await this.db
-      .select()
+      .select({ config: experienceChatConfigs, scriptName: scripts.name })
       .from(experienceChatConfigs)
+      .leftJoin(scripts, eq(scripts.id, experienceChatConfigs.scriptId))
       .where(eq(experienceChatConfigs.chatId, chatId))
       .get();
-    return row ? this.mapRowConfig(row) : null;
+    return row ? { ...this.mapRowConfig(row.config), scriptName: row.scriptName ?? null } : null;
   }
 
   /**
@@ -337,7 +375,9 @@ export class ExperienceResourceStore {
           updatedAt: now,
         })
         .returning();
-      return this.mapRowConfig(row!);
+      // A freshly created config row never carries a script (all defaults), so
+      // the derived scriptName is null by construction — no join needed here.
+      return { ...this.mapRowConfig(row!), scriptName: null };
     } catch (error) {
       // Expected: a racing insert violated unique(chatId) — the winner is now
       // persisted; read it. Anything else (e.g. an FK violation on a deleted
@@ -378,7 +418,20 @@ export class ExperienceResourceStore {
       .where(eq(experienceChatConfigs.id, config.id))
       .returning();
     if (!row) throw new Error(`Experience config for chat '${chatId}' not found after update`);
-    return this.mapRowConfig(row);
+    return { ...this.mapRowConfig(row), scriptName: await this.resolveScriptName(row.scriptId) };
+  }
+
+  /** Resolve the bound script's display name for a config row already in
+   * hand (updateConfig returns the updated row directly, without the join
+   * getConfigForChat performs). Null when nothing is bound. */
+  private async resolveScriptName(scriptId: string | null): Promise<string | null> {
+    if (scriptId === null) return null;
+    const script = await this.db
+      .select({ name: scripts.name })
+      .from(scripts)
+      .where(eq(scripts.id, scriptId))
+      .get();
+    return script?.name ?? null;
   }
 
   async deleteConfig(chatId: string): Promise<void> {
@@ -518,7 +571,9 @@ export class ExperienceResourceStore {
     };
   }
 
-  private mapRowConfig(row: typeof experienceChatConfigs.$inferSelect): ExperienceChatConfigRow {
+  private mapRowConfig(
+    row: typeof experienceChatConfigs.$inferSelect,
+  ): Omit<ExperienceChatConfigRow, 'scriptName'> {
     return {
       id: row.id,
       chatId: row.chatId,

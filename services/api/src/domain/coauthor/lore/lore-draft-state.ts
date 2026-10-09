@@ -233,6 +233,8 @@ export class LoreDraftState {
 	/** Persisted values captured at import; the sole baseline for review changes. */
 	private readonly lorebookBaselines = new Map<string, CoauthorDraftLorebook>();
 	private readonly entryBaselines = new Map<string, CoauthorDraftLoreEntry>();
+	/** Monotonic revision emitted with every cumulative snapshot. */
+	private revision = 0;
 	private chain: Promise<unknown> = Promise.resolve();
 
 	constructor(private readonly deps: LoreDraftDeps) {}
@@ -246,7 +248,14 @@ export class LoreDraftState {
 	 * order rather than racing on the maps.
 	 */
 	private runQueued<T>(fn: () => T): Promise<T> {
-		const result = this.chain.catch(() => undefined).then(fn);
+		const result = this.chain.catch(() => undefined).then(() => {
+			// Advance before the mutation snapshots state, making every successful
+			// output's revision an atomic ordering token. A rejected operation may
+			// leave a gap, but no output carries that revision and later snapshots
+			// remain strictly newer than every prior successful snapshot.
+			this.revision += 1;
+			return fn();
+		});
 		this.chain = result.then(
 			() => undefined,
 			() => undefined,
@@ -481,6 +490,7 @@ export class LoreDraftState {
 	 */
 	snapshot(): CoauthorLoreBundle {
 		return {
+			revision: this.revision,
 			lorebooks: [...this.lorebooks.values()].map((node) => {
 				const { settingChanges: _settingChanges, ...lorebook } = node;
 				const settingChanges = deriveSettingChanges(

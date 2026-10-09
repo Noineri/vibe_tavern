@@ -320,7 +320,10 @@ export function ExperienceLauncher({ docked = false }: ExperienceLauncherProps):
 
   if (!visible) return null;
 
-  const title = session?.manifest.name ?? config!.scriptId ?? "";
+  // Display title: the live session's manifest name, else the bound
+  // script's human name (scriptName, derived server-side), else the raw id
+  // as a last-resort fallback, else the generic launcher title.
+  const title = session?.manifest.name ?? config!.scriptName ?? config!.scriptId ?? "";
   const incompatible = hasSession && session!.visualSource === null;
   // Endgame (lobby B3): a terminal branch session (completed or interrupted)
   // swaps the primary launcher action for the restart pair. Status is a plain

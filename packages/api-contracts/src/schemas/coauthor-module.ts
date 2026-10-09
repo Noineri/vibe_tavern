@@ -19,6 +19,11 @@ export const coauthorToolSetSchema = z.object({
   create_lorebook: z.boolean().optional(),
   create_lore_entry: z.boolean().optional(),
   set_lore_activation: z.boolean().optional(),
+  // CE-B1: operate on persisted lore. These are separate toggles because a
+  // module may be allowed to create lore without revising existing entities.
+  edit_lorebook: z.boolean().optional(),
+  edit_lore_entry: z.boolean().optional(),
+  add_lore_entry: z.boolean().optional(),
   // AI-delegation tools (CTX-L2b): the co-author delegates content/keys
   // generation to the AI-assistant via an ISOLATED one-shot prompt (a
   // separate LLM call, configurable to a smaller model) — IDE-style

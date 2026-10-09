@@ -32,6 +32,7 @@ import { createRef } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { mocked } from "../../../../test/mock-utils.js";
 import type { CharacterImportMobileHandle } from "./CharacterImportMobile.js";
+import type { RegexScriptImportDraft } from "@vibe-tavern/import-export";
 import type { CharacterPreview } from "./parse-import-file.js";
 
 useDomEnv();
@@ -50,7 +51,9 @@ const parseCharacterFile = mock(realParseImportFile.parseCharacterFile);
 mock.module("../../../i18n/context.js", () => ({
   ...realI18nContext,
   useT: () => ({
-    t: (key: string) => key,
+    t: (key: string, values?: Record<string, number>) => key === "regexImport.profileSummary"
+      ? `${values?.n} Rules · ${values?.enabled} enabled · ${values?.disabled} disabled`
+      : key,
     tDynamic: (key: string) => key,
     locale: "en",
     setLocale: () => {},
@@ -86,8 +89,35 @@ const mockToastError = mocked(toastError);
 const PNG_FILE = new File(["x"], "card.png", { type: "image/png" });
 const MOCK_AVATAR_URL = "blob:mock-avatar-url";
 
-function previewFor(file: File, name: string, avatarUrl: string | null, hasEmbeddedLorebook = false): CharacterPreview {
-  return { file, name, description: "desc", tags: ["tag1"], hasEmbeddedLorebook, avatarUrl };
+function regexDraft(name: string, disabled: boolean): RegexScriptImportDraft {
+  return {
+    name,
+    findRegex: "/x/g",
+    replaceString: "",
+    trimStrings: [],
+    substituteRegex: 0,
+    disabled,
+    markdownOnly: false,
+    promptOnly: false,
+    runOnEdit: false,
+    minDepth: null,
+    maxDepth: null,
+    placement: [2],
+    isGlobal: false,
+    sortOrder: 0,
+    profileId: null,
+    sourceScript: { scriptName: name },
+  };
+}
+
+function previewFor(
+  file: File,
+  name: string,
+  avatarUrl: string | null,
+  hasEmbeddedLorebook = false,
+  regexScripts?: RegexScriptImportDraft[],
+): CharacterPreview {
+  return { file, name, description: "desc", tags: ["tag1"], hasEmbeddedLorebook, avatarUrl, ...(regexScripts?.length ? { regexScripts } : {}) };
 }
 
 function mockPreview(avatarUrl: string | null): CharacterPreview {
@@ -184,21 +214,36 @@ describe("CharacterImportMobile", () => {
     });
   });
 
-  it("offers the embedded-lore choice and sends the enabled flag with the confirmed card", async () => {
-    // ST asks before importing card lore (world-info.js:5559-5574); the mobile
-    // preview uses the same Toggle control as the desktop preview.
-    mockParse.mockResolvedValue(previewFor(PNG_FILE, "Test Character", MOCK_AVATAR_URL, true));
+  it("keeps embedded-lore and Regex Profile choices independent and sends both enabled values", async () => {
+    // Both cards share the preview without coupling their state: importing a
+    // card's lore remains the established option while Regex profile activation
+    // stays default-off unless the user explicitly changes it.
+    mockParse.mockResolvedValue(previewFor(
+      PNG_FILE,
+      "Test Character",
+      MOCK_AVATAR_URL,
+      true,
+      [regexDraft("Enabled", false), regexDraft("Disabled", true)],
+    ));
     const { getByRole, getByText, input } = renderWithInput();
     pickFile(input, PNG_FILE);
     await waitFor(() => {
-      expect(document.body.textContent).toContain("import_embedded_lorebook");
+      expect(document.body.textContent).toContain("regexImport.scopeCharacter");
     });
-    const toggle = getByRole("switch", { name: "import_embedded_lorebook" });
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(document.body.textContent).toContain("2 Rules · 1 enabled · 1 disabled");
+    const loreToggle = getByRole("switch", { name: "import_embedded_lorebook" });
+    const regexToggle = getByRole("switch", { name: "regexImport.enableAfterImport" });
+    expect(loreToggle.getAttribute("aria-checked")).toBe("false");
+    expect(regexToggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(loreToggle);
+    fireEvent.click(regexToggle);
+    expect(loreToggle.getAttribute("aria-checked")).toBe("true");
+    expect(regexToggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(getByText("add_to_library"));
-    expect(onImportFiles).toHaveBeenCalledWith([PNG_FILE], { importEmbeddedBook: true });
+    expect(onImportFiles).toHaveBeenCalledWith([PNG_FILE], {
+      importEmbeddedBook: true,
+      enableImportedRegexProfile: true,
+    });
   });
 
   it("cancel clears the modal without calling onImportFiles", async () => {

@@ -8,8 +8,12 @@ import { useSnapshotStore } from "../snapshot-store.js";
 // real (spread) so unrelated actions in this module are unaffected.
 const createCharacterMock = mock();
 const fetchBootstrapMock = mock(async () => undefined);
+const importJsonMock = mock(async () => ({ } as unknown as Awaited<ReturnType<typeof import("../../api/import-api.js").importJson>>));
+const invalidateActiveRegexPresetsSpy = mock();
 const realCharacterApi = await import("../../api/character-api.js");
 const realBootstrapActions = await import("./bootstrap-actions.js");
+const realActiveRegexPresets = await import("../../hooks/use-active-regex-presets.js");
+const realImportApi = await import("../../api/import-api.js");
 
 mock.module("../../api/character-api.js", () => ({
 	...realCharacterApi,
@@ -20,10 +24,19 @@ mock.module("./bootstrap-actions.js", () => ({
 	...realBootstrapActions,
 	fetchBootstrapAction: fetchBootstrapMock,
 }));
+mock.module("../../api/import-api.js", () => ({
+	...realImportApi,
+	importJson: importJsonMock,
+}));
+mock.module("../../hooks/use-active-regex-presets.js", () => ({
+	...realActiveRegexPresets,
+	invalidateActiveRegexPresets: invalidateActiveRegexPresetsSpy,
+}));
 
 let createCharacterAction: typeof import("./character-actions.js").createCharacterAction;
+let importCharacterAction: typeof import("./character-actions.js").importCharacterAction;
 beforeAll(async () => {
-	({ createCharacterAction } = await import("./character-actions.js"));
+	({ createCharacterAction, importCharacterAction } = await import("./character-actions.js"));
 });
 
 const chatId = (id: string) => id as ChatId;
@@ -58,6 +71,11 @@ function newChatSnapshot(newChatId: string): AppSnapshot {
 
 beforeEach(() => {
 	createCharacterMock.mockReset();
+	fetchBootstrapMock.mockReset();
+	fetchBootstrapMock.mockResolvedValue(undefined);
+	importJsonMock.mockReset();
+	importJsonMock.mockResolvedValue({ } as unknown as Awaited<ReturnType<typeof import("../../api/import-api.js").importJson>>);
+	invalidateActiveRegexPresetsSpy.mockReset();
 	useSnapshotStore.getState().clear();
 	useChatStore.getState().setActiveChatId(null);
 });
@@ -89,5 +107,19 @@ describe("createCharacterAction", () => {
 
 		// No swap — the user stays on the prior chat.
 		expect(useChatStore.getState().activeChatId).toBe(chatId("prior-chat"));
+	});
+});
+
+describe("importCharacterAction", () => {
+	test("invalidates the chat-side resolved-regex cache after an import (embedded regex bundle lands without a page reload)", async () => {
+		// Owner report 2026-10-09: importing a card with embedded regex_scripts
+		// persisted the Profile bundle server-side, but the resolved-presets
+		// module cache kept serving the pre-import union until a full reload.
+		await importCharacterAction({ fileName: "card.json", jsonText: "{}", enableImportedRegexProfile: true });
+
+		expect(importJsonMock).toHaveBeenCalledTimes(1);
+		expect(importJsonMock).toHaveBeenCalledWith(expect.objectContaining({ enableImportedRegexProfile: true }));
+		expect(fetchBootstrapMock).toHaveBeenCalledTimes(1);
+		expect(invalidateActiveRegexPresetsSpy).toHaveBeenCalledTimes(1);
 	});
 });

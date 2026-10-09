@@ -38,19 +38,23 @@ async function seedAndResolve(stores: StoreContainer) {
 }
 
 describe("seedBuiltinExperiences (BE-3)", () => {
-  test("catalog carries the realtime Breakout entry alongside Conversation", () => {
+  test("catalog carries Breakout and the two-visual Durak entry alongside Conversation", () => {
     const breakoutEntry = BUILTIN_EXPERIENCE_CATALOG.find((e) => e.id === "breakout");
     expect(breakoutEntry).toBeDefined();
     expect(breakoutEntry!.manifestId).toBe("breakout_arcade");
-    expect(breakoutEntry!.visualStableKey).toBe("builtin:breakout");
+    expect(breakoutEntry!.visuals[0]!.stableKey).toBe("builtin:breakout");
     expect(breakoutEntry!.displayName.length).toBeGreaterThan(0);
     expect(breakoutEntry!.description.length).toBeGreaterThan(0);
-    // The wave-6 realtime starter declares the realtime mode + tick in the
-    // manifest; the seed persists the source verbatim.
-    expect(breakoutEntry!.rulesSource).toContain('mode: "realtime"');
-    expect(breakoutEntry!.rulesSource).toContain("tickMs: 33");
-    expect(breakoutEntry!.rulesSource).toContain("update(context, dt)");
-    expect(breakoutEntry!.visualSource).toContain("VibeExperience.connect");
+    // Owner-approved exports are catalog source-of-truth; the seed persists
+    // them verbatim rather than synthesizing manifest/update markers here.
+    expect(breakoutEntry!.rulesSource.length).toBeGreaterThan(0);
+    expect(breakoutEntry!.visuals[0]!.source).toContain("VibeExperience.connect");
+    const durakEntry = BUILTIN_EXPERIENCE_CATALOG.find((entry) => entry.id === "durak");
+    expect(durakEntry?.manifestId).toBe("durak");
+    expect(durakEntry?.visuals.map((visual) => visual.name)).toEqual([
+      "Classic table",
+      "Alternative table",
+    ]);
   });
 
   test("seeds the Conversation built-in: enabled + global + builtinId + defaultVisualId wired", async () => {
@@ -75,7 +79,7 @@ describe("seedBuiltinExperiences (BE-3)", () => {
       ? await stores.experienceResources.getVisualById(convo!.defaultVisualId)
       : null;
     expect(visual).not.toBeNull();
-    expect(visual!.name).toBe("Conversation");
+    expect(visual!.name).toBe("Messenger");
     expect(visual!.source).toBeTypeOf("string");
     expect(visual!.source.length).toBeGreaterThan(0);
 
@@ -125,10 +129,45 @@ describe("seedBuiltinExperiences (BE-3)", () => {
     const convoScripts = scripts.filter((s) => s.creationIntentId === "builtin:conversation");
     expect(convoScripts).toHaveLength(1);
 
-    // Exactly one global visual named Conversation (the built-in).
+    // Exactly one global Messenger visual (the conversation built-in).
     const visuals = await stores.experienceResources.listVisualsForScope("global", null);
-    const convoVisuals = visuals.filter((v) => v.name === "Conversation");
+    const convoVisuals = visuals.filter((v) => v.name === "Messenger");
     expect(convoVisuals).toHaveLength(1);
+  });
+
+  test("adds newly declared grants to assigned chats without restoring user-removed grants", async () => {
+    const stores = await setup();
+    await seedBuiltinExperiences(stores);
+    const entry = BUILTIN_EXPERIENCE_CATALOG.find((item) => item.id === "conversation")!;
+    const script = (await stores.scripts.listAll()).find(
+      (item) => item.creationIntentId === "builtin:conversation",
+    )!;
+    const oldSource = entry.rulesSource.replace(
+      "    { capability: 'model', reason: 'character replies are generated as independently routed durable effects' }\n",
+      "",
+    );
+    expect(oldSource).not.toBe(entry.rulesSource);
+    await stores.scripts.update(script.id, { code: oldSource });
+
+    const character = await stores.characters.create({ name: "Grant migration fixture" });
+    const chat = await stores.chats.createChat({
+      characterId: character.id,
+      title: "Grant migration fixture",
+      promptPresetId: null,
+    });
+    const resources = new ExperienceResourceService(stores);
+    const assigned = await resources.updateConfig(chat.id, {
+      enabled: true,
+      scriptId: script.id,
+      visualId: script.defaultVisualId,
+      capabilityGrants: [],
+    });
+    expect(assigned.ok).toBe(true);
+
+    const result = await seedBuiltinExperiences(stores);
+    expect(result.updated).toContain("conversation");
+    const config = await stores.experienceResources.getConfigForChat(chat.id);
+    expect(config?.capabilityGrants).toEqual(["model"]);
   });
 
   test("re-syncs drifted rows to the catalog (RM-12e): a stale source is overwritten, the result reports it", async () => {
@@ -153,13 +192,30 @@ describe("seedBuiltinExperiences (BE-3)", () => {
     expect(after.code).toBe(entry.rulesSource);
     expect(after.name).toBe(entry.displayName);
     const visual = await stores.experienceResources.getVisualById(visualId);
-    expect(visual!.source).toBe(entry.visualSource);
+    expect(visual!.source).toBe(entry.visuals[0]!.source);
     expect(visual!.name).toBe(entry.displayName);
     expect(visual!.sourceHash.length).toBeGreaterThan(0);
 
     // And a third seed with no drift is quiet again (updated empty).
     const third = await seedBuiltinExperiences(stores);
     expect(third.updated).toEqual([]);
+  });
+
+  test("seeds both Durak visuals with Classic table as default and stays idempotent", async () => {
+    const stores = await setup();
+    expect((await seedBuiltinExperiences(stores)).skipped).toEqual([]);
+
+    const script = (await stores.scripts.listAll()).find((row) => row.creationIntentId === "builtin:durak");
+    expect(script).toBeDefined();
+    const boundIds = await stores.scripts.getBoundVisualIds(script!.id);
+    expect(boundIds).toHaveLength(2);
+    const visuals = (await Promise.all(boundIds.map((id) => stores.experienceResources.getVisualById(id))))
+      .filter((visual) => visual !== null);
+    expect(visuals.map((visual) => visual.name).sort()).toEqual(["Alternative table", "Classic table"]);
+    expect(visuals.find((visual) => visual.id === script!.defaultVisualId)?.name).toBe("Classic table");
+
+    expect((await seedBuiltinExperiences(stores)).updated).toEqual([]);
+    expect((await stores.scripts.getBoundVisualIds(script!.id))).toHaveLength(2);
   });
 });
 
@@ -176,9 +232,9 @@ describe("built-in experience dismissal tombstones (fix item 12)", () => {
 
     const reseed = await seedBuiltinExperiences(stores);
     expect(reseed.dismissed).toEqual(["conversation"]);
-    // The non-dismissed Catch built-in still seeds alongside the tombstoned
+    // The non-dismissed built-ins still seed alongside the tombstoned
     // Conversation (catalog-agnostic — the tombstone only suppresses its own id).
-    expect(reseed.seeded).toEqual(["breakout"]);
+    expect(reseed.seeded).toEqual(["breakout", "durak"]);
 
     // The visual was NOT recreated.
     const visuals = await stores.experienceResources.listVisualsForScope("global", null);
@@ -197,7 +253,7 @@ describe("built-in experience dismissal tombstones (fix item 12)", () => {
     const reseed = await seedBuiltinExperiences(stores);
     expect(reseed.dismissed).toEqual(["conversation"]);
     // Same as the visual-dismissal case: only Conversation is tombstoned.
-    expect(reseed.seeded).toEqual(["breakout"]);
+    expect(reseed.seeded).toEqual(["breakout", "durak"]);
 
     // The script was NOT recreated (the surviving visual is the only artifact).
     const scripts = await stores.scripts.listAll();
@@ -228,11 +284,11 @@ describe("built-in experience dismissal tombstones (fix item 12)", () => {
     await stores.experienceResources.clearBuiltinExperienceDismissal("conversation");
     const reseed = await seedBuiltinExperiences(stores);
     expect(reseed.dismissed).toEqual([]);
-    expect(reseed.seeded).toEqual(["conversation", "breakout"]);
+    expect(reseed.seeded).toEqual(CATALOG_IDS);
 
     // The visual is recreated and re-bound to the surviving script.
     const visuals = await stores.experienceResources.listVisualsForScope("global", null);
-    const convoVisuals = visuals.filter((v) => v.name === "Conversation");
+    const convoVisuals = visuals.filter((v) => v.name === "Messenger");
     expect(convoVisuals).toHaveLength(1);
     expect(await stores.scripts.getBoundVisualIds(script.id)).toContain(convoVisuals[0]!.id);
   });

@@ -470,6 +470,13 @@ describe("updateDynamicPromptSchema", () => {
 // --- renameBranchSchema -----------------------------------------------------
 
 describe("coauthorLoreBundleSchema — review metadata", () => {
+  it("accepts a monotonic revision while preserving revision-less historical bundles", () => {
+    const base = { lorebooks: [], entries: [] };
+    expect(coauthorLoreBundleSchema.parse(base).revision).toBeUndefined();
+    expect(coauthorLoreBundleSchema.parse({ ...base, revision: 4 }).revision).toBe(4);
+    expect(coauthorLoreBundleSchema.safeParse({ ...base, revision: -1 }).success).toBe(false);
+  });
+
   it("round-trips additive setting changes without affecting the draft fields", () => {
     const bundle = {
       lorebooks: [],

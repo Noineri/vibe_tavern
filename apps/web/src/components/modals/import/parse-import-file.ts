@@ -12,6 +12,7 @@
  */
 import { extractPngMetadata, parseCharacterMetadata } from "../../../lib/png-reader.js";
 import { unpackMonolith, type VtfCharacterContent } from "@vibe-tavern/db/codecs";
+import { importCharacterCardV3Json, type RegexScriptImportDraft } from "@vibe-tavern/import-export";
 import { getT } from "../../../i18n/locale-helpers.js";
 
 export interface CharacterPreview {
@@ -20,6 +21,8 @@ export interface CharacterPreview {
   description: string;
   tags: string[];
   hasEmbeddedLorebook: boolean;
+  /** Source-faithful embedded Rules for preview only; omitted when absent. */
+  regexScripts?: RegexScriptImportDraft[];
   avatarUrl: string | null;
 }
 
@@ -43,8 +46,10 @@ export async function parseCharacterFile(file: File): Promise<CharacterPreview> 
   const isPng = lowerName.endsWith(".png") || file.type === "image/png";
   const raw = await readCardRaw(file);
   const data = normalizeCharacterPreview(raw, file);
+  const regexScripts = previewRegexScripts(raw);
   return {
     ...data,
+    ...(regexScripts ? { regexScripts } : {}),
     file,
     avatarUrl: isPng ? URL.createObjectURL(file) : null,
   };
@@ -128,7 +133,21 @@ export function initial(value: string): string {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────
 
-function normalizeCharacterPreview(raw: unknown, file: File): Omit<CharacterPreview, "file" | "avatarUrl"> {
+/** Read embedded Rule drafts through the shared character-card parser, keeping
+ * the preview display-only while matching the server import's source fidelity.
+ * Structurally incomplete cards retain the preview's existing metadata-only
+ * behavior; their confirm path remains authoritative and validates separately. */
+function previewRegexScripts(raw: unknown): RegexScriptImportDraft[] | undefined {
+  if (!isRecord(raw)) return undefined;
+  try {
+    const rules = importCharacterCardV3Json(raw).regexScripts;
+    return rules.length > 0 ? rules : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeCharacterPreview(raw: unknown, file: File): Omit<CharacterPreview, "file" | "avatarUrl" | "regexScripts"> {
   const obj = asRecord(raw);
   const data = asRecord(obj.data) ?? obj;
   const name = stringValue(data.name) || stringValue(obj.name) || stringValue(data.char_name) || stringValue(obj.char_name) || file.name.replace(/\.[^/.]+$/, "");

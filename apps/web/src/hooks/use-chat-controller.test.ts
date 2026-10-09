@@ -15,6 +15,7 @@
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 
 import { brandId, type ChatId } from "@vibe-tavern/domain";
+import type { CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
 import type { DiceRollSnapshot, ExperienceQueuedAttachmentView } from "../api/types.js";
 import type { ExperienceScopeState } from "../stores/experience-store.js";
 import { useDomEnv } from "../../test/dom-env.js";
@@ -99,6 +100,7 @@ const { usePerSendPrefillStore } = await import("../stores/per-send-prefill-stor
 const { useProviderStore } = await import("../stores/provider-store.js");
 const { useProviderDataStore } = await import("../stores/provider-data-store.js");
 const { useSnapshotStore } = await import("../stores/snapshot-store.js");
+const { useCoauthorTurnStore } = await import("../stores/coauthor-turn-store.js");
 const { useBootstrapStore } = await import("../stores/api-actions/bootstrap-actions.js");
 const { useExperienceStore } = await import("../stores/experience-store.js");
 
@@ -330,6 +332,59 @@ describe("useChatController — Co-Author send gate", () => {
     await act(async () => { await result.current.handleSend(); });
 
     expect(sendChatMessageStream).toHaveBeenCalledTimes(1);
+  });
+
+  test("CE-B1: recognizes an edit_lore_entry result as a live lore proposal by wire shape", async () => {
+    useProviderDataStore.setState({
+      profiles: [{ id: "p_co", name: "Co Prof", isActive: false, defaultModel: null } as never],
+      coauthorSettingsByProfile: {
+        p_co: { providerProfileId: "p_co", modelName: "tool-m", settings: {}, createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+      },
+    });
+    useBootstrapStore.setState({
+      data: { uiSettings: { coauthorProviderId: "p_co" } } as never,
+    });
+    const bundle: CoauthorLoreBundle = {
+      revision: 7,
+      lorebooks: [],
+      entries: [{
+        id: "entry-existing",
+        lorebookId: "lorebook-existing",
+        title: "Existing entry",
+        content: "Updated content.",
+        keys: ["updated"],
+        secondaryKeys: [],
+        constant: false,
+        position: "before_char",
+        depth: 4,
+        enabled: true,
+        mode: "edit",
+        parentMode: "persisted",
+      }],
+    };
+    sendChatMessageStream.mockImplementation((_id: unknown, _body: unknown, opts: {
+      onToolResult?: (info: { toolCallId: string; toolName: string; output: unknown; isError: boolean }) => void;
+    }) => {
+      opts.onToolResult?.({
+        toolCallId: "edit-entry",
+        toolName: "edit_lore_entry",
+        output: { target: "lore_bundle", bundle, summary: "Updated entry." },
+        isError: false,
+      });
+      return Promise.resolve({ finishReason: "stop" });
+    });
+
+    useChatStore.setState({ activeChatId: CHAT, draft: "update the existing lore", generations: {}, messageActionId: null });
+    const { result } = renderHook(() => useChatController());
+    await act(async () => { await result.current.handleSend(); });
+
+    expect(useCoauthorTurnStore.getState().getActivities(CHAT)).toEqual([{
+      toolCallId: "edit-entry",
+      toolName: "edit_lore_entry",
+      status: "done",
+      summary: "Updated entry.",
+      loreBundle: bundle,
+    }]);
   });
 
   test("blocks when no explicit binding and no RP fallback profile", async () => {

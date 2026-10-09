@@ -29,6 +29,7 @@ export interface CreateRegexPresetBody {
   placement?: RegexPlacement[];
   isGlobal?: boolean;
   sortOrder?: number;
+  profileId?: string | null;
 }
 
 export async function createRegexPreset(body: CreateRegexPresetBody): Promise<RegexPresetRecord> {
@@ -95,6 +96,25 @@ export async function getRegexProfile(id: string): Promise<RegexProfileRecord | 
 
 export async function createRegexProfile(body: { name: string; disabled?: boolean; isGlobal?: boolean; sortOrder?: number }): Promise<RegexProfileRecord> {
   const response = await client.api.regex.profiles.$post({ json: body });
+  return unwrapRpc(response);
+}
+
+export interface CreateRegexProfileBundleBody {
+  name: string;
+  disabled: boolean;
+  isGlobal?: boolean;
+  sortOrder?: number;
+  links?: Array<{ targetType: "character" | "preset"; targetId: string }>;
+  rules: Array<Omit<CreateRegexPresetBody, "profileId">>;
+}
+
+export interface RegexProfileBundleRecord {
+  profile: RegexProfileRecord;
+  rules: RegexPresetRecord[];
+}
+
+export async function createRegexProfileBundle(body: CreateRegexProfileBundleBody): Promise<RegexProfileBundleRecord> {
+  const response = await client.api.regex.profiles.bundle.$post({ json: body });
   return unwrapRpc(response);
 }
 

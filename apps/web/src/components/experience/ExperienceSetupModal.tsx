@@ -35,7 +35,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   EXPERIENCE_CAPABILITY,
   EXPERIENCE_CONTEXT_MODE,
-  type ExperienceCapability,
   type ExperienceContextMode,
 } from "@vibe-tavern/domain";
 import {
@@ -52,7 +51,6 @@ import { Ic } from "../shared/icons.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { listPersonas } from "../../api/persona-api.js";
-import type Resources from "../../i18n/resources.js";
 import { useAllCharacters, useChatList } from "../../stores/snapshot-store.js";
 import {
   useExperienceConfig,
@@ -66,7 +64,8 @@ import {
   updateExperienceCharacterOverride,
   updateExperienceGlobalOverride,
 } from "../../api/experience-api.js";
-import { testScript, type DiscoveredExperienceDefinition } from "../../api/script-api.js";
+import { listAllScripts, testScript, type DiscoveredExperienceDefinition } from "../../api/script-api.js";
+import { SCRIPT_SAFETY_AUTO_SKIP_MESSAGE_KEY, scriptExecutionGuard } from "../../lib/script-execution-guard.js";
 import {
   FieldError,
   SetupFieldRow,
@@ -85,32 +84,21 @@ import type {
   ExperienceStartRequest,
   ProviderModelOption,
   ProviderProfileRecord,
+  ScriptRecord,
 } from "../../api/types.js";
-
-type TKey = keyof Resources["en"];
-
-/** Controller literal union (mirrors EXPERIENCE_CONTROLLER). */
-type SeatController = "human" | "script" | "model";
-
-/** One editable participant row. The host owns the stable id; the label is
- *  user-editable free text. Model seats additionally pin a provider + model,
- *  and may be backed by a library character (report item 6b). */
-interface RosterSeat {
-  /** Stable host-generated participant id (seat_1, seat_2, …; never reassigned). */
-  id: string;
-  /** User-editable bounded name. */
-  label: string;
-  controller: SeatController;
-  /** Model seats only — both required before Start (IR-70E). */
-  providerProfileId?: string;
-  modelId?: string;
-  /** Model seats only — a library character the seat answers as (report item
-   *  6b). Stripped when the seat switches away from a model controller. */
-  characterId?: string;
-}
-
-/** Modal phase — drives which controls render and which action is primary. */
-type Phase = "config" | "capturing" | "awaiting-summary" | "generating-summary" | "ready";
+import {
+  applySnapshotPrefill,
+  CONTEXT_MODE_LABEL_KEYS,
+  CONTEXT_MODE_ORDER,
+  CONTROLLER_LABEL_KEYS,
+  normalizeCapabilityGrants,
+  normalizeContextMode,
+  seatsFromSnapshot,
+  type Phase,
+  type RosterSeat,
+  type SeatController,
+  type TKey,
+} from "./experience-setup-helpers.js";
 
 export interface ExperienceSetupModalProps {
   /** Controls modal visibility. When open, the scope is hydrated on mount. */
@@ -134,103 +122,9 @@ export interface ExperienceSetupModalProps {
   readonly restartSource?: ExperienceSessionResponse | null;
 }
 
-/** Canonical display order for the context-mode segmented control. */
-const CONTEXT_MODE_ORDER: readonly ExperienceContextMode[] = [
-  EXPERIENCE_CONTEXT_MODE.none,
-  EXPERIENCE_CONTEXT_MODE.currentBranch,
-  EXPERIENCE_CONTEXT_MODE.recent,
-  EXPERIENCE_CONTEXT_MODE.summariesRecent,
-  EXPERIENCE_CONTEXT_MODE.compactSummary,
-];
-
-const CONTEXT_MODE_LABEL_KEYS: Record<ExperienceContextMode, TKey> = {
-  [EXPERIENCE_CONTEXT_MODE.none]: "experience_context_none",
-  [EXPERIENCE_CONTEXT_MODE.currentBranch]: "experience_context_current_branch",
-  [EXPERIENCE_CONTEXT_MODE.recent]: "experience_context_recent",
-  [EXPERIENCE_CONTEXT_MODE.summariesRecent]: "experience_context_summaries_recent",
-  [EXPERIENCE_CONTEXT_MODE.compactSummary]: "experience_context_compact_summary",
-};
-
-const CONTROLLER_LABEL_KEYS: Record<SeatController, TKey> = {
-  human: "experience_setup_controller_human",
-  script: "experience_setup_controller_script",
-  model: "experience_setup_controller_model",
-};
-
-/** Fail-closed normalization of the DB config row's broad string fields into the
- *  canonical Domain unions (mirrors InsightsPanel — derived from the Domain
- *  constants, never a duplicate handwritten union or an unverified cast). */
-const VALID_CAPABILITY_VALUES: ReadonlySet<string> = new Set(Object.values(EXPERIENCE_CAPABILITY));
-const VALID_CONTEXT_MODE_VALUES: ReadonlySet<string> = new Set(Object.values(EXPERIENCE_CONTEXT_MODE));
-
-function normalizeCapabilityGrants(raw: string[] | undefined): ExperienceCapability[] {
-  return (raw ?? []).filter((g): g is ExperienceCapability => VALID_CAPABILITY_VALUES.has(g));
-}
-
-function isContextMode(raw: string): raw is ExperienceContextMode {
-  return VALID_CONTEXT_MODE_VALUES.has(raw);
-}
-
-function normalizeContextMode(raw: string | undefined): ExperienceContextMode {
-  if (raw !== undefined && isContextMode(raw)) return raw;
-  return EXPERIENCE_CONTEXT_MODE.none;
-}
-
 function toMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
-}
-
-/** Overlay a frozen settings snapshot onto seeded defaults (lobby LB-5).
- * Only declared fields with a type-compatible snapshot value are prefilled:
- * select values no longer in the authored option list are DROPPED (the UI must
- * never display an option that does not exist), numbers must be finite, and a
- * no-default boolean maps false back to absent (unchecked). */
-function applySnapshotPrefill(
-  fields: SetupField[],
-  snapshot: Record<string, unknown>,
-): { values: Record<string, string | boolean | undefined>; entered: Set<string> } {
-  const values: Record<string, string | boolean | undefined> = {};
-  const entered = new Set<string>();
-  for (const field of fields) {
-    if (!(field.id in snapshot)) continue;
-    const raw = snapshot[field.id];
-    if (field.kind === "text" && typeof raw === "string") {
-      values[field.id] = raw;
-    } else if (field.kind === "number" && typeof raw === "number" && Number.isFinite(raw)) {
-      values[field.id] = String(raw);
-      entered.add(field.id);
-    } else if (field.kind === "boolean" && typeof raw === "boolean") {
-      values[field.id] = field.default === undefined ? (raw === true ? true : undefined) : raw;
-    } else if (field.kind === "select" && typeof raw === "string" && field.options.some((o) => o.value === raw)) {
-      values[field.id] = raw;
-    }
-  }
-  return { values, entered };
-}
-
-/** Map a frozen roster snapshot onto editable seats (lobby LB-5). Seat ids are
- *  reused verbatim (stable, unique); the counter moves past every parseable
- *  `seat_N` suffix AND the roster length so a later Add never collides. */
-function seatsFromSnapshot(participants: ExperienceSessionResponse["participants"]): {
-  seats: RosterSeat[];
-  nextCounter: number;
-} {
-  const seats: RosterSeat[] = participants.map((p) => {
-    const seat: RosterSeat = { id: p.id, label: p.label, controller: p.controller };
-    if (p.controller === "model") {
-      if (p.providerProfileId !== undefined) seat.providerProfileId = p.providerProfileId;
-      if (p.modelId !== undefined) seat.modelId = p.modelId;
-      if (p.characterId !== undefined) seat.characterId = p.characterId;
-    }
-    return seat;
-  });
-  let maxN = 0;
-  for (const seat of seats) {
-    const m = /^seat_(\d+)$/.exec(seat.id);
-    if (m) maxN = Math.max(maxN, Number(m[1]));
-  }
-  return { seats, nextCounter: Math.max(maxN, seats.length) + 1 };
 }
 
 export function ExperienceSetupModal({
@@ -260,6 +154,20 @@ export function ExperienceSetupModal({
     | { status: "ok"; definition: DiscoveredExperienceDefinition }
     | { status: "error"; message: string | null };
   const [discovery, setDiscovery] = useState<DiscoveryState>({ status: "idle" });
+
+  // ── SS-7B3: selected-script record resolution (automatic-discovery gate) ─
+  // The discovery below is AUTOMATIC script execution, so the modal resolves
+  // the selected script's record (its trust source: origin/firstEnabledAt)
+  // BEFORE any request. Every settled state carries the script id it belongs
+  // to, so a newly selected script can never inherit the previous script's
+  // trust while its own record is still loading. Missing/error both fail
+  // closed and stay not-ready.
+  type ScriptRecordResolution =
+    | { status: "pending"; scriptId: string | null }
+    | { status: "ok"; scriptId: string; script: ScriptRecord }
+    | { status: "missing"; scriptId: string }
+    | { status: "error"; scriptId: string; message: string };
+  const [scriptRecord, setScriptRecord] = useState<ScriptRecordResolution>({ status: "pending", scriptId: null });
 
   // ── Setup-field draft values + per-field errors ─────────────────────────
   // text/select → string; number → string (raw, parsed at submit); boolean →
@@ -319,6 +227,7 @@ export function ExperienceSetupModal({
     abortRef.current?.abort();
     abortRef.current = null;
     setDiscovery({ status: "idle" });
+    setScriptRecord({ status: "pending", scriptId: null });
     setFieldValues({});
     setNumberEntered(new Set());
     setFieldErrors({});
@@ -469,12 +378,79 @@ export function ExperienceSetupModal({
   const setupFields: SetupField[] =
     discovery.status === "ok" && discovery.definition.setup ? discovery.definition.setup.fields : [];
 
+  // ── SS-7B3: resolve the selected script's record before any automatic
+  // discovery request (same cancellation + scope-epoch shape as the discovery
+  // effect below: `cancelled` invalidates same-scope re-runs on a scriptId
+  // change, the epoch invalidates cross-scope results). The script list is
+  // the same chat-independent global resource read the assignment surface
+  // uses; there is no single-script fetch on this API seam.
+  useEffect(() => {
+    if (!open || scriptId === null) {
+      setScriptRecord({ status: "pending", scriptId: null });
+      return;
+    }
+    let cancelled = false;
+    const gen = scopeRef.current;
+    setScriptRecord({ status: "pending", scriptId });
+    listAllScripts()
+      .then((all) => {
+        if (cancelled || scopeRef.current !== gen) return;
+        const script = all.find((candidate) => candidate.id === scriptId);
+        setScriptRecord(
+          script === undefined
+            ? { status: "missing", scriptId }
+            : { status: "ok", scriptId, script },
+        );
+      })
+      .catch((err: unknown) => {
+        if (cancelled || scopeRef.current !== gen) return;
+        setScriptRecord({ status: "error", scriptId, message: toMessage(err) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, scriptId, chatId, branchId]);
+
+  // SS-7B3 (SCRIPT_SAFETY_PLAN decision 13d): only a record resolved for the
+  // CURRENT script may reach the shared guard. Missing/error/pending and a
+  // stale record from the previous selection all fail closed. An imported
+  // never-enabled script sends NO testScript request and the modal stays
+  // not-ready with the shared localized unavailable-until-enable state
+  // (explicit flows are untouched — SS-7B4).
+  const selectedScriptRecord =
+    scriptRecord.status === "ok" && scriptRecord.scriptId === scriptId
+      ? scriptRecord.script
+      : null;
+  const scriptRecordReady = selectedScriptRecord !== null;
+  const scriptRecordMissing =
+    scriptRecord.status === "missing" && scriptRecord.scriptId === scriptId;
+  const scriptRecordLoadError =
+    scriptRecord.status === "error" && scriptRecord.scriptId === scriptId
+      ? scriptRecord.message
+      : null;
+  const autoDiscoverySkipped =
+    selectedScriptRecord !== null &&
+    scriptExecutionGuard({
+      script: selectedScriptRecord,
+      code: selectedScriptRecord.code,
+      kind: selectedScriptRecord.scriptKind,
+      intent: "automatic",
+      suppressImportWarnings: null,
+    }).kind === "skip-auto";
+
   // ── Discovery effect: real testScript(config.scriptId, {}) ──────────────
   // Proceeds only for kind "interactive", non-null definition, null discovery
   // error (the assignment contract). `cancelled` invalidates same-scope
   // re-runs (scriptId change); the scope epoch invalidates cross-scope.
   useEffect(() => {
     if (!open || scriptId === null) {
+      setDiscovery({ status: "idle" });
+      return;
+    }
+    // SS-7B3: the automatic discovery waits for the CURRENT selected script's
+    // record and never runs for missing/error/untrusted cases — the render
+    // carries their fail-closed state instead of discovery-driven UI.
+    if (!scriptRecordReady || autoDiscoverySkipped) {
       setDiscovery({ status: "idle" });
       return;
     }
@@ -506,7 +482,7 @@ export function ExperienceSetupModal({
     return () => {
       cancelled = true;
     };
-  }, [open, scriptId, chatId, branchId, t]);
+  }, [open, scriptId, chatId, branchId, t, scriptRecordReady, autoDiscoverySkipped]);
 
   // ── Seed setup-field defaults on a clean discovery / scope ──────────────
   // Only fields with an author `default` are seeded; optional untouched fields
@@ -1047,7 +1023,22 @@ export function ExperienceSetupModal({
     body = <p className="font-ui text-[12px] text-t4">{t("experience_setup_loading_config")}</p>;
   } else if (noScript) {
     body = <p className="font-ui text-[12px] leading-relaxed text-t4">{t("experience_setup_no_script")}</p>;
-  } else if (discovering) {
+  } else if (scriptRecordLoadError !== null) {
+    // SS-7B3: the record itself failed to load — fail closed (no request) and
+    // surface the failure on the modal's existing inline error shape.
+    body = <ErrorBox title={t("experience_setup_discovery_error")} detail={scriptRecordLoadError} />;
+  } else if (scriptRecordMissing) {
+    body = <ErrorBox title={t("experience_setup_discovery_error")} detail={t("experience_assign_script_missing")} />;
+  } else if (autoDiscoverySkipped) {
+    // SS-7B3: the shared localized unavailable-until-enable state — an
+    // untrusted import's automatic discovery is skipped, so the form never
+    // arms and Start stays absent (the modal remains not-ready).
+    body = (
+      <p className="font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed text-t4" data-testid="experience-setup-auto-skip">
+        {t(SCRIPT_SAFETY_AUTO_SKIP_MESSAGE_KEY)}
+      </p>
+    );
+  } else if (discovering || !scriptRecordReady) {
     body = <p className="font-ui text-[12px] text-t4">{t("experience_setup_discovering")}</p>;
   } else if (discovery.status === "error") {
     body = <ErrorBox title={t("experience_setup_discovery_error")} detail={discovery.message} />;

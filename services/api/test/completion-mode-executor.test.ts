@@ -19,10 +19,11 @@
  * recorded `/completion`-shaped fixtures) — mirroring the KoboldCPP native
  * adapter's fixture tests. No `mock.module`.
  */
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, mock, beforeEach, afterEach, afterAll } from "bun:test";
 import type { AssemblePromptResponse, GenerationFormat, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { GENERATION_MODE } from "@vibe-tavern/domain";
 import { resetProviderFetchFactory } from "../src/domain/providers/provider-fetch-factory.js";
+import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
 import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
@@ -102,6 +103,19 @@ const COMPLETION_JSON = {
 
 interface CapturedCall { url: string; init: RequestInit }
 
+function findArrayTypePaths(value: unknown, path = "$", found: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => findArrayTypePaths(item, `${path}[${index}]`, found));
+    return found;
+  }
+  if (!value || typeof value !== "object") return found;
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "type" && Array.isArray(child)) found.push(`${path}.type`);
+    findArrayTypePaths(child, `${path}.${key}`, found);
+  }
+  return found;
+}
+
 const originalFetch = globalThis.fetch;
 let calls: CapturedCall[] = [];
 
@@ -128,13 +142,24 @@ const STREAM_CHUNKS = [
   { id: "cmpl-s", object: "text_completion", model: "qwen-local", choices: [{ text: " lived a wizard.", finish_reason: "stop", index: 0 }], usage: { prompt_tokens: 20, completion_tokens: 6, total_tokens: 26 } },
 ];
 
+const CHAT_STREAM_CHUNKS = [
+  { id: "chatcmpl-s", object: "chat.completion.chunk", created: 1, model: "qwen-local", choices: [{ index: 0, delta: { role: "assistant", content: "Ready." }, finish_reason: null }] },
+  { id: "chatcmpl-s", object: "chat.completion.chunk", created: 1, model: "qwen-local", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 20, completion_tokens: 2, total_tokens: 22 } },
+];
+
 beforeEach(() => {
+  globalThis.fetch = originalFetch;
   // Direct transport: the executors must resolve NO proxy fetch so the SDK
   // uses the stubbed global fetch (the seam this file intercepts).
   resetProviderFetchFactory();
 });
 
 afterEach(() => {
+  globalThis.fetch = originalFetch;
+  mock.restore();
+});
+
+afterAll(() => {
   globalThis.fetch = originalFetch;
   mock.restore();
 });
@@ -189,6 +214,79 @@ describe("completion mode — nonstreamingProviderExecute", () => {
     expect(Array.isArray(body.messages)).toBe(true);
     expect(body.prompt).toBeUndefined();
     expect(result.text).toBe("Hello!");
+  });
+
+  it("serializes nullable Co-Author tool fields without array-valued type keywords", async () => {
+    installFetchStub(() => new Response(JSON.stringify({
+      id: "chatcmpl-tools", object: "chat.completion", model: "qwen-local",
+      choices: [{ index: 0, message: { role: "assistant", content: "Ready." }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    const tools = buildCoauthorTools({
+      loreWorkActive: true,
+      toolSet: { create_lorebook: true, create_lore_entry: true },
+    });
+    await nonstreamingProviderExecute(makeInput({
+      profile: makeProfile({ generationMode: GENERATION_MODE.chat }),
+      tools,
+      maxSteps: 1,
+    }));
+
+    const body = JSON.parse(String(calls[0]!.init.body)) as {
+      tools?: Array<{
+        function?: {
+          name?: string;
+          parameters?: { properties?: Record<string, Record<string, unknown>> };
+        };
+      }>;
+    };
+    expect(findArrayTypePaths(body.tools)).toEqual([]);
+
+    const createEntry = body.tools?.find((entry) => entry.function?.name === "create_lore_entry");
+    const properties = createEntry?.function?.parameters?.properties;
+    expect(properties?.useGroupScoring?.anyOf).toEqual([{ type: "boolean" }, { type: "null" }]);
+    expect(properties?.scanDepthOverride?.anyOf).toEqual([{ type: "number" }, { type: "null" }]);
+  });
+
+  it("keeps the normalized nullable schemas valid on the native Google endpoint", async () => {
+    installFetchStub(() => new Response(JSON.stringify({
+      candidates: [{
+        content: { role: "model", parts: [{ text: "Ready." }] },
+        finishReason: "STOP",
+      }],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2, totalTokenCount: 12 },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    const tools = buildCoauthorTools({
+      loreWorkActive: true,
+      toolSet: { create_lore_entry: true },
+    });
+    await nonstreamingProviderExecute(makeInput({
+      profile: makeProfile({
+        providerPreset: "google",
+        endpoint: "https://generativelanguage.googleapis.com",
+        generationMode: GENERATION_MODE.chat,
+      }),
+      model: "gemini-2.5-pro",
+      tools,
+      maxSteps: 1,
+    }));
+
+    const body = JSON.parse(String(calls[0]!.init.body)) as {
+      tools?: Array<{
+        functionDeclarations?: Array<{
+          name?: string;
+          parameters?: { properties?: Record<string, Record<string, unknown>> };
+        }>;
+      }>;
+    };
+    expect(findArrayTypePaths(body.tools)).toEqual([]);
+    const declarations = body.tools?.flatMap((entry) => entry.functionDeclarations ?? []) ?? [];
+    const createEntry = declarations.find((entry) => entry.name === "create_lore_entry");
+    const properties = createEntry?.parameters?.properties;
+    expect(properties?.useGroupScoring).toMatchObject({ type: "boolean", nullable: true });
+    expect(properties?.scanDepthOverride).toMatchObject({ type: "number", nullable: true });
   });
 });
 
@@ -350,6 +448,27 @@ describe("generation format handoff (LS-3b/c)", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("completion mode — streamProviderExecutor", () => {
+  it("applies nullable tool-schema normalization on the streaming chat path too", async () => {
+    installFetchStub(() => sseResponse(CHAT_STREAM_CHUNKS));
+    const tools = buildCoauthorTools({
+      loreWorkActive: true,
+      toolSet: { create_lore_entry: true },
+    });
+
+    const result = await streamProviderExecutor(makeInput({
+      profile: makeProfile({ generationMode: GENERATION_MODE.chat }),
+      tools,
+      maxSteps: 1,
+    }));
+    for await (const _chunk of result.stream) {
+      // Consume the stream so the SDK performs the lazy request.
+    }
+    expect((await result.finished).finishReason).toBe("stop");
+
+    const body = JSON.parse(String(calls[0]!.init.body)) as { tools?: unknown[] };
+    expect(findArrayTypePaths(body.tools)).toEqual([]);
+  });
+
   it("streams text deltas from the /completions SSE (same chunk contract as chat)", async () => {
     installFetchStub(() => sseResponse(STREAM_CHUNKS));
 

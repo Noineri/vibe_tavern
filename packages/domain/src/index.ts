@@ -23,6 +23,7 @@ export * from "./event-bus.js";
 export * from "./extract-thinking-tags.js";
 export * from "./generation-format.js";
 export * from "./experience-helpers.js";
+export * from "./experience-launch-context.js";
 export * from "./experience-payload-schema.js";
 export * from "./experience-random.js";
 export * from "./experience-round-limits.js";

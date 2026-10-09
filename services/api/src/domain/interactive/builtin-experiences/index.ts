@@ -21,24 +21,31 @@ import {
   BREAKOUT_VISUAL_SOURCE,
   CONVERSATION_RULES_SOURCE,
   CONVERSATION_VISUAL_SOURCE,
+  DURAK_ALT_VISUAL_SOURCE,
+  DURAK_CLASSIC_VISUAL_SOURCE,
+  DURAK_RULES_SOURCE,
 } from "@vibe-tavern/domain/builtins";
+
+export interface BuiltinExperienceVisual {
+  readonly stableKey: string;
+  readonly name: string;
+  readonly source: string;
+}
 
 /** One app-owned built-in experience. */
 export interface BuiltinExperienceEntry {
   /** Stable built-in id — also `extensions.builtinId` and the `creationIntentId` suffix (`"builtin:<id>"`). */
   readonly id: string;
-  /** Human-readable name (used for both the script and the visual). */
+  /** Human-readable script name. */
   readonly displayName: string;
   /** One-line description (script description). */
   readonly description: string;
   /** The manifest id declared inside the rules source. */
   readonly manifestId: string;
-  /** Stable key for idempotent visual ensure (`ensureVisualByKey`). */
-  readonly visualStableKey: string;
   /** The interactive rules script source (self-contained JS body). */
   readonly rulesSource: string;
-  /** The visual module source (self-contained HTML/CSS/JS). */
-  readonly visualSource: string;
+  /** Visual modules in binding order; the first is the default. */
+  readonly visuals: readonly BuiltinExperienceVisual[];
 }
 
 /**
@@ -50,21 +57,35 @@ export const BUILTIN_EXPERIENCE_CATALOG: readonly BuiltinExperienceEntry[] = Obj
     id: "conversation",
     displayName: "Conversation",
     description:
-      "A human and model conversation: the human replies, the AI replies in turn. The compact messenger built-in (validates the delivery pipeline).",
+      "A messenger with your profile, characters bound to model seats, and one-on-one or group chats; each character replies through its own model while you wait.",
     manifestId: "model_conversation",
-    visualStableKey: "builtin:conversation",
     rulesSource: CONVERSATION_RULES_SOURCE,
-    visualSource: CONVERSATION_VISUAL_SOURCE,
+    visuals: Object.freeze([
+      Object.freeze({ stableKey: "builtin:conversation", name: "Messenger", source: CONVERSATION_VISUAL_SOURCE }),
+    ]),
   }),
   Object.freeze({
     id: "breakout",
     displayName: "Breakout (Realtime)",
     description:
-      "A realtime arcade loop: bounce the ball off the paddle, clear the brick wall — 3 balls, edge hits fly wide. The wave-6 realtime starter.",
+      "A realtime arcade loop with power-ups: bounce the ball off the paddle and clear the brick wall (3 balls). Demonstrates update(context, dt), frame-local actLocal inputs, seeded randomness and a replay-verified realtime commit.",
     manifestId: "breakout_arcade",
-    visualStableKey: "builtin:breakout",
     rulesSource: BREAKOUT_RULES_SOURCE,
-    visualSource: BREAKOUT_VISUAL_SOURCE,
+    visuals: Object.freeze([
+      Object.freeze({ stableKey: "builtin:breakout", name: "Breakout (Realtime)", source: BREAKOUT_VISUAL_SOURCE }),
+    ]),
+  }),
+  Object.freeze({
+    id: "durak",
+    displayName: "Durak",
+    description:
+      "Durak against the bot: 24/36/52-card deck, match to N wins, lowest-trump opening, four bot personalities, adaptive play.",
+    manifestId: "durak",
+    rulesSource: DURAK_RULES_SOURCE,
+    visuals: Object.freeze([
+      Object.freeze({ stableKey: "builtin:durak:classic", name: "Classic table", source: DURAK_CLASSIC_VISUAL_SOURCE }),
+      Object.freeze({ stableKey: "builtin:durak:alternative", name: "Alternative table", source: DURAK_ALT_VISUAL_SOURCE }),
+    ]),
   }),
 ]);
 

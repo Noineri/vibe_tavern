@@ -8,6 +8,7 @@ import { invalidateActiveContextPreview } from "../context-preview-store.js";
 import { useChatStore } from "../chat-store.js";
 import { fetchBootstrapAction } from "./bootstrap-actions.js";
 import { fetchChat } from "../../api/chat-api.js";
+import { invalidateActiveRegexPresets } from "../../hooks/use-active-regex-presets.js";
 
 // ---------------------------------------------------------------------------
 // Character Actions
@@ -85,6 +86,9 @@ export async function importCharacterAction(input: {
   monolithText?: string;
   chatId?: ChatId;
   importEmbeddedBook?: boolean;
+  // Card `regex_scripts` Profile master switch (RXU-24): forwarded as-is —
+  // omitted stays omitted, the server boundary owns the default (off).
+  enableImportedRegexProfile?: boolean;
 }): Promise<ImportJsonResponse> {
   const result = await importJson(input);
   if (result.snapshot) {
@@ -98,6 +102,11 @@ export async function importCharacterAction(input: {
   // activeChatId still pointed at the old one, so syncBootstrapSnapshotForActiveChat
   // re-fetched and ingested the OLD chat, corrupting the store.
   await fetchBootstrapAction({ silent: true, skipSnapshotSync: true });
+  // A card import may have persisted an embedded regex_scripts Profile
+  // bundle (RXU-23/24) — the chat-side resolved-presets cache must not keep
+  // serving the pre-import union (owner report 2026-10-09: new rules needed
+  // a page reload to appear).
+  invalidateActiveRegexPresets();
   return result;
 }
 
@@ -109,7 +118,7 @@ export async function exportCharacterAction(characterId: string): Promise<Record
   return await exportCharacter(characterId);
 }
 
-export async function duplicateCharacterAction(characterId: string): Promise<ImportJsonResponse> {
+export async function duplicateCharacterAction(characterId: string): Promise<ImportJsonResponse & { disabledImportedScripts: number }> {
   const result = await duplicateCharacter(characterId);
   void fetchBootstrapAction({ silent: true });
   return result;

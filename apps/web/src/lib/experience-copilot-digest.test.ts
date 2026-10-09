@@ -15,11 +15,14 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildPlaygroundDigest,
+  buildPlaygroundLogDigest,
   buildRealtimeLoopDigest,
   buildRunTestDigest,
   buildRunTestErrorDigest,
   buildSimulateDigest,
+  type PlaygroundSessionLog,
 } from "./experience-copilot-digest.js";
+import type { ExperienceCopilotLaunchContext } from "@vibe-tavern/api-contracts";
 import type {
   ExperiencePlaygroundData,
   ExperienceTestRunData,
@@ -92,6 +95,17 @@ function makePlayground(overrides: Partial<ExperiencePlaygroundData> = {}): Expe
     revision: 7,
     status: "active",
     stopReason: "awaiting_human",
+    ...overrides,
+  };
+}
+
+/** Grounding step 6: the client-side whole-session accumulator. */
+function makeSessionLog(overrides: Partial<PlaygroundSessionLog> = {}): PlaygroundSessionLog {
+  return {
+    events: [],
+    effects: [],
+    console: [],
+    turns: 0,
     ...overrides,
   };
 }
@@ -284,6 +298,147 @@ describe("buildPlaygroundDigest", () => {
   });
 });
 
+// ─── playground full-session log digest (grounding step 6) ────────────────
+
+describe("buildPlaygroundLogDigest", () => {
+  const launchContext: ExperienceCopilotLaunchContext = {
+    participants: [
+      { id: "you", label: "You", controller: "human" },
+      { id: "bot", label: "Bot", controller: "script" },
+    ],
+    capabilityGrants: ["participants"],
+    seed: "7",
+  };
+
+  it("carries the whole session: definition, boundary, legality, launch context, state, effects, events, console", () => {
+    const matrix = {
+      seats: [
+        { participantId: "you", label: "You", controller: "human" as const, actionTypes: ["reply"], count: 1 },
+        { participantId: "bot", label: "Bot", controller: "script" as const, actionTypes: [], count: 0 },
+      ],
+      turnOwners: ["you"],
+    };
+    const events = [
+      { visibility: "public" as const, type: "scored" },
+      { visibility: "public" as const, type: "turn_passed" },
+    ];
+    const { feedback, text } = buildPlaygroundLogDigest({
+      session: makePlayground(),
+      sessionLog: makeSessionLog({
+        events,
+        effects: [{ kind: "model", request: { prompt: "n" } }],
+        console: [{ level: "log", args: ["hi"] }],
+        turns: 2,
+      }),
+      definition: makeRunData().definition,
+      launchContext,
+      seatLegality: matrix,
+    });
+
+    expect(feedback).toEqual({
+      ok: true,
+      definition: { id: "round", name: "Round" },
+      status: "active",
+      revision: 7,
+      stopReason: "awaiting_human",
+      turns: 2,
+      legalActionTypes: ["reply"],
+      seatLegality: matrix,
+      launchContext: {
+        seats: [
+          { id: "you", controller: "human" },
+          { id: "bot", controller: "script" },
+        ],
+        grants: ["participants"],
+        seed: "7",
+      },
+      stateSummary: '{"round":2}',
+      effects: [{ kind: "model", request: { prompt: "n" } }],
+      events,
+      eventsTotal: 2,
+      console: ["log: hi"],
+      consoleTotal: 1,
+    });
+
+    expect(text).toContain("Playground session log");
+    expect(text).toContain("Definition: Round (round)");
+    expect(text).toContain("Turns: 2 · Events: 2 · Effects: 1");
+    expect(text).toContain("Seats: you (human), bot (script) · Grants: participants · Seed: 7");
+    expect(text).toContain('Seat "You" (id "you", human): reply');
+    expect(text).toContain("public/scored | public/turn_passed");
+  });
+
+  it("keeps the last 200 events and 100 console lines with their totals, and caps the state at 8000 chars", () => {
+    const events = Array.from({ length: 250 }, (_, i) => ({
+      visibility: "public" as const,
+      type: `ev-${i}`,
+    }));
+    const { feedback, text } = buildPlaygroundLogDigest({
+      session: makePlayground({ state: { blob: "x".repeat(10_000) } }),
+      sessionLog: makeSessionLog({ events, console: consoleEntries(150), turns: 3 }),
+    });
+
+    const fb = feedback as { events: Array<{ type: string }>; console: string[]; stateSummary: string };
+    expect(fb.events).toHaveLength(200);
+    expect(fb.events[0]!.type).toBe("ev-50"); // last 200 of 250
+    expect(fb.events[199]!.type).toBe("ev-249");
+    expect(feedback.eventsTotal).toBe(250);
+    expect(fb.console).toHaveLength(100);
+    expect(fb.console[0]).toBe("log: line-50"); // last 100 of 150
+    expect(fb.console[99]).toBe("log: line-149");
+    expect(feedback.consoleTotal).toBe(150);
+    expect(fb.stateSummary.length).toBe(8000 + 1); // capped + trailing ellipsis
+    expect(fb.stateSummary.endsWith("\u2026")).toBe(true);
+    expect(text).toContain("Events (250 total, last 200):");
+    expect(text).toContain("Console (150 total, last 100):");
+  });
+
+  it("shapes an empty session (no log, no launch context, no matrix) without inventing fields", () => {
+    const { feedback, text } = buildPlaygroundLogDigest({
+      session: makePlayground({ events: [], effects: [], console: [] }),
+      sessionLog: makeSessionLog(),
+    });
+
+    expect(feedback).toEqual({
+      ok: true,
+      definition: { id: "(unknown)", name: "(unknown)" },
+      status: "active",
+      revision: 7,
+      stopReason: "awaiting_human",
+      turns: 0,
+      legalActionTypes: ["reply"],
+      stateSummary: '{"round":2}',
+      effects: [],
+      events: [],
+      eventsTotal: 0,
+      console: [],
+      consoleTotal: 0,
+    });
+    expect("launchContext" in feedback).toBe(false);
+    expect("seatLegality" in feedback).toBe(false);
+    expect(text).toContain("Turns: 0 · Events: 0 · Effects: 0");
+    expect(text).toContain("Events (0 total, last 0): none");
+  });
+
+  it("flips to the fail-path fields when an error is present", () => {
+    const { feedback, text } = buildPlaygroundLogDigest({
+      session: makePlayground(),
+      sessionLog: makeSessionLog({ events: [{ visibility: "public", type: "boom" }], turns: 1 }),
+      error: { message: "reducer fault", code: "vm_error", kind: "reduce", console: [] },
+    });
+
+    expect(feedback.ok).toBe(false);
+    expect(feedback).toMatchObject({
+      errorCode: "vm_error",
+      errorKind: "reduce",
+      errorMessage: "reducer fault",
+      eventsTotal: 1,
+    });
+    expect(text).toContain("Error: reducer fault");
+    expect(text).toContain("Code: vm_error");
+  });
+});
+
 // ─── realtime loop digest (RM-13) ──────────────────────────────────────────
 
 describe("buildRealtimeLoopDigest", () => {
@@ -350,5 +505,29 @@ describe("buildRealtimeLoopDigest", () => {
     expect(feedback.status).toBe("completed");
     const fb = feedback as { errorTail?: string[] };
     expect(fb.errorTail).toEqual(["watchdog: over budget"]);
+  });
+
+  it("keeps the raised tails (100 events / 50 errors / 100 console — grounding step 6)", () => {
+    const { feedback } = buildRealtimeLoopDigest({
+      realtime: { tickMs: 33, seed: 42 },
+      diag: {
+        events: Array.from({ length: 120 }, (_, i) => ({ kind: `tick-${i}` })),
+        errors: Array.from({ length: 60 }, (_, i) => ({ kind: `err-${i}`, message: "m" })),
+        console: Array.from({ length: 120 }, (_, i) => ({ level: "log", text: `c-${i}` })),
+        final: false,
+      },
+      claim: null,
+      definition: null,
+      error: null,
+    });
+    const fb = feedback as { eventTail?: string[]; errorTail?: string[]; consoleTail?: string[] };
+    expect(fb.eventTail).toHaveLength(100);
+    expect(fb.eventTail![0]).toContain("tick-20"); // last 100 of 120
+    expect(fb.eventTail![99]).toContain("tick-119");
+    expect(fb.errorTail).toHaveLength(50);
+    expect(fb.errorTail![0]).toContain("err-10"); // last 50 of 60
+    expect(fb.consoleTail).toHaveLength(100);
+    expect(fb.consoleTail![0]).toBe("log: c-20"); // last 100 of 120
+    expect(fb.consoleTail![99]).toBe("log: c-119");
   });
 });

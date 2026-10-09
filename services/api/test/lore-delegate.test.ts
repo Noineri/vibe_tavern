@@ -111,9 +111,11 @@ describe("createLoreDelegate (CTX-L2b)", () => {
 		expect(msgs[1]!.content).toContain("Return the complete updated lorebook entry content only");
 		expect(msgs[1]!.content).toContain("Modification request:");
 		expect(msgs[1]!.content).toContain("Write her command style and reputation.");
-		// The delegate bound the configured (optionally smaller) model.
+		// The delegate bound the configured (optionally smaller) model. It must
+		// not impose its own output cap: reasoning models spend the same budget on
+		// hidden thought, so a small hard-coded cap can truncate even short prose.
 		expect(captured!.model).toBe("small-model");
-		expect(captured!.overrideMaxTokens).toBeGreaterThan(0);
+		expect(captured!.overrideMaxTokens).toBeUndefined();
 	});
 
 	it("write_entry: throws on empty generated content", async () => {
@@ -133,6 +135,9 @@ describe("createLoreDelegate (CTX-L2b)", () => {
 
 		expect(result.keys).toEqual(["Vex", "commander", "lieutenant"]);
 		expect(result.secondaryKeys).toEqual(["bridge", "orders", "fleet"]);
+		// Inherit the provider's configured/default budget. A 512-token override
+		// is not enough for models whose output budget also includes reasoning.
+		expect(captured!.overrideMaxTokens).toBeUndefined();
 
 		// The user message mirrors buildUserMessage (lore_keys): the entry
 		// content, the AND_ANY logic line, and the existing-keys dedup directive.
