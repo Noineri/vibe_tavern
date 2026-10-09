@@ -72,6 +72,7 @@ function rule(id: string, name: string, profileId: string | null): RegexPresetRe
 async function renderEditor(memberCount: number, rules: RegexPresetRecord[]) {
   const onCreateRule = mock();
   const onAttachRules = mock();
+  const onDetachRules = mock();
   const view = render(
     <RegexProfileEditor
       profile={profile()}
@@ -79,13 +80,14 @@ async function renderEditor(memberCount: number, rules: RegexPresetRecord[]) {
       rules={rules}
       onCreateRule={onCreateRule}
       onAttachRules={onAttachRules}
+      onDetachRules={onDetachRules}
       onNameChange={mock()}
       onActiveToggle={mock()}
       onScopeChange={mock()}
     />,
   );
   await act(async () => {});
-  return { ...view, onCreateRule, onAttachRules };
+  return { ...view, onCreateRule, onAttachRules, onDetachRules };
 }
 
 describe("RegexProfileEditor — availability reason marker", () => {
@@ -99,6 +101,7 @@ describe("RegexProfileEditor — availability reason marker", () => {
         rules={[]}
         onCreateRule={mock()}
         onAttachRules={mock()}
+        onDetachRules={mock()}
         onNameChange={mock()}
         onActiveToggle={mock()}
         onScopeChange={mock()}
@@ -111,60 +114,76 @@ describe("RegexProfileEditor — availability reason marker", () => {
   });
 });
 
-describe("RegexProfileEditor — member workflows (RXU-42)", () => {
-  test("shows prominent Create Rule and Add existing actions for a Profile with members", async () => {
+describe("RegexProfileEditor — member workflows (RXU-42; picker rides the shared LinkBindingPopover per owner ruling 2026-10-09)", () => {
+  test("shows prominent Create Rule and the shared Add existing trigger for a Profile with members", async () => {
     const view = await renderEditor(1, [rule("member-1", "Member", "profile-1"), rule("standalone-1", "Standalone", null)]);
     const create = view.getByRole("button", { name: "promptManager.regex.createRule" });
-    const addExisting = view.getByRole("button", { name: "promptManager.regex.pickerTrigger" });
+    // The popover's labeled dashed trigger (canon shape — accessible name
+    // is the aria-label, i.e. pickerTitle, not the visible pickerTrigger text).
+    const addExisting = view.getByRole("button", { name: "promptManager.regex.pickerTitle" });
 
     expect(create.className).toContain("h-11");
-    expect(addExisting.className).toContain("h-11");
+    expect(addExisting.textContent).toContain("promptManager.regex.pickerTrigger");
     fireEvent.click(create);
     expect(view.onCreateRule).toHaveBeenCalledTimes(1);
   });
 
-  test("replaces the count-only hint with an empty state containing both prominent actions", async () => {
+  test("replaces the count-only hint with an empty state containing both actions", async () => {
     const view = await renderEditor(0, [rule("standalone-1", "Standalone", null)]);
     const emptyState = view.getByTestId("regex-profile-members-empty-state");
 
     expect(within(emptyState).getByText("promptManager.regex.profileMembersEmptyTitle")).toBeTruthy();
     expect(within(emptyState).queryByText("promptManager.regex.profileMemberCount")).toBeNull();
     expect(within(emptyState).getByRole("button", { name: "promptManager.regex.createRule" }).className).toContain("h-11");
-    expect(within(emptyState).getByRole("button", { name: "promptManager.regex.pickerTrigger" }).className).toContain("h-11");
+    expect(within(emptyState).getByRole("button", { name: "promptManager.regex.pickerTitle" }).textContent).toContain("promptManager.regex.pickerTrigger");
   });
 
-  test("opens the desktop picker from a selected Profile and attaches multiple standalone Rules", async () => {
+  test("opens the shared picker and attaches standalone Rules with immediate toggles", async () => {
     const view = await renderEditor(1, [
       rule("member-1", "Member", "profile-1"),
       rule("standalone-1", "Standalone", null),
       rule("standalone-2", "Second standalone", null),
     ]);
-    fireEvent.pointerDown(view.getByRole("button", { name: "promptManager.regex.pickerTrigger" }));
-    fireEvent.click(view.getByRole("button", { name: "promptManager.regex.pickerTrigger" }));
+    // Closed popover: no member/standalone names in the pane.
+    expect(view.queryByText("Standalone")).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "promptManager.regex.pickerTitle" }));
 
-    expect(view.getByText("Standalone")).toBeTruthy();
-    expect(view.getByText("Second standalone")).toBeTruthy();
-    expect(view.queryByText("Member")).toBeNull();
-    fireEvent.click(view.getByRole("checkbox", { name: "Standalone" }));
-    fireEvent.click(view.getByRole("checkbox", { name: "Second standalone" }));
-    fireEvent.click(view.getByRole("button", { name: "promptManager.regex.pickerAttach" }));
-
-    expect(view.onAttachRules).toHaveBeenCalledWith(["standalone-1", "standalone-2"]);
+    // Chips: own member (active) + both standalone candidates; the member
+    // chip carries the accent (bound) styling.
+    const memberChip = view.getByText("Member").closest("div");
+    expect(memberChip?.className).toContain("border-accent");
+    fireEvent.click(view.getByText("Standalone"));
+    await act(async () => {});
+    expect(view.onAttachRules).toHaveBeenCalledWith(["standalone-1"]);
+    fireEvent.click(view.getByText("Second standalone"));
+    await act(async () => {});
+    expect(view.onAttachRules).toHaveBeenCalledWith(["standalone-2"]);
+    expect(view.onDetachRules).not.toHaveBeenCalled();
   });
 
-  test("opens the picker empty state when no standalone Rules exist", async () => {
+  test("toggling the active member chip detaches it back to Standalone", async () => {
     const view = await renderEditor(1, [rule("member-1", "Member", "profile-1")]);
-    fireEvent.click(view.getByRole("button", { name: "promptManager.regex.pickerTrigger" }));
+    fireEvent.click(view.getByRole("button", { name: "promptManager.regex.pickerTitle" }));
 
-    expect(view.getByText("promptManager.regex.pickerEmptyTitle")).toBeTruthy();
+    fireEvent.click(view.getByText("Member"));
+    await act(async () => {});
+    expect(view.onDetachRules).toHaveBeenCalledWith(["member-1"]);
+    expect(view.onAttachRules).not.toHaveBeenCalled();
+  });
+
+  test("shows the popover empty label when no attach candidates and no members exist", async () => {
+    const view = await renderEditor(0, []);
+    fireEvent.click(view.getByRole("button", { name: "promptManager.regex.pickerTitle" }));
+
+    expect(view.getByText("promptManager.regex.pickerEmptySub")).toBeTruthy();
   });
 
   test("opens the shared picker in its mobile sheet", async () => {
     isMobile = true;
     const view = await renderEditor(1, [rule("standalone-1", "Standalone", null)]);
-    fireEvent.click(view.getByRole("button", { name: "promptManager.regex.pickerTrigger" }));
+    fireEvent.click(view.getByRole("button", { name: "promptManager.regex.pickerTitle" }));
 
     expect(view.getByText("promptManager.regex.pickerTitle")).toBeTruthy();
-    expect(view.getByRole("checkbox", { name: "Standalone" })).toBeTruthy();
+    expect(view.getByText("Standalone")).toBeTruthy();
   });
 });

@@ -1193,6 +1193,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                 rules={regexPresets}
                 onCreateRule={() => regexRuleDraft.open("", activeRegexProfile.id)}
                 onAttachRules={(ruleIds) => handleRegexAttach(activeRegexProfile.id, ruleIds)}
+                onDetachRules={(ruleIds) => { for (const ruleId of ruleIds) void regexProfileAssignment.detach(ruleId); }}
                 onNameChange={(name) => queueProfileSave({ name }, false)}
                 onActiveToggle={handleRegexProfileActiveToggle}
                 onScopeChange={handleRegexProfileScopeToggle}

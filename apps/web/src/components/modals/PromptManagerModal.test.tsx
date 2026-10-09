@@ -1417,7 +1417,7 @@ describe("PromptManagerModal — Profile member workflows (RXU-42)", () => {
     expect(attachRegexRuleMock).not.toHaveBeenCalled();
   });
 
-  test("Add existing opens for a selected Profile, attaches candidates, and keeps that Profile selected", async () => {
+  test("Add existing (shared LinkBindingPopover) attaches a candidate immediately and keeps that Profile selected", async () => {
     const member = regexRecord("member-1", "Existing member", "profile-1");
     const standalone = regexRecord("standalone-1", "Standalone");
     const secondStandalone = regexRecord("standalone-2", "Second standalone");
@@ -1428,10 +1428,20 @@ describe("PromptManagerModal — Profile member workflows (RXU-42)", () => {
       return regexRecord(id, id === "standalone-1" ? "Standalone" : "Second standalone", "profile-1");
     });
 
-    fireEvent.click(q.getByRole("button", { name: "promptManager.regex.pickerTrigger" }));
-    fireEvent.click(q.getByRole("checkbox", { name: "Standalone" }));
-    fireEvent.click(q.getByRole("checkbox", { name: "Second standalone" }));
-    fireEvent.click(q.getByRole("button", { name: "promptManager.regex.pickerAttach" }));
+    // Owner ruling 2026-10-09: no forked picker — the shared popover with
+    // immediate per-toggle membership (accessible name = pickerTitle). Rule
+    // names ALSO render as left-list rows — scope clicks to the popover
+    // body via the Radix popper wrapper.
+    const popoverChip = (name: string) => {
+      const el = q.getAllByText(name).find((node) => node.closest("[data-radix-popper-content-wrapper]"));
+      if (!el) throw new Error(`popover chip not found: ${name}`);
+      return el;
+    };
+    fireEvent.click(q.getByRole("button", { name: "promptManager.regex.pickerTitle" }));
+    fireEvent.click(popoverChip("Standalone"));
+    await act(async () => {});
+    fireEvent.click(popoverChip("Second standalone"));
+    await act(async () => {});
 
     await waitFor(() => {
       expect(attachRegexRuleMock).toHaveBeenCalledWith("profile-1", "standalone-1");

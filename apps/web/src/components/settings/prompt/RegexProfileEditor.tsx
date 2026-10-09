@@ -3,7 +3,7 @@ import { useT } from "../../../i18n/context.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { SegmentedControl } from "../../shared/SegmentedControl.js";
 import { LinkBindingPopover, type LinkBindingRecord, type LinkTarget } from "../../shared/LinkBindingPopover.js";
-import { characterToLinkTarget, promptPresetToLinkTarget } from "../../../lib/link-targets.js";
+import { characterToLinkTarget, promptPresetToLinkTarget, regexToLinkTarget } from "../../../lib/link-targets.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
@@ -13,7 +13,6 @@ import { listPromptPresets } from "../../../api/preset-api.js";
 import { invalidateActiveRegexPresets } from "../../../hooks/use-active-regex-presets.js";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
 import { regexProfileAvailability } from "../../../lib/regex-availability.js";
-import { RegexProfileRulePicker } from "./RegexProfileRulePicker.js";
 import { AddButton } from "../../shared/add-button.js";
 import { EmptyState } from "../../shared/empty-state.js";
 import { Icons, Ic } from "../../shared/icons.js";
@@ -29,6 +28,7 @@ interface RegexProfileEditorProps {
   rules: RegexPresetRecord[];
   onCreateRule: () => void;
   onAttachRules: (ruleIds: string[]) => void;
+  onDetachRules: (ruleIds: string[]) => void;
   onNameChange: (nextName: string) => void;
   onActiveToggle: (nextActive: boolean) => void;
   onScopeChange: (nextIsGlobal: boolean) => void;
@@ -36,18 +36,44 @@ interface RegexProfileEditorProps {
 }
 
 function ProfileMemberActions({
-  rules,
+  memberLinks,
+  ruleTargets,
   onCreateRule,
-  onAttachRules,
-}: Pick<RegexProfileEditorProps, "rules" | "onCreateRule" | "onAttachRules">) {
+  onSetMemberLinks,
+}: Pick<RegexProfileEditorProps, "onCreateRule"> & {
+  memberLinks: LinkBindingRecord[];
+  ruleTargets: LinkTarget[];
+  onSetMemberLinks: (next: LinkBindingRecord[]) => void;
+}) {
   const { t } = useT();
+  const isMobile = useIsMobile();
   return (
     <div className="flex flex-wrap gap-2">
       <AddButton prominent onClick={onCreateRule}>
         <Ic.plus />
         {t("promptManager.regex.createRule")}
       </AddButton>
-      <RegexProfileRulePicker rules={rules} onAttach={onAttachRules} onCancel={() => {}} />
+      {/* Owner ruling 2026-10-09: «Add existing» rides the shared
+          LinkBindingPopover — NO forked picker (the RXU-41 fork duplicated
+          the primitive one-to-one). showPills=false: the member ROWS live in
+          the left list, this surface is the add trigger + picker only (the
+          Dice assignment-row precedent). Immediate per-toggle membership —
+          the lorebook-pill canon; toggling an active member chip detaches
+          it back to Standalone. */}
+      <LinkBindingPopover
+        links={memberLinks}
+        characters={[]}
+        personas={[]}
+        presets={[]}
+        regexes={ruleTargets}
+        onSetLinks={onSetMemberLinks}
+        t={t}
+        isMobile={isMobile}
+        showPills={false}
+        triggerLabel={t("promptManager.regex.pickerTrigger")}
+        tooltipLabel={t("promptManager.regex.pickerTitle")}
+        emptyLabel={t("promptManager.regex.pickerEmptySub")}
+      />
     </div>
   );
 }
@@ -58,6 +84,7 @@ export function RegexProfileEditor({
   rules,
   onCreateRule,
   onAttachRules,
+  onDetachRules,
   onNameChange,
   onActiveToggle,
   onScopeChange,
@@ -156,6 +183,33 @@ export function RegexProfileEditor({
 
   const isActive = !profile.disabled;
 
+  // ── Member pick via the shared LinkBindingPopover (immediate toggles).
+  // Targets = attach candidates (Standalone Rules) + this Profile's own
+  // members (so an active chip can be toggled OFF back to Standalone);
+  // other Profiles' members never appear here.
+  const memberLinks: LinkBindingRecord[] = useMemo(
+    () => rules
+      .filter((r) => r.profileId === profile.id)
+      .map((r) => ({ targetType: "regex" as const, targetId: r.id })),
+    [rules, profile.id],
+  );
+  const ruleTargets: LinkTarget[] = useMemo(
+    () => rules
+      .filter((r) => r.profileId === null || r.profileId === profile.id)
+      .map(regexToLinkTarget),
+    [rules, profile.id],
+  );
+  const handleSetMemberLinks = (next: LinkBindingRecord[]) => {
+    const currentIds = new Set(memberLinks.map((l) => l.targetId));
+    const nextIds = new Set(
+      next.filter((l) => l.targetType === "regex").map((l) => l.targetId),
+    );
+    const added = [...nextIds].filter((id) => !currentIds.has(id));
+    const removed = [...currentIds].filter((id) => !nextIds.has(id));
+    if (added.length > 0) onAttachRules(added);
+    if (removed.length > 0) onDetachRules(removed);
+  };
+
   return (
     <div className="flex flex-col gap-4" data-testid="regex-profile-editor">
       {/* Name + Active toggle */}
@@ -241,14 +295,24 @@ export function RegexProfileEditor({
             title={t("promptManager.regex.profileMembersEmptyTitle")}
             sub={t("promptManager.regex.profileMembersEmptySub")}
           />
-          <ProfileMemberActions rules={rules} onCreateRule={onCreateRule} onAttachRules={onAttachRules} />
+          <ProfileMemberActions
+            memberLinks={memberLinks}
+            ruleTargets={ruleTargets}
+            onCreateRule={onCreateRule}
+            onSetMemberLinks={handleSetMemberLinks}
+          />
         </div>
       ) : (
         <>
           <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
             {t("promptManager.regex.profileMemberCount", { count: memberCount })}
           </div>
-          <ProfileMemberActions rules={rules} onCreateRule={onCreateRule} onAttachRules={onAttachRules} />
+          <ProfileMemberActions
+            memberLinks={memberLinks}
+            ruleTargets={ruleTargets}
+            onCreateRule={onCreateRule}
+            onSetMemberLinks={handleSetMemberLinks}
+          />
         </>
       )}
 
