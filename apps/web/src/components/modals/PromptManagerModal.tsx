@@ -44,6 +44,7 @@ import { RegexPresetList } from "../settings/prompt/RegexPresetList.js";
 import { RegexPresetEditor } from "../settings/prompt/RegexPresetEditor.js";
 import { regexDraftFromRecord, useRegexRuleDraft, emptyRegexDraft, type RegexPresetDraft } from "../settings/prompt/regex-rule-draft.js";
 import { RegexProfileEditor } from "../settings/prompt/RegexProfileEditor.js";
+import { makeRegexProfileAttachmentHandler } from "../settings/prompt/profile-member-workflows.js";
 import {
   listAllRegexPresets,
   createRegexPreset,
@@ -660,13 +661,7 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
       return next;
     });
   }, []);
-  function handleRegexAttach(profileId: string, ruleId: string) {
-    void attachRegexRule(profileId, ruleId).then((updated) => {
-      if (updated) setRegexPresets((prev) => prev.map((p) => p.id === ruleId ? updated : p));
-      setExpandedProfileIds((prev) => new Set([...prev, profileId]));
-      invalidateActiveRegexPresets();
-    });
-  }
+  const handleRegexAttach = makeRegexProfileAttachmentHandler({ attach: attachRegexRule, setRules: setRegexPresets, setExpandedProfileIds, onAttached: invalidateActiveRegexPresets });
   function handleRegexDetach(ruleId: string) {
     void detachRegexRule(ruleId).then((updated) => {
       if (updated) setRegexPresets((prev) => prev.map((p) => p.id === ruleId ? updated : p));
@@ -1202,6 +1197,9 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
               <RegexProfileEditor
                 profile={activeRegexProfile}
                 memberCount={regexPresets.filter((r) => r.profileId === activeRegexProfile.id).length}
+                rules={regexPresets}
+                onCreateRule={() => regexRuleDraft.open("", activeRegexProfile.id)}
+                onAttachRules={(ruleIds) => handleRegexAttach(activeRegexProfile.id, ruleIds)}
                 onNameCommit={(newName) => handleRegexProfileRename(activeRegexProfile.id, newName)}
                 onActiveToggle={handleRegexProfileActiveToggle}
                 onScopeChange={handleRegexProfileScopeToggle}

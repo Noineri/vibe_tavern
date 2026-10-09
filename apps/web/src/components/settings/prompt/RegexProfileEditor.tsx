@@ -11,8 +11,11 @@ import { useAllCharacters } from "../../../stores/snapshot-store.js";
 import { getRegexProfileLinks, setRegexProfileLinks } from "../../../api/regex-api.js";
 import { listPromptPresets } from "../../../api/preset-api.js";
 import { invalidateActiveRegexPresets } from "../../../hooks/use-active-regex-presets.js";
-import type { RegexProfileRecord } from "../../../api/types.js";
-import { Icons } from "../../shared/icons.js";
+import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
+import { RegexProfileRulePicker } from "./RegexProfileRulePicker.js";
+import { AddButton } from "../../shared/add-button.js";
+import { EmptyState } from "../../shared/empty-state.js";
+import { Icons, Ic } from "../../shared/icons.js";
 
 const SCOPE_OPTIONS = [
   { value: "all", labelKey: "promptManager.regex.scopeAll" as const },
@@ -22,6 +25,9 @@ const SCOPE_OPTIONS = [
 interface RegexProfileEditorProps {
   profile: RegexProfileRecord;
   memberCount: number;
+  rules: RegexPresetRecord[];
+  onCreateRule: () => void;
+  onAttachRules: (ruleIds: string[]) => void;
   onNameCommit: (newName: string) => void;
   onActiveToggle: (nextActive: boolean) => void;
   onScopeChange: (nextIsGlobal: boolean) => void;
@@ -30,9 +36,29 @@ interface RegexProfileEditorProps {
   onDeleteClick: () => void;
 }
 
+function ProfileMemberActions({
+  rules,
+  onCreateRule,
+  onAttachRules,
+}: Pick<RegexProfileEditorProps, "rules" | "onCreateRule" | "onAttachRules">) {
+  const { t } = useT();
+  return (
+    <div className="flex flex-wrap gap-2">
+      <AddButton prominent onClick={onCreateRule}>
+        <Ic.plus />
+        {t("promptManager.regex.createRule")}
+      </AddButton>
+      <RegexProfileRulePicker rules={rules} onAttach={onAttachRules} onCancel={() => {}} />
+    </div>
+  );
+}
+
 export function RegexProfileEditor({
   profile,
   memberCount,
+  rules,
+  onCreateRule,
+  onAttachRules,
   onNameCommit,
   onActiveToggle,
   onScopeChange,
@@ -198,10 +224,23 @@ export function RegexProfileEditor({
         </div>
       )}
 
-      {/* Member count hint */}
-      <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
-        {t("promptManager.regex.profileMemberCount", { count: memberCount })}
-      </div>
+      {memberCount === 0 ? (
+        <div className="flex flex-col gap-3" data-testid="regex-profile-members-empty-state">
+          <EmptyState
+            icon={<Icons.Terminal />}
+            title={t("promptManager.regex.profileMembersEmptyTitle")}
+            sub={t("promptManager.regex.profileMembersEmptySub")}
+          />
+          <ProfileMemberActions rules={rules} onCreateRule={onCreateRule} onAttachRules={onAttachRules} />
+        </div>
+      ) : (
+        <>
+          <div className="font-ui text-[calc(var(--ui-fs)-2px)] text-t3">
+            {t("promptManager.regex.profileMemberCount", { count: memberCount })}
+          </div>
+          <ProfileMemberActions rules={rules} onCreateRule={onCreateRule} onAttachRules={onAttachRules} />
+        </>
+      )}
 
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-2">

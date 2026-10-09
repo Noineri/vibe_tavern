@@ -91,7 +91,8 @@ mock.module("sonner", () => ({ ...realSonner, toast: { ...realSonner.toast, erro
 mock.module("../../i18n/context.js", () => ({
   ...realI18nContext,
   useT: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: { count?: number }) =>
+      key === "promptManager.regex.profileMemberCount" ? `${key}:${options?.count ?? 0}` : key,
     tDynamic: (key: string) => key,
     locale: "en",
     setLocale: () => {},
@@ -1272,6 +1273,67 @@ describe("PromptManagerModal — manual rule drafts (RXU-14)", () => {
     await waitFor(() => expect(useModalStore.getState().isPromptManagerOpen).toBe(false));
     expect(createRegexPresetMock).not.toHaveBeenCalled();
     expect(attachRegexRuleMock).not.toHaveBeenCalled();
+  });
+});
+
+// ── RXU-42: Profile member workflows ───────────────────────────────────
+describe("PromptManagerModal — Profile member workflows (RXU-42)", () => {
+  function profileRecord(id: string, name: string): RegexProfileRecord {
+    return { id: brandId<RegexProfileId>(id), name, disabled: false, isGlobal: true, sortOrder: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+  }
+  function regexRecord(id: string, name: string, profileId: string | null = null): RegexPresetRecord {
+    return {
+      id: brandId<RegexPresetId>(id), name, findRegex: "/x/g", replaceString: "", trimStrings: [], substituteRegex: 0, disabled: false, markdownOnly: false, promptOnly: false, runOnEdit: false, minDepth: null, maxDepth: null, placement: [2], isGlobal: false, sortOrder: 0, profileId: profileId === null ? null : brandId<RegexProfileId>(profileId), createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+  }
+  async function openProfile(presets: RegexPresetRecord[]) {
+    listAllRegexPresetsMock.mockResolvedValue(presets);
+    listAllRegexProfilesMock.mockResolvedValue([profileRecord("profile-1", "Bundle")]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
+    );
+    fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
+    const profile = within(view.baseElement).getByText("Bundle");
+    await act(async () => { fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    await waitFor(() => expect(within(view.baseElement).getByRole("button", { name: "promptManager.regex.createRule" })).toBeTruthy());
+    return view;
+  }
+
+  test("Create Rule opens an empty local draft bound to the selected Profile without a write", async () => {
+    const view = await openProfile([]);
+    const q = within(view.baseElement);
+    fireEvent.click(q.getByRole("button", { name: "promptManager.regex.createRule" }));
+
+    await waitFor(() => expect(q.getByText("promptManager.regex.memberViaProfile")).toBeTruthy());
+    expect((q.getByLabelText("promptManager.regex.fieldName") as HTMLInputElement).value).toBe("");
+    expect((q.getByLabelText("promptManager.regex.fieldFind") as HTMLTextAreaElement).value).toBe("");
+    expect(createRegexPresetMock).not.toHaveBeenCalled();
+    expect(attachRegexRuleMock).not.toHaveBeenCalled();
+  });
+
+  test("Add existing attaches selected Rules, refreshes the count, and keeps the Profile selected", async () => {
+    const standalone = regexRecord("standalone-1", "Standalone");
+    const secondStandalone = regexRecord("standalone-2", "Second standalone");
+    const view = await openProfile([standalone, secondStandalone]);
+    const q = within(view.baseElement);
+    attachRegexRuleMock.mockImplementation(async (_profileId, ruleId) => {
+      const id = String(ruleId);
+      return regexRecord(id, id === "standalone-1" ? "Standalone" : "Second standalone", "profile-1");
+    });
+
+    fireEvent.click(q.getByRole("button", { name: "promptManager.regex.pickerTrigger" }));
+    fireEvent.click(q.getByRole("checkbox", { name: "Standalone" }));
+    fireEvent.click(q.getByRole("checkbox", { name: "Second standalone" }));
+    fireEvent.click(q.getByRole("button", { name: "promptManager.regex.pickerAttach" }));
+
+    await waitFor(() => {
+      expect(attachRegexRuleMock).toHaveBeenCalledWith("profile-1", "standalone-1");
+      expect(attachRegexRuleMock).toHaveBeenCalledWith("profile-1", "standalone-2");
+      expect(q.getByText("promptManager.regex.profileMemberCount:2")).toBeTruthy();
+    });
+    expect((q.getByDisplayValue("Bundle") as HTMLInputElement).value).toBe("Bundle");
   });
 });
 
