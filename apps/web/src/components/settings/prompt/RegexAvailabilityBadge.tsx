@@ -1,11 +1,14 @@
 import type { RegexProfileAvailability, RegexRuleAvailability } from "../../../lib/regex-availability.js";
 import { useT } from "../../../i18n/context.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 
 export interface RegexAvailabilityBadgeProps {
   availability: RegexProfileAvailability | RegexRuleAvailability;
 }
 
-/** Textual availability summary for a Regex Rule or Profile row. */
+/** Compact availability indicator for a Regex Rule or Profile list row.
+ * The full localized status is exposed through its accessible name and tooltip;
+ * list-row width is reserved for names, Profile counts, and actions. */
 export function RegexAvailabilityBadge({ availability }: RegexAvailabilityBadgeProps) {
   const { t } = useT();
   if (availability.kind === "loading") return null;
@@ -19,13 +22,19 @@ export function RegexAvailabilityBadge({ availability }: RegexAvailabilityBadgeP
         : "enabledRuleCount" in availability
           ? t("promptManager.regex.availabilityActiveRules", { count: availability.enabledRuleCount })
           : t("promptManager.regex.availabilityActive");
+  const dotClass = availability.kind === "disabled"
+    ? "bg-t4"
+    : availability.kind === "unbound"
+      ? "bg-danger"
+      : availability.kind === "noEnabledRules"
+        ? "bg-warning"
+        : "bg-success";
 
   return (
-    <span
-      aria-label={label}
-      className="shrink-0 whitespace-nowrap rounded bg-s2 px-1.5 py-0.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t3"
-    >
-      {label}
-    </span>
+    <CustomTooltip content={label}>
+      <span role="img" aria-label={label} className="flex shrink-0 p-1">
+        <span className={`h-[6px] w-[6px] rounded-full ${dotClass}`} />
+      </span>
+    </CustomTooltip>
   );
 }

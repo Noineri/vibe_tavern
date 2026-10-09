@@ -74,8 +74,8 @@ beforeAll(async () => {
   regexDraftSaveIssue = draftMod.regexDraftSaveIssue;
 });
 
-import type { RegexPresetRecord } from "../../../api/types.js";
-import { brandId, type RegexPresetId } from "@vibe-tavern/domain";
+import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
+import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
 
 function baseRecord(overrides: Partial<RegexPresetRecord> = {}): RegexPresetRecord {
   return {
@@ -95,6 +95,19 @@ function baseRecord(overrides: Partial<RegexPresetRecord> = {}): RegexPresetReco
     isGlobal: false,
     sortOrder: 0,
     profileId: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function profileRecord(id: string, name: string, overrides: Partial<RegexProfileRecord> = {}): RegexProfileRecord {
+  return {
+    id: brandId<RegexProfileId>(id),
+    name,
+    disabled: false,
+    isGlobal: true,
+    sortOrder: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
@@ -190,7 +203,7 @@ describe("RegexPresetEditor", () => {
         preset={profile}
         draft={regexDraftFromRecord(profile)}
         onDraftChange={mock()}
-        profiles={[{ id: "p1", name: "Current Profile" }, { id: "p2", name: "Other Profile" }]}
+        profiles={[profileRecord("p1", "Current Profile"), profileRecord("p2", "Other Profile")]}
       />,
     );
     const assignment = view.getByTestId("regex-profile-assignment") as HTMLSelectElement;
@@ -209,7 +222,7 @@ describe("RegexPresetEditor", () => {
         preset={profile}
         draft={regexDraftFromRecord(profile)}
         onDraftChange={mock()}
-        profiles={[{ id: "p1", name: "Current Profile" }, { id: "p2", name: "Other Profile" }]}
+        profiles={[profileRecord("p1", "Current Profile"), profileRecord("p2", "Other Profile")]}
         onProfileAssignment={onProfileAssignment}
       />,
     );
@@ -426,6 +439,29 @@ describe("RegexPresetEditor — new-rule draft (RXU-14)", () => {
     expect(third.queryByText("promptManager.regex.draftFindRequired")).toBeNull();
   });
 
+  it("renders an invalid name alert outside the input/control alignment row", () => {
+    const valid = render(
+      <RegexPresetEditor
+        preset={null}
+        draft={{ ...emptyRegexDraft(), name: "Valid", findRegex: "/x/g" }}
+        onDraftChange={mock()}
+      />,
+    );
+    const validControls = (valid.getByText("regexAssistant.open").parentElement as HTMLElement).className;
+    valid.unmount();
+
+    const invalid = render(<RegexPresetEditor preset={null} draft={emptyRegexDraft()} onDraftChange={mock()} />);
+    const row = invalid.getByTestId("regex-name-controls-row");
+    const alert = invalid.getByRole("alert");
+    const controls = invalid.getByText("regexAssistant.open").parentElement as HTMLElement;
+
+    expect(row.className).toContain("items-end");
+    expect(row.contains(alert)).toBe(false);
+    expect(row.contains(controls)).toBe(true);
+    expect(controls.className).toBe(validControls);
+    expect(controls.className).toContain("pb-[7px]");
+  });
+
   it("saved-record editing never shows the draft gate feedback", () => {
     // A saved record with a broken pattern keeps its existing update flow —
     // the gate exists only for a draft's FIRST persistence.
@@ -441,8 +477,8 @@ describe("RegexPresetEditor — new-rule draft (RXU-14)", () => {
         preset={null}
         draft={{ ...emptyRegexDraft(), name: "A" }}
         onDraftChange={mock()}
-        profileName="Bundle"
         draftProfileId="p1"
+        profiles={[profileRecord("p1", "Bundle")]}
       />,
     );
     expect(view.getByText("promptManager.regex.memberViaProfile")).toBeTruthy();
@@ -458,8 +494,8 @@ describe("RegexPresetEditor — new-rule draft (RXU-14)", () => {
   });
 });
 
-// ── R-7 owner follow-up: «Не применяется» badge under the name (editor) ────
-describe("RegexPresetEditor — not-applied badge under the name", () => {
+// ── RXU-31 availability reason marker in the editor ─────────────────────
+describe("RegexPresetEditor — unbound reason marker", () => {
   beforeEach(() => {
     getRegexLinksMock.mockReset();
     getRegexLinksMock.mockResolvedValue([]);
@@ -468,25 +504,66 @@ describe("RegexPresetEditor — not-applied badge under the name", () => {
     setRegexLinksMock.mockReset();
   });
 
-  it("shows the badge for enabled + bind mode + zero resolvable links", async () => {
-    const record = baseRecord({ isGlobal: false }); // bind mode, enabled
+  it("shows the unbound reason for an enabled standalone Rule with confirmed zero resolvable links", async () => {
+    const record = baseRecord({ isGlobal: false });
     render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
-    expect(await screen.findByText("promptManager.regex.badgeNotApplied")).toBeTruthy();
+    expect(await screen.findByText("promptManager.regex.availabilityUnbound")).toBeTruthy();
   });
 
-  it("hides the badge when disabled, when global, or when a link resolves", async () => {
+  it("does not show an unbound reason for an active member whose Profile is reachable", () => {
+    const member = baseRecord({ profileId: brandId<RegexProfileId>("p1"), isGlobal: false });
+    const view = render(
+      <RegexPresetEditor
+        preset={member}
+        draft={regexDraftFromRecord(member)}
+        onDraftChange={mock()}
+        profiles={[profileRecord("p1", "Bundle", { isGlobal: false })]}
+        profileLinkCounts={{ p1: 1 }}
+      />,
+    );
+    expect(view.queryByText("promptManager.regex.availabilityUnbound")).toBeNull();
+  });
+
+  it("withholds the member reason while its Profile link count is unknown", () => {
+    const member = baseRecord({ profileId: brandId<RegexProfileId>("p1"), isGlobal: false });
+    const view = render(
+      <RegexPresetEditor
+        preset={member}
+        draft={regexDraftFromRecord(member)}
+        onDraftChange={mock()}
+        profiles={[profileRecord("p1", "Bundle", { isGlobal: false })]}
+      />,
+    );
+    expect(view.queryByText("promptManager.regex.availabilityUnbound")).toBeNull();
+  });
+
+  it("shows an unbound reason for an active member only after its Profile confirms zero links", () => {
+    const member = baseRecord({ profileId: brandId<RegexProfileId>("p1"), isGlobal: false });
+    const view = render(
+      <RegexPresetEditor
+        preset={member}
+        draft={regexDraftFromRecord(member)}
+        onDraftChange={mock()}
+        profiles={[profileRecord("p1", "Bundle", { isGlobal: false })]}
+        profileLinkCounts={{ p1: 0 }}
+      />,
+    );
+    expect(view.getByText("promptManager.regex.availabilityUnbound")).toBeTruthy();
+  });
+
+  it("hides the unbound reason when disabled, global, or reachable", async () => {
     // Disabled (instant toggle state) → the Toggle itself carries the state.
     let record = baseRecord({ isGlobal: false, disabled: true });
     const first = render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
     await first.findByText("promptManager.regex.fieldActive");
-    expect(first.queryByText("promptManager.regex.badgeNotApplied")).toBeNull();
+    expect(first.queryByText("promptManager.regex.availabilityUnbound")).toBeNull();
     first.unmount();
 
     // Global («Все чаты») → applies everywhere, never "not applied".
     record = baseRecord({ isGlobal: true });
     const second = render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
     await second.findByText("promptManager.regex.scopeAll");
-    expect(second.queryByText("promptManager.regex.badgeNotApplied")).toBeNull();
+    expect(second.queryByText("promptManager.regex.availabilityUnbound")).toBeNull();
     second.unmount();
 
     // Bind mode with one resolvable link → applies.
@@ -496,6 +573,6 @@ describe("RegexPresetEditor — not-applied badge under the name", () => {
     const third = render(<RegexPresetEditor preset={record} draft={regexDraftFromRecord(record)} onDraftChange={mock()} />);
     expect(await third.findByText("Deep RP")).toBeTruthy();
     await new Promise((r) => setTimeout(r, 50));
-    expect(third.queryByText("promptManager.regex.badgeNotApplied")).toBeNull();
+    expect(third.queryByText("promptManager.regex.availabilityUnbound")).toBeNull();
   });
 });

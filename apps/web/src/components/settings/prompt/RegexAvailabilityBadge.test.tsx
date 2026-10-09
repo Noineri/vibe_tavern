@@ -4,6 +4,7 @@ import type { RegexProfileAvailability, RegexRuleAvailability } from "../../../l
 
 useDomEnv();
 const { render } = await import("@testing-library/react");
+const { TooltipProvider } = await import("../../shared/Tooltip.js");
 const realI18nContext = await import("../../../i18n/context.js");
 const { default: en } = await import("../../../i18n/locales/en.json");
 const { default: ru } = await import("../../../i18n/locales/ru.json");
@@ -59,21 +60,25 @@ const statuses: Array<{ availability: RegexProfileAvailability | RegexRuleAvaila
 
 function renderBadge(locale: "en" | "ru", availability: RegexProfileAvailability | RegexRuleAvailability) {
   activeLocale = locale;
-  return render(<RegexAvailabilityBadge availability={availability} />);
+  return render(<TooltipProvider><RegexAvailabilityBadge availability={availability} /></TooltipProvider>);
 }
 
 describe("RegexAvailabilityBadge", () => {
   for (const status of statuses) {
-    it(`renders ${status.availability.kind} as text and an accessible EN label`, () => {
+    it(`renders ${status.availability.kind} as a dot with an accessible EN label`, () => {
       const view = renderBadge("en", status.availability);
       const badge = view.getByLabelText(status.en);
-      expect(badge.textContent).toBe(status.en);
+      expect(badge.getAttribute("role")).toBe("img");
+      expect(badge.textContent).toBe("");
+      expect(badge.querySelector("span")?.className).toContain("h-[6px]");
     });
 
-    it(`renders ${status.availability.kind} as text and an accessible RU label`, () => {
+    it(`renders ${status.availability.kind} as a dot with an accessible RU label`, () => {
       const view = renderBadge("ru", status.availability);
       const badge = view.getByLabelText(status.ru);
-      expect(badge.textContent).toBe(status.ru);
+      expect(badge.getAttribute("role")).toBe("img");
+      expect(badge.textContent).toBe("");
+      expect(badge.querySelector("span")?.className).toContain("w-[6px]");
     });
   }
 

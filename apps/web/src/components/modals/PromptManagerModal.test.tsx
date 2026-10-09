@@ -1397,8 +1397,8 @@ describe("PromptManagerModal — Profile member workflows (RXU-42)", () => {
       <PromptManagerModal presets={[advancedPreset()]} activePresetId="preset-1" setActivePresetId={mock()} onCreate={mock(async () => null)} onUpdate={mock(async () => true)} onDelete={mock(async () => true)} onReorder={mock(async () => true)} />,
     );
     fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
-    await waitFor(() => expect(within(view.baseElement).getByText("Bundle")).toBeTruthy());
-    const profile = within(view.baseElement).getByText("Bundle");
+    await waitFor(() => expect(within(view.baseElement).getAllByText("Bundle").length).toBeGreaterThan(0));
+    const profile = within(view.baseElement).getAllByText("Bundle")[0]!;
     await act(async () => { fireEvent.pointerDown(profile); fireEvent.click(profile); });
     await waitFor(() => expect(within(view.baseElement).getByRole("button", { name: "promptManager.regex.createRule" })).toBeTruthy());
     return view;
@@ -1416,10 +1416,11 @@ describe("PromptManagerModal — Profile member workflows (RXU-42)", () => {
     expect(attachRegexRuleMock).not.toHaveBeenCalled();
   });
 
-  test("Add existing attaches selected Rules, refreshes the count, and keeps the Profile selected", async () => {
+  test("Add existing opens for a selected Profile, attaches candidates, and keeps that Profile selected", async () => {
+    const member = regexRecord("member-1", "Existing member", "profile-1");
     const standalone = regexRecord("standalone-1", "Standalone");
     const secondStandalone = regexRecord("standalone-2", "Second standalone");
-    const view = await openProfile([standalone, secondStandalone]);
+    const view = await openProfile([member, standalone, secondStandalone]);
     const q = within(view.baseElement);
     attachRegexRuleMock.mockImplementation(async (_profileId, ruleId) => {
       const id = String(ruleId);
@@ -1434,7 +1435,7 @@ describe("PromptManagerModal — Profile member workflows (RXU-42)", () => {
     await waitFor(() => {
       expect(attachRegexRuleMock).toHaveBeenCalledWith("profile-1", "standalone-1");
       expect(attachRegexRuleMock).toHaveBeenCalledWith("profile-1", "standalone-2");
-      expect(q.getByText("promptManager.regex.profileMemberCount:2")).toBeTruthy();
+      expect(q.getByText("promptManager.regex.profileMemberCount:3")).toBeTruthy();
     });
     expect((q.getByDisplayValue("Bundle") as HTMLInputElement).value).toBe("Bundle");
   });

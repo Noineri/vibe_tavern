@@ -150,12 +150,18 @@ export function RegexProfileRulePicker({ rules, onAttach, onCancel }: RegexProfi
           else cancelPicker();
         }}
       >
-        <Popover.Trigger asChild>
-          <AddButton prominent onClick={openPicker}>
-            <Ic.plus />
-            {t("promptManager.regex.pickerTrigger")}
-          </AddButton>
-        </Popover.Trigger>
+        {/* The picker owns its controlled open state. Anchor the shared button
+            on a native element instead of making AddButton a Radix trigger:
+            AddButton intentionally has no forwarded ref/prop spread, so a
+            Trigger-asChild can swallow the live pointer interaction. */}
+        <Popover.Anchor asChild>
+          <div className="inline-flex">
+            <AddButton prominent onClick={openPicker}>
+              <Ic.plus />
+              {t("promptManager.regex.pickerTrigger")}
+            </AddButton>
+          </div>
+        </Popover.Anchor>
         {!isMobile && (
           <Popover.Portal container={getModalPortal() ?? document.body}>
             <Popover.Content

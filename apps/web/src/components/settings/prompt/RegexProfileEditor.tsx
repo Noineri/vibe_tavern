@@ -12,6 +12,7 @@ import { getRegexProfileLinks, setRegexProfileLinks } from "../../../api/regex-a
 import { listPromptPresets } from "../../../api/preset-api.js";
 import { invalidateActiveRegexPresets } from "../../../hooks/use-active-regex-presets.js";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
+import { regexProfileAvailability } from "../../../lib/regex-availability.js";
 import { RegexProfileRulePicker } from "./RegexProfileRulePicker.js";
 import { AddButton } from "../../shared/add-button.js";
 import { EmptyState } from "../../shared/empty-state.js";
@@ -74,24 +75,31 @@ export function RegexProfileEditor({
   // ── Bindings ──
   const allCharacters = useAllCharacters();
   const [bindLinks, setBindLinks] = useState<LinkBindingRecord[]>([]);
+  const [linksLoaded, setLinksLoaded] = useState(false);
+  const [promptPresetsLoaded, setPromptPresetsLoaded] = useState(false);
   const [promptPresets, setPromptPresets] = useState<Array<{ id: string; name: string; updatedAt?: string }>>([]);
 
   useEffect(() => {
     setBindLinks([]);
+    setLinksLoaded(false);
+    setPromptPresetsLoaded(false);
     let cancelled = false;
     getRegexProfileLinks(profile.id)
       .then((rows) => {
-        if (!cancelled) setBindLinks(rows.map((r) => ({ targetType: r.targetType, targetId: r.targetId })));
+        if (!cancelled) { setBindLinks(rows.map((r) => ({ targetType: r.targetType, targetId: r.targetId }))); setLinksLoaded(true); }
       })
       .catch(() => {
-        if (!cancelled) setBindLinks([]);
+        if (!cancelled) { setBindLinks([]); setLinksLoaded(true); }
       });
     listPromptPresets()
       .then((list) => {
-        if (!cancelled) setPromptPresets(list.map((p) => ({ id: p.id, name: p.name, updatedAt: p.updatedAt })));
+        if (!cancelled) {
+          setPromptPresets(list.map((promptPreset) => ({ id: promptPreset.id, name: promptPreset.name, updatedAt: promptPreset.updatedAt })));
+          setPromptPresetsLoaded(true);
+        }
       })
       .catch(() => {
-        if (!cancelled) setPromptPresets([]);
+        if (!cancelled) { setPromptPresets([]); setPromptPresetsLoaded(true); }
       });
     return () => {
       cancelled = true;
@@ -119,7 +127,15 @@ export function RegexProfileEditor({
     [bindLinks, resolvableIds],
   );
 
-  const notApplied = !profile.isGlobal && !profile.disabled && effectiveBindCount === 0;
+  // RXU-31 is the sole availability derivation. Unbound means enabled,
+  // non-global, and CONFIRMED zero resolvable links; until links and prompt
+  // preset targets resolve, undefined yields loading and no false red reason.
+  const profileAvailability = regexProfileAvailability(
+    profile,
+    [],
+    linksLoaded && promptPresetsLoaded ? effectiveBindCount : undefined,
+  );
+  const isUnbound = profileAvailability.kind === "unbound";
 
   const handleSetBindLinks = (next: LinkBindingRecord[]) => {
     const prev = bindLinks;
@@ -171,11 +187,11 @@ export function RegexProfileEditor({
         </div>
       </div>
 
-      {notApplied && (
+      {isUnbound && (
         <div className="-mt-2">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-2 py-px font-ui text-[calc(var(--ui-fs)-4px)] leading-tight text-danger-text select-none">
             <span className="h-[6px] w-[6px] rounded-full bg-danger" />
-            {t("promptManager.regex.badgeNotApplied")}
+            {t("promptManager.regex.availabilityUnbound")}
           </span>
         </div>
       )}

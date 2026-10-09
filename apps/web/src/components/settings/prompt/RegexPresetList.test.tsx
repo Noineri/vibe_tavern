@@ -29,7 +29,10 @@ const useSortable = mock(() => ({
 mock.module("../../../i18n/context.js", () => ({
   ...realI18nContext,
   useT: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: { count?: number }) =>
+      key === "promptManager.regex.availabilityActiveRules"
+        ? `${key}:${options?.count ?? 0}`
+        : key,
     tDynamic: (key: string) => key,
     locale: "en",
     setLocale: () => {},
@@ -199,6 +202,87 @@ describe("RegexPresetList", () => {
     expect(onReorder).not.toHaveBeenCalled();
   });
 
+  it("uses one dot-only indicator with a full accessible name for every Profile status", () => {
+    const statuses: Array<{
+      name: string;
+      profile: RegexProfileRecord;
+      presets: RegexPresetRecord[];
+      linkCount?: number;
+      label: string;
+    }> = [
+      {
+        name: "disabled",
+        profile: profile("p-disabled", "Disabled Profile", { disabled: true, isGlobal: false }),
+        presets: [],
+        linkCount: 0,
+        label: "promptManager.regex.availabilityDisabled",
+      },
+      {
+        name: "unbound",
+        profile: profile("p-unbound", "Unbound Profile", { isGlobal: false }),
+        presets: [],
+        linkCount: 0,
+        label: "promptManager.regex.availabilityUnbound",
+      },
+      {
+        name: "no enabled Rules",
+        profile: profile("p-empty", "Empty Profile"),
+        presets: [],
+        label: "promptManager.regex.availabilityNoEnabledRules",
+      },
+      {
+        name: "active",
+        profile: profile("p-active", "Active Profile"),
+        presets: [rule("r-active", "Active member", { profileId: brandId<RegexProfileId>("p-active") })],
+        label: "promptManager.regex.availabilityActiveRules:1",
+      },
+    ];
+
+    for (const status of statuses) {
+      const view = render(<RegexPresetList {...baseProps({
+        presets: status.presets,
+        profiles: [status.profile],
+        regexProfileLinkCounts: status.linkCount === undefined ? {} : { [status.profile.id]: status.linkCount },
+      })} />);
+      const indicator = view.getByRole("img", { name: status.label });
+      expect(indicator.textContent).toBe("");
+      expect(indicator.querySelector("span")?.className).toContain("h-[6px]");
+    }
+  });
+
+  it("keeps Rule-row availability dot-only too", () => {
+    const view = render(<RegexPresetList {...baseProps({ presets: [rule("r-dot", "Dot Rule")] })} />);
+    const indicator = view.getByRole("img", { name: "promptManager.regex.availabilityActive" });
+    expect(indicator.textContent).toBe("");
+    expect(indicator.className).toContain("shrink-0");
+  });
+
+  it("keeps a Russian narrow Profile row to one visible member count plus a dot", () => {
+    const name = "Очень длинный профиль правил";
+    const profileRow = profile("p-ru", name);
+    const view = render(<RegexPresetList {...baseProps({
+      presets: [rule("r-ru", "Участник", { profileId: profileRow.id })],
+      profiles: [profileRow],
+    })} />);
+    const row = view.getByText(name).closest("div.group") as HTMLElement;
+    expect(row.textContent?.match(/\(1\)/g)).toHaveLength(1);
+    expect(within(row).getByRole("img", { name: "promptManager.regex.availabilityActiveRules:1" }).textContent).toBe("");
+    expect(within(row).queryByText("promptManager.regex.availabilityActiveRules:1")).toBeNull();
+  });
+
+  it("keeps the prominent nested New Rule slot between its Profile and member Rules", () => {
+    const view = render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} />);
+    const profileName = view.getByText("First profile");
+    const newRule = view.getByRole("button", { name: "promptManager.regex.memberNewRule" });
+    const member = view.getByText("Member needle");
+
+    expect(newRule.className).toContain("h-11");
+    expect(newRule.className).toContain("w-full");
+    expect(newRule.className).toContain("border-dashed");
+    expect(profileName.compareDocumentPosition(newRule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(newRule.compareDocumentPosition(member) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("renames a rule from its row", async () => {
     const onRename = mock();
     const user = userEvent.setup();
@@ -225,6 +309,19 @@ describe("RegexPresetList", () => {
     expect(view.getByTestId("regex-standalone-drop")).toBeTruthy();
     act(() => { dndHandlers!.onDragEnd!(end("rule:r2")); });
     expect(view.queryByTestId("regex-standalone-drop")).toBeNull();
+  });
+
+  it("places the standalone drop flow slot in the same scroll container before list rows", () => {
+    const view = render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} />);
+    const start = { active: { id: "rule:r2" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
+    act(() => { dndHandlers!.onDragStart!(start); });
+
+    const target = view.getByTestId("regex-standalone-drop");
+    const profileRow = view.getByText("First profile").closest("div.group") as HTMLElement;
+    expect(target.parentElement).toBe(profileRow.parentElement);
+    expect(target.compareDocumentPosition(profileRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(target.className).not.toContain("absolute");
+    expect(target.className).not.toContain("fixed");
   });
 
   it("detaches a member through the standalone target with no standalone Rules", () => {

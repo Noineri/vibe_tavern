@@ -319,10 +319,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [regexConfirmDeleteOpen, setRegexConfirmDeleteOpen] = useState(false);
   const [profileConfirmDeleteId, setProfileConfirmDeleteId] = useState<string | null>(null);
   const regexImportInputRef = useRef<HTMLInputElement>(null);
-  // R-7 list badge ("Not applied"): link counts for non-global presets —
-  // a bind-mode preset with zero links applies in no chat. Fetched lazily per
-  // unknown id; undefined = not loaded yet (badge withheld until known), so
-  // rows never flash a false «unbound» while links load.
+  // Per-Rule reachability counts for the centralized availability model.
+  // They load lazily after the Regex tab opens; undefined means not loaded.
   const [regexLinkCounts, setRegexLinkCounts] = useState<Record<string, number | undefined>>({});
   const [regexProfiles, setRegexProfiles] = useState<RegexProfileRecord[]>([]);
   const [expandedProfileIds, setExpandedProfileIds] = useState<Set<string>>(new Set());
@@ -1210,8 +1208,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                 onLinksChanged={(presetId, count) =>
                   setRegexLinkCounts((prev) => ({ ...prev, [presetId]: count }))
                 }
-                profileName={activeRegexPreset.profileId ? (regexProfiles.find((p) => p.id === activeRegexPreset.profileId)?.name ?? null) : null}
                 profiles={regexProfiles}
+                profileLinkCounts={regexProfileLinkCounts}
                 onProfileAssignment={(profileId) => regexProfileAssignment.assign(activeRegexPreset.id, profileId)}
               />
             ) : regexRuleDraft.draft ? (
@@ -1222,8 +1220,8 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                 preset={null}
                 draft={regexDraft}
                 onDraftChange={handleRegexDraftChange}
-                profileName={regexRuleDraft.draft.profileId ? (regexProfiles.find((p) => p.id === regexRuleDraft.draft?.profileId)?.name ?? null) : null}
                 draftProfileId={regexRuleDraft.draft.profileId}
+                profiles={regexProfiles}
               />
             ) : regexLoadState === "loading" ? (
               <div className="flex h-full items-center justify-center p-5">

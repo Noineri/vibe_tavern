@@ -4,6 +4,7 @@ import { Icons } from "../../shared/icons.js";
 import { SearchInput } from "../../shared/SearchInput.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { EmptyState } from "../../shared/empty-state.js";
+import { AddButton } from "../../shared/add-button.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
 import { MasterDetailMobileDrillDown } from "../../shared/MasterDetailModal.js";
@@ -174,6 +175,11 @@ const SortableRegexProfileRow = React.memo(({ p, memberCount, isActive, isExpand
     transition,
     ...(isDragging ? { opacity: 0 } : {}),
   };
+  // AD-022 row-width budget: desktop grip (20px) + gaps (24px) + caret
+  // (16px) + visible count (about 3ch) + status dot (14px with hit padding)
+  // + edit/drill actions leave the min-w-0 name flex slot. Mobile widens the
+  // grip to 44px, so status remains a dot: no authored EN/RU status text may
+  // compete with the Profile name or its separate `(N)` member count.
   return (
     <div
       ref={setNodeRef}
@@ -537,14 +543,20 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
         onDragEnd={handleDragEnd}
         onDragCancel={handleStandaloneDragCancel}
       >
-        {isMemberRuleDrag(activeDragItem) && (
-          <StandaloneDropRow
-            label={t("promptManager.regex.moveToStandalone")}
-            isDropOver={isStandaloneDropOver}
-          />
-        )}
+        {/* Owner ruling 2026-10-09: the Standalone drop row is a SLOT in the
+            scrolling flow — rendered INSIDE the scroll container as its first
+            row, right above the rules — never a fixed band above the scroll
+            area (the band displaced/covered the profile row in ~90% of drag
+            positions). As a flow slot it pushes rows down naturally and
+            scrolls with the list. */}
         <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
           <div className="flex-1 overflow-y-auto">
+            {isMemberRuleDrag(activeDragItem) && (
+              <StandaloneDropRow
+                label={t("promptManager.regex.moveToStandalone")}
+                isDropOver={isStandaloneDropOver}
+              />
+            )}
             {filteredFlat.length === 0 && !isCreating && !isCreatingProfile && !inlineRuleProfileId ? (
               <div className="flex h-full items-center justify-center px-2">
                 <EmptyState
@@ -623,12 +635,13 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
                     )}
                     {!isFiltering && isExpanded && (
                       <div className="ml-2">
-                        <button type="button"
-                          onClick={() => setInlineRuleProfileId(pr.id)}
-                          className="flex w-full items-center gap-2 px-4 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4 hover:text-t2"
-                        >
+                        {/* Owner-approved enlargement (plan RXU-42 «prominent
+                            Create Rule»): the member quick-create uses the
+                            prominent AddButton — never the old ghost row
+                            button. `className` EXTENDS the baked base. */}
+                        <AddButton prominent className="w-full" onClick={() => setInlineRuleProfileId(pr.id)}>
                           <Icons.Plus /> {t("promptManager.regex.memberNewRule")}
-                        </button>
+                        </AddButton>
                       </div>
                     )}
                   </React.Fragment>
