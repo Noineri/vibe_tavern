@@ -2103,6 +2103,7 @@ export default interface Resources {
     "promptManager.regex.memberNewRule": "New rule",
     "promptManager.regex.memberShadowed": "Own apply-scope ignored — the profile governs",
     "promptManager.regex.memberViaProfile": "Applied via profile {name}",
+    "promptManager.regex.moveToStandalone": "Move to Standalone",
     "promptManager.regex.namePlaceholder": "e.g. Strip thinking tags",
     "promptManager.regex.newNamePlaceholder": "Regex preset name…",
     "promptManager.regex.newPreset": "New Regex Preset",

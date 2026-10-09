@@ -1,15 +1,20 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import type { ComponentProps } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { brandId, type RegexPresetId, type RegexProfileId } from "@vibe-tavern/domain";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
 
 useDomEnv();
-const { render, within } = await import("@testing-library/react");
+const { act, render, within } = await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
 const realI18nContext = await import("../../../i18n/context.js");
 const realMasterDetailModal = await import("../../shared/MasterDetailModal.js");
 const realTooltip = await import("../../shared/Tooltip.js");
 const realSortable = await import("@dnd-kit/sortable");
+const realDndKit = await import("@dnd-kit/core");
+type RealDndContextProps = ComponentProps<typeof realDndKit.DndContext>;
+const RealDndContext = realDndKit.DndContext;
+let dndHandlers: RealDndContextProps | null = null;
 
 const useSortable = mock(() => ({
   attributes: {},
@@ -42,6 +47,13 @@ mock.module("../../shared/Tooltip.js", () => ({
   CustomTooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 mock.module("@dnd-kit/sortable", () => ({ ...realSortable, useSortable }));
+mock.module("@dnd-kit/core", () => ({
+  ...realDndKit,
+  DndContext: (props: RealDndContextProps) => {
+    dndHandlers = props;
+    return <RealDndContext {...props} />;
+  },
+}));
 
 let RegexPresetList: typeof import("./RegexPresetList.js").RegexPresetList;
 beforeAll(async () => {
@@ -114,7 +126,10 @@ function nestedProps() {
 }
 
 describe("RegexPresetList", () => {
-  beforeEach(() => mock.clearAllMocks());
+  beforeEach(() => {
+    mock.clearAllMocks();
+    dndHandlers = null;
+  });
 
   it("keeps manual expand/collapse and drag handles available without a filter", async () => {
     const user = userEvent.setup();
@@ -195,5 +210,83 @@ describe("RegexPresetList", () => {
     await user.clear(input);
     await user.type(input, "Renamed{enter}");
     expect(onRename).toHaveBeenCalledWith("r1", "Renamed");
+  });
+
+  it("shows the standalone target only while dragging a member Rule", () => {
+    const view = render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} />);
+    const start = (id: string) => ({ active: { id } }) as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
+    const end = (id: string) => ({ active: { id }, over: null }) as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+
+    expect(view.queryByTestId("regex-standalone-drop")).toBeNull();
+    act(() => { dndHandlers!.onDragStart!(start("rule:r1")); });
+    expect(view.queryByTestId("regex-standalone-drop")).toBeNull();
+    act(() => { dndHandlers!.onDragEnd!(end("rule:r1")); });
+    act(() => { dndHandlers!.onDragStart!(start("rule:r2")); });
+    expect(view.getByTestId("regex-standalone-drop")).toBeTruthy();
+    act(() => { dndHandlers!.onDragEnd!(end("rule:r2")); });
+    expect(view.queryByTestId("regex-standalone-drop")).toBeNull();
+  });
+
+  it("detaches a member through the standalone target with no standalone Rules", () => {
+    const onDetach = mock();
+    const onlyProfile = profile("p1", "Only profile");
+    const view = render(<RegexPresetList {...baseProps({
+      presets: [rule("r1", "Only member", { profileId: onlyProfile.id })],
+      profiles: [onlyProfile],
+      expandedProfileIds: ["p1"],
+      onDetach,
+    })} />);
+    const start = { active: { id: "rule:r1" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragStart"]>>[0];
+    const over = { active: { id: "rule:r1" }, over: { id: "regex:standalone" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragOver"]>>[0];
+    const end = { active: { id: "rule:r1" }, over: { id: "regex:standalone" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+
+    act(() => { dndHandlers!.onDragStart!(start); });
+    const target = view.getByTestId("regex-standalone-drop");
+    expect(target.className).toContain("border border-dashed border-border2");
+    act(() => { dndHandlers!.onDragOver!(over); });
+    expect(target.className).toContain("border-accent");
+    expect(target.className).toContain("bg-accent-dim");
+    act(() => { dndHandlers!.onDragEnd!(end); });
+    expect(onDetach).toHaveBeenCalledWith("r1");
+    expect(view.queryByTestId("regex-standalone-drop")).toBeNull();
+  });
+
+  it("preserves top-level reorder, attachment, within-Profile reorder, and invalid-drop no-op", () => {
+    const topLevelReorder = mock();
+    render(<RegexPresetList {...baseProps({ onReorder: topLevelReorder })} />);
+    const topLevelEnd = { active: { id: "rule:r1" }, over: { id: "rule:r2" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    act(() => { dndHandlers!.onDragEnd!(topLevelEnd); });
+    expect(topLevelReorder).toHaveBeenCalledWith([
+      { id: "r2", sortOrder: 0 },
+      { id: "r1", sortOrder: 1 },
+      { id: "r3", sortOrder: 2 },
+    ]);
+
+    const onAttach = mock();
+    const attachReorder = mock();
+    render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} onAttach={onAttach} onReorder={attachReorder} />);
+    const attachEnd = { active: { id: "rule:r1" }, over: { id: "profile:p1" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    act(() => { dndHandlers!.onDragEnd!(attachEnd); });
+    expect(onAttach).toHaveBeenCalledWith("p1", "r1");
+    expect(attachReorder).toHaveBeenCalledWith([
+      { id: "r1", sortOrder: 0 },
+      { id: "r2", sortOrder: 1 },
+      { id: "r3", sortOrder: 2 },
+    ]);
+
+    const memberReorder = mock();
+    render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} onReorder={memberReorder} />);
+    const memberEnd = { active: { id: "rule:r2" }, over: { id: "rule:r3" } } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    act(() => { dndHandlers!.onDragEnd!(memberEnd); });
+    expect(memberReorder).toHaveBeenCalledWith([
+      { id: "r3", sortOrder: 0 },
+      { id: "r2", sortOrder: 1 },
+    ]);
+
+    const invalidReorder = mock();
+    render(<RegexPresetList {...baseProps({ onReorder: invalidReorder })} />);
+    const invalidEnd = { active: { id: "rule:r1" }, over: null } as unknown as Parameters<NonNullable<RealDndContextProps["onDragEnd"]>>[0];
+    act(() => { dndHandlers!.onDragEnd!(invalidEnd); });
+    expect(invalidReorder).not.toHaveBeenCalled();
   });
 });

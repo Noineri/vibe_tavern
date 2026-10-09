@@ -3108,6 +3108,7 @@
 	"promptManager.regex.availabilityActiveRules_other": "Active · {count} Rules",
 	"promptManager.regex.searchPlaceholder": "Search Rules and Profiles",
 	"promptManager.regex.dragAria": "Reorder regex item",
+	"promptManager.regex.moveToStandalone": "Move to Standalone",
 	"promptManager.regex.copy": "Copy",
 	"promptManager.regex.copySuffix": " (copy)",
 	"promptManager.regex.copied": "Preset copied",

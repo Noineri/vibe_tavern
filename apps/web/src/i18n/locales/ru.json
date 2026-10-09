@@ -3144,6 +3144,7 @@
 	"promptManager.regex.availabilityActiveRules_other": "Активно · {count} правил",
 	"promptManager.regex.searchPlaceholder": "Поиск правил и профилей",
 	"promptManager.regex.dragAria": "Изменить порядок регулярного правила",
+	"promptManager.regex.moveToStandalone": "Переместить в отдельные",
 	"promptManager.regex.copy": "Копировать",
 	"promptManager.regex.copySuffix": " (копия)",
 	"promptManager.regex.copied": "Пресет скопирован",

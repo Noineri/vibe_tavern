@@ -8,7 +8,7 @@ import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
 import { MasterDetailMobileDrillDown } from "../../shared/MasterDetailModal.js";
 import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
-import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
+import { DndContext, DragOverlay, closestCenter, useDroppable, type DragOverEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { buildFlatVisualOrder, interpretRegexDrop, type FlatItem } from "../../../lib/regex-profile-drop.js";
@@ -20,6 +20,11 @@ import {
 } from "../../../lib/regex-availability.js";
 import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
 import { RegexAvailabilityBadge } from "./RegexAvailabilityBadge.js";
+import {
+  isMemberRuleDrag,
+  memberRuleIdForStandaloneDrop,
+  regexStandaloneDropId,
+} from "./regex-profile-drop.js";
 
 type RegexAvailability = RegexProfileAvailability | RegexRuleAvailability;
 
@@ -44,6 +49,23 @@ interface RegexPresetListProps {
   onDetach?: (ruleId: string) => void | Promise<unknown>;
   onToggleProfile?: (id: string) => void;
   onImportRegex?: () => void;
+}
+
+function StandaloneDropRow({ label, isDropOver }: { label: string; isDropOver: boolean }) {
+  const { isOver, setNodeRef } = useDroppable({ id: regexStandaloneDropId });
+  return (
+    <div
+      ref={setNodeRef}
+      data-testid="regex-standalone-drop"
+      className={cn(
+        "flex min-h-11 w-full items-center justify-center gap-2 border border-dashed border-border2 bg-s1 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors",
+        (isOver || isDropOver) && "border-accent bg-accent-dim text-accent",
+      )}
+    >
+      <Icons.Expand />
+      <span>{label}</span>
+    </div>
+  );
 }
 
 const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, startEditing, dndDisabled, availability, shadowed }: {
@@ -235,6 +257,7 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
   const manualExpansionSnapshot = useRef<Set<string>>(new Set());
   const [inlineRuleProfileId, setInlineRuleProfileId] = useState<string | null>(null);
   const [inlineRuleName, setInlineRuleName] = useState("");
+  const [isStandaloneDropOver, setIsStandaloneDropOver] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
   const newInputRef = useRef<HTMLInputElement>(null);
 
@@ -390,6 +413,7 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
   });
 
   const handleDragStart = (event: Parameters<typeof baseHandleDragStart>[0]) => {
+    setIsStandaloneDropOver(false);
     const id = String(event.active.id);
     if (id.startsWith("profile:")) {
       const pid = id.slice("profile:".length);
@@ -400,7 +424,27 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
     baseHandleDragStart(event);
   };
 
-  const handleDragEnd = baseHandleDragEnd;
+  const handleDragOver = (event: DragOverEvent) => {
+    setIsStandaloneDropOver(
+      memberRuleIdForStandaloneDrop(activeDragItem, event.over ? String(event.over.id) : null) !== null,
+    );
+  };
+
+  const handleDragEnd = (event: Parameters<typeof baseHandleDragEnd>[0]) => {
+    const ruleId = memberRuleIdForStandaloneDrop(activeDragItem, event.over ? String(event.over.id) : null);
+    setIsStandaloneDropOver(false);
+    if (ruleId) {
+      handleDragCancel();
+      onDetach?.(ruleId);
+      return;
+    }
+    baseHandleDragEnd(event);
+  };
+
+  const handleStandaloneDragCancel = () => {
+    setIsStandaloneDropOver(false);
+    handleDragCancel();
+  };
 
   const filteredFlat = useMemo(() => {
     if (!isFiltering) return flatItems;
@@ -489,9 +533,16 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
+        onDragCancel={handleStandaloneDragCancel}
       >
+        {isMemberRuleDrag(activeDragItem) && (
+          <StandaloneDropRow
+            label={t("promptManager.regex.moveToStandalone")}
+            isDropOver={isStandaloneDropOver}
+          />
+        )}
         <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
           <div className="flex-1 overflow-y-auto">
             {filteredFlat.length === 0 && !isCreating && !isCreatingProfile && !inlineRuleProfileId ? (
