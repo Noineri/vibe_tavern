@@ -31,6 +31,7 @@ import { CustomTooltip } from "../shared/Tooltip.js";
 import { useImageGenChatStore } from "../../stores/image-gen-chat-store.js";
 import { useImageGenProgress } from "../../hooks/use-image-gen-progress.js";
 import { useT } from "../../i18n/context.js";
+import { parseHordeQueueState } from "../../lib/horde-queue-state.js";
 
 export interface ImageGenProgressRowProps {
   chatId: string;
@@ -61,6 +62,7 @@ export function ImageGenProgressRow({ chatId }: ImageGenProgressRowProps) {
   const previewSrc = !previewHidden && snapshot?.previewBase64 !== undefined
     ? `data:image/png;base64,${snapshot.previewBase64}`
     : null;
+  const hordeQueueState = parseHordeQueueState(snapshot?.state);
 
   return (
     <div
@@ -73,7 +75,14 @@ export function ImageGenProgressRow({ chatId }: ImageGenProgressRowProps) {
       ) : !run.liveProgress ? (
         <span className="flex items-center gap-1.5 text-accent animate-pulse">
           <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
-          {t("image_gen_generating")}
+          {hordeQueueState?.kind === "queue"
+            ? t("image_gen_horde_queue", {
+                position: hordeQueueState.position,
+                minutes: Math.max(1, Math.round(hordeQueueState.etaSeconds / 60)),
+              })
+            : hordeQueueState?.kind === "drawing"
+              ? t("image_gen_horde_drawing")
+              : t("image_gen_generating")}
         </span>
       ) : showSteps ? (
         <>

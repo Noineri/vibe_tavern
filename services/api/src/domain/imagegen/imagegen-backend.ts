@@ -169,6 +169,9 @@ export interface ImageGenGenerateRequest {
    *  attributed to the queued prompt_id. Adapters that report no progress
    *  never call it (the phase stays "starting" until the run ends). */
   onJobStarted?: () => void;
+  /** AI Horde queue-state signal: an opaque state string for the active
+   *  profile's progress poll. Other backends never call it. */
+  onQueueState?: (state: string) => void;
 }
 
 /** Cloud generation timeout budget (owner-approved 2026-09-14: 3 minutes).

@@ -281,6 +281,7 @@ export async function pollHordeGeneration(
   id: string,
   signal: AbortSignal | undefined,
   control: HordeWaitControl = defaultWaitControl,
+  onQueueState?: (state: string) => void,
 ): Promise<void> {
   let delay = 3000;
   for (;;) {
@@ -308,6 +309,14 @@ export async function pollHordeGeneration(
       );
     }
     if (payload.done === true) return;
+    if (typeof payload.queue_position === "number") {
+      if (payload.queue_position === 0) {
+        onQueueState?.("drawing");
+      } else if (payload.queue_position >= 1) {
+        const waitTime = typeof payload.wait_time === "number" ? payload.wait_time : 0;
+        onQueueState?.(`queue:${payload.queue_position}:${waitTime}`);
+      }
+    }
     await control.wait(delay);
     delay = Math.min(15000, delay * 2);
   }
@@ -400,7 +409,14 @@ registerImageGenBackend(
           throw new HordeImageError("AI Horde submit returned no request id");
         }
         try {
-          await pollHordeGeneration(parsed.fetch, parsed.endpoint, id, request.signal);
+          await pollHordeGeneration(
+            parsed.fetch,
+            parsed.endpoint,
+            id,
+            request.signal,
+            defaultWaitControl,
+            request.onQueueState,
+          );
         } catch (error) {
           // Best-effort cancel on ANY poll failure, then surface.
           await cancelHordeRequest(parsed.fetch, parsed.endpoint, id);

@@ -806,6 +806,26 @@ describe("aihorde native arm (async submit→poll→status, anonymous tier)", ()
     expect(waits).toEqual([3000, 6000, 12000, 15000]); // doubling, capped at 15s
   });
 
+  it("publishes queued, drawing, and absent queue states through the poll callback", async () => {
+    const states: string[] = [];
+    const payloads = [
+      { done: false, queue_position: 2, wait_time: 300 },
+      { done: false, queue_position: 0 },
+      { done: false },
+      { done: true },
+    ];
+    const t = makeTransport(() => jsonResponse(payloads.shift()));
+    await pollHordeGeneration(
+      t.transport,
+      BASE,
+      "req-queue",
+      undefined,
+      { wait: () => Promise.resolve() },
+      (state) => states.push(state),
+    );
+    expect(states).toEqual(["queue:2:300", "drawing"]);
+  });
+
   it("PE-7a: a check fetch that never settles fails fast with HordeEndpointSilentError (inactivity, not queue length)", async () => {
     // A hung connection with real fetch semantics: the promise parks
     // forever and rejects ONLY when its signal aborts.

@@ -1292,6 +1292,8 @@ export default interface Resources {
     "image_gen_hires_upscaler_auto": "Auto",
     "image_gen_hires_upscaler_label": "Upscaler",
     "image_gen_hires_upscalers_failed": "Upscaler list unavailable",
+    "image_gen_horde_drawing": "Drawing…",
+    "image_gen_horde_queue": "In queue: position {position} · ~{minutes}m",
     "image_gen_key_from_provider_hint": "Key is taken from the \"{name}\" provider profile — type your own key here to override.",
     "image_gen_key_optional_hint": "Optional — enter user:pass only if the server was started with --api-auth",
     "image_gen_keyless_note": "No API key (local server)",
