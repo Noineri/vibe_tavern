@@ -108,6 +108,13 @@ export class HordeEndpointSilentError extends Error {
 export const HORDE_JSON_FETCH_INACTIVITY_MS = 45_000;
 export const HORDE_DOWNLOAD_INACTIVITY_MS = 120_000;
 
+/** PE-7a (supervisor 2026-10-09): the best-effort DELETE cancel gets its
+ *  own SHORT budget — without a guard, a silent endpoint parks the exit
+ *  path forever and the typed silent error never reaches the user
+ *  (behavioral probe: generate() still hung past 60 s). Best-effort means
+ *  a swallowed timeout, never a hang. */
+export const HORDE_CANCEL_INACTIVITY_MS = 10_000;
+
 // ─── Documented surface (live swagger 2026-09-18) ───────────────────────────
 
 /** The documented anonymous key (a first-class tier, not a bypass). */
@@ -307,16 +314,23 @@ export async function pollHordeGeneration(
 }
 
 /** Best-effort cancellation — returns an outcome instead of throwing, so
- *  the original error/abort is never masked. */
-async function cancelHordeRequest(
+ *  the original error/abort is never masked. PE-7a: the DELETE rides the
+ *  inactivity guard too (HORDE_CANCEL_INACTIVITY_MS) — a hung cleanup
+ *  fetch is swallowed after the budget instead of parking generate().
+ *  Exported as a test seam (inactivityMs override) like pollHordeGeneration. */
+export async function cancelHordeRequest(
   transport: typeof fetch,
   endpoint: string,
   id: string,
+  inactivityMs: number = HORDE_CANCEL_INACTIVITY_MS,
 ): Promise<void> {
-  await fetchOrWrap(transport, `${endpoint}/v2/generate/status/${id}`, {
-    method: "DELETE",
-    headers: hordeHeaders(HORDE_ANONYMOUS_API_KEY, false),
-  }, "cancel").catch(() => undefined);
+  await fetchWithInactivityGuard(
+    transport,
+    `${endpoint}/v2/generate/status/${id}`,
+    { method: "DELETE", headers: hordeHeaders(HORDE_ANONYMOUS_API_KEY, false) },
+    "cancel",
+    inactivityMs,
+  ).catch(() => undefined);
 }
 
 // ─── Registration ────────────────────────────────────────────────────────────

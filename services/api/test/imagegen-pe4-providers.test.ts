@@ -17,9 +17,11 @@ import {
 } from "../src/domain/imagegen/backends/ideogram.js";
 import "../src/domain/imagegen/backends/cloudflare.js";
 import {
+  HORDE_CANCEL_INACTIVITY_MS,
   HORDE_DOWNLOAD_INACTIVITY_MS,
   HORDE_JSON_FETCH_INACTIVITY_MS,
   HordeEndpointSilentError,
+  cancelHordeRequest,
   pollHordeGeneration,
   snapHordeDimension,
 } from "../src/domain/imagegen/backends/aihorde.js";
@@ -880,6 +882,38 @@ describe("aihorde native arm (async submit→poll→status, anonymous tier)", ()
   it("PE-7a lockstep: 45s JSON fetch inactivity, 120s image download inactivity", () => {
     expect(HORDE_JSON_FETCH_INACTIVITY_MS).toBe(45_000);
     expect(HORDE_DOWNLOAD_INACTIVITY_MS).toBe(120_000);
+  });
+
+  it("PE-7a pin: a silent best-effort DELETE cancel never parks the exit path (guard fires, swallows, resolves)", async () => {
+    // Supervisor probe incident (2026-10-09): without a guard on the
+    // cleanup DELETE, a fully silent endpoint parked generate() forever —
+    // the typed silent error never reached the caller. The guard converts
+    // the hang into a swallowed timeout once the budget expires.
+    let deleteAttempted = false;
+    const transport: typeof fetch = (url, init) => {
+      const u = String(url);
+      if (u.includes("/v2/generate/status/") && init?.method === "DELETE") {
+        deleteAttempted = true;
+        // A hung connection with real fetch semantics: parks forever,
+        // rejects ONLY when its (guard-timer) signal aborts.
+        return new Promise<Response>((_, reject) => {
+          const signal = init?.signal;
+          if (signal?.aborted) {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+            return;
+          }
+          signal?.addEventListener("abort", () =>
+            reject(new DOMException("The operation was aborted.", "AbortError")),
+          );
+        });
+      }
+      return Promise.resolve(jsonResponse({}));
+    };
+    expect(HORDE_CANCEL_INACTIVITY_MS).toBe(10_000); // lockstep: short cleanup budget
+    // inactivityMs 0 — the guard fires on the next macrotask (no real wait);
+    // best-effort semantics: resolves (swallowed) instead of throwing.
+    await cancelHordeRequest(transport, BASE, "req-silent", 0);
+    expect(deleteAttempted).toBe(true); // cleanup was ATTEMPTED, then unhung
   });
 
   it("snapHordeDimension pins the documented 64-multiple grid clamp", () => {
