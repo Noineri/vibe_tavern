@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { brandId, type RegexProfileId } from "@vibe-tavern/domain";
+
 // ─── Closed vocabularies ──────────────────────────────────────────────────────
 
 /**
@@ -29,6 +31,14 @@ export type RegexApplyTargetValue = z.infer<typeof regexApplyTargetSchema>;
  *  and prompt preset only; persona excluded by design. */
 export const regexTargetTypeSchema = z.enum(["character", "preset"]);
 export type RegexTargetTypeValue = z.infer<typeof regexTargetTypeSchema>;
+
+/** One binding target inside any links payload — preset links and profile
+ *  links share this single shape ({targetType, targetId}). */
+export const regexLinkTargetSchema = z.object({
+  targetType: regexTargetTypeSchema,
+  targetId: z.string().min(1),
+});
+export type RegexLinkTarget = z.infer<typeof regexLinkTargetSchema>;
 
 // ─── Create / update ─────────────────────────────────────────────────────────
 
@@ -61,6 +71,17 @@ export const createRegexPresetSchema = z.object({
   isGlobal: z.boolean().optional().default(false),
   /** Deterministic application order within the resolved set. */
   sortOrder: z.number().optional().default(0),
+  /** Optional profile membership (RXU-12): a non-null id births the rule
+   *  directly inside that profile (manual-save path); absent or null =
+   *  standalone. Branded at this API edge (chat-schema idiom). Inside a bundle
+   *  this field is omitted — membership there is bundle-owned (see
+   *  `createRegexProfileBundleSchema`). */
+  profileId: z
+    .string()
+    .min(1)
+    .transform((value) => brandId<RegexProfileId>(value))
+    .nullable()
+    .optional(),
 });
 export type CreateRegexPresetInput = z.infer<typeof createRegexPresetSchema>;
 
@@ -89,12 +110,7 @@ export type UpdateRegexPresetInput = z.infer<typeof updateRegexPresetSchema>;
 
 /** Replace-all binding payload for a regex preset (mirrors ScriptStore link API). */
 export const setRegexLinksSchema = z.object({
-  links: z.array(
-    z.object({
-      targetType: regexTargetTypeSchema,
-      targetId: z.string().min(1),
-    }),
-  ),
+  links: z.array(regexLinkTargetSchema),
 });
 export type SetRegexLinksInput = z.infer<typeof setRegexLinksSchema>;
 
@@ -107,7 +123,8 @@ export type ResolveActiveRegexQuery = z.infer<typeof resolveActiveRegexQuerySche
 
 // ─── Profiles (R-13) ──────────────────────────────────────────────────────
 
-/** Create a regex profile bundle (R-13). Rules join via attach — never here. */
+/** Create a regex profile alone (R-13). Rules join via attach — never here;
+ *  for profile + rules in one atomic write use `createRegexProfileBundleSchema`. */
 export const createRegexProfileSchema = z.object({
   /** Human-readable profile name. */
   name: z.string().min(1),
@@ -143,11 +160,46 @@ export type AttachRegexRuleInput = z.infer<typeof attachRegexRuleSchema>;
 
 /** Replace-all binding payload for a regex profile (mirrors setRegexLinksSchema). */
 export const setRegexProfileLinksSchema = z.object({
-  links: z.array(
-    z.object({
-      targetType: regexTargetTypeSchema,
-      targetId: z.string().min(1),
-    }),
-  ),
+  links: z.array(regexLinkTargetSchema),
 });
 export type SetRegexProfileLinksInput = z.infer<typeof setRegexProfileLinksSchema>;
+
+// ─── Profile bundles (RXU-12, REGEX_RULE_PROFILE_UX_PORTABILITY) ─────────────
+
+/**
+ * One atomic profile-with-members creation payload: the store creates the
+ * profile, its links, and every member rule in a SINGLE transaction — the
+ * bundle lands complete or not at all. Rules are source-faithful: each
+ * carries its own `disabled` (defaults follow `createRegexPresetSchema`, no
+ * normalization pass). Scope rules enforced here:
+ * - a GLOBAL profile (`isGlobal: true`) carries NO links;
+ * - links accept only character/preset targets (`regexLinkTargetSchema`).
+ */
+export const createRegexProfileBundleSchema = z
+  .object({
+    /** Human-readable profile name. */
+    name: z.string().min(1),
+    /** Master switch — explicit (required, no default): the caller states the
+     *  resolved activation state (imports resolve their enable-after-import
+     *  toggle before calling; manual saves pass the rule-level default). */
+    disabled: z.boolean(),
+    /** Applies to every chat regardless of bindings (like global lorebooks). */
+    isGlobal: z.boolean().optional().default(false),
+    /** Application order within the flat list (shared sort space with rules). */
+    sortOrder: z.number().optional().default(0),
+    /** Profile scope links — must be empty when `isGlobal` is true. */
+    links: z.array(regexLinkTargetSchema).optional().default([]),
+    /** One or more member rules; membership is bundle-owned — no rule-level
+     *  `profileId` here, the store stamps the new profile's id on insert. */
+    rules: createRegexPresetSchema.omit({ profileId: true }).array().min(1),
+  })
+  .superRefine((data, ctx) => {
+    if (data.isGlobal && data.links.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["links"],
+        message: "a global profile cannot carry links",
+      });
+    }
+  });
+export type CreateRegexProfileBundleInput = z.infer<typeof createRegexProfileBundleSchema>;

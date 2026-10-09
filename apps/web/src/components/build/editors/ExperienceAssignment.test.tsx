@@ -25,6 +25,10 @@
  *  8. The launcher toggle patches only launcherVisible; pending disables
  *     every control.
  *  9. Rejected list loads and unmount mid-discovery write no stale state.
+ * 10. SS-7B3 automatic-discovery trust gate: discovery waits for the loaded
+ *     interactive list (its single trust source — never assumes in_app); an
+ *     untrusted import renders the shared auto-skip state with NO request;
+ *     trusted imports and in-app scripts keep parity.
  *
  * Runner: bun:test + happy-dom (useDomEnv). The i18n context returns keys
  * verbatim; assertions check key strings (jest-dom matchers are avoided on
@@ -96,8 +100,16 @@ const { ExperienceAssignment } = await import("./ExperienceAssignment.js");
 
 const CHAT_ID = brandId<ChatId>("chat_1");
 
-/** Minimal script row; the component only reads id/name/scriptKind/defaultVisualId. */
-function scriptRec(id: string, name: string, scriptKind: string, defaultVisualId: string | null = null) {
+/** Minimal script row; the component reads id/name/scriptKind/defaultVisualId
+ *  plus the SS-7B3 trust fields (origin/firstEnabledAt) for the automatic
+ *  discovery gate. */
+function scriptRec(
+  id: string,
+  name: string,
+  scriptKind: string,
+  defaultVisualId: string | null = null,
+  over: { origin?: string; firstEnabledAt?: string | null } = {},
+) {
   return {
     id,
     name,
@@ -112,6 +124,9 @@ function scriptRec(id: string, name: string, scriptKind: string, defaultVisualId
     sortOrder: 0,
     defaultVisualId,
     copilotProfileId: null,
+    origin: "in_app",
+    firstEnabledAt: null,
+    ...over,
   };
 }
 
@@ -457,12 +472,14 @@ describe("ExperienceAssignment (IR-72A)", () => {
 
   it("a selected script missing from the interactive list shows the missing state and is invalid", async () => {
     // The stored scriptId is no longer an interactive script (deleted or its
-    // kind changed) even though the raw test endpoint still answers.
+    // kind changed). The authoritative list does not know it, so SS-7B3 sends
+    // no automatic request for it either — the missing state carries the UI.
     mocks.listAllScripts.mockResolvedValue([scriptRec("s2", "Durak", "interactive")]);
     mocks.testScript.mockResolvedValue(interactiveOk("tic-tac-toe", "Tic-Tac-Toe", [{ capability: "participants" }]));
 
     const view = renderAssignment({ scriptId: "s1" });
     await view.findByText("experience_assign_script_missing");
+    expect(mocks.testScript).not.toHaveBeenCalled();
     expect(validityCalls().at(-1)).toBe(false);
     expect(view.queryByText("experience_cap_participants")).toBeNull();
     expect(view.getAllByRole("switch")).toHaveLength(1);
@@ -574,7 +591,10 @@ describe("ExperienceAssignment (IR-72A)", () => {
 
     const view = renderAssignment({ scriptId: "s1" });
     await view.findByText("experience_assign_scripts_load_error");
-    await waitFor(() => expect(mocks.testScript).toHaveBeenCalledWith("s1", {}));
+    // SS-7B3 fail-closed: with the trust record unresolvable, the automatic
+    // discovery never sends the request (it used to fire blind) — the surface
+    // stays not-ready and shows no package.
+    expect(mocks.testScript).not.toHaveBeenCalled();
     expect(validityCalls()).toEqual([false]);
     expect(view.queryByText("experience_assign_no_capabilities")).toBeNull();
     expect(view.queryByText("Tic-Tac-Toe")).toBeNull();
@@ -660,5 +680,77 @@ describe("ExperienceAssignment — RP-context source row", () => {
     const row = view.getByTestId("experience-assign-source");
     expect(row.textContent).toContain("experience_setup_source_preview_chat");
     expect(row.textContent).toContain("experience_setup_source_preview_persona");
+  });
+});
+
+// ─── SS-7B3: automatic discovery trust gate ────────────────────────────────
+
+describe("ExperienceAssignment — automatic discovery trust gate (SS-7B3)", () => {
+  beforeEach(() => {
+    mocks.listExperienceVisuals.mockResolvedValue([]);
+    mocks.testScript.mockResolvedValue(interactiveOk("m", "M", []));
+    mocks.listPersonas.mockResolvedValue([]);
+  });
+
+  it("waits for the interactive list before any automatic discovery request", async () => {
+    const d = deferred<unknown>();
+    mocks.listAllScripts.mockReturnValue(d.promise);
+    const view = renderAssignment({ scriptId: "s1" });
+    // Settle on the visuals list (already resolved): with the script list
+    // parked, the discovery block has not mounted, the script selector stays
+    // inert, and NO request goes out (fail closed: trust is never assumed
+    // in_app).
+    await waitFor(() =>
+      expect(triggerWithText(view, "experience_assign_visual_placeholder").className).not.toContain("pointer-events-none"),
+    );
+    expect(mocks.testScript).not.toHaveBeenCalled();
+    d.resolve([scriptRec("s1", "Tic-Tac-Toe", "interactive")]);
+    await waitFor(() => expect(mocks.testScript).toHaveBeenCalledWith("s1", {}));
+    await view.findByText("experience_assign_no_capabilities");
+  });
+
+  it("an untrusted imported script renders the shared auto-skip state, sends no request, and stays not-ready", async () => {
+    mocks.listAllScripts.mockResolvedValue([
+      scriptRec("s1", "Imported Game", "interactive", null, { origin: "imported", firstEnabledAt: null }),
+    ]);
+    const view = renderAssignment({ scriptId: "s1" });
+    await waitFor(() => expect(view.getByTestId("experience-assign-auto-skip")).toBeTruthy());
+    expect(view.getByTestId("experience-assign-auto-skip").textContent).toBe("script_safety_checks_after_enabling");
+    expect(mocks.testScript).not.toHaveBeenCalled();
+    expect(validityCalls()).toEqual([false]);
+  });
+
+  it("a trusted import keeps the automatic discovery and can become ready", async () => {
+    mocks.listAllScripts.mockResolvedValue([
+      scriptRec("s1", "Imported Game", "interactive", null, { origin: "imported", firstEnabledAt: "2026-01-01T00:00:00Z" }),
+    ]);
+    const view = renderAssignment({ scriptId: "s1" });
+    await view.findByText("experience_assign_no_capabilities");
+    expect(mocks.testScript).toHaveBeenCalledWith("s1", {});
+    await waitFor(() => expect(validityCalls().at(-1)).toBe(true));
+  });
+
+  it("an in-app script keeps the automatic discovery (parity)", async () => {
+    mocks.listAllScripts.mockResolvedValue([
+      scriptRec("s1", "Native Game", "interactive", null, { origin: "in_app", firstEnabledAt: null }),
+    ]);
+    const view = renderAssignment({ scriptId: "s1" });
+    await view.findByText("experience_assign_no_capabilities");
+    expect(mocks.testScript).toHaveBeenCalledWith("s1", {});
+    await waitFor(() => expect(validityCalls().at(-1)).toBe(true));
+  });
+
+  it("switching from an untrusted script to a trusted one discovers normally (no poisoned state)", async () => {
+    mocks.listAllScripts.mockResolvedValue([
+      scriptRec("s1", "Untrusted", "interactive", null, { origin: "imported", firstEnabledAt: null }),
+      scriptRec("s2", "Trusted", "interactive", null, { origin: "in_app", firstEnabledAt: null }),
+    ]);
+    const view = renderAssignment({ scriptId: "s1" });
+    await waitFor(() => expect(view.getByTestId("experience-assign-auto-skip")).toBeTruthy());
+    view.rerender(<ExperienceAssignment {...propsFor({ scriptId: "s2" })} />);
+    await view.findByText("experience_assign_no_capabilities");
+    expect(mocks.testScript).toHaveBeenCalledTimes(1);
+    expect(mocks.testScript).toHaveBeenCalledWith("s2", {});
+    expect(view.queryByTestId("experience-assign-auto-skip")).toBeNull();
   });
 });

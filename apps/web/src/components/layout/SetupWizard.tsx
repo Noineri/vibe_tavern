@@ -16,6 +16,7 @@ import { ProviderForm } from "../settings/provider/ProviderForm.js";
 import { ProviderTestHelloButton } from "../settings/provider/ProviderTestHelloButton.js";
 import { ProviderModalModelSelector } from "../settings/provider/ProviderModalModelSelector.js";
 import type { FormState } from "../modals/ProviderModal.js";
+import { NOVELAI_SAMPLER_FORM_DEFAULTS } from "../../lib/provider-sampler-values.js";
 import { PROVIDER_PRESETS } from "../../provider-presets.js";
 import { StFolderImport } from "../modals/ImportModals.js";
 import { Icons, Ic } from "../shared/icons.js";
@@ -167,6 +168,7 @@ function ProviderStep({
     frequencyPenalty: existingProfile?.frequencyPenalty ?? 0,
     presencePenalty: existingProfile?.presencePenalty ?? 0,
     repetitionPenalty: existingProfile?.repetitionPenalty ?? 1,
+    ...NOVELAI_SAMPLER_FORM_DEFAULTS, // NAI-1a convoy: wire fields arrive in NAI-1b
     maxTokens: existingProfile?.maxTokens ?? 2000,
     contextBudget: existingProfile?.contextBudget ?? 16000,
     pinContextBudget: existingProfile?.pinContextBudget ?? false,
@@ -209,7 +211,7 @@ function ProviderStep({
   const applyPreset = useCallback((presetId: string) => {
     const preset = PROVIDER_PRESETS.find((f) => f.id === presetId);
     if (!preset) return;
-    setForm((prev) => ({ ...prev, providerPreset: presetId, baseUrl: preset.baseUrl }));
+    setForm((prev) => ({ ...prev, providerPreset: presetId, baseUrl: preset.baseUrl, ...(preset.defaultMaxTokens != null ? { maxTokens: preset.defaultMaxTokens } : {}) }));
   }, []);
 
   async function fetchModelsFor() {

@@ -33,6 +33,9 @@
       "@vibe-tavern/domain/builtins": [
         "../../packages/domain/src/builtin-experiences.ts"
       ],
+      "@vibe-tavern/domain/script-safety": [
+        "../../packages/domain/src/script-safety.ts"
+      ],
       "@vibe-tavern/import-export": [
         "../../packages/import-export/src/index.ts"
       ],

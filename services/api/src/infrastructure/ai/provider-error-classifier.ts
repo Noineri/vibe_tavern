@@ -148,6 +148,14 @@ function tryParseJson(text: string): unknown {
 
 const PROXY_ERROR_MESSAGE_RE = /proxy_error/i;
 
+/** NovelAI rejects trial (recaptcha) and tier-limited generations with a
+ *  provider message that is NOT an invalid-key signal — the key itself is
+ *  valid, but the account lacks an active subscription. Match the two texts
+ *  NovelAI returns so they classify as `subscription_required` rather than the
+ *  status mapping's `invalid_request` / `authentication`. */
+const NOVELAI_SUBSCRIPTION_RE =
+  /recaptcha token is required for trial generations|model not allowed for user tier/i;
+
 /** The local Antigravity proxy wraps its own upstream failures as
  *  `{"error":{"message":…,"type":"proxy_error"}}` — with a WRONG 4xx
  *  status (live incident 2026-08-17: HTTP 400 for a dead upstream socket).
@@ -162,6 +170,20 @@ function isProxyErrorEnvelope(apiLike: ApiCallErrorLike): boolean {
   // Message fallback for proxies that surface the envelope type only in the
   // error text (no parseable body).
   return apiLike.message !== undefined && PROXY_ERROR_MESSAGE_RE.test(apiLike.message);
+}
+
+/** NovelAI subscription/tier rejection — matched against the parsed body
+ *  `message` and the error message itself. Like the proxy-envelope check, it
+ *  runs BEFORE the status mapping: a 400 recaptcha is not the client's invalid
+ *  request and a 403 tier rejection is not a bad key. */
+function isNovelaiSubscriptionError(apiLike: ApiCallErrorLike): boolean {
+  if (apiLike.responseBody !== undefined) {
+    const parsed = tryParseJson(apiLike.responseBody);
+    if (isRecord(parsed) && typeof parsed.message === "string" && NOVELAI_SUBSCRIPTION_RE.test(parsed.message)) {
+      return true;
+    }
+  }
+  return apiLike.message !== undefined && NOVELAI_SUBSCRIPTION_RE.test(apiLike.message);
 }
 
 // ─── public API ────────────────────────────────────────────────────────────
@@ -218,6 +240,7 @@ export function classifyProviderError(error: unknown): ProviderErrorCategory {
   const apiLike = asApiCallError(error);
   if (apiLike) {
     if (isProxyErrorEnvelope(apiLike)) return "server_error";
+    if (isNovelaiSubscriptionError(apiLike)) return "subscription_required";
     const byStatus = apiLike.statusCode !== undefined ? classifyByStatus(apiLike.statusCode) : null;
     if (byStatus) return byStatus;
     // statusCode present but outside the mapped ranges, and no network/parse

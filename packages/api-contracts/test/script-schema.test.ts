@@ -488,3 +488,96 @@ describe("scriptTestResultSchema (prompt | dice | interactive)", () => {
     expectReject(scriptTestResultSchema.safeParse({ checks: [] }));
   });
 });
+
+// ─── SS-3: origin/firstEnabledAt are never client-writable ──────────────────
+//
+// Script provenance (`origin`) is fixed at creation and trust (`firstEnabledAt`)
+// is stamped by the store on the first enable of an imported script — neither
+// is a client-writable input. Zod objects are non-strict, so unknown keys are
+// stripped (not rejected); these pin that the fields never reach the parsed
+// create/update/import payloads (the same "strips scriptKind/creationIntentId"
+// contract the DICE-B3 block pins for update). The response DTO (route-inferred
+// `ScriptRecord`) carries both read-only fields via the store's `Script` shape.
+
+describe("updateScriptSchema origin/firstEnabledAt are NOT patch fields (SS-3)", () => {
+  it("strips an origin key from an update patch (immutable provenance)", () => {
+    const data = expectData(
+      updateScriptSchema.safeParse({ name: "renamed", origin: "imported" }),
+    ) as Record<string, unknown>;
+    expect("origin" in data).toBe(false);
+    expect(Object.keys(data)).toEqual(["name"]);
+  });
+
+  it("strips a firstEnabledAt key from an update patch (store-stamped trust)", () => {
+    const data = expectData(
+      updateScriptSchema.safeParse({ firstEnabledAt: "2026-10-06T00:00:00.000Z" }),
+    ) as Record<string, unknown>;
+    expect("firstEnabledAt" in data).toBe(false);
+    expect(Object.keys(data).length).toBe(0);
+  });
+});
+
+describe("createScriptSchema firstEnabledAt is NOT client-writable (SS-3)", () => {
+  it("strips a firstEnabledAt key from a create payload (store stamps it)", () => {
+    const data = expectData(
+      createScriptSchema.safeParse({ ...validCreateScript(), firstEnabledAt: "2026-10-06T00:00:00.000Z" }),
+    ) as Record<string, unknown>;
+    expect("firstEnabledAt" in data).toBe(false);
+  });
+});
+
+describe("importScriptSchema origin/firstEnabledAt are NOT client-writable (SS-3)", () => {
+  it("js branch strips origin and firstEnabledAt (import stamps origin server-side)", () => {
+    const data = expectData(
+      importScriptSchema.safeParse({ format: "js", code: "x", origin: "in_app", firstEnabledAt: "t" }),
+    ) as Record<string, unknown>;
+    expect("origin" in data).toBe(false);
+    expect("firstEnabledAt" in data).toBe(false);
+  });
+
+  it("json branch strips origin and firstEnabledAt (import stamps origin server-side)", () => {
+    const data = expectData(
+      importScriptSchema.safeParse({ format: "json", jsonText: "{}", origin: "in_app", firstEnabledAt: "t" }),
+    ) as Record<string, unknown>;
+    expect("origin" in data).toBe(false);
+    expect("firstEnabledAt" in data).toBe(false);
+  });
+});
+
+// ─── SS-4: import-side origin on create + the test-route ack flag ───────────
+
+describe("createScriptSchema origin (SS-4)", () => {
+  it("accepts 'imported' — the only client-settable value (the mini-app file-import path)", () => {
+    const data = expectData(
+      createScriptSchema.safeParse({ ...validCreateScript(), origin: "imported" }),
+    ) as Record<string, unknown>;
+    expect(data.origin).toBe("imported");
+  });
+
+  it("rejects any other origin value — provenance is not freely client-choosable", () => {
+    expectReject(createScriptSchema.safeParse({ ...validCreateScript(), origin: "in_app" }));
+    expectReject(createScriptSchema.safeParse({ ...validCreateScript(), origin: 42 }));
+  });
+
+  it("omits origin by default (in-app creation — the server-side default is 'in_app')", () => {
+    const data = expectData(
+      createScriptSchema.safeParse(validCreateScript()),
+    ) as Record<string, unknown>;
+    expect("origin" in data).toBe(false);
+  });
+});
+
+describe("testScriptSchema warningAcknowledged (SS-4)", () => {
+  it("carries the ack flag through when boolean (the warning modal sets it)", () => {
+    const data = expectData(
+      testScriptSchema.safeParse({ warningAcknowledged: true }),
+    ) as Record<string, unknown>;
+    expect(data.warningAcknowledged).toBe(true);
+  });
+
+  it("is absent by default and rejects non-boolean values", () => {
+    const data = expectData(testScriptSchema.safeParse({})) as Record<string, unknown>;
+    expect("warningAcknowledged" in data).toBe(false);
+    expectReject(testScriptSchema.safeParse({ warningAcknowledged: "yes" }));
+  });
+});

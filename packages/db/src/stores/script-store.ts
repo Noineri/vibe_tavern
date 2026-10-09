@@ -1,6 +1,6 @@
 import { eq, and, or, asc, inArray } from 'drizzle-orm';
 import type { ScriptKind } from '@vibe-tavern/domain';
-import { scripts, scriptLinks, scriptVisuals } from '../db-schema.js';
+import { scripts, scriptLinks, scriptVisuals, type ScriptOrigin } from '../db-schema.js';
 import type { AppDb } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import type { ContentStore } from '../content-store.js';
@@ -13,6 +13,8 @@ export interface CreateScriptData {
   description?: string;
   code?: string;
   enabled?: boolean;
+  /** Provenance: 'in_app' (default) or 'imported' (trusted after first enable); set at creation, never changes. */
+  origin?: ScriptOrigin;
   /** Runtime contract: 'prompt' (default) or 'dice'. Set at creation; the two
    *  runtimes are isolated by kind at the resolver boundary. */
   scriptKind?: ScriptKind;
@@ -37,7 +39,8 @@ export interface CreateScriptData {
   extensions?: Record<string, unknown>;
 }
 
-export type UpdateScriptData = Partial<CreateScriptData>;
+/** Update shape: `origin` excluded — provenance is fixed at creation; trust (`firstEnabledAt`) is stamped by the store. */
+export type UpdateScriptData = Partial<Omit<CreateScriptData, 'origin'>>;
 
 // ─── Return type ──────────────────────────────────────────────────────────────
 
@@ -50,6 +53,8 @@ export interface Script {
   description: string;
   code: string;
   enabled: boolean;
+  origin: ScriptOrigin;
+  firstEnabledAt: string | null;
   scriptKind: ScriptKind;
   /** Server-idempotent creation key (nullable; unique when set). Read-only. */
   creationIntentId: string | null;
@@ -216,6 +221,10 @@ export class ScriptStore {
 
     const id = this.idGen.next('script');
     const now = this.clock.now();
+    const origin: ScriptOrigin = data.origin ?? 'in_app';
+    const enabled = data.enabled ?? true;
+    // Imported + already enabled = the trust moment happened at creation.
+    const firstEnabledAt = origin === 'imported' && enabled ? now : null;
     const [row] = await this.db
       .insert(scripts)
       .values({
@@ -223,7 +232,9 @@ export class ScriptStore {
         name: data.name,
         description: data.description ?? '',
         code: data.code ?? '',
-        enabled: (data.enabled ?? true) ? 1 : 0,
+        enabled: enabled ? 1 : 0,
+        origin,
+        firstEnabledAt,
         scriptKind: data.scriptKind ?? 'prompt',
         creationIntentId: data.creationIntentId ?? null,
         scopeType: data.scopeType ?? 'entity',
@@ -256,6 +267,13 @@ export class ScriptStore {
 
   async update(id: string, data: UpdateScriptData): Promise<Script> {
     const now = this.clock.now();
+    // First-enable stamp is a transition: read the prior trust state first.
+    const existing = await this.db
+      .select({ enabled: scripts.enabled, origin: scripts.origin, firstEnabledAt: scripts.firstEnabledAt })
+      .from(scripts)
+      .where(eq(scripts.id, id))
+      .get();
+    if (!existing) throw new Error(`Script '${id}' not found`);
     const values: Partial<typeof scripts.$inferInsert> = { updatedAt: now };
     if (data.name !== undefined) values.name = data.name;
     if (data.description !== undefined) values.description = data.description;
@@ -270,6 +288,11 @@ export class ScriptStore {
     if (data.copilotProfileId !== undefined) values.copilotProfileId = data.copilotProfileId;
     if (data.extensions !== undefined) values.extensionsJson = JSON.stringify(data.extensions);
 
+    // First explicit enable of an imported script stamps trust exactly once;
+    // disabling never clears it and re-enabling never re-stamps.
+    const isFirstEnable = data.enabled === true && existing.enabled === 0 &&
+      existing.origin === 'imported' && existing.firstEnabledAt === null;
+    if (isFirstEnable) values.firstEnabledAt = now;
     const [row] = await this.db
       .update(scripts)
       .set(values)
@@ -753,6 +776,8 @@ export class ScriptStore {
       description: row.description,
       code: row.code,
       enabled: row.enabled === 1,
+      origin: row.origin,
+      firstEnabledAt: row.firstEnabledAt,
       scriptKind: row.scriptKind,
       creationIntentId: row.creationIntentId,
       scopeType: row.scopeType,

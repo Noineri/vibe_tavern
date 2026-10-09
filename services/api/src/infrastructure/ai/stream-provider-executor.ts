@@ -8,7 +8,7 @@
 
 import { streamText, isStepCount } from "ai";
 import type { ProviderExecutor, ProviderStreamResult, SentConfigSnapshot } from "./provider-execution-types.js";
-import { resolveModel, resolveCompletionFormatHandoff, toSdkMessages, prepareSdkMessages } from "./provider-executor-utils.js";
+import { resolveModel, resolveCompletionFormatHandoff, toSdkMessages, prepareSdkMessages, prepareProviderTools } from "./provider-executor-utils.js";
 import { buildSamplerConfig } from "./sampler-mapper.js";
 import { COAUTHOR_TRANSPORT, normalizeProviderType } from "@vibe-tavern/domain";
 import { log } from "@vibe-tavern/domain";
@@ -160,6 +160,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
     // second tool step.
     const responsesProviderOptions =
       input.transport === COAUTHOR_TRANSPORT.responses ? { openai: { store: false } } : undefined;
+    const providerTools = prepareProviderTools(input.tools);
     const sentConfig: SentConfigSnapshot = {
       systemRole: hasSystemMessages ? "system" : undefined,
       samplerConfig: samplerConfig as Record<string, unknown>,
@@ -175,8 +176,8 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
       abortSignal: input.signal,
       ...samplerConfig,
       ...(responsesProviderOptions ? { providerOptions: responsesProviderOptions } : {}),
-      ...(input.tools ? { tools: input.tools } : {}),
-      ...(input.tools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
+      ...(providerTools ? { tools: providerTools } : {}),
+      ...(providerTools && input.maxSteps ? { stopWhen: isStepCount(input.maxSteps) } : {}),
       include: { rawChunks: true },
     });
 

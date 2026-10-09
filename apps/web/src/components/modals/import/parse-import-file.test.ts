@@ -78,6 +78,34 @@ test("a JSON card still parses via the JSON branch (no regression)", async () =>
   expect(preview.avatarUrl).toBeNull();
 });
 
+describe("embedded Regex preview drafts (RXU-25)", () => {
+  test("leaves regexScripts absent when the card contains no Regex", async () => {
+    const card = { spec: "chara_card_v3", data: { name: "Plain card" } };
+    const preview = await parseCharacterFile(new File([JSON.stringify(card)], "plain.json", { type: "application/json" }));
+
+    expect("regexScripts" in preview).toBe(false);
+  });
+
+  test("uses the shared card parser to preserve one and mixed source Rule states", async () => {
+    const card = {
+      spec: "chara_card_v3",
+      data: {
+        name: "Regex card",
+        extensions: {
+          regex_scripts: [
+            { scriptName: "Enabled Rule", findRegex: "/on/g", disabled: false },
+            { scriptName: "Disabled Rule", findRegex: "/off/g", disabled: true },
+          ],
+        },
+      },
+    };
+    const preview = await parseCharacterFile(new File([JSON.stringify(card)], "regex.json", { type: "application/json" }));
+
+    expect(preview.regexScripts?.map((rule) => rule.name)).toEqual(["Enabled Rule", "Disabled Rule"]);
+    expect(preview.regexScripts?.map((rule) => rule.disabled)).toEqual([false, true]);
+  });
+});
+
 // ─── readCardRaw (shared by every character-import entry point) ────────────
 
 describe("readCardRaw", () => {

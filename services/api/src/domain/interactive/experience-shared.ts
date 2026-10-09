@@ -34,6 +34,11 @@ export type ExperienceApiError =
   | { status: 409; code: "stale_revision"; message: string; currentRevision: number }
   | { status: 409; code: "branch_has_active"; message: string }
   | { status: 409; code: "not_enabled"; message: string }
+  // SCRIPT_SAFETY_PLAN decision 14 (SS-4): the chat's SELECTED rules script is
+  // disabled — session start refuses instead of executing its code. Named
+  // behavior change: before SS-4 only the chat config flag was checked and a
+  // disabled selected script still executed at session start.
+  | { status: 409; code: "script_not_enabled"; message: string }
   | { status: 409; code: "effect_not_retryable"; message: string; currentStatus: string }
   // 422 — validation / semantic rejection
   | { status: 422; code: "validation_error"; message: string }

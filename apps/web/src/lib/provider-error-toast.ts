@@ -44,6 +44,16 @@ export function showProviderErrorToast(error: unknown, t: TFunc, fallbackKey: ke
     });
     return;
   }
+  if (category === "subscription_required") {
+    toast.error(message, {
+      description: t("provider_error_subscription_desc"),
+      action: {
+        label: t("open_provider_settings"),
+        onClick: () => useModalStore.getState().setIsProviderModalOpen(true),
+      },
+    });
+    return;
+  }
   if (TRANSIENT_PROVIDER_CATEGORIES.has(category)) {
     toast.error(message, { description: t("provider_error_transient_desc") });
     return;

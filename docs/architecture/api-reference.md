@@ -971,6 +971,154 @@ Delete a preset.
 
 ---
 
+## Regex Rules and Profiles
+
+The UI terms are **Rule** and **Profile**, while the persisted domain/API name for a Rule remains `RegexPreset` for compatibility.
+Regex scope accepts character and prompt-preset targets only; persona is not a Regex target.
+
+### `GET /api/regex/presets/all`
+
+List all Regex Rules across every scope, including Profile members.
+
+### `GET /api/regex/presets/:id`
+
+Get one Regex Rule, or 404 when it does not exist.
+
+### `POST /api/regex/presets`
+
+Create one Rule with `createRegexPresetSchema`.
+
+```json
+{
+  "name": "Strip narration markers",
+  "findRegex": "/\\*([^*]+)\\*/g",
+  "replaceString": "$1",
+  "disabled": true,
+  "placement": [2],
+  "isGlobal": false,
+  "profileId": "regex_profile_1"
+}
+```
+
+`profileId` is optional and lets a valid manual draft be born directly inside an existing Profile.
+Omitted or `null` means Standalone.
+Imports with multiple Rules use the atomic bundle route instead.
+
+### `PATCH /api/regex/presets/:id`
+
+Update one Rule with `updateRegexPresetSchema`.
+Profile membership is not patched through this route; use attach/detach.
+
+### `DELETE /api/regex/presets/:id`
+
+Delete one Rule and cascade its junction links.
+
+### `GET /api/regex/presets/:id/links`
+
+List the Rule's stored character/prompt-preset links.
+For a Profile member these links remain stored but are dormant until detach.
+
+### `PUT /api/regex/presets/:id/links`
+
+Replace all stored Rule links.
+
+**Body:** `{ "links": [{ "targetType": "character" | "preset", "targetId": "..." }] }`
+
+### `GET /api/regex/resolve-active`
+
+Resolve enabled Rules visible in one generation context.
+
+**Query:** optional `characterId` and `presetId`.
+
+Standalone global/direct-link reachability and Profile-gated membership are deduplicated in deterministic order.
+Placement and depth filtering happen later at the Regex application hook.
+
+### `GET /api/regex/profiles/all`
+
+List all Regex Profiles.
+
+### `GET /api/regex/profiles/:id`
+
+Get one Profile, or 404 when it does not exist.
+
+### `POST /api/regex/profiles`
+
+Create an empty Profile with `createRegexProfileSchema`.
+Rules can later join through attach or direct Rule creation.
+
+### `PATCH /api/regex/profiles/:id`
+
+Update Profile name, master `disabled` state, global scope, or sort order with `updateRegexProfileSchema`.
+
+### `DELETE /api/regex/profiles/:id`
+
+Delete a Profile.
+
+**Query:** `mode=keep|cascade` (default `keep`).
+
+`keep` detaches surviving members to Standalone; `cascade` deletes the member Rules with the Profile.
+
+### `POST /api/regex/profiles/bundle`
+
+Create a complete Profile, its scope links, and one or more member Rules atomically.
+This is the only new create route required by the bundle import workflow; ordinary Rule/Profile CRUD, links, and membership continue to reuse the endpoints in this section.
+
+**Body:** `createRegexProfileBundleSchema`
+
+```json
+{
+  "name": "Imported Celia Regex",
+  "disabled": true,
+  "isGlobal": false,
+  "links": [
+    { "targetType": "preset", "targetId": "preset_1" }
+  ],
+  "rules": [
+    {
+      "name": "Strip narration markers",
+      "findRegex": "/\\*([^*]+)\\*/g",
+      "replaceString": "$1",
+      "disabled": false
+    }
+  ]
+}
+```
+
+`disabled` is required for the Profile because the caller must resolve the **Enable Profile after import** choice explicitly.
+Each Rule keeps its own source `disabled` value and must omit `profileId`, because membership is owned by the bundle.
+A global Profile must have no links; non-global links accept character/preset targets only.
+The transaction inserts every Rule with the new Profile ID and returns `{ profile, rules }` only after commit; any Profile, link, or Rule failure rolls back all bundle rows.
+
+### `POST /api/regex/profiles/:id/attach`
+
+Move an existing Rule into the Profile.
+Exclusive membership means this also moves a Rule from another Profile when invoked by an authorized workflow.
+
+**Body:** `{ "ruleId": "regex_rule_1" }`
+
+### `POST /api/regex/presets/:id/detach`
+
+Move a member Rule to Standalone while preserving its own stored global/link scope.
+
+### `GET /api/regex/profiles/:id/members`
+
+Return the Profile's member Rule IDs in deterministic order.
+
+### `GET /api/regex/profiles/:id/links`
+
+List the Profile's character/prompt-preset links.
+
+### `PUT /api/regex/profiles/:id/links`
+
+Replace all Profile links.
+
+**Body:** `{ "links": [{ "targetType": "character" | "preset", "targetId": "..." }] }`
+
+Prompt-preset and standalone-file import UIs call the bundle route after client-side parsing and preview.
+Character-card import reaches the same atomic store operation through `POST /api/import/json`, where the server owns failure containment.
+
+---
+
 ## Scripts
 
 ### `GET /api/scripts`
@@ -1164,9 +1312,14 @@ Import a character/chat from JSON (SillyTavern or internal format).
   "fileName": "Aria.png",
   "jsonText": "{ \"data\": { \"name\": \"Aria\", ... } }",
   "chatId": "chat_1",
-  "skipExisting": false
+  "skipExisting": false,
+  "enableImportedRegexProfile": false
 }
 ```
+
+`enableImportedRegexProfile` is optional and defaults to `false` at the server boundary.
+When the card contains Regex Rules, the importer creates exactly one atomic character-linked Profile; `true` makes its master switch active immediately, while every member preserves its source enabled/disabled state.
+A Regex bundle failure reports zero created Regex and does not fail the character import, while the bundle transaction prevents partial Profile/Rule rows.
 
 **Response:** Import result with created entity IDs.
 

@@ -117,7 +117,7 @@ function SortableProfileRowInner<TProfile extends ProviderProfileListItem>({
           <span className="text-base leading-none">≡</span>
         </button>
       )}
-      <div className="flex w-full items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <div
           className={cn(
             'h-2 w-2 shrink-0 rounded-full transition-colors',

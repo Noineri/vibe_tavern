@@ -148,6 +148,16 @@ export interface ImageGenGenerateRequest {
     complexity?: number;
     movement?: number;
   };
+  /** NovelAI vendor dialect (NOVELAI_PROVIDER_PLAN NAI-6a): the
+   *  server-side quality-layer switch — NovelAI's quality tags differ per
+   *  model, so quality rides the vendor's own `qualityToggle` wire field
+   *  and never a text block in the prompt. Only the novelai backend reads
+   *  the block; the adapter sets it from the profile's quality-layer
+   *  switch when the resolved prompt family is `novelai`. Absent → the
+   *  backend sends `qualityToggle: false`. */
+  novelai?: {
+    qualityToggle?: boolean;
+  };
   /** Cooperative cancellation — adapters forward it to their HTTP calls.
    *  LOCAL backends carry no timeout (owner 2026-09-14: explicit cancel
    *  only); CLOUD backends are wrapped at the adapter layer with
@@ -159,6 +169,9 @@ export interface ImageGenGenerateRequest {
    *  attributed to the queued prompt_id. Adapters that report no progress
    *  never call it (the phase stays "starting" until the run ends). */
   onJobStarted?: () => void;
+  /** AI Horde queue-state signal: an opaque state string for the active
+   *  profile's progress poll. Other backends never call it. */
+  onQueueState?: (state: string) => void;
 }
 
 /** Cloud generation timeout budget (owner-approved 2026-09-14: 3 minutes).

@@ -62,9 +62,10 @@ export interface ImportResult {
 		warnings: string[];
 		attachedToCharacterName?: string;
 	};
-	/** RX-15 UI surface: how many regex presets were created from the card's
-	 *  embedded `regex_scripts` (always 0 on paths that skip regex import).
-	 *  Present on character imports; omitted otherwise. */
+	/** RX-15 UI surface: how many regex RULES landed in the card's single
+	 *  Regex Profile bundle (RXU-23) — 0 on no-regex cards, all-duplicate
+	 *  re-imports, and contained regex failures (always 0 on paths that skip
+	 *  regex import). Present on character imports; omitted otherwise. */
 	createdRegexPresets?: number;
 }
 
@@ -260,6 +261,10 @@ export async function importJson(
 		lean?: boolean;
 		/** User-approved on a single card; forced by bulk import. */
 		importEmbeddedBook?: boolean;
+		/** RXU-23: master switch for the imported card's Regex Profile bundle —
+		 *  true lands the Profile enabled (source-enabled rules act at once);
+		 *  omitted/false keeps it disabled. Source rule states always survive. */
+		enableImportedRegexProfile?: boolean;
 	},
 ): Promise<ImportResult> {
 	const jsonText = input.jsonText?.trim() ?? "";
@@ -442,15 +447,19 @@ export async function importJson(
 			promptPresetId: await deps.resolveDefaultPromptPresetId(),
 		});
 
-		// RX-15 UI surface: embedded `regex_scripts` become regex presets
-		// auto-linked to the imported character. Runs for both fresh-create and
-		// update paths (but NOT the skipExisting early return above). Security
-		// gate: drafts land `disabled: true` regardless of what the card claims.
-		// Never-throw: a regex failure must not fail the card import.
+		// RX-15 UI surface / RXU-23: embedded `regex_scripts` land as ONE Regex
+		// Profile bundle — every member rule keeps its SOURCE state (RXU-11
+		// parsers deliver it; no force-disable pass) and the Profile master
+		// switch alone comes from the request option (default off). Runs for
+		// both fresh-create and update paths (but NOT the skipExisting early
+		// return above). Never-throw: a regex failure must not fail the card
+		// import.
 		const createdRegexPresets = await importCardRegexScripts(
 			deps.stores,
 			imported.regexScripts,
 			characterId as CharacterId,
+			imported.character.name,
+			input.enableImportedRegexProfile ?? false,
 		);
 
 		const createdId = chat.id as ChatId;
@@ -487,48 +496,75 @@ export async function importJson(
 }
 
 /**
- * RX-15 UI surface: create regex presets from a card's embedded
- * `regex_scripts` drafts and link each to the imported character.
+ * RX-15 UI surface / RXU-23: create ONE Regex Profile from a card's embedded
+ * `regex_scripts` drafts, atomically linked to the imported character.
  *
- * Security gate: every draft lands `disabled: true` (review-before-trust).
- * Idempotent: re-importing the same card does NOT duplicate presets — a draft
- * whose (name + findRegex) matches an existing preset ALREADY LINKED to this
- * character is skipped. Never throws — a regex failure logs and returns the
- * count created so far; the card import itself must not fail.
+ * Source fidelity: member rules keep their source enabled/disabled states
+ * exactly as parsed (RXU-11); `enableProfile` sets ONLY the Profile master
+ * switch (the sole bundle-level gate — importing never requires enabling
+ * rules one by one). Idempotent: re-importing the same card against the same
+ * character does NOT duplicate rules — drafts whose (name + findRegex) key
+ * matches a rule this character already owns (a Profile member of a
+ * character-linked Profile, or a legacy standalone rule linked to the
+ * character by the pre-RXU-23 per-rule path) are skipped; when every draft
+ * is a duplicate NO Profile is created (a bundle needs ≥ 1 rule). Never
+ * throws — a regex failure logs and returns 0; the card import itself must
+ * not fail.
  */
 async function importCardRegexScripts(
 	stores: StoreContainer,
 	drafts: ImportedCharacterCardBundle["regexScripts"],
 	characterId: CharacterId,
+	characterName: string,
+	enableProfile: boolean,
 ): Promise<number> {
 	if (drafts.length === 0) return 0;
 
 	try {
-		// Existing presets linked to this character — dedupe key (name + findRegex).
-		// listAll() + per-preset getLinks() is fine at import time (N presets, tiny).
+		// Rules this character already owns — dedupe key (name + findRegex).
+		// Profile members (the shape this function writes): members of Profiles
+		// linked to this character. listAll()/listProfiles() + per-entity link
+		// reads are fine at import time (N rules, tiny).
 		const existingKeys = new Set<string>();
-		const all = await stores.regex.listAll();
-		for (const preset of all) {
+		const profiles = await stores.regex.listProfiles();
+		for (const profile of profiles) {
+			const profileLinks = await stores.regex.getProfileLinks(profile.id);
+			const linkedHere = profileLinks.some(
+				(link) => link.targetType === REGEX_TARGET_TYPE.Character && link.targetId === characterId,
+			);
+			if (!linkedHere) continue;
+			for (const memberId of await stores.regex.listProfileMemberIds(profile.id)) {
+				const member = await stores.regex.getById(memberId);
+				if (member) existingKeys.add(`${member.name}${member.findRegex}`);
+			}
+		}
+		// Legacy shape: standalone rules linked to this character directly
+		// (written by the pre-RXU-23 per-rule import path).
+		for (const preset of await stores.regex.listAll()) {
+			if (preset.profileId !== null) continue; // members covered above
 			const links = await stores.regex.getLinks(preset.id);
-			for (const link of links) {
-				if (link.targetType === REGEX_TARGET_TYPE.Character && link.targetId === characterId) {
-					existingKeys.add(`${preset.name}${preset.findRegex}`);
-					break;
-				}
+			if (links.some((link) => link.targetType === REGEX_TARGET_TYPE.Character && link.targetId === characterId)) {
+				existingKeys.add(`${preset.name}${preset.findRegex}`);
 			}
 		}
 
-		let created = 0;
+		// Element type of the bundle's `rules` input, derived from the store
+		// method so this stays in lockstep with RegexStore's contract.
+		type BundleRuleDraft = Parameters<StoreContainer["regex"]["createProfileBundle"]>[0]["rules"][number];
+		const rules = [] as BundleRuleDraft[];
 		for (const draft of drafts) {
 			const key = `${draft.name}${draft.findRegex}`;
+			// One rule per key: DB-owned (above) or earlier in this same card.
 			if (existingKeys.has(key)) continue;
-			const preset = await stores.regex.create({
+			existingKeys.add(key);
+			rules.push({
 				name: draft.name,
 				findRegex: draft.findRegex,
 				replaceString: draft.replaceString,
 				trimStrings: draft.trimStrings,
 				substituteRegex: draft.substituteRegex,
-				disabled: true, // security gate — never trust a shared card
+				// Source state, no normalization — the master switch is the only gate.
+				disabled: draft.disabled,
 				markdownOnly: draft.markdownOnly,
 				promptOnly: draft.promptOnly,
 				runOnEdit: draft.runOnEdit,
@@ -538,17 +574,27 @@ async function importCardRegexScripts(
 				isGlobal: draft.isGlobal,
 				sortOrder: draft.sortOrder,
 			});
-			await stores.regex.setLinks(preset.id, [
-				{ targetType: REGEX_TARGET_TYPE.Character, targetId: characterId },
-			]);
-			existingKeys.add(key);
-			created += 1;
 		}
-		return created;
+
+		// All duplicates → nothing to bundle; a Profile requires ≥ 1 member rule.
+		if (rules.length === 0) return 0;
+
+		// ONE atomic write (RXU-12): the store transaction guarantees the
+		// Profile, its character link, and every member rule land together or
+		// not at all — no partial bundle can survive a failure.
+		const bundle = await stores.regex.createProfileBundle({
+			name: `${characterName}'s Regex`,
+			disabled: !enableProfile,
+			isGlobal: false,
+			sortOrder: 0,
+			links: [{ targetType: REGEX_TARGET_TYPE.Character, targetId: characterId }],
+			rules,
+		});
+		return bundle.rules.length;
 	} catch (err) {
 		// Never break the card import over a regex hiccup.
 		console.warn(
-			"[import] regex script import failed for character", characterId,
+			"[import] regex profile bundle failed for character", characterId,
 			err instanceof Error ? err.message : err,
 		);
 		return 0;
@@ -562,6 +608,10 @@ export interface BatchImportItem {
 	chatId?: string;
 	skipExisting?: boolean;
 	importEmbeddedBook?: boolean;
+	/** RXU-23: per-item master switch for the card's Regex Profile bundle —
+	 *  carried into {@link importJson} verbatim by the loop's `{ ...item }`
+	 *  spread, defaulting false there. */
+	enableImportedRegexProfile?: boolean;
 }
 
 export interface BatchImportResult {

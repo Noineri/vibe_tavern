@@ -45,6 +45,7 @@ interface FakeScopeState {
     enabled: boolean;
     launcherVisible: boolean;
     scriptId: string | null;
+    scriptName: string | null;
     visualId: string | null;
   } | null;
   session: {
@@ -324,7 +325,7 @@ const { ExperienceLauncher } = await import("./ExperienceLauncher.js");
 
 // ─── fixtures ───────────────────────────────────────────────────────────────
 function makeConfig(over: Partial<FakeScopeState["config"]> = {}): NonNullable<FakeScopeState["config"]> {
-  return { enabled: true, launcherVisible: true, scriptId: "script_1", visualId: "vis_1", ...over };
+  return { enabled: true, launcherVisible: true, scriptId: "script_1", scriptName: null, visualId: "vis_1", ...over };
 }
 function makeSession(over: Partial<NonNullable<FakeScopeState["session"]>> = {}): NonNullable<FakeScopeState["session"]> {
   return {
@@ -444,6 +445,15 @@ describe("ExperienceLauncher — scope hydration", () => {
 
 // ─── 3. Start / Resume / Close ──────────────────────────────────────────────
 describe("ExperienceLauncher — start, resume, close", () => {
+  it("no session: the popover title shows the bound script's human name, not its technical id", () => {
+    setScopeState(SCOPE_KEY, { config: makeConfig({ scriptId: "script_xyz", scriptName: "Uno" }) });
+    const { getByTestId } = render(<ExperienceLauncher />);
+    fireEvent.click(getByTestId("experience-launcher-pill"));
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("Uno");
+    expect(text).not.toContain("script_xyz");
+  });
+
   it("no session: Start opens the SetupModal", () => {
     setScopeState(SCOPE_KEY, { config: makeConfig() });
     const { getByTestId, queryByTestId } = render(<ExperienceLauncher />);

@@ -4,6 +4,14 @@ import { useT } from "../../../i18n/context.js";
 import { cn } from "../../../lib/cn.js";
 import { TextInput } from "../../shared/text-input.js";
 import { lblCls } from "../../../lib/field-tokens.js";
+import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
+import {
+	ImportedScriptWarningModal,
+	scriptSafetyWarningFlow,
+	type ScriptSafetyWarningFlow,
+} from "./script-safety/ImportedScriptWarningModal.js";
+import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
+import type { ScriptRecord } from "../../../api/types.js";
 import type { DiceScriptTestResult, DiceSampleRoll } from "@vibe-tavern/api-contracts";
 
 interface DiceScriptTesterProps {
@@ -11,27 +19,41 @@ interface DiceScriptTesterProps {
 	code: string;
 	isMobile: boolean;
 	characterName?: string;
+	/** SS-7: the script record's origin/trust — drives the warning flow on run. */
+	script?: Pick<ScriptRecord, "origin" | "firstEnabledAt"> | null;
+	/** SS-7: «Show in code» from the findings modal — the host reveals the line. */
+	onRevealLine?: (line: number) => void;
 }
 
 type DiscoveredCheck = DiceScriptTestResult["checks"][number];
 
-export function DiceScriptTester({ scriptId, code, isMobile, characterName }: DiceScriptTesterProps) {
+export function DiceScriptTester({ scriptId, code, isMobile, characterName, script = null, onRevealLine }: DiceScriptTesterProps) {
 	const { t, tDynamic } = useT();
 	const [testCharName, setTestCharName] = useState("");
 	const [testPersonaName, setTestPersonaName] = useState("");
 	const [result, setResult] = useState<DiceScriptTestResult | null>(null);
 	const [testing, setTesting] = useState(false);
+	// SS-7: the warning surface gating this run — repeats on every run of an
+	// untrusted import until first enable or the checkbox (decision 11).
+	const [pendingFlow, setPendingFlow] = useState<ScriptSafetyWarningFlow | null>(null);
+	const loadSafetySettings = useScriptSafetySettingsStore((s) => s.load);
+
+	// Self-sufficient suppress state (single-flight store, fail-open).
+	useEffect(() => {
+		void loadSafetySettings();
+	}, [loadSafetySettings]);
 
 	useEffect(() => {
 		if (characterName) setTestCharName((prev) => prev || characterName);
 	}, [characterName]);
 
-	const runTest = async () => {
+	const runTest = async (warningAcknowledged: boolean) => {
 		if (!scriptId) return;
 		const body: Parameters<typeof testScript>[1] = {
 			messages: [{ role: "user", content: "test" }],
 			code,
 		};
+		if (warningAcknowledged) body.warningAcknowledged = true;
 		if (testCharName.trim()) body.characterName = testCharName.trim();
 		if (testPersonaName.trim()) body.personaName = testPersonaName.trim();
 		setTesting(true);
@@ -44,6 +66,23 @@ export function DiceScriptTester({ scriptId, code, isMobile, characterName }: Di
 		} finally {
 			setTesting(false);
 		}
+	};
+
+	// SS-7: route the run through the shared warning matrix (see ScriptTester —
+	// the dice panel is the same flow with kind "dice").
+	const startTest = () => {
+		if (!scriptId) return;
+		const flow = scriptSafetyWarningFlow({
+			script,
+			code,
+			kind: "dice",
+			suppressImportWarnings: useScriptSafetySettingsStore.getState().suppressImportWarnings,
+		});
+		if (flow.kind === "none") {
+			void runTest(flow.warningAcknowledged);
+			return;
+		}
+		setPendingFlow(flow);
 	};
 
 	return (
@@ -67,7 +106,7 @@ export function DiceScriptTester({ scriptId, code, isMobile, characterName }: Di
 				<button
 					type="button"
 					className={cn("h-9 shrink-0 cursor-pointer rounded-md border-0 bg-accent px-4 font-ui text-xs font-medium text-on-accent transition-all", isMobile && "min-h-[44px]")}
-					onClick={() => { void runTest(); }}
+					onClick={() => { startTest(); }}
 				>
 					{t("script_test_run")}
 				</button>
@@ -115,6 +154,36 @@ export function DiceScriptTester({ scriptId, code, isMobile, characterName }: Di
 			)}
 
 			{testing && <div className="mt-3 text-center font-ui text-[12px] text-t3">{t("script_running")}</div>}
+
+			{/* SS-7: the warning surface gating this run (portal-rendered; only one
+		    of the two can be open — plain when no blocking findings, findings
+		    alone otherwise, decision 11). */}
+			{pendingFlow?.kind === "plain" && (
+				<ImportedScriptWarningModal
+					intent="test"
+					onConfirm={() => {
+						setPendingFlow(null);
+						void runTest(true);
+					}}
+					onCancel={() => setPendingFlow(null)}
+				/>
+			)}
+			{pendingFlow?.kind === "findings" && (
+				<FindingsWarningModal
+					findings={pendingFlow.findings}
+					showHonestWarning={pendingFlow.showHonestWarning}
+					intent="test"
+					onShowInCode={(line) => {
+						setPendingFlow(null);
+						onRevealLine?.(line);
+					}}
+					onConfirm={() => {
+						setPendingFlow(null);
+						void runTest(true);
+					}}
+					onCancel={() => setPendingFlow(null)}
+				/>
+			)}
 		</div>
 	);
 }

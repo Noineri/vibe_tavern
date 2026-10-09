@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { serializeProfileMd } from "@vibe-tavern/db";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
-import type { LoreDelegate, LoreDelegateInput } from "../src/domain/coauthor/lore/lore-delegate.js";
+import type { LoreDelegate, LoreDelegateInput, LoreDelegateResult } from "../src/domain/coauthor/lore/lore-delegate.js";
 
 /**
  * Co-Author tools propose edits; they never write. These tests pin the
@@ -768,6 +768,41 @@ describe("coauthor-tools: AI-delegation lore tools (CTX-L2b)", () => {
     expect(out.bundle.entries[0]!.secondaryKeys).toEqual(["fleet"]);
     expect(captured.input!.kind).toBe("generate_keys");
     expect(captured.input!.entryContent).toBe("AI-authored lore prose.");
+  });
+
+  test("CE-B3: parallel key delegates retain their completion-order revisions", async () => {
+    const resolvers = new Map<string, (result: LoreDelegateResult) => void>();
+    let resolveAllDelegates!: () => void;
+    const allDelegatesStarted = new Promise<void>((resolve) => { resolveAllDelegates = resolve; });
+    const tools = buildCoauthorTools({
+      loreIdGen: deterministicIdGen(),
+      loreDelegate: (input) => new Promise<LoreDelegateResult>((resolve) => {
+        resolvers.set(input.entryId, resolve);
+        if (resolvers.size === 3) resolveAllDelegates();
+      }),
+    });
+    await tools.create_lorebook.execute({ name: "LB", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "A", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "B", summary: "s" }, ctx);
+    await tools.create_lore_entry.execute({ lorebookId: "lorebook_1", title: "C", summary: "s" }, ctx);
+
+    // All three expensive requests start together. Resolve C → B → A to model
+    // delegates finishing opposite their tool-call order.
+    const pendingA = tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_1", summary: "A" }, ctx);
+    const pendingB = tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_2", summary: "B" }, ctx);
+    const pendingC = tools.ai_generate_lore_keys.execute({ entryId: "lore_entry_3", summary: "C" }, ctx);
+    await allDelegatesStarted;
+
+    resolvers.get("lore_entry_3")!({ keys: ["C"] });
+    const outC = await pendingC;
+    resolvers.get("lore_entry_2")!({ keys: ["B"] });
+    const outB = await pendingB;
+    resolvers.get("lore_entry_1")!({ keys: ["A"] });
+    const outA = await pendingA;
+
+    expect(outC.bundle.revision).toBeLessThan(outB.bundle.revision!);
+    expect(outB.bundle.revision).toBeLessThan(outA.bundle.revision!);
+    expect(outA.bundle.entries.map((entry) => entry.keys)).toEqual([["A"], ["B"], ["C"]]);
   });
 
   test("ai_generate_lore_keys: keyTarget=primary replaces ONLY primary; secondary stays empty even if the delegate returns one", async () => {

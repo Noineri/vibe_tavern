@@ -1,6 +1,7 @@
 import type {
   CoauthorTransport,
   GenerationMode,
+  PhraseRepPen,
   ProviderProxyMode,
   ProviderQuotaErrorKind,
   ProviderQuotaEvent,
@@ -11,6 +12,7 @@ import type {
   SceneBackfillMode,
   SceneBackfillRunStatus,
   ScriptKind,
+  ThinkingMode,
 } from '@vibe-tavern/domain';
 import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
@@ -369,12 +371,28 @@ export const lorebookLinks = sqliteTable('lorebook_links', {
 
 // ─── scripts ──────────────────────────────────────────────────────────────────────
 
+/** Script provenance (SCRIPT_SAFETY_PLAN): 'in_app' = authored in VT (hand or
+ *  copilot, trusted immediately); 'imported' = third-party, trusted only after
+ *  the first explicit enable. Every pre-existing row is backfilled to
+ *  'in_app' by the column DEFAULT (existing scripts stay trusted). */
+export type ScriptOrigin = 'in_app' | 'imported';
+
 export const scripts = sqliteTable('scripts', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
   code: text('code').notNull().default(''),
   enabled: integer('enabled').notNull().default(1),
+  // Script provenance (SCRIPT_SAFETY_PLAN): DB-only metadata — not written to
+  // the canonical file payload. Backfilled to 'in_app' for every existing row
+  // by the column DEFAULT, so pre-existing scripts stay trusted after the
+  // migration. `origin` never changes after creation.
+  origin: text('origin').$type<ScriptOrigin>().notNull().default('in_app'),
+  // Trust stamp: when an 'imported' script was first explicitly enabled.
+  // Null for 'in_app' scripts (trusted at creation) and for imported scripts
+  // that have never been enabled. Stamped exactly once on the first
+  // enabled→true transition; never cleared (trust is never revoked).
+  firstEnabledAt: text('first_enabled_at'),
   // Runtime contract of this script: 'prompt' (default, the original prompt-script
   // VM) or 'dice' (the dedicated Dice-script VM, Wave B2). Every legacy row and
   // import defaults to 'prompt' so existing prompt scripts are unchanged; the
@@ -469,6 +487,18 @@ export const scriptVisuals = sqliteTable('script_visuals', {
   pk: primaryKey({ columns: [table.scriptId, table.visualId] }),
   scriptIdx: index('idx_script_visuals_script').on(table.scriptId),
   visualIdx: index('idx_script_visuals_visual').on(table.visualId),
+}));
+
+// ─── scriptSafetySettings ────────────────────────────────────────────────────
+// Singleton row (id = 'default') holding the server-side "don't show again"
+// flag for imported-script warnings (SCRIPT_SAFETY_PLAN decision 3) — one flag
+// for all devices. Mirrors proxySettings' singleton id check.
+export const scriptSafetySettings = sqliteTable('script_safety_settings', {
+  id: text('id').primaryKey(),
+  suppressImportWarnings: integer('suppress_import_warnings').notNull().default(0),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  singletonIdCheck: check('script_safety_settings_singleton_id_check', sql`${table.id} = 'default'`),
 }));
 
 // ─── regexPresets / regexLinks ────────────────────────────────────────────────
@@ -1024,6 +1054,16 @@ export const providerProfiles = sqliteTable('provider_profiles', {
   frequencyPenalty: real('frequency_penalty').notNull().default(0),
   presencePenalty: real('presence_penalty').notNull().default(0),
   repetitionPenalty: real('repetition_penalty').notNull().default(1.0),
+  // NovelAI sampler fields (NOVELAI_PROVIDER_PLAN Wave 1) — Unified knobs
+  // (native math1_*), repetition_penalty_slope, phrase_rep_pen and the /oa/v1
+  // thinking toggle. No preset resolves a set that includes them until
+  // Waves 2–3 wire the NovelAI presets, so nothing is user-visible yet.
+  unifiedLinear: real('unified_linear').notNull().default(1),
+  unifiedQuad: real('unified_quad').notNull().default(0),
+  unifiedConf: real('unified_conf').notNull().default(0),
+  repetitionPenaltySlope: real('repetition_penalty_slope').notNull().default(0),
+  phraseRepPen: text('phrase_rep_pen').$type<PhraseRepPen>().notNull().default('off'),
+  thinkingMode: text('thinking_mode').$type<ThinkingMode>().notNull().default('auto'),
   stopSequencesJson: text('stop_sequences_json'),
   // KoboldCPP antislop phrase list (LOCAL_SAMPLERS_ADDITION_REPORT B3) — native
   // `banned_strings` request field; exact-match phrases, leading spaces

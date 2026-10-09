@@ -3,6 +3,7 @@ import { cn } from "../../lib/cn.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
 import { Modal } from "./Modal.js";
+import { modalPanelCls } from "./modal-helpers.js";
 import { Icons } from "./icons.js";
 import { CustomTooltip } from "./Tooltip.js";
 import { SegmentedControl } from "./SegmentedControl.js";
@@ -22,11 +23,22 @@ export function useMasterDetail() {
   return ctx;
 }
 
-export function MasterDetailMobileDrillDown({ onSelect, className }: { onSelect?: () => void; className?: string }) {
+export function MasterDetailMobileDrillDown({
+  onSelect,
+  ariaLabel,
+  className,
+}: {
+  onSelect?: () => void;
+  /** Overrides the generic mobile drill-down name with the selected item's name. */
+  ariaLabel?: string;
+  className?: string;
+}) {
   const { openDetail } = useMasterDetail();
+  const { t } = useT();
   return (
     <button
       type="button"
+      aria-label={ariaLabel ?? t("master_detail_open")}
       className={cn("shrink-0 px-2 text-t3 transition-colors hover:text-t1 md:hidden", className)}
       onClick={(e) => { 
         e.stopPropagation(); 
@@ -53,6 +65,10 @@ export interface MasterDetailFooterAction {
   icon: ReactNode;
   label: string;
   onClick: () => void;
+  /** Prevents the action from being activated. */
+  disabled?: boolean;
+  /** Applies destructive-action color treatment. */
+  destructive?: boolean;
 }
 
 export function MasterDetailFooter({
@@ -94,17 +110,27 @@ export function MasterDetailFooter({
           <button
             key={a.label}
             type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2"
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-md bg-s3 text-t3 active:bg-s2",
+              a.destructive && "text-danger active:bg-danger/10",
+              a.disabled && "cursor-default opacity-50",
+            )}
             onClick={a.onClick}
             aria-label={a.label}
+            disabled={a.disabled}
           >
             {a.icon}
           </button>
         ) : (
           <span
             key={a.label}
-            className="flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1"
-            onClick={a.onClick}
+            className={cn(
+              "flex cursor-pointer items-center gap-1 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-all hover:text-t1",
+              a.destructive && "text-danger hover:text-danger",
+              a.disabled && "pointer-events-none cursor-default opacity-50",
+            )}
+            onClick={a.disabled ? undefined : a.onClick}
+            aria-disabled={a.disabled || undefined}
           >
             {a.icon} {a.label}
           </span>
@@ -195,7 +221,9 @@ export function MasterDetailModal<T extends string = string>({
   detailContent,
   footer,
   onBack,
-  containerClassName = "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[880px] w-[1080px] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]",
+  // Sizes only — the panel chrome rides modalPanelCls at the composition
+  // below, so a custom containerClassName can never drop the canon shape.
+  containerClassName = "max-h-[calc(100vh-60px)] max-w-[calc(100vw-32px)] h-[880px] w-[1080px]",
   masterClassName = "flex w-[220px] shrink-0 flex-col border-r border-border",
   detailClassName = "p-6",
   mobileDetailClassName = "p-4",
@@ -239,6 +267,7 @@ export function MasterDetailModal<T extends string = string>({
           {headerActions}
           <button
             type="button"
+            aria-label={t("close")}
             className={cn(
               "flex shrink-0 cursor-pointer items-center justify-center text-t3 transition-colors",
               isMobile ? "h-10 w-10 rounded-lg active:bg-s2" : "h-8 w-8 rounded-md hover:bg-s2 hover:text-t1"
@@ -278,6 +307,7 @@ export function MasterDetailModal<T extends string = string>({
         </div>
         <button
           type="button"
+          aria-label={t("close")}
           className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg text-t3 active:bg-s2 transition-colors hover:bg-s2 hover:text-t1"
           onClick={onClose}
         >
@@ -308,8 +338,12 @@ export function MasterDetailModal<T extends string = string>({
             // fill + frost to a z:-1 ::before underlayer — same frost rect and
             // look, panel itself keeps backdrop-filter: none. Opaque themes
             // remain byte-identical (--glass-bg == --surface, blur 0).
-            "glass-blur-under flex flex-col overflow-hidden",
-            isMobile ? "h-[100dvh] w-[100dvw]" : containerClassName,
+            // The chrome half lives in modalPanelCls (desktop-only); mobile
+            // stays a chromeless glass fullscreen.
+            "flex flex-col",
+            isMobile
+              ? "glass-blur-under h-[100dvh] w-[100dvw] overflow-hidden"
+              : cn(modalPanelCls, containerClassName),
           )}
           onClick={(e) => e.stopPropagation()}
         >

@@ -173,7 +173,7 @@ describe("ExperienceResourceStore — chat configs (one per chat)", () => {
     expect(second.id).toBe(first.id);
   });
 
-  test("update enables, sets grants/context, and binds a live script ref", async () => {
+  test("update enables, sets grants/context, and binds a live script ref (scriptName derived)", async () => {
     await store.getOrCreateConfigForChat("chat_1");
     const updated = await store.updateConfig("chat_1", {
       enabled: true,
@@ -182,6 +182,12 @@ describe("ExperienceResourceStore — chat configs (one per chat)", () => {
       contextMode: "current_branch",
     });
     expect(updated.enabled).toBe(true);
+    // The derived display name travels with the row on every read path —
+    // the update return AND the joined GET read (owner defect 2026-10-08:
+    // the launcher title fell back to the technical script id).
+    expect(updated.scriptName).toBe("TTT Rules");
+    const reread = await store.getConfigForChat("chat_1");
+    expect(reread?.scriptName).toBe("TTT Rules");
     expect(updated.scriptId).toBe("script_1");
     expect(updated.capabilityGrants).toEqual(["participants", "deterministic_random"]);
     expect(updated.contextMode).toBe("current_branch");
@@ -244,6 +250,17 @@ describe("ExperienceResourceStore — chat configs (one per chat)", () => {
     await db.run(sql`DELETE FROM characters WHERE id = 'char_2'`);
     const after = await store.getOrCreateConfigForChat("chat_1");
     expect(after.contextSourceCharacterId).toBeNull();
+  });
+
+  test("deleting the bound script nulls scriptId AND the derived scriptName (SET NULL)", async () => {
+    await store.getOrCreateConfigForChat("chat_1");
+    await store.updateConfig("chat_1", { scriptId: "script_1" });
+    const bound = await store.getConfigForChat("chat_1");
+    expect(bound?.scriptName).toBe("TTT Rules");
+    await db.run(sql`DELETE FROM scripts WHERE id = 'script_1'`);
+    const after = await store.getConfigForChat("chat_1");
+    expect(after?.scriptId).toBeNull();
+    expect(after?.scriptName).toBeNull();
   });
 });
 

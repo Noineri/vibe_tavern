@@ -322,6 +322,9 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		await waitFor(() => expect(getByRole("button", { name: "create_lorebook" })).toBeTruthy());
 		expect(getByRole("button", { name: "create_lore_entry" })).toBeTruthy();
 		expect(getByRole("button", { name: "set_lore_activation" })).toBeTruthy();
+		expect(getByRole("button", { name: "edit_lorebook" })).toBeTruthy();
+		expect(getByRole("button", { name: "edit_lore_entry" })).toBeTruthy();
+		expect(getByRole("button", { name: "add_lore_entry" })).toBeTruthy();
 		expect(getByRole("button", { name: "ai_write_lore_entry" })).toBeTruthy();
 		expect(getByRole("button", { name: "ai_generate_lore_keys" })).toBeTruthy();
 	});

@@ -1,41 +1,39 @@
 import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { cn } from "../../../lib/cn.js";
 import { Icons } from "../../shared/icons.js";
 import { SearchInput } from "../../shared/SearchInput.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
 import { EmptyState } from "../../shared/empty-state.js";
+import { AddButton } from "../../shared/add-button.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
 import { useT } from "../../../i18n/context.js";
 import { MasterDetailMobileDrillDown } from "../../shared/MasterDetailModal.js";
 import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
-import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
+import { DndContext, DragOverlay, closestCenter, useDroppable, type DragOverEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { buildFlatVisualOrder, interpretRegexDrop, type FlatItem } from "../../../lib/regex-profile-drop.js";
+import {
+  regexProfileAvailability,
+  regexRuleAvailability,
+  type RegexProfileAvailability,
+  type RegexRuleAvailability,
+} from "../../../lib/regex-availability.js";
+import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
+import { RegexAvailabilityBadge } from "./RegexAvailabilityBadge.js";
+import {
+  isMemberRuleDrag,
+  memberRuleIdForStandaloneDrop,
+  regexStandaloneDropId,
+} from "./regex-profile-drop.js";
 
-type RegexPresetRef = {
-  id: string;
-  name: string;
-  disabled: boolean;
-  notApplied: "disabled" | "unbound" | null;
-  profileId?: string | null;
-  shadowed?: boolean;
-  sortOrder?: number;
-};
-
-type RegexProfileRef = {
-  id: string;
-  name: string;
-  disabled: boolean;
-  notApplied: "disabled" | "unbound" | null;
-  sortOrder: number;
-  memberCount: number;
-};
+type RegexAvailability = RegexProfileAvailability | RegexRuleAvailability;
 
 interface RegexPresetListProps {
-  presets: RegexPresetRef[];
-  profiles?: RegexProfileRef[];
+  presets: RegexPresetRecord[];
+  profiles?: RegexProfileRecord[];
+  regexLinkCounts?: Record<string, number | undefined>;
+  regexProfileLinkCounts?: Record<string, number | undefined>;
   activePresetId: string | null;
   activeProfileId?: string | null;
   expandedProfileIds?: string[];
@@ -43,7 +41,6 @@ interface RegexPresetListProps {
   onSelectProfile?: (id: string) => void;
   onAdd: (name: string) => void;
   onAddProfile?: (name: string) => void;
-  onAddRuleToProfile?: (profileId: string, name: string) => void;
   onRename: (id: string, newName: string) => void;
   onRenameProfile?: (id: string, newName: string) => void;
   onReorder: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
@@ -54,13 +51,31 @@ interface RegexPresetListProps {
   onImportRegex?: () => void;
 }
 
-const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, startEditing, dndDisabled }: {
-  p: RegexPresetRef;
+function StandaloneDropRow({ label, isDropOver }: { label: string; isDropOver: boolean }) {
+  const { isOver, setNodeRef } = useDroppable({ id: regexStandaloneDropId });
+  return (
+    <div
+      ref={setNodeRef}
+      data-testid="regex-standalone-drop"
+      className={cn(
+        "flex min-h-11 w-full items-center justify-center gap-2 border border-dashed border-border2 bg-s1 px-3 font-ui text-[calc(var(--ui-fs)-2px)] text-t3 transition-colors",
+        (isOver || isDropOver) && "border-accent bg-accent-dim text-accent",
+      )}
+    >
+      <Icons.Expand />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, startEditing, dndDisabled, availability, shadowed }: {
+  p: RegexPresetRecord;
   isActive: boolean;
   onSelect: (id: string) => void;
-  isMobile: boolean;
-  startEditing: (preset: RegexPresetRef, e: React.MouseEvent) => void;
+  startEditing: (preset: RegexPresetRecord, e: React.MouseEvent) => void;
   dndDisabled: boolean;
+  availability: RegexAvailability;
+  shadowed: boolean;
 }) => {
   const { t } = useT();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
@@ -72,13 +87,6 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
     transition,
     ...(isDragging ? { opacity: 0 } : {}),
   };
-  const statusKey = p.notApplied === "disabled"
-    ? "promptManager.regex.badgeDisabledReason"
-    : p.notApplied === "unbound" ? "promptManager.regex.badgeUnboundReason"
-    : "promptManager.regex.badgeWorking";
-  const statusDotCls = p.notApplied === "disabled" ? "bg-t4"
-    : p.notApplied === "unbound" ? "bg-danger"
-    : "bg-success";
   const isMember = p.profileId != null;
   return (
     <div
@@ -98,11 +106,11 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
-          aria-label="drag"
+          aria-label={t("promptManager.regex.dragAria")}
           onClick={(e) => e.stopPropagation()}
-          className="flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
+          className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-8 sm:w-5"
         >
-          <span className="text-base leading-none">≡</span>
+          <Icons.Grip className="h-[18px] w-[18px] sm:h-[13px] sm:w-[13px]" />
         </button>
       )}
       <div className={cn("h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors", isActive ? "bg-accent" : "bg-transparent")} />
@@ -113,7 +121,7 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
           p.disabled && "opacity-50",
         )}>{p.name}</span>
       </CustomTooltip>
-      {p.shadowed && (
+      {shadowed && (
         <CustomTooltip content={t("promptManager.regex.memberShadowed")}>
           <span role="img" aria-label={t("promptManager.regex.memberShadowed")} className="flex shrink-0 p-1">
             <span className="h-[6px] w-[6px] rounded-full bg-danger" />
@@ -125,11 +133,7 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
         className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
       ><Icons.Edit /></button>
       <div className="ml-auto flex items-center gap-1">
-        <CustomTooltip content={t(statusKey)}>
-          <span role="img" aria-label={t(statusKey)} className="flex shrink-0 p-1">
-            <span className={cn("h-[6px] w-[6px] rounded-full", statusDotCls)} />
-          </span>
-        </CustomTooltip>
+        <RegexAvailabilityBadge availability={availability} />
         <button type="button"
           onClick={(e) => startEditing(p, e)}
           className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
@@ -143,20 +147,22 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
   prev.p.id === next.p.id &&
   prev.p.name === next.p.name &&
   prev.p.disabled === next.p.disabled &&
-  prev.p.notApplied === next.p.notApplied &&
   prev.p.profileId === next.p.profileId &&
-  prev.p.shadowed === next.p.shadowed &&
+  prev.shadowed === next.shadowed &&
+  prev.availability.kind === next.availability.kind &&
+  ("enabledRuleCount" in prev.availability ? prev.availability.enabledRuleCount : undefined) === ("enabledRuleCount" in next.availability ? next.availability.enabledRuleCount : undefined) &&
   prev.dndDisabled === next.dndDisabled);
 
-const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect, isMobile, startEditing, dndDisabled, onToggle }: {
-  p: RegexProfileRef;
+const SortableRegexProfileRow = React.memo(({ p, memberCount, isActive, isExpanded, onSelect, startEditing, dndDisabled, onToggle, availability }: {
+  p: RegexProfileRecord;
+  memberCount: number;
   isActive: boolean;
   isExpanded: boolean;
   onSelect: (id: string) => void;
-  isMobile: boolean;
-  startEditing: (profile: RegexProfileRef, e: React.MouseEvent) => void;
+  startEditing: (profile: RegexProfileRecord, e: React.MouseEvent) => void;
   dndDisabled: boolean;
   onToggle: (id: string) => void;
+  availability: RegexAvailability;
 }) => {
   const { t } = useT();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
@@ -168,13 +174,11 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
     transition,
     ...(isDragging ? { opacity: 0 } : {}),
   };
-  const statusKey = p.notApplied === "disabled"
-    ? "promptManager.regex.badgeDisabledReason"
-    : p.notApplied === "unbound" ? "promptManager.regex.badgeUnboundReason"
-    : "promptManager.regex.badgeWorking";
-  const statusDotCls = p.notApplied === "disabled" ? "bg-t4"
-    : p.notApplied === "unbound" ? "bg-danger"
-    : "bg-success";
+  // AD-022 row-width budget: desktop grip (20px) + gaps (24px) + caret
+  // (16px) + visible count (about 3ch) + status dot (14px with hit padding)
+  // + edit/drill actions leave the min-w-0 name flex slot. Mobile widens the
+  // grip to 44px, so status remains a dot: no authored EN/RU status text may
+  // compete with the Profile name or its separate `(N)` member count.
   return (
     <div
       ref={setNodeRef}
@@ -191,11 +195,11 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
-          aria-label="drag"
+          aria-label={t("promptManager.regex.dragAria")}
           onClick={(e) => e.stopPropagation()}
-          className="flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
+          className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-8 sm:w-5"
         >
-          <span className="text-base leading-none">≡</span>
+          <Icons.Grip className="h-[18px] w-[18px] sm:h-[13px] sm:w-[13px]" />
         </button>
       )}
       <button
@@ -205,7 +209,7 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
         aria-expanded={isExpanded}
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
       >
-        <span className="shrink-0 text-t3"><Icons.Caret direction={isExpanded ? "d" : "r"} /></span>
+        <span className={cn("shrink-0 text-t3 transition-transform duration-200 ease-out", isExpanded && "rotate-90")}><Icons.Caret direction="r" /></span>
         <CustomTooltip content={p.name}>
           <span className={cn(
             "truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
@@ -213,18 +217,14 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
             p.disabled && "opacity-50",
           )}>{p.name}</span>
         </CustomTooltip>
-        <span className="shrink-0 font-ui text-[11px] text-t4">({p.memberCount})</span>
+        <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">({memberCount})</span>
       </button>
       <button type="button"
         onClick={(e) => startEditing(p, e)}
         className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
       ><Icons.Edit /></button>
       <div className="ml-auto flex items-center gap-1">
-        <CustomTooltip content={t(statusKey)}>
-          <span role="img" aria-label={t(statusKey)} className="flex shrink-0 p-1">
-            <span className={cn("h-[6px] w-[6px] rounded-full", statusDotCls)} />
-          </span>
-        </CustomTooltip>
+        <RegexAvailabilityBadge availability={availability} />
         <button type="button"
           onClick={(e) => startEditing(p, e)}
           className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
@@ -239,13 +239,13 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
   prev.p.id === next.p.id &&
   prev.p.name === next.p.name &&
   prev.p.disabled === next.p.disabled &&
-  prev.p.notApplied === next.p.notApplied &&
-  prev.p.memberCount === next.p.memberCount &&
+  prev.memberCount === next.memberCount &&
+  prev.availability.kind === next.availability.kind &&
+  ("enabledRuleCount" in prev.availability ? prev.availability.enabledRuleCount : undefined) === ("enabledRuleCount" in next.availability ? next.availability.enabledRuleCount : undefined) &&
   prev.dndDisabled === next.dndDisabled);
 
-export function RegexPresetList({ presets, profiles = [], activePresetId, activeProfileId, expandedProfileIds: controlledExpanded, onSelect, onSelectProfile, onAdd, onAddProfile, onAddRuleToProfile, onRename, onRenameProfile, onReorder, onReorderProfiles, onAttach, onDetach, onToggleProfile, onImportRegex }: RegexPresetListProps) {
+export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, regexProfileLinkCounts = {}, activePresetId, activeProfileId, expandedProfileIds: controlledExpanded, onSelect, onSelectProfile, onAdd, onAddProfile, onRename, onRenameProfile, onReorder, onReorderProfiles, onAttach, onDetach, onToggleProfile, onImportRegex }: RegexPresetListProps) {
   const { t } = useT();
-  const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
@@ -255,33 +255,27 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
   const [newName, setNewName] = useState("");
   const [newProfileName, setNewProfileName] = useState("");
   const [internalExpanded, setInternalExpanded] = useState<Set<string>>(new Set());
-  const expandedIds = useMemo(() => {
+  const manualExpandedIds = useMemo(() => {
     if (controlledExpanded) return new Set(controlledExpanded);
     return internalExpanded;
   }, [controlledExpanded, internalExpanded]);
-  const [inlineRuleProfileId, setInlineRuleProfileId] = useState<string | null>(null);
-  const [inlineRuleName, setInlineRuleName] = useState("");
+  const manualExpansionSnapshot = useRef<Set<string>>(new Set());
+  const [isStandaloneDropOver, setIsStandaloneDropOver] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
   const newInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (editingId || editingProfileId) editInputRef.current?.focus(); }, [editingId, editingProfileId]);
   useEffect(() => { if (isCreating || isCreatingProfile) newInputRef.current?.focus(); }, [isCreating, isCreatingProfile]);
 
-  const dndDisabled = search.trim().length > 0;
+  const searchLower = search.trim().toLowerCase();
+  const isFiltering = searchLower.length > 0;
+  const dndDisabled = isFiltering;
 
-  const flatItems: FlatItem[] = useMemo(() => {
-    const effProfiles = profiles.map((pr) => ({ id: pr.id, sortOrder: pr.sortOrder, name: pr.name }));
-    const effPresets = presets.map((p) => ({ id: p.id, sortOrder: p.sortOrder ?? 0, name: p.name, profileId: p.profileId ?? null }));
-    // Preserve original sortOrder from presets where available: need actual sortOrder from presets prop
-    // The presets prop's sortOrder is not in RegexPresetRef; we use 0 fallback but need real value
-    // Instead, we will build based on the order of presets/profiles arrays which are already sorted by parent
-    // For flat order we keep inference by array order when sortOrder not available, but we have it in parent state
-    // For simplicity, use provided sortOrder from profiles, and for presets use index as fallback
-    // The parent passes presets sorted; we keep that order via the flat visual builder's sort
-    // To make tests deterministic, we trust the passed order: build using sortOrder 0 + name localeCompare
-    // The actual flat order will be sorted; for drag tests we care about visual order as built
-    return buildFlatVisualOrder(effProfiles, effPresets, expandedIds);
-  }, [profiles, presets, expandedIds]);
+  const flatItems: FlatItem[] = useMemo(() => buildFlatVisualOrder(
+    profiles.map((profile) => ({ id: profile.id, sortOrder: profile.sortOrder, name: profile.name })),
+    presets.map((preset) => ({ id: preset.id, sortOrder: preset.sortOrder, name: preset.name, profileId: preset.profileId })),
+    manualExpandedIds,
+  ), [profiles, presets, manualExpandedIds]);
 
   // For sortable ids, use flatItems sortableIds
   const sortableIds = useMemo(() => {
@@ -291,6 +285,7 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
   }, [flatItems, editingId, editingProfileId]);
 
   const handleToggle = (id: string) => {
+    if (isFiltering) return;
     if (onToggleProfile) onToggleProfile(id);
     else setInternalExpanded((prev) => {
       const next = new Set(prev);
@@ -421,39 +416,68 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
   });
 
   const handleDragStart = (event: Parameters<typeof baseHandleDragStart>[0]) => {
+    setIsStandaloneDropOver(false);
     const id = String(event.active.id);
     if (id.startsWith("profile:")) {
       const pid = id.slice("profile:".length);
-      if (expandedIds.has(pid)) {
+      if (manualExpandedIds.has(pid)) {
         handleToggle(pid);
       }
     }
     baseHandleDragStart(event);
   };
 
-  const handleDragEnd = baseHandleDragEnd;
+  const handleDragOver = (event: DragOverEvent) => {
+    setIsStandaloneDropOver(
+      memberRuleIdForStandaloneDrop(activeDragItem, event.over ? String(event.over.id) : null) !== null,
+    );
+  };
 
-  // Search filter
-  const searchLower = search.trim().toLowerCase();
-  const filteredFlat = searchLower
-    ? flatItems.filter((item) => {
-        if (item.kind === "profile") {
-          const pr = profiles.find((p) => p.id === item.id);
-          return pr?.name.toLowerCase().includes(searchLower);
-        }
-        const pr = presets.find((p) => p.id === item.id);
-        return pr?.name.toLowerCase().includes(searchLower);
-      })
-    : flatItems;
+  const handleDragEnd = (event: Parameters<typeof baseHandleDragEnd>[0]) => {
+    const ruleId = memberRuleIdForStandaloneDrop(activeDragItem, event.over ? String(event.over.id) : null);
+    setIsStandaloneDropOver(false);
+    if (ruleId) {
+      handleDragCancel();
+      onDetach?.(ruleId);
+      return;
+    }
+    baseHandleDragEnd(event);
+  };
 
-  const filteredIdsSet = new Set(filteredFlat.map((f) => f.sortableId));
+  const handleStandaloneDragCancel = () => {
+    setIsStandaloneDropOver(false);
+    handleDragCancel();
+  };
 
-  const startEditing = (preset: RegexPresetRef, e: React.MouseEvent) => {
+  const filteredFlat = useMemo(() => {
+    if (!isFiltering) return flatItems;
+    const matchedProfileIds = new Set<string>();
+    const visibleRuleIds = new Set<string>();
+    for (const profile of profiles) {
+      const profileMatches = profile.name.toLowerCase().includes(searchLower);
+      const members = presets.filter((preset) => preset.profileId === profile.id);
+      const matchingMembers = members.filter((preset) => preset.name.toLowerCase().includes(searchLower));
+      if (profileMatches || matchingMembers.length > 0) matchedProfileIds.add(profile.id);
+      for (const member of profileMatches ? members : matchingMembers) visibleRuleIds.add(member.id);
+    }
+    for (const preset of presets) {
+      if (preset.profileId === null && preset.name.toLowerCase().includes(searchLower)) visibleRuleIds.add(preset.id);
+    }
+    return buildFlatVisualOrder(
+      profiles.filter((profile) => matchedProfileIds.has(profile.id)).map((profile) => ({ id: profile.id, sortOrder: profile.sortOrder, name: profile.name })),
+      presets.filter((preset) => visibleRuleIds.has(preset.id)).map((preset) => ({ id: preset.id, sortOrder: preset.sortOrder, name: preset.name, profileId: preset.profileId })),
+      matchedProfileIds,
+    );
+  }, [flatItems, isFiltering, presets, profiles, searchLower]);
+
+  const profileById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
+
+  const startEditing = (preset: RegexPresetRecord, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingId(preset.id);
     setEditName(preset.name);
   };
-  const startEditingProfile = (profile: RegexProfileRef, e: React.MouseEvent) => {
+  const startEditingProfile = (profile: RegexProfileRecord, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingProfileId(profile.id);
     setEditName(profile.name);
@@ -491,6 +515,119 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
 
   const isEmpty = presets.length === 0 && profiles.length === 0;
 
+  // ── Accordion rendering (owner ruling 2026-10-09: «как аккордеонов у
+  // нас») ── the profile member section animates with the repo's canonical
+  // grid-rows collapse (the InputArea / PerSendPrefillStrip idiom). The
+  // RENDER order always carries members under their profile; the 0fr/1fr
+  // wrapper owns visibility, so expanding animates height+opacity instead
+  // of mounting rows. `sortableIds` still derive from `flatItems` (real
+  // expansion) — a collapsed member is never a sortable/drop target.
+  const renderFlatItem = (item: FlatItem) => {
+    if (item.kind === "profile") {
+      const pr = profiles.find((p) => p.id === item.id);
+      if (!pr) return null;
+      const isActive = activeProfileId === pr.id;
+      const isExpanded = isFiltering || manualExpandedIds.has(pr.id);
+      const isEditing = editingProfileId === pr.id;
+      if (isEditing) {
+        return (
+          <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
+            <div className="relative flex items-center">
+              <InlineRenameInput
+                ref={editInputRef}
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onKeyDown={handleEditKeyDown}
+                onBlur={saveEdit}
+              />
+              <button type="button"
+                onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
+                className="absolute right-2 text-success transition-colors hover:text-green-400"
+              >
+                <Icons.Check />
+              </button>
+            </div>
+          </div>
+        );
+      }
+      return (
+        <SortableRegexProfileRow
+          key={item.sortableId}
+          p={pr}
+          memberCount={presets.filter((preset) => preset.profileId === pr.id).length}
+          isActive={isActive}
+          isExpanded={isExpanded}
+          onSelect={(id) => onSelectProfile ? onSelectProfile(id) : onSelect(id)}
+          startEditing={startEditingProfile}
+          dndDisabled={dndDisabled}
+          onToggle={handleToggle}
+          availability={regexProfileAvailability(pr, presets, regexProfileLinkCounts[pr.id])}
+        />
+      );
+    }
+    // rule
+    const p = presets.find((pr) => pr.id === item.id);
+    if (!p) return null;
+    const isActive = activePresetId === p.id;
+    const isEditing = editingId === p.id;
+    if (isEditing) {
+      return (
+        <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
+          <div className="relative flex items-center">
+            <InlineRenameInput
+              ref={editInputRef}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={handleEditKeyDown}
+              onBlur={saveEdit}
+            />
+            <button type="button"
+              onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
+              className="absolute right-2 text-success transition-colors hover:text-green-400"
+            >
+              <Icons.Check />
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <SortableRegexPresetRow
+        key={item.sortableId}
+        p={p}
+        isActive={isActive}
+        onSelect={onSelect}
+        startEditing={startEditing}
+        dndDisabled={dndDisabled}
+        availability={regexRuleAvailability({
+          rule: p,
+          ruleLinkCount: regexLinkCounts[p.id],
+          profile: p.profileId === null ? null : profileById.get(p.profileId) ?? null,
+          profileLinkCount: p.profileId === null ? undefined : regexProfileLinkCounts[p.profileId],
+        })}
+        shadowed={p.profileId !== null && (p.isGlobal || (regexLinkCounts[p.id] ?? 0) > 0)}
+      />
+    );
+  };
+
+  const renderGroups = useMemo(() => {
+    const base = isFiltering ? filteredFlat : buildFlatVisualOrder(
+      profiles.map((profile) => ({ id: profile.id, sortOrder: profile.sortOrder, name: profile.name })),
+      presets.map((preset) => ({ id: preset.id, sortOrder: preset.sortOrder, name: preset.name, profileId: preset.profileId })),
+      new Set(profiles.map((profile) => profile.id)),
+    );
+    const groups: Array<{ lead: FlatItem; members: FlatItem[] }> = [];
+    for (const item of base) {
+      const last = groups[groups.length - 1];
+      if (item.kind === "profile" || item.profileId === null || !last || last.lead.kind !== "profile") {
+        groups.push({ lead: item, members: [] });
+      } else {
+        last.members.push(item);
+      }
+    }
+    return groups;
+  }, [isFiltering, filteredFlat, profiles, presets]);
+
   return (
     <div className="flex flex-col flex-1 min-h-0 py-2.5">
       <div className="shrink-0 px-[13px]">
@@ -499,9 +636,12 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
         </div>
         <SearchInput
           className="mb-2"
-          placeholder={t("search_presets")}
+          placeholder={t("promptManager.regex.searchPlaceholder")}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            if (!isFiltering && e.target.value.trim()) manualExpansionSnapshot.current = new Set(manualExpandedIds);
+            setSearch(e.target.value);
+          }}
         />
       </div>
 
@@ -509,12 +649,25 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
+        onDragCancel={handleStandaloneDragCancel}
       >
+        {/* Owner ruling 2026-10-09: the Standalone drop row is a SLOT in the
+            scrolling flow — rendered INSIDE the scroll container as its first
+            row, right above the rules — never a fixed band above the scroll
+            area (the band displaced/covered the profile row in ~90% of drag
+            positions). As a flow slot it pushes rows down naturally and
+            scrolls with the list. */}
         <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
           <div className="flex-1 overflow-y-auto">
-            {filteredFlat.length === 0 && !isCreating && !isCreatingProfile && !inlineRuleProfileId ? (
+            {isMemberRuleDrag(activeDragItem) && (
+              <StandaloneDropRow
+                label={t("promptManager.regex.moveToStandalone")}
+                isDropOver={isStandaloneDropOver}
+              />
+            )}
+            {filteredFlat.length === 0 && !isCreating && !isCreatingProfile ? (
               <div className="flex h-full items-center justify-center px-2">
                 <EmptyState
                   icon={<Icons.Terminal />}
@@ -522,124 +675,26 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
                   sub={isEmpty ? t("promptManager.regex.emptySub") : t("no_preset_matches_sub")}
                 />
               </div>
-            ) : filteredFlat.map((item) => {
-              if (item.kind === "profile") {
-                const pr = profiles.find((p) => p.id === item.id);
-                if (!pr) return null;
-                if (!filteredIdsSet.has(item.sortableId)) return null;
-                const isActive = activeProfileId === pr.id;
-                const isExpanded = expandedIds.has(pr.id);
-                const isEditing = editingProfileId === pr.id;
-                if (isEditing) {
-                  return (
-                    <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
-                      <div className="relative flex items-center">
-                        <InlineRenameInput
-                          ref={editInputRef}
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          onKeyDown={handleEditKeyDown}
-                          onBlur={saveEdit}
-                        />
-                        <button type="button"
-                          onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
-                          className="absolute right-2 text-success transition-colors hover:text-green-400"
-                        >
-                          <Icons.Check />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }
-                return (
-                  <React.Fragment key={item.sortableId}>
-                    <SortableRegexProfileRow
-                      p={pr}
-                      isActive={isActive}
-                      isExpanded={isExpanded}
-                      onSelect={(id) => onSelectProfile ? onSelectProfile(id) : onSelect(id)}
-                      isMobile={isMobile}
-                      startEditing={startEditingProfile}
-                      dndDisabled={dndDisabled}
-                      onToggle={handleToggle}
-                    />
-                    {isExpanded && inlineRuleProfileId === pr.id && (
-                      <div className="ml-8 border-l border-border/40 px-3 py-2">
-                        <div className="relative flex items-center">
-                          <InlineRenameInput
-                            placeholder={t("promptManager.regex.newNamePlaceholder")}
-                            value={inlineRuleName}
-                            onChange={(e) => setInlineRuleName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && inlineRuleName.trim() && onAddRuleToProfile) {
-                                onAddRuleToProfile(pr.id, inlineRuleName.trim());
-                                setInlineRuleName("");
-                                setInlineRuleProfileId(null);
-                              }
-                              if (e.key === "Escape") { setInlineRuleProfileId(null); setInlineRuleName(""); }
-                            }}
-                            onBlur={() => { if (!inlineRuleName.trim()) { setInlineRuleProfileId(null); setInlineRuleName(""); } else if (onAddRuleToProfile) { onAddRuleToProfile(pr.id, inlineRuleName.trim()); setInlineRuleName(""); setInlineRuleProfileId(null); } }}
-                            autoFocus
-                          />
-                          <button type="button"
-                            onMouseDown={(e) => { e.preventDefault(); if (inlineRuleName.trim() && onAddRuleToProfile) { onAddRuleToProfile(pr.id, inlineRuleName.trim()); setInlineRuleName(""); setInlineRuleProfileId(null); } }}
-                            className="absolute right-2 text-success transition-colors hover:text-green-400"
-                          >
-                            <Icons.Check />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {isExpanded && (
-                      <div className="ml-2">
-                        <button type="button"
-                          onClick={() => setInlineRuleProfileId(pr.id)}
-                          className="flex w-full items-center gap-2 px-4 py-1.5 font-ui text-[calc(var(--ui-fs)-3px)] text-t4 hover:text-t2"
-                        >
-                          <Icons.Plus /> {t("promptManager.regex.memberNewRule")}
-                        </button>
-                      </div>
-                    )}
-                  </React.Fragment>
-                );
-              }
-              // rule
-              const p = presets.find((pr) => pr.id === item.id);
-              if (!p) return null;
-              if (!filteredIdsSet.has(item.sortableId)) return null;
-              const isActive = activePresetId === p.id;
-              const isEditing = editingId === p.id;
-              if (isEditing) {
-                return (
-                  <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
-                    <div className="relative flex items-center">
-                      <InlineRenameInput
-                        ref={editInputRef}
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        onKeyDown={handleEditKeyDown}
-                        onBlur={saveEdit}
-                      />
-                      <button type="button"
-                        onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
-                        className="absolute right-2 text-success transition-colors hover:text-green-400"
-                      >
-                        <Icons.Check />
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
+            ) : renderGroups.map((group) => {
+              const lead = renderFlatItem(group.lead);
+              if (group.lead.kind !== "profile" || group.members.length === 0) return lead;
+              const open = isFiltering || manualExpandedIds.has(group.lead.id);
               return (
-                <SortableRegexPresetRow
-                  key={item.sortableId}
-                  p={p}
-                  isActive={isActive}
-                  onSelect={onSelect}
-                  isMobile={isMobile}
-                  startEditing={startEditing}
-                  dndDisabled={dndDisabled}
-                />
+                <React.Fragment key={group.lead.sortableId}>
+                  {lead}
+                  {/* Owner rulings 2026-10-09: no duplicate quick-create row
+                      inside the list (the Profile pane's «Create Rule» /
+                      «Add existing» are the single entry points), and member
+                      sections collapse with the canonical grid-rows idiom. */}
+                  <div
+                    data-testid={`regex-members-${group.lead.id}`}
+                    className="grid transition-[grid-template-rows,opacity] duration-200 ease-out"
+                    style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0 }}
+                    aria-hidden={!open}
+                  >
+                    <div className="overflow-hidden">{group.members.map(renderFlatItem)}</div>
+                  </div>
+                </React.Fragment>
               );
             })}
 

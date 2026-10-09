@@ -204,8 +204,14 @@ export {
   type DiceSampleRoll,
   type InteractiveScriptTestResult,
 } from "./script-schema.js";
-export { regexPlacementSchema, regexSubstituteSchema, regexApplyTargetSchema, regexTargetTypeSchema, createRegexPresetSchema, updateRegexPresetSchema, setRegexLinksSchema, resolveActiveRegexQuerySchema, createRegexProfileSchema, updateRegexProfileSchema, deleteRegexProfileQuerySchema, attachRegexRuleSchema, setRegexProfileLinksSchema } from "./regex-schema.js";
-export type { RegexPlacementCode, RegexSubstituteCode, RegexApplyTargetValue, RegexTargetTypeValue, CreateRegexPresetInput, UpdateRegexPresetInput, SetRegexLinksInput, ResolveActiveRegexQuery, CreateRegexProfileInput, UpdateRegexProfileInput, DeleteRegexProfileQuery, AttachRegexRuleInput, SetRegexProfileLinksInput } from "./regex-schema.js";
+export {
+  scriptSafetySettingsSchema,
+  updateScriptSafetySettingsSchema,
+  type ScriptSafetySettings,
+  type UpdateScriptSafetySettings,
+} from "./script-safety-settings-schema.js";
+export { regexPlacementSchema, regexSubstituteSchema, regexApplyTargetSchema, regexTargetTypeSchema, createRegexPresetSchema, updateRegexPresetSchema, setRegexLinksSchema, resolveActiveRegexQuerySchema, createRegexProfileSchema, updateRegexProfileSchema, deleteRegexProfileQuerySchema, attachRegexRuleSchema, setRegexProfileLinksSchema, createRegexProfileBundleSchema, regexLinkTargetSchema } from "./regex-schema.js";
+export type { RegexPlacementCode, RegexSubstituteCode, RegexApplyTargetValue, RegexTargetTypeValue, CreateRegexPresetInput, UpdateRegexPresetInput, SetRegexLinksInput, ResolveActiveRegexQuery, CreateRegexProfileInput, UpdateRegexProfileInput, DeleteRegexProfileQuery, AttachRegexRuleInput, SetRegexProfileLinksInput, CreateRegexProfileBundleInput, RegexLinkTarget } from "./regex-schema.js";
 export { ttsBackendSchema, ttsTargetTypeSchema, ttsProfileConfigSchema, ttsProfileSchema, createTtsProfileSchema, updateTtsProfileSchema, setTtsLinksSchema, generateTtsSchema, draftTtsVoicesSchema, draftTtsPreviewSchema, draftTtsModelsSchema, localDockerStatusSchema, revealNarrationSchema } from "./tts-schema.js";
 export type { TtsBackendValue, TtsTargetTypeValue, TtsProfileValue, CreateTtsProfileInput, UpdateTtsProfileInput, SetTtsLinksInput, GenerateTtsInput, DraftTtsVoicesInput, DraftTtsPreviewInput, DraftTtsModelsInput, LocalDockerStatus, RevealNarrationInput } from "./tts-schema.js";
 export { sttBackendSchema, sttProfileConfigSchema, sttProfileSchema, createSttProfileSchema, updateSttProfileSchema, sttModelInfoSchema, draftSttModelsSchema } from "./stt-schema.js";
@@ -258,6 +264,7 @@ export {
   experienceCopilotTargetSchema,
   experienceCopilotToolOutputSchema,
   experienceCopilotStepSchema,
+  experienceCopilotLaunchContextSchema,
   experienceCopilotStreamRequestSchema,
   experienceCopilotStreamAnswerSchema,
   experienceCopilotThreadSchema,
@@ -280,6 +287,7 @@ export type {
   ExperienceCopilotTarget,
   ExperienceCopilotToolOutput,
   ExperienceCopilotStep,
+  ExperienceCopilotLaunchContext,
   ExperienceCopilotStreamRequest,
   ExperienceCopilotStreamAnswer,
   ExperienceCopilotThreadWire,

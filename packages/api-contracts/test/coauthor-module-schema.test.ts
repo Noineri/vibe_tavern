@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import {
+  COAUTHOR_TOOL_KEYS,
   coauthorModuleSchema,
   setCoauthorModuleSchema,
   coauthorModuleCreateSchema,
@@ -77,6 +78,31 @@ describe("coauthorToolSetSchema: write_* section-write flags (CED-2)", () => {
       isBuiltIn: false,
     };
     expect(coauthorModuleSchema.parse(payload)).toEqual(payload);
+  });
+});
+
+describe("coauthorToolSetSchema: persisted-lore tools (CE-B1)", () => {
+  test("preserves edit/add lore flags and exposes them to module editors", () => {
+    const payload = {
+      id: "lore-editor",
+      name: "Lore Editor",
+      description: "",
+      basePrompt: "p",
+      openingMessage: "",
+      skillIds: [],
+      toolSet: {
+        edit_lorebook: true,
+        edit_lore_entry: true,
+        add_lore_entry: true,
+      },
+      maxSteps: 3,
+      isBuiltIn: false,
+    };
+
+    expect(coauthorModuleSchema.parse(payload)).toEqual(payload);
+    expect(COAUTHOR_TOOL_KEYS).toContain("edit_lorebook");
+    expect(COAUTHOR_TOOL_KEYS).toContain("edit_lore_entry");
+    expect(COAUTHOR_TOOL_KEYS).toContain("add_lore_entry");
   });
 });
 

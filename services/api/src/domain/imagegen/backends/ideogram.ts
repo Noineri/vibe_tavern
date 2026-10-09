@@ -2,7 +2,8 @@
  * @module imagegen/backends/ideogram
  *
  * Ideogram image backend (IMAGEGEN_PROVIDER_EXPANSION_PLAN wave PE-4
- * unit 3) — the typography-first native vendor. Multipart bodies with the
+ * unit 3) — the typography-first native vendor. forks: 1 — novelai.ts.
+ * Multipart bodies with the
  * `Api-Key` header (NOT Bearer), synchronous generation, and an
  * **EPHEMERAL signed `url`** in the response — downloaded server-side
  * per the cloud-URL-expiry rule.

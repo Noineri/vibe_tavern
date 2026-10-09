@@ -51,6 +51,9 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       create_lorebook: true,
       create_lore_entry: true,
       set_lore_activation: true,
+      edit_lorebook: true,
+      edit_lore_entry: true,
+      add_lore_entry: true,
       ai_write_lore_entry: true,
       ai_generate_lore_keys: true,
       // CE-D2: indexed two-step context search.
@@ -82,6 +85,9 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       create_lorebook: true,
       create_lore_entry: true,
       set_lore_activation: true,
+      edit_lorebook: true,
+      edit_lore_entry: true,
+      add_lore_entry: true,
       ai_write_lore_entry: true,
       ai_generate_lore_keys: true,
       // CE-D2: indexed two-step context search.

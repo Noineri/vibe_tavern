@@ -27,6 +27,11 @@
  * 11. A→B scope switch ignores late A discovery/provider/start/capture results
  * 12. close aborts generation but never ends the session
  * 13. mobile layout contract + EN/RU labels do not rely on fixed widths
+ * 15. SS-7B3 automatic-discovery trust gate: the selected script's record
+ *     resolves BEFORE any request (unknown trust waits, never assumes in_app);
+ *     an untrusted import renders the shared auto-skip state and sends NO
+ *     request; trusted imports and in-app scripts keep parity; a failed record
+ *     load fails closed with the honest inline error
  */
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -48,7 +53,7 @@ import type { ExperienceCapability } from "@vibe-tavern/domain";
 useDomEnv();
 
 type RenderResult = import("@testing-library/react").RenderResult;
-const { render, fireEvent, waitFor, cleanup } = await import("@testing-library/react");
+const { render, fireEvent, waitFor, cleanup, act } = await import("@testing-library/react");
 const { useSyncExternalStore } = await import("react");
 
 const CHAT_ID = "chat_1";
@@ -79,6 +84,7 @@ function setFakeState(patch: Partial<FakeState>): void {
 
 const mocks = {
   testScript: mock(),
+  listAllScripts: mock(),
   listPersonas: mock(),
   listProviderProfiles: mock(),
   fetchProviderProfileModels: mock(),
@@ -144,7 +150,7 @@ mock.module("../../stores/experience-store.js", () => ({
   },
 }));
 
-mock.module("../../api/script-api.js", () => ({ ...realScriptApi, testScript: mocks.testScript }));
+mock.module("../../api/script-api.js", () => ({ ...realScriptApi, testScript: mocks.testScript, listAllScripts: mocks.listAllScripts }));
 mock.module("../../api/experience-api.js", () => ({
   ...realExperienceApi,
   getExperiencePromptOverrides: mocks.getExperiencePromptOverrides,
@@ -184,6 +190,7 @@ function makeConfig(over: Partial<ExperienceChatConfigRow> = {}): ExperienceChat
     chatId: CHAT_ID,
     enabled: true,
     scriptId: "s1",
+    scriptName: "Script One",
     visualId: null,
     capabilityGrants: [],
     contextMode: "none",
@@ -241,6 +248,29 @@ function profile(id: string, name: string, defaultModel: string | null = null) {
   return { id, name, defaultModel };
 }
 
+/** Minimal script row for the automatic-discovery trust gate (SS-7B3); the
+ *  modal reads id/code/scriptKind plus the trust fields from the list. */
+function scriptRec(over: { id?: string; origin?: string; firstEnabledAt?: string | null } = {}) {
+  return {
+    id: "s1",
+    name: "Tic-Tac-Toe",
+    description: "",
+    code: "",
+    scriptKind: "interactive",
+    scopeType: "global",
+    characterId: null,
+    personaId: null,
+    chatId: null,
+    enabled: true,
+    sortOrder: 0,
+    defaultVisualId: null,
+    copilotProfileId: null,
+    origin: "in_app",
+    firstEnabledAt: null,
+    ...over,
+  };
+}
+
 function makeOverrides(global: string | null, character: string | null): ExperiencePromptOverridesResponse {
   return {
     global: global === null ? null : { scope: "global", content: global, characterId: null, createdAt: "t", updatedAt: "t" },
@@ -250,6 +280,10 @@ function makeOverrides(global: string | null, character: string | null): Experie
 
 function setupDefaultMocks(): void {
   mocks.testScript.mockResolvedValue(interactiveOk(def([])));
+  // SS-7B3: the automatic-discovery trust gate resolves the selected script's
+  // record from the script list before any request — default to an in-app
+  // record so the pre-existing matrix keeps its exact prior behavior.
+  mocks.listAllScripts.mockResolvedValue([scriptRec()]);
   mocks.listPersonas.mockResolvedValue([] as never);
   mocks.listProviderProfiles.mockResolvedValue([profile("p1", "Acme", "model-a"), profile("p2", "Beta")]);
   mocks.fetchProviderProfileModels.mockResolvedValue({ models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] });
@@ -1021,6 +1055,11 @@ describe("ExperienceSetupModal — scope switch", () => {
     let resolveA!: (v: any) => void;
     mocks.testScript.mockReturnValueOnce(new Promise((r) => { resolveA = r; }));
     const view = renderModal();
+    // SS-7B3: the discovery request now starts only after the selected
+    // script's record resolves — wait for scope A's request to actually start
+    // before switching, so the pinned boundary (a late A result vs scope B)
+    // is exercised exactly as before.
+    await waitFor(() => expect(mocks.testScript).toHaveBeenCalledTimes(1));
     // switch to branch B before A resolves
     view.rerender(<ExperienceSetupModal open chatId={CHAT_ID} branchId="branch_B" onClose={() => {}} />);
     // resolve A late (would paint a ghost field if applied)
@@ -1329,5 +1368,116 @@ describe("ExperienceSetupModal — restart mode (lobby LB-5)", () => {
     fireEvent.click(view.getByTestId("experience-setup-start"));
     await waitFor(() => expect(mocks.startSession).toHaveBeenCalledTimes(1));
     expect(mocks.restartSession).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 15. SS-7B3: automatic-discovery trust gate
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("ExperienceSetupModal — automatic discovery trust gate (SS-7B3)", () => {
+  it("waits for the selected script's record before any discovery request", async () => {
+    setFakeState({ config: makeConfig() });
+    let resolveRecord!: (v: unknown) => void;
+    mocks.listAllScripts.mockReturnValueOnce(new Promise((r) => { resolveRecord = r; }));
+    const view = renderModal();
+    // While the record is unresolved: the wait renders the discovering state
+    // and NO request goes out (fail closed — trust is never assumed in_app).
+    await waitFor(() => expect(view.getByText("experience_setup_discovering")).toBeTruthy());
+    expect(mocks.testScript).not.toHaveBeenCalled();
+    resolveRecord([scriptRec()]);
+    await whenReady(view);
+    expect(mocks.testScript).toHaveBeenCalledTimes(1);
+    expect(mocks.testScript).toHaveBeenCalledWith("s1", {});
+  });
+
+  it("a selected script missing from the resolved record list fails closed", async () => {
+    setFakeState({ config: makeConfig() });
+    mocks.listAllScripts.mockResolvedValue([]);
+    const view = renderModal();
+    await waitFor(() => expect(view.getByText("experience_setup_discovery_error")).toBeTruthy());
+    expect(view.getByText("experience_assign_script_missing")).toBeTruthy();
+    await act(async () => {});
+    expect(mocks.testScript).not.toHaveBeenCalled();
+    expect(view.queryByTestId("experience-setup-start")).toBeNull();
+  });
+
+  it("an untrusted imported script sends NO request, stays not-ready, and renders the shared auto-skip state", async () => {
+    setFakeState({ config: makeConfig() });
+    mocks.listAllScripts.mockResolvedValue([scriptRec({ origin: "imported", firstEnabledAt: null })]);
+    const view = renderModal();
+    await waitFor(() => expect(view.getByTestId("experience-setup-auto-skip")).toBeTruthy());
+    expect(view.getByTestId("experience-setup-auto-skip").textContent).toBe("script_safety_checks_after_enabling");
+    expect(mocks.testScript).not.toHaveBeenCalled();
+    expect(view.queryByTestId("experience-setup-start")).toBeNull();
+  });
+
+  it("a trusted import (first-enabled) keeps the automatic discovery", async () => {
+    setFakeState({ config: makeConfig() });
+    mocks.listAllScripts.mockResolvedValue([scriptRec({ origin: "imported", firstEnabledAt: "2026-01-01T00:00:00Z" })]);
+    const view = renderModal();
+    await whenReady(view);
+    expect(mocks.testScript).toHaveBeenCalledWith("s1", {});
+  });
+
+  it("an in-app script keeps the automatic discovery (parity)", async () => {
+    setFakeState({ config: makeConfig() });
+    mocks.listAllScripts.mockResolvedValue([scriptRec({ origin: "in_app", firstEnabledAt: null })]);
+    const view = renderModal();
+    await whenReady(view);
+    expect(mocks.testScript).toHaveBeenCalledWith("s1", {});
+  });
+
+  it("a failed record load fails closed: no request, honest inline error", async () => {
+    setFakeState({ config: makeConfig() });
+    mocks.listAllScripts.mockRejectedValue(new Error("record list failed"));
+    const view = renderModal();
+    await waitFor(() => expect(view.getByText("record list failed")).toBeTruthy());
+    expect(view.getByText("experience_setup_discovery_error")).toBeTruthy();
+    await act(async () => {});
+    expect(mocks.testScript).not.toHaveBeenCalled();
+    expect(view.queryByTestId("experience-setup-start")).toBeNull();
+  });
+
+  it("never authorizes a new script with the previous script's trusted record", async () => {
+    setFakeState({ config: makeConfig({ scriptId: "s1" }) });
+    mocks.listAllScripts.mockResolvedValueOnce([scriptRec({ id: "s1", origin: "in_app" })]);
+    const view = renderModal();
+    await whenReady(view);
+    expect(mocks.testScript).toHaveBeenCalledTimes(1);
+    expect(mocks.testScript).toHaveBeenCalledWith("s1", {});
+
+    let resolveB!: (v: unknown) => void;
+    mocks.listAllScripts.mockReturnValueOnce(new Promise((resolve) => { resolveB = resolve; }));
+    await act(async () => {
+      setFakeState({ config: makeConfig({ scriptId: "s2" }) });
+    });
+    await waitFor(() => expect(view.getByText("experience_setup_discovering")).toBeTruthy());
+    await act(async () => {});
+    expect(mocks.testScript).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveB([scriptRec({ id: "s2", origin: "imported", firstEnabledAt: null })]);
+    });
+    await waitFor(() => expect(view.getByTestId("experience-setup-auto-skip")).toBeTruthy());
+    expect(mocks.testScript).toHaveBeenCalledTimes(1);
+    expect(mocks.testScript).not.toHaveBeenCalledWith("s2", {});
+  });
+
+  it("a late record resolution from scope A never guards or paints scope B", async () => {
+    setFakeState({ config: makeConfig() });
+    let resolveA!: (v: unknown) => void;
+    mocks.listAllScripts
+      .mockReturnValueOnce(new Promise((r) => { resolveA = r; }))
+      .mockResolvedValueOnce([scriptRec()]);
+    const view = renderModal();
+    // Switch to branch B before A's record resolves (same epoch discipline as
+    // the late-discovery scope-switch case in section 11).
+    view.rerender(<ExperienceSetupModal open chatId={CHAT_ID} branchId="branch_B" onClose={() => {}} />);
+    // A resolves with an UNTRUSTED record — it must not paint B's skip state.
+    resolveA([scriptRec({ origin: "imported", firstEnabledAt: null })]);
+    await whenReady(view);
+    expect(view.queryByTestId("experience-setup-auto-skip")).toBeNull();
+    expect(mocks.testScript).toHaveBeenCalledWith("s1", {});
   });
 });

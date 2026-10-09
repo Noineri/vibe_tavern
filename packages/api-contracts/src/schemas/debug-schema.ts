@@ -18,6 +18,13 @@ export const importJsonSchema = z.object({
   // Single-card imports require an explicit user choice before converting the
   // card's embedded `character_book`; batch imports force this on.
   importEmbeddedBook: z.boolean().optional(),
+  // User choice for the card's embedded `regex_scripts` Profile bundle
+  // (RXU-23): true → the imported Profile lands ENABLED, so source-enabled
+  // rules act at once; omitted/false → the Profile master switch stays off.
+  // Source rule states are preserved either way — this option only sets the
+  // bundle-level master switch. Flows into batch items via the
+  // `.omit({ lean: true })` spread below.
+  enableImportedRegexProfile: z.boolean().optional(),
   // When true, the server skips the O(N²) getSnapshot rebuild and returns only
   // { activeChatId, characterId, imported } — the mass-import path reads nothing
   // else. Single-card import (no flag) keeps the full snapshot, byte-identical.

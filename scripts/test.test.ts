@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { QuarantineEntry } from "./test-quarantine.js";
 import {
 	createTestSuites,
 	runTestCli,
@@ -320,6 +321,110 @@ describe("test suite orchestration", () => {
 		expect(result.stdout).toContain("Unknown test suite: not-a-suite");
 		expect(result.stdout).not.toContain("Unknown test suite: --");
 		expect(result.stderr).toBe("");
+	});
+
+	test("collects a JUnit report for every non-web suite and hands the web suite a path instead", () => {
+		// TH-8 fix step 10.2: every suite must produce a JUnit report for the
+		// quarantine verdict — but the web suite's `bun run test` command rejects
+		// unknown flags (strict parseArgs, exit 2), so it receives a handoff PATH
+		// (VIBE_TAVERN_TEST_JUNIT_OUT) and writes the report itself. The reporter
+		// flags for the other suites are appended at SPAWN time and must never
+		// appear in the declared command — `suite.command.at(-1)` is the pinned
+		// positional filter, and `suite.command[1] === "test"` selects these suites.
+		for (const suite of createTestSuites()) {
+			if (suite.name === "web") {
+				expect(suite.junit).toBe("child");
+			} else {
+				expect(suite.junit).toBe("appended");
+				expect(suite.command).not.toContain("--reporter=junit");
+			}
+		}
+	});
+
+	test("passes a suite whose only failures are quarantined and lists them", async () => {
+		// Given: a real `bun test` suite with one failing test, quarantined via
+		// an injected list — the full spawn → JUnit report → verdict → report
+		// path, not a mock of any of them.
+		const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-quarantine-"));
+		try {
+			await Bun.write(
+				join(dir, "flaky.test.ts"),
+				'import { expect, test } from "bun:test";\ntest("flaky probe", () => {\n\texpect(1).toBe(2);\n});\n',
+			);
+			const suite = {
+				name: "probe",
+			cwd: dir,
+			command: [process.execPath, "test"],
+			junit: "appended",
+			} as const satisfies TestSuite;
+			const quarantine: readonly QuarantineEntry[] = [{
+				suite: "probe",
+				file: "flaky.test.ts",
+				test: "flaky probe",
+				reason: "TH-8 10.2 composition probe — TEST_SUITE_HYGIENE_REPORT step 10",
+				since: "2026-10-06",
+			}];
+			const output: string[] = [];
+
+			// When
+			const exitCode = await runTestCli(
+				[suite],
+				[],
+				(message) => output.push(message),
+				process.platform,
+				process.env,
+				quarantine,
+			);
+
+			// Then: bun exited 1, the verdict is green, and the report names the debt.
+			const text = output.join("\n");
+			expect(exitCode).toBe(0);
+			expect(text).toContain("PASS  probe");
+			expect(text).toContain("Quarantined failures");
+			expect(text).toContain("probe · flaky.test.ts · flaky probe · since 2026-10-06");
+			expect(text.indexOf("PASS  probe")).toBeLessThan(text.indexOf("Quarantined failures"));
+			expect(text.indexOf("Quarantined failures")).toBeLessThan(text.indexOf("Suites: 1 passed, 0 failed"));
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("still fails a suite whose failures are not quarantined", async () => {
+		// The inverse of the quarantine pass: an empty list is exactly today's
+		// behaviour — any failure is red, no block is printed.
+		const dir = await mkdtemp(join(tmpdir(), "vibe-tavern-blocking-"));
+		try {
+				await Bun.write(
+					join(dir, "boom.test.ts"),
+					'import { expect, test } from "bun:test";\ntest("unlisted probe", () => {\n\texpect(1).toBe(2);\n});\n',
+				);
+				const suite = {
+					name: "probe",
+				cwd: dir,
+				command: [process.execPath, "test"],
+				junit: "appended",
+				} as const satisfies TestSuite;
+				const output: string[] = [];
+
+			// When
+			const exitCode = await runTestCli(
+					[suite],
+					[],
+					(message) => output.push(message),
+					process.platform,
+					process.env,
+					[],
+				);
+
+			// Then
+			const text = output.join("\n");
+			expect(exitCode).toBe(1);
+			expect(text).toContain("FAIL  probe");
+			expect(text).toContain("Suites: 0 passed, 1 failed");
+			expect(text).not.toContain("Quarantined failures");
+			} finally {
+				await rm(dir, { recursive: true, force: true });
+			}
 	});
 
 });

@@ -96,6 +96,7 @@ import type { ImageGenAdapterConfig, ImageGenGenerateRequest } from "../../domai
 import { IMAGE_GENERATION_CLOUD_TIMEOUT_MS, withImageGenTimeoutMs } from "../../domain/imagegen/imagegen-backend.js";
 import { TEST_CHAT_TIMEOUT_MS } from "../../domain/providers/provider-transport.js";
 import { createImageGenBackend, IMAGE_GEN_FAMILY_DETECTION_BACKENDS } from "../../domain/imagegen/imagegen-registry.js";
+import { clearHordeQueueState, getHordeQueueState, setHordeQueueState } from "../../domain/imagegen/horde-queue-state.js";
 import { clearImageGenRunPhase, getImageGenRunPhase, setImageGenRunPhase } from "../../domain/imagegen/run-phase.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import type { ProviderExecutionInput } from "../../infrastructure/ai/provider-execution-types.js";
@@ -103,29 +104,9 @@ import { resolveEffectiveSummaryProfile } from "../../domain/chat/summary-genera
 import type { AssemblePromptResponse, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { ImageGenListing, ImageGenRuntimeApi } from "../contract/runtime-api.js";
 
-// Import backend modules for their side-effect registrations (the
-// stt-adapter twin): importing the module makes its slug creatable via the
-// registry; the route layer reaches every backend through this file.
-import "../../domain/imagegen/backends/openrouter.js";
-import "../../domain/imagegen/backends/openai-images.js";
-import "../../domain/imagegen/backends/openai-images-family.js";
-import "../../domain/imagegen/backends/a1111.js";
-import "../../domain/imagegen/backends/comfyui.js";
-import "../../domain/imagegen/backends/minimax.js";
-import "../../domain/imagegen/backends/dashscope.js";
-import "../../domain/imagegen/backends/nim.js";
-import "../../domain/imagegen/backends/google.js";
-import "../../domain/imagegen/backends/stability.js";
-import "../../domain/imagegen/backends/ideogram.js";
-import "../../domain/imagegen/backends/cloudflare.js";
-import "../../domain/imagegen/backends/aihorde.js";
-import "../../domain/imagegen/backends/bfl.js";
-import "../../domain/imagegen/backends/fal.js";
-import "../../domain/imagegen/backends/replicate.js";import "../../domain/imagegen/backends/leonardo.js";
-import "../../domain/imagegen/backends/luma.js";
-import "../../domain/imagegen/backends/novita.js";
-import "../../domain/imagegen/backends/krea.js";
-import "../../domain/imagegen/backends/raw-binary.js";
+// Side-effect registration of the complete backend roster (the stt-adapter
+// twin) is centralized in this file-size-ratchet extraction.
+import "../../domain/imagegen/backends/register-imagegen-backends.js";
 
 // ─── Route-ladder errors ─────────────────────────────────────────────────────
 
@@ -554,12 +535,16 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     const profile = await this.stores.imageGen.getById(id);
     if (!profile) return null;
     // Static dialect gate FIRST (the extensions-arm twin, PG-3): the
-    // schedule-type surface exists on the LOCAL dialects — A1111 (its
-    // /sdapi/v1/schedulers arm) and ComfyUI (the KSampler scheduler combo,
-    // CG-A3) — schedulers are not a cross-vendor capability, so no
-    // capability flag exists for them; the dialect check answers without
-    // live config validity.
-    if (profile.backend !== IMAGE_GEN_BACKENDS.A1111 && profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI) {
+    // schedule-type surface exists on A1111 (/sdapi/v1/schedulers), ComfyUI
+    // (the KSampler scheduler combo, CG-A3), and NovelAI (its documented
+    // static scheduler catalog, NAI-5a). Schedulers are not a cross-vendor
+    // capability, so no capability flag exists for them; the dialect check
+    // answers without live config validity.
+    if (
+      profile.backend !== IMAGE_GEN_BACKENDS.A1111 &&
+      profile.backend !== IMAGE_GEN_BACKENDS.ComfyUI &&
+      profile.backend !== IMAGE_GEN_BACKENDS.NovelAi
+    ) {
       return null;
     }
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
@@ -718,7 +703,8 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // swipe-regenerated run showed no progress because the gate read a
     // pre-CG-C1 mirror; the registry's current truth is the only source).
     if (!IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].supportsLiveProgress) {
-      return phase === undefined ? null : { phase };
+      const queueState = getHordeQueueState(id);
+      return phase === undefined ? null : { phase, ...(queueState !== undefined ? { state: queueState } : {}) };
     }
     const backend = createImageGenBackend(profile.backend, await resolveAdapterConfig(this.stores, profile, this.fetchOverride));
     // Interface-driven second gate: a backend without the progress method
@@ -763,7 +749,11 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       throw new ImageGenValidationError("AI prompt drafting needs a configured LLM assist provider and model");
     }
     const model = profile.modelId;
-    const { family: promptFamily } = resolveImageGenPromptFamily(profile, model);
+    const { family: promptFamily } = resolveImageGenPromptFamily(
+      profile,
+      model,
+      IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].defaultPromptFamily,
+    );
     try {
       const promptCharCap =
         model !== undefined && model !== ""
@@ -850,14 +840,13 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
   // ── Generate (image message slot) ───────────────────────────────────────
 
   generateImageGen: ImageGenRuntimeApi["generateImageGen"] = async (chatId, body, signal) => {
-    // MR-11: the phase registry must never leak a stale phase past the
-    // run's exit — every exit path (success, validation throw, abort,
-    // backend error) funnels through this finally. The phase itself is set
-    // inside the core once the profile resolves.
+    // MR-11: every exit funnels through this finally so the phase cannot
+    // leak into the next run; the core sets it once the profile resolves.
     try {
       return await this.generateImageGenCore(chatId, body, signal);
     } finally {
       clearImageGenRunPhase(body.profileId);
+      clearHordeQueueState(body.profileId);
     }
   };
 
@@ -1044,8 +1033,14 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // IPT-2 assembly: the family the prompt templates speak — manual pin,
     // else a FRESH auto detection (freshness vs the model ACTUALLY
     // generating: the chip's model override outranks the saved pick), else
-    // the universal prose default. Unpinned profiles stay byte-identical.
-    const { family: promptFamily } = resolveImageGenPromptFamily(profile, model);
+    // the backend's own default (NAI-6a: NovelAI), else the universal prose
+    // default. Unpinned profiles on backends without a default stay
+    // byte-identical.
+    const { family: promptFamily } = resolveImageGenPromptFamily(
+      profile,
+      model,
+      IMAGE_GEN_BACKEND_CAPABILITIES[profile.backend].defaultPromptFamily,
+    );
 
     // IG-14 mode assembly: the prompt the design's generation flow builds —
     // Images-tab template + chat-context macros (free mode wraps the caller
@@ -1102,12 +1097,17 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
       ...(adetailerModel !== undefined ? { adetailerModel } : {}),
       ...(adetailerSteps !== undefined ? { adetailerSteps } : {}),
       ...(krea !== undefined ? { krea } : {}),
+      // NAI-6a: NovelAI's server-side quality layer — the profile's quality
+      // switch rides the vendor block ONLY for the novelai backend AND only
+      // when the resolved family is novelai (quality tags are never doubled).
+      ...(profile.backend === IMAGE_GEN_BACKENDS.NovelAi
+        ? { novelai: { qualityToggle: profile.qualityLayerEnabled && promptFamily === "novelai" } }
+        : {}),
       ...(loras !== undefined && loras.length > 0 ? { loras } : {}),
       ...(hires !== undefined ? { hires } : {}),
-      // MR-11: the backend announces the moment its progress surface
-      // reflects THIS run's job — the phase flips to "steps" exactly there
-      // (no percent before real steps; no inherited stale snapshot).
+      // MR-11: flip to steps only once the progress surface reflects this run.
       onJobStarted: () => setImageGenRunPhase(profile.id, "steps"),
+      onQueueState: (state) => setHordeQueueState(profile.id, state),
       ...(signal !== undefined ? { signal } : {}),
     };
 
@@ -1119,9 +1119,9 @@ export class ImageGenAdapter implements ImageGenRuntimeApi {
     // advisory caps must never outlive their truth).
     const runBackend = async (): Promise<Awaited<ReturnType<typeof backend.generate>>> => {
       try {
-        // Owner 2026-09-14: LOCAL backends have NO generation timeout
-        // (explicit cancel only); CLOUD backends carry the 3-minute budget.
-        const generated = profile.capabilities.localExecution
+        // Owner 2026-09-14: LOCAL backends have NO generation timeout (explicit cancel only); CLOUD backends carry the
+        // 3-minute budget. PE-7a (owner 2026-09-18): aihorde joins the no-budget side — silence, not queue length, aborts it.
+        const generated = profile.capabilities.localExecution || profile.backend === IMAGE_GEN_BACKENDS.Aihorde
           ? await backend.generate(request)
           : await withImageGenTimeoutMs(
               signal,

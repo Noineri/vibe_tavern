@@ -49,3 +49,30 @@ export function getModalPortal(exclude: HTMLElement | null = null): HTMLElement 
 export function getApplicationModalPortal(): HTMLElement | null {
   return document.getElementById("modal-portal");
 }
+
+/**
+ * Canonical glass-safe modal panel chrome (SS-6B single source, owner decision 16).
+ * Every desktop `Modal` caller renders its own panel as
+ * `cn(modalPanelCls, <caller sizes/extras>)` — no hand-written copies.
+ *
+ * `glass-blur-under`, NEVER `bg-surface`: `--surface` is translucent in glass
+ * themes, which made `bg-surface` panels see-through (owner defect 2026-09-10);
+ * the underlayer paints `--glass-bg` + frost on a z:-1 ::before, which is
+ * opaque and visually identical to `bg-surface` in solid themes (styles.css
+ * `.glass-blur-under` comment) and frosted in glass ones. Never combine this
+ * constant with `bg-surface` — the two fills conflict.
+ *
+ * `overflow-hidden` clips the ::before pseudo to the rounded rect (the same
+ * R-8 containing-block reason MasterDetailModal documents: the frost must
+ * never live on the panel element itself).
+ *
+ * Caller-owned extras (NOT universal, so NOT in here): `flex`/`flex-col`,
+ * sizes/widths, padding, and the mobile-fullscreen branch — dual-mode callers
+ * keep the chrome desktop-only (chromeless `glass-blur-under` fullscreen on
+ * mobile). The one sanctioned axis narrowing is `overflow-y-auto` on top of
+ * the bundled `overflow-hidden` (scene-zone edit panel): Tailwind v4 emits
+ * `.overflow-y-auto` after `.overflow-hidden` (verified against the repo's
+ * own tailwindcss 4.3.3), so the y-axis scrolls while x stays clipped.
+ */
+export const modalPanelCls =
+  "rounded-xl border border-border2 glass-blur-under shadow-[0_24px_60px_rgba(0,0,0,.5)] overflow-hidden";

@@ -39,12 +39,28 @@ const uploadCharacterAvatar = mock((_id: string, _file: File, _full?: File) =>
 const uploadAsset = mock((_f: File) => Promise.resolve({ assetId: "asset-legacy" }));
 const fetchBootstrapAction = mock((_opts?: { silent?: boolean; skipSnapshotSync?: boolean }) =>
 	Promise.resolve());
-const importCharacterAction = mock((_input: { fileName: string; jsonText?: string; importEmbeddedBook?: boolean }) =>
+const importCharacterAction = mock((_input: { fileName: string; jsonText?: string; importEmbeddedBook?: boolean; enableImportedRegexProfile?: boolean }) =>
 	Promise.resolve({
 		activeChatId: "chat-1",
 		snapshot: { character: { id: "char-imported", name: "Test", avatarExt: null } },
 		imported: { kind: "character", name: "Test", fileName: "card.png", warningCount: 0, warnings: [] },
 	} as never));
+
+// ─── Wire capture for the import-api transports (importJson / importJsonBatch) ─
+// import-api passes its input straight into `{ json: input }`, so capturing
+// the Hono `$post` arg pins the EXACT wire body per transport. The client mock
+// is registered BEFORE any transitive import-api load so the api module binds
+// to the fake (mock.module does not rewire already-loaded live bindings).
+const importJsonPost = mock((..._args: unknown[]) =>
+	Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ activeChatId: "chat-1" }), text: () => Promise.resolve("") }));
+const importBatchPost = mock((..._args: unknown[]) =>
+	Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ results: [] }), text: () => Promise.resolve("") }));
+
+const realClientModule = await import("../api/client.js");
+const fakeImportClient = {
+	api: { import: { json: { $post: importJsonPost }, batch: { $post: importBatchPost } } },
+} as unknown as typeof realClientModule.client;
+mock.module("../api/client.js", () => ({ ...realClientModule, client: fakeImportClient }));
 
 const realCharacterApi = await import("../api/character-api.js");
 const realAssetApi = await import("../api/asset-api.js");
@@ -66,6 +82,7 @@ mock.module("../stores/api-actions/bootstrap-actions.js", () => {
 });
 
 const { useCharacterImport } = await import("./use-character-import.js");
+const { importJson, importJsonBatch } = await import("../api/import-api.js");
 
 // ─── Synthesized PNG with a base64 `chara` tEXt chunk ───────────────────────
 //
@@ -103,6 +120,8 @@ beforeEach(() => {
   uploadAsset.mockClear();
   fetchBootstrapAction.mockClear();
   importCharacterAction.mockClear();
+  importJsonPost.mockClear();
+  importBatchPost.mockClear();
 });
 
 test("PNG import uploads via the folder route and skips legacy asset+PATCH", async () => {
@@ -137,6 +156,81 @@ test("PNG import uploads via the folder route and skips legacy asset+PATCH", asy
   // (top bar / chat / editor). importCharacterAction's fixture returned
   // avatarExt:null; the hook MUST overwrite it with the folder route's value.
   expect(imported?.snapshot?.character?.avatarExt).toBe(".png");
+});
+
+// ─── RXU-24: enableImportedRegexProfile transport ─────────────────────────
+// The hook threads the option into the single-file body; import-api carries it
+// on both transports. Omitted must stay ABSENT (not false) — the server
+// boundary owns the default (off), so no-Regex behavior is byte-identical.
+
+function jsonlFile(): File {
+  return new File(['{"lines":[]}'], "chat.jsonl", { type: "application/jsonl" });
+}
+
+test("single-file import omits enableImportedRegexProfile when the option is not provided", async () => {
+  const { result } = renderHook(() => useCharacterImport());
+
+  await act(async () => {
+    await result.current.importFile(jsonlFile());
+  });
+
+  expect(importCharacterAction).toHaveBeenCalledTimes(1);
+  expect("enableImportedRegexProfile" in importCharacterAction.mock.calls[0][0]).toBe(false);
+});
+
+test("single-file import carries enableImportedRegexProfile: true", async () => {
+  const { result } = renderHook(() => useCharacterImport());
+
+  await act(async () => {
+    await result.current.importFile(jsonlFile(), { enableImportedRegexProfile: true });
+  });
+
+  expect(importCharacterAction).toHaveBeenCalledTimes(1);
+  expect(importCharacterAction.mock.calls[0][0].enableImportedRegexProfile).toBe(true);
+});
+
+test("single-file import carries explicit enableImportedRegexProfile: false", async () => {
+  const { result } = renderHook(() => useCharacterImport());
+
+  await act(async () => {
+    await result.current.importFile(jsonlFile(), { enableImportedRegexProfile: false });
+  });
+
+  expect(importCharacterAction).toHaveBeenCalledTimes(1);
+  const body = importCharacterAction.mock.calls[0][0];
+  expect("enableImportedRegexProfile" in body).toBe(true);
+  expect(body.enableImportedRegexProfile).toBe(false);
+});
+
+test("single importJson posts the exact JSON body (true carries, omitted absents)", async () => {
+  await importJson({ fileName: "card.json", jsonText: "{}", enableImportedRegexProfile: true });
+  expect(importJsonPost).toHaveBeenCalledTimes(1);
+  expect(importJsonPost.mock.calls[0][0]).toEqual({
+    json: { fileName: "card.json", jsonText: "{}", enableImportedRegexProfile: true },
+  });
+
+  await importJson({ fileName: "card.json", jsonText: "{}" });
+  expect(importJsonPost).toHaveBeenCalledTimes(2);
+  const omitted = importJsonPost.mock.calls[1][0] as { json: Record<string, unknown> };
+  expect("enableImportedRegexProfile" in omitted.json).toBe(false);
+});
+
+test("batch importJsonBatch carries the per-item choice (omitted/true/false)", async () => {
+  await importJsonBatch({
+    items: [
+      { fileName: "a.json", jsonText: "{}" },
+      { fileName: "b.json", jsonText: "{}", enableImportedRegexProfile: true },
+      { fileName: "c.json", jsonText: "{}", enableImportedRegexProfile: false },
+    ],
+  });
+  expect(importBatchPost).toHaveBeenCalledTimes(1);
+  const posted = importBatchPost.mock.calls[0][0] as {
+    json: { items: Array<{ fileName: string; enableImportedRegexProfile?: boolean }> };
+  };
+  expect(posted.json.items).toHaveLength(3);
+  expect("enableImportedRegexProfile" in posted.json.items[0]).toBe(false);
+  expect(posted.json.items[1].enableImportedRegexProfile).toBe(true);
+  expect(posted.json.items[2].enableImportedRegexProfile).toBe(false);
 });
 
 test("non-PNG (jsonl) import does not trigger any avatar upload", async () => {

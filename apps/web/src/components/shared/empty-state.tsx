@@ -1,4 +1,8 @@
 import type { ReactNode } from "react";
+import { cn } from "../../lib/cn.js";
+
+const DEFAULT_CTA_CLASS = "empty-cta";
+const PROMINENT_CTA_CLASS = "empty-cta min-h-11 px-4";
 
 interface EmptyStateProps {
   icon: ReactNode;
@@ -6,6 +10,8 @@ interface EmptyStateProps {
   sub?: string;
   cta?: ReactNode;
   onCta?: () => void;
+  /** Uses a 44px minimum target for touch-first empty-state actions. */
+  ctaProminent?: boolean;
   secondaryCta?: ReactNode;
   onSecondaryCta?: () => void;
 }
@@ -17,17 +23,22 @@ export function EmptyState(input: EmptyStateProps) {
       <div className="empty-title">{input.title}</div>
       {input.sub && <div className="empty-sub">{input.sub}</div>}
       {input.cta && (
-        <div className="empty-cta" onClick={input.onCta}>
+        <button
+          type="button"
+          className={cn(input.ctaProminent ? PROMINENT_CTA_CLASS : DEFAULT_CTA_CLASS)}
+          onClick={input.onCta}
+        >
           {input.cta}
-        </div>
+        </button>
       )}
       {input.secondaryCta && (
-        <div 
-          className="empty-cta text-t2 hover:text-t1 bg-transparent border-transparent shadow-none" 
+        <button
+          type="button"
+          className="empty-cta text-t2 hover:text-t1 bg-transparent border-transparent shadow-none"
           onClick={input.onSecondaryCta}
         >
           {input.secondaryCta}
-        </div>
+        </button>
       )}
     </div>
   );

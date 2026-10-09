@@ -98,6 +98,13 @@ describe("Coauthor Module Registry — CED-2 paired write_* tool scopes", () => 
     expect(qd.write_examples).toBe(true);
     expect(qd.edit_greeting).toBe(true);
     expect(qd.add_alt_greeting).toBe(true);
+    expect(qd.edit_lorebook).toBe(true);
+    expect(qd.edit_lore_entry).toBe(true);
+    expect(qd.add_lore_entry).toBe(true);
+    const defaultModule = byId.get("default")!;
+    expect(defaultModule.edit_lorebook).toBe(true);
+    expect(defaultModule.edit_lore_entry).toBe(true);
+    expect(defaultModule.add_lore_entry).toBe(true);
     // The three original seed ids survive (existing chats need no migration).
     expect(isSeedModule("default")).toBe(true);
     expect(isSeedModule("profile-editor")).toBe(true);

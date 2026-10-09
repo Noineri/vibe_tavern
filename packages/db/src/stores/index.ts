@@ -70,6 +70,9 @@ export type {
   ScriptLink,
 } from './script-store.js';
 
+export { ScriptSafetySettingsStore } from './script-safety-settings-store.js';
+export type { ScriptSafetySettings } from './script-safety-settings-store.js';
+
 export { RegexStore } from './regex-store.js';
 export type {
   CreateRegexPresetData,

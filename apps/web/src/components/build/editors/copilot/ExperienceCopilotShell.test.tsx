@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { wireUiSettings } from "../../../../../test/wire-fixtures.js";
 import type { ReactElement, ReactNode } from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
@@ -1098,6 +1098,11 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     const body = streamCalls()[0]!.body!;
     expect(body.testFeedback).toMatchObject({ ok: true, status: "active" });
+    expect(body.launchContext).toEqual({
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: ["participants"],
+      settings: {},
+    });
     expect(body.step).not.toBe("test");
     expect(typeof body.content).toBe("string");
     expect((body.content as string).length).toBeGreaterThan(0);
@@ -1133,6 +1138,15 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     const body = streamCalls()[0]!.body!;
     expect(body.testFeedback).toMatchObject({ ok: true, status: "active", revision: 0 });
+    expect(body.launchContext).toMatchObject({
+      participants: [{ id: "you", label: "You", controller: "human" }],
+      capabilityGrants: [],
+      settings: {},
+    });
+    const startBody = apiCalls("POST", /\/api\/experience\/playground\/start$/)[0]!.body!;
+    expect((body.launchContext as { seed?: string }).seed).toBe(
+      (startBody as { seed?: string }).seed,
+    );
   });
 });
 
@@ -1978,5 +1992,77 @@ describe("ExperienceCopilotShell — E6 mobile management surfaces (MOBILE_DEFEC
     expect(desktop.queryByTestId("copilot-mobile-back")).toBeNull();
     expect(desktop.queryByTestId("copilot-edit-tab-header")).toBeNull();
     expect(desktop.container.querySelector('[role="tablist"] span[aria-hidden]')).toBeNull();
+  });
+});
+
+// ── SS-7B2: script trust threading to the inline playground ─────────────
+
+describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
+  it("threads an untrusted import: the playground renders the shared auto-skip state and no discovery POST fires", async () => {
+    const { getByRole, getByTestId, queryByTestId } = renderShell({
+      script: { origin: "imported", firstEnabledAt: null },
+    });
+    await flushSessionLoad();
+
+    jest.useFakeTimers();
+    try {
+      fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+
+      // The shared localized auto-skip state renders (identity i18n — the
+      // shared message key verbatim) instead of the discovery-driven no-fields
+      // line: the editor-threaded trust data reached the playground.
+      expect(getByTestId("playground-auto-skip").textContent).toBe("script_safety_checks_after_enabling");
+      expect(queryByTestId("playground-no-fields")).toBeNull();
+
+      // Advance past the debounce deterministically: the auto-derive POST
+      // would have fired by now if the guard had not skipped it.
+      await act(async () => {
+        jest.advanceTimersByTime(600);
+      });
+      expect(apiCalls("POST", /\/api\/experience\/test\/run$/)).toHaveLength(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("in-app parity: the playground's debounced auto-discovery POSTs as before", async () => {
+    const { getByRole, queryByTestId } = renderShell({
+      script: { origin: "in_app", firstEnabledAt: null },
+    });
+    await flushSessionLoad();
+
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+
+    await waitFor(
+      () => expect(apiCalls("POST", /\/api\/experience\/test\/run$/).length).toBeGreaterThanOrEqual(1),
+      { timeout: 4000 },
+    );
+    expect(queryByTestId("playground-auto-skip")).toBeNull();
+  });
+
+  it("playground findings Show in code leaves Try, opens Rules, and refreshes the same-line reveal", async () => {
+    const { container, findByTestId, getByRole, getByText } = renderShell({
+      rulesCode: "const safe = 1;\nconst value = eval('x');",
+      script: { origin: "imported", firstEnabledAt: null },
+    });
+    await flushSessionLoad();
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByText("experience_playground_start"));
+    await findByTestId("script-safety-findings-modal");
+    fireEvent.click(getByText("script_safety_findings_show_in_code"));
+
+    await waitFor(() => expect(getByRole("radio", { name: "experience_copilot_code" }).getAttribute("aria-checked")).toBe("true"));
+    const firstView = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
+    if (!firstView) throw new Error("rules editor missing");
+    const findingPosition = firstView.state.doc.line(2).from;
+    expect(firstView.state.selection.main.head).toBe(findingPosition);
+
+    firstView.dispatch({ selection: { anchor: 0 } });
+    expect(firstView.state.selection.main.head).toBe(0);
+    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByText("experience_playground_start"));
+    await findByTestId("script-safety-findings-modal");
+    fireEvent.click(getByText("script_safety_findings_show_in_code"));
+    await waitFor(() => expect(EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)?.state.selection.main.head).toBe(findingPosition));
   });
 });

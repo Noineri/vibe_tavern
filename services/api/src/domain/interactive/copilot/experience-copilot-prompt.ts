@@ -30,8 +30,7 @@
  * tool-result pairs (the prompt-pipeline compaction invariant — never split a
  * tool call from its result). A count-based window cap once lived here too;
  * it silently dropped affordable context and was removed (2026-08-19) — the
- * live path always passes a positive constant budget, so the cap guarded
- * nothing.
+ * live path always passes a positive constant budget, so it guarded nothing.
  */
 
 import { dirname } from "node:path";
@@ -253,6 +252,10 @@ export interface ExperienceCopilotAssembleInput {
   /** The CURRENT rules source at turn start (full text). Drives contract
    *  discovery; surfaces as read-only context for the model. */
   readonly rules: string;
+  /** SS-4B (decision 13): false while the script is imported and never
+   *  enabled — deriveContract is then skipped (no sandbox run) and the
+   *  contract section renders an honest skip note. Default true. */
+  readonly rulesTrusted?: boolean;
   /** The CURRENT active visual source (full text), if any. */
   readonly visual?: string;
   /** Visuals already bound to this experience, metadata-only (id/name/kind). */
@@ -321,11 +324,12 @@ export interface ExperienceCopilotAssembleResult {
 
 // ─── Contract derivation ─────────────────────────────────────────────────────
 
-/** Derive a compact contract summary from the current rules source. Runs a
- *  create-only test (pure — the stateless experience tester); on failure
- *  (broken/empty rules) returns null so the model writes rules fresh. */
-function deriveContract(rules: string): ExperienceCopilotContract | null {
-  if (!rules.trim()) return null;
+/** Derive a compact contract summary from the current rules source via a
+ *  create-only test (pure); on failure (broken/empty rules) returns null so
+ *  the model writes rules fresh. SS-4B: skipped (null, NO test run) while
+ *  the script is untrusted — imported code never executes in assembly. */
+function deriveContract(rules: string, trusted: boolean): ExperienceCopilotContract | null {
+  if (!trusted || !rules.trim()) return null;
   const result = runExperienceTest({ rulesCode: rules, actions: [] });
   if (!result.ok) return null;
   const def = result.data.definition;
@@ -488,6 +492,7 @@ function renderContextPackage(
   visual: string | undefined,
   boundVisuals: readonly ExperienceCopilotBoundVisual[] | undefined,
   contract: ExperienceCopilotContract | null,
+  rulesTrusted: boolean,
   testFeedback: ExperienceCopilotTestFeedback | null | undefined,
   step: ExperienceCopilotStep,
 ): string {
@@ -529,7 +534,9 @@ function renderContextPackage(
     sections.push(
       "",
       "## Discovered experience definition",
-      "(discovery failed or rules are empty — the user may be starting fresh; help them write a valid rules package)",
+      rulesTrusted
+        ? "(discovery failed or rules are empty — the user may be starting fresh; help them write a valid rules package)"
+        : "(not derived: script is imported and not yet enabled — the summary is skipped until the user enables it)",
     );
   }
 
@@ -611,8 +618,8 @@ export async function assembleExperienceCopilotPrompt(
 ): Promise<ExperienceCopilotAssembleResult> {
   if (input.model !== undefined) setModelHint(input.model);
 
-  // ── Derive contract from current rules (pure create-only test) ─────────────
-  const contract = deriveContract(input.rules);
+  // ── Derive contract from current rules (SS-4B: skipped while untrusted) ──
+  const contract = deriveContract(input.rules, input.rulesTrusted !== false);
 
   // ── Resolve profile + skill catalog + the canonical API refs ────────────────
   // The profile supplies the base prompt (role + tool mechanics + key
@@ -655,6 +662,7 @@ export async function assembleExperienceCopilotPrompt(
     input.visual,
     input.boundVisuals,
     contract,
+    input.rulesTrusted !== false,
     input.testFeedback ?? null,
     input.step,
   );

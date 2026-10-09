@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createProviderRoutes } from "../src/api/routes/provider.js";
 import { ProviderAdapter } from "../src/api/adapters/provider-adapter.js";
+import { resolveCachedModels } from "../src/domain/providers/model-cache-service.js";
 import type { ProviderRuntimeApi } from "../src/api/contract/runtime-api.js";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
@@ -172,5 +173,87 @@ describe("profile Test: Hi transport routing", () => {
       proxyId: null,
     })).success).toBe(true);
     expect(authorizations.at(-1)).toBeNull();
+  });
+});
+
+describe("novelai_oa keyless model-list auth (NAI-2b)", () => {
+  function recordingFetch(calls: string[]): ProviderFetch {
+    const providerFetch = (async (input: string | URL | Request) => {
+      calls.push(input instanceof Request ? input.url : String(input));
+      return Response.json({ data: [] });
+    }) as ProviderFetch;
+    providerFetch.preconnect = () => {};
+    return providerFetch;
+  }
+
+  test("fetchProviderModels throws before fetching for a keyless novelai_oa profile", async () => {
+    const calls: string[] = [];
+    setProviderFetchFactory({ resolveFetch: async () => recordingFetch(calls) });
+
+    const stores = { proxies: {} } as unknown as StoreContainer;
+    const providerProfileService = {
+      getProviderProfile: async () => ({
+        id: "p1",
+        endpoint: "https://text.novelai.net/oa/v1",
+        apiKey: null,
+        providerPreset: "novelai_oa",
+        proxyMode: "direct",
+        proxyId: null,
+      }),
+    } as unknown as ProviderProfileService;
+    const adapter = new ProviderAdapter(stores, providerProfileService);
+
+    await expect(adapter.fetchProviderModels("p1")).rejects.toThrow(/API key required/);
+    expect(calls).toEqual([]);
+  });
+
+  test("fetchModelsByEndpoint throws before fetching for a keyless novelai_oa endpoint", async () => {
+    const calls: string[] = [];
+    setProviderFetchFactory({ resolveFetch: async () => recordingFetch(calls) });
+
+    const stores = { proxies: {} } as unknown as StoreContainer;
+    const adapter = new ProviderAdapter(stores, {} as ProviderProfileService);
+
+    await expect(
+      adapter.fetchModelsByEndpoint("https://text.novelai.net/oa/v1", undefined, "openai_compat", "direct", null),
+    ).rejects.toThrow(/API key required/);
+    expect(calls).toEqual([]);
+  });
+
+  test("fetchModelsByEndpoint still fetches keylessly for a non-novelai openai-compat endpoint", async () => {
+    const calls: string[] = [];
+    setProviderFetchFactory({ resolveFetch: async () => recordingFetch(calls) });
+
+    const stores = { proxies: {} } as unknown as StoreContainer;
+    const adapter = new ProviderAdapter(stores, {} as ProviderProfileService);
+
+    const models = await adapter.fetchModelsByEndpoint("https://api.example.com/v1", undefined, "openai_compat", "direct", null);
+    expect(models).toEqual([]);
+    expect(calls).toEqual(["https://api.example.com/v1/models"]);
+  });
+
+  test("resolveCachedModels does not fetch for a keyless novelai_oa profile", async () => {
+    const calls: string[] = [];
+    setProviderFetchFactory({ resolveFetch: async () => recordingFetch(calls) });
+
+    const stores = {
+      providers: {
+        getCachedModels: async () => [],
+        saveCachedModels: async () => {},
+      },
+    } as unknown as StoreContainer;
+
+    const result = await resolveCachedModels(stores, {
+      id: "p1",
+      endpoint: "https://text.novelai.net/oa/v1",
+      apiKey: null,
+      providerPreset: "novelai_oa",
+      defaultModel: null,
+      proxyMode: "direct",
+      proxyId: null,
+    });
+
+    expect(result).toEqual([]);
+    expect(calls).toEqual([]);
   });
 });

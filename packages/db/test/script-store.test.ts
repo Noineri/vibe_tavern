@@ -501,3 +501,78 @@ describe("ScriptStore.create owner links (step 2)", () => {
 		expect((await store.getById(created.id))?.name).toBe("both");
 	});
 });
+
+// ─── SS-2: script origin + first-enable trust (SCRIPT_SAFETY_PLAN) ────────
+//
+// origin is fixed at creation (in_app = trusted immediately; imported = trusted
+// only after the first explicit enable). firstEnabledAt is the one-time trust
+// stamp on an imported script's first enabled→true transition; disabling never
+// clears it, edits never re-disable, and origin never changes on edit.
+
+describe("ScriptStore origin + first-enable trust (SS-2)", () => {
+	test("origin defaults to 'in_app' and firstEnabledAt stays null", async () => {
+		const { store } = await setup();
+		const s = await store.create({ name: "own", scopeType: "global" });
+		expect(s.origin).toBe("in_app");
+		expect(s.firstEnabledAt).toBeNull();
+		expect((await store.getById(s.id))?.origin).toBe("in_app");
+	});
+
+	test("an imported script is created untrusted (null stamp, never enabled)", async () => {
+		const { store } = await setup();
+		const s = await store.create({ name: "imported", scopeType: "global", origin: "imported", enabled: false });
+		expect(s.origin).toBe("imported");
+		expect(s.enabled).toBe(false);
+		expect(s.firstEnabledAt).toBeNull();
+	});
+
+	test("first enable of an imported script stamps firstEnabledAt once; disable→enable never re-stamps or clears", async () => {
+		const { store } = await setup();
+		const s = await store.create({ name: "imp", scopeType: "global", origin: "imported", enabled: false });
+		const enabled = await store.update(s.id, { enabled: true });
+		expect(enabled.firstEnabledAt).toBe("2026-06-15T00:00:00.000Z");
+		const stamp = enabled.firstEnabledAt;
+
+		await store.update(s.id, { enabled: false });
+		// Disabling does not clear the stamp.
+		expect((await store.getById(s.id))?.firstEnabledAt).toBe(stamp);
+
+		const reEnabled = await store.update(s.id, { enabled: true });
+		expect(reEnabled.firstEnabledAt).toBe(stamp);
+	});
+
+	test("origin is fixed at creation — updates cannot change it", async () => {
+		const { store } = await setup();
+		const s = await store.create({ name: "imp", scopeType: "global", origin: "imported", enabled: false });
+		const updated = await store.update(s.id, { name: "renamed", code: "new code" });
+		expect(updated.origin).toBe("imported");
+	});
+
+	test("edits never un-trust or re-disable a trusted imported script", async () => {
+		const { store } = await setup();
+		const s = await store.create({ name: "imp", scopeType: "global", origin: "imported", enabled: false });
+		const trusted = await store.update(s.id, { enabled: true });
+		const stamp = trusted.firstEnabledAt;
+
+		const edited = await store.update(s.id, { code: "changed source" });
+		expect(edited.enabled).toBe(true);
+		expect(edited.origin).toBe("imported");
+		expect(edited.firstEnabledAt).toBe(stamp);
+	});
+
+	test("an in_app script is never stamped even when toggled", async () => {
+		const { store } = await setup();
+		const s = await store.create({ name: "own", scopeType: "global", enabled: false });
+		const enabled = await store.update(s.id, { enabled: true });
+		expect(enabled.firstEnabledAt).toBeNull();
+	});
+
+	test("origin/firstEnabledAt are DB-only metadata — not in the canonical file payload", async () => {
+		const { store, content } = await setup();
+		const s = await store.create({ name: "imp", scopeType: "global", origin: "imported", enabled: false });
+		await store.update(s.id, { enabled: true });
+		const payload = (await content.readEntity(STORAGE_FOLDERS.scripts, s.id)) as Record<string, unknown>;
+		expect("origin" in payload).toBe(false);
+		expect("firstEnabledAt" in payload).toBe(false);
+	});
+});

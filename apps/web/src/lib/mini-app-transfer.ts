@@ -170,6 +170,7 @@ export interface MiniAppImportDeps {
     scriptKind?: "interactive";
     scopeType: string;
     enabled?: boolean;
+    origin?: "imported";
   }) => Promise<ScriptRecord>;
   createExperienceVisual: (body: {
     name: string;
@@ -224,7 +225,11 @@ export async function importMiniAppBundle(
     code: bundle.script.code,
     scriptKind: "interactive",
     scopeType: scope.scopeType,
-    enabled: bundle.script.enabled,
+    // Decision 9 + 2: a file-imported mini-app is ALWAYS imported provenance
+    // and ALWAYS arrives disabled — never forward the bundle's exported
+    // `enabled` (do NOT send enabled:true alongside origin='imported').
+    enabled: false,
+    origin: "imported",
   });
 
   // Bind the exported primary FIRST (store promotes it to default), then the

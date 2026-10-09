@@ -88,6 +88,8 @@ export function wireScript(): ScriptRecord {
 		description: "",
 		code: "",
 		enabled: true,
+		origin: "in_app",
+		firstEnabledAt: null,
 		scriptKind: "prompt",
 		creationIntentId: null,
 		scopeType: "global",

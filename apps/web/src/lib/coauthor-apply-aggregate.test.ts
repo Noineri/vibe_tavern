@@ -440,6 +440,41 @@ describe("aggregateCoauthorProposal — lore_bundle (CTX-L3)", () => {
 		expect(result.summaries).toEqual(["first", "second"]);
 	});
 
+	it("CE-B3: reversed delegate completion picks the newest cumulative snapshot, not the last call slot", () => {
+		// Calls A, B, C reserve their draft mutations only AFTER their delegates
+		// complete. When delegates finish C → B → A, their cumulative snapshots
+		// are C={C}, B={C,B}, A={C,B,A}; the activity list still stays A,B,C
+		// because live and persisted rows retain tool-call order.
+		const afterC = {
+			...sampleLoreBundle({ entries: [{ id: "C", lorebookId: "lb1", title: "C", content: "c", keys: ["c"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true }] }),
+			revision: 1,
+		} as CoauthorLoreBundle;
+		const afterCB = {
+			...sampleLoreBundle({ entries: [
+				{ id: "C", lorebookId: "lb1", title: "C", content: "c", keys: ["c"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+				{ id: "B", lorebookId: "lb1", title: "B", content: "b", keys: ["b"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+			] }),
+			revision: 2,
+		} as CoauthorLoreBundle;
+		const afterCBA = {
+			...sampleLoreBundle({ entries: [
+				{ id: "C", lorebookId: "lb1", title: "C", content: "c", keys: ["c"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+				{ id: "B", lorebookId: "lb1", title: "B", content: "b", keys: ["b"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+				{ id: "A", lorebookId: "lb1", title: "A", content: "a", keys: ["a"], secondaryKeys: [], constant: false, position: "before_char", depth: 4, enabled: true },
+			] }),
+			revision: 3,
+		} as CoauthorLoreBundle;
+
+		const result = aggregateCoauthorProposal([
+			loreActivity("A", afterCBA, "A completed last"),
+			loreActivity("B", afterCB, "B completed second"),
+			loreActivity("C", afterC, "C completed first"),
+		], baseDraft());
+
+		expect(result.loreBundle).toEqual(afterCBA);
+		expect(result.applyRequest.loreBundle?.entries.map((entry) => entry.id)).toEqual(["C", "B", "A"]);
+	});
+
 	it("mixed: profile + lore in one turn → both arms in the request", () => {
 		const proposed = profileMd("Fierce.", "A cave.", "{{char}}: *grins*");
 		const lbundle = sampleLoreBundle();

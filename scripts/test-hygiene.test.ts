@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,8 +7,11 @@ import {
 	collectTestFiles,
 	formatReport,
 	isTestFilePath,
+	KNOWN_SUITES,
 	runGuard,
 	scanFile,
+	validateQuarantineList,
+	writeReminderLines,
 } from "./test-hygiene.js";
 
 describe("test-hygiene guard (TH-4c, L2 layer)", () => {
@@ -183,5 +186,153 @@ describe("test-hygiene guard (TH-4c, L2 layer)", () => {
 		expect(isTestFilePath("services/api/test/send-debug-log.test.ts")).toBe(true);
 		expect(isTestFilePath("scripts/test-web.ts")).toBe(false);
 		expect(isTestFilePath("apps/web/src/lib/avatar.ts")).toBe(false);
+	});
+});
+
+describe("quarantine hygiene (TH-8 fix step 10.3)", () => {
+	const TODAY = "2026-10-31";
+
+	function makeTempRoot(): string {
+		const root = mkdtempSync(join(tmpdir(), "vt-hygiene-q-"));
+		writeFileSync(join(root, "exists.test.ts"), "");
+		return root;
+	}
+
+	function listOf(...entries: readonly unknown[]): string {
+		return JSON.stringify(entries);
+	}
+
+	function validEntry(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+		return {
+			suite: "api",
+			file: "exists.test.ts",
+			test: "A ctx > leaf",
+			reason: "known flake — TEST_SUITE_HYGIENE_REPORT fix step 10",
+			since: "2026-09-30",
+			...overrides,
+		};
+	}
+
+	test("the known-suite check covers all eight orchestrator suites", () => {
+		expect([...KNOWN_SUITES].sort()).toEqual([
+			"api",
+			"api-contracts",
+			"db",
+			"domain",
+			"import-export",
+			"prompt-pipeline",
+			"scripts",
+			"web",
+		].sort());
+	});
+
+	test("a 31-day-old entry produces the reminder line and no violation", () => {
+		const root = makeTempRoot();
+		try {
+			// since 2026-09-30 → today 2026-10-31 = 31 days.
+			const report = validateQuarantineList(listOf(validEntry({ since: "2026-09-30" })), root, TODAY);
+			expect(report.violations).toEqual([]);
+			expect(report.reminders).toEqual([
+				"quarantined since 2026-09-30 (31 days): api A ctx > leaf",
+			]);
+			// The reminder never fails the guard.
+			const text = formatReport(runGuard([], () => ""), report);
+			expect(text).toContain("Hygiene: OK (0 test files, all rules green)");
+			expect(text).toContain("quarantined since 2026-09-30 (31 days): api A ctx > leaf");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("the reminder boundary is strictly greater than 30 days", () => {
+		const root = makeTempRoot();
+		try {
+			// exactly 30 days (2026-10-01 → 2026-10-31) — not a reminder.
+			const at30 = validateQuarantineList(listOf(validEntry({ since: "2026-10-01" })), root, TODAY);
+			expect(at30.violations).toEqual([]);
+			expect(at30.reminders).toEqual([]);
+			// 31 days — reminder.
+			const at31 = validateQuarantineList(listOf(validEntry({ since: "2026-09-30" })), root, TODAY);
+			expect(at31.reminders).toEqual(["quarantined since 2026-09-30 (31 days): api A ctx > leaf"]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("rejects a future since date", () => {
+		const root = makeTempRoot();
+		try {
+			const { violations } = validateQuarantineList(listOf(validEntry({ since: "2026-11-01" })), root, TODAY);
+			expect(violations.some((v) => v.rule === "quarantine-future-since")).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("rejects an unknown suite", () => {
+		const root = makeTempRoot();
+		try {
+			const { violations } = validateQuarantineList(listOf(validEntry({ suite: "nope" })), root, TODAY);
+			expect(violations.some((v) => v.rule === "quarantine-unknown-suite")).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("rejects a missing file", () => {
+		const root = makeTempRoot();
+		try {
+			const { violations } = validateQuarantineList(listOf(validEntry({ file: "missing.test.ts" })), root, TODAY);
+			expect(violations.some((v) => v.rule === "quarantine-missing-file")).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("rejects an empty test and an empty reason", () => {
+		const root = makeTempRoot();
+		try {
+			const emptyTest = validateQuarantineList(listOf(validEntry({ test: "" })), root, TODAY);
+			expect(emptyTest.violations.some((v) => v.rule === "quarantine-empty-test")).toBe(true);
+			const emptyReason = validateQuarantineList(listOf(validEntry({ reason: "  " })), root, TODAY);
+			expect(emptyReason.violations.some((v) => v.rule === "quarantine-empty-reason")).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("rejects a malformed since date and a non-array list", () => {
+		const root = makeTempRoot();
+		try {
+			const badSince = validateQuarantineList(listOf(validEntry({ since: "10-01" })), root, TODAY);
+			expect(badSince.violations.some((v) => v.rule === "quarantine-bad-since")).toBe(true);
+			const notArray = validateQuarantineList(JSON.stringify({ suite: "api" }), root, TODAY);
+			expect(notArray.violations.some((v) => v.rule === "quarantine-not-array")).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("rejects unparsable JSON", () => {
+		const root = makeTempRoot();
+		try {
+			const { violations } = validateQuarantineList("{ not json", root, TODAY);
+			expect(violations.some((v) => v.rule === "quarantine-json-unparsable")).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("appends reminder lines to the step summary and no-ops without a path", () => {
+		const root = makeTempRoot();
+		try {
+			const summaryPath = join(root, "summary.md");
+			const reminders = ["quarantined since 2026-09-30 (31 days): api A ctx > leaf"];
+			writeReminderLines(reminders, summaryPath);
+			expect(readFileSync(summaryPath, "utf8")).toBe("quarantined since 2026-09-30 (31 days): api A ctx > leaf\n");
+			expect(() => writeReminderLines(reminders, undefined)).not.toThrow();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

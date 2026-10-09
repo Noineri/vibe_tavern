@@ -57,7 +57,7 @@ import { characterDefaults } from "../../lib/character-draft.js";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "../../lib/coauthor-apply-aggregate.js";
 import { selectLoreBundle, allLorebookIds, allEntryIds } from "../../lib/lore-selection.js";
 import { applyCoauthorDraft } from "../../api/chat-api.js";
-import type { AppCharacter } from "../../api/types.js";
+import type { AppCharacter, LorebookRecord, ScriptRecord, AppCharacterEntry } from "../../api/types.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useIsSending } from "../../stores/chat-store.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
@@ -77,7 +77,6 @@ import { BoundResourcesField } from "../shared/BoundResourcesField.js";
 import { listAllLorebooks } from "../../api/lorebook-api.js";
 import { listAllScripts } from "../../api/script-api.js";
 import { listPersonas } from "../../api/persona-api.js";
-import type { LorebookRecord, ScriptRecord, AppCharacterEntry } from "../../api/types.js";
 import type { PersonaRecord } from "@vibe-tavern/api-contracts";
 import { setCoauthorContextLinksAction } from "../../stores/api-actions/chat-actions.js";
 import { CoauthorLoreReview, type CoauthorLoreReviewLabels } from "./CoauthorLoreReview.js";
@@ -139,6 +138,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   const [allLorebooks, setAllLorebooks] = useState<LorebookRecord[]>([]);
   const [allPersonas, setAllPersonas] = useState<PersonaRecord[]>([]);
   const [allScripts, setAllScripts] = useState<ScriptRecord[]>([]);
+  const [resourcesRefreshToken, setResourcesRefreshToken] = useState(0);
   useEffect(() => {
     let cancelled = false;
     void Promise.all([listAllLorebooks(), listPersonas(), listAllScripts()]).then(([lb, pe, sc]) => {
@@ -148,7 +148,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       setAllScripts(sc);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [resourcesRefreshToken]);
   const characterTargets: LinkTarget[] = useMemo(
     () => allCharacters.map(characterToLinkTarget),
     [allCharacters],
@@ -382,7 +382,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       // Apply leaves lore untouched (consistent with omitted profile/greeting).
       if (proposal.loreBundle) {
         const selected = selectLoreBundle(proposal.loreBundle, selectedLorebookIds, selectedEntryIds);
-        if (selected.lorebooks.length > 0) {
+        if (selected.lorebooks.length > 0 || selected.entries.length > 0) {
           request.loreBundle = selected;
         } else {
           delete request.loreBundle;
@@ -394,6 +394,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       );
       useSnapshotStore.getState().ingestSnapshot(snapshot);
       useCoauthorTurnStore.getState().clearTurn(chatId); // → reviewing falls to idle
+      if (request.loreBundle) setResourcesRefreshToken((token) => token + 1);
       // Re-seed the form/editor to the freshly-written canonical so the user
       // immediately sees the applied document (the snapshot carries the new card).
       const fresh = useSnapshotStore.getState().character;
@@ -424,7 +425,12 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   const canSave = (form.watch("name") || "").trim().length > 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col max-md:block max-md:overflow-y-auto">
+    // max-md:overflow-x-clip — D4 (v1.2.1), co-author instance: the sticky
+    // glass-bar's ::before frost bleeds 20px past the bar; overflow-y:auto
+    // coerces overflow-x to auto → a 20px horizontal swipe-scroll on the
+    // mobile Doc tab (owner 2026-09-24; root sw 410 vs cw 390, no visible
+    // offender). Same fix as BuildMode's container; visually lossless.
+    <div className="flex h-full min-h-0 flex-col max-md:block max-md:overflow-y-auto max-md:overflow-x-clip">
       {/* Header bar — title + state subtitle + save. */}
       <div className="glass-bar sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-surface px-4 py-2.5">
         <div className="min-w-0">
@@ -500,6 +506,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
               isMobile={false}
               lorebookCaption={t("coauthor.context.bound_lorebooks_caption")}
               scriptCaption={t("coauthor.context.bound_scripts_caption")}
+              refreshToken={resourcesRefreshToken}
             />
           </div>
         )}

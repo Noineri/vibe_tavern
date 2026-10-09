@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { COAUTHOR_TRANSPORT, GENERATION_MODE, MODEL_FAVORITE_SCOPE, type SamplerFieldId } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, GENERATION_MODE, MODEL_FAVORITE_SCOPE, PHRASE_REP_PEN, THINKING_MODE, type SamplerFieldId } from "@vibe-tavern/domain";
 import { providerProxyModeSchema } from "./proxy-schema.js";
 import { generationFormatSchema as generationFormatSchemaRef } from "./prompt-preset-schema.js";
 
@@ -47,6 +47,23 @@ const samplerFieldSchemas = {
   frequencyPenalty: z.number().optional(),
   presencePenalty: z.number().optional(),
   repetitionPenalty: z.number().optional(),
+  // NovelAI sampler fields (NOVELAI_PROVIDER_PLAN Wave 1) — numbers stay
+  // z.number(); the two vocabularies are zod enums built from the domain
+  // constants (PHRASE_REP_PEN / THINKING_MODE) so the wire set cannot drift
+  // from the UI option lists.
+  unifiedLinear: z.number().optional(),
+  unifiedQuad: z.number().optional(),
+  unifiedConf: z.number().optional(),
+  repetitionPenaltySlope: z.number().optional(),
+  phraseRepPen: z.enum([
+    PHRASE_REP_PEN.off,
+    PHRASE_REP_PEN.veryLight,
+    PHRASE_REP_PEN.light,
+    PHRASE_REP_PEN.medium,
+    PHRASE_REP_PEN.aggressive,
+    PHRASE_REP_PEN.veryAggressive,
+  ]).optional(),
+  thinkingMode: z.enum([THINKING_MODE.auto, THINKING_MODE.on, THINKING_MODE.off]).optional(),
   stopSequences: z.array(z.string()).optional(),
   bannedStrings: z.array(z.string()).optional(),
   logitBias: z.array(z.object({

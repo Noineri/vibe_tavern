@@ -72,7 +72,6 @@ import {
 import {
   EXPERIENCE_CONTROLLER,
   EXPERIENCE_SESSION_STATUS,
-  EXPERIENCE_VIEWER_KIND,
   type ExperienceAction,
   type ExperienceActionDescriptor,
   type ExperienceCapability,
@@ -86,6 +85,11 @@ import type {
   ExperienceSeatLegality,
   ExperienceSeatLegalityMatrix,
 } from "@vibe-tavern/api-contracts";
+import {
+  resolveProjectionViewer,
+  resolveViewerForAction,
+  viewerKindForController,
+} from "./experience-test-viewers.js";
 
 // ─── Tunables ────────────────────────────────────────────────────────────────
 
@@ -235,6 +239,8 @@ export interface ExperienceTestRunInput {
   readonly participants?: readonly ExperienceParticipant[];
   readonly capabilityGrants?: readonly ExperienceCapability[];
   readonly seed?: string;
+  /** Seat whose view is projected in the response; defaults to the first human. */
+  readonly humanSeatId?: string;
   /** Ordered action intentions to replay after create. An empty/omitted list
    *  yields a create-only run (discover + create + project + legal actions). */
   readonly actions?: readonly ExperienceAction[];
@@ -317,38 +323,6 @@ function buildSeatLegalityMatrix(
       ? seats.filter((s) => s.error === undefined && s.count > 0).map((s) => s.participantId)
       : [];
   return { seats, turnOwners };
-}
-
-function viewerKindForController(controller: string): ExperienceViewer["kind"] {
-  if (controller === EXPERIENCE_CONTROLLER.human) return EXPERIENCE_VIEWER_KIND.human;
-  if (controller === EXPERIENCE_CONTROLLER.script) return EXPERIENCE_VIEWER_KIND.script;
-  if (controller === EXPERIENCE_CONTROLLER.model) return EXPERIENCE_VIEWER_KIND.model;
-  return EXPERIENCE_VIEWER_KIND.observer;
-}
-
-/** The viewer the response projection is computed for: the human seat, or the
- *  observer view when the roster has no human-controlled seat. */
-function resolveProjectionViewer(participants: readonly ExperienceParticipant[]): ExperienceViewer {
-  const human = participants.find((p) => p.controller === EXPERIENCE_CONTROLLER.human);
-  return human !== undefined
-    ? { kind: EXPERIENCE_VIEWER_KIND.human, participantId: human.id }
-    : { kind: EXPERIENCE_VIEWER_KIND.observer };
-}
-
-/** Resolve the viewer a submitted action is for: the named seat (kind derived
- *  from its controller), or the projection viewer when no participantId is given. */
-function resolveViewerForAction(
-  participants: readonly ExperienceParticipant[],
-  participantId?: string,
-): ExperienceViewer {
-  if (participantId !== undefined) {
-    const p = participants.find((seat) => seat.id === participantId);
-    if (p !== undefined) {
-      return { kind: viewerKindForController(p.controller), participantId: p.id };
-    }
-    return { kind: EXPERIENCE_VIEWER_KIND.human, participantId };
-  }
-  return resolveProjectionViewer(participants);
 }
 
 // ─── Error construction ──────────────────────────────────────────────────────
@@ -602,7 +576,7 @@ export function runExperienceTest(input: ExperienceTestRunInput): ExperienceTest
     applied.set(action.requestId, step);
   }
 
-  const projectionViewer = resolveProjectionViewer(participants);
+  const projectionViewer = resolveProjectionViewer(participants, input.humanSeatId);
   const projection = projectForResponse(
     code,
     scriptName,

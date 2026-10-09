@@ -1,5 +1,9 @@
 import { describe, test, expect } from "bun:test";
-import { buildExperienceCopilotTools } from "../src/domain/interactive/copilot/experience-copilot-tools.js";
+import {
+  buildExperienceCopilotTools,
+  type ExperienceCopilotRunSimulateDigest,
+  type ExperienceCopilotRunTestDigest,
+} from "../src/domain/interactive/copilot/experience-copilot-tools.js";
 
 /**
  * Experience-Copilot tools propose rules/visual edits and run read-only tests;
@@ -29,6 +33,97 @@ context.experience.register({
     if (action.type === "reset") return { state: { count: 0 }, status: "completed", events: [] };
     return { state: context.state, status: "active", events: [] };
   },
+});
+`;
+
+/** The report's corrected reference Round (P3.7): proposal validation must
+ *  accept the same participants-based example the copilot is told to author. */
+const REFERENCE_ROUND_RULES = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "round", name: "Round" },
+  capabilities: [{ capability: "participants", reason: "per-player turns and scores" }],
+  create(context) {
+    var ids = context.participants.map(function (p) { return p.id; });
+    var names = context.participants.map(function (p) { return p.label || p.id; });
+    return { round: 1, turn: 0, ids: ids, names: names, scores: ids.map(function () { return 0; }) };
+  },
+  project(context) {
+    var s = context.state;
+    return {
+      round: s.round,
+      activePlayer: s.names[s.turn] || s.names[0],
+      scores: s.scores.slice(),
+      names: s.names.slice()
+    };
+  },
+  actions(context, viewer) {
+    var s = context.state;
+    if (!viewer || viewer.participantId !== s.ids[s.turn]) return [];
+    return [
+      { type: "score", label: "Score" },
+      { type: "pass", label: "Pass turn" }
+    ];
+  },
+  choose(context) {
+    var s = context.state;
+    return { type: s.scores[s.turn] < s.round ? "score" : "pass" };
+  },
+  reduce(context, action) {
+    var s = context.state;
+    if (action.participantId !== s.ids[s.turn]) {
+      return { state: s, status: "active", events: [] };
+    }
+    if (action.type === "score") {
+      var scores = s.scores.slice(); scores[s.turn] += 1;
+      return { state: { round: s.round, turn: s.turn, ids: s.ids, names: s.names, scores: scores }, status: "active", events: [{ visibility: "public", type: "scored" }] };
+    }
+    if (action.type === "pass") {
+      var next = (s.turn + 1) % s.ids.length;
+      var round = next === 0 ? s.round + 1 : s.round;
+      return { state: { round: round, turn: next, ids: s.ids, names: s.names, scores: s.scores.slice() }, status: "active", events: [{ visibility: "public", type: "turn_passed" }] };
+    }
+    return { state: s, status: "active", events: [] };
+  }
+});
+`;
+
+/** A two-seat-capable round that exposes settings/seed use in projected state
+ *  and can start on the script seat without changing roster order. */
+const GROUNDED_ROUND_RULES = `
+context.experience.register({
+  apiVersion: 1,
+  manifest: { id: "grounded_round", name: "Grounded Round" },
+  capabilities: [
+    { capability: "participants", reason: "turn owners" },
+    { capability: "deterministic_random", reason: "seeded opening" }
+  ],
+  create(context, settings) {
+    var ids = context.participants.map(function (participant) { return participant.id; });
+    return {
+      turn: settings && settings.botFirst ? "bot" : ids[0],
+      ids: ids,
+      marker: settings && settings.marker ? settings.marker : null,
+      roll: context.random.int(0, 1000000000)
+    };
+  },
+  project(context) { return context.state; },
+  actions(context, viewer) {
+    return viewer && viewer.participantId === context.state.turn ? [{ type: "pass" }] : [];
+  },
+  choose(context, { legal }) { return legal[0]; },
+  reduce(context, action) {
+    return {
+      state: {
+        turn: action.participantId === "bot" ? "you" : "bot",
+        ids: context.state.ids,
+        marker: context.state.marker,
+        roll: context.state.roll
+      },
+      status: "active",
+      events: []
+    };
+  }
 });
 `;
 
@@ -98,7 +193,9 @@ describe("experience-copilot-tools: write_buffer rules-validation guard", () => 
         { target: "rules", content: SYNTAX_ERROR_RULES, summary: "bad" },
         ctx,
       ),
-    ).rejects.toThrow(/write_buffer: proposed rules failed validation/);
+    ).rejects.toThrow(
+      /write_buffer: proposed rules failed validation .*launchContext=\{"source":"derived","seats":\[\{"id":"you","controller":"human"\}\],"grants":\[\]\}/,
+    );
   });
 
   test("a missing-method rules proposal throws naming the typed error", async () => {
@@ -109,6 +206,15 @@ describe("experience-copilot-tools: write_buffer rules-validation guard", () => 
         ctx,
       ),
     ).rejects.toThrow(/write_buffer: proposed rules failed validation/);
+  });
+
+  test("the corrected reference Round passes proposal validation under the derived launch context", async () => {
+    const tools = buildExperienceCopilotTools();
+    const out = await tools.write_buffer.execute(
+      { target: "rules", content: REFERENCE_ROUND_RULES, summary: "Reference Round" },
+      ctx,
+    );
+    expect(out).toMatchObject({ target: "rules", proposed: REFERENCE_ROUND_RULES });
   });
 
   test("a rejected proposal does NOT advance the buffer (non-poisoning)", async () => {
@@ -247,6 +353,55 @@ describe("experience-copilot-tools: run_test (read-only digest)", () => {
     expect(edited.proposed).toContain("Tally");
   });
 
+  test("derived context is echoed with the default seats/grants and per-seat legality", async () => {
+    const tools = buildExperienceCopilotTools({ rules: REFERENCE_ROUND_RULES });
+    const digest = await tools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
+
+    expect(digest.ok).toBe(true);
+    expect(digest.legalActionTypes).toEqual(["score", "pass"]);
+    expect(digest.seatLegality?.turnOwners).toEqual(["you"]);
+    expect(digest.launchContext).toEqual({
+      source: "derived",
+      seats: [{ id: "you", controller: "human" }],
+      grants: ["participants"],
+    });
+  });
+
+  test("an explicit sandbox context uses its settings, selected seat, grants, and seed verbatim", async () => {
+    const launchContext = {
+      participants: [
+        { id: "you", label: "You", controller: "human" as const },
+        { id: "bot", label: "Bot", controller: "script" as const },
+      ],
+      capabilityGrants: ["participants" as const, "deterministic_random" as const],
+      settings: { botFirst: true, marker: "sandbox-value" },
+      seed: "seed-alpha",
+      humanSeatId: "bot",
+    };
+    const tools = buildExperienceCopilotTools({ rules: GROUNDED_ROUND_RULES, launchContext });
+    const digest = await tools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
+
+    expect(digest.ok).toBe(true);
+    expect(digest.legalActionTypes).toEqual(["pass"]);
+    expect(digest.stateSummary).toContain("sandbox-value");
+    expect(digest.launchContext).toEqual({
+      source: "sandbox",
+      seats: [
+        { id: "you", controller: "human" },
+        { id: "bot", controller: "script" },
+      ],
+      grants: ["participants", "deterministic_random"],
+      seed: "seed-alpha",
+    });
+
+    const differentSeedTools = buildExperienceCopilotTools({
+      rules: GROUNDED_ROUND_RULES,
+      launchContext: { ...launchContext, seed: "seed-beta" },
+    });
+    const differentSeed = await differentSeedTools.run_test.execute({}, ctx) as ExperienceCopilotRunTestDigest;
+    expect(differentSeed.stateSummary).not.toBe(digest.stateSummary);
+  });
+
   test("on invalid (seeded) rules returns a structured error digest (ok:false)", async () => {
     const tools = buildExperienceCopilotTools({ rules: SYNTAX_ERROR_RULES });
     const digest = (await tools.run_test.execute({}, ctx)) as never;
@@ -267,10 +422,32 @@ describe("experience-copilot-tools: run_simulate (read-only digest)", () => {
   test("on valid rules returns a digest with a stop reason and iteration count", async () => {
     const tools = buildExperienceCopilotTools({ rules: VALID_RULES });
     const digest = (await tools.run_simulate.execute({}, ctx)) as never;
-    // With no participants the simulation finds no actor → no_legal_action.
+    // With the derived human seat, this ungated counter stops at its human boundary.
     expect(digest.ok).toBe(true);
     expect(typeof digest.stopReason).toBe("string");
     expect(typeof digest.iterations).toBe("number");
+  });
+
+  test("an explicit human+script sandbox advances the script seat past iteration zero", async () => {
+    const tools = buildExperienceCopilotTools({
+      rules: GROUNDED_ROUND_RULES,
+      launchContext: {
+        participants: [
+          { id: "you", label: "You", controller: "human" },
+          { id: "bot", label: "Bot", controller: "script" },
+        ],
+        capabilityGrants: ["participants", "deterministic_random"],
+        settings: { botFirst: true },
+        seed: "simulation-seed",
+        humanSeatId: "you",
+      },
+    });
+    const digest = await tools.run_simulate.execute({}, ctx) as ExperienceCopilotRunSimulateDigest;
+
+    expect(digest.ok).toBe(true);
+    expect(digest.iterations).toBe(1);
+    expect(digest.stopReason).toBe("awaiting_human");
+    expect(digest.launchContext?.source).toBe("sandbox");
   });
 });
 
@@ -478,5 +655,106 @@ describe("experience-copilot-tools: ToolSet shape + gating", () => {
     expect(tools.suggest_visual_binding).toBeUndefined();
     // read_skill_file is always on regardless of toolSet.
     expect(tools.read_skill_file).toBeDefined();
+  });
+});
+
+// ─── SS-4B: untrusted-script trust gate (SCRIPT_SAFETY_PLAN decision 10) ─────
+//
+// `rulesTrusted: false` models an IMPORTED, NEVER-ENABLED script: its code
+// must not execute in the copilot. Runs refuse with a structured reason the
+// model relays; rules proposals are accepted WITHOUT the sandbox run, marked.
+
+describe("experience-copilot-tools: SS-4B trust gate (rulesTrusted: false)", () => {
+  test("run_test refuses an untrusted script with a structured digest — the code never runs", async () => {
+    // VALID rules prove non-execution: a real run would return ok:true; the
+    // refusal fires before the sandbox is ever touched.
+    const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
+    const digest = (await tools.run_test.execute({}, ctx)) as unknown as {
+      ok: boolean;
+      errorCode?: string;
+      errorMessage?: string;
+    };
+    expect(digest.ok).toBe(false);
+    expect(digest.errorCode).toBe("script_not_trusted");
+    expect(digest.errorMessage).toContain("imported and never enabled");
+    expect(digest.errorMessage).toContain("enable it in the editor first");
+  });
+
+  test("run_simulate refuses an untrusted script with the same structured digest", async () => {
+    const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
+    const digest = (await tools.run_simulate.execute({}, ctx)) as unknown as {
+      ok: boolean;
+      errorCode?: string;
+      errorMessage?: string;
+    };
+    expect(digest.ok).toBe(false);
+    expect(digest.errorCode).toBe("script_not_trusted");
+    expect(digest.errorMessage).toContain("imported and never enabled");
+  });
+
+  test("write_buffer accepts a rules proposal WITHOUT validation and carries the «not validated» marker", async () => {
+    // SYNTAX_ERROR rules would throw on the trusted path — acceptance proves
+    // the sandbox run was skipped; the marker names the trust state.
+    const tools = buildExperienceCopilotTools({ rulesTrusted: false });
+    const out = (await tools.write_buffer.execute(
+      { target: "rules", content: SYNTAX_ERROR_RULES, summary: "draft" },
+      ctx,
+    )) as unknown as { target: string; proposed: string; notValidated?: string };
+    expect(out.target).toBe("rules");
+    expect(out.proposed).toBe(SYNTAX_ERROR_RULES);
+    expect(out.notValidated).toBe("not validated: script is imported and not yet enabled");
+  });
+
+  test("edit_buffer accepts invalid edits without validation and carries the marker; the buffer still advances", async () => {
+    const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: false });
+    const out = (await tools.edit_buffer.execute(
+      {
+        target: "rules",
+        edits: [{ search: "context.experience.register({", replace: "context.experience.register({ !!broken" }],
+        summary: "break",
+      },
+      ctx,
+    )) as unknown as { notValidated?: string };
+    expect(out.notValidated).toBe("not validated: script is imported and not yet enabled");
+    // The working buffer advanced (no validation throw, no rollback).
+    const after = (await tools.edit_buffer.execute(
+      { target: "rules", edits: [{ search: " !!broken", replace: "" }], summary: "fix" },
+      ctx,
+    )) as unknown as { proposed: string; notValidated?: string };
+    expect(after.proposed).toContain("context.experience.register({");
+    expect(after.notValidated).toBe("not validated: script is imported and not yet enabled");
+  });
+
+  test("visual proposals never carry the marker (no rules validation exists for visual)", async () => {
+    const tools = buildExperienceCopilotTools({ rulesTrusted: false });
+    const out = (await tools.write_buffer.execute(
+      { target: "visual", content: "<div>x</div>", summary: "v" },
+      ctx,
+    )) as unknown as { target: string; proposed: string; notValidated?: string };
+    expect(out.target).toBe("visual");
+    expect(out.proposed).toBe("<div>x</div>");
+    expect(out.notValidated).toBeUndefined();
+  });
+});
+
+describe("experience-copilot-tools: SS-4B trusted parity (after first enable)", () => {
+  test("rulesTrusted: true — run_test executes, rules proposals validate and carry NO marker", async () => {
+    const tools = buildExperienceCopilotTools({ rules: VALID_RULES, rulesTrusted: true });
+    const digest = (await tools.run_test.execute({}, ctx)) as unknown as {
+      ok: boolean;
+      legalActionTypes?: string[];
+    };
+    expect(digest.ok).toBe(true);
+    expect(digest.legalActionTypes).toEqual(["increment", "reset"]);
+
+    // Validation still throws on invalid rules for a trusted script.
+    await expect(
+      tools.write_buffer.execute({ target: "rules", content: SYNTAX_ERROR_RULES, summary: "bad" }, ctx),
+    ).rejects.toThrow(/failed validation/);
+    const out = (await tools.write_buffer.execute(
+      { target: "rules", content: VALID_RULES, summary: "ok" },
+      ctx,
+    )) as unknown as { notValidated?: string };
+    expect(out.notValidated).toBeUndefined();
   });
 });

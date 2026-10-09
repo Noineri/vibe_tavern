@@ -3,6 +3,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { formatTestReport, type TestSuiteResult } from "./test-report.js";
+import { classifySuiteRun, readQuarantineList, type QuarantineEntry } from "./test-quarantine.js";
 
 export { formatTestReport, type TestSuiteResult } from "./test-report.js";
 
@@ -17,6 +18,21 @@ export interface TestSuite {
 	 * (`bun run test web`) runs it everywhere.
 	 */
 	readonly skipOnWindows?: boolean;
+	/**
+	 * JUnit collection for the quarantine verdict (TH-8 fix step 10.2).
+	 *
+	 * - `"appended"`: the suite is a plain `bun test` invocation, so the runner
+	 *   appends `--reporter=junit --reporter-outfile <suite temp root>/junit.xml`
+	 *   AT SPAWN TIME. The flags deliberately stay out of `command` itself —
+	 *   that array is the declared, pinned argv (`suite.command` is asserted in
+	 *   test.test.ts), and the report path is per-run private state.
+	 * - `"child"`: the suite's command cannot take reporter flags (the web suite
+	 *   runs `bun run test`, whose strict parseArgs exits 2 on unknown flags);
+	 *   its own runner writes the report. The target path is handed down via the
+	 *   `VIBE_TAVERN_TEST_JUNIT_OUT` environment variable and read here after
+	 *   the child exits.
+	 */
+	readonly junit?: "appended" | "child";
 }
 
 export type TestSuiteStartHandler = (suite: TestSuite, index: number, total: number) => void;
@@ -75,41 +91,49 @@ export function createTestSuites(): readonly TestSuite[] {
 			cwd: join(ROOT, "apps", "web"),
 			command: [BUN, "run", "test"],
 			skipOnWindows: true,
+			junit: "child",
 		},
 		{
 			name: "api",
 			cwd: join(ROOT, "services", "api"),
 			command: bunTestCommand(),
+			junit: "appended",
 		},
 		{
 			name: "db",
 			cwd: join(ROOT, "packages", "db"),
 			command: bunTestCommand(),
+			junit: "appended",
 		},
 		{
 			name: "scripts",
 			cwd: ROOT,
 			command: bunTestCommand("scripts"),
+			junit: "appended",
 		},
 		{
 			name: "prompt-pipeline",
 			cwd: join(ROOT, "packages", "prompt-pipeline"),
 			command: bunTestCommand(),
+			junit: "appended",
 		},
 		{
 			name: "api-contracts",
 			cwd: join(ROOT, "packages", "api-contracts"),
 			command: bunTestCommand(),
+			junit: "appended",
 		},
 		{
 			name: "import-export",
 			cwd: join(ROOT, "packages", "import-export"),
 			command: bunTestCommand(),
+			junit: "appended",
 		},
 		{
 			name: "domain",
 			cwd: join(ROOT, "packages", "domain"),
 			command: bunTestCommand(),
+			junit: "appended",
 		},
 	];
 }
@@ -137,8 +161,9 @@ const HOST_PROXY_ENV_KEYS = [
 ] as const;
 
 /** Suite spawn environment: the host env minus the desktop proxy variables
- *  (see HOST_PROXY_ENV_KEYS), plus the per-suite temp and color overrides. */
-function suiteSpawnEnv(suiteTempRoot: string): Record<string, string> {
+ *  (see HOST_PROXY_ENV_KEYS), plus the per-suite temp, color and — for suites
+ *  whose own runner writes the JUnit report — quarantine-handoff overrides. */
+function suiteSpawnEnv(suiteTempRoot: string, junitOut?: string): Record<string, string> {
 	const env: Record<string, string> = {};
 	for (const [key, value] of Object.entries(Bun.env)) {
 		if (value === undefined) continue;
@@ -150,10 +175,15 @@ function suiteSpawnEnv(suiteTempRoot: string): Record<string, string> {
 	env.TMPDIR = suiteTempRoot;
 	env.FORCE_COLOR = "0";
 	env.NO_COLOR = "1";
+	if (junitOut !== undefined) env.VIBE_TAVERN_TEST_JUNIT_OUT = junitOut;
 	return env;
 }
 
-async function runTestSuite(suite: TestSuite, tempRoot: string): Promise<TestSuiteResult> {
+async function runTestSuite(
+	suite: TestSuite,
+	tempRoot: string,
+	quarantine: readonly QuarantineEntry[],
+): Promise<TestSuiteResult> {
 	const startedAt = performance.now();
 	// PER-SUITE temp dir, deliberately not shared: suites run several at a time,
 	// and the store-cleanup preload's process-global afterAll sweeps `vt-*` dirs
@@ -165,24 +195,57 @@ async function runTestSuite(suite: TestSuite, tempRoot: string): Promise<TestSui
 	// seeing another suite's dirs. The runner's final recursive rm of the shared
 	// root still cleans everything up.
 	const suiteTempRoot = await mkdtemp(join(tempRoot, `${suite.name}-`));
+	// The JUnit report always lands in the suite's OWN private temp root: two
+	// suites must never share a report path, and the root is swept with it.
+	const junitReportPath = suite.junit === undefined ? null : join(suiteTempRoot, "junit.xml");
 	try {
-		const process = Bun.spawn([...suite.command], {
-			cwd: suite.cwd,
-			stdout: "pipe",
-			stderr: "pipe",
-			env: suiteSpawnEnv(suiteTempRoot),
-		});
+		const process = Bun.spawn(
+			[
+				...suite.command,
+				// Reporter flags are appended at spawn time, never baked into
+				// `command` — see TestSuite.junit. Bun accepts flags after the
+				// positional filter (verified on 1.4.2), and the console reporter
+				// still prints alongside the junit outfile.
+				...(suite.junit === "appended" && junitReportPath !== null
+					? ["--reporter=junit", "--reporter-outfile", junitReportPath]
+					: []),
+			],
+			{
+				cwd: suite.cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+				env: suiteSpawnEnv(
+					suiteTempRoot,
+					suite.junit === "child" && junitReportPath !== null ? junitReportPath : undefined,
+				),
+			},
+		);
 		const [exitCode, stdout, stderr] = await Promise.all([
 			process.exited,
 			new Response(process.stdout).text(),
 			new Response(process.stderr).text(),
 		]);
+		const durationMs = Math.round(performance.now() - startedAt);
+		if (junitReportPath === null) {
+			return { name: suite.name, exitCode, durationMs, stdout, stderr };
+		}
+		// The quarantine verdict (TH-8 fix step 10.2): a suite whose every failed
+		// test case matches the committed list PASSES even though bun exited
+		// non-zero, so the recorded exit code becomes the verdict; anything the
+		// verdict still blocks keeps bun's own non-zero code. The quarantined
+		// matches ride on the result so the final report can list them.
+		const report = await Bun.file(junitReportPath).exists()
+			? await Bun.file(junitReportPath).text()
+			: "";
+		const verdict = classifySuiteRun({ exitCode, report, suite: suite.name, quarantine });
+		const green = verdict.blocking.length === 0 && verdict.fileLevel.length === 0;
 		return {
 			name: suite.name,
-			exitCode,
-			durationMs: Math.round(performance.now() - startedAt),
+			exitCode: green ? 0 : exitCode,
+			durationMs,
 			stdout,
 			stderr,
+			quarantined: verdict.quarantined,
 		};
 	} catch (error: unknown) {
 		const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -201,6 +264,9 @@ export interface TestRunOptions {
 	readonly tempBase?: string;
 	/** How many suites may run at once. Defaults to `suiteConcurrency()`. */
 	readonly concurrency?: number;
+	/** Overrides the committed quarantine list (scripts/test-quarantine.json) —
+	 *  tests inject entries without touching the repo. */
+	readonly quarantine?: readonly QuarantineEntry[];
 }
 
 /**
@@ -222,6 +288,7 @@ export async function runTestSuites(
 	const tempBase = resolve(options.tempBase ?? Bun.env.VIBE_TAVERN_TEST_TEMP_BASE ?? tmpdir());
 	await mkdir(tempBase, { recursive: true });
 	const testTempRoot = await mkdtemp(join(tempBase, "vibe-tavern-test-run-"));
+	const quarantine = options.quarantine ?? await readQuarantineList();
 	// Indexed rather than pushed: suites finish out of order, the report must not.
 	const results: Array<TestSuiteResult | undefined> = Array.from({ length: suites.length });
 	const poolSize = Math.max(1, Math.min(options.concurrency ?? suiteConcurrency(), suites.length));
@@ -233,7 +300,7 @@ export async function runTestSuites(
 					const suite = suites[index];
 					if (suite === undefined) continue;
 					onStart?.(suite, index, suites.length);
-					results[index] = await runTestSuite(suite, testTempRoot);
+					results[index] = await runTestSuite(suite, testTempRoot, quarantine);
 				}
 			}),
 		);
@@ -294,6 +361,7 @@ export async function runTestCli(
 	write: TestOutputWriter,
 	platform: NodeJS.Platform = process.platform,
 	environment: NodeJS.ProcessEnv = process.env,
+	quarantine?: readonly QuarantineEntry[],
 ): Promise<number> {
 	const selection = selectTestSuites(suites, args, platform, environment);
 	switch (selection.kind) {
@@ -309,7 +377,7 @@ export async function runTestCli(
 			const startedAt = performance.now();
 			const results = await runTestSuites(selection.suites, (suite, index, total) => {
 				write(`[${index + 1}/${total}] ${suite.name}`);
-			});
+			}, { quarantine });
 			write(`\n${formatTestReport(results, Math.round(performance.now() - startedAt))}`);
 			return results.some((result) => result.exitCode !== 0) ? 1 : 0;
 		}

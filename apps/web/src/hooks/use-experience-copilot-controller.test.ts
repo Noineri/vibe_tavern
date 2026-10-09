@@ -306,6 +306,27 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     expect("testFeedback" in (streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>)).toBe(false);
   });
 
+  test("passes the Try sandbox launch context through to the stream body", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+    const launchContext = {
+      participants: [{ id: "you", label: "You", controller: "human" as const }],
+      capabilityGrants: ["participants" as const],
+      settings: { rounds: 3 },
+      seed: "seed-1",
+      humanSeatId: "you",
+    };
+
+    await act(async () => {
+      await result.current.handleSend("test this", { launchContext });
+    });
+
+    const body = streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.launchContext).toEqual(launchContext);
+  });
+
   test("write_buffer tool error (isError) marks the card error", async () => {
     const d = deferred<{ finishReason: string }>();
     let captured!: CopilotStreamOpts;
@@ -804,6 +825,11 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
         rules: "rules-code",
         visual: "visual-src",
         step: "rules",
+        launchContext: {
+          participants: [{ id: "you", label: "You", controller: "human" }],
+          capabilityGrants: [],
+          settings: {},
+        },
       });
       await Promise.resolve();
     });
@@ -819,6 +845,11 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
       rules: "rules-code",
       visual: "visual-src",
       step: "rules",
+      launchContext: {
+        participants: [{ id: "you", label: "You", controller: "human" }],
+        capabilityGrants: [],
+        settings: {},
+      },
     });
     expect(result.current.isSending).toBe(true);
     // The optimistic flip: the card shows the resolution immediately.

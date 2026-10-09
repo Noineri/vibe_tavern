@@ -34,6 +34,7 @@ import { PROVIDER_TYPE } from "@vibe-tavern/domain";
 import type { ProviderType } from "@vibe-tavern/domain";
 import { providerError } from "../../shared/errors.js";
 import { koboldCppProtocol } from "./koboldcpp-adapter.js";
+import { novelaiProtocol } from "./novelai-adapter.js";
 import { ollamaProtocol } from "./ollama-adapter.js";
 import { openaiCompatProtocol } from "./openai-compat-adapter.js";
 import { llamaCppProtocol } from "./llamacpp-adapter.js";
@@ -68,6 +69,7 @@ const protocols: Record<ProviderType, ProtocolAdapter> = {
 	[PROVIDER_TYPE.llamaCpp]: llamaCppProtocol,
 	[PROVIDER_TYPE.koboldCpp]: koboldCppProtocol,
 	[PROVIDER_TYPE.unsloth]: unslothProtocol,
+	[PROVIDER_TYPE.novelai]: novelaiProtocol,
 };
 
 /**

@@ -30,6 +30,7 @@
  * field, rendered as JSON context by the backend and surviving history
  * compaction).
  */
+import type { ExperienceCopilotLaunchContext } from "@vibe-tavern/api-contracts";
 import type {
   ExperiencePlaygroundData,
   ExperienceTestConsoleEntry,
@@ -91,15 +92,17 @@ function consoleTail(entries: ReadonlyArray<ExperienceTestConsoleEntry>): string
 
 /** Compact JSON snapshot of an unknown projected state, capped to keep the
  *  model context bounded. Falls back to a placeholder for unserializable state.
- *  Mirrors `summarizeState` in experience-copilot-tools.ts. */
-function summarizeState(state: unknown): string {
+ *  Mirrors `summarizeState` in experience-copilot-tools.ts (the default cap MUST
+ *  match the backend exactly; the playground log channel passes its own larger
+ *  cap — see `PLAYGROUND_LOG_STATE_MAX`). */
+function summarizeState(state: unknown, max = STATE_SUMMARY_MAX): string {
   let s: string;
   try {
     s = JSON.stringify(state) ?? String(state);
   } catch {
     return "(unserializable state)";
   }
-  return s.length > STATE_SUMMARY_MAX ? `${s.slice(0, STATE_SUMMARY_MAX)}\u2026` : s;
+  return s.length > max ? `${s.slice(0, max)}\u2026` : s;
 }
 
 /** Standard footer appended to every digest's human-readable `text` so the
@@ -110,33 +113,37 @@ const ATTACHED_NOTE =
 
 // ─── Builders ───────────────────────────────────────────────────────────────
 
+/** Per-seat legality lines for a digest's human-readable text (shared by the
+ *  run-test digest and the playground log digest — one rendering of the
+ *  seat/turn vocabulary the model reads). */
+function seatLegalityLines(matrix: ExperienceTestRunData["seatLegality"], status: string): string[] {
+  if (matrix.seats.length === 0) return [];
+  return [
+    `Turn: ${
+      matrix.turnOwners.length > 0
+        ? matrix.turnOwners.join(", ")
+        : status === "completed"
+          ? "— (completed)"
+          : "—"
+    }`,
+    ...matrix.seats.map((seat) => {
+      const list =
+        seat.error !== undefined
+          ? `actions() error: ${seat.error}`
+          : seat.actionTypes.length > 0
+            ? seat.actionTypes.join(", ")
+            : "none";
+      return `Seat "${seat.label}" (id "${seat.participantId}", ${seat.controller}): ${list}`;
+    }),
+  ];
+}
+
 /** A create-only test digest from a successful run. The feedback is the ok-path
  *  `ExperienceCopilotRunTestDigest` (`status`, `revision`, `legalActionTypes`,
  *  capped `stateSummary`, `consoleTail`) — plus `seatLegality` (per-seat matrix +
  *  turn owners; empty seats when the run carried no roster). */
 export function buildRunTestDigest(result: ExperienceTestRunData): CopilotDigest {
-  const matrix = result.seatLegality;
-  const seatLines =
-    matrix.seats.length > 0
-      ? [
-          `Turn: ${
-            matrix.turnOwners.length > 0
-              ? matrix.turnOwners.join(", ")
-              : result.status === "completed"
-                ? "— (completed)"
-                : "—"
-          }`,
-          ...matrix.seats.map((seat) => {
-            const list =
-              seat.error !== undefined
-                ? `actions() error: ${seat.error}`
-                : seat.actionTypes.length > 0
-                  ? seat.actionTypes.join(", ")
-                  : "none";
-            return `Seat "${seat.label}" (id "${seat.participantId}", ${seat.controller}): ${list}`;
-          }),
-        ]
-      : [];
+  const seatLines = seatLegalityLines(result.seatLegality, result.status);
   const feedback: Record<string, unknown> = {
     ok: true,
     status: result.status,
@@ -144,7 +151,7 @@ export function buildRunTestDigest(result: ExperienceTestRunData): CopilotDigest
     legalActionTypes: result.projection.actions.map((a) => a.type),
     stateSummary: summarizeState(result.projection.state),
     consoleTail: consoleTail(result.console),
-    seatLegality: matrix,
+    seatLegality: result.seatLegality,
   };
   const legalTypes = result.projection.actions.map((a) => a.type);
   const lines = [
@@ -248,13 +255,144 @@ export function buildPlaygroundDigest(args: CopilotPlaygroundDigestInput): Copil
   return { text: lines.join("\n"), feedback };
 }
 
+// ─── Playground full-session log digest (grounding step 6) ──────────────────
+
+/** Caps for the playground LOG channel. Deliberately NOT the mirrored tool
+ *  caps above (`CONSOLE_TAIL_MAX` / `STATE_SUMMARY_MAX` stay byte-identical to
+ *  the backend tools so a UI-sent tool digest equals the tool's own): the log
+ *  channel exists so the model can read the WHOLE session, so it keeps its own
+ *  larger bounds (EXPERIENCE_COPILOT_GROUNDING_REPORT step 6 / D5.4). */
+const PLAYGROUND_LOG_EVENTS_MAX = 200;
+const PLAYGROUND_LOG_CONSOLE_MAX = 100;
+const PLAYGROUND_LOG_STATE_MAX = 8000;
+
+/** The client-side whole-session accumulator (component state in
+ *  ExperiencePlayground): the server returns every event on START but only the
+ *  CURRENT turn's events/effects/console on advance and timer beats (D5.3), so
+ *  the full log is stitched client-side. `turns` counts applied HUMAN turns
+ *  (advances); timer beats append their deltas without counting a turn. */
+export interface PlaygroundSessionLog {
+  readonly events: ReadonlyArray<ExperiencePlaygroundData["events"][number]>;
+  readonly effects: ReadonlyArray<ExperiencePlaygroundData["effects"][number]>;
+  readonly console: ReadonlyArray<ExperienceTestConsoleEntry>;
+  readonly turns: number;
+}
+
+export interface CopilotPlaygroundLogDigestInput {
+  readonly session: ExperiencePlaygroundData;
+  readonly sessionLog: PlaygroundSessionLog;
+  readonly definition?: ExperienceTestRunData["definition"] | null;
+  readonly error?: CopilotErrorInput | null;
+  /** How the session was launched (roster/grants/seed, captured at start so
+   *  the log reflects the run, not the since-edited live config). Echoed with
+   *  the same vocabulary the copilot's own tools use in their digest
+   *  `launchContext`, so the model reads one shape across channels. */
+  readonly launchContext?: ExperienceCopilotLaunchContext | null;
+  /** Per-seat legality matrix, where the caller has one — the playground
+   *  session envelope carries only the projected seat's actions. */
+  readonly seatLegality?: ExperienceTestRunData["seatLegality"] | null;
+}
+
+/** The WHOLE-session playground log digest (grounding step 6): unlike the
+ *  mirrored tool digests, this carries the full accumulated session — every
+ *  event (last {@link PLAYGROUND_LOG_EVENTS_MAX} + total count), the effects,
+ *  the console (last {@link PLAYGROUND_LOG_CONSOLE_MAX} + total count), the
+ *  authoritative final state (capped at {@link PLAYGROUND_LOG_STATE_MAX} — the
+ *  projected view may hide the very fields turn bugs hinge on), the projected
+ *  seat's legal actions (+ the per-seat matrix where present), and the launch
+ *  roster/grants/seed. An `error` flips it to the fail-path fields. */
+export function buildPlaygroundLogDigest(args: CopilotPlaygroundLogDigestInput): CopilotDigest {
+  const { session, sessionLog, error, launchContext, seatLegality } = args;
+  const defName = args.definition?.manifest.name ?? "(unknown)";
+  const defId = args.definition?.manifest.id ?? "(unknown)";
+
+  const events = sessionLog.events.slice(-PLAYGROUND_LOG_EVENTS_MAX);
+  const consoleLines = sessionLog.console
+    .slice(-PLAYGROUND_LOG_CONSOLE_MAX)
+    .map((e) => `${e.level}: ${e.args.join(" ")}`);
+  const legalTypes = session.projection.actions.map((a) => a.type);
+
+  const feedback: Record<string, unknown> = {
+    ok: !error,
+    definition: { id: defId, name: defName },
+    status: session.status,
+    revision: session.revision,
+    stopReason: session.stopReason,
+    turns: sessionLog.turns,
+    legalActionTypes: legalTypes,
+    ...(seatLegality !== null && seatLegality !== undefined ? { seatLegality } : {}),
+    ...(launchContext !== null && launchContext !== undefined
+      ? {
+          launchContext: {
+            seats: launchContext.participants.map((p) => ({ id: p.id, controller: p.controller })),
+            grants: [...launchContext.capabilityGrants],
+            ...(launchContext.seed !== undefined ? { seed: launchContext.seed } : {}),
+          },
+        }
+      : {}),
+    stateSummary: summarizeState(session.state, PLAYGROUND_LOG_STATE_MAX),
+    effects: [...sessionLog.effects],
+    events,
+    eventsTotal: sessionLog.events.length,
+    console: consoleLines,
+    consoleTotal: sessionLog.console.length,
+    ...(error
+      ? {
+          errorCode: error.code ?? "error",
+          ...(error.kind !== undefined ? { errorKind: error.kind } : {}),
+          errorMessage: error.message,
+        }
+      : {}),
+  };
+
+  const seatLines =
+    seatLegality !== null && seatLegality !== undefined
+      ? seatLegalityLines(seatLegality, session.status)
+      : [];
+  const lines = [
+    "## Playground session log",
+    `Definition: ${defName} (${defId})`,
+    `Status: ${session.status} · Revision ${session.revision} · Stop reason: ${session.stopReason}`,
+    `Turns: ${sessionLog.turns} · Events: ${sessionLog.events.length} · Effects: ${sessionLog.effects.length}`,
+    `Legal action types: ${legalTypes.length > 0 ? legalTypes.join(", ") : "(none)"}`,
+    ...seatLines,
+    ...(launchContext !== null && launchContext !== undefined
+      ? [
+          `Seats: ${launchContext.participants.map((p) => `${p.id} (${p.controller})`).join(", ")} · Grants: ${
+            launchContext.capabilityGrants.length > 0
+              ? launchContext.capabilityGrants.join(", ")
+              : "(none)"
+          }${launchContext.seed !== undefined ? ` · Seed: ${launchContext.seed}` : ""}`,
+        ]
+      : []),
+    "State: (attached in stateSummary)",
+    `Effects: ${
+      sessionLog.effects.length > 0
+        ? sessionLog.effects.map((e) => `${e.kind}: ${JSON.stringify(e.request)}`).join(" | ")
+        : "none"
+    }`,
+    `Events (${sessionLog.events.length} total, last ${events.length}): ${
+      events.length > 0 ? events.map((e) => `${e.visibility}/${e.type}`).join(" | ") : "none"
+    }`,
+    `Console (${sessionLog.console.length} total, last ${consoleLines.length}): ${
+      consoleLines.length > 0 ? consoleLines.join(" ⏎ ") : "silent"
+    }`,
+    ...(error ? [`Error: ${error.message}`, `Code: ${error.code ?? "(none)"}`] : []),
+    ATTACHED_NOTE,
+  ];
+  return { text: lines.join("\n"), feedback };
+}
+
 // ─── Realtime digest (RM-13) ───────────────────────────────────────────────
 
 /** Bounds for the realtime digest tails (the SDK sample is already bounded;
- *  these caps keep the MODEL context lean — tails, not transcripts). */
-const RT_EVENT_TAIL_MAX = 12;
-const RT_ERROR_TAIL_MAX = 6;
-const RT_CONSOLE_TAIL_MAX = 12;
+ *  these caps keep the MODEL context lean — tails, not transcripts). Raised
+ *  12/6/12 → 100/50/100 by EXPERIENCE_COPILOT_GROUNDING_REPORT step 6: the
+ *  realtime digest doubles as the sandbox LOG channel for realtime rounds, so
+ *  the tails must carry a playable round, not a glimpse. */
+const RT_EVENT_TAIL_MAX = 100;
+const RT_ERROR_TAIL_MAX = 50;
+const RT_CONSOLE_TAIL_MAX = 100;
 
 /** Compact `kind: …` rendering of a round-log event for the model. */
 function rtEventLine(event: unknown): string {

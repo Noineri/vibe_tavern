@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, dev]
+    branches: [master, dev, 'feat/**']
     paths-ignore:
       - '**/*.md'
       - '**/*.sh'
@@ -25,8 +25,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# CI verifies the full platform build matrix on every push/PR — BEFORE a tag is
-# ever cut. This replaces the old separate dry-run.yml (deleted).
+# CI verifies the full platform build matrix on master/dev pushes and pull
+# requests. feat/** pushes run only the four verification jobs — typecheck,
+# dependency-policy, test-linux, test-windows — with restore-only caching, so
+# feature-branch pushes stay cheap and the expensive platform builds don't gate
+# them. This replaces the old separate dry-run.yml (deleted).
 #
 # Gating model:
 #   - typecheck, test-linux, and test-windows are all blocking. Linux runs the
@@ -37,7 +40,12 @@ concurrency:
 #     `skipIf(process.platform === "win32")` gates in scripts/*.test.ts —
 #     not here. `skipOnWindows` applies only when CI is truthy, so local Windows
 #     `bun run test` runs the web suite while Windows CI skips it.
-#   - The platform builds fan out after typecheck passes.
+#   - The platform builds fan out after typecheck passes. Each build job gates
+#     itself on master/dev pushes or pull requests (via `github.ref` /
+#     `github.event_name`), so a feat/** push never reaches the build matrix
+#     even though its typecheck runs there.
+#   - The Bun package cache is restore-only on feat/** pushes and pull
+#     requests; only master/dev pushes save it (see the cache save steps below).
 # Nothing is published; the docker job only loads locally to prove the image builds.
 # Build artifacts are intentionally NOT uploaded — CI verifies compilation only,
 # not distribution. release.yml re-builds from the tag when cutting a real release;
@@ -49,10 +57,11 @@ concurrency:
 # the tagged commit. Running it here too is pure duplication. This is done with a
 # job-level `if` and NOT with `[skip ci]` in the commit message: `[skip ci]` is
 # evaluated per push event, so it would also kill the tag push that triggers
-# release.yml. The three root jobs carry the condition; the build jobs inherit it
-# through `needs: [typecheck]` (a skipped dependency skips its dependents). The
-# prefix is spelled out inline because the `env` context is not available to a
-# job-level `if` — keep it in sync with the script.
+# release.yml. The four verification jobs carry the bump-skip condition alone;
+# the build jobs carry that same condition AND-ed with the master/dev-or-PR ref
+# gate, which is what keeps feat/** pushes out of the build matrix. The prefix is
+# spelled out inline because the `env` context is not available to a job-level
+# `if` — keep it in sync with the script.
 
 jobs:
   typecheck:
@@ -65,7 +74,8 @@ jobs:
         with:
           bun-version: "1.4.2"
       - name: Restore Bun package cache
-        uses: actions/cache@v4
+        id: bun-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.bun/install/cache
           key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
@@ -73,6 +83,12 @@ jobs:
             bun-install-${{ runner.os }}-${{ runner.arch }}-
       - run: bun install --frozen-lockfile --prefer-offline
       - run: bun run typecheck
+      - name: Save Bun package cache (master/dev only)
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+        if: "${{ github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev' }} && steps.bun-cache.outputs.cache-hit != 'true'"
 
   dependency-policy:
     # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
@@ -84,7 +100,8 @@ jobs:
         with:
           bun-version: "1.4.2"
       - name: Restore Bun package cache
-        uses: actions/cache@v4
+        id: bun-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.bun/install/cache
           key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
@@ -98,6 +115,12 @@ jobs:
       # decide compatibility with AGPL-3.0.
       - name: Report production licenses
         run: bun pm licenses --prod
+      - name: Save Bun package cache (master/dev only)
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+        if: "${{ github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev' }} && steps.bun-cache.outputs.cache-hit != 'true'"
 
   test-linux:
     # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
@@ -109,7 +132,8 @@ jobs:
         with:
           bun-version: "1.4.2"
       - name: Restore Bun package cache
-        uses: actions/cache@v4
+        id: bun-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.bun/install/cache
           key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
@@ -120,6 +144,12 @@ jobs:
       # the expensive suites — see scripts/test-hygiene.ts.
       - run: bun run test:hygiene
       - run: bun run test
+      - name: Save Bun package cache (master/dev only)
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+        if: "${{ github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev' }} && steps.bun-cache.outputs.cache-hit != 'true'"
 
   test-windows:
     # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
@@ -131,7 +161,8 @@ jobs:
         with:
           bun-version: "1.4.2"
       - name: Restore Bun package cache
-        uses: actions/cache@v4
+        id: bun-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.bun/install/cache
           key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
@@ -142,9 +173,19 @@ jobs:
       # the expensive suites — see scripts/test-hygiene.ts.
       - run: bun run test:hygiene
       - run: bun run test
+      - name: Save Bun package cache (master/dev only)
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+        if: "${{ github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev' }} && steps.bun-cache.outputs.cache-hit != 'true'"
 
   build-linux:
     needs: [typecheck]
+    # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
+    # The ref gate keeps feat/** pushes out of the build matrix; the bump-skip
+    # is duplicated here because `needs` only skips when typecheck is skipped.
+    if: "${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev') && (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump to v')) }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -163,6 +204,10 @@ jobs:
 
   build-android:
     needs: [typecheck]
+    # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
+    # The ref gate keeps feat/** pushes out of the build matrix; the bump-skip
+    # is duplicated here because `needs` only skips when typecheck is skipped.
+    if: "${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev') && (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump to v')) }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -189,6 +234,10 @@ jobs:
 
   build-windows:
     needs: [typecheck]
+    # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
+    # The ref gate keeps feat/** pushes out of the build matrix; the bump-skip
+    # is duplicated here because `needs` only skips when typecheck is skipped.
+    if: "${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev') && (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump to v')) }}"
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -221,6 +270,10 @@ jobs:
   # artifacts nobody publishes; this tests the one that is.
   build-npm:
     needs: [typecheck]
+    # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
+    # The ref gate keeps feat/** pushes out of the build matrix; the bump-skip
+    # is duplicated here because `needs` only skips when typecheck is skipped.
+    if: "${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev') && (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump to v')) }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -278,6 +331,10 @@ jobs:
   # covers the install on all three.
   selfupdate-npm:
     needs: [typecheck]
+    # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
+    # The ref gate keeps feat/** pushes out of the build matrix; the bump-skip
+    # is duplicated here because `needs` only skips when typecheck is skipped.
+    if: "${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev') && (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump to v')) }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -296,6 +353,10 @@ jobs:
 
   build-docker:
     needs: [typecheck]
+    # Quoted: a plain YAML scalar may not contain ": ", which the prefix does.
+    # The ref gate keeps feat/** pushes out of the build matrix; the bump-skip
+    # is duplicated here because `needs` only skips when typecheck is skipped.
+    if: "${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev') && (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump to v')) }}"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

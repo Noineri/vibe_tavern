@@ -20,16 +20,13 @@
  *    Typing never hits the server; Save creates (first save) or patches
  *    (later saves) exactly one snapshot; a failed save keeps the buffer dirty
  *    and retryable; edits made mid-save survive the reconciliation.
- *  - The IR-81A interactive trust model, surfaced: interactive rules execute
- *    with host permissions, so `enabled` is an exact-source trust signal. A
- *    changed (or never-saved) source renders as "Not trusted" and the enable
- *    toggle stays LOCKED — enabling only succeeds when the visible source is
- *    exactly the saved one. The store already forces `enabled = false` on any
- *    code change; this UI makes that invariant visible and never silently
- *    auto-enables.
- *  - Duplication: from a starter (the picker) or from the current buffer
- *    (rules via `duplicateRulesValues`, visuals via `duplicateVisualDraftValues`)
- *    — always a fresh, explicitly untrusted copy; the source is never mutated.
+ *  - The IR-81A trust model: interactive rules run with host permissions, so
+ *    `enabled` is an exact-source trust signal; a dirty source forces
+ *    `enabled = false` locally until saved. SS-6 (decision 8): the toggle LOCK
+ *    fires only for imported scripts never yet enabled — in-app and trusted
+ *    scripts edit freely.
+ *  - Duplication (starter picker or current buffer) is always a fresh untrusted
+ *    copy inheriting the source's origin, never its trust or shared references.
  *  - The package contract at hand via `InteractiveApiReference`.
  *
  * IR-81D: the stateless InteractiveTester drives the unsaved rules buffer
@@ -73,7 +70,6 @@ import {
   createExperienceVisual,
   deleteExperienceVisual,
   listExperienceVisuals,
-  runExperienceTest,
   updateExperienceVisual,
 } from "../../../api/experience-api.js";
 import type { ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
@@ -89,8 +85,19 @@ import {
   VISUAL_API_VERSION,
 } from "./experience-local-helpers.js";
 import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/ExperienceCopilotShell.js";
+import { useExperienceRulesValidation } from "./use-experience-rules-validation.js";
+import { ExperienceManagementControls } from "./ExperienceManagementControls.js";
 import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
 import { ExperienceCardPreview } from "./ExperienceCardPreview.js";
+import { isUntrustedImport, ScriptSafetyBanner } from "./script-safety/ScriptSafetyBanner.js";
+import { ImportedScriptWarningModal } from "./script-safety/ImportedScriptWarningModal.js";
+import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
+import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
+import {
+  scriptExecutionGuard,
+  type ScriptSafetyWarningFlow,
+  type ScriptSafetyWarningIntent,
+} from "../../../lib/script-execution-guard.js";
 import {
   buildMiniAppBundle,
   importMiniAppBundle,
@@ -122,136 +129,6 @@ function errorMessage(error: unknown): string {
  *  appearance → try). */
 const CREATION_STEP_ORDER: readonly ExperienceCopilotStep[] = ["rules", "appearance", "try"];
 
-/** E6 (MOBILE_DEFECTS_ROUND_2): the editor's management cluster (name input,
- *  trust pill + toggle, save-state, save, duplicate, delete) as ONE component
- *  rendered both in the desktop top bar and as the mobile Edit-tab header —
- *  the two surfaces cannot drift. Module-level (not an inner function) so the
- *  name input keeps focus across parent re-renders. */
-interface ExperienceManagementControlsProps {
-  name: string;
-  onNameChange: (name: string) => void;
-  scriptEnabled: boolean;
-  enableLocked: boolean;
-  onToggle: (enabled: boolean) => void;
-  scriptSaveState: ScriptDraftSaveState;
-  scriptDirty: boolean;
-  saveError: string | null;
-  isMobile: boolean;
-  resetKey: string | null;
-  onSave: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-  canDelete: boolean;
-}
-
-function ExperienceManagementControls({
-  name,
-  onNameChange,
-  scriptEnabled,
-  enableLocked,
-  onToggle,
-  scriptSaveState,
-  scriptDirty,
-  saveError,
-  isMobile,
-  resetKey,
-  onSave,
-  onDuplicate,
-  onDelete,
-  canDelete,
-}: ExperienceManagementControlsProps) {
-  const { t } = useT();
-  return (
-    <>
-      <TextInput
-        className="min-w-0 max-md:w-auto flex-1 !text-[15px] font-semibold"
-        type="text"
-        value={name}
-        onChange={(e) => onNameChange(e.target.value)}
-        placeholder={t("script_name")}
-      />
-
-      {/* The action cluster (pill → delete) is a flat `display:contents`
-          group on desktop — a single flex-wrap row with the name — and becomes
-          a nested flex row on mobile, so the header composes into exactly two
-          rows: [name] / [status, toggle, save(flex-1), duplicate, delete].
-          (A plain `flex-1` on the name cannot force this: basis-0 lets the
-          shrink-0 pill/toggle squeeze onto row 1 at 40px of leftover width.) */}
-      <div className="contents max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-1.5">
-        <CustomTooltip content={t("experience_editor_trust_hint")}>
-          <span
-            className={cn(
-              "shrink-0 cursor-help rounded-full px-2 py-0.5 font-ui text-[10px] font-medium uppercase",
-              scriptEnabled ? "bg-success-dim text-success-text" : "bg-warning-dim text-warning-text",
-            )}
-          >
-            {/* Mobile: the status pill uses the short form ('on/off')
-                below 768px so the whole action cluster fits one row; desktop
-                keeps the full word. */}
-            {t(
-              scriptEnabled
-                ? isMobile ? "experience_editor_enabled_short" : "experience_editor_enabled"
-                : isMobile ? "experience_editor_disabled_short" : "experience_editor_disabled",
-            )}
-          </span>
-        </CustomTooltip>
-        <Toggle
-          checked={scriptEnabled}
-          disabled={enableLocked}
-          onChange={onToggle}
-        />
-
-        {/* Save-state text is desktop-only: on mobile the state is conveyed by
-            the SaveButton's visual state + the Edit-tab dirty badge (E6). */}
-        <span
-          className={cn("shrink-0 max-md:hidden font-ui text-[12px]", scriptSaveState === "error" ? "text-danger" : "text-t3")}
-          title={saveError ?? undefined}
-        >
-          {scriptSaveState === "error" ? t("retry") : scriptDirty ? t("unsaved_changes") : t("saved_state")}
-        </span>
-        <SaveButton
-          icon={isMobile ? <Ic.floppy /> : undefined}
-          dirty={scriptDirty}
-          saveState={scriptSaveState}
-          resetKey={resetKey}
-          onClick={onSave}
-          label={scriptSaveState === "error" ? t("retry") : t("save")}
-        />
-
-        {/* The icon pair moves as ONE unit (display:contents on desktop) so
-            mobile wrapping never strands a lone icon on its own row. */}
-        <div className="contents max-md:flex max-md:gap-1.5">
-          <CustomTooltip content={t("experience_editor_duplicate")}>
-            <button
-              type="button"
-              aria-label={t("experience_editor_duplicate")}
-              className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-t2 transition-all hover:bg-s2 hover:text-t1"
-              onClick={onDuplicate}
-            >
-              <Ic.copy />
-            </button>
-          </CustomTooltip>
-          {/* IR-90A: delete the experience (its rules script). Reachable only for
-              a saved script — an unsaved/local draft is discarded by navigating
-              back. */}
-          {canDelete && (
-            <CustomTooltip content={t("experience_editor_delete")}>
-              <button
-                type="button"
-                aria-label={t("experience_editor_delete")}
-                className="flex h-8 w-8 max-md:h-9 max-md:w-9 shrink-0 cursor-pointer items-center justify-center rounded text-danger transition-all hover:bg-s2"
-                onClick={onDelete}
-              >
-                <Ic.del />
-              </button>
-            </CustomTooltip>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function ExperienceEditor() {
@@ -270,10 +147,6 @@ export function ExperienceEditor() {
   const [activeVisualId, setActiveVisualId] = useState<string | null>(null);
   const [apiRefOpen, setApiRefOpen] = useState(false);
   const [visualApiRefOpen, setVisualApiRefOpen] = useState(false);
-  // IR-90E: compact friendly validation result (reuses the wizard's pattern).
-  const [rulesValid, setRulesValid] = useState<boolean | null>(null);
-  const [rulesValidationError, setRulesValidationError] = useState<string | null>(null);
-  const [validating, setValidating] = useState(false);
 
   // IR-90A: explicit destructive delete for a saved/pending visual, confirmed
   // via the shared DestructiveConfirmModal. A failed delete keeps the visual
@@ -441,14 +314,60 @@ export function ExperienceEditor() {
 
   // ── Trust model (IR-81A) ─────────────────────────────────────────────────
   // Enabling is allowed only when the visible source is EXACTLY the saved one
-  // (and the script exists server-side at all). The store independently
-  // forces enabled=false on any code change; this UI locks the toggle and
-  // explains why, so an edit can never silently carry trust forward.
+  // (and the script exists server-side at all). The store forces enabled=false
+  // on code change; the lock fires only for imported never-enabled scripts (SS-6).
   const scriptCodeTrusted = !isNewScript
     && activeScriptDraft !== null
     && activeScriptDraft.values.code === activeScriptDraft.base.code;
   const scriptEnabled = activeScript?.enabled ?? false;
-  const enableLocked = !scriptEnabled && !scriptCodeTrusted;
+  const enableLocked = !scriptEnabled && !scriptCodeTrusted && isUntrustedImport(activeScript);
+
+  // ── SS-7B4: explicit action warning flow + Rules reveal request. ─────────
+  const [scriptWarningFlow, setScriptWarningFlow] = useState<ScriptSafetyWarningFlow | null>(null);
+  const [scriptWarningIntent, setScriptWarningIntent] = useState<ScriptSafetyWarningIntent>("enable");
+  const pendingScriptActionRef = useRef<((warningAcknowledged: boolean) => void) | null>(null);
+  const [revealRulesLine, setRevealRulesLine] = useState<{ line: number } | null>(null);
+
+  const runExplicitScriptAction = (
+    intent: ScriptSafetyWarningIntent,
+    action: (warningAcknowledged: boolean) => void,
+  ) => {
+    const decision = scriptExecutionGuard({
+      script: activeScript,
+      code: activeScript?.code ?? "",
+      kind: "interactive",
+      intent: "explicit",
+      suppressImportWarnings: useScriptSafetySettingsStore.getState().suppressImportWarnings,
+    });
+    if (decision.kind === "ok") {
+      action(decision.warningAcknowledged);
+      return;
+    }
+    if (decision.kind === "warn") {
+      pendingScriptActionRef.current = action;
+      setScriptWarningIntent(intent);
+      setScriptWarningFlow(decision.flow);
+    }
+  };
+
+  const confirmScriptWarning = () => {
+    const action = pendingScriptActionRef.current;
+    pendingScriptActionRef.current = null;
+    setScriptWarningFlow(null);
+    action?.(true);
+  };
+  const cancelScriptWarning = () => {
+    pendingScriptActionRef.current = null;
+    setScriptWarningFlow(null);
+  };
+
+  const handleToggleScriptEnabled = (enabled: boolean) => {
+    if (!enabled) {
+      updateScriptDraft({ enabled: false });
+      return;
+    }
+    runExplicitScriptAction("enable", () => updateScriptDraft({ enabled: true }));
+  };
 
   // ── Draft creation (starter pick / blank / duplicate) ────────────────────
   /** Seed a pending rules buffer from explicit values. The draft base is
@@ -565,49 +484,11 @@ export function ExperienceEditor() {
     }
   };
 
-  // IR-90E: monotonic validation token. Changing the active script or its
-  // source invalidates every in-flight validation so a stale promise can
-  // never set valid/invalid or leave loading true after a switch/edit.
-  const validationTokenRef = useRef(0);
-
-  // IR-90E: fail-closed validation — clear stale "valid" state AND loading
-  // whenever the active script or its source code changes. The editor must
-  // never show valid for a new or edited source without explicit re-validation.
-  useEffect(() => {
-    validationTokenRef.current += 1;
-    setRulesValid(null);
-    setRulesValidationError(null);
-    setValidating(false);
-  }, [activeScriptId, activeScript?.code]);
-
-  // IR-90E: compact friendly rules validation (reuses the wizard's
-  // runExperienceTest discovery pattern — same API, same presentation shape).
-  const handleValidateRules = useCallback(async () => {
-    if (!activeScript || activeScript.code.trim() === "") return;
-    const token = ++validationTokenRef.current;
-    setValidating(true);
-    setRulesValidationError(null);
-    try {
-      await runExperienceTest({
-        rulesCode: activeScript.code,
-        settings: {},
-        participants: [],
-        capabilityGrants: [],
-        actions: [],
-      });
-      if (validationTokenRef.current !== token) return;
-      setRulesValid(true);
-    } catch (error) {
-      if (validationTokenRef.current !== token) return;
-      setRulesValid(false);
-      const msg = error instanceof Error ? error.message : String(error);
-      setRulesValidationError(msg);
-    } finally {
-      if (validationTokenRef.current === token) {
-        setValidating(false);
-      }
-    }
-  }, [activeScript?.code]);
+  // IR-90E: the rules validation state + handler live in the extracted hook
+  // (SS-7B2 extraction-only move — the monotonic stale-result guard is
+  // preserved verbatim there).
+  const { rulesValid, rulesValidationError, validating, handleValidateRules } =
+    useExperienceRulesValidation({ activeScript, activeScriptId });
 
   const handleNewVisualFromStarter = (starter: VisualStarter) => {
     setActiveVisualId(createPendingVisual({
@@ -643,14 +524,14 @@ export function ExperienceEditor() {
     setChosenRulesStarterId(starter.id);
   };
 
-  /** Duplicate the CURRENT rules buffer (including unsaved edits) as a fresh,
-   *  explicitly untrusted pending draft. The source row is never mutated. */
+  /** Duplicate the rules buffer as a fresh untrusted draft inheriting the source's origin (decision 9). */
   const handleDuplicateScript = () => {
     if (!activeScript) return;
     const values = duplicateRulesValues({
       name: activeScript.name,
       description: activeScript.description,
       code: activeScript.code,
+      origin: activeScript.origin,
     });
     setActiveScriptId(createPendingRules(values));
   };
@@ -756,8 +637,7 @@ export function ExperienceEditor() {
     if (!submitted) return;
     if (isLocalId(activeScriptId)) {
       // First save = CREATE. On success the local buffer migrates to the real
-      // row id; edits made while the create was in flight are re-applied as a
-      // dirty patch against the new base (mirrors completeSave semantics).
+      // row id; mid-flight edits re-apply as a dirty patch (mirrors completeSave).
       try {
         const created = await createScript({
           name: submitted.name,
@@ -766,6 +646,8 @@ export function ExperienceEditor() {
           scriptKind: "interactive",
           enabled: submitted.enabled,
           scopeType: "global",
+          // SS-6 (decision 9): a duplicated imported mini-app inherits origin.
+          ...(activeScriptRecord?.origin === "imported" ? { origin: "imported" } : {}),
         });
         const localId = activeScriptId;
         const latest = useScriptDraftStore.getState().drafts[localId]?.values ?? submitted;
@@ -788,7 +670,7 @@ export function ExperienceEditor() {
     } catch (error) {
       failScriptSave(activeScriptId, errorMessage(error));
     }
-  }, [activeScriptId, prepareScriptSave, removeScriptDraft, ensureScriptDraft, patchScriptDraft, completeScriptSave, failScriptSave]);
+  }, [activeScriptId, activeScriptRecord, prepareScriptSave, removeScriptDraft, ensureScriptDraft, patchScriptDraft, completeScriptSave, failScriptSave]);
 
   const handleSaveVisual = useCallback(async () => {
     if (!activeVisualId) return;
@@ -1018,7 +900,7 @@ export function ExperienceEditor() {
       onNameChange={(name) => updateScriptDraft({ name })}
       scriptEnabled={scriptEnabled}
       enableLocked={enableLocked}
-      onToggle={(enabled) => updateScriptDraft({ enabled })}
+      onToggle={handleToggleScriptEnabled}
       scriptSaveState={scriptSaveState}
       scriptDirty={scriptDirty}
       saveError={activeScriptDraft?.error ?? null}
@@ -1050,6 +932,7 @@ export function ExperienceEditor() {
         </div>
       )}
       {!isMobile && trustBlockedHint}
+      {!isMobile && <ScriptSafetyBanner script={activeScript} className="mx-3" />}
 
       {/* XU-6 creation stepper: a slim presentational strip above the editor
           pane. The active step mirrors the shell's current position (reported
@@ -1097,6 +980,7 @@ export function ExperienceEditor() {
       <div className="flex min-h-0 flex-1">
         <ExperienceCopilotShell
           scriptId={activeScript.id}
+          script={activeScript}
           assignedProfileId={activeScript.copilotProfileId ?? null}
           creationMode={creationMode}
           onStepChange={handleStepChange}
@@ -1106,12 +990,14 @@ export function ExperienceEditor() {
               <>
                 <div className="flex flex-wrap items-center gap-2 px-3 py-2">{managementControls}</div>
                 {trustBlockedHint}
+                <ScriptSafetyBanner script={activeScript} className="mx-3" />
               </>
             ) : undefined
           }
           editTabDirty={scriptDirty}
           rulesCode={activeScript.code}
           onRulesChange={(code) => updateScriptDraft({ code })}
+          revealRulesLine={revealRulesLine}
           visualSource={activeVisual?.source ?? ""}
           onVisualChange={(source) => updateVisualDraft({ source })}
           rulesToolbar={
@@ -1159,7 +1045,7 @@ export function ExperienceEditor() {
                   type="button"
                   className="flex h-7 max-md:h-9 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-40"
                   disabled={validating || activeScript.code.trim() === ""}
-                  onClick={() => void handleValidateRules()}
+                  onClick={() => runExplicitScriptAction("test", (warningAcknowledged) => { void handleValidateRules(warningAcknowledged); })}
                 >
                   <Ic.check />
                   {validating ? t("experience_wizard_validating") : t("experience_editor_validate_rules")}
@@ -1409,6 +1295,30 @@ export function ExperienceEditor() {
           onCancel={() => setExperienceDeleteOpen(false)}
           secondaryLabel={activeVisualId ? t("experience_editor_delete_rules_only") : undefined}
           onSecondary={activeVisualId ? () => void handleDeleteExperience("rules") : undefined}
+        />
+      )}
+
+      {/* SS-7/7B4: explicit enable and validation warnings. Only one can be
+          open — the discriminated flow renders plain when there are no blocking
+          findings and findings ALONE otherwise (decision 11). */}
+      {scriptWarningFlow?.kind === "plain" && (
+        <ImportedScriptWarningModal
+          intent={scriptWarningIntent}
+          onConfirm={confirmScriptWarning}
+          onCancel={cancelScriptWarning}
+        />
+      )}
+      {scriptWarningFlow?.kind === "findings" && (
+        <FindingsWarningModal
+          findings={scriptWarningFlow.findings}
+          showHonestWarning={scriptWarningFlow.showHonestWarning}
+          intent={scriptWarningIntent}
+          onShowInCode={(line) => {
+            cancelScriptWarning();
+            setRevealRulesLine({ line });
+          }}
+          onConfirm={confirmScriptWarning}
+          onCancel={cancelScriptWarning}
         />
       )}
     </div>

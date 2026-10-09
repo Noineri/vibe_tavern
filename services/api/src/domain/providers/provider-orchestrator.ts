@@ -21,11 +21,16 @@ export class ProviderOrchestrator {
     const providerType = normalizeProviderType(profile.providerPreset);
     try {
       const fetch = await resolveProviderFetchForProfile(profile);
+      // `novelai_oa` rides the openaiCompat type, whose model list stays
+      // keyless for every other preset — NovelAI's must not be fetched without
+      // a key (NOVELAI_PROVIDER_PLAN NAI-2a).
+      const requiresAuthForModels = profile.providerPreset === "novelai_oa"
+        || AUTH_REQUIRED_FOR_MODEL_LIST.has(providerType);
       const models = await listProviderModels({
         baseUrl: profile.endpoint,
         apiKey: profile.apiKey ?? "",
         providerType,
-        requiresAuthForModels: AUTH_REQUIRED_FOR_MODEL_LIST.has(providerType),
+        requiresAuthForModels,
         ...(fetch ? { fetch } : {}),
       });
       const normalized = models.map((model) => ({

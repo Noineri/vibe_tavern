@@ -157,6 +157,41 @@ describe("classifyProviderError", () => {
     expect(classifyProviderError(apiLike)).toBe("invalid_request");
   });
 
+  // ── 5b. NovelAI subscription-required (overrides the status code) ──────
+  // A trial key / free-tier rejection is NOT a bad key: the key is valid but
+  // the account lacks an active subscription. Must classify BEFORE the status
+  // mapping (a 400 recaptcha is not the client's invalid request; a 403 tier
+  // rejection is not authentication).
+
+  it("classifies NovelAI 'Recaptcha token is required for trial generations' → subscription_required", () => {
+    const apiLike = {
+      statusCode: 400,
+      responseBody: '{"message":"Recaptcha token is required for trial generations"}',
+    };
+    expect(classifyProviderError(apiLike)).toBe("subscription_required");
+  });
+
+  it("classifies NovelAI 'Model not allowed for user tier' → subscription_required", () => {
+    const apiLike = {
+      statusCode: 403,
+      responseBody: '{"message":"Model not allowed for user tier"}',
+    };
+    expect(classifyProviderError(apiLike)).toBe("subscription_required");
+  });
+
+  it("classifies NovelAI subscription text found only in the error message → subscription_required", () => {
+    const apiLike = {
+      statusCode: 403,
+      message: "Model not allowed for user tier",
+    };
+    expect(classifyProviderError(apiLike)).toBe("subscription_required");
+  });
+
+  it("keeps a plain 403 with a non-NovelAI body → authentication (as before)", () => {
+    const apiLike = { statusCode: 403, responseBody: '{"message":"Forbidden"}' };
+    expect(classifyProviderError(apiLike)).toBe("authentication");
+  });
+
   it("maps 422 → invalid_request", () => {
     expect(classifyProviderError({ statusCode: 422 })).toBe("invalid_request");
   });

@@ -55,6 +55,7 @@ import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { cn } from "../../../lib/cn.js";
 import { Ic } from "../../shared/icons.js";
 import { Modal } from "../../shared/Modal.js";
+import { modalPanelCls } from "../../shared/modal-helpers.js";
 import { BottomSheet } from "../../shared/BottomSheet.js";
 import { SceneStateView } from "../../shared/SceneStateView.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
@@ -395,7 +396,10 @@ function SceneEditorModal({ open, isMobile, schema, state, onClose, onSave, t }:
   }
   return (
     <Modal open={open} onClose={onClose} title={t("scn_zone_edit")}>
-      <div className="w-[min(92vw,560px)] max-h-[80vh] overflow-y-auto rounded-xl border border-border2 bg-surface p-4 shadow-[0_24px_60px_rgba(0,0,0,.5)]">
+      {/* overflow-y-auto narrows the bundled overflow-hidden to the y-axis
+          (Tailwind emits it later, so vertical scroll survives; x stays
+          clipped) — the sanctioned axis override documented on modalPanelCls. */}
+      <div className={cn(modalPanelCls, "max-h-[80vh] w-[min(92vw,560px)] overflow-y-auto p-4")}>
         {body}
       </div>
     </Modal>
@@ -421,7 +425,7 @@ function ConfirmDelete({ open, isMobile, onCancel, onConfirm, t }: {
   if (isMobile) {
     return <BottomSheet open={open} onClose={onCancel} title={t("scn_zone_delete")}>{body}</BottomSheet>;
   }
-  return <Modal open={open} onClose={onCancel} compact title={t("scn_zone_delete")}><div className="w-[min(92vw,400px)] rounded-xl border border-border2 bg-surface shadow-[0_24px_60px_rgba(0,0,0,.5)]">{body}</div></Modal>;
+  return <Modal open={open} onClose={onCancel} compact title={t("scn_zone_delete")}><div className={cn(modalPanelCls, "w-[min(92vw,400px)]")}>{body}</div></Modal>;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

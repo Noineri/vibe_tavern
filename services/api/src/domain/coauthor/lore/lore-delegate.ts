@@ -84,10 +84,6 @@ export interface CreateLoreDelegateDeps {
 const LORE_ENTRY_ASSET = "lore-entry-ai-prompt.md";
 const LORE_KEYS_ASSET = "lore-keys-ai-prompt.md";
 
-/** Token cap for delegation calls — keeps the one-shot cheap and focused. */
-const WRITE_ENTRY_MAX_TOKENS = 1024;
-const GENERATE_KEYS_MAX_TOKENS = 512;
-
 /** Mirrors `getLogicHint` in ai-assistant-stream.ts — kept inline (not
  *  imported) so co-author/lore stays self-contained (it reuses the assistant's
  *  PROMPT ASSETS, not its code). Update both if the logic guidance changes. */
@@ -219,7 +215,7 @@ export function createLoreDelegate(deps: CreateLoreDelegateDeps): LoreDelegate {
 			const systemPrompt = withGrounding(await loadPromptAsset(LORE_ENTRY_ASSET), input);
 			const userMessage = buildWriteEntryUserMessage(input);
 			const prompt = buildOneShotPrompt(systemPrompt, userMessage);
-			const res = await execute({ profile, model, prompt, signal, overrideMaxTokens: WRITE_ENTRY_MAX_TOKENS });
+			const res = await execute({ profile, model, prompt, signal });
 			const content = res.text.trim();
 			if (!content) throw new Error("ai_write_lore_entry: the assistant returned empty content");
 			return { content };
@@ -228,7 +224,7 @@ export function createLoreDelegate(deps: CreateLoreDelegateDeps): LoreDelegate {
 		const systemPrompt = withGrounding(await loadPromptAsset(LORE_KEYS_ASSET), input);
 		const userMessage = buildGenerateKeysUserMessage(input);
 		const prompt = buildOneShotPrompt(systemPrompt, userMessage);
-		const res = await execute({ profile, model, prompt, signal, overrideMaxTokens: GENERATE_KEYS_MAX_TOKENS });
+		const res = await execute({ profile, model, prompt, signal });
 		const parsed = parseLoreKeysJson(res.text);
 		return { keys: parsed.keys, secondaryKeys: parsed.secondaryKeys };
 	};

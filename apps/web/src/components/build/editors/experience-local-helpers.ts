@@ -56,6 +56,8 @@ export function pendingScriptRecord(id: string, values: InteractiveRulesDraftVal
     code: values.code,
     scriptKind: "interactive",
     enabled: false,
+    origin: values.origin,
+    firstEnabledAt: null,
     scopeType: "global",
     characterId: null,
     personaId: null,

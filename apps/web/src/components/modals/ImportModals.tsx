@@ -5,6 +5,7 @@ import type { ChatId } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { Icons } from "../shared/icons.js";
 import { Modal } from "../shared/Modal.js";
+import { modalPanelCls } from "../shared/modal-helpers.js";
 import { Dropzone } from "../shared/dropzone.js";
 import { useIsMobile } from "../../hooks/use-mobile.js";
 import { useT } from "../../i18n/context.js";
@@ -29,7 +30,7 @@ import { ImportModalFooter } from "./import/ImportModalFooter.js";
 interface ImportModalCommonProps {
   isImporting: boolean;
   onClose: () => void;
-  onImportFiles: (files: File[], options?: { importEmbeddedBook?: boolean }) => void;
+  onImportFiles: (files: File[], options?: { importEmbeddedBook?: boolean; enableImportedRegexProfile?: boolean }) => void;
   /** Library imports can opt into the embedded-card-lore confirmation. */
   showEmbeddedBookImport?: boolean;
 }
@@ -338,6 +339,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
   const [parsing, setParsing] = useState(false);
   const [preview, setPreview] = useState<CharacterPreview | null>(null);
   const [importEmbeddedBook, setImportEmbeddedBook] = useState(false);
+  const [enableImportedRegexProfile, setEnableImportedRegexProfile] = useState(false);
   const [stMode, setStMode] = useState(false);
   useEffect(() => () => {
     if (preview?.avatarUrl) URL.revokeObjectURL(preview.avatarUrl);
@@ -347,6 +349,7 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
     if (!file) return;
     setParsing(true);
     setImportEmbeddedBook(false);
+    setEnableImportedRegexProfile(false);
     setPreview((current) => {
       if (current?.avatarUrl) URL.revokeObjectURL(current.avatarUrl);
       return null;
@@ -362,7 +365,10 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
 
   function confirm(): void {
     if (!preview || input.isImporting) return;
-    input.onImportFiles([preview.file], { importEmbeddedBook });
+    input.onImportFiles([preview.file], {
+      importEmbeddedBook,
+      ...(preview.regexScripts && preview.regexScripts.length > 0 && enableImportedRegexProfile ? { enableImportedRegexProfile: true } : {}),
+    });
     input.onClose();
   }
 
@@ -399,6 +405,8 @@ export function CharacterImportModal(input: ImportModalCommonProps) {
             preview={preview}
             importEmbeddedBook={importEmbeddedBook}
             onImportEmbeddedBookChange={input.showEmbeddedBookImport ? setImportEmbeddedBook : undefined}
+            enableImportedRegexProfile={enableImportedRegexProfile}
+            onEnableImportedRegexProfileChange={setEnableImportedRegexProfile}
           />
         )}
       </div>
@@ -478,7 +486,7 @@ function ImportModalFrame(props: { title: string; subtitle: string; onClose: () 
   const isMobile = useIsMobile();
   return (
     <Modal open={true} onClose={props.onClose}>
-      <div className={cn("flex flex-col overflow-hidden bg-surface", isMobile ? "w-full h-full" : "max-h-[calc(100vh-60px)] w-[500px] max-w-[calc(100vw-32px)] rounded-xl border border-border2 shadow-[0_24px_60px_rgba(0,0,0,.5)]")}>
+      <div className={cn("flex flex-col", isMobile ? "glass-blur-under h-full w-full overflow-hidden" : cn(modalPanelCls, "max-h-[calc(100vh-60px)] w-[500px] max-w-[calc(100vw-32px)]"))}>
         <div className={cn("shrink-0", isMobile ? "px-4 pt-4" : "px-5 pt-[18px]")}>
           <div className="flex items-start justify-between">
             <div>

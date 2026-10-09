@@ -12,7 +12,7 @@ import {
   modelSettingsOverlaySchema,
   samplerPresetPayloadSchema,
 } from "../src/schemas/provider-schema.js";
-import { COAUTHOR_TRANSPORT, SAMPLER_FIELDS, type SamplerFieldId } from "@vibe-tavern/domain";
+import { COAUTHOR_TRANSPORT, PHRASE_REP_PEN, SAMPLER_FIELDS, THINKING_MODE, type SamplerFieldId } from "@vibe-tavern/domain";
 
 /**
  * Characterization tests for the provider schemas.
@@ -481,8 +481,8 @@ describe("sampler single-source invariant (ERA-1)", () => {
   // Pin the documented count so a duplicate or accidental union shrink is
   // caught loudly. Update this number only when SamplerFieldId genuinely gains
   // or loses a field.
-  it("SAMPLER_FIELDS has the expected cardinality (32)", () => {
-    expect(SAMPLER_FIELDS.length).toBe(32);
+  it("SAMPLER_FIELDS has the expected cardinality (38)", () => {
+    expect(SAMPLER_FIELDS.length).toBe(38);
     expect(new Set(SAMPLER_FIELDS).size).toBe(SAMPLER_FIELDS.length); // no dupes
   });
 
@@ -518,6 +518,12 @@ describe("sampler single-source invariant (ERA-1)", () => {
       frequencyPenalty: 0.2,
       presencePenalty: 0.3,
       repetitionPenalty: 1.1,
+      unifiedLinear: 0.9,
+      unifiedQuad: 0.3,
+      unifiedConf: -0.2,
+      repetitionPenaltySlope: 0.33,
+      phraseRepPen: "light",
+      thinkingMode: "on",
       stopSequences: ["END"],
       logitBias: [{ tokenId: 7, bias: 12 }],
       seed: "99988",
@@ -553,5 +559,31 @@ describe("sampler single-source invariant (ERA-1)", () => {
     for (const k of nonSamplerCore) {
       expect(keys.has(k), `non-sampler field "${k}" dropped from providerCoreSchema`).toBe(true);
     }
+  });
+});
+
+// ─── NovelAI enum sampler fields (NOVELAI_PROVIDER_PLAN Wave 1) ───────
+
+describe("NovelAI enum sampler fields (Wave 1)", () => {
+  it("accepts every phraseRepPen vocabulary value", () => {
+    for (const value of Object.values(PHRASE_REP_PEN)) {
+      const parsed = saveProviderDraftSchema.safeParse({ ...validSaveDraft(), phraseRepPen: value });
+      expect(parsed.success, `phraseRepPen "${value}" rejected`).toBe(true);
+    }
+  });
+
+  it("accepts every thinkingMode vocabulary value", () => {
+    for (const value of Object.values(THINKING_MODE)) {
+      const parsed = saveProviderDraftSchema.safeParse({ ...validSaveDraft(), thinkingMode: value });
+      expect(parsed.success, `thinkingMode "${value}" rejected`).toBe(true);
+    }
+  });
+
+  it("rejects an unknown phraseRepPen value", () => {
+    expectReject(saveProviderDraftSchema.safeParse({ ...validSaveDraft(), phraseRepPen: "extreme" }));
+  });
+
+  it("rejects an unknown thinkingMode value", () => {
+    expectReject(saveProviderDraftSchema.safeParse({ ...validSaveDraft(), thinkingMode: "sometimes" }));
   });
 });

@@ -458,6 +458,59 @@ AppShell
 
 The modal maintains a local `DraftData` state initialized from `activePreset`. On save, the full draft is serialized (`aiAssistantPrompts` → JSON string) and sent via `updatePromptPresetAction`. The action refreshes the bootstrap store so the preset list stays current.
 
+### Regex Rule and Profile workspace
+
+The Regex tab presents standalone Rules and nested Profiles in one flat visual order.
+A Rule has exclusive ownership: it is either Standalone or a member of exactly one Profile.
+Its explicit assignment selector is the authoritative workflow; drag-and-drop remains an acceleration path, including the temporary **Move to Standalone** target shown only while a member is being dragged.
+
+#### Manual Rule lifecycle
+
+**Create Rule** and **Create Rule in Profile** open the same local-only draft with the intended `profileId | null`.
+The draft contains no synthetic Rule content: find and replacement start empty, the name is either the user's list entry or empty for the in-Profile action, and Active starts off.
+Opening or cancelling this draft makes no API call and creates no placeholder row.
+Save remains blocked until the name is non-empty and the find expression parses, then performs exactly one `POST /api/regex/presets`; a child Rule is born directly in its Profile through `profileId` instead of being created and attached in two steps.
+
+#### Profile membership and persistence
+
+Each Profile exposes **Create Rule** and **Add existing** actions plus the same actions in its zero-member `EmptyState`.
+**Add existing** uses `LinkBindingPopover` with `showPills={false}` because membership is already visible in the nested list.
+The picker contains Standalone Rules plus current members only, and each toggle attaches or detaches immediately; Rules owned by another Profile are never offered.
+
+Profile editing uses one autosave lifecycle.
+Text changes coalesce behind a 1-second debounce, discrete controls save immediately, failures restore the last confirmed snapshot and show an error, and pending work flushes before selection changes or modal close.
+Profile Export and both Delete modes live in `MasterDetailFooter`; the Save action is reserved for Rule drafts and existing Rules.
+The Regex assistant uses `AiAssistantShell` structured actions, which remain compact on desktop and stack as full-width 44px controls with safe-area spacing on mobile.
+
+#### Availability and nested-list behavior
+
+`regex-availability.ts` is the only status derivation; list rows and editors consume its result rather than reconstructing reachability.
+Profile precedence is **Disabled** → internal **Loading** for an unknown non-global link count → **Unbound** for confirmed zero links → **No enabled Rules** → **Active · N Rules**.
+The internal Loading state renders no misleading status badge.
+Standalone Rule precedence is **Disabled** → Loading/Unbound for its own links → **Active**.
+A member Rule is disabled when either the Rule or its Profile is disabled; otherwise the Profile's global/link state controls reachability, while the member's own stored global flag and links remain dormant until detach.
+
+Search evaluates the complete member collection before collapsed visibility.
+A member match temporarily reveals its parent and the matching member; a Profile-name match reveals that Profile and all its members.
+Clearing search restores the exact manual expansion set, and reordering remains disabled while filtering.
+
+### Regex imports and prompt-preset portability
+
+All three Regex-bearing import surfaces create exactly one Profile whenever at least one Rule is present, including single-Rule files:
+
+1. A prompt-preset import creates a Profile linked to the newly imported prompt preset.
+2. A character-card import creates a Profile linked to the imported character.
+3. A standalone Regex file requires the user to choose the current prompt preset, current character, all chats, or unbound; unavailable current targets are disabled in the preview.
+
+Every preview summarizes the source Rule states and exposes **Enable Profile after import**.
+The toggle defaults off; turning it on creates the Profile active immediately, so every source-enabled Rule can run without individual activation while source-disabled Rules remain disabled.
+The Profile, links, and member Rules are submitted as one atomic bundle, and every Rule is inserted with its Profile membership already set.
+
+Prompt-preset export reads the saved preset and fetches authoritative current Rules and Profiles even when the Regex tab was never opened.
+It includes directly preset-linked Standalone Rules and every member of directly preset-linked Profiles, including disabled members and directly linked entities that are also global.
+It excludes global-only reachability, members of unlinked Profiles, and dormant links stored on Profile members; results are deduplicated by Rule ID and follow `buildFlatVisualOrder`.
+Any Rule/Profile listing or link-resolution failure shows `promptManager.regex.exportFailed` and prevents the download instead of producing a partial file.
+
 ### Character field updates
 
 Character edits bypass the preset entirely. The `onCharacterFieldUpdate` callback:

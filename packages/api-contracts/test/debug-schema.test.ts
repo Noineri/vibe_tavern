@@ -112,6 +112,25 @@ describe("importJsonSchema", () => {
     expectReject(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", skipExisting: "yes" }));
   });
 
+  // RXU-23: the card's Regex Profile master-switch choice — optional boolean,
+  // defaulting false server-side (importJson's `?? false`). Flows into batch
+  // items via importJsonBatchSchema's `.omit({ lean: true })` spread.
+  it("preserves the explicit imported-regex-profile activation choice", () => {
+    const result = importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", enableImportedRegexProfile: true });
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error("unreachable");
+    expect(result.data.enableImportedRegexProfile).toBe(true);
+  });
+
+  it("treats enableImportedRegexProfile as optional-boolean (absent, true, or false ok; null and non-boolean rejected)", () => {
+    expect(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", enableImportedRegexProfile: true }).success).toBe(true);
+    expect(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", enableImportedRegexProfile: false }).success).toBe(true);
+    // Absent is fine (optional) — clients that send nothing are unchanged.
+    expect(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}" }).success).toBe(true);
+    expectReject(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", enableImportedRegexProfile: null }));
+    expectReject(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", enableImportedRegexProfile: "yes" }));
+  });
+
   it("treats skipExisting as optional-boolean (absent, true, or false ok, null rejected)", () => {
     expect(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", skipExisting: true }).success).toBe(true);
     expect(importJsonSchema.safeParse({ fileName: "f.json", jsonText: "{}", skipExisting: false }).success).toBe(true);

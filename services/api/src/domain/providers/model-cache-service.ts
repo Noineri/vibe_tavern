@@ -36,11 +36,14 @@ export async function resolveCachedModels(
 	try {
 		const providerType = profile.providerPreset;
 		const fetch = await resolveProviderFetchForProfile(profile);
+		// `novelai_oa` rides the openaiCompat type, whose model list stays keyless
+		// for every other preset — NovelAI's must not be fetched without a key
+		// (NOVELAI_PROVIDER_PLAN NAI-2b).
 		const models = await listProviderModels({
 			baseUrl: profile.endpoint,
 			apiKey: profile.apiKey ?? "",
 			providerType,
-			requiresAuthForModels: providerType === "anthropic" || providerType === "google",
+			requiresAuthForModels: providerType === "anthropic" || providerType === "google" || providerType === "novelai_oa" || providerType === "novelai",
 			...(fetch ? { fetch } : {}),
 		});
 		const normalized = models.map((m) => ({

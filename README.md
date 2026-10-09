@@ -251,7 +251,7 @@ The AI assistant is a pair-programmer for mini-apps: it works in sessions, follo
 
 ## Providers and personas
 
-Provider setup starts with three things: choose a protocol, paste the key, and test the connection. OpenAI-compatible profiles cover OpenRouter, DeepSeek, Groq, xAI, Mistral, and other compatible services; Anthropic, Google, Ollama, and llama.cpp are supported separately.
+Provider setup starts with three things: choose a protocol, paste the key, and test the connection. OpenAI-compatible profiles cover OpenRouter, DeepSeek, Groq, xAI, Mistral, and other compatible services; Anthropic, Google, Ollama, and llama.cpp are supported separately. NovelAI is supported natively for text (Kayra, Erato, and the OpenAI-compatible route for Xialong) and as an image-generation backend.
 
 The main settings contain model selection, response size, context, and reasoning controls. Temperature, top-p, stop sequences, and other samplers stay in an advanced section where they do not bother people who do not need them.
 
