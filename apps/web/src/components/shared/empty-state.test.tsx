@@ -44,4 +44,12 @@ describe("EmptyState", () => {
     expect(primaryCalls).toBe(1);
     expect(secondaryCalls).toBe(1);
   });
+
+  it("uses the 44px primary CTA class only when prominent is requested", () => {
+    const { getByRole } = render(
+      <EmptyState icon={<span>Icon</span>} title="No rules" cta="Create rule" ctaProminent />,
+    );
+
+    expect(getByRole("button", { name: "Create rule" }).className).toBe("empty-cta min-h-11 px-4");
+  });
 });
