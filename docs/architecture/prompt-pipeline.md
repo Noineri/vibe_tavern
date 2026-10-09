@@ -570,6 +570,56 @@ Runtime note: banned-word macros produce candidate bias entries only. Before gen
 
 ---
 
+## Regex Rule Resolution and Portability
+
+Regex Profiles are ownership and activation bundles around Regex Rules; they do not add a new transform stage.
+`RegexStore.resolveActiveRegexPresets()` first resolves the Rules that can participate in the current character/prompt-preset context, and the Regex engine then applies placement and message-depth filtering at each hook.
+
+The resolver has four sources:
+
+1. Enabled global Standalone Rules.
+2. Enabled Standalone Rules linked to the current character.
+3. Enabled Standalone Rules linked to the active prompt preset.
+4. Enabled member Rules whose enabled Profile is global or linked to the current character or prompt preset.
+
+A member Rule's own `isGlobal` value and junction links are dormant while it belongs to a Profile.
+The Rule participates only when its Profile is reachable and enabled and the Rule itself is enabled; detaching it to Standalone restores its own stored scope data.
+Persona is deliberately not a Regex scope.
+The resolver deduplicates Rules reached through multiple sources and returns deterministic `sortOrder`/ID order before placement/depth filtering.
+
+### Atomic import bundles
+
+`POST /api/regex/profiles/bundle` creates the Profile, its character/preset links, and every member Rule in one SQLite transaction.
+Every member receives the new `profileId` in its insert, so no imported Rule is temporarily Standalone and any failed write rolls back the complete bundle.
+Parsers preserve each source Rule's enabled/disabled state; the import-level choice controls only the Profile master switch.
+
+There are three Regex-bearing import surfaces:
+
+- Prompt-preset Regex become one Profile linked to the imported prompt preset.
+- Character-card Regex become one Profile linked to the imported character.
+- Standalone Regex files become one Profile with an explicit scope choice: current prompt preset, current character, all chats (`isGlobal`), or unbound.
+
+A one-Rule import still creates a Profile.
+**Enable Profile after import** defaults off on every preview, which submits `disabled: true` for the Profile.
+When enabled in the preview, the Profile is created active immediately and every source-enabled member can participate without a second per-Rule activation pass; source-disabled members stay disabled.
+
+### Prompt-preset export selection
+
+SillyTavern prompt presets have no Profile entity, so Vibe Tavern flattens the selected Rules into the exported `regex_scripts` array.
+Export reads the saved `PromptPresetDto` plus authoritative current Rule/Profile lists from the server; it never depends on whether the lazy Regex tab was opened and never serializes a dirty prompt-preset draft.
+
+The portable set contains:
+
+- each Standalone Rule with a direct link to the exported prompt preset; and
+- every member of each Profile with a direct link to that prompt preset, including disabled members.
+
+A direct link remains authoritative when the Rule or Profile is also global.
+Global-only reachability, members of unlinked Profiles, and dormant member-owned links are excluded.
+The set is deduplicated by Rule ID and ordered through the manager's shared `buildFlatVisualOrder()` helper before `serializeStPreset()` preserves each Rule's own disabled flag.
+A failure to list Rules/Profiles or resolve any required links aborts the export and produces no partial download.
+
+---
+
 ## Pipeline Walkthrough
 
 Given this input:
