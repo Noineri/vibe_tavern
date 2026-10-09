@@ -886,10 +886,9 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
     };
   }
 
-  async function openRegexTabWith(records: RegexPresetRecord[]) {
-    listAllRegexPresetsMock.mockResolvedValue(records);
+  function openPresetTab() {
     useModalStore.setState({ isPromptManagerOpen: true });
-    const view = render(
+    return render(
       <PromptManagerModal
         presets={[advancedPreset()]}
         activePresetId="preset-1"
@@ -900,6 +899,11 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
         onReorder={mock(async () => true)}
       />,
     );
+  }
+
+  async function openRegexTabWith(records: RegexPresetRecord[]) {
+    listAllRegexPresetsMock.mockResolvedValue(records);
+    const view = openPresetTab();
     fireEvent.click(within(view.baseElement).getByText("promptManager.regex.tabLabel"));
     await waitFor(() => {
       expect(listAllRegexPresetsMock).toHaveBeenCalled();
@@ -968,9 +972,32 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
     });
   });
 
+  test("preset export resolves a directly linked Rule without opening the Regex tab", async () => {
+    const direct = fullRecord("rx_1", "Alpha Strip");
+    listAllRegexPresetsMock.mockResolvedValue([direct]);
+    listAllRegexProfilesMock.mockResolvedValue([]);
+    getRegexLinksMock.mockResolvedValue([{
+      regexPresetId: direct.id,
+      targetType: "preset",
+      targetId: "preset-1",
+    }] as Awaited<ReturnType<typeof realRegexApi.getRegexLinks>>);
+    const view = openPresetTab();
+
+    fireEvent.click(within(view.baseElement).getByText("export_preset_btn"));
+
+    await waitFor(() => expect(downloadTextFileMock).toHaveBeenCalledTimes(1));
+    expect(listAllRegexPresetsMock).toHaveBeenCalledTimes(1);
+    expect(listAllRegexProfilesMock).toHaveBeenCalledTimes(1);
+    const [, json] = downloadTextFileMock.mock.calls[0] as [string, string, string];
+    const parsed = JSON.parse(json) as { extensions?: { regex_scripts?: Array<{ scriptName: string }> } };
+    expect(parsed.extensions?.regex_scripts).toHaveLength(1);
+    expect(parsed.extensions?.regex_scripts?.[0]).toMatchObject({ scriptName: "Alpha Strip" });
+  });
+
   test("preset export without Regex remains a normal ST preset export", async () => {
-    const view = await openRegexTabWith([]);
-    fireEvent.click(within(view.baseElement).getByText("promptManager.tabPresets"));
+    listAllRegexPresetsMock.mockResolvedValue([]);
+    listAllRegexProfilesMock.mockResolvedValue([]);
+    const view = openPresetTab();
     fireEvent.click(within(view.baseElement).getByText("export_preset_btn"));
 
     await waitFor(() => expect(downloadTextFileMock).toHaveBeenCalledTimes(1));
@@ -979,10 +1006,10 @@ describe("PromptManagerModal — regex copy & export (R-12)", () => {
     expect(parsed.extensions?.regex_scripts).toBeUndefined();
   });
 
-  test("a Regex link-resolution failure prevents preset download and surfaces exportFailed", async () => {
-    getRegexLinksMock.mockRejectedValue(new Error("offline"));
-    const view = await openRegexTabWith([fullRecord("rx_1", "Alpha Strip")]);
-    fireEvent.click(within(view.baseElement).getByText("promptManager.tabPresets"));
+  test("a Regex list failure prevents preset download and surfaces exportFailed", async () => {
+    listAllRegexPresetsMock.mockRejectedValue(new Error("offline"));
+    listAllRegexProfilesMock.mockResolvedValue([]);
+    const view = openPresetTab();
     fireEvent.click(within(view.baseElement).getByText("export_preset_btn"));
 
     await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("promptManager.regex.exportFailed"));

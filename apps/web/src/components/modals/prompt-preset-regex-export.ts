@@ -29,8 +29,8 @@ export async function resolvePromptPresetExportRules({
   getRuleLinks,
   getProfileLinks,
 }: PromptPresetRegexExportInput): Promise<RegexPreset[]> {
-  const standaloneRules = rules.filter((rule) => rule.profileId === null && !rule.isGlobal);
-  const linkedProfiles = profiles.filter((profile) => !profile.isGlobal);
+  const standaloneRules = rules.filter((rule) => rule.profileId === null);
+  const linkedProfiles = profiles;
 
   const [standaloneLinks, profileLinks] = await Promise.all([
     Promise.all(standaloneRules.map(async (rule) => [rule.id, await getRuleLinks(rule.id)] as const)),
@@ -67,16 +67,25 @@ export async function resolvePromptPresetExportRules({
   return exported;
 }
 
-interface ExportPromptPresetWithRegexInput extends Omit<PromptPresetRegexExportInput, "presetId"> {
+interface ExportPromptPresetWithRegexInput extends Omit<PromptPresetRegexExportInput, "presetId" | "rules" | "profiles"> {
   preset: PromptPresetDto;
+  listRules: () => Promise<RegexPreset[]>;
+  listProfiles: () => Promise<RegexProfile[]>;
 }
 
 /** Resolve portable Rules before serializing one saved prompt preset. */
-export async function exportPromptPresetWithRegex({ preset, rules, profiles, getRuleLinks, getProfileLinks }: ExportPromptPresetWithRegexInput): Promise<void> {
+export async function exportPromptPresetWithRegex({
+  preset,
+  listRules,
+  listProfiles,
+  getRuleLinks,
+  getProfileLinks,
+}: ExportPromptPresetWithRegexInput): Promise<void> {
+  const [rules, profiles] = await Promise.all([listRules(), listProfiles()]);
   const exportRules = await resolvePromptPresetExportRules({
     presetId: preset.id,
-    rules: [...rules],
-    profiles: [...profiles],
+    rules,
+    profiles,
     getRuleLinks,
     getProfileLinks,
   });

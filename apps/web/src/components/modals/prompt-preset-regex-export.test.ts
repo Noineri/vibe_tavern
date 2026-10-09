@@ -88,11 +88,37 @@ describe("resolvePromptPresetExportRules", () => {
     expect(await resolve([global], [])).toEqual([]);
   });
 
+  test("includes a global standalone Rule when it also has a direct preset link", async () => {
+    const global = rule("global", "Global", null, { isGlobal: true });
+
+    expect(await resolve([global], [], ["global"])).toEqual([global]);
+  });
+
+  test("includes members of a global Profile when it also has a direct preset link", async () => {
+    const globalProfile = profile("global-profile", "Global Profile", { isGlobal: true });
+    const member = rule("member", "Member", "global-profile");
+
+    expect(await resolve([member], [globalProfile], [], ["global-profile"])).toEqual([member]);
+  });
+
   test("excludes a member Rule's dormant preset link when its Profile is not linked", async () => {
     const bundle = profile("bundle", "Unlinked bundle");
     const member = rule("member", "Dormant direct link", "bundle");
+    let memberLinkLookups = 0;
 
-    expect(await resolve([member], [bundle], ["member"])).toEqual([]);
+    const exported = await resolvePromptPresetExportRules({
+      presetId: "preset-1",
+      rules: [member],
+      profiles: [bundle],
+      getRuleLinks: async () => {
+        memberLinkLookups += 1;
+        return [{ regexPresetId: member.id, targetType: "preset", targetId: "preset-1" }];
+      },
+      getProfileLinks: async () => [],
+    });
+
+    expect(exported).toEqual([]);
+    expect(memberLinkLookups).toBe(0);
   });
 
   test("excludes Rules in unlinked Profiles", async () => {
@@ -102,14 +128,14 @@ describe("resolvePromptPresetExportRules", () => {
     expect(await resolve([member], [bundle])).toEqual([]);
   });
 
-  test("deduplicates Rules by ID across duplicate input paths", async () => {
-    const direct = rule("shared", "Direct copy");
-    const bundle = profile("bundle", "Bundle");
-    const memberDuplicate = rule("shared", "Member copy", "bundle");
+  test("deduplicates the same directly linked Rule object by ID", async () => {
+    const direct = rule("shared", "Direct copy", null, { replaceString: "preserve this field" });
 
-    const exported = await resolve([direct, memberDuplicate], [bundle], ["shared"], ["bundle"]);
+    const exported = await resolve([direct, direct], [], ["shared"]);
 
-    expect(exported.map((item) => item.id)).toEqual([direct.id]);
+    expect(exported).toEqual([direct]);
+    expect(exported[0]).toBe(direct);
+    expect(exported[0]?.replaceString).toBe("preserve this field");
   });
 
   test("uses the deterministic manager order", async () => {
