@@ -28,12 +28,10 @@ interface RegexProfileEditorProps {
   rules: RegexPresetRecord[];
   onCreateRule: () => void;
   onAttachRules: (ruleIds: string[]) => void;
-  onNameCommit: (newName: string) => void;
+  onNameChange: (nextName: string) => void;
   onActiveToggle: (nextActive: boolean) => void;
   onScopeChange: (nextIsGlobal: boolean) => void;
   onLinksChanged?: (profileId: string, count: number) => void;
-  onExport: () => void;
-  onDeleteClick: () => void;
 }
 
 function ProfileMemberActions({
@@ -59,12 +57,10 @@ export function RegexProfileEditor({
   rules,
   onCreateRule,
   onAttachRules,
-  onNameCommit,
+  onNameChange,
   onActiveToggle,
   onScopeChange,
   onLinksChanged,
-  onExport,
-  onDeleteClick,
 }: RegexProfileEditorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -74,11 +70,6 @@ export function RegexProfileEditor({
     setName(profile.name);
   }, [profile.id, profile.name]);
 
-  const commitName = () => {
-    const trimmed = name.trim();
-    if (trimmed && trimmed !== profile.name) onNameCommit(trimmed);
-    else setName(profile.name);
-  };
 
   // ── Bindings ──
   const allCharacters = useAllCharacters();
@@ -150,7 +141,7 @@ export function RegexProfileEditor({
   const isActive = !profile.disabled;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" data-testid="regex-profile-editor">
       {/* Name + Active toggle */}
       <div className="flex items-end gap-4">
         <div className="min-w-0 flex-1">
@@ -160,10 +151,13 @@ export function RegexProfileEditor({
           <TextInput
             id="regex-profile-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={commitName}
+            onChange={(e) => {
+              const nextName = e.target.value;
+              setName(nextName);
+              const trimmed = nextName.trim();
+              if (trimmed) onNameChange(trimmed);
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") commitName();
               if (e.key === "Escape") setName(profile.name);
             }}
             placeholder={t("promptManager.regex.newProfilePlaceholder")}
@@ -242,26 +236,6 @@ export function RegexProfileEditor({
         </>
       )}
 
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={memberCount === 0}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-s2 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-t2 transition-colors hover:bg-s3 hover:text-t1 disabled:opacity-40 disabled:pointer-events-none"
-        >
-          <Icons.Download />
-          {t("promptManager.regex.profileExport")}
-        </button>
-        <button
-          type="button"
-          onClick={onDeleteClick}
-          className="inline-flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger/10 px-3 py-1.5 font-ui text-[calc(var(--ui-fs)-2px)] text-danger transition-colors hover:bg-danger/20"
-        >
-          <Icons.Trash />
-          {t("promptManager.regex.profileDelete")}
-        </button>
-      </div>
     </div>
   );
 }

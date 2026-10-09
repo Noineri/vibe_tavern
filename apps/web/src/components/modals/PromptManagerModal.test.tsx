@@ -11,7 +11,7 @@ useDomEnv();
  * to the copy leak back into the source's in-memory state. The pure helper is
  * exported precisely so this invariant has a direct unit test (no RTL render).
  */
-import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeAll, describe, expect, jest, mock, test } from "bun:test";
 import type { ReactNode } from "react";
 import React from "react";
 import type { CustomInjection, PromptOrderEntry, PromptPresetDto } from "@vibe-tavern/domain";
@@ -169,6 +169,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  jest.useRealTimers();
   await act(async () => {});
   cleanup();
   loadPromptCanvasLoreEntries.mockReset();
@@ -1106,6 +1107,104 @@ describe("PromptManagerModal — regex profile pane & member chip (R-13c)", () =
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed).toHaveLength(2);
     expect(parsed.every((o) => typeof o.scriptName === "string")).toBe(true);
+  });
+
+  test("Profile text edits debounce and coalesce into one autosave", async () => {
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
+    const q = within(view.baseElement);
+    await act(async () => { const profile = q.getAllByText("Bundle")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    const name = await waitFor(() => q.getByDisplayValue("Bundle")) as HTMLInputElement;
+    jest.useFakeTimers();
+    try {
+      fireEvent.change(name, { target: { value: "First" } });
+      fireEvent.change(name, { target: { value: "Final" } });
+      expect(updateRegexProfileMock).not.toHaveBeenCalled();
+
+      await act(async () => { jest.advanceTimersByTime(999); });
+      expect(updateRegexProfileMock).not.toHaveBeenCalled();
+      await act(async () => { jest.advanceTimersByTime(1); });
+
+      expect(updateRegexProfileMock).toHaveBeenCalledTimes(1);
+      expect(updateRegexProfileMock).toHaveBeenCalledWith("p1", { name: "Final" });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("Profile discrete controls save immediately", async () => {
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
+    const q = within(view.baseElement);
+    await act(async () => { const profile = q.getAllByText("Bundle")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    const toggle = await waitFor(() => q.getByRole("switch", { name: "promptManager.regex.fieldActive" }));
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(updateRegexProfileMock).toHaveBeenCalledWith("p1", { disabled: true }));
+  });
+
+  test("a failed Profile autosave rolls back the optimistic control and shows an error", async () => {
+    updateRegexProfileMock.mockRejectedValueOnce(new Error("offline"));
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
+    const q = within(view.baseElement);
+    await act(async () => { const profile = q.getAllByText("Bundle")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    const toggle = await waitFor(() => q.getByRole("switch", { name: "promptManager.regex.fieldActive" }));
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(updateRegexProfileMock).toHaveBeenCalledWith("p1", { disabled: true }));
+    await waitFor(() => expect(q.getByText("promptManager.regex.profileAutosaveFailed")).toBeTruthy());
+  });
+
+  test("flushes a pending Profile rename before switching selection", async () => {
+    let resolveSave: ((record: RegexProfileRecord) => void) | undefined;
+    updateRegexProfileMock.mockImplementationOnce(() => new Promise<RegexProfileRecord>((resolve) => { resolveSave = resolve; }));
+    const rule = regexRecord("rule-1", "Standalone");
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], [rule]);
+    const q = within(view.baseElement);
+    await act(async () => { const profile = q.getAllByText("Bundle")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    fireEvent.change(await waitFor(() => q.getByDisplayValue("Bundle")), { target: { value: "Renamed" } });
+
+    const standalone = q.getByText("Standalone");
+    fireEvent.pointerDown(standalone);
+    fireEvent.click(standalone);
+
+    await waitFor(() => expect(updateRegexProfileMock).toHaveBeenCalledWith("p1", { name: "Renamed" }));
+    expect(q.getByDisplayValue("Renamed")).toBeTruthy();
+    resolveSave?.(profileRecord("p1", "Renamed"));
+    await waitFor(() => expect(q.getByText("promptManager.regex.fieldFind")).toBeTruthy());
+  });
+
+  test("flushes a pending Profile rename before closing", async () => {
+    let resolveSave: ((record: RegexProfileRecord) => void) | undefined;
+    updateRegexProfileMock.mockImplementationOnce(() => new Promise<RegexProfileRecord>((resolve) => { resolveSave = resolve; }));
+    const view = await openRegexTab([profileRecord("p1", "Bundle")], []);
+    const q = within(view.baseElement);
+    await act(async () => { const profile = q.getAllByText("Bundle")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    fireEvent.change(await waitFor(() => q.getByDisplayValue("Bundle")), { target: { value: "Renamed" } });
+
+    fireEvent.click(q.getAllByText("close")[0]);
+
+    await waitFor(() => expect(updateRegexProfileMock).toHaveBeenCalledWith("p1", { name: "Renamed" }));
+    expect(useModalStore.getState().isPromptManagerOpen).toBe(true);
+    resolveSave?.(profileRecord("p1", "Renamed"));
+    await waitFor(() => expect(useModalStore.getState().isPromptManagerOpen).toBe(false));
+  });
+
+  test("Profile Export and Delete live only in the footer, and Export disables when empty", async () => {
+    const emptyView = await openRegexTab([profileRecord("p1", "Empty")], []);
+    const emptyQuery = within(emptyView.baseElement);
+    await act(async () => { const profile = emptyQuery.getAllByText("Empty")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    const editor = await waitFor(() => emptyQuery.getByTestId("regex-profile-editor"));
+    expect(within(editor).queryByText("promptManager.regex.profileExport")).toBeNull();
+    expect(within(editor).queryByText("promptManager.regex.profileDelete")).toBeNull();
+    expect(emptyQuery.getByText("promptManager.regex.profileExport").getAttribute("aria-disabled")).toBe("true");
+
+    cleanup();
+    const memberView = await openRegexTab([profileRecord("p2", "Filled")], [regexRecord("member", "Member", "p2")]);
+    const memberQuery = within(memberView.baseElement);
+    await act(async () => { const profile = memberQuery.getAllByText("Filled")[0]; fireEvent.pointerDown(profile); fireEvent.click(profile); });
+    await waitFor(() => expect(memberQuery.getByText("promptManager.regex.profileExport").getAttribute("aria-disabled")).toBeNull());
+    expect(memberQuery.getByText("promptManager.regex.profileDelete")).toBeTruthy();
   });
 });
 

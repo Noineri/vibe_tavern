@@ -70,11 +70,9 @@ async function renderEditor(memberCount: number, rules: RegexPresetRecord[]) {
       rules={rules}
       onCreateRule={onCreateRule}
       onAttachRules={onAttachRules}
-      onNameCommit={mock()}
+      onNameChange={mock()}
       onActiveToggle={mock()}
       onScopeChange={mock()}
-      onExport={mock()}
-      onDeleteClick={mock()}
     />,
   );
   await act(async () => {});

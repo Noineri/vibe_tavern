@@ -44,6 +44,7 @@ import { RegexPresetList } from "../settings/prompt/RegexPresetList.js";
 import { RegexPresetEditor } from "../settings/prompt/RegexPresetEditor.js";
 import { regexDraftFromRecord, useRegexRuleDraft, emptyRegexDraft, type RegexPresetDraft } from "../settings/prompt/regex-rule-draft.js";
 import { RegexProfileEditor } from "../settings/prompt/RegexProfileEditor.js";
+import { ProfileAutosaveFooter, useProfileAutosave } from "../settings/prompt/profile-autosave.js";
 import { makeRegexProfileAttachmentHandler } from "../settings/prompt/profile-member-workflows.js";
 import { makeRegexProfileAssignmentHandler } from "../settings/prompt/regex-profile-assignment.js";
 import {
@@ -326,6 +327,14 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   const [regexProfiles, setRegexProfiles] = useState<RegexProfileRecord[]>([]);
   const [expandedProfileIds, setExpandedProfileIds] = useState<Set<string>>(new Set());
   const [regexProfileLinkCounts, setRegexProfileLinkCounts] = useState<Record<string, number | undefined>>({});
+  const profileAutosave = useProfileAutosave({
+    update: updateRegexProfile,
+    setProfiles: setRegexProfiles,
+    onRollback: (id, previous) => setRegexProfiles((profiles) =>
+      profiles.map((profile) => profile.id === id ? previous : profile),
+    ),
+    onSaved: invalidateActiveRegexPresets,
+  });
 
   // RXU-14: manual Rule creation is a LOCAL draft — no placeholder is
   // persisted and no list row exists until the first valid Save.
@@ -437,53 +446,40 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
     setRegexSaveState("idle");
   }
 
+  function afterProfileAutosave(next: () => void) {
+    void profileAutosave.flush().then(next);
+  }
+
   function handleRegexSelect(id: string) {
-    regexRuleDraft.discard();
-    setActiveRegexPresetId(id);
-    setActiveRegexProfileId(null);
+    afterProfileAutosave(() => {
+      regexRuleDraft.discard();
+      setActiveRegexPresetId(id);
+      setActiveRegexProfileId(null);
+      profileAutosave.resetStatus();
+    });
   }
 
   function handleRegexProfileSelect(id: string) {
-    regexRuleDraft.discard();
-    setActiveRegexProfileId(id);
-    setActiveRegexPresetId(null);
-    setRegexDirty(false);
-    setRegexSaveState("idle");
+    afterProfileAutosave(() => {
+      regexRuleDraft.discard();
+      setActiveRegexProfileId(id);
+      setActiveRegexPresetId(null);
+      setRegexDirty(false);
+      setRegexSaveState("idle");
+      profileAutosave.resetStatus();
+    });
+  }
+
+  function queueProfileSave(patch: { name?: string; disabled?: boolean; isGlobal?: boolean }, immediate: boolean) {
+    if (activeRegexProfile) profileAutosave.queue(activeRegexProfile, patch, immediate);
   }
 
   function handleRegexProfileActiveToggle(nextActive: boolean) {
-    if (!activeRegexProfileId) return;
-    const id = activeRegexProfileId;
-    const prev = regexProfiles.find((p) => p.id === id);
-    if (!prev) return;
-    const nextDisabled = !nextActive;
-    setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, disabled: nextDisabled } : p)));
-    void updateRegexProfile(id, { disabled: nextDisabled })
-      .then((updated) => {
-        if (updated) setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? updated : p)));
-        invalidateActiveRegexPresets();
-      })
-      .catch(() => {
-        setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, disabled: prev.disabled } : p)));
-        toast.error(t("promptManager.regex.profileActiveFailed"));
-      });
+    queueProfileSave({ disabled: !nextActive }, true);
   }
 
   function handleRegexProfileScopeToggle(nextIsGlobal: boolean) {
-    if (!activeRegexProfileId) return;
-    const id = activeRegexProfileId;
-    const prev = regexProfiles.find((p) => p.id === id);
-    if (!prev) return;
-    setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, isGlobal: nextIsGlobal } : p)));
-    void updateRegexProfile(id, { isGlobal: nextIsGlobal })
-      .then((updated) => {
-        if (updated) setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? updated : p)));
-        invalidateActiveRegexPresets();
-      })
-      .catch(() => {
-        setRegexProfiles((prevList) => prevList.map((p) => (p.id === id ? { ...p, isGlobal: prev.isGlobal } : p)));
-        toast.error(t("promptManager.regex.profileActiveFailed"));
-      });
+    queueProfileSave({ isGlobal: nextIsGlobal }, true);
   }
 
   const handleProfileExport = useCallback(() => {
@@ -781,11 +777,13 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
   if (!isOpen) return null;
 
   const handleClose = () => {
-    if (dirty || regexDirty || serviceDirty || imagesDirty) {
-      setConfirmCloseOpen(true);
-    } else {
-      onClose();
-    }
+    afterProfileAutosave(() => {
+      if (dirty || regexDirty || serviceDirty || imagesDirty) {
+        setConfirmCloseOpen(true);
+      } else {
+        onClose();
+      }
+    });
   };
 
   const handleSave = () => {
@@ -1198,12 +1196,10 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                 rules={regexPresets}
                 onCreateRule={() => regexRuleDraft.open("", activeRegexProfile.id)}
                 onAttachRules={(ruleIds) => handleRegexAttach(activeRegexProfile.id, ruleIds)}
-                onNameCommit={(newName) => handleRegexProfileRename(activeRegexProfile.id, newName)}
+                onNameChange={(name) => queueProfileSave({ name }, false)}
                 onActiveToggle={handleRegexProfileActiveToggle}
                 onScopeChange={handleRegexProfileScopeToggle}
                 onLinksChanged={(pid, count) => setRegexProfileLinkCounts((prev) => ({ ...prev, [pid]: count }))}
-                onExport={handleProfileExport}
-                onDeleteClick={() => setProfileConfirmDeleteId(activeRegexProfile.id)}
               />
             ) : activeRegexPreset ? (
               <RegexPresetEditor
@@ -1299,30 +1295,34 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             : activeTab === "service"
             ? slots.footer
             : activeTab === "regex"
-              ? (
-            <MasterDetailFooter
-              actions={
-                activeRegexPreset
-                  ? [
+              ? activeRegexProfile
+                ? (
+                  <ProfileAutosaveFooter
+                    profile={activeRegexProfile}
+                    rules={regexPresets}
+                    status={profileAutosave.status}
+                    onExport={handleProfileExport}
+                    onDelete={() => setProfileConfirmDeleteId(activeRegexProfile.id)}
+                    onClose={handleClose}
+                  />
+                ) : (
+                  <MasterDetailFooter
+                    actions={activeRegexPreset ? [
                       { icon: <Icons.Copy />, label: t("promptManager.regex.copy"), onClick: handleRegexCopy },
                       { icon: <Icons.Download />, label: t("promptManager.regex.export"), onClick: handleRegexExport },
-                      { icon: <Icons.Trash />, label: t("promptManager.regex.deleteConfirm"), onClick: () => setRegexConfirmDeleteOpen(true) },
-                    ]
-                  : []
-              }
-              onClose={handleClose}
-              right={
-                <SaveButton
-                  dirty={regexDirty}
-                  saveState={regexSaveState}
-                  resetKey={activeRegexPresetId}
-                  onClick={handleRegexSave}
-                  disabled={regexRuleDraft.draft ? regexRuleDraft.saveBlocked(regexDraft) : false}
-                  label={t("save")}
-                />
-              }
-            />
-          ) : (
+                      { icon: <Icons.Trash />, label: t("promptManager.regex.deleteConfirm"), onClick: () => setRegexConfirmDeleteOpen(true), destructive: true },
+                    ] : []}
+                    onClose={handleClose}
+                    right={<SaveButton
+                      dirty={regexDirty}
+                      saveState={regexSaveState}
+                      resetKey={activeRegexPresetId}
+                      onClick={handleRegexSave}
+                      disabled={regexRuleDraft.draft ? regexRuleDraft.saveBlocked(regexDraft) : false}
+                      label={t("save")}
+                    />}
+                  />
+                ) : (
           <MasterDetailFooter
               actions={
                 activePreset
