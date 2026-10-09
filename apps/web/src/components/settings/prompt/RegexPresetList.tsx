@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { cn } from "../../../lib/cn.js";
 import { Icons } from "../../shared/icons.js";
 import { SearchInput } from "../../shared/SearchInput.js";
@@ -13,29 +12,22 @@ import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { buildFlatVisualOrder, interpretRegexDrop, type FlatItem } from "../../../lib/regex-profile-drop.js";
+import {
+  regexProfileAvailability,
+  regexRuleAvailability,
+  type RegexProfileAvailability,
+  type RegexRuleAvailability,
+} from "../../../lib/regex-availability.js";
+import type { RegexPresetRecord, RegexProfileRecord } from "../../../api/types.js";
+import { RegexAvailabilityBadge } from "./RegexAvailabilityBadge.js";
 
-type RegexPresetRef = {
-  id: string;
-  name: string;
-  disabled: boolean;
-  notApplied: "disabled" | "unbound" | null;
-  profileId?: string | null;
-  shadowed?: boolean;
-  sortOrder?: number;
-};
-
-type RegexProfileRef = {
-  id: string;
-  name: string;
-  disabled: boolean;
-  notApplied: "disabled" | "unbound" | null;
-  sortOrder: number;
-  memberCount: number;
-};
+type RegexAvailability = RegexProfileAvailability | RegexRuleAvailability;
 
 interface RegexPresetListProps {
-  presets: RegexPresetRef[];
-  profiles?: RegexProfileRef[];
+  presets: RegexPresetRecord[];
+  profiles?: RegexProfileRecord[];
+  regexLinkCounts?: Record<string, number | undefined>;
+  regexProfileLinkCounts?: Record<string, number | undefined>;
   activePresetId: string | null;
   activeProfileId?: string | null;
   expandedProfileIds?: string[];
@@ -54,13 +46,14 @@ interface RegexPresetListProps {
   onImportRegex?: () => void;
 }
 
-const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, startEditing, dndDisabled }: {
-  p: RegexPresetRef;
+const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, startEditing, dndDisabled, availability, shadowed }: {
+  p: RegexPresetRecord;
   isActive: boolean;
   onSelect: (id: string) => void;
-  isMobile: boolean;
-  startEditing: (preset: RegexPresetRef, e: React.MouseEvent) => void;
+  startEditing: (preset: RegexPresetRecord, e: React.MouseEvent) => void;
   dndDisabled: boolean;
+  availability: RegexAvailability;
+  shadowed: boolean;
 }) => {
   const { t } = useT();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
@@ -72,13 +65,6 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
     transition,
     ...(isDragging ? { opacity: 0 } : {}),
   };
-  const statusKey = p.notApplied === "disabled"
-    ? "promptManager.regex.badgeDisabledReason"
-    : p.notApplied === "unbound" ? "promptManager.regex.badgeUnboundReason"
-    : "promptManager.regex.badgeWorking";
-  const statusDotCls = p.notApplied === "disabled" ? "bg-t4"
-    : p.notApplied === "unbound" ? "bg-danger"
-    : "bg-success";
   const isMember = p.profileId != null;
   return (
     <div
@@ -98,11 +84,11 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
-          aria-label="drag"
+          aria-label={t("promptManager.regex.dragAria")}
           onClick={(e) => e.stopPropagation()}
-          className="flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
+          className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-8 sm:w-5"
         >
-          <span className="text-base leading-none">≡</span>
+          <Icons.Grip className="h-[18px] w-[18px] sm:h-[13px] sm:w-[13px]" />
         </button>
       )}
       <div className={cn("h-[6px] w-[6px] shrink-0 rounded-full sm:transition-colors", isActive ? "bg-accent" : "bg-transparent")} />
@@ -113,7 +99,7 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
           p.disabled && "opacity-50",
         )}>{p.name}</span>
       </CustomTooltip>
-      {p.shadowed && (
+      {shadowed && (
         <CustomTooltip content={t("promptManager.regex.memberShadowed")}>
           <span role="img" aria-label={t("promptManager.regex.memberShadowed")} className="flex shrink-0 p-1">
             <span className="h-[6px] w-[6px] rounded-full bg-danger" />
@@ -125,11 +111,7 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
         className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
       ><Icons.Edit /></button>
       <div className="ml-auto flex items-center gap-1">
-        <CustomTooltip content={t(statusKey)}>
-          <span role="img" aria-label={t(statusKey)} className="flex shrink-0 p-1">
-            <span className={cn("h-[6px] w-[6px] rounded-full", statusDotCls)} />
-          </span>
-        </CustomTooltip>
+        <RegexAvailabilityBadge availability={availability} />
         <button type="button"
           onClick={(e) => startEditing(p, e)}
           className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
@@ -143,20 +125,22 @@ const SortableRegexPresetRow = React.memo(({ p, isActive, onSelect, isMobile, st
   prev.p.id === next.p.id &&
   prev.p.name === next.p.name &&
   prev.p.disabled === next.p.disabled &&
-  prev.p.notApplied === next.p.notApplied &&
   prev.p.profileId === next.p.profileId &&
-  prev.p.shadowed === next.p.shadowed &&
+  prev.shadowed === next.shadowed &&
+  prev.availability.kind === next.availability.kind &&
+  ("enabledRuleCount" in prev.availability ? prev.availability.enabledRuleCount : undefined) === ("enabledRuleCount" in next.availability ? next.availability.enabledRuleCount : undefined) &&
   prev.dndDisabled === next.dndDisabled);
 
-const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect, isMobile, startEditing, dndDisabled, onToggle }: {
-  p: RegexProfileRef;
+const SortableRegexProfileRow = React.memo(({ p, memberCount, isActive, isExpanded, onSelect, startEditing, dndDisabled, onToggle, availability }: {
+  p: RegexProfileRecord;
+  memberCount: number;
   isActive: boolean;
   isExpanded: boolean;
   onSelect: (id: string) => void;
-  isMobile: boolean;
-  startEditing: (profile: RegexProfileRef, e: React.MouseEvent) => void;
+  startEditing: (profile: RegexProfileRecord, e: React.MouseEvent) => void;
   dndDisabled: boolean;
   onToggle: (id: string) => void;
+  availability: RegexAvailability;
 }) => {
   const { t } = useT();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
@@ -168,13 +152,6 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
     transition,
     ...(isDragging ? { opacity: 0 } : {}),
   };
-  const statusKey = p.notApplied === "disabled"
-    ? "promptManager.regex.badgeDisabledReason"
-    : p.notApplied === "unbound" ? "promptManager.regex.badgeUnboundReason"
-    : "promptManager.regex.badgeWorking";
-  const statusDotCls = p.notApplied === "disabled" ? "bg-t4"
-    : p.notApplied === "unbound" ? "bg-danger"
-    : "bg-success";
   return (
     <div
       ref={setNodeRef}
@@ -191,11 +168,11 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
-          aria-label="drag"
+          aria-label={t("promptManager.regex.dragAria")}
           onClick={(e) => e.stopPropagation()}
-          className="flex h-8 w-7 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-auto sm:w-5"
+          className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded cursor-grab touch-none text-t4 transition-colors hover:bg-s2 hover:text-t1 active:cursor-grabbing sm:h-8 sm:w-5"
         >
-          <span className="text-base leading-none">≡</span>
+          <Icons.Grip className="h-[18px] w-[18px] sm:h-[13px] sm:w-[13px]" />
         </button>
       )}
       <button
@@ -213,18 +190,14 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
             p.disabled && "opacity-50",
           )}>{p.name}</span>
         </CustomTooltip>
-        <span className="shrink-0 font-ui text-[11px] text-t4">({p.memberCount})</span>
+        <span className="shrink-0 font-ui text-[calc(var(--ui-fs)-3px)] text-t4">({memberCount})</span>
       </button>
       <button type="button"
         onClick={(e) => startEditing(p, e)}
         className={cn("ml-1 shrink-0 transition-colors md:hidden", isActive ? "text-accent" : "text-t4 hover:text-t1")}
       ><Icons.Edit /></button>
       <div className="ml-auto flex items-center gap-1">
-        <CustomTooltip content={t(statusKey)}>
-          <span role="img" aria-label={t(statusKey)} className="flex shrink-0 p-1">
-            <span className={cn("h-[6px] w-[6px] rounded-full", statusDotCls)} />
-          </span>
-        </CustomTooltip>
+        <RegexAvailabilityBadge availability={availability} />
         <button type="button"
           onClick={(e) => startEditing(p, e)}
           className={cn("shrink-0 opacity-0 transition-opacity group-hover:opacity-100 hidden md:flex", isActive ? "text-accent" : "text-t4 hover:text-t1")}
@@ -239,13 +212,13 @@ const SortableRegexProfileRow = React.memo(({ p, isActive, isExpanded, onSelect,
   prev.p.id === next.p.id &&
   prev.p.name === next.p.name &&
   prev.p.disabled === next.p.disabled &&
-  prev.p.notApplied === next.p.notApplied &&
-  prev.p.memberCount === next.p.memberCount &&
+  prev.memberCount === next.memberCount &&
+  prev.availability.kind === next.availability.kind &&
+  ("enabledRuleCount" in prev.availability ? prev.availability.enabledRuleCount : undefined) === ("enabledRuleCount" in next.availability ? next.availability.enabledRuleCount : undefined) &&
   prev.dndDisabled === next.dndDisabled);
 
-export function RegexPresetList({ presets, profiles = [], activePresetId, activeProfileId, expandedProfileIds: controlledExpanded, onSelect, onSelectProfile, onAdd, onAddProfile, onAddRuleToProfile, onRename, onRenameProfile, onReorder, onReorderProfiles, onAttach, onDetach, onToggleProfile, onImportRegex }: RegexPresetListProps) {
+export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, regexProfileLinkCounts = {}, activePresetId, activeProfileId, expandedProfileIds: controlledExpanded, onSelect, onSelectProfile, onAdd, onAddProfile, onAddRuleToProfile, onRename, onRenameProfile, onReorder, onReorderProfiles, onAttach, onDetach, onToggleProfile, onImportRegex }: RegexPresetListProps) {
   const { t } = useT();
-  const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
@@ -255,10 +228,11 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
   const [newName, setNewName] = useState("");
   const [newProfileName, setNewProfileName] = useState("");
   const [internalExpanded, setInternalExpanded] = useState<Set<string>>(new Set());
-  const expandedIds = useMemo(() => {
+  const manualExpandedIds = useMemo(() => {
     if (controlledExpanded) return new Set(controlledExpanded);
     return internalExpanded;
   }, [controlledExpanded, internalExpanded]);
+  const manualExpansionSnapshot = useRef<Set<string>>(new Set());
   const [inlineRuleProfileId, setInlineRuleProfileId] = useState<string | null>(null);
   const [inlineRuleName, setInlineRuleName] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -267,21 +241,15 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
   useEffect(() => { if (editingId || editingProfileId) editInputRef.current?.focus(); }, [editingId, editingProfileId]);
   useEffect(() => { if (isCreating || isCreatingProfile) newInputRef.current?.focus(); }, [isCreating, isCreatingProfile]);
 
-  const dndDisabled = search.trim().length > 0;
+  const searchLower = search.trim().toLowerCase();
+  const isFiltering = searchLower.length > 0;
+  const dndDisabled = isFiltering;
 
-  const flatItems: FlatItem[] = useMemo(() => {
-    const effProfiles = profiles.map((pr) => ({ id: pr.id, sortOrder: pr.sortOrder, name: pr.name }));
-    const effPresets = presets.map((p) => ({ id: p.id, sortOrder: p.sortOrder ?? 0, name: p.name, profileId: p.profileId ?? null }));
-    // Preserve original sortOrder from presets where available: need actual sortOrder from presets prop
-    // The presets prop's sortOrder is not in RegexPresetRef; we use 0 fallback but need real value
-    // Instead, we will build based on the order of presets/profiles arrays which are already sorted by parent
-    // For flat order we keep inference by array order when sortOrder not available, but we have it in parent state
-    // For simplicity, use provided sortOrder from profiles, and for presets use index as fallback
-    // The parent passes presets sorted; we keep that order via the flat visual builder's sort
-    // To make tests deterministic, we trust the passed order: build using sortOrder 0 + name localeCompare
-    // The actual flat order will be sorted; for drag tests we care about visual order as built
-    return buildFlatVisualOrder(effProfiles, effPresets, expandedIds);
-  }, [profiles, presets, expandedIds]);
+  const flatItems: FlatItem[] = useMemo(() => buildFlatVisualOrder(
+    profiles.map((profile) => ({ id: profile.id, sortOrder: profile.sortOrder, name: profile.name })),
+    presets.map((preset) => ({ id: preset.id, sortOrder: preset.sortOrder, name: preset.name, profileId: preset.profileId })),
+    manualExpandedIds,
+  ), [profiles, presets, manualExpandedIds]);
 
   // For sortable ids, use flatItems sortableIds
   const sortableIds = useMemo(() => {
@@ -291,6 +259,7 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
   }, [flatItems, editingId, editingProfileId]);
 
   const handleToggle = (id: string) => {
+    if (isFiltering) return;
     if (onToggleProfile) onToggleProfile(id);
     else setInternalExpanded((prev) => {
       const next = new Set(prev);
@@ -424,7 +393,7 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
     const id = String(event.active.id);
     if (id.startsWith("profile:")) {
       const pid = id.slice("profile:".length);
-      if (expandedIds.has(pid)) {
+      if (manualExpandedIds.has(pid)) {
         handleToggle(pid);
       }
     }
@@ -433,27 +402,35 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
 
   const handleDragEnd = baseHandleDragEnd;
 
-  // Search filter
-  const searchLower = search.trim().toLowerCase();
-  const filteredFlat = searchLower
-    ? flatItems.filter((item) => {
-        if (item.kind === "profile") {
-          const pr = profiles.find((p) => p.id === item.id);
-          return pr?.name.toLowerCase().includes(searchLower);
-        }
-        const pr = presets.find((p) => p.id === item.id);
-        return pr?.name.toLowerCase().includes(searchLower);
-      })
-    : flatItems;
+  const filteredFlat = useMemo(() => {
+    if (!isFiltering) return flatItems;
+    const matchedProfileIds = new Set<string>();
+    const visibleRuleIds = new Set<string>();
+    for (const profile of profiles) {
+      const profileMatches = profile.name.toLowerCase().includes(searchLower);
+      const members = presets.filter((preset) => preset.profileId === profile.id);
+      const matchingMembers = members.filter((preset) => preset.name.toLowerCase().includes(searchLower));
+      if (profileMatches || matchingMembers.length > 0) matchedProfileIds.add(profile.id);
+      for (const member of profileMatches ? members : matchingMembers) visibleRuleIds.add(member.id);
+    }
+    for (const preset of presets) {
+      if (preset.profileId === null && preset.name.toLowerCase().includes(searchLower)) visibleRuleIds.add(preset.id);
+    }
+    return buildFlatVisualOrder(
+      profiles.filter((profile) => matchedProfileIds.has(profile.id)).map((profile) => ({ id: profile.id, sortOrder: profile.sortOrder, name: profile.name })),
+      presets.filter((preset) => visibleRuleIds.has(preset.id)).map((preset) => ({ id: preset.id, sortOrder: preset.sortOrder, name: preset.name, profileId: preset.profileId })),
+      matchedProfileIds,
+    );
+  }, [flatItems, isFiltering, presets, profiles, searchLower]);
 
-  const filteredIdsSet = new Set(filteredFlat.map((f) => f.sortableId));
+  const profileById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
 
-  const startEditing = (preset: RegexPresetRef, e: React.MouseEvent) => {
+  const startEditing = (preset: RegexPresetRecord, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingId(preset.id);
     setEditName(preset.name);
   };
-  const startEditingProfile = (profile: RegexProfileRef, e: React.MouseEvent) => {
+  const startEditingProfile = (profile: RegexProfileRecord, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingProfileId(profile.id);
     setEditName(profile.name);
@@ -499,9 +476,12 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
         </div>
         <SearchInput
           className="mb-2"
-          placeholder={t("search_presets")}
+          placeholder={t("promptManager.regex.searchPlaceholder")}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            if (!isFiltering && e.target.value.trim()) manualExpansionSnapshot.current = new Set(manualExpandedIds);
+            setSearch(e.target.value);
+          }}
         />
       </div>
 
@@ -526,9 +506,8 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
               if (item.kind === "profile") {
                 const pr = profiles.find((p) => p.id === item.id);
                 if (!pr) return null;
-                if (!filteredIdsSet.has(item.sortableId)) return null;
                 const isActive = activeProfileId === pr.id;
-                const isExpanded = expandedIds.has(pr.id);
+                const isExpanded = isFiltering || manualExpandedIds.has(pr.id);
                 const isEditing = editingProfileId === pr.id;
                 if (isEditing) {
                   return (
@@ -555,15 +534,16 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
                   <React.Fragment key={item.sortableId}>
                     <SortableRegexProfileRow
                       p={pr}
+                      memberCount={presets.filter((preset) => preset.profileId === pr.id).length}
                       isActive={isActive}
                       isExpanded={isExpanded}
                       onSelect={(id) => onSelectProfile ? onSelectProfile(id) : onSelect(id)}
-                      isMobile={isMobile}
                       startEditing={startEditingProfile}
                       dndDisabled={dndDisabled}
                       onToggle={handleToggle}
+                      availability={regexProfileAvailability(pr, presets, regexProfileLinkCounts[pr.id])}
                     />
-                    {isExpanded && inlineRuleProfileId === pr.id && (
+                    {!isFiltering && isExpanded && inlineRuleProfileId === pr.id && (
                       <div className="ml-8 border-l border-border/40 px-3 py-2">
                         <div className="relative flex items-center">
                           <InlineRenameInput
@@ -590,7 +570,7 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
                         </div>
                       </div>
                     )}
-                    {isExpanded && (
+                    {!isFiltering && isExpanded && (
                       <div className="ml-2">
                         <button type="button"
                           onClick={() => setInlineRuleProfileId(pr.id)}
@@ -606,7 +586,6 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
               // rule
               const p = presets.find((pr) => pr.id === item.id);
               if (!p) return null;
-              if (!filteredIdsSet.has(item.sortableId)) return null;
               const isActive = activePresetId === p.id;
               const isEditing = editingId === p.id;
               if (isEditing) {
@@ -636,9 +615,15 @@ export function RegexPresetList({ presets, profiles = [], activePresetId, active
                   p={p}
                   isActive={isActive}
                   onSelect={onSelect}
-                  isMobile={isMobile}
                   startEditing={startEditing}
                   dndDisabled={dndDisabled}
+                  availability={regexRuleAvailability({
+                    rule: p,
+                    ruleLinkCount: regexLinkCounts[p.id],
+                    profile: p.profileId === null ? null : profileById.get(p.profileId) ?? null,
+                    profileLinkCount: p.profileId === null ? undefined : regexProfileLinkCounts[p.profileId],
+                  })}
+                  shadowed={p.profileId !== null && (p.isGlobal || (regexLinkCounts[p.id] ?? 0) > 0)}
                 />
               );
             })}

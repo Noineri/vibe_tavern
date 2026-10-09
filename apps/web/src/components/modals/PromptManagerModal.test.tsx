@@ -961,10 +961,9 @@ describe("PromptManagerModal — regex profiles (R-13b)", () => {
     expect((createRegexProfileMock.mock.calls[0][0] as unknown as { name: string }).name).toBe("MyProf");
   });
 
-  test("member rule's status dot reflects the PROFILE gate: enabled-but-unbound profile → red dot on both the profile row and its member (R-13b owner spec)", async () => {
-    // Enabled, non-global, zero profile links → applies in NO chat: the
-    // profile row dot is red AND the member's dot must be red too (a green
-    // member dot would claim the rule fires while the gate keeps it dead).
+  test("member rule status reflects the PROFILE gate: enabled-but-unbound profile → Unbound on both the profile row and its member (R-13b owner spec)", async () => {
+    // Enabled, non-global, zero profile links → applies in NO chat: both rows
+    // must state Unbound; an active member badge would contradict the profile gate.
     const unboundProfile: RegexProfileRecord = { id: brandId<RegexProfileId>("pu"), name: "UnboundProf", disabled: false, isGlobal: false, sortOrder: 0, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
     listAllRegexPresetsMock.mockResolvedValue([regexRecord("m1", "MemRule", "pu")]);
     listAllRegexProfilesMock.mockResolvedValue([unboundProfile]);
@@ -978,9 +977,9 @@ describe("PromptManagerModal — regex profiles (R-13b)", () => {
     // Expand the profile so the member row renders.
     fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
     await waitFor(() => expect(within(view.baseElement).getByText("MemRule")).toBeTruthy());
-    // Both the profile row and the member row carry the red "unbound" dot.
+    // Both the profile row and member row expose the same accessible status.
     await waitFor(() => {
-      expect(view.getAllByLabelText("promptManager.regex.badgeUnboundReason").length).toBe(2);
+      expect(view.getAllByLabelText("promptManager.regex.availabilityUnbound").length).toBe(2);
     });
   });
 });

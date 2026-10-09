@@ -32,7 +32,7 @@
     "apps/web/src/components/dev/ThemeTuner.tsx": 1926,
     "apps/web/src/components/experience/ExperienceSetupModal.tsx": 1618,
     "apps/web/src/components/layout/SetupWizard.tsx": 1019,
-    "apps/web/src/components/modals/PromptManagerModal.tsx": 1391,
+    "apps/web/src/components/modals/PromptManagerModal.tsx": 1360,
     "apps/web/src/components/modals/ProviderModal.tsx": 995,
     "apps/web/src/components/settings/prompt/ImagePromptTemplatesPane.tsx": 995,
     "apps/web/src/components/settings/prompt/ServicePromptsPane.tsx": 827,

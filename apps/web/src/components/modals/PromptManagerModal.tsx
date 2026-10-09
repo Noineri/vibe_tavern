@@ -1157,41 +1157,10 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
             : activeTab === "regex"
             ? () => (
                 <RegexPresetList
-                  presets={regexPresets.map((p) => ({
-                    id: p.id,
-                    name: p.name,
-                    disabled: p.disabled,
-                    sortOrder: p.sortOrder,
-                    notApplied: (() => {
-                      // R-13b: a member's dot reflects the PROFILE gate — green
-                      // only when the profile actually fires in some chat. Gray
-                      // when the rule OR its profile is disabled; red when the
-                      // profile is enabled but applies nowhere (not global,
-                      // no bindings). Standalone rules keep the R-7 logic.
-                      if (p.profileId !== null) {
-                        const profile = regexProfiles.find((pr) => pr.id === p.profileId);
-                        if (p.disabled || profile?.disabled) return "disabled" as const;
-                        if (profile && !profile.isGlobal && regexProfileLinkCounts[profile.id] === 0) return "unbound" as const;
-                        return null;
-                      }
-                      return p.disabled
-                        ? ("disabled" as const)
-                        : !p.isGlobal && regexLinkCounts[p.id] === 0
-                          ? ("unbound" as const)
-                          : null;
-                    })(),
-                    profileId: p.profileId,
-                    shadowed: p.profileId !== null && (p.isGlobal || (regexLinkCounts[p.id] ?? 0) > 0),
-                  }))}
-                  profiles={regexProfiles.map((pr) => ({
-                    id: pr.id,
-                    name: pr.name,
-                    disabled: pr.disabled,
-                    isGlobal: pr.isGlobal,
-                    sortOrder: pr.sortOrder,
-                    notApplied: pr.disabled ? ("disabled" as const) : !pr.isGlobal && regexProfileLinkCounts[pr.id] === 0 ? ("unbound" as const) : null,
-                    memberCount: regexPresets.filter((r) => r.profileId === pr.id).length,
-                  }))}
+                  presets={regexPresets}
+                  profiles={regexProfiles}
+                  regexLinkCounts={regexLinkCounts}
+                  regexProfileLinkCounts={regexProfileLinkCounts}
                   activePresetId={activeRegexPresetId}
                   activeProfileId={activeRegexProfileId}
                   expandedProfileIds={[...expandedProfileIds]}
