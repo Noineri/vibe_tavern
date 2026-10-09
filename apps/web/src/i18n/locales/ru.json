@@ -3168,7 +3168,7 @@
 	"promptManager.regex.pickerTitle": "Добавить существующие правила",
 	"promptManager.regex.pickerTrigger": "Добавить существующие",
 	"promptManager.regex.pickerEmptySub": "Создайте новое правило или переместите правило участника в отдельные, прежде чем добавлять его сюда.",
-	"promptManager.regex.createRule": "Создать правило",
+	"promptManager.regex.createRule": "Создать правило в профиле",
 	"promptManager.regex.profileMembersEmptyTitle": "В этом профиле нет правил",
 	"promptManager.regex.profileMembersEmptySub": "Создайте правило здесь или добавьте существующее отдельное правило.",
 	"promptManager.regex.profileExport": "Экспортировать профиль",

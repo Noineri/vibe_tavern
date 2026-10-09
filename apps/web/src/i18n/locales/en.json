@@ -3132,7 +3132,7 @@
 	"promptManager.regex.pickerTitle": "Add existing Rules",
 	"promptManager.regex.pickerTrigger": "Add existing",
 	"promptManager.regex.pickerEmptySub": "Create a new Rule or move a member Rule to Standalone before adding it here.",
-	"promptManager.regex.createRule": "Create Rule",
+	"promptManager.regex.createRule": "Create Rule in Profile",
 	"promptManager.regex.profileMembersEmptyTitle": "No Rules in this Profile",
 	"promptManager.regex.profileMembersEmptySub": "Create a Rule here or add an existing standalone Rule.",
 	"promptManager.regex.profileExport": "Export profile",

@@ -15,12 +15,4 @@ describe("AddButton", () => {
       '<button type="button" class="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-3 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent">Add rule</button>',
     );
   });
-
-  it("uses the baked 44px prominent action size", () => {
-    const { container } = render(<AddButton prominent={true} onClick={() => {}}>Add rule</AddButton>);
-
-    expect(container.innerHTML).toBe(
-      '<button type="button" class="flex h-11 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-border2 bg-transparent px-4 font-ui text-[12px] text-t3 transition-all hover:border-accent hover:text-accent">Add rule</button>',
-    );
-  });
 });

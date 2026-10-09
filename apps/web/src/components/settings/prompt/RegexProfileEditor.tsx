@@ -49,7 +49,7 @@ function ProfileMemberActions({
   const isMobile = useIsMobile();
   return (
     <div className="flex flex-wrap gap-2">
-      <AddButton prominent onClick={onCreateRule}>
+      <AddButton onClick={onCreateRule}>
         <Ic.plus />
         {t("promptManager.regex.createRule")}
       </AddButton>

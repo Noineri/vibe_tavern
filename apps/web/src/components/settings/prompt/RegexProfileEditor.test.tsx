@@ -115,14 +115,14 @@ describe("RegexProfileEditor — availability reason marker", () => {
 });
 
 describe("RegexProfileEditor — member workflows (RXU-42; picker rides the shared LinkBindingPopover per owner ruling 2026-10-09)", () => {
-  test("shows prominent Create Rule and the shared Add existing trigger for a Profile with members", async () => {
+  test("shows the standard Create Rule button and the shared Add existing trigger for a Profile with members", async () => {
     const view = await renderEditor(1, [rule("member-1", "Member", "profile-1"), rule("standalone-1", "Standalone", null)]);
     const create = view.getByRole("button", { name: "promptManager.regex.createRule" });
-    // The popover's labeled dashed trigger (canon shape — accessible name
-    // is the aria-label, i.e. pickerTitle, not the visible pickerTrigger text).
+    // Owner ruling 2026-10-09: the in-Profile Create Rule rides the standard
+    // AddButton size (h-8) — no taller variant next to its neighbors.
     const addExisting = view.getByRole("button", { name: "promptManager.regex.pickerTitle" });
 
-    expect(create.className).toContain("h-11");
+    expect(create.className).toContain("h-8");
     expect(addExisting.textContent).toContain("promptManager.regex.pickerTrigger");
     fireEvent.click(create);
     expect(view.onCreateRule).toHaveBeenCalledTimes(1);
@@ -134,7 +134,7 @@ describe("RegexProfileEditor — member workflows (RXU-42; picker rides the shar
 
     expect(within(emptyState).getByText("promptManager.regex.profileMembersEmptyTitle")).toBeTruthy();
     expect(within(emptyState).queryByText("promptManager.regex.profileMemberCount")).toBeNull();
-    expect(within(emptyState).getByRole("button", { name: "promptManager.regex.createRule" }).className).toContain("h-11");
+    expect(within(emptyState).getByRole("button", { name: "promptManager.regex.createRule" }).className).toContain("h-8");
     expect(within(emptyState).getByRole("button", { name: "promptManager.regex.pickerTitle" }).textContent).toContain("promptManager.regex.pickerTrigger");
   });
 
