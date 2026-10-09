@@ -162,10 +162,11 @@ mock.module("../../lib/download.js", () => ({
 const { act, cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 
 let PromptManagerModal: typeof import("./PromptManagerModal.js").PromptManagerModal;
-let buildDuplicatePayload: typeof import("./PromptManagerModal.js").buildDuplicatePayload;
+let buildDuplicatePayload: typeof import("./prompt-manager-draft.js").buildDuplicatePayload;
 
 beforeAll(async () => {
-  ({ PromptManagerModal, buildDuplicatePayload } = await import("./PromptManagerModal.js"));
+  ({ PromptManagerModal } = await import("./PromptManagerModal.js"));
+  ({ buildDuplicatePayload } = await import("./prompt-manager-draft.js"));
 });
 
 afterEach(async () => {
@@ -815,6 +816,43 @@ describe("PromptManagerModal — regex tab lazy-load (R-1)", () => {
       expect(listAllRegexPresetsMock).toHaveBeenCalled();
       expect(within(view.baseElement).getByText("Alpha Strip")).toBeTruthy();
       expect(within(view.baseElement).getByText("Beta Wrap")).toBeTruthy();
+    });
+  });
+
+  test("reopening the modal refetches the regex list (imported rules appear without a page reload)", async () => {
+    // Owner report 2026-10-09: the modal is mounted ONCE in AppShell, so the
+    // once-per-mount fetch guard meant once per PAGE LIFETIME — rules created
+    // while the modal was closed (card import with an embedded regex bundle)
+    // stayed invisible until a full reload. The guard must rearm on close.
+    listAllRegexPresetsMock.mockResolvedValue([regexRecord("rx_a", "Alpha Strip")]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+    const view = render(
+      <PromptManagerModal
+        presets={[advancedPreset()]}
+        activePresetId="preset-1"
+        setActivePresetId={mock()}
+        onCreate={mock(async () => null)}
+        onUpdate={mock(async () => true)}
+        onDelete={mock(async () => true)}
+        onReorder={mock(async () => true)}
+      />,
+    );
+    const q = within(view.baseElement);
+    fireEvent.click(q.getByText("promptManager.regex.tabLabel"));
+    await waitFor(() => expect(q.getByText("Alpha Strip")).toBeTruthy());
+    listAllRegexPresetsMock.mockClear();
+
+    // Close → an import persists a new rule server-side → reopen. The tab
+    // state survives (still "regex"), so the refetch must fire on the open
+    // transition itself — the guard rearmed while the modal was closed.
+    useModalStore.setState({ isPromptManagerOpen: false });
+    await act(async () => {}); // let the close transition flush (rearm)
+    listAllRegexPresetsMock.mockResolvedValue([regexRecord("rx_a", "Alpha Strip"), regexRecord("rx_imp", "Imported Bundle")]);
+    useModalStore.setState({ isPromptManagerOpen: true });
+
+    await waitFor(() => {
+      expect(listAllRegexPresetsMock).toHaveBeenCalled();
+      expect(q.getByText("Imported Bundle")).toBeTruthy();
     });
   });
 });
