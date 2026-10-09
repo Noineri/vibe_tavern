@@ -1334,13 +1334,14 @@ describe("PromptManagerModal — manual rule drafts (RXU-14)", () => {
     const q = within(view.baseElement);
     createRegexPresetMock.mockResolvedValue(regexRecord("rx_new", "InProf", "p1"));
 
-    // Expand the profile → inline "+ New rule" member entry.
-    fireEvent.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]);
-    await waitFor(() => expect(q.getByText("promptManager.regex.memberNewRule")).toBeTruthy());
-    fireEvent.click(q.getByText("promptManager.regex.memberNewRule"));
-    const input = q.getByPlaceholderText("promptManager.regex.newNamePlaceholder") as HTMLInputElement;
+    // Owner ruling 2026-10-09: the list carries no duplicate quick-create —
+    // the draft opens through the Profile pane's «Create Rule» action.
+    const profileEntry = q.getAllByText("Bundle")[0]!;
+    await act(async () => { fireEvent.pointerDown(profileEntry); fireEvent.click(profileEntry); });
+    await waitFor(() => expect(q.getByRole("button", { name: "promptManager.regex.createRule" })).toBeTruthy());
+    fireEvent.click(q.getByRole("button", { name: "promptManager.regex.createRule" }));
+    const input = q.getByLabelText("promptManager.regex.fieldName") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "InProf" } });
-    fireEvent.keyDown(input, { key: "Enter" });
 
     // Draft editor mounted with the member chip (intended destination shown).
     await waitFor(() => expect(q.getByText("promptManager.regex.memberViaProfile")).toBeTruthy());

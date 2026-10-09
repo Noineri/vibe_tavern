@@ -41,7 +41,6 @@ interface RegexPresetListProps {
   onSelectProfile?: (id: string) => void;
   onAdd: (name: string) => void;
   onAddProfile?: (name: string) => void;
-  onAddRuleToProfile?: (profileId: string, name: string) => void;
   onRename: (id: string, newName: string) => void;
   onRenameProfile?: (id: string, newName: string) => void;
   onReorder: (updates: Array<{ id: string; sortOrder: number }>) => void | Promise<unknown>;
@@ -210,7 +209,7 @@ const SortableRegexProfileRow = React.memo(({ p, memberCount, isActive, isExpand
         aria-expanded={isExpanded}
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
       >
-        <span className="shrink-0 text-t3"><Icons.Caret direction={isExpanded ? "d" : "r"} /></span>
+        <span className={cn("shrink-0 text-t3 transition-transform duration-200 ease-out", isExpanded && "rotate-90")}><Icons.Caret direction="r" /></span>
         <CustomTooltip content={p.name}>
           <span className={cn(
             "truncate font-ui text-[calc(var(--ui-fs)-2px)] font-medium",
@@ -245,7 +244,7 @@ const SortableRegexProfileRow = React.memo(({ p, memberCount, isActive, isExpand
   ("enabledRuleCount" in prev.availability ? prev.availability.enabledRuleCount : undefined) === ("enabledRuleCount" in next.availability ? next.availability.enabledRuleCount : undefined) &&
   prev.dndDisabled === next.dndDisabled);
 
-export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, regexProfileLinkCounts = {}, activePresetId, activeProfileId, expandedProfileIds: controlledExpanded, onSelect, onSelectProfile, onAdd, onAddProfile, onAddRuleToProfile, onRename, onRenameProfile, onReorder, onReorderProfiles, onAttach, onDetach, onToggleProfile, onImportRegex }: RegexPresetListProps) {
+export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, regexProfileLinkCounts = {}, activePresetId, activeProfileId, expandedProfileIds: controlledExpanded, onSelect, onSelectProfile, onAdd, onAddProfile, onRename, onRenameProfile, onReorder, onReorderProfiles, onAttach, onDetach, onToggleProfile, onImportRegex }: RegexPresetListProps) {
   const { t } = useT();
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -261,8 +260,6 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
     return internalExpanded;
   }, [controlledExpanded, internalExpanded]);
   const manualExpansionSnapshot = useRef<Set<string>>(new Set());
-  const [inlineRuleProfileId, setInlineRuleProfileId] = useState<string | null>(null);
-  const [inlineRuleName, setInlineRuleName] = useState("");
   const [isStandaloneDropOver, setIsStandaloneDropOver] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
   const newInputRef = useRef<HTMLInputElement>(null);
@@ -518,6 +515,119 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
 
   const isEmpty = presets.length === 0 && profiles.length === 0;
 
+  // ── Accordion rendering (owner ruling 2026-10-09: «как аккордеонов у
+  // нас») ── the profile member section animates with the repo's canonical
+  // grid-rows collapse (the InputArea / PerSendPrefillStrip idiom). The
+  // RENDER order always carries members under their profile; the 0fr/1fr
+  // wrapper owns visibility, so expanding animates height+opacity instead
+  // of mounting rows. `sortableIds` still derive from `flatItems` (real
+  // expansion) — a collapsed member is never a sortable/drop target.
+  const renderFlatItem = (item: FlatItem) => {
+    if (item.kind === "profile") {
+      const pr = profiles.find((p) => p.id === item.id);
+      if (!pr) return null;
+      const isActive = activeProfileId === pr.id;
+      const isExpanded = isFiltering || manualExpandedIds.has(pr.id);
+      const isEditing = editingProfileId === pr.id;
+      if (isEditing) {
+        return (
+          <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
+            <div className="relative flex items-center">
+              <InlineRenameInput
+                ref={editInputRef}
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onKeyDown={handleEditKeyDown}
+                onBlur={saveEdit}
+              />
+              <button type="button"
+                onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
+                className="absolute right-2 text-success transition-colors hover:text-green-400"
+              >
+                <Icons.Check />
+              </button>
+            </div>
+          </div>
+        );
+      }
+      return (
+        <SortableRegexProfileRow
+          key={item.sortableId}
+          p={pr}
+          memberCount={presets.filter((preset) => preset.profileId === pr.id).length}
+          isActive={isActive}
+          isExpanded={isExpanded}
+          onSelect={(id) => onSelectProfile ? onSelectProfile(id) : onSelect(id)}
+          startEditing={startEditingProfile}
+          dndDisabled={dndDisabled}
+          onToggle={handleToggle}
+          availability={regexProfileAvailability(pr, presets, regexProfileLinkCounts[pr.id])}
+        />
+      );
+    }
+    // rule
+    const p = presets.find((pr) => pr.id === item.id);
+    if (!p) return null;
+    const isActive = activePresetId === p.id;
+    const isEditing = editingId === p.id;
+    if (isEditing) {
+      return (
+        <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
+          <div className="relative flex items-center">
+            <InlineRenameInput
+              ref={editInputRef}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={handleEditKeyDown}
+              onBlur={saveEdit}
+            />
+            <button type="button"
+              onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
+              className="absolute right-2 text-success transition-colors hover:text-green-400"
+            >
+              <Icons.Check />
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <SortableRegexPresetRow
+        key={item.sortableId}
+        p={p}
+        isActive={isActive}
+        onSelect={onSelect}
+        startEditing={startEditing}
+        dndDisabled={dndDisabled}
+        availability={regexRuleAvailability({
+          rule: p,
+          ruleLinkCount: regexLinkCounts[p.id],
+          profile: p.profileId === null ? null : profileById.get(p.profileId) ?? null,
+          profileLinkCount: p.profileId === null ? undefined : regexProfileLinkCounts[p.profileId],
+        })}
+        shadowed={p.profileId !== null && (p.isGlobal || (regexLinkCounts[p.id] ?? 0) > 0)}
+      />
+    );
+  };
+
+  const renderGroups = useMemo(() => {
+    const base = isFiltering ? filteredFlat : buildFlatVisualOrder(
+      profiles.map((profile) => ({ id: profile.id, sortOrder: profile.sortOrder, name: profile.name })),
+      presets.map((preset) => ({ id: preset.id, sortOrder: preset.sortOrder, name: preset.name, profileId: preset.profileId })),
+      new Set(profiles.map((profile) => profile.id)),
+    );
+    const groups: Array<{ lead: FlatItem; members: FlatItem[] }> = [];
+    for (const item of base) {
+      const last = groups[groups.length - 1];
+      if (item.kind === "profile" || item.profileId === null || !last || last.lead.kind !== "profile") {
+        groups.push({ lead: item, members: [] });
+      } else {
+        last.members.push(item);
+      }
+    }
+    return groups;
+  }, [isFiltering, filteredFlat, profiles, presets]);
+
   return (
     <div className="flex flex-col flex-1 min-h-0 py-2.5">
       <div className="shrink-0 px-[13px]">
@@ -557,7 +667,7 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
                 isDropOver={isStandaloneDropOver}
               />
             )}
-            {filteredFlat.length === 0 && !isCreating && !isCreatingProfile && !inlineRuleProfileId ? (
+            {filteredFlat.length === 0 && !isCreating && !isCreatingProfile ? (
               <div className="flex h-full items-center justify-center px-2">
                 <EmptyState
                   icon={<Icons.Terminal />}
@@ -565,130 +675,26 @@ export function RegexPresetList({ presets, profiles = [], regexLinkCounts = {}, 
                   sub={isEmpty ? t("promptManager.regex.emptySub") : t("no_preset_matches_sub")}
                 />
               </div>
-            ) : filteredFlat.map((item) => {
-              if (item.kind === "profile") {
-                const pr = profiles.find((p) => p.id === item.id);
-                if (!pr) return null;
-                const isActive = activeProfileId === pr.id;
-                const isExpanded = isFiltering || manualExpandedIds.has(pr.id);
-                const isEditing = editingProfileId === pr.id;
-                if (isEditing) {
-                  return (
-                    <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
-                      <div className="relative flex items-center">
-                        <InlineRenameInput
-                          ref={editInputRef}
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          onKeyDown={handleEditKeyDown}
-                          onBlur={saveEdit}
-                        />
-                        <button type="button"
-                          onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
-                          className="absolute right-2 text-success transition-colors hover:text-green-400"
-                        >
-                          <Icons.Check />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }
-                return (
-                  <React.Fragment key={item.sortableId}>
-                    <SortableRegexProfileRow
-                      p={pr}
-                      memberCount={presets.filter((preset) => preset.profileId === pr.id).length}
-                      isActive={isActive}
-                      isExpanded={isExpanded}
-                      onSelect={(id) => onSelectProfile ? onSelectProfile(id) : onSelect(id)}
-                      startEditing={startEditingProfile}
-                      dndDisabled={dndDisabled}
-                      onToggle={handleToggle}
-                      availability={regexProfileAvailability(pr, presets, regexProfileLinkCounts[pr.id])}
-                    />
-                    {!isFiltering && isExpanded && inlineRuleProfileId === pr.id && (
-                      <div className="ml-8 border-l border-border/40 px-3 py-2">
-                        <div className="relative flex items-center">
-                          <InlineRenameInput
-                            placeholder={t("promptManager.regex.newNamePlaceholder")}
-                            value={inlineRuleName}
-                            onChange={(e) => setInlineRuleName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && inlineRuleName.trim() && onAddRuleToProfile) {
-                                onAddRuleToProfile(pr.id, inlineRuleName.trim());
-                                setInlineRuleName("");
-                                setInlineRuleProfileId(null);
-                              }
-                              if (e.key === "Escape") { setInlineRuleProfileId(null); setInlineRuleName(""); }
-                            }}
-                            onBlur={() => { if (!inlineRuleName.trim()) { setInlineRuleProfileId(null); setInlineRuleName(""); } else if (onAddRuleToProfile) { onAddRuleToProfile(pr.id, inlineRuleName.trim()); setInlineRuleName(""); setInlineRuleProfileId(null); } }}
-                            autoFocus
-                          />
-                          <button type="button"
-                            onMouseDown={(e) => { e.preventDefault(); if (inlineRuleName.trim() && onAddRuleToProfile) { onAddRuleToProfile(pr.id, inlineRuleName.trim()); setInlineRuleName(""); setInlineRuleProfileId(null); } }}
-                            className="absolute right-2 text-success transition-colors hover:text-green-400"
-                          >
-                            <Icons.Check />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {!isFiltering && isExpanded && (
-                      <div className="ml-2">
-                        {/* Owner-approved enlargement (plan RXU-42 «prominent
-                            Create Rule»): the member quick-create uses the
-                            prominent AddButton — never the old ghost row
-                            button. `className` EXTENDS the baked base. */}
-                        <AddButton prominent className="w-full" onClick={() => setInlineRuleProfileId(pr.id)}>
-                          <Icons.Plus /> {t("promptManager.regex.memberNewRule")}
-                        </AddButton>
-                      </div>
-                    )}
-                  </React.Fragment>
-                );
-              }
-              // rule
-              const p = presets.find((pr) => pr.id === item.id);
-              if (!p) return null;
-              const isActive = activePresetId === p.id;
-              const isEditing = editingId === p.id;
-              if (isEditing) {
-                return (
-                  <div key={item.sortableId} className="border-l-2 border-transparent px-3 py-2">
-                    <div className="relative flex items-center">
-                      <InlineRenameInput
-                        ref={editInputRef}
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        onKeyDown={handleEditKeyDown}
-                        onBlur={saveEdit}
-                      />
-                      <button type="button"
-                        onMouseDown={(e) => { e.preventDefault(); saveEdit(); }}
-                        className="absolute right-2 text-success transition-colors hover:text-green-400"
-                      >
-                        <Icons.Check />
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
+            ) : renderGroups.map((group) => {
+              const lead = renderFlatItem(group.lead);
+              if (group.lead.kind !== "profile" || group.members.length === 0) return lead;
+              const open = isFiltering || manualExpandedIds.has(group.lead.id);
               return (
-                <SortableRegexPresetRow
-                  key={item.sortableId}
-                  p={p}
-                  isActive={isActive}
-                  onSelect={onSelect}
-                  startEditing={startEditing}
-                  dndDisabled={dndDisabled}
-                  availability={regexRuleAvailability({
-                    rule: p,
-                    ruleLinkCount: regexLinkCounts[p.id],
-                    profile: p.profileId === null ? null : profileById.get(p.profileId) ?? null,
-                    profileLinkCount: p.profileId === null ? undefined : regexProfileLinkCounts[p.profileId],
-                  })}
-                  shadowed={p.profileId !== null && (p.isGlobal || (regexLinkCounts[p.id] ?? 0) > 0)}
-                />
+                <React.Fragment key={group.lead.sortableId}>
+                  {lead}
+                  {/* Owner rulings 2026-10-09: no duplicate quick-create row
+                      inside the list (the Profile pane's «Create Rule» /
+                      «Add existing» are the single entry points), and member
+                      sections collapse with the canonical grid-rows idiom. */}
+                  <div
+                    data-testid={`regex-members-${group.lead.id}`}
+                    className="grid transition-[grid-template-rows,opacity] duration-200 ease-out"
+                    style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0 }}
+                    aria-hidden={!open}
+                  >
+                    <div className="overflow-hidden">{group.members.map(renderFlatItem)}</div>
+                  </div>
+                </React.Fragment>
               );
             })}
 

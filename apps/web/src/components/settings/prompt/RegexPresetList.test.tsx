@@ -137,10 +137,21 @@ describe("RegexPresetList", () => {
   it("keeps manual expand/collapse and drag handles available without a filter", async () => {
     const user = userEvent.setup();
     const view = render(<RegexPresetList {...nestedProps()} />);
-    expect(view.queryByText("Member needle")).toBeNull();
-    expect(view.getAllByLabelText("promptManager.regex.dragAria")).toHaveLength(3);
+    // Accordion semantics (owner ruling 2026-10-09): collapsed members stay
+    // MOUNTED inside the grid-rows wrapper — hidden via 0fr + aria-hidden,
+    // not unmounted (that is what makes the height animation possible).
+    const collapsed = view.getByTestId("regex-members-p1");
+    expect(collapsed.getAttribute("aria-hidden")).toBe("true");
+    expect((collapsed as HTMLElement).style.gridTemplateRows).toBe("0fr");
+    // All six rows' handles stay mounted (3 top-level + 3 hidden members);
+    // expanding must NOT duplicate them.
+    expect(view.getAllByLabelText("promptManager.regex.dragAria")).toHaveLength(6);
     await user.click(view.getAllByLabelText("promptManager.regex.expandProfile")[0]!);
+    const open = view.getByTestId("regex-members-p1");
+    expect(open.getAttribute("aria-hidden")).toBe("false");
+    expect((open as HTMLElement).style.gridTemplateRows).toBe("1fr");
     expect(view.getByText("Member needle")).toBeTruthy();
+    expect(view.getAllByLabelText("promptManager.regex.dragAria")).toHaveLength(6);
   });
 
   it("uses the shared grip icon in a 44px mobile target", () => {
@@ -177,7 +188,9 @@ describe("RegexPresetList", () => {
     await user.type(search, "needle");
     expect(view.getByText("Member needle")).toBeTruthy();
     await user.clear(search);
-    expect(view.queryByText("Member needle")).toBeNull();
+    const wrapper = view.getByTestId("regex-members-p1");
+    expect(wrapper.getAttribute("aria-hidden")).toBe("true");
+    expect((wrapper as HTMLElement).style.gridTemplateRows).toBe("0fr");
   });
 
   it("clearing search restores every manually expanded profile", async () => {
@@ -270,17 +283,25 @@ describe("RegexPresetList", () => {
     expect(within(row).queryByText("promptManager.regex.availabilityActiveRules:1")).toBeNull();
   });
 
-  it("keeps the prominent nested New Rule slot between its Profile and member Rules", () => {
+  it("renders NO nested quick-create slot (owner ruling 2026-10-09: the Profile pane owns rule creation)", () => {
     const view = render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} />);
+    expect(view.queryByRole("button", { name: "promptManager.regex.memberNewRule" })).toBeNull();
+    // Members render directly under their profile inside the accordion wrapper.
     const profileName = view.getByText("First profile");
-    const newRule = view.getByRole("button", { name: "promptManager.regex.memberNewRule" });
     const member = view.getByText("Member needle");
+    expect(profileName.compareDocumentPosition(member) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 
-    expect(newRule.className).toContain("h-11");
-    expect(newRule.className).toContain("w-full");
-    expect(newRule.className).toContain("border-dashed");
-    expect(profileName.compareDocumentPosition(newRule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(newRule.compareDocumentPosition(member) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  it("collapses and expands the member section with the grid-rows accordion idiom", () => {
+    const collapsed = render(<RegexPresetList {...nestedProps()} expandedProfileIds={[]} />);
+    const wrapperCollapsed = collapsed.getByTestId("regex-members-p1");
+    expect(wrapperCollapsed.getAttribute("aria-hidden")).toBe("true");
+    expect(wrapperCollapsed.className).toContain("transition-[grid-template-rows,opacity]");
+    collapsed.unmount();
+    const expanded = render(<RegexPresetList {...nestedProps()} expandedProfileIds={["p1"]} />);
+    const wrapperOpen = expanded.getByTestId("regex-members-p1");
+    expect(wrapperOpen.getAttribute("aria-hidden")).toBe("false");
+    expect((wrapperOpen as HTMLElement).style.gridTemplateRows).toBe("1fr");
   });
 
   it("renames a rule from its row", async () => {

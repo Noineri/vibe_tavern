@@ -1158,7 +1158,6 @@ export function PromptManagerModal(input: PromptManagerModalProps) {
                   onSelectProfile={handleRegexProfileSelect}
                   onAdd={(name) => regexRuleDraft.open(name, null)}
                   onAddProfile={handleRegexProfileAdd}
-                  onAddRuleToProfile={(profileId, name) => regexRuleDraft.open(name, profileId)}
                   onRename={handleRegexRename}
                   onRenameProfile={handleRegexProfileRename}
                   onReorder={handleRegexReorder}

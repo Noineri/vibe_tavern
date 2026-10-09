@@ -3165,7 +3165,6 @@
 	"promptManager.regex.expandProfile": "Развернуть профиль",
 	"promptManager.regex.collapseProfile": "Свернуть профиль",
 	"promptManager.regex.memberShadowed": "Собственное \"Применение\" игнорируется — действует профиль",
-	"promptManager.regex.memberNewRule": "Новое правило",
 	"promptManager.regex.pickerTitle": "Добавить существующие правила",
 	"promptManager.regex.pickerTrigger": "Добавить существующие",
 	"promptManager.regex.pickerSearchPlaceholder": "Поиск отдельных правил",

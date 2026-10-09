@@ -3129,7 +3129,6 @@
 	"promptManager.regex.expandProfile": "Expand profile",
 	"promptManager.regex.collapseProfile": "Collapse profile",
 	"promptManager.regex.memberShadowed": "Own apply-scope ignored — the profile governs",
-	"promptManager.regex.memberNewRule": "New rule",
 	"promptManager.regex.pickerTitle": "Add existing Rules",
 	"promptManager.regex.pickerTrigger": "Add existing",
 	"promptManager.regex.pickerSearchPlaceholder": "Search standalone Rules",

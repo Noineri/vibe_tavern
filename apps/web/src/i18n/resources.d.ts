@@ -2101,7 +2101,6 @@ export default interface Resources {
     "promptManager.regex.importFailed": "Regex import failed",
     "promptManager.regex.importNone": "No regex scripts found in that file",
     "promptManager.regex.imported": "Imported {n} Regex Rule(s) — all disabled for review",
-    "promptManager.regex.memberNewRule": "New rule",
     "promptManager.regex.memberShadowed": "Own apply-scope ignored — the profile governs",
     "promptManager.regex.memberViaProfile": "Applied via profile {name}",
     "promptManager.regex.moveToStandalone": "Move to Standalone",
