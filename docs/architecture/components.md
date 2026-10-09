@@ -30,6 +30,7 @@
 | `<OverflowTooltip>` | `title="..."` on names | `OverflowTooltip.tsx` | Truncating text that tooltips only when it overflows |
 | `<Modal>` | Custom dialogs | `Modal.tsx` | Radix Dialog, focus trap, scroll lock |
 | `<MasterDetailModal>` | Custom two-pane modals | `MasterDetailModal.tsx` | Two-pane on desktop, drill-down stack on mobile |
+| `<MasterDetailFooter>` | Custom editor footers | `MasterDetailModal.tsx` | Canonical desktop/mobile actions with disabled and destructive states |
 | `<ConfirmCloseModal>` | Custom confirm | `confirm-close-modal.tsx` | "Discard changes?" dialog |
 | `<DestructiveConfirmModal>` | Custom confirm | `destructive-confirm-modal.tsx` | "Are you sure?" for delete actions (+ optional secondary) |
 | `<ActionSheet>` | Mobile action menus | `ActionSheet.tsx` | Mobile bottom-sheet action menu (portaled) |
@@ -45,6 +46,7 @@
 | `<AvatarCropModal>` | — | `AvatarCropModal.tsx` | Circular crop overlay using react-easy-crop |
 | `<TextDiffPreview>` | — | `TextDiffPreview.tsx` | Side-by-side or inline text diff view |
 | `<AiAssistantModal>` | — | `AiAssistantModal.tsx` | AI Assistant modal (script/lore_entry/md_import generate + AiQuickPill settings editor) |
+| `<AiAssistantShell>` | Hand-built assistant modal chrome | `ai-assistant/AiAssistantShell.tsx` | Shared header/content/footer shell with responsive structured actions |
 | `textarea-helpers` | — | `textarea-helpers.ts` | Shared utilities for textarea behavior (not a component) |
 | `<DiceFaces>` | per-feature dice markup | `dice-faces.tsx` | Shared 2D SVG dice renderer + pure helpers |
 
@@ -537,6 +539,14 @@ State is shared via context: `useMasterDetail()` returns `{ isMobile, isDetailOp
 
 Consumers: `ProviderModal` (provider profiles), `PromptManagerModal` (prompt presets / regex presets / service prompt profiles / image prompt profiles — one master-detail per tab; image prompt profiles live in `ImagePromptTemplatesPane`, a fork of the service-prompt profile flow whose detail side is mode rows × family dropdowns, kept SEPARATE from service-prompt profiles and LLM presets), `PersonaModal` (personas), `ContextMemoryModal`, coauthor module/skill modals. Canonical structure: header/title/subtitle/dirty-dot/headerActions + master list (scrollable rows with `border-l-2` + active dot, dashed "+ New" docked at the list bottom — never in headerActions) + stable footer with `border-t`.
 
+`MasterDetailMobileDrillDown` accepts an optional item-specific `ariaLabel` and otherwise uses the localized generic open-detail label.
+Use the item name when several drill-down buttons share one list.
+
+`MasterDetailFooter` keeps editor actions in one canonical location.
+Its `actions` entries are `{ icon, label, onClick, disabled?, destructive? }`: desktop renders labeled actions, while mobile renders 36px icon buttons with the same label as their accessible name.
+`disabled` prevents activation on both layouts, and `destructive` applies the danger treatment without changing action behavior.
+The `right` slot remains one atomic action row; move controls that cannot fit beside it on mobile into `mobileBottomRow`.
+
 ---
 
 ## ConfirmCloseModal
@@ -659,20 +669,26 @@ Uses the `useTokenCount(text)` hook which selects the appropriate tokenizer (tik
   icon={<Icons.Inbox />}
   title="No lorebooks yet"
   sub="Create one to add world-building entries"
-  cta={<button onClick={handleCreate}>Create Lorebook</button>}
-  secondaryCta={<button onClick={handleImport}>Import</button>}
+  cta="Create Lorebook"
+  onCta={handleCreate}
+  ctaProminent
+  secondaryCta="Import"
+  onSecondaryCta={handleImport}
 />
 ```
+
+`EmptyState` owns the real `<button>` elements for both actions; pass their visible content and callbacks rather than nesting buttons inside `cta`.
 
 | Prop | Type | Description |
 |------|------|-------------|
 | `icon` | `ReactNode` | Large icon |
 | `title` | `string` | Primary text |
 | `sub` | `string?` | Secondary description |
-| `cta` | `ReactNode?` | Primary call-to-action element |
-| `onCta` | `() => void?` | CTA click callback |
-| `secondaryCta` | `ReactNode?` | Secondary CTA element |
-| `onSecondaryCta` | `() => void?` | Secondary CTA click callback |
+| `cta` | `ReactNode?` | Primary action content |
+| `onCta` | `() => void?` | Primary action callback |
+| `ctaProminent` | `boolean?` | Give the primary action a 44px minimum touch target |
+| `secondaryCta` | `ReactNode?` | Secondary action content |
+| `onSecondaryCta` | `() => void?` | Secondary action callback |
 
 ---
 
@@ -829,6 +845,25 @@ Circular crop overlay with zoom/pan controls; exports a normalized square image 
 **Purpose:** preview text changes before applying them.
 
 Use when AI-assisted edits or bulk transformations need a visible before/after review step.
+
+---
+
+## AiAssistantShell
+
+**File:** `ai-assistant/AiAssistantShell.tsx`
+
+Layout-only chrome shared by assistant modals: title/header extras, a streaming-aware close action, the no-provider guard, scrollable content, and the footer.
+Business logic and body markup remain in each consumer.
+
+Prefer the structured footer contract over a hand-built `footer`:
+
+- `primaryAction?: { label, onClick, disabled?, busy?, busyLabel? }`
+- `secondaryActions?: Array<{ label, onClick, disabled?, busy?, busyLabel? }>`
+
+A busy action is disabled, exposes `aria-busy`, and may replace its visible label with `busyLabel`.
+Desktop actions stay compact; mobile actions become full-width 44px rows and the footer adds safe-area bottom spacing.
+The legacy `footer` slot remains for existing consumers, but new multi-action footers should use the structured contract.
+The Regex AI assistant is the reference consumer.
 
 ---
 

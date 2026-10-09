@@ -2066,7 +2066,7 @@ export default interface Resources {
     "promptManager.regex.copy": "Copy",
     "promptManager.regex.copyFailed": "Failed to copy Rule",
     "promptManager.regex.copySuffix": " (copy)",
-    "promptManager.regex.createRule": "Create Rule",
+    "promptManager.regex.createRule": "Create Rule in Profile",
     "promptManager.regex.deleteBody": "Delete \"{name}\"? This cannot be undone.",
     "promptManager.regex.deleteConfirm": "Delete",
     "promptManager.regex.deleteTitle": "Delete Regex Rule",
