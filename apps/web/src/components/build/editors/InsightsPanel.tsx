@@ -11,6 +11,8 @@ import {
 import { Ic } from "../../shared/icons.js";
 import { Toggle } from "../../shared/Toggle.js";
 import { EmptyState } from "../../shared/empty-state.js";
+import { DestructiveConfirmModal } from "../../shared/destructive-confirm-modal.js";
+import { CustomTooltip } from "../../shared/Tooltip.js";
 import { ObjectiveConfig } from "./ObjectiveConfig.js";
 import { TrackerConfig } from "./TrackerConfig.js";
 import { DiceAssignment } from "./DiceAssignment.js";
@@ -19,6 +21,9 @@ import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore, useActiveBranch } from "../../../stores/snapshot-store.js";
 import { useExperienceConfig, useExperienceStore } from "../../../stores/experience-store.js";
 import { updateExperienceConfig } from "../../../api/experience-api.js";
+import { applyCharacterTrackerTemplate, saveAsCharacterTrackerTemplate } from "../../../api/tracker-template-api.js";
+import { RpcError } from "../../../api/unwrap.js";
+import { useCharacterTrackerTemplate } from "../../../hooks/use-character-tracker-template.js";
 import { updateInsightsConfigAction } from "../../../stores/api-actions/chat-actions.js";
 import type { ExperienceConfigUpdateRequest } from "../../../api/types.js";
 
@@ -97,8 +102,12 @@ export function InsightsPanel() {
   const activeBranch = useActiveBranch();
   const branchId = activeBranch?.id ?? null;
   const chatIdStr = activeChat?.id ?? null;
+  const characterId = activeChat?.mode === "rp" ? activeChat.characterId : null;
+  const { template: characterTrackerTemplate, refetch: refetchCharacterTrackerTemplate } =
+    useCharacterTrackerTemplate(characterId);
   const experienceConfig = useExperienceConfig(chatIdStr, branchId);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [templateConfirm, setTemplateConfirm] = useState<"apply" | "save" | null>(null);
 
   // Hydrate the server-authoritative Experience store for the active
   // {chatId, branchId}. An absent/temporary branch is a no-op here and never
@@ -192,6 +201,39 @@ export function InsightsPanel() {
       ? pendingExperiencePatch.launcherVisible
       : (experienceConfig?.launcherVisible ?? false);
 
+  async function applyTrackerTemplate() {
+    setTemplateConfirm(null);
+    try {
+      const snapshot = await applyCharacterTrackerTemplate(chatId);
+      useSnapshotStore.getState().ingestSnapshot(snapshot);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("insights_save_failed"));
+    }
+  }
+
+  async function saveTrackerTemplate() {
+    setTemplateConfirm(null);
+    try {
+      await saveAsCharacterTrackerTemplate(chatId);
+      await refetchCharacterTrackerTemplate();
+      toast.success(t("insights_template_saved"));
+    } catch (err) {
+      if (err instanceof RpcError && err.status === 422) {
+        toast.error(t("insights_template_empty_setup"));
+        return;
+      }
+      toast.error(err instanceof Error ? err.message : t("insights_save_failed"));
+    }
+  }
+
+  function openSaveTrackerTemplate() {
+    if (characterTrackerTemplate === null) {
+      void saveTrackerTemplate();
+      return;
+    }
+    setTemplateConfirm("save");
+  }
+
   async function persist(patch: InsightsConfigPatch, which: "objective" | "tracker" | "dice") {
     if (pending) return;
     setPending({ chatId, which, patch });
@@ -235,6 +277,33 @@ export function InsightsPanel() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-3 p-1">
+      {activeChat.mode === "rp" && (
+        <div className="flex flex-wrap gap-2">
+          <CustomTooltip
+            content={characterTrackerTemplate === null ? t("insights_template_empty_tooltip") : undefined}
+          >
+            <span className="max-sm:w-full">
+              <button
+                type="button"
+                className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-45 disabled:hover:bg-s3 disabled:hover:text-t2 max-sm:w-full max-sm:justify-center"
+                disabled={characterTrackerTemplate === null}
+                onClick={() => setTemplateConfirm("apply")}
+              >
+                <Ic.download />
+                {t("insights_template_load_from_character")}
+              </button>
+            </span>
+          </CustomTooltip>
+          <button
+            type="button"
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1 max-sm:w-full max-sm:justify-center"
+            onClick={openSaveTrackerTemplate}
+          >
+            <Ic.floppy />
+            {t("insights_template_save_as_character")}
+          </button>
+        </div>
+      )}
       <FeatureToggleRow
         icon={<Ic.checkCircle />}
         title={t("insights_objective_title")}
@@ -298,6 +367,24 @@ export function InsightsPanel() {
         <p className="px-1 pt-1 font-ui text-[11px] leading-relaxed text-t4">
           {t("insights_coming_soon_hint")}
         </p>
+      )}
+      {templateConfirm === "apply" && (
+        <DestructiveConfirmModal
+          title={t("insights_template_apply_title")}
+          body={t("insights_template_apply_body")}
+          confirmLabel={t("insights_template_replace")}
+          onConfirm={() => void applyTrackerTemplate()}
+          onCancel={() => setTemplateConfirm(null)}
+        />
+      )}
+      {templateConfirm === "save" && (
+        <DestructiveConfirmModal
+          title={t("insights_template_save_title")}
+          body={t("insights_template_save_body")}
+          confirmLabel={t("insights_template_replace")}
+          onConfirm={() => void saveTrackerTemplate()}
+          onCancel={() => setTemplateConfirm(null)}
+        />
       )}
     </div>
   );
