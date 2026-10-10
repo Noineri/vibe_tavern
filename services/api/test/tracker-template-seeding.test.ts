@@ -85,9 +85,9 @@ const TRACKER_TEMPLATE = {
   objective: {
     enabled: true,
     state: {
+      mode: "route",
       objectiveDescription: "Escape the city",
       tasks: [{ id: "task_escape", description: "Find the gate", status: "pending" }],
-      shortTermGoals: [{ id: "goal_escape", description: "Avoid the guards", status: "pending" }],
     },
   },
 } as const;
@@ -119,9 +119,8 @@ describe("tracker template seeding (CT-2)", () => {
       expect(chat.insightsObjectiveState.tasks).toEqual([
         { id: "task_escape", description: "Find the gate", status: "pending" },
       ]);
-      expect(chat.insightsObjectiveState.shortTermGoals).toEqual([
-        { id: "goal_escape", description: "Avoid the guards", status: "pending" },
-      ]);
+      // CT-9: a route-mode template seeds the runtime state's foreign slot empty.
+      expect(chat.insightsObjectiveState.shortTermGoals).toEqual([]);
 
       const messages = await env.stores.messages.getMessages(chat.activeBranchId);
       expect(messages.map((message) => message.content)).toEqual([RP_GREETING]);

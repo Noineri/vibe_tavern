@@ -38,19 +38,70 @@ const sceneTrackerTemplateConfigSchema = z.object({
   rulesPrompt: z.string().default(""),
 }).strict();
 
-const objectiveTemplateStateSchema = z.object({
-  mode: z.enum([OBJECTIVE_MODE.route, OBJECTIVE_MODE.goals]).default(OBJECTIVE_MODE.route),
-  objectiveDescription: z.string().default(""),
-  tasks: z.array(objectiveItemSchema).default(() => []),
-  longTermGoal: objectiveLongTermGoalSchema.nullable().default(null),
-  shortTermGoals: z.array(objectiveItemSchema).default(() => []),
+/**
+ * Objective template fields shared by both mode branches (CT-9): the union
+ * discriminates only the goal-carrying slots; everything else is identical.
+ * Single source for both branches below.
+ */
+const objectiveTemplateStateScalars = {
   autoCheckFrequency: z.number().int().min(0).default(0),
   contextWindow: z.number().int().min(1).default(5),
   injectionDepth: z.number().int().min(1).default(1),
   generatePrompt: z.string().default(""),
   checkPrompt: z.string().default(""),
   injectPrompt: z.string().default(""),
+};
+
+/**
+ * Route branch of the objective template state (CT-9): carries `tasks` ONLY.
+ * Strict, so a `shortTermGoals`/`longTermGoal` key here surfaces as an
+ * "Unrecognized key" error naming the field — a mis-slotted goal list becomes
+ * a precise self-correction target instead of a silently ignored slot.
+ */
+const routeObjectiveTemplateStateSchema = z.object({
+  mode: z.literal(OBJECTIVE_MODE.route),
+  objectiveDescription: z.string().default(""),
+  tasks: z.array(objectiveItemSchema).default(() => []),
+  ...objectiveTemplateStateScalars,
 }).strict();
+
+/**
+ * Goals branch of the objective template state (CT-9): carries
+ * `shortTermGoals` + `longTermGoal` ONLY; a `tasks` key here is an
+ * "Unrecognized key" error naming the field (see the route branch).
+ */
+const goalsObjectiveTemplateStateSchema = z.object({
+  mode: z.literal(OBJECTIVE_MODE.goals),
+  objectiveDescription: z.string().default(""),
+  shortTermGoals: z.array(objectiveItemSchema).default(() => []),
+  longTermGoal: objectiveLongTermGoalSchema.nullable().default(null),
+  ...objectiveTemplateStateScalars,
+}).strict();
+
+function isPlainRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Objective template state as a discriminated union on `mode` (CT-9). Parse
+ * output is per-branch: a stored template carries only its mode's slots
+ * (portability discipline — the domain normalizer heals legacy mis-slotted
+ * payloads on read). The preprocess keeps the historical behavior that an
+ * input without `mode` parses as route: zod unions do not apply defaults to a
+ * MISSING discriminator, so the default is injected before the union runs.
+ */
+const objectiveTemplateStateSchema = z.preprocess(
+  (value) => {
+    if (isPlainRecordValue(value) && value.mode === undefined) {
+      return { ...value, mode: OBJECTIVE_MODE.route };
+    }
+    return value;
+  },
+  z.discriminatedUnion("mode", [
+    routeObjectiveTemplateStateSchema,
+    goalsObjectiveTemplateStateSchema,
+  ]),
+);
 
 /** Portable scene/objective setup that omits machine-local provider choices. */
 export const trackerTemplateSchema = z.object({

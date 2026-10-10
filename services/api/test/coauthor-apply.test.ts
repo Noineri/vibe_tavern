@@ -230,6 +230,7 @@ describe("Co-Author Apply RPC — tracker template (CT-7a)", () => {
 		objective: {
 			enabled: true,
 			state: {
+				mode: "goals",
 				objectiveDescription: "Escape the city",
 				shortTermGoals: [{ id: "goal_escape", description: "Reach the gate", status: "pending" }],
 			},
