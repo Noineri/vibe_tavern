@@ -19,7 +19,7 @@ const API_SOURCE_ROOT = "services/api/src";
 const DOMAIN_ROOT = `${API_SOURCE_ROOT}/domain`;
 const SIZE_ROOTS = new Set(["apps", "services", "packages", "scripts"]);
 const LAYER_IMPORT_HINT = "domain/ must not depend on api/ or runtime/; move the needed code down into domain/ (or packages/*), or take a narrow interface instead of the SessionRuntime coordinator.";
-const FILE_SIZE_HINT = "split the file — extract the part you are changing into its own module — instead of appending.";
+const FILE_SIZE_HINT = "split the file — extract the part you are changing into its own module — instead of appending. Deleting or compressing existing lines (code, comments, or whitespace) is NOT a remedy: this ratchet exists so budgets shrink by moving code out, never by trimming — if no cohesive part can be extracted, stop and escalate instead.";
 
 // These are flat catalogs by design: every schema/type addition belongs in the
 // one exhaustive source of truth, so splitting them would make navigation worse.

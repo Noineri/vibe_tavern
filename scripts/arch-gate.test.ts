@@ -103,7 +103,7 @@ describe("architecture ratchet gate", () => {
 			]);
 			const output = formatArchGateReport(report);
 			expect(output).toContain("Architecture gate: FAIL");
-			expect(output).toContain("split the file — extract the part you are changing into its own module — instead of appending.");
+			expect(output).toContain("split the file — extract the part you are changing into its own module — instead of appending. Deleting or compressing existing lines (code, comments, or whitespace) is NOT a remedy: this ratchet exists so budgets shrink by moving code out, never by trimming — if no cohesive part can be extracted, stop and escalate instead.");
 			expect(output).toContain("budgets:");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
