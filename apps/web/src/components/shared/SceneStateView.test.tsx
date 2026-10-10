@@ -15,6 +15,7 @@ import { createElement } from "react";
 import { useDomEnv } from "../../../test/dom-env.js";
 import { SceneStateView } from "./SceneStateView.js";
 import type { SceneTrackerDsl } from "@vibe-tavern/domain";
+import type { SceneRenderVariant } from "../../stores/scene-render-store.js";
 
 useDomEnv();
 
@@ -24,7 +25,7 @@ const { render } = await import("@testing-library/react");
 function r(
   schema: SceneTrackerDsl,
   data: Record<string, unknown>,
-  variant: "rich" | "compact" = "rich",
+  variant: SceneRenderVariant = "rich",
   stale?: boolean,
 ) {
   return render(createElement(SceneStateView, { schema, data, variant, stale })).container;
@@ -124,11 +125,14 @@ describe("SceneStateView — recursion (objects / arrays)", () => {
     expect(c.textContent).toContain("tavern");
   });
 
-  it("array of primitives renders each item; empty shows []", () => {
+  it("array of primitives renders each item; an empty array shows the i18n empty state, never []", () => {
     const schema = { tags: { $type: "array", items: { $type: "string" } } } as const satisfies SceneTrackerDsl;
     expect(r(schema, { tags: ["a", "b"] }).textContent).toContain("a");
     expect(r(schema, { tags: ["a", "b"] }).textContent).toContain("b");
-    expect(r(schema, { tags: [] }).textContent).toContain("[]");
+    // Without a LocaleProvider, the context's deterministic test fallback is the key itself.
+    const empty = r(schema, { tags: [] }).textContent;
+    expect(empty).toContain("scn_state_empty");
+    expect(empty).not.toContain("[]");
   });
 
   it("array of objects renders each object's fields, NOT [object Object]", () => {
@@ -147,6 +151,53 @@ describe("SceneStateView — recursion (objects / arrays)", () => {
     // Each object item is numbered.
     expect(c.textContent).toContain("#1");
     expect(c.textContent).toContain("#2");
+  });
+});
+
+describe("SceneStateView — shared-core defect fixes", () => {
+  it("a fixed min=max number is a plain value, never a zero-width meter", () => {
+    const c = r({ cost: { $type: "number", min: 30, max: 30 } }, { cost: 30 });
+    expect(c.querySelector('[role="meter"]')).toBeNull();
+    expect(c.textContent).toContain("30");
+    expect(c.textContent).not.toContain("30–30");
+  });
+
+  it("a huge range is a plain value with a muted maximum, never a sliver meter", () => {
+    const c = r({ credits: { $type: "number", min: 0, max: 999999 } }, { credits: 30 });
+    expect(c.querySelector('[role="meter"]')).toBeNull();
+    expect(c.textContent).toContain("30 / 999999");
+    const maximum = Array.from(c.querySelectorAll("span")).find((el) => el.textContent === " / 999999");
+    expect(maximum?.className).toContain("text-t4");
+  });
+
+  it("rich labels remain verbatim while compact keeps its established dense separator", () => {
+    const schema = { day: { $type: "string", label: "Day:" } } as const satisfies SceneTrackerDsl;
+    const rich = r(schema, { day: "Monday" });
+    const compact = r(schema, { day: "Monday" }, "compact");
+    expect(rich.textContent).toContain("Day:Monday");
+    expect(rich.textContent).not.toContain("Day::");
+    expect(compact.textContent).toContain("Day:Monday");
+    expect(compact.textContent).not.toContain("Day::");
+  });
+
+  it("array records prefer schema labels over numbered fallback identifiers and raw field keys", () => {
+    const schema = {
+      party: {
+        $type: "array",
+        items: {
+          $type: "object",
+          label: "Companion",
+          properties: { name: { $type: "string", label: "Name" }, rank: { $type: "string", label: "Rank" } },
+        },
+      },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { party: [{ name: "Aria", rank: "Captain" }] });
+    expect(c.textContent).toContain("Companion");
+    expect(c.textContent).toContain("Name");
+    expect(c.textContent).toContain("Rank");
+    expect(c.textContent).not.toContain("#1");
+    expect(c.textContent).not.toContain("name:");
+    expect(c.textContent).not.toContain("rank:");
   });
 });
 

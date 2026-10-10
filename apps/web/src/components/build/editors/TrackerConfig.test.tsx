@@ -15,7 +15,7 @@ import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
 import { createElement, type ChangeEvent, type ReactNode } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import { brandId, computeSceneSchemaHash, type ChatId, type SceneTrackerConfig } from "@vibe-tavern/domain";
-import { useSceneRenderStore } from "../../../stores/scene-render-store.js";
+import { IMPLEMENTED_SCENE_RENDER_VARIANTS, useSceneRenderStore } from "../../../stores/scene-render-store.js";
 
 useDomEnv();
 const { render, fireEvent, waitFor, act } = await import("@testing-library/react");
@@ -162,6 +162,13 @@ describe("TrackerConfig (SCN-11)", () => {
     // Save is a button — assert it is disabled when not dirty.
     const saveBtn = getByText("scn_save_button").closest("button")!;
     expect(saveBtn.disabled).toBe(true);
+  });
+
+  it("sources render-variant selector options from the implemented-variants list", () => {
+    seed();
+    useSceneRenderStore.setState({ variant: "rich" });
+    const { getAllByRole } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    expect(getAllByRole("radio").map((option) => option.getAttribute("value"))).toEqual([...IMPLEMENTED_SCENE_RENDER_VARIANTS]);
   });
 
   it("an invalid DSL shows an inline error and disables Save + Preview", async () => {

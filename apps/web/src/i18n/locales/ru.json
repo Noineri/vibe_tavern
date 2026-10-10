@@ -149,6 +149,7 @@
 	"scn_preview_title": "Превью",
 	"scn_preview_mode_rich": "Графический",
 	"scn_preview_mode_compact": "Компактный",
+	"scn_state_empty": "пусто",
 	"scn_preview_raw_json": "Сырой JSON",
 	"scn_no_target": "Сначала отправьте сообщение для превью.",
 	"scn_dirty_hint": "Несохранённые изменения",

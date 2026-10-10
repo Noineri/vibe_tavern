@@ -24,7 +24,7 @@ import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { updateInsightsConfigAction, previewSceneAction } from "../../../stores/api-actions/chat-actions.js";
 import { findCurrentInsightsCompletionTarget } from "../../../stores/api-actions/insights-completion-actions.js";
 import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
-import { useSceneRenderStore, type SceneRenderVariant } from "../../../stores/scene-render-store.js";
+import { IMPLEMENTED_SCENE_RENDER_VARIANTS, useSceneRenderStore } from "../../../stores/scene-render-store.js";
 
 /** A copyable worked example for the DSL authoring disclosure — exercises every
  *  node kind ($type, ranged number, object/properties, array/items, label). */
@@ -432,11 +432,11 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
           <SegmentedControl
             compact
             value={renderVariant}
-            onChange={(v) => setRenderVariant(v as SceneRenderVariant)}
-            options={[
-              { value: "rich", label: t("scn_preview_mode_rich") },
-              { value: "compact", label: t("scn_preview_mode_compact") },
-            ]}
+            onChange={setRenderVariant}
+            options={IMPLEMENTED_SCENE_RENDER_VARIANTS.map((variant) => ({
+              value: variant,
+              label: t(variant === "rich" ? "scn_preview_mode_rich" : "scn_preview_mode_compact"),
+            }))}
           />
         </div>
       </div>
