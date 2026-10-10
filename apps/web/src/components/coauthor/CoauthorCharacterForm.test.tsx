@@ -30,6 +30,7 @@ import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useBootstrapStore } from "../../stores/api-actions/bootstrap-actions.js";
 import { useCoauthorTurnStore } from "../../stores/coauthor-turn-store.js";
 import { coauthorToolOutputSchema } from "@vibe-tavern/api-contracts";
+import { normalizeTrackerTemplate } from "@vibe-tavern/domain";
 import { toast } from "sonner";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
@@ -43,8 +44,10 @@ const realScriptApi = await import("../../api/script-api.js");
 const realCharacterApi = await import("../../api/character-api.js");
 const realRegexApi = await import("../../api/regex-api.js");
 const realChatStore = await import("../../stores/chat-store.js");
+const realCharacterTrackerTemplate = await import("../../hooks/use-character-tracker-template.js");
 const listAllLorebooksMock = mock((): Promise<LorebookRecord[]> => Promise.resolve([]));
 const listCharacterLorebooksMock = mock((): Promise<LorebookRecord[]> => Promise.resolve([]));
+const refetchTrackerTemplateMock = mock(async () => undefined);
 
 /** Shared Checkbox exposes its state via aria-checked (role="checkbox"), not input.checked. */
 const ariaChecked = (el: Element) => el.getAttribute("aria-checked") === "true";
@@ -85,6 +88,17 @@ mock.module("../../api/character-api.js", () => ({
 	...realCharacterApi,
 	listCharacterLorebooks: listCharacterLorebooksMock,
 	listCharacterScripts: () => Promise.resolve([]),
+}));
+mock.module("../../hooks/use-character-tracker-template.js", () => ({
+	...realCharacterTrackerTemplate,
+	useCharacterTrackerTemplate: () => ({
+		template: null,
+		loading: false,
+		error: null,
+		save: mock(),
+		clear: mock(),
+		refetch: refetchTrackerTemplateMock,
+	}),
 }));
 mock.module("../../api/persona-api.js", () => ({
 	...realPersonaApi,
@@ -198,6 +212,8 @@ describe("CoauthorCharacterForm", () => {
 		listAllLorebooksMock.mockResolvedValue([]);
 		listCharacterLorebooksMock.mockReset();
 		listCharacterLorebooksMock.mockResolvedValue([]);
+		refetchTrackerTemplateMock.mockReset();
+		refetchTrackerTemplateMock.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
@@ -579,6 +595,21 @@ describe("CoauthorCharacterForm", () => {
 	// Parent-dependency is enforced at the Apply boundary: deselecting a lorebook
 	// drops its entries from the shipped bundle (selectLoreBundle).
 
+	function makeTrackerTemplateActivity(): CoauthorToolActivity {
+		const trackerTemplate = normalizeTrackerTemplate({
+			version: 1,
+			scene: { enabled: true, config: { schema: { location: { $type: "string" } } } },
+		});
+		if (!trackerTemplate) throw new Error("Expected fixture tracker template to normalize");
+		return {
+			toolCallId: "tracker-1",
+			toolName: "set_tracker_template",
+			status: "done",
+			summary: "Drafted detective trackers.",
+			trackerTemplate,
+		};
+	}
+
 	function makeLoreActivity(): CoauthorToolActivity {
 		return {
 			toolCallId: "l1",
@@ -597,6 +628,37 @@ describe("CoauthorCharacterForm", () => {
 			},
 		};
 	}
+
+	it("CT-7b: a tracker-template card applies only when included and refreshes its character-template hook", async () => {
+		__isSending = false;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		const fetchMock = mock((_u: RequestInfo | URL, _i?: RequestInit) =>
+			Promise.resolve(new Response(JSON.stringify({ character: makeCharacter(), corrections: [] }), { status: 200 })),
+		);
+		Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+		const { getByRole, getByText } = render(<CoauthorCharacterForm />);
+		expect(getByText("coauthor.tracker_template.review.title")).toBeTruthy();
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => {
+			const call = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit | undefined];
+			const body = JSON.parse(String(call[1]?.body ?? "{}"));
+			expect(body.trackerTemplate.scene.config.schema.location.$type).toBe("string");
+			expect(refetchTrackerTemplateMock).toHaveBeenCalledTimes(1);
+		});
+
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		await waitFor(() => expect(getByText("coauthor.tracker_template.review.title")).toBeTruthy());
+		fireEvent.click(getByRole("checkbox"));
+		fireEvent.click(getByText("coauthor.review.apply"));
+		await waitFor(() => {
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+			const call = fetchMock.mock.calls[1] as unknown as [unknown, RequestInit | undefined];
+			const body = JSON.parse(String(call[1]?.body ?? "{}"));
+			expect(body.trackerTemplate).toBeUndefined();
+		});
+	});
 
 	it("CTX-L3: a lore-only turn enters Reviewing and Apply ships the wholesale loreBundle (no profileMd)", async () => {
 		__isSending = false;

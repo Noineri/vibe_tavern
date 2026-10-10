@@ -16,6 +16,7 @@
  */
 import { describe, it, expect } from "bun:test";
 import type { BuildCharacterDraft, CoauthorLoreBundle } from "@vibe-tavern/api-contracts";
+import { normalizeTrackerTemplate, type TrackerTemplate } from "@vibe-tavern/domain";
 import { parseProfileMd } from "@vibe-tavern/db/codecs";
 import { aggregateCoauthorProposal, buildPartialApplyRequest } from "./coauthor-apply-aggregate.js";
 import type { CoauthorToolActivity } from "../stores/coauthor-turn-store.js";
@@ -94,6 +95,19 @@ function sampleLoreBundle(over: Partial<CoauthorLoreBundle> = {}): CoauthorLoreB
  *  target/proposed, so it must never enter proposal aggregation. */
 function readActivity(toolCallId: string, path: string): CoauthorToolActivity {
 	return { toolCallId, toolName: "read_skill_file", status: "done", readPath: path };
+}
+
+function trackerTemplate(sceneKey: string): TrackerTemplate {
+	const template = normalizeTrackerTemplate({
+		version: 1,
+		scene: { enabled: true, config: { schema: { [sceneKey]: { $type: "string" } } } },
+	});
+	if (!template) throw new Error("Expected fixture tracker template to normalize");
+	return template;
+}
+
+function trackerTemplateActivity(toolCallId: string, template: TrackerTemplate, summary = "Drafted a tracker template."): CoauthorToolActivity {
+	return { toolCallId, toolName: "set_tracker_template", status: "done", trackerTemplate: template, summary };
 }
 
 describe("aggregateCoauthorProposal — read_skill_file isolation (CTX-S6)", () => {
@@ -406,6 +420,31 @@ describe("buildPartialApplyRequest — hunk-level (CA-12)", () => {
  * activity counts as a proposal on its own (lore-only turn), and composes with
  * profile/greeting in a mixed turn.
  */
+describe("aggregateCoauthorProposal — tracker_template (CT-7b)", () => {
+	it("two tracker-template activities in one turn use the last proposal", () => {
+		const first = trackerTemplate("location");
+		const second = trackerTemplate("mood");
+		const result = aggregateCoauthorProposal([
+			trackerTemplateActivity("t1", first, "First template."),
+			trackerTemplateActivity("t2", second, "Second template."),
+		], baseDraft());
+		expect(result.applyRequest.trackerTemplate).toEqual(second);
+		expect(result.trackerTemplate).toEqual(second);
+		expect(result.trackerTemplateSummary).toBe("Second template.");
+	});
+
+	it("a turn without the tool leaves the Apply request byte-identical", () => {
+		const proposed = profileMd("Bold and direct.", "A cave.", "{{char}}: *nods*");
+		const withoutTracker = aggregateCoauthorProposal([profileActivity("p1", proposed)], baseDraft());
+		const withUnrelatedRead = aggregateCoauthorProposal([
+			readActivity("r1", "general-writing/SKILL.md"),
+			profileActivity("p1", proposed),
+		], baseDraft());
+		expect(JSON.stringify(withUnrelatedRead.applyRequest)).toBe(JSON.stringify(withoutTracker.applyRequest));
+		expect(withUnrelatedRead.applyRequest.trackerTemplate).toBeUndefined();
+	});
+});
+
 describe("aggregateCoauthorProposal — lore_bundle (CTX-L3)", () => {
 	it("a lore-only turn counts as a proposal and ships the bundle wholesale", () => {
 		const lbundle = sampleLoreBundle();

@@ -179,11 +179,15 @@ type OpPreview =
   | { kind: "write-profile" }
   | { kind: "greeting"; labelKey: GreetingLabelKey; labelNum?: number; content: string }
   | { kind: "lore"; labelKey: LoreLabelKey; content?: string; chips?: string[]; chipKeys?: string[] }
+  | { kind: "tracker-template" }
   | null;
 
 /** Narrow the opaque `args` per `toolName` into a renderable operation, or
  * `null` when the input is missing/unparseable (historical or malformed). */
 function parseOperation(toolName: string, args: unknown): OpPreview {
+  // CT-7b: this operation's preview is the result summary, not its structured
+  // template args, so it remains renderable even for a historical call missing args.
+  if (toolName === "set_tracker_template") return { kind: "tracker-template" };
   if (args == null || typeof args !== "object") return null;
   switch (toolName) {
     case "edit_personality":
@@ -330,7 +334,7 @@ function DiffHunk({ search, replace }: { search: string; replace: string }) {
 }
 
 /** Scoped operation preview rendered when the card is expanded. */
-function OperationPreview({ op, proposed }: { op: OpPreview; proposed?: string }) {
+function OperationPreview({ op, proposed, summary }: { op: OpPreview; proposed?: string; summary?: string }) {
   const { t, tDynamic } = useT();
   if (!op) {
     // Historical/malformed: no input to reconstruct the operation. Do NOT fall
@@ -365,6 +369,13 @@ function OperationPreview({ op, proposed }: { op: OpPreview; proposed?: string }
     case "write-profile":
       // The ONLY case the full cumulative document is shown — the operation itself is document-wide.
       return <pre className={PREVIEW_PRE_CLS}>{proposed ?? ""}</pre>;
+    case "tracker-template":
+      return (
+        <div className="flex flex-col gap-1">
+          <span className={PREVIEW_LABEL_CLS}>{t("coauthor_tool_tracker_template")}</span>
+          <span className="font-ui text-[11px] leading-relaxed text-msg-t2">{summary}</span>
+        </div>
+      );
     case "lore":
       return (
         <div className="flex flex-col gap-1">
@@ -465,7 +476,7 @@ function ToolActivityCard({ activity }: { activity: CoauthorToolActivity }) {
           {isSearch ? (
             <SearchResultsPreview results={activity.search!.results} />
           ) : (
-            <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} />
+            <OperationPreview op={parseOperation(activity.toolName, activity.args)} proposed={activity.proposed} summary={activity.summary} />
           )}
         </div>
       </AnimatedDisclosure>

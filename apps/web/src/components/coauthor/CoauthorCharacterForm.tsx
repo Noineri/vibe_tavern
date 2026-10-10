@@ -49,7 +49,6 @@ import { greetingsUi } from "../build/editors/vibe-md-greetings.js";
 import { vibeMdFolding } from "../build/editors/vibe-md-folding.js";
 import { applyBodyToDraft, draftToBody } from "../build/editors/vibe-md-sync.js";
 import { buildLineDiff } from "../shared/TextDiffPreview.js";
-import { HunkSelectionDiff } from "./HunkSelectionDiff.js";
 import { groupHunks, mergeSelectedBody, allHunkIds } from "../../lib/coauthor-hunk-merge.js";
 
 import { lblCls } from "../../lib/field-tokens.js";
@@ -79,8 +78,9 @@ import { listAllScripts } from "../../api/script-api.js";
 import { listPersonas } from "../../api/persona-api.js";
 import type { PersonaRecord } from "@vibe-tavern/api-contracts";
 import { setCoauthorContextLinksAction } from "../../stores/api-actions/chat-actions.js";
-import { CoauthorLoreReview, type CoauthorLoreReviewLabels } from "./CoauthorLoreReview.js";
+import { CoauthorReviewingOverlay } from "./CoauthorReviewingOverlay.js";
 import { CoauthorLoreAssistantSettings } from "./CoauthorLoreAssistantSettings.js";
+import { useCharacterTrackerTemplate } from "../../hooks/use-character-tracker-template.js";
 
 /**
  * Stable empty array for the turn-store selector fallback. Returning a fresh
@@ -115,9 +115,10 @@ interface CoauthorCharacterFormInnerProps {
 }
 
 function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerProps) {
-  const { t } = useT();
+  const { t, tDynamic } = useT();
   const isSending = useIsSending();
   const { handleSaveCharacter, isSavingCharacter } = useCharacterController();
+  const { template: currentTrackerTemplate, refetch: refetchTrackerTemplate } = useCharacterTrackerTemplate(character.id);
 
   // The active chat id drives the ephemeral turn store (CA-9.2) which holds the
   // just-finished turn's tool proposals until Apply/Reject clears them.
@@ -193,7 +194,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   // diff overlay + Apply/Reject (rendered below). hasProposal is a cheap guard
   // so we don't aggregate on every render; the full aggregation is memoized.
   const hasProposal =
-    !isSending && activities.some((a) => a.status === "done" && ((!!a.proposed && !!a.target) || !!a.loreBundle));
+    !isSending && activities.some((a) => a.status === "done" && ((!!a.proposed && !!a.target) || !!a.loreBundle || !!a.trackerTemplate));
   const editorState: "idle" | "generating" | "reviewing" = isSending
     ? "generating"
     : hasProposal
@@ -236,7 +237,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
   // diff (profile/greeting) AND/OR a proposed lore bundle (CTX-L3). The editor
   // container stays in the DOM (display:none) so its CM6 lifecycle is never
   // torn down between states — it just leaves flow so it can't be scrolled to.
-  const showReview = reviewing && (!!diff || !!proposal?.loreBundle);
+  const showReview = reviewing && (!!diff || !!proposal?.loreBundle || !!proposal?.trackerTemplate);
   const hunks = useMemo(() => (diff ? groupHunks(diff) : []), [diff]);
   const [selectedHunkIds, setSelectedHunkIds] = useState<Set<number>>(new Set());
   useEffect(() => {
@@ -256,6 +257,14 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       setSelectedEntryIds(allEntryIds(loreBundle));
     }
   }, [loreBundle]);
+
+  // ── CT-7b: tracker-template proposal selection. Single proposal, wholesale
+  //    Apply; mirrors the lore review's include/exclude mechanics. ───────────
+  const trackerTemplate = proposal?.trackerTemplate;
+  const [trackerTemplateSelected, setTrackerTemplateSelected] = useState(false);
+  useEffect(() => {
+    if (trackerTemplate) setTrackerTemplateSelected(true);
+  }, [trackerTemplate]);
 
   // ── Greetings widget handlers (draft-backed; same rationale as VibeMdView). ──
   function forceEditorFromBody(): void {
@@ -388,6 +397,13 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
           delete request.loreBundle;
         }
       }
+      if (proposal.trackerTemplate) {
+        if (trackerTemplateSelected) {
+          request.trackerTemplate = proposal.trackerTemplate;
+        } else {
+          delete request.trackerTemplate;
+        }
+      }
       const { snapshot, corrections } = await applyCoauthorDraft(
         brandId<ChatId>(chatId),
         request,
@@ -395,6 +411,7 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
       useSnapshotStore.getState().ingestSnapshot(snapshot);
       useCoauthorTurnStore.getState().clearTurn(chatId); // → reviewing falls to idle
       if (request.loreBundle) setResourcesRefreshToken((token) => token + 1);
+      if (request.trackerTemplate) await refetchTrackerTemplate();
       // Re-seed the form/editor to the freshly-written canonical so the user
       // immediately sees the applied document (the snapshot carries the new card).
       const fresh = useSnapshotStore.getState().character;
@@ -546,8 +563,9 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
         )}
 
         {showReview && (
-          <ReviewingOverlay
+          <CoauthorReviewingOverlay
             summary={proposal.summaries.join(" · ") || t("coauthor.review.no_summary")}
+            t={t}
             diff={diff}
             hunks={hunks}
             selectedHunkIds={selectedHunkIds}
@@ -564,6 +582,11 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
             onApply={() => { void handleApply(); }}
             onReject={handleReject}
             loreBundle={proposal.loreBundle}
+            trackerTemplate={proposal.trackerTemplate}
+            trackerTemplateSummary={proposal.trackerTemplateSummary}
+            currentTrackerTemplate={currentTrackerTemplate}
+            trackerTemplateSelected={trackerTemplateSelected}
+            onToggleTrackerTemplate={() => setTrackerTemplateSelected((selected) => !selected)}
             selectedLorebookIds={selectedLorebookIds}
             selectedEntryIds={selectedEntryIds}
             onToggleLorebook={(id) =>
@@ -580,6 +603,34 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
                 return next;
               })
             }
+            trackerTemplateLabels={{
+              title: t("coauthor.tracker_template.review.title"),
+              defaults: t("coauthor.tracker_template.review.defaults"),
+              current: t("coauthor.tracker_template.review.current"),
+              noCurrent: t("coauthor.tracker_template.review.none"),
+              scene: (count) => tDynamic("coauthor.tracker_template.review.scene", { count, n: count }),
+              objectives: (mode, count) => tDynamic("coauthor.tracker_template.review.objectives", { mode, count, n: count }),
+              settings: {
+                autoMode: t("coauthor.tracker_template.review.auto_mode"),
+                contextWindow: t("coauthor.tracker_template.review.context_window"),
+                continuityLastN: t("coauthor.tracker_template.review.continuity"),
+                injectionDepth: t("coauthor.tracker_template.review.injection_depth"),
+                injectLastN: t("coauthor.tracker_template.review.scene_memory"),
+                promptFormat: t("coauthor.tracker_template.review.prompt_format"),
+                generatePrompt: t("coauthor.tracker_template.review.generate_prompt"),
+                injectPrompt: t("coauthor.tracker_template.review.inject_prompt"),
+                rulesPrompt: t("coauthor.tracker_template.review.rules_prompt"),
+              },
+              types: {
+                string: t("coauthor.tracker_template.review.type_string"),
+                number: t("coauthor.tracker_template.review.type_number"),
+                boolean: t("coauthor.tracker_template.review.type_boolean"),
+                object: t("coauthor.tracker_template.review.type_object"),
+                array: t("coauthor.tracker_template.review.type_array"),
+              },
+              enabled: t("enabled"),
+              disabled: t("disabled"),
+            }}
             loreLabels={{
               title: t("coauthor.lore.review.title"),
               lorebook: t("coauthor.lore.review.lorebook"),
@@ -660,140 +711,6 @@ function CoauthorCharacterFormInner({ character }: CoauthorCharacterFormInnerPro
             }}
           />
         )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * The reviewing overlay (CA-11): the turn's proposed edits shown as an inline
- * diff over the editor, with Apply / Reject. Absolutely positioned over the
- * editor surface so the editor instance stays mounted (no teardown between
- * states). Apply commits via the CA-7 RPC; Reject discards.
- */
-function ReviewingOverlay({
-  summary,
-  diff,
-  hunks,
-  selectedHunkIds,
-  onToggleHunk,
-  onSelectAll,
-  onSelectNone,
-  applying,
-  onApply,
-  onReject,
-  loreBundle,
-  selectedLorebookIds,
-  selectedEntryIds,
-  onToggleLorebook,
-  onToggleEntry,
-  loreLabels,
-  labels,
-}: {
-  summary: string;
-  diff: ReturnType<typeof buildLineDiff> | null;
-  hunks: ReturnType<typeof groupHunks>;
-  selectedHunkIds: Set<number>;
-  onToggleHunk: (id: number) => void;
-  onSelectAll: () => void;
-  onSelectNone: () => void;
-  applying: boolean;
-  onApply: () => void;
-  onReject: () => void;
-  /** CTX-L3: the proposed lore bundle (absent on profile/greeting-only turns). */
-  loreBundle?: import("@vibe-tavern/api-contracts").CoauthorLoreBundle;
-  selectedLorebookIds: ReadonlySet<string>;
-  selectedEntryIds: ReadonlySet<string>;
-  onToggleLorebook: (id: string) => void;
-  onToggleEntry: (id: string) => void;
-  loreLabels: CoauthorLoreReviewLabels;
-  labels: {
-    title: string;
-    tooLarge: string;
-    noChanges: string;
-    apply: string;
-    reject: string;
-    applying: string;
-    selectAll: string;
-    selectNone: string;
-    applyingCount: string;
-    hunkN: string;
-    skipped: string;
-  };
-}) {
-  // The diff section only fills the column when it actually has selectable
-  // hunks. When the diff is empty / too-large it renders a one-line message
-  // (no flex-1 inside HunkSelectionDiff) — if THIS wrapper still took flex-1,
-  // that message would sit at the top with a dead gap below it, and a mixed
-  // turn (empty diff + lore) would split the column 50/50 against empty space.
-  // shrink-0 lets the message take natural height and gives the rest to lore.
-  const hasDiffContent = !!diff && !diff.tooLarge && hunks.length > 0;
-  return (
-    <div className="flex min-h-0 flex-1 flex-col bg-surface">
-      {/* Summary — pinned top, frosted (.glass-blur) so it doesn't see-through
-          on glass themes; the editor underneath is display:none, so the blur
-          reads against the page background, not the editor. */}
-      <div className="shrink-0 px-3 pt-3">
-        <div className="glass-blur rounded-md border border-border/70 bg-glass-bg px-3 py-2">
-          <div className="font-ui text-[12px] font-medium text-t2">{summary}</div>
-        </div>
-      </div>
-      {/* Body diff (profile/greeting) — shown iff proposed. Each section takes
-          flex-1 so a mixed turn (diff + lore) splits the space 50/50 and each
-          scrolls internally; a single-section turn fills the whole area. */}
-      {diff && (
-        <div className={"flex flex-col px-1 py-2 " + (hasDiffContent ? "min-h-0 flex-1 " : "shrink-0 ")}>
-          <HunkSelectionDiff
-            diff={diff}
-            hunks={hunks}
-            selectedIds={selectedHunkIds}
-            onToggleHunk={onToggleHunk}
-            onSelectAll={onSelectAll}
-            onSelectNone={onSelectNone}
-            labels={{
-              title: labels.title,
-              tooLarge: labels.tooLarge,
-              noChanges: labels.noChanges,
-              selectAll: labels.selectAll,
-              selectNone: labels.selectNone,
-              applyingCount: labels.applyingCount,
-              hunkN: labels.hunkN,
-              skipped: labels.skipped,
-            }}
-          />
-        </div>
-      )}
-      {/* CTX-L3: structured lore review (lorebooks + entries). Shown iff proposed. */}
-      {loreBundle && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <CoauthorLoreReview
-            bundle={loreBundle}
-            selectedLorebookIds={selectedLorebookIds}
-            selectedEntryIds={selectedEntryIds}
-            onToggleLorebook={onToggleLorebook}
-            onToggleEntry={onToggleEntry}
-            applying={applying}
-            labels={loreLabels}
-          />
-        </div>
-      )}
-      <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/50 bg-surface px-4 py-2.5">
-        <button
-          type="button"
-          className="rounded-md border border-border bg-bg px-3.5 py-1.5 font-ui text-[0.8rem] font-semibold text-t2 transition-all hover:bg-s2 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
-          disabled={applying}
-          onClick={onReject}
-        >
-          {labels.reject}
-        </button>
-        <button
-          type="button"
-          className="rounded-md border-0 bg-accent px-4 py-1.5 font-ui text-[0.8rem] font-semibold text-on-accent transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-default disabled:opacity-40"
-          disabled={applying}
-          onClick={onApply}
-        >
-          {applying ? labels.applying : labels.apply}
-        </button>
       </div>
     </div>
   );

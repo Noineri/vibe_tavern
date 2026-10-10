@@ -354,6 +354,22 @@ describe("ToolActivityCard — operation previews (CED-6)", () => {
 	});
 });
 
+describe("ToolActivityCard — tracker-template preview (CT-7b)", () => {
+	it("set_tracker_template draws its label and the result summary in the preview", () => {
+		const summary = "Detective scene tracker with three starting goals.";
+		const { getAllByText, getByText } = render(
+			<ToolActivityCard activity={activity({
+				toolName: "set_tracker_template",
+				summary,
+				args: { scene: { schema: { location: { $type: "string" } } } },
+			})} />,
+		);
+		fireEvent.click(getByText(summary));
+		expect(getByText("coauthor_tool_tracker_template")).toBeDefined();
+		expect(getAllByText(summary)).toHaveLength(2);
+	});
+});
+
 describe("ToolActivityCard — lore tool previews (CTX-L3)", () => {
 	it("create_lorebook shows the book name + description instead of 'unavailable'", () => {
 		const { getByText, queryByText } = render(
