@@ -13,6 +13,7 @@ import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore } from "../../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { AiAssistantConnectionFields } from "../../shared/ai-assistant/AiAssistantConnectionFields.js";
+import { PromptField } from "./prompt-field.js";
 import {
   generateObjectiveTasksAction,
   checkObjectiveCompletionAction,
@@ -121,6 +122,7 @@ export function ObjectiveConfig({ chatId }: { chatId: ChatId }) {
         <div>
           <label className={lblCls}>{t("obj_description_label")}</label>
           <AutoTextarea
+            key={state.objectiveDescription}
             defaultValue={state.objectiveDescription}
             placeholder={t("obj_description_placeholder")}
             minRows={2}
@@ -636,6 +638,7 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
         <div>
           <label className={lblCls}>{t("obj_frequency_label")}</label>
           <TextInput
+            key={state.autoCheckFrequency}
             type="number"
             min={0}
             defaultValue={state.autoCheckFrequency}
@@ -646,6 +649,7 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
         <div>
           <label className={lblCls}>{t("obj_context_window_label")}</label>
           <TextInput
+            key={state.contextWindow}
             type="number"
             min={1}
             defaultValue={state.contextWindow}
@@ -656,6 +660,7 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
         <div>
           <label className={lblCls}>{t("obj_depth_label")}</label>
           <TextInput
+            key={state.injectionDepth}
             type="number"
             min={1}
             defaultValue={state.injectionDepth}
@@ -681,21 +686,6 @@ function AdvancedConfig({ chatId, state }: { chatId: ChatId; state: ObjectiveSta
         hint={t("obj_prompt_hint")}
         defaultValue={state.injectPrompt}
         onSave={(v) => savePrompt("injectPrompt", v)}
-      />
-    </div>
-  );
-}
-
-function PromptField({ label, hint, defaultValue, onSave }: { label: string; hint: string; defaultValue: string; onSave: (v: string) => void }) {
-  return (
-    <div>
-      <label className={lblCls}>{label}</label>
-      <AutoTextarea
-        mono
-        defaultValue={defaultValue}
-        placeholder={hint}
-        minRows={2}
-        onBlur={(e) => { if (e.target.value !== defaultValue) onSave(e.target.value); }}
       />
     </div>
   );

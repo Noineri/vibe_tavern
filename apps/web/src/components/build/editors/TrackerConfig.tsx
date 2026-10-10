@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import type { ChatId, SceneTrackerConfig, SceneTrackerConfigPatch } from "@vibe-tavern/domain";
 import { normalizeSceneTrackerConfig, synthesizeSceneSample, findInvalidXmlKeys, computeSceneSchemaHash, SCENE_AUTO_MODE, SCENE_PROMPT_FORMAT } from "@vibe-tavern/domain";
@@ -8,7 +8,6 @@ import { cn } from "../../../lib/cn.js";
 import { copyText } from "../../../lib/clipboard.js";
 import { CodeEditor } from "../../shared/CodeEditor.js";
 import { CustomTooltip } from "../../shared/Tooltip.js";
-import { AutoTextarea } from "../../shared/auto-textarea.js";
 import { DropdownSelect } from "../../shared/DropdownSelect.js";
 import { AiAssistantConnectionFields } from "../../shared/ai-assistant/AiAssistantConnectionFields.js";
 import { NumberInput } from "../../shared/NumberInput.js";
@@ -18,6 +17,7 @@ import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { formatSceneHistory } from "@vibe-tavern/prompt-pipeline";
 import { lblCls, codeQuoteCls } from "../../../lib/field-tokens.js";
 import { SceneHistoryBackfill } from "./SceneHistoryBackfill.js";
+import { PromptField } from "./prompt-field.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore, useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
@@ -525,26 +525,6 @@ function ScalarField({ label, hint, children }: { label: string; hint: string; c
       <label className={lblCls}>{label}</label>
       <div className="mt-1.5">{children}</div>
       <p className="mt-1 font-ui text-[10px] leading-relaxed text-t4">{hint}</p>
-    </div>
-  );
-}
-
-function PromptField({ label, hint, defaultValue, onSave, action }: { label: string; hint: string; defaultValue: string; onSave: (v: string) => void; action?: ReactNode }) {
-  return (
-    <div>
-      <div className="flex items-center gap-2">
-        <label className={lblCls + " !mb-0"}>{label}</label>
-        {action ? <div className="ml-auto">{action}</div> : null}
-      </div>
-      <div className="mt-1.5">
-        <AutoTextarea
-          mono
-          defaultValue={defaultValue}
-        placeholder={hint}
-        minRows={2}
-        onBlur={(e) => { if (e.target.value !== defaultValue) onSave(e.target.value); }}
-      />
-      </div>
     </div>
   );
 }

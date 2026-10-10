@@ -27,6 +27,7 @@ const mocks = {
   findCurrentInsightsCompletionTarget: mock(),
   fetchProviderModelsAction: mock(),
   aiModalProps: null as null | Record<string, unknown>,
+  rulesAiModalProps: null as null | Record<string, unknown>,
 };
 
 const realI18nContext = await import("../../../i18n/context.js");
@@ -97,7 +98,11 @@ mock.module("../../shared/Tooltip.js", () => ({
 // modal's own streaming/context internals (those have their own coverage).
 mock.module("../../shared/AiAssistantModal.js", () => ({
   ...realAiAssistantModal,
-  AiAssistantModal: (props: { apiMode?: string }) => { if (props.apiMode === "scene_schema") mocks.aiModalProps = props as Record<string, unknown>; return null; },
+  AiAssistantModal: (props: { apiMode?: string }) => {
+    if (props.apiMode === "scene_schema") mocks.aiModalProps = props as Record<string, unknown>;
+    if (props.apiMode === "scene_rules") mocks.rulesAiModalProps = props as Record<string, unknown>;
+    return null;
+  },
 }));
 
 let TrackerConfig: typeof import("./TrackerConfig.js").TrackerConfig;
@@ -143,6 +148,7 @@ afterEach(() => {
   mocks.findCurrentInsightsCompletionTarget.mockReturnValue({ branchId: "b1", messageId: "m1", variantId: "v1" });
   mocks.activeChat = null;
   mocks.aiModalProps = null;
+  mocks.rulesAiModalProps = null;
 });
 
 describe("TrackerConfig (SCN-11)", () => {
@@ -374,6 +380,51 @@ describe("TrackerConfig (SCN-11)", () => {
 // (each DropdownSelect is w-full by default, so it fills its own row); the
 // desktop grids return above the max-md breakpoint (sm:grid-cols-3 on the
 // scalar row). Desktop behavior is unchanged — max-md only ADDS a rule.
+describe("TrackerConfig prompt-field re-seed (AI replace / chat switch)", () => {
+  it("AI rules replace re-seeds the field: new text visible, blur does not clobber it, Save persists it", async () => {
+    seed({ rulesPrompt: "v1 rules" });
+    const { getByPlaceholderText, getByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    fireEvent.click(getByText("scn_advanced_label"));
+    expect((getByPlaceholderText("scn_rules_prompt_hint") as HTMLTextAreaElement).value).toBe("v1 rules");
+    // Applying the AI modal output writes the generated text into the draft.
+    await act(async () => {
+      (mocks.rulesAiModalProps!.onReplace as (text: string) => void)("v2 rules");
+    });
+    // R10: re-query after the replace — the key remount retired the old node.
+    const reseeded = getByPlaceholderText("scn_rules_prompt_hint") as HTMLTextAreaElement;
+    expect(reseeded.value).toBe("v2 rules");
+    // Blur without editing must not commit the pre-replace text back over the draft.
+    fireEvent.blur(reseeded);
+    expect((getByPlaceholderText("scn_rules_prompt_hint") as HTMLTextAreaElement).value).toBe("v2 rules");
+    // Save carries the generated rules in the partial tracker PATCH.
+    await act(async () => {
+      fireEvent.click(getByText("scn_save_button").closest("button")!);
+    });
+    await waitFor(() => expect(mocks.updateInsightsConfigAction).toHaveBeenCalledTimes(1));
+    const patch = mocks.updateInsightsConfigAction.mock.calls[0][1] as {
+      insightsConfig: { tracker: { rulesPrompt: string } };
+    };
+    expect(patch.insightsConfig.tracker.rulesPrompt).toBe("v2 rules");
+  });
+
+  it("switching chats re-seeds the prompt fields — no stale cross-chat text left to blur-commit", async () => {
+    seed({ generatePrompt: "chat A prompt" });
+    const { getAllByPlaceholderText, getByText, rerender } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    fireEvent.click(getByText("scn_advanced_label"));
+    expect((getAllByPlaceholderText("scn_prompt_hint")[0] as HTMLTextAreaElement).value).toBe("chat A prompt");
+    // Switch to chat B (stored config differs); the draft is not dirty, so it tracks the stored value.
+    seed({ generatePrompt: "chat B prompt" });
+    await act(async () => {
+      rerender(createElement(TrackerConfig, { chatId: brandId<ChatId>("chat_2") }));
+    });
+    const switched = getAllByPlaceholderText("scn_prompt_hint")[0] as HTMLTextAreaElement;
+    expect(switched.value).toBe("chat B prompt");
+    // Blur must not resurrect chat A's text into chat B's draft.
+    fireEvent.blur(switched);
+    expect((getAllByPlaceholderText("scn_prompt_hint")[0] as HTMLTextAreaElement).value).toBe("chat B prompt");
+  });
+});
+
 describe("TrackerConfig mobile grid stacking (MUI-W3)", () => {
   it("max-md: the scalar row and the provider/model picker row are single full-width columns", () => {
     seed();

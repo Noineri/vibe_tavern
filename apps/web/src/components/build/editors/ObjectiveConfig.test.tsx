@@ -11,6 +11,8 @@
  * Runner: bun:test + happy-dom.
  */
 import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { brandId, type ChatId } from "@vibe-tavern/domain";
+import { act } from "react";
 import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ObjectiveState } from "../../../api/types.js";
 
@@ -136,6 +138,8 @@ const EMPTY: ObjectiveState = {
   model: null,
 };
 
+const CHAT_ID = brandId<ChatId>("chat_1");
+
 function withState(state: ObjectiveState) {
   mocks.activeChat = { id: "chat_1", insightsObjectiveState: state };
 }
@@ -150,6 +154,23 @@ describe("ObjectiveConfig (INS-5)", () => {
     fireEvent.change(input, { target: { value: "Start manually" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(mocks.addObjectiveTaskAction).toHaveBeenCalledWith("chat_1", "Start manually");
+  });
+
+  it("re-seeds the description after an external snapshot update without blur-clobbering it", async () => {
+    withState({ ...EMPTY, objectiveDescription: "v1" });
+    const { getByPlaceholderText, rerender } = render(<ObjectiveConfig chatId={CHAT_ID} />);
+    expect((getByPlaceholderText("obj_description_placeholder") as HTMLTextAreaElement).value).toBe("v1");
+
+    withState({ ...EMPTY, objectiveDescription: "v2" });
+    await act(async () => {
+      rerender(<ObjectiveConfig chatId={CHAT_ID} />);
+    });
+
+    // R10: re-query after the update because the key remount retires the old node.
+    const reseeded = getByPlaceholderText("obj_description_placeholder") as HTMLTextAreaElement;
+    expect(reseeded.value).toBe("v2");
+    fireEvent.blur(reseeded);
+    expect((getByPlaceholderText("obj_description_placeholder") as HTMLTextAreaElement).value).toBe("v2");
   });
 
   it("renders the task route when the state has tasks (generate → tree appears)", () => {
