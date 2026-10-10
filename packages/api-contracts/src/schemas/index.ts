@@ -178,6 +178,7 @@ export type {
   UpdateSceneTrackerConfig,
   ScenePathResolution,
 } from "./tracker-schema.js";
+export { trackerTemplateSchema, updateTrackerTemplateSchema } from "./tracker-template-schema.js";
 export {
   importJsonSchema,
   importJsonBatchSchema,

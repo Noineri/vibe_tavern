@@ -35,6 +35,7 @@ import type { LorebookExportResult, SkillCatalogEntryDto } from "@vibe-tavern/ap
 import type { CoauthorConnectionSettingsRuntimeApi } from "./coauthor-connection-contracts.js";
 export type { CoauthorConnectionSettingsRuntimeApi };
 import type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi } from "./template-library-contracts.js";
+import type { TrackerTemplateApi, TrackerTemplateCharacterRuntimeApi, TrackerTemplateInsightsRuntimeApi } from "./tracker-template-api.js";
 export type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi };
 // Lorebook + Script contracts live in their own module (extracted when the
 // «Текущие» participating queries grew them past this file's line baseline —
@@ -72,7 +73,6 @@ import type { MobileAccessInfo } from "../../domain/mobile-access/mobile-access-
 import type { SkillImportFile, SkillImportResult } from "../../domain/coauthor/skills/skill-library.js";
 import type { ImageGenListing, ImageGenRuntimeApi, SttRuntimeApi, TtsRuntimeApi } from "./profile-runtime-contracts.js";
 export type { ImageGenListing, ImageGenRuntimeApi, SttRuntimeApi, TtsRuntimeApi } from "./profile-runtime-contracts.js";
-
 // ─── Shared type aliases ────────────────────────────────────────────
 //
 // This file defines `RuntimeApi` — the single contract between Hono route
@@ -217,7 +217,7 @@ export interface ChatRuntimeApi {
 
 // ─── Character ───────────────────────────────────────────────────────
 
-export interface CharacterRuntimeApi {
+export interface CharacterRuntimeApi extends TrackerTemplateCharacterRuntimeApi {
 	createCharacterFromScratch: (body: {
 		name: string;
 		description?: string;
@@ -488,7 +488,7 @@ export interface CoauthorSkillsRuntimeApi {
 // Manual actions return directly; automatic completion is delivered through a
 // target-scoped join rather than SSE or a whole-session snapshot.
 
-export interface InsightsRuntimeApi {
+export interface InsightsRuntimeApi extends TrackerTemplateInsightsRuntimeApi {
 	refreshInsightsCompletion: (chatId: string, body: { target: { branchId: string; messageId: string; variantId?: string } }, signal?: AbortSignal) => Promise<InsightsCompletionPatchResponse>;
 	generateObjectiveTasks: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
 	checkObjectiveCompletion: (chatId: string, body: { providerProfileId?: string; model?: string }, signal?: AbortSignal) => Promise<ConfigPatchResponse>;
@@ -964,7 +964,7 @@ export interface SamplerSetRuntimeApi {
  *  template-library-contracts.ts (extracted for the size ratchet; re-exported
  *  above). */
 
-export interface RuntimeApi {
+export interface RuntimeApi extends TrackerTemplateApi {
 	bootstrap: BootstrapRuntimeApi["bootstrap"];
 	servicePrompts: ServicePromptRuntimeApi;
 	imagePromptProfiles: ImagePromptProfileRuntimeApi;

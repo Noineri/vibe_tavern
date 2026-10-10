@@ -3,6 +3,7 @@ import { chats, chatBranches, characters, messages, messageVariants, promptTrace
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
 import { createChatInsertValues, type CreateChatInput } from './chat-create-values.js';
+import { replaceChatTrackerSetup, updateChatInsightsConfig, updateChatObjectiveState } from './chat-tracker-setup.js';
 import {
   normalizeSceneTrackerConfig,
   applySceneTrackerConfigPatch,
@@ -238,14 +239,7 @@ export class ChatStore {
   }
 
   async updateInsightsConfig(id: string, input: { insightsConfig?: InsightsConfig }): Promise<Chat> {
-    const now = this.clock.now();
-    const values: Partial<typeof chats.$inferInsert> = { updatedAt: now };
-    if (input.insightsConfig !== undefined) values.insightsConfigJson = JSON.stringify(input.insightsConfig);
-    const [row] = await this.db
-      .update(chats)
-      .set(values)
-      .where(eq(chats.id, id))
-      .returning();
+    const [row] = await updateChatInsightsConfig(this.db, id, input.insightsConfig, this.clock.now());
     if (!row) throw new Error(`Chat '${id}' not found after insights config update`);
     return this.mapRow(row);
   }
@@ -283,16 +277,17 @@ export class ChatStore {
     return this.mapRow(row);
   }
 
+  /** Replace both Tracker setup columns in one write so applying a portable
+   * template cannot leave the config and Objective state out of sync. */
+  async replaceTrackerSetup(id: string, insightsConfig: InsightsConfig, objectiveState: ObjectiveState): Promise<Chat> {
+    const [row] = await replaceChatTrackerSetup(this.db, id, insightsConfig, objectiveState, this.clock.now());
+    if (!row) throw new Error(`Chat '${id}' not found after tracker setup replacement`);
+    return this.mapRow(row);
+  }
+
   /** Replace the chat's Objective Tracker state wholesale (INSIGHTS_PLAN). The service computes the full next state and writes it atomically. */
   async updateInsightsObjectiveState(id: string, input: { insightsObjectiveState?: ObjectiveState }): Promise<Chat> {
-    const now = this.clock.now();
-    const values: Partial<typeof chats.$inferInsert> = { updatedAt: now };
-    if (input.insightsObjectiveState !== undefined) values.insightsObjectiveStateJson = JSON.stringify(input.insightsObjectiveState);
-    const [row] = await this.db
-      .update(chats)
-      .set(values)
-      .where(eq(chats.id, id))
-      .returning();
+    const [row] = await updateChatObjectiveState(this.db, id, input.insightsObjectiveState, this.clock.now());
     if (!row) throw new Error(`Chat '${id}' not found after objective state update`);
     return this.mapRow(row);
   }

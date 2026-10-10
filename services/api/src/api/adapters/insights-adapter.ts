@@ -1,10 +1,10 @@
-import { brandId, ensureActiveObjectiveTarget, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveMode, type ObjectiveState, type ObjectiveTaskStatus, type SceneBackfillMode, type SceneTrackerConfig } from "@vibe-tavern/domain";
+import { applyTrackerTemplate, brandId, ensureActiveObjectiveTarget, readTrackerTemplate, trackerTemplateFromChat, withTrackerTemplate, type CharacterId, type ChatBranchId, type ChatId, type MessageId, type MessageVariantId, type ObjectiveMode, type ObjectiveState, type ObjectiveTaskStatus, type SceneBackfillMode, type SceneTrackerConfig, type TrackerTemplate } from "@vibe-tavern/domain";
 import type { StoreContainer } from "@vibe-tavern/db";
 import type { SessionRuntime } from "../../runtime/session/session-runtime.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import type { ConfigPatchResponse, InsightsCompletionPatchResponse, SceneBackfillStatusResponse, ScenePreviewResponse, SceneStatusResponse, SceneTargetResponse } from "../contract/session-types.js";
 import { mapMessageDto } from "../../runtime/session/session-runtime-dto.js";
-import { conflict, notFound, validation } from "../../shared/errors.js";
+import { conflict, DomainError, notFound, unprocessable, validation } from "../../shared/errors.js";
 import { ObjectiveService } from "../../domain/insights/objective-service.js";
 import { SceneTrackerService, type SceneTarget } from "../../domain/insights/tracker-service.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
@@ -316,6 +316,49 @@ export class InsightsAdapter {
 	/** Retry/resume a terminal run's failed + unprocessed frozen-manifest items. */
 	retrySceneBackfill = async (chatId: string, runId: string): Promise<SceneBackfillStatusResponse> => {
 		return this.trackerService.retryBackfill(brandId<ChatId>(chatId), runId);
+	};
+
+	/** Apply the active character's portable setup to an RP chat and refresh the
+	 * active-chat patch using the same shape as insights-config PATCH. */
+	applyCharacterTrackerTemplate = async (chatId: string): Promise<ConfigPatchResponse> => {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		if (chat.mode !== "rp") {
+			throw unprocessable("Tracker templates can only be applied to RP chats.", { code: "not_an_rp_chat" });
+		}
+		const character = await this.stores.characters.getById(chat.characterId);
+		if (!character) throw notFound("Character", `Character '${chat.characterId}' was not found.`);
+		const template = readTrackerTemplate(character.extensions);
+		if (!template) {
+			throw new DomainError({
+				kind: "NotFound",
+				message: "The character has no tracker template.",
+				details: { code: "no_tracker_template" },
+			});
+		}
+		const next = applyTrackerTemplate(template, {
+			insightsConfig: chat.insightsConfig,
+			objectiveState: chat.insightsObjectiveState,
+		});
+		await this.stores.chats.replaceTrackerSetup(chatId, next.insightsConfig, next.objectiveState);
+		return this.refresh(chatId);
+	};
+
+	/** Save this chat's portable setup onto its character without machine-local
+	 * provider/model selections. Available for every chat mode; only apply is RP-only. */
+	saveAsCharacterTrackerTemplate = async (chatId: string): Promise<{ template: TrackerTemplate }> => {
+		const chat = await this.stores.chats.getById(chatId);
+		if (!chat) throw notFound("Chat", `Chat '${chatId}' was not found.`);
+		const template = trackerTemplateFromChat(chat.insightsConfig, chat.insightsObjectiveState);
+		if (!template) {
+			throw unprocessable("The chat has no tracker setup to save.", { code: "empty_tracker_setup" });
+		}
+		const character = await this.stores.characters.getById(chat.characterId);
+		if (!character) throw notFound("Character", `Character '${chat.characterId}' was not found.`);
+		await this.sessionRuntime.character.update(brandId<CharacterId>(chat.characterId), {
+			extensions: withTrackerTemplate(character.extensions, template),
+		}, { rebuildChatOrder: () => this.sessionRuntime.rebuildChatOrder() });
+		return { template };
 	};
 
 	/**

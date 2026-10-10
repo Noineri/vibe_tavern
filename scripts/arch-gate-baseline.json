@@ -46,7 +46,7 @@
     "apps/web/src/stores/experience-store.ts": 993,
     "packages/api-contracts/src/schemas/interactive-schema.ts": 1098,
     "packages/db/src/db-connection.ts": 1088,
-    "packages/db/src/stores/chat-store.ts": 973,
+    "packages/db/src/stores/chat-store.ts": 968,
     "packages/db/src/stores/dice-roll-store.ts": 835,
     "packages/db/src/stores/experience-store.ts": 1624,
     "packages/db/src/stores/lorebook-store.ts": 984,

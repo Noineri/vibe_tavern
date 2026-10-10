@@ -1,4 +1,4 @@
-import type { ChatId } from "@vibe-tavern/domain";
+import type { ChatId, TrackerTemplate } from "@vibe-tavern/domain";
 import type { AppSnapshot, AppCharacterVersion, ImportJsonResponse, LorebookRecord, ScriptRecord } from "./types.js";
 import { apiFetch, client, getGatewayBaseUrl, getMobileToken } from "./client.js";
 import { unwrapRpc, unwrapError } from "./unwrap.js";
@@ -76,6 +76,21 @@ export async function deleteCharacter(characterId: string): Promise<void> {
 export async function exportCharacter(characterId: string): Promise<Record<string, unknown>> {
   const response = await client.api.characters[":characterId"].export.$get({ param: { characterId } });
   return unwrapRpc(response);
+}
+
+export async function getTrackerTemplate(characterId: string): Promise<TrackerTemplate | null> {
+  const response = await client.api.characters[":characterId"]["tracker-template"].$get({ param: { characterId } });
+  return (await unwrapRpc(response)).template;
+}
+
+export async function updateTrackerTemplate(characterId: string, template: TrackerTemplate): Promise<TrackerTemplate> {
+  const response = await client.api.characters[":characterId"]["tracker-template"].$put({ param: { characterId }, json: { template } });
+  return (await unwrapRpc(response)).template;
+}
+
+export async function deleteTrackerTemplate(characterId: string): Promise<void> {
+  const response = await client.api.characters[":characterId"]["tracker-template"].$delete({ param: { characterId } });
+  if (!response.ok) throw await unwrapError(response);
 }
 
 // ─── Character versions (VTF Phase 3 folder-snapshot branching) ─────────────
