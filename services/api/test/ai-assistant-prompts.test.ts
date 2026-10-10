@@ -146,6 +146,23 @@ describe("chat impersonation enhancement prompt", () => {
   });
 });
 
+describe("tracker template teaching prompt (CT-10)", () => {
+  it("resolves its default asset and only its own profile override via the field path", async () => {
+    const { db, profileStore, uiSettings } = await setupDb();
+    const defaultResult = await resolveSystemPrompt(db, "script", { field: "tracker_template" });
+    expect(defaultResult.source).toBe("default");
+    expect(defaultResult.prompt).toContain("UNION RULE");
+
+    const profile = await profileStore.createServicePromptProfile({
+      name: "Tracker Override",
+      overrides: { tracker_template: "CUSTOM TRACKER TEMPLATE PROMPT" },
+    });
+    await uiSettings.update({ activeServicePromptProfileId: profile.id });
+    expect(await resolveSystemPrompt(db, "script", { field: "tracker_template" }))
+      .toEqual({ prompt: "CUSTOM TRACKER TEMPLATE PROMPT", source: "override" });
+  });
+});
+
 describe("lore-key generation prompt (P20)", () => {
   it("grounds key language in the entry and gives non-ASCII short keys Unicode boundaries", async () => {
     const prompt = await getDefaultPromptForMode("lore_keys");

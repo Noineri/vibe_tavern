@@ -31,6 +31,7 @@ export const SERVICE_PROMPT_FIELDS = {
   message_edit: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   message_merge: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   message_tts_annotate: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
+  tracker_template: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   // assistant (12) — regex-rule authoring (REGEX_AI_ASSISTANT_PLAN)
   regex: { family: SERVICE_PROMPT_FIELD_FAMILIES.assistant },
   // summary (1)
@@ -64,6 +65,7 @@ export const SERVICE_PROMPT_FIELD_KEYS = [
   "message_edit",
   "message_merge",
   "message_tts_annotate",
+  "tracker_template",
   "regex",
   "summary",
   "objective_generate",

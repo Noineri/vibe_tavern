@@ -3307,6 +3307,7 @@
 	"promptManager.servicePrompts.field.objective_generate_goals": "Objective Goals",
 	"promptManager.servicePrompts.field.objective_check": "Objective Check",
 	"promptManager.servicePrompts.field.scene_generate": "Scene Generate",
+	"promptManager.servicePrompts.field.tracker_template": "Tracker Template",
 	"promptManager.servicePrompts.field.coauthor_base": "Co-Author Base",
 	"promptManager.servicePrompts.field.copilot_base": "Mini-app AI Assistant Base",
 	"promptManager.servicePrompts.field.copilot_user_flow": "User Process in Mini-apps",

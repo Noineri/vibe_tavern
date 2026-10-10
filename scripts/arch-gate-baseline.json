@@ -35,7 +35,7 @@
     "apps/web/src/components/modals/PromptManagerModal.tsx": 1304,
     "apps/web/src/components/modals/ProviderModal.tsx": 995,
     "apps/web/src/components/settings/prompt/ImagePromptTemplatesPane.tsx": 995,
-    "apps/web/src/components/settings/prompt/ServicePromptsPane.tsx": 827,
+    "apps/web/src/components/settings/prompt/ServicePromptsPane.tsx": 803,
     "apps/web/src/components/settings/provider/imagegen/ImageGenPane.tsx": 1967,
     "apps/web/src/components/settings/provider/ProviderSamplerPanel.tsx": 1164,
     "apps/web/src/components/settings/provider/tts/TtsProfileEditor.tsx": 1014,

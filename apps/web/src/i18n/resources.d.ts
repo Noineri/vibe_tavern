@@ -2276,6 +2276,7 @@ export default interface Resources {
     "promptManager.servicePrompts.field.scene_generate": "Scene Generate",
     "promptManager.servicePrompts.field.scene_rules": "Scene Rules AI",
     "promptManager.servicePrompts.field.summary": "Summary",
+    "promptManager.servicePrompts.field.tracker_template": "Tracker Template",
     "promptManager.servicePrompts.liveBadge": "live",
     "promptManager.servicePrompts.liveTooltip": "Built-in profile — reads the live asset files on the server",
     "promptManager.servicePrompts.loadError": "Failed to load profiles",

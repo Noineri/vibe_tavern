@@ -20,6 +20,7 @@ import { SaveButton } from "../../shared/SaveBar.js";
 import { lblCls, codeQuoteCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";
 import { InlineRenameInput } from "../../shared/InlineRenameInput.js";
+import { FIELD_LABEL_KEYS } from "./service-prompt-field-labels.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { useReorderableList } from "../../../hooks/use-reorderable-list.js";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
@@ -53,32 +54,7 @@ const FAMILY_LABEL_KEYS: Record<ServicePromptFieldFamily, string> = {
 	[SERVICE_PROMPT_FIELD_FAMILIES.bases]: "promptManager.servicePrompts.family.bases",
 };
 
-const FIELD_LABEL_KEYS: Partial<Record<ServicePromptFieldKey, string>> = {
-	script: "ai_assistant_mode_script",
-	dice_script: "promptManager.servicePrompts.field.dice_script",
-	lore_entry: "ai_assistant_mode_lore_entry",
-	lore_keys: "ai_assistant_mode_lore_keys",
-	chat_impersonate: "ai_assistant_mode_chat_impersonate",
-	chat_impersonate_enhance: "promptManager.servicePrompts.field.chat_impersonate_enhance",
-	md_import: "promptManager.servicePrompts.field.md_import",
-	vision_describe: "ai_assistant_mode_vision_describe",
-	scene_schema: "ai_assistant_mode_scene_schema",
-	scene_rules: "promptManager.servicePrompts.field.scene_rules",
-	message_edit: "ai_assistant_mode_message_edit",
-	message_merge: "ai_assistant_mode_message_merge",
-	message_tts_annotate: "ai_assistant_mode_message_tts_annotate",
-	regex: "promptManager.servicePrompts.field.regex",
-	summary: "promptManager.servicePrompts.field.summary",
-	objective_generate: "promptManager.servicePrompts.field.objective_generate",
-	objective_generate_goals: "promptManager.servicePrompts.field.objective_generate_goals",
-	objective_check: "promptManager.servicePrompts.field.objective_check",
-	scene_generate: "promptManager.servicePrompts.field.scene_generate",
-	coauthor_base: "promptManager.servicePrompts.field.coauthor_base",
-	copilot_base: "promptManager.servicePrompts.field.copilot_base",
-	copilot_user_flow: "promptManager.servicePrompts.field.copilot_user_flow",
-	interactive_rules: "promptManager.servicePrompts.field.interactive_rules",
-	interactive_visual: "promptManager.servicePrompts.field.interactive_visual",
-};
+
 
 function truncateForPlaceholder(value: string): string {
 	if (value.length <= 120) return value;

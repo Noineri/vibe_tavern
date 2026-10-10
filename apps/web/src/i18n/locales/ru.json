@@ -3359,6 +3359,7 @@
 	"promptManager.servicePrompts.field.objective_generate_goals": "Генерация задач цели",
 	"promptManager.servicePrompts.field.objective_check": "Проверка цели",
 	"promptManager.servicePrompts.field.scene_generate": "Генерация сцены",
+	"promptManager.servicePrompts.field.tracker_template": "Заготовка трекеров (генерация)",
 	"promptManager.servicePrompts.field.coauthor_base": "База соавтора",
 	"promptManager.servicePrompts.field.copilot_base": "База ИИ-помощника мини-приложений",
 	"promptManager.servicePrompts.field.copilot_user_flow": "Пользовательский процесс в мини-приложениях",
