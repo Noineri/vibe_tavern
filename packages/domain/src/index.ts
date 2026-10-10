@@ -43,5 +43,6 @@ export * from "./scene-tracker-constants.js";
 export * from "./service-prompts.js";
 export * from "./stt-presets.js";
 export * from "./text-exact-edit.js";
+export * from "./tracker-template.js";
 export * from "./tts-server-discovery.js";
 export * from "./whisper-models.js";
