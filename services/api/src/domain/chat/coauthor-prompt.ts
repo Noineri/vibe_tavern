@@ -20,8 +20,8 @@
  * fields stay empty; the trace UI simply shows fewer rows.
  */
 
-import type { ChatBranchId, ChatId, LoreEntryId } from "@vibe-tavern/domain";
-import { brandId } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, LoreEntryId, TrackerTemplate } from "@vibe-tavern/domain";
+import { brandId, readTrackerTemplate } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult, CoauthorContextItem, CoauthorBoundResources } from "./chat-mode-strategy.js";
 import { buildCoauthorTools } from "./coauthor-tools.js";
@@ -88,6 +88,21 @@ function renderCurrentCard(profileMd: string, character: { firstMessage: string 
     return `### Greeting ${label}\n${g || "(empty)"}`;
   });
   return [`# Current profile.md`, "```yaml", profileMd, "```", "", "# Current greetings", ...greetingLines].join("\n");
+}
+
+/**
+ * Render the character's current tracker template as read-only context
+ * (CT-7a), directly after {@link renderCurrentCard}'s card block. Fenced JSON
+ * when a template exists (the exact shape `set_tracker_template` expects back,
+ * so the model can use it as the edit base); the literal `none` when the
+ * character carries no template. The CALLER gates this on the module's tool
+ * set — a module without `set_tracker_template` never sees the section, so
+ * its prompt stays byte-identical to pre-CT-7a.
+ */
+function renderTrackerTemplateSection(template: TrackerTemplate | null): string {
+  return template === null
+    ? ["# Current tracker template", "none"].join("\n")
+    : ["# Current tracker template", "```json", JSON.stringify(template, null, 2), "```"].join("\n");
 }
 
 /** Render the chat's pinned Level-1 context entities as read-only reference
@@ -267,6 +282,14 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     ? await resolveServicePromptText(input.db, "coauthor_base")
     : await loadPromptAsset("coauthor/base.md");
   const currentCard = renderCurrentCard(profileMd, character);
+  // CT-7a: the current tracker template rides right after the card — but ONLY
+  // for modules whose tool set enables `set_tracker_template` (the same gate
+  // buildCoauthorTools applies to the tool itself). Tool-off modules omit the
+  // section entirely, keeping their prompt byte-identical to pre-CT-7a.
+  const trackerToolOn = !module.toolSet || module.toolSet.set_tracker_template === true;
+  const trackerTemplateBlock = trackerToolOn
+    ? renderTrackerTemplateSection(readTrackerTemplate(character.extensions))
+    : "";
   const contextBlock = renderContextBlocks(contextItems);
   const boundLorebooksBlock = renderBoundLorebooksAwareness(boundResources.lorebooks);
   const boundScriptsBlock = renderBoundScriptsAwareness(boundResources.scripts);
@@ -289,6 +312,11 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     sections.push("", skillCatalogBlock);
   }
   sections.push("", currentCard);
+  // CT-7a: tracker-template section — empty string when the tool is toggled
+  // off, so the push (and the prompt) is skipped entirely.
+  if (trackerTemplateBlock) {
+    sections.push("", trackerTemplateBlock);
+  }
   // CE-C2/C3: bound-resource awareness sits right after the character card —
   // these are the character's OWNED lorebooks/scripts (a table of contents),
   // distinct from Level-1 pinned context (full content) appended further down.

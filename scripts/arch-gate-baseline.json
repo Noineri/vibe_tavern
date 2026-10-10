@@ -68,7 +68,7 @@
     "services/api/src/domain/prompt/lore-activation-engine.ts": 1282,
     "services/api/src/domain/prompt/prompt-assembly-service.ts": 802,
     "services/api/src/domain/tts/backends/openai-tts.ts": 811,
-    "services/api/src/runtime/session/session-runtime.ts": 1194,
+    "services/api/src/runtime/session/session-runtime.ts": 1096,
     "services/api/src/server/updater.ts": 1101,
     "services/api/src/shared/st-directory-scanner.ts": 1441
   }

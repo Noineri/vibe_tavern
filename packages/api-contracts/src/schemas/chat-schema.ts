@@ -1,6 +1,7 @@
 import { brandId, type MessageVariantId } from "@vibe-tavern/domain";
 import { z } from "zod";
 import { updateLoreEntrySchema, updateLorebookMetaSchema } from "./lorebook-schema.js";
+import { trackerTemplateSchema } from "./tracker-template-schema.js";
 
 /** The settings the lore review renders for a lorebook. */
 export const LOREBOOK_REVIEW_SETTING_FIELDS = [
@@ -347,6 +348,14 @@ export const coauthorApplySchema = z.object({
    * field carries the user-accepted graph to be written idempotently.
    */
   loreBundle: coauthorLoreBundleSchema.optional(),
+  /**
+   * CT-7a: the accepted tracker-template proposal (the tool-normalized echo
+   * of a `set_tracker_template` call). Apply writes it through the domain
+   * `withTrackerTemplate` helper inside the same `character.update` call as
+   * the profile merge — every other `extensions` key is preserved. Omitted =
+   * the character's template is left untouched.
+   */
+  trackerTemplate: trackerTemplateSchema.optional(),
 });
 
 export type CoauthorApplyRequest = z.infer<typeof coauthorApplySchema>;
@@ -375,6 +384,24 @@ export const coauthorToolOutputSchema = z.object({
   summary: z.string(),
 });
 export type CoauthorToolOutput = z.infer<typeof coauthorToolOutputSchema>;
+
+/**
+ * The `output` payload of a `set_tracker_template` `tool-result` SSE event
+ * (CT-7a). A PROPOSAL, like {@link coauthorToolOutputSchema} /
+ * {@link coauthorLoreBundleOutputSchema} — but its proposed document is a
+ * structured object (the domain `TrackerTemplate`), not a string, so it does
+ * not reuse the `target`/`proposed` string shape. Carries no `target`: the
+ * frontend routes it by tool name, and aggregation follows «the LAST
+ * `set_tracker_template` wins» (mirroring `lore_bundle`). The backend tool
+ * (`coauthor-tools.ts`) normalizes via the domain `normalizeTrackerTemplate`
+ * and echoes the canonical template — this schema is the single source of
+ * truth for the wire shape.
+ */
+export const coauthorTrackerTemplateOutputSchema = z.object({
+  trackerTemplate: trackerTemplateSchema,
+  summary: z.string(),
+});
+export type CoauthorTrackerTemplateOutput = z.infer<typeof coauthorTrackerTemplateOutputSchema>;
 
 /**
  * The `output` payload of a `read_skill_file` `tool-result` SSE event (CTX-S4).

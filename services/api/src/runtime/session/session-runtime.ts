@@ -1,4 +1,4 @@
-import { parseProfileMd, type PromptPreset, type StoreContainer, type UiSettings, type DiceRoll } from "@vibe-tavern/db";
+import { type PromptPreset, type StoreContainer, type UiSettings, type DiceRoll } from "@vibe-tavern/db";
 import type { PromptPresetDto, PromptTraceRecordDto } from "@vibe-tavern/domain";
 import { effectiveContextBudget } from "@vibe-tavern/domain";
 import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
@@ -19,17 +19,17 @@ import {
 	notFound,
 	validation,
 } from "../../shared/errors.js";
-import type { CoauthorApplyRequest, CoauthorCorrection } from "@vibe-tavern/api-contracts";
+import type { CoauthorApplyRequest } from "@vibe-tavern/api-contracts";
 import { PromptAssemblyService } from "../../domain/prompt/prompt-assembly-service.js";
 import { storeRollToSnapshot } from "../../domain/dice/dice-service.js";
 import { StaticPromptResolver } from "../../domain/prompt/prompt-resolver.js";
 import { RegexHookService } from "../../domain/regex/regex-hook-service.js";
 import { createLoreDelegate } from "../../domain/coauthor/lore/lore-delegate.js";
 import { createSessionLoreDelegate } from "./session-runtime-lore-delegate.js";
+import { applyCoauthorDraft } from "./session-runtime-coauthor-apply.js";
 import { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
 export { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
 import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
-import { findUnsafeMacros } from "../../domain/coauthor/macro-subset.js";
 import { createContextSearchSession } from "../../domain/context/context-search-service.js";
 import {
 	mapChatBranch,
@@ -730,114 +730,16 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 
 	/**
 	 * Apply a co-author turn's aggregated proposed state to the underlying
-	 * character card (CA-7). Does NOT touch chat messages — it parses the
-	 * proposed `profile.md` into the canonical character fields and persists
-	 * them via the normal character-update dual-write, then returns a
-	 * config-patch snapshot.
-	 *
-	 * R3 (data-loss guard): an empty `name` is restored from the current card
-	 * rather than throwing — the omission is surfaced to the user via a
-	 * `correction` so it is not silently masked. Section/greeting emptiness is
-	 * intentional-or-loss and is handled upstream (tool guard CA-17) or on the
-	 * diff (CA-10), not here.
+	 * character card (CA-7). Thin delegation — the implementation lives in
+	 * `session-runtime-coauthor-apply.ts` (extracted when the tracker-template
+	 * Apply branch CT-7a needed headroom on this file's arch-gate budget).
 	 */
 	async applyCoauthorDraft(chatId: ChatId, body: CoauthorApplyRequest): Promise<CoauthorApplyResponse> {
-		const chat = await this.stores.chats.getById(chatId);
-		if (!chat) {
-			throw notFound("Chat", `Chat '${chatId}' was not found.`);
-		}
-		const characterId = chat.characterId as CharacterId;
-
-		const corrections: CoauthorCorrection[] = [];
-		const updateInput: Parameters<CharacterRuntime["update"]>[1] = { chatId };
-
-		if (body.profileMd !== undefined) {
-			const { profile } = parseProfileMd(body.profileMd);
-			const current = await this.stores.characters.getById(characterId);
-			// R3: empty name → omit (character.update keeps current) + notify user.
-			const proposedName = profile.name.trim();
-			if (proposedName) {
-				updateInput.name = proposedName;
-			} else {
-				corrections.push({
-					field: "name",
-					action: "restored",
-					reason: `Model returned an empty name; restored "${current?.name ?? ""}" from the card.`,
-				});
-			}
-			updateInput.tags = profile.tags;
-			updateInput.creatorNotes = profile.creatorNotes;
-			updateInput.description = profile.description;
-			updateInput.scenario = profile.scenario ?? "";
-			updateInput.mesExample = profile.mesExample;
-			updateInput.mesExampleMode = profile.mesExampleMode;
-			updateInput.mesExampleDepth = profile.mesExampleDepth;
-			// Lossless frontmatter round-trip: creator / character_version live in
-			// `extensions` (not top-level update fields). Merge over current so a
-			// model edit to either is honored; omitting would preserve current.
-			const baseExtensions = (current?.extensions ?? {}) as Record<string, unknown>;
-			updateInput.extensions = {
-				...baseExtensions,
-				...(profile.creator !== null ? { creator: profile.creator } : {}),
-				...(profile.characterVersion !== null ? { character_version: profile.characterVersion } : {}),
-			};
-		}
-
-		if (body.firstMessage !== undefined) {
-			updateInput.firstMessage = body.firstMessage;
-		}
-		if (body.alternateGreetings !== undefined) {
-			updateInput.alternateGreetings = body.alternateGreetings;
-		}
-
-		// B5: flag macros the model emitted outside the safe reusable subset
-		// (identity + pronouns). The prose is preserved as-is — these are warnings,
-		// not silent edits; the user decides whether to keep each token. One
-		// correction per (field, distinct macro) so the toast names exactly what
-		// to review and where.
-		const proseFields: Array<[string, string | string[] | null | undefined]> = [
-			["name", updateInput.name],
-			["description", updateInput.description],
-			["scenario", updateInput.scenario],
-			["mesExample", updateInput.mesExample],
-			["creatorNotes", updateInput.creatorNotes],
-			["firstMessage", updateInput.firstMessage],
-			["alternateGreetings", updateInput.alternateGreetings],
-		];
-		for (const [field, value] of proseFields) {
-			if (value === null || value === undefined) continue;
-			const texts = Array.isArray(value) ? value : [value];
-			const unsafe = new Set<string>();
-			for (const text of texts) {
-				for (const name of findUnsafeMacros(text)) unsafe.add(name);
-			}
-			for (const name of unsafe) {
-				corrections.push({
-					field,
-					action: "warned",
-					reason: `Model used {{${name}}}, which is outside the reusable macro set ({{user}}, {{char}}, pronouns) and may not resolve as intended; left as-is for review.`,
-				});
-			}
-		}
-
-		const patch = await this.character.update(characterId, updateInput, {
-			rebuildChatOrder: () => this.rebuildChatOrder(),
-		});
-
-		// CTX-L2 (Wave 4): lore-bundle Apply branch. The accepted cumulative draft
-		// is persisted idempotently (preallocated ids upsert the same rows) in one
-		// transaction. Character-scoped draft books are written with characterId so
-		// the activation engine discovers them. Absent/empty bundle = no-op (the
-		// common profile/greeting-only Apply path is unchanged).
-		let lore: { lorebookIds: string[]; entryIds: string[] } | undefined;
-		if (body.loreBundle && (body.loreBundle.lorebooks.length > 0 || body.loreBundle.entries.length > 0)) {
-			lore = await this.stores.lorebooks.applyCoauthorLoreDraft(
-				characterId as unknown as string,
-				body.loreBundle,
-			);
-		}
-
-		return { ...patch, corrections, ...(lore ? { lore } : {}) };
+		return applyCoauthorDraft(
+			{ stores: this.stores, character: this.character, rebuildChatOrder: () => this.rebuildChatOrder() },
+			chatId,
+			body,
+		);
 	}
 
 	/**

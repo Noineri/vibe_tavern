@@ -37,6 +37,11 @@ export const coauthorToolSetSchema = z.object({
   // opt out if they don't need library search.
   search_context: z.boolean().optional(),
   read_context_item: z.boolean().optional(),
+  // CT-7a: propose the character's tracker template (scene + objective
+  // setup). A card-level proposal surface like the lore tools — gated so
+  // voice/prose-focused modules (dialogue-writer, profile-editor) keep their
+  // tool blocks (and prompts) unchanged.
+  set_tracker_template: z.boolean().optional(),
 });
 
 export type CoauthorToolSet = z.infer<typeof coauthorToolSetSchema>;

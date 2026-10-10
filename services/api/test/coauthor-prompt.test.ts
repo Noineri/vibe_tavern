@@ -3,6 +3,7 @@ import type { ChatModeAssembleInput, ChatModeAssembleLoaders } from "../src/doma
 import { assembleCoauthorPrompt } from "../src/domain/chat/coauthor-prompt.js";
 import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tavern/db";
 import { serializeProfileMd } from "@vibe-tavern/db";
+import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
 
 /**
  * Co-Author assembly characterization. Pins what the model + frontend can
@@ -781,5 +782,117 @@ describe("assembleCoauthorPrompt — Wave-3 module prompt contracts (CTX-M2)", (
     expect(system).toContain("read_context_item");
     // Binding is the author's action, not the model's.
     expect(system).toMatch(/Binding is the author's action/);
+  });
+});
+
+/**
+ * CT-7a — current tracker template prompt section.
+ *
+ * Pinned BEFORE the source edit (characterization): a character without a
+ * tracker template (`extensions` empty) had no tracker section, and the
+ * assembled skeleton kept its canonical order (base → skills → profile →
+ * greetings; greetings last when nothing else is bound). WAS → NOW (basis:
+ * CT-7a enables `set_tracker_template` in the two card-building seed modules
+ * — default + quick-draft, mirroring the lore tools): those two modules gain
+ * exactly the new section (present/`none`); the tool-off modules
+ * (profile-editor, dialogue-writer) keep the zero-template prompt
+ * BYTE-IDENTICAL — pinned below.
+ */
+describe("assembleCoauthorPrompt — current tracker template section (CT-7a)", () => {
+  /** A canonical template fixture (parsed through the wire schema so defaults
+   *  are resolved — the exact JSON the section must embed). */
+  const template = trackerTemplateSchema.parse({
+    version: 1,
+    scene: {
+      enabled: true,
+      config: { schema: { location: { $type: "string" } }, contextWindow: 12 },
+    },
+    objective: {
+      enabled: true,
+      state: {
+        objectiveDescription: "Escape the city",
+        shortTermGoals: [{ id: "goal_escape", description: "Reach the gate", status: "pending" }],
+      },
+    },
+  });
+
+  /** Assemble with an explicit character `extensions` override. */
+  async function assembleWithExtensions(extensions: Record<string, unknown>, moduleId: string): Promise<string> {
+    const loaders = makeLoaders({
+      character: { extensions },
+      chat: { id: "chat_test", coauthorModuleId: moduleId },
+    });
+    const result = await assembleCoauthorPrompt(makeInput(loaders));
+    return (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+  }
+
+  test("tool-off modules: zero-template prompt carries NO tracker section and keeps the canonical skeleton (pre-CT-7a pin, byte-identical)", async () => {
+    for (const id of ["profile-editor", "dialogue-writer"]) {
+      const system = await assembleForModule(id);
+      // No tracker section for a character without a template.
+      expect(system, id).not.toContain("# Current tracker template");
+      // Skeleton order unchanged: skills → profile → greetings, greetings last
+      // (no bound resources / pinned context / memory in this fixture).
+      const skillsIdx = system.indexOf("# Available skills");
+      const profileIdx = system.indexOf("# Current profile.md");
+      const greetingsIdx = system.indexOf("# Current greetings");
+      expect(skillsIdx, id).toBeGreaterThan(0);
+      expect(profileIdx, id).toBeGreaterThan(skillsIdx);
+      expect(greetingsIdx, id).toBeGreaterThan(profileIdx);
+      expect(system.slice(greetingsIdx), id).toContain("### Greeting PRIMARY (firstMessage)");
+    }
+  });
+
+  test("tool-off module: the section is omitted ENTIRELY even when the character HAS a template (the toolSet gates it)", async () => {
+    const system = await assembleWithExtensions(
+      { vibe_tavern: { tracker_template: template } },
+      "dialogue-writer",
+    );
+    expect(system).not.toContain("# Current tracker template");
+    expect(system).not.toContain("Escape the city");
+  });
+
+  test("default module (tool on), zero template: the section shows `none` right after the card — nothing else changes", async () => {
+    const system = await assembleForModule("default");
+    const greetingsIdx = system.indexOf("# Current greetings");
+    const trackerIdx = system.indexOf("# Current tracker template");
+    expect(trackerIdx).toBeGreaterThan(greetingsIdx);
+    // The zero-template body is the literal `none`.
+    expect(system.slice(trackerIdx)).toBe("# Current tracker template\nnone");
+    // The card above the section is untouched.
+    expect(system.slice(0, greetingsIdx)).toContain("# Current profile.md");
+  });
+
+  test("default module (tool on), template present: the section embeds the canonical template as fenced JSON", async () => {
+    const system = await assembleWithExtensions(
+      { vibe_tavern: { tracker_template: template } },
+      "default",
+    );
+    const trackerIdx = system.indexOf("# Current tracker template");
+    const greetingsIdx = system.indexOf("# Current greetings");
+    expect(trackerIdx).toBeGreaterThan(greetingsIdx);
+    const expected = [
+      "# Current tracker template",
+      "```json",
+      JSON.stringify(template, null, 2),
+      "```",
+    ].join("\n");
+    expect(system.slice(trackerIdx, trackerIdx + expected.length)).toBe(expected);
+    // The embedded template is the model-readable content.
+    expect(system).toContain("Escape the city");
+    expect(system).toContain('"location"');
+  });
+
+  test("quick-draft (tool on) gains the section too; the tool is exposed exactly in the tool-on modules", async () => {
+    const system = await assembleForModule("quick-draft");
+    expect(system).toContain("# Current tracker template\nnone");
+    // The tool rides the assembled tool set for tool-on modules...
+    const toolOn = await assembleCoauthorPrompt(makeInput(makeLoaders()));
+    expect(Object.keys(toolOn.tools)).toContain("set_tracker_template");
+    // ...and is absent for a tool-off module (dialogue-writer).
+    const toolOff = await assembleCoauthorPrompt(
+      makeInput(makeLoaders({ chat: { id: "chat_test", coauthorModuleId: "dialogue-writer" } })),
+    );
+    expect(Object.keys(toolOff.tools)).not.toContain("set_tracker_template");
   });
 });

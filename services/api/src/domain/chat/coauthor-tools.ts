@@ -29,10 +29,12 @@ import { parseProfileMd, serializeProfileMd, splitFrontmatter, type VtfProfile }
 import {
   coauthorSectionEditInputSchema,
   coauthorSectionWriteInputSchema,
+  trackerTemplateSchema,
   type CoauthorTarget,
   type CoauthorToolOutput,
+  type CoauthorTrackerTemplateOutput,
 } from "@vibe-tavern/api-contracts";
-import { applyExactEditsToBody, log } from "@vibe-tavern/domain";
+import { applyExactEditsToBody, log, normalizeTrackerTemplate } from "@vibe-tavern/domain";
 import { buildReadSkillFileTool } from "../coauthor/skills/skill-read-tool.js";
 import { buildLoreTools, type LoreEntityLookup } from "../coauthor/lore/lore-tools.js";
 import type { LoreDraftIdGen } from "../coauthor/lore/lore-draft-state.js";
@@ -519,6 +521,59 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
     // Co-Author works on lore, basic starter fields outside it; computed by the
     // assembler from lore-work-trigger.ts.
     ...buildLoreTools({ idGen: opts.loreIdGen, loreDelegate, loreEntityLookup, loreWorkActive: opts.loreWorkActive, getWorkingProfileMd: () => workingProfileMd }),
+
+    // ── CT-7a: tracker-template proposal tool ───────────────────────────────
+    // Card-level proposal surface, same propose-never-persist contract as the
+    // lore tools above: validate + normalize through the domain authority
+    // (`normalizeTrackerTemplate` — the ONE template mapping rule, CT-1) and
+    // ECHO the canonical template; no store, no draft state, last call wins.
+    // Apply (`applyCoauthorDraft`) is the sole persistence boundary. The
+    // normalizer also strips machine-local provider/model picks inside the
+    // template, so the echoed proposal (and thus any Apply payload) never
+    // carries them.
+    set_tracker_template: tool({
+      description:
+        "Propose the character's tracker template — the Scene Tracker and Objective Tracker setup that new RP chats with this character start from (stored on the card; the user reviews and applies it like every other proposal). " +
+        "Read the '# Current tracker template' section of this prompt for the existing setup and use it as the base when adjusting; a scene-only or objective-only template is valid (set the other section to null). " +
+        "Provider and model choices are machine-local and never part of a template — emit only the portable fields. Nothing is persisted until the user applies.",
+      inputSchema: z.object({
+        template: trackerTemplateSchema.describe(
+          "The FULL proposed tracker template: version 1, an optional `scene` (enabled + config: field-schema DSL, context window, generation/injection prompts), an optional `objective` (enabled + state: mode, description, starting goals/tasks — statuses start at pending). At least one of scene/objective must be present.",
+        ),
+        summary: z
+          .string()
+          .max(200)
+          .describe("One-line description of what this template changes, shown above the Apply button."),
+      }),
+      execute: async ({ template, summary }): Promise<CoauthorTrackerTemplateOutput> => {
+        const sceneDesc = template.scene === null ? "absent" : template.scene.enabled ? "on" : "off";
+        const objectiveDesc = template.objective === null ? "absent" : template.objective.enabled ? "on" : "off";
+        logger.info("set_tracker_template IN scene=%s objective=%s summary=%s", sceneDesc, objectiveDesc, summary);
+        // The domain normalizer is the single authority on template shape:
+        // it applies defaults, strips machine-local fields, and returns null
+        // when the template cannot be persisted (unsupported version, or
+        // neither a scene nor an objective section).
+        const normalized = normalizeTrackerTemplate(template);
+        if (normalized === null) {
+          logger.warn(
+            "set_tracker_template REJECTED version=%d scene=%s objective=%s",
+            template.version,
+            sceneDesc,
+            objectiveDesc,
+          );
+          throw new Error(
+            "set_tracker_template: the template is invalid — it must carry version 1 and at least one of `scene` or `objective` (both null leave nothing to template). " +
+              "Re-emit with a supported version and a scene and/or objective section.",
+          );
+        }
+        logger.info(
+          "set_tracker_template OK scene=%s objective=%s",
+          normalized.scene === null ? "absent" : normalized.scene.enabled ? "on" : "off",
+          normalized.objective === null ? "absent" : normalized.objective.enabled ? "on" : "off",
+        );
+        return { trackerTemplate: normalized, summary };
+      },
+    }),
 
     // ── CE-D2: indexed two-step context search ──────────────────────────────
     // search_context returns compact locator metadata only (no body);

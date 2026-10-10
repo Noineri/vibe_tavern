@@ -56,6 +56,9 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       add_lore_entry: true,
       ai_write_lore_entry: true,
       ai_generate_lore_keys: true,
+      // CT-7a: propose the character's tracker template (card-level surface,
+      // same scope as the lore tools — the two card-building modules only).
+      set_tracker_template: true,
       // CE-D2: indexed two-step context search.
       search_context: true,
       read_context_item: true,
@@ -90,6 +93,9 @@ const SEED_MODULE_DEFS: readonly SeedModuleDef[] = [
       add_lore_entry: true,
       ai_write_lore_entry: true,
       ai_generate_lore_keys: true,
+      // CT-7a: propose the character's tracker template (card-level surface,
+      // same scope as the lore tools — the two card-building modules only).
+      set_tracker_template: true,
       // CE-D2: indexed two-step context search.
       search_context: true,
       read_context_item: true,
