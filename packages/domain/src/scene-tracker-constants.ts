@@ -132,6 +132,25 @@ export type ScenePromptFormat = (typeof SCENE_PROMPT_FORMAT)[keyof typeof SCENE_
 // ---------------------------------------------------------------------------
 
 /**
+ * The complete set of semantic tone tokens a schema node may carry — the
+ * schema-level color DSL (SCENE_TRACKER_RENDER_VARIANTS_REPORT, R1).
+ *
+ * Tones reference the app theme's semantic tokens by name ONLY: the owner
+ * re-themes via the theme tuner, so a raw hex value would freeze a color the
+ * theme no longer has. Validation (`sceneNodeToneSchema` in api-contracts)
+ * rejects anything outside this set; an absent tone means neutral (renderers'
+ * concern, later units).
+ */
+export const SCENE_TONE = {
+  accent: "accent",
+  success: "success",
+  warning: "warning",
+  danger: "danger",
+} as const;
+
+export type SceneTone = (typeof SCENE_TONE)[keyof typeof SCENE_TONE];
+
+/**
  * One node of the Scene Tracker shape grammar — the user-authored DSL that
  * describes the structure the model must fill.
  *
@@ -143,13 +162,20 @@ export type ScenePromptFormat = (typeof SCENE_PROMPT_FORMAT)[keyof typeof SCENE_
  *
  * `$type` is the discriminator; it is also a reserved key name, so it can
  * never appear as a user field.
+ *
+ * `tone` / `toneBy` are presentation-only color semantics (like `label`):
+ * `tone` tints the node's rendered value; `toneBy` (string nodes only) maps a
+ * generated string value to its tone (e.g. `{ "Ruined": "danger", "Repaired":
+ * "success" }`). Both are stripped wherever presentation metadata is removed
+ * — the schema hash and the tracking-model prompt — so recoloring never dims
+ * records and the model never sees them.
  */
 export type SceneTrackerSchemaNode =
-  | { $type: "string"; label?: string }
-  | { $type: "number"; min?: number; max?: number; label?: string }
-  | { $type: "boolean"; label?: string }
-  | { $type: "object"; properties: Record<string, SceneTrackerSchemaNode>; label?: string }
-  | { $type: "array"; items: SceneTrackerSchemaNode; label?: string };
+  | { $type: "string"; label?: string; tone?: SceneTone; toneBy?: Record<string, SceneTone> }
+  | { $type: "number"; min?: number; max?: number; label?: string; tone?: SceneTone }
+  | { $type: "boolean"; label?: string; tone?: SceneTone }
+  | { $type: "object"; properties: Record<string, SceneTrackerSchemaNode>; label?: string; tone?: SceneTone }
+  | { $type: "array"; items: SceneTrackerSchemaNode; label?: string; tone?: SceneTone };
 
 /**
  * The root of a Scene schema is a fields map (an implicit object): the natural
@@ -275,13 +301,15 @@ function sampleSceneNode(node: SceneTrackerSchemaNode, depth: number): unknown {
 }
 
 /**
- * Project a DSL with every `label` removed, recursing into object properties and
- * array items. `label` is renderer-only presentation metadata, so it MUST NOT
- * affect data identity: the schema hash is computed over this projection (so
- * adding / changing / removing a label never invalidates existing records), and
- * the generation-prompt schema description is built from it (the model sees
- * stable machine keys like `health`, never the human "Health"). A no-op when
- * no labels are present, so label-less schemas hash and validate identically.
+ * Project a DSL down to its data-identity core: every presentation-only field
+ * (`label`, `tone`, `toneBy`) removed, recursing into object properties and
+ * array items. Presentation metadata MUST NOT affect data identity: the schema
+ * hash is computed over this projection (so adding / changing / removing a
+ * label or tone never invalidates existing records), and the generation-prompt
+ * schema description is built from it (the model sees stable machine keys like
+ * `health`, never the human "Health" nor any color semantics). A no-op when
+ * no presentation fields are present, so bare schemas hash and validate
+ * identically.
  */
 export function stripLabels(dsl: SceneTrackerDsl): SceneTrackerDsl {
   const out: SceneTrackerDsl = {};

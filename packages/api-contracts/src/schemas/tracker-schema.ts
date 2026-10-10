@@ -2,6 +2,7 @@ import {
   SCENE_AUTO_MODE,
   SCENE_PROMPT_FORMAT,
   SCENE_RESERVED_SEGMENTS,
+  SCENE_TONE,
   SCENE_TRACKER_LIMITS,
   computeSceneSchemaHash,
   countSceneDataNodes,
@@ -21,9 +22,12 @@ import { z } from "zod";
  *
  * 1. `sceneTrackerDslSchema` — validates the user-authored shape grammar (the
  *    `schema` field of a config): primitive leaves, nested objects, homogeneous
- *    arrays, and the exact ranged-number descriptor. Rejects unknown fields,
- *    wrong primitive types, invalid descriptors, reserved/unsafe keys, and
- *    out-of-bound structures with exact paths.
+ *    arrays, and the exact ranged-number descriptor. Optional presentation
+ *    metadata is accepted alongside the structure: `label`, and the semantic
+ *    color tokens `tone` / `toneBy` (string nodes only). Rejects unknown
+ *    fields, wrong primitive types, invalid descriptors, reserved/unsafe keys,
+ *    non-token tones (raw hex included), and out-of-bound structures with
+ *    exact paths.
  * 2. `buildSceneDataSchema(dsl)` / `validateSceneData(dsl, data)` — validates
  *    the LLM-generated scene state against a runtime DSL. Built dynamically
  *    because the schema is user-authored; returned to `parseStructuredOutput`
@@ -45,8 +49,39 @@ const sceneNodeLabelSchema = z
   .max(SCENE_TRACKER_LIMITS.maxLabelLength)
   .refine((v) => !v.includes("\n"), "Label must be a single line.");
 
-const sceneNodeStringSchema = z.object({ $type: z.literal("string"), label: sceneNodeLabelSchema.optional() }).strict();
-const sceneNodeBooleanSchema = z.object({ $type: z.literal("boolean"), label: sceneNodeLabelSchema.optional() }).strict();
+/**
+ * Semantic tone token (the schema color DSL). Strict enum over `SCENE_TONE`:
+ * anything else — raw hex ("#ff0000"), theme-internal names ("red",
+ * "primary"), typos — fails as an invalid enum value whose message names the
+ * allowed set, so the editor can show the tokens verbatim.
+ */
+const sceneNodeToneSchema = z.enum(
+  [SCENE_TONE.accent, SCENE_TONE.success, SCENE_TONE.warning, SCENE_TONE.danger],
+  {
+    error: () =>
+      `Tone must be one of the semantic tokens: ${Object.values(SCENE_TONE).join(", ")} (raw hex or theme-internal color names are not tones).`,
+  },
+);
+
+/** String value → tone map, e.g. `{ "Ruined": "danger", "Repaired": "success" }`. */
+const sceneNodeToneBySchema = z.record(z.string(), sceneNodeToneSchema);
+
+const sceneNodeStringSchema = z
+  .object({
+    $type: z.literal("string"),
+    label: sceneNodeLabelSchema.optional(),
+    /** Node-level semantic color token (presentation-only; stripped from the hash + model prompt). */
+    tone: sceneNodeToneSchema.optional(),
+    /** Value → tone map; string nodes only, since only string values can be keyed exactly. */
+    toneBy: sceneNodeToneBySchema.optional(),
+  })
+  .strict();
+const sceneNodeBooleanSchema = z.object({
+  $type: z.literal("boolean"),
+  label: sceneNodeLabelSchema.optional(),
+  /** Node-level semantic color token (presentation-only; stripped from the hash + model prompt). */
+  tone: sceneNodeToneSchema.optional(),
+}).strict();
 
 const sceneNodeNumberSchema = z
   .object({
@@ -57,6 +92,8 @@ const sceneNodeNumberSchema = z
     max: z.number().optional(),
     /** Optional human display name (renderer-only; stripped from the hash + model prompt). */
     label: sceneNodeLabelSchema.optional(),
+    /** Node-level semantic color token (presentation-only; stripped from the hash + model prompt). */
+    tone: sceneNodeToneSchema.optional(),
   })
   .strict();
 
@@ -105,6 +142,8 @@ const sceneNodeObjectSchema = z.object({
   properties: sceneFieldRecord(z.lazy(() => sceneTrackerNodeSchema)),
   /** Optional human display name (renderer-only; stripped from the hash + model prompt). */
   label: sceneNodeLabelSchema.optional(),
+  /** Node-level semantic color token (presentation-only; stripped from the hash + model prompt). */
+  tone: sceneNodeToneSchema.optional(),
 }).strict();
 
 const sceneNodeArraySchema = z.object({
@@ -113,6 +152,8 @@ const sceneNodeArraySchema = z.object({
   items: z.lazy(() => sceneTrackerNodeSchema),
   /** Optional human display name (renderer-only; stripped from the hash + model prompt). */
   label: sceneNodeLabelSchema.optional(),
+  /** Node-level semantic color token (presentation-only; stripped from the hash + model prompt). */
+  tone: sceneNodeToneSchema.optional(),
 }).strict();
 
 /**
