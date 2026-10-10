@@ -287,8 +287,12 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   // buildCoauthorTools applies to the tool itself). Tool-off modules omit the
   // section entirely, keeping their prompt byte-identical to pre-CT-7a.
   const trackerToolOn = !module.toolSet || module.toolSet.set_tracker_template === true;
+  // Guard: minimal character fixtures (and any future caller) may omit
+  // `extensions` — the section then renders as `none`, same as an absent
+  // template (incident: CoauthorModeStrategy delegation test crashed on a
+  // character mock without the field).
   const trackerTemplateBlock = trackerToolOn
-    ? renderTrackerTemplateSection(readTrackerTemplate(character.extensions))
+    ? renderTrackerTemplateSection(character.extensions ? readTrackerTemplate(character.extensions) : null)
     : "";
   const contextBlock = renderContextBlocks(contextItems);
   const boundLorebooksBlock = renderBoundLorebooksAwareness(boundResources.lorebooks);
