@@ -168,6 +168,8 @@ export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
    * delegation tools then throw a clear error if invoked). RP mode ignores it.
    */
   loreDelegate?: import("../coauthor/lore/lore-delegate.js").LoreDelegate;
+  /** Optional AI-delegation callback for tracker-template generation (CT-11). */
+  trackerDelegate?: import("../coauthor/tracker/tracker-delegate.js").TrackerDelegate;
   /**
    * CE-B1: optional lookup that loads a persisted lore entity's current state
    * as a draft node, so the edit tools (edit_lorebook / edit_lore_entry /

@@ -92,17 +92,18 @@ function renderCurrentCard(profileMd: string, character: { firstMessage: string 
 
 /**
  * Render the character's current tracker template as read-only context
- * (CT-7a), directly after {@link renderCurrentCard}'s card block. Fenced JSON
- * when a template exists (the exact shape `set_tracker_template` expects back,
- * so the model can use it as the edit base); the literal `none` when the
- * character carries no template. The CALLER gates this on the module's tool
- * set — a module without `set_tracker_template` never sees the section, so
- * its prompt stays byte-identical to pre-CT-7a.
+ * (CT-11), directly after {@link renderCurrentCard}'s card block. Fenced JSON
+ * when a template exists and `none` otherwise. The delegate, not the Co-Author,
+ * uses this as its refine base. The CALLER gates this on the module's tool set
+ * — a module without `set_tracker_template` never sees the section, so its
+ * prompt stays byte-identical to pre-CT-7a.
  */
 function renderTrackerTemplateSection(template: TrackerTemplate | null): string {
-  return template === null
-    ? ["# Current tracker template", "none"].join("\n")
-    : ["# Current tracker template", "```json", JSON.stringify(template, null, 2), "```"].join("\n");
+  return [
+    "# Current tracker template",
+    "The tracker-template delegate uses this as the refine base when you call `set_tracker_template` with `action: \"refine\"`. Describe the requested change in the tool input; do not emit template JSON yourself.",
+    ...(template === null ? ["none"] : ["```json", JSON.stringify(template, null, 2), "```"]),
+  ].join("\n");
 }
 
 /** Render the chat's pinned Level-1 context entities as read-only reference
@@ -178,7 +179,7 @@ function estimateCoauthorHistoryTokens(messages: ReadonlyArray<CoauthorHistoryMe
  * the result and are threaded into the executor by CA-5's wiring.
  */
 export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Promise<ChatModeAssembleResult> {
-  const { chatId, model, loaders, loreDelegate, loreEntityLookup, contextSearchSession } = input;
+  const { chatId, model, loaders, loreDelegate, trackerDelegate, loreEntityLookup, contextSearchSession } = input;
 
   // Pull the card state + conversation history up front. Co-author is a flat
   // editor chat — no branches. (Skills are catalog-only in the prompt; the
@@ -291,8 +292,9 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   // `extensions` — the section then renders as `none`, same as an absent
   // template (incident: CoauthorModeStrategy delegation test crashed on a
   // character mock without the field).
+  const currentTrackerTemplate = character.extensions ? readTrackerTemplate(character.extensions) : null;
   const trackerTemplateBlock = trackerToolOn
-    ? renderTrackerTemplateSection(character.extensions ? readTrackerTemplate(character.extensions) : null)
+    ? renderTrackerTemplateSection(currentTrackerTemplate)
     : "";
   const contextBlock = renderContextBlocks(contextItems);
   const boundLorebooksBlock = renderBoundLorebooksAwareness(boundResources.lorebooks);
@@ -566,7 +568,7 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
       latencyMs: 0,
       compactionSummary,
     },
-    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots, loreDelegate, loreEntityLookup, loreWorkActive, contextSearchSession }),
+    tools: buildCoauthorTools({ toolSet: module.toolSet, profileMd, skillRoots, loreDelegate, trackerDelegate, getCurrentTrackerTemplate: () => currentTrackerTemplate, loreEntityLookup, loreWorkActive, contextSearchSession }),
     maxSteps: module.maxSteps,
     coauthorModuleId: module.id,
     coauthorSkillId: null,

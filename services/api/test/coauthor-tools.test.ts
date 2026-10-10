@@ -4,6 +4,7 @@ import { normalizeTrackerTemplate } from "@vibe-tavern/domain";
 import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
 import type { LoreDelegate, LoreDelegateInput, LoreDelegateResult } from "../src/domain/coauthor/lore/lore-delegate.js";
+import type { TrackerDelegateInput } from "../src/domain/coauthor/tracker/tracker-delegate.js";
 
 /**
  * Co-Author tools propose edits; they never write. These tests pin the
@@ -1015,10 +1016,9 @@ describe("coauthor-tools: edit + add lore tools (CE-B1)", () => {
   });
 });
 
-describe("coauthor-tools: set_tracker_template (CT-7a)", () => {
-  /** A minimal valid template INPUT, parsed through the wire schema so the
-   *  fixture carries the parsed-input shape `execute` receives (defaults
-   * resolved). */
+describe("coauthor-tools: set_tracker_template (CT-11)", () => {
+  /** Parsed through the wire schema so the fake delegate returns a canonical
+   * portable template just as the real delegate does. */
   const validTemplate = trackerTemplateSchema.parse({
     version: 1,
     scene: {
@@ -1034,111 +1034,76 @@ describe("coauthor-tools: set_tracker_template (CT-7a)", () => {
       },
     },
   });
+  const delegatedTemplate = normalizeTrackerTemplate(validTemplate)!;
 
-  test("input schema is a flat object root: { template, summary }", () => {
+  test("input schema is intent-only: { action, modeHint?, focusNotes?, summary }", () => {
     const tools = buildCoauthorTools();
     const schema = tools.set_tracker_template.inputSchema as unknown as {
       shape: Record<string, unknown>;
       safeParse(value: unknown): { success: boolean };
     };
-    expect(Object.keys(schema.shape).sort()).toEqual(["summary", "template"]);
-    // Object root required — an array/string root or a missing template fails.
-    expect(schema.safeParse([{ template: validTemplate, summary: "s" }]).success).toBe(false);
-    expect(schema.safeParse("set the tracker").success).toBe(false);
+    expect(Object.keys(schema.shape).sort()).toEqual(["action", "focusNotes", "modeHint", "summary"]);
     expect(schema.safeParse({ summary: "s" }).success).toBe(false);
-    expect(schema.safeParse({ template: "not an object", summary: "s" }).success).toBe(false);
-    expect(schema.safeParse({ template: validTemplate, summary: "Set up trackers." }).success).toBe(true);
+    expect(schema.safeParse({ action: "create", summary: "s" }).success).toBe(true);
+    expect(schema.safeParse({ action: "refine", modeHint: "goals", focusNotes: "Tune the chase.", summary: "s" }).success).toBe(true);
   });
 
-  test("normalizes and echoes the proposal { trackerTemplate, summary } — never writes", async () => {
-    const tools = buildCoauthorTools();
+  test("routes intent and current template to the delegate, then passes its object through verbatim", async () => {
+    let captured: TrackerDelegateInput | null = null;
+    const currentTemplate = delegatedTemplate;
+    const tools = buildCoauthorTools({
+      profileMd: "# PERSONALITY\nVex is a commander.",
+      getCurrentTrackerTemplate: () => currentTemplate,
+      trackerDelegate: async (input) => {
+        captured = input;
+        return { trackerTemplate: delegatedTemplate };
+      },
+    });
+
     const out = await tools.set_tracker_template.execute(
-      { template: validTemplate, summary: "Add scene + objective trackers." },
+      { action: "refine", modeHint: "goals", focusNotes: "Keep the chase tense.", summary: "Refined the chase tracker." },
       ctx,
     );
-    // The echo is the DOMAIN-normalized template (CT-1's single mapping
-    // authority), not the raw model emission.
-    expect(out).toEqual({
-      trackerTemplate: normalizeTrackerTemplate(validTemplate),
-      summary: "Add scene + objective trackers.",
+
+    expect(captured).toEqual({
+      action: "refine",
+      modeHint: "goals",
+      focusNotes: "Keep the chase tense.",
+      characterProfileMd: "# PERSONALITY\nVex is a commander.",
+      currentTemplate,
     });
-    // Not a {target, proposed} string proposal: the document is the
-    // structured template itself, so aggregation routes it by tool name.
-    expect("target" in out).toBe(false);
-    expect("proposed" in out).toBe(false);
+    expect(typeof out).not.toBe("string");
+    if (typeof out === "string") throw new Error(out);
+    expect(out).toEqual({ trackerTemplate: delegatedTemplate, summary: "Refined the chase tracker." });
+    // The tool does not normalize, clone, or otherwise re-emit the delegate result.
+    expect(out.trackerTemplate).toBe(delegatedTemplate);
   });
 
-  test("strips machine-local provider/model picks from the echoed template", async () => {
-    // execute() is the last line of defense: even if a machine-local pick
-    // (model / providerProfileId / useChatModel / revision / schemaHash /
-    // autoCheckEventCount) reaches it — strict transport schema aside — the
-    // domain normalizer removes it from the echoed proposal, so it can never
-    // ride an Apply payload into the card. The extras ride plain widened
-    // objects (variables, not call-site literals) so the typed call compiles.
-    const dirtyConfig = {
-      ...validTemplate.scene!.config,
-      useChatModel: true,
-      providerProfileId: "prof_1",
-      model: "some-model",
-      revision: 7,
-      schemaHash: "abc",
-    };
-    const dirtyState = {
-      ...validTemplate.objective!.state,
-      useChatModel: true,
-      providerProfileId: "prof_1",
-      model: "some-model",
-      autoCheckEventCount: 5,
-    };
-    const dirtyTemplate = {
-      ...validTemplate,
-      scene: { ...validTemplate.scene!, config: dirtyConfig },
-      objective: { ...validTemplate.objective!, state: dirtyState },
-    };
+  test("returns a clear model-facing error string when delegation fails", async () => {
+    const tools = buildCoauthorTools({
+      trackerDelegate: async () => { throw new Error("union validation failed at objective.state"); },
+    });
+
+    const out = await tools.set_tracker_template.execute({ action: "create", summary: "s" }, ctx);
+
+    expect(out).toBe("set_tracker_template: tracker template generation failed: union validation failed at objective.state. Please tell the user and ask whether they want to try again.");
+  });
+
+  test("throws a clear configuration error when no tracker delegate is wired", async () => {
     const tools = buildCoauthorTools();
-    const out = await tools.set_tracker_template.execute({ template: dirtyTemplate, summary: "s" }, ctx);
-    const sceneConfig = out.trackerTemplate.scene!.config as Record<string, unknown>;
-    for (const key of ["useChatModel", "providerProfileId", "model", "revision", "schemaHash"]) {
-      expect(sceneConfig[key], `scene.config.${key}`).toBeUndefined();
-    }
-    const objectiveState = out.trackerTemplate.objective!.state as Record<string, unknown>;
-    for (const key of ["useChatModel", "providerProfileId", "model", "autoCheckEventCount"]) {
-      expect(objectiveState[key], `objective.state.${key}`).toBeUndefined();
-    }
-    // The portable content survives the strip.
-    expect(sceneConfig.contextWindow).toBe(12);
-    expect((sceneConfig.schema as Record<string, unknown>).location).toBeDefined();
-    expect(objectiveState.objectiveDescription).toBe("Escape the city");
-    // Echo equals the domain normalization of the same dirty input.
-    expect(out.trackerTemplate).toEqual(normalizeTrackerTemplate(dirtyTemplate));
+    await expect(tools.set_tracker_template.execute({ action: "create", summary: "s" }, ctx)).rejects.toThrow(
+      /tracker template generation is not configured/,
+    );
   });
 
-  test("rejects an invalid template with a correctable tool error (house pattern)", async () => {
-    const tools = buildCoauthorTools();
-    // Unsupported version: zod's transport schema permits any number, the
-    // domain normalizer is the authority that refuses it.
-    await expect(
-      tools.set_tracker_template.execute({ template: { ...validTemplate, version: 2 }, summary: "s" }, ctx),
-    ).rejects.toThrow(/version 1/);
-    // Neither scene nor objective → nothing to template.
-    await expect(
-      tools.set_tracker_template.execute({ template: { version: 1, scene: null, objective: null }, summary: "s" }, ctx),
-    ).rejects.toThrow(/at least one of `scene` or `objective`/);
-  });
-
-  test("gated by toolSet like the other proposal tools", () => {
+  test("gates the tool by toolSet like the other proposal tools", () => {
     const on = buildCoauthorTools({ toolSet: { set_tracker_template: true } }) as unknown as Record<string, unknown>;
     expect(on.set_tracker_template).toBeDefined();
     const off = buildCoauthorTools({ toolSet: { write_profile: true } }) as unknown as Record<string, unknown>;
     expect(off.set_tracker_template).toBeUndefined();
   });
 
-  test("emitted input schema survives prepareProviderTools: no array-valued type unions (9eab6a12)", async () => {
-    // Gemini's protobuf FunctionDeclaration.parameters Schema.type is singular
-    // and rejects `type: ["object", "null"]` unions wholesale. The transport
-    // fix (prepareProviderTools) rewrites them to anyOf — this pins THAT
-    // guarantee for THIS tool's emitted schema, so a future schema edit that
-    // reintroduces an exotic shape fails here instead of at a gateway.
+  test("emitted intent schema survives prepareProviderTools: no array-valued type unions", async () => {
     const { asSchema } = await import("ai");
     const { prepareProviderTools } = await import("../src/infrastructure/ai/provider-executor-utils.js");
     const prepared = prepareProviderTools(buildCoauthorTools())?.set_tracker_template;

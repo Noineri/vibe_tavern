@@ -858,8 +858,12 @@ describe("assembleCoauthorPrompt — current tracker template section (CT-7a)", 
     const greetingsIdx = system.indexOf("# Current greetings");
     const trackerIdx = system.indexOf("# Current tracker template");
     expect(trackerIdx).toBeGreaterThan(greetingsIdx);
-    // The zero-template body is the literal `none`.
-    expect(system.slice(trackerIdx)).toBe("# Current tracker template\nnone");
+    // The zero-template section frames delegation while retaining literal `none`.
+    expect(system.slice(trackerIdx)).toBe([
+      "# Current tracker template",
+      "The tracker-template delegate uses this as the refine base when you call `set_tracker_template` with `action: \"refine\"`. Describe the requested change in the tool input; do not emit template JSON yourself.",
+      "none",
+    ].join("\n"));
     // The card above the section is untouched.
     expect(system.slice(0, greetingsIdx)).toContain("# Current profile.md");
   });
@@ -874,6 +878,7 @@ describe("assembleCoauthorPrompt — current tracker template section (CT-7a)", 
     expect(trackerIdx).toBeGreaterThan(greetingsIdx);
     const expected = [
       "# Current tracker template",
+      "The tracker-template delegate uses this as the refine base when you call `set_tracker_template` with `action: \"refine\"`. Describe the requested change in the tool input; do not emit template JSON yourself.",
       "```json",
       JSON.stringify(template, null, 2),
       "```",
@@ -886,7 +891,7 @@ describe("assembleCoauthorPrompt — current tracker template section (CT-7a)", 
 
   test("quick-draft (tool on) gains the section too; the tool is exposed exactly in the tool-on modules", async () => {
     const system = await assembleForModule("quick-draft");
-    expect(system).toContain("# Current tracker template\nnone");
+    expect(system).toContain("# Current tracker template\nThe tracker-template delegate uses this as the refine base");
     // The tool rides the assembled tool set for tool-on modules...
     const toolOn = await assembleCoauthorPrompt(makeInput(makeLoaders()));
     expect(Object.keys(toolOn.tools)).toContain("set_tracker_template");
