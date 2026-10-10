@@ -20,6 +20,10 @@
  * probes but not in the full nested mock setup). The editor's field-change
  * behavior is verified via Playwright instead. What IS tested: every button →
  * handler → RPC wiring, validation gating, and mode transitions.
+ *
+ * Tool toggles render human-readable labels via `COAUTHOR_TOOL_LABEL_KEYS`
+ * (exhaustive over `COAUTHOR_TOOL_KEYS`); the useT mock returns keys verbatim,
+ * so label assertions read as the mapped i18n key, never the raw snake_case.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { useDomEnv } from "../../../test/dom-env.js";
@@ -30,6 +34,8 @@ import { useModalStore } from "../../stores/modal-store.js";
 import { useSnapshotStore } from "../../stores/snapshot-store.js";
 import { useCoauthorSkillStore } from "../../stores/coauthor-skill-store.js";
 import type { CoauthorModule, CoauthorModuleCreate, CoauthorModuleUpdate } from "@vibe-tavern/api-contracts";
+import { COAUTHOR_TOOL_KEYS } from "@vibe-tavern/api-contracts";
+import type { TFunc } from "../../i18n/context.js";
 
 // Mock useT at the module boundary — returns keys verbatim so assertions match.
 // Use `...real` spread (AGENTS.md mock.module gotcha): the mock persists
@@ -171,8 +177,11 @@ mock.module("../shared/destructive-confirm-modal.js", () => ({
 }));
 
 let CoauthorModuleModal: typeof import("./CoauthorModuleModal.js").CoauthorModuleModal;
+let COAUTHOR_TOOL_LABEL_KEYS: typeof import("./coauthor-tool-labels.js").COAUTHOR_TOOL_LABEL_KEYS;
+let resolveCoauthorToolLabel: typeof import("./coauthor-tool-labels.js").resolveCoauthorToolLabel;
 beforeAll(async () => {
 	({ CoauthorModuleModal } = await import("./CoauthorModuleModal.js"));
+	({ COAUTHOR_TOOL_LABEL_KEYS, resolveCoauthorToolLabel } = await import("./coauthor-tool-labels.js"));
 });
 
 beforeEach(() => {
@@ -305,9 +314,9 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
 		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
 		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
-		await waitFor(() => expect(getByRole("button", { name: "write_personality" })).toBeTruthy());
-		expect(getByRole("button", { name: "write_scenario" })).toBeTruthy();
-		expect(getByRole("button", { name: "write_examples" })).toBeTruthy();
+		await waitFor(() => expect(getByRole("button", { name: "coauthor.module.tool.write_personality" })).toBeTruthy());
+		expect(getByRole("button", { name: "coauthor.module.tool.write_scenario" })).toBeTruthy();
+		expect(getByRole("button", { name: "coauthor.module.tool.write_examples" })).toBeTruthy();
 	});
 
 	it("surfaces lore tools as toggle pills (derived from the schema, not hardcoded)", async () => {
@@ -319,14 +328,14 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
 		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
 		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
-		await waitFor(() => expect(getByRole("button", { name: "create_lorebook" })).toBeTruthy());
-		expect(getByRole("button", { name: "create_lore_entry" })).toBeTruthy();
-		expect(getByRole("button", { name: "set_lore_activation" })).toBeTruthy();
-		expect(getByRole("button", { name: "edit_lorebook" })).toBeTruthy();
-		expect(getByRole("button", { name: "edit_lore_entry" })).toBeTruthy();
-		expect(getByRole("button", { name: "add_lore_entry" })).toBeTruthy();
-		expect(getByRole("button", { name: "ai_write_lore_entry" })).toBeTruthy();
-		expect(getByRole("button", { name: "ai_generate_lore_keys" })).toBeTruthy();
+		await waitFor(() => expect(getByRole("button", { name: "coauthor.module.tool.create_lorebook" })).toBeTruthy());
+		expect(getByRole("button", { name: "coauthor.module.tool.create_lore_entry" })).toBeTruthy();
+		expect(getByRole("button", { name: "coauthor.module.tool.set_lore_activation" })).toBeTruthy();
+		expect(getByRole("button", { name: "coauthor.module.tool.edit_lorebook" })).toBeTruthy();
+		expect(getByRole("button", { name: "coauthor.module.tool.edit_lore_entry" })).toBeTruthy();
+		expect(getByRole("button", { name: "coauthor.module.tool.add_lore_entry" })).toBeTruthy();
+		expect(getByRole("button", { name: "coauthor.module.tool.ai_write_lore_entry" })).toBeTruthy();
+		expect(getByRole("button", { name: "coauthor.module.tool.ai_generate_lore_keys" })).toBeTruthy();
 	});
 
 	it("toggling a write tool persists on save without disabling its edit sibling", async () => {
@@ -336,9 +345,9 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
 		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
 		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
-		await waitFor(() => expect(getByRole("button", { name: "write_examples" })).toBeTruthy());
+		await waitFor(() => expect(getByRole("button", { name: "coauthor.module.tool.write_examples" })).toBeTruthy());
 		// Turn write_examples ON; edit_examples stays ON (independent flags).
-		fireEvent.click(getByRole("button", { name: "write_examples" }));
+		fireEvent.click(getByRole("button", { name: "coauthor.module.tool.write_examples" }));
 		fireEvent.click(getByTestId("module-save-btn"));
 		await waitFor(() => expect(updateCoauthorModuleAction).toHaveBeenCalledTimes(1));
 		const input = updateCoauthorModuleAction.mock.calls[0][1] as { toolSet: Record<string, boolean> };
@@ -354,8 +363,8 @@ describe("CoauthorModuleModal (CS-25 manager)", () => {
 		const { getByTestId, getByRole } = render(<CoauthorModuleModal />);
 		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
 		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
-		await waitFor(() => expect(getByRole("button", { name: "edit_personality" })).toBeTruthy());
-		fireEvent.click(getByRole("button", { name: "edit_personality" }));
+		await waitFor(() => expect(getByRole("button", { name: "coauthor.module.tool.edit_personality" })).toBeTruthy());
+		fireEvent.click(getByRole("button", { name: "coauthor.module.tool.edit_personality" }));
 		fireEvent.click(getByTestId("module-save-btn"));
 		await waitFor(() => expect(updateCoauthorModuleAction).toHaveBeenCalledTimes(1));
 		const input = updateCoauthorModuleAction.mock.calls[0][1] as { toolSet: Record<string, boolean> };
@@ -445,5 +454,43 @@ describe("CoauthorModuleModal — built-in Duplicate (CTX-M3)", () => {
 		fireEvent.change(nameInput, { target: { value: "" } });
 		fireEvent.click(getByTestId("module-save-btn"));
 		await waitFor(() => expect(createCoauthorModuleAction).not.toHaveBeenCalled());
+	});
+});
+
+describe("CoauthorModuleModal — human-readable tool labels (HOTFIX-UI)", () => {
+	it("renders a mapped label (never the raw key) for every COAUTHOR_TOOL_KEYS entry", async () => {
+		// The editor toggle list is driven by COAUTHOR_TOOL_KEYS; each pill
+		// shows t(labelKey) — the useT mock returns keys verbatim, so the
+		// accessible name is the mapped i18n key and the raw snake_case key
+		// matches no toggle.
+		setActiveChat(null);
+		openModal();
+		const { getByTestId, getByRole, queryByRole } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getByTestId("module-edit-btn-cmod_1")).toBeTruthy());
+		fireEvent.click(getByTestId("module-edit-btn-cmod_1"));
+		await waitFor(() => expect(getByTestId("module-editor")).toBeTruthy());
+		for (const key of COAUTHOR_TOOL_KEYS) {
+			expect(getByRole("button", { name: COAUTHOR_TOOL_LABEL_KEYS[key] })).toBeTruthy();
+			expect(queryByRole("button", { name: key })).toBeNull();
+		}
+	});
+
+	it("read-only view renders labels for enabled tools, not raw keys", async () => {
+		// The default module ships enabled tools; its detail chips show the
+		// same mapped labels as the editor pills.
+		setActiveChat(null);
+		openModal();
+		const { getAllByText, getByText, queryByText } = render(<CoauthorModuleModal />);
+		await waitFor(() => expect(getAllByText("Default Co-Author").length).toBeGreaterThan(0));
+		expect(getByText("coauthor.module.tool.write_profile")).toBeTruthy();
+		expect(getByText("coauthor.module.tool.edit_personality")).toBeTruthy();
+		expect(queryByText("write_profile")).toBeNull();
+		expect(queryByText("edit_personality")).toBeNull();
+	});
+
+	it("falls back to the raw key for unmapped (future) tool keys", () => {
+		const identity: TFunc = (key) => key;
+		expect(resolveCoauthorToolLabel(identity, "some_future_tool")).toBe("some_future_tool");
+		expect(resolveCoauthorToolLabel(identity, "write_profile")).toBe("coauthor.module.tool.write_profile");
 	});
 });

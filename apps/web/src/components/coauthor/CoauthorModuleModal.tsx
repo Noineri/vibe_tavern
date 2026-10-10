@@ -17,6 +17,7 @@ import {
 	deleteCoauthorModuleAction,
 } from "../../stores/api-actions/chat-actions.js";
 import { useT, type TFunc } from "../../i18n/context.js";
+import { COAUTHOR_TOOL_LABEL_KEYS, resolveCoauthorToolLabel } from "./coauthor-tool-labels.js";
 import { toast } from "sonner";
 import { cn } from "../../lib/cn.js";
 import { type CoauthorModule, type CoauthorModuleCreate, type CoauthorToolSet, type SkillCatalogEntryDto, COAUTHOR_TOOL_KEYS, COAUTHOR_MAX_STEPS_MIN, COAUTHOR_MAX_STEPS_MAX, COAUTHOR_MAX_STEPS_DEFAULT } from "@vibe-tavern/api-contracts";
@@ -605,7 +606,7 @@ function ModuleView({ module, t, onEdit, onDuplicate, onDelete }: ModuleViewProp
 					{enabledTools.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
 							{enabledTools.map((key) => (
-								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{key}</span>
+								<span key={key} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{resolveCoauthorToolLabel(t, key)}</span>
 							))}
 						</div>
 					) : (
@@ -732,7 +733,7 @@ function ModuleEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool 
 								)}
 								onClick={() => onToggleTool(key)}
 							>
-								{key}
+								{resolveCoauthorToolLabel(t, key)}
 							</button>
 						);
 					})}
