@@ -37,6 +37,8 @@ import { useActiveCharacter, useSnapshotStore } from "../../../stores/snapshot-s
 import { saveCharacterAction } from "../../../stores/api-actions/character-actions.js";
 import { describeCharacterAvatar } from "../../../api/gallery-api.js";
 import { AvatarDescriptionField, type AvatarDescriptionPatch } from "./AvatarDescriptionField.js";
+import { useCharacterTrackerTemplate } from "../../../hooks/use-character-tracker-template.js";
+import { TrackerTemplateSummaryRow } from "./TrackerTemplateSummaryRow.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -389,6 +391,7 @@ export function CharacterForm({
   // from the existing avatar (full endpoint) without re-uploading a file.
   // Null when the thumbnail editor is closed.
   const [thumbnailEditSrc, setThumbnailEditSrc] = useState<string | null>(null);
+  const { template: trackerTemplate, clear: clearTrackerTemplate, refetch: refetchTrackerTemplate } = useCharacterTrackerTemplate(characterId);
 
   // VTF-14: Form↔MD authoring-surface toggle. State lives in the Zustand store
   // (not local) so it survives Build tab switches — CharacterForm unmounts when
@@ -750,23 +753,19 @@ export function CharacterForm({
         </div>
       )}
       </div>
-
       {importError && (
         <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
           {importError}
         </div>
       )}
-
       {/* Validation error for name */}
       {errors.name && (
         <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
           {errors.name.message}
         </div>
       )}
-
       <div className="mb-7 font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.55] text-t2">
       </div>
-
       {/* Avatar + Name + Tags */}
       {avatarOrientation === "landscape" && displayAvatar ? (
         /* Landscape: full-width avatar above name/tags */
@@ -838,7 +837,6 @@ export function CharacterForm({
         </div>
       </div>
       )}
-
       {/* VTF Phase 3 — version switcher. Mounted once after the avatar/name/tags
           block so it is shared across Form/MD modes and both avatar orientations.
           On activate the draft is reset from the reloaded character snapshot. */}
@@ -846,9 +844,9 @@ export function CharacterForm({
         characterId={characterId}
         isDirty={isDirty}
         disabled={isSaving}
-        onAfterActivate={onReset}
+        onAfterActivate={() => { onReset(); void refetchTrackerTemplate(); }}
       />
-
+      {trackerTemplate && <TrackerTemplateSummaryRow template={trackerTemplate} onClear={clearTrackerTemplate} />}
       {/* Avatar-in-prompt — describe via vision + toggle + description.
           Reads from the snapshot character (out-of-band from BuildCharacterDraft
           — see avatar-description-ui-gap.md). Mounted once, shared across

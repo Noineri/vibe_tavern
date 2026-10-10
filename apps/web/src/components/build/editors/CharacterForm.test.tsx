@@ -8,19 +8,39 @@
  * real react-hook-form (useForm in a harness) so setValue/shouldDirty wiring
  * is the REAL boundary.
  */
-import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { defaultObjectiveState, normalizeTrackerTemplate, type TrackerTemplate } from "@vibe-tavern/domain";
 import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
-const { fireEvent, render } = await import("@testing-library/react");
+const { fireEvent, render, waitFor } = await import("@testing-library/react");
 const { createElement } = await import("react");
 const { useForm } = await import("react-hook-form");
 
 // useT at the module boundary — keys verbatim so assertions match.
 const realI18nContext = await import("../../../i18n/context.js");
-mock.module("../../i18n/context.js", () => ({
+mock.module("../../../i18n/context.js", () => ({
   ...realI18nContext,
-  useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
+  useT: () => ({
+    t: (key: string, opts?: Record<string, unknown>) => {
+      const n = Number(opts?.n);
+      switch (key) {
+        case "character_tracker_template_label": return "Tracker template";
+        case "character_tracker_template_scene": return `Scene: ${n} field${n === 1 ? "" : "s"}`;
+        case "character_tracker_template_objective": return `Objectives: ${String(opts?.mode)} mode, ${n} goal${n === 1 ? "" : "s"}`;
+        case "character_tracker_template_mode_route": return "route";
+        case "character_tracker_template_mode_goals": return "goals";
+        case "character_tracker_template_remove": return "Remove";
+        case "character_tracker_template_remove_title": return "Remove tracker template?";
+        case "character_tracker_template_remove_body": return "The template will be removed from the character card. Tracker settings in existing chats will not change.";
+        default: return key;
+      }
+    },
+    tDynamic: (key: string) => key,
+    locale: "en",
+    setLocale: () => {},
+    ready: true,
+  }),
 }));
 
 // CustomTooltip needs a Radix provider context irrelevant to this pin.
@@ -38,6 +58,11 @@ const realPersonaApi = await import("../../../api/persona-api.js");
 const realScriptApi = await import("../../../api/script-api.js");
 const realCharacterApi = await import("../../../api/character-api.js");
 const realRegexApi = await import("../../../api/regex-api.js");
+const realVersionSwitcher = await import("../VersionSwitcher.js");
+
+let trackerTemplate: TrackerTemplate | null = null;
+const getTrackerTemplate = mock(() => Promise.resolve(trackerTemplate));
+const deleteTrackerTemplate = mock(async () => { trackerTemplate = null; });
 mock.module("../../../api/lorebook-api.js", () => ({
 	...realLorebookApi,
 	listAllLorebooks: () => Promise.resolve([]),
@@ -48,6 +73,14 @@ mock.module("../../../api/character-api.js", () => ({
 	...realCharacterApi,
 	listCharacterLorebooks: () => Promise.resolve([]),
 	listCharacterScripts: () => Promise.resolve([]),
+  getTrackerTemplate,
+  deleteTrackerTemplate,
+}));
+mock.module("../VersionSwitcher.js", () => ({
+  ...realVersionSwitcher,
+  VersionSwitcher: ({ onAfterActivate }: { onAfterActivate: () => void }) => (
+    <button type="button" data-testid="version-switch" onClick={onAfterActivate}>switch version</button>
+  ),
 }));
 mock.module("../../../api/persona-api.js", () => ({
 	...realPersonaApi,
@@ -79,7 +112,45 @@ const chipRemoveButtons = () => Array.from(document.querySelectorAll('[data-test
 const dangerConfirm = () =>
   Array.from(document.querySelectorAll("button")).find((b) => b.className.includes("bg-danger") && b.className.includes("px-[18px]")) ?? null;
 
-function Harness({ greetings }: { greetings: string[] }) {
+function makeTrackerTemplate({ sceneFieldCount = 0, objectiveMode, objectiveCount = 0 }: {
+  sceneFieldCount?: number;
+  objectiveMode?: "route" | "goals";
+  objectiveCount?: number;
+}): TrackerTemplate {
+  const objectiveState = defaultObjectiveState();
+  const template = normalizeTrackerTemplate({
+    version: 1,
+    scene: sceneFieldCount > 0
+      ? {
+          enabled: true,
+          config: {
+            schema: Object.fromEntries(
+              Array.from({ length: sceneFieldCount }, (_, index) => [`field_${index}`, { $type: "string" }]),
+            ),
+          },
+        }
+      : null,
+    objective: objectiveMode
+      ? {
+          enabled: true,
+          state: {
+            ...objectiveState,
+            mode: objectiveMode,
+            tasks: objectiveMode === "route"
+              ? Array.from({ length: objectiveCount }, (_, index) => ({ id: `task_${index}`, description: `Task ${index}`, status: "pending" }))
+              : [],
+            shortTermGoals: objectiveMode === "goals"
+              ? Array.from({ length: objectiveCount }, (_, index) => ({ id: `goal_${index}`, description: `Goal ${index}`, status: "pending" }))
+              : [],
+          },
+        }
+      : null,
+  });
+  if (!template) throw new Error("Expected a populated tracker template");
+  return template;
+}
+
+function Harness({ greetings, onReset = mock() }: { greetings: string[]; onReset?: () => void }) {
   const form = useForm({ defaultValues: { description: "", firstMessage: "", mesExample: "", scenario: "", personalitySummary: "", alternateGreetings: greetings } });
   return createElement(CharacterForm, {
     form: form as never,
@@ -89,7 +160,7 @@ function Harness({ greetings }: { greetings: string[] }) {
     isSaving: false,
     avatarUrl: undefined,
     onSave: mock(),
-    onReset: mock(),
+    onReset,
     onAvatarUpload: mock(),
     onAfterImport: mock(),
     onExportJson: mock(),
@@ -101,6 +172,65 @@ function Harness({ greetings }: { greetings: string[] }) {
     characterId: "test-character-id",
   });
 }
+
+afterEach(() => {
+  trackerTemplate = null;
+  getTrackerTemplate.mockReset();
+  getTrackerTemplate.mockImplementation(() => Promise.resolve(trackerTemplate));
+  deleteTrackerTemplate.mockReset();
+  deleteTrackerTemplate.mockImplementation(async () => { trackerTemplate = null; });
+});
+
+describe("CharacterForm — tracker template summary row (CT-5)", () => {
+  it("hides the row when the active version has no template", async () => {
+    const { queryByText } = render(createElement(Harness, { greetings: [] }));
+
+    await waitFor(() => expect(getTrackerTemplate).toHaveBeenCalledWith("test-character-id"));
+    expect(queryByText("Tracker template")).toBeNull();
+  });
+
+  it("renders scene-only, objective-only, and combined summaries", async () => {
+    trackerTemplate = makeTrackerTemplate({ sceneFieldCount: 7 });
+    const scene = render(createElement(Harness, { greetings: [] }));
+    expect(await scene.findByText("Scene: 7 fields")).toBeTruthy();
+    scene.unmount();
+
+    trackerTemplate = makeTrackerTemplate({ objectiveMode: "goals", objectiveCount: 3 });
+    const objective = render(createElement(Harness, { greetings: [] }));
+    expect(await objective.findByText("Objectives: goals mode, 3 goals")).toBeTruthy();
+    objective.unmount();
+
+    trackerTemplate = makeTrackerTemplate({ sceneFieldCount: 7, objectiveMode: "goals", objectiveCount: 3 });
+    const combined = render(createElement(Harness, { greetings: [] }));
+    expect(await combined.findByText("Scene: 7 fields · Objectives: goals mode, 3 goals")).toBeTruthy();
+  });
+
+  it("confirms removal, calls the DELETE client, and hides the row", async () => {
+    trackerTemplate = makeTrackerTemplate({ sceneFieldCount: 1 });
+    const { findByRole, getByRole, queryByText } = render(createElement(Harness, { greetings: [] }));
+
+    await findByRole("button", { name: "Remove" });
+    fireEvent.click(getByRole("button", { name: "Remove" }));
+    expect(document.body.textContent).toContain("Remove tracker template?");
+    fireEvent.click(dangerConfirm()!);
+
+    await waitFor(() => expect(deleteTrackerTemplate).toHaveBeenCalledWith("test-character-id"));
+    await waitFor(() => expect(queryByText("Tracker template")).toBeNull());
+  });
+
+  it("re-reads the template after the active version changes", async () => {
+    trackerTemplate = makeTrackerTemplate({ sceneFieldCount: 1 });
+    const onReset = mock();
+    const { findByText, getByTestId } = render(createElement(Harness, { greetings: [], onReset }));
+
+    await findByText("Scene: 1 field");
+    trackerTemplate = makeTrackerTemplate({ objectiveMode: "route", objectiveCount: 2 });
+    fireEvent.click(getByTestId("version-switch"));
+
+    expect(onReset).toHaveBeenCalledTimes(1);
+    await findByText("Objectives: route mode, 2 goals");
+  });
+});
 
 describe("CharacterForm — alt-greeting chips delete safely (E2)", () => {
   it("✕ opens the destructive confirm; cancel keeps all greetings", () => {

@@ -18,7 +18,7 @@
     "domain/providers/proxy-service.ts -> runtime/session/session-runtime-dto"
   ],
   "oversizedFiles": {
-    "apps/web/src/components/build/editors/CharacterForm.tsx": 915,
+    "apps/web/src/components/build/editors/CharacterForm.tsx": 913,
     "apps/web/src/components/build/editors/copilot/ExperienceCopilotShell.tsx": 1369,
     "apps/web/src/components/build/editors/ExperienceEditor.tsx": 1326,
     "apps/web/src/components/build/editors/ExperiencePlayground.tsx": 2178,
