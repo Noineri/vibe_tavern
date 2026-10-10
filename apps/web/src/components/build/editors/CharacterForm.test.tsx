@@ -31,6 +31,7 @@ mock.module("../../../i18n/context.js", () => ({
         case "character_tracker_template_mode_route": return "route";
         case "character_tracker_template_mode_goals": return "goals";
         case "character_tracker_template_remove": return "Remove";
+        case "character_tracker_template_remove_aria": return "Remove tracker template";
         case "character_tracker_template_remove_title": return "Remove tracker template?";
         case "character_tracker_template_remove_body": return "The template will be removed from the character card. Tracker settings in existing chats will not change.";
         default: return key;
@@ -209,8 +210,8 @@ describe("CharacterForm — tracker template summary row (CT-5)", () => {
     trackerTemplate = makeTrackerTemplate({ sceneFieldCount: 1 });
     const { findByRole, getByRole, queryByText } = render(createElement(Harness, { greetings: [] }));
 
-    await findByRole("button", { name: "Remove" });
-    fireEvent.click(getByRole("button", { name: "Remove" }));
+    await findByRole("button", { name: "Remove tracker template" });
+    fireEvent.click(getByRole("button", { name: "Remove tracker template" }));
     expect(document.body.textContent).toContain("Remove tracker template?");
     fireEvent.click(dangerConfirm()!);
 
