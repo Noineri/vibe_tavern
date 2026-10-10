@@ -39,6 +39,7 @@ import { describeCharacterAvatar } from "../../../api/gallery-api.js";
 import { AvatarDescriptionField, type AvatarDescriptionPatch } from "./AvatarDescriptionField.js";
 import { useCharacterTrackerTemplate } from "../../../hooks/use-character-tracker-template.js";
 import { TrackerTemplateSummaryRow } from "./TrackerTemplateSummaryRow.js";
+import { CharacterCoreTextFields } from "./character-core-text-fields.js";
 
 export interface CharacterFormProps {
   form: UseFormReturn<BuildCharacterDraft>;
@@ -165,30 +166,14 @@ function ClassicCharacterFields({ form, isSaving }: { form: UseFormReturn<BuildC
   const [altGreetIdx, setAltGreetIdx] = useState(0);
   // E2: alt-greeting deletion goes through the shared destructive confirm.
   const [pendingGreetingDelete, setPendingGreetingDelete] = useState<number | null>(null);
-  const [description, firstMessage, mesExample, mesExampleMode, mesExampleDepth, scenario, personalitySummary, altGreetingsRaw] = useWatch({
+  const [mesExample, mesExampleMode, mesExampleDepth, scenario, personalitySummary, altGreetingsRaw] = useWatch({
     control: form.control,
-    name: ["description", "firstMessage", "mesExample", "mesExampleMode", "mesExampleDepth", "scenario", "personalitySummary", "alternateGreetings"],
+    name: ["mesExample", "mesExampleMode", "mesExampleDepth", "scenario", "personalitySummary", "alternateGreetings"],
   });
   const alternateGreetings = altGreetingsRaw || [];
   return (
     <>
-      {/* Description */}
-      <div className="mb-5">
-        <label className={lblCls}>{t("char_desc_label")}</label>
-        <MobileExpandTextarea value={description || ""} onChange={(v) => setValue("description", v)} label={t("char_desc_label")}>
-          <AutoTextarea disabled={isSaving} register={register("description")} minRows={5} />
-        </MobileExpandTextarea>
-        <TokenCounter text={description || ""} />
-      </div>
-
-      {/* First Message */}
-      <div className="mb-5">
-        <label className={lblCls}>{t("first_message_greeting")}</label>
-        <MobileExpandTextarea value={firstMessage || ""} onChange={(v) => setValue("firstMessage", v)} label={t("first_message_label")}>
-          <AutoTextarea disabled={isSaving} placeholder={t("first_message_placeholder")} register={register("firstMessage")} minRows={6} />
-        </MobileExpandTextarea>
-        <TokenCounter text={firstMessage || ""} />
-      </div>
+      <CharacterCoreTextFields form={form} isSaving={isSaving} />
 
       {/* Alternate Greetings */}
       <div className="mb-5">
@@ -753,19 +738,23 @@ export function CharacterForm({
         </div>
       )}
       </div>
+
       {importError && (
         <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
           {importError}
         </div>
       )}
+
       {/* Validation error for name */}
       {errors.name && (
         <div className="mb-3 rounded-md border border-border2 bg-s2 px-3 py-1.5 font-ui text-xs text-danger-text">
           {errors.name.message}
         </div>
       )}
+
       <div className="mb-7 font-ui text-[calc(var(--ui-fs)-1px)] leading-[1.55] text-t2">
       </div>
+
       {/* Avatar + Name + Tags */}
       {avatarOrientation === "landscape" && displayAvatar ? (
         /* Landscape: full-width avatar above name/tags */
@@ -837,6 +826,7 @@ export function CharacterForm({
         </div>
       </div>
       )}
+
       {/* VTF Phase 3 — version switcher. Mounted once after the avatar/name/tags
           block so it is shared across Form/MD modes and both avatar orientations.
           On activate the draft is reset from the reloaded character snapshot. */}
