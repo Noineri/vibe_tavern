@@ -2,6 +2,7 @@ import type { CoauthorTrackerTemplateOutput } from "@vibe-tavern/api-contracts";
 import type { SceneTrackerSchemaNode, TrackerTemplate } from "@vibe-tavern/domain";
 import { DEFAULT_SCENE_TRACKER_CONFIG } from "@vibe-tavern/domain";
 import { Checkbox } from "../shared/Checkbox.js";
+import { TrackerTemplatePromptBlocks } from "../shared/tracker-template-schema-preview.js";
 import { describeTrackerTemplate } from "../../hooks/describe-tracker-template.js";
 import type { TFunc } from "../../i18n/context.js";
 
@@ -29,16 +30,13 @@ interface CoauthorTrackerTemplateReviewProps {
   t: TFunc;
 }
 
-const SCENE_SETTING_KEYS = [
+const SCENE_DIFF_SETTING_KEYS = [
   "autoMode",
   "contextWindow",
   "continuityLastN",
   "injectionDepth",
   "injectLastN",
   "promptFormat",
-  "generatePrompt",
-  "injectPrompt",
-  "rulesPrompt",
 ] as const;
 
 function settingValue(value: string | number | boolean, labels: CoauthorTrackerTemplateReviewLabels): string {
@@ -86,13 +84,13 @@ export function CoauthorTrackerTemplateReview({
               </div>
             ))}
           </div>
-          {SCENE_SETTING_KEYS.some((key) => scene.config[key] !== DEFAULT_SCENE_TRACKER_CONFIG[key]) && (
+          {SCENE_DIFF_SETTING_KEYS.some((key) => scene.config[key] !== DEFAULT_SCENE_TRACKER_CONFIG[key]) && (
             <>
               <div className="mt-2.5 font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3">
                 {labels.defaults}
               </div>
               <div className="mt-1">
-                {SCENE_SETTING_KEYS.map((key) => {
+                {SCENE_DIFF_SETTING_KEYS.map((key) => {
                   const value = scene.config[key];
                   const defaultValue = DEFAULT_SCENE_TRACKER_CONFIG[key];
                   if (value === defaultValue) return null;
@@ -108,6 +106,11 @@ export function CoauthorTrackerTemplateReview({
               </div>
             </>
           )}
+          <TrackerTemplatePromptBlocks prompts={[
+            { label: t("tracker_template_prompt_scene_generate"), value: scene.config.generatePrompt },
+            { label: t("tracker_template_prompt_scene_rules"), value: scene.config.rulesPrompt },
+            { label: t("tracker_template_prompt_scene_inject"), value: scene.config.injectPrompt },
+          ]} />
         </>
       )}
 
@@ -127,6 +130,19 @@ export function CoauthorTrackerTemplateReview({
               </div>
             ))}
           </div>
+          {objective.state.mode === "goals" && objective.state.longTermGoal && (
+            <div className="mt-2 font-ui text-[calc(var(--ui-fs)-2px)] leading-relaxed">
+              <div className="font-ui text-[calc(var(--ui-fs)-3px)] font-semibold uppercase tracking-[0.05em] text-t3">
+                {t("tracker_template_long_term_goal")}
+              </div>
+              <div className="text-t2">{objective.state.longTermGoal.description}</div>
+            </div>
+          )}
+          <TrackerTemplatePromptBlocks prompts={[
+            { label: t("tracker_template_prompt_objective_generate"), value: objective.state.generatePrompt },
+            { label: t("tracker_template_prompt_objective_check"), value: objective.state.checkPrompt },
+            { label: t("tracker_template_prompt_objective_inject"), value: objective.state.injectPrompt },
+          ]} />
         </>
       )}
 

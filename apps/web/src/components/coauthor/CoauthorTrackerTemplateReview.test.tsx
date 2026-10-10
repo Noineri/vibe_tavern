@@ -31,7 +31,46 @@ const labels: CoauthorTrackerTemplateReviewLabels = {
   disabled: "Disabled",
 };
 
-function template(): TrackerTemplate {
+const trackerLabels: Record<string, string> = {
+  tracker_template_long_term_goal: "Long-term goal",
+  tracker_template_prompt_scene_generate: "Scene generation prompt",
+  tracker_template_prompt_scene_rules: "Scene rules prompt",
+  tracker_template_prompt_scene_inject: "Scene injection prompt",
+  tracker_template_prompt_objective_generate: "Objective generation prompt",
+  tracker_template_prompt_objective_check: "Objective check prompt",
+  tracker_template_prompt_objective_inject: "Objective injection prompt",
+};
+
+function translate(key: string, options?: Record<string, unknown>) {
+  if (key === "coauthor.tracker_template.review.was") return `was ${options?.value}`;
+  if (key === "character_tracker_template_mode_goals") return "goals";
+  if (key === "character_tracker_template_mode_route") return "route";
+  return trackerLabels[key] ?? key;
+}
+
+function template({
+  mode = "goals",
+  authoredPrompts = true,
+  includeObjective = true,
+}: {
+  mode?: "route" | "goals";
+  authoredPrompts?: boolean;
+  includeObjective?: boolean;
+} = {}): TrackerTemplate {
+  const scenePrompts = authoredPrompts
+    ? {
+        generatePrompt: "Write the next scene beat.\nPreserve the clue trail.",
+        rulesPrompt: "Keep continuity with established evidence.",
+        injectPrompt: "Scene tracker state follows.",
+      }
+    : {};
+  const objectivePrompts = authoredPrompts
+    ? {
+        generatePrompt: "Update the objective after each scene.",
+        checkPrompt: "Mark goals complete only with decisive evidence.",
+        injectPrompt: "Objective tracker state follows.",
+      }
+    : {};
   const value = normalizeTrackerTemplate({
     version: 1,
     scene: {
@@ -43,18 +82,32 @@ function template(): TrackerTemplate {
         },
         injectionDepth: 2,
         injectLastN: 5,
+        ...scenePrompts,
       },
     },
-    objective: {
-      enabled: true,
-      state: {
-        mode: "goals",
-        shortTermGoals: [
-          { id: "goal-1", description: "Find the strange signal", status: "pending" },
-          { id: "goal-2", description: "Earn the assistant's trust", status: "pending" },
-        ],
-      },
-    },
+    objective: includeObjective
+      ? mode === "goals"
+        ? {
+            enabled: true,
+            state: {
+              mode: "goals",
+              shortTermGoals: [
+                { id: "goal-1", description: "Find the strange signal", status: "pending" },
+                { id: "goal-2", description: "Earn the assistant's trust", status: "pending" },
+              ],
+              longTermGoal: { description: "Solve the source of the signal", status: "pending" },
+              ...objectivePrompts,
+            },
+          }
+        : {
+            enabled: true,
+            state: {
+              mode: "route",
+              tasks: [{ id: "task-1", description: "Follow the signal", status: "pending" }],
+              ...objectivePrompts,
+            },
+          }
+      : null,
   });
   if (!value) throw new Error("Expected fixture tracker template to normalize");
   return value;
@@ -71,11 +124,7 @@ describe("CoauthorTrackerTemplateReview (CT-7b)", () => {
         applying={false}
         onToggle={() => {}}
         labels={labels}
-        t={(key, options) => {
-          if (key === "coauthor.tracker_template.review.was") return `was ${options?.value}`;
-          if (key === "character_tracker_template_mode_goals") return "goals";
-          return key;
-        }}
+        t={translate}
       />,
     );
     expect(getByText("Tracker template")).toBeTruthy();
@@ -93,6 +142,73 @@ describe("CoauthorTrackerTemplateReview (CT-7b)", () => {
     expect(getByText("Current: No template")).toBeTruthy();
   });
 
+  it("renders every non-empty authored prompt as a full block and the goals long-term goal", () => {
+    const { getByText } = render(
+      <CoauthorTrackerTemplateReview
+        template={template()}
+        summary="Drafted trackers."
+        currentTemplate={null}
+        selected={true}
+        applying={false}
+        onToggle={() => {}}
+        labels={labels}
+        t={translate}
+      />,
+    );
+
+    const sceneGeneratePrompt = getByText("Scene generation prompt").nextElementSibling;
+    expect(sceneGeneratePrompt?.textContent).toBe("Write the next scene beat.\nPreserve the clue trail.");
+    expect(sceneGeneratePrompt?.className).toContain("whitespace-pre-wrap");
+    expect(getByText("Scene rules prompt")).toBeTruthy();
+    expect(getByText("Keep continuity with established evidence.")).toBeTruthy();
+    expect(getByText("Scene injection prompt")).toBeTruthy();
+    expect(getByText("Scene tracker state follows.")).toBeTruthy();
+    expect(getByText("Objective generation prompt")).toBeTruthy();
+    expect(getByText("Update the objective after each scene.")).toBeTruthy();
+    expect(getByText("Objective check prompt")).toBeTruthy();
+    expect(getByText("Mark goals complete only with decisive evidence.")).toBeTruthy();
+    expect(getByText("Objective injection prompt")).toBeTruthy();
+    expect(getByText("Objective tracker state follows.")).toBeTruthy();
+    expect(getByText("Long-term goal")).toBeTruthy();
+    expect(getByText("Solve the source of the signal")).toBeTruthy();
+  });
+
+  it("omits empty prompt blocks and the long-term-goal row for route and no-objective templates", () => {
+    const route = render(
+      <CoauthorTrackerTemplateReview
+        template={template({ mode: "route", authoredPrompts: false })}
+        summary="Route tracker."
+        currentTemplate={null}
+        selected={true}
+        applying={false}
+        onToggle={() => {}}
+        labels={labels}
+        t={translate}
+      />,
+    );
+    expect(route.getByText("Follow the signal")).toBeTruthy();
+    expect(route.queryByText("Long-term goal")).toBeNull();
+    expect(route.queryByText("Scene generation prompt")).toBeNull();
+    expect(route.queryByText("Objective generation prompt")).toBeNull();
+    route.unmount();
+
+    const sceneOnly = render(
+      <CoauthorTrackerTemplateReview
+        template={template({ includeObjective: false, authoredPrompts: false })}
+        summary="Scene tracker."
+        currentTemplate={null}
+        selected={true}
+        applying={false}
+        onToggle={() => {}}
+        labels={labels}
+        t={translate}
+      />,
+    );
+    expect(sceneOnly.queryByText("Objectives — goals, 2")).toBeNull();
+    expect(sceneOnly.queryByText("Long-term goal")).toBeNull();
+    expect(sceneOnly.queryByText("Scene generation prompt")).toBeNull();
+  });
+
   it("calls the single include toggle and disables it while applying", () => {
     const onToggle = mock();
     const view = render(
@@ -104,7 +220,7 @@ describe("CoauthorTrackerTemplateReview (CT-7b)", () => {
         applying={false}
         onToggle={onToggle}
         labels={labels}
-        t={(key) => key}
+        t={translate}
       />,
     );
     fireEvent.click(view.getByRole("checkbox"));
@@ -120,7 +236,7 @@ describe("CoauthorTrackerTemplateReview (CT-7b)", () => {
         applying={true}
         onToggle={onToggle}
         labels={labels}
-        t={(key) => key}
+        t={translate}
       />,
     );
     expect((applying.getByRole("checkbox") as HTMLButtonElement).disabled).toBe(true);
