@@ -849,6 +849,28 @@ describe("ChatStore — insights config (INS-1b)", () => {
     });
   });
 
+  test("omitting insights setup preserves database-owned default JSON bytes", async () => {
+    const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
+    const row = db.select().from(schema.chats).where(eq(schema.chats.id, chat.id)).get();
+    expect(row?.insightsConfigJson).toBe('{"objectiveEnabled":false,"trackerEnabled":false}');
+    expect(row?.insightsObjectiveStateJson).toBe("{}");
+  });
+
+  test("createChat persists supplied insights setup", async () => {
+    const insightsConfig = normalizeInsightsConfig({ objectiveEnabled: true, trackerEnabled: true });
+    const insightsObjectiveState = normalizeObjectiveState({ objectiveDescription: "Reach the city" });
+    const chat = await store.createChat({
+      characterId: "char_1",
+      title: "c",
+      promptPresetId: "preset_1",
+      insightsConfig,
+      insightsObjectiveState,
+    });
+    const row = db.select().from(schema.chats).where(eq(schema.chats.id, chat.id)).get();
+    expect(row?.insightsConfigJson).toBe(JSON.stringify(insightsConfig));
+    expect(row?.insightsObjectiveStateJson).toBe(JSON.stringify(insightsObjectiveState));
+  });
+
   test("updateInsightsConfig round-trips and persists across getById", async () => {
     const chat = await store.createChat({ characterId: "char_1", title: "c", promptPresetId: "preset_1" });
     const updated = await store.updateInsightsConfig(chat.id, { insightsConfig: normalizeInsightsConfig({ objectiveEnabled: true }) });

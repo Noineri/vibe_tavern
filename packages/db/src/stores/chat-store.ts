@@ -2,6 +2,7 @@ import { eq, and, desc, asc, lte, count, inArray } from 'drizzle-orm';
 import { chats, chatBranches, characters, messages, messageVariants, promptTraces } from '../db-schema.js';
 import type { AppDb, DbTransaction } from '../db-connection.js';
 import { resolveStoreRuntime, type StoreClock, type StoreIdGenerator } from '../persistence.js';
+import { createChatInsertValues, type CreateChatInput } from './chat-create-values.js';
 import {
   normalizeSceneTrackerConfig,
   applySceneTrackerConfigPatch,
@@ -85,14 +86,7 @@ export class ChatStore {
 
   // ─── Chat lifecycle ────────────────────────────────────────────────────────
 
-  async createChat(data: {
-    characterId: string;
-    personaId?: string;
-    title: string;
-    promptPresetId: string | null;
-    /** Chat mode. Omit/undefined → DB default 'rp'. */
-    mode?: ChatMode;
-  }): Promise<Chat> {
+  async createChat(data: CreateChatInput): Promise<Chat> {
     const chatId = this.idGen.next('chat');
     const branchId = this.idGen.next('brnch');
     const now = this.clock.now();
@@ -106,21 +100,13 @@ export class ChatStore {
     this.db.transaction((tx) => {
       tx
         .insert(chats)
-        .values({
+        .values(createChatInsertValues({
+          ...data,
           id: chatId,
-          characterId: data.characterId,
-          personaId: data.personaId ?? null,
           activeBranchId: branchId,
-          promptPresetId: data.promptPresetId,
-          mode: data.mode,
-          title: data.title,
-          summary: '',
-          messageHistoryLimit: 0,
-          autoSummaryConfigJson: '{"enabled":false,"everyN":20,"useChatModel":true}',
-          status: 'active',
           createdAt: now,
           updatedAt: now,
-        })
+        }))
         .run();
 
       tx

@@ -24,6 +24,8 @@ export interface CreateChatRequest {
   promptPresetId: PromptPresetId;
   /** Chat mode. Omit/undefined → DB default 'rp'. */
   mode?: ChatMode;
+  insightsConfig?: import("@vibe-tavern/domain").InsightsConfig;
+  insightsObjectiveState?: import("@vibe-tavern/domain").ObjectiveState;
 }
 
 export interface CreateChatResponse {

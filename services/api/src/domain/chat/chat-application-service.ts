@@ -85,6 +85,8 @@ export class ChatApplicationService {
       title: input.title,
       promptPresetId: input.promptPresetId,
       mode: input.mode,
+      insightsConfig: input.insightsConfig,
+      insightsObjectiveState: input.insightsObjectiveState,
     });
 
     return {
