@@ -43,6 +43,10 @@ export type { FormatTemplateRuntimeApi, AiInstructionTemplateRuntimeApi };
 // import path keeps resolving.
 import type { LorebookRuntimeApi, ScriptRuntimeApi } from "./lorebook-script-contracts.js";
 export type { LorebookRuntimeApi, ScriptRuntimeApi };
+import type { AgentPlanRuntimeApi } from "./agent-plan-contracts.js";
+export type { AgentPlanRuntimeApi };
+import type { CopilotProfileRuntimeApi } from "./copilot-profile-contracts.js";
+export type { CopilotProfileRuntimeApi };
 // Re-export so existing imports from this module (the skill adapter) keep
 // resolving; the canonical wire type lives in api-contracts (single source).
 export type { SkillCatalogEntryDto };
@@ -932,16 +936,6 @@ export interface ImagePromptProfileRuntimeApi {
   ) => Promise<import("@vibe-tavern/api-contracts").ImagePromptProfileListResponse>;
 }
 
-/** Copilot profile CRUD (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3). The
- *  built-in "Experience Authoring" seed (id "builtin") is READ-ONLY — update /
- *  delete reject it with a 400. */
-export interface CopilotProfileRuntimeApi {
-	/** Built-in seed first, then user profiles in store order. */
-	listCopilotProfiles: () => Promise<import("@vibe-tavern/api-contracts").CopilotProfile[]>;
-	createCopilotProfile: (input: import("@vibe-tavern/api-contracts").CopilotProfileCreate) => Promise<import("@vibe-tavern/api-contracts").CopilotProfile>;
-	updateCopilotProfile: (id: string, input: import("@vibe-tavern/api-contracts").CopilotProfileUpdate) => Promise<import("@vibe-tavern/api-contracts").CopilotProfile>;
-	deleteCopilotProfile: (id: string) => Promise<void>;
-}
 
 /** Named sampler-set library CRUD (LOCAL_SUPPORT_PLAN LS-5b) — the small-resource
  *  pattern (CopilotProfileRuntimeApi) with an import endpoint: the backend
@@ -993,6 +987,7 @@ export interface RuntimeApi extends TrackerTemplateApi {
 	experience: ExperienceRuntimeApi;
 	experienceCopilot: ExperienceCopilotRuntimeApi;
 	copilotProfiles: CopilotProfileRuntimeApi;
+	agentPlan: AgentPlanRuntimeApi;
 	samplerSets: SamplerSetRuntimeApi;
 	formatTemplates: FormatTemplateRuntimeApi;
 	aiInstructionTemplates: AiInstructionTemplateRuntimeApi;

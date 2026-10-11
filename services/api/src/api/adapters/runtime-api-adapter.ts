@@ -32,6 +32,7 @@ import { MobileAccessAdapter } from "./mobile-access-adapter.js";
 import { CoauthorSkillAdapter } from "./coauthor-skill-adapter.js";
 import { CopilotSkillAdapter } from "./copilot-skill-adapter.js";
 import { CopilotProfileAdapter } from "./copilot-profile-adapter.js";
+import { AgentPlanAdapter } from "./agent-plan-adapter.js";
 import { SamplerSetAdapter } from "./sampler-set-adapter.js";
 import { FormatTemplateAdapter } from "./format-template-adapter.js";
 import { AiInstructionTemplateAdapter } from "./ai-instruction-template-adapter.js";
@@ -82,6 +83,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 	readonly coauthorSkills: CoauthorSkillAdapter;
 	readonly copilotSkills: CopilotSkillAdapter;
 	readonly copilotProfiles: CopilotProfileAdapter;
+	readonly agentPlan: AgentPlanAdapter;
 	readonly samplerSets: SamplerSetAdapter;
 	readonly formatTemplates: FormatTemplateAdapter;
 	readonly aiInstructionTemplates: AiInstructionTemplateAdapter;
@@ -154,6 +156,7 @@ export class RuntimeApiAdapter implements RuntimeApi {
 		this.coauthorSkills = new CoauthorSkillAdapter(skillLibraryService);
 		this.copilotSkills = new CopilotSkillAdapter(copilotSkillService);
 		this.copilotProfiles = new CopilotProfileAdapter(stores);
+		this.agentPlan = new AgentPlanAdapter(stores);
 		this.samplerSets = new SamplerSetAdapter(stores);
 		this.formatTemplates = new FormatTemplateAdapter(stores);
 		this.aiInstructionTemplates = new AiInstructionTemplateAdapter(stores);
