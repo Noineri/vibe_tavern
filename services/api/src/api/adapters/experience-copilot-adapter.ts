@@ -250,7 +250,6 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       updatedAt: t.updatedAt,
       metrics: t.contextMetrics ? this.toMetricsWire(t.contextMetrics) : null,
       contextLinks: t.contextLinks,
-      todo: t.todo,
     };
   }
 

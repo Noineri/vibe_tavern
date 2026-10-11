@@ -1832,12 +1832,13 @@ export const experienceCopilotThreads = sqliteTable('experience_copilot_threads'
   // (malformed → [], logged, never fatal). Resolved by id at ASSEMBLY time —
   // never a stored content copy, so a pinned entity can never go stale.
   contextLinksJson: text('context_links_json').notNull().default('[]'),
-  // The model's step-plan for this thread (copilot todo/ask plan, TAG-2): JSON
-  // array of {title, status: pending|active|completed|abandoned}. The model
-  // owns it (read-only for the user); every `todo` tool call is a full-list
-  // rewrite. Nullable: null until the first todo call. Malformed JSON on read
-  // → [] (logged, never fatal) — same defensive-parse contract as
-  // context_links_json above.
+  // RETIRED COLUMN — superseded by agent_plans (EXPERIENCE_COPILOT_PLAN_MODE_PLAN,
+  // PM-6): the thread-scoped todo mechanic was replaced by the script-owned
+  // agent plan (`agent_plans` table + GET/PUT /api/scripts/:scriptId/agent-plan).
+  // Kept as a nullable text column (committed migrations are never edited;
+  // dropping it would churn every thread row for no read/write benefit).
+  // Historical shape: JSON array of {title, status}. Nothing reads or writes it
+  // anymore — mapThread no longer projects it onto the store thread.
   todoJson: text('todo_json'),
   // The provider/model the thread LAST used (persisted from the stream finish
   // path) — the compaction service (CM-5) reuses this pair when the manual

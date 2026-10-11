@@ -536,13 +536,25 @@ The authoring DSL reference lives in `services/api/assets/interactive-rules.md` 
 
 Mounted as the `experience-copilot` FeatureModule; domain code in `domain/interactive/copilot/`. Full architecture: [Experience Copilot](./experience-copilot.md). Key mechanics:
 
-- **Propose-only tool surface** — `write_buffer`/`edit_buffer`/`run_test`/`run_simulate`/`suggest_visual_binding` plus `todo` (full-list-rewrite session step-plan, persisted to `todo_json`) and `ask_user` (clarifying questions). `read_skill_file` is always on. Rules proposals are sandbox-validated before surfacing; the tool set is per-profile gated (7 toggleable keys).
+- **Propose-only tool surface** — `write_buffer`/`edit_buffer`/`run_test`/`run_simulate`/`suggest_visual_binding` plus `plan`/`read_plan` (the script-owned agent plan — see [Agent plan mechanic](#agent-plan-mechanic)) and `ask_user` (clarifying questions). `read_skill_file` is always on. Rules proposals are sandbox-validated before surfacing; the tool set is per-profile gated (8 toggleable keys).
 - **Unbounded tool loop** — `stopWhen: [isStepCount(1_000_000 formality), hasToolCall("ask_user")]`. No profile step cap exists (deliberately removed); the loop runs until the model stops or the user cancels.
 - **Ask split-turn** — a question ends the turn (the `ask_user` marker tool-result); the answer arrives as a stream request in answer mode, rewrites the awaiting tool-result row in place (no user row), and resumes the logical turn. Dangling asks self-heal at assembly time with a sentinel string (stored rows never mutated).
 - **Skills** — filesystem-scanned `SKILL.md` dirs under `assets/experience-copilot/skills/` (`experience-authoring`, `grill-me`); scanner/catalog reused from Co-Author with an isolated root.
 - **Compaction + context meter** — digest-based history folding (never splitting tool-call/result pairs) and persisted context metrics driving the meter UI.
 
 The engine the copilot authors against — kernel, sandbox, durable effects (`model`, `timer`), the visual bridge — is Interactive Experiences, documented in the copilot architecture doc's references and the shared asset references (`interactive-rules.md`, `interactive-visual.md`). The engine now has two authoring modes — the classic turn-based flow and realtime loop rounds (`mode: "realtime"`) — and mode-choice guidance lives in `base.md` plus the realtime sections of the shared assets.
+
+## Agent plan mechanic
+
+`EXPERIENCE_COPILOT_PLAN_MODE_PLAN` — a host-agnostic, script-owned plan the model maintains and the user can edit. Domain shape in `packages/domain/src/agent-plan.ts` (`AgentPlan` = goal + constraints + tasks; at most one `active` task), storage in `packages/db/src/stores/agent-plan-store.ts` (one `agent_plans` row per owner, full-rewrite save, malformed JSON → null + log, never throw).
+
+- **Owner kinds** — `AgentPlanOwner` is a discriminated union; today exactly one arm exists (`{ kind: "script", scriptId }`). The union is the extension seam: a chat-scoped owner later is one nullable owner column on the host's table + one union arm, with zero changes to the store, tools, or contracts.
+- **Tools** — `createAgentPlanTools({ load, save })` (`services/api/src/domain/agent-plan/agent-plan-tools.ts`) builds the host-agnostic `plan` (whole-structure rewrite, object root, returns `{ok, activeTitle?, remaining?}`) and `read_plan` (returns the full plan or `{empty: true}`). The factory has zero copilot imports; the copilot injects `load`/`save` bound to the thread's `scriptId`.
+- **Progressive injection** — each turn the assembler injects a `# Plan` system section (`agent-plan-prompt.ts`, pure): header, goal, constraints, every task as `[status] title`, then ONLY the active task's body plus the discipline lines. Bodies of other tasks are deliberately absent (they are readable on demand via `read_plan`) — bounded prompt cost for long plans. An absent/empty plan omits the section byte-identically, and the section survives history compaction (system-level).
+- **HTTP** — `GET`/`PUT /api/scripts/:scriptId/agent-plan` run the same `normalizeAgentPlan` validation as the tool, so the user editor and the model write through one contract (two `active` tasks → typed `422`).
+- **Locked during streams** — the frontend locks plan editing while a turn streams (see the frontend doc's section); the backend needs no extra guard because both writers go through the same normalize+upsert path.
+
+**Adding a new host** (a second AI surface that wants a plan): one owner arm in `AgentPlanOwner` + one nullable owner column on the host's table + pass `owner` (and the host's streaming `locked` flag) to the shared tools/UI. Nothing else changes.
 
 ---
 

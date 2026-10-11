@@ -2,10 +2,8 @@ import { create } from "zustand";
 import {
   experienceCopilotToolOutputSchema,
   coauthorSkillReadOutputSchema,
-  copilotTodoListSchema,
   type ExperienceCopilotMessageWire,
   type ExperienceCopilotTarget,
-  type CopilotTodoItem,
 } from "@vibe-tavern/api-contracts";
 
 /**
@@ -27,30 +25,13 @@ import {
  * starts fresh). `clearTurn` is called at turn start (controller), on thread
  * switch, and on Apply/Reject (ER-9). Not persisted (no `persist` middleware).
  *
- * TAG-7 adds `todoByThread` — the SESSION-scoped live todo panel state (NOT
- * turn-scoped): it mirrors the backend's `todo_json` on the thread row
- * ("todos should live for the whole session"), so `clearTurn` deliberately
- * does NOT drop it (a turn starting must not blank the pinned panel until the
- * refetch re-seeds it). It is seeded from the thread wire (`thread.todo`) by
- * the controller and upserted by live `todo` tool events — full-rewrite
- * semantics: the newest call's list replaces the whole state.
+ * The thread-scoped step-plan panel state (TAG-7) was removed in PM-6
+ * (EXPERIENCE_COPILOT_PLAN_MODE_PLAN): the plan is script-owned
+ * (`useAgentPlan` cache), so this store no longer carries any plan state.
  */
 
 /** Lifecycle of a single tool call within an experience-copilot turn. */
 export type ExperienceCopilotToolStatus = "streaming" | "done" | "error";
-
-/** The `todo` tool's result envelope, projected onto the activity card
- *  payload (TAG-7). `items` is the FULL rewritten list (Cline-style — every
- *  call replaces the session plan); `remaining` counts pending+active items
- *  (the collapsed panel's "N remaining goals"), `activeTitle` is the current
- *  step's title. The backend computes both; the parser recomputes them
- *  defensively when an envelope omits one, so live and persisted renders of
- *  the same call can never disagree. */
-export interface CopilotTodoActivityResult {
-  items: readonly CopilotTodoItem[];
-  remaining: number;
-  activeTitle?: string;
-}
 
 /** One `ask_user` call's lifecycle state (TAG-7), keyed by the activity's
  *  `toolCallId`. `awaiting_answer` is the live/persisted marker the ask card
@@ -94,12 +75,6 @@ export interface ExperienceCopilotToolActivity {
    *  never enter proposal aggregation (ER-9) — they render only as glanceable
    *  tool activity (the path read). */
   readPath?: string;
-  /** Present iff this is a `todo` activity whose result envelope parsed
-   *  (TAG-7): the card payload (items + remaining + activeTitle). A failed
-   *  save (`ok:false`) or malformed envelope leaves this unset and the card
-   *  renders as an error with the raw content — mirroring the write_buffer
-   *  branch's failure shape. */
-  todo?: CopilotTodoActivityResult;
   /** Present iff this is an `ask_user` activity (TAG-7): the question/
    *  options/recommended plus the awaiting/answered/skipped status the ask
    *  card (TAG-9) renders. Produced by ONE parser (`parseCopilotAskState`)
@@ -251,19 +226,23 @@ export function extractPersistedExperienceCopilotActivities(
       });
       continue;
     }
-    // A todo result is the {ok, items, activeTitle, remaining} envelope
-    // (TAG-3). A successful envelope carries the card payload (items + the
-    // collapsed-panel summary); a failed save (ok:false) or malformed shape
-    // renders as an error card with the raw content — the write_buffer
-    // branch's failure shape.
-    if (toolName === "todo") {
-      const todo = parseTodoToolResult(rawOutput);
+    // A plan result is the {ok, activeTitle?, remaining?} envelope from
+    // createAgentPlanTools (PM-2). The activity carries NO summary on success —
+    // CopilotActivityCard labels plan cards by tool name (i18n), so the raw
+    // envelope must not leak into the title. A failed save (ok:false) or a
+    // malformed shape renders as an error card with the raw content — the
+    // write_buffer branch's failure shape. The ok-decision mirrors the hook's
+    // parseAgentPlanToolResult (apps/web/src/hooks/use-agent-plan.ts owns the
+    // full parse; the store cannot import a hook module, so only the ok flag
+    // is re-derived here — the controller test's live===persisted parity case
+    // pins the two in agreement).
+    if (toolName === "plan") {
       activities.push({
         toolCallId,
         toolName,
         args: info?.args,
-        status: todo ? "done" : "error",
-        ...(todo ? { todo } : { summary: message.content }),
+        status: isPlanToolResultEnvelopeOk(rawOutput) ? "done" : "error",
+        ...(isPlanToolResultEnvelopeOk(rawOutput) ? {} : { summary: message.content }),
       });
       continue;
     }
@@ -336,44 +315,12 @@ function readStringArray(source: Record<string, unknown>, key: string): string[]
   return value;
 }
 
-/** Parse a `todo` tool-call's STREAMED ARGS into the live todo list (TAG-7
- *  live-preview path). The tool input is an OBJECT `{items: [...]}` (the
- *  2026-08-21 incident fix — a bare-array root made models emit `{}` and fail
- *  validation wholesale; object roots are what tool-calling arguments are).
- *  Partial streaming args (items not yet complete) fail parse → null, which
- *  the caller silently skips: the tool-result envelope is the fallback path.
- *  Pure. */
-export function parseTodoToolArgs(args: unknown): CopilotTodoItem[] | null {
-  if (typeof args !== "object" || args === null) return null;
-  const items = (args as Record<string, unknown>).items;
-  const parsed = copilotTodoListSchema.safeParse(items);
-  return parsed.success ? parsed.data : null;
-}
-
-/** Parse a `todo` tool-result envelope (TAG-7) into the activity card payload.
- *  Accepts ONLY the success shape (`ok: true` + a contract-valid item list);
- *  a failed save (`ok: false, error`) or anything malformed returns null —
- *  the caller renders the error-card branch, exactly like a write_buffer
- *  whose proposal fails to parse. `remaining`/`activeTitle` are recomputed
- *  from the items when the envelope omits them, so a same-shape envelope
- *  through either path yields the identical payload. Pure. */
-export function parseTodoToolResult(output: unknown): CopilotTodoActivityResult | null {
-  if (typeof output !== "object" || output === null) return null;
-  const record = output as Record<string, unknown>;
-  if (record.ok !== true) return null;
-  const items = copilotTodoListSchema.safeParse(record.items);
-  if (!items.success) return null;
-  const remainingFromEnvelope = record.remaining;
-  const remaining = typeof remainingFromEnvelope === "number" && Number.isInteger(remainingFromEnvelope) && remainingFromEnvelope >= 0
-    ? remainingFromEnvelope
-    : items.data.filter((item) => item.status === "pending" || item.status === "active").length;
-  const activeTitle = readString(record, "activeTitle")
-    ?? items.data.find((item) => item.status === "active")?.title;
-  return {
-    items: items.data,
-    remaining,
-    ...(activeTitle !== undefined ? { activeTitle } : {}),
-  };
+/** Structural success check for a `plan` tool-result envelope — the persisted
+ *  twin of the hook's `parseAgentPlanToolResult` ok decision (see the plan
+ *  branch in `extractPersistedExperienceCopilotActivities` for why it is a
+ *  twin, not an import). Pure. */
+function isPlanToolResultEnvelopeOk(output: unknown): boolean {
+  return typeof output === "object" && output !== null && (output as Record<string, unknown>).ok === true;
 }
 
 /** Parse an `ask_user` tool-call's state (TAG-7) from the carrier args plus
@@ -523,21 +470,12 @@ interface ExperienceCopilotTurnState {
   turnsByThread: Record<string, ExperienceCopilotToolActivity[]>;
   /** TF-4: ordered arrival feed per thread (text segments + activity refs). */
   feedByThread: Record<string, CopilotFeedEntry[]>;
-  /** TAG-7: session-scoped live todo panel state per thread (mirrors the
-   *  backend thread row's `todo_json`; see the header lifecycle note). */
-  todoByThread: Record<string, CopilotTodoItem[]>;
   /** Insert or merge (by toolCallId) an activity for a thread. */
   upsertActivity: (threadId: string, activity: ExperienceCopilotToolActivity) => void;
   /** Drop the active turn's activities for a thread (turn start / switch / Apply / Reject). */
   clearTurn: (threadId: string) => void;
   /** Read the activities for a thread (empty array if none). */
   getActivities: (threadId: string) => ExperienceCopilotToolActivity[];
-  /** TAG-7: full-rewrite replace of a thread's live todo panel state (the
-   *  newest `todo` call's list IS the state — Cline-style). The items are
-   *  shallow-copied to detach them from the caller's parsed-JSON reference. */
-  setTodo: (threadId: string, items: readonly CopilotTodoItem[]) => void;
-  /** TAG-7: read a thread's live todo panel state (empty array if none). */
-  getTodo: (threadId: string) => CopilotTodoItem[];
   /** TF-4: append a text delta into the OPEN text segment (or open one). */
   appendTextDelta: (threadId: string, delta: string) => void;
   /** TF-4: close the OPEN text segment (noop when none is open). */
@@ -553,7 +491,6 @@ let nextFeedTextId = 1;
 export const useExperienceCopilotTurnStore = create<ExperienceCopilotTurnState>((set, get) => ({
   turnsByThread: {},
   feedByThread: {},
-  todoByThread: {},
   upsertActivity: (threadId, activity) => {
     set((s) => {
       const list = s.turnsByThread[threadId] ?? [];
@@ -582,10 +519,6 @@ export const useExperienceCopilotTurnStore = create<ExperienceCopilotTurnState>(
     // ER-10 wires draft persistence (experience-copilot-draft.ts) — not yet available.
   },
   getActivities: (threadId) => get().turnsByThread[threadId] ?? [],
-  setTodo: (threadId, items) => {
-    set((s) => ({ todoByThread: { ...s.todoByThread, [threadId]: [...items] } }));
-  },
-  getTodo: (threadId) => get().todoByThread[threadId] ?? [],
   appendTextDelta: (threadId, delta) => {
     if (delta === "") return;
     set((s) => {

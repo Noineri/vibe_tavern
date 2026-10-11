@@ -59,6 +59,15 @@ function loadPlan(owner: AgentPlanOwner, entry: AgentPlanCacheEntry): void {
   notify(entry);
   entry.loadPromise = getAgentPlan(owner.scriptId)
     .then((plan) => replacePlan(entry, plan))
+    .catch((error: unknown) => {
+      // A failed GET (server down, transient 5xx) must not become an unhandled
+      // rejection fired into whatever test/DOM context mounted the hook. The
+      // entry keeps the empty plan and stops loading (one attempt per owner
+      // per process — no retry storm); the panel stays hidden and the editor
+      // modal surfaces its own save errors. Logged for diagnosability,
+      // mirroring the db store's defensive-parse logging.
+      console.error(`[use-agent-plan] failed to load the plan for script '${owner.scriptId}':`, error);
+    })
     .finally(() => {
       entry.loaded = true;
       entry.isLoading = false;

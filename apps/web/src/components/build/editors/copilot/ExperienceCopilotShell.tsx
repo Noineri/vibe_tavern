@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type {
-  CopilotTodoItem,
   ExperienceCopilotContextLink,
   ExperienceCopilotContextTargetType,
   ExperienceCopilotLaunchContext,
@@ -17,7 +16,9 @@ import { ExperiencePlayground } from "../ExperiencePlayground.js";
 import { ExperienceFrame } from "../../../experience/ExperienceFrame.js";
 import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { useT } from "../../../../i18n/context.js";
+import type { AgentPlanOwner } from "@vibe-tavern/domain";
 import { useExperienceCopilotController } from "../../../../hooks/use-experience-copilot-controller.js";
+import { useAgentPlan } from "../../../../hooks/use-agent-plan.js";
 import { useCopilotContext } from "../../../../hooks/use-copilot-context.js";
 import { useCopilotReviewState } from "../../../../hooks/use-copilot-review-state.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
@@ -46,7 +47,7 @@ import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
 import type { MentionAutocompleteItem } from "../../../shared/mention-autocomplete-query.js";
 import { ExperienceSessionSwitcher } from "./ExperienceSessionSwitcher.js";
 import { ExperienceContextMeter } from "./ExperienceContextMeter.js";
-import { CopilotTodoPanel } from "./CopilotTodoPanel.js";
+import { CopilotPlanSection } from "./CopilotPlanSection.js";
 import { CopilotProfileModal } from "./CopilotProfileModal.js";
 import { ExperienceCopilotMessageList } from "./ExperienceCopilotMessageList.js";
 import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
@@ -159,9 +160,6 @@ const EMPTY_ACTIVITIES: readonly ExperienceCopilotToolActivity[] = [];
  *  Matches the CSS animation total (~2 × 1.1s), same as DOC_PULSE_MS in
  *  CoauthorMode. */
 const EDIT_TAB_PULSE_MS = 2200;
-// TAG-8: stable empty for the todo panel selector (reference-stable so an
-// absent plan never re-renders the panel).
-const EMPTY_TODO: readonly CopilotTodoItem[] = [];
 /** Outer editor tab (XU-5): live preview / code / inline sandbox. */
 type EditorBuffer = "preview" | "code" | "sandbox";
 /** Inner code sub-toggle — the two canonical buffers. */
@@ -200,12 +198,16 @@ export function ExperienceCopilotShell({
   // merged mention catalog. Pins are optimistically PATCHed (full-replace).
   const [contextLinks, setContextLinks] = useState<ExperienceCopilotContextLink[]>([]);
   const [mentionCatalog, setMentionCatalog] = useState<MentionAutocompleteItem[]>([]);
-  // ── Todo plan (TAG-8) ─────────────────────────────────────────────────
-  // The thread wire's `todo` (the model's persisted step plan). The shell
-  // holds it ONLY to seed the turn store's session-scoped `todoByThread`
-  // through the controller (TAG-7 effect); the live source of truth is the
-  // store (the `todo` tool updates it during the turn).
-  const [threadTodo, setThreadTodo] = useState<CopilotTodoItem[] | undefined>(undefined);
+  // ── Script-owned agent plan (PM-6, EXPERIENCE_COPILOT_PLAN_MODE_PLAN) ────
+  // ONE plan per script (the `agent_plans` row), replacing the thread-scoped
+  // todo mechanic: the model maintains it through the `plan`/`read_plan`
+  // tools, the user through the editor modal. useAgentPlan is the single
+  // web-side cache; the controller feeds `plan` tool results into the SAME
+  // cache (applyPlanToolResult), and CopilotPlanSection renders the panel +
+  // modal from it. Session switching/archiving never touches it (it is not
+  // thread state).
+  const planOwner = useMemo<AgentPlanOwner>(() => ({ kind: "script", scriptId }), [scriptId]);
+  const agentPlan = useAgentPlan(planOwner);
 
   // Characters come from the live snapshot store (already app-wide); the other
   // four catalog sources are fetched ONCE per shell mount (best-effort — a
@@ -411,14 +413,12 @@ export function ExperienceCopilotShell({
       if (active) {
         setThreadId(active.id);
         setContextLinks(active.contextLinks ?? []); // CX-6: seed the pinned pills
-        setThreadTodo(active.todo); // TAG-8: seed the step-plan panel
         const msgs = await listExperienceCopilotMessages(active.id);
         setMessages(msgs);
       } else {
         const thread = await startExperienceCopilotSession(scriptId);
         setThreadId(thread.id);
         setContextLinks(thread.contextLinks ?? []); // CX-6: a fresh thread has no pins
-        setThreadTodo(thread.todo); // TAG-8: a fresh thread has no plan yet
         setMessages([]);
       }
     } catch (error) {
@@ -478,7 +478,7 @@ export function ExperienceCopilotShell({
     model,
     onTurnSettled: handleTurnSettled,
     onMetrics: copilotContext.applyMetrics,
-    threadTodo, // TAG-8: seeds the session-scoped todo panel state (mount/switch)
+    applyPlanToolResult: agentPlan.applyToolResult, // PM-6: `plan` tool results → the plan cache
   });
 
   // ── Review state (CD-2/CD-3): freeze, snapshots, revert ────────────────
@@ -486,11 +486,6 @@ export function ExperienceCopilotShell({
   // the SAME store read the MessageList does — never from inside a render.
   const turnActivities = useExperienceCopilotTurnStore(
     useShallow((s) => (threadId ? s.turnsByThread[threadId] ?? EMPTY_ACTIVITIES : EMPTY_ACTIVITIES)),
-  );
-  // TAG-8: the session-scoped step plan for the pinned panel. The store
-  // replaces the array immutably per rewrite — a reference selector is exact.
-  const threadTodoItems = useExperienceCopilotTurnStore((s) =>
-    threadId ? s.todoByThread[threadId] ?? EMPTY_TODO : EMPTY_TODO,
   );
   const handleRevertBuffers = useCallback(
     (buffers: { rules: string; visual: string }) => {
@@ -854,7 +849,6 @@ export function ExperienceCopilotShell({
         }
         setThreadId(targetThreadId);
         setContextLinks(activated.contextLinks ?? []); // CX-6: switch → that thread's pins
-        setThreadTodo(activated.todo); // TAG-8: switch → that thread's step plan
         const msgs = await listExperienceCopilotMessages(targetThreadId);
         setMessages(msgs);
         await fetchSessions();
@@ -872,7 +866,6 @@ export function ExperienceCopilotShell({
       const thread = await startExperienceCopilotSession(scriptId);
       setThreadId(thread.id);
       setContextLinks(thread.contextLinks ?? []); // CX-6: new session → no pins
-      setThreadTodo(thread.todo); // TAG-8: new session → no plan
       setMessages([]);
       await fetchSessions();
     } catch {
@@ -1067,10 +1060,12 @@ export function ExperienceCopilotShell({
               })
             }
           />
-          {/* TAG-8: the pinned step-plan panel lives DIRECTLY below the meter
-              (never scrolls with the feed); hidden until the model's first
-              `todo` call. Read-only — the model owns the plan. */}
-          <CopilotTodoPanel items={threadTodoItems} />
+          {/* PM-6: the script-owned agent plan — the todo panel's replacement —
+              lives DIRECTLY below the meter (never scrolls with the feed);
+              hidden while the plan is empty; its editor locks while a turn
+              streams. CopilotPlanSection owns the useAgentPlan subscription,
+              the panel, and the editor modal. */}
+          <CopilotPlanSection owner={planOwner} locked={ctrl.isSending} />
           <ExperienceCopilotMessageList
             threadId={threadId}
             messages={messages}

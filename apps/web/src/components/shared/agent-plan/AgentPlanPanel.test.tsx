@@ -37,6 +37,34 @@ describe("AgentPlanPanel", () => {
     expect(queryByTestId("agent-plan-panel")).toBeNull();
   });
 
+  it("collapses onto the first PENDING task when nothing is active (pickCurrent fallback)", () => {
+    const { getByTestId, getByText } = renderPanel({
+      goal: "Ship",
+      constraints: [],
+      tasks: [
+        { id: "p1", title: "First step", body: "", status: "pending" },
+        { id: "p2", title: "Second step", body: "", status: "pending" },
+      ],
+    });
+    expect(getByText("First step")).toBeDefined();
+    expect(getByTestId("agent-plan-panel").textContent).toContain("· 2 agent_plan_remaining");
+    expect(getByTestId("agent-plan-glyph-pending")).toBeDefined();
+  });
+
+  it("shows the done label and zero remaining for a fully-resolved plan", () => {
+    const { getByTestId, getByText } = renderPanel({
+      goal: "Ship",
+      constraints: [],
+      tasks: [
+        { id: "c1", title: "Only step", body: "", status: "completed" },
+        { id: "a1", title: "Dropped", body: "", status: "abandoned" },
+      ],
+    });
+    expect(getByText("agent_plan_done")).toBeDefined();
+    expect(getByTestId("agent-plan-panel").textContent).toContain("· 0 agent_plan_remaining");
+    expect(getByTestId("agent-plan-glyph-completed")).toBeDefined();
+  });
+
   it("shows every task but only the active task body when expanded", () => {
     const { getByTestId, queryByText } = renderPanel();
     fireEvent.click(getByTestId("agent-plan-toggle"));

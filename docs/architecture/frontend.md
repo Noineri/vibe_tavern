@@ -321,6 +321,20 @@ LorebookEditor
 
 ---
 
+## Agent Plan Mechanic
+
+`EXPERIENCE_COPILOT_PLAN_MODE_PLAN` — the web side of the script-owned agent plan (backend mechanics: [backend doc](./backend.md#agent-plan-mechanic)). One plan per script, shared by the copilot's `plan`/`read_plan` tools and the user-facing editor.
+
+- **One data source** — `useAgentPlan(owner)` (`hooks/use-agent-plan.ts`) is the ONLY web-side plan state: a module-level cache per owner (`kind: "script"`, keyed by scriptId), one lazy GET on the first consumer's mount, `save` (PUT), and `applyToolResult(args, output)` — the live tool-event seam that replaces the cached plan only when the streamed args AND the success envelope both parse. Every consumer (panel, editor modal, the copilot shell's controller) reads this one hook.
+- **Shared UI, no copilot coupling** — `components/shared/agent-plan/AgentPlanPanel.tsx` (the pinned collapsible summary: current task + pulsing live glyph + remaining count; expanded shows every task but only the active task's body) and `AgentPlanEditorModal.tsx` (goal / constraints / task rows with status, reorder, remove; saves through PUT; shows the server's 422 for two active tasks). Both are prop-driven and import nothing from the copilot dirs.
+- **Copilot mount** — `CopilotPlanSection` pins the panel directly below the context meter (never scrolling with the feed) and owns the modal's open state; the shell's controller routes `plan` tool results into the same cache via `applyPlanToolResult`, so the panel updates live during a turn.
+- **Locked during streams** — the shell passes `locked={isSending}` down: the panel's editor button disables and the modal locks every field + save (with a visible reason line) while a turn streams, so the model's rewrite and the user's edit can never race. If the modal is open when a turn starts it locks in place.
+- **Tool-activity cards** — a `plan` tool call renders through the ordinary card mechanism labelled by the "Plan updated" i18n key (`agent_plan_updated`); `read_plan` cards read "Plan" (`agent_plan_title`). Raw envelopes/plan JSON never reach a card title.
+
+**Adding a new host**: one owner arm in `AgentPlanOwner` + one column mount (the panel/modal beside the host's surface) + pass `owner` and the host's `locked` flag. Nothing else changes.
+
+---
+
 ## Generation Queue
 
 A per-chat **sequential regeneration queue** lets the user enqueue several "generate more" jobs without waiting. The queue lives in `useGenerationQueueStore` (the ordered job list + per-job status); the runner is `use-generation-queue.ts`, registered once in the app shell.

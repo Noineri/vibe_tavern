@@ -123,7 +123,6 @@ const { ProviderStreamError } = await import("../api/provider-stream-error.js");
 const { extractPersistedExperienceCopilotActivities, wireToToolSource } = await import(
   "../stores/experience-copilot-turn-store.js"
 );
-type CopilotTodoItem = import("@vibe-tavern/api-contracts").CopilotTodoItem;
 
 const THREAD = "thread-1";
 const PROVIDER = "provider-1";
@@ -153,7 +152,7 @@ beforeEach(() => {
   answerCopilotAsk.mockReset();
   toastError.mockClear();
   toastInfo.mockClear();
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
 });
 
 afterAll(() => {
@@ -536,17 +535,24 @@ describe("feed wiring (TF-4)", () => {
   });
 });
 
-// ─── TAG-7: todo/ask wiring ─────────────────────────────────────────────────
+// ─── TAG-7 / PM-6: plan + ask wiring ─────────────────────────────────────
 
-const TODO_ITEMS: CopilotTodoItem[] = [
-  { title: "Draft the rules skeleton", status: "completed" },
-  { title: "Write the visual header", status: "active" },
-  { title: "Wire the score action", status: "pending" },
-];
+/** PM-6: a `plan` tool-call's args (object root `{plan}`) and its success
+ *  result envelope — the shapes createAgentPlanTools produces. */
+const PLAN_ARGS = {
+  plan: {
+    goal: "Ship the visual",
+    constraints: ["Keep it focused"],
+    tasks: [
+      { id: "task_1", title: "Draft the rules skeleton", body: "", status: "completed" },
+      { id: "task_2", title: "Write the visual header", body: "Use the shared frame", status: "active" },
+      { id: "task_3", title: "Wire the score action", body: "", status: "pending" },
+    ],
+  },
+};
 
-const TODO_ENVELOPE = {
+const PLAN_ENVELOPE = {
   ok: true,
-  items: TODO_ITEMS,
   activeTitle: "Write the visual header",
   remaining: 2,
 };
@@ -557,17 +563,18 @@ const ASK_ARGS = {
   recommended: "tarot",
 };
 
-describe("useExperienceCopilotController — todo wiring (TAG-7)", () => {
-  test("a todo tool-call upserts the panel state from its args (full rewrite, immediate); the result envelope confirms + carries the card payload", async () => {
+describe("useExperienceCopilotController — plan wiring (PM-6)", () => {
+  test("a plan tool result routes the carrier args + envelope to applyPlanToolResult and renders the done card (no raw summary)", async () => {
     const d = deferred<{ finishReason: string }>();
     let captured!: CopilotStreamOpts;
     streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
       captured = opts;
       return d.promise;
     });
+    const applyPlanToolResult = mock();
 
     const { result } = renderHook(() =>
-      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
     );
 
     let pending!: Promise<void>;
@@ -576,40 +583,42 @@ describe("useExperienceCopilotController — todo wiring (TAG-7)", () => {
       await Promise.resolve();
     });
 
-    // Args arrive BEFORE the result — the panel updates immediately.
+    // The tool-call event leaves the streaming placeholder carrying the args
+    // (the same carrier the ask_user branch reads back).
     await act(async () => {
-      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
+      captured.onToolCall!({ toolCallId: "tc_plan", toolName: "plan", args: PLAN_ARGS });
     });
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
-
     await act(async () => {
-      captured.onToolResult!({ toolCallId: "tc_todo", toolName: "todo", output: TODO_ENVELOPE, isError: false });
+      captured.onToolResult!({ toolCallId: "tc_plan", toolName: "plan", output: PLAN_ENVELOPE, isError: false });
       d.resolve({ finishReason: "stop" });
       await pending;
     });
 
+    // The hook seam: args + envelope routed together (the shell passes
+    // useAgentPlan's applyToolResult — the cache replace itself is pinned in
+    // use-agent-plan.test.tsx).
+    expect(applyPlanToolResult).toHaveBeenCalledWith(PLAN_ARGS, PLAN_ENVELOPE);
+
     const [activity] = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
     expect(activity).toEqual({
-      toolCallId: "tc_todo",
-      toolName: "todo",
-      args: { items: TODO_ITEMS },
+      toolCallId: "tc_plan",
+      toolName: "plan",
+      args: PLAN_ARGS,
       status: "done",
-      todo: { items: TODO_ITEMS, remaining: 2, activeTitle: "Write the visual header" },
     });
-    // The panel still shows the confirmed list after the envelope.
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
   });
 
-  test("a failed todo save (ok:false) renders the error card and leaves the panel at the optimistic args value", async () => {
+  test("a failed plan save (ok:false) renders the error card with the raw content; the args still route to the hook seam", async () => {
     const d = deferred<{ finishReason: string }>();
     let captured!: CopilotStreamOpts;
     streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
       captured = opts;
       return d.promise;
     });
+    const applyPlanToolResult = mock();
 
     const { result } = renderHook(() =>
-      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
     );
 
     let pending!: Promise<void>;
@@ -619,10 +628,10 @@ describe("useExperienceCopilotController — todo wiring (TAG-7)", () => {
     });
 
     await act(async () => {
-      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
+      captured.onToolCall!({ toolCallId: "tc_plan", toolName: "plan", args: PLAN_ARGS });
       captured.onToolResult!({
-        toolCallId: "tc_todo",
-        toolName: "todo",
+        toolCallId: "tc_plan",
+        toolName: "plan",
         output: { ok: false, error: "db down" },
         isError: false,
       });
@@ -630,47 +639,13 @@ describe("useExperienceCopilotController — todo wiring (TAG-7)", () => {
       await pending;
     });
 
+    // The hook decides whether to apply (ok:false → no replace); the routing
+    // itself still fires with the same args + envelope pair.
+    expect(applyPlanToolResult).toHaveBeenCalledWith(PLAN_ARGS, { ok: false, error: "db down" });
+
     const [activity] = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
-    expect(activity).toMatchObject({ toolCallId: "tc_todo", toolName: "todo", status: "error" });
-    expect(activity!.todo).toBeUndefined();
-    // Optimistic panel value retained — the model retries the rewrite next step.
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
-  });
-
-  test("threadTodo seeds/resets the panel state from the persisted wire; omitted leaves the store untouched", async () => {
-    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
-
-    // renderHook's rerender takes new PROPS (not a new render callback — a
-    // zero-arg callback would ignore them and re-run its stale closure), so the
-    // threadTodo is threaded through initialProps to make re-seeding drivable.
-    const initial = renderHook(
-      ({ todo }: { todo: readonly CopilotTodoItem[] }) =>
-        useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER, threadTodo: todo }),
-      { initialProps: { todo: TODO_ITEMS } },
-    );
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
-
-    // A refetch producing a new wire todo re-seeds (new array identity).
-    const rewritten: CopilotTodoItem[] = [{ title: "Fresh plan", status: "active" }];
-    await act(async () => {
-      initial.rerender({ todo: rewritten });
-    });
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(rewritten);
-
-    // The empty wire todo clears the panel (thread switch to a plan-less thread).
-    await act(async () => {
-      initial.rerender({ todo: [] });
-    });
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual([]);
-
-    // Omitted (undefined) — no seeding, the existing state is untouched.
-    useExperienceCopilotTurnStore.getState().setTodo(THREAD, TODO_ITEMS);
-    initial.unmount();
-    const second = renderHook(() =>
-      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
-    );
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
-    second.unmount();
+    expect(activity).toMatchObject({ toolCallId: "tc_plan", toolName: "plan", status: "error" });
+    expect(activity!.summary).toBe(JSON.stringify({ ok: false, error: "db down" }));
   });
 });
 
@@ -722,13 +697,13 @@ describe("useExperienceCopilotController — ask wiring (TAG-7)", () => {
 });
 
 describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 acceptance)", () => {
-  test("the same turn fixture produces identical activities and todo panel state through both paths", async () => {
-    // The fixture models one real turn: a todo rewrite plus three ask calls
+  test("the same turn fixture produces identical activities through both paths", async () => {
+    // The fixture models one real turn: a plan rewrite plus three ask calls
     // (one still awaiting, one answered, one skipped). The SAME data drives
     // (a) the live SSE callbacks and (b) the persisted wire rows through
     // wireToToolSource → extractPersistedExperienceCopilotActivities.
     const carrierCalls = [
-      { type: "tool-call", toolCallId: "tc_todo", toolName: "todo", input: { items: TODO_ITEMS } },
+      { type: "tool-call", toolCallId: "tc_plan", toolName: "plan", input: PLAN_ARGS },
       { type: "tool-call", toolCallId: "tc_a1", toolName: "ask_user", input: ASK_ARGS },
       { type: "tool-call", toolCallId: "tc_a2", toolName: "ask_user", input: ASK_ARGS },
       { type: "tool-call", toolCallId: "tc_a3", toolName: "ask_user", input: ASK_ARGS },
@@ -746,7 +721,7 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
     const wireRows = [
       wireMessage({ id: "u1", role: "user", content: "plan and ask" }),
       wireMessage({ id: "carrier", toolCallsJson: JSON.stringify(carrierCalls) }),
-      wireMessage({ id: "t_todo", role: "tool", toolCallId: "tc_todo", content: JSON.stringify({ toolName: "todo", output: TODO_ENVELOPE }) }),
+      wireMessage({ id: "t_plan", role: "tool", toolCallId: "tc_plan", content: JSON.stringify({ toolName: "plan", output: PLAN_ENVELOPE }) }),
       wireMessage({ id: "t_a1", role: "tool", toolCallId: "tc_a1", content: JSON.stringify({ toolName: "ask_user", output: { status: "awaiting_answer", ...ASK_ARGS } }) }),
       wireMessage({ id: "t_a2", role: "tool", toolCallId: "tc_a2", content: JSON.stringify({ toolName: "ask_user", output: { status: "answered", answer: "tarot, definitely" } }) }),
       wireMessage({ id: "t_a3", role: "tool", toolCallId: "tc_a3", content: JSON.stringify({ toolName: "ask_user", output: { status: "skipped" } }) }),
@@ -754,13 +729,11 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
     ];
 
     // (b) persisted path FIRST (pure — no hook needed): hydrate as the shell
-    // would after settle+refetch, then seed the panel from the thread wire.
+    // would after settle+refetch.
     const persistedActivities = extractPersistedExperienceCopilotActivities(wireRows.map(wireToToolSource));
-    useExperienceCopilotTurnStore.getState().setTodo(THREAD, TODO_ITEMS); // thread.todo seed
-    const persistedTodo = useExperienceCopilotTurnStore.getState().getTodo(THREAD);
 
     // (a) live path: reset, then drive the SAME turn through the SSE callbacks.
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
     const d = deferred<{ finishReason: string }>();
     let captured!: CopilotStreamOpts;
     streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
@@ -777,8 +750,8 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
       await Promise.resolve();
     });
     await act(async () => {
-      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
-      captured.onToolResult!({ toolCallId: "tc_todo", toolName: "todo", output: TODO_ENVELOPE, isError: false });
+      captured.onToolCall!({ toolCallId: "tc_plan", toolName: "plan", args: PLAN_ARGS });
+      captured.onToolResult!({ toolCallId: "tc_plan", toolName: "plan", output: PLAN_ENVELOPE, isError: false });
       captured.onToolCall!({ toolCallId: "tc_a1", toolName: "ask_user", args: ASK_ARGS });
       captured.onToolResult!({ toolCallId: "tc_a1", toolName: "ask_user", output: { status: "awaiting_answer", ...ASK_ARGS }, isError: false });
       captured.onToolCall!({ toolCallId: "tc_a2", toolName: "ask_user", args: ASK_ARGS });
@@ -790,16 +763,12 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
     });
 
     const liveActivities = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
-    const liveTodo = useExperienceCopilotTurnStore.getState().getTodo(THREAD);
 
-    // THE parity claim: field-for-field identical activities (todo/ask
-    // payloads, args, status) and identical panel state from the two sources.
+    // THE parity claim: field-for-field identical activities (plan/ask
+    // payloads, args, status) from the two sources. The plan row is the twin
+    // guard: the store's ok-flag check and the controller's
+    // parseAgentPlanToolResult must agree on the SAME envelope.
     expect(liveActivities).toEqual(persistedActivities);
-    expect(liveTodo).toEqual(persistedTodo);
-    // And the payloads specifically (not just the envelope):
-    expect(liveActivities.map((a) => a.todo ?? a.ask)).toEqual(
-      persistedActivities.map((a) => a.todo ?? a.ask),
-    );
   });
 });
 

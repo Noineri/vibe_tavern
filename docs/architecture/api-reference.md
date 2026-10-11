@@ -1189,6 +1189,14 @@ Test a script with simulated context. The optional `code` field overrides the st
 
 **Response:** `{ output: any, error?: string, mutations?: object }`
 
+### `GET /api/scripts/:scriptId/agent-plan`
+
+The script-owned agent plan (`EXPERIENCE_COPILOT_PLAN_MODE_PLAN`). Returns `{ plan }` — the stored plan, or the empty plan (`{ goal: "", constraints: [], tasks: [] }`) when none is stored yet. The plan is shared by the copilot's `plan`/`read_plan` tools and the user-facing plan editor; it is NOT part of the copilot thread wire.
+
+### `PUT /api/scripts/:scriptId/agent-plan`
+
+Full-replace write of the plan. Runs the same `normalizeAgentPlan` validation as the `plan` tool: two `active` tasks are rejected with a typed `422` (ambiguous active task). **Body:** `{ plan: agentPlanSchema }` — **Response:** `{ plan }` (the normalized plan).
+
 ### `POST /api/scripts/import`
 
 Import a script from JS code or JSON.
@@ -1231,7 +1239,7 @@ The authoring assistant for interactive experiences. Architecture: [Experience C
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/experience-copilot/script/:scriptId/active` | The active thread (id + wire snapshot: title, step, `todo`, context fields) or `null` |
+| `GET /api/experience-copilot/script/:scriptId/active` | The active thread (id + wire snapshot: title, context fields) or `null` |
 | `POST /api/experience-copilot/script/:scriptId/session` | Start a new session for the script (archives the current one); optional body `{ title? }` |
 | `GET /api/experience-copilot/script/:scriptId/sessions` | Session list for the switcher |
 | `POST /api/experience-copilot/:threadId/activate` | Make an archived thread active |
@@ -1239,7 +1247,7 @@ The authoring assistant for interactive experiences. Architecture: [Experience C
 | `PATCH /api/experience-copilot/:threadId/title` | Rename (`{ title }`, max 120) |
 | `GET /api/experience-copilot/:threadId/messages` | Message history (user / assistant / tool rows, activities keyed by toolCallId) |
 
-The thread wire's `todo` is REQUIRED (`CopilotTodoItem[]`, `[]` = no plan yet) — the model's step plan, full-list-rewrite semantics; the model owns it, the UI renders it read-only.
+The thread wire no longer carries a plan field — the model's step plan is script-owned and served by [`GET`/`PUT /api/scripts/:scriptId/agent-plan`](#get-apiscriptsscriptidagent-plan) (`EXPERIENCE_COPILOT_PLAN_MODE_PLAN`).
 
 ### Stream
 
@@ -1277,7 +1285,7 @@ or the **answer mode** (split-turn resume — the answer continues the logical t
 
 ### Profiles
 
-CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profiles carry provider/model, `toolSet` toggles (7 keys: `edit_buffer`, `write_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `todo`, `ask_user`) and `skillIds`. The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
+CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profiles carry provider/model, `toolSet` toggles (8 keys: `edit_buffer`, `write_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `ask_user`) and `skillIds`. Legacy rows storing `todo: true` project to `plan` + `read_plan` at read time. The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
 
 ---
 

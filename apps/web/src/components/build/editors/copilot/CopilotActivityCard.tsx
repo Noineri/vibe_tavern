@@ -17,6 +17,12 @@ import { useT } from "../../../../i18n/context.js";
 export function CopilotActivityCard({ activity }: { activity: ExperienceCopilotToolActivity }) {
   const { t } = useT();
   const isRead = activity.readPath !== undefined;
+  // PM-6: plan-tool cards are labelled by i18n, not by their payloads — the
+  // `plan` result envelope ({ok, activeTitle, remaining}) and the `read_plan`
+  // result (the whole plan JSON) are machine shapes that must never render as
+  // a raw JSON title. "Plan updated" marks a rewrite; a read is just "Plan".
+  const isPlanUpdate = activity.toolName === "plan" && activity.status !== "error";
+  const isPlanRead = activity.toolName === "read_plan";
   const isProposal = activity.target !== undefined && activity.proposed !== undefined;
   const streaming = activity.status === "streaming";
   const errored = activity.status === "error";
@@ -34,12 +40,17 @@ export function CopilotActivityCard({ activity }: { activity: ExperienceCopilotT
   );
   const statusClass = errored ? "text-danger-text" : streaming ? "text-t3" : "text-success-text";
 
-  // A read's meaningful label is the path; proposals/informational cards use
+  // A read's meaningful label is the path; plan cards take their i18n label
+  // (see isPlanUpdate/isPlanRead above); proposals/informational cards use
   // the model-supplied summary (commit-message label), falling back to the
   // tool name / target.
   const title = isRead
     ? activity.readPath!
-    : activity.summary?.trim() || (isProposal ? targetText : activity.toolName);
+    : isPlanUpdate
+      ? t("agent_plan_updated")
+      : isPlanRead
+        ? t("agent_plan_title")
+        : activity.summary?.trim() || (isProposal ? targetText : activity.toolName);
 
   // The label is NEVER visually truncated: the model's summaries are the
   // user's window into what the copilot is doing, and an ellipsis hides

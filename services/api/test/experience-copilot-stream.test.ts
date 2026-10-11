@@ -38,16 +38,14 @@ let streamTextImpl: ((opts: unknown) => unknown) | undefined;
 
 function createFakeStore(
   thread: ExperienceCopilotThread,
-): ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }>; todoCalls: Array<{ threadId: string; items: unknown }> } {
+): ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> } {
   const messages: ExperienceCopilotMessage[] = [];
   const metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> = [];
-  const todoCalls: Array<{ threadId: string; items: unknown }> = [];
   let counter = 0;
   const now = () => new Date(Date.now() + counter++ * 1000).toISOString();
   return {
     messages,
     metricsCalls,
-    todoCalls,
     async getActive() { return null; },
     async getById() { return thread; },
     async listSessions() { return [thread]; },
@@ -73,14 +71,6 @@ function createFakeStore(
     },
     async getAutoCompact() { return true; },
     async setAutoCompact() {},
-    // TAG-6: the todo tool's full-list rewrite persists onto the thread row.
-    // The fake mirrors the real store: records the call AND mutates the in-
-    // memory thread's todo so the NEXT turn's `getById` (this same thread
-    // object) already carries the plan — the session-scoped lifetime behavior.
-    async updateTodo(threadId: string, items: readonly { title: string; status: string }[]) {
-      todoCalls.push({ threadId, items });
-      thread.todo = items as ExperienceCopilotThread["todo"];
-    },
     // TAG-5: the fake mirrors the real store's semantics — rewrite the ONE
     // tool row matching threadId+toolCallId (threadId ignored in the fake; one
     // thread per test), null when no row matches.
@@ -94,7 +84,7 @@ function createFakeStore(
       row.content = JSON.stringify(payload);
       return row;
     },
-  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }>; todoCalls: Array<{ threadId: string; items: unknown }> };
+  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> };
 }
 
 // ─── Fake streamText result ──────────────────────────────────────────────────
@@ -214,7 +204,6 @@ function makeThread(scriptId: string | null = null): ExperienceCopilotThread {
     archivedAt: null,
     contextMetrics: null,
     contextLinks: [],
-    todo: [],
     lastProviderProfileId: null,
     lastModel: null,
     autoCompact: true,

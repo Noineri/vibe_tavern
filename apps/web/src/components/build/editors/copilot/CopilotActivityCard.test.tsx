@@ -100,4 +100,31 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
     );
     expect(getByTestId("copilot-activity-card")).toBeDefined();
   });
+
+  it("PM-6: plan cards label by i18n (never the raw envelope/plan JSON); an errored plan keeps the raw summary", () => {
+    const { getAllByTestId } = render(
+      <div>
+        {/* A done plan rewrite — NO summary (the controller/extraction omit it
+            so the i18n label owns the title). */}
+        <CopilotActivityCard
+          activity={activity({ toolCallId: "p1", toolName: "plan", status: "done", summary: undefined })}
+        />
+        {/* A done read_plan — the persisted row carries the whole plan JSON as
+            its summary; the label must win over the machine shape. */}
+        <CopilotActivityCard
+          activity={activity({ toolCallId: "p2", toolName: "read_plan", status: "done", summary: '{"goal":"…","tasks":[…]}' })}
+        />
+        {/* A failed plan save — the error card keeps the raw content (the
+            write_buffer failure shape), NOT the success label. */}
+        <CopilotActivityCard
+          activity={activity({ toolCallId: "p3", toolName: "plan", status: "error", summary: '{"ok":false}' })}
+        />
+      </div>,
+    );
+    const titles = getAllByTestId("copilot-activity-title").map((el) => el.textContent);
+    // Identity i18n: the keys render verbatim without a LocaleProvider.
+    expect(titles[0]).toBe("agent_plan_updated");
+    expect(titles[1]).toBe("agent_plan_title");
+    expect(titles[2]).toBe('{"ok":false}');
+  });
 });

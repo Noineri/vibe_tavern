@@ -31,19 +31,19 @@ The engine side it authors against — kernel, sandbox, durable effects (includi
 
 ## System prompt shape
 
-The assembler builds a single system message from live-loaded assets (re-read from disk each turn, so edits beside the executable are live on the next turn): the base prompt (`base.md` — role, tools, key constraints), the rules DSL reference (`interactive-rules.md`), the visual bridge reference (`interactive-visual.md`), the human-side user-flow doc (`user-flow.md`), the resolved skill catalog, and the runtime context sections (context links, digest, **Current step plan**, live buffer snapshots, test feedback). Head sections are system-level on purpose: they survive history compaction (compaction only folds the history flow, never the system message).
+The assembler builds a single system message from live-loaded assets (re-read from disk each turn, so edits beside the executable are live on the next turn): the base prompt (`base.md` — role, tools, key constraints), the rules DSL reference (`interactive-rules.md`), the visual bridge reference (`interactive-visual.md`), the human-side user-flow doc (`user-flow.md`), the resolved skill catalog, and the runtime context sections (context links, digest, **Plan**, live buffer snapshots, test feedback). Head sections are system-level on purpose: they survive history compaction (compaction only folds the history flow, never the system message).
 
-The `Current step plan` section is the todo list re-injected into the prompt each turn (omitted byte-identically when empty) — this is what makes the plan survive context compaction, not just page reloads.
+The `# Plan` section is the script-owned agent plan re-injected into the prompt each turn (omitted byte-identically when empty) — this is what makes the plan survive context compaction, not just page reloads. Only the active task's body is injected (progressive disclosure; the model reads the rest with `read_plan`).
 
 ## Tools
 
-Built per turn by `buildExperienceCopilotTools` (pure builder, turn-local closure state) and gated per profile via the `toolSet` (7 toggleable keys; `read_skill_file` is always on — the universal read-only skill channel, not gated):
+Built per turn by `buildExperienceCopilotTools` (pure builder, turn-local closure state) and gated per profile via the `toolSet` (8 toggleable keys; `read_skill_file` is always on — the universal read-only skill channel, not gated):
 
 - `write_buffer` / `edit_buffer` — whole-buffer replace / exact SEARCH-REPLACE edits to `rules` or `visual`. First change to a buffer in a turn must be `write_buffer`. Serialized through a non-poisoning queue so an early failure never strands later writes.
 - `run_test` — read-only create-only check of the working rules (discover → create → project → legal actions).
 - `run_simulate` — bounded simulation for termination checking.
 - `suggest_visual_binding` — non-binding recommendation; only the user binds.
-- `todo` — the step-plan tool. Full-list rewrite semantics (the array IS the new state — no diffs, no appends; Cline pattern). Persists via an injected `saveTodo` writer (wired to the thread's `todo_json`); the tool returns a compact confirmation envelope. The list is capped at 30 items.
+- `plan` / `read_plan` — the script-owned agent-plan tools (see [Agent plan mechanic](#agent-plan-mechanic-plan-mode)). `plan` is a whole-structure rewrite (the object IS the new state — no diffs, no appends; Cline pattern); it persists through an injected writer (wired to the thread's `scriptId` → the `agent_plans` row) and returns a compact `{ok, activeTitle, remaining}` envelope. `read_plan` returns the full plan (progressive disclosure — the prompt injects only the active task's body).
 - `ask_user` — the clarifying-question tool (see below). Returns an `awaiting_answer` marker; does no I/O itself.
 - `read_skill_file` — progressive disclosure for skills.
 
@@ -51,7 +51,7 @@ Tool proposals for `rules` are validated through the experience sandbox before s
 
 ## The tool loop — unbounded by design
 
-There is **no step cap**: `stopWhen: [isStepCount(COPILOT_TOOL_LOOP_CEILING), hasToolCall("ask_user")]` where the ceiling is a 1,000,000-step formality (the AI SDK requires a finite `stopWhen`). The user decision was pi-parity: the loop runs until the model stops calling tools or the user cancels generation — a step cap is a nanny limit meaningless for a model that plans real development work through a todo list. The two real stops: the model finishes, or it asks.
+There is **no step cap**: `stopWhen: [isStepCount(COPILOT_TOOL_LOOP_CEILING), hasToolCall("ask_user")]` where the ceiling is a 1,000,000-step formality (the AI SDK requires a finite `stopWhen`). The user decision was pi-parity: the loop runs until the model stops calling tools or the user cancels generation — a step cap is a nanny limit meaningless for a model that plans real development work through its plan. The two real stops: the model finishes, or it asks.
 
 ## Ask split-turn (style B — Cline-style resume)
 
@@ -61,18 +61,18 @@ The user's answer arrives as a new stream request in **answer mode**: the body c
 
 Self-healing: if the user never answers (they just send a normal message), the dangling ask is rewritten **at assembly time only** to `(the user did not answer this question; they moved on)` — the stored row is never mutated, so a late answer can still land. This conversion is shared with the compaction service, so compaction never freezes a dangling promise.
 
-## Todo system (session-scoped plan)
+## Agent plan mechanic (plan mode)
 
-The todo is the model's own action map, owned and driven only by the model; the user-facing panel is strictly read-only. Lifetime is the **thread session**: it survives turns, page reloads (thread wire `todo`), and compaction (system-level prompt section). Storage is a `todo_json` column on the thread row (defensive parse → `[]`).
+The plan is the model's own action map — but unlike the retired todo mechanic it is **script-owned**, not thread-scoped: one `agent_plans` row per script (`EXPERIENCE_COPILOT_PLAN_MODE_PLAN`), shared by every copilot session of that script and by the user-facing editor. The model drives it through `plan` (whole-structure rewrite) and `read_plan`; the user edits it through `GET`/`PUT /api/scripts/:scriptId/agent-plan` and the `AgentPlanEditorModal`. The retired `todo_json` column stays on the thread row for migration history only — nothing reads or writes it.
 
-Frontend state lives in the turn store (`todoByThread`), fed from two sources kept in structural parity by shared pure parsers: live SSE ingestion (optimistic upsert from the tool-call args, confirmed by the result envelope) and persisted thread-GET hydration. The `CopilotTodoPanel` is pinned directly below the context meter (not scrolling with the feed), hidden until the first `todo` call ever happens; collapsed it shows the current goal + a pulsing live dot + the remaining count, expanded the full list with status glyphs borrowed from the RP objective tracker.
+Frontend state lives in `useAgentPlan` (one module-level cache per owner), fed from two sources: the lazy GET on first consumer mount, and live `plan` tool results routed by the controller (`applyToolResult` — the cache replaces only on a confirmed success envelope, so there is no optimistic args-only update). The `AgentPlanPanel` (mounted via `CopilotPlanSection`) is pinned directly below the context meter (not scrolling with the feed), hidden while the plan is empty; collapsed it shows the current task + a pulsing live dot + the remaining count, expanded the full task list with status glyphs borrowed from the RP objective tracker. The panel's editor button and the modal lock while a turn streams, so the model's rewrite and the user's edit can never race.
 
 ## Skills
 
 Filesystem-scanned `SKILL.md` directories under `services/api/assets/experience-copilot/skills/` (the scanner/catalog machinery is reused wholesale from Co-Author, with an isolated root). Built-ins:
 
 - `experience-authoring` — the craft-guidance strategy layer (rules-first loop, seat mapping, pitfalls), read on demand.
-- `grill-me` — trigger-gated adversarial design review: interrogates the draft through `ask_user` (one question at a time, facts-are-your-job, every question must be able to change the build) and ends with a synthesis + an offer to lay out a `todo` plan.
+- `grill-me` — trigger-gated adversarial design review: interrogates the draft through `ask_user` (one question at a time, facts-are-your-job, every question must be able to change the build) and ends with a synthesis + an offer to lay out a plan.
 
 Profiles pick skills via `skillIds`; a pinned skill's `SKILL.md` body is injected eagerly (CX-1) on top of the catalog's descriptions.
 
@@ -92,7 +92,7 @@ Compaction (CM): a digest message summarizes the folded prefix; the digest ancho
 
 ## Frontend shape
 
-`ExperienceCopilotShell` (editor chrome + tabs after the UX redesign) hosts, top-to-bottom in the chat tab: the session switcher header, the context meter, the todo panel (pinned), the scrolling message feed. The turn store holds per-thread activity maps + panel state; the controller (`use-experience-copilot-controller`) drives sends and answers through one shared SSE-callback builder, so live routing stays field-for-field with persisted extraction by construction. `CopilotAskCard` renders in the feed wherever an `ask_user` activity sits — interactive on the trailing awaiting ask, read-only (answered/skipped/expired) in history. The live===persisted parity test is the boundary guard for the whole extraction layer.
+`ExperienceCopilotShell` (editor chrome + tabs after the UX redesign) hosts, top-to-bottom in the chat tab: the session switcher header, the context meter, the agent-plan section (pinned), the scrolling message feed. The turn store holds per-thread activity maps; the controller (`use-experience-copilot-controller`) drives sends and answers through one shared SSE-callback builder, so live routing stays field-for-field with persisted extraction by construction (the `plan` tool result rides the same tool-activity-card mechanism — the card labels it with the "Plan updated" i18n key, never the raw envelope). `CopilotAskCard` renders in the feed wherever an `ask_user` activity sits — interactive on the trailing awaiting ask, read-only (answered/skipped/expired) in history. The live===persisted parity test is the boundary guard for the whole extraction layer.
 
 ## Testing notes
 

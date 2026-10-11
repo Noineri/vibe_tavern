@@ -3,19 +3,16 @@ import {
   extractHistoricalTurnActivities,
   extractPersistedExperienceCopilotActivities,
   parseCopilotAskState,
-  parseTodoToolArgs,
-  parseTodoToolResult,
   useExperienceCopilotTurnStore,
   wireToToolSource,
 } from "./experience-copilot-turn-store.js";
 import type { AppMessage } from "../api/types.js";
-import type { CopilotTodoItem } from "@vibe-tavern/api-contracts";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 
 describe("useExperienceCopilotTurnStore", () => {
   beforeEach(() => {
     // Reset to a clean state before each case (the store is process-global).
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
   });
 
   it("rebuilds only the latest committed non-streaming turn with tool names and proposals", () => {
@@ -483,7 +480,7 @@ describe("extractHistoricalTurnActivities", () => {
 describe("feed (TF-4)", () => {
   beforeEach(() => {
     // This describe lives outside the first describe's reset — restore here.
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
   });
 
   const feedOf = (threadId: string) =>
@@ -571,17 +568,23 @@ describe("feed (TF-4)", () => {
   });
 });
 
-// ─── TAG-7: todo/ask parsers, extractor branches, todoByThread state ───────
+// ─── TAG-7 / PM-6: plan + ask extractor branches ───────────────────────
 
-const TODO_ITEMS: CopilotTodoItem[] = [
-  { title: "Draft the rules skeleton", status: "completed" },
-  { title: "Write the visual header", status: "active" },
-  { title: "Wire the score action", status: "pending" },
-];
-
-const TODO_ENVELOPE = {
+/** PM-6: a `plan` tool-call's args (object root `{plan}`) and its success
+ *  result envelope — the shapes createAgentPlanTools produces. */
+const PLAN_ARGS = {
+  plan: {
+    goal: "Ship the visual",
+    constraints: ["Keep it focused"],
+    tasks: [
+      { id: "task_1", title: "Draft the rules skeleton", body: "", status: "completed" },
+      { id: "task_2", title: "Write the visual header", body: "Use the shared frame", status: "active" },
+      { id: "task_3", title: "Wire the score action", body: "", status: "pending" },
+    ],
+  },
+};
+const PLAN_ENVELOPE = {
   ok: true,
-  items: TODO_ITEMS,
   activeTitle: "Write the visual header",
   remaining: 2,
 };
@@ -591,46 +594,6 @@ const ASK_ARGS = {
   options: ["tarot", "playing cards"],
   recommended: "tarot",
 };
-
-describe("parseTodoToolArgs (2026-08-21 incident fix: object root `{items}`)", () => {
-  it("accepts the object wrapper and returns the list", () => {
-    expect(parseTodoToolArgs({ items: TODO_ITEMS })).toEqual(TODO_ITEMS);
-    expect(parseTodoToolArgs({ items: [] })).toEqual([]);
-  });
-
-  it("returns null for a bare array, `{}`, partial args, and non-objects — silently skipped by the caller", () => {
-    // The tool input is an OBJECT root; these shapes fail the model-facing
-    // contract and the live preview must not fire on them (the tool-result
-    // envelope is the fallback path).
-    expect(parseTodoToolArgs(TODO_ITEMS)).toBeNull();
-    expect(parseTodoToolArgs({})).toBeNull();
-    expect(parseTodoToolArgs({ items: [{ title: "half-streamed" }] })).toBeNull();
-    expect(parseTodoToolArgs(null)).toBeNull();
-    expect(parseTodoToolArgs("items")).toBeNull();
-  });
-});
-
-describe("parseTodoToolResult (TAG-7)", () => {
-  it("accepts the success envelope and echoes items/remaining/activeTitle", () => {
-    expect(parseTodoToolResult(TODO_ENVELOPE)).toEqual({
-      items: TODO_ITEMS,
-      remaining: 2,
-      activeTitle: "Write the visual header",
-    });
-  });
-
-  it("recomputes remaining/activeTitle from the items when the envelope omits them", () => {
-    const parsed = parseTodoToolResult({ ok: true, items: TODO_ITEMS });
-    expect(parsed).toEqual({ items: TODO_ITEMS, remaining: 2, activeTitle: "Write the visual header" });
-  });
-
-  it("returns null for a failed save (ok:false), a non-array items value, and an item with a bad status", () => {
-    expect(parseTodoToolResult({ ok: false, error: "db down" })).toBeNull();
-    expect(parseTodoToolResult({ ok: true, items: "not-a-list" })).toBeNull();
-    expect(parseTodoToolResult({ ok: true, items: [{ title: "x", status: "nope" }] })).toBeNull();
-    expect(parseTodoToolResult("junk")).toBeNull();
-  });
-});
 
 describe("parseCopilotAskState (TAG-7)", () => {
   it("parses the awaiting marker verbatim (question/options/recommended from the output)", () => {
@@ -677,48 +640,46 @@ describe("parseCopilotAskState (TAG-7)", () => {
   });
 });
 
-describe("extractor todo/ask branches (TAG-7, persisted shapes)", () => {
-  it("a todo row (wrapped envelope) becomes a done activity carrying the card payload", () => {
+describe("extractor plan/ask branches (TAG-7 / PM-6, persisted shapes)", () => {
+  it("a plan row (wrapped success envelope) becomes a done activity with NO raw summary (the card labels it via i18n)", () => {
     const messages = [
       { id: "u1", role: "user", content: "plan it" },
       {
         id: "carrier",
         role: "assistant",
         content: "",
-        toolCalls: [{ id: "call_todo", name: "todo", args: TODO_ITEMS }],
+        toolCalls: [{ id: "call_plan", name: "plan", args: PLAN_ARGS }],
       },
       {
-        id: "tool_todo",
+        id: "tool_plan",
         role: "tool",
-        toolCallId: "call_todo",
-        content: JSON.stringify({ toolName: "todo", output: TODO_ENVELOPE }),
+        toolCallId: "call_plan",
+        content: JSON.stringify({ toolName: "plan", output: PLAN_ENVELOPE }),
       },
     ] as AppMessage[];
 
     expect(extractPersistedExperienceCopilotActivities(messages)).toEqual([{
-      toolCallId: "call_todo",
-      toolName: "todo",
-      args: TODO_ITEMS,
+      toolCallId: "call_plan",
+      toolName: "plan",
+      args: PLAN_ARGS,
       status: "done",
-      todo: { items: TODO_ITEMS, remaining: 2, activeTitle: "Write the visual header" },
     }]);
   });
 
-  it("a failed todo save (ok:false) renders the error card with the raw content", () => {
+  it("a failed plan save (ok:false) renders the error card with the raw content", () => {
     const messages = [
       { id: "u1", role: "user", content: "plan it" },
       {
-        id: "tool_todo",
+        id: "tool_plan",
         role: "tool",
-        toolCallId: "call_todo",
-        content: JSON.stringify({ toolName: "todo", output: { ok: false, error: "db down" } }),
+        toolCallId: "call_plan",
+        content: JSON.stringify({ toolName: "plan", output: { ok: false, error: "db down" } }),
       },
     ] as AppMessage[];
 
     const [activity] = extractPersistedExperienceCopilotActivities(messages);
-    expect(activity).toMatchObject({ toolCallId: "call_todo", toolName: "todo", status: "error" });
-    expect(activity!.todo).toBeUndefined();
-    expect(activity!.summary).toBe(JSON.stringify({ toolName: "todo", output: { ok: false, error: "db down" } }));
+    expect(activity).toMatchObject({ toolCallId: "call_plan", toolName: "plan", status: "error" });
+    expect(activity!.summary).toBe(JSON.stringify({ toolName: "plan", output: { ok: false, error: "db down" } }));
   });
 
   it("ask rows parse into awaiting/answered/skipped ask states (question recovered from carrier args)", () => {
@@ -760,41 +721,5 @@ describe("extractor todo/ask branches (TAG-7, persisted shapes)", () => {
     expect(acts[2]!.ask).toMatchObject({ status: "skipped" });
     expect(acts[2]!.ask!.answer).toBeUndefined();
     expect(acts.every((a) => a.status === "done")).toBe(true);
-  });
-});
-
-describe("todoByThread panel state (TAG-7)", () => {
-  beforeEach(() => {
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
-  });
-
-  it("setTodo is a full-rewrite replace (the newest list IS the state)", () => {
-    const s = () => useExperienceCopilotTurnStore.getState();
-    s().setTodo("t1", TODO_ITEMS);
-    expect(s().getTodo("t1")).toEqual(TODO_ITEMS);
-    s().setTodo("t1", [{ title: "Only step", status: "active" }]);
-    expect(s().getTodo("t1")).toEqual([{ title: "Only step", status: "active" }]);
-    // Seeding the empty list (a wire todo of []) clears the panel state.
-    s().setTodo("t1", []);
-    expect(s().getTodo("t1")).toEqual([]);
-  });
-
-  it("getTodo defaults to [] and threads are isolated", () => {
-    const s = () => useExperienceCopilotTurnStore.getState();
-    expect(s().getTodo("unknown")).toEqual([]);
-    s().setTodo("t1", TODO_ITEMS);
-    expect(s().getTodo("t2")).toEqual([]);
-  });
-
-  it("clearTurn does NOT drop todoByThread (session lifetime, not turn lifetime)", () => {
-    // «время жизни туду должно быть на всю сессию» — clearTurn fires at every
-    // turn start; wiping the panel state there would blank the pinned panel
-    // during every generation until the settle refetch re-seeds it.
-    const s = () => useExperienceCopilotTurnStore.getState();
-    s().setTodo("t1", TODO_ITEMS);
-    s().upsertActivity("t1", { toolCallId: "c1", toolName: "todo", status: "done" });
-    s().clearTurn("t1");
-    expect(s().getActivities("t1")).toEqual([]);
-    expect(s().getTodo("t1")).toEqual(TODO_ITEMS);
   });
 });

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, jest, mock } fro
 import { wireUiSettings } from "../../../../../test/wire-fixtures.js";
 import type { ReactElement, ReactNode } from "react";
 import { useDomEnv } from "../../../../../test/dom-env.js";
-import type { ExperienceCopilotContextLink, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
+import type { AgentPlan, ExperienceCopilotContextLink, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
@@ -39,8 +39,15 @@ interface RouterState {
   contextLinks: ExperienceCopilotContextLink[];
   /** CX-6: when true the context-links PATCH returns 500 (revert-path test). */
   contextLinksFail: boolean;
+  /** PM-6: the script-owned plan served by GET /api/scripts/:id/agent-plan.
+   *  Default empty — the AgentPlanPanel stays hidden for every test that does
+   *  not set it (mirrors the hidden-until-first-plan contract). */
+  agentPlan: AgentPlan;
 }
 let router: RouterState;
+
+/** PM-6: the empty plan — hidden panel. */
+const EMPTY_PLAN: AgentPlan = { goal: "", constraints: [], tasks: [] };
 
 const jsonResponse = (payload: unknown) =>
   new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -141,6 +148,12 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
   if (method === "GET" && path.endsWith("/api/lorebooks/all")) return jsonResponse([]);
   if (method === "GET" && path.endsWith("/api/scripts/all")) return jsonResponse([]);
   if (method === "GET" && path.endsWith("/api/coauthor/skills")) return jsonResponse({ entries: SKILL_CATALOG_ENTRIES, errors: [] });
+  // PM-6: the shell's useAgentPlan fetches the script-owned plan once per
+  // scriptId (module-level cache in use-agent-plan.ts — one GET per unique
+  // id per process, which is exactly what the apiCalls assertions below see).
+  if (method === "GET" && /\/api\/scripts\/[^/]+\/agent-plan$/.test(path)) {
+    return jsonResponse({ plan: router.agentPlan });
+  }
   // Unmodeled endpoints (e.g. best-effort model-favorites) get a 404 body —
   // callers treat it like any RPC failure and swallow it.
   if (method === "GET" && path.endsWith("/model-favorites")) return jsonResponse([]);
@@ -350,7 +363,6 @@ function thread(id: string): ExperienceCopilotThreadWire {
     updatedAt: "",
     metrics: null,
     contextLinks: [],
-    todo: [],
   };
 }
 
@@ -388,7 +400,7 @@ function hasHiddenClass(el: HTMLElement): boolean {
 
 beforeEach(() => {
   mobileOverride = false;
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
+  useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
   // The review round + the persisted localStorage draft now SURVIVE shell
   // unmounts (the whole point of the round store) — reset both, or a
   // previous test's hanging review leaks into the next mount.
@@ -414,6 +426,7 @@ beforeEach(() => {
     releaseStream: null,
     contextLinks: [],
     contextLinksFail: false,
+    agentPlan: EMPTY_PLAN,
   };
   fetchRouter.mockClear();
 });
@@ -506,61 +519,77 @@ describe("ExperienceCopilotShell — context meter + compact flow (CM-7/CM-8)", 
   });
 });
 
-describe("ExperienceCopilotShell — todo panel (TAG-8)", () => {
-  const PLAN = [
-    { status: "completed", title: "Design the turn loop" },
-    { status: "active", title: "Write the rules buffer" },
-    { status: "pending", title: "Bind the visual" },
-  ] as const;
+describe("ExperienceCopilotShell — agent plan panel (PM-6)", () => {
+  // The plan owner cache in use-agent-plan.ts is MODULE-level (one entry per
+  // script id, never evicted), so every case here renders the shell with a
+  // UNIQUE scriptId — that is what makes `router.agentPlan` deterministic per
+  // test despite the shared cache (same trick the review tests use for
+  // buffer content).
+  const PLAN: AgentPlan = {
+    goal: "Ship the editor",
+    constraints: [],
+    tasks: [
+      { id: "t1", title: "Design the turn loop", body: "", status: "completed" },
+      { id: "t2", title: "Write the rules buffer", body: "", status: "active" },
+      { id: "t3", title: "Bind the visual", body: "", status: "pending" },
+    ],
+  };
 
-  it("mounts the panel DIRECTLY below the meter, seeded from the thread wire todo", async () => {
-    router.activeThread = { ...thread("thread-1"), todo: [...PLAN] };
+  it("mounts the AgentPlanPanel DIRECTLY below the meter, fed by useAgentPlan's GET", async () => {
+    router.activeThread = thread("thread-1");
     router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = PLAN;
 
-    const { getByTestId, queryByTestId } = renderShell();
+    const { getByTestId } = renderShell({ scriptId: "script-plan-mount" });
     await flushSessionLoad();
 
     const meter = getByTestId("copilot-context-meter");
-    const panel = getByTestId("copilot-todo-panel");
     // Mount order: the panel is the meter's IMMEDIATE next sibling (the pinned
-    // stack is header → meter → panel → feed).
-    expect(meter.nextElementSibling).toBe(panel);
-    // Seeded from the wire: collapsed summary shows the active goal + remaining.
+    // stack stays header → meter → panel → feed — unchanged from the todo era).
+    await waitFor(() => {
+      const panel = getByTestId("agent-plan-panel");
+      expect(meter.nextElementSibling).toBe(panel);
+    });
+    // Fed by the hook: collapsed summary shows the active task + remaining.
+    const panel = getByTestId("agent-plan-panel");
     expect(panel.getAttribute("data-state")).toBe("collapsed");
     expect(panel.textContent).toContain("Write the rules buffer");
     expect(panel.textContent).toContain("· 2");
-    // The panel state went through the session-scoped store (not local).
-    expect(useExperienceCopilotTurnStore.getState().getTodo("thread-1")).toHaveLength(3);
+    // The panel's data came over the script-scoped route (not the thread wire).
+    expect(apiCalls("GET", /\/api\/scripts\/script-plan-mount\/agent-plan$/)).toHaveLength(1);
   });
 
-  it("stays hidden when the thread wire todo is empty", async () => {
-    router.activeThread = thread("thread-1"); // todo: []
+  it("stays hidden when the stored plan is empty", async () => {
+    router.activeThread = thread("thread-1");
     router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = EMPTY_PLAN;
 
-    const { getByTestId, queryByTestId } = renderShell();
+    const { getByTestId, queryByTestId } = renderShell({ scriptId: "script-plan-empty" });
     await flushSessionLoad();
 
     expect(getByTestId("copilot-context-meter")).toBeDefined();
-    expect(queryByTestId("copilot-todo-panel")).toBeNull();
+    expect(queryByTestId("agent-plan-panel")).toBeNull();
   });
 
-  it("reflects the live `todo` tool call (store rewrite → panel re-renders)", async () => {
-    router.activeThread = thread("thread-1"); // todo: [] → hidden at first
+  it("locks the editor button while a turn streams (locked = ctrl.isSending)", async () => {
+    router.activeThread = thread("thread-1");
     router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = PLAN;
+    // Hang the stream so isSending stays true while we assert the locked state.
+    router.holdStreamOpen = true;
 
-    const { getByTestId, queryByTestId } = renderShell();
+    const { container, getByTestId } = renderShell({ scriptId: "script-plan-locked" });
     await flushSessionLoad();
-    expect(queryByTestId("copilot-todo-panel")).toBeNull();
+    await waitFor(() => expect(getByTestId("agent-plan-panel")).toBeDefined());
 
-    act(() => {
-      useExperienceCopilotTurnStore.getState().setTodo("thread-1", [
-        { status: "active", title: "Fresh plan step" },
-      ]);
-    });
+    const editorButton = getByTestId("agent-plan-open-editor");
+    expect((editorButton as HTMLButtonElement).disabled).toBe(false);
 
-    const panel = getByTestId("copilot-todo-panel");
-    expect(panel.textContent).toContain("Fresh plan step");
-    expect(panel.textContent).toContain("· 1");
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "edit the rules" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+
+    await waitFor(() => expect((getByTestId("agent-plan-open-editor") as HTMLButtonElement).disabled).toBe(true));
   });
 });
 
@@ -1799,7 +1828,7 @@ describe("ExperienceCopilotShell — round survives unmount/remount (the hanging
     // stores and CLEAR the persisted key — on a real reload nothing is
     // mounted when the stores die.)
     first.unmount();
-    useExperienceCopilotTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
+    useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
     useCopilotReviewRoundStore.setState({ roundsByThread: {} });
 
     // Fresh page load: the shell's mount effect rehydrates from localStorage.
