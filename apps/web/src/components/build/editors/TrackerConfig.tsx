@@ -17,6 +17,7 @@ import { AiAssistantModal } from "../../shared/AiAssistantModal.js";
 import { formatSceneHistory } from "@vibe-tavern/prompt-pipeline";
 import { lblCls, codeQuoteCls } from "../../../lib/field-tokens.js";
 import { SceneHistoryBackfill } from "./SceneHistoryBackfill.js";
+import { SceneSchemaReference } from "./scene-schema-reference.js";
 import { PromptField } from "./prompt-field.js";
 import { useT } from "../../../i18n/context.js";
 import { useSnapshotStore, useActiveCharacter, useActivePersona } from "../../../stores/snapshot-store.js";
@@ -93,6 +94,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
   const [testing, setTesting] = useState(false);
   const testAbort = useRef<AbortController | null>(null);
   const [schemaAiOpen, setSchemaAiOpen] = useState(false);
+  const [schemaReferenceOpen, setSchemaReferenceOpen] = useState(false);
   const [rulesAiOpen, setRulesAiOpen] = useState(false);
 
   const activeCharacter = useActiveCharacter();
@@ -240,12 +242,23 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
     <div className="space-y-4 rounded-lg border border-border bg-s2/50 p-4">
       {/* DSL schema editor */}
       <div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <label className={lblCls + " !mb-0"}>{t("scn_schema_label")}</label>
           <button
             type="button"
+            onClick={() => setSchemaReferenceOpen((open) => !open)}
+            className={cn(
+              "ml-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-ui text-[11px] transition-all hover:bg-s2 hover:text-t1",
+              schemaReferenceOpen ? "bg-accent-dim text-accent-t" : "bg-s3 text-t2",
+            )}
+          >
+            <Ic.book />
+            {t("scn_ref_toggle")}
+          </button>
+          <button
+            type="button"
             onClick={() => setSchemaAiOpen(true)}
-            className="ml-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
+            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-s3 px-2.5 font-ui text-[11px] text-t2 transition-all hover:bg-s2 hover:text-t1"
           >
             <Ic.brain />
             {t("scn_ai_generate")}
@@ -280,6 +293,7 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
             </div>
           </div>
         </details>
+        {schemaReferenceOpen && <SceneSchemaReference />}
         <div className="mt-1.5 overflow-hidden rounded-md border border-border2">
           <CodeEditor
             value={schemaText}

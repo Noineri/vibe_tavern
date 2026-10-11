@@ -220,6 +220,15 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(getByText("scn_schema_grammar")).toBeTruthy();
   });
 
+  it("mounts the schema DSL reference above the JSON editor when toggled", () => {
+    seed();
+    const { getByText, getByTestId, queryByText } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
+    expect(queryByText("scn_ref_title")).toBeNull();
+    fireEvent.click(getByText("scn_ref_toggle"));
+    expect(getByText("scn_ref_title")).toBeTruthy();
+    expect(getByTestId("scn-dsl")).toBeTruthy();
+  });
+
   it("shows the Raw XML disclosure under XML format, not under JSON", () => {
     seed({ promptFormat: "xml", schema: { mood: { $type: "string" as const } } });
     const xmlView = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
