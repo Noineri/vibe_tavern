@@ -2719,6 +2719,7 @@ export default interface Resources {
     "scn_no_target": "Send a message first to preview against it.",
     "scn_preview_button": "Preview",
     "scn_preview_failed": "Preview failed.",
+    "scn_preview_mode_clean": "Clean",
     "scn_preview_mode_compact": "Compact",
     "scn_preview_mode_rich": "Graphical",
     "scn_preview_raw_json": "Raw JSON",

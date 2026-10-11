@@ -3,7 +3,7 @@
  * validated `sceneState` block is VISUALLY rendered, shared by the chat header
  * (Scene zone, expanded) and the Build → Insights → Scene Preview.
  *
- * Selecting Graphical/Compact in the Preview re-renders the header too (and
+ * Selecting a Preview render variant re-renders the header too (and
  * vice-versa) — the choice is global, not Preview-local. Persisted to
  * localStorage so it survives a reload; defaults to `"rich"`.
  *
@@ -18,7 +18,7 @@ import { create } from "zustand";
 export type SceneRenderVariant = "rich" | "compact" | "clean" | "hud";
 
 /** Variants with a matching SceneStateView implementation. */
-export const IMPLEMENTED_SCENE_RENDER_VARIANTS = ["rich", "compact"] as const satisfies readonly SceneRenderVariant[];
+export const IMPLEMENTED_SCENE_RENDER_VARIANTS = ["rich", "compact", "clean"] as const satisfies readonly SceneRenderVariant[];
 
 const STORAGE_KEY = "vibe:sceneRenderVariant";
 const DEFAULT: SceneRenderVariant = "rich";

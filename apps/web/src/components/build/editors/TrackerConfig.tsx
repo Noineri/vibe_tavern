@@ -26,6 +26,12 @@ import { findCurrentInsightsCompletionTarget } from "../../../stores/api-actions
 import { fetchProviderModelsAction } from "../../../stores/api-actions/provider-actions.js";
 import { IMPLEMENTED_SCENE_RENDER_VARIANTS, useSceneRenderStore } from "../../../stores/scene-render-store.js";
 
+const SCENE_RENDER_VARIANT_LABEL_KEYS = {
+  rich: "scn_preview_mode_rich",
+  compact: "scn_preview_mode_compact",
+  clean: "scn_preview_mode_clean",
+} as const satisfies Record<(typeof IMPLEMENTED_SCENE_RENDER_VARIANTS)[number], string>;
+
 /** A copyable worked example for the DSL authoring disclosure — exercises every
  *  node kind ($type, ranged number, object/properties, array/items, label). */
 const SCENE_DSL_EXAMPLE = `{
@@ -431,11 +437,12 @@ export function TrackerConfig({ chatId }: { chatId: ChatId }) {
         <div className="ml-auto">
           <SegmentedControl
             compact
+            mobileSelect
             value={renderVariant}
             onChange={setRenderVariant}
             options={IMPLEMENTED_SCENE_RENDER_VARIANTS.map((variant) => ({
               value: variant,
-              label: t(variant === "rich" ? "scn_preview_mode_rich" : "scn_preview_mode_compact"),
+              label: t(SCENE_RENDER_VARIANT_LABEL_KEYS[variant]),
             }))}
           />
         </div>

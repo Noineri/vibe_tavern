@@ -12,15 +12,15 @@
  * Four variants share one recursive core. `"rich"` (default) renders bounded
  * numbers as a11y meters and objects/arrays as an indented `border-l` tree;
  * `"compact"` keeps dense `key: value` lines without bars or tree chrome.
- * `"clean"` and `"hud"` are accepted preference values ahead of their visual
- * implementations and use rich's neutral fallback in this shared core.
+ * `"clean"` renders a single-column card layout with typography-only nesting;
+ * `"hud"` remains an accepted preference value ahead of its implementation.
  *
  * Recursion is schema-guided at every level, so an array-of-objects renders the
  * object fields (NOT `[object Object]` — the bug the previous flat `String()`
  * leaf shipped). The stale flag dims the whole view (`opacity-50`); callers that
  * need a different treatment can drop the flag and dim externally.
  */
-import { type ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
@@ -44,10 +44,8 @@ interface SceneStateViewProps {
 export function SceneStateView({ schema, data, variant = "rich", stale, className }: SceneStateViewProps) {
   const { t } = useT();
   return (
-    <div className={cn("flex flex-col gap-0.5", stale && "opacity-50", className)}>
-      {Object.entries(schema).map(([key, node]) => (
-        <Field key={key} label={node.label ?? key} node={node} value={data[key]} variant={variant} emptyLabel={t("scn_state_empty")} />
-      ))}
+    <div className={cn("flex flex-col", variant === "clean" ? "gap-2" : "gap-0.5", stale && "opacity-50", className)}>
+      <Fields entries={Object.entries(schema)} values={data} variant={variant} emptyLabel={t("scn_state_empty")} depth={0} />
     </div>
   );
 }
@@ -58,30 +56,96 @@ export function SceneStateView({ schema, data, variant = "rich", stale, classNam
 // for object items whose own properties carry the labels.
 // ────────────────────────────────────────────────────────────────────────────
 
+function Fields({
+  entries,
+  values,
+  variant,
+  emptyLabel,
+  depth,
+}: {
+  entries: [string, SceneTrackerSchemaNode][];
+  values: Record<string, unknown>;
+  variant: SceneRenderVariant;
+  emptyLabel: string;
+  depth: number;
+}): ReactNode {
+  if (variant !== "clean") {
+    return entries.map(([key, node]) => (
+      <Field key={key} label={node.label ?? key} node={node} value={values[key]} variant={variant} emptyLabel={emptyLabel} depth={depth} />
+    ));
+  }
+
+  const rendered: ReactNode[] = [];
+  for (let index = 0; index < entries.length;) {
+    const scalarEntries: [string, SceneTrackerSchemaNode][] = [];
+    while (scalarEntries.length < 4 && index + scalarEntries.length < entries.length) {
+      const entry = entries[index + scalarEntries.length];
+      if (!isShortCleanScalar(entry[1], values[entry[0]])) break;
+      scalarEntries.push(entry);
+    }
+    if (scalarEntries.length >= 2) {
+      rendered.push(
+        <div key={scalarEntries[0][0]} className="scene-state-clean-triplet flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+          {scalarEntries.map(([key, node], scalarIndex) => (
+            <Fragment key={key}>
+              {scalarIndex > 0 && <span className="scene-state-clean-separator text-t4">·</span>}
+              <Field label={node.label ?? key} node={node} value={values[key]} variant={variant} emptyLabel={emptyLabel} depth={depth} inline />
+            </Fragment>
+          ))}
+        </div>,
+      );
+      index += scalarEntries.length;
+      continue;
+    }
+    const [key, node] = entries[index];
+    rendered.push(<Field key={key} label={node.label ?? key} node={node} value={values[key]} variant={variant} emptyLabel={emptyLabel} depth={depth} />);
+    index += 1;
+  }
+  return rendered;
+}
+
 function Field({
   label,
   node,
   value,
   variant,
   emptyLabel,
+  depth,
+  inline = false,
 }: {
   label: string | undefined;
   node: SceneTrackerSchemaNode;
   value: unknown;
   variant: SceneRenderVariant;
   emptyLabel: string;
+  depth: number;
+  inline?: boolean;
 }): ReactNode {
   switch (node.$type) {
     case "object": {
       const child = isPlainObject(value) ? (value as Record<string, unknown>) : null;
+      if (variant === "clean") {
+        const content = child
+          ? <Fields entries={Object.entries(node.properties)} values={child} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />
+          : <Dash />;
+        return depth === 0 ? (
+          <section className="scene-state-clean-card flex flex-col gap-2 rounded-md border border-border bg-s2 p-3">
+            {label !== undefined && <CleanGroupHeader label={label} />}
+            <div className="flex flex-col gap-2">{content}</div>
+          </section>
+        ) : (
+          <div className="scene-state-clean-subgroup ml-2 flex flex-col gap-1 pl-2">
+            {label !== undefined && <ContainerLabel label={label} variant={variant} />}
+            <div className="flex flex-col gap-2">{content}</div>
+          </div>
+        );
+      }
       return (
         <div className="flex flex-col gap-0.5">
           {label !== undefined && <ContainerLabel label={label} />}
           <div className={cn(variant === "compact" ? "ml-3" : "ml-2 border-l border-border pl-2", "flex flex-col gap-0.5")}>
             {child
-              ? Object.entries(node.properties).map(([k, n]) => (
-                  <Field key={k} label={n.label ?? k} node={n} value={child[k]} variant={variant} emptyLabel={emptyLabel} />
-                ))
+              ? <Fields entries={Object.entries(node.properties)} values={child} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />
               : <Dash />}
           </div>
         </div>
@@ -89,15 +153,27 @@ function Field({
     }
     case "array": {
       const items = Array.isArray(value) ? value : [];
+      const content = items.length === 0
+        ? <span className="text-[11px] text-t4">{emptyLabel}</span>
+        : items.map((item, i) => <ArrayItem key={i} index={i} itemNode={node.items} value={item} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />);
+      if (variant === "clean") {
+        return depth === 0 ? (
+          <section className="scene-state-clean-card flex flex-col gap-2 rounded-md border border-border bg-s2 p-3">
+            {label !== undefined && <CleanGroupHeader label={label} />}
+            <div className="flex flex-col gap-2">{content}</div>
+          </section>
+        ) : (
+          <div className="scene-state-clean-subgroup ml-2 flex flex-col gap-1 pl-2">
+            {label !== undefined && <ContainerLabel label={label} variant={variant} />}
+            <div className="flex flex-col gap-2">{content}</div>
+          </div>
+        );
+      }
       return (
         <div className="flex flex-col gap-0.5">
           {label !== undefined && <ContainerLabel label={label} />}
           <div className={cn(variant === "compact" ? "ml-3" : "ml-2 border-l border-border pl-2", "flex flex-col gap-0.5")}>
-            {items.length === 0 ? (
-              <span className="text-[11px] text-t4">{emptyLabel}</span>
-            ) : (
-              items.map((item, i) => <ArrayItem key={i} index={i} itemNode={node.items} value={item} variant={variant} emptyLabel={emptyLabel} />)
-            )}
+            {content}
           </div>
         </div>
       );
@@ -105,7 +181,7 @@ function Field({
     case "boolean":
     case "number":
     case "string":
-      return <Leaf label={label} node={node} value={value} variant={variant} />;
+      return <Leaf label={label} node={node} value={value} variant={variant} inline={inline} />;
   }
 }
 
@@ -120,29 +196,29 @@ function ArrayItem({
   value,
   variant,
   emptyLabel,
+  depth,
 }: {
   index: number;
   itemNode: SceneTrackerSchemaNode;
   value: unknown;
   variant: SceneRenderVariant;
   emptyLabel: string;
+  depth: number;
 }): ReactNode {
   if (itemNode.$type === "object") {
     const child = isPlainObject(value) ? (value as Record<string, unknown>) : null;
     return (
-      <div className={cn(variant === "compact" ? "" : "rounded border border-border2 bg-s2/40 px-1.5 py-1", "flex flex-col gap-0.5")}>
+      <div className={cn(variant === "clean" ? "scene-state-clean-record rounded border border-border2 bg-s3 px-2 py-1.5" : variant === "compact" ? "" : "rounded border border-border2 bg-s2/40 px-1.5 py-1", "flex flex-col gap-0.5")}>
         <span className="text-[10px] text-t4">{itemNode.label ?? `#${index + 1}`}</span>
         {child
-          ? Object.entries(itemNode.properties).map(([k, n]) => (
-              <Field key={k} label={n.label ?? k} node={n} value={child[k]} variant={variant} emptyLabel={emptyLabel} />
-            ))
+          ? <Fields entries={Object.entries(itemNode.properties)} values={child} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />
           : <Dash />}
       </div>
     );
   }
   if (itemNode.$type === "array") {
     // Array-of-arrays — recurse via Field (label = the 1-based index).
-    return <Field label={`#${index + 1}`} node={itemNode} value={value} variant={variant} emptyLabel={emptyLabel} />;
+    return <Field label={`#${index + 1}`} node={itemNode} value={value} variant={variant} emptyLabel={emptyLabel} depth={depth} />;
   }
   // Primitive item — value only, no key label.
   return <Leaf label={undefined} node={itemNode} value={value} variant={variant} />;
@@ -157,17 +233,19 @@ function Leaf({
   node,
   value,
   variant,
+  inline = false,
 }: {
   label: string | undefined;
   node: Extract<SceneTrackerSchemaNode, { $type: "string" | "number" | "boolean" }>;
   value: unknown;
   variant: SceneRenderVariant;
+  inline?: boolean;
 }): ReactNode {
   if (node.$type === "boolean") {
     const text = value == null ? "—" : value ? "✓" : "✗";
     return (
-      <KvRow label={label} variant={variant}>
-        <span className={cn("text-[11px]", value === true ? "text-accent" : "text-t4")}>{text}</span>
+      <KvRow label={label} variant={variant} inline={inline}>
+        <span className={cn("text-[11px]", variant === "clean" && "scene-state-value", value === true ? "text-accent" : "text-t4")}>{text}</span>
       </KvRow>
     );
   }
@@ -178,10 +256,10 @@ function Leaf({
     // Inline the null checks so TS narrows `min`/`max` to `number` inside each
     // branch (a `const bounded = …` boolean would NOT carry the narrowing).
     const range = min != null && max != null ? max - min : null;
-    if (min != null && max != null && n != null && variant !== "compact" && range !== null && range !== 0 && range <= METER_MAX_RANGE) {
-      const pct = Math.max(0, Math.min(100, ((n - min) / range) * 100));
+    if (min != null && max != null && shouldRenderMeter(node, n, variant)) {
+      const pct = Math.max(0, Math.min(100, ((n - min) / (max - min)) * 100));
       return (
-        <div className="flex min-w-0 items-center gap-2">
+        <div className={cn("flex min-w-0 items-center gap-2", variant === "clean" && "scene-state-clean-meter-row")}>
           {label !== undefined && <span className="shrink-0 text-[11px] text-t4">{label}</span>}
           <div
             role="meter"
@@ -189,11 +267,11 @@ function Leaf({
             aria-valuemin={min}
             aria-valuemax={max}
             aria-label={label}
-            className="h-1.5 min-w-[36px] flex-1 overflow-hidden rounded-full bg-s2"
+            className={cn("h-1.5 min-w-[36px] flex-1 overflow-hidden rounded-full bg-s2", variant === "clean" && "scene-state-clean-meter ml-auto max-w-[45%] flex-none")}
           >
             <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
           </div>
-          <span className="shrink-0 text-[11px] font-medium tabular-nums text-t2">{formatNum(n)}</span>
+          <span className={cn("shrink-0 text-[11px] font-medium tabular-nums text-t2", variant === "clean" && "scene-state-value")}>{formatNum(n)}</span>
         </div>
       );
     }
@@ -207,8 +285,8 @@ function Leaf({
       ? ` (${formatNum(min)}–${formatNum(max)})`
       : "";
     return (
-      <KvRow label={label} variant={variant}>
-        <span className="text-[11px] tabular-nums text-t2">
+      <KvRow label={label} variant={variant} inline={inline}>
+        <span className={cn("text-[11px] tabular-nums text-t2", variant === "clean" && "scene-state-value")}>
           {valueText}{rangeSuffix}
           {isHugeRange && variant !== "compact" && n != null && max != null && <span className="text-t4"> / {formatNum(max)}</span>}
         </span>
@@ -224,8 +302,8 @@ function Leaf({
   // the column cannot push its container wider than the viewport.
   const text = value == null ? "—" : typeof value === "string" ? value : String(value);
   return (
-    <KvRow label={label} variant={variant}>
-      <span className="text-[11px] text-t2 [overflow-wrap:anywhere]">{text}</span>
+    <KvRow label={label} variant={variant} inline={inline}>
+      <span className={cn("text-[11px] text-t2 [overflow-wrap:anywhere]", variant === "clean" && "scene-state-value")}>{text}</span>
     </KvRow>
   );
 }
@@ -235,17 +313,28 @@ function Leaf({
 // ────────────────────────────────────────────────────────────────────────────
 
 /** Inline label and value row. Compact preserves its established dense colon separator. */
-function KvRow({ label, variant, children }: { label: string | undefined; variant: SceneRenderVariant; children: ReactNode }) {
+function KvRow({ label, variant, inline = false, children }: { label: string | undefined; variant: SceneRenderVariant; inline?: boolean; children: ReactNode }) {
+  const clean = variant === "clean";
   return (
-    <div className="flex min-w-0 items-baseline gap-1.5">
+    <div className={clean ? (inline ? "inline-flex min-w-0 items-baseline gap-1.5" : "flex min-w-0 items-baseline justify-between gap-2") : "flex min-w-0 items-baseline gap-1.5"}>
       {label !== undefined && <span className="shrink-0 text-[11px] text-t4">{variant === "compact" && !label.endsWith(":") ? `${label}:` : label}</span>}
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className={clean && !inline ? "min-w-0 flex-1 text-right" : "min-w-0 flex-1"}>{children}</div>
     </div>
   );
 }
 
-function ContainerLabel({ label }: { label: string }) {
-  return <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-t4">{label}</span>;
+function ContainerLabel({ label, variant }: { label: string; variant?: SceneRenderVariant }) {
+  return <span className={variant === "clean" ? "text-[10px] font-medium tracking-[0.04em] text-t4" : "text-[10px] font-semibold uppercase tracking-[0.04em] text-t4"}>{label}</span>;
+}
+
+function CleanGroupHeader({ label }: { label: string }) {
+  return (
+    <div className="scene-state-clean-group-header flex min-w-0 items-center gap-2">
+      <span className="h-px w-3 shrink-0 bg-border" />
+      <span className="min-w-0 text-[11px] font-semibold text-t3 [overflow-wrap:anywhere]">{label}</span>
+      <span className="h-px min-w-3 flex-1 bg-border" />
+    </div>
+  );
 }
 
 function Dash() {
@@ -259,6 +348,21 @@ function Dash() {
 /** Trim trailing zeros for display: 7.0 → "7", 7.5 → "7.5", 7.25 → "7.25". */
 function formatNum(n: number): string {
   return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+}
+
+function shouldRenderMeter(
+  node: Extract<SceneTrackerSchemaNode, { $type: "number" }>,
+  value: number | null,
+  variant: SceneRenderVariant,
+): value is number {
+  const { min, max } = node;
+  return min != null && max != null && value != null && variant !== "compact" && max - min !== 0 && max - min <= METER_MAX_RANGE;
+}
+
+function isShortCleanScalar(node: SceneTrackerSchemaNode, value: unknown): boolean {
+  if (node.$type === "boolean") return true;
+  if (node.$type === "number") return !shouldRenderMeter(node, typeof value === "number" ? value : null, "clean");
+  return node.$type === "string" && (value == null || (typeof value === "string" && value.length <= 36));
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -201,6 +201,55 @@ describe("SceneStateView — shared-core defect fixes", () => {
   });
 });
 
+describe("SceneStateView — clean variant", () => {
+  it("renders top-level groups as hairline-headed cards, short scalar triplets, and right-aligned meters without rich rails", () => {
+    const schema = {
+      citadel: {
+        $type: "object",
+        label: "Citadel",
+        properties: {
+          name: { $type: "string", label: "Name" },
+          rank: { $type: "string", label: "Rank" },
+          active: { $type: "boolean", label: "Active" },
+          level: { $type: "number", min: 0, max: 100, label: "Level" },
+        },
+      },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { citadel: { name: "Aster", rank: "UR", active: true, level: 25 } }, "clean");
+    expect(c.querySelectorAll(".scene-state-clean-card").length).toBe(1);
+    expect(c.querySelector(".scene-state-clean-group-header")?.textContent).toContain("Citadel");
+    expect(c.querySelector(".scene-state-clean-triplet")?.textContent).toContain("NameAster·RankUR·Active✓");
+    expect(c.querySelectorAll(".scene-state-clean-separator").length).toBe(2);
+    expect(c.querySelectorAll(".border-l").length).toBe(0);
+    const { meter } = meterOf(c);
+    expect(meter?.className).toContain("scene-state-clean-meter");
+    expect(meter?.className).toContain("ml-auto");
+  });
+
+  it("keeps record labels and shared empty, fixed-value, and huge-range behavior", () => {
+    const records = {
+      companions: {
+        $type: "array",
+        label: "Companions",
+        items: {
+          $type: "object",
+          label: "Companion",
+          properties: { name: { $type: "string", label: "Name" }, rank: { $type: "string", label: "Rank" } },
+        },
+      },
+      reserve: { $type: "array", label: "Reserve", items: { $type: "string" } },
+      fixed: { $type: "number", min: 30, max: 30, label: "Cost" },
+      huge: { $type: "number", min: 0, max: 999999, label: "Credits" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(records, { companions: [{ name: "Aria", rank: "Captain" }], reserve: [], fixed: 30, huge: 30 }, "clean");
+    expect(c.querySelector(".scene-state-clean-record")?.textContent).toContain("CompanionNameAria·RankCaptain");
+    expect(c.textContent).not.toContain("#1");
+    expect(c.textContent).toContain("scn_state_empty");
+    expect(c.textContent).toContain("30 / 999999");
+    expect(c.querySelectorAll('[role="meter"]').length).toBe(0);
+  });
+});
+
 describe("SceneStateView — stale + shared coverage", () => {
   it("stale=true adds opacity-50 to the root", () => {
     const c = r({ a: { $type: "string" } }, { a: "x" }, "rich", true);
