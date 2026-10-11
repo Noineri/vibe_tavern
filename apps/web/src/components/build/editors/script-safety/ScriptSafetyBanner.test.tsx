@@ -84,6 +84,7 @@ describe("ScriptSafetyBanner visibility matrix", () => {
     const view = render(<ScriptSafetyBanner script={script({ origin: "imported", firstEnabledAt: null })} />);
     expect(view.getByTestId("script-safety-banner")).toBeTruthy();
     expect(view.getByText("script_safety_banner_imported")).toBeTruthy();
+    expect(view.getByText("script_safety_banner_full_access")).toBeTruthy();
     expect(view.queryByText("script_safety_banner_show_warnings")).toBeNull();
   });
 

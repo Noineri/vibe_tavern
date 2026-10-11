@@ -50,7 +50,10 @@ export function ScriptSafetyBanner({ script, className }: ScriptSafetyBannerProp
           {t("script_safety_banner_show_warnings")}
         </button>
       ) : (
-        <span>{t("script_safety_banner_imported")}</span>
+        <>
+          <span>{t("script_safety_banner_imported")}</span>
+          <span className="block">{t("script_safety_banner_full_access")}</span>
+        </>
       )}
     </div>
   );
