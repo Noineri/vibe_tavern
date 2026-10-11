@@ -179,6 +179,10 @@ export const anthropicProtocol: ProtocolAdapter = {
 		nonStreamGeneration: true,
 		abortSignal: true,
 		streaming: true,
+		// Prefill (trailing assistant turn) is API-disabled on Anthropic:
+		// Claude 4.6+ / Mythos Preview return 400 for a last assistant turn
+		// (Anthropic prompting docs, verified 2026-10-11; legacy models like
+		// 3.5 Sonnet still accept it, but the flag mirrors the current API).
 		prefill: false,
 		logitBias: false,
 		samplers: SAMPLER_SETS.anthropic,
