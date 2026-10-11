@@ -2629,6 +2629,7 @@
 	"experience_copilot_no_models": "No models",
 	"experience_copilot_send": "Send",
 	"experience_copilot_cancel": "Cancel",
+	"experience_copilot_tools": "Tools · {n}",
 	"experience_copilot_tool_failed": "Tool failed",
 	"copilot_review_model_editing": "AI is editing…",
 	"copilot_review_revert": "Undo changes",

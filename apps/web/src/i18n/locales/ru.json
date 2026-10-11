@@ -2669,6 +2669,7 @@
 	"experience_copilot_no_models": "Нет моделей",
 	"experience_copilot_send": "Отправить",
 	"experience_copilot_cancel": "Отмена",
+	"experience_copilot_tools": "Инструменты · {n}",
 	"experience_copilot_tool_failed": "Ошибка инструмента",
 	"copilot_review_model_editing": "ИИ вносит изменения…",
 	"copilot_review_revert": "Отменить изменения",

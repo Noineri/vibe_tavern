@@ -844,6 +844,7 @@ export default interface Resources {
     "experience_copilot_tab_edit": "Edit",
     "experience_copilot_title": "AI assistant",
     "experience_copilot_tool_failed": "Tool failed",
+    "experience_copilot_tools": "Tools · {n}",
     "experience_copilot_try_it": "Try it",
     "experience_copilot_visual": "Visual",
     "experience_copilot_visual_problems": "Visual source problems",

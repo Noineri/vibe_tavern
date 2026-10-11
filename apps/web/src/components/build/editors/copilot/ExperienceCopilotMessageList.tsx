@@ -12,8 +12,8 @@ import type { CopilotAskAnswerInput } from "../../../../api/experience-copilot-a
 import type { ExperienceCopilotPendingAskAnswer } from "../../../../hooks/use-experience-copilot-controller.js";
 import { orderMessagesWithDigests } from "../../../../lib/copilot-context.js";
 import { ExperienceCopilotMessageBlock } from "./ExperienceCopilotMessageBlock.js";
-import { CopilotActivityCard } from "./CopilotActivityCard.js";
 import { CopilotAskCard } from "./CopilotAskCard.js";
+import { CopilotToolAccordion } from "./CopilotToolAccordion.js";
 import { MessageReasoning } from "../../../chat/MessageReasoning.js";
 import { Icons } from "../../../shared/icons.js";
 import { EmptyState } from "../../../shared/empty-state.js";
@@ -147,36 +147,64 @@ export function ExperienceCopilotMessageList({
     return null;
   }, [feed, trailingCards, anchorCards, messages]);
 
-  // TAG-9: render an `ask_user` activity as the interactive ask card instead
-  // of the generic activity card — everywhere an activity can appear (history
-  // anchors, trailing cards, the live feed). The optimistic controller
-  // override (`pendingAskAnswer`) flips the just-answered card immediately.
-  const renderActivity = (activity: ExperienceCopilotToolActivity) => {
-    const ask = activity.ask;
-    if (ask) {
-      const resolved: CopilotAskState =
-        pendingAskAnswer && pendingAskAnswer.toolCallId === activity.toolCallId
-          ? {
-              ...ask,
-              status: pendingAskAnswer.status,
-              ...(pendingAskAnswer.answer !== undefined ? { answer: pendingAskAnswer.answer } : {}),
-            }
-          : ask;
-      return (
-        <CopilotAskCard
-          key={activity.toolCallId}
-          ask={resolved}
-          interactive={
-            resolved.status === "awaiting_answer" &&
-            activity.toolCallId === lastActivityId &&
-            !isSending &&
-            onAnswer !== undefined
+  // TAG-9: `ask_user` remains its own interactive card. It also divides tool
+  // card runs, so an ask never gets hidden inside a tool accordion.
+  const renderAskActivity = (activity: ExperienceCopilotToolActivity) => {
+    const ask = activity.ask!;
+    const resolved: CopilotAskState =
+      pendingAskAnswer && pendingAskAnswer.toolCallId === activity.toolCallId
+        ? {
+            ...ask,
+            status: pendingAskAnswer.status,
+            ...(pendingAskAnswer.answer !== undefined ? { answer: pendingAskAnswer.answer } : {}),
           }
-          onSubmit={onAnswer ? (a) => onAnswer(activity.toolCallId, a) : undefined}
-        />
+        : ask;
+    return (
+      <CopilotAskCard
+        key={activity.toolCallId}
+        ask={resolved}
+        interactive={
+          resolved.status === "awaiting_answer" &&
+          activity.toolCallId === lastActivityId &&
+          !isSending &&
+          onAnswer !== undefined
+        }
+        onSubmit={onAnswer ? (a) => onAnswer(activity.toolCallId, a) : undefined}
+      />
+    );
+  };
+
+  // Consecutive non-ask activity cards are one tool run. Only the live feed
+  // receives `isSending`: historical cards stay collapsed even while a newer
+  // turn is in flight.
+  const renderActivities = (
+    activityItems: readonly ExperienceCopilotToolActivity[],
+    live: boolean,
+  ) => {
+    const rendered = [];
+    let cardRun: ExperienceCopilotToolActivity[] = [];
+    const flushCardRun = () => {
+      if (cardRun.length === 0) return;
+      rendered.push(
+        <CopilotToolAccordion
+          key={cardRun[0]!.toolCallId}
+          activities={cardRun}
+          isSending={live}
+        />,
       );
+      cardRun = [];
+    };
+
+    for (const activity of activityItems) {
+      if (activity.ask) {
+        flushCardRun();
+        rendered.push(renderAskActivity(activity));
+      } else {
+        cardRun.push(activity);
+      }
     }
-    return <CopilotActivityCard key={activity.toolCallId} activity={activity} />;
+    flushCardRun();
+    return rendered;
   };
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -239,7 +267,7 @@ export function ExperienceCopilotMessageList({
         <div className="flex flex-col gap-3">
           {visibleMessages.map((entry) => (
             <Fragment key={entry.message.id}>
-              {anchorCards.get(entry.message.id)?.map((activity) => renderActivity(activity))}
+              {renderActivities(anchorCards.get(entry.message.id) ?? EMPTY, false)}
               <ExperienceCopilotMessageBlock
                 message={entry.message}
                 coveredCount={entry.coveredCount}
@@ -247,7 +275,7 @@ export function ExperienceCopilotMessageList({
             </Fragment>
           ))}
 
-          {trailingCards.map((activity) => renderActivity(activity))}
+          {renderActivities(trailingCards, false)}
 
           {hasPendingUserContent && (
             <ExperienceCopilotMessageBlock
@@ -274,30 +302,49 @@ export function ExperienceCopilotMessageList({
             </div>
           )}
 
-          {feed.map((entry) => {
-            if (entry.kind === "activity") {
-              const activity = activityById.get(entry.id);
-              return activity ? renderActivity(activity) : null;
+          {(() => {
+            const rendered = [];
+            let cardRun: ExperienceCopilotToolActivity[] = [];
+            const flushCardRun = () => {
+              if (cardRun.length === 0) return;
+              rendered.push(...renderActivities(cardRun, true));
+              cardRun = [];
+            };
+
+            for (const entry of feed) {
+              if (entry.kind === "activity") {
+                const activity = activityById.get(entry.id);
+                if (!activity) continue;
+                if (activity.ask) {
+                  flushCardRun();
+                  rendered.push(renderAskActivity(activity));
+                } else {
+                  cardRun.push(activity);
+                }
+                continue;
+              }
+              flushCardRun();
+              // Post-settle: the controller clears `pendingText`, so feed text
+              // is suppressed while refetched history owns the persisted rows.
+              if (!hasPendingText) continue;
+              rendered.push(
+                <ExperienceCopilotMessageBlock
+                  key={entry.id}
+                  message={{
+                    id: entry.id,
+                    threadId,
+                    role: "assistant",
+                    content: entry.text,
+                    toolCallsJson: null,
+                    toolCallId: null,
+                    createdAt: "",
+                  }}
+                />,
+              );
             }
-            // Post-settle: the controller clears `pendingText`, so feed text is
-            // suppressed while the refetched history owns the persisted rows;
-            // the open text segment renders as the pending bubble below.
-            if (!hasPendingText) return null;
-            return (
-              <ExperienceCopilotMessageBlock
-                key={entry.id}
-                message={{
-                  id: entry.id,
-                  threadId,
-                  role: "assistant",
-                  content: entry.text,
-                  toolCallsJson: null,
-                  toolCallId: null,
-                  createdAt: "",
-                }}
-              />
-            );
-          })}
+            flushCardRun();
+            return rendered;
+          })()}
 
           {hasPendingText && feed.length === 0 && (
             <ExperienceCopilotMessageBlock
