@@ -4,6 +4,7 @@ import {
   type ExperienceCopilotRunSimulateDigest,
   type ExperienceCopilotRunTestDigest,
 } from "../src/domain/interactive/copilot/experience-copilot-tools.js";
+import type { ExperienceCopilotTodoResult } from "../src/domain/interactive/copilot/copilot-todo-tool.js";
 
 /**
  * Experience-Copilot tools propose rules/visual edits and run read-only tests;
@@ -517,8 +518,8 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo, restored
     ];
     const second = [{ title: "bind the visual", status: "active" }];
 
-    const r1 = (await tools.todo.execute({ items: first }, ctx)) as never;
-    const r2 = (await tools.todo.execute({ items: second }, ctx)) as never;
+    const r1 = (await tools.todo.execute({ items: first }, ctx)) as ExperienceCopilotTodoResult;
+    const r2 = (await tools.todo.execute({ items: second }, ctx)) as ExperienceCopilotTodoResult;
 
     expect(r1.ok).toBe(true);
     expect(r1.activeTitle).toBe("wire the reducer");
@@ -537,7 +538,10 @@ describe("experience-copilot-tools: todo (full-list rewrite + saveTodo, restored
         throw new Error("db down");
       },
     });
-    const r = (await tools.todo.execute({ items: [{ title: "a", status: "pending" }] }, ctx)) as never;
+    const r = (await tools.todo.execute(
+      { items: [{ title: "a", status: "pending" }] },
+      ctx,
+    )) as ExperienceCopilotTodoResult;
     expect(r.ok).toBe(false);
     expect(typeof r.error).toBe("string");
     expect(r.error).toContain("db down");

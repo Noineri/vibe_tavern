@@ -58,7 +58,11 @@ export const BUDGETS = {
 	// experience-copilot-tools.test.ts carries the same three `as never`
 	// result casts PM-6 deleted with the mechanic (deliberate growth, not
 	// drift — the restore mandate forbids rewriting the old tests).
-	asNever: 1246,
+	// 1243 (2026-10-12, PM-7 fixup, owner ruling): those 3 casts were
+	// eliminated — the todo results are typed as the seam's exported
+	// ExperienceCopilotTodoResult — and the ratchet lowered back; the
+	// ratchet exists to go DOWN.
+	asNever: 1243,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;
