@@ -1191,10 +1191,10 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PM-2: agent-plan wiring + retained TAG-6 todo prompt section
+// PM-2/PM-3: agent-plan wiring + durable prompt context
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("experience-copilot stream — agent-plan wiring + todo prompt context", () => {
+describe("experience-copilot stream — agent-plan wiring + prompt context", () => {
   beforeEach(() => {
     streamTextImpl = undefined;
   });
@@ -1250,19 +1250,30 @@ describe("experience-copilot stream — agent-plan wiring + todo prompt context"
       },
     }]);
     expect(await readPlanTool.execute!({})).toEqual(saves[0]!.plan);
-    expect(loadOwners).toEqual([{ kind: "script", scriptId: "script_1" }]);
+    expect(loadOwners).toEqual([
+      { kind: "script", scriptId: "script_1" },
+      { kind: "script", scriptId: "script_1" },
+    ]);
   });
 
-  it("the NEXT turn's assembly carries the persisted todo section (session-scoped lifetime)", async () => {
-    // A prior turn already persisted a plan onto the thread (the fake's
-    // updateTodo mutates thread.todo; here we seed it directly to isolate the
-    // turn-over read path).
-    const thread = makeThread();
-    thread.todo = [
-      { title: "Write the rules buffer", status: "active" },
-      { title: "Bind a visual", status: "pending" },
-    ];
-    const store = createFakeStore(thread);
+  it("loads the script-owned plan before assembly and renders its active task", async () => {
+    const plan = {
+      goal: "Build the experience",
+      constraints: [],
+      tasks: [
+        { id: "rules", title: "Write the rules buffer", body: "Draft reducer first.", status: "active" },
+        { id: "visual", title: "Bind a visual", body: "Pending detail.", status: "pending" },
+      ],
+    };
+    const store = createFakeStore(makeThread("script_1"));
+    const loadOwners: unknown[] = [];
+    const agentPlans = {
+      get: async (owner: unknown) => {
+        loadOwners.push(owner);
+        return plan;
+      },
+      save: async () => {},
+    } as ExperienceCopilotStreamDeps["agentPlans"];
     let captured: { messages?: Array<{ role: string; content: string }> } | undefined;
     streamTextImpl = (opts: unknown) => {
       captured = opts as typeof captured;
@@ -1272,19 +1283,21 @@ describe("experience-copilot stream — agent-plan wiring + todo prompt context"
     await collect(
       streamExperienceCopilot(
         { threadId: "thread_1", content: "continue", providerProfileId: "prov_1" },
-        makeDeps(store),
+        makeDeps(store, { agentPlans }),
       ),
     );
 
     const system = captured!.messages![0];
+    expect(loadOwners).toEqual([{ kind: "script", scriptId: "script_1" }]);
     expect(system.role).toBe("system");
-    expect(system.content).toContain("# Current step plan");
+    expect(system.content).toContain("# Plan");
     expect(system.content).toContain("[active] Write the rules buffer");
-    expect(system.content).toContain("[pending] Bind a visual");
+    expect(system.content).toContain("Draft reducer first.");
+    expect(system.content).not.toContain("Pending detail.");
   });
 
-  it("an empty todo → no todo section in the assembled prompt (byte-identical pre-TAG-6)", async () => {
-    const store = createFakeStore(makeThread()); // todo: []
+  it("no script-owned plan → no plan section in the assembled prompt", async () => {
+    const store = createFakeStore(makeThread());
     let captured: { messages?: Array<{ role: string; content: string }> } | undefined;
     streamTextImpl = (opts: unknown) => {
       captured = opts as typeof captured;
@@ -1298,7 +1311,7 @@ describe("experience-copilot stream — agent-plan wiring + todo prompt context"
       ),
     );
 
-    expect(captured!.messages![0].content).not.toContain("Current step plan");
+    expect(captured!.messages![0].content).not.toContain("# Plan");
   });
 });
 

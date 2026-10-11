@@ -40,11 +40,13 @@ import {
   setModelHint,
 } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
-import type { CopilotProfile, CopilotTodoItem } from "@vibe-tavern/api-contracts";
+import type { CopilotProfile } from "@vibe-tavern/api-contracts";
+import type { AgentPlan } from "@vibe-tavern/domain";
 import { loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 import type { AppDb } from "@vibe-tavern/db";
 import { resolveServicePromptText } from "../../service-prompts/service-prompt-resolver.js";
 import { runExperienceTest } from "../experience-tester.js";
+import { renderAgentPlanSection } from "../../agent-plan/agent-plan-prompt.js";
 import type {
   ExperienceCopilotRealtimeDigest,
   ExperienceCopilotRunSimulateDigest,
@@ -279,12 +281,10 @@ export interface ExperienceCopilotAssembleInput {
    *  persisted and never compacted: it is injected AFTER compaction, at the
    *  bottom of the prompt (recency), where the model weighs it most. */
   readonly attachedContextBlock?: string;
-  /** The model's step-plan for this thread (TAG-6): `[]` when none. Rendered as
-   *  a system-message context section ONLY when non-empty (byte-identical
-   *  assembly otherwise). Injected into the SYSTEM message (counts toward
-   *  systemTokens), so it survives history compaction — the plan is the
-   *  session's durable working state, not a history message. */
-  readonly todo?: readonly CopilotTodoItem[];
+  /** The script-owned durable plan for this thread. Rendered as a system-message
+   *  context section only when non-empty (byte-identical assembly otherwise).
+   *  It counts toward systemTokens, so it survives history compaction. */
+  readonly plan?: AgentPlan | null;
   /** Optional DB handle — when present, reference prompts resolve via the active service-prompt profile. */
   readonly db?: AppDb;
 }
@@ -554,20 +554,6 @@ function renderContextPackage(
   return sections.join("\n");
 }
 
-/** Render the model's step-plan as a context section (TAG-6). OMITTED ENTIRELY
- *  when empty — the zero-todo assembly stays byte-identical to the pre-TAG-6
- *  shape (pinned by test). The preamble tells the model this is ITS OWN plan
- *  from earlier in the session and to keep it current via the `todo` tool
- *  (full-list rewrite). Statuses render as `[status] title` lines so the model
- *  reads each item's state at a glance (mirrors the panel's visual language). */
-function renderTodoSection(todo: readonly CopilotTodoItem[]): string {
-  if (todo.length === 0) return "";
-  return [
-    "# Current step plan (your own todo from earlier in this session — keep it current via the `todo` tool)",
-    ...todo.map((item) => `[${item.status}] ${item.title}`),
-  ].join("\n");
-}
-
 /** Render the compaction digest as a system-level JSON context section (CM-3).
  *  Mirrors the Co-Author compaction pattern: a compact `{"digest": "..."}`
  *  block the model reads as a single fact — the digest is a summary, NOT a
@@ -666,7 +652,7 @@ export async function assembleExperienceCopilotPrompt(
     input.testFeedback ?? null,
     input.step,
   );
-  const todoSection = renderTodoSection(input.todo ?? []);
+  const planSection = renderAgentPlanSection(input.plan ?? null);
 
   // ── Lift digest messages out of the history flow (CM-3) ───────────────────
   // A `digest` message is a compaction summary, not a chat turn. The LAST digest
@@ -686,7 +672,7 @@ export async function assembleExperienceCopilotPrompt(
   // + both API references — all change rarely or never): providers with prefix
   // caching (Anthropic/OpenAI/Gemini/DeepSeek) hit cache on the whole stable
   // block every turn and each tool-loop step. VOLATILE sections go last,
-  // rarest-changing first (digest → todo → context package), so the most-
+  // rarest-changing first (digest → plan → context package), so the most-
   // mutable content sits at the system message's tail — also maximum recency
   // for the working buffers, which used to sit mid-message and broke the cache
   // on every buffer edit.
@@ -711,11 +697,11 @@ export async function assembleExperienceCopilotPrompt(
     "",
     visualReference,
   );
-  // Volatile tail: digest (changes only at compaction) → todo (changes when the
-  // model rewrites its plan) → context package (changes every turn).
+  // Volatile tail: digest (changes only at compaction) → plan (changes when the
+  // model updates it) → context package (changes every turn).
   const volatileNoDigest: string[] = [];
-  if (todoSection) {
-    volatileNoDigest.push("", todoSection);
+  if (planSection) {
+    volatileNoDigest.push("", planSection);
   }
   volatileNoDigest.push("", contextPackage);
   const systemWithoutDigest = [...stableSections, ...volatileNoDigest].join("\n");

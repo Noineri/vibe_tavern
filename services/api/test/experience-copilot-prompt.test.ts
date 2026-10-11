@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
+import type { AgentPlan } from "@vibe-tavern/domain";
 import {
   assembleExperienceCopilotPrompt,
   resolveDigestBoundary,
@@ -634,66 +635,59 @@ describe("resolveDigestBoundary (CM-5)", () => {
   });
 });
 
-// ─── TAG-6: todo step-plan section ────────────────────────────────────────
+// ─── PM-3: durable script-owned plan section ───────────────────────────────
 
-describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", () => {
-  test("empty todo → section omitted, system message byte-identical to pre-TAG-6", async () => {
+describe("assembleExperienceCopilotPrompt — agent plan section (PM-3)", () => {
+  const plan: AgentPlan = {
+    goal: "Build the experience",
+    constraints: ["Keep the reducer deterministic"],
+    tasks: [
+      { id: "rules", title: "Write the rules buffer", body: "ACTIVE BODY MARKER", status: "active" },
+      { id: "reduce", title: "Add the reduce loop", body: "PENDING BODY MARKER", status: "pending" },
+      { id: "visual", title: "Sketch the visual", body: "", status: "completed" },
+      { id: "old", title: "Old idea", body: "", status: "abandoned" },
+    ],
+  };
+
+  test("no plan → section omitted, system message byte-identical to the zero-todo baseline", async () => {
     const result = await assembleExperienceCopilotPrompt({
       history: [],
       rules: VALID_RULES,
       step: "rules",
     });
-    expect(result.systemMessage).not.toContain("Current step plan");
-    // The zero-todo SHA is still the pinned pre-feature digest — the omission
-    // is total, not a substituted empty header. (Re-captured TAG-11: the
-    // `grill-me` skill catalog entry is present in the baseline system message.
-    // Re-captured for #16 (context economy): base.md shrunk to role + skill pointer + hard constraints, and the system message was reordered cache-first (stable role/catalog/refs prefix, volatile context package at the tail) — see the
-    // zero-digest pin's trail. Re-captured again (2026-10-07, Experience
-    // Copilot Grounding Report step 3 / P2): interactive-visual.md became a
-    // pure visual-bridge reference. Re-captured again for step 4 / P3's
-    // interactive-rules grounding corrections — see the zero-digest trail.
-    // Re-captured again for step 8 / P5's user-flow log-button corrections —
-    // see the zero-digest trail. Re-captured again (2026-10-11, node:vm
-    // docs-honesty unit): interactive-rules.md runtime-surface rewording —
-    // see the zero-digest pin's trail.)
+    expect(result.systemMessage).not.toContain("# Plan");
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
       .toBe("8fd6032ec7d1f64a54c9b97dd4c466d86da911023aa6d4b97f521367a0250577");
   });
 
-  test("non-empty todo renders [status] title lines with a preamble", async () => {
+  test("the plan section renders task statuses and only the active task body", async () => {
     const result = await assembleExperienceCopilotPrompt({
       history: [],
       rules: VALID_RULES,
       step: "rules",
-      todo: [
-        { title: "Write the rules buffer", status: "active" },
-        { title: "Add the reduce loop", status: "pending" },
-        { title: "Sketch the visual", status: "completed" },
-        { title: "Old idea", status: "abandoned" },
-      ],
+      plan,
     });
-    expect(result.systemMessage).toContain("# Current step plan");
-    expect(result.systemMessage).toContain("keep it current via the `todo` tool");
+    expect(result.systemMessage).toContain("# Plan");
+    expect(result.systemMessage).toContain("Goal: Build the experience");
     expect(result.systemMessage).toContain("[active] Write the rules buffer");
     expect(result.systemMessage).toContain("[pending] Add the reduce loop");
     expect(result.systemMessage).toContain("[completed] Sketch the visual");
     expect(result.systemMessage).toContain("[abandoned] Old idea");
+    expect(result.systemMessage).toContain("ACTIVE BODY MARKER");
+    expect(result.systemMessage).not.toContain("PENDING BODY MARKER");
   });
 
-  test("the todo section is injected into the SYSTEM message (survives history compaction)", async () => {
-    // Feed a LONG history that budget-compaction would trim — the todo section
-    // is system-level, so it must ride OUTSIDE the compacted history flow.
+  test("the plan section is injected into the SYSTEM message (survives history compaction)", async () => {
     const result = await assembleExperienceCopilotPrompt({
       history: makeMessages(40),
       rules: VALID_RULES,
       step: "rules",
       contextBudget: 800,
       responseReserve: 100,
-      todo: [{ title: "Finish the plan", status: "active" }],
+      plan,
     });
-    expect(result.systemMessage).toContain("# Current step plan");
-    expect(result.systemMessage).toContain("[active] Finish the plan");
-    // The plan is NOT a history flow message.
+    expect(result.systemMessage).toContain("# Plan");
+    expect(result.systemMessage).toContain("[active] Write the rules buffer");
     expect(result.messages.some((m) => m.role !== "system")).toBe(true);
     expect(result.messages[0].role).toBe("system");
   });

@@ -458,6 +458,10 @@ export async function* streamExperienceCopilot(
     itemCount: contextItems.length,
     blockLength: attachedContextBlock.length,
   });
+  const agentPlanOwner: AgentPlanOwner | null = thread.scriptId === null
+    ? null
+    : { kind: "script", scriptId: thread.scriptId };
+  const agentPlan = agentPlanOwner === null ? null : await deps.agentPlans.get(agentPlanOwner);
   const assembled = await assembleExperienceCopilotPrompt({
     ...(deps.db ? { db: deps.db } : {}),
     history,
@@ -472,7 +476,7 @@ export async function* streamExperienceCopilot(
     contextBudget: COPILOT_CONTEXT_BUDGET_TOKENS,
     responseReserve: COPILOT_RESPONSE_RESERVE_TOKENS,
     profile: copilotProfile,
-    todo: thread.todo,
+    plan: agentPlan,
     rulesTrusted: context.rulesTrusted,
     ...(deps.skillUserRoot !== undefined ? { skillUserRoot: deps.skillUserRoot } : {}),
     ...(attachedContextBlock ? { attachedContextBlock } : {}),
@@ -490,9 +494,6 @@ export async function* streamExperienceCopilot(
   // Skill roots come from the resolved skill catalog (ER-16) so read_skill_file
   // resolves against the rendered catalog's root; toolSet is the resolved
   // profile's set (read_skill_file always added on top, mirroring Co-Author).
-  const agentPlanOwner: AgentPlanOwner | null = thread.scriptId === null
-    ? null
-    : { kind: "script", scriptId: thread.scriptId };
   const requireAgentPlanOwner = (): AgentPlanOwner => {
     if (agentPlanOwner === null) {
       throw new Error("plan: a script must be saved before its plan can be read or updated");
