@@ -524,8 +524,11 @@ describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {
     // buttons ("Send log to assistant" / "Copy log" / "Ask the copilot about
     // this error") and the live-only Developer-diagnostics digest button.
     // Intentional system-prompt content changes, not drift.
+    // Re-captured again (2026-10-11, node:vm docs-honesty unit): the
+    // interactive-rules.md "Sandbox bounds" section became "Runtime surface
+    // bounds" — security-implying wording removed; surface facts unchanged.
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
+      .toBe("8fd6032ec7d1f64a54c9b97dd4c466d86da911023aa6d4b97f521367a0250577");
     expect(result.messages).toHaveLength(3);
   });
 
@@ -650,9 +653,11 @@ describe("assembleExperienceCopilotPrompt — todo step-plan section (TAG-6)", (
     // pure visual-bridge reference. Re-captured again for step 4 / P3's
     // interactive-rules grounding corrections — see the zero-digest trail.
     // Re-captured again for step 8 / P5's user-flow log-button corrections —
-    // see the zero-digest trail.)
+    // see the zero-digest trail. Re-captured again (2026-10-11, node:vm
+    // docs-honesty unit): interactive-rules.md runtime-surface rewording —
+    // see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
+      .toBe("8fd6032ec7d1f64a54c9b97dd4c466d86da911023aa6d4b97f521367a0250577");
   });
 
   test("non-empty todo renders [status] title lines with a preamble", async () => {
@@ -721,9 +726,11 @@ describe("assembleExperienceCopilotPrompt — attached context (CX-3)", () => {
     // reference. Re-captured again for step 4 / P3's interactive-rules
     // grounding corrections — see the zero-digest pin's trail. Re-captured
     // again for step 8 / P5's user-flow log-button corrections — see the
-    // zero-digest pin's trail.)
+    // zero-digest pin's trail. Re-captured again (2026-10-11, node:vm
+    // docs-honesty unit): interactive-rules.md runtime-surface rewording —
+    // see the zero-digest pin's trail.)
     expect(createHash("sha256").update(result.systemMessage).digest("hex"))
-      .toBe("cc6f1d0a345c992c97c045fc659e6299719c4475fe885d68d86baba61fd11545");
+      .toBe("8fd6032ec7d1f64a54c9b97dd4c466d86da911023aa6d4b97f521367a0250577");
   });
 
   test("attached block + anchor splice immediately before the final user message", async () => {

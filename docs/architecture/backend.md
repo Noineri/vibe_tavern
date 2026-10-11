@@ -523,7 +523,7 @@ Registering `vision_describe` as a real mode (rather than a separate code path) 
 
 ## Interactive Experiences
 
-The mini-app engine (`domain/interactive/`, contracts in `packages/api-contracts/src/schemas/interactive-schema.ts`). A package is two sources authored in Build mode: **rules** (the `context.experience.register({...})` DSL — `create`/`project`/`actions`/`reduce`, executed in a `node:vm` sandbox with no DOM/network) and a **visual** (a self-contained HTML document rendered in a CSP-sandboxed iframe, driven through the `VibeExperience` bridge). Live sessions pin the rules source, visual source, and random seed at start; every turn advances through the kernel and journals transitions.
+The mini-app engine (`domain/interactive/`, contracts in `packages/api-contracts/src/schemas/interactive-schema.ts`). A package is two sources authored in Build mode: **rules** (the `context.experience.register({...})` DSL — `create`/`project`/`actions`/`reduce`, executed in `node:vm` with a DOM-free context surface — not a security boundary, see [Scripts — Confinement posture](./scripts.md#confinement-posture)) and a **visual** (a self-contained HTML document rendered in a CSP-sandboxed iframe, driven through the `VibeExperience` bridge). Live sessions pin the rules source, visual source, and random seed at start; every turn advances through the kernel and journals transitions.
 
 Two execution modes (REALTIME_EXPERIENCE_MODE_PLAN):
 

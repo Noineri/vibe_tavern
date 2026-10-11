@@ -6,7 +6,7 @@
 
 ## Overview
 
-A **script** is a snippet of user-authored JavaScript that runs **once per generated turn**, after lore activation and before prompt assembly. It can mutate the character's `personality` / `scenario` fields, inject extra messages into the prompt, and keep persistent per-chat state. Scripts are the bespoke, code-first counterpart to lorebooks: where a lorebook is a declarative table of keyword→text rules evaluated by an engine, a script is arbitrary code evaluated in a sandbox.
+A **script** is a snippet of user-authored JavaScript that runs **once per generated turn**, after lore activation and before prompt assembly. It can mutate the character's `personality` / `scenario` fields, inject extra messages into the prompt, and keep persistent per-chat state. Scripts are the bespoke, code-first counterpart to lorebooks: where a lorebook is a declarative table of keyword→text rules evaluated by an engine, a script is arbitrary code evaluated server-side in `node:vm` with a controlled context surface (see [Confinement posture](#confinement-posture) — not a security boundary).
 
 VT scripts are modeled on **Janitor AI's** scripting API, not SillyTavern's. The lineage is visible in the conventions: snake_case aliases (`last_message`, `message_count`, `inject_message`) mirroring JAI's surface, the `{ code, script }` JSON import shape that `parseScriptImport` accepts, per-character binding, and the `context.chat` / `context.character` shape. SillyTavern has no comparable freeform per-turn JS feature (its closest surfaces — Quick Reply scripts and the slash-command system — are a different model), so there is no ST parity to speak of here. See [Lineage: Janitor AI, not SillyTavern](#lineage-janitor-ai-not-sillytavern).
 
@@ -125,6 +125,8 @@ Injected host-realm objects expose host constructors: chains such as `Object.con
 The 5-second VM timeout bounds synchronous CPU execution only; Promise continuations can run after `executeScripts` returns and therefore outside the timeout window.
 
 This posture applies to both `script-sandbox.ts` and `dice-script-sandbox.ts`, which use the same `runInNewContext` API.
+
+Installing and enabling a script is therefore a deliberate act of granting it full access to the VT process; the import-time detector, warnings, and copilot review assist that assessment but guarantee nothing — absence of findings is not a safety claim.
 
 ---
 

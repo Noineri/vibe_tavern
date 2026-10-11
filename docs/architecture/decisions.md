@@ -109,7 +109,7 @@ Why the original decision missed this: the options table weighs three ways to fi
 **Rationale:**
 - **Deterministic ordering** — each script sees the mutations of all previous scripts. Async execution would require complex dependency resolution.
 - **No race conditions** — no `Promise.all()` surprises, no interleaving.
-- **Security** — `node:vm` sandboxing prevents file system access, network access, and process spawning.
+- **Security** — superseded: `node:vm` is retained for its synchronous execution contract (timeout, exception propagation, mutation transfer), NOT as a security boundary — guest code can reach host capabilities via constructor chains; see AD-024 and [Scripts — Confinement posture](./scripts.md#confinement-posture).
 - **Janitor AI compatibility** — Janitor executes scripts synchronously. Matching this behavior ensures compatibility.
 
 **Trade-off:** Scripts can't do async I/O (no `fetch`, no `setTimeout`). Acceptable because scripts are meant for prompt manipulation, not network calls.

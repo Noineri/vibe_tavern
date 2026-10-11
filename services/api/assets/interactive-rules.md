@@ -161,8 +161,8 @@ A frozen namespace of pure, deterministic recipes available in every method. All
 - `range(count)` — `[0, 1, ..., count-1]`.
 - `keepLast(items, max)` — the last `max` items as a NEW array; use it to keep growing histories (messages, logs) in state bounded.
 
-# Sandbox bounds (HARD)
-Your code runs in an isolated `node:vm` sandbox. This is the RULES sandbox — it has NO DOM, NO `window`, NO `document`, and NO access to visuals or the bridge.
+# Runtime surface bounds (HARD)
+Your code runs server-side in `node:vm` with a restricted RULES context — it has NO DOM, NO `window`, NO `document`, and NO access to visuals or the bridge.
 - ALLOWED globals: `Math`, `JSON`, `Date`, `parseInt`, `parseFloat`, `isNaN`, `isFinite`, `Array`, `Object`, `String`, `Number`, `Boolean`, `RegExp`, `Map`, `Set`, `Error`, and a capturing `console`.
 - FORBIDDEN: `fetch`, `Promise`, `async`/`await`, `setTimeout`, `setInterval`, `require`, `import`, `process`, `globalThis`, `eval`, `Function`, `WebAssembly`, `Reflect`, `window`, `document`, any DOM API, and any network/storage/process API.
 - Methods MUST be synchronous and return JSON-safe values. An `async` method (returning a Promise) is rejected.
