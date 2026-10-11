@@ -21,7 +21,10 @@
  * return condensed digests the model reasons over; they never mutate the
  * working state. `read_skill_file` is REUSED from the Co-Author skill system
  * (same sandboxed reader, same progressive-disclosure flow). `plan` and
- * `read_plan` are supplied by standalone script-owned agent-plan tools.
+ * `read_plan` are supplied by standalone script-owned agent-plan tools; `todo`
+ * (the thread-session quick checklist, restored PM-7 to live BESIDE the plan
+ * — the tool descriptions carry the choice guidance) by the standalone
+ * `createCopilotTodoTool` factory.
  *
  * The model may call several tools per turn; the AI SDK multi-step loop feeds
  * results back so the model stays coherent (bounded only by the nominal
@@ -52,6 +55,7 @@ import {
   type ExperienceParticipant,
 } from "@vibe-tavern/domain";
 import {
+  type CopilotTodoItem,
   type ExperienceCopilotLaunchContext,
   type ExperienceCopilotToolOutput,
   type ExperienceSeatLegalityMatrix,
@@ -63,6 +67,7 @@ import {
 } from "../experience-tester.js";
 import { buildReadSkillFileTool } from "../../coauthor/skills/skill-read-tool.js";
 import { createAgentPlanTools } from "../../agent-plan/agent-plan-tools.js";
+import { createCopilotTodoTool } from "./copilot-todo-tool.js";
 
 /** Structured log for every experience-copilot tool call — the observability
  *  channel for a path whose tool I/O and validation verdicts are otherwise
@@ -274,7 +279,9 @@ function launchContextDigest(
  * read-only diagnostics; `read_skill_file` is the reused Co-Author skill
  * reader; `suggest_visual_binding` is a non-binding recommendation; `plan` and
  * `read_plan` maintain the script-owned plan through injected load/save
- * functions; `ask_user` ends the turn with a clarifying question (a marker —
+ * functions; `todo` maintains the thread-session checklist (full-list rewrite
+ * through the injected `saveTodo`); `ask_user` ends the turn with a clarifying
+ * question (a marker —
  * the stream, not this builder, persists/acts on it). The caller
  * passes this set to the executor (tools propose/diagnose; the BE-6 endpoints
  * are the sole write path).
@@ -290,7 +297,7 @@ function launchContextDigest(
  *   true: trusted scripts behave exactly as before.
  * @param opts.launchContext Latest Try-panel roster, grants, settings and seed.
  *   When absent, each rules body gets the shared capability-derived default.
- * @param opts.toolSet Optional inclusion map for the eight authoring/diagnostic
+ * @param opts.toolSet Optional inclusion map for the nine authoring/diagnostic
  *   tools (default: all on). `read_skill_file` is always included, mirroring
  *   the Co-Author convention (it is the universal read-only skill channel).
  * @param opts.loadPlan Optional reader for the script-owned plan. When absent,
@@ -299,6 +306,10 @@ function launchContextDigest(
  * @param opts.savePlan Optional writer for the script-owned plan. When absent,
  *   a `plan` call returns the standard `{ ok: false, error }` persistence
  *   envelope.
+ * @param opts.saveTodo Optional writer for the `todo` tool's full-list rewrite
+ *  (the stream wires it to `ExperienceCopilotStore.updateTodo(threadId,
+ *  items)`; the test injects a fake). When absent, a `todo` call throws — a
+ *  precondition miss, mirroring `run_test`'s no-buffer guard.
  * @param opts.skillRoots  Roots for the reused `read_skill_file` tool.
  */
 export function buildExperienceCopilotTools(opts: {
@@ -309,9 +320,10 @@ export function buildExperienceCopilotTools(opts: {
   toolSet?: Record<string, boolean>;
   loadPlan?: () => Promise<AgentPlan | null>;
   savePlan?: (plan: AgentPlan) => Promise<void>;
+  saveTodo?: (items: readonly CopilotTodoItem[]) => Promise<void>;
   skillRoots?: readonly string[];
 } = {}): ToolSet {
-  const { toolSet, skillRoots, loadPlan, savePlan } = opts;
+  const { toolSet, skillRoots, loadPlan, savePlan, saveTodo } = opts;
   const rulesTrusted = opts.rulesTrusted ?? true;
 
   /** Resolve the context independently for each working rules body: explicit
@@ -685,6 +697,8 @@ export function buildExperienceCopilotTools(opts: {
     }),
 
     ...agentPlanTools,
+
+    todo: createCopilotTodoTool({ save: saveTodo, enqueue: runQueued }),
 
     ask_user: tool({
       description:

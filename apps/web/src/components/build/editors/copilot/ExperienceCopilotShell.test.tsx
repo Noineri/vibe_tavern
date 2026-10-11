@@ -363,6 +363,7 @@ function thread(id: string): ExperienceCopilotThreadWire {
     updatedAt: "",
     metrics: null,
     contextLinks: [],
+    todo: [],
   };
 }
 
@@ -400,7 +401,7 @@ function hasHiddenClass(el: HTMLElement): boolean {
 
 beforeEach(() => {
   mobileOverride = false;
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
+  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
   // The review round + the persisted localStorage draft now SURVIVE shell
   // unmounts (the whole point of the round store) — reset both, or a
   // previous test's hanging review leaks into the next mount.
@@ -590,6 +591,128 @@ describe("ExperienceCopilotShell — agent plan panel (PM-6)", () => {
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
 
     await waitFor(() => expect((getByTestId("agent-plan-open-editor") as HTMLButtonElement).disabled).toBe(true));
+  });
+});
+
+describe("ExperienceCopilotShell — todo panel (TAG-8, restored PM-7)", () => {
+  const PLAN = [
+    { status: "completed", title: "Design the turn loop" },
+    { status: "active", title: "Write the rules buffer" },
+    { status: "pending", title: "Bind the visual" },
+  ] as const;
+
+  it("mounts the panel DIRECTLY below the meter, seeded from the thread wire todo", async () => {
+    router.activeThread = { ...thread("thread-1"), todo: [...PLAN] };
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+
+    const { getByTestId, queryByTestId } = renderShell();
+    await flushSessionLoad();
+
+    const meter = getByTestId("copilot-context-meter");
+    const panel = getByTestId("copilot-todo-panel");
+    // Mount order: the panel is the meter's IMMEDIATE next sibling (the pinned
+    // stack is header → meter → todo → plan → feed; the plan panel is hidden
+    // here because the stored plan is empty — the independent-hiding contract).
+    expect(meter.nextElementSibling).toBe(panel);
+    expect(queryByTestId("agent-plan-panel")).toBeNull();
+    // Seeded from the wire: collapsed summary shows the active goal + remaining.
+    expect(panel.getAttribute("data-state")).toBe("collapsed");
+    expect(panel.textContent).toContain("Write the rules buffer");
+    expect(panel.textContent).toContain("· 2");
+    // The panel state went through the session-scoped store (not local).
+    expect(useExperienceCopilotTurnStore.getState().getTodo("thread-1")).toHaveLength(3);
+  });
+
+  it("stays hidden when the thread wire todo is empty", async () => {
+    router.activeThread = thread("thread-1"); // todo: []
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+
+    const { getByTestId, queryByTestId } = renderShell();
+    await flushSessionLoad();
+
+    expect(getByTestId("copilot-context-meter")).toBeDefined();
+    expect(queryByTestId("copilot-todo-panel")).toBeNull();
+  });
+
+  it("reflects the live `todo` tool call (store rewrite → panel re-renders)", async () => {
+    router.activeThread = thread("thread-1"); // todo: [] → hidden at first
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+
+    const { getByTestId, queryByTestId } = renderShell();
+    await flushSessionLoad();
+    expect(queryByTestId("copilot-todo-panel")).toBeNull();
+
+    act(() => {
+      useExperienceCopilotTurnStore.getState().setTodo("thread-1", [
+        { status: "active", title: "Fresh plan step" },
+      ]);
+    });
+
+    const panel = getByTestId("copilot-todo-panel");
+    expect(panel.textContent).toContain("Fresh plan step");
+    expect(panel.textContent).toContain("· 1");
+  });
+});
+
+describe("ExperienceCopilotShell — todo + plan coexistence (PM-7)", () => {
+  const TODO = [
+    { status: "active", title: "Tweak the copy" },
+  ] as const;
+  const PLAN: AgentPlan = {
+    goal: "Ship the editor",
+    constraints: [],
+    tasks: [
+      { id: "t1", title: "Design the turn loop", body: "", status: "completed" },
+      { id: "t2", title: "Write the rules buffer", body: "", status: "active" },
+    ],
+  };
+
+  it("both panels mounted: todo DIRECTLY ABOVE the plan section (owner ruling: todo = session, plan = script)", async () => {
+    router.activeThread = { ...thread("thread-1"), todo: [...TODO] };
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = PLAN;
+
+    const { getByTestId } = renderShell({ scriptId: "script-coexist-both" });
+    await flushSessionLoad();
+
+    const meter = getByTestId("copilot-context-meter");
+    await waitFor(() => expect(getByTestId("agent-plan-panel")).toBeDefined());
+    const todoPanel = getByTestId("copilot-todo-panel");
+    const planPanel = getByTestId("agent-plan-panel");
+    // Pinned stack: header → meter → TODO → PLAN → feed — todo above plan.
+    expect(meter.nextElementSibling).toBe(todoPanel);
+    expect(todoPanel.nextElementSibling).toBe(planPanel);
+    // Both render their own data (todo's current step; plan's active task).
+    expect(todoPanel.textContent).toContain("Tweak the copy");
+    expect(planPanel.textContent).toContain("Write the rules buffer");
+  });
+
+  it("each panel hides independently: plan shown while todo empty", async () => {
+    router.activeThread = thread("thread-1"); // todo: [] → todo hidden
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = PLAN;
+
+    const { getByTestId, queryByTestId } = renderShell({ scriptId: "script-coexist-plan-only" });
+    await flushSessionLoad();
+
+    await waitFor(() => expect(getByTestId("agent-plan-panel")).toBeDefined());
+    expect(queryByTestId("copilot-todo-panel")).toBeNull();
+    // The plan panel is the meter's immediate sibling again (todo rendered nothing).
+    expect(getByTestId("copilot-context-meter").nextElementSibling).toBe(getByTestId("agent-plan-panel"));
+  });
+
+  it("each panel hides independently: todo shown while the plan is empty", async () => {
+    router.activeThread = { ...thread("thread-1"), todo: [...TODO] };
+    router.messages = [msg({ id: "u1", role: "user", content: "hi" })];
+    router.agentPlan = EMPTY_PLAN;
+
+    const { getByTestId, queryByTestId } = renderShell({ scriptId: "script-coexist-todo-only" });
+    await flushSessionLoad();
+
+    expect(getByTestId("copilot-todo-panel")).toBeDefined();
+    expect(queryByTestId("agent-plan-panel")).toBeNull();
+    // Session switching never touches the plan: it stays the empty-plan GET.
+    expect(apiCalls("GET", /\/api\/scripts\/script-coexist-todo-only\/agent-plan$/)).toHaveLength(1);
   });
 });
 

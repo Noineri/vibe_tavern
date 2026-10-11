@@ -918,11 +918,23 @@ The modal persists the last-used model per mode in `localStorage` so the lightbu
 
 ## CopilotPlanSection
 
-**File:** `build/editors/copilot/CopilotPlanSection.tsx` — the Experience Copilot's mount of the shared agent-plan mechanic (see [Agent plan mechanic](./frontend.md#agent-plan-mechanic)), part of the [copilot subsystem](./experience-copilot.md). Mounted in the shell's chat tab as the context meter's immediate next sibling (pinned stack: header → meter → section → scrolling feed — it does not scroll with the feed); it replaced the retired thread-scoped step-plan panel.
+**File:** `build/editors/copilot/CopilotPlanSection.tsx` — the Experience Copilot's mount of the shared agent-plan mechanic (see [Agent plan mechanic](./frontend.md#agent-plan-mechanic)), part of the [copilot subsystem](./experience-copilot.md). Mounted in the shell's chat tab directly below the todo section (pinned stack: header → meter → todo panel → plan section → scrolling feed — it does not scroll with the feed); the plan is the durable script document living beside the session-scoped todo panel (PM-7).
 
 - Owns one `useAgentPlan(owner)` subscription for the script plus the editor modal's local open state; renders `AgentPlanPanel` + `AgentPlanEditorModal` (both in `shared/agent-plan/`).
 - The shell passes `locked={ctrl.isSending}` — the panel's editor button and every modal field lock while a turn streams, so the model's rewrite and the user's edit can never race.
 - Props are prop-driven by contract (`owner`, `locked`); nothing imports from the copilot dir in the shared components.
+
+---
+
+## CopilotTodoSection
+
+**File:** `build/editors/copilot/CopilotTodoSection.tsx` + `CopilotTodoPanel.tsx` — the Experience Copilot's mount of the session-scoped todo mechanic (restored PM-7, owner ruling 2026-10-11: todo = the thread's session; plan = the script), part of the [copilot subsystem](./experience-copilot.md). Pinned directly below the context meter and directly ABOVE `CopilotPlanSection` — it does not scroll with the feed.
+
+- The section owns the turn-store subscription (`todoByThread[threadId]`, seeded from the thread wire by the controller, rewritten live by `todo` tool events); the panel is strictly read-only (model-owned).
+- **Hidden until the first `todo` call ever happens** on the thread (`items.length === 0` → `null`) — each pinned panel hides itself independently of the other.
+- **Collapsed:** `[status glyph] current-title · N` + chevron; the whole row is the expand button. Current = first `active` item, falling back to first `pending` (mirrors the objective tracker's `pickActiveTask`); a fully-resolved list shows the done label. N = remaining = `pending + active`. The active glyph's dot pulses — the "live" indicator.
+- **Expanded:** `Ic.target` header + i18n title + remaining count, then the full ordered list with per-status glyphs (status classes/NodeGlyph styling borrowed verbatim from `chat/message-slots/objective-zone.tsx`).
+- Collapse/expand is per-mount local state (a UI toggle, deliberately NOT persisted to the store).
 
 ---
 

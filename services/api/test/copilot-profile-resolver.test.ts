@@ -67,7 +67,11 @@ describe("CopilotProfileResolver", () => {
     expect(profile.maxSteps).toBeUndefined();
   });
 
-  test("legacy todo:true projects to plan/read_plan, while rows without it get neither", () => {
+  test("a stored todo:true projects to todo:true and NOTHING else (PM-7 no-alias boundary)", () => {
+    // PM-7 (owner ruling 2026-10-11): `todo` is a real toolset key again —
+    // the PM-2 alias that projected a legacy `todo: true` onto `plan` +
+    // `read_plan` was REMOVED with the todo mechanic's restoration (todo =
+    // the thread's session checklist beside the plan).
     const row: CopilotProfileRow = {
       id: "profile_legacy",
       name: "Legacy",
@@ -78,7 +82,9 @@ describe("CopilotProfileResolver", () => {
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
 
-    expect(copilotProfileRowToWire(row).toolSet).toEqual({ plan: true, read_plan: true });
+    expect(copilotProfileRowToWire(row).toolSet).toEqual({ todo: true });
+    expect(copilotProfileRowToWire(row).toolSet.plan).toBeUndefined();
+    expect(copilotProfileRowToWire(row).toolSet.read_plan).toBeUndefined();
     expect(copilotProfileRowToWire({ ...row, toolSet: {} }).toolSet).toEqual({});
   });
 

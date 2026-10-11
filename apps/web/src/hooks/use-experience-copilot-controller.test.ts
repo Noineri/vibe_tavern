@@ -123,6 +123,7 @@ const { ProviderStreamError } = await import("../api/provider-stream-error.js");
 const { extractPersistedExperienceCopilotActivities, wireToToolSource } = await import(
   "../stores/experience-copilot-turn-store.js"
 );
+type CopilotTodoItem = import("@vibe-tavern/api-contracts").CopilotTodoItem;
 
 const THREAD = "thread-1";
 const PROVIDER = "provider-1";
@@ -152,7 +153,7 @@ beforeEach(() => {
   answerCopilotAsk.mockReset();
   toastError.mockClear();
   toastInfo.mockClear();
-  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {} });
+  useExperienceCopilotTurnStore.setState({ turnsByThread: {}, feedByThread: {}, todoByThread: {} });
 });
 
 afterAll(() => {
@@ -535,7 +536,22 @@ describe("feed wiring (TF-4)", () => {
   });
 });
 
-// ─── TAG-7 / PM-6: plan + ask wiring ─────────────────────────────────────
+// ─── TAG-7 (restored PM-7) / PM-6: todo, plan + ask wiring ─────────────
+
+/** TAG-7 (restored PM-7): the session-scoped checklist items — the shapes
+ *  the restored `todo` tool produces (object root `{items}`). */
+const TODO_ITEMS: CopilotTodoItem[] = [
+  { title: "Draft the rules skeleton", status: "completed" },
+  { title: "Write the visual header", status: "active" },
+  { title: "Wire the score action", status: "pending" },
+];
+
+const TODO_ENVELOPE = {
+  ok: true,
+  items: TODO_ITEMS,
+  activeTitle: "Write the visual header",
+  remaining: 2,
+};
 
 /** PM-6: a `plan` tool-call's args (object root `{plan}`) and its success
  *  result envelope — the shapes createAgentPlanTools produces. */
@@ -562,6 +578,164 @@ const ASK_ARGS = {
   options: ["tarot", "playing cards"],
   recommended: "tarot",
 };
+
+describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)", () => {
+  test("a todo tool-call upserts the panel state from its args (full rewrite, immediate); the result envelope confirms + carries the card payload", async () => {
+    const d = deferred<{ finishReason: string }>();
+    let captured!: CopilotStreamOpts;
+    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("plan this");
+      await Promise.resolve();
+    });
+
+    // Args arrive BEFORE the result — the panel updates immediately.
+    await act(async () => {
+      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
+    });
+    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+
+    await act(async () => {
+      captured.onToolResult!({ toolCallId: "tc_todo", toolName: "todo", output: TODO_ENVELOPE, isError: false });
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+
+    const [activity] = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    expect(activity).toEqual({
+      toolCallId: "tc_todo",
+      toolName: "todo",
+      args: { items: TODO_ITEMS },
+      status: "done",
+      todo: { items: TODO_ITEMS, remaining: 2, activeTitle: "Write the visual header" },
+    });
+    // The panel still shows the confirmed list after the envelope.
+    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+  });
+
+  test("a failed todo save (ok:false) renders the error card and leaves the panel at the optimistic args value", async () => {
+    const d = deferred<{ finishReason: string }>();
+    let captured!: CopilotStreamOpts;
+    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("plan this");
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
+      captured.onToolResult!({
+        toolCallId: "tc_todo",
+        toolName: "todo",
+        output: { ok: false, error: "db down" },
+        isError: false,
+      });
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+
+    const [activity] = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    expect(activity).toMatchObject({ toolCallId: "tc_todo", toolName: "todo", status: "error" });
+    expect(activity!.todo).toBeUndefined();
+    // Optimistic panel value retained — the model retries the rewrite next step.
+    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+  });
+
+  test("threadTodo seeds/resets the panel state from the persisted wire; omitted leaves the store untouched", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+
+    // renderHook's rerender takes new PROPS (not a new render callback — a
+    // zero-arg callback would ignore them and re-run its stale closure), so the
+    // threadTodo is threaded through initialProps to make re-seeding drivable.
+    const initial = renderHook(
+      ({ todo }: { todo: readonly CopilotTodoItem[] }) =>
+        useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER, threadTodo: todo }),
+      { initialProps: { todo: TODO_ITEMS } },
+    );
+    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+
+    // A refetch producing a new wire todo re-seeds (new array identity).
+    const rewritten: CopilotTodoItem[] = [{ title: "Fresh plan", status: "active" }];
+    await act(async () => {
+      initial.rerender({ todo: rewritten });
+    });
+    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(rewritten);
+
+    // The empty wire todo clears the panel (thread switch to a plan-less thread).
+    await act(async () => {
+      initial.rerender({ todo: [] });
+    });
+    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual([]);
+
+    // Omitted (undefined) — no seeding, the existing state is untouched.
+    useExperienceCopilotTurnStore.getState().setTodo(THREAD, TODO_ITEMS);
+    initial.unmount();
+    const second = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+    second.unmount();
+  });
+
+  test("PM-7 coexistence: a todo event routes to the turn store while a plan event routes to applyPlanToolResult", async () => {
+    const d = deferred<{ finishReason: string }>();
+    let captured!: CopilotStreamOpts;
+    streamExperienceCopilot.mockImplementation((_threadId, _body, opts) => {
+      captured = opts;
+      return d.promise;
+    });
+    const applyPlanToolResult = mock();
+
+    const { result } = renderHook(() =>
+      useExperienceCopilotController({ threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
+    );
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.handleSend("both tools");
+      await Promise.resolve();
+    });
+
+    // ONE turn, both mechanics: the todo call rewrites the session checklist…
+    await act(async () => {
+      captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
+    });
+    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+    // …and the plan call routes its carrier args + envelope to the hook seam.
+    await act(async () => {
+      captured.onToolCall!({ toolCallId: "tc_plan", toolName: "plan", args: PLAN_ARGS });
+      captured.onToolResult!({ toolCallId: "tc_plan", toolName: "plan", output: PLAN_ENVELOPE, isError: false });
+      captured.onToolResult!({ toolCallId: "tc_todo", toolName: "todo", output: TODO_ENVELOPE, isError: false });
+      d.resolve({ finishReason: "stop" });
+      await pending;
+    });
+    expect(applyPlanToolResult).toHaveBeenCalledWith(PLAN_ARGS, PLAN_ENVELOPE);
+    // The two states never crossed: the todo envelope confirmed the store list…
+    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+    // …and the plan activity carries no todo payload (and vice versa).
+    const activities = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    expect(activities.find((a) => a.toolName === "todo")!.todo).toBeDefined();
+    expect(activities.find((a) => a.toolName === "plan")!.todo).toBeUndefined();
+  });
+});
 
 describe("useExperienceCopilotController — plan wiring (PM-6)", () => {
   test("a plan tool result routes the carrier args + envelope to applyPlanToolResult and renders the done card (no raw summary)", async () => {

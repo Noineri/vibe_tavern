@@ -53,10 +53,11 @@ describe("ExperienceCopilotAdapter session lifecycle (ER-12a)", () => {
     expect(sessions.some((s) => s.id === other.id)).toBe(false);
 
     // Wire mapping: branded ids flatten to plain strings, nullable fields stay
-    // null (never undefined). `listSessions` returns full
-    // `ExperienceCopilotThreadWire`s, so the summary pin carries the whole
-    // wire shape (the thread-scoped `todo` field was removed in PM-6 — the
-    // plan is script-owned now, served by /api/scripts/:id/agent-plan).
+    // null (never undefined). `todo` is the REQUIRED session checklist on the
+    // thread wire (TAG-6, restored PM-7 — `[]` = none yet; the durable plan is
+    // script-owned and served by /api/scripts/:id/agent-plan, NOT here).
+    // `listSessions` returns full `ExperienceCopilotThreadWire`s, so the
+    // summary pin carries the whole wire shape.
     expect(sessions[0]).toEqual({
       id: newer.id,
       scriptId: "script_a",
@@ -67,6 +68,7 @@ describe("ExperienceCopilotAdapter session lifecycle (ER-12a)", () => {
       updatedAt: newer.updatedAt,
       metrics: null,
       contextLinks: [],
+      todo: [],
     });
   });
 

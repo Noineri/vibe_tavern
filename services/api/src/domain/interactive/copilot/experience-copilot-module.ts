@@ -75,6 +75,7 @@ export const EXPERIENCE_COPILOT_MODULE: ExperienceCopilotModuleDef = {
     suggest_visual_binding: true,
     plan: true,
     read_plan: true,
+    todo: true,
     ask_user: true,
   },
 };

@@ -219,6 +219,38 @@ export const setCopilotContextLinksSchema = z
   .strict();
 export type SetCopilotContextLinksRequest = z.infer<typeof setCopilotContextLinksSchema>;
 
+// ─── Copilot todo (EXPERIENCE_COPILOT_TODO_ASK_GRILL_PLAN, TAG-1) ───────────
+
+/**
+ * One step in the copilot's todo list (TAG-1). The `todo` tool (Wave 2) has
+ * the model maintain a quick session-scoped checklist for the authoring
+ * thread via full-list rewrites; the list persists on the thread row
+ * (`todo_json`, TAG-2). PM-7 (owner ruling 2026-10-11) restored the mechanic
+ * to live BESIDE the script-owned agent plan: todo = the thread's session
+ * (small tasks), plan = the script's durable document. The four statuses
+ * mirror the objective tracker's `objectiveTaskStatusSchema`
+ * (insights-schema.ts) — a deliberate match so the pinned panel (TAG-8)
+ * reuses the tracker's visual language (`NodeGlyph`, `statusClass`)
+ * unchanged. `.strict()` rejects unknown keys: a model-authored list must
+ * not smuggle extra fields through persistence.
+ */
+export const copilotTodoItemSchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    status: z.enum(["pending", "active", "completed", "abandoned"]),
+  })
+  .strict();
+export type CopilotTodoItem = z.infer<typeof copilotTodoItemSchema>;
+
+/**
+ * A complete todo list as the `todo` tool sends it (rewrite semantics — every
+ * call carries the FULL list, never a delta; Cline-style). The cap is a
+ * pragmatic bound: room for a real working checklist, bounded cost for the
+ * pinned panel render.
+ */
+export const copilotTodoListSchema = z.array(copilotTodoItemSchema).max(30);
+export type CopilotTodoList = z.infer<typeof copilotTodoListSchema>;
+
 /**
  * Wire shape of an experience-copilot thread (ER-7). Mirrors
  * `ExperienceCopilotThread` (packages/db/src/stores/experience-copilot-store.ts)
@@ -244,10 +276,14 @@ export const experienceCopilotThreadSchema = z.object({
    *  ids are skipped silently. Empty array = nothing pinned (the zero-pinned
    *  assembly stays byte-identical to the pre-plan output). */
   contextLinks: z.array(experienceCopilotContextLinkSchema),
-  /** The model's step-plan moved OFF the thread wire in PM-6
-   *  (EXPERIENCE_COPILOT_PLAN_MODE_PLAN): the plan is script-owned
-   *  (`agent_plans`) and served by GET/PUT `/api/scripts/:scriptId/agent-plan`,
-   *  so the thread wire no longer carries it. */
+  /** The model's session-scoped checklist (TAG-6, restored PM-7): `[]` until
+   * the first `todo` call, then the full-list rewrite the tool persists every
+   * call. Mirrors the store's parsed `todo` (TAG-2). REQUIRED (always
+   * present, empty = no checklist yet) so the client never has to
+   * null-check — the adapter maps the store row's todo into this field on
+   * every thread read. The DURABLE plan is separate: script-owned
+   * (`agent_plans`), served by GET/PUT `/api/scripts/:scriptId/agent-plan`. */
+  todo: z.array(copilotTodoItemSchema),
 });
 export type ExperienceCopilotThreadWire = z.infer<typeof experienceCopilotThreadSchema>;
 
@@ -299,9 +335,13 @@ export type ExperienceCopilotBoundVisual = z.infer<typeof experienceCopilotBound
 // `openingMessage` — the copilot is not a chat-mode and does not greet.
 
 /**
- * Which tools a profile may toggle. A PARTIAL record over exactly the 8
+ * Which tools a profile may toggle. A PARTIAL record over exactly the 9
  * toggleable copilot tools (write_buffer, edit_buffer, run_test, run_simulate,
- * suggest_visual_binding, plan, read_plan, ask_user). `read_skill_file` is intentionally ABSENT — it is
+ * suggest_visual_binding, plan, read_plan, todo, ask_user). `todo` was
+ * restored as a real key in PM-7 (owner ruling 2026-10-11): it is the
+ * session-scoped quick checklist living beside the script-owned plan, and a
+ * stored `todo: true` projects to `todo: true` and nothing else (no alias).
+ * `read_skill_file` is intentionally ABSENT — it is
  * the always-on, read-only skill-access channel and is never gated by a
  * toolSet (mirroring Co-Author's `coauthorToolSetSchema`, which excludes
  * `read_skill_file` for the same reason). `.strict()` rejects any unknown key
@@ -317,6 +357,7 @@ export const copilotToolSetSchema = z
     suggest_visual_binding: z.boolean().optional(),
     plan: z.boolean().optional(),
     read_plan: z.boolean().optional(),
+    todo: z.boolean().optional(),
     ask_user: z.boolean().optional(),
   })
   .strict();

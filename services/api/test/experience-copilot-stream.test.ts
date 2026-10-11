@@ -38,14 +38,16 @@ let streamTextImpl: ((opts: unknown) => unknown) | undefined;
 
 function createFakeStore(
   thread: ExperienceCopilotThread,
-): ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> } {
+): ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }>; todoCalls: Array<{ threadId: string; items: unknown }> } {
   const messages: ExperienceCopilotMessage[] = [];
   const metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> = [];
+  const todoCalls: Array<{ threadId: string; items: unknown }> = [];
   let counter = 0;
   const now = () => new Date(Date.now() + counter++ * 1000).toISOString();
   return {
     messages,
     metricsCalls,
+    todoCalls,
     async getActive() { return null; },
     async getById() { return thread; },
     async listSessions() { return [thread]; },
@@ -71,6 +73,15 @@ function createFakeStore(
     },
     async getAutoCompact() { return true; },
     async setAutoCompact() {},
+    // TAG-6 (restored PM-7): the todo tool's full-list rewrite persists onto
+    // the thread row. The fake mirrors the real store: records the call AND
+    // mutates the in-memory thread's todo so the NEXT turn's `getById` (this
+    // same thread object) already carries the checklist — the session-scoped
+    // lifetime behavior.
+    async updateTodo(threadId: string, items: readonly { title: string; status: string }[]) {
+      todoCalls.push({ threadId, items });
+      thread.todo = items as ExperienceCopilotThread["todo"];
+    },
     // TAG-5: the fake mirrors the real store's semantics — rewrite the ONE
     // tool row matching threadId+toolCallId (threadId ignored in the fake; one
     // thread per test), null when no row matches.
@@ -84,7 +95,7 @@ function createFakeStore(
       row.content = JSON.stringify(payload);
       return row;
     },
-  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }> };
+  } as unknown as ExperienceCopilotStore & { messages: ExperienceCopilotMessage[]; metricsCalls: Array<{ threadId: string; metrics: unknown; providerProfileId: string; model: string }>; todoCalls: Array<{ threadId: string; items: unknown }> };
 }
 
 // ─── Fake streamText result ──────────────────────────────────────────────────
@@ -204,6 +215,7 @@ function makeThread(scriptId: string | null = null): ExperienceCopilotThread {
     archivedAt: null,
     contextMetrics: null,
     contextLinks: [],
+    todo: [],
     lastProviderProfileId: null,
     lastModel: null,
     autoCompact: true,
@@ -1182,6 +1194,49 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // PM-2/PM-3: agent-plan wiring + durable prompt context
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAG-6 (restored PM-7): todo wiring (saveTodo → updateTodo)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("experience-copilot stream — todo wiring (TAG-6, restored PM-7)", () => {
+  beforeEach(() => {
+    streamTextImpl = undefined;
+  });
+
+  it("wires the todo tool's saveTodo to the store: a todo call persists via updateTodo", async () => {
+    const store = createFakeStore(makeThread());
+    let captured: { tools?: Record<string, { execute?: (input: unknown) => Promise<unknown> }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as typeof captured;
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "plan this out", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // The built tool set carries the todo tool (builtin seed has todo: true).
+    const todoTool = captured!.tools!["todo"];
+    expect(todoTool).toBeDefined();
+
+    // Invoking the tool's execute — the same path the real SDK loop drives —
+    // must flow through the wired saveTodo → store.updateTodo(threadId, items).
+    const items = [
+      { title: "Write rules", status: "active" },
+      { title: "Bind visual", status: "pending" },
+    ];
+    const result = await todoTool.execute!({ items });
+    expect(result).toMatchObject({ ok: true, remaining: 2, activeTitle: "Write rules" });
+
+    expect(store.todoCalls).toHaveLength(1);
+    expect(store.todoCalls[0].threadId).toBe("thread_1");
+    expect(store.todoCalls[0].items).toEqual(items);
+  });
+});
 
 describe("experience-copilot stream — agent-plan wiring + prompt context", () => {
   beforeEach(() => {

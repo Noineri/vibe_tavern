@@ -1239,7 +1239,7 @@ The authoring assistant for interactive experiences. Architecture: [Experience C
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/experience-copilot/script/:scriptId/active` | The active thread (id + wire snapshot: title, context fields) or `null` |
+| `GET /api/experience-copilot/script/:scriptId/active` | The active thread (id + wire snapshot: title, step, `todo`, context fields) or `null` |
 | `POST /api/experience-copilot/script/:scriptId/session` | Start a new session for the script (archives the current one); optional body `{ title? }` |
 | `GET /api/experience-copilot/script/:scriptId/sessions` | Session list for the switcher |
 | `POST /api/experience-copilot/:threadId/activate` | Make an archived thread active |
@@ -1247,7 +1247,7 @@ The authoring assistant for interactive experiences. Architecture: [Experience C
 | `PATCH /api/experience-copilot/:threadId/title` | Rename (`{ title }`, max 120) |
 | `GET /api/experience-copilot/:threadId/messages` | Message history (user / assistant / tool rows, activities keyed by toolCallId) |
 
-The thread wire no longer carries a plan field — the model's step plan is script-owned and served by [`GET`/`PUT /api/scripts/:scriptId/agent-plan`](#get-apiscriptsscriptidagent-plan) (`EXPERIENCE_COPILOT_PLAN_MODE_PLAN`).
+The thread wire's `todo` is REQUIRED (`CopilotTodoItem[]`, `[]` = no checklist yet) — the model's session-scoped quick checklist (PM-7), full-list-rewrite semantics; the model owns it, the UI renders it read-only. The durable plan is NOT on the thread wire — it is script-owned and served by [`GET`/`PUT /api/scripts/:scriptId/agent-plan`](#get-apiscriptsscriptidagent-plan) (`EXPERIENCE_COPILOT_PLAN_MODE_PLAN`).
 
 ### Stream
 
@@ -1285,7 +1285,7 @@ or the **answer mode** (split-turn resume — the answer continues the logical t
 
 ### Profiles
 
-CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profiles carry provider/model, `toolSet` toggles (8 keys: `edit_buffer`, `write_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `ask_user`) and `skillIds`. Legacy rows storing `todo: true` project to `plan` + `read_plan` at read time. The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
+CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profiles carry provider/model, `toolSet` toggles (9 keys: `edit_buffer`, `write_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `todo`, `ask_user`) and `skillIds`. A stored `todo: true` projects to `todo: true` and nothing else (the PM-2 alias onto `plan`+`read_plan` was removed with the todo mechanic's restoration in PM-7). The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
 
 ---
 

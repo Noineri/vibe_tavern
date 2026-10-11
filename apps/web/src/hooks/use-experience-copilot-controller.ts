@@ -9,6 +9,8 @@ import {
 } from "../api/experience-copilot-api.js";
 import {
   useExperienceCopilotTurnStore,
+  parseTodoToolResult,
+  parseTodoToolArgs,
   parseCopilotAskState,
 } from "../stores/experience-copilot-turn-store.js";
 import { parseAgentPlanToolResult } from "./use-agent-plan.js";
@@ -19,6 +21,7 @@ import {
   type ExperienceCopilotStep,
   type ExperienceCopilotLaunchContext,
   type ExperienceCopilotContextMetrics,
+  type CopilotTodoItem,
 } from "@vibe-tavern/api-contracts";
 import { ProviderStreamError } from "../api/provider-stream-error.js";
 
@@ -56,6 +59,13 @@ export interface UseExperienceCopilotControllerArgs {
    *  parse (a confirmed full-plan rewrite — no optimistic args-only update,
    *  by the hook's design). */
   applyPlanToolResult?: (args: unknown, output: unknown) => void;
+  /** TAG-7 (restored PM-7): the current thread wire's `todo` (the durable
+   *  `todo_json` truth — the session checklist that lives BESIDE the plan).
+   *  Seeds/resets the session-scoped live todo panel state on mount, thread
+   *  switch, and every thread refetch that produces a new array; live `todo`
+ *  tool events upsert on top between refetches. Omitted (undefined) leaves
+   *  the store untouched — the shell wires this to `thread.todo`. */
+  threadTodo?: readonly CopilotTodoItem[];
 }
 
 /** Live draft buffers + active authoring step to send with a copilot message so
@@ -157,7 +167,7 @@ function summarizeToolOutput(output: unknown): string {
 export function useExperienceCopilotController(
   args: UseExperienceCopilotControllerArgs,
 ): ExperienceCopilotController {
-  const { threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult } = args;
+  const { threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo } = args;
 
   const [isSending, setIsSending] = useState(false);
   const [pendingText, setPendingText] = useState("");
@@ -175,6 +185,20 @@ export function useExperienceCopilotController(
   // so a rapid double-send in the same tick would otherwise both pass the
   // guard. Mirrors the RP controller reading generation state synchronously.
   const isSendingRef = useRef(false);
+
+  // TAG-7 (restored PM-7): seed/reset the session-scoped todo panel state
+  // from the persisted thread wire (the durable truth — `todo_json` on the
+  // thread row). Runs on mount, thread switch, and every thread refetch
+  // producing a new array; seeding with the wire value IS the thread-switch
+  // reset (an empty wire todo clears the panel for a thread with no checklist
+  // yet). Live `todo` tool events upsert on top between refetches — the wire
+  // and the live state converge on settle+refetch because both describe the
+  // same persisted list. The plan is deliberately NOT seeded here: it is
+  // script-owned (useAgentPlan), never thread state.
+  useEffect(() => {
+    if (threadId === null || threadTodo === undefined) return;
+    useExperienceCopilotTurnStore.getState().setTodo(threadId, threadTodo);
+  }, [threadId, threadTodo]);
 
   // TAG-9: drop a stale optimistic ask resolution on thread switch (the new
   // thread's persisted rows are the truth for its own asks).
@@ -210,6 +234,18 @@ export function useExperienceCopilotController(
         args: info.args,
         status: "streaming",
       });
+      // TAG-7 (restored PM-7): full-rewrite semantics — the todo tool-call's
+      // args ARE the new session checklist (Cline-style), so the panel
+      // updates immediately while the call streams; the tool-result envelope
+      // below re-confirms the same list. Object shape `{items}` (incident
+      // fix 2026-08-21); ill-formed/partial args → null, silently skipped
+      // (the result envelope is the fallback path).
+      if (info.toolName === "todo") {
+        const todo = parseTodoToolArgs(info.args);
+        if (todo !== null) {
+          useExperienceCopilotTurnStore.getState().setTodo(activeThreadId, todo);
+        }
+      }
     },
     onToolInputStart: (info) => {
       useExperienceCopilotTurnStore.getState().closeTextSegment(activeThreadId);
@@ -250,6 +286,26 @@ export function useExperienceCopilotController(
                 proposed: output.data.proposed,
               }
             : { summary: summarizeToolOutput(info.output) }),
+        });
+        return;
+      }
+      // TAG-7 (restored PM-7): a todo result is the {ok, items, activeTitle,
+      // remaining} envelope. A successful envelope carries the card payload
+      // AND confirms the panel state (same list the tool-call args already
+      // upserted); a failed save (ok:false — not an isError) renders the
+      // error card and leaves the panel at the optimistic value (the model
+      // retries the rewrite next step). Must stay field-for-field with the
+      // persisted extraction's `todo` branch.
+      if (info.toolName === "todo") {
+        const todo = parseTodoToolResult(info.output);
+        if (todo) {
+          useExperienceCopilotTurnStore.getState().setTodo(activeThreadId, todo.items);
+        }
+        useExperienceCopilotTurnStore.getState().upsertActivity(activeThreadId, {
+          toolCallId: info.toolCallId,
+          toolName: info.toolName,
+          status: info.isError || !todo ? "error" : "done",
+          ...(todo ? { todo } : { summary: summarizeToolOutput(info.output) }),
         });
         return;
       }

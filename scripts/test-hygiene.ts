@@ -54,7 +54,11 @@ const QUARANTINE_REMINDER_DAYS = 30;
 export const BUDGETS = {
 	/** `as never` casts in test files (TS-7b class; blanket rewrite wontfix). */
 	// 1243 (2026-10-04): ratcheted to the merged tree's count after PR #51.
-	asNever: 1243,
+	// 1246 (2026-10-11, PM-7): +3 — the restored-as-was todo describe in
+	// experience-copilot-tools.test.ts carries the same three `as never`
+	// result casts PM-6 deleted with the mechanic (deliberate growth, not
+	// drift — the restore mandate forbids rewriting the old tests).
+	asNever: 1246,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

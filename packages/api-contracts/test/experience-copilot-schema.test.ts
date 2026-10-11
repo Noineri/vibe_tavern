@@ -10,6 +10,8 @@ import {
   experienceCopilotContextMetricsSchema,
   experienceCopilotContextLinkSchema,
   setCopilotContextLinksSchema,
+  copilotTodoItemSchema,
+  copilotTodoListSchema,
   copilotToolSetSchema,
   copilotProfileSchema,
   COPILOT_TOOL_KEYS,
@@ -165,6 +167,7 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
       updatedAt: "2026-01-02T00:00:00.000Z",
       metrics: null,
       contextLinks: [],
+      todo: [],
     };
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
   });
@@ -180,8 +183,44 @@ describe("experienceCopilotThreadSchema (ER-7)", () => {
       updatedAt: "2026-01-03T00:00:00.000Z",
       metrics: null,
       contextLinks: [],
+      todo: [],
     };
     expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("accepts a thread carrying a todo step-plan (TAG-6, restored PM-7)", () => {
+    const payload = {
+      id: "thread_004",
+      scriptId: "script_abc",
+      draftSessionId: null,
+      title: "Plan",
+      archivedAt: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      metrics: null,
+      contextLinks: [],
+      todo: [
+        { title: "Write the rules buffer", status: "active" as const },
+        { title: "Bind a visual", status: "pending" as const },
+      ],
+    };
+    expect(experienceCopilotThreadSchema.parse(payload)).toEqual(payload);
+  });
+
+  test("rejects a thread missing the todo field (required — TAG-6, restored PM-7)", () => {
+    expect(() =>
+      experienceCopilotThreadSchema.parse({
+        id: "thread_005",
+        scriptId: null,
+        draftSessionId: null,
+        title: "No todo",
+        archivedAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        metrics: null,
+        contextLinks: [],
+      }),
+    ).toThrow();
   });
 
   test("rejects a thread missing the id field", () => {
@@ -355,11 +394,14 @@ describe("copilotToolSetSchema (CP-1)", () => {
     expect(copilotToolSetSchema.parse(payload)).toEqual(payload);
   });
 
-  test("rejects legacy todo strictly", () => {
-    expect(() => copilotToolSetSchema.parse({ todo: true })).toThrow();
+  test("accepts todo/plan/read_plan together (PM-7 coexistence)", () => {
+    // Owner ruling 2026-10-11: todo (the session checklist) and the plan
+    // tools coexist — a profile may enable all three at once.
+    const payload = { todo: true, plan: true, read_plan: true };
+    expect(copilotToolSetSchema.parse(payload)).toEqual(payload);
   });
 
-  test("COPILOT_TOOL_KEYS lists exactly the 8 toggleable tools (no read_skill_file)", () => {
+  test("COPILOT_TOOL_KEYS lists exactly the 9 toggleable tools (no read_skill_file)", () => {
     expect(COPILOT_TOOL_KEYS).toEqual([
       "write_buffer",
       "edit_buffer",
@@ -368,12 +410,54 @@ describe("copilotToolSetSchema (CP-1)", () => {
       "suggest_visual_binding",
       "plan",
       "read_plan",
+      "todo",
       "ask_user",
     ]);
   });
 });
 
 // ─── CP-1: copilot profiles ─────────────────────────────────────────────
+
+// ─── TAG-1 (restored PM-7): copilot todo schemas ──────────────────────────
+
+describe("copilotTodoItemSchema (TAG-1, restored PM-7)", () => {
+  test("accepts a valid item in each status", () => {
+    for (const status of ["pending", "active", "completed", "abandoned"] as const) {
+      const payload = { title: "Write the reduce loop", status };
+      expect(copilotTodoItemSchema.parse(payload)).toEqual(payload);
+    }
+  });
+
+  test("rejects an unknown status", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "x", status: "in_progress" })).toThrow();
+  });
+
+  test("rejects an empty title", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "", status: "pending" })).toThrow();
+  });
+
+  test("rejects an oversized title (cap 200)", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "y".repeat(201), status: "pending" })).toThrow();
+  });
+
+  test("rejects an unknown key (strict)", () => {
+    expect(() => copilotTodoItemSchema.parse({ title: "x", status: "pending", done: true })).toThrow();
+  });
+});
+
+describe("copilotTodoListSchema (TAG-1, restored PM-7)", () => {
+  const item = { title: "step", status: "active" as const };
+
+  test("accepts a list at the cap (30 items)", () => {
+    const list = Array.from({ length: 30 }, () => item);
+    expect(copilotTodoListSchema.parse(list).length).toBe(30);
+  });
+
+  test("rejects a list over the cap (31 items)", () => {
+    const list = Array.from({ length: 31 }, () => item);
+    expect(() => copilotTodoListSchema.parse(list)).toThrow();
+  });
+});
 
 describe("copilotProfileSchema (CP-1)", () => {
   test("accepts a valid profile (no description/openingMessage)", () => {

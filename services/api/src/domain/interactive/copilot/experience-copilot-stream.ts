@@ -512,6 +512,11 @@ export async function* streamExperienceCopilot(
     skillRoots: assembled.skillRoots,
     loadPlan,
     savePlan,
+    // TAG-6 (restored PM-7): the todo tool's full-list rewrite persists onto
+    // the thread row via the ER-3 store (session-scoped — survives turns and
+    // reloads through the thread wire); `updateTodo(threadId, items)` is the
+    // store's structural twin of the tool's `(items) => Promise<void>` dep.
+    saveTodo: (items) => deps.store.updateTodo(request.threadId, items),
   });
 
   // ── 8. Resolve the model + start streaming ──

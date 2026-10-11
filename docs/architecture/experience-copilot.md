@@ -37,15 +37,18 @@ The `# Plan` section is the script-owned agent plan re-injected into the prompt 
 
 ## Tools
 
-Built per turn by `buildExperienceCopilotTools` (pure builder, turn-local closure state) and gated per profile via the `toolSet` (8 toggleable keys; `read_skill_file` is always on — the universal read-only skill channel, not gated):
+Built per turn by `buildExperienceCopilotTools` (pure builder, turn-local closure state) and gated per profile via the `toolSet` (9 toggleable keys; `read_skill_file` is always on — the universal read-only skill channel, not gated):
 
 - `write_buffer` / `edit_buffer` — whole-buffer replace / exact SEARCH-REPLACE edits to `rules` or `visual`. First change to a buffer in a turn must be `write_buffer`. Serialized through a non-poisoning queue so an early failure never strands later writes.
 - `run_test` — read-only create-only check of the working rules (discover → create → project → legal actions).
 - `run_simulate` — bounded simulation for termination checking.
 - `suggest_visual_binding` — non-binding recommendation; only the user binds.
 - `plan` / `read_plan` — the script-owned agent-plan tools (see [Agent plan mechanic](#agent-plan-mechanic-plan-mode)). `plan` is a whole-structure rewrite (the object IS the new state — no diffs, no appends; Cline pattern); it persists through an injected writer (wired to the thread's `scriptId` → the `agent_plans` row) and returns a compact `{ok, activeTitle, remaining}` envelope. `read_plan` returns the full plan (progressive disclosure — the prompt injects only the active task's body).
+- `todo` — the session-scoped quick checklist (restored PM-7, owner ruling 2026-10-11). Full-list rewrite semantics (the array IS the new state — no diffs, no appends; Cline pattern); persists via the thread's `todo_json` and returns a compact confirmation envelope. The list is capped at 30 items.
 - `ask_user` — the clarifying-question tool (see below). Returns an `awaiting_answer` marker; does no I/O itself.
 - `read_skill_file` — progressive disclosure for skills.
+
+**todo vs plan** (the choice guidance lives in the tool descriptions, not the prompt): `todo` is the quick checklist of small tasks for the CURRENT session (thread-scoped, lives in `todoByThread` / `todo_json`); `plan` is the durable plan with a goal for serious multi-step work (script-owned, survives sessions).
 
 Tool proposals for `rules` are validated through the experience sandbox before surfacing — an invalid proposal comes back as a tool-error the model can self-correct on in the same turn.
 
@@ -63,9 +66,17 @@ Self-healing: if the user never answers (they just send a normal message), the d
 
 ## Agent plan mechanic (plan mode)
 
-The plan is the model's own action map — but unlike the retired todo mechanic it is **script-owned**, not thread-scoped: one `agent_plans` row per script (`EXPERIENCE_COPILOT_PLAN_MODE_PLAN`), shared by every copilot session of that script and by the user-facing editor. The model drives it through `plan` (whole-structure rewrite) and `read_plan`; the user edits it through `GET`/`PUT /api/scripts/:scriptId/agent-plan` and the `AgentPlanEditorModal`. The retired `todo_json` column stays on the thread row for migration history only — nothing reads or writes it.
+The plan is the model's own durable action map, **script-owned** rather than thread-scoped: one `agent_plans` row per script (`EXPERIENCE_COPILOT_PLAN_MODE_PLAN`), shared by every copilot session of that script and by the user-facing editor. The model drives it through `plan` (whole-structure rewrite) and `read_plan`; the user edits it through `GET`/`PUT /api/scripts/:scriptId/agent-plan` and the `AgentPlanEditorModal`.
 
-Frontend state lives in `useAgentPlan` (one module-level cache per owner), fed from two sources: the lazy GET on first consumer mount, and live `plan` tool results routed by the controller (`applyToolResult` — the cache replaces only on a confirmed success envelope, so there is no optimistic args-only update). The `AgentPlanPanel` (mounted via `CopilotPlanSection`) is pinned directly below the context meter (not scrolling with the feed), hidden while the plan is empty; collapsed it shows the current task + a pulsing live dot + the remaining count, expanded the full task list with status glyphs borrowed from the RP objective tracker. The panel's editor button and the modal lock while a turn streams, so the model's rewrite and the user's edit can never race.
+Frontend state lives in `useAgentPlan` (one module-level cache per owner), fed from two sources: the lazy GET on first consumer mount, and live `plan` tool results routed by the controller (`applyToolResult` — the cache replaces only on a confirmed success envelope, so there is no optimistic args-only update). The `AgentPlanPanel` (mounted via `CopilotPlanSection`) is pinned directly below the todo panel (not scrolling with the feed), hidden while the plan is empty; collapsed it shows the current task + a pulsing live dot + the remaining count, expanded the full task list with status glyphs borrowed from the RP objective tracker. The panel's editor button and the modal lock while a turn streams, so the model's rewrite and the user's edit can never race.
+
+## Todo mechanic (session-scoped, restored PM-7)
+
+Deleting todo as a class in PM-6 was unintended (owner ruling 2026-10-11): todo lives BESIDE the plan as a session-scoped quick checklist. The principle: **todo = the thread's session (thread-scoped `todo_json` / `todoByThread`, exactly as before); plan = the script's durable document, surviving sessions.**
+
+The todo is the model's own quick checklist for the thread's small tasks; the user-facing panel is strictly read-only. Lifetime is the **thread session**: it survives turns and page reloads (thread wire `todo`), and a new copilot session starts an empty checklist. Storage is the `todo_json` column on the thread row (defensive parse → `[]`). Within a session the model keeps the list current through its own `todo` tool calls in the history; the PM-7 restore deliberately does not re-inject a `Current step plan` prompt section (the durable cross-compaction map is the plan's `# Plan` section; the todo-vs-plan choice guidance lives in the tool descriptions, keeping the assembled prompt bytes unchanged).
+
+Frontend state lives in the turn store (`todoByThread`), fed from two sources kept in structural parity by shared pure parsers: live SSE ingestion (optimistic upsert from the tool-call args, confirmed by the result envelope) and persisted thread-GET hydration (the controller seeds from `thread.todo`). The `CopilotTodoPanel` (mounted via `CopilotTodoSection`) is pinned directly below the context meter and directly ABOVE the plan section, hidden until the first `todo` call; collapsed it shows the current goal + a pulsing live dot + the remaining count, expanded the full list with status glyphs borrowed from the RP objective tracker.
 
 ## Skills
 
@@ -92,7 +103,7 @@ Compaction (CM): a digest message summarizes the folded prefix; the digest ancho
 
 ## Frontend shape
 
-`ExperienceCopilotShell` (editor chrome + tabs after the UX redesign) hosts, top-to-bottom in the chat tab: the session switcher header, the context meter, the agent-plan section (pinned), the scrolling message feed. The turn store holds per-thread activity maps; the controller (`use-experience-copilot-controller`) drives sends and answers through one shared SSE-callback builder, so live routing stays field-for-field with persisted extraction by construction (the `plan` tool result rides the same tool-activity-card mechanism — the card labels it with the "Plan updated" i18n key, never the raw envelope). `CopilotAskCard` renders in the feed wherever an `ask_user` activity sits — interactive on the trailing awaiting ask, read-only (answered/skipped/expired) in history. The live===persisted parity test is the boundary guard for the whole extraction layer.
+`ExperienceCopilotShell` (editor chrome + tabs after the UX redesign) hosts, top-to-bottom in the chat tab: the session switcher header, the context meter, the todo panel (pinned), the agent-plan section (pinned — todo ABOVE plan, PM-7), the scrolling message feed. The turn store holds per-thread activity maps plus the session-scoped `todoByThread` checklist state; the controller (`use-experience-copilot-controller`) drives sends and answers through one shared SSE-callback builder, so live routing stays field-for-field with persisted extraction by construction (the `plan` tool result rides the same tool-activity-card mechanism — the card labels it with the "Plan updated" i18n key, never the raw envelope; the `todo` tool result carries its card payload). `CopilotAskCard` renders in the feed wherever an `ask_user` activity sits — interactive on the trailing awaiting ask, read-only (answered/skipped/expired) in history. The live===persisted parity test is the boundary guard for the whole extraction layer.
 
 ## Testing notes
 

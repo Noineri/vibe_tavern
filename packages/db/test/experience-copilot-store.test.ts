@@ -404,6 +404,91 @@ describe("ExperienceCopilotStore — pinned-context links (CX-1)", () => {
   });
 });
 
+// ─── TAG-2 (restored PM-7): session-scoped checklist todo ───────────────
+
+describe("ExperienceCopilotStore — step-plan todo (TAG-2, restored PM-7)", () => {
+  test("todo defaults to [] on a fresh thread (null column); mapThread exposes it", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_todo_fresh", "T");
+    expect(thread.todo).toEqual([]);
+    expect((await store.getById(thread.id))?.todo).toEqual([]);
+    expect((await store.getActive("script_todo_fresh"))?.todo).toEqual([]);
+  });
+
+  test("updateTodo full-replace round-trips through getById", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_todo_set", "T");
+
+    const items = [
+      { title: "Assemble visual profile", status: "active" as const },
+      { title: "Write fight rules", status: "pending" as const },
+      { title: "Set bindings", status: "completed" as const },
+    ];
+    await store.updateTodo(thread.id, items);
+    expect((await store.getById(thread.id))?.todo).toEqual(items);
+
+    // Full replace: a shorter list drops the removed items (rewrite semantics).
+    const shorter = [{ title: "One goal", status: "pending" as const }];
+    await store.updateTodo(thread.id, shorter);
+    expect((await store.getById(thread.id))?.todo).toEqual(shorter);
+
+    // Empty rewrite → empty plan (the panel hides, per the plan's hidden-until-first-call rule).
+    await store.updateTodo(thread.id, []);
+    expect((await store.getById(thread.id))?.todo).toEqual([]);
+  });
+
+  test("updateTodo bumps updatedAt", async () => {
+    const { store } = await setup();
+    const thread = await store.startNewSession("script_todo_ts", "T");
+    const before = thread.updatedAt;
+    await store.updateTodo(thread.id, [{ title: "x", status: "active" }]);
+    expect((await store.getById(thread.id))?.updatedAt > before).toBe(true);
+  });
+
+  test("malformed todo_json → [] (never fatal)", async () => {
+    const { db, store } = await setup();
+    const thread = await store.startNewSession("script_todo_malformed", "T");
+
+    await db.update(experienceCopilotThreads)
+      .set({ todoJson: "not-json{" })
+      .where(eq(experienceCopilotThreads.id, thread.id))
+      .run();
+
+    expect((await store.getById(thread.id))?.todo).toEqual([]);
+  });
+
+  test("non-array todo_json → [] (never fatal)", async () => {
+    const { db, store } = await setup();
+    const thread = await store.startNewSession("script_todo_nonarray", "T");
+
+    await db.update(experienceCopilotThreads)
+      .set({ todoJson: JSON.stringify({ title: "not", status: "a list" }) })
+      .where(eq(experienceCopilotThreads.id, thread.id))
+      .run();
+
+    expect((await store.getById(thread.id))?.todo).toEqual([]);
+  });
+
+  test("wrong-shape todo JSON drops invalid entries, keeps valid ones", async () => {
+    const { db, store } = await setup();
+    const thread = await store.startNewSession("script_todo_wrongshape", "T");
+
+    // Mixed array: a valid item, an unknown status, an empty title, a
+    // non-object — only the valid one survives.
+    await db.update(experienceCopilotThreads)
+      .set({ todoJson: JSON.stringify([
+        { title: "valid", status: "active" },
+        { title: "bad status", status: "done" },
+        { title: "", status: "pending" },
+        42,
+      ]) })
+      .where(eq(experienceCopilotThreads.id, thread.id))
+      .run();
+
+    expect((await store.getById(thread.id))?.todo).toEqual([{ title: "valid", status: "active" }]);
+  });
+});
+
 describe("ExperienceCopilotStore — setToolResultOutput (TAG-5)", () => {
   test("rewrites ONE tool row's payload by threadId+toolCallId and bumps updatedAt", async () => {
     const { store } = await setup();

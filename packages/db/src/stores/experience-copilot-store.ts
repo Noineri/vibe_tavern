@@ -60,6 +60,10 @@ export interface ExperienceCopilotThread {
   /** Pinned-context links (CX-1); `[]` when none pinned or the stored JSON is
    *  malformed (logged, never fatal). */
   contextLinks: CopilotContextLink[];
+  /** The model's session-scoped checklist (TAG-2, restored PM-7); `[]` until
+   *  the first todo call or when the stored JSON is malformed (logged, never
+   *  fatal). */
+  todo: CopilotTodoItem[];
   /** The provider/model the thread last used (persisted from the stream finish
    *  path); null before the first turn. */
   lastProviderProfileId: string | null;
@@ -78,6 +82,17 @@ export interface ExperienceCopilotThread {
 export interface CopilotContextLink {
   targetType: 'character' | 'persona' | 'lorebook' | 'script' | 'skill';
   targetId: string;
+}
+
+/** A checklist item on a copilot thread (copilot todo/ask plan, TAG-2,
+ *  restored PM-7). Local structural twin of the api-contracts
+ *  `copilotTodoItemSchema` — the db package cannot import api-contracts
+ *  (dependency direction), same as {@link CopilotContextMetrics} above.
+ * Statuses mirror the RP objective tracker so the frontend panel reuses its
+ * visual language. */
+export interface CopilotTodoItem {
+  title: string;
+  status: 'pending' | 'active' | 'completed' | 'abandoned';
 }
 
 export interface ExperienceCopilotMessage {
@@ -377,6 +392,22 @@ export class ExperienceCopilotStore {
       .run();
   }
 
+  // ─── Session-scoped checklist todo (TAG-2, restored PM-7) ──────────────
+
+  /** Full-replace the thread's checklist (the model computes the whole list
+   *  on every `todo` tool call — Cline-style rewrite semantics; the panel
+   *  renders whatever this holds). Bumps updated_at. The caller (services/api
+   *  tool layer) validates the list shape + cap against the api-contracts
+   *  schema; the store trusts its typed input, mirroring setContextLinks. */
+  async updateTodo(threadId: string, items: readonly CopilotTodoItem[]): Promise<void> {
+    const now = this.clock.now();
+    await this.db
+      .update(experienceCopilotThreads)
+      .set({ todoJson: JSON.stringify(items), updatedAt: now })
+      .where(eq(experienceCopilotThreads.id, threadId))
+      .run();
+  }
+
   /** Rewrite the persisted output payload of ONE tool-result message row
    *  (TAG-5 split-turn): the user answered a pending `ask_user` question, and
    *  the answer REPLACES the awaiting marker in that row — there is no
@@ -423,6 +454,7 @@ export class ExperienceCopilotStore {
       archivedAt: row.archivedAt,
       contextMetrics: parseContextMetrics(row.contextMetricsJson, row.id),
       contextLinks: parseContextLinks(row.contextLinksJson, row.id),
+      todo: parseTodo(row.todoJson, row.id),
       lastProviderProfileId: row.lastProviderProfileId,
       lastModel: row.lastModel,
       autoCompact: row.autoCompact === 1,
@@ -492,6 +524,37 @@ function parseContextMetrics(text: string | null, threadId: string): CopilotCont
 }
 
 const COPILOT_LINK_TARGET_TYPES = new Set(["character", "persona", "lorebook", "script", "skill"]);
+
+const COPILOT_TODO_STATUSES = new Set(["pending", "active", "completed", "abandoned"]);
+
+/** Parse `todo_json` into validated {@link CopilotTodoItem}s (TAG-2, restored
+ *  PM-7). Absent/malformed JSON or a non-array → `[]` (logged where corrupt,
+ *  never fatal): the checklist is the model's working plan — a corrupted
+ *  column must never take the thread down, and the next `updateTodo` write
+ *  heals it. Invalid entries are dropped individually (a mixed array keeps
+ *  its valid items), mirroring parseContextLinks. */
+function parseTodo(text: string | null, threadId: string): CopilotTodoItem[] {
+  if (!text) return [];
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!Array.isArray(parsed)) {
+      console.error(`[experience-copilot-store] invalid todo_json for thread '${threadId}': not an array`);
+      return [];
+    }
+    const items: CopilotTodoItem[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item as Record<string, unknown>;
+      if (typeof rec.title !== "string" || rec.title.length === 0 || rec.title.length > 200) continue;
+      if (typeof rec.status !== "string" || !COPILOT_TODO_STATUSES.has(rec.status)) continue;
+      items.push({ title: rec.title, status: rec.status as CopilotTodoItem["status"] });
+    }
+    return items;
+  } catch (err) {
+    console.error(`[experience-copilot-store] malformed todo_json for thread '${threadId}':`, err);
+    return [];
+  }
+}
 
 /** Parse `context_links_json` into validated {@link CopilotContextLink}s.
  *  Malformed JSON or a wrong shape → `[]` (logged, never fatal): links are

@@ -18,7 +18,9 @@ export function createAgentPlanTools(deps: {
   return {
     plan: tool({
       description:
-        "Replace the full plan for this script. Send the complete {plan} object every time. At most one task may be active.",
+        "Replace the full durable plan for this script — the serious multi-step work with a goal; the plan survives sessions. " +
+        "Send the complete {plan} object every time. At most one task may be active. " +
+        "For a quick checklist of the current session's small tasks, use the `todo` tool instead.",
       inputSchema: z.object({ plan: agentPlanSchema }),
       execute: async ({ plan }): Promise<AgentPlanToolResult> => {
         const normalized = normalizeAgentPlan(plan);

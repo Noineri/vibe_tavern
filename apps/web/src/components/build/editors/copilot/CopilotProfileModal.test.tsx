@@ -244,7 +244,11 @@ describe("CopilotProfileModal — edit user profile", () => {
 		await flush(getByTestId);
 		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_1"));
 		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
-		const toolKeys = ["edit_buffer", "write_buffer", "run_test", "run_simulate", "suggest_visual_binding", "plan", "read_plan", "ask_user"];
+		// PM-7 (behavior change, owner ruling 2026-10-11): `todo` is a real
+		// toggleable key again — the list pins NINE keys (same boundary as
+		// before: every COPILOT_TOOL_KEYS entry renders, read_skill_file never
+		// does).
+		const toolKeys = ["edit_buffer", "write_buffer", "run_test", "run_simulate", "suggest_visual_binding", "plan", "read_plan", "todo", "ask_user"];
 		for (const key of toolKeys) {
 			expect(getByText(key)).toBeDefined();
 		}
