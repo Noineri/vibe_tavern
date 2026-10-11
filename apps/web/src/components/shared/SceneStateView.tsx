@@ -26,67 +26,14 @@ import type { SceneTone, SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-t
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import type { SceneRenderVariant } from "../../stores/scene-render-store.js";
+import { resolveSceneTone, SCENE_TONE_BORDER, SCENE_TONE_BORDER_SOFT, SCENE_TONE_FILL, SCENE_TONE_FILL_SOFT, SCENE_TONE_TEXT } from "./scene-tone.js";
 
 const METER_MAX_RANGE = 1000;
 const HUD_METER_SEGMENT_COUNT = 20;
 
-// ────────────────────────────────────────────────────────────────────────────
 // Tone — schema color semantics (`tone` on any node, `toneBy` value→tone map
-// on string nodes) resolved through ONE helper and rendered with the app's
-// semantic color tokens only (theme-tuner compatibility — raw hex forbidden).
-// Fills use the solid brand tokens (`bg-*`); soft rules reuse the established
-// `/40` alpha shape the HUD already uses (`border-accent/40`). Every map holds
-// full literal class names so the Tailwind scanner generates them.
-// ────────────────────────────────────────────────────────────────────────────
-
-const SCENE_TONE_TEXT: Record<SceneTone, string> = {
-  accent: "text-accent",
-  success: "text-success",
-  warning: "text-warning",
-  danger: "text-danger",
-};
-
-const SCENE_TONE_FILL: Record<SceneTone, string> = {
-  accent: "bg-accent",
-  success: "bg-success",
-  warning: "bg-warning",
-  danger: "bg-danger",
-};
-
-const SCENE_TONE_BORDER: Record<SceneTone, string> = {
-  accent: "border-accent",
-  success: "border-success",
-  warning: "border-warning",
-  danger: "border-danger",
-};
-
-const SCENE_TONE_FILL_SOFT: Record<SceneTone, string> = {
-  accent: "bg-accent/40",
-  success: "bg-success/40",
-  warning: "bg-warning/40",
-  danger: "bg-danger/40",
-};
-
-const SCENE_TONE_BORDER_SOFT: Record<SceneTone, string> = {
-  accent: "border-accent/40",
-  success: "border-success/40",
-  warning: "border-warning/40",
-  danger: "border-danger/40",
-};
-
-/**
- * Resolve the display tone for a schema node + its current value. For STRING
- * nodes a `toneBy` entry matching the CURRENT value wins (the value-specific
- * signal); otherwise the node's own `tone` applies; absent both → neutral
- * (undefined — render exactly as today). Non-string nodes resolve `tone` only.
- */
-export function resolveSceneTone(node: SceneTrackerSchemaNode, value: unknown): SceneTone | undefined {
-  if (node.$type === "string" && typeof value === "string") {
-    const mapped = node.toneBy?.[value];
-    if (mapped !== undefined) return mapped;
-  }
-  return node.tone;
-}
+// on string nodes) — resolves through the shared `scene-tone.ts` module (R7
+// extraction): one derivation of tone → class names for every consumer.
 
 interface SceneStateViewProps {
   /** The user-authored DSL describing the shape (drives rendering, not parsing). */

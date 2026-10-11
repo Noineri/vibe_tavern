@@ -2,6 +2,7 @@ import type { CoauthorTrackerTemplateOutput } from "@vibe-tavern/api-contracts";
 import type { SceneTrackerSchemaNode, TrackerTemplate } from "@vibe-tavern/domain";
 import { DEFAULT_SCENE_TRACKER_CONFIG } from "@vibe-tavern/domain";
 import { Checkbox } from "../shared/Checkbox.js";
+import { SCENE_TONE_FILL } from "../shared/scene-tone.js";
 import { TrackerTemplatePromptBlocks } from "../shared/tracker-template-schema-preview.js";
 import { describeTrackerTemplate } from "../../hooks/describe-tracker-template.js";
 import type { TFunc } from "../../i18n/context.js";
@@ -45,6 +46,28 @@ function settingValue(value: string | number | boolean, labels: CoauthorTrackerT
   return String(value || "—");
 }
 
+/**
+ * Proposed-tone marker for one scene row (R7): a filled dot in the node's
+ * `tone` (the same token maps the render variants use), or — for a string node
+ * with a value→tone map — the same dot shape in a neutral outline plus a muted
+ * "value-based color" label, so the two cases read differently before Apply.
+ * The dot is decorative (aria-hidden); a node without tones renders nothing.
+ */
+function ToneMarker({ node, t }: { node: SceneTrackerSchemaNode; t: TFunc }) {
+  if (node.$type === "string" && node.toneBy && Object.keys(node.toneBy).length > 0) {
+    return (
+      <span className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap text-t4">
+        <span aria-hidden="true" className="tracker-template-tone-dot inline-block h-1.5 w-1.5 rounded-full border border-t3" />
+        {t("tracker_template_value_based_color")}
+      </span>
+    );
+  }
+  if (!node.tone) return null;
+  return (
+    <span aria-hidden="true" className={`tracker-template-tone-dot ml-auto inline-block h-1.5 w-1.5 shrink-0 rounded-full ${SCENE_TONE_FILL[node.tone]}`} />
+  );
+}
+
 export function CoauthorTrackerTemplateReview({
   template,
   summary,
@@ -81,6 +104,7 @@ export function CoauthorTrackerTemplateReview({
                 <span className="text-t3">
                   {labels.types[node.$type]}{node.label ? ` — ${node.label}` : ""}
                 </span>
+                <ToneMarker node={node} t={t} />
               </div>
             ))}
           </div>

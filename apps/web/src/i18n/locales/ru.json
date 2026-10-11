@@ -87,6 +87,7 @@
 	"character_tracker_template_remove_aria": "Убрать заготовку трекеров",
 	"character_tracker_template_schema": "Схема",
 	"tracker_template_long_term_goal": "Долгосрочная цель",
+	"tracker_template_value_based_color": "цвет по значению",
 	"tracker_template_prompt_scene_generate": "Промпт генерации сцены",
 	"tracker_template_prompt_scene_rules": "Промпт правил сцены",
 	"tracker_template_prompt_scene_inject": "Промпт инъекции сцены",

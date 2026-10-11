@@ -81,6 +81,7 @@
 	"character_tracker_template_remove_aria": "Remove tracker template",
 	"character_tracker_template_schema": "Schema",
 	"tracker_template_long_term_goal": "Long-term goal",
+	"tracker_template_value_based_color": "value-based color",
 	"tracker_template_prompt_scene_generate": "Scene generation prompt",
 	"tracker_template_prompt_scene_rules": "Scene rules prompt",
 	"tracker_template_prompt_scene_inject": "Scene injection prompt",

@@ -24,6 +24,33 @@ The schema root is a JSON object whose keys are field names. Every value is a NO
 
 Any node may carry a `"label"`: a short human-readable name shown in the UI instead of the machine key (e.g. `"oath": { "$type": "number", "min": 0, "max": 100, "label": "Oath" }`). The key stays machine-stable; the label is presentation-only. Omit `label` when the key is already readable.
 
+### Tone coding
+
+Any node may also carry a `"tone"`: one of four SEMANTIC color tokens that tint how the node renders in the UI (its value text, meter fill, or group rail). The tokens carry meaning, never decoration:
+
+- `"danger"` — harmful, urgent, or failed states.
+- `"success"` — positive, progress, or achieved states.
+- `"warning"` — at-risk, transitional, or degrading states.
+- `"accent"` — emphasis: quest-critical or spotlight groups.
+
+A STRING field whose values form a small closed set may instead carry `"toneBy"`: a value → tone map. Each listed value renders in its own tone; values left out of the map stay neutral. `tone` and `toneBy` are presentation-only — they never change what is tracked or generated.
+
+Use tone when it carries meaning:
+
+- a status field with a small closed value set → `toneBy`, one entry per value that needs a color;
+- a meter whose meaning is fixed at any level (a corruption meter is bad news at every reading) → `tone`;
+- the quest / main-arc group → `"accent"`.
+
+Do NOT: tone every field (color must stay a signal — the default is neutral); pick tokens for looks (a rainbow tracker reads as noise); write raw hex or theme color names — validation accepts ONLY the four tokens above; put `toneBy` on a non-string field or on open-ended free text.
+
+Worked fragment (shape to imitate, not to copy):
+
+```
+"condition": { "$type": "string", "toneBy": { "Stable": "success", "Wounded": "warning", "Ruined": "danger" } },
+"corruption": { "$type": "number", "min": 0, "max": 100, "tone": "danger" },
+"hunt": { "$type": "object", "tone": "accent", "properties": { "target": { "$type": "string" } } }
+```
+
 ### Naming keys
 
 Field keys may be any readable name — spaces and non-ASCII are fine. Prefer concise, descriptive, snake_case-ish keys; mirror the card's own wording when it gives one.
@@ -157,12 +184,13 @@ A complete goals-mode template for an oathbound warden whose card tracks Day, Ti
     "config": {
       "schema": {
         "day": { "$type": "number", "label": "Day" },
-        "timeOfDay": { "$type": "string", "label": "Time of day" },
-        "oath": { "$type": "number", "min": 0, "max": 100, "label": "Oath" },
+        "timeOfDay": { "$type": "string", "label": "Time of day", "toneBy": { "Dawn": "warning", "Dusk": "warning", "Night": "danger" } },
+        "oath": { "$type": "number", "min": 0, "max": 100, "label": "Oath", "tone": "success" },
         "wounded": { "$type": "boolean", "label": "Wounded" },
         "activeHunt": {
           "$type": "object",
           "label": "Active hunt",
+          "tone": "accent",
           "properties": {
             "target": { "$type": "string" },
             "trail": { "$type": "string" }

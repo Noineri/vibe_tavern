@@ -3272,6 +3272,7 @@ export default interface Resources {
     "tracker_template_type_number": "number",
     "tracker_template_type_object": "object",
     "tracker_template_type_string": "string",
+    "tracker_template_value_based_color": "value-based color",
     "tts_backend_elevenlabs": "ElevenLabs",
     "tts_backend_gemini": "Gemini",
     "tts_backend_kokoro": "Kokoro (in-browser)",

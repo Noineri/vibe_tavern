@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
-import { normalizeTrackerTemplate, type TrackerTemplate } from "@vibe-tavern/domain";
+import { normalizeTrackerTemplate, type SceneTrackerDsl, type TrackerTemplate } from "@vibe-tavern/domain";
 import type { CoauthorTrackerTemplateReviewLabels } from "./CoauthorTrackerTemplateReview.js";
 import { useDomEnv } from "../../../test/dom-env.js";
 
@@ -39,6 +39,7 @@ const trackerLabels: Record<string, string> = {
   tracker_template_prompt_objective_generate: "Objective generation prompt",
   tracker_template_prompt_objective_check: "Objective check prompt",
   tracker_template_prompt_objective_inject: "Objective injection prompt",
+  tracker_template_value_based_color: "value-based color",
 };
 
 function translate(key: string, options?: Record<string, unknown>) {
@@ -52,11 +53,17 @@ function template({
   mode = "goals",
   authoredPrompts = true,
   includeObjective = true,
+  schema,
 }: {
   mode?: "route" | "goals";
   authoredPrompts?: boolean;
   includeObjective?: boolean;
+  schema?: SceneTrackerDsl;
 } = {}): TrackerTemplate {
+  const sceneSchema = schema ?? {
+    location: { $type: "string", label: "short text" },
+    suspects: { $type: "array", items: { $type: "string" }, label: "people of interest" },
+  };
   const scenePrompts = authoredPrompts
     ? {
         generatePrompt: "Write the next scene beat.\nPreserve the clue trail.",
@@ -76,10 +83,7 @@ function template({
     scene: {
       enabled: true,
       config: {
-        schema: {
-          location: { $type: "string", label: "short text" },
-          suspects: { $type: "array", items: { $type: "string" }, label: "people of interest" },
-        },
+        schema: sceneSchema,
         injectionDepth: 2,
         injectLastN: 5,
         ...scenePrompts,
@@ -240,5 +244,42 @@ describe("CoauthorTrackerTemplateReview (CT-7b)", () => {
       />,
     );
     expect((applying.getByRole("checkbox") as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("CoauthorTrackerTemplateReview — proposed tone markers (R7)", () => {
+  const toneSchema: SceneTrackerDsl = {
+    mood: { $type: "string", tone: "danger" },
+    condition: { $type: "string", toneBy: { Stable: "success", Ruined: "danger" } },
+    hunt: { $type: "object", tone: "accent", properties: { target: { $type: "string" } } },
+    notes: { $type: "string" },
+  };
+
+  it("a toned node renders its dot; a toneBy string node renders the outline dot + muted label; neutral renders nothing", () => {
+    const { container, getByText } = render(
+      <CoauthorTrackerTemplateReview
+        template={template({ schema: toneSchema, authoredPrompts: false, includeObjective: false })}
+        summary="Tone-coded tracker."
+        currentTemplate={null}
+        selected={true}
+        applying={false}
+        onToggle={() => {}}
+        labels={labels}
+        t={translate}
+      />,
+    );
+
+    // Row order follows the schema: mood (tone), condition (toneBy), hunt (tone); notes has no tone.
+    const dots = Array.from(container.querySelectorAll(".tracker-template-tone-dot")) as HTMLElement[];
+    expect(dots.length).toBe(3);
+    for (const dot of dots) expect(dot.getAttribute("aria-hidden")).toBe("true");
+    expect(dots[0]!.className).toContain("bg-danger");
+    expect(dots[1]!.className).toContain("border-t3");
+    expect(dots[1]!.className).not.toContain("bg-");
+    expect(dots[2]!.className).toContain("bg-accent");
+
+    const valueBased = getByText("value-based color");
+    expect(valueBased.className).toContain("text-t4");
+    expect(valueBased.getAttribute("aria-hidden")).toBe(null);
   });
 });

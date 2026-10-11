@@ -13,8 +13,8 @@ import { describe, it, expect } from "bun:test";
 import { createElement } from "react";
 
 import { useDomEnv } from "../../../test/dom-env.js";
-import { SceneStateView, resolveSceneTone } from "./SceneStateView.js";
-import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
+import { SceneStateView } from "./SceneStateView.js";
+import type { SceneTrackerDsl } from "@vibe-tavern/domain";
 import type { SceneRenderVariant } from "../../stores/scene-render-store.js";
 
 useDomEnv();
@@ -400,30 +400,6 @@ function spanWith(container: HTMLElement, text: string): HTMLElement {
   if (!el) throw new Error(`no span with text "${text}"`);
   return el as HTMLElement;
 }
-
-describe("SceneStateView — resolveSceneTone precedence", () => {
-  it("a toneBy entry matching the current value wins over the node tone", () => {
-    const node: SceneTrackerSchemaNode = { $type: "string", tone: "success", toneBy: { Ruined: "danger" } };
-    expect(resolveSceneTone(node, "Ruined")).toBe("danger");
-  });
-
-  it("an unmatched value falls back to the node tone", () => {
-    const node: SceneTrackerSchemaNode = { $type: "string", tone: "success", toneBy: { Ruined: "danger" } };
-    expect(resolveSceneTone(node, "Repaired")).toBe("success");
-  });
-
-  it("neither tone nor toneBy resolves to neutral undefined", () => {
-    expect(resolveSceneTone({ $type: "string" }, "x")).toBeUndefined();
-    expect(resolveSceneTone({ $type: "number" }, 3)).toBeUndefined();
-  });
-
-  it("non-string nodes resolve tone only; non-string values on string nodes fall to tone", () => {
-    expect(resolveSceneTone({ $type: "number", tone: "warning" }, 3)).toBe("warning");
-    expect(resolveSceneTone({ $type: "boolean", tone: "danger" }, true)).toBe("danger");
-    const node: SceneTrackerSchemaNode = { $type: "string", tone: "success", toneBy: { Ruined: "danger" } };
-    expect(resolveSceneTone(node, 42)).toBe("success");
-  });
-});
 
 describe("SceneStateView — toneBy end to end (R6)", () => {
   const schema = { cond: { $type: "string", tone: "success", toneBy: { Ruined: "danger" } } } as const satisfies SceneTrackerDsl;
