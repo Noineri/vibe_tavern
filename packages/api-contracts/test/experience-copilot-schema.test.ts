@@ -389,19 +389,24 @@ describe("copilotToolSetSchema (CP-1)", () => {
     expect(() => copilotToolSetSchema.parse({ read_skill_file: true })).toThrow();
   });
 
-  test("accepts todo/ask_user booleans (TAG-1)", () => {
-    const payload = { todo: true, ask_user: false };
+  test("accepts plan/read_plan/ask_user booleans", () => {
+    const payload = { plan: true, read_plan: true, ask_user: false };
     expect(copilotToolSetSchema.parse(payload)).toEqual(payload);
   });
 
-  test("COPILOT_TOOL_KEYS lists exactly the 7 toggleable tools (no read_skill_file)", () => {
+  test("rejects legacy todo strictly", () => {
+    expect(() => copilotToolSetSchema.parse({ todo: true })).toThrow();
+  });
+
+  test("COPILOT_TOOL_KEYS lists exactly the 8 toggleable tools (no read_skill_file)", () => {
     expect(COPILOT_TOOL_KEYS).toEqual([
       "write_buffer",
       "edit_buffer",
       "run_test",
       "run_simulate",
       "suggest_visual_binding",
-      "todo",
+      "plan",
+      "read_plan",
       "ask_user",
     ]);
   });

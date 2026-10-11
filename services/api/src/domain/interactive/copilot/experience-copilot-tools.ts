@@ -2,10 +2,10 @@
  * Experience-Copilot AI tools (EXPERIENCE_EDITOR_REFACTOR_PLAN, Wave 2 / ER-4).
  *
  * These tools are the model's ONLY channel for proposing rules/visual edits to
- * an experience and for running tests against the unsaved source. They NEVER
- * write to the {@link ExperienceCopilotStore} or any script/visual resource —
- * each mutating `execute()` validates the proposal and returns it as the
- * proposed buffer; the user commits via the BE-6 binding endpoints
+ * an experience and for running tests against the unsaved source. The buffer
+ * tools NEVER write to the {@link ExperienceCopilotStore} or any script/visual
+ * resource — each mutating `execute()` validates the proposal and returns it as
+ * the proposed buffer; the user commits via the BE-6 binding endpoints
  * (`/api/scripts/:scriptId/visuals`), the sole write path. This is the same
  * Google-Docs-Suggestions / pull-request pattern the Co-Author tools use, with
  * two named text buffers ("rules"/"visual") in place of the profile/greeting
@@ -20,7 +20,8 @@
  * The read-only tools (`run_test`, `run_simulate`, `suggest_visual_binding`)
  * return condensed digests the model reasons over; they never mutate the
  * working state. `read_skill_file` is REUSED from the Co-Author skill system
- * (same sandboxed reader, same progressive-disclosure flow).
+ * (same sandboxed reader, same progressive-disclosure flow). `plan` and
+ * `read_plan` are supplied by standalone script-owned agent-plan tools.
  *
  * The model may call several tools per turn; the AI SDK multi-step loop feeds
  * results back so the model stays coherent (bounded only by the nominal
@@ -45,13 +46,12 @@ import {
   applyExactEditsToBody,
   deriveDefaultLaunchContext,
   log,
+  type AgentPlan,
   type ExperienceCapability,
   type ExperienceController,
   type ExperienceParticipant,
 } from "@vibe-tavern/domain";
 import {
-  copilotTodoListSchema,
-  type CopilotTodoItem,
   type ExperienceCopilotLaunchContext,
   type ExperienceCopilotToolOutput,
   type ExperienceSeatLegalityMatrix,
@@ -62,6 +62,7 @@ import {
   simulateExperienceTest,
 } from "../experience-tester.js";
 import { buildReadSkillFileTool } from "../../coauthor/skills/skill-read-tool.js";
+import { createAgentPlanTools } from "../../agent-plan/agent-plan-tools.js";
 
 /** Structured log for every experience-copilot tool call — the observability
  *  channel for a path whose tool I/O and validation verdicts are otherwise
@@ -189,21 +190,6 @@ export type ExperienceCopilotBufferOutput = ExperienceCopilotToolOutput & {
   readonly notValidated?: string;
 };
 
-/** Result envelope for the `todo` tool (TAG-3). Success carries the rewritten
- *  list plus the collapsed-panel summary the frontend renders (`activeTitle` +
- *  `remaining`); a `saveTodo` persistence failure returns `ok:false` (NOT a
- *  throw — mirroring how `run_test` reports failures as a structured digest the
- *  model can reason over) so a transient DB error does not surface as an opaque
- *  tool-error. `remaining` counts non-completed, non-abandoned items (pending +
- *  active) — the "N remaining goals" the collapsed panel shows. */
-export interface ExperienceCopilotTodoResult {
-  readonly ok: boolean;
-  readonly items?: readonly CopilotTodoItem[];
-  readonly activeTitle?: string;
-  readonly remaining?: number;
-  readonly error?: string;
-}
-
 /** Marker result for the `ask_user` tool (TAG-3): the tool does NOT persist and
  *  does NOT wait — it only marks the turn as awaiting an answer. TAG-5's
  *  stop-condition and the frontend read this envelope; the question/options/
@@ -286,9 +272,9 @@ function launchContextDigest(
  * Build the experience-copilot tool set. Pure — no I/O, no store access. The
  * proposing tools validate and echo the proposal; `run_test`/`run_simulate` are
  * read-only diagnostics; `read_skill_file` is the reused Co-Author skill
- * reader; `suggest_visual_binding` is a non-binding recommendation; `todo`
- * maintains the session step-plan (full-list rewrite through the injected
- * `saveTodo`); `ask_user` ends the turn with a clarifying question (a marker —
+ * reader; `suggest_visual_binding` is a non-binding recommendation; `plan` and
+ * `read_plan` maintain the script-owned plan through injected load/save
+ * functions; `ask_user` ends the turn with a clarifying question (a marker —
  * the stream, not this builder, persists/acts on it). The caller
  * passes this set to the executor (tools propose/diagnose; the BE-6 endpoints
  * are the sole write path).
@@ -304,13 +290,15 @@ function launchContextDigest(
  *   true: trusted scripts behave exactly as before.
  * @param opts.launchContext Latest Try-panel roster, grants, settings and seed.
  *   When absent, each rules body gets the shared capability-derived default.
- * @param opts.toolSet Optional inclusion map for the seven authoring/diagnostic
+ * @param opts.toolSet Optional inclusion map for the eight authoring/diagnostic
  *   tools (default: all on). `read_skill_file` is always included, mirroring
  *   the Co-Author convention (it is the universal read-only skill channel).
- * @param opts.saveTodo Optional writer for the `todo` tool's full-list rewrite
- *   (TAG-6 wires it to `ExperienceCopilotStore.updateTodo(threadId, items)`; the
- *   test injects a fake). When absent, a `todo` call throws — a precondition
- *   miss, mirroring `run_test`'s no-buffer guard.
+ * @param opts.loadPlan Optional reader for the script-owned plan. When absent,
+ *   a `read_plan` call throws — a precondition miss, mirroring `run_test`'s
+ *   no-buffer guard.
+ * @param opts.savePlan Optional writer for the script-owned plan. When absent,
+ *   a `plan` call returns the standard `{ ok: false, error }` persistence
+ *   envelope.
  * @param opts.skillRoots  Roots for the reused `read_skill_file` tool.
  */
 export function buildExperienceCopilotTools(opts: {
@@ -319,10 +307,11 @@ export function buildExperienceCopilotTools(opts: {
   rulesTrusted?: boolean;
   launchContext?: ExperienceCopilotLaunchContext;
   toolSet?: Record<string, boolean>;
-  saveTodo?: (items: readonly CopilotTodoItem[]) => Promise<void>;
+  loadPlan?: () => Promise<AgentPlan | null>;
+  savePlan?: (plan: AgentPlan) => Promise<void>;
   skillRoots?: readonly string[];
 } = {}): ToolSet {
-  const { toolSet, skillRoots, saveTodo } = opts;
+  const { toolSet, skillRoots, loadPlan, savePlan } = opts;
   const rulesTrusted = opts.rulesTrusted ?? true;
 
   /** Resolve the context independently for each working rules body: explicit
@@ -419,6 +408,15 @@ export function buildExperienceCopilotTools(opts: {
     }
     return {};
   }
+
+  const agentPlanTools = createAgentPlanTools({
+    load: loadPlan ?? (async () => {
+      throw new Error("read_plan: no plan reader wired");
+    }),
+    save: savePlan ?? (async () => {
+      throw new Error("plan: no plan writer wired");
+    }),
+  });
 
   const allTools = {
     write_buffer: tool({
@@ -686,38 +684,7 @@ export function buildExperienceCopilotTools(opts: {
       },
     }),
 
-    todo: tool({
-      description:
-        "Maintain the step-by-step action plan for this authoring session. Send the FULL list every call (rewrite semantics, not incremental) as {items: [...]}. " +
-        "One item should be `active` — the step you are on now. Use for any work that needs more than ~3 steps; this is a real development project, plan it.",
-      // Object root (2026-08-21 incident): a bare-array inputSchema made models
-      // emit `{}` — tool-calling arguments are JSON objects, and providers
-      // reject/never produce a non-object root — so every call failed
-      // validation ("expected array, received object") and the turn died.
-      inputSchema: z.object({
-        items: copilotTodoListSchema.describe("The FULL rewritten todo list — every item, every time."),
-      }),
-      execute: async ({ items }): Promise<ExperienceCopilotTodoResult> =>
-        runQueued(async () => {
-          const toolName = "todo";
-          logger.info("%s IN items=%d", toolName, items.length);
-          if (saveTodo === undefined) {
-            logger.warn("%s REJECTED no saveTodo writer wired", toolName);
-            throw new Error(`${toolName}: no todo writer wired — saveTodo is required for this tool`);
-          }
-          try {
-            await saveTodo(items);
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            logger.warn("%s FAIL message=%s", toolName, message);
-            return { ok: false, error: message };
-          }
-          const activeTitle = items.find((i) => i.status === "active")?.title;
-          const remaining = items.filter((i) => i.status === "pending" || i.status === "active").length;
-          logger.info("%s OK items=%d remaining=%d activeTitle=%s", toolName, items.length, remaining, activeTitle ?? "(none)");
-          return { ok: true, items, activeTitle, remaining };
-        }),
-    }),
+    ...agentPlanTools,
 
     ask_user: tool({
       description:

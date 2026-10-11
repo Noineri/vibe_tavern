@@ -26,7 +26,7 @@ describe("experience-copilot module (ER-16)", () => {
     expect(EXPERIENCE_COPILOT_MODULE.id).toBe("experience-authoring");
     expect(EXPERIENCE_COPILOT_MODULE.skillIds).toEqual(["experience-authoring", "grill-me"]);
     expect(EXPERIENCE_COPILOT_MODULE.basePromptFile).toBe("experience-copilot/base.md");
-    // The seven authoring/diagnostic tools are declared. `read_skill_file` is
+    // The eight authoring/diagnostic tools are declared. `read_skill_file` is
     // always available on top (mirroring Co-Author — the universal read-only
     // skill channel), so it is NOT part of the gated toolSet.
     expect(EXPERIENCE_COPILOT_MODULE.toolSet.write_buffer).toBe(true);
@@ -34,8 +34,8 @@ describe("experience-copilot module (ER-16)", () => {
     expect(EXPERIENCE_COPILOT_MODULE.toolSet.run_test).toBe(true);
     expect(EXPERIENCE_COPILOT_MODULE.toolSet.run_simulate).toBe(true);
     expect(EXPERIENCE_COPILOT_MODULE.toolSet.suggest_visual_binding).toBe(true);
-    // TAG-4: the todo + ask_user tools are enabled in the built-in seed.
-    expect(EXPERIENCE_COPILOT_MODULE.toolSet.todo).toBe(true);
+    expect(EXPERIENCE_COPILOT_MODULE.toolSet.plan).toBe(true);
+    expect(EXPERIENCE_COPILOT_MODULE.toolSet.read_plan).toBe(true);
     expect(EXPERIENCE_COPILOT_MODULE.toolSet.ask_user).toBe(true);
   });
 
@@ -86,15 +86,16 @@ describe("experience-copilot module (ER-16)", () => {
     // The loaded base-prompt asset carries the role framing.
     expect(profile.basePrompt.trim().length).toBeGreaterThan(0);
     expect(profile.basePrompt).toContain("MINI-APP ASSISTANT");
-    // toolSet projected through COPILOT_TOOL_KEYS → all 7 declared tools on
-    // (TAG-4: todo + ask_user join the seed). maxSteps is no longer carried.
+    // toolSet projected through COPILOT_TOOL_KEYS → all 8 declared tools on.
+    // maxSteps is no longer carried.
     expect(profile.toolSet).toEqual({
       write_buffer: true,
       edit_buffer: true,
       run_test: true,
       run_simulate: true,
       suggest_visual_binding: true,
-      todo: true,
+      plan: true,
+      read_plan: true,
       ask_user: true,
     });
     expect(profile.maxSteps).toBeUndefined();

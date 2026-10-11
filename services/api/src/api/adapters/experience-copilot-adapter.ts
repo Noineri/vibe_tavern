@@ -53,6 +53,7 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
   ) {
     const deps: ExperienceCopilotStreamDeps = {
       store: this.stores.experienceCopilot,
+      agentPlans: this.stores.agentPlans,
       getScript: (scriptId: string) => this.stores.scripts.getById(scriptId),
       getBoundVisualIds: (scriptId: string) => this.stores.scripts.getBoundVisualIds(scriptId),
       getVisual: (id: string) => this.stores.experienceResources.getVisualById(id),

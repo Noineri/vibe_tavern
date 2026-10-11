@@ -73,7 +73,8 @@ export const EXPERIENCE_COPILOT_MODULE: ExperienceCopilotModuleDef = {
     run_test: true,
     run_simulate: true,
     suggest_visual_binding: true,
-    todo: true,
+    plan: true,
+    read_plan: true,
     ask_user: true,
   },
 };

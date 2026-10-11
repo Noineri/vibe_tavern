@@ -186,6 +186,10 @@ function makeDeps(
   const profile = makeProfile();
   return {
     store,
+    agentPlans: {
+      get: async () => null,
+      save: async () => {},
+    } as ExperienceCopilotStreamDeps["agentPlans"],
     getScript: async () => null,
     getBoundVisualIds: async () => [],
     getVisual: async () => null,
@@ -1187,16 +1191,29 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TAG-6: todo wiring (saveTodo → updateTodo + prompt section)
+// PM-2: agent-plan wiring + retained TAG-6 todo prompt section
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("experience-copilot stream — todo wiring (TAG-6)", () => {
+describe("experience-copilot stream — agent-plan wiring + todo prompt context", () => {
   beforeEach(() => {
     streamTextImpl = undefined;
   });
 
-  it("wires the todo tool's saveTodo to the store: a todo call persists via updateTodo", async () => {
-    const store = createFakeStore(makeThread());
+  it("wires plan/read_plan to the thread script's agent-plan store", async () => {
+    const store = createFakeStore(makeThread("script_1"));
+    const loadOwners: unknown[] = [];
+    const saves: Array<{ owner: unknown; plan: unknown }> = [];
+    let saved: unknown = null;
+    const agentPlans = {
+      get: async (owner: unknown) => {
+        loadOwners.push(owner);
+        return saved;
+      },
+      save: async (owner: unknown, plan: unknown) => {
+        saves.push({ owner, plan });
+        saved = plan;
+      },
+    } as ExperienceCopilotStreamDeps["agentPlans"];
     let captured: { tools?: Record<string, { execute?: (input: unknown) => Promise<unknown> }> } | undefined;
     streamTextImpl = (opts: unknown) => {
       captured = opts as typeof captured;
@@ -1206,26 +1223,34 @@ describe("experience-copilot stream — todo wiring (TAG-6)", () => {
     await collect(
       streamExperienceCopilot(
         { threadId: "thread_1", content: "plan this out", providerProfileId: "prov_1" },
-        makeDeps(store),
+        makeDeps(store, { agentPlans }),
       ),
     );
 
-    // The built tool set carries the todo tool (builtin seed has todo: true).
-    const todoTool = captured!.tools!["todo"];
-    expect(todoTool).toBeDefined();
+    const planTool = captured!.tools!["plan"];
+    const readPlanTool = captured!.tools!["read_plan"];
+    expect(planTool).toBeDefined();
+    expect(readPlanTool).toBeDefined();
+    const plan = {
+      goal: "Write the experience",
+      constraints: [],
+      tasks: [{ id: " rules ", title: " Write rules ", body: "", status: "active" }],
+    };
 
-    // Invoking the tool's execute — the same path the real SDK loop drives —
-    // must flow through the wired saveTodo → store.updateTodo(threadId, items).
-    const items = [
-      { title: "Write rules", status: "active" },
-      { title: "Bind visual", status: "pending" },
-    ];
-    const result = await todoTool.execute!({ items });
-    expect(result).toMatchObject({ ok: true, remaining: 2, activeTitle: "Write rules" });
-
-    expect(store.todoCalls).toHaveLength(1);
-    expect(store.todoCalls[0].threadId).toBe("thread_1");
-    expect(store.todoCalls[0].items).toEqual(items);
+    expect(await planTool.execute!({ plan })).toEqual({
+      ok: true,
+      activeTitle: "Write rules",
+      remaining: 1,
+    });
+    expect(saves).toEqual([{
+      owner: { kind: "script", scriptId: "script_1" },
+      plan: {
+        ...plan,
+        tasks: [{ ...plan.tasks[0], id: "rules", title: "Write rules" }],
+      },
+    }]);
+    expect(await readPlanTool.execute!({})).toEqual(saves[0]!.plan);
+    expect(loadOwners).toEqual([{ kind: "script", scriptId: "script_1" }]);
   });
 
   it("the NEXT turn's assembly carries the persisted todo section (session-scoped lifetime)", async () => {

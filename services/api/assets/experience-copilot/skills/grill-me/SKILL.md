@@ -14,4 +14,4 @@ Interrogate the user's experience design until nothing important is left implici
 - Probe: the core loop (could a reader predict what the experience DOES from the rules alone?), state sufficiency, turn ownership and seat mapping, termination and dead-end actions, visual/rules disagreement (a visual re-deriving what the rules should own), binding gaps. Early, ask the rejection question: "What would make you send this back for a rework?"
 - Taste and feel are ungrillable: do not interrogate them — propose a concrete variant instead (an option chip, or a described visual direction) and let the user react.
 - If the user says "just build it": compress to the 3 questions whose answers would most change the outcome, then proceed, listing your assumptions.
-- The grill ends when no unblocked question remains. Synthesize the decisions made in a short list, then offer to lay them out as a `todo` step plan before any building starts.
+- The grill ends when no unblocked question remains. Synthesize the decisions made in a short list, then offer to lay them out as a plan with the `plan` tool before any building starts.

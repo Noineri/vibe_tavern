@@ -25,12 +25,18 @@ import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
  * row); `createdAt`/`updatedAt` are dropped (the wire profile has no timestamps).
  * The stored `toolSet` is a loose partial record — it is projected through
  * {@link COPILOT_TOOL_KEYS} so only the known toggleable-tool keys (and only
- * their `true` entries) survive, producing a strict `CopilotToolSet`.
+ * their `true` entries) survive, producing a strict `CopilotToolSet`. Legacy
+ * rows with `todo: true` project it to both replacement plan tools at read time;
+ * the stored JSON remains untouched until the user next saves the profile.
  */
 export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile {
 	const toolSet: CopilotToolSet = {};
 	for (const key of COPILOT_TOOL_KEYS) {
 		if (row.toolSet[key] === true) toolSet[key] = true;
+	}
+	if (row.toolSet.todo === true) {
+		toolSet.plan = true;
+		toolSet.read_plan = true;
 	}
 	return {
 		id: row.id,

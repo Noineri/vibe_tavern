@@ -2,8 +2,11 @@ import { describe, test, expect, beforeAll } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
-import { CopilotProfileResolver } from "../src/domain/interactive/copilot/copilot-profile-resolver.js";
+import { createStoreContainer, type CopilotProfileRow, type StoreContainer } from "@vibe-tavern/db";
+import {
+  CopilotProfileResolver,
+  copilotProfileRowToWire,
+} from "../src/domain/interactive/copilot/copilot-profile-resolver.js";
 
 /**
  * CP-6 — copilot profile resolution. Pins the fallback ladder: null scriptId /
@@ -62,6 +65,21 @@ describe("CopilotProfileResolver", () => {
     expect(profile.toolSet).toEqual({ write_buffer: true });
     // TAG-4: maxSteps is no longer projected to the wire shape.
     expect(profile.maxSteps).toBeUndefined();
+  });
+
+  test("legacy todo:true projects to plan/read_plan, while rows without it get neither", () => {
+    const row: CopilotProfileRow = {
+      id: "profile_legacy",
+      name: "Legacy",
+      basePrompt: "Legacy prompt.",
+      skillIds: [],
+      toolSet: { todo: true },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    expect(copilotProfileRowToWire(row).toolSet).toEqual({ plan: true, read_plan: true });
+    expect(copilotProfileRowToWire({ ...row, toolSet: {} }).toolSet).toEqual({});
   });
 
   test("a dangling profile id (deleted profile) → built-in seed", async () => {

@@ -26,6 +26,7 @@ import type { LanguageModel, ModelMessage, AssistantContent, ToolCallPart, ToolR
 import type { ToolSet } from "ai";
 import type { ProviderProfile, ScriptRow, ExperienceVisualRow, AppDb } from "@vibe-tavern/db";
 import type { CopilotProfile, ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
+import type { AgentPlan, AgentPlanOwner } from "@vibe-tavern/domain";
 import type {
   ExperienceCopilotStore,
   ExperienceCopilotMessage,
@@ -86,6 +87,11 @@ interface PersistedToolResult {
 export interface ExperienceCopilotStreamDeps {
   /** The ER-3 store (thread + message persistence). */
   readonly store: ExperienceCopilotStore;
+  /** Script-owned plan persistence for the model-facing plan/read_plan tools. */
+  readonly agentPlans: {
+    get(owner: AgentPlanOwner): Promise<AgentPlan | null>;
+    save(owner: AgentPlanOwner, plan: AgentPlan): Promise<void>;
+  };
   /** Fetch a script by id (rules source). Null when missing. */
   readonly getScript: (scriptId: string) => Promise<ScriptRow | null>;
   /** List the visual ids bound to a script (the bound-visuals set). */
@@ -484,6 +490,18 @@ export async function* streamExperienceCopilot(
   // Skill roots come from the resolved skill catalog (ER-16) so read_skill_file
   // resolves against the rendered catalog's root; toolSet is the resolved
   // profile's set (read_skill_file always added on top, mirroring Co-Author).
+  const agentPlanOwner: AgentPlanOwner | null = thread.scriptId === null
+    ? null
+    : { kind: "script", scriptId: thread.scriptId };
+  const requireAgentPlanOwner = (): AgentPlanOwner => {
+    if (agentPlanOwner === null) {
+      throw new Error("plan: a script must be saved before its plan can be read or updated");
+    }
+    return agentPlanOwner;
+  };
+  const loadPlan = (): Promise<AgentPlan | null> => deps.agentPlans.get(requireAgentPlanOwner());
+  const savePlan = (plan: AgentPlan): Promise<void> => deps.agentPlans.save(requireAgentPlanOwner(), plan);
+
   const tools: ToolSet = buildExperienceCopilotTools({
     ...(rules ? { rules } : {}),
     ...(visual !== undefined ? { visual } : {}),
@@ -491,11 +509,8 @@ export async function* streamExperienceCopilot(
     ...(request.launchContext !== undefined ? { launchContext: request.launchContext } : {}),
     toolSet: copilotProfile.toolSet,
     skillRoots: assembled.skillRoots,
-    // TAG-6: the todo tool's full-list rewrite persists onto the thread row via
-    // the ER-3 store (session-scoped — survives turns, reloads, compaction via
-    // the prompt section above); `updateTodo(threadId, items)` is the store's
-    // structural twin of the tool's `(items) => Promise<void>` dep.
-    saveTodo: (items) => deps.store.updateTodo(request.threadId, items),
+    loadPlan,
+    savePlan,
   });
 
   // ── 8. Resolve the model + start streaming ──

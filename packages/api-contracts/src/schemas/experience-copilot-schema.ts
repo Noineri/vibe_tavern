@@ -331,10 +331,9 @@ export type ExperienceCopilotBoundVisual = z.infer<typeof experienceCopilotBound
 // `openingMessage` — the copilot is not a chat-mode and does not greet.
 
 /**
- * Which tools a profile may toggle. A PARTIAL record over exactly the 7
+ * Which tools a profile may toggle. A PARTIAL record over exactly the 8
  * toggleable copilot tools (write_buffer, edit_buffer, run_test, run_simulate,
- * suggest_visual_binding, todo, ask_user — the last two are wired to their
- * tool implementations in Wave 2). `read_skill_file` is intentionally ABSENT — it is
+ * suggest_visual_binding, plan, read_plan, ask_user). `read_skill_file` is intentionally ABSENT — it is
  * the always-on, read-only skill-access channel and is never gated by a
  * toolSet (mirroring Co-Author's `coauthorToolSetSchema`, which excludes
  * `read_skill_file` for the same reason). `.strict()` rejects any unknown key
@@ -348,7 +347,8 @@ export const copilotToolSetSchema = z
     run_test: z.boolean().optional(),
     run_simulate: z.boolean().optional(),
     suggest_visual_binding: z.boolean().optional(),
-    todo: z.boolean().optional(),
+    plan: z.boolean().optional(),
+    read_plan: z.boolean().optional(),
     ask_user: z.boolean().optional(),
   })
   .strict();
