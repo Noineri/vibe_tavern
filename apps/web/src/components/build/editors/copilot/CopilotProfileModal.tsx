@@ -58,7 +58,7 @@ type DetailMode = "view" | "edit" | "create";
  * Copilot profile manager (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3 / CP-9).
  * Mirrors `CoauthorModuleModal` MINUS description/openingMessage: profile list
  * (built-in seed shown read-only, user profiles), name + inline system prompt
- * (AutoTextarea), catalog-driven skill toggles, tool checkboxes (the 7 keys
+ * (AutoTextarea), catalog-driven skill toggles, tool checkboxes (the keys
  * from `COPILOT_TOOL_KEYS`). "Duplicate built-in"
  * pre-fills a new user profile. Assignment writes `scripts.copilotProfileId`
  * via `setCopilotProfile` (built-in → null = unassign).

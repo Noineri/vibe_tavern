@@ -239,12 +239,12 @@ describe("CopilotProfileModal — edit user profile", () => {
 		expect(updateCopilotProfile).toHaveBeenCalledWith("cprof_1", expect.objectContaining({ name: "Card games" }));
 	});
 
-	it("renders all seven tool toggles and no step-limit input (TAG-10)", async () => {
-		const { getByTestId, queryAllByTestId, getByRole, queryByRole, getByText } = renderModal();
+	it("renders all eight tool toggles and no step-limit input (TAG-10)", async () => {
+		const { getByTestId, queryByRole, getByText } = renderModal();
 		await flush(getByTestId);
 		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_1"));
 		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
-		const toolKeys = ["edit_buffer", "write_buffer", "run_test", "run_simulate", "suggest_visual_binding", "todo", "ask_user"];
+		const toolKeys = ["edit_buffer", "write_buffer", "run_test", "run_simulate", "suggest_visual_binding", "plan", "read_plan", "ask_user"];
 		for (const key of toolKeys) {
 			expect(getByText(key)).toBeDefined();
 		}
