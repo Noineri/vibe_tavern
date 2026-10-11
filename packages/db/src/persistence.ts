@@ -1,4 +1,5 @@
 import { createDb, type AppDb } from './db-connection.js';
+import { AgentPlanStore } from './stores/agent-plan-store.js';
 import { ContentStore } from './content-store.js';
 import { createFileStore } from './file-store.js';
 import { CharacterStore, CharacterFolder, CharacterDirectoryRegistry, PersonaStore, ProviderStore, ProxyStore, ChatStore, ChatSummaryStore, PresetStore, UiSettingsStore, LorebookStore, ScriptStore, RegexStore, CharacterAssetStore, MessageStore, PromptTraceStore, VersionStore, CoauthorModuleStore, CoauthorConnectionSettingsStore, CopilotProfileStore, SamplerSetStore, ImageGenSamplerSetStore, ImageGenPromptCapStore, ImageGenListingSnapshotStore, ImagePromptVariantStore, ImagePromptProfileStore, FormatTemplateStore, AiInstructionTemplateStore, DiceRollStore, ExperienceStore, ExperienceResourceStore, ExperienceCopilotStore, QuotaStore, TtsStore, SttStore, ImageGenStore } from './stores/index.js';
@@ -40,6 +41,7 @@ export interface StoreContainer {
   experiences: ExperienceStore;
   experienceResources: ExperienceResourceStore;
   experienceCopilot: ExperienceCopilotStore;
+  agentPlans: AgentPlanStore;
   quota: QuotaStore;
 }
 
@@ -110,6 +112,7 @@ export async function createStoreContainer(dbPath: string, dataDir?: string): Pr
     experiences: new ExperienceStore(db),
     experienceResources: new ExperienceResourceStore(db),
     experienceCopilot: new ExperienceCopilotStore(db),
+    agentPlans: new AgentPlanStore(db),
     quota: new QuotaStore(db),
   };
 }

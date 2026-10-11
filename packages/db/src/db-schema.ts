@@ -1879,6 +1879,20 @@ export const experienceCopilotMessages = sqliteTable('experience_copilot_message
   threadIdx: index('idx_experience_copilot_messages_thread').on(table.threadId),
 }));
 
+// ─── agentPlans ──────────────────────────────────────────────────────────────
+// One persisted agent plan belongs to each saved script. script_id is a soft
+// link with NO FK: deleting a script never cascade-deletes copilot data, and
+// its plan follows that same snapshot/no-FK-source convention.
+export const agentPlans = sqliteTable('agent_plans', {
+  id: text('id').primaryKey(),
+  scriptId: text('script_id').notNull(),
+  contentJson: text('content_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  scriptIdUnique: uniqueIndex('idx_agent_plans_script').on(table.scriptId),
+}));
+
 // ─── builtinExperienceDismissals ─────────────────────────────────────────────
 // Tombstone marker for a built-in experience the user explicitly deleted or
 // unlinked. `seedBuiltinExperiences` (BE-3) is create-or-return WITHOUT memory
