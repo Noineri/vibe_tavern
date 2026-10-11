@@ -22,13 +22,71 @@
  * need a different treatment can drop the flag and dim externally.
  */
 import { Fragment, type ReactNode } from "react";
-import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
+import type { SceneTone, SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
 import { cn } from "../../lib/cn.js";
 import { useT } from "../../i18n/context.js";
 import type { SceneRenderVariant } from "../../stores/scene-render-store.js";
 
 const METER_MAX_RANGE = 1000;
 const HUD_METER_SEGMENT_COUNT = 20;
+
+// ────────────────────────────────────────────────────────────────────────────
+// Tone — schema color semantics (`tone` on any node, `toneBy` value→tone map
+// on string nodes) resolved through ONE helper and rendered with the app's
+// semantic color tokens only (theme-tuner compatibility — raw hex forbidden).
+// Fills use the solid brand tokens (`bg-*`); soft rules reuse the established
+// `/40` alpha shape the HUD already uses (`border-accent/40`). Every map holds
+// full literal class names so the Tailwind scanner generates them.
+// ────────────────────────────────────────────────────────────────────────────
+
+const SCENE_TONE_TEXT: Record<SceneTone, string> = {
+  accent: "text-accent",
+  success: "text-success",
+  warning: "text-warning",
+  danger: "text-danger",
+};
+
+const SCENE_TONE_FILL: Record<SceneTone, string> = {
+  accent: "bg-accent",
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-danger",
+};
+
+const SCENE_TONE_BORDER: Record<SceneTone, string> = {
+  accent: "border-accent",
+  success: "border-success",
+  warning: "border-warning",
+  danger: "border-danger",
+};
+
+const SCENE_TONE_FILL_SOFT: Record<SceneTone, string> = {
+  accent: "bg-accent/40",
+  success: "bg-success/40",
+  warning: "bg-warning/40",
+  danger: "bg-danger/40",
+};
+
+const SCENE_TONE_BORDER_SOFT: Record<SceneTone, string> = {
+  accent: "border-accent/40",
+  success: "border-success/40",
+  warning: "border-warning/40",
+  danger: "border-danger/40",
+};
+
+/**
+ * Resolve the display tone for a schema node + its current value. For STRING
+ * nodes a `toneBy` entry matching the CURRENT value wins (the value-specific
+ * signal); otherwise the node's own `tone` applies; absent both → neutral
+ * (undefined — render exactly as today). Non-string nodes resolve `tone` only.
+ */
+export function resolveSceneTone(node: SceneTrackerSchemaNode, value: unknown): SceneTone | undefined {
+  if (node.$type === "string" && typeof value === "string") {
+    const mapped = node.toneBy?.[value];
+    if (mapped !== undefined) return mapped;
+  }
+  return node.tone;
+}
 
 interface SceneStateViewProps {
   /** The user-authored DSL describing the shape (drives rendering, not parsing). */
@@ -126,18 +184,21 @@ function Field({
   switch (node.$type) {
     case "object": {
       const child = isPlainObject(value) ? (value as Record<string, unknown>) : null;
+      // A group tone is the group's own accent element — never a recursion
+      // paint: children resolve their own nodes independently below.
+      const groupTone = variant === "compact" ? undefined : resolveSceneTone(node, value);
       if (variant === "hud") {
         const content = child
           ? <Fields entries={Object.entries(node.properties)} values={child} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />
           : <Dash />;
         return depth === 0 ? (
           <section className="scene-state-hud-panel flex flex-col gap-2 border border-border2 bg-s2/40 p-3">
-            {label !== undefined && <HudPanelHeader label={label} />}
+            {label !== undefined && <HudPanelHeader label={label} tone={groupTone} />}
             <div className="flex flex-col gap-2">{content}</div>
           </section>
         ) : (
-          <div className="scene-state-hud-subgroup flex flex-col gap-2 border-t border-accent/40 pt-2">
-            {label !== undefined && <ContainerLabel label={label} variant={variant} />}
+          <div className={`scene-state-hud-subgroup flex flex-col gap-2 border-t ${groupTone ? SCENE_TONE_BORDER_SOFT[groupTone] : "border-accent/40"} pt-2`}>
+            {label !== undefined && <ContainerLabel label={label} variant={variant} tone={groupTone} />}
             <div className="flex flex-col gap-2">{content}</div>
           </div>
         );
@@ -146,14 +207,18 @@ function Field({
         const content = child
           ? <Fields entries={Object.entries(node.properties)} values={child} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />
           : <Dash />;
+        // Group `tone: "accent"` IS the quest highlight (R4 supervisor ruling):
+        // the top-level card takes the emphasis border + tinted background
+        // from the directions-file quest block, ported to app tokens.
+        const highlighted = groupTone === "accent";
         return depth === 0 ? (
-          <section className="scene-state-clean-card flex flex-col gap-2 rounded-md border border-border bg-s2 p-3">
-            {label !== undefined && <CleanGroupHeader label={label} />}
+          <section className={`scene-state-clean-card flex flex-col gap-2 rounded-md border ${highlighted ? "scene-state-clean-card-accent border-accent bg-accent-dim" : "border-border bg-s2"} p-3`}>
+            {label !== undefined && <CleanGroupHeader label={label} tone={groupTone} />}
             <div className="flex flex-col gap-2">{content}</div>
           </section>
         ) : (
           <div className="scene-state-clean-subgroup ml-2 flex flex-col gap-1 pl-2">
-            {label !== undefined && <ContainerLabel label={label} variant={variant} />}
+            {label !== undefined && <ContainerLabel label={label} variant={variant} tone={groupTone} />}
             <div className="flex flex-col gap-2">{content}</div>
           </div>
         );
@@ -161,7 +226,7 @@ function Field({
       return (
         <div className="flex flex-col gap-0.5">
           {label !== undefined && <ContainerLabel label={label} />}
-          <div className={cn(variant === "compact" ? "ml-3" : "ml-2 border-l border-border pl-2", "flex flex-col gap-0.5")}>
+          <div className={cn(groupTone ? `ml-2 border-l ${SCENE_TONE_BORDER[groupTone]} pl-2` : variant === "compact" ? "ml-3" : "ml-2 border-l border-border pl-2", "flex flex-col gap-0.5")}>
             {child
               ? <Fields entries={Object.entries(node.properties)} values={child} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />
               : <Dash />}
@@ -174,28 +239,30 @@ function Field({
       const content = items.length === 0
         ? <span className="text-[11px] text-t4">{emptyLabel}</span>
         : items.map((item, i) => <ArrayItem key={i} index={i} itemNode={node.items} value={item} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />);
+      const groupTone = variant === "compact" ? undefined : resolveSceneTone(node, value);
       if (variant === "hud") {
         return depth === 0 ? (
           <section className="scene-state-hud-panel flex flex-col gap-2 border border-border2 bg-s2/40 p-3">
-            {label !== undefined && <HudPanelHeader label={label} />}
+            {label !== undefined && <HudPanelHeader label={label} tone={groupTone} />}
             <div className="flex flex-col gap-2">{content}</div>
           </section>
         ) : (
-          <div className="scene-state-hud-subgroup flex flex-col gap-2 border-t border-accent/40 pt-2">
-            {label !== undefined && <ContainerLabel label={label} variant={variant} />}
+          <div className={`scene-state-hud-subgroup flex flex-col gap-2 border-t ${groupTone ? SCENE_TONE_BORDER_SOFT[groupTone] : "border-accent/40"} pt-2`}>
+            {label !== undefined && <ContainerLabel label={label} variant={variant} tone={groupTone} />}
             <div className="flex flex-col gap-2">{content}</div>
           </div>
         );
       }
       if (variant === "clean") {
+        const highlighted = groupTone === "accent";
         return depth === 0 ? (
-          <section className="scene-state-clean-card flex flex-col gap-2 rounded-md border border-border bg-s2 p-3">
-            {label !== undefined && <CleanGroupHeader label={label} />}
+          <section className={`scene-state-clean-card flex flex-col gap-2 rounded-md border ${highlighted ? "scene-state-clean-card-accent border-accent bg-accent-dim" : "border-border bg-s2"} p-3`}>
+            {label !== undefined && <CleanGroupHeader label={label} tone={groupTone} />}
             <div className="flex flex-col gap-2">{content}</div>
           </section>
         ) : (
           <div className="scene-state-clean-subgroup ml-2 flex flex-col gap-1 pl-2">
-            {label !== undefined && <ContainerLabel label={label} variant={variant} />}
+            {label !== undefined && <ContainerLabel label={label} variant={variant} tone={groupTone} />}
             <div className="flex flex-col gap-2">{content}</div>
           </div>
         );
@@ -203,7 +270,7 @@ function Field({
       return (
         <div className="flex flex-col gap-0.5">
           {label !== undefined && <ContainerLabel label={label} />}
-          <div className={cn(variant === "compact" ? "ml-3" : "ml-2 border-l border-border pl-2", "flex flex-col gap-0.5")}>
+          <div className={cn(groupTone ? `ml-2 border-l ${SCENE_TONE_BORDER[groupTone]} pl-2` : variant === "compact" ? "ml-3" : "ml-2 border-l border-border pl-2", "flex flex-col gap-0.5")}>
             {content}
           </div>
         </div>
@@ -275,9 +342,13 @@ function Leaf({
 }): ReactNode {
   if (node.$type === "boolean") {
     const text = value == null ? "—" : value ? "✓" : "✗";
+    const tone = resolveSceneTone(node, value);
+    // Compact keeps its default value color — the tone surfaces as a dot only.
+    const valueColor = tone && variant !== "compact" ? SCENE_TONE_TEXT[tone] : value === true && variant !== "hud" ? "text-accent" : "text-t4";
     return (
       <KvRow label={label} variant={variant} inline={inline}>
-        <span className={cn("text-[11px]", variant === "clean" && "scene-state-value", value === true && variant !== "hud" ? "text-accent" : "text-t4")}>{text}</span>
+        {variant === "compact" && <ToneDot tone={tone} />}
+        <span className={cn("text-[11px]", variant === "clean" && "scene-state-value", valueColor)}>{text}</span>
       </KvRow>
     );
   }
@@ -285,6 +356,11 @@ function Leaf({
   if (node.$type === "number") {
     const n = typeof value === "number" ? value : null;
     const { min, max } = node;
+    const tone = resolveSceneTone(node, value);
+    // Meter fills take the solid brand token of the resolved tone family — it
+    // reads on the track (`bg-s2`/`bg-s3`) in every variant; neutral keeps `bg-accent`.
+    const meterFill = tone ? SCENE_TONE_FILL[tone] : "bg-accent";
+    const meterValueColor = tone && variant !== "compact" ? SCENE_TONE_TEXT[tone] : "text-t2";
     // Inline the null checks so TS narrows `min`/`max` to `number` inside each
     // branch (a `const bounded = …` boolean would NOT carry the narrowing).
     const range = min != null && max != null ? max - min : null;
@@ -294,9 +370,9 @@ function Leaf({
         return (
           <div className="scene-state-hud-meter-row flex min-w-0 flex-col gap-1">
             <KvRow label={label} variant={variant} inline={inline}>
-              <span className="text-[11px] font-medium tabular-nums text-t2">{formatNum(n)}</span>
+              <span className={cn("text-[11px] font-medium tabular-nums", meterValueColor)}>{formatNum(n)}</span>
             </KvRow>
-            <HudMeter label={label} value={n} min={min} max={max} fillPercent={pct} />
+            <HudMeter label={label} value={n} min={min} max={max} fillPercent={pct} tone={tone} />
           </div>
         );
       }
@@ -311,9 +387,9 @@ function Leaf({
             aria-label={label}
             className={cn("h-1.5 min-w-[36px] flex-1 overflow-hidden rounded-full bg-s2", variant === "clean" && "scene-state-clean-meter ml-auto max-w-[45%] flex-none")}
           >
-            <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+            <div className={cn("h-full rounded-full", meterFill)} style={{ width: `${pct}%` }} />
           </div>
-          <span className={cn("shrink-0 text-[11px] font-medium tabular-nums text-t2", variant === "clean" && "scene-state-value")}>{formatNum(n)}</span>
+          <span className={cn("shrink-0 text-[11px] font-medium tabular-nums", variant === "clean" && "scene-state-value", meterValueColor)}>{formatNum(n)}</span>
         </div>
       );
     }
@@ -328,7 +404,8 @@ function Leaf({
       : "";
     return (
       <KvRow label={label} variant={variant} inline={inline}>
-        <span className={cn("text-[11px] tabular-nums text-t2", variant === "clean" && "scene-state-value")}>
+        {variant === "compact" && <ToneDot tone={tone} />}
+        <span className={cn(`text-[11px] tabular-nums ${tone && variant !== "compact" ? SCENE_TONE_TEXT[tone] : "text-t2"}`, variant === "clean" && "scene-state-value")}>
           {valueText}{rangeSuffix}
           {isHugeRange && variant !== "compact" && n != null && max != null && <span className="text-t4"> / {formatNum(max)}</span>}
         </span>
@@ -343,9 +420,11 @@ function Leaf({
   // (not `break-words`) so min-content sizing itself accounts for the break —
   // the column cannot push its container wider than the viewport.
   const text = value == null ? "—" : typeof value === "string" ? value : String(value);
+  const tone = resolveSceneTone(node, value);
   return (
     <KvRow label={label} variant={variant} inline={inline}>
-      <span className={cn("text-[11px] text-t2 [overflow-wrap:anywhere]", variant === "clean" && "scene-state-value")}>{text}</span>
+      {variant === "compact" && <ToneDot tone={tone} />}
+      <span className={cn(`text-[11px] ${tone && variant !== "compact" ? SCENE_TONE_TEXT[tone] : "text-t2"} [overflow-wrap:anywhere]`, variant === "clean" && "scene-state-value")}>{text}</span>
     </KvRow>
   );
 }
@@ -367,26 +446,37 @@ function KvRow({ label, variant, inline = false, children }: { label: string | u
   );
 }
 
-function ContainerLabel({ label, variant }: { label: string; variant?: SceneRenderVariant }) {
+function ContainerLabel({ label, variant, tone }: { label: string; variant?: SceneRenderVariant; tone?: SceneTone }) {
+  if (tone && variant !== undefined) {
+    return <span className={variant === "clean" ? `text-[10px] font-medium tracking-[0.04em] ${SCENE_TONE_TEXT[tone]}` : `scene-state-hud-label text-[10px] font-semibold uppercase tracking-[0.12em] ${SCENE_TONE_TEXT[tone]}`}>{label}</span>;
+  }
   return <span className={variant === "clean" ? "text-[10px] font-medium tracking-[0.04em] text-t4" : variant === "hud" ? "scene-state-hud-label text-[10px] font-semibold uppercase tracking-[0.12em] text-t4" : "text-[10px] font-semibold uppercase tracking-[0.04em] text-t4"}>{label}</span>;
 }
 
-function CleanGroupHeader({ label }: { label: string }) {
+/** Decorative tone dot for `compact` — the ONLY tone surface there (aria-hidden). */
+function ToneDot({ tone }: { tone: SceneTone | undefined }) {
+  if (!tone) return null;
+  return <span aria-hidden="true" className={cn("scene-state-tone-dot mr-1 inline-block h-1.5 w-1.5 rounded-full", SCENE_TONE_FILL[tone])} />;
+}
+
+function CleanGroupHeader({ label, tone }: { label: string; tone?: SceneTone }) {
+  const hairline = tone ? SCENE_TONE_FILL[tone] : "bg-border";
+  const labelColor = tone ? SCENE_TONE_TEXT[tone] : "text-t3";
   return (
     <div className="scene-state-clean-group-header flex min-w-0 items-center gap-2">
-      <span className="h-px w-3 shrink-0 bg-border" />
-      <span className="min-w-0 text-[11px] font-semibold text-t3 [overflow-wrap:anywhere]">{label}</span>
-      <span className="h-px min-w-3 flex-1 bg-border" />
+      <span className={cn("h-px w-3 shrink-0", hairline)} />
+      <span className={`min-w-0 text-[11px] font-semibold ${labelColor} [overflow-wrap:anywhere]`}>{label}</span>
+      <span className={cn("h-px min-w-3 flex-1", hairline)} />
     </div>
   );
 }
 
-function HudPanelHeader({ label }: { label: string }) {
+function HudPanelHeader({ label, tone }: { label: string; tone?: SceneTone }) {
   return (
-    <div className="scene-state-hud-panel-header flex min-w-0 items-center gap-2 border-b border-accent/40 pb-1">
-      <span className="h-px w-3 shrink-0 bg-accent" />
-      <span className="scene-state-hud-label min-w-0 text-[11px] font-semibold uppercase tracking-[0.16em] text-t3 [overflow-wrap:anywhere]">{label}</span>
-      <span className="h-px min-w-2 flex-1 bg-accent/40" />
+    <div className={`scene-state-hud-panel-header flex min-w-0 items-center gap-2 border-b ${tone ? SCENE_TONE_BORDER_SOFT[tone] : "border-accent/40"} pb-1`}>
+      <span className={cn("h-px w-3 shrink-0", tone ? SCENE_TONE_FILL[tone] : "bg-accent")} />
+      <span className={`scene-state-hud-label min-w-0 text-[11px] font-semibold uppercase tracking-[0.16em] ${tone ? SCENE_TONE_TEXT[tone] : "text-t3"} [overflow-wrap:anywhere]`}>{label}</span>
+      <span className={cn("h-px min-w-2 flex-1", tone ? SCENE_TONE_FILL_SOFT[tone] : "bg-accent/40")} />
     </div>
   );
 }
@@ -402,7 +492,7 @@ function HudRecordCorners() {
 }
 
 /** Twenty equal cells retain the HUD segmentation while the final cell fills exactly to the value ratio. */
-function HudMeter({ label, value, min, max, fillPercent }: { label: string | undefined; value: number; min: number; max: number; fillPercent: number }) {
+function HudMeter({ label, value, min, max, fillPercent, tone }: { label: string | undefined; value: number; min: number; max: number; fillPercent: number; tone?: SceneTone }) {
   return (
     <div
       role="meter"
@@ -416,7 +506,7 @@ function HudMeter({ label, value, min, max, fillPercent }: { label: string | und
         const segmentFill = Math.max(0, Math.min(100, fillPercent * HUD_METER_SEGMENT_COUNT - index * 100));
         return (
           <span key={index} aria-hidden="true" className="scene-state-hud-meter-segment overflow-hidden bg-s3">
-            <span className="block h-full bg-accent" style={{ width: `${segmentFill}%` }} />
+            <span className={cn("block h-full", tone ? SCENE_TONE_FILL[tone] : "bg-accent")} style={{ width: `${segmentFill}%` }} />
           </span>
         );
       })}

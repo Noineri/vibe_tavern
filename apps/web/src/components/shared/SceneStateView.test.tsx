@@ -13,8 +13,8 @@ import { describe, it, expect } from "bun:test";
 import { createElement } from "react";
 
 import { useDomEnv } from "../../../test/dom-env.js";
-import { SceneStateView } from "./SceneStateView.js";
-import type { SceneTrackerDsl } from "@vibe-tavern/domain";
+import { SceneStateView, resolveSceneTone } from "./SceneStateView.js";
+import type { SceneTrackerDsl, SceneTrackerSchemaNode } from "@vibe-tavern/domain";
 import type { SceneRenderVariant } from "../../stores/scene-render-store.js";
 
 useDomEnv();
@@ -391,5 +391,181 @@ describe("SceneStateView — per-node `label` (label || key)", () => {
     expect(c.textContent).toContain("Группа");
     expect(c.textContent).toContain("Имя");
     expect(c.textContent).toContain("Aria");
+  });
+});
+
+/** Find the single span whose whole text is `text` (labels and values differ). */
+function spanWith(container: HTMLElement, text: string): HTMLElement {
+  const el = Array.from(container.querySelectorAll("span")).find((candidate) => candidate.textContent === text);
+  if (!el) throw new Error(`no span with text "${text}"`);
+  return el as HTMLElement;
+}
+
+describe("SceneStateView — resolveSceneTone precedence", () => {
+  it("a toneBy entry matching the current value wins over the node tone", () => {
+    const node: SceneTrackerSchemaNode = { $type: "string", tone: "success", toneBy: { Ruined: "danger" } };
+    expect(resolveSceneTone(node, "Ruined")).toBe("danger");
+  });
+
+  it("an unmatched value falls back to the node tone", () => {
+    const node: SceneTrackerSchemaNode = { $type: "string", tone: "success", toneBy: { Ruined: "danger" } };
+    expect(resolveSceneTone(node, "Repaired")).toBe("success");
+  });
+
+  it("neither tone nor toneBy resolves to neutral undefined", () => {
+    expect(resolveSceneTone({ $type: "string" }, "x")).toBeUndefined();
+    expect(resolveSceneTone({ $type: "number" }, 3)).toBeUndefined();
+  });
+
+  it("non-string nodes resolve tone only; non-string values on string nodes fall to tone", () => {
+    expect(resolveSceneTone({ $type: "number", tone: "warning" }, 3)).toBe("warning");
+    expect(resolveSceneTone({ $type: "boolean", tone: "danger" }, true)).toBe("danger");
+    const node: SceneTrackerSchemaNode = { $type: "string", tone: "success", toneBy: { Ruined: "danger" } };
+    expect(resolveSceneTone(node, 42)).toBe("success");
+  });
+});
+
+describe("SceneStateView — toneBy end to end (R6)", () => {
+  const schema = { cond: { $type: "string", tone: "success", toneBy: { Ruined: "danger" } } } as const satisfies SceneTrackerDsl;
+
+  it("the toneBy-matched value renders the mapped tone class", () => {
+    expect(spanWith(r(schema, { cond: "Ruined" }), "Ruined").className).toContain("text-danger");
+  });
+
+  it("an unmapped value renders the node tone class", () => {
+    expect(spanWith(r(schema, { cond: "Stable" }), "Stable").className).toContain("text-success");
+  });
+});
+
+describe("SceneStateView — rich tone (R6)", () => {
+  it("scalar values take the text token and meter fills the solid token", () => {
+    const schema = {
+      mood: { $type: "string", tone: "danger" },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+      active: { $type: "boolean", tone: "warning" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { mood: "Ruined", hp: 75, active: true });
+    expect(spanWith(c, "Ruined").className).toContain("text-danger");
+    const { fill } = meterOf(c);
+    expect(fill!.className).toContain("bg-success");
+    expect(fill!.className).not.toContain("bg-accent");
+    expect(spanWith(c, "75").className).toContain("text-success");
+    const check = spanWith(c, "✓");
+    expect(check.className).toContain("text-warning");
+    expect(check.className).not.toContain("text-accent");
+  });
+
+  it("a group tone recolors the rail only — children stay neutral", () => {
+    const schema = {
+      loc: { $type: "object", tone: "danger", properties: { room: { $type: "string" } } },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { loc: { room: "tavern" } });
+    const rail = c.querySelector(".border-danger");
+    expect(rail).not.toBeNull();
+    expect((rail as HTMLElement).className).toContain("border-l");
+    const room = spanWith(c, "tavern");
+    expect(room.className).toContain("text-t2");
+    expect(room.className).not.toContain("text-danger");
+  });
+});
+
+describe("SceneStateView — compact tone dot (R6)", () => {
+  it("toned values render a decorative dot and keep the default value color", () => {
+    const schema = {
+      mood: { $type: "string", tone: "danger" },
+      hp: { $type: "number", min: 0, max: 100, tone: "success" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { mood: "tense", hp: 75 }, "compact");
+    const dots = Array.from(c.querySelectorAll(".scene-state-tone-dot")) as HTMLElement[];
+    expect(dots.length).toBe(2);
+    expect(dots[0].getAttribute("aria-hidden")).toBe("true");
+    expect(dots[0].className).toContain("bg-danger");
+    expect(dots[1].className).toContain("bg-success");
+    const value = spanWith(c, "tense");
+    expect(value.className).toContain("text-t2");
+    expect(value.className).not.toContain("text-danger");
+    expect(c.querySelector('[role="meter"]')).toBeNull();
+  });
+
+  it("no dot renders without a tone", () => {
+    const c = r({ mood: { $type: "string" } }, { mood: "tense" }, "compact");
+    expect(c.querySelector(".scene-state-tone-dot")).toBeNull();
+  });
+});
+
+describe("SceneStateView — clean tone (R6)", () => {
+  it("an accent-toned group card takes the quest highlight", () => {
+    const schema = {
+      quest: { $type: "object", label: "Quest", tone: "accent", properties: { name: { $type: "string", label: "Name" } } },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { quest: { name: "Survive" } }, "clean");
+    const card = c.querySelector(".scene-state-clean-card") as HTMLElement;
+    expect(card.className).toContain("scene-state-clean-card-accent");
+    expect(card.className).toContain("border-accent");
+    expect(card.className).toContain("bg-accent-dim");
+    expect(card.className).not.toContain("border-border");
+    const header = c.querySelector(".scene-state-clean-group-header") as HTMLElement;
+    const hairlines = Array.from(header.children) as HTMLElement[];
+    expect(hairlines[0].className).toContain("bg-accent");
+    expect(hairlines[2].className).toContain("bg-accent");
+    expect(spanWith(c, "Quest").className).toContain("text-accent");
+  });
+
+  it("a non-accent group tone colors the header only — card and children stay neutral", () => {
+    const schema = {
+      store: { $type: "object", label: "Store", tone: "warning", properties: { name: { $type: "string", label: "Name" } } },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { store: { name: "Flour" } }, "clean");
+    const card = c.querySelector(".scene-state-clean-card") as HTMLElement;
+    expect(card.className).toContain("border-border");
+    expect(card.className).toContain("bg-s2");
+    expect(card.className).not.toContain("scene-state-clean-card-accent");
+    expect(card.className).not.toContain("border-accent");
+    const header = c.querySelector(".scene-state-clean-group-header") as HTMLElement;
+    const hairlines = Array.from(header.children) as HTMLElement[];
+    expect(hairlines[0].className).toContain("bg-warning");
+    expect(spanWith(c, "Store").className).toContain("text-warning");
+    const child = spanWith(c, "Flour");
+    expect(child.className).toContain("text-t2");
+    expect(child.className).not.toContain("text-warning");
+  });
+
+  it("meters and values take the tone family", () => {
+    const schema = {
+      hp: { $type: "number", min: 0, max: 100, label: "HP", tone: "success" },
+      mood: { $type: "string", label: "Mood", tone: "danger" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { hp: 40, mood: "Ruined" }, "clean");
+    const { fill } = meterOf(c);
+    expect(fill!.className).toContain("bg-success");
+    expect(spanWith(c, "40").className).toContain("text-success");
+    expect(spanWith(c, "Ruined").className).toContain("text-danger");
+  });
+});
+
+describe("SceneStateView — hud tone (R6)", () => {
+  it("values, segment fills, and panel chrome take the tone family", () => {
+    const schema = {
+      status: {
+        $type: "object",
+        label: "Status",
+        tone: "warning",
+        properties: {
+          cond: { $type: "string", label: "Cond", tone: "danger" },
+          hp: { $type: "number", label: "HP", min: 0, max: 100, tone: "success" },
+        },
+      },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { status: { cond: "Ruined", hp: 50 } }, "hud");
+    expect(spanWith(c, "Ruined").className).toContain("text-danger");
+    const fills = Array.from(c.querySelectorAll(".scene-state-hud-meter-segment > span")) as HTMLElement[];
+    expect(fills.length).toBe(20);
+    for (const fill of fills) expect(fill.className).toContain("bg-success");
+    const header = c.querySelector(".scene-state-hud-panel-header") as HTMLElement;
+    expect(header.className).toContain("border-warning/40");
+    expect(spanWith(c, "Status").className).toContain("text-warning");
+    const rules = Array.from(header.children) as HTMLElement[];
+    expect(rules[0].className).toContain("bg-warning");
+    expect(rules[2].className).toContain("bg-warning/40");
   });
 });
