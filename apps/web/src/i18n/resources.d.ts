@@ -2721,6 +2721,7 @@ export default interface Resources {
     "scn_preview_failed": "Preview failed.",
     "scn_preview_mode_clean": "Clean",
     "scn_preview_mode_compact": "Compact",
+    "scn_preview_mode_hud": "HUD",
     "scn_preview_mode_rich": "Graphical",
     "scn_preview_raw_json": "Raw JSON",
     "scn_preview_raw_xml": "Raw XML",

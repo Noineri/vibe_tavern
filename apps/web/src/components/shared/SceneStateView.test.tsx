@@ -250,6 +250,72 @@ describe("SceneStateView — clean variant", () => {
   });
 });
 
+describe("SceneStateView — HUD variant", () => {
+  it("renders schema-ordered HUD panels, dot leaders, and bracketed object records without renaming schema labels", () => {
+    const schema = {
+      status: {
+        $type: "object",
+        label: "Статус сцены",
+        properties: {
+          condition: { $type: "string", label: "Состояние" },
+          active: { $type: "boolean", label: "Активно" },
+        },
+      },
+      party: {
+        $type: "array",
+        label: "Группа",
+        items: {
+          $type: "object",
+          label: "Спутник",
+          properties: { name: { $type: "string", label: "Имя" } },
+        },
+      },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { status: { condition: "Спокойно", active: true }, party: [{ name: "Арина" }] }, "hud");
+    expect(c.firstElementChild?.className).toContain("font-mono");
+    expect(c.querySelectorAll(".scene-state-hud-panel").length).toBe(2);
+    expect(c.querySelectorAll(".scene-state-hud-dot-leader").length).toBe(3);
+    expect(c.querySelectorAll(".scene-state-hud-record").length).toBe(1);
+    expect(c.querySelectorAll(".scene-state-hud-corner").length).toBe(2);
+    const schemaLabel = Array.from(c.querySelectorAll(".scene-state-hud-label")).find((el) => el.textContent === "Состояние");
+    expect(schemaLabel?.textContent).toBe("Состояние");
+    expect(schemaLabel?.className).toContain("uppercase");
+    // Object group order remains the schema insertion order, not a HUD-guessed order.
+    expect(c.textContent!.indexOf("Статус сцены")).toBeLessThan(c.textContent!.indexOf("Группа"));
+  });
+
+  it("normalizes 7/100 across twenty segments with a 40%-filled final cell", () => {
+    const c = r({ hp: { $type: "number", min: 0, max: 100, label: "HP" } }, { hp: 7 }, "hud");
+    const { meter } = meterOf(c);
+    const fills = Array.from(c.querySelectorAll(".scene-state-hud-meter-segment > span")) as HTMLElement[];
+    expect(meter?.getAttribute("aria-valuenow")).toBe("7");
+    expect(fills.length).toBe(20);
+    expect(fills[0].style.width).toBe("100%");
+    expect(Number.parseFloat(fills[1].style.width)).toBeCloseTo(40, 6);
+    expect(fills.slice(2).every((fill) => fill.style.width === "0%")).toBe(true);
+  });
+
+  it("normalizes 1/100 to one fifth of a cell, never a full five-percent segment", () => {
+    const c = r({ hp: { $type: "number", min: 0, max: 100 } }, { hp: 1 }, "hud");
+    const fills = Array.from(c.querySelectorAll(".scene-state-hud-meter-segment > span")) as HTMLElement[];
+    expect(fills[0].style.width).toBe("20%");
+    expect(fills[0].style.width).not.toBe("100%");
+    expect(fills[1].style.width).toBe("0%");
+  });
+
+  it("inherits the shared empty, fixed-value, and huge-range gates", () => {
+    const schema = {
+      reserve: { $type: "array", label: "Резерв", items: { $type: "string" } },
+      cost: { $type: "number", min: 30, max: 30, label: "Стоимость" },
+      credits: { $type: "number", min: 0, max: 999999, label: "Кредиты" },
+    } as const satisfies SceneTrackerDsl;
+    const c = r(schema, { reserve: [], cost: 30, credits: 30 }, "hud");
+    expect(c.textContent).toContain("scn_state_empty");
+    expect(c.textContent).toContain("30 / 999999");
+    expect(c.querySelector('[role="meter"]')).toBeNull();
+  });
+});
+
 describe("SceneStateView — stale + shared coverage", () => {
   it("stale=true adds opacity-50 to the root", () => {
     const c = r({ a: { $type: "string" } }, { a: "x" }, "rich", true);

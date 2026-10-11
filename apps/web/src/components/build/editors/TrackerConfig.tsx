@@ -30,6 +30,7 @@ const SCENE_RENDER_VARIANT_LABEL_KEYS = {
   rich: "scn_preview_mode_rich",
   compact: "scn_preview_mode_compact",
   clean: "scn_preview_mode_clean",
+  hud: "scn_preview_mode_hud",
 } as const satisfies Record<(typeof IMPLEMENTED_SCENE_RENDER_VARIANTS)[number], string>;
 
 /** A copyable worked example for the DSL authoring disclosure — exercises every

@@ -144,6 +144,7 @@
 	"scn_preview_mode_rich": "Graphical",
 	"scn_preview_mode_compact": "Compact",
 	"scn_preview_mode_clean": "Clean",
+	"scn_preview_mode_hud": "HUD",
 	"scn_state_empty": "empty",
 	"scn_preview_raw_json": "Raw JSON",
 	"scn_no_target": "Send a message first to preview against it.",

@@ -13,7 +13,8 @@
  * numbers as a11y meters and objects/arrays as an indented `border-l` tree;
  * `"compact"` keeps dense `key: value` lines without bars or tree chrome.
  * `"clean"` renders a single-column card layout with typography-only nesting;
- * `"hud"` remains an accepted preference value ahead of its implementation.
+ * `"hud"` uses a monospace HUD layout with schema-named panels and normalized
+ * segmented meters.
  *
  * Recursion is schema-guided at every level, so an array-of-objects renders the
  * object fields (NOT `[object Object]` — the bug the previous flat `String()`
@@ -27,13 +28,14 @@ import { useT } from "../../i18n/context.js";
 import type { SceneRenderVariant } from "../../stores/scene-render-store.js";
 
 const METER_MAX_RANGE = 1000;
+const HUD_METER_SEGMENT_COUNT = 20;
 
 interface SceneStateViewProps {
   /** The user-authored DSL describing the shape (drives rendering, not parsing). */
   schema: SceneTrackerDsl;
   /** The validated scene-state values to display. */
   data: Record<string, unknown>;
-  /** Render variant preference; unimplemented variants use rich's neutral fallback. */
+  /** Render variant preference. */
   variant?: SceneRenderVariant;
   /** When true, dims the whole view (e.g. a stale record in the header). */
   stale?: boolean;
@@ -44,7 +46,7 @@ interface SceneStateViewProps {
 export function SceneStateView({ schema, data, variant = "rich", stale, className }: SceneStateViewProps) {
   const { t } = useT();
   return (
-    <div className={cn("flex flex-col", variant === "clean" ? "gap-2" : "gap-0.5", stale && "opacity-50", className)}>
+    <div className={cn("flex flex-col", variant === "clean" ? "gap-2" : variant === "hud" ? "gap-3 font-mono" : "gap-0.5", stale && "opacity-50", className)}>
       <Fields entries={Object.entries(schema)} values={data} variant={variant} emptyLabel={t("scn_state_empty")} depth={0} />
     </div>
   );
@@ -124,6 +126,22 @@ function Field({
   switch (node.$type) {
     case "object": {
       const child = isPlainObject(value) ? (value as Record<string, unknown>) : null;
+      if (variant === "hud") {
+        const content = child
+          ? <Fields entries={Object.entries(node.properties)} values={child} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />
+          : <Dash />;
+        return depth === 0 ? (
+          <section className="scene-state-hud-panel flex flex-col gap-2 border border-border2 bg-s2/40 p-3">
+            {label !== undefined && <HudPanelHeader label={label} />}
+            <div className="flex flex-col gap-2">{content}</div>
+          </section>
+        ) : (
+          <div className="scene-state-hud-subgroup flex flex-col gap-2 border-t border-accent/40 pt-2">
+            {label !== undefined && <ContainerLabel label={label} variant={variant} />}
+            <div className="flex flex-col gap-2">{content}</div>
+          </div>
+        );
+      }
       if (variant === "clean") {
         const content = child
           ? <Fields entries={Object.entries(node.properties)} values={child} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />
@@ -156,6 +174,19 @@ function Field({
       const content = items.length === 0
         ? <span className="text-[11px] text-t4">{emptyLabel}</span>
         : items.map((item, i) => <ArrayItem key={i} index={i} itemNode={node.items} value={item} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />);
+      if (variant === "hud") {
+        return depth === 0 ? (
+          <section className="scene-state-hud-panel flex flex-col gap-2 border border-border2 bg-s2/40 p-3">
+            {label !== undefined && <HudPanelHeader label={label} />}
+            <div className="flex flex-col gap-2">{content}</div>
+          </section>
+        ) : (
+          <div className="scene-state-hud-subgroup flex flex-col gap-2 border-t border-accent/40 pt-2">
+            {label !== undefined && <ContainerLabel label={label} variant={variant} />}
+            <div className="flex flex-col gap-2">{content}</div>
+          </div>
+        );
+      }
       if (variant === "clean") {
         return depth === 0 ? (
           <section className="scene-state-clean-card flex flex-col gap-2 rounded-md border border-border bg-s2 p-3">
@@ -208,8 +239,9 @@ function ArrayItem({
   if (itemNode.$type === "object") {
     const child = isPlainObject(value) ? (value as Record<string, unknown>) : null;
     return (
-      <div className={cn(variant === "clean" ? "scene-state-clean-record rounded border border-border2 bg-s3 px-2 py-1.5" : variant === "compact" ? "" : "rounded border border-border2 bg-s2/40 px-1.5 py-1", "flex flex-col gap-0.5")}>
-        <span className="text-[10px] text-t4">{itemNode.label ?? `#${index + 1}`}</span>
+      <div className={cn(variant === "hud" ? "scene-state-hud-record relative border border-border2 bg-s3/50 px-2 py-2" : variant === "clean" ? "scene-state-clean-record rounded border border-border2 bg-s3 px-2 py-1.5" : variant === "compact" ? "" : "rounded border border-border2 bg-s2/40 px-1.5 py-1", "flex flex-col gap-0.5")}>
+        {variant === "hud" && <HudRecordCorners />}
+        <span className={cn("text-[10px] text-t4", variant === "hud" && "uppercase tracking-[0.12em]")}>{itemNode.label ?? `#${index + 1}`}</span>
         {child
           ? <Fields entries={Object.entries(itemNode.properties)} values={child} variant={variant} emptyLabel={emptyLabel} depth={depth + 1} />
           : <Dash />}
@@ -245,7 +277,7 @@ function Leaf({
     const text = value == null ? "—" : value ? "✓" : "✗";
     return (
       <KvRow label={label} variant={variant} inline={inline}>
-        <span className={cn("text-[11px]", variant === "clean" && "scene-state-value", value === true ? "text-accent" : "text-t4")}>{text}</span>
+        <span className={cn("text-[11px]", variant === "clean" && "scene-state-value", value === true && variant !== "hud" ? "text-accent" : "text-t4")}>{text}</span>
       </KvRow>
     );
   }
@@ -258,6 +290,16 @@ function Leaf({
     const range = min != null && max != null ? max - min : null;
     if (min != null && max != null && shouldRenderMeter(node, n, variant)) {
       const pct = Math.max(0, Math.min(100, ((n - min) / (max - min)) * 100));
+      if (variant === "hud") {
+        return (
+          <div className="scene-state-hud-meter-row flex min-w-0 flex-col gap-1">
+            <KvRow label={label} variant={variant} inline={inline}>
+              <span className="text-[11px] font-medium tabular-nums text-t2">{formatNum(n)}</span>
+            </KvRow>
+            <HudMeter label={label} value={n} min={min} max={max} fillPercent={pct} />
+          </div>
+        );
+      }
       return (
         <div className={cn("flex min-w-0 items-center gap-2", variant === "clean" && "scene-state-clean-meter-row")}>
           {label !== undefined && <span className="shrink-0 text-[11px] text-t4">{label}</span>}
@@ -315,16 +357,18 @@ function Leaf({
 /** Inline label and value row. Compact preserves its established dense colon separator. */
 function KvRow({ label, variant, inline = false, children }: { label: string | undefined; variant: SceneRenderVariant; inline?: boolean; children: ReactNode }) {
   const clean = variant === "clean";
+  const hud = variant === "hud";
   return (
-    <div className={clean ? (inline ? "inline-flex min-w-0 items-baseline gap-1.5" : "flex min-w-0 items-baseline justify-between gap-2") : "flex min-w-0 items-baseline gap-1.5"}>
-      {label !== undefined && <span className="shrink-0 text-[11px] text-t4">{variant === "compact" && !label.endsWith(":") ? `${label}:` : label}</span>}
-      <div className={clean && !inline ? "min-w-0 flex-1 text-right" : "min-w-0 flex-1"}>{children}</div>
+    <div className={clean ? (inline ? "inline-flex min-w-0 items-baseline gap-1.5" : "flex min-w-0 items-baseline justify-between gap-2") : hud ? "scene-state-hud-row flex min-w-0 items-baseline gap-2" : "flex min-w-0 items-baseline gap-1.5"}>
+      {label !== undefined && <span className={hud ? "scene-state-hud-label min-w-0 text-[11px] uppercase tracking-[0.12em] text-t4 [overflow-wrap:anywhere]" : "shrink-0 text-[11px] text-t4"}>{variant === "compact" && !label.endsWith(":") ? `${label}:` : label}</span>}
+      {hud && label !== undefined && <span aria-hidden="true" className="scene-state-hud-dot-leader mb-1 min-w-2 flex-1 border-b border-dotted border-border" />}
+      <div className={clean && !inline ? "min-w-0 flex-1 text-right" : hud ? "min-w-0 flex-1 text-right [overflow-wrap:anywhere]" : "min-w-0 flex-1"}>{children}</div>
     </div>
   );
 }
 
 function ContainerLabel({ label, variant }: { label: string; variant?: SceneRenderVariant }) {
-  return <span className={variant === "clean" ? "text-[10px] font-medium tracking-[0.04em] text-t4" : "text-[10px] font-semibold uppercase tracking-[0.04em] text-t4"}>{label}</span>;
+  return <span className={variant === "clean" ? "text-[10px] font-medium tracking-[0.04em] text-t4" : variant === "hud" ? "scene-state-hud-label text-[10px] font-semibold uppercase tracking-[0.12em] text-t4" : "text-[10px] font-semibold uppercase tracking-[0.04em] text-t4"}>{label}</span>;
 }
 
 function CleanGroupHeader({ label }: { label: string }) {
@@ -333,6 +377,49 @@ function CleanGroupHeader({ label }: { label: string }) {
       <span className="h-px w-3 shrink-0 bg-border" />
       <span className="min-w-0 text-[11px] font-semibold text-t3 [overflow-wrap:anywhere]">{label}</span>
       <span className="h-px min-w-3 flex-1 bg-border" />
+    </div>
+  );
+}
+
+function HudPanelHeader({ label }: { label: string }) {
+  return (
+    <div className="scene-state-hud-panel-header flex min-w-0 items-center gap-2 border-b border-accent/40 pb-1">
+      <span className="h-px w-3 shrink-0 bg-accent" />
+      <span className="scene-state-hud-label min-w-0 text-[11px] font-semibold uppercase tracking-[0.16em] text-t3 [overflow-wrap:anywhere]">{label}</span>
+      <span className="h-px min-w-2 flex-1 bg-accent/40" />
+    </div>
+  );
+}
+
+/** Presentational corners mirror the HUD mockup without adding an icon font. */
+function HudRecordCorners() {
+  return (
+    <>
+      <span aria-hidden="true" className="scene-state-hud-corner absolute right-0 top-0 h-2.5 w-2.5 border-r border-t border-accent" />
+      <span aria-hidden="true" className="scene-state-hud-corner absolute bottom-0 left-0 h-2.5 w-2.5 border-b border-l border-accent" />
+    </>
+  );
+}
+
+/** Twenty equal cells retain the HUD segmentation while the final cell fills exactly to the value ratio. */
+function HudMeter({ label, value, min, max, fillPercent }: { label: string | undefined; value: number; min: number; max: number; fillPercent: number }) {
+  return (
+    <div
+      role="meter"
+      aria-valuenow={value}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-label={label}
+      className="scene-state-hud-meter grid h-1.5 grid-cols-20 gap-px bg-s2"
+    >
+      {Array.from({ length: HUD_METER_SEGMENT_COUNT }, (_, index) => {
+        const segmentFill = Math.max(0, Math.min(100, fillPercent * HUD_METER_SEGMENT_COUNT - index * 100));
+        return (
+          <span key={index} aria-hidden="true" className="scene-state-hud-meter-segment overflow-hidden bg-s3">
+            <span className="block h-full bg-accent" style={{ width: `${segmentFill}%` }} />
+          </span>
+        );
+      })}
     </div>
   );
 }

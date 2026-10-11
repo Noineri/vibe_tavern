@@ -18,7 +18,7 @@ import { create } from "zustand";
 export type SceneRenderVariant = "rich" | "compact" | "clean" | "hud";
 
 /** Variants with a matching SceneStateView implementation. */
-export const IMPLEMENTED_SCENE_RENDER_VARIANTS = ["rich", "compact", "clean"] as const satisfies readonly SceneRenderVariant[];
+export const IMPLEMENTED_SCENE_RENDER_VARIANTS = ["rich", "compact", "clean", "hud"] as const satisfies readonly SceneRenderVariant[];
 
 const STORAGE_KEY = "vibe:sceneRenderVariant";
 const DEFAULT: SceneRenderVariant = "rich";

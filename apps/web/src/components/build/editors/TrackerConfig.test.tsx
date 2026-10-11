@@ -171,11 +171,13 @@ describe("TrackerConfig (SCN-11)", () => {
     expect(getAllByRole("radio").map((option) => option.getAttribute("value"))).toEqual([...IMPLEMENTED_SCENE_RENDER_VARIANTS]);
   });
 
-  it("offers the clean variant with its own label key", () => {
+  it("offers the clean and HUD variants with their own label keys", () => {
     seed();
     const { getByRole } = render(createElement(TrackerConfig, { chatId: CHAT_ID }));
     const clean = getByRole("radio", { name: "scn_preview_mode_clean" });
+    const hud = getByRole("radio", { name: "scn_preview_mode_hud" });
     expect(clean.getAttribute("value")).toBe("clean");
+    expect(hud.getAttribute("value")).toBe("hud");
   });
 
   it("an invalid DSL shows an inline error and disables Save + Preview", async () => {

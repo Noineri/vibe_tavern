@@ -26,6 +26,6 @@ describe("scene render preference", () => {
   });
 
   it("exposes only implemented variants to selector consumers", () => {
-    expect(IMPLEMENTED_SCENE_RENDER_VARIANTS).toEqual(["rich", "compact", "clean"]);
+    expect(IMPLEMENTED_SCENE_RENDER_VARIANTS).toEqual(["rich", "compact", "clean", "hud"]);
   });
 });
