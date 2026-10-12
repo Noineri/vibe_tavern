@@ -22,6 +22,19 @@ import { useT } from "../../../../i18n/context.js";
 const EMPTY: ExperienceCopilotToolActivity[] = [];
 const EMPTY_FEED: CopilotFeedEntry[] = [];
 
+/** One ordered render item pinned between two flow messages (TA-1, owner
+ *  ruling 2026-10-12: ONE accordion per assistant turn hides ALL of that
+ *  turn's tool calls). `"accordion"` is the turn's single tool group —
+ *  placed at the turn's FIRST non-ask tool activity's slot, collecting every
+ *  non-ask activity of the turn (interleaved text does not split it);
+ *  `"ask"` is an `ask_user` card kept OUTSIDE the accordion, rendered in
+ *  place (TAG-9: it stays interactive). Items within one anchor list keep
+ *  their chronological slot order. */
+type CopilotTurnAnchorItem =
+  | { kind: "accordion"; activities: ExperienceCopilotToolActivity[] }
+  | { kind: "ask"; activity: ExperienceCopilotToolActivity };
+const EMPTY_ITEMS: CopilotTurnAnchorItem[] = [];
+
 /**
  * Experience-copilot message surface (ER-11c). Props-driven: the shell (ER-11d)
  * owns the persisted message list and the two-buffer state; this component
@@ -94,18 +107,39 @@ export function ExperienceCopilotMessageList({
     return map;
   }, [messages]);
 
-  // Each tool row's card attaches to the NEXT flow message (user/assistant,
-  // carriers included — they render as null, so the position is identical);
-  // tool rows with no following flow message trail at the list's end. Digest
-  // rows do NOT flush the accumulator (CM-9 moves them; cards keep their
-  // chronological neighbors).
-  const { anchorCards, trailingCards } = useMemo(() => {
-    const anchor = new Map<string, ExperienceCopilotToolActivity[]>();
-    let pending: ExperienceCopilotToolActivity[] = [];
+  // TA-1 (owner ruling 2026-10-12): persisted tool rows group PER TURN, not
+  // per consecutive run — a turn with interleaved text renders ONE accordion
+  // holding all of the turn's tool calls. Turns are delimited by user rows
+  // (the same key `extractHistoricalTurnActivities` uses, which rebuilt the
+  // `historyActivities` map below). The accordion item is pinned to the turn's
+  // FIRST non-ask tool activity's slot: the NEXT flow message (user/assistant,
+  // carriers included — they render as null, so the position is identical).
+  // Later tool rows of the same turn only grow the array the item references
+  // (the pass is synchronous, so the array is complete before render reads it);
+  // interleaved text never splits the group. `ask_user` rows render as their
+  // own cards in place (TAG-9), never inside the accordion. Tool rows with no
+  // following flow message trail at the list's end. Digest rows do NOT flush
+  // the pending items (CM-9 moves them; cards keep their chronological
+  // neighbors).
+  const { anchorItems, trailingItems, lastHistoryActivityId } = useMemo(() => {
+    const anchor = new Map<string, CopilotTurnAnchorItem[]>();
+    let pending: CopilotTurnAnchorItem[] = [];
+    let turnTools: ExperienceCopilotToolActivity[] | null = null;
+    let lastActivityId: string | null = null;
     for (const m of messages) {
       if (m.role === "tool") {
         const activity = historyActivities.get(m.toolCallId ?? m.id);
-        if (activity && !liveToolCallIds.has(activity.toolCallId)) pending.push(activity);
+        if (!activity || liveToolCallIds.has(activity.toolCallId)) continue;
+        lastActivityId = activity.toolCallId;
+        if (activity.ask) {
+          pending.push({ kind: "ask", activity });
+          continue;
+        }
+        if (!turnTools) {
+          turnTools = [];
+          pending.push({ kind: "accordion", activities: turnTools });
+        }
+        turnTools.push(activity);
         continue;
       }
       if (m.role === "user" || m.role === "assistant") {
@@ -113,9 +147,12 @@ export function ExperienceCopilotMessageList({
           anchor.set(m.id, pending);
           pending = [];
         }
+        // A user row starts the next turn — the accordion state resets;
+        // an assistant row is interleaved text within the SAME turn.
+        if (m.role === "user") turnTools = null;
       }
     }
-    return { anchorCards: anchor, trailingCards: pending };
+    return { anchorItems: anchor, trailingItems: pending, lastHistoryActivityId: lastActivityId };
   }, [messages, historyActivities, liveToolCallIds]);
 
   const activityById = useMemo(
@@ -123,32 +160,35 @@ export function ExperienceCopilotMessageList({
     [activities],
   );
 
+  // TA-1: the live feed IS the current turn — every non-ask activity it
+  // references collapses into that turn's single accordion (rendered at the
+  // first tool activity's slot in the feed loop below).
+  const liveToolActivities = useMemo(() => {
+    const out: ExperienceCopilotToolActivity[] = [];
+    for (const entry of feed) {
+      if (entry.kind !== "activity") continue;
+      const activity = activityById.get(entry.id);
+      if (activity && !activity.ask) out.push(activity);
+    }
+    return out;
+  }, [feed, activityById]);
+
   // TAG-9: the chronologically LAST activity of the thread (live feed first —
-  // it is the current turn; then trailing history cards; then the anchor
-  // cards of the last flow message). Only an awaiting `ask_user` activity
-  // that IS this last one renders interactively; an awaiting ask with any
-  // later activity renders as expired (the user moved on). Raw `messages`
-  // order is chronological for flow rows (digests are a separate role and
-  // never hold anchor cards), so the scan runs on `messages` directly.
+  // it is the current turn; then the last history activity, tracked in the
+  // anchor pass above in raw `messages` order). Only an awaiting `ask_user`
+  // activity that IS this last one renders interactively; an awaiting ask
+  // with any later activity renders as expired (the user moved on).
   const lastActivityId = useMemo(() => {
     for (let i = feed.length - 1; i >= 0; i--) {
       const entry = feed[i];
       if (entry && entry.kind === "activity") return entry.id;
     }
-    const lastTrailing = trailingCards[trailingCards.length - 1];
-    if (lastTrailing) return lastTrailing.toolCallId;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (!m || (m.role !== "user" && m.role !== "assistant")) continue;
-      const cards = anchorCards.get(m.id);
-      const last = cards?.[cards.length - 1];
-      if (last) return last.toolCallId;
-    }
-    return null;
-  }, [feed, trailingCards, anchorCards, messages]);
+    return lastHistoryActivityId;
+  }, [feed, lastHistoryActivityId]);
 
-  // TAG-9: `ask_user` remains its own interactive card. It also divides tool
-  // card runs, so an ask never gets hidden inside a tool accordion.
+  // TAG-9: `ask_user` remains its own interactive card, rendered IN PLACE at
+  // its chronological slot — never inside a turn's tool accordion (TA-1
+  // collects only non-ask activities).
   const renderAskActivity = (activity: ExperienceCopilotToolActivity) => {
     const ask = activity.ask!;
     const resolved: CopilotAskState =
@@ -174,38 +214,22 @@ export function ExperienceCopilotMessageList({
     );
   };
 
-  // Consecutive non-ask activity cards are one tool run. Only the live feed
-  // receives `isSending`: historical cards stay collapsed even while a newer
-  // turn is in flight.
-  const renderActivities = (
-    activityItems: readonly ExperienceCopilotToolActivity[],
-    live: boolean,
-  ) => {
-    const rendered = [];
-    let cardRun: ExperienceCopilotToolActivity[] = [];
-    const flushCardRun = () => {
-      if (cardRun.length === 0) return;
-      rendered.push(
+  // TA-1: history renders each turn as ONE accordion (at the first tool
+  // activity's slot) plus in-place ask cards, in the items' slot order. Only
+  // the live feed receives `isSending`: historical groups stay collapsed even
+  // while a newer turn is in flight.
+  const renderAnchorItems = (items: readonly CopilotTurnAnchorItem[]) =>
+    items.map((item) =>
+      item.kind === "accordion" ? (
         <CopilotToolAccordion
-          key={cardRun[0]!.toolCallId}
-          activities={cardRun}
-          isSending={live}
-        />,
-      );
-      cardRun = [];
-    };
-
-    for (const activity of activityItems) {
-      if (activity.ask) {
-        flushCardRun();
-        rendered.push(renderAskActivity(activity));
-      } else {
-        cardRun.push(activity);
-      }
-    }
-    flushCardRun();
-    return rendered;
-  };
+          key={item.activities[0]!.toolCallId}
+          activities={item.activities}
+          isSending={false}
+        />
+      ) : (
+        renderAskActivity(item.activity)
+      ),
+    );
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
@@ -214,7 +238,7 @@ export function ExperienceCopilotMessageList({
   // CM-9: digest messages are APPENDED at the end by the backend (anchor in
   // `toolCallId`), so reorder each digest to sit immediately before its anchor
   // message and derive its covered-count caption. Tool-role rows are not part
-  // of this flow ordering — they render inline via `anchorCards`/`trailingCards`
+  // of this flow ordering — they render inline via `anchorItems`/`trailingItems`
   // (TF-5).
   const visibleMessages = orderMessagesWithDigests(messages);
   const hasPendingText = pendingText.trim().length > 0;
@@ -267,7 +291,7 @@ export function ExperienceCopilotMessageList({
         <div className="flex flex-col gap-3">
           {visibleMessages.map((entry) => (
             <Fragment key={entry.message.id}>
-              {renderActivities(anchorCards.get(entry.message.id) ?? EMPTY, false)}
+              {renderAnchorItems(anchorItems.get(entry.message.id) ?? EMPTY_ITEMS)}
               <ExperienceCopilotMessageBlock
                 message={entry.message}
                 coveredCount={entry.coveredCount}
@@ -275,7 +299,7 @@ export function ExperienceCopilotMessageList({
             </Fragment>
           ))}
 
-          {renderActivities(trailingCards, false)}
+          {renderAnchorItems(trailingItems)}
 
           {hasPendingUserContent && (
             <ExperienceCopilotMessageBlock
@@ -304,26 +328,31 @@ export function ExperienceCopilotMessageList({
 
           {(() => {
             const rendered = [];
-            let cardRun: ExperienceCopilotToolActivity[] = [];
-            const flushCardRun = () => {
-              if (cardRun.length === 0) return;
-              rendered.push(...renderActivities(cardRun, true));
-              cardRun = [];
-            };
-
+            let accordionPlaced = false;
             for (const entry of feed) {
               if (entry.kind === "activity") {
                 const activity = activityById.get(entry.id);
                 if (!activity) continue;
                 if (activity.ask) {
-                  flushCardRun();
                   rendered.push(renderAskActivity(activity));
-                } else {
-                  cardRun.push(activity);
+                  continue;
+                }
+                // TA-1: the turn's FIRST non-ask tool activity renders the
+                // turn's single accordion (ALL non-ask activities of the
+                // feed — one turn); interleaved text does not split it and
+                // later tool activities are already inside.
+                if (!accordionPlaced) {
+                  accordionPlaced = true;
+                  rendered.push(
+                    <CopilotToolAccordion
+                      key={activity.toolCallId}
+                      activities={liveToolActivities}
+                      isSending
+                    />,
+                  );
                 }
                 continue;
               }
-              flushCardRun();
               // Post-settle: the controller clears `pendingText`, so feed text
               // is suppressed while refetched history owns the persisted rows.
               if (!hasPendingText) continue;
@@ -342,7 +371,6 @@ export function ExperienceCopilotMessageList({
                 />,
               );
             }
-            flushCardRun();
             return rendered;
           })()}
 

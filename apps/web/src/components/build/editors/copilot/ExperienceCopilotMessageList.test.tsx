@@ -599,3 +599,242 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
     expect(getByTestId("copilot-ask-question").textContent).toContain("Which buffer");
   });
 });
+
+// ─── TA-1: ONE tool accordion per assistant turn (owner ruling 2026-10-12) ──
+// A turn's interleaved text must NOT split its tool calls into multiple
+// «Инструменты · N» accordions: every non-ask call of the turn collapses
+// into a single accordion at the turn's FIRST tool activity slot; ask cards
+// stay outside, rendered in place.
+
+describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () => {
+  const writeRow = (id: string, toolCallId: string): ExperienceCopilotMessageWire =>
+    message({
+      id,
+      role: "tool",
+      toolCallId,
+      content: JSON.stringify({
+        toolName: "write_buffer",
+        output: { target: "rules", proposed: "# R1", summary: `${toolCallId} pass` },
+      }),
+    });
+
+  const editRow = (id: string, toolCallId: string): ExperienceCopilotMessageWire =>
+    message({
+      id,
+      role: "tool",
+      toolCallId,
+      content: JSON.stringify({
+        toolName: "edit_buffer",
+        output: { target: "visual", proposed: "# V2", summary: `${toolCallId} pass` },
+      }),
+    });
+
+  it("history: one turn with text between tool calls renders ONE accordion holding all calls, one per turn", () => {
+    const { container, getAllByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "plan it" }),
+          message({ id: "a1", role: "assistant", content: "intro text" }),
+          writeRow("tool1", "c1"),
+          message({ id: "a2", role: "assistant", content: "middle text" }),
+          editRow("tool2", "c2"),
+          writeRow("tool3", "c3"),
+          message({ id: "a3", role: "assistant", content: "closing text" }),
+          // A second turn gets its OWN accordion (turns split at user rows).
+          message({ id: "u2", role: "user", content: "again" }),
+          message({
+            id: "tool4",
+            role: "tool",
+            toolCallId: "c4",
+            content: JSON.stringify({ toolName: "run_test", output: { ok: true } }),
+          }),
+          message({ id: "a4", role: "assistant", content: "second reply" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+      />,
+    );
+
+    // ONE accordion per turn — never one per consecutive run.
+    const headers = getAllByTestId("copilot-tool-accordion-toggle");
+    expect(getAllByTestId("copilot-tool-accordion")).toHaveLength(2);
+    // N counts the turn's TOTAL tool calls (c1+c2+c3 in turn 1, c4 in turn 2).
+    expect(headers.map((h) => h.getAttribute("data-count"))).toEqual(["3", "1"]);
+    // Historical groups render collapsed.
+    expect(headers[0]!.getAttribute("aria-expanded")).toBe("false");
+
+    // The accordion sits at the turn's FIRST tool activity slot (between the
+    // intro and middle text); the middle text no longer splits the cards.
+    const order = Array.from(
+      container.querySelectorAll("[data-testid='copilot-activity-card'], [data-role]"),
+    );
+    expect(order.map((el) => el.getAttribute("data-tool") ?? el.getAttribute("data-role"))).toEqual([
+      "user",
+      "assistant",
+      "write_buffer",
+      "edit_buffer",
+      "write_buffer",
+      "assistant",
+      "assistant",
+      "user",
+      "run_test",
+      "assistant",
+    ]);
+  });
+
+  it("history: an ask_user between tool calls stays outside the turn's single accordion", () => {
+    const { container, getByTestId, getAllByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[
+          message({ id: "u1", role: "user", content: "plan it" }),
+          message({ id: "a1", role: "assistant", content: "intro text" }),
+          writeRow("tool1", "c1"),
+          askCarrier("a2"),
+          askToolRow({ status: "answered", answer: "Rules" }),
+          editRow("tool2", "c2"),
+          message({ id: "a3", role: "assistant", content: "closing text" }),
+        ]}
+        pendingText=""
+        pendingReasoning=""
+        pendingUserContent=""
+        onAnswer={() => {}}
+      />,
+    );
+
+    // Still exactly ONE accordion — the ask does not split the turn's tools.
+    expect(getAllByTestId("copilot-tool-accordion")).toHaveLength(1);
+    expect(getAllByTestId("copilot-tool-accordion-toggle")[0]!.getAttribute("data-count")).toBe("2");
+    // The ask card renders OUTSIDE the accordion, between the texts.
+    const askCard = getByTestId("copilot-ask-card");
+    expect(askCard.getAttribute("data-state")).toBe("answered");
+    expect(askCard.closest("[data-testid='copilot-tool-accordion']")).toBeNull();
+
+    const order = Array.from(
+      container.querySelectorAll(
+        "[data-testid='copilot-activity-card'], [data-testid='copilot-ask-card'], [data-role]",
+      ),
+    );
+    expect(
+      order.map((el) => el.getAttribute("data-tool") ?? el.getAttribute("data-role") ?? "ask"),
+    ).toEqual([
+      "user",
+      "assistant",
+      "write_buffer",
+      "edit_buffer",
+      "ask",
+      "assistant",
+    ]);
+  });
+
+  it("live feed: interleaved text does not split the turn's accordion", () => {
+    useExperienceCopilotTurnStore.setState({
+      turnsByThread: {
+        "thread-1": [
+          { toolCallId: "t1", toolName: "write_buffer", status: "done", target: "rules", proposed: "v1", summary: "wrote" },
+          { toolCallId: "t2", toolName: "run_test", status: "done", summary: "ok" },
+        ],
+      },
+      feedByThread: {
+        "thread-1": [
+          { kind: "text", id: "text-1", text: "Step one", closed: true },
+          { kind: "activity", id: "t1" },
+          { kind: "text", id: "text-2", text: "Step two", closed: true },
+          { kind: "activity", id: "t2" },
+          { kind: "text", id: "text-3", text: "Done", closed: false },
+        ],
+      },
+    });
+
+    const { container, getAllByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[]}
+        pendingText="Step oneStep twoDone"
+        pendingReasoning=""
+        pendingUserContent="go"
+      />,
+    );
+
+    // The whole feed is ONE turn → ONE accordion at the first tool activity's
+    // slot, N = total tool calls of the turn.
+    expect(getAllByTestId("copilot-tool-accordion")).toHaveLength(1);
+    const header = getAllByTestId("copilot-tool-accordion-toggle")[0]!;
+    expect(header.getAttribute("data-count")).toBe("2");
+    // The live group stays expanded while the turn streams.
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+
+    const order = Array.from(
+      container.querySelectorAll("[data-testid='copilot-activity-card'], [data-role]"),
+    );
+    expect(order.map((el) => el.getAttribute("data-tool") ?? el.getAttribute("data-role"))).toEqual([
+      "user",
+      "assistant",
+      "write_buffer",
+      "run_test",
+      "assistant",
+      "assistant",
+    ]);
+  });
+
+  it("live feed: an ask between tool calls stays outside the single accordion", () => {
+    useExperienceCopilotTurnStore.setState({
+      turnsByThread: {
+        "thread-1": [
+          { toolCallId: "t1", toolName: "write_buffer", status: "done", target: "rules", proposed: "v1", summary: "wrote" },
+          {
+            toolCallId: "tc-ask",
+            toolName: "ask_user",
+            status: "done",
+            ask: { ...ASK_ARGS, status: "answered", answer: "Rules" },
+          },
+          { toolCallId: "t2", toolName: "run_test", status: "done", summary: "ok" },
+        ],
+      },
+      feedByThread: {
+        "thread-1": [
+          { kind: "text", id: "text-1", text: "Thinking", closed: true },
+          { kind: "activity", id: "t1" },
+          { kind: "activity", id: "tc-ask" },
+          { kind: "activity", id: "t2" },
+          { kind: "text", id: "text-2", text: "Done", closed: false },
+        ],
+      },
+    });
+
+    const { container, getByTestId, getAllByTestId } = render(
+      <ExperienceCopilotMessageList
+        threadId="thread-1"
+        messages={[]}
+        pendingText="ThinkingDone"
+        pendingReasoning=""
+        pendingUserContent="go"
+      />,
+    );
+
+    expect(getAllByTestId("copilot-tool-accordion")).toHaveLength(1);
+    expect(getAllByTestId("copilot-tool-accordion-toggle")[0]!.getAttribute("data-count")).toBe("2");
+    // The ask card renders in place, AFTER the accordion, outside it.
+    const askCard = getByTestId("copilot-ask-card");
+    expect(askCard.getAttribute("data-state")).toBe("answered");
+    expect(askCard.closest("[data-testid='copilot-tool-accordion']")).toBeNull();
+
+    const order = Array.from(
+      container.querySelectorAll(
+        "[data-testid='copilot-activity-card'], [data-testid='copilot-ask-card'], [data-role]",
+      ),
+    );
+    expect(
+      order.map((el) => el.getAttribute("data-tool") ?? el.getAttribute("data-role") ?? "ask"),
+    ).toEqual([
+      "user",
+      "assistant",
+      "write_buffer",
+      "run_test",
+      "ask",
+      "assistant",
+    ]);
+  });
+});
