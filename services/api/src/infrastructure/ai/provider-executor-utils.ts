@@ -292,6 +292,11 @@ export function toSdkMessages(
 // prepareSdkMessages
 // ---------------------------------------------------------------------------
 
+/** Trailing user instruction appended by `prepareSdkMessages` when the caller
+ *  opts into `continuationFallback`. A history ending in assistant→user is
+ *  accepted by every chat backend, unlike a trailing assistant prefill. */
+export const CONTINUATION_USER_INSTRUCTION = "You are continuing an assistant reply that stops mid-text. Continue it from exactly where it stopped. Do not repeat any part of the existing reply; output only the continuation text.";
+
 /**
  * Prepare prompt messages for provider execution.
  *
@@ -309,12 +314,16 @@ export async function prepareSdkMessages(
   messages: SdkMessage[],
   options: {
     prefill?: string;
+    continuationFallback?: boolean;
     providerType: ProviderType;
     visionGate?: VisionGateConfig;
     assetLoader?: (assetId: string) => Promise<Buffer | null>;
   },
 ): Promise<PreparedMessages> {
   const capabilities = resolveProtocol(options.providerType).capabilities;
+  if (options.continuationFallback && options.prefill) {
+    throw new Error("prepareSdkMessages: continuationFallback and prefill are mutually exclusive");
+  }
   let conversationMessages: SdkMessage[];
 
   if (options.providerType === "google") {
@@ -338,7 +347,9 @@ export async function prepareSdkMessages(
     conversationMessages = [...messages];
   }
 
-  if (options.prefill && capabilities.prefill) {
+  if (options.continuationFallback) {
+    conversationMessages.push({ role: "user", content: CONTINUATION_USER_INSTRUCTION });
+  } else if (options.prefill && capabilities.prefill) {
     conversationMessages.push({ role: "assistant", content: options.prefill });
   }
 

@@ -3,6 +3,7 @@ import { asSchema, tool } from "ai";
 import { z } from "zod";
 import { COAUTHOR_TRANSPORT, GENERATION_MODE } from "@vibe-tavern/domain";
 import {
+  CONTINUATION_USER_INSTRUCTION,
   prepareProviderTools,
   resolveModel,
   toSdkMessages,
@@ -313,6 +314,60 @@ describe("prepareSdkMessages", () => {
       { role: "user", content: "Explain X" },
       { role: "system", content: "Answer in English." },
       { role: "assistant", content: "Sure:" },
+    ]);
+  });
+
+  // ─── continuationFallback ──────────────────────────────────────────────
+
+  it("appends the user instruction last and no assistant prefill for openai_compat", async () => {
+    const result = await prepareSdkMessages(baseMessages, {
+      providerType: "openai_compat",
+      continuationFallback: true,
+    });
+    expect(result.systemPrompt).toBeUndefined();
+    expect(result.conversationMessages).toEqual([
+      { role: "system", content: "You are helpful." },
+      { role: "user", content: "Hello" },
+      { role: "user", content: CONTINUATION_USER_INSTRUCTION },
+    ]);
+  });
+
+  it("keeps the merged google system message first and appends the instruction last", async () => {
+    const messages: SdkMessage[] = [
+      { role: "system", content: "Rule 1." },
+      { role: "user", content: "Hi" },
+      { role: "system", content: "Rule 2." },
+    ];
+    const result = await prepareSdkMessages(messages, {
+      providerType: "google",
+      continuationFallback: true,
+    });
+    expect(result.systemPrompt).toBeUndefined();
+    expect(result.conversationMessages).toEqual([
+      { role: "system", content: "Rule 1.\n\nRule 2." },
+      { role: "user", content: "Hi" },
+      { role: "user", content: CONTINUATION_USER_INSTRUCTION },
+    ]);
+  });
+
+  it("throws when continuationFallback and prefill are combined", async () => {
+    await expect(prepareSdkMessages(baseMessages, {
+      providerType: "openai_compat",
+      continuationFallback: true,
+      prefill: "x",
+    })).rejects.toThrow("prepareSdkMessages: continuationFallback and prefill are mutually exclusive");
+  });
+
+  it("keeps the prefill push when continuationFallback is explicitly false", async () => {
+    const result = await prepareSdkMessages(baseMessages, {
+      providerType: "openai_compat",
+      continuationFallback: false,
+      prefill: "Sure, here is:",
+    });
+    expect(result.conversationMessages).toEqual([
+      { role: "system", content: "You are helpful." },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Sure, here is:" },
     ]);
   });
 });
