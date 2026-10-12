@@ -131,6 +131,7 @@ export const streamProviderExecutor: ProviderExecutor = async (input) => {
 
     const { conversationMessages } = await prepareSdkMessages(messages, {
       prefill: input.prefill,
+      continuationFallback: input.continuationFallback,
       providerType: normalizeProviderType(input.profile.providerPreset),
       ...(hasAttachments ? { visionGate, assetLoader: input.assetLoader } : {}),
     });

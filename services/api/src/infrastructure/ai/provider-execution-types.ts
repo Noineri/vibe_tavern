@@ -190,6 +190,8 @@ export interface ProviderExecutionInput {
   prompt: AssemblePromptResponse;
   signal?: AbortSignal;
   prefill?: string;
+  /** Set on the continue-fallback path (mutually exclusive with prefill; prepareSdkMessages throws when both are set — that guard is the single authority). */
+  continuationFallback?: boolean;
   /** Override the profile's maxOutputTokens for this specific call (e.g. summarization). */
   overrideMaxTokens?: number;
   /** Override the profile's temperature for this specific call (e.g. cooling the sampler for summary generation). */
