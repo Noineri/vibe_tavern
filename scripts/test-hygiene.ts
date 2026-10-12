@@ -62,7 +62,18 @@ export const BUDGETS = {
 	// eliminated — the todo results are typed as the seam's exported
 	// ExperienceCopilotTodoResult — and the ratchet lowered back; the
 	// ratchet exists to go DOWN.
-	asNever: 1243,
+	// 1246 (2026-10-12, CPF-2b): +3 — continue-fallback integration tests
+	// (live-chat-continue-fallback.test.ts): (a) the chatRuntime DI stub for
+	// the LiveChatOrchestrator constructor (ChatRuntime is nominal — private
+	// deps — the same cast the existing live-chat-continue.test.ts harness
+	// uses), (b) the ChatRuntimeDeps object for the real-ChatRuntime
+	// attribution tests (members are nominal store classes; one whole-object
+	// cast instead of a dozen), (c) one shared `UNSET` for the two
+	// required-but-unused ctor deps. Minimized from 22 raw harness casts
+	// (real RpModeStrategy instead of a stub, real executor types for the DI
+	// stub, `satisfies` for the trace literal). Lower when the nominal DI
+	// boundaries become structural.
+	asNever: 1246,
 	/** Global `screen.` usage in apps/web test files (binds at import time). */
 	// 196 (2026-10-04): ratcheted to the merged tree's count after PR #51
 	// (provider-lists unification removed the forked pickers' screen usage;

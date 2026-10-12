@@ -8,6 +8,10 @@ import type { ProviderExecutionInput, ProviderStreamResult, ExtractedToolCall, E
 import type { ChatModeStrategy } from "./chat-mode-strategy.js";
 import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../../infrastructure/ai/stream-provider-executor.js";
+import { ProviderExecutionError } from "../../infrastructure/ai/provider-execution-types.js";
+import { detectPrefillRejection } from "../../infrastructure/ai/prefill-rejection-detector.js";
+import { runContinueFallback, runContinueFallbackStream, drainContinuePrefillWithRetry, appendContinueVariant, ContinueFallbackMemory, resolveEffectivePrefill, requirePrefillCapability, countPromptMessages } from "./continue-fallback.js";
+import type { StreamStartInput, DrainStreamInput, DrainFinalSnapshot, ContinueFallbackAttemptInput } from "./continue-fallback.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-tags.js";
 import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-in-response.js";
@@ -37,6 +41,12 @@ export type RegexTextHook = (text: string, ctx: RegexHookContext) => string | Pr
  * and mode-specific behavior to {@link ChatModeStrategy}.
  */
 export class LiveChatOrchestrator {
+  /** CPF-2b prefill-rejection memory (server-session lifetime, in-memory
+   *  only). A hit sends the Continue fallback DIRECTLY — the doomed prefill
+   *  attempt is skipped entirely. Populated only by a detector-confirmed
+   *  clean rejection; see ContinueFallbackMemory for the keying rule. */
+  private readonly continueFallbackMemory = new ContinueFallbackMemory();
+
   constructor(
     private readonly chatRuntime: ChatRuntime,
     private readonly chatApp: import("./chat-application-service.js").ChatApplicationService,
@@ -80,31 +90,6 @@ export class LiveChatOrchestrator {
     return hook === "USER_INPUT"
       ? await this.regexHooks.onUserInput(text, { chatId, hook })
       : await this.regexHooks.onAiOutput(text, { chatId, hook });
-  }
-
-  /**
-   * LS-4 prefill capability gate: prefill only rides when the resolved
-   * protocol actually supports it (`capabilities.prefill`, the same gate
-   * `prepareSdkMessages` uses to decide whether to PUSH the assistant
-   * message). Without this, a prefill from a capability-less provider would
-   * never reach the model — yet `ensurePrefillInResponse` would still PREPEND
-   * it to the stored reply, silently corrupting the variant with text the
-   * model never wrote. Dropping the prefill here keeps the echo seam
-   * symmetric on every generation path.
-   */
-  private resolveEffectivePrefill(profile: StoredProviderProfileRecord, candidate: string | undefined): string | undefined {
-    if (candidate === undefined) return undefined;
-    if (!resolveProtocol(normalizeProviderType(profile.providerPreset)).capabilities.prefill) return undefined;
-    return candidate;
-  }
-
-  /** LS-4a: Continue is a PREFILL of the existing text — refuse instead of
-   *  silently generating a fresh reply that would masquerade as a
-   *  continuation variant. */
-  private requirePrefillCapability(profile: StoredProviderProfileRecord): void {
-    if (!resolveProtocol(normalizeProviderType(profile.providerPreset)).capabilities.prefill) {
-      throw validation("The active provider does not support assistant prefill, which continuing a reply requires.");
-    }
   }
 
   // ─── Non-streaming methods ────────────────────────────────────────────
@@ -154,7 +139,7 @@ export class LiveChatOrchestrator {
     logSendDebug("live.send.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
     // LS-4: the per-send override (input.prefill) wins over the preset value;
     // both are dropped on protocols without the prefill capability.
-    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prepared.prompt.prefill ?? undefined);
+    const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prepared.prompt.prefill ?? undefined);
     let reply: string;
     let reasoning: string | undefined;
     let toolCalls: ExtractedToolCall[] | undefined;
@@ -245,7 +230,7 @@ export class LiveChatOrchestrator {
         responseReserve: provider.profile.maxTokens,
       }),
     );
-    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
+    const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const startedAt = Date.now();
     let reply: string;
     let reasoning: string | undefined;
@@ -337,7 +322,7 @@ export class LiveChatOrchestrator {
       promptMessageCount: countPromptMessages(prompt),
     });
     // LS-4 capability gate: drop the preset prefill on non-capable protocols.
-    const prefill = this.resolveEffectivePrefill(provider.profile, prompt.prefill ?? undefined);
+    const prefill = resolveEffectivePrefill(provider.profile, prompt.prefill ?? undefined);
     const startedAt = Date.now();
     logSendDebug("live.regenerate.provider.start", { chatId: input.chatId, providerId: provider.profile.id, model: provider.model });
     let reply: string;
@@ -425,7 +410,7 @@ export class LiveChatOrchestrator {
     if (prepared.userMessage) {
       yield { event: "user-message-saved", data: JSON.stringify({ messageId: prepared.userMessage.id }) };
     }
-    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prepared.prompt.prefill ?? undefined);
+    const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prepared.prompt.prefill ?? undefined);
     const onAttachmentDescriptions = (prepared.userMessage && input.attachments?.length)
       ? async (descriptions: Array<{ attachmentId: string; description: string }>) => {
           await this.chatApp.updateAttachmentDescriptions(prepared.userMessage!.id, input.attachments!, descriptions);
@@ -497,7 +482,7 @@ export class LiveChatOrchestrator {
     );
     // Resolved again here for drainStream's echo seam; startStream applies the
     // same gate to the executor input (LS-4).
-    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
+    const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
@@ -569,7 +554,7 @@ export class LiveChatOrchestrator {
     );
     // Resolved again here for drainStream's echo seam; startStream applies the
     // same gate to the executor input (LS-4).
-    const prefill = this.resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
+    const prefill = resolveEffectivePrefill(provider.profile, input.prefill ?? prompt.prefill ?? undefined);
     const { streamResult, startedAt } = await this.startStream({ ...input, ...provider, tools: prompt.tools, maxSteps: prompt.maxSteps }, prompt);
     this.chatRuntime.patchPendingTrace(brandId<ChatId>(input.chatId), {
       ...(streamResult.sentConfig ? { sentConfig: streamResult.sentConfig } : {}),
@@ -627,7 +612,13 @@ export class LiveChatOrchestrator {
    *  completion renderer treats a trailing assistant as the continuation,
    *  chat-capable providers continue the pushed turn). The reply (echo
    *  asymmetry handled by `ensurePrefillInResponse`) APPENDS as a NEW variant
-   *  of the target message — the same fork regenerate uses. */
+   *  of the target message — the same fork regenerate uses.
+   *
+   *  CPF-2b prefill fallback: backends that refuse a last-assistant-turn
+   *  request (Gemini via aggregators) reject every prefill attempt. A
+   *  detector-confirmed clean rejection retries ONCE as a user-role
+   *  continuation ({@link runContinueFallback}) and remembers the pair —
+   *  later clicks go straight to the fallback (skip the doomed attempt). */
   async continueMessage(input: {
     chatId: string;
     messageId: string;
@@ -643,7 +634,16 @@ export class LiveChatOrchestrator {
     snapshot: MessageResponse;
   }> {
     const provider = await this.resolveProvider(input);
-    this.requirePrefillCapability(provider.profile);
+    requirePrefillCapability(provider.profile);
+    const memoryKey = ContinueFallbackMemory.key(provider.profile, provider.model);
+    if (this.continueFallbackMemory.has(memoryKey)) {
+      return await runContinueFallback({
+        chatRuntime: this.chatRuntime,
+        executeNonstreaming: this.executeNonstreaming,
+        applyRegexLayer: (hook, chatId, text) => this.applyRegexLayer(hook, chatId, text),
+        withTokenContext: (provider2, fn) => this.withTokenContext(provider2, fn),
+      }, input, provider, "memory-hit");
+    }
     logSendDebug("live.continue.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
     const prompt = await this.withTokenContext(provider, () =>
       this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
@@ -678,39 +678,44 @@ export class LiveChatOrchestrator {
         providerResponse: result.providerResponse,
       });
     } catch (err) {
+      // CPF-2b retry-once: a CLEAN prefill rejection (detector match on the
+      // executor error) re-issues the request as a user-role continuation.
+      // Any other error keeps the existing discard + rethrow unchanged.
+      const message = extractProviderErrorMessage(err);
+      const cleanRejection = detectPrefillRejection({
+        status: err instanceof ProviderExecutionError ? err.statusCode : undefined,
+        message,
+      });
       this.chatRuntime.discardPendingPromptTrace(brandId<ChatId>(input.chatId));
-      throw err;
+      if (!cleanRejection) throw err;
+      this.continueFallbackMemory.record(memoryKey);
+      logSendDebug("live.continue.rejection-detected", { chatId: input.chatId, messageId: input.messageId, key: memoryKey, message });
+      return await runContinueFallback({
+        chatRuntime: this.chatRuntime,
+        executeNonstreaming: this.executeNonstreaming,
+        applyRegexLayer: (hook, chatId, text) => this.applyRegexLayer(hook, chatId, text),
+        withTokenContext: (provider2, fn) => this.withTokenContext(provider2, fn),
+      }, input, provider, "rejection-retry");
     }
 
-    // Extract thinking tags from content (some models embed <thinking> in text)
-    const { mainContent: contText, reasoning: contReasoning } = extractThinkingTags(reply, reasoning);
-    reply = contText;
-    reasoning = contReasoning;
-    // RX-10 regex seam: REASONING transform (persist-mode presets, reasoning only; guarded so undefined/empty never fires the hook).
-    if (reasoning) reasoning = await this.applyRegexLayer("REASONING", input.chatId, reasoning);
-
-    const latencyMs = Date.now() - startedAt;
-    logSendDebug("live.continue.provider.done", { chatId: input.chatId, latencyMs, replyLength: reply.length });
-    // RX-8 regex seam: AI_OUTPUT transform (persist-mode presets, main content only). The variant is created already-transformed.
-    reply = await this.applyRegexLayer("AI_OUTPUT", input.chatId, reply);
-    const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
-      content: reply,
-      latencyMs,
-      reasoning,
-    });
-    logSendDebug("live.continue.append.done", { chatId: input.chatId, messageId: input.messageId, messageCount: snapshot.messages.length });
-
-    return {
-      promptMessageCount: countPromptMessages(prompt),
-      reply,
-      snapshot,
-    };
+    // Shared continue tail (thinking-tag extraction, regex seams, variant
+    // append) — see appendContinueVariant in continue-fallback.ts.
+    return await appendContinueVariant({
+      chatRuntime: this.chatRuntime,
+      applyRegexLayer: (hook, chatId, text) => this.applyRegexLayer(hook, chatId, text),
+    }, input, prompt, reply, reasoning, startedAt);
   }
 
   /** Streaming continue (LS-4a): same seam as {@link continueMessage} — the
    *  variant text rides as the executor prefill; deltas stream the raw
    *  continuation (the same echo asymmetry the preset-prefill send path
-   *  shows), and the full text appends as a new variant on finalize. */
+   *  shows), and the full text appends as a new variant on finalize.
+   *
+   *  CPF-2b prefill fallback: a detector-confirmed clean rejection (the
+   *  provider 400 rides the LAZY streamText stream — zero deltas reach the
+   *  client, which is what makes the retry clean) retries ONCE as a
+   *  user-role continuation ({@link runContinueFallbackStream}); the pair is
+   *  remembered so later clicks skip the doomed prefill attempt. */
   async *continueMessageStream(input: {
     chatId: string;
     messageId: string;
@@ -721,7 +726,12 @@ export class LiveChatOrchestrator {
     signal?: AbortSignal;
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
-    this.requirePrefillCapability(provider.profile);
+    requirePrefillCapability(provider.profile);
+    const memoryKey = ContinueFallbackMemory.key(provider.profile, provider.model);
+    if (this.continueFallbackMemory.has(memoryKey)) {
+      yield* this.continueFallbackStream(input, provider, "memory-hit");
+      return;
+    }
     logSendDebug("live.continue-stream.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
     const prompt = await this.withTokenContext(provider, () =>
       this.chatRuntime.assemblePromptPreview(brandId<ChatId>(input.chatId), {
@@ -739,40 +749,44 @@ export class LiveChatOrchestrator {
       providerResponse: streamResult.providerResponse,
     });
 
-    yield* this.drainStream({
-      chatId: input.chatId,
-      streamResult,
-      signal: input.signal,
+    // CPF-2b retry-once: a clean prefill rejection surfaces as drainStream's
+    // FIRST `error` event — streamText is lazy, so the 400 rides the stream
+    // (zero deltas streamed, which is what makes the retry clean). The drain
+    // relay (continue-fallback.ts) swallows that event BEFORE it reaches the
+    // client when the detector matches; any other error forwards
+    // byte-identical to the pre-fallback behavior.
+    let cleanRejection = false;
+    yield* drainContinuePrefillWithRetry(
+      {
+        chatRuntime: this.chatRuntime,
+        drainStream: <TFinal extends DrainFinalSnapshot>(drainInput: DrainStreamInput<TFinal>) => this.drainStream(drainInput),
+      },
+      input,
       startedAt,
-      debugLabel: "live.continue-stream",
-      omitMessageCountInFinish: true,
+      streamResult,
       prefill,
-      onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
-        if (text) {
-          await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
-            content: text,
-            latencyMs,
-            reasoning: reasoning || undefined,
-            reasoningDurationMs,
-          });
-        }
+      (message) => {
+        cleanRejection = true;
+        this.continueFallbackMemory.record(memoryKey);
+        logSendDebug("live.continue-stream.rejection-detected", { chatId: input.chatId, messageId: input.messageId, key: memoryKey, message });
       },
-      onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
-        const snapshot = await this.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
-          content: text,
-          latencyMs,
-          reasoning,
-          reasoningDurationMs,
-          toolCalls,
-          toolResults,
-        });
-        logSendDebug("live.continue-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
-        return { ...snapshot, lorebookOverflows: snapshot.overflowAlerts };
-      },
-    });
+    );
+    if (cleanRejection) {
+      yield* this.continueFallbackStream(input, provider, "rejection-retry");
+    }
   }
 
-  // ─── Shared streaming helpers ─────────────────────────────────────────
+  /** CPF-2b fallback continue, streaming: delegates to
+   *  {@link runContinueFallbackStream} (continue-fallback.ts — extracted per
+   *  the file-size ratchet) on this orchestrator's seams. */
+  private async *continueFallbackStream(input: ContinueFallbackAttemptInput & { profile: StoredProviderProfileRecord; model: string }, provider: { profile: StoredProviderProfileRecord; model: string }, reason: "memory-hit" | "rejection-retry"): AsyncGenerator<{ event: string; data: string }> {
+    yield* runContinueFallbackStream({
+      chatRuntime: this.chatRuntime,
+      startStream: (startInput, prompt) => this.startStream(startInput, prompt),
+      drainStream: <TFinal extends DrainFinalSnapshot>(drainInput: DrainStreamInput<TFinal>) => this.drainStream(drainInput),
+      withTokenContext: (scoped, fn) => this.withTokenContext(scoped, fn),
+    }, input, provider, reason);
+  }
 
   /**
    * Starts a stream provider execution with error handling.
@@ -827,9 +841,7 @@ export class LiveChatOrchestrator {
   }
 
   private async startStream(
-    input: { chatId: string; profile: StoredProviderProfileRecord; model: string; transport?: CoauthorTransport; signal?: AbortSignal; prefill?: string; tools?: import("ai").ToolSet; maxSteps?: number; visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
-    /** STT_PLAN ST-6: profile-bound transcriber for voice-note attachments. */
-    voiceTranscriber?: ProviderExecutionInput["voiceTranscriber"]; onAttachmentDescriptions?: ProviderExecutionInput["onAttachmentDescriptions"] },
+    input: StreamStartInput,
     prompt: Parameters<typeof streamProviderExecutor>[0]["prompt"],
   ): Promise<{ streamResult: ProviderStreamResult; startedAt: number }> {
     const startedAt = Date.now();
@@ -840,8 +852,13 @@ export class LiveChatOrchestrator {
         transport: input.transport,
         prompt,
         signal: input.signal,
-        // LS-4 capability gate: same rule as the non-stream paths.
-        prefill: this.resolveEffectivePrefill(input.profile, input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined),
+        // LS-4 capability gate: same rule as the non-stream paths. CPF-2b
+        // fallback: no prefill may ride (mutual exclusion is enforced at
+        // prepareSdkMessages; suppressing the cascade here keeps it honest).
+        prefill: input.continuationFallback
+          ? undefined
+          : resolveEffectivePrefill(input.profile, input.prefill ?? (prompt as { prefill?: string }).prefill ?? undefined),
+        ...(input.continuationFallback ? { continuationFallback: true } : {}),
         tools: input.tools,
         maxSteps: input.maxSteps,
         cachedModels: input.visionAssets?.cachedModels,
@@ -863,22 +880,7 @@ export class LiveChatOrchestrator {
    * handles aborts via `onAbort`, saves the final result via `onFinal`,
    * and yields SSE events (text-delta, reasoning-delta, reasoning-done, finish).
    */
-  private async *drainStream(input: {
-    chatId: string;
-    streamResult: ProviderStreamResult;
-    signal?: AbortSignal | undefined;
-    startedAt: number;
-    debugLabel: string;
-    omitMessageCountInFinish?: boolean;
-    prefill?: string;
-    onAbort: (text: string, reasoning: string, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<void>;
-    /** P21: the final return carries the wire snapshot PLUS the lorebook
-     *  overflow-alert channel (alert-on books that overflowed this turn) —
-     *  drainStream forwards it on the `finish` SSE event so the client can
-     *  toast without a refetch. Intersection type: existing `snapshot.messages`
-     *  consumers are unchanged. */
-    onFinal: (text: string, reasoning: string | undefined, reasoningDurationMs: number | undefined, latencyMs: number, toolCalls?: ExtractedToolCall[], toolResults?: ExtractedToolResult[]) => Promise<MessageResponse & { lorebookOverflows?: Array<{ name: string; dropped: number }> }>;
-  }): AsyncGenerator<{ event: string; data: string }> {
+  private async *drainStream<TFinal extends DrainFinalSnapshot>(input: DrainStreamInput<TFinal>): AsyncGenerator<{ event: string; data: string }> {
     const { streamResult, signal, startedAt, debugLabel, onAbort, onFinal, omitMessageCountInFinish, prefill } = input;
     // ── CA-17/CANARY: loop observability. Counts every tool interaction so a
     // tool-loop runaway (model re-calling write_profile, or a false-positive
@@ -1056,10 +1058,4 @@ export class LiveChatOrchestrator {
     }
     yield { event: "finish", data: JSON.stringify(finishData) };
   }
-}
-
-/** Extracts the message count from a prompt's finalPayload. */
-function countPromptMessages(prompt: { finalPayload?: unknown }): number {
-  const payload = prompt.finalPayload as { messages?: unknown };
-  return Array.isArray(payload?.messages) ? payload.messages.length : 0;
 }

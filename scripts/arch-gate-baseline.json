@@ -58,7 +58,7 @@
     "services/api/src/api/adapters/image-gen-adapter.ts": 1591,
     "services/api/src/api/contract/runtime-api.ts": 994,
     "services/api/src/domain/ai-assistant/ai-assistant-stream.ts": 1108,
-    "services/api/src/domain/chat/live-chat-orchestrator.ts": 1065,
+    "services/api/src/domain/chat/live-chat-orchestrator.ts": 1061,
     "services/api/src/domain/imagegen/backends/a1111.ts": 1024,
     "services/api/src/domain/imagegen/backends/comfyui.ts": 2520,
     "services/api/src/domain/insights/objective-service.ts": 833,

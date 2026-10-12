@@ -190,11 +190,13 @@ export class ChatRuntime {
   /** Patch the pending prompt trace with executor-level request/response data.
    *  `prefill` (LS-4a) records what actually rode as the pushed assistant
    *  message — the Continue path's continuation text replaces the draft's
-   *  preset prefill so the trace stays honest about the prompt that was sent. */
+   *  preset prefill so the trace stays honest about the prompt that was sent.
+   *  Passing `null` CLEARS it (CPF-2b fallback: no prefill rode, so a stale
+   *  preset prefill must not claim it did). */
   patchPendingTrace(chatId: ChatId, patch: {
     sentConfig?: AssemblePromptResponse["sentConfig"];
     providerResponse?: ProviderResponseTrace;
-    prefill?: string;
+    prefill?: string | null;
   }): void {
     const pending = this.pendingPromptTraceByChat.get(chatId);
     if (!pending) return;
@@ -556,7 +558,15 @@ export class ChatRuntime {
 
   async assemblePromptPreview(
     chatId: ChatId,
-    options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
+    options: { excludeMessageId?: MessageId; model: string; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId;
+      /** CPF-2b: create the pending prompt trace even without
+       *  `excludeMessageId`. The continue-fallback assembly keeps the target
+       *  message IN the history, so it passes no exclusion — yet that request
+       *  must still be traced (its finalPayload is what actually rode on the
+       *  wire) and the appended variant must keep its model/preset
+       *  attribution via the normal consume-at-append path. Only the continue
+       *  fallback paths pass this. */
+      setPendingTrace?: boolean },
   ): Promise<AssemblePromptResponse & { tools?: ToolSet; maxSteps?: number; coauthorModuleId?: string; coauthorSkillId?: string | null }> {
     const { assemblePrompt } = this.deps;
     const assembled = await assemblePrompt(chatId, undefined, {
@@ -566,7 +576,7 @@ export class ChatRuntime {
       responseReserve: options.responseReserve,
       presetId: options.presetId,
     });
-    if (options.excludeMessageId) {
+    if (options.excludeMessageId || options.setPendingTrace) {
       this.pendingPromptTraceByChat.set(chatId, {
         branchId: assembled.branchId,
         draft: assembled.promptTraceDraft,
