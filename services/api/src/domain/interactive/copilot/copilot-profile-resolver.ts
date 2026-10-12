@@ -30,6 +30,9 @@ import { resolveBuiltinCopilotProfile } from "./experience-copilot-module.js";
  * projects to `todo: true` and nothing else — the PM-2 alias that projected
  * it onto `plan` + `read_plan` was removed with the todo mechanic's
  * restoration (todo = the thread's session checklist beside the plan).
+ * `skillIds` is NOT projected (PM-8, owner ruling 2026-10-12): the skill
+ * catalog is ungated, so the stored `skill_ids_json` column is legacy data
+ * the resolver simply never reads.
  */
 export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile {
 	const toolSet: CopilotToolSet = {};
@@ -41,7 +44,6 @@ export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile 
 		name: row.name,
 		isBuiltIn: false,
 		basePrompt: row.basePrompt,
-		skillIds: row.skillIds,
 		toolSet,
 	};
 }

@@ -381,16 +381,22 @@ export const COPILOT_TOOL_KEYS = Object.keys(copilotToolSetSchema.shape) as (key
  * `description`, no `openingMessage`. No `maxSteps`: the tool-loop bound was
  * removed by user decision (TAG-4 → TAG-10) — the loop runs unbounded to
  * `COPILOT_TOOL_LOOP_CEILING`, and the DB `copilot_profiles.max_steps` column
- * was dropped in TAG-4b.
+ * was dropped in TAG-4b. No `skillIds` either (PM-8, owner ruling
+ * 2026-10-12): the skill catalog is UNGATED like Co-Author's — the catalog
+ * carries only id + one-line description (progressive disclosure), so listing
+ * every scanned skill is free; profiles are `basePrompt` + `toolSet` only.
+ * `.strict()` rejects unknown keys — including a retired `skillIds` — so a
+ * stale client cannot smuggle the retired field back in.
  */
-export const copilotProfileSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  isBuiltIn: z.boolean(),
-  basePrompt: z.string().min(1),
-  skillIds: z.array(z.string().min(1)),
-  toolSet: copilotToolSetSchema,
-});
+export const copilotProfileSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    isBuiltIn: z.boolean(),
+    basePrompt: z.string().min(1),
+    toolSet: copilotToolSetSchema,
+  })
+  .strict();
 
 export type CopilotProfile = z.infer<typeof copilotProfileSchema>;
 
@@ -400,14 +406,16 @@ export const copilotProfileListSchema = z.array(copilotProfileSchema);
  * Input for creating a user profile. `id` is assigned by the store; `isBuiltIn`
  * is always `false` for user-created profiles (enforced server-side, never
  * accepted from the client). Leaner than `CoauthorModuleCreate` — no
- * `description`, no `openingMessage`.
+ * `description`, no `openingMessage`, and no `skillIds` (PM-8: skills are
+ * ungated, so there is nothing to pick). `.strict()` rejects unknown keys.
  */
-export const copilotProfileCreateSchema = z.object({
-  name: z.string().min(1),
-  basePrompt: z.string().min(1),
-  skillIds: z.array(z.string().min(1)),
-  toolSet: copilotToolSetSchema,
-});
+export const copilotProfileCreateSchema = z
+  .object({
+    name: z.string().min(1),
+    basePrompt: z.string().min(1),
+    toolSet: copilotToolSetSchema,
+  })
+  .strict();
 
 export type CopilotProfileCreate = z.infer<typeof copilotProfileCreateSchema>;
 

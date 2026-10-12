@@ -622,7 +622,6 @@ describe("experience-copilot stream (ER-6)", () => {
       name: "Custom",
       isBuiltIn: false,
       basePrompt: "CUSTOM STREAM PROMPT MARKER",
-      skillIds: [],
       toolSet: { run_test: true },
     };
     let captured: Record<string, unknown> | null = null;

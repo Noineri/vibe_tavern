@@ -8,6 +8,8 @@
  *   - "+ New profile" opens a blank editor; empty name blocks save (no RPC);
  *   - "Duplicate" on the built-in seed opens a create editor with a copy suffix;
  *   - editing a user profile populates the editor and Save calls update;
+ *   - NO skill toggles render and the skill catalog is never fetched (PM-8 —
+ *     skills are ungated, so the profile editor has no skill surface);
  *   - assigning a user profile calls setCopilotProfile(scriptId, id); assigning
  *     the built-in seed calls setCopilotProfile(scriptId, null) (unassign);
  *   - deleting a user profile asks for confirmation then calls remove.
@@ -42,7 +44,6 @@ const BUILTIN: CopilotProfile = {
 	name: "Experience Authoring",
 	isBuiltIn: true,
 	basePrompt: "You author interactive experiences.",
-	skillIds: ["experience-authoring"],
 	toolSet: { write_buffer: true, edit_buffer: true, run_test: true },
 };
 
@@ -51,7 +52,6 @@ const USER: CopilotProfile = {
 	name: "Card games",
 	isBuiltIn: false,
 	basePrompt: "You help author card-game experiences.",
-	skillIds: ["experience-authoring"],
 	toolSet: { write_buffer: true, run_test: true },
 };
 
@@ -254,6 +254,28 @@ describe("CopilotProfileModal — edit user profile", () => {
 		}
 		// No step-limit number input remains.
 		expect(queryByRole("spinbutton")).toBeNull();
+	});
+
+	it("renders no skill toggles and never fetches the skill catalog (PM-8: skills ungated)", async () => {
+		const { getByTestId, getByText, queryByText } = renderModal();
+		await flush(getByTestId);
+		// Edit mode: no Skills field, no catalog-driven toggle chips (the mocked
+		// useT returns keys verbatim, so the Skills label would surface as its
+		// i18n key if the section still existed).
+		fireEvent.click(getByTestId("copilot-profile-edit-btn-cprof_1"));
+		await waitFor(() => expect(getByTestId("copilot-profile-editor")).toBeDefined());
+		expect(queryByText("copilot_profile_skills")).toBeNull();
+		expect(queryByText("experience-authoring")).toBeNull();
+		expect(queryByText("copilot_profile_skills_hint")).toBeNull();
+		// View mode (built-in seed): no skills row either — only the base prompt
+		// and the tool chips render.
+		fireEvent.click(getByTestId("copilot-profile-cancel-btn"));
+		fireEvent.pointerDown(getByTestId("copilot-profile-row-builtin"));
+		await waitFor(() => expect(getByTestId("copilot-profile-view-duplicate-btn")).toBeDefined());
+		expect(queryByText("copilot_profile_skills")).toBeNull();
+		expect(getByText("copilot_profile_tools")).toBeDefined();
+		// The skill catalog RPC was profile-toggle-only wiring — never called.
+		expect(listCopilotSkills).not.toHaveBeenCalled();
 	});
 });
 

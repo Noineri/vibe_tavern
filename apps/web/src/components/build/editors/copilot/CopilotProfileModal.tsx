@@ -7,30 +7,28 @@ import { Icons } from "../../../shared/icons.js";
 import { TextInput } from "../../../shared/text-input.js";
 import { lblCls } from "../../../../lib/field-tokens.js";
 import { useCopilotProfileStore } from "../../../../stores/copilot-profile-store.js";
-import { useCopilotSkillStore } from "../../../../stores/copilot-skill-store.js";
 import { setCopilotProfile } from "../../../../api/copilot-profile-api.js";
 import { useT, type TFunc } from "../../../../i18n/context.js";
 import { toast } from "sonner";
 import { cn } from "../../../../lib/cn.js";
-import { type CopilotProfile, type CopilotProfileCreate, type CopilotToolSet, type SkillCatalogEntryDto, COPILOT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
+import { type CopilotProfile, type CopilotProfileCreate, type CopilotToolSet, COPILOT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
 import { CopilotSkillModal } from "./CopilotSkillModal.js";
 
 /** The read-only built-in seed profile id (EXPERIENCE_COPILOT_PROFILES_PLAN). */
 const BUILTIN_PROFILE_ID = "builtin";
 
 /** Copilot profile draft — leaner than a co-author module (no description,
- *  no openingMessage). */
+ *  no openingMessage) and, since PM-8 (skills ungated), no skillIds either:
+ *  a profile is name + basePrompt + toolSet. */
 interface ProfileDraft {
 	name: string;
 	basePrompt: string;
-	skillIds: string[];
 	toolSet: CopilotToolSet;
 }
 
 const EMPTY_DRAFT: ProfileDraft = {
 	name: "",
 	basePrompt: "",
-	skillIds: [],
 	toolSet: {},
 };
 
@@ -38,7 +36,6 @@ function profileToDraft(p: CopilotProfile): ProfileDraft {
 	return {
 		name: p.name,
 		basePrompt: p.basePrompt,
-		skillIds: [...p.skillIds],
 		toolSet: { ...p.toolSet },
 	};
 }
@@ -47,7 +44,6 @@ function draftToCreateInput(d: ProfileDraft): CopilotProfileCreate {
 	return {
 		name: d.name.trim(),
 		basePrompt: d.basePrompt,
-		skillIds: d.skillIds,
 		toolSet: d.toolSet,
 	};
 }
@@ -56,12 +52,15 @@ type DetailMode = "view" | "edit" | "create";
 
 /**
  * Copilot profile manager (EXPERIENCE_COPILOT_PROFILES_PLAN, Wave 3 / CP-9).
- * Mirrors `CoauthorModuleModal` MINUS description/openingMessage: profile list
- * (built-in seed shown read-only, user profiles), name + inline system prompt
- * (AutoTextarea), catalog-driven skill toggles, tool checkboxes (the keys
- * from `COPILOT_TOOL_KEYS`). "Duplicate built-in"
- * pre-fills a new user profile. Assignment writes `scripts.copilotProfileId`
- * via `setCopilotProfile` (built-in → null = unassign).
+ * Mirrors `CoauthorModuleModal` MINUS description/openingMessage/skills: profile
+ * list (built-in seed shown read-only, user profiles), name + inline system
+ * prompt (AutoTextarea), tool checkboxes (the keys from `COPILOT_TOOL_KEYS`).
+ * Skills are UNGATED (PM-8, owner ruling 2026-10-12): the model sees every
+ * scanned skill regardless of profile, so there are no per-profile skill
+ * toggles — the "Manage skills" header button opens `CopilotSkillModal` for the
+ * import/delete library instead. "Duplicate built-in" pre-fills a new user
+ * profile. Assignment writes `scripts.copilotProfileId` via `setCopilotProfile`
+ * (built-in → null = unassign).
  *
  * CONTROLLED — open/close are props (owned by `ExperienceCopilotShell`), not
  * the global `modal-store` (which is co-author-specific).
@@ -88,9 +87,6 @@ export function CopilotProfileModal({ scriptId, assignedProfileId, isOpen, onClo
 	const updateProfile = useCopilotProfileStore((s) => s.update);
 	const removeProfile = useCopilotProfileStore((s) => s.remove);
 
-	const skillEntries = useCopilotSkillStore((s) => s.entries);
-	const loadSkills = useCopilotSkillStore((s) => s.load);
-
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [detailMode, setDetailMode] = useState<DetailMode>("view");
 	const [draft, setDraft] = useState<ProfileDraft>(EMPTY_DRAFT);
@@ -102,7 +98,6 @@ export function CopilotProfileModal({ scriptId, assignedProfileId, isOpen, onClo
 	useEffect(() => {
 		if (isOpen) {
 			void loadProfiles();
-			void loadSkills();
 		}
 		if (!isOpen) {
 			setDetailMode("view");
@@ -111,7 +106,7 @@ export function CopilotProfileModal({ scriptId, assignedProfileId, isOpen, onClo
 			setConfirmDiscardOpen(false);
 			setSkillManagerOpen(false);
 		}
-	}, [isOpen, loadProfiles, loadSkills]);
+	}, [isOpen, loadProfiles]);
 
 	const selected = profiles.find((p) => p.id === selectedId) ?? null;
 	const isSelectedActive = selected !== null && selected.id === activeProfileId;
@@ -165,17 +160,6 @@ export function CopilotProfileModal({ scriptId, assignedProfileId, isOpen, onClo
 
 	const updateDraft = <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => {
 		setDraft((prev) => ({ ...prev, [key]: value }));
-		setDirty(true);
-	};
-
-	const toggleSkill = (skillId: string) => {
-		setDraft((prev) => {
-			const has = prev.skillIds.includes(skillId);
-			return {
-				...prev,
-				skillIds: has ? prev.skillIds.filter((s) => s !== skillId) : [...prev.skillIds, skillId],
-			};
-		});
 		setDirty(true);
 	};
 
@@ -308,10 +292,8 @@ export function CopilotProfileModal({ scriptId, assignedProfileId, isOpen, onClo
 					isEditing ? (
 						<ProfileEditor
 							draft={draft}
-							skills={skillEntries}
 							t={t}
 							onUpdate={updateDraft}
-							onToggleSkill={toggleSkill}
 							onToggleTool={toggleTool}
 						/>
 					) : selected ? (
@@ -548,18 +530,6 @@ function ProfileView({ profile, t, onEdit, onDuplicate, onDelete }: ProfileViewP
 					<pre className="whitespace-pre-wrap break-words rounded bg-s2 p-2 font-mono text-[11px] leading-relaxed text-t2">{profile.basePrompt}</pre>
 				</PreviewRow>
 
-				<PreviewRow label={t("copilot_profile_skills")}>
-					{profile.skillIds.length > 0 ? (
-						<div className="flex flex-wrap gap-1.5">
-							{profile.skillIds.map((id) => (
-								<span key={id} className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-t2">{id}</span>
-							))}
-						</div>
-					) : (
-						<span className="font-ui text-[12px] text-t3">{t("copilot_profile_no_skills")}</span>
-					)}
-				</PreviewRow>
-
 				<PreviewRow label={t("copilot_profile_tools")}>
 					{enabledTools.length > 0 ? (
 						<div className="flex flex-wrap gap-1.5">
@@ -580,15 +550,12 @@ function ProfileView({ profile, t, onEdit, onDuplicate, onDelete }: ProfileViewP
 
 interface ProfileEditorProps {
 	draft: ProfileDraft;
-	/** Merged copilot skill catalog (built-in + user). Drives the skill toggles. */
-	skills: SkillCatalogEntryDto[];
 	t: TFunc;
 	onUpdate: <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => void;
-	onToggleSkill: (skillId: string) => void;
 	onToggleTool: (key: keyof CopilotToolSet) => void;
 }
 
-function ProfileEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool }: ProfileEditorProps) {
+function ProfileEditor({ draft, t, onUpdate, onToggleTool }: ProfileEditorProps) {
 	return (
 		<div className="flex flex-col gap-4" data-testid="copilot-profile-editor">
 			<div className="flex flex-col">
@@ -611,46 +578,6 @@ function ProfileEditor({ draft, skills, t, onUpdate, onToggleSkill, onToggleTool
 				/>
 				<p className="font-ui text-[10px] leading-relaxed text-t3">{t("copilot_profile_base_prompt_hint")}</p>
 			</div>
-
-			<Field label={t("copilot_profile_skills")} hint={t("copilot_profile_skills_hint")}>
-				{skills.length === 0 && draft.skillIds.length === 0 ? (
-					<span className="font-ui text-[12px] text-t3">{t("copilot_profile_no_skills")}</span>
-				) : (
-					<div className="flex flex-wrap gap-1.5">
-						{skills.map((skill) => {
-							const active = draft.skillIds.includes(skill.id);
-							return (
-								<button
-									key={skill.id}
-									type="button"
-									title={skill.description}
-									className={cn(
-										"cursor-pointer rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors",
-										active ? "border-accent bg-accent-dim text-accent-t" : "border-border text-t3 hover:text-t1",
-									)}
-									onClick={() => onToggleSkill(skill.id)}
-								>
-									{skill.name}
-								</button>
-							);
-						})}
-						{draft.skillIds
-							.filter((id) => !skills.some((s) => s.id === id))
-							.map((orphanId) => (
-								<button
-									key={`orphan:${orphanId}`}
-									type="button"
-									data-testid={`copilot-profile-skill-orphan-${orphanId}`}
-									title={t("copilot_profile_skill_orphan_title")}
-									className="cursor-pointer rounded-full border border-dashed border-danger/50 px-2.5 py-0.5 font-mono text-[11px] text-danger-text line-through transition-colors hover:bg-danger-dim"
-									onClick={() => onToggleSkill(orphanId)}
-								>
-									{orphanId}
-								</button>
-							))}
-					</div>
-				)}
-			</Field>
 
 			<Field label={t("copilot_profile_tools")}>
 				<div className="flex flex-wrap gap-1.5">

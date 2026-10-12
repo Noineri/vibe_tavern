@@ -19,13 +19,15 @@ export type StoredCopilotToolSet = Partial<Record<string, boolean>>;
  * separately in CP-4); every row here is a user profile. `createdAt`/`updatedAt`
  * are kept for ordering and UI; they are dropped when mapped to the API
  * `CopilotProfile` shape. Leaner than `CoauthorModuleRow` — no `description`,
- * no `openingMessage` (the copilot is not a chat-mode and does not greet).
+ * no `openingMessage` (the copilot is not a chat-mode and does not greet), and
+ * no `skillIds` (PM-8, owner ruling 2026-10-12: the skill catalog is ungated —
+ * the legacy `skill_ids_json` column is never read or written; existing rows
+ * keep their data untouched and are simply ignored).
  */
 export interface CopilotProfileRow {
   id: string;
   name: string;
   basePrompt: string;
-  skillIds: string[];
   toolSet: StoredCopilotToolSet;
   createdAt: string;
   updatedAt: string;
@@ -34,7 +36,6 @@ export interface CopilotProfileRow {
 export interface CreateCopilotProfileData {
   name: string;
   basePrompt: string;
-  skillIds: string[];
   toolSet: StoredCopilotToolSet;
 }
 
@@ -78,7 +79,6 @@ export class CopilotProfileStore {
         id,
         name: data.name,
         basePrompt: data.basePrompt,
-        skillIdsJson: JSON.stringify(data.skillIds),
         toolSetJson: JSON.stringify(data.toolSet),
         createdAt: now,
         updatedAt: now,
@@ -96,7 +96,6 @@ export class CopilotProfileStore {
     const values: Partial<typeof copilotProfiles.$inferInsert> = { updatedAt: this.clock.now() };
     if (data.name !== undefined) values.name = data.name;
     if (data.basePrompt !== undefined) values.basePrompt = data.basePrompt;
-    if (data.skillIds !== undefined) values.skillIdsJson = JSON.stringify(data.skillIds);
     if (data.toolSet !== undefined) values.toolSetJson = JSON.stringify(data.toolSet);
 
     await this.db.update(copilotProfiles).set(values).where(eq(copilotProfiles.id, id)).run();
@@ -114,21 +113,10 @@ export class CopilotProfileStore {
       id: row.id,
       name: row.name,
       basePrompt: row.basePrompt,
-      skillIds: parseStringArray(row.skillIdsJson),
       toolSet: parseToolSet(row.toolSetJson),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
-  }
-}
-
-/** Parse a JSON column that holds a string array, defending against malformed rows. */
-function parseStringArray(text: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(text || '[]');
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
-  } catch {
-    return [];
   }
 }
 

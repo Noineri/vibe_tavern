@@ -6,9 +6,10 @@
  * switcher in the editor — unlike Co-Author's user-pickable modules). This file
  * is that one mode's DEFINITION, adapted from the Co-Author seed-module pattern
  * ({@link getCoauthorModule}): a base prompt loaded lazily from a `.md` asset +
- * a declarative tool set + the skill ids this mode bundles. "Module" here is a
- * declarative config object the prompt assembler + tool builder consult, NOT a
- * runtime-selectable entity.
+ * a declarative tool set. "Module" here is a declarative config object the
+ * prompt assembler + tool builder consult, NOT a runtime-selectable entity.
+ * The mode does NOT pick skills (PM-8, owner ruling 2026-10-12): the catalog is
+ * UNGATED — every skill the scan finds is listed and readable, Co-Author-style.
  *
  * The skill system is REUSED wholesale from Co-Author (scanner + catalog +
  * `read_skill_file`), not reimplemented: the copilot simply has its OWN skill
@@ -52,8 +53,6 @@ export interface ExperienceCopilotModuleDef {
   readonly description: string;
   /** Asset path (relative to the prompt-asset root) holding the base prompt. */
   readonly basePromptFile: string;
-  /** Skills this mode advertises in its catalog (scanned from its own root). */
-  readonly skillIds: readonly string[];
   /** Authoring/diagnostic tools enabled for this mode (`read_skill_file` is
    *  always available on top, mirroring Co-Author — it is the universal
    *  read-only skill channel, NOT gated by `toolSet`). */
@@ -66,7 +65,6 @@ export const EXPERIENCE_COPILOT_MODULE: ExperienceCopilotModuleDef = {
   description:
     "The copilot mode for authoring an interactive experience's rules and visual source. Proposes buffer edits via tools, self-tests, and never binds.",
   basePromptFile: "experience-copilot/base.md",
-  skillIds: ["experience-authoring", "grill-me"],
   toolSet: {
     write_buffer: true,
     edit_buffer: true,
@@ -156,7 +154,8 @@ export async function resolveExperienceCopilotSkillCatalog(
  * module). `isBuiltIn: true` + a stable `"builtin"` id mark it as the seed the
  * profile editor shows read-only and that users duplicate from (Wave 3). The
  * tool set is projected through {@link COPILOT_TOOL_KEYS} so the wire contract
- * stays the single source of truth for the toggleable-tool names.
+ * stays the single source of truth for the toggleable-tool names. No
+ * `skillIds` — the catalog is ungated (PM-8).
  */
 export async function resolveBuiltinCopilotProfile(db?: AppDb): Promise<CopilotProfile> {
   // SP-5: the global service-prompt profile's `copilot_base` override replaces
@@ -174,7 +173,6 @@ export async function resolveBuiltinCopilotProfile(db?: AppDb): Promise<CopilotP
     name: EXPERIENCE_COPILOT_MODULE.name,
     isBuiltIn: true,
     basePrompt,
-    skillIds: [...EXPERIENCE_COPILOT_MODULE.skillIds],
     toolSet,
   };
 }

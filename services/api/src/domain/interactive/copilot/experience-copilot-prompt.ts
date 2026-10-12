@@ -608,13 +608,17 @@ export async function assembleExperienceCopilotPrompt(
   const contract = deriveContract(input.rules, input.rulesTrusted !== false);
 
   // ── Resolve profile + skill catalog + the canonical API refs ────────────────
-  // The profile supplies the base prompt (role + tool mechanics + key
-  // constraints, loaded live from its base-prompt source) and gates the skill
-  // catalog by its `skillIds`. Defaulting to the built-in seed keeps the
-  // no-profile path byte-identical to the ER-16 module. The catalog is scanned
-  // from the built-in root plus the optional user root (CP-4); the two API
-  // references (rules DSL + visual bridge) load alongside so all asset I/O fans
-  // out together.
+  // The profile supplies the base prompt ONLY (role + tool mechanics + key
+  // constraints, loaded live from its base-prompt source). The skill catalog is
+  // UNGATED (PM-8, owner ruling 2026-10-12): everything the scan finds is
+  // listed and every scanned root is readable by `read_skill_file` — the
+  // catalog carries only id + one-line description (progressive disclosure),
+  // so listing all skills is free, and a user-imported skill is usable with
+  // the built-in seed profile active (the Co-Author parity the owner ruled).
+  // Defaulting to the built-in seed keeps the no-profile path byte-identical
+  // to the ER-16 module. The catalog is scanned from the built-in root plus
+  // the optional user root (CP-4); the two API references (rules DSL + visual
+  // bridge) load alongside so all asset I/O fans out together.
   const profile = input.profile ?? await resolveBuiltinCopilotProfile(input.db);
   const resolveRef = (field: "interactive_rules" | "interactive_visual" | "copilot_user_flow", assetFile: string) =>
     input.db
@@ -630,17 +634,18 @@ export async function assembleExperienceCopilotPrompt(
     // profiles snapshot away from base.md).
     resolveRef("copilot_user_flow", "experience-copilot/user-flow.md"),
   ]);
-  // The profile's skillIds GATE the catalog — only enabled skills are listed
-  // and only their roots are exposed to `read_skill_file`. The built-in seed
-  // enables ["experience-authoring"], so its catalog is unchanged.
-  const skillCatalog = allSkills.entries.filter((e) => profile.skillIds.includes(e.id));
+  // The skill catalog is UNGATED (PM-8, owner ruling 2026-10-12): it lists
+  // everything the scan found as-is (user > built-in shadowing was already
+  // applied by buildSkillCatalog), and every scanned root is exposed to
+  // `read_skill_file`. The profile no longer carries `skillIds`.
+  const skillCatalog = allSkills.entries;
   const basePrompt = profile.basePrompt;
   const skillCatalogBlock = renderExperienceCopilotSkillCatalog(skillCatalog);
   // Derive the skill roots from the catalog entries' skill dirs so
   // `read_skill_file` (built in the stream from this result) resolves paths
   // against the same root the catalog was built from. Empty when no skills are
   // available (reads then reject; the other tools work fully).
-  const skillRoots = [...new Set(skillCatalog.map((e) => dirname(e.skillDir)))];
+  const skillRoots = [...new Set(allSkills.entries.map((e) => dirname(e.skillDir)))];
 
   // ── Build the context-package section ──────────────────────────────────────
   const contextPackage = renderContextPackage(

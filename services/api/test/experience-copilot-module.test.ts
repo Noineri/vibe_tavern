@@ -2,11 +2,13 @@
  * Experience-copilot module definition + skill-catalog wiring (ER-16).
  *
  * Pins the single fixed "experience-authoring" module: its declarative shape
- * (id / basePromptFile / skillIds / toolSet / maxSteps), that the base-prompt
- * asset LOADS (the ER-16 gate — "module loads"), and that the copilot's own
- * skill root is scanned (reusing the Co-Author scanner) to surface the
- * `experience-authoring` skill for on-demand `read_skill_file`. The catalog
- * renderer is a pure function exercised directly.
+ * (id / basePromptFile / toolSet), that the base-prompt asset LOADS (the ER-16
+ * gate — "module loads"), and that the copilot's own skill root is scanned
+ * (reusing the Co-Author scanner) to surface the `experience-authoring` skill
+ * for on-demand `read_skill_file`. The catalog is UNGATED (PM-8, owner ruling
+ * 2026-10-12): the module/profile carries no `skillIds` — the catalog lists
+ * everything the scan finds. The catalog renderer is a pure function exercised
+ * directly.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
@@ -24,7 +26,9 @@ import {
 describe("experience-copilot module (ER-16)", () => {
   test("the single fixed module definition has the expected shape", () => {
     expect(EXPERIENCE_COPILOT_MODULE.id).toBe("experience-authoring");
-    expect(EXPERIENCE_COPILOT_MODULE.skillIds).toEqual(["experience-authoring", "grill-me"]);
+    // PM-8 (owner ruling 2026-10-12): skillIds is retired — the module no
+    // longer declares a skill allow-list (the catalog is ungated).
+    expect(EXPERIENCE_COPILOT_MODULE).not.toHaveProperty("skillIds");
     expect(EXPERIENCE_COPILOT_MODULE.basePromptFile).toBe("experience-copilot/base.md");
     // The nine authoring/diagnostic tools are declared (todo restored PM-7).
     // `read_skill_file` is always available on top (mirroring Co-Author — the
@@ -84,7 +88,8 @@ describe("experience-copilot module (ER-16)", () => {
     expect(profile.id).toBe("builtin");
     expect(profile.isBuiltIn).toBe(true);
     expect(profile.name).toBe(EXPERIENCE_COPILOT_MODULE.name);
-    expect(profile.skillIds).toEqual([...EXPERIENCE_COPILOT_MODULE.skillIds]);
+    // PM-8: no skillIds on the wire profile (the catalog is ungated).
+    expect(profile).not.toHaveProperty("skillIds");
     // The loaded base-prompt asset carries the role framing.
     expect(profile.basePrompt.trim().length).toBeGreaterThan(0);
     expect(profile.basePrompt).toContain("MINI-APP ASSISTANT");
@@ -120,13 +125,17 @@ describe("experience-copilot two-root skill catalog (CP-4)", () => {
   const manifest = (name: string, desc: string) =>
     `---\nname: ${name}\ndescription: ${desc}\n---\n\n# ${name}\n`;
 
-  test("merges the user root alongside the built-in root", async () => {
+  test("merges the user root alongside the built-in root (ungated — PM-8: everything scanned is cataloged)", async () => {
     await mkdir(join(userRoot, "custom-skill"), { recursive: true });
     await Bun.write(join(userRoot, "custom-skill", "SKILL.md"), manifest("custom-skill", "a user skill"));
 
+    // No profile filters the scan: the catalog lists the user skill next to
+    // every built-in (the owner's live bug — imported skills used to be
+    // invisible unless a profile's skillIds enabled them, and no profile did).
     const { entries } = await resolveExperienceCopilotSkillCatalog(userRoot);
     const ids = entries.map((e) => e.id);
     expect(ids).toContain("experience-authoring");
+    expect(ids).toContain("grill-me");
     expect(ids).toContain("custom-skill");
 
     const builtin = entries.find((e) => e.id === "experience-authoring");

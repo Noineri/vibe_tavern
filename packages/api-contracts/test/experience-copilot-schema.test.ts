@@ -14,6 +14,7 @@ import {
   copilotTodoListSchema,
   copilotToolSetSchema,
   copilotProfileSchema,
+  copilotProfileCreateSchema,
   COPILOT_TOOL_KEYS,
 } from "../src/schemas/experience-copilot-schema.js";
 
@@ -460,13 +461,12 @@ describe("copilotTodoListSchema (TAG-1, restored PM-7)", () => {
 });
 
 describe("copilotProfileSchema (CP-1)", () => {
-  test("accepts a valid profile (no description/openingMessage)", () => {
+  test("accepts a valid profile (no description/openingMessage/skillIds)", () => {
     const payload = {
       id: "profile_1",
       name: "Card games",
       isBuiltIn: false,
       basePrompt: "You are a card-game experience author.",
-      skillIds: ["experience-authoring"],
       toolSet: { edit_buffer: true, run_test: true },
     };
     expect(copilotProfileSchema.parse(payload)).toEqual(payload);
@@ -479,24 +479,45 @@ describe("copilotProfileSchema (CP-1)", () => {
         name: "X",
         isBuiltIn: false,
         basePrompt: "",
-        skillIds: [],
         toolSet: {},
       }),
     ).toThrow();
   });
 
-  // maxSteps is REMOVED from the wire (TAG-10): the schema strips it — it is
-  // no longer a field at all, so a payload carrying it yields no maxSteps key.
-  test("strips maxSteps (removed from the wire — TAG-10)", () => {
+  // PM-8 (owner ruling 2026-10-12): `skillIds` is retired — skills are
+  // ungated, so the field no longer exists. The schema is `.strict()`: a
+  // stale client sending `skillIds` is rejected, not silently stripped.
+  test("strict-rejects a retired skillIds payload (PM-8)", () => {
     const base = {
       id: "x",
       name: "X",
       isBuiltIn: false,
       basePrompt: "p",
-      skillIds: [],
       toolSet: {},
     };
-    expect(copilotProfileSchema.parse({ ...base, maxSteps: 5 })).not.toHaveProperty("maxSteps");
+    expect(() => copilotProfileSchema.parse({ ...base, skillIds: ["experience-authoring"] })).toThrow();
+    expect(() =>
+      copilotProfileCreateSchema.parse({
+        name: "X",
+        basePrompt: "p",
+        toolSet: {},
+        skillIds: [],
+      }),
+    ).toThrow();
+  });
+
+  // maxSteps is REMOVED from the wire (TAG-10) and the schema is `.strict()`:
+  // unknown keys are rejected outright (a payload carrying maxSteps throws,
+  // never yielding a parsed object with the field).
+  test("strict-rejects unknown keys incl. retired maxSteps (TAG-10)", () => {
+    const base = {
+      id: "x",
+      name: "X",
+      isBuiltIn: false,
+      basePrompt: "p",
+      toolSet: {},
+    };
+    expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 5 })).toThrow();
   });
 });
 

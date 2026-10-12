@@ -1285,7 +1285,7 @@ or the **answer mode** (split-turn resume — the answer continues the logical t
 
 ### Profiles
 
-CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profiles carry provider/model, `toolSet` toggles (9 keys: `edit_buffer`, `write_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `todo`, `ask_user`) and `skillIds`. A stored `todo: true` projects to `todo: true` and nothing else (the PM-2 alias onto `plan`+`read_plan` was removed with the todo mechanic's restoration in PM-7). The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
+CRUD under `/api/copilot-profiles` (see the copilot profile schemas): user profiles carry `basePrompt` + `toolSet` toggles (9 keys: `edit_buffer`, `write_buffer`, `run_test`, `run_simulate`, `suggest_visual_binding`, `plan`, `read_plan`, `todo`, `ask_user`) — `skillIds` was retired in PM-8 (skills are ungated; a payload carrying it is strict-rejected, as is any unknown key). A stored `todo: true` projects to `todo: true` and nothing else (the PM-2 alias onto `plan`+`read_plan` was removed with the todo mechanic's restoration in PM-7). The `builtin` profile is read-only (400 on update/delete). There is no step-limit field — the tool loop is unbounded (see the architecture doc).
 
 ---
 

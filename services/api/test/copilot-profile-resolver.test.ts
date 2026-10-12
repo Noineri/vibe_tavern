@@ -43,9 +43,7 @@ describe("CopilotProfileResolver", () => {
     const created = await stores.copilotProfiles.create({
       name: "Card games",
       basePrompt: "You are a card-game rules reviewer.",
-      skillIds: ["experience-authoring"],
       toolSet: { write_buffer: true, run_test: false },
-      maxSteps: 12,
     });
     const script = await stores.scripts.create({
       name: "Assigned",
@@ -60,7 +58,9 @@ describe("CopilotProfileResolver", () => {
     expect(profile.id).toBe(created.id);
     expect(profile.name).toBe("Card games");
     expect(profile.basePrompt).toBe("You are a card-game rules reviewer.");
-    expect(profile.skillIds).toEqual(["experience-authoring"]);
+    // PM-8 (owner ruling 2026-10-12): skillIds is retired from the wire — the
+    // catalog is ungated, so the profile carries no skill allow-list.
+    expect(profile).not.toHaveProperty("skillIds");
     // Only true keys survive the strict projection (run_test: false dropped).
     expect(profile.toolSet).toEqual({ write_buffer: true });
     // TAG-4: maxSteps is no longer projected to the wire shape.
@@ -76,7 +76,6 @@ describe("CopilotProfileResolver", () => {
       id: "profile_legacy",
       name: "Legacy",
       basePrompt: "Legacy prompt.",
-      skillIds: [],
       toolSet: { todo: true },
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -92,9 +91,7 @@ describe("CopilotProfileResolver", () => {
     const created = await stores.copilotProfiles.create({
       name: "Doomed",
       basePrompt: "Will be deleted.",
-      skillIds: [],
       toolSet: {},
-      maxSteps: 20,
     });
     const script = await stores.scripts.create({
       name: "Dangling",

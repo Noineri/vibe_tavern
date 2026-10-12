@@ -10,6 +10,9 @@
 
 import { describe, test, expect, beforeEach } from "bun:test";
 import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTokenCountFn } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
 import type { CopilotProfile } from "@vibe-tavern/api-contracts";
@@ -22,6 +25,7 @@ import {
   type ExperienceCopilotHistoryMessage,
 } from "../src/domain/interactive/copilot/experience-copilot-prompt.js";
 import { resolveBuiltinCopilotProfile } from "../src/domain/interactive/copilot/experience-copilot-module.js";
+import { readSkillFile } from "../src/domain/coauthor/skills/skill-read-tool.js";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -122,6 +126,42 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     expect(result.skillRoots[0]).toContain("skills");
   });
 
+  test("a user skill root joins the catalog and its roots — usable with the builtin seed profile (PM-8)", async () => {
+    // The owner's live bug: an imported user skill was invisible/unreadable
+    // unless a custom profile's skillIds enabled it (and no profile existed).
+    // PM-8 ungates the catalog: the builtin-seed default assembly lists the
+    // user skill AND exposes its root to read_skill_file.
+    const userRoot = await mkdtemp(join(tmpdir(), "copilot-prompt-user-root-"));
+    try {
+      await mkdir(join(userRoot, "user-skill"), { recursive: true });
+      await Bun.write(
+        join(userRoot, "user-skill", "SKILL.md"),
+        "---\nname: user-skill\ndescription: an imported user skill\n---\n\n# user-skill\n",
+      );
+
+      // No `profile` input → the builtin seed resolves internally.
+      const result = await assembleExperienceCopilotPrompt({
+        history: [],
+        rules: VALID_RULES,
+        step: "rules",
+        skillUserRoot: userRoot,
+      });
+
+      // The user skill is listed in the catalog block.
+      expect(result.systemMessage).toContain("user-skill");
+      expect(result.systemMessage).toContain("user-skill/SKILL.md");
+      // ...and its root is exposed alongside the built-in root.
+      expect(result.skillRoots).toContain(userRoot);
+
+      // End-to-end through the real read resolver the tool closes over: the
+      // user-skill manifest path resolves under the builtin seed profile.
+      const read = await readSkillFile("user-skill/SKILL.md", result.skillRoots);
+      expect(read.content).toContain("# user-skill");
+    } finally {
+      await rm(userRoot, { recursive: true, force: true });
+    }
+  });
+
   test("contract is omitted when rules discovery fails (broken rules)", async () => {
     const result = await assembleExperienceCopilotPrompt({
       history: [],
@@ -199,15 +239,18 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     expect(explicitResult.skillRoots).toEqual(defaultResult.skillRoots);
   });
 
-  test("a custom profile overrides the base prompt and gates the skill catalog", async () => {
+  test("a custom profile overrides the base prompt; the skill catalog stays UNGATED (PM-8)", async () => {
+    // PM-8 (owner ruling 2026-10-12) — same boundary as the old gating test,
+    // inverted: the profile used to gate the catalog via skillIds (an empty
+    // skillIds hid the catalog and emptied skillRoots); now the profile carries
+    // ONLY basePrompt + toolSet and the catalog lists everything scanned,
+    // whichever profile is active.
     const custom: CopilotProfile = {
       id: "custom",
       name: "Custom",
       isBuiltIn: false,
       basePrompt: "CUSTOM SYSTEM PROMPT MARKER",
-      skillIds: [],
       toolSet: {},
-      maxSteps: 5,
     };
     const result = await assembleExperienceCopilotPrompt({
       history: [],
@@ -217,9 +260,9 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
     });
     expect(result.systemMessage).toContain("CUSTOM SYSTEM PROMPT MARKER");
     expect(result.systemMessage).not.toContain("MINI-APP ASSISTANT");
-    // No enabled skills → no "Available skills" section and no skill roots.
-    expect(result.systemMessage).not.toContain("Available skills");
-    expect(result.skillRoots).toEqual([]);
+    // The catalog is NOT gated by the profile: the section and roots persist.
+    expect(result.systemMessage).toContain("Available skills");
+    expect(result.skillRoots.length).toBeGreaterThanOrEqual(1);
   });
 });
 

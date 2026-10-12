@@ -235,6 +235,8 @@ export const copilotProfiles = sqliteTable('copilot_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   basePrompt: text('base_prompt').notNull(),
+  // superseded: skills are ungated (EXPERIENCE_COPILOT_PLAN_MODE_PLAN PM-8) —
+  // never read or written by the store; kept for legacy rows only.
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),
   toolSetJson: text('tool_set_json').notNull().default('{}'),
   createdAt: text('created_at').notNull(),

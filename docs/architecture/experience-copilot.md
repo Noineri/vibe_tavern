@@ -85,11 +85,12 @@ Filesystem-scanned `SKILL.md` directories under `services/api/assets/experience-
 - `experience-authoring` — the craft-guidance strategy layer (rules-first loop, seat mapping, pitfalls), read on demand.
 - `grill-me` — trigger-gated adversarial design review: interrogates the draft through `ask_user` (one question at a time, facts-are-your-job, every question must be able to change the build) and ends with a synthesis + an offer to lay out a plan.
 
-Profiles pick skills via `skillIds`; a pinned skill's `SKILL.md` body is injected eagerly (CX-1) on top of the catalog's descriptions.
+The catalog is UNGATED (PM-8, owner ruling 2026-10-12) exactly like Co-Author's: it lists every skill the scan finds — built-in root plus user imports — and exposes every scanned root to `read_skill_file`.
+Profiles carry no skill list; a pinned skill's `SKILL.md` body is still injected eagerly (CX-1) on top of the catalog's descriptions.
 
 ## Profiles
 
-`copilot_profiles` rows plus one code-defined read-only **builtin** seed (id `"builtin"`, resolved from the module def — update/delete reject it). A profile carries the provider/model pair, the `toolSet` toggles (raw-key chips in the modal — no labels to translate), and `skillIds`. There is deliberately **no `maxSteps`**: the loop bound is the shared ceiling constant, not profile data (staged removal TAG-4 → TAG-4b → TAG-10).
+`copilot_profiles` rows plus one code-defined read-only **builtin** seed (id `"builtin"`, resolved from the module def — update/delete reject it). A profile is the `basePrompt` text plus the `toolSet` toggles (raw-key chips in the modal — no labels to translate); `skillIds` was retired in PM-8 (the catalog is ungated — the DB `skill_ids_json` column remains as unread legacy data). There is deliberately **no `maxSteps`**: the loop bound is the shared ceiling constant, not profile data (staged removal TAG-4 → TAG-4b → TAG-10).
 
 ## Threads, messages, and the context meter
 

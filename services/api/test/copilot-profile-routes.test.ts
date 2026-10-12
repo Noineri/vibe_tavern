@@ -41,9 +41,7 @@ beforeAll(async () => {
 const createInput = (over: Record<string, unknown> = {}) => ({
   name: "Card games",
   basePrompt: "You help author card-game experiences.",
-  skillIds: ["experience-authoring"],
   toolSet: { write_buffer: true, run_test: true },
-  maxSteps: 20,
   ...over,
 });
 
@@ -90,6 +88,20 @@ describe("POST /api/copilot/profiles", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  // PM-8 (owner ruling 2026-10-12): `skillIds` is retired — the wire schemas
+  // are `.strict()`, so a stale client sending it (or the long-retired
+  // `maxSteps`) is rejected with a 400, never silently stripped.
+  test("strict-rejects a retired skillIds / maxSteps body → 400", async () => {
+    for (const over of [{ skillIds: ["experience-authoring"] }, { maxSteps: 12 }]) {
+      const res = await app.request("/api/copilot/profiles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(createInput(over)),
+      });
+      expect(res.status).toBe(400);
+    }
+  });
 });
 
 describe("PATCH /api/copilot/profiles/:id", () => {
@@ -108,14 +120,15 @@ describe("PATCH /api/copilot/profiles/:id", () => {
     const update = await app.request(`/api/copilot/profiles/${created.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Card games v2", maxSteps: 12 }),
+      body: JSON.stringify({ name: "Card games v2" }),
     });
     expect(update.status).toBe(200);
-    const updated = (await update.json()) as { name: string; maxSteps: number | undefined; basePrompt: string };
+    const updated = (await update.json()) as { name: string; maxSteps: number | undefined; basePrompt: string; skillIds?: string[] };
     expect(updated.name).toBe("Card games v2");
-    // TAG-4: maxSteps is accepted on update (the live column still stores it)
-    // but no longer projected to the wire shape.
+    // TAG-4: maxSteps no longer exists on the wire; PM-8 retired skillIds —
+    // neither is projected to the response shape.
     expect(updated.maxSteps).toBeUndefined();
+    expect(updated.skillIds).toBeUndefined();
     expect(updated.basePrompt).toBe("You help author card-game experiences.");
   });
 });

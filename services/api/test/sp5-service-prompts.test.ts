@@ -205,7 +205,6 @@ describe("SP-5 copilot base honors profile only for builtin", () => {
       name: "Explicit",
       isBuiltIn: false,
       basePrompt: "EXPLICIT-BASE",
-      skillIds: ["experience-authoring"],
       toolSet: { write_buffer: true },
     } as never;
 
