@@ -13,6 +13,12 @@
  * recoverable via an index map from each normalized character back to its
  * source offset, so the output keeps the ORIGINAL's characters (its
  * whitespace) and `overlapLength` is measured in ORIGINAL characters.
+ *
+ * Join rule: the generated text's own boundary whitespace between the
+ * repeated tail and the new content is preserved verbatim — the model's
+ * space/newline/paragraph break IS the word boundary; trimming it would
+ * glue "…wings." to "And then…". The remainder is trimmed ONLY when the
+ * original already ends on whitespace (the break is already there).
  */
 
 export interface MergeContinuationResult {
@@ -79,6 +85,10 @@ function longestNormalizedOverlap(normOriginal: string, normGenerated: string): 
 	return matched;
 }
 
+function endsWithWhitespace(text: string): boolean {
+	return text.length > 0 && /\s/.test(text[text.length - 1] as string);
+}
+
 /**
  * Stitches a fallback continuation onto the original text, dropping the
  * longest whitespace-tolerant overlap. `overlapLength` is measured in
@@ -92,7 +102,12 @@ export function mergeContinuation(original: string, generated: string): MergeCon
 	const normGenerated = normalizeWithMap(generated);
 	const overlapNorm = longestNormalizedOverlap(normOriginal.norm, normGenerated.norm);
 	if (overlapNorm === 0) {
-		return { content: original + generated.trimStart(), overlapLength: 0 };
+		// No repeat detected: the generated text continues the original
+		// directly. Its leading whitespace is the model's own join signal —
+		// keep it (mid-word continuations carry none); trim only when the
+		// original already ends on whitespace, so the break is not doubled.
+		const remainder = endsWithWhitespace(original) ? generated.trimStart() : generated;
+		return { content: original + remainder, overlapLength: 0 };
 	}
 
 	const suffixStart = normOriginal.indexMap[
@@ -102,8 +117,12 @@ export function mergeContinuation(original: string, generated: string): MergeCon
 		overlapNorm >= normGenerated.norm.length
 			? generated.length
 			: (normGenerated.indexMap[overlapNorm] as number);
+	// Same join rule as the no-overlap branch, applied to the text AFTER the
+	// dropped repeat (see the module doc comment).
+	const rawRemainder = generated.slice(remainderStart);
+	const remainder = endsWithWhitespace(original) ? rawRemainder.trimStart() : rawRemainder;
 	return {
-		content: original + generated.slice(remainderStart).trimStart(),
+		content: original + remainder,
 		overlapLength: original.length - suffixStart,
 	};
 }
