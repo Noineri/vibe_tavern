@@ -18,13 +18,22 @@ export interface ChatMessageRuntimeApi {
   sendMessageStream: (chatId: string, body: ChatSendBody, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
   regenerateMessage: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => Promise<MessageResponse>;
   regenerateMessageStream: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
+  /** LS-4a: continue the last assistant reply from its selected variant's text
+   *  (the variant text rides as the pushed-assistant continuation point); the
+   *  result appends as a NEW variant of the target message. */
   continueMessage: (chatId: string, messageId: string, signal?: AbortSignal) => Promise<MessageResponse>;
   continueMessageStream: (chatId: string, messageId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
   generateReply: (chatId: string, signal?: AbortSignal) => Promise<MessageResponse>;
   generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
   selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<VariantResponse>;
   setVariantTtsAnnotation: (chatId: string, messageId: string, variantIndex: number, text: string | null) => Promise<VariantResponse>;
-  addEditorVariant: (chatId: string, messageId: string, body: { readonly content: string; readonly sourceVariantIds: readonly import("@vibe-tavern/domain").MessageVariantId[]; readonly modelId?: string; readonly promptPresetId?: string; readonly finishReason?: string }) => Promise<MessageResponse>;
+  addEditorVariant: (chatId: string, messageId: string, body: {
+    readonly content: string;
+    readonly sourceVariantIds: readonly import("@vibe-tavern/domain").MessageVariantId[];
+    readonly modelId?: string;
+    readonly promptPresetId?: string;
+    readonly finishReason?: string;
+  }) => Promise<MessageResponse>;
   deleteVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<MessageResponse>;
   editMessage: (chatId: string, messageId: string, content: string, expectedVariantId?: import("@vibe-tavern/domain").MessageVariantId) => Promise<MessageResponse>;
   deleteMessage: (chatId: string, messageId: string) => Promise<MessageResponse>;

@@ -44,12 +44,25 @@ export async function assembleSessionPrompt(
   const strategy = await deps.resolveChatModeStrategy(chatId);
   const profile = strategy.mode === "rp" ? await deps.getActiveProviderProfile() : null;
   const model = options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel;
+  // Construct the lore AI-delegation callback (CTX-L2b) from Co-Author's
+  // connection settings. A complete lore pair selects that connection; an
+  // absent or dangling lore profile falls back to the Co-Author connection,
+  // never the RP active profile.
   const loreDelegate = await deps.buildLoreDelegate();
   const trackerDelegate = await deps.buildTrackerDelegate();
+  // CE-B1: lore entity lookup lets the edit / re-delegation tools target
+  // previously-created (persisted) lore entities across turns, not just ones
+  // drafted this turn. Built when a lorebook store is wired (production always
+  // wires it); absent in minimal/test contexts — tools then report no lookup.
   const loreEntityLookup = deps.createLoreEntityLookup();
+  // CE-D2: context-search session for indexed entity discovery. Lazily projects
+  // canonical entities into FTS5 on first search; the next turn rebuilds it.
   const contextSearchSession = deps.buildContextSearchSession(chatId);
   return strategy.assemble({
     promptService: deps.promptService,
+    // SP-5: co-author base resolves through the active service-prompt profile
+    // when a db handle is reachable; minimal/test contexts fall back to the
+    // bundled asset inside coauthor-prompt.
     db: deps.stores?.db,
     loaders: deps.buildChatModeLoaders(),
     loreDelegate,
@@ -68,6 +81,8 @@ export async function assembleSessionPrompt(
     presetId: options?.presetId,
     priorSummaries: options?.priorSummaries,
     coauthorEditorState: options?.coauthorEditorState,
+    // LS-10: the active profile's stored generation format; assembly resolves
+    // profile-over-preset precedence and inlines custom-template selections.
     providerGenerationFormat: profile?.generationFormat ?? null,
   });
 }
