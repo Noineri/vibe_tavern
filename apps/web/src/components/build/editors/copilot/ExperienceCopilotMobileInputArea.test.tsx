@@ -1,5 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
+import { createInstance } from "i18next";
+import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { ToolbarSelectItem } from "../../../shared/ToolbarSelect.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
@@ -59,6 +61,20 @@ mock.module("../../../shared/ToolbarSelect.js", () => ({
   ToolbarSelect: FakeToolbarSelect,
 }));
 
+// The favorites hook's mount effect fires the REAL RPC client (fetch with no
+// server under happy-dom) — its rejection settles into the hook's local error
+// state AFTER the test's synchronous flow, tripping one act() warning per
+// test. Stub the two favorites actions at the module boundary (SAFE: real
+// captured first, only the favorites fns overridden — same as the desktop
+// input-area suite). The hook's data path (store read) stays real: tests seed
+// the store directly. No test below asserts favorites UI.
+const realProviderActions = await import("../../../../stores/api-actions/provider-actions.js");
+mock.module("../../../../stores/api-actions/provider-actions.js", () => ({
+  ...realProviderActions,
+  loadFavoriteModelsAction: async () => {},
+  toggleFavoriteModelAction: async () => {},
+}));
+
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
   ({ ExperienceCopilotMobileInputArea } = await import("./ExperienceCopilotMobileInputArea.js"));
@@ -87,6 +103,30 @@ beforeEach(() => {
   seedStores();
 });
 
+// Per-test isolated i18next instance (empty resources ⇒ t() returns the key
+// verbatim, so every key-based assertion keeps passing). This silences
+// react-i18next's NO_I18NEXT_INSTANCE warning from the @-mention popover
+// WITHOUT touching the process-global i18n singleton: initI18n() has no reset
+// and would poison sibling files sharing the worker (R13).
+function makeIsolatedI18n() {
+  const instance = createInstance();
+  void instance.init({
+    lng: "en",
+    fallbackLng: "en",
+    resources: {},
+    ns: ["translation"],
+    defaultNS: "translation",
+    keySeparator: false,
+    nsSeparator: false,
+    interpolation: { prefix: "{", suffix: "}", escapeValue: false },
+  });
+  return instance;
+}
+
+function withIsolatedI18n(node: ReactNode) {
+  return <I18nextProvider i18n={makeIsolatedI18n()}>{node}</I18nextProvider>;
+}
+
 function renderMobileInput(over: Partial<Parameters<typeof ExperienceCopilotMobileInputArea>[0]> = {}) {
   const props = {
     isSending: false,
@@ -97,7 +137,7 @@ function renderMobileInput(over: Partial<Parameters<typeof ExperienceCopilotMobi
     onProviderChange: mock(),
     ...over,
   };
-  const utils = render(<ExperienceCopilotMobileInputArea {...props} />);
+  const utils = render(withIsolatedI18n(<ExperienceCopilotMobileInputArea {...props} />));
   return { ...utils, props };
 }
 

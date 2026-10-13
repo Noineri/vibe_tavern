@@ -1,5 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
+import { createInstance } from "i18next";
+import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { ToolbarSelectItem } from "../../../shared/ToolbarSelect.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
@@ -142,6 +144,30 @@ beforeEach(() => {
   seedStores();
 });
 
+// Per-test isolated i18next instance (empty resources ⇒ t() returns the key
+// verbatim, so every key-based assertion keeps passing). This silences
+// react-i18next's NO_I18NEXT_INSTANCE warning from the @-mention popover
+// WITHOUT touching the process-global i18n singleton: initI18n() has no reset
+// and would poison sibling files sharing the worker (R13).
+function makeIsolatedI18n() {
+  const instance = createInstance();
+  void instance.init({
+    lng: "en",
+    fallbackLng: "en",
+    resources: {},
+    ns: ["translation"],
+    defaultNS: "translation",
+    keySeparator: false,
+    nsSeparator: false,
+    interpolation: { prefix: "{", suffix: "}", escapeValue: false },
+  });
+  return instance;
+}
+
+function withIsolatedI18n(node: ReactNode) {
+  return <I18nextProvider i18n={makeIsolatedI18n()}>{node}</I18nextProvider>;
+}
+
 function renderInput(over: Partial<Parameters<typeof ExperienceCopilotInputArea>[0]> = {}) {
   const props = {
     isSending: false,
@@ -152,7 +178,7 @@ function renderInput(over: Partial<Parameters<typeof ExperienceCopilotInputArea>
     onProviderChange: mock(),
     ...over,
   };
-  const utils = render(<ExperienceCopilotInputArea {...props} />);
+  const utils = render(withIsolatedI18n(<ExperienceCopilotInputArea {...props} />));
   return { ...utils, props };
 }
 
@@ -255,7 +281,7 @@ describe("ExperienceCopilotInputArea", () => {
 
     // A prefill object arriving (fresh identity per copy click in the Shell)
     // replaces the draft — the user reviews/edits, then sends manually.
-    rerender(<ExperienceCopilotInputArea {...props} prefill={{ text: "digest from tester" }} />);
+    rerender(withIsolatedI18n(<ExperienceCopilotInputArea {...props} prefill={{ text: "digest from tester" }} />));
     expect(textarea.value).toBe("digest from tester");
   });
 });

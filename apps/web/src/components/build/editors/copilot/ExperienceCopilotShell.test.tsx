@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { wireUiSettings } from "../../../../../test/wire-fixtures.js";
 import type { ReactElement, ReactNode } from "react";
+import { createInstance } from "i18next";
+import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { AgentPlan, ExperienceCopilotContextLink, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
@@ -432,6 +434,32 @@ beforeEach(() => {
   fetchRouter.mockClear();
 });
 
+// Per-test isolated i18next instance (empty resources ⇒ t() returns the key
+// verbatim, so every key-based assertion keeps passing). This silences
+// react-i18next's NO_I18NEXT_INSTANCE warning from the @-mention popover
+// WITHOUT touching the process-global i18n singleton: initI18n() has no reset
+// and would poison sibling files sharing the worker (R13).
+function makeIsolatedI18n() {
+  const instance = createInstance();
+  void instance.init({
+    lng: "en",
+    fallbackLng: "en",
+    resources: {},
+    ns: ["translation"],
+    defaultNS: "translation",
+    keySeparator: false,
+    nsSeparator: false,
+    interpolation: { prefix: "{", suffix: "}", escapeValue: false },
+  });
+  return instance;
+}
+
+// The provider must wrap BOTH the initial render and every rerender: a root
+// element type change between render and rerender unmounts/remounts the tree.
+function withIsolatedI18n(node: ReactNode) {
+  return <I18nextProvider i18n={makeIsolatedI18n()}>{node}</I18nextProvider>;
+}
+
 function renderShell(over: Partial<Parameters<typeof ExperienceCopilotShell>[0]> = {}) {
   const props = {
     scriptId: "script-1",
@@ -444,7 +472,7 @@ function renderShell(over: Partial<Parameters<typeof ExperienceCopilotShell>[0]>
     onVisualChange: mock(),
     ...over,
   };
-  const utils = render(<ExperienceCopilotShell {...props} />);
+  const utils = render(withIsolatedI18n(<ExperienceCopilotShell {...props} />));
   return { ...utils, props };
 }
 
@@ -1348,13 +1376,15 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
     // The parent applies a change (e.g. the user accepted a proposal / edited
     // by hand): the buffer drifted from the turn-start snapshot.
     rerender(
-      <ExperienceCopilotShell
-        scriptId="script-1"
-        rulesCode="// rules buffer v2"
-        visualSource="// visual buffer"
-        onRulesChange={onRulesChange}
-        onVisualChange={mock()}
-      />,
+      withIsolatedI18n(
+        <ExperienceCopilotShell
+          scriptId="script-1"
+          rulesCode="// rules buffer v2"
+          visualSource="// visual buffer"
+          onRulesChange={onRulesChange}
+          onVisualChange={mock()}
+        />,
+      ),
     );
     expect(getByTestId("copilot-toolbar-revert")).toBeDefined();
 
@@ -1374,14 +1404,16 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
 
     // Drift the rules buffer while on the rules position: revert visible…
     rerender(
-      <ExperienceCopilotShell
-        scriptId="script-1"
-        rulesCode="// rules buffer v2"
-        visualSource="// visual buffer"
-        onRulesChange={mock()}
-        onVisualChange={mock()}
-        creationMode
-      />,
+      withIsolatedI18n(
+        <ExperienceCopilotShell
+          scriptId="script-1"
+          rulesCode="// rules buffer v2"
+          visualSource="// visual buffer"
+          onRulesChange={mock()}
+          onVisualChange={mock()}
+          creationMode
+        />,
+      ),
     );
     expect(queryByTestId("copilot-toolbar-revert")).not.toBeNull();
     // …but the try (sandbox) position has no code editor / review affordances.
@@ -1405,19 +1437,21 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
 
     // The turn's write_buffer proposal lands in the live store (as the SSE
     // tool-result path would fill it).
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "c1",
-            toolName: "write_buffer",
-            status: "done",
-            target: "rules",
-            proposed: "// rules buffer v2",
-            summary: "rewrote",
-          },
-        ],
-      },
+    await act(async () => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "c1",
+              toolName: "write_buffer",
+              status: "done",
+              target: "rules",
+              proposed: "// rules buffer v2",
+              summary: "rewrote",
+            },
+          ],
+        },
+      });
     });
 
     // The review bar appears with the pending count and the rules tab dot.
@@ -1445,19 +1479,21 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "w1",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "header + tail",
-            target: "rules",
-            proposed: "// RULES v2\nconst keep = 1;\nconst tail = 22.",
-          },
-        ],
-      },
+    await act(async () => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "header + tail",
+              target: "rules",
+              proposed: "// RULES v2\nconst keep = 1;\nconst tail = 22.",
+            },
+          ],
+        },
+      });
     });
     await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
     await waitFor(() => expect(container.querySelectorAll(".cm-copilotDiffDismiss")).toHaveLength(2));
@@ -1535,7 +1571,7 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
     expect(onRulesChange).toHaveBeenCalledWith(HYBRID);
     // The parent applies the accept → the draft becomes the hybrid.
-    utils.rerender(<ExperienceCopilotShell {...utils.props} rulesCode={HYBRID} onRulesChange={onRulesChange} />);
+    utils.rerender(withIsolatedI18n(<ExperienceCopilotShell {...utils.props} rulesCode={HYBRID} onRulesChange={onRulesChange} />));
     await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
 
     fireEvent.click(utils.getByTestId("copilot-cancel-all"));
@@ -1557,11 +1593,13 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     // Drift the MIDDLE context line (not part of hunk 0's added/removed lines),
     // so hunk 0 still anchors onto the drifted buffer.
     utils.rerender(
-      <ExperienceCopilotShell
-        {...utils.props}
-        rulesCode={HYBRID.replace("const keep = 1;", "const keep = 999;")}
-        onRulesChange={onRulesChange}
-      />,
+      withIsolatedI18n(
+        <ExperienceCopilotShell
+          {...utils.props}
+          rulesCode={HYBRID.replace("const keep = 1;", "const keep = 999;")}
+          onRulesChange={onRulesChange}
+        />,
+      ),
     );
 
     fireEvent.click(utils.getByTestId("copilot-cancel-all"));
@@ -1583,19 +1621,21 @@ describe("ExperienceCopilotShell — RV-3: tab-scoped cancel buttons", () => {
     fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "w-big",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "rewrote",
-            target: "rules",
-            proposed: bigProposed,
-          },
-        ],
-      },
+    await act(async () => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w-big",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "rewrote",
+              target: "rules",
+              proposed: bigProposed,
+            },
+          ],
+        },
+      });
     });
     await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
 
@@ -1664,20 +1704,24 @@ describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn",
     await flushSessionLoad();
   }
 
+  // Direct store writes re-render the mounted shell outside React's event flow
+  // — wrap the trigger in act() so no "not wrapped in act" warning fires.
   function seedProposal(text: string) {
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: `w-${text.length}`,
-            toolName: "write_buffer",
-            status: "done",
-            summary: "wrote rules",
-            target: "rules",
-            proposed: text,
-          },
-        ],
-      },
+    act(() => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: `w-${text.length}`,
+              toolName: "write_buffer",
+              status: "done",
+              summary: "wrote rules",
+              target: "rules",
+              proposed: text,
+            },
+          ],
+        },
+      });
     });
   }
 
@@ -1739,19 +1783,21 @@ describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn",
 
     // Turn 2: the model proposes ONLY a visual (rules untouched).
     await sendOne("now write the visual");
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "v1",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "wrote visual",
-            target: "visual",
-            proposed: "<!doctype html><html><body>v2</body></html>",
-          },
-        ],
-      },
+    await act(async () => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "v1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "wrote visual",
+              target: "visual",
+              proposed: "<!doctype html><html><body>v2</body></html>",
+            },
+          ],
+        },
+      });
     });
 
     // The visual round shows on the visual tab…
@@ -1781,30 +1827,34 @@ describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", (
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
 
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "w1",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "two edits",
-            target: "rules",
-            proposed: "// RULES v2\nconst keep = 1;\nconst tail = 2;",
-          },
-        ],
-      },
+    await act(async () => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "two edits",
+              target: "rules",
+              proposed: "// RULES v2\nconst keep = 1;\nconst tail = 2;",
+            },
+          ],
+        },
+      });
     });
     await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
 
     // External drift: the template tool rewrote the whole buffer — no hunk can
     // anchor. Accept-all must skip BOTH hunks, warn, and write NOTHING.
     utils.rerender(
-      <ExperienceCopilotShell
-        {...utils.props}
-        rulesCode="// HAND-EDITED BUFFER"
-        onRulesChange={onRulesChange}
-      />,
+      withIsolatedI18n(
+        <ExperienceCopilotShell
+          {...utils.props}
+          rulesCode="// HAND-EDITED BUFFER"
+          onRulesChange={onRulesChange}
+        />,
+      ),
     );
     fireEvent.click(utils.getByTestId("copilot-accept-all"));
 
@@ -1825,30 +1875,34 @@ describe("ExperienceCopilotShell — CD-8: conflict hunks under buffer drift", (
     await waitFor(() => expect(streamCalls()).toHaveLength(1));
     await flushSessionLoad();
 
-    useExperienceCopilotTurnStore.setState({
-      turnsByThread: {
-        "thread-new": [
-          {
-            toolCallId: "w1",
-            toolName: "write_buffer",
-            status: "done",
-            summary: "header + tail",
-            target: "rules",
-            proposed: "// RULES v2\nconst keep = 1;\nconst tail = 22;",
-          },
-        ],
-      },
+    await act(async () => {
+      useExperienceCopilotTurnStore.setState({
+        turnsByThread: {
+          "thread-new": [
+            {
+              toolCallId: "w1",
+              toolName: "write_buffer",
+              status: "done",
+              summary: "header + tail",
+              target: "rules",
+              proposed: "// RULES v2\nconst keep = 1;\nconst tail = 22;",
+            },
+          ],
+        },
+      });
     });
     await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
 
     // Drift away from the MIDDLE line only: the header hunk and the tail hunk
     // still anchor; they splice onto the drifted text (no clobber of the edit).
     utils.rerender(
-      <ExperienceCopilotShell
-        {...utils.props}
-        rulesCode={base.replace("const keep = 1;", "const keep = 999;")}
-        onRulesChange={onRulesChange}
-      />,
+      withIsolatedI18n(
+        <ExperienceCopilotShell
+          {...utils.props}
+          rulesCode={base.replace("const keep = 1;", "const keep = 999;")}
+          onRulesChange={onRulesChange}
+        />,
+      ),
     );
     fireEvent.click(utils.getByTestId("copilot-accept-all"));
 
@@ -2108,6 +2162,10 @@ describe("ExperienceCopilotShell — E6 mobile management surfaces (MOBILE_DEFEC
     mobileOverride = true;
     const onBack = mock();
     const { getByTestId } = renderShell({ onBack, editTabHeader: <div data-testid="e6-header-node">management cluster</div> });
+    // Settle the mount-time loadSession chain inside act (every other test
+    // does this via flushSessionLoad — without it the chain lands outside
+    // act() and warns repeatedly).
+    await flushSessionLoad();
 
     const chevron = getByTestId("copilot-mobile-back");
     expect(chevron.getAttribute("aria-label")).toBe("experience_editor_back");
