@@ -4,10 +4,12 @@
  * (AGENT_SHELL_PLAN, Wave 1 / AS-2a). A "kind" is a whole agent species
  * (today: the experience copilot; later: the script agent, AS-7), NOT a
  * per-instance profile: the descriptor carries only species-level facts.
- * Buffers / tool builders / prompt rendering arrive as FUNCTIONS in AS-2b/2c
- * and are deliberately absent here — a field is added only when a second kind
- * can already be expressed through it (no "generic" field that secretly
- * carries experience semantics).
+ * Buffers / tool builders arrive as FUNCTIONS in AS-2c and are deliberately
+ * absent here — a field is added only when a second kind can already be
+ * expressed through it (no "generic" field that secretly carries experience
+ * semantics). The ONE function carried today is `renderContextPackage`
+ * (AS-2b): the per-turn context package is kind-owned prose, so the generic
+ * assembly delegates to the descriptor instead of rendering it itself.
  *
  * Registry contract (this file is pure types — see agent-kind-registry.ts):
  * a kind module builds one descriptor and self-registers it at module init;
@@ -25,10 +27,15 @@ import type { ScriptKind } from "@vibe-tavern/domain";
 export type AgentKindId = string;
 
 /**
- * One agent species. All fields are species-level; per-experience (or
- * per-script) variation lives in the copilot profiles, not here.
+ * One agent species. Generic over the kind's OWN context-package input
+ * `CTX` — OPAQUE to the core (the registry stores `AgentKind<unknown>`;
+ * callers narrow via `getAgentKindOf<CTX>`). No shared `AgentKindContext`
+ * shape exists yet: it arrives with AS-2c's request/deps carve, and
+ * speculative empty shapes are banned (AS-2a design note). All fields are
+ * species-level; per-experience (or per-script) variation lives in the
+ * copilot profiles, not here.
  */
-export interface AgentKind {
+export interface AgentKind<CTX = unknown> {
   /** Stable kind id used as the registry key. */
   readonly id: AgentKindId;
   /**
@@ -64,4 +71,14 @@ export interface AgentKind {
    * default, projected through the kind's own wire-contract tool keys.
    */
   readonly defaultToolSet: Readonly<Record<string, boolean>>;
+  /**
+   * Render the kind's per-turn context package — the volatile system-message
+   * section that mirrors the author's CURRENT working state (buffers,
+   * discovered contract, test feedback, authoring step). The `ctx` shape is
+   * KIND-OWNED and opaque here; the experience assembly (AS-2b) calls it via
+   * `getAgentKindOf<CTX>("…").renderContextPackage(ctx)` instead of rendering
+   * the context itself — proving the plugin path works end-to-end inside one
+   * kind before a second kind registers.
+   */
+  renderContextPackage(ctx: CTX): string;
 }

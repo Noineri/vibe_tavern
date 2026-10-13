@@ -1,18 +1,29 @@
 /**
  * The `experience` agent kind — the delegation shell (AGENT_SHELL_PLAN, Wave 1
- * / AS-2a). Self-registers at module init by DELEGATING to the existing
- * experience-copilot module: every species-level fact comes from
- * EXPERIENCE_COPILOT_MODULE / the wire contract; zero new logic lives here.
- * AS-2b/2c will grow this shell with the kind-specific FUNCTIONS (buffers,
- * tool builders, prompt rendering) while the descriptor in agent-kind.ts
+ * / AS-2a; grown in Wave 2 / AS-2b). Self-registers at module init by
+ * DELEGATING to the existing experience-copilot module: every species-level
+ * fact comes from EXPERIENCE_COPILOT_MODULE / the wire contract, and since
+ * AS-2b the kind also owns `renderContextPackage` — the per-turn context
+ * package moved VERBATIM out of the experience prompt assembler, so the
+ * generic assembly renders context THROUGH THE DESCRIPTOR (the plugin path)
+ * instead of calling experience code directly. AS-2c will grow this shell
+ * further (buffers, tool builders) while the descriptor in agent-kind.ts
  * stays experience-agnostic.
  *
  * Loaded for its side effect — server-runtime.ts imports this beside the
- * other copilot imports so the kind is registered at startup.
+ * other copilot imports so the kind is registered at startup, and the
+ * experience prompt module side-effect-imports it so the descriptor path
+ * works in any process that assembles a prompt (tests included).
  */
 
 import { COPILOT_TOOL_KEYS, copilotToolSetSchema } from "@vibe-tavern/api-contracts";
 import { EXPERIENCE_COPILOT_MODULE } from "../../interactive/copilot/experience-copilot-module.js";
+import type {
+  ExperienceCopilotBoundVisual,
+  ExperienceCopilotContract,
+  ExperienceCopilotStep,
+  ExperienceCopilotTestFeedback,
+} from "../../interactive/copilot/experience-copilot-prompt.js";
 import type { AgentKind } from "../agent-kind.js";
 import { registerAgentKind } from "../agent-kind-registry.js";
 
@@ -25,11 +36,95 @@ for (const key of COPILOT_TOOL_KEYS) {
   if (EXPERIENCE_COPILOT_MODULE.toolSet[key] === true) defaultToolSet[key] = true;
 }
 
-registerAgentKind({
+/**
+ * The experience kind's context-package input — the seven values the old
+ * `renderContextPackage` took as parameters (same optionality as the
+ * assembler passes today: `visual`/`boundVisuals` may be absent, `contract`
+ * may be null when derivation failed or was skipped, `testFeedback` may be
+ * null/undefined). Opaque to the core: only this module knows the shape.
+ */
+export interface ExperienceAgentContext {
+  readonly rules: string;
+  readonly visual: string | undefined;
+  readonly boundVisuals: readonly ExperienceCopilotBoundVisual[] | undefined;
+  readonly contract: ExperienceCopilotContract | null;
+  readonly rulesTrusted: boolean;
+  readonly testFeedback: ExperienceCopilotTestFeedback | null | undefined;
+  readonly step: ExperienceCopilotStep;
+}
+
+/** The experience context package — moved VERBATIM from
+ *  `experience-copilot-prompt.ts` (same sections, same order, same strings);
+ *  the object is destructured into the same locals the parameter list used to
+ *  bind. The byte output stays pinned by the prompt suite + AS-1. */
+function renderContextPackage(ctx: ExperienceAgentContext): string {
+  const { rules, visual, boundVisuals, contract, rulesTrusted, testFeedback, step } = ctx;
+  const sections = [
+    "# Current working context",
+    `Authoring step: **${step}**`,
+  ];
+
+  // Rules buffer
+  sections.push("", "## Current rules buffer");
+  sections.push(rules.trim() ? "```js\n" + rules + "\n```" : "(empty — help the user write valid rules)");
+
+  // Visual buffer (only when present)
+  if (visual !== undefined && visual.trim()) {
+    sections.push("", "## Current visual buffer", "```js\n" + visual + "\n```");
+  }
+
+  // Bound visuals (metadata only)
+  if (boundVisuals && boundVisuals.length > 0) {
+    sections.push(
+      "",
+      "## Bound visuals (metadata only — the user binds these; you cannot)",
+      ...boundVisuals.map((v) => `- **${v.name}** (kind: ${v.kind}) [id: \`${v.id}\`]`),
+    );
+  }
+
+  // Contract (discovered definition)
+  if (contract !== null) {
+    sections.push(
+      "",
+      "## Discovered experience definition",
+      `- manifest: **${contract.manifestName}** (id: \`${contract.manifestId}\`)`,
+      `- apiVersion: ${contract.apiVersion}`,
+      `- capabilities: ${contract.declaredCapabilities.length > 0 ? contract.declaredCapabilities.join(", ") : "(none)"}`,
+      `- choose method: ${contract.hasChoose ? "present" : "absent"}`,
+      `- flavor method: ${contract.hasFlavor ? "present" : "absent"}`,
+    );
+  } else {
+    sections.push(
+      "",
+      "## Discovered experience definition",
+      rulesTrusted
+        ? "(discovery failed or rules are empty — the user may be starting fresh; help them write a valid rules package)"
+        : "(not derived: script is imported and not yet enabled — the summary is skipped until the user enables it)",
+    );
+  }
+
+  // Test feedback (the latest digest the user sent back from the test panel)
+  if (testFeedback) {
+    sections.push(
+      "",
+      "## Latest test feedback (sent by the user from the test panel)",
+      "```json",
+      JSON.stringify(testFeedback),
+      "```",
+    );
+  }
+
+  return sections.join("\n");
+}
+
+const kind: AgentKind<ExperienceAgentContext> = {
   id: "experience",
   servesScriptKinds: ["interactive"],
   basePromptServiceKey: "copilot_base",
   skillRootId: "experience",
   toolSetSchema: copilotToolSetSchema,
   defaultToolSet,
-});
+  renderContextPackage,
+};
+
+registerAgentKind(kind);

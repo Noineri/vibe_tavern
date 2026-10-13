@@ -49,7 +49,6 @@ export class NoAgentKindForScriptKindError extends Error {
 // Insertion-ordered: registration order is the documented precedence for
 // resolveKindForScript.
 const kinds = new Map<AgentKindId, AgentKind>();
-
 /**
  * Register one agent kind. Throws
  * {@link AgentKindAlreadyRegisteredError} on a duplicate id. Returns an
@@ -70,6 +69,18 @@ export function getAgentKind(id: AgentKindId): AgentKind {
   const kind = kinds.get(id);
   if (kind === undefined) throw new UnknownAgentKindError(id);
   return kind;
+}
+
+/**
+ * Typed kind getter (AS-2b): same lookup as {@link getAgentKind}, but returns
+ * `AgentKind<CTX>` so call sites (e.g. the generic assembly calling
+ * `renderContextPackage`) pass the kind's own ctx shape WITHOUT casting. The
+ * ctx stays opaque to the registry — the type argument is the CALLER's
+ * assertion of the kind's declared ctx, exactly like the descriptor the kind
+ * registered.
+ */
+export function getAgentKindOf<CTX>(id: AgentKindId): AgentKind<CTX> {
+  return getAgentKind(id);
 }
 
 /**

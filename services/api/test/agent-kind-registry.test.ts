@@ -25,11 +25,13 @@ import type { AgentKind } from "../src/domain/agent/agent-kind.js";
 import {
   registerAgentKind,
   getAgentKind,
+  getAgentKindOf,
   resolveKindForScript,
   AgentKindAlreadyRegisteredError,
   UnknownAgentKindError,
   NoAgentKindForScriptKindError,
 } from "../src/domain/agent/agent-kind-registry.js";
+import type { ExperienceAgentContext } from "../src/domain/agent/kinds/experience-kind.js";
 // Side-effect import: registers the real experience kind (delegation shell).
 import "../src/domain/agent/kinds/experience-kind.js";
 
@@ -42,6 +44,7 @@ function makeFakeKind(id: string, servesScriptKinds: readonly ScriptKind[]): Age
     skillRootId: id,
     toolSetSchema: z.object({ fake_tool: z.boolean().optional() }).strict(),
     defaultToolSet: { fake_tool: true },
+    renderContextPackage: () => "", // required since AS-2b; fakes don't render
   };
 }
 
@@ -140,5 +143,25 @@ describe("agent-kind registry (AS-2a)", () => {
     }
     expect(caught).toBeInstanceOf(NoAgentKindForScriptKindError);
     expect((caught as NoAgentKindForScriptKindError).scriptKind).toBe("bogus");
+  });
+});
+
+describe("getAgentKindOf + descriptor context rendering (AS-2b)", () => {
+  test("getAgentKindOf<ExperienceAgentContext>(\"experience\").renderContextPackage renders the context package through the descriptor", () => {
+    const kind = getAgentKindOf<ExperienceAgentContext>("experience");
+    const rendered = kind.renderContextPackage({
+      rules: "context.experience.register({})",
+      visual: undefined,
+      boundVisuals: undefined,
+      contract: null,
+      rulesTrusted: true,
+      testFeedback: null,
+      step: "rules",
+    });
+    // Pins the DESCRIPTOR PATH exists (AS-2b): the kind renders the context
+    // package through the registry getter, no direct experience-module call.
+    // The byte output itself is pinned by the prompt suite + AS-1.
+    expect(rendered.startsWith("# Current working context")).toBe(true);
+    expect(rendered).toContain("Authoring step:");
   });
 });
