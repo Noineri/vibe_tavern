@@ -1,5 +1,5 @@
 import { brandId, EventBus } from "@vibe-tavern/domain";
-import type { ChatBranchId, ChatId, MessageId, PromptPresetId, Attachment } from "@vibe-tavern/domain";
+import type { ChatBranchId, ChatId, MessageId, PromptPresetId } from "@vibe-tavern/domain";
 import type { ChatRuntime } from "../../runtime/session/session-runtime-chat.js";
 import type { SessionSnapshot, MessageResponse } from "../../api/contract/session-types.js";
 import type { ProviderOrchestrator } from "../providers/provider-orchestrator.js";
@@ -22,6 +22,7 @@ import { effectiveContextBudget, normalizeProviderType } from "@vibe-tavern/doma
 import { providerTokenContextFromProfile, runWithProviderTokenContext } from "../../infrastructure/ai/token-count-cache.js";
 import { resolveProtocol } from "../providers/protocol-registry.js";
 import { validation } from "../../shared/errors.js";
+import type { LiveChatSendInput } from "./live-chat-send-input.js";
 
 /** Context passed to every regex-text hook invocation (REGEX_EXTENSION_PLAN, RX-5). */
 export interface RegexHookContext {
@@ -95,28 +96,7 @@ export class LiveChatOrchestrator {
   // ─── Non-streaming methods ────────────────────────────────────────────
 
   /** Non-streaming send: prepare → execute → append reply → return snapshot. */
-  async sendMessage(input: {
-    chatId: string;
-    content: string;
-    attachments?: Attachment[];
-    profile: StoredProviderProfileRecord;
-    model: string;
-    transport?: CoauthorTransport;
-    prefill?: string;
-    signal?: AbortSignal;
-    visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
-    /** STT_PLAN ST-6: profile-bound transcriber for voice-note attachments. */
-    voiceTranscriber?: ProviderExecutionInput["voiceTranscriber"];
-    /** DICE-B11: optional commit intent threaded into `prepareLiveTurn` so the
-     *  user-message insert and pending-lane bind share one atomic transaction.
-     *  Absent ⇒ no-Dice send behavior (byte-for-byte current path). */
-    diceCommit?: import("./chat-application-types.js").SendMessageRequest["diceCommit"];
-    /** IR-51: optional experience attachment commit intent threaded into
-     *  `prepareLiveTurn` so the user-message insert and the queued-attachment
-     *  verify-and-bind share one atomic transaction (composed with the Dice
-     *  bind when both are present). Absent ⇒ no-experience send behavior. */
-    experienceCommit?: import("./chat-application-types.js").SendMessageRequest["experienceCommit"];
-  }): Promise<{
+  async sendMessage(input: LiveChatSendInput): Promise<{
     preparedMessageCount: number;
     promptMessageCount: number;
     reply: string;
@@ -127,7 +107,7 @@ export class LiveChatOrchestrator {
     // RX-8 regex seam: USER_INPUT transform (persist-mode presets only).
     const transformedContent = await this.applyRegexLayer("USER_INPUT", input.chatId, input.content);
     const prepared = await this.withTokenContext(provider, () =>
-      this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit),
+      this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit, input.coauthorEditorState),
     );
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     logSendDebug("live.send.prepare.done", {
@@ -381,29 +361,13 @@ export class LiveChatOrchestrator {
   // ─── Streaming methods ────────────────────────────────────────────────
 
   /** Streaming send: prepare → execute stream → yield SSE events → append on finish/abort. */
-  async *sendMessageStream(input: {
-    chatId: string;
-    content: string;
-    attachments?: Attachment[];
-    profile: StoredProviderProfileRecord;
-    model: string;
-    transport?: CoauthorTransport;
-    prefill?: string;
-    signal?: AbortSignal;
-    visionAssets?: { cachedModels: CachedModelEntry[]; visionModel: string | null; assetLoader: (assetId: string) => Promise<Buffer | null>; visionDescribePrompt?: string };
-    /** STT_PLAN ST-6: profile-bound transcriber for voice-note attachments. */
-    voiceTranscriber?: ProviderExecutionInput["voiceTranscriber"];
-    /** DICE-B11: optional commit intent threaded into `prepareLiveTurn`. See sendMessage. */
-    diceCommit?: import("./chat-application-types.js").SendMessageRequest["diceCommit"];
-    /** IR-51: optional experience attachment commit intent. See sendMessage. */
-    experienceCommit?: import("./chat-application-types.js").SendMessageRequest["experienceCommit"];
-  }): AsyncGenerator<{ event: string; data: string }> {
+  async *sendMessageStream(input: LiveChatSendInput): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
     logSendDebug("live.send-stream.prepare.start", { chatId: input.chatId, model: provider.model });
     // RX-8 regex seam: USER_INPUT transform (persist-mode presets only).
     const transformedContent = await this.applyRegexLayer("USER_INPUT", input.chatId, input.content);
     const prepared = await this.withTokenContext(provider, () =>
-      this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit),
+      this.chatRuntime.prepareLiveTurn(brandId<ChatId>(input.chatId), transformedContent, provider.model, provider.profile.maxTokens, input.attachments, input.diceCommit, input.experienceCommit, input.coauthorEditorState),
     );
     this.notifyUserMessageCreated(input.chatId, prepared.userMessage);
     // Stored from here on: a later error leaves it in the chat — the client reloads, not restores the draft.

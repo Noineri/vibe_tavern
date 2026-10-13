@@ -15,6 +15,7 @@ import type {
 import type { IChatOrder } from "./session-runtime-chat-order.js";
 import type { PromptTraceDraft } from "../../domain/prompt/prompt-assembly-service.js";
 import type { ChatModeAssembleResult } from "../../domain/chat/chat-mode-strategy.js";
+import type { CoauthorEditorState } from "@vibe-tavern/api-contracts";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { notFound } from "../../shared/errors.js";
 
@@ -71,7 +72,7 @@ export interface ChatRuntimeDeps {
   assemblePrompt: (
     chatId: ChatId,
     branchId?: ChatBranchId,
-    options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId },
+    options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; coauthorEditorState?: CoauthorEditorState },
   ) => Promise<ChatModeAssembleResult>;
   getSnapshot: (chatId: ChatId) => Promise<SessionSnapshot>;
   /** Narrowed message-path response (messages + contextPreview + latest trace; summaries optional). */
@@ -111,12 +112,12 @@ export class ChatRuntime {
    * but with attachments) DOES insert — the message carries its attachments and,
    * when `diceCommit` is present, binds Dice exactly like a prose send (DICE-B11).
    */
-  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[], diceCommit?: SendMessageRequest["diceCommit"], experienceCommit?: SendMessageRequest["experienceCommit"]): Promise<PreparedLiveTurn> {
+  async prepareLiveTurn(chatId: ChatId, content: string, model: string, responseReserve?: number, attachments?: import("@vibe-tavern/domain").Attachment[], diceCommit?: SendMessageRequest["diceCommit"], experienceCommit?: SendMessageRequest["experienceCommit"], coauthorEditorState?: CoauthorEditorState): Promise<PreparedLiveTurn> {
     const { chatApp, assemblePrompt, getSnapshot } = this.deps;
     const trimmed = content.trim();
     const hasAttachments = !!(attachments && attachments.length > 0);
     if (!trimmed && !hasAttachments) {
-      const assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
+      const assembled = await assemblePrompt(chatId, undefined, { model, responseReserve, coauthorEditorState });
       return {
         prompt: assembled.prompt,
         tools: assembled.tools,
@@ -135,7 +136,7 @@ export class ChatRuntime {
 
     let assembled;
     try {
-      assembled = await assemblePrompt(chatId, undefined, { model, responseReserve });
+      assembled = await assemblePrompt(chatId, undefined, { model, responseReserve, coauthorEditorState });
     } catch (err) {
       try {
         // DICE-B11 / IR-51: release any Dice rolls AND any experience

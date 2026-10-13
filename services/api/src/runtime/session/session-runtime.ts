@@ -9,7 +9,6 @@ import {
 	type MessageId,
 	type PromptPresetId,
 	type StoredProviderProfileRecord,
-	SYSTEM_RESOURCE_ID,
 	tag,
 } from "@vibe-tavern/domain";
 import { ChatApplicationService } from "../../domain/chat/chat-application-service.js";
@@ -32,8 +31,9 @@ import { buildChatModeLoaders } from "./session-runtime-chat-mode-loaders.js";
 import { applyCoauthorDraft } from "./session-runtime-coauthor-apply.js";
 import { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
 export { pickBootstrapChatId } from "./bootstrap-chat-picker.js";
-import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
 import { createContextSearchSession } from "../../domain/context/context-search-service.js";
+import { createLoreEntityLookup } from "../../domain/coauthor/lore/lore-entity-lookup.js";
+import { assembleSessionPrompt, type SessionPromptAssemblyOptions } from "./session-runtime-prompt-assembly.js";
 import {
 	mapChatBranch,
 	mapChatDto,
@@ -757,60 +757,25 @@ import type { ImportStreamEvent } from "../../shared/st-directory-scanner.js";
 	private async assemblePrompt(
 		chatId: ChatId,
 		branchId?: ChatBranchId,
-		options?: { excludeMessageIds?: MessageId[]; model?: string; recentMessageLimit?: number; summary?: boolean; dryRun?: boolean; contextBudget?: number | null; responseReserve?: number; presetId?: PromptPresetId; priorSummaries?: Array<{ id: string; label?: string; content: string }> },
+		options?: SessionPromptAssemblyOptions,
 	) {
-		const strategy = await this.resolveChatModeStrategy(chatId);
-		const profile = strategy.mode === "rp" ? await this.getActiveProviderProfile() : null;
-		const model = options?.model ?? SYSTEM_RESOURCE_ID.unresolvedModel;
-		// Construct the lore AI-delegation callback (CTX-L2b) from Co-Author's
-		// connection settings. A complete lore pair selects that connection; an
-		// absent or dangling lore profile falls back to the Co-Author connection,
-		// never the RP active profile.
-		const loreDelegate = await createSessionLoreDelegate({
+		return assembleSessionPrompt({
 			stores: this.stores,
-			buildDelegate: this.buildLoreDelegate,
-		});
-		const trackerDelegate = await createSessionTrackerDelegate({
-			stores: this.stores,
-			buildDelegate: this.buildTrackerDelegate,
-		});
-		// CE-B1: lore entity lookup lets the edit / re-delegation tools target
-		// previously-created (persisted) lore entities across turns, not just
-		// ones drafted this turn. Built when a lorebook store is wired (production
-		// always wires it); absent in minimal/test contexts — edit tools that need
-		// it then throw a clear "no lookup configured" error.
-		const loreEntityLookup = this.stores?.lorebooks ? createLoreEntityLookup(this.stores.lorebooks) : undefined;
-		// CE-D2: context-search session for indexed entity discovery.
-		// Lazily projects all canonical entities into FTS5 on first search.
-		const contextSearchSession = this.stores ? this.buildContextSearchSession(chatId) : undefined;
-		return strategy.assemble({
 			promptService: this.promptService,
-			// SP-5: co-author base resolves through the active service-prompt profile
-			// when a db handle is reachable; `stores` is absent in minimal/test contexts
-			// (same defensiveness as contextSearchSession above) — the base then
-			// falls back to the bundled asset inside coauthor-prompt.
-			db: this.stores?.db,
-			loaders: this.buildChatModeLoaders(),
-			loreDelegate,
-			trackerDelegate,
-			loreEntityLookup,
-			contextSearchSession,
-			chatId,
-			branchId,
-			model,
-			excludeMessageIds: options?.excludeMessageIds,
-			recentMessageLimit: options?.recentMessageLimit,
-			summary: options?.summary,
-			dryRun: options?.dryRun,
-			contextBudget: options?.contextBudget ?? null,
-			responseReserve: options?.responseReserve,
-			presetId: options?.presetId,
-			priorSummaries: options?.priorSummaries,
-			// LS-10: the ACTIVE profile's stored generation format — the assembly
-			// applies the decision-(c) resolution (profile wins when set, else the
-			// preset fallback) and inlines custom-template selections.
-			providerGenerationFormat: profile?.generationFormat ?? null,
-		});
+			resolveChatModeStrategy: (id) => this.resolveChatModeStrategy(id),
+			getActiveProviderProfile: this.getActiveProviderProfile,
+			buildChatModeLoaders: () => this.buildChatModeLoaders(),
+			buildLoreDelegate: async () => createSessionLoreDelegate({
+				stores: this.stores,
+				buildDelegate: this.buildLoreDelegate,
+			}),
+			buildTrackerDelegate: async () => createSessionTrackerDelegate({
+				stores: this.stores,
+				buildDelegate: this.buildTrackerDelegate,
+			}),
+			createLoreEntityLookup: () => this.stores?.lorebooks ? createLoreEntityLookup(this.stores.lorebooks) : undefined,
+			buildContextSearchSession: (id) => this.stores ? this.buildContextSearchSession(id) : undefined,
+		}, chatId, branchId, options);
 	}
 
 	/** Build raw state access for non-RP chat-mode strategies. */

@@ -3,6 +3,7 @@ import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import type { EventBus } from "@vibe-tavern/domain";
 import type { ChatMode } from "@vibe-tavern/domain";
 import type { ToolSet } from "ai";
+import type { CoauthorEditorState } from "@vibe-tavern/api-contracts";
 import type { Character, Message as DbMessage, Chat as DbChat, AppDb } from "@vibe-tavern/db";
 import type {
   AssemblePromptForChatInput,
@@ -156,6 +157,8 @@ export interface ChatModeAssembleLoaders {
  * `loaders` gives non-RP strategies raw state access (see {@link ChatModeAssembleLoaders}).
  */
 export interface ChatModeAssembleInput extends AssemblePromptForChatInput {
+  /** Optional live co-author editor snapshot. Prompt/tool consumption is mode-owned. */
+  coauthorEditorState?: CoauthorEditorState;
   promptService: PromptAssemblyService;
   /** Service-prompt DB handle — when present, co-author base resolves via the active profile. */
   db?: AppDb;

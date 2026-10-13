@@ -47,6 +47,8 @@ import type { AgentPlanRuntimeApi } from "./agent-plan-contracts.js";
 export type { AgentPlanRuntimeApi };
 import type { CopilotProfileRuntimeApi } from "./copilot-profile-contracts.js";
 export type { CopilotProfileRuntimeApi };
+import type { ChatMessageRuntimeApi } from "./chat-runtime-contracts.js";
+export type { ChatSendBody, ChatMessageRuntimeApi } from "./chat-runtime-contracts.js";
 // Experience-copilot contracts live in their own module (extracted for the
 // size ratchet when AS-2c grew the interface — same pattern as the siblings
 // above); re-exported here so every existing import path keeps resolving.
@@ -137,7 +139,7 @@ export interface BootstrapRuntimeApi {
 
 // ─── Chat ────────────────────────────────────────────────────────────
 
-export interface ChatRuntimeApi {
+export interface ChatRuntimeApi extends ChatMessageRuntimeApi {
 	getChatSnapshot: (chatId: string) => Promise<ChatSwitchResponse>;
 	createChatForCharacter: (characterId: string, mode?: ChatMode) => Promise<ChatCreateResponse>;
 	/** Co-Author chats for a character (mode='coauthor'), for the Co-Author
@@ -170,36 +172,6 @@ export interface ChatRuntimeApi {
 	activateBranch: (chatId: string, branchId: string) => Promise<BranchResponse>;
 	deleteBranch: (chatId: string, branchId: string) => Promise<BranchResponse>;
 	renameBranch: (chatId: string, branchId: string, label: string) => Promise<BranchMetaResponse>;
-
-	// Messages
-	sendMessage: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; prefill?: string }, signal?: AbortSignal) => Promise<MessageResponse>;
-	sendMessageStream: (chatId: string, body: { content: string; attachments?: import("@vibe-tavern/domain").Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; prefill?: string }, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	regenerateMessage: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => Promise<MessageResponse>;
-	regenerateMessageStream: (chatId: string, messageId: string, override: RegenerateOverride, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	/** LS-4a: continue the last assistant reply from its selected variant's text
-	 *  (the variant text rides as the pushed-assistant continuation point); the
-	 *  result appends as a NEW variant of the target message. */
-	continueMessage: (chatId: string, messageId: string, signal?: AbortSignal) => Promise<MessageResponse>;
-	continueMessageStream: (chatId: string, messageId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	generateReply: (chatId: string, signal?: AbortSignal) => Promise<MessageResponse>;
-	generateReplyStream: (chatId: string, signal?: AbortSignal) => AsyncIterable<{ event: string; data: string }>;
-	selectVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<VariantResponse>;
-	setVariantTtsAnnotation: (chatId: string, messageId: string, variantIndex: number, text: string | null) => Promise<VariantResponse>;
-	addEditorVariant: (chatId: string, messageId: string, body: {
-		readonly content: string;
-		readonly sourceVariantIds: readonly MessageVariantId[];
-		readonly modelId?: string;
-		readonly promptPresetId?: string;
-		readonly finishReason?: string;
-	}) => Promise<MessageResponse>;
-	deleteVariant: (chatId: string, messageId: string, variantIndex: number) => Promise<MessageResponse>;
-	editMessage: (chatId: string, messageId: string, content: string, expectedVariantId?: MessageVariantId) => Promise<MessageResponse>;
-	deleteMessage: (chatId: string, messageId: string) => Promise<MessageResponse>;
-	updateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string, description: string) => Promise<{ ok: boolean }>;
-	updateAttachmentIncludeInPrompt: (chatId: string, messageId: string, attachmentId: string, includeInPrompt: boolean) => Promise<{ ok: boolean }>;
-	updateAttachmentPrompt: (chatId: string, messageId: string, attachmentId: string, prompt: string) => Promise<{ ok: boolean }>;
-	deleteAttachment: (chatId: string, messageId: string, attachmentId: string) => Promise<{ ok: boolean }>;
-	regenerateAttachmentDescription: (chatId: string, messageId: string, attachmentId: string) => Promise<{ description: string }>;
 
 	// Export
 	exportChatJsonl: (chatId: string) => Promise<string>;

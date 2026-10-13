@@ -1,4 +1,5 @@
 import type { ChatRuntimeApi, SttRuntimeApi } from "../contract/runtime-api.js";
+import type { ChatSendBody } from "../contract/chat-runtime-contracts.js";
 import { brandId, parseStoredAttachments, resolveEffectiveSettings, resolveCoauthorGenerationProfile, normalizeSceneTrackerConfig, applySceneTrackerConfigPatch, findInvalidXmlKeys, SCENE_PROMPT_FORMAT, COAUTHOR_TRANSPORT, type ChatId, type ChatBranchId, type MessageId, type MessageVariantId, type PromptPresetId, type SceneTrackerConfigPatch, type CoauthorContextLink, type CoauthorTransport, type StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { rebuildCurrentSceneCache } from "../../domain/insights/scene-cache.js";
 import type { Attachment } from "@vibe-tavern/domain";
@@ -137,7 +138,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		};
 	}
 
-	sendMessage = async (chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string }, signal?: AbortSignal) => {
+	sendMessage = async (chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) => {
 		logSendDebug("api.runtime.send.start", { chatId, contentLength: body.content?.length ?? 0 });
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		logSendDebug("api.runtime.send.profile", {
@@ -161,6 +162,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 			prefill: body.prefill,
 			diceCommit: resolveDiceCommit(body),
 			experienceCommit: resolveExperienceCommit(body),
+			coauthorEditorState: body.coauthorEditorState,
 			visionAssets: {
 				cachedModels: await resolveCachedModels(this.stores, profile),
 				visionModel: profile.visionModel,
@@ -178,7 +180,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 		return result.snapshot;
 	};
 
-	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: { content: string; attachments?: Attachment[]; diceMode?: "normal" | "immersive"; pendingRevision?: number; experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number; prefill?: string }, signal?: AbortSignal) {
+	sendMessageStream = async function* (this: ChatAdapter, chatId: string, body: ChatSendBody & { experienceAttachmentId?: string; experienceQueueRevision?: number; experienceSessionRevision?: number }, signal?: AbortSignal) {
 		const { profile, transport } = await this.resolveEffectiveProfileOrThrow({ chatId });
 		try {
 			yield* this.liveChatOrchestrator.sendMessageStream({
@@ -193,6 +195,7 @@ export class ChatAdapter implements ChatRuntimeApi {
 				prefill: body.prefill,
 				diceCommit: resolveDiceCommit(body),
 				experienceCommit: resolveExperienceCommit(body),
+				coauthorEditorState: body.coauthorEditorState,
 				visionAssets: {
 					cachedModels: await resolveCachedModels(this.stores, profile),
 					visionModel: profile.visionModel,
