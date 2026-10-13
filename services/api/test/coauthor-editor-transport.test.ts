@@ -37,6 +37,11 @@ const editorState = {
   },
 } satisfies CoauthorEditorState;
 
+const emptyEditorState = {
+  card: { name: "", body: "", greetings: ["", "hello"], cardClean: false },
+  review: { targets: [] },
+} satisfies CoauthorEditorState;
+
 const successNonstreaming: typeof nonstreamingProviderExecute = async () => ({
   text: "transport reply",
   providerResponse: { mode: "nonstream", steps: [] },
@@ -140,15 +145,15 @@ describe("co-author editor state transport", () => {
 
   test("non-stream empty-content co-author assembly preserves state and does not retain it for a legacy request", async () => {
     const env = await makeEnvironment();
-    expect((await post(env.app, `/api/chats/${env.chatId}/messages`, { content: "", coauthorEditorState: editorState })).status).toBe(200);
+    expect((await post(env.app, `/api/chats/${env.chatId}/messages`, { content: "", coauthorEditorState: emptyEditorState })).status).toBe(200);
     expect((await post(env.app, `/api/chats/${env.chatId}/messages`, { content: "" })).status).toBe(200);
-    expect(env.seen).toEqual([editorState, undefined]);
+    expect(env.seen).toEqual([emptyEditorState, undefined]);
   });
 
   test("stream empty-content co-author assembly preserves state and does not retain it for a legacy request", async () => {
     const env = await makeEnvironment();
-    await (await post(env.app, `/api/chats/${env.chatId}/messages/stream`, { content: "", coauthorEditorState: editorState })).text();
+    await (await post(env.app, `/api/chats/${env.chatId}/messages/stream`, { content: "", coauthorEditorState: emptyEditorState })).text();
     await (await post(env.app, `/api/chats/${env.chatId}/messages/stream`, { content: "" })).text();
-    expect(env.seen).toEqual([editorState, undefined]);
+    expect(env.seen).toEqual([emptyEditorState, undefined]);
   });
 });
