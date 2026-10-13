@@ -1,6 +1,18 @@
 export { pronounFormsSchema, createPersonaSchema, updatePersonaSchema, setPersonaSchema, personaExportQuerySchema, personaExportBulkQuerySchema, personaExportAvatarSchema, personaExportVtSchema, personaExportVtBulkSchema, stPronounSchema, stPersonaBackupSchema } from "./persona-schema.js";
 export { agentPlanSchema, agentPlanTaskSchema } from "./agent-plan-schema.js";
 export type { AgentPlan, AgentPlanTask } from "./agent-plan-schema.js";
+export {
+  reviewHunkCountsSchema,
+  reviewOutcomeSchema,
+  reviewTargetRecordSchema,
+  agentReviewSnapshotSchema,
+} from "./agent-review-snapshot.js";
+export type {
+  ReviewHunkCounts,
+  ReviewOutcome,
+  ReviewTargetRecord,
+  AgentReviewSnapshot,
+} from "./agent-review-snapshot.js";
 export { createCharacterSchema, updateCharacterSchema, buildCharacterDraftSchema, createVersionSchema, renameVersionSchema } from "./character-schema.js";
 export type { BuildCharacterDraft } from "./character-schema.js";
 export {
@@ -37,7 +49,7 @@ export {
   coauthorSectionEditInputSchema,
   coauthorSectionWriteInputSchema,
 } from "./chat-schema.js";
-export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTrackerTemplateOutput, CoauthorTarget, CoauthorEditItem, CoauthorSectionEditInput, CoauthorSectionWriteInput, SkillCatalogEntryDto, SkillCatalogError, SkillCatalog, SkillImportResult, CoauthorSkillReadOutput, CoauthorDraftLorebook, CoauthorDraftLoreEntry, CoauthorLoreBundle, CoauthorLoreBundleOutput, ContextSearchResultItem, CoauthorSearchOutput, CoauthorContextReadOutput, LorebookReviewSettingField, LoreEntryReviewSettingField, LoreReviewSettingChange } from "./chat-schema.js";
+export type { CoauthorApplyRequest, CoauthorCorrection, CoauthorToolOutput, CoauthorTrackerTemplateOutput, CoauthorTarget, CoauthorEditorState, CoauthorEditItem, CoauthorSectionEditInput, CoauthorSectionWriteInput, SkillCatalogEntryDto, SkillCatalogError, SkillCatalog, SkillImportResult, CoauthorSkillReadOutput, CoauthorDraftLorebook, CoauthorDraftLoreEntry, CoauthorLoreBundle, CoauthorLoreBundleOutput, ContextSearchResultItem, CoauthorSearchOutput, CoauthorContextReadOutput, LorebookReviewSettingField, LoreEntryReviewSettingField, LoreReviewSettingChange } from "./chat-schema.js";
 export { regenerateOverrideSchema } from "./chat-regenerate-schema.js";
 export type { RegenerateOverride } from "./chat-regenerate-schema.js";
 export {

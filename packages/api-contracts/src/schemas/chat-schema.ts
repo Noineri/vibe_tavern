@@ -1,5 +1,6 @@
 import { brandId, type MessageVariantId } from "@vibe-tavern/domain";
 import { z } from "zod";
+import { agentReviewSnapshotSchema } from "./agent-review-snapshot.js";
 import { updateLoreEntrySchema, updateLorebookMetaSchema } from "./lorebook-schema.js";
 import { trackerTemplateSchema } from "./tracker-template-schema.js";
 
@@ -92,6 +93,15 @@ export const sendMessageSchema = z.object({
    * providers), so this field is inert where prefill is unsupported.
    */
   prefill: z.string().min(1).optional(),
+  coauthorEditorState: z.object({
+    card: z.object({
+      name: z.string(),
+      body: z.string(),
+      greetings: z.array(z.string()),
+      cardClean: z.boolean(),
+    }),
+    review: agentReviewSnapshotSchema,
+  }).optional(),
 }).refine(
   (data) => (data.diceMode === undefined) === (data.pendingRevision === undefined),
   { message: "diceMode and pendingRevision must both be present or both absent" },
@@ -108,6 +118,7 @@ export const sendMessageSchema = z.object({
   },
   { message: "experienceAttachmentId, experienceQueueRevision, and experienceSessionRevision must all be present or all absent" },
 );
+export type CoauthorEditorState = NonNullable<z.infer<typeof sendMessageSchema>["coauthorEditorState"]>;
 
 const messageVariantIdSchema = z.string().min(1).transform((value) => brandId<MessageVariantId>(value));
 

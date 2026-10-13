@@ -22,6 +22,7 @@
  */
 
 import { z } from "zod";
+import { agentReviewSnapshotSchema } from "./agent-review-snapshot.js";
 import { experiencePlaygroundStartRequestSchema } from "./interactive-schema.js";
 
 /**
@@ -133,6 +134,9 @@ export const experienceCopilotStreamRequestSchema = z
     testFeedback: z.record(z.string(), z.unknown()).nullable().optional(),
     launchContext: experienceCopilotLaunchContextSchema.optional(),
     answer: experienceCopilotStreamAnswerSchema.optional(),
+    reviewSnapshot: agentReviewSnapshotSchema.optional(),
+    rulesSaved: z.boolean().optional(),
+    visualSaved: z.boolean().optional(),
   })
   .superRefine((val, ctx) => {
     const hasContent = val.content !== undefined;

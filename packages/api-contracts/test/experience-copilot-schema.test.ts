@@ -59,6 +59,43 @@ describe("experienceCopilotStreamRequestSchema (ER-6)", () => {
     });
   });
 
+  test("preserves review metadata on a content request without defaulting absent fields", () => {
+    const reviewSnapshot = {
+      targets: [{
+        target: "rules" as const,
+        roundId: "a1b2c3",
+        outcome: "applied" as const,
+        hunks: { accepted: 2, rejected: 0, pending: 1 },
+      }],
+    };
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      content: "continue",
+      providerProfileId: "p1",
+      reviewSnapshot,
+      rulesSaved: false,
+      visualSaved: false,
+    });
+    expect(parsed).toEqual({
+      content: "continue",
+      providerProfileId: "p1",
+      reviewSnapshot,
+      rulesSaved: false,
+      visualSaved: false,
+    });
+  });
+
+  test("retains an explicit empty review snapshot on a content request", () => {
+    expect(experienceCopilotStreamRequestSchema.parse({
+      content: "continue",
+      providerProfileId: "p1",
+      reviewSnapshot: { targets: [] },
+    })).toEqual({
+      content: "continue",
+      providerProfileId: "p1",
+      reviewSnapshot: { targets: [] },
+    });
+  });
+
   test("accepts the Try sandbox launch context", () => {
     const launchContext = {
       participants: [
@@ -102,6 +139,34 @@ describe("experienceCopilotStreamRequestSchema — answer mode (TAG-5)", () => {
       answer: { toolCallId: "tc_1", text: "make it blue" },
     });
     expect(parsed.answer).toEqual({ toolCallId: "tc_1", text: "make it blue" });
+  });
+
+  test("preserves review metadata on an answer request while keeping the nested answer strict", () => {
+    const reviewSnapshot = {
+      targets: [{
+        target: "visual" as const,
+        roundId: "d4e5f6",
+        outcome: "applied-partial" as const,
+      }],
+    };
+    const parsed = experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_1", skipped: true },
+      reviewSnapshot,
+      rulesSaved: false,
+      visualSaved: false,
+    });
+    expect(parsed).toEqual({
+      ...base,
+      answer: { toolCallId: "tc_1", skipped: true },
+      reviewSnapshot,
+      rulesSaved: false,
+      visualSaved: false,
+    });
+    expect(() => experienceCopilotStreamRequestSchema.parse({
+      ...base,
+      answer: { toolCallId: "tc_1", skipped: true, reviewSnapshot },
+    })).toThrow();
   });
 
   test("answer-only is accepted (skip)", () => {

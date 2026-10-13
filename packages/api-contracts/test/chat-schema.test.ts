@@ -244,6 +244,58 @@ describe("sendMessageSchema", () => {
     expect(sendMessageSchema.safeParse({ content: "hi" }).success).toBe(true);
   });
 
+  it("preserves the exact legacy output when coauthor editor state is absent", () => {
+    expect(sendMessageSchema.parse({ content: "hi" })).toEqual({ content: "hi" });
+  });
+
+  it("preserves a coauthor editor snapshot including live empty buffers and greetings", () => {
+    const coauthorEditorState = {
+      card: {
+        name: "",
+        body: "",
+        greetings: ["", "Hello there"],
+        cardClean: false,
+      },
+      review: {
+        targets: [
+          {
+            target: "lore" as const,
+            roundId: "a1b2",
+            outcome: "awaiting" as const,
+            items: { offered: 3, selected: 2, applied: 0 },
+            selected: true,
+          },
+          {
+            target: "tracker_template" as const,
+            roundId: "c3d4",
+            outcome: "awaiting" as const,
+            selected: true,
+          },
+        ],
+      },
+    };
+    expect(sendMessageSchema.parse({ content: "hi", coauthorEditorState })).toEqual({
+      content: "hi",
+      coauthorEditorState,
+    });
+  });
+
+  it("retains an explicit empty coauthor review snapshot", () => {
+    expect(sendMessageSchema.parse({
+      content: "hi",
+      coauthorEditorState: {
+        card: { name: "", body: "", greetings: [], cardClean: true },
+        review: { targets: [] },
+      },
+    })).toEqual({
+      content: "hi",
+      coauthorEditorState: {
+        card: { name: "", body: "", greetings: [], cardClean: true },
+        review: { targets: [] },
+      },
+    });
+  });
+
   it("accepts a message with content and one valid attachment", () => {
     expect(sendMessageSchema.safeParse({ content: "hi", attachments: [validAttachment()] }).success).toBe(true);
   });
