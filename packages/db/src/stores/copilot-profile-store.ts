@@ -29,6 +29,9 @@ export interface CopilotProfileRow {
   name: string;
   basePrompt: string;
   toolSet: StoredCopilotToolSet;
+  /** Owning agent kind (AS-3) — 'experience' for every pre-AS-3 row (the
+   *  column default); immutable after create (update never writes it). */
+  agentKind: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,6 +40,8 @@ export interface CreateCopilotProfileData {
   name: string;
   basePrompt: string;
   toolSet: StoredCopilotToolSet;
+  /** Omitted = 'experience' (the current web client sends no kind). */
+  agentKind?: string;
 }
 
 export type UpdateCopilotProfileData = Partial<CreateCopilotProfileData>;
@@ -60,8 +65,10 @@ export class CopilotProfileStore {
     this.idGen = runtime.idGenerator;
   }
 
-  async list(): Promise<CopilotProfileRow[]> {
-    const rows = await this.db.select().from(copilotProfiles).all();
+  async list(kind?: string): Promise<CopilotProfileRow[]> {
+    const rows = kind === undefined
+      ? await this.db.select().from(copilotProfiles).all()
+      : await this.db.select().from(copilotProfiles).where(eq(copilotProfiles.agentKind, kind)).all();
     return rows.map((row) => this.mapRow(row));
   }
 
@@ -80,6 +87,7 @@ export class CopilotProfileStore {
         name: data.name,
         basePrompt: data.basePrompt,
         toolSetJson: JSON.stringify(data.toolSet),
+        agentKind: data.agentKind ?? 'experience',
         createdAt: now,
         updatedAt: now,
       })
@@ -93,6 +101,8 @@ export class CopilotProfileStore {
     const existing = await this.getById(id);
     if (!existing) throw new Error(`Copilot profile '${id}' not found`);
 
+    // AS-3: `agent_kind` is immutable — intentionally no branch for it here,
+    // so an update can never convert a profile to another kind.
     const values: Partial<typeof copilotProfiles.$inferInsert> = { updatedAt: this.clock.now() };
     if (data.name !== undefined) values.name = data.name;
     if (data.basePrompt !== undefined) values.basePrompt = data.basePrompt;
@@ -114,6 +124,7 @@ export class CopilotProfileStore {
       name: row.name,
       basePrompt: row.basePrompt,
       toolSet: parseToolSet(row.toolSetJson),
+      agentKind: row.agentKind,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

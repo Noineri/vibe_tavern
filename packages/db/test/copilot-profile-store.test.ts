@@ -127,3 +127,67 @@ describe("CopilotProfileStore (CP-3)", () => {
     expect(await store.getById("cprof_missing")).toBeNull();
   });
 });
+
+// ─── AS-3: agent_kind ──────────────────────────────────────────────────────
+// The kind dimension: rows carry their owning kind, lists filter by it in
+// SQL, create persists it (default 'experience'), and update never touches
+// it (immutability pins the "no kind smuggling via update" rule at the
+// lowest layer — the contract + adapter re-check above it).
+
+describe("CopilotProfileStore agent_kind (AS-3)", () => {
+  test("a pre-AS-3-style row (column omitted) reads as 'experience'", async () => {
+    // The migration is default-only: legacy rows carry no agent_kind value
+    // and must read as experience profiles with unchanged tool sets.
+    const { store, db } = await mkStore();
+    await db
+      .insert(copilotProfiles)
+      .values({
+        id: "cprof_legacy",
+        name: "Legacy",
+        basePrompt: "Legacy prompt.",
+        toolSetJson: JSON.stringify({ write_buffer: true }),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })
+      .run();
+    const fetched = await store.getById("cprof_legacy");
+    expect(fetched?.agentKind).toBe("experience");
+    expect(fetched?.toolSet).toEqual({ write_buffer: true });
+  });
+
+  test("create defaults a missing kind to 'experience'", async () => {
+    const { store } = await mkStore();
+    const created = await store.create(PAYLOAD);
+    expect(created.agentKind).toBe("experience");
+  });
+
+  test("create persists an explicit kind", async () => {
+    const { store } = await mkStore();
+    const created = await store.create({ ...PAYLOAD, agentKind: "fake-kind" });
+    expect(created.agentKind).toBe("fake-kind");
+    expect((await store.getById(created.id))?.agentKind).toBe("fake-kind");
+  });
+
+  test("list(kind) filters in SQL; unfiltered list returns every kind", async () => {
+    const { store } = await mkStore();
+    const exp = await store.create({ ...PAYLOAD, name: "Exp" });
+    const other = await store.create({ ...PAYLOAD, name: "Other", agentKind: "fake-kind" });
+    expect((await store.list()).map((p) => p.id).sort()).toEqual([exp.id, other.id].sort());
+    expect(await store.list("experience")).toEqual([expect.objectContaining({ id: exp.id })]);
+    expect(await store.list("fake-kind")).toEqual([expect.objectContaining({ id: other.id })]);
+    expect(await store.list("nope")).toEqual([]);
+  });
+
+  test("update never touches agent_kind", async () => {
+    const { store, db } = await mkStore();
+    const created = await store.create({ ...PAYLOAD, agentKind: "fake-kind" });
+    const updated = await store.update(created.id, { name: "Renamed", toolSet: { run_test: true } });
+    expect(updated.agentKind).toBe("fake-kind");
+    const raw = await db
+      .select({ agentKind: copilotProfiles.agentKind })
+      .from(copilotProfiles)
+      .where(eq(copilotProfiles.id, created.id))
+      .get();
+    expect(raw?.agentKind).toBe("fake-kind");
+  });
+});

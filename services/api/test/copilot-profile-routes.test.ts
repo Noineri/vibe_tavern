@@ -3,6 +3,10 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStoreContainer, type StoreContainer } from "@vibe-tavern/db";
+// AS-3: profile create/list validate the kind through the registry — the
+// side-effect import registers the real experience kind (production does the
+// same in server-runtime.ts); assertions below are unchanged.
+import "../src/domain/agent/kinds/experience-kind.js";
 import { createCopilotProfileRoutes } from "../src/api/routes/copilot-profile.js";
 import { CopilotProfileAdapter } from "../src/api/adapters/copilot-profile-adapter.js";
 import {

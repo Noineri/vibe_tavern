@@ -395,6 +395,10 @@ export const copilotProfileSchema = z
     isBuiltIn: z.boolean(),
     basePrompt: z.string().min(1),
     toolSet: copilotToolSetSchema,
+    // AS-3: owning agent kind ('experience' for every pre-AS-3 profile).
+    // Required on the wire profile — the server always emits it (seed and
+    // rows alike) so a list consumer can tell kinds apart.
+    agentKind: z.string().min(1),
   })
   .strict();
 
@@ -414,12 +418,21 @@ export const copilotProfileCreateSchema = z
     name: z.string().min(1),
     basePrompt: z.string().min(1),
     toolSet: copilotToolSetSchema,
+    // AS-3: optional with an 'experience' default so the current web client
+    // (which sends no kind) keeps creating experience profiles untouched.
+    agentKind: z.string().min(1).optional().default("experience"),
   })
   .strict();
 
-export type CopilotProfileCreate = z.infer<typeof copilotProfileCreateSchema>;
+export type CopilotProfileCreate = z.input<typeof copilotProfileCreateSchema>;
 
-/** Partial update for a user profile. Every field is optional. */
-export const copilotProfileUpdateSchema = copilotProfileCreateSchema.partial();
+/**
+ * Partial update for a user profile. Every field is optional. `agentKind` is
+ * OMITTED (not merely optional) — the kind is immutable after create, and
+ * the object stays `.strict()`, so a PATCH smuggling an `agentKind` key is
+ * rejected with a 400 instead of being silently stripped. A wrong-kind
+ * profile is recreated under the right kind, never converted.
+ */
+export const copilotProfileUpdateSchema = copilotProfileCreateSchema.omit({ agentKind: true }).partial();
 
 export type CopilotProfileUpdate = z.infer<typeof copilotProfileUpdateSchema>;

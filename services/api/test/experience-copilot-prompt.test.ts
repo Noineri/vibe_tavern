@@ -251,6 +251,7 @@ describe("assembleExperienceCopilotPrompt — shape", () => {
       isBuiltIn: false,
       basePrompt: "CUSTOM SYSTEM PROMPT MARKER",
       toolSet: {},
+      agentKind: "experience",
     };
     const result = await assembleExperienceCopilotPrompt({
       history: [],

@@ -324,7 +324,7 @@ export async function assembleExperienceCopilotPrompt(
   // to the ER-16 module. The catalog is scanned from the built-in root plus
   // the optional user root (CP-4); the two API references (rules DSL + visual
   // bridge) load alongside so all asset I/O fans out together.
-  const profile = input.profile ?? await resolveBuiltinCopilotProfile(input.db);
+  const profile = input.profile ?? await resolveBuiltinCopilotProfile("experience", input.db);
   const resolveRef = (field: "interactive_rules" | "interactive_visual" | "copilot_user_flow", assetFile: string) =>
     input.db
       ? resolveServicePromptText(input.db, field)

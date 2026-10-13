@@ -24,6 +24,7 @@ import { dirname, resolve } from "node:path";
 import { resolvePromptAssetPath, loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 import type { AppDb } from "@vibe-tavern/db";
 import { resolveServicePrompt } from "../../service-prompts/service-prompt-resolver.js";
+import { getAgentKind } from "../../agent/agent-kind-registry.js";
 import {
   buildSkillCatalog,
   type ScanRoot,
@@ -156,8 +157,37 @@ export async function resolveExperienceCopilotSkillCatalog(
  * tool set is projected through {@link COPILOT_TOOL_KEYS} so the wire contract
  * stays the single source of truth for the toggleable-tool names. No
  * `skillIds` — the catalog is ungated (PM-8).
+ *
+ * AS-3: the seed is per kind (`resolveBuiltinCopilotProfile(kind)`). A
+ * non-`experience` kind is validated through the registry FIRST — an unknown
+ * kind throws `UnknownAgentKindError` and NEVER falls back to the experience
+ * seed (a silent cross-kind fallback would mask a miswired list). The
+ * `experience` path is byte-identical to the pre-AS-3 behavior, plus
+ * `agentKind`.
  */
-export async function resolveBuiltinCopilotProfile(db?: AppDb): Promise<CopilotProfile> {
+export async function resolveBuiltinCopilotProfile(kind: string = "experience", db?: AppDb): Promise<CopilotProfile> {
+  if (kind !== "experience") {
+    // Validate FIRST — an unknown kind throws `UnknownAgentKindError` and
+    // NEVER falls back to the experience seed (a silent cross-kind fallback
+    // would mask a miswired list). The `experience` default path below stays
+    // registry-free so every existing caller (which never registers kinds)
+    // keeps byte-identical behavior.
+    const descriptor = getAgentKind(kind);
+    // Generic-kind seed (today only test fakes arrive here — AS-7's script
+    // kind brings its own base prompt + service key and extends this path).
+    // Deliberately NOT the experience prompt: serving another kind's content
+    // here would be the silent cross-kind fallback AS-3 forbids. The empty
+    // base prompt fails loudly (wire `min(1)`) if it ever reaches validation
+    // instead of passing as a real prompt.
+    return {
+      id: "builtin",
+      name: descriptor.id,
+      isBuiltIn: true,
+      basePrompt: "",
+      toolSet: {},
+      agentKind: descriptor.id,
+    };
+  }
   // SP-5: the global service-prompt profile's `copilot_base` override replaces
   // the builtin base ONLY on this builtin path — explicit per-script copilot
   // profiles (basePrompt snapshots) never consult it (see copilot-profile-resolver).
@@ -174,6 +204,7 @@ export async function resolveBuiltinCopilotProfile(db?: AppDb): Promise<CopilotP
     isBuiltIn: true,
     basePrompt,
     toolSet,
+    agentKind: "experience",
   };
 }
 

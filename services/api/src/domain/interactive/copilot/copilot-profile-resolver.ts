@@ -45,6 +45,7 @@ export function copilotProfileRowToWire(row: CopilotProfileRow): CopilotProfile 
 		isBuiltIn: false,
 		basePrompt: row.basePrompt,
 		toolSet,
+		agentKind: row.agentKind,
 	};
 }
 
@@ -56,12 +57,12 @@ export class CopilotProfileResolver {
 	 * or any missing/dangling link falls back to the built-in seed.
 	 */
 	async resolveForScript(scriptId: string | null): Promise<CopilotProfile> {
-		if (scriptId === null) return resolveBuiltinCopilotProfile(this.stores.db);
+		if (scriptId === null) return resolveBuiltinCopilotProfile("experience", this.stores.db);
 		const script = await this.stores.scripts.getById(scriptId);
 		const profileId = script?.copilotProfileId ?? null;
-		if (profileId === null) return resolveBuiltinCopilotProfile(this.stores.db);
+		if (profileId === null) return resolveBuiltinCopilotProfile("experience", this.stores.db);
 		const row = await this.stores.copilotProfiles.getById(profileId);
-		if (row === null) return resolveBuiltinCopilotProfile(this.stores.db);
+		if (row === null) return resolveBuiltinCopilotProfile("experience", this.stores.db);
 		return copilotProfileRowToWire(row);
 	}
 }

@@ -10,7 +10,9 @@ import type { CopilotProfileRuntimeApi } from "../contract/runtime-api.js";
  * profiles:
  *
  *  - `GET    /api/copilot/profiles`              — built-in seed first, then user
- *    profiles in store order (the seed is resolved, not stored).
+ *    profiles of the requested kind in store order (the seed is resolved, not
+ *    stored). `?kind=` selects the kind (default `'experience'`); an unknown
+ *    kind is a 400 carrying `UNKNOWN_AGENT_KIND`.
  *  - `POST   /api/copilot/profiles`              — create a user profile.
  *  - `PATCH  /api/copilot/profiles/:profileId`   — partial update; the built-in
  *    seed (id "builtin") is rejected as read-only (400).
@@ -21,7 +23,8 @@ import type { CopilotProfileRuntimeApi } from "../contract/runtime-api.js";
 export function createCopilotProfileRoutes(runtime: CopilotProfileRuntimeApi) {
 	return new Hono()
 		.get("/api/copilot/profiles", async (c) => {
-			return c.json({ profiles: await runtime.listCopilotProfiles() });
+			const kind = c.req.query("kind") ?? "experience";
+			return c.json({ profiles: await runtime.listCopilotProfiles(kind) });
 		})
 		.post("/api/copilot/profiles", zValidator("json", schemas.copilotProfileCreateSchema), async (c) => {
 			return c.json(await runtime.createCopilotProfile(c.req.valid("json")));

@@ -1,0 +1,1 @@
+ALTER TABLE `copilot_profiles` ADD `agent_kind` text DEFAULT 'experience' NOT NULL;

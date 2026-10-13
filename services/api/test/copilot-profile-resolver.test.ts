@@ -77,6 +77,9 @@ describe("CopilotProfileResolver", () => {
       name: "Legacy",
       basePrompt: "Legacy prompt.",
       toolSet: { todo: true },
+      // AS-3: rows always carry their owning kind (pre-AS-3 rows read as
+      // 'experience' via the column default).
+      agentKind: "experience",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     };

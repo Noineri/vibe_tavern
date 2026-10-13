@@ -468,6 +468,8 @@ describe("copilotProfileSchema (CP-1)", () => {
       isBuiltIn: false,
       basePrompt: "You are a card-game experience author.",
       toolSet: { edit_buffer: true, run_test: true },
+      // AS-3: profiles carry their owning kind.
+      agentKind: "experience",
     };
     expect(copilotProfileSchema.parse(payload)).toEqual(payload);
   });
@@ -480,6 +482,7 @@ describe("copilotProfileSchema (CP-1)", () => {
         isBuiltIn: false,
         basePrompt: "",
         toolSet: {},
+        agentKind: "experience",
       }),
     ).toThrow();
   });
@@ -494,6 +497,7 @@ describe("copilotProfileSchema (CP-1)", () => {
       isBuiltIn: false,
       basePrompt: "p",
       toolSet: {},
+      agentKind: "experience",
     };
     expect(() => copilotProfileSchema.parse({ ...base, skillIds: ["experience-authoring"] })).toThrow();
     expect(() =>
@@ -516,6 +520,7 @@ describe("copilotProfileSchema (CP-1)", () => {
       isBuiltIn: false,
       basePrompt: "p",
       toolSet: {},
+      agentKind: "experience",
     };
     expect(() => copilotProfileSchema.parse({ ...base, maxSteps: 5 })).toThrow();
   });

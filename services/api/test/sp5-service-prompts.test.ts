@@ -187,7 +187,7 @@ describe("SP-5 copilot base honors profile only for builtin", () => {
     });
     await uiSettings.update({ activeServicePromptProfileId: profile.id });
 
-    const builtin = await resolveBuiltinCopilotProfile(db);
+    const builtin = await resolveBuiltinCopilotProfile("experience", db);
     expect(builtin.basePrompt).toBe("COPILOT-PROFILE-BASE");
     expect(builtin.isBuiltIn).toBe(true);
   });

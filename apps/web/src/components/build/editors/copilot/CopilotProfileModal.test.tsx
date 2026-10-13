@@ -45,6 +45,7 @@ const BUILTIN: CopilotProfile = {
 	isBuiltIn: true,
 	basePrompt: "You author interactive experiences.",
 	toolSet: { write_buffer: true, edit_buffer: true, run_test: true },
+	agentKind: "experience",
 };
 
 const USER: CopilotProfile = {
@@ -53,6 +54,7 @@ const USER: CopilotProfile = {
 	isBuiltIn: false,
 	basePrompt: "You help author card-game experiences.",
 	toolSet: { write_buffer: true, run_test: true },
+	agentKind: "experience",
 };
 
 const ALL_PROFILES = [BUILTIN, USER];

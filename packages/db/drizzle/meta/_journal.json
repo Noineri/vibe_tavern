@@ -785,6 +785,13 @@
       "when": 1791713172027,
       "tag": "0111_tearful_wiccan",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "6",
+      "when": 1791871850554,
+      "tag": "0112_safe_puff_adder",
+      "breakpoints": true
     }
   ]
 }

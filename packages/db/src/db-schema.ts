@@ -235,6 +235,12 @@ export const copilotProfiles = sqliteTable('copilot_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   basePrompt: text('base_prompt').notNull(),
+  // AGENT_SHELL_PLAN AS-3: which agent kind owns this profile ('experience'
+  // today; 'script' registers in AS-7). Immutable after create (the store
+  // never writes it, the update contract omits it) — a wrong-kind profile is
+  // recreated under the right kind, never converted. Default-only migration:
+  // existing rows read as 'experience' with unchanged tool sets.
+  agentKind: text('agent_kind').notNull().default('experience'),
   // superseded: skills are ungated (EXPERIENCE_COPILOT_PLAN_MODE_PLAN PM-8) —
   // never read or written by the store; kept for legacy rows only.
   skillIdsJson: text('skill_ids_json').notNull().default('[]'),

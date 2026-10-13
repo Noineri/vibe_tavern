@@ -623,6 +623,7 @@ describe("experience-copilot stream (ER-6)", () => {
       isBuiltIn: false,
       basePrompt: "CUSTOM STREAM PROMPT MARKER",
       toolSet: { run_test: true },
+      agentKind: "experience",
     };
     let captured: Record<string, unknown> | null = null;
     streamTextImpl = (opts: unknown) => {
