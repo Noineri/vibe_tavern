@@ -19,7 +19,11 @@
  * works in any process that assembles a prompt (tests included).
  */
 
-import { COPILOT_TOOL_KEYS, copilotToolSetSchema } from "@vibe-tavern/api-contracts";
+import {
+  COPILOT_TOOL_KEYS,
+  copilotToolSetSchema,
+  type AgentReviewSnapshot,
+} from "@vibe-tavern/api-contracts";
 import { EXPERIENCE_COPILOT_MODULE } from "../../interactive/copilot/experience-copilot-module.js";
 import type {
   ExperienceCopilotBoundVisual,
@@ -53,6 +57,9 @@ export interface ExperienceAgentContext {
   readonly contract: ExperienceCopilotContract | null;
   readonly rulesTrusted: boolean;
   readonly testFeedback: ExperienceCopilotTestFeedback | null | undefined;
+  readonly reviewSnapshot: AgentReviewSnapshot | undefined;
+  readonly rulesSaved: boolean | undefined;
+  readonly visualSaved: boolean | undefined;
   readonly step: ExperienceCopilotStep;
 }
 
@@ -69,7 +76,18 @@ export const EXPERIENCE_RECENCY_ANCHOR_TEXT =
  *  the object is destructured into the same locals the parameter list used to
  *  bind. The byte output stays pinned by the prompt suite + AS-1. */
 function renderContextPackage(ctx: ExperienceAgentContext): string {
-  const { rules, visual, boundVisuals, contract, rulesTrusted, testFeedback, step } = ctx;
+  const {
+    rules,
+    visual,
+    boundVisuals,
+    contract,
+    rulesTrusted,
+    testFeedback,
+    reviewSnapshot,
+    rulesSaved,
+    visualSaved,
+    step,
+  } = ctx;
   const sections = [
     "# Current working context",
     `Authoring step: **${step}**`,
@@ -123,6 +141,40 @@ function renderContextPackage(ctx: ExperienceAgentContext): string {
       JSON.stringify(testFeedback),
       "```",
     );
+  }
+
+  if (reviewSnapshot !== undefined) {
+    sections.push("", "## Proposal review outcomes");
+    if (reviewSnapshot.targets.length === 0) {
+      sections.push("no unreviewed proposals and no recorded outcomes");
+    } else {
+      sections.push(...reviewSnapshot.targets.map((target) => {
+        const details: string[] = [];
+        if (target.hunks !== undefined) {
+          details.push(`hunks: accepted ${target.hunks.accepted}, rejected ${target.hunks.rejected}, pending ${target.hunks.pending}`);
+        }
+        if (target.items !== undefined) {
+          details.push(`items: offered ${target.items.offered}, selected ${target.items.selected}, applied ${target.items.applied}`);
+        }
+        if (target.selected !== undefined) {
+          details.push(`selected: ${target.selected ? "yes" : "no"}`);
+        }
+        if (target.supersededByRound !== undefined) {
+          details.push(`superseded by round \`${target.supersededByRound}\``);
+        }
+        return `- ${target.target} round \`${target.roundId}\`: **${target.outcome}**${details.length > 0 ? ` (${details.join("; ")})` : ""}`;
+      }));
+    }
+  }
+
+  if (rulesSaved !== undefined || visualSaved !== undefined) {
+    sections.push("", "## Buffer save status");
+    if (rulesSaved !== undefined) {
+      sections.push(`- rules buffer: ${rulesSaved ? "saved" : "unsaved"}`);
+    }
+    if (visualSaved !== undefined) {
+      sections.push(`- visual buffer: ${visualSaved ? "saved" : "unsaved"}`);
+    }
   }
 
   return sections.join("\n");

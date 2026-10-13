@@ -518,6 +518,74 @@ describe("assembleExperienceCopilotPrompt — user-flow doc + RU labels", () => 
   });
 });
 
+// ─── Review outcome feedback (RO-2) ──────────────────────────────────────────
+
+describe("assembleExperienceCopilotPrompt — review outcome feedback (RO-2)", () => {
+  test("renders per-target outcomes, counts, supersession, and independently unsaved buffers", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+      reviewSnapshot: {
+        targets: [
+          {
+            target: "rules",
+            roundId: "a1b2c3d4e5f6",
+            outcome: "applied-partial",
+            hunks: { accepted: 2, rejected: 1, pending: 3 },
+          },
+          {
+            target: "visual",
+            roundId: "0f1e2d3c4b5a",
+            outcome: "superseded",
+            hunks: { accepted: 0, rejected: 4, pending: 1 },
+            supersededByRound: "abcdef123456",
+          },
+        ],
+      },
+      rulesSaved: false,
+      visualSaved: true,
+    });
+
+    expect(result.systemMessage).toContain("## Proposal review outcomes");
+    expect(result.systemMessage).toContain("- rules round `a1b2c3d4e5f6`: **applied-partial** (hunks: accepted 2, rejected 1, pending 3)");
+    expect(result.systemMessage).toContain("- visual round `0f1e2d3c4b5a`: **superseded** (hunks: accepted 0, rejected 4, pending 1; superseded by round `abcdef123456`)");
+    expect(result.systemMessage).toContain("## Buffer save status\n- rules buffer: unsaved\n- visual buffer: saved");
+  });
+
+  test("renders an explicit empty snapshot and each supplied save flag without inventing the absent flag", async () => {
+    const emptySnapshot = await assembleExperienceCopilotPrompt({
+      history: [], rules: VALID_RULES, step: "rules", reviewSnapshot: { targets: [] },
+    });
+    const rulesOnly = await assembleExperienceCopilotPrompt({
+      history: [], rules: VALID_RULES, step: "rules", rulesSaved: true,
+    });
+    const visualOnly = await assembleExperienceCopilotPrompt({
+      history: [], rules: VALID_RULES, step: "rules", visualSaved: false,
+    });
+
+    expect(emptySnapshot.systemMessage).toContain("## Proposal review outcomes\nno unreviewed proposals and no recorded outcomes");
+    expect(emptySnapshot.systemMessage).not.toContain("Buffer save status");
+    expect(rulesOnly.systemMessage).toContain("- rules buffer: saved");
+    expect(rulesOnly.systemMessage).not.toContain("visual buffer:");
+    expect(visualOnly.systemMessage).toContain("- visual buffer: unsaved");
+    expect(visualOnly.systemMessage).not.toContain("rules buffer:");
+  });
+
+  test("omitted review metadata leaves the legacy system message byte-identical", async () => {
+    const result = await assembleExperienceCopilotPrompt({
+      history: [],
+      rules: VALID_RULES,
+      step: "rules",
+    });
+
+    expect(result.systemMessage).not.toContain("Proposal review outcomes");
+    expect(result.systemMessage).not.toContain("Buffer save status");
+    expect(createHash("sha256").update(result.systemMessage).digest("hex"))
+      .toBe("8fd6032ec7d1f64a54c9b97dd4c466d86da911023aa6d4b97f521367a0250577");
+  });
+});
+
 // ─── (d) Digest messages (CM-3) ──────────────────────────────────────────────
 
 describe("assembleExperienceCopilotPrompt — digest (CM-3)", () => {

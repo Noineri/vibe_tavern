@@ -1,4 +1,5 @@
 import type {
+  AgentReviewSnapshot,
   ExperienceCopilotLaunchContext,
   ExperienceCopilotStep,
 } from "@vibe-tavern/api-contracts";
@@ -47,6 +48,12 @@ export interface ExperienceCopilotStreamRequest {
   testFeedback?: Record<string, unknown> | null;
   /** Latest Try-panel roster, grants, settings and seed for diagnostic tools. */
   launchContext?: ExperienceCopilotLaunchContext;
+  /** Latest per-target proposal review outcomes supplied by the editor. */
+  reviewSnapshot?: AgentReviewSnapshot;
+  /** Whether the live rules buffer has been saved independently of its review outcome. */
+  rulesSaved?: boolean;
+  /** Whether the live visual buffer has been saved independently of its review outcome. */
+  visualSaved?: boolean;
 }
 
 /** SSE event the route forwards verbatim via `streamSSE`. */

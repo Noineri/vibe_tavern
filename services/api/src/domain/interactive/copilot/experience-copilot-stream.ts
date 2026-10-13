@@ -275,6 +275,9 @@ export async function* streamExperienceCopilot(
         profile: copilotProfile,
         plan: agentPlan,
         rulesTrusted: context.rulesTrusted,
+        reviewSnapshot: request.reviewSnapshot,
+        rulesSaved: request.rulesSaved,
+        visualSaved: request.visualSaved,
         ...(deps.skillUserRoot !== undefined ? { skillUserRoot: deps.skillUserRoot } : {}),
         ...(attachedContextBlock ? { attachedContextBlock } : {}),
       });

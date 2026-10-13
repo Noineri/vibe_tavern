@@ -50,7 +50,7 @@ import {
   planHistoryCompaction,
   setModelHint,
 } from "@vibe-tavern/prompt-pipeline";
-import type { CopilotProfile } from "@vibe-tavern/api-contracts";
+import type { AgentReviewSnapshot, CopilotProfile } from "@vibe-tavern/api-contracts";
 import type { AgentPlan } from "@vibe-tavern/domain";
 import { loadPromptAsset } from "../../../shared/prompt-asset-loader.js";
 import type { AppDb } from "@vibe-tavern/db";
@@ -203,6 +203,12 @@ export interface ExperienceCopilotAssembleInput {
   readonly boundVisuals?: readonly ExperienceCopilotBoundVisual[];
   /** The latest test/simulate digest the user sent back. Optional. */
   readonly testFeedback?: ExperienceCopilotTestFeedback | null;
+  /** Latest per-target proposal review outcomes supplied by the editor. */
+  readonly reviewSnapshot?: AgentReviewSnapshot;
+  /** Whether the live rules buffer has been saved independently of its review outcome. */
+  readonly rulesSaved?: boolean;
+  /** Whether the live visual buffer has been saved independently of its review outcome. */
+  readonly visualSaved?: boolean;
   /** The current authoring step (inline 3-step creation flow). */
   readonly step: ExperienceCopilotStep;
   /** The RESOLVED copilot profile for this experience (CP-7). When omitted,
@@ -365,6 +371,9 @@ export async function assembleExperienceCopilotPrompt(
     contract,
     rulesTrusted: input.rulesTrusted !== false,
     testFeedback: input.testFeedback,
+    reviewSnapshot: input.reviewSnapshot,
+    rulesSaved: input.rulesSaved,
+    visualSaved: input.visualSaved,
     step: input.step,
   });
   // AS-2c: the recency anchor reads THROUGH THE KIND DESCRIPTOR (same plugin

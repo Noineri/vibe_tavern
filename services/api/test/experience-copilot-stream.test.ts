@@ -534,6 +534,14 @@ describe("experience-copilot stream (ER-6)", () => {
         {
           threadId: "thread_1", content: "tweak the visual", providerProfileId: "prov_1",
           step: "visual", rules: "DRAFT RULES BODY", visual: "DRAFT VISUAL BODY",
+          reviewSnapshot: {
+            targets: [
+              { target: "rules", roundId: "a1b2c3d4", outcome: "applied", hunks: { accepted: 2, rejected: 0, pending: 1 } },
+              { target: "visual", roundId: "e5f6a7b8", outcome: "rejected", hunks: { accepted: 0, rejected: 3, pending: 0 } },
+            ],
+          },
+          rulesSaved: false,
+          visualSaved: true,
         },
         makeDeps(store, {
           getScript: async (id) => (id === "script_1" ? script : null),
@@ -548,6 +556,30 @@ describe("experience-copilot stream (ER-6)", () => {
     expect(blob).toContain("DRAFT VISUAL BODY");
     expect(blob).not.toContain("DB RULES BODY");
     expect(blob).not.toContain("DB VISUAL BODY");
+    expect(blob).toContain("rules round `a1b2c3d4`: **applied**");
+    expect(blob).toContain("visual round `e5f6a7b8`: **rejected**");
+    expect(blob).toContain("rules buffer: unsaved");
+    expect(blob).toContain("visual buffer: saved");
+  });
+
+  it("passes an explicit empty review snapshot into the actual provider system message", async () => {
+    const store = createFakeStore(makeThread());
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as { messages?: Array<{ role: string; content: unknown }> };
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(streamExperienceCopilot(
+      {
+        threadId: "thread_1", content: "status", providerProfileId: "prov_1",
+        reviewSnapshot: { targets: [] },
+      },
+      makeDeps(store),
+    ));
+
+    const systemMessage = captured!.messages!.find((message) => message.role === "system")!.content;
+    expect(systemMessage).toContain("no unreviewed proposals and no recorded outcomes");
   });
 
   it("round-trips tool-call/tool-result history across turns", async () => {
@@ -1057,7 +1089,19 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
 
     const events = await collect(
       streamExperienceCopilot(
-        { threadId: "thread_1", answer: { toolCallId: "tc_ask_1", text: "blue" }, providerProfileId: "prov_1" },
+        {
+          threadId: "thread_1", answer: { toolCallId: "tc_ask_1", text: "blue" }, providerProfileId: "prov_1",
+          reviewSnapshot: {
+            targets: [
+              {
+                target: "rules", roundId: "deadbeef", outcome: "applied-partial",
+                hunks: { accepted: 1, rejected: 2, pending: 3 },
+              },
+            ],
+          },
+          rulesSaved: false,
+          visualSaved: true,
+        },
         makeDeps(store),
       ),
     );
@@ -1076,6 +1120,11 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
     // of the old prose pin `toBe("blue")` — ask tool rows now render object
     // wire JSON (Struct contract for translation proxies).
     expect(lastAskResultObject(captured!.messages!)).toEqual({ answer: "blue" });
+    const systemMessage = captured!.messages!.find((message) => message.role === "system")!.content;
+    expect(systemMessage).toContain("rules round `deadbeef`: **applied-partial**");
+    expect(systemMessage).toContain("hunks: accepted 1, rejected 2, pending 3");
+    expect(systemMessage).toContain("rules buffer: unsaved");
+    expect(systemMessage).toContain("visual buffer: saved");
     const finish = events.find((e) => e.event === "finish");
     expect(finish).toBeDefined();
     expect(store.messages.at(-1)!.role).toBe("assistant");
