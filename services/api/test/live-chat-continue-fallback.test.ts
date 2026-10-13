@@ -35,6 +35,7 @@ import { describe, expect, it, beforeEach, afterEach, afterAll } from "bun:test"
 import { brandId, EventBus } from "@vibe-tavern/domain";
 import type { ChatBranchId, ChatId, MessageId, ProviderResponseTrace, StoredProviderProfileRecord } from "@vibe-tavern/domain";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import type { RegexTextHook } from "../src/domain/chat/live-chat-orchestrator.js";
 import { RpModeStrategy } from "../src/domain/chat/chat-mode-strategy.js";
 import { ChatRuntime } from "../src/runtime/session/session-runtime-chat.js";
 import { CONTINUATION_USER_INSTRUCTION } from "../src/infrastructure/ai/provider-executor-utils.js";
@@ -209,7 +210,7 @@ const UNSET = null as never;
 function makeOrchestrator(calls: ContinueCalls, executors?: {
   nonstreaming: typeof nonstreamingProviderExecute;
   stream: typeof streamProviderExecutor;
-}): LiveChatOrchestrator {
+}, hooks?: { onUserInput: RegexTextHook; onAiOutput: RegexTextHook; onReasoning: RegexTextHook }): LiveChatOrchestrator {
   const prefillHistory = [{ role: "user", content: "Tell me a story." }];
   const fallbackHistory = [
     { role: "user", content: "Tell me a story." },
@@ -248,7 +249,7 @@ function makeOrchestrator(calls: ContinueCalls, executors?: {
     new EventBus(),
     async () => strategy,
     undefined,
-    undefined,
+    hooks,
     executors,
   );
 }
@@ -415,6 +416,53 @@ describe("LiveChatOrchestrator — continue prefill fallback, streaming (CPF-2b)
     // Composition pin: nothing trimmed, nothing glued extra.
     expect(calls.appendedVariants[0]!.content).toBe(MID_WORD_MERGED);
     expect(events.some((e) => e.event === "error")).toBe(false);
+  });
+
+  it("stitches BEFORE the AI_OUTPUT regex hook (order parity with non-stream): overlap trimmed, hook applied to the merged text", async () => {
+    // CPF-fix1 order pin: the hook uppercases the head of the continuation
+    // (exactly where the overlap lives). Merging on the TRANSFORMED text
+    // (pre-fix order) defeats the case-sensitive overlap trim → duplicated
+    // tail; merging on the RAW text first (non-stream order) trims, then the
+    // hook transforms the merged whole. Installed through the orchestrator's
+    // `regexHooks` constructor seam (regex-hooks.test.ts precedent) — a
+    // persist-mode AI_OUTPUT preset would fire the same seam.
+    const upperHook = {
+      onUserInput: (text: string) => text,
+      onAiOutput: (text: string) => text.toUpperCase(),
+      onReasoning: (text: string) => text,
+    };
+    const expected = MERGED_OVERLAP.toUpperCase();
+
+    // Stream path: rejection → fallback stream with the hook armed.
+    const streamCalls = makeCalls();
+    const streamOrchestrator = makeOrchestrator(streamCalls, undefined, upperHook);
+    const streamEvents: Array<{ event: string; data: string }> = [];
+    installFetchQueue([
+      multiaiRejection(),
+      sseCompletion([CONTINUATION_OVERLAP]),
+    ]);
+    for await (const event of streamOrchestrator.continueMessageStream(continueInput(ORIGINAL))) {
+      streamEvents.push(event);
+    }
+    expect(streamEvents.some((e) => e.event === "error")).toBe(false);
+    expect(streamCalls.appendedVariants).toHaveLength(1);
+    // Hook applied to the MERGED text (not just the continuation).
+    expect(streamCalls.appendedVariants[0]!.content).toBe(expected);
+    // Overlap trimmed exactly once — a single "WINGS." (pre-fix: the raw
+    // ORIGINAL tail "wings." plus the uppercased re-emit "WINGS.").
+    expect(streamCalls.appendedVariants[0]!.content.split("WINGS.")).toHaveLength(2);
+
+    // Non-stream parity: the same click with streamResponse toggled yields
+    // the same variant text when the hook is non-idempotent.
+    const nonStreamCalls = makeCalls();
+    const nonStreamOrchestrator = makeOrchestrator(nonStreamCalls, undefined, upperHook);
+    installFetchQueue([
+      multiaiRejection(),
+      completion(CONTINUATION_OVERLAP),
+    ]);
+    const result = await nonStreamOrchestrator.continueMessage(continueInput(ORIGINAL));
+    expect(result.reply).toBe(expected);
+    expect(nonStreamCalls.appendedVariants[0]!.content).toBe(streamCalls.appendedVariants[0]!.content);
   });
 });
 

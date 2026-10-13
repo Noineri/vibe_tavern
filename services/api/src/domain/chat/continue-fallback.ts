@@ -34,6 +34,7 @@ import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreamin
 import type { ExtractedToolCall, ExtractedToolResult, GenerationResult, ProviderStreamResult } from "../../infrastructure/ai/provider-execution-types.js";
 import { detectPrefillRejection } from "../../infrastructure/ai/prefill-rejection-detector.js";
 import { mergeContinuation } from "../../infrastructure/ai/merge-continuation.js";
+import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-in-response.js";
 import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-tags.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { resolveProtocol } from "../providers/protocol-registry.js";
@@ -79,6 +80,12 @@ export interface DrainStreamInput<TFinal extends DrainFinalSnapshot> {
   debugLabel: string;
   omitMessageCountInFinish?: boolean;
   prefill?: string;
+  /** CPF fallback stitch base — the original variant text (raw, pre-extraction).
+   *  Mutually exclusive with `prefill`; only the continue-fallback stream
+   *  path passes it. When set, drainStream merges the raw reply onto this
+   *  base with `mergeContinuation` BEFORE thinking-tag extraction + the
+   *  AI_OUTPUT regex seam (order parity with the non-stream fallback). */
+  continuationOf?: string;
   onAbort: (text: string, reasoning: string, reasoningDurationMs: number | undefined, latencyMs: number) => Promise<void>;
   /** P21: the final return carries the wire snapshot PLUS the lorebook
    *  overflow-alert channel (alert-on books that overflowed this turn) —
@@ -238,6 +245,24 @@ export async function appendContinueVariant<TSnapshot extends FallbackVariantSna
 
 // ─── Fallback attempts ───────────────────────────────────────────────────────
 
+/** CPF-fix1 — stream-finalize stitch seam (lives here, not in the
+ *  orchestrator, per the file-size ratchet): when `continuationOf` is set,
+ *  the RAW reply is merged onto the original variant text with
+ *  `mergeContinuation` BEFORE thinking-tag extraction + the AI_OUTPUT regex
+ *  seam (order parity with the non-stream fallback — a persist-mode hook
+ *  altering the overlap head must not defeat the trim); otherwise the
+ *  prefill echo seam runs as before. */
+export function stitchContinuationOrPrefill(
+  input: Pick<DrainStreamInput<DrainFinalSnapshot>, "chatId" | "continuationOf" | "prefill">,
+  rawText: string,
+  debugLabel: string,
+): string {
+  if (input.continuationOf === undefined) return ensurePrefillInResponse(rawText, input.prefill);
+  const merged = mergeContinuation(input.continuationOf, rawText);
+  logSendDebug(`${debugLabel}.fallback.stitch`, { chatId: input.chatId, overlapLength: merged.overlapLength });
+  return merged.content;
+}
+
 /** Non-streaming fallback attempt — see the module doc for the request shape. */
 export async function runContinueFallback<TSnapshot extends FallbackVariantSnapshot>(
   deps: {
@@ -346,9 +371,12 @@ export async function* runContinueFallbackStream<TSnapshot extends FallbackVaria
     startedAt,
     debugLabel: "live.continue-stream",
     omitMessageCountInFinish: true,
-    // No prefill on the fallback path — the drain's echo seam is a no-op
-    // (ensurePrefillInResponse returns `text` unchanged for `undefined`).
+    // No prefill on the fallback path — the stitch base rides as
+    // `continuationOf` so drainStream merges the RAW reply BEFORE
+    // thinking-tag extraction + the AI_OUTPUT regex seam (order parity
+    // with the non-stream fallback). prefill stays undefined.
     prefill: undefined,
+    continuationOf: input.continuationText,
     onAbort: async (text, reasoning, reasoningDurationMs, latencyMs) => {
       if (text) {
         await deps.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
@@ -360,19 +388,17 @@ export async function* runContinueFallbackStream<TSnapshot extends FallbackVaria
       }
     },
     onFinal: async (text, reasoning, reasoningDurationMs, latencyMs, toolCalls, toolResults) => {
-      // Stitching seam: overlap-trimmed merge of the RAW final continuation
-      // onto the original variant text — BEFORE the variant append.
-      const merged = mergeContinuation(input.continuationText, text);
-      logSendDebug("live.continue-stream.fallback.stitch", { chatId: input.chatId, messageId: input.messageId, overlapLength: merged.overlapLength });
+      // The stitch already ran inside drainStream (on the raw reply, before
+      // extraction + regex) — append the final text as received.
       const snapshot = await deps.chatRuntime.appendMessageVariant(brandId<ChatId>(input.chatId), brandId<MessageId>(input.messageId), {
-        content: merged.content,
+        content: text,
         latencyMs,
         reasoning,
         reasoningDurationMs,
         toolCalls,
         toolResults,
       });
-      logSendDebug("live.continue-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs, overlapLength: merged.overlapLength });
+      logSendDebug("live.continue-stream.done", { chatId: input.chatId, messageId: input.messageId, latencyMs });
       return { ...snapshot, lorebookOverflows: snapshot.overflowAlerts };
     },
   });

@@ -10,7 +10,7 @@ import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreamin
 import { streamProviderExecutor } from "../../infrastructure/ai/stream-provider-executor.js";
 import { ProviderExecutionError } from "../../infrastructure/ai/provider-execution-types.js";
 import { detectPrefillRejection } from "../../infrastructure/ai/prefill-rejection-detector.js";
-import { runContinueFallback, runContinueFallbackStream, drainContinuePrefillWithRetry, appendContinueVariant, ContinueFallbackMemory, resolveEffectivePrefill, selectContinueEntry, countPromptMessages } from "./continue-fallback.js";
+import { runContinueFallback, runContinueFallbackStream, drainContinuePrefillWithRetry, appendContinueVariant, stitchContinuationOrPrefill, ContinueFallbackMemory, resolveEffectivePrefill, selectContinueEntry, countPromptMessages } from "./continue-fallback.js";
 import type { StreamStartInput, DrainStreamInput, DrainFinalSnapshot, ContinueFallbackAttemptInput, ContinueFallbackReason } from "./continue-fallback.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-tags.js";
@@ -1017,8 +1017,8 @@ export class LiveChatOrchestrator {
       rawReasoning = reasoningAccumulator || undefined;
     }
 
-    // Some providers return <thinking> tags in content instead of reasoning_content
-    const textWithPrefill = ensurePrefillInResponse(rawText, prefill);
+    // CPF-fix1: the fallback stitch runs on the RAW reply inside the helper (merge BEFORE extract+regex); prefill echo otherwise.
+    const textWithPrefill = stitchContinuationOrPrefill(input, rawText, debugLabel);
     const { mainContent: finalText, reasoning: finalReasoning } = extractThinkingTags(textWithPrefill, rawReasoning);
     // RX-8 regex seam: AI_OUTPUT transform (persist-mode presets, main content only) — covers ALL stream paths funneling through drainStream. Deltas stream raw (ST parity); only the final stored text is transformed.
     const transformedFinalText = await this.applyRegexLayer("AI_OUTPUT", input.chatId, finalText);
