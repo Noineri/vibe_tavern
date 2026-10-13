@@ -19,6 +19,10 @@
  *   5. Runtime-level (REAL ChatRuntime): setPendingTrace attributes the
  *      fallback variant (model + preset flow through the append) and
  *      patchPendingTrace({prefill: null}) clears a stale preset prefill.
+ *   6. CPF-3 direct entry: Continue on a `prefill: false` protocol (google)
+ *      runs the fallback FIRST — exactly ONE wire call in fallback shape
+ *      (target IN history, trailing user instruction), a stitched variant,
+ *      and NO prefill attempt (no exclusion assembly, no discard, no error).
  *
  * HOW: the real orchestrator methods with the REAL executors — the stub sits
  * at the external boundary (globalThis.fetch, queue of prepared Responses),
@@ -58,6 +62,8 @@ const REJECTION_MESSAGE = "The conversation cannot end with a model response. Ad
 interface WireCall {
   url: string;
   messages: Array<{ role: string; content: string }>;
+  /** The raw request body (native-protocol shapes carry no `messages`). */
+  rawBody: string;
 }
 
 const realFetch = globalThis.fetch;
@@ -68,12 +74,13 @@ function installFetchQueue(responses: Array<() => Response>): WireCall[] {
   let index = 0;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input.toString();
+    const rawBody = typeof init?.body === "string" ? init.body : "";
     let messages: Array<{ role: string; content: string }> = [];
-    if (typeof init?.body === "string") {
-      const parsed = JSON.parse(init.body) as { messages?: Array<{ role: string; content: string }> };
+    if (rawBody) {
+      const parsed = JSON.parse(rawBody) as { messages?: Array<{ role: string; content: string }> };
       messages = parsed.messages ?? [];
     }
-    calls.push({ url, messages });
+    calls.push({ url, messages, rawBody });
     const next = responses[index];
     index += 1;
     if (!next) throw new Error(`unexpected provider fetch #${index} (${url})`);
@@ -439,6 +446,134 @@ describe("LiveChatOrchestrator — continue prefill fallback, non-streaming (CPF
     // The prefill patch from the rejected attempt, then the fallback patch clearing prefill.
     expect(calls.tracePatches[0]!.prefill).toBe(ORIGINAL);
     expect(calls.tracePatches[calls.tracePatches.length - 1]!.prefill).toBe(null);
+  });
+});
+
+describe("LiveChatOrchestrator — continue direct fallback on prefill:false protocols (CPF-3)", () => {
+  function makeGoogleProfile(): StoredProviderProfileRecord {
+    return {
+      ...makeProfile(),
+      providerPreset: "google",
+      endpoint: "https://generativelanguage.googleapis.com",
+      apiKey: "test-key",
+      defaultModel: "gemini-test",
+    };
+  }
+
+  function continueGoogleInput(continuationText: string) {
+    return {
+      chatId: CHAT,
+      messageId: MESSAGE,
+      continuationText,
+      profile: makeGoogleProfile(),
+      model: "gemini-test",
+    };
+  }
+
+  /** A Google-native generateContent response (non-streaming success). */
+  function googleCompletion(text: string): () => Response {
+    return () => new Response(JSON.stringify({
+      candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP", index: 0 }],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }
+
+  /** A Google-native SSE stream (streaming success). */
+  function googleStream(deltas: string[]): () => Response {
+    return () => {
+      const encoder = new TextEncoder();
+      const parts = deltas.map((text) => `data: ${JSON.stringify({
+        candidates: [{ content: { role: "model", parts: [{ text }] }, index: 0 }],
+      })}\n\n`);
+      parts.push(`data: ${JSON.stringify({
+        candidates: [{ content: { role: "model", parts: [] }, finishReason: "STOP", index: 0 }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 },
+      })}\n\n`);
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const part of parts) controller.enqueue(encoder.encode(part));
+          controller.close();
+        },
+      });
+      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+    };
+  }
+
+  interface GoogleWireContent {
+    role: string;
+    text: string;
+  }
+
+  /** Google-native wire body → the contents list as (role, text) pairs. */
+  function googleContents(call: WireCall): GoogleWireContent[] {
+    const parsed = JSON.parse(call.rawBody) as { contents?: Array<{ role: string; parts: Array<{ text?: string }> }> };
+    if (!parsed.contents) throw new Error("no contents on the google wire body");
+    return parsed.contents.map((content) => ({
+      role: content.role,
+      text: content.parts.map((part) => part.text ?? "").join(""),
+    }));
+  }
+
+  it("non-streaming: ONE wire call in fallback shape, stitched variant, no prefill attempt, no error", async () => {
+    const calls = makeCalls();
+    const orchestrator = makeOrchestrator(calls);
+    const wire = installFetchQueue([googleCompletion(CONTINUATION_OVERLAP)]);
+
+    const result = await orchestrator.continueMessage(continueGoogleInput(ORIGINAL));
+
+    // Direct entry — exactly ONE wire call, no rejected prefill attempt.
+    expect(wire).toHaveLength(1);
+    // Fallback shape: the target IN history (model turn) + the trailing user instruction.
+    const contents = googleContents(wire[0]!);
+    expect(contents).toEqual([
+      { role: "user", text: "Tell me a story." },
+      { role: "model", text: ORIGINAL },
+      { role: "user", text: CONTINUATION_USER_INSTRUCTION },
+    ]);
+    // One variant, stitched (overlap trimmed — a single "wings.").
+    expect(result.reply).toBe(MERGED_OVERLAP);
+    expect(calls.appendedVariants).toHaveLength(1);
+    expect(calls.appendedVariants[0]!.messageId).toBe(MESSAGE);
+    expect(calls.appendedVariants[0]!.content).toBe(MERGED_OVERLAP);
+    // No exclusion assembly (a single traced assembly), nothing discarded,
+    // and no prefill ever rode (the single patch clears it).
+    expect(calls.assemblies).toEqual([{ excludeMessageId: undefined, setPendingTrace: true }]);
+    expect(calls.discards).toBe(0);
+    expect(calls.tracePatches).toHaveLength(1);
+    expect(calls.tracePatches[0]!.prefill).toBe(null);
+  });
+
+  it("streaming: ONE wire call in fallback shape, deltas stream, stitched variant, no error event", async () => {
+    const calls = makeCalls();
+    const orchestrator = makeOrchestrator(calls);
+    const wire = installFetchQueue([googleStream(["wings.", " And then the rain came down."])]);
+
+    const events: Array<{ event: string; data: string }> = [];
+    for await (const event of orchestrator.continueMessageStream(continueGoogleInput(ORIGINAL))) {
+      events.push(event);
+    }
+
+    // Direct entry — exactly ONE wire call, and the client saw no error.
+    expect(wire).toHaveLength(1);
+    expect(events.some((e) => e.event === "error")).toBe(false);
+    expect(events.some((e) => e.event === "text-delta")).toBe(true);
+    expect(events.some((e) => e.event === "finish")).toBe(true);
+    // Fallback shape: the target IN history (model turn) + the trailing user instruction.
+    const contents = googleContents(wire[0]!);
+    expect(contents).toEqual([
+      { role: "user", text: "Tell me a story." },
+      { role: "model", text: ORIGINAL },
+      { role: "user", text: CONTINUATION_USER_INSTRUCTION },
+    ]);
+    // One variant, stitched (overlap trimmed — a single "wings.").
+    expect(calls.appendedVariants).toHaveLength(1);
+    expect(calls.appendedVariants[0]!.messageId).toBe(MESSAGE);
+    expect(calls.appendedVariants[0]!.content).toBe(MERGED_OVERLAP);
+    // No exclusion assembly, nothing discarded, no prefill ever rode.
+    expect(calls.assemblies).toEqual([{ excludeMessageId: undefined, setPendingTrace: true }]);
+    expect(calls.discards).toBe(0);
+    expect(calls.tracePatches).toHaveLength(1);
+    expect(calls.tracePatches[0]!.prefill).toBe(null);
   });
 });
 

@@ -14,9 +14,11 @@
  *   2. The pending prompt trace records the ACTUAL continuation text as its
  *      `prefill` (trace honesty — not the preset value).
  *   3. Providers WITHOUT the prefill capability (anthropic/google/koboldcpp,
- *      per the protocol registry) cannot continue — the orchestrator refuses
- *      instead of silently generating a fresh reply masquerading as a
- *      continuation variant.
+ *      per the protocol registry) enter the Continue fallback DIRECTLY (CPF-3)
+ *      — no refusal, no prefill attempt: the executor receives
+ *      `continuationFallback: true` (never `prefill`), the prompt keeps the
+ *      target message in history (no `excludeMessageId`), and the stitched
+ *      reply appends as a new variant.
  *   4. The LS-4 capability gate ALSO applies to prefill on the send path: a
  *      prefill from a capability-less provider is dropped entirely (never
  *      pushed, never prepended by ensurePrefillInResponse — the pre-existing
@@ -30,6 +32,7 @@ import { describe, expect, it } from "bun:test";
 import { EventBus } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse, MessageId } from "@vibe-tavern/domain";
 import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.js";
+import { mergeContinuation } from "../src/infrastructure/ai/merge-continuation.js";
 import type { GenerationResult } from "../src/infrastructure/ai/provider-execution-types.js";
 import type { ProviderExecutionInput, ProviderStreamResult } from "../src/infrastructure/ai/provider-execution-types.js";
 import type { StoredProviderProfileRecord } from "@vibe-tavern/domain";
@@ -70,7 +73,7 @@ interface RuntimeCalls {
   assembleExcludeMessageId: MessageId | undefined;
   appendedVariants: Array<{ messageId: string; content: string }>;
   appendedReplies: string[];
-  patchedTracePrefills: Array<string | undefined>;
+  patchedTracePrefills: Array<string | null | undefined>;
 }
 
 function makeRuntime(calls: RuntimeCalls, assembledPrefill: string | null = null) {
@@ -93,7 +96,7 @@ function makeRuntime(calls: RuntimeCalls, assembledPrefill: string | null = null
       calls.appendedReplies.push(content);
       return { response: { messages: [] }, branchId: "branch_1", messageId: "new_1" } as never;
     },
-    patchPendingTrace(_chatId: string, patch: { prefill?: string }) {
+    patchPendingTrace(_chatId: string, patch: { prefill?: string | null }) {
       calls.patchedTracePrefills.push(patch.prefill);
     },
     discardPendingPromptTrace() {},
@@ -223,31 +226,46 @@ describe("LiveChatOrchestrator — continue generation (LS-4a)", () => {
     expect(events.some((e) => e.event === "finish")).toBe(true);
   });
 
-  it("refuses to continue on a provider without the prefill capability", async () => {
+  it("enters the fallback directly on a provider without the prefill capability (no refusal, no prefill attempt)", async () => {
     const calls: RuntimeCalls = {
       assembleExcludeMessageId: undefined,
       appendedVariants: [],
       appendedReplies: [],
       patchedTracePrefills: [],
     };
-    let executorRan = false;
+    const executorInputs: ProviderExecutionInput[] = [];
     const orchestrator = makeOrchestrator(calls, makeProfile("anthropic"), {
-      nonstreaming: async () => {
-        executorRan = true;
-        return { text: "nope", providerResponse: {} } as GenerationResult;
+      nonstreaming: async (input) => {
+        executorInputs.push(input);
+        // The model re-emits the tail before continuing — the stitch trims it.
+        return { text: "upon a time, the snow began to fall.", providerResponse: {} } as GenerationResult;
       },
       stream: null as never,
     });
 
-    await expect(orchestrator.continueMessage({
+    // CPF-3: no Validation refusal — the user pressed "continue" by hand.
+    const result = await orchestrator.continueMessage({
       chatId: CHAT,
       messageId: MESSAGE,
       continuationText: "Once upon a time",
       profile: makeProfile("anthropic"),
       model: "model-1",
-    })).rejects.toMatchObject({ kind: "Validation" });
-    expect(executorRan).toBe(false);
-    expect(calls.appendedVariants).toHaveLength(0);
+    });
+
+    // Direct fallback entry: exactly one executor call, fallback-shaped.
+    expect(executorInputs).toHaveLength(1);
+    expect(executorInputs[0]!.continuationFallback).toBe(true);
+    expect(executorInputs[0]!.prefill).toBeUndefined();
+    // The target message stays in history — no exclusion assembly.
+    expect(calls.assembleExcludeMessageId).toBeUndefined();
+    // Stitched variant appended (overlap trimmed to a single "upon a time").
+    const expected = mergeContinuation("Once upon a time", "upon a time, the snow began to fall.").content;
+    expect(calls.appendedVariants).toHaveLength(1);
+    expect(calls.appendedVariants[0]!.messageId).toBe(MESSAGE);
+    expect(calls.appendedVariants[0]!.content).toBe(expected);
+    expect(result.reply).toBe(expected);
+    // Trace honesty: nothing rode as prefill — the patch clears it.
+    expect(calls.patchedTracePrefills[calls.patchedTracePrefills.length - 1]).toBe(null);
   });
 });
 

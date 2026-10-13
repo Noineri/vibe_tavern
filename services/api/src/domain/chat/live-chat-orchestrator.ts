@@ -10,8 +10,8 @@ import { nonstreamingProviderExecute } from "../../infrastructure/ai/nonstreamin
 import { streamProviderExecutor } from "../../infrastructure/ai/stream-provider-executor.js";
 import { ProviderExecutionError } from "../../infrastructure/ai/provider-execution-types.js";
 import { detectPrefillRejection } from "../../infrastructure/ai/prefill-rejection-detector.js";
-import { runContinueFallback, runContinueFallbackStream, drainContinuePrefillWithRetry, appendContinueVariant, ContinueFallbackMemory, resolveEffectivePrefill, requirePrefillCapability, countPromptMessages } from "./continue-fallback.js";
-import type { StreamStartInput, DrainStreamInput, DrainFinalSnapshot, ContinueFallbackAttemptInput } from "./continue-fallback.js";
+import { runContinueFallback, runContinueFallbackStream, drainContinuePrefillWithRetry, appendContinueVariant, ContinueFallbackMemory, resolveEffectivePrefill, selectContinueEntry, countPromptMessages } from "./continue-fallback.js";
+import type { StreamStartInput, DrainStreamInput, DrainFinalSnapshot, ContinueFallbackAttemptInput, ContinueFallbackReason } from "./continue-fallback.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-tags.js";
 import { ensurePrefillInResponse } from "../../infrastructure/ai/ensure-prefill-in-response.js";
@@ -634,15 +634,15 @@ export class LiveChatOrchestrator {
     snapshot: MessageResponse;
   }> {
     const provider = await this.resolveProvider(input);
-    requirePrefillCapability(provider.profile);
     const memoryKey = ContinueFallbackMemory.key(provider.profile, provider.model);
-    if (this.continueFallbackMemory.has(memoryKey)) {
+    const fallbackEntry = selectContinueEntry(provider.profile, this.continueFallbackMemory.has(memoryKey));
+    if (fallbackEntry) {
       return await runContinueFallback({
         chatRuntime: this.chatRuntime,
         executeNonstreaming: this.executeNonstreaming,
         applyRegexLayer: (hook, chatId, text) => this.applyRegexLayer(hook, chatId, text),
         withTokenContext: (provider2, fn) => this.withTokenContext(provider2, fn),
-      }, input, provider, "memory-hit");
+      }, input, provider, fallbackEntry);
     }
     logSendDebug("live.continue.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
     const prompt = await this.withTokenContext(provider, () =>
@@ -726,10 +726,10 @@ export class LiveChatOrchestrator {
     signal?: AbortSignal;
   }): AsyncGenerator<{ event: string; data: string }> {
     const provider = await this.resolveProvider(input);
-    requirePrefillCapability(provider.profile);
     const memoryKey = ContinueFallbackMemory.key(provider.profile, provider.model);
-    if (this.continueFallbackMemory.has(memoryKey)) {
-      yield* this.continueFallbackStream(input, provider, "memory-hit");
+    const fallbackEntry = selectContinueEntry(provider.profile, this.continueFallbackMemory.has(memoryKey));
+    if (fallbackEntry) {
+      yield* this.continueFallbackStream(input, provider, fallbackEntry);
       return;
     }
     logSendDebug("live.continue-stream.start", { chatId: input.chatId, messageId: input.messageId, model: provider.model });
@@ -779,7 +779,7 @@ export class LiveChatOrchestrator {
   /** CPF-2b fallback continue, streaming: delegates to
    *  {@link runContinueFallbackStream} (continue-fallback.ts — extracted per
    *  the file-size ratchet) on this orchestrator's seams. */
-  private async *continueFallbackStream(input: ContinueFallbackAttemptInput & { profile: StoredProviderProfileRecord; model: string }, provider: { profile: StoredProviderProfileRecord; model: string }, reason: "memory-hit" | "rejection-retry"): AsyncGenerator<{ event: string; data: string }> {
+  private async *continueFallbackStream(input: ContinueFallbackAttemptInput & { profile: StoredProviderProfileRecord; model: string }, provider: { profile: StoredProviderProfileRecord; model: string }, reason: ContinueFallbackReason): AsyncGenerator<{ event: string; data: string }> {
     yield* runContinueFallbackStream({
       chatRuntime: this.chatRuntime,
       startStream: (startInput, prompt) => this.startStream(startInput, prompt),

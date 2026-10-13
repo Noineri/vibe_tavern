@@ -37,7 +37,6 @@ import { mergeContinuation } from "../../infrastructure/ai/merge-continuation.js
 import { extractThinkingTags } from "../../infrastructure/ai/extract-thinking-tags.js";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { resolveProtocol } from "../providers/protocol-registry.js";
-import { validation } from "../../shared/errors.js";
 
 // ─── Shared structural types ────────────────────────────────────────────────
 
@@ -165,14 +164,31 @@ export function resolveEffectivePrefill(profile: StoredProviderProfileRecord, ca
   return candidate;
 }
 
-/** LS-4a: Continue is a PREFILL of the existing text — refuse instead of
- *  silently generating a fresh reply that would masquerade as a
- *  continuation variant. (CPF-3 will replace this gate with direct fallback
- *  entry for `prefill: false` protocols.) */
-export function requirePrefillCapability(profile: StoredProviderProfileRecord): void {
-  if (!resolveProtocol(normalizeProviderType(profile.providerPreset)).capabilities.prefill) {
-    throw validation("The active provider does not support assistant prefill, which continuing a reply requires.");
-  }
+/** CPF-3 — prefill-capability predicate (replaces the LS-4a throwing gate):
+ *  `prefill: false` protocols (google, anthropic, …) enter the Continue
+ *  fallback DIRECTLY instead of hard-refusing — the user pressed
+ *  "continue" by hand, so a user-role continuation is always attempted. */
+export function protocolSupportsPrefill(profile: StoredProviderProfileRecord): boolean {
+  return resolveProtocol(normalizeProviderType(profile.providerPreset)).capabilities.prefill;
+}
+
+/** CPF-3 — why a Continue ran in fallback mode: a rejection-memory hit
+ *  skips the doomed prefill, a clean rejection retries once, and a
+ *  `prefill: false` protocol enters directly (owner: the user pressed
+ *  "continue" by hand — no hard refusal). Rides the `logSendDebug` entry
+ *  lines of both attempt functions. */
+export type ContinueFallbackReason = "memory-hit" | "rejection-retry" | "capability";
+
+/** CPF-3 — Continue entry selection (the mode funnel BOTH continue seams
+ *  share): `prefill: false` protocols enter the fallback DIRECTLY
+ *  ("capability" — the user pressed "continue" by hand, so no hard refusal);
+ *  otherwise a rejection-memory hit skips the doomed prefill ("memory-hit");
+ *  otherwise the prefill attempt runs (`null`). Capability is checked FIRST —
+ *  it takes precedence over memory. */
+export function selectContinueEntry(profile: StoredProviderProfileRecord, memoryHas: boolean): ContinueFallbackReason | null {
+  if (!protocolSupportsPrefill(profile)) return "capability";
+  if (memoryHas) return "memory-hit";
+  return null;
 }
 
 // ─── Shared non-streaming continue tail ─────────────────────────────
@@ -232,7 +248,7 @@ export async function runContinueFallback<TSnapshot extends FallbackVariantSnaps
   },
   input: ContinueFallbackAttemptInput,
   provider: { profile: StoredProviderProfileRecord; model: string },
-  reason: "memory-hit" | "rejection-retry",
+  reason: ContinueFallbackReason,
 ): Promise<{
   promptMessageCount: number;
   reply: string;
@@ -293,7 +309,7 @@ export async function* runContinueFallbackStream<TSnapshot extends FallbackVaria
   },
   input: ContinueFallbackAttemptInput,
   provider: { profile: StoredProviderProfileRecord; model: string },
-  reason: "memory-hit" | "rejection-retry",
+  reason: ContinueFallbackReason,
 ): AsyncGenerator<{ event: string; data: string }> {
   logSendDebug("live.continue-stream.fallback.entry", { chatId: input.chatId, messageId: input.messageId, model: provider.model, reason });
   const prompt = await deps.withTokenContext(provider, () =>
