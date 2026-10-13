@@ -259,27 +259,36 @@ function isAwaitingAskOutput(output: unknown): boolean {
   );
 }
 
-/** The model-visible text for an `ask_user` tool-result output (TAG-5
- *  split-turn). The stored payload is STRUCTURED state for the UI
- *  (`{ status: "awaiting_answer" | "answered" | "skipped", … }`); the model
- *  reads plain prose instead of marker JSON: an answer → the user's text
- *  verbatim; a skip → "(skipped)"; a still-awaiting marker (the user never
- *  answered — they moved on and sent a normal message instead) → the
- *  self-heal literal, so the model never sees a dangling promise. Prompt-side
- *  only: the stored row is never mutated by this rendering. */
-function renderAskOutputText(output: unknown): string {
+/** Wire stringify GUARANTEEING the result parses to a non-null JSON object:
+ *  objects pass through verbatim; any other value (a tool that persisted a
+ *  primitive, a malformed ask payload) wraps under a `result` key. Translation
+ *  proxies (agi → Google) build google.protobuf.Struct function responses from
+ *  these strings — a bare string is a 400, an object passes. */
+function stringifyObjectWireText(output: unknown): string {
+  if (output !== null && typeof output === "object") return JSON.stringify(output);
+  return JSON.stringify({ result: output });
+}
+
+/** The model-visible wire JSON for an `ask_user` tool-result output (TAG-5
+ *  split-turn). The stored payload is STRUCTURED state for the UI; the model
+ *  reads the same facts through self-describing keys instead of marker JSON:
+ *  an answer → `{ answer }` (the user's text verbatim); a skip →
+ *  `{ skipped: true }`; a still-awaiting marker (the user moved on) →
+ *  `{ unanswered: true, note }`, so the model never sees a dangling promise.
+ *  Prompt-side only: the stored row is never mutated by this rendering. */
+function renderAskOutputWireText(output: unknown): string {
   if (output !== null && typeof output === "object" && "status" in output) {
     const status = (output as { status: unknown }).status;
     if (status === "awaiting_answer") {
-      return "(the user did not answer this question; they moved on)";
+      return JSON.stringify({ unanswered: true, note: "the user did not answer this question; they moved on" });
     }
-    if (status === "skipped") return "(skipped)";
+    if (status === "skipped") return JSON.stringify({ skipped: true });
     if (status === "answered") {
       const answer = (output as { answer?: unknown }).answer;
-      if (typeof answer === "string" && answer.length > 0) return answer;
+      if (typeof answer === "string" && answer.length > 0) return JSON.stringify({ answer });
     }
   }
-  return JSON.stringify(output);
+  return stringifyObjectWireText(output);
 }
 
 /** Is this stored message row an awaiting `ask_user` tool-result? (TAG-5 —
@@ -318,11 +327,12 @@ export function storeMessagesToHistory<M extends AgentStreamStoredMessage>(
       try {
         const parsed = JSON.parse(m.content) as AgentPersistedToolResult;
         toolName = parsed.toolName ?? "";
-        outputText = JSON.stringify(parsed.output);
+        outputText = stringifyObjectWireText(parsed.output);
         // TAG-5: an ask_user result carries the CONVERSATION, not telemetry —
-        // the model reads plain prose (the answer / a skip / the self-heal
-        // literal for a never-answered ask), never the marker JSON.
-        if (toolName === "ask_user") outputText = renderAskOutputText(parsed.output);
+        // the model reads the answer / skip / never-answered note through
+        // self-describing keys, never the marker JSON (the whole wire string
+        // parses to a JSON object — Struct contract for translation proxies).
+        if (toolName === "ask_user") outputText = renderAskOutputWireText(parsed.output);
       } catch {
         // Invalid JSON — use the raw content as the output text.
       }

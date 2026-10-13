@@ -974,11 +974,14 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
   }
 
   /** Pull the LAST tool-role message's first tool-result part value (the
-   *  model-visible text of the seeded ask row) from the captured modelMessages. */
-  function lastAskResultText(modelMessages: Array<{ role: string; content: unknown }>): string {
+   *  model-visible wire string of the seeded ask row) from the captured
+   *  modelMessages, JSON-parsed — the wire contract is an OBJECT (the Struct
+   *  requirement translation proxies impose), so assertions deep-equal
+   *  objects, never string-identity prose. */
+  function lastAskResultObject(modelMessages: Array<{ role: string; content: unknown }>): unknown {
     const toolMsg = [...modelMessages].reverse().find((m) => m.role === "tool");
     const part = (toolMsg!.content as Array<{ type: string; output?: { value?: string } }>)[0];
-    return part.output!.value!;
+    return JSON.parse(part.output!.value!);
   }
 
   it("stopWhen wires the ceiling AND the ask_user stop condition (verified ai@7.0.66 API)", async () => {
@@ -1043,7 +1046,7 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
     });
   });
 
-  it("answer mode: NO user row; the marker row is rewritten; the model sees the answer text as the tool-result", async () => {
+  it("answer mode: NO user row; the marker row is rewritten; the model sees the answer object as the tool-result", async () => {
     const store = createFakeStore(makeThread());
     seedAwaitingAsk(store);
     let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
@@ -1067,16 +1070,19 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
       toolName: "ask_user",
       output: { status: "answered", answer: "blue" },
     });
-    // The model window ends on the answered tool-result with the ANSWER TEXT
-    // (not the marker JSON), and the continuation persists normally.
-    expect(lastAskResultText(captured!.messages!)).toBe("blue");
+    // The model window ends on the answered tool-result with the ANSWER as an
+    // object (not the marker JSON), and the continuation persists normally.
+    // 2026-10-13 — BUGFIX unit (owner ruling fd18eb2): intentional re-capture
+    // of the old prose pin `toBe("blue")` — ask tool rows now render object
+    // wire JSON (Struct contract for translation proxies).
+    expect(lastAskResultObject(captured!.messages!)).toEqual({ answer: "blue" });
     const finish = events.find((e) => e.event === "finish");
     expect(finish).toBeDefined();
     expect(store.messages.at(-1)!.role).toBe("assistant");
     expect(store.messages.at(-1)!.content).toBe("Blue it is.");
   });
 
-  it("answer mode with skipped: the model sees (skipped)", async () => {
+  it("answer mode with skipped: the model sees { skipped: true }", async () => {
     const store = createFakeStore(makeThread());
     seedAwaitingAsk(store, "tc_skip_1");
     let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
@@ -1097,10 +1103,12 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
       toolName: "ask_user",
       output: { status: "skipped" },
     });
-    expect(lastAskResultText(captured!.messages!)).toBe("(skipped)");
+    // 2026-10-13 — BUGFIX unit (owner ruling fd18eb2): intentional re-capture
+    // of the old prose pin `toBe("(skipped)")` — object wire JSON now.
+    expect(lastAskResultObject(captured!.messages!)).toEqual({ skipped: true });
   });
 
-  it("a dangling ask self-heals at the next assembly: the model reads the heal literal; the stored row is NOT mutated", async () => {
+  it("a dangling ask self-heals at the next assembly: the model reads the unanswered-note object; the stored row is NOT mutated", async () => {
     const store = createFakeStore(makeThread());
     seedAwaitingAsk(store);
     let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
@@ -1116,8 +1124,14 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
       ),
     );
 
-    // The model sees the heal literal for the never-answered ask...
-    expect(lastAskResultText(captured!.messages!)).toBe("(the user did not answer this question; they moved on)");
+    // The model sees the unanswered-note OBJECT for the never-answered ask...
+    // 2026-10-13 — BUGFIX unit (owner ruling fd18eb2): intentional re-capture
+    // of the old prose pin `toBe("(the user did not answer …)")` — object
+    // wire JSON now.
+    expect(lastAskResultObject(captured!.messages!)).toEqual({
+      unanswered: true,
+      note: "the user did not answer this question; they moved on",
+    });
     // ...while the STORED row keeps its awaiting marker (prompt-side only —
     // the UI still renders the unanswered state, and a LATE answer can still
     // rewrite it).
@@ -1125,6 +1139,81 @@ describe("experience-copilot stream — ask split-turn (TAG-5)", () => {
     expect((JSON.parse(toolRow.content) as { output: { status: string } }).output.status).toBe("awaiting_answer");
     // The normal message still persisted as a user row.
     expect(store.messages.filter((m) => m.role === "user")).toHaveLength(1);
+  });
+
+  it("every reconstructed tool-row wire string parses to a JSON object (Struct contract for translation proxies)", async () => {
+    const store = createFakeStore(makeThread());
+    // Seed four tool rows a next turn must reconstruct: (a) an answered ask,
+    // (b) a skipped ask, (c) a normal tool with an OBJECT output, (d) a tool
+    // with a PRIMITIVE string output (hand-written persisted content JSON —
+    // the exact row shape that crashed Google-via-translation-proxy turns).
+    const seedToolPair = (toolCallId: string, toolName: string, output: unknown) => {
+      store.messages.push(
+        {
+          id: `msg_seed_c_${toolCallId}`,
+          threadId: "thread_1",
+          role: "assistant",
+          content: "",
+          toolCallsJson: JSON.stringify([
+            { type: "tool-call", toolCallId, toolName, input: {} },
+          ]),
+          toolCallId: null,
+          createdAt: "2025-01-01T00:00:00.000Z",
+        },
+        {
+          id: `msg_seed_r_${toolCallId}`,
+          threadId: "thread_1",
+          role: "tool",
+          content: JSON.stringify({ toolName, output }),
+          toolCallsJson: null,
+          toolCallId,
+          createdAt: "2025-01-01T00:00:01.000Z",
+        },
+      );
+    };
+    seedToolPair("tc_obj_ans", "ask_user", { status: "answered", answer: "blue" });
+    seedToolPair("tc_obj_skip", "ask_user", { status: "skipped" });
+    seedToolPair("tc_obj_wb", "write_buffer", { summary: "wrote" });
+    seedToolPair("tc_prim", "x", "plain");
+
+    let captured: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    streamTextImpl = (opts: unknown) => {
+      captured = opts as { messages?: Array<{ role: string; content: unknown }> };
+      return makeFakeStreamTextResult({ parts: [textDelta("ok")] });
+    };
+
+    await collect(
+      streamExperienceCopilot(
+        { threadId: "thread_1", content: "continue", providerProfileId: "prov_1" },
+        makeDeps(store),
+      ),
+    );
+
+    // Every role:"tool" message's content part value JSON-parses to a NON-NULL
+    // NON-ARRAY object — a bare string there is the exact 400
+    // (function_response.response google.protobuf.Struct) the Google-via-proxy
+    // turns died on.
+    const toolMsgs = captured!.messages!.filter((m) => m.role === "tool");
+    expect(toolMsgs).toHaveLength(4);
+    for (const msg of toolMsgs) {
+      const part = (msg.content as Array<{ type: string; output?: { value?: string } }>)[0];
+      const parsed: unknown = JSON.parse(part.output!.value!);
+      expect(parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)).toBe(true);
+    }
+    // The four wire shapes in history order: ask rows render ask keys; an
+    // object output passes through; a primitive output is wrapped under a
+    // result key.
+    const wireValues: unknown[] = toolMsgs.map((msg) =>
+      JSON.parse(
+        (msg.content as Array<{ type: string; output?: { value?: string } }>)[0].output!.value!,
+      ),
+    );
+    expect(wireValues).toEqual([
+      { answer: "blue" },
+      { skipped: true },
+      { summary: "wrote" },
+      { result: "plain" },
+    ]);
   });
 
   it("an answer for a toolCallId that is not an awaiting ask in this thread is rejected", async () => {
