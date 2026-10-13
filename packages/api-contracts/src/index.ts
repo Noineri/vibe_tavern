@@ -1,2 +1,3 @@
 export * from "./schemas/index.js";
 export * from "./wire-types.js";
+export * from "./agent-proposal.js";
