@@ -179,6 +179,44 @@ describe("jsonBoundsError", () => {
     expect(jsonBoundsError(a, { maxDepth: 8, maxBytes: 1024 })).toMatch(/cyclic/);
   });
 
+  // 2026-10-13 — engine bugfix: UNO projection (topCard === discardPile[0]) was
+  // misreported cyclic; owner-reported outage. A global seen-set rejected ANY
+  // object referenced twice; only true ancestor cycles are un-JSON-safe.
+
+  it("allows a shared reference (DAG): the same object under two keys", () => {
+    // JSON.stringify duplicates the shared object — the round-trip succeeds, so
+    // a DAG is JSON-safe and must pass.
+    const shared = { id: "c1", color: "red" };
+    const dag = { a: shared, b: shared };
+    expect(jsonBoundsError(dag, { maxDepth: 8, maxBytes: 1024 })).toBeNull();
+  });
+
+  it("allows a shared reference between an array element and an object key", () => {
+    const shared = { id: "c1", color: "red" };
+    const dag = { list: [shared], head: shared };
+    expect(jsonBoundsError(dag, { maxDepth: 8, maxBytes: 1024 })).toBeNull();
+  });
+
+  it("allows the same card object in topCard and discardPile (UNO projection shape)", () => {
+    // The exact owner-outage shape: project() returned the top card object and
+    // the discard pile containing that SAME object.
+    const card = { id: "c1", color: "red", value: 5, kind: "number" };
+    const projection = { topCard: card, discardPile: [card] };
+    expect(jsonBoundsError(projection, { maxDepth: 8, maxBytes: 1024 })).toBeNull();
+  });
+
+  it("still rejects a true ancestor cycle even beside a shared reference", () => {
+    // A shared sibling passes, but an object containing its own ancestor chain
+    // stays rejected with the exact pinned error string.
+    const shared = { id: "c1" };
+    const loop: Record<string, unknown> = { self: null };
+    loop.self = loop;
+    const value = { a: shared, b: shared, loop };
+    expect(jsonBoundsError(value, { maxDepth: 8, maxBytes: 1024 })).toMatch(
+      /cyclic/,
+    );
+  });
+
   it("rejects nesting deeper than maxDepth", () => {
     // maxDepth counts container levels; a chain deeper than the limit is rejected.
     const deep = { a: { b: { c: { d: 1 } } } };
