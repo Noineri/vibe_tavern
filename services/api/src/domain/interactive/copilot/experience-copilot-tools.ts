@@ -11,6 +11,13 @@
  * two named text buffers ("rules"/"visual") in place of the profile/greeting
  * surfaces — adapted from {@link buildCoauthorTools}.
  *
+ * AS-2c SPLIT: the buffer-tool MECHANISM (working state, first-mutation guard,
+ * validation plumbing, mutation queue, empty-content rejection) lives in
+ * `domain/agent/agent-buffer-tools.ts` (`createBufferTools`); this module is
+ * the EXPERIENCE wiring — buffer ids, description fragments (byte-identical
+ * to the pre-AS-2c strings), the rules validator, and the seeds — plus the
+ * experience-only tools below (AS-10 removes the shim notes).
+ *
  * Returned shape for the proposing tools (`write_buffer`/`edit_buffer`):
  * {@link ExperienceCopilotToolOutput} — `{ target, proposed, summary }`.
  * - `target` tells the frontend which editor surface to overlay the diff on.
@@ -46,7 +53,6 @@ import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import {
   DEFAULT_BROKEN_RULES_LAUNCH_CONTEXT,
-  applyExactEditsToBody,
   deriveDefaultLaunchContext,
   log,
   type AgentPlan,
@@ -67,6 +73,7 @@ import {
 } from "../experience-tester.js";
 import { buildReadSkillFileTool } from "../../coauthor/skills/skill-read-tool.js";
 import { createAgentPlanTools } from "../../agent-plan/agent-plan-tools.js";
+import { createBufferTools } from "../../agent/agent-buffer-tools.js";
 import { createCopilotTodoTool } from "./copilot-todo-tool.js";
 
 /** Structured log for every experience-copilot tool call — the observability
@@ -358,20 +365,15 @@ export function buildExperienceCopilotTools(opts: {
     };
   }
 
-  // ── Turn-local composable buffer state ─────────────────────────────────────
-  // Two named text buffers (rules/visual) seeded from the turn-start source.
-  // Each successful buffer mutation advances the working copy, so a later call
-  // composes on top of earlier mutations. Per-buffer mutation counters drive
-  // the write_buffer first-mutation guard (a whole-buffer rewrite may only be
-  // the FIRST change to a buffer; afterwards the model must use edit_buffer for
-  // incremental changes — mirrors co-author's write_profile late-rewrite reject).
-  let workingRules: string | undefined = opts.rules;
-  let workingVisual: string | undefined = opts.visual;
-  let rulesMutationCount = 0;
-  let visualMutationCount = 0;
+  // ── Turn-local serialization queue ─────────────────────────────────────────
+  // AS-2c: the buffer tools serialize on the generic factory's OWN queue
+  // (agent-buffer-tools.ts); this one remains for the `todo` tool's
+  // full-list rewrite. The two queues guard DISJOINT state (buffers vs the
+  // thread checklist), so per-queue serialization preserves every observable
+  // ordering that existed under the single shared chain.
   let turnChain: Promise<unknown> = Promise.resolve();
 
-  /** Serialize a buffer mutation onto the turn queue (non-poisoning: a rejected
+  /** Serialize a mutation onto the turn queue (non-poisoning: a rejected
    *  call is swallowed so the next call runs against the last good state). */
   function runQueued<T>(fn: () => Promise<T>): Promise<T> {
     const result = turnChain.catch(() => undefined).then(fn);
@@ -430,120 +432,46 @@ export function buildExperienceCopilotTools(opts: {
     }),
   });
 
-  const allTools = {
-    write_buffer: tool({
-      description:
-        "Replace the ENTIRE rules OR visual buffer with `content`. EVERY call MUST include `target` ('rules' or 'visual') — a call missing it, or any required field, is rejected wholesale. " +
-        "Use it for a ground-up rewrite of a buffer. " +
-        "It must be the FIRST change to that buffer in a turn — once a buffer has been mutated, refine it with edit_buffer instead. " +
-        "For target 'rules', the proposed source is validated by running it through the experience sandbox (a create-only test); an invalid proposal returns a tool-error so you can self-correct in the same turn. " +
-        "For target 'visual', no validation runs (no validator exists). The proposed buffer is shown to the user as a diff before they bind it.",
-      inputSchema: z.object({
-        target: z
-          .enum(["rules", "visual"])
-          .describe("REQUIRED on every call. Which buffer to rewrite: 'rules' (the experience rules source) or 'visual' (the visual source). Never omit."),
-        content: z
-          .string()
-          .describe("The FULL proposed buffer content, replacing the current buffer entirely."),
-        summary: z
-          .string()
-          .max(200)
-          .describe("One-line description of what this change does, shown above the Apply action."),
-      }),
-      execute: async ({ target, content, summary }): Promise<ExperienceCopilotBufferOutput> =>
-        runQueued(async () => {
-          const toolName = "write_buffer";
-          if (!content.trim()) {
-            logger.warn("%s REJECTED empty content target=%s", toolName, target);
-            throw new Error(`${toolName}: content must not be empty`);
-          }
-          logger.info("%s IN target=%s len=%d summary=%s", toolName, target, content.length, summary);
-          if (target === "rules") {
-            // A whole-buffer rewrite may only be the FIRST rules change in a
-            // turn — once the buffer has been mutated, edit_buffer must be used
-            // for incremental changes (a guard-thrown write does NOT increment
-            // the count, so a self-correct re-emit in the same turn is allowed).
-            if (rulesMutationCount > 0) {
-              logger.warn("%s REJECTED late whole-buffer rules rewrite after %d mutation(s)", toolName, rulesMutationCount);
-              throw new Error(
-                `${toolName}: a whole-buffer rewrite of 'rules' can only be the FIRST rules change in a turn. ` +
-                  `Earlier edits already composed into the working rules buffer; a full rewrite now would erase them. ` +
-                  `Use edit_buffer with exact {search, replace} edits to refine the composed result.`,
-              );
-            }
-            const marker = validateRules(content, toolName);
-            workingRules = content; // advance ONLY on success — atomic on failure
-            rulesMutationCount += 1;
-            logger.info("%s OK target=%s len=%d", toolName, target, content.length);
-            return { target, proposed: content, summary, ...marker };
-          } else {
-            if (visualMutationCount > 0) {
-              logger.warn("%s REJECTED late whole-buffer visual rewrite after %d mutation(s)", toolName, visualMutationCount);
-              throw new Error(
-                `${toolName}: a whole-buffer rewrite of 'visual' can only be the FIRST visual change in a turn. ` +
-                  `Earlier edits already composed into the working visual buffer; a full rewrite now would erase them. ` +
-                  `Use edit_buffer with exact {search, replace} edits to refine the composed result.`,
-              );
-            }
-            workingVisual = content; // no validator for the visual buffer
-            visualMutationCount += 1;
-            logger.info("%s OK target=%s len=%d", toolName, target, content.length);
-            return { target, proposed: content, summary };
-          }
-        }),
+  // ── Buffer tools through the generic factory (AS-2c) ────────────────────────
+  // The MECHANISM (working state, first-mutation guard, validation plumbing,
+  // mutation queue, empty-content rejection) lives in agent-buffer-tools.ts;
+  // this wiring supplies the EXPERIENCE copy — the description fragments below
+  // reproduce the pre-AS-2c tool strings BYTE-EXACTLY (pinned by the tools
+  // suite's description pins), including the rules-vs-visual validation
+  // sentences and the SS-4B marker flow through makeOutput.
+  const bufferTools = createBufferTools({
+    bufferIds: ["rules", "visual"],
+    seeds: {
+      ...(opts.rules !== undefined ? { rules: opts.rules } : {}),
+      ...(opts.visual !== undefined ? { visual: opts.visual } : {}),
+    },
+    descriptions: {
+      write: (bufferId) =>
+        bufferId === "rules"
+          ? "For target 'rules', the proposed source is validated by running it through the experience sandbox (a create-only test); an invalid proposal returns a tool-error so you can self-correct in the same turn."
+          : "For target 'visual', no validation runs (no validator exists). The proposed buffer is shown to the user as a diff before they bind it.",
+      edit: (bufferId) =>
+        bufferId === "rules"
+          ? "For target 'rules', the RESULTING proposed source is validated by running it through the experience sandbox (a create-only test); an invalid result returns a tool-error."
+          : "Edits compose across calls within one turn. The proposed buffer is shown to the user as a diff before they bind it.",
+      targetDescribe: (bufferId) =>
+        bufferId === "rules" ? "'rules' (the experience rules source)" : "'visual' (the visual source)",
+    },
+    validators: {
+      rules: (proposed, toolName) => validateRules(proposed, toolName),
+    },
+    firstMutationGuard: { rules: true, visual: true },
+    makeOutput: (target, proposed, summary, marker) => ({
+      target,
+      proposed,
+      summary,
+      ...(marker ?? {}),
     }),
+  });
 
-    edit_buffer: tool({
-      description:
-        "Apply exact SEARCH/REPLACE edits to the current rules OR visual buffer. EVERY call MUST include `target` ('rules' or 'visual') — a call missing it, or any required field, is rejected wholesale before any edit runs. " +
-        "Each `search` must match exactly once in the current buffer text; use this for targeted incremental changes after the buffer exists. " +
-        "For target 'rules', the RESULTING proposed source is validated by running it through the experience sandbox (a create-only test); an invalid result returns a tool-error. " +
-        "Edits compose across calls within one turn. The proposed buffer is shown to the user as a diff before they bind it.",
-      inputSchema: z.object({
-        target: z
-          .enum(["rules", "visual"])
-          .describe("REQUIRED on every call. Which buffer to edit: 'rules' or 'visual'. Never omit."),
-        edits: z
-          .array(
-            z.object({
-              search: z.string().describe("Exact text to find in the current buffer (must match once)."),
-              replace: z.string().describe("The replacement text."),
-            }),
-          )
-          .min(1)
-          .describe("Ordered exact SEARCH/REPLACE edits applied to the current buffer."),
-        summary: z
-          .string()
-          .max(200)
-          .describe("One-line description of what these edits change, shown above the Apply action."),
-      }),
-      execute: async ({ target, edits, summary }): Promise<ExperienceCopilotBufferOutput> =>
-        runQueued(async () => {
-          const toolName = "edit_buffer";
-          logger.info("%s IN target=%s edits=%d summary=%s", toolName, target, edits.length, summary);
-          const current = target === "rules" ? workingRules : workingVisual;
-          if (current === undefined) {
-            logger.warn("%s REJECTED no %s buffer in working state", toolName, target);
-            throw new Error(
-              `${toolName}: no '${target}' buffer in the working state — use write_buffer to set the buffer first`,
-            );
-          }
-          // Shared exact-edit primitive (ER-1). Atomic on failure: a failed item
-          // throws and the working buffer is left untouched.
-          const proposed = applyExactEditsToBody(current, edits, toolName);
-          if (target === "rules") {
-            const marker = validateRules(proposed, toolName);
-            workingRules = proposed;
-            rulesMutationCount += 1;
-            logger.info("%s OK target=%s len=%d", toolName, target, proposed.length);
-            return { target, proposed, summary, ...marker };
-          }
-          workingVisual = proposed;
-          visualMutationCount += 1;
-          logger.info("%s OK target=%s len=%d", toolName, target, proposed.length);
-          return { target, proposed, summary };
-        }),
-    }),
+  const allTools = {
+    write_buffer: bufferTools.write_buffer,
+    edit_buffer: bufferTools.edit_buffer,
 
     run_test: tool({
       description:
@@ -567,6 +495,7 @@ export function buildExperienceCopilotTools(opts: {
             errorMessage: UNTRUSTED_SCRIPT_REFUSAL_MESSAGE,
           };
         }
+        const workingRules = bufferTools.getBuffer("rules");
         if (workingRules === undefined) {
           logger.warn("%s REJECTED no rules buffer in working state", toolName);
           throw new Error(
@@ -633,6 +562,7 @@ export function buildExperienceCopilotTools(opts: {
             errorMessage: UNTRUSTED_SCRIPT_REFUSAL_MESSAGE,
           };
         }
+        const workingRules = bufferTools.getBuffer("rules");
         if (workingRules === undefined) {
           logger.warn("%s REJECTED no rules buffer in working state", toolName);
           throw new Error(

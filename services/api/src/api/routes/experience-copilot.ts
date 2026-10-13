@@ -7,6 +7,10 @@ import * as schemas from "@vibe-tavern/api-contracts";
 import { logSendDebug } from "../../shared/send-debug-log.js";
 import { extractProviderErrorMessage } from "../../infrastructure/ai/provider-error-message.js";
 import { classifyProviderError } from "../../infrastructure/ai/provider-error-classifier.js";
+import {
+  NoAgentKindForScriptKindError,
+  UnknownAgentKindError,
+} from "../../domain/agent/agent-kind-registry.js";
 
 type CopilotStreamEvent = { event: string; data: string };
 
@@ -124,7 +128,7 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
     .post(
       "/api/experience-copilot/:threadId/stream",
       zValidator("json", schemas.experienceCopilotStreamRequestSchema),
-      (c) => {
+      async (c) => {
         const threadId = c.req.param("threadId");
         const body = c.req.valid("json");
         logSendDebug("api.route.experience-copilot-stream.post", {
@@ -132,6 +136,23 @@ export function createExperienceCopilotRoutes(runtime: ExperienceCopilotRuntimeA
           contentLength: body.content?.length ?? 0,
           answerToolCallId: body.answer?.toolCallId ?? null,
         });
+        // AS-2c kind resolution at the stream-turn start: run BEFORE the SSE
+        // headers are sent so an unserved script kind is a 400 JSON response
+        // (mirrors this file's `{ error }` response shape, plus the registry
+        // error's machine-readable `code`), never an in-stream SSE error.
+        // Today interactive → experience always resolves, so behavior is
+        // unchanged on every reachable state.
+        try {
+          await runtime.experienceCopilotAssertStreamKind(threadId);
+        } catch (err) {
+          if (
+            err instanceof NoAgentKindForScriptKindError ||
+            err instanceof UnknownAgentKindError
+          ) {
+            return c.json({ error: err.message, code: err.code }, 400);
+          }
+          throw err;
+        }
         const abortBridge = createRouteAbortBridge(c.req.raw.signal, "api.route.experience-copilot-stream", { threadId });
         const gen = runtime.experienceCopilotStream(threadId, body, abortBridge.signal);
         return streamSSE(c, async (stream) => writeCopilotSseEvents(stream, gen, abortBridge));

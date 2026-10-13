@@ -13,6 +13,7 @@ import {
 import { ExperienceCopilotCompactionService } from "../../domain/interactive/copilot/experience-copilot-compaction.js";
 import { getCopilotContextItems } from "../../domain/interactive/copilot/experience-copilot-context.js";
 import { readSkillFile } from "../../domain/coauthor/skills/skill-read-tool.js";
+import { resolveKindForScript } from "../../domain/agent/agent-kind-registry.js";
 import type { ProviderProfileService } from "../../domain/providers/provider-profile-service.js";
 import { resolveEffectiveSettings } from "@vibe-tavern/domain";
 
@@ -44,6 +45,26 @@ export class ExperienceCopilotAdapter implements ExperienceCopilotRuntimeApi {
       ? new ExperienceCopilotCompactionService(stores.experienceCopilot, providerProfileService)
       : null;
   }
+
+  /** AS-2c kind resolution at the stream-turn start: thread → script row →
+   *  `resolveKindForScript(script.scriptKind)` through the registry. The
+   *  resolved kind is not yet dispatched (the experience kind is the only one —
+   *  the stream wiring stays the single consumer today); the call exists so
+   *  the ROUTE can reject an unserved script kind with a 400 BEFORE the SSE
+   *  headers are sent. Draft threads and dangling script links resolve
+   *  nothing (today's draft semantics — the turn streams as before). Throws
+   *  the registry's `NoAgentKindForScriptKindError` for an unserved kind and
+   *  `notFound` for a missing thread. */
+  experienceCopilotAssertStreamKind = async (threadId: string): Promise<void> => {
+    const thread = await this.stores.experienceCopilot.getById(threadId);
+    if (!thread) {
+      throw notFound("ExperienceCopilotThread", `Copilot thread '${threadId}' was not found.`);
+    }
+    if (thread.scriptId === null) return; // draft — no script row to resolve
+    const script = await this.stores.scripts.getById(thread.scriptId);
+    if (script === null) return; // dangling soft link — draft semantics
+    resolveKindForScript(script.scriptKind);
+  };
 
   experienceCopilotStream = async function* (
     this: ExperienceCopilotAdapter,

@@ -812,3 +812,46 @@ describe("experience-copilot-tools: SS-4B trusted parity (after first enable)", 
     expect(out.notValidated).toBeUndefined();
   });
 });
+
+// ─── AS-2c buffer-tool description pin ───────────────────────────────────────
+//
+// The buffer-tool MECHANISM moved to domain/agent/agent-buffer-tools.ts and
+// the experience wiring composes the strings from fragments. Tool descriptions
+// are model-facing behavior (not byte-pinned by AS-1), so this pins the
+// pre-AS-2c literals verbatim — copied from the pre-carve source, byte for
+// byte — plus the target-enum describe texts (the one place the factory
+// composes kind copy into the zod schema).
+
+describe("experience-copilot-tools: buffer-tool description pin (AS-2c)", () => {
+  test("write_buffer/edit_buffer descriptions are byte-identical to the pre-AS-2c literals", () => {
+    const WRITE_BUFFER_DESCRIPTION =
+      "Replace the ENTIRE rules OR visual buffer with `content`. EVERY call MUST include `target` ('rules' or 'visual') — a call missing it, or any required field, is rejected wholesale. " +
+      "Use it for a ground-up rewrite of a buffer. " +
+      "It must be the FIRST change to that buffer in a turn — once a buffer has been mutated, refine it with edit_buffer instead. " +
+      "For target 'rules', the proposed source is validated by running it through the experience sandbox (a create-only test); an invalid proposal returns a tool-error so you can self-correct in the same turn. " +
+      "For target 'visual', no validation runs (no validator exists). The proposed buffer is shown to the user as a diff before they bind it.";
+    const EDIT_BUFFER_DESCRIPTION =
+      "Apply exact SEARCH/REPLACE edits to the current rules OR visual buffer. EVERY call MUST include `target` ('rules' or 'visual') — a call missing it, or any required field, is rejected wholesale before any edit runs. " +
+      "Each `search` must match exactly once in the current buffer text; use this for targeted incremental changes after the buffer exists. " +
+      "For target 'rules', the RESULTING proposed source is validated by running it through the experience sandbox (a create-only test); an invalid result returns a tool-error. " +
+      "Edits compose across calls within one turn. The proposed buffer is shown to the user as a diff before they bind it.";
+    const WRITE_TARGET_DESCRIBE =
+      "REQUIRED on every call. Which buffer to rewrite: 'rules' (the experience rules source) or 'visual' (the visual source). Never omit.";
+    const EDIT_TARGET_DESCRIBE =
+      "REQUIRED on every call. Which buffer to edit: 'rules' or 'visual'. Never omit.";
+
+    const tools = buildExperienceCopilotTools();
+    expect(tools.write_buffer.description).toBe(WRITE_BUFFER_DESCRIPTION);
+    expect(tools.edit_buffer.description).toBe(EDIT_BUFFER_DESCRIPTION);
+
+    // The zod target-enum describe texts, via a minimal shape probe.
+    const writeSchema = tools.write_buffer.inputSchema as unknown as {
+      shape: { target: { description: string } };
+    };
+    const editSchema = tools.edit_buffer.inputSchema as unknown as {
+      shape: { target: { description: string } };
+    };
+    expect(writeSchema.shape.target.description).toBe(WRITE_TARGET_DESCRIBE);
+    expect(editSchema.shape.target.description).toBe(EDIT_TARGET_DESCRIBE);
+  });
+});

@@ -72,6 +72,15 @@ export interface AgentKind<CTX = unknown> {
    */
   readonly defaultToolSet: Readonly<Record<string, boolean>>;
   /**
+   * The kind's recency-anchor text (CX-3 pattern): a SHORT user-role reminder
+   * injected immediately after the kind's attached-context block, before the
+   * final user message — it keeps pinned reference data from being read as
+   * instructions. The WORDING is kind-owned copy (the anchor's whole value is
+   * its phrasing); the generic assembly reads it from here, and kinds that pin
+   * no context simply never have it injected.
+   */
+  readonly recencyAnchorText: string;
+  /**
    * Render the kind's per-turn context package — the volatile system-message
    * section that mirrors the author's CURRENT working state (buffers,
    * discovered contract, test feedback, authoring step). The `ctx` shape is

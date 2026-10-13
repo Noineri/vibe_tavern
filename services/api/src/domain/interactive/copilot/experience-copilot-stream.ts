@@ -1,49 +1,47 @@
 /**
- * Experience-Copilot streaming — the core runtime (EXPERIENCE_EDITOR_REFACTOR_PLAN,
- * Wave 2 / ER-6).
+ * Experience-Copilot streaming — the experience wiring (EXPERIENCE_EDITOR_REFACTOR_PLAN,
+ * Wave 2 / ER-6; AGENT_SHELL_PLAN Wave 1 / AS-2c).
  *
- * Takes a request, loads the thread context via the ER-3 store, fetches the
- * current rules/visual/bound-visuals by `thread.scriptId`, assembles the prompt
- * via ER-5, builds the tools via ER-4, and streams via Vercel AI SDK
- * `streamText()`. The output is an `AsyncGenerator<{ event, data }>` of
- * SSE-shaped chunks that the route emits verbatim through `streamSSE` (same
- * contract as `runtime.sendMessageStream`).
+ * AS-2c SPLIT: the generic turn MECHANISM (thread load, turn-input persistence
+ * incl. the TAG-5 answer-mode rewrite, digest-boundary pre-split, provider
+ * stream consumption, SSE relay, TF-3 ordered persistence, CM-4 metrics, CM-6
+ * auto-compaction) lives in `domain/agent/agent-stream.ts` (`streamAgentTurn`,
+ * parameterized by `AgentStreamSeams`); this module supplies the EXPERIENCE
+ * seams — rules/visual/bound-visuals/trust context loading, the copilot
+ * profile resolution (with the built-in seed default), the ER-5 assembly call
+ * (attached context + plan owner + live drafts), and the ER-4 tool-set build.
+ * A second agent kind runs the same loop with its own assembly + tools.
  *
- * SINGLE-MODE: the copilot proposes rules/visual edits + runs tests; it is NOT
- * the multi-mode AI-assistant and NOT a chat-mode. It mirrors the AI-assistant's
- * CORE (standalone `streamText`, direct provider/model resolution) but emits the
- * SAME SSE event vocabulary as the chat stream (`text-delta`, `reasoning-delta`,
- * `tool-call`, `tool-result`, `finish`, `error`) so the frontend's
- * `parseSSEStream` consumes it unchanged. The tool-enabled chunk normalization
- * reuses the proven `createMappedStream` / `mapFinish` from `stream-helpers`
- * (the same helpers the chat executor uses), which already handle reasoning
- * stripping (both the marker protocol and native reasoning parts) AND tool
- * parts in one pass — so `splitReasoningFromText` is not needed separately here.
+ * The output remains an `AsyncGenerator<{ event, data }>` of SSE-shaped chunks
+ * that the route emits verbatim through `streamSSE` (same contract as
+ * `runtime.sendMessageStream`). SINGLE-MODE: the copilot proposes rules/visual
+ * edits + runs tests; it is NOT the multi-mode AI-assistant and NOT a
+ * chat-mode. It mirrors the AI-assistant's CORE (standalone `streamText`,
+ * direct provider/model resolution) but emits the SAME SSE event vocabulary
+ * as the chat stream (`text-delta`, `reasoning-delta`, `tool-call`,
+ * `tool-result`, `finish`, `error`) so the frontend's `parseSSEStream`
+ * consumes it unchanged.
  */
 
-import { streamText, isStepCount, hasToolCall } from "ai";
-import type { LanguageModel, ModelMessage, AssistantContent, ToolCallPart, ToolResultPart } from "ai";
-import type { ToolSet } from "ai";
+import { streamText } from "ai";
+import type { LanguageModel } from "ai";
 import type { ProviderProfile, ScriptRow, ExperienceVisualRow, AppDb } from "@vibe-tavern/db";
-import type { CopilotProfile, ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
+import type { CopilotProfile } from "@vibe-tavern/api-contracts";
 import type { AgentPlan, AgentPlanOwner } from "@vibe-tavern/domain";
 import type {
   ExperienceCopilotStore,
-  ExperienceCopilotMessage,
+  ExperienceCopilotThread,
 } from "@vibe-tavern/db";
 import type { ProviderFetch } from "../../providers/provider-fetch-factory.js";
-import { resolveProviderFetchForProfile } from "../../providers/provider-fetch-factory.js";
-import { createMappedStream, mapFinish } from "../../../infrastructure/ai/stream-helpers.js";
-import type { ProviderStreamChunk } from "../../../infrastructure/ai/provider-execution-types.js";
-import { classifyProviderError } from "../../../infrastructure/ai/provider-error-classifier.js";
-import { extractProviderErrorMessage } from "../../../infrastructure/ai/provider-error-message.js";
 import { logSendDebug } from "../../../shared/send-debug-log.js";
-import { notFound, validation } from "../../../shared/errors.js";
+import {
+  streamAgentTurn,
+  type AgentStreamDeps,
+  type AgentStreamSeams,
+} from "../../agent/agent-stream.js";
 import {
   assembleExperienceCopilotPrompt,
-  resolveDigestBoundary,
-  type ExperienceCopilotHistoryMessage,
-  type ExperienceCopilotPromptMessage,
+  type ExperienceCopilotAssembleResult,
   type ExperienceCopilotTestFeedback,
 } from "./experience-copilot-prompt.js";
 import { COPILOT_CONTEXT_BUDGET_TOKENS, COPILOT_RESPONSE_RESERVE_TOKENS, COPILOT_TOOL_LOOP_CEILING } from "./copilot-limits.js";
@@ -64,23 +62,12 @@ export type {
   ExperienceCopilotStreamRequest,
 } from "./experience-copilot-stream-contract.js";
 
-/** Persisted tool-call row, serialized into `tool_calls_json` on an assistant
- *  message. `providerOptions` are intentionally omitted — they are not needed
- *  for cross-turn history (the SDK re-derives them from the live model). */
-interface PersistedToolCall {
-  type: "tool-call";
-  toolCallId: string;
-  toolName: string;
-  input: unknown;
-}
-
-/** Persisted tool-result payload, serialized into the `content` of a tool
- *  message row. Carries `toolName` so the round-trip back to a
- *  `ToolResultPart` (which the SDK requires) does not need a side lookup. */
-interface PersistedToolResult {
-  toolName: string;
-  output: unknown;
-}
+// ─── Compat aliases (AS-2c) ─────────────────────────────────────────────────
+//
+// The generic history conversion moved to domain/agent/agent-stream.ts; this
+// re-export keeps every existing importer (the compaction service, tests)
+// compiling untouched. AS-10 removes this block.
+export { storeMessagesToHistory } from "../../agent/agent-stream.js";
 
 // ─── Dependencies ────────────────────────────────────────────────────────────
 
@@ -145,140 +132,6 @@ export interface ExperienceCopilotStreamDeps {
 // feeds it COPILOT_TOOL_LOOP_CEILING (1,000,000 — a wire-level formality, not
 // a nanny cap). See copilot-limits.ts.
 
-// ─── History conversion (store ↔ prompt ↔ SDK) ───────────────────────────────
-
-/** Is this parsed tool-result output an awaiting `ask_user` marker? (TAG-5) */
-function isAwaitingAskOutput(output: unknown): boolean {
-  return (
-    output !== null &&
-    typeof output === "object" &&
-    (output as { status?: unknown }).status === "awaiting_answer"
-  );
-}
-
-/** The model-visible text for an `ask_user` tool-result output (TAG-5
- *  split-turn). The stored payload is STRUCTURED state for the UI
- *  (`{ status: "awaiting_answer" | "answered" | "skipped", … }`); the model
- *  reads plain prose instead of marker JSON: an answer → the user's text
- *  verbatim; a skip → "(skipped)"; a still-awaiting marker (the user never
- *  answered — they moved on and sent a normal message instead) → the
- *  self-heal literal, so the model never sees a dangling promise. Prompt-side
- *  only: the stored row is never mutated by this rendering. */
-function renderAskOutputText(output: unknown): string {
-  if (output !== null && typeof output === "object" && "status" in output) {
-    const status = (output as { status: unknown }).status;
-    if (status === "awaiting_answer") {
-      return "(the user did not answer this question; they moved on)";
-    }
-    if (status === "skipped") return "(skipped)";
-    if (status === "answered") {
-      const answer = (output as { answer?: unknown }).answer;
-      if (typeof answer === "string" && answer.length > 0) return answer;
-    }
-  }
-  return JSON.stringify(output);
-}
-
-/** Is this stored message row an awaiting `ask_user` tool-result? (TAG-5 —
- *  the answer-mode precondition; parsed defensively, never throws.) */
-function isAwaitingAskRow(m: ExperienceCopilotMessage): boolean {
-  try {
-    const parsed = JSON.parse(m.content) as PersistedToolResult;
-    return parsed.toolName === "ask_user" && isAwaitingAskOutput(parsed.output);
-  } catch {
-    return false;
-  }
-}
-
-/** Convert stored copilot messages (ER-3) into the history shape ER-5 expects.
- *  Round-trips the {@link storeHistoryToSdk} serialization: assistant rows carry
- *  parsed `toolCalls`; tool rows carry a reconstructed `ToolResultPart`.
- *  Exported (CM-5) so the compaction service reuses the SAME conversion for its
- *  tool-pair-safe boundary walk and post-compaction token estimate. */
-export function storeMessagesToHistory(
-  messages: readonly ExperienceCopilotMessage[],
-): ExperienceCopilotHistoryMessage[] {
-  return messages.map((m): ExperienceCopilotHistoryMessage => {
-    if (m.role === "digest") {
-      // A compaction digest (CM-3) round-trips as a plain digest message — the
-      // assembler lifts it out of the history flow.
-      return { role: "digest", content: m.content };
-    }
-    if (m.role === "tool") {
-      // Reconstruct the ToolResultPart from the stored payload. The store row
-      // carries the serialized `{ toolName, output }` wrapper in `content` +
-      // `toolCallId`; the SDK ToolResultPart.output is a discriminated union,
-      // so the output is wrapped as a text value (the model reads it as text,
-      // same as the co-author history round-trip).
-      let toolName = "";
-      let outputText = m.content;
-      try {
-        const parsed = JSON.parse(m.content) as PersistedToolResult;
-        toolName = parsed.toolName ?? "";
-        outputText = JSON.stringify(parsed.output);
-        // TAG-5: an ask_user result carries the CONVERSATION, not telemetry —
-        // the model reads plain prose (the answer / a skip / the self-heal
-        // literal for a never-answered ask), never the marker JSON.
-        if (toolName === "ask_user") outputText = renderAskOutputText(parsed.output);
-      } catch {
-        // Invalid JSON — use the raw content as the output text.
-      }
-      return {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: m.toolCallId ?? "",
-            toolName,
-            output: { type: "text", value: outputText },
-          },
-        ],
-      };
-    }
-    const msg: ExperienceCopilotHistoryMessage = {
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: m.content,
-    };
-    if (m.toolCallsJson) {
-      try {
-        const parsed = JSON.parse(m.toolCallsJson) as unknown;
-        if (Array.isArray(parsed)) msg.toolCalls = parsed as ToolCallPart[];
-      } catch {
-        // Invalid JSON — skip tool calls for this message.
-      }
-    }
-    return msg;
-  });
-}
-
-/** Convert the ER-5 assembled prompt messages into AI SDK `ModelMessage[]`.
- *  Mirrors `prepareSdkMessages`'s assistant branch: the SDK has NO top-level
- *  `toolCalls` field on an assistant message — tool calls live INSIDE `content`
- *  as `ToolCallPart[]` (AssistantContent) — without this fold the SDK silently
- *  ignores them and the model loses its cross-turn tool-call context. */
-function toModelMessages(
-  messages: ReadonlyArray<ExperienceCopilotPromptMessage>,
-): ModelMessage[] {
-  return messages.map((msg): ModelMessage => {
-    switch (msg.role) {
-      case "system":
-        return { role: "system", content: msg.content };
-      case "user":
-        return { role: "user", content: msg.content };
-      case "assistant": {
-        if (msg.toolCalls?.length) {
-          const parts: AssistantContent = [...msg.toolCalls];
-          if (msg.content) parts.push({ type: "text", text: msg.content });
-          return { role: "assistant", content: parts };
-        }
-        return { role: "assistant", content: msg.content };
-      }
-      case "tool":
-        return { role: "tool", content: msg.content };
-    }
-  });
-}
-
 // ─── Context loading (rules / visual / bound visuals by scriptId) ────────────
 
 interface CopilotContext {
@@ -331,14 +184,22 @@ async function loadCopilotContext(
   return { rules, visual, boundVisuals, rulesTrusted };
 }
 
+/** The script-owned plan owner for a thread — null for unsaved drafts (the
+ *  plan tools' precondition guard reports that as a tool-error). */
+function planOwnerFor(thread: ExperienceCopilotThread): AgentPlanOwner | null {
+  return thread.scriptId === null ? null : { kind: "script", scriptId: thread.scriptId };
+}
+
 // ─── Main streaming function ─────────────────────────────────────────────────
 
 /**
- * Stream one experience-copilot turn. Loads the thread context, assembles the
- * prompt (ER-5), builds the tools (ER-4), streams via `streamText`, and yields
- * SSE-shaped `{ event, data }` chunks. After the stream completes, the turn
- * (user message + tool calls/results + final assistant text) is persisted to the
- * ER-3 store so history reloads next turn.
+ * Stream one experience-copilot turn: the experience seams (context loading,
+ * profile resolution, ER-5 assembly, ER-4 tools) wired into the generic agent
+ * turn loop (`streamAgentTurn`). The loop loads the thread, persists the
+ * turn's input, streams via `streamText`, and yields SSE-shaped
+ * `{ event, data }` chunks; after the stream completes the turn (user message
+ * + tool calls/results + final assistant text) is persisted to the ER-3 store
+ * so history reloads next turn.
  *
  * @throws {@link notFound} when the thread does not exist (surfaces as HTTP 404
  *   via the global error handler, before any SSE headers are sent).
@@ -348,445 +209,120 @@ export async function* streamExperienceCopilot(
   deps: ExperienceCopilotStreamDeps,
   signal?: AbortSignal,
 ): AsyncGenerator<ExperienceCopilotStreamEvent> {
-  const debug = (event: string, data: Record<string, unknown>) =>
-    logSendDebug(`api.experience-copilot.${event}`, data);
+  const seams: AgentStreamSeams<
+    ExperienceCopilotStreamRequest,
+    ExperienceCopilotThread,
+    CopilotContext,
+    CopilotProfile,
+    ExperienceCopilotAssembleResult
+  > = {
+    logChannelPrefix: "api.experience-copilot",
+    threadLabel: "ExperienceCopilotThread",
+    limits: {
+      contextBudgetTokens: COPILOT_CONTEXT_BUDGET_TOKENS,
+      responseReserveTokens: COPILOT_RESPONSE_RESERVE_TOKENS,
+      toolLoopCeiling: COPILOT_TOOL_LOOP_CEILING,
+    },
+    // The kind-context fact the old prompt-assembled debug line carried.
+    assembleDebugFields: (context) => ({ rulesTrusted: context.rulesTrusted }),
 
-  // ── 1. Load thread ──
-  const thread = await deps.store.getById(request.threadId);
-  if (!thread) {
-    throw notFound("ExperienceCopilotThread", `Copilot thread '${request.threadId}' was not found.`);
-  }
+    // ── Experience context: rules / visual / bound visuals / trust flag ──
+    loadContext: (thread) => loadCopilotContext(thread.scriptId, deps),
 
-  // ── 2. Load history (prior turns) + context (rules/visual/bound visuals) ──
-  const [priorMessages, context] = await Promise.all([
-    deps.store.listMessages(request.threadId),
-    loadCopilotContext(thread.scriptId, deps),
-  ]);
+    // ── Copilot profile (CP-6/CP-7): thread → script → profile row → built-in seed.
+    resolveProfile: (thread) =>
+      deps.resolveProfile
+        ? deps.resolveProfile(thread.scriptId)
+        : resolveBuiltinCopilotProfile(),
 
-  // ── 3. Resolve provider + model ──
-  const profile = await deps.getProviderProfile(request.providerProfileId);
-  if (!profile) {
-    throw notFound("ProviderProfile", `Provider profile '${request.providerProfileId}' was not found.`);
-  }
-  const modelName = request.model ?? profile.defaultModel ?? "gpt-4o-mini";
-  const effectiveProfile = await deps.getEffectiveProviderProfile(request.providerProfileId, modelName);
-
-  // ── 4. Persist this turn's input ──
-  // Content mode: append the user's message row NOW so it survives a crash.
-  // Answer mode (TAG-5 split-turn, style B): NO user row — the answer replaces
-  // the awaiting marker of the referenced ask_user tool-result row, and the
-  // turn resumes as a continuation of the question turn. The rewrite is
-  // validated first (the row must be an awaiting ask in THIS thread) so a
-  // stale or foreign toolCallId can never overwrite another tool's result.
-  if (request.answer) {
-    const answer = request.answer;
-    const target = priorMessages.find(
-      (m) => m.role === "tool" && m.toolCallId === answer.toolCallId,
-    );
-    if (!target || !isAwaitingAskRow(target)) {
-      throw validation(
-        "The question being answered was not found (or is no longer awaiting) in this thread.",
-      );
-    }
-    const answerPayload: PersistedToolResult = {
-      toolName: "ask_user",
-      output: answer.skipped
-        ? { status: "skipped" }
-        : { status: "answered", answer: answer.text ?? "" },
-    };
-    await deps.store.setToolResultOutput(request.threadId, answer.toolCallId, answerPayload);
-    // Rewrite the in-memory copy so THIS turn's assembly sees the answered
-    // state without a re-fetch (the store row is the durable copy).
-    target.content = JSON.stringify(answerPayload);
-  } else if (request.content) {
-    await deps.store.appendMessage(request.threadId, {
-      role: "user",
-      content: request.content,
-    });
-  } else {
-    // The wire schema enforces exactly-one-of content/answer; this guards
-    // direct domain callers (tests, future internal callers).
-    throw validation("A copilot turn requires either `content` or `answer`.");
-  }
-
-  // ── Pre-split at the digest boundary (CM-5) ──────────────────────────────
-  // A digest REPLACES older messages in the MODEL window only. Before assembly,
-  // resolve the boundary: the LAST digest is re-placed at the front (so the
-  // assembler's CM-3 lifting renders it as a system section) and every message
-  // strictly before its anchor is dropped. Zero-digest threads pass through
-  // unchanged (byte-identical assembly preserved). Computed AFTER the input
-  // branch (TAG-5): an answered ask row must already carry its answer here, so
-  // the model window ends on the answered tool-result, never the marker.
-  const boundary = resolveDigestBoundary(priorMessages);
-  const priorHistory: ExperienceCopilotHistoryMessage[] = [
-    ...(boundary.lastDigest ? storeMessagesToHistory([boundary.lastDigest]) : []),
-    ...storeMessagesToHistory(boundary.kept),
-  ];
-
-  // ── 5. Resolve the copilot profile (base prompt + skills + tools + budget) ──
-  // Defaults to the built-in seed (CP-4) — zero behavior change for an
-  // experience with no assigned profile (the pre-plan ER-16 module).
-  const copilotProfile = deps.resolveProfile
-    ? await deps.resolveProfile(thread.scriptId)
-    : await resolveBuiltinCopilotProfile();
-
-  // ── 6. Assemble the prompt (ER-5) ──
-  // Content mode: the new user message is appended to the prior history for
-  // assembly; it was NOT in priorHistory (which is the pre-turn stored set).
-  // Answer mode (TAG-5): NO user message is pushed — the history already ends
-  // with the answered ask tool-result, which IS the turn's input.
-  const history: ExperienceCopilotHistoryMessage[] = request.content
-    ? [...priorHistory, { role: "user", content: request.content }]
-    : priorHistory;
-  const step: ExperienceCopilotStep = request.step ?? "rules";
-  // Prefer the LIVE drafts the editor sent over the persisted DB buffers — the
-  // copilot must see exactly what the user sees (in-progress edits, pre-save
-  // drafts where the DB buffers are empty, the switched-to buffer).
-  const rules = request.rules ?? context.rules;
-  const visual = request.visual ?? context.visual;
-  // CX-3: resolve the thread's pinned links into the rendered attached block.
-  // Live by-id resolution EVERY turn — never persisted, so a later
-  // rename/delete/edit re-resolves next turn (dangling ids vanish). No dep or
-  // no links → empty string → the assembler omits the section entirely.
-  const contextItems = deps.resolveContextItems && thread.contextLinks.length > 0
-    ? await deps.resolveContextItems(thread.contextLinks)
-    : [];
-  const attachedContextBlock = renderAttachedContext(contextItems);
-  debug("attached-context-resolved", {
-    threadId: request.threadId,
-    linkCount: thread.contextLinks.length,
-    itemCount: contextItems.length,
-    blockLength: attachedContextBlock.length,
-  });
-  const agentPlanOwner: AgentPlanOwner | null = thread.scriptId === null
-    ? null
-    : { kind: "script", scriptId: thread.scriptId };
-  const agentPlan = agentPlanOwner === null ? null : await deps.agentPlans.get(agentPlanOwner);
-  const assembled = await assembleExperienceCopilotPrompt({
-    ...(deps.db ? { db: deps.db } : {}),
-    history,
-    rules,
-    ...(visual !== undefined ? { visual } : {}),
-    ...(context.boundVisuals.length > 0 ? { boundVisuals: context.boundVisuals } : {}),
-    ...(request.testFeedback !== undefined && request.testFeedback !== null
-      ? { testFeedback: request.testFeedback as unknown as ExperienceCopilotTestFeedback }
-      : {}),
-    step,
-    model: modelName,
-    contextBudget: COPILOT_CONTEXT_BUDGET_TOKENS,
-    responseReserve: COPILOT_RESPONSE_RESERVE_TOKENS,
-    profile: copilotProfile,
-    plan: agentPlan,
-    rulesTrusted: context.rulesTrusted,
-    ...(deps.skillUserRoot !== undefined ? { skillUserRoot: deps.skillUserRoot } : {}),
-    ...(attachedContextBlock ? { attachedContextBlock } : {}),
-  });
-
-  debug("prompt-assembled", {
-    threadId: request.threadId,
-    systemMessageLength: assembled.systemMessage.length,
-    messageCount: assembled.messages.length,
-    rulesTrusted: context.rulesTrusted,
-    ...(assembled.compactionSummary ? { compaction: assembled.compactionSummary } : {}),
-  });
-
-  // ── 7. Build tools (ER-4), seeded from the current rules/visual ──
-  // Skill roots come from the resolved skill catalog (ER-16) so read_skill_file
-  // resolves against the rendered catalog's root; toolSet is the resolved
-  // profile's set (read_skill_file always added on top, mirroring Co-Author).
-  const requireAgentPlanOwner = (): AgentPlanOwner => {
-    if (agentPlanOwner === null) {
-      throw new Error("plan: a script must be saved before its plan can be read or updated");
-    }
-    return agentPlanOwner;
-  };
-  const loadPlan = (): Promise<AgentPlan | null> => deps.agentPlans.get(requireAgentPlanOwner());
-  const savePlan = (plan: AgentPlan): Promise<void> => deps.agentPlans.save(requireAgentPlanOwner(), plan);
-
-  const tools: ToolSet = buildExperienceCopilotTools({
-    ...(rules ? { rules } : {}),
-    ...(visual !== undefined ? { visual } : {}),
-    rulesTrusted: context.rulesTrusted,
-    ...(request.launchContext !== undefined ? { launchContext: request.launchContext } : {}),
-    toolSet: copilotProfile.toolSet,
-    skillRoots: assembled.skillRoots,
-    loadPlan,
-    savePlan,
-    // TAG-6 (restored PM-7): the todo tool's full-list rewrite persists onto
-    // the thread row via the ER-3 store (session-scoped — survives turns and
-    // reloads through the thread wire); `updateTodo(threadId, items)` is the
-    // store's structural twin of the tool's `(items) => Promise<void>` dep.
-    saveTodo: (items) => deps.store.updateTodo(request.threadId, items),
-  });
-
-  // ── 8. Resolve the model + start streaming ──
-  const providerFetch = await resolveProviderFetchForProfile(effectiveProfile);
-  const aiModel = deps.resolveModel(effectiveProfile, modelName, providerFetch);
-
-  const modelMessages = toModelMessages(assembled.messages);
-
-  const stream = deps.streamText ?? streamText;
-  let result: ReturnType<typeof streamText>;
-  try {
-    result = stream({
-      model: aiModel,
-      messages: modelMessages,
-      allowSystemInMessages: true,
-      abortSignal: signal,
-      tools,
-      // TAG-5 split-turn (style B): a question turn ENDS on the ask_user call.
-      // The SDK ships the exact primitive — `hasToolCall(name)` stops the loop
-      // when the latest step contains that tool call (verified against the
-      // installed ai@7.0.66). The tool still EXECUTES — its awaiting marker
-      // streams to the client and persists via persistTurn — then the loop
-      // halts and the turn finishes normally (a finish event, never an error).
-      // The user's answer arrives later as a NEW stream request in `answer`
-      // mode, which rewrites the marker row (step 4).
-      stopWhen: [isStepCount(COPILOT_TOOL_LOOP_CEILING), hasToolCall("ask_user")],
-    });
-  } catch (err) {
-    // Setup error (streamText() failed before iteration began).
-    const message = extractProviderErrorMessage(err);
-    const category = classifyProviderError(err);
-    debug("setup-error", { message, category });
-    yield { event: "error", data: JSON.stringify({ message, category }) };
-    return;
-  }
-
-  // ── 9. Normalize + drain the stream, emitting SSE events ──
-  // `state.providerResponse.steps` collects PER-STEP usage from finish-step
-  // parts — the metrics path reads the LAST step's input (see CM-4 block below).
-  const { stream: mapped, state: mappedState } = createMappedStream(result.stream);
-
-  let textAccumulator = "";
-  let reasoningAccumulator = "";
-  // TF-3: the turn's pieces in ARRIVAL order. Consecutive text-deltas coalesce
-  // into one open text segment; a tool-call chunk closes the open text segment
-  // (the next text-delta opens a new one), so the stored rows preserve the
-  // model's real sequence: text → tool-call → tool-result → text → …
-  const segments: TurnSegment[] = [];
-  const appendTextDelta = (delta: string) => {
-    const last = segments[segments.length - 1];
-    if (last && last.kind === "text") last.text += delta;
-    else segments.push({ kind: "text", text: delta });
-  };
-
-  try {
-    for await (const chunk of mapped as AsyncIterable<ProviderStreamChunk>) {
-      if (signal?.aborted) {
-        yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-        await persistTurn(deps, request.threadId, segments);
-        return;
-      }
-      if (chunk.type === "text-delta" && chunk.delta) {
-        textAccumulator += chunk.delta;
-        appendTextDelta(chunk.delta);
-        yield { event: "text-delta", data: JSON.stringify({ delta: chunk.delta }) };
-      } else if (chunk.type === "reasoning-delta") {
-        reasoningAccumulator += chunk.textDelta;
-        yield { event: "reasoning-delta", data: JSON.stringify({ delta: chunk.textDelta }) };
-      } else if (chunk.type === "tool-call") {
-        segments.push({
-          kind: "toolCall",
-          toolCallId: chunk.toolCallId,
-          toolName: chunk.toolName,
-          args: chunk.args,
-        });
-        debug("tool-call", { threadId: request.threadId, toolCallId: chunk.toolCallId, toolName: chunk.toolName });
-        yield {
-          event: "tool-call",
-          data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, args: chunk.args }),
-        };
-      } else if (chunk.type === "tool-result") {
-        const isError = chunk.isError ?? false;
-        segments.push({
-          kind: "toolResult",
-          toolCallId: chunk.toolCallId,
-          toolName: chunk.toolName,
-          output: chunk.output,
-          isError,
-        });
-        debug("tool-result", { threadId: request.threadId, toolCallId: chunk.toolCallId, toolName: chunk.toolName, isError });
-        yield {
-          event: "tool-result",
-          data: JSON.stringify({ toolCallId: chunk.toolCallId, toolName: chunk.toolName, output: chunk.output, isError }),
-        };
-      }
-      // tool-input-start / tool-input-delta are progressive tool-arg streaming
-      // (the model writing the document); the chat stream forwards them too,
-      // but they are informational and the copilot frontend has no separate use
-      // for them yet, so they are intentionally NOT forwarded here.
-    }
-  } catch (err) {
-    if (signal?.aborted) {
-      yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-      await persistTurn(deps, request.threadId, segments);
-      return;
-    }
-    const message = extractProviderErrorMessage(err);
-    const category = classifyProviderError(err);
-    debug("provider-error", { threadId: request.threadId, message, category });
-    yield { event: "error", data: JSON.stringify({ message, category }) };
-    // Still persist whatever was accumulated so far (partial turn).
-    await persistTurn(deps, request.threadId, segments);
-    return;
-  }
-
-  if (signal?.aborted) {
-    yield { event: "abort", data: JSON.stringify({ partialLength: textAccumulator.length }) };
-    await persistTurn(deps, request.threadId, segments);
-    return;
-  }
-
-  // ── 10. Finalize: resolve finish metadata + persist the turn ──
-  let finishReason = "stop";
-  let usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | undefined;
-  try {
-    const finish = await mapFinish(result, signal);
-    finishReason = finish.finishReason;
-    usage = finish.usage;
-  } catch {
-    finishReason = "error";
-  }
-
-  await persistTurn(deps, request.threadId, segments);
-
-  if (reasoningAccumulator) {
-    yield { event: "reasoning-done", data: JSON.stringify({}) };
-  }
-
-  // ── Context metrics (CM-4) ─────────────────────────────────────────────────
-  // Per-segment values are ALWAYS the assembler's estimate (the provider only
-  // reports an aggregate). `totalTokens` prefers the provider's ACTUAL input
-  // size of the FINAL request — read from the live provider-response trace's
-  // LAST step — the aggregate `usage.inputTokens` SUMS steps (multi-step turns
-  // re-send the whole context per step: 3 × ~63k ≈ 190k against a 100k budget —
-  // a false 190% reading; the last step's input is the true final size).
-  // Else the assembler's estimate — never blend the two and claim it was
-  // measured. `budgetTokens` is 0 with no explicit budget (unmetered bar);
-  // `reserveTokens` clamps negatives to 0 (maxTokens -1 = model decides).
-  // Persisting is best-effort: a failure logs and never fails the turn.
-  const traceSteps = mappedState.providerResponse.steps;
-  const lastStepInputTokens = traceSteps.length > 0
-    ? traceSteps[traceSteps.length - 1]?.usage?.inputTokens
-    : undefined;
-  const providerInputTokens = lastStepInputTokens ?? usage?.inputTokens;
-  let metricsSource: "estimate" | "provider";
-  let metricsTotalTokens: number;
-  if (
-    typeof providerInputTokens === "number" &&
-    Number.isFinite(providerInputTokens) &&
-    providerInputTokens > 0
-  ) {
-    metricsSource = "provider";
-    metricsTotalTokens = providerInputTokens;
-  } else {
-    metricsSource = "estimate";
-    metricsTotalTokens = assembled.tokenAccounting.total;
-  }
-  const contextMetrics: ExperienceCopilotContextMetrics = {
-    systemTokens: assembled.tokenAccounting.system,
-    digestTokens: assembled.tokenAccounting.digest,
-    historyTokens: assembled.tokenAccounting.history,
-    totalTokens: metricsTotalTokens,
-    // CX-3: the attached block + recency anchor, straight from the assembler's
-    // segmented accounting (0 when nothing is pinned — also the exact legacy
-    // value, so pre-CX-3 threads meter unchanged).
-    attachedTokens: assembled.tokenAccounting.attached,
-    budgetTokens: COPILOT_CONTEXT_BUDGET_TOKENS,
-    reserveTokens: COPILOT_RESPONSE_RESERVE_TOKENS,
-    source: metricsSource,
-    measuredAt: new Date().toISOString(),
-  };
-  try {
-    await deps.store.updateContextMetrics(
-      request.threadId,
-      contextMetrics,
-      request.providerProfileId,
-      modelName,
-    );
-  } catch (err) {
-    debug("metrics-persist-failed", {
-      threadId: request.threadId,
-      message: extractProviderErrorMessage(err),
-    });
-  }
-
-  // ── CM-6 fire-and-forget auto-compaction ──────────────────────────────────
-  // Trigger AFTER the metrics (and thus lastProviderProfileId/lastModel) are
-  // persisted. Deliberately NOT awaited — the compaction service runs under its
-  // own per-thread lock and must never block or fail the stream.
-  void deps.autoCompact?.(request.threadId);
-
-  yield {
-    event: "finish",
-    data: JSON.stringify({ finishReason, usage, modelId: modelName, metrics: contextMetrics }),
-  };
-}
-
-// ─── Turn persistence ────────────────────────────────────────────────────────
-
-/** One chronologically ordered piece of the assistant turn (TF-3). The stream
- *  loop records segments in arrival order; persistTurn walks them so stored
- *  rows preserve the model's text → tool-call → tool-result → text sequence
- *  (the old accumulator flattened the whole turn into tool rows + ONE final
- *  text row, losing the interleaving). */
-type TurnSegment =
-  | { kind: "text"; text: string }
-  | { kind: "toolCall"; toolCallId: string; toolName: string; args: Record<string, unknown> }
-  | { kind: "toolResult"; toolCallId: string; toolName: string; output: unknown; isError: boolean };
-
-/** Persist the assistant half of the turn as chronologically ordered rows: a
- *  non-empty text segment → an assistant text row; a RUN of consecutive
- *  tool-call segments (parallel calls in one step) → one assistant row in
- *  `toolCallsJson`; a tool-result segment → one tool row. Each write is
- *  independent (no transaction) so a failure loses only itself (append-only,
- *  ordered by createdAt). */
-async function persistTurn(
-  deps: ExperienceCopilotStreamDeps,
-  threadId: string,
-  segments: readonly TurnSegment[],
-): Promise<void> {
-  let pendingToolCalls: PersistedToolCall[] = [];
-  const flushToolCalls = async () => {
-    if (pendingToolCalls.length === 0) return;
-    const persisted = pendingToolCalls;
-    pendingToolCalls = [];
-    await deps.store.appendMessage(threadId, {
-      role: "assistant",
-      content: "",
-      toolCallsJson: JSON.stringify(persisted),
-    });
-  };
-
-  for (const seg of segments) {
-    if (seg.kind === "toolCall") {
-      // Consecutive tool calls stay in ONE assistant row until any other
-      // segment kind arrives (mirrors parallel calls in a single step).
-      pendingToolCalls.push({
-        type: "tool-call",
-        toolCallId: seg.toolCallId,
-        toolName: seg.toolName,
-        input: seg.args,
+    // ── ER-5 assembly: live drafts + attached context + plan → prompt ──
+    assemble: async ({ thread, request, kindContext: context, agentProfile: copilotProfile, history, model: modelName }) => {
+      // Prefer the LIVE drafts the editor sent over the persisted DB buffers —
+      // the copilot must see exactly what the user sees (in-progress edits,
+      // pre-save drafts where the DB buffers are empty, the switched-to buffer).
+      const rules = request.rules ?? context.rules;
+      const visual = request.visual ?? context.visual;
+      const step: ExperienceCopilotStep = request.step ?? "rules";
+      // CX-3: resolve the thread's pinned links into the rendered attached
+      // block. Live by-id resolution EVERY turn — never persisted, so a later
+      // rename/delete/edit re-resolves next turn (dangling ids vanish). No dep
+      // or no links → empty string → the assembler omits the section entirely.
+      const contextItems = deps.resolveContextItems && thread.contextLinks.length > 0
+        ? await deps.resolveContextItems(thread.contextLinks)
+        : [];
+      const attachedContextBlock = renderAttachedContext(contextItems);
+      logSendDebug("api.experience-copilot.attached-context-resolved", {
+        threadId: request.threadId,
+        linkCount: thread.contextLinks.length,
+        itemCount: contextItems.length,
+        blockLength: attachedContextBlock.length,
       });
-      continue;
-    }
-    await flushToolCalls();
-    if (seg.kind === "toolResult") {
-      const payload: PersistedToolResult = { toolName: seg.toolName, output: seg.output };
-      await deps.store.appendMessage(threadId, {
-        role: "tool",
-        content: JSON.stringify(payload),
-        toolCallId: seg.toolCallId,
+      const agentPlanOwner = planOwnerFor(thread);
+      const agentPlan = agentPlanOwner === null ? null : await deps.agentPlans.get(agentPlanOwner);
+      return await assembleExperienceCopilotPrompt({
+        ...(deps.db ? { db: deps.db } : {}),
+        history,
+        rules,
+        ...(visual !== undefined ? { visual } : {}),
+        ...(context.boundVisuals.length > 0 ? { boundVisuals: context.boundVisuals } : {}),
+        ...(request.testFeedback !== undefined && request.testFeedback !== null
+          ? { testFeedback: request.testFeedback as unknown as ExperienceCopilotTestFeedback }
+          : {}),
+        step,
+        model: modelName,
+        contextBudget: COPILOT_CONTEXT_BUDGET_TOKENS,
+        responseReserve: COPILOT_RESPONSE_RESERVE_TOKENS,
+        profile: copilotProfile,
+        plan: agentPlan,
+        rulesTrusted: context.rulesTrusted,
+        ...(deps.skillUserRoot !== undefined ? { skillUserRoot: deps.skillUserRoot } : {}),
+        ...(attachedContextBlock ? { attachedContextBlock } : {}),
       });
-    } else if (seg.text.trim()) {
-      // Assistant text (the model's explanation), only when non-empty — a
-      // whitespace-only segment stays unpersisted, same as the old accumulator.
-      await deps.store.appendMessage(threadId, {
-        role: "assistant",
-        content: seg.text,
+    },
+
+    // ── ER-4 tools, seeded from the same context the assembly saw ──
+    buildTools: ({ thread, request, kindContext: context, agentProfile: copilotProfile, assembled }) => {
+      const rules = request.rules ?? context.rules;
+      const visual = request.visual ?? context.visual;
+      const agentPlanOwner = planOwnerFor(thread);
+      const requireAgentPlanOwner = (): AgentPlanOwner => {
+        if (agentPlanOwner === null) {
+          throw new Error("plan: a script must be saved before its plan can be read or updated");
+        }
+        return agentPlanOwner;
+      };
+      const loadPlan = (): Promise<AgentPlan | null> => deps.agentPlans.get(requireAgentPlanOwner());
+      const savePlan = (plan: AgentPlan): Promise<void> => deps.agentPlans.save(requireAgentPlanOwner(), plan);
+      // Skill roots come from the resolved skill catalog (ER-16) so
+      // read_skill_file resolves against the rendered catalog's root; toolSet
+      // is the resolved profile's set (read_skill_file always added on top,
+      // mirroring Co-Author).
+      return buildExperienceCopilotTools({
+        ...(rules ? { rules } : {}),
+        ...(visual !== undefined ? { visual } : {}),
+        rulesTrusted: context.rulesTrusted,
+        ...(request.launchContext !== undefined ? { launchContext: request.launchContext } : {}),
+        toolSet: copilotProfile.toolSet,
+        skillRoots: assembled.skillRoots,
+        loadPlan,
+        savePlan,
+        // TAG-6 (restored PM-7): the todo tool's full-list rewrite persists onto
+        // the thread row via the ER-3 store (session-scoped — survives turns and
+        // reloads through the thread wire); `updateTodo(threadId, items)` is the
+        // store's structural twin of the tool's `(items) => Promise<void>` dep.
+        saveTodo: (items) => deps.store.updateTodo(request.threadId, items),
       });
-    }
-  }
-  await flushToolCalls();
+    },
+  };
+
+  const streamDeps: AgentStreamDeps<ExperienceCopilotThread> = {
+    store: deps.store,
+    getProviderProfile: deps.getProviderProfile,
+    getEffectiveProviderProfile: deps.getEffectiveProviderProfile,
+    resolveModel: deps.resolveModel,
+    ...(deps.streamText !== undefined ? { streamText: deps.streamText } : {}),
+    ...(deps.autoCompact !== undefined ? { autoCompact: deps.autoCompact } : {}),
+  };
+
+  yield* streamAgentTurn(request, streamDeps, seams, signal);
 }
