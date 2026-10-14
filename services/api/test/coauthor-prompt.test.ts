@@ -4,6 +4,7 @@ import { assembleCoauthorPrompt } from "../src/domain/chat/coauthor-prompt.js";
 import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tavern/db";
 import { serializeProfileMd } from "@vibe-tavern/db";
 import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
+import type { CoauthorEditorState } from "@vibe-tavern/api-contracts";
 
 /**
  * Co-Author assembly characterization. Pins what the model + frontend can
@@ -193,6 +194,63 @@ describe("assembleCoauthorPrompt", () => {
     expect(system).toContain("ALT ONE");
     expect(system).toContain("PRIMARY (firstMessage)");
     expect(system).toContain("ALT 1");
+  });
+
+  test("uses a supplied editor document for the current card, tool base, and authoritative review state", async () => {
+    const editorState = {
+      card: {
+        name: "Live editor name",
+        body: "# PERSONALITY\nLive personality only.\n\n# SCENARIO\nLive scenario.\n\n# EXAMPLES\nLive example.\n\n# GREETINGS\nSynthetic editor view.",
+        greetings: ["Live primary", "Live alternate"],
+        cardClean: false,
+      },
+      review: {
+        targets: [
+          { target: "card", roundId: "card123", outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 3 }, supersededByRound: "card456" },
+          { target: "lore", roundId: "lore123", outcome: "applied", items: { offered: 4, selected: 3, applied: 2 } },
+          { target: "tracker_template", roundId: "track123", outcome: "awaiting", selected: true },
+        ],
+      },
+    } satisfies CoauthorEditorState;
+    const result = await assembleCoauthorPrompt(makeInput(makeLoaders({
+      profileMd: "---\nname: Saved\ncreator: Server\nvt:\n  storage_id: char_saved\n  mes_example_mode: always\n  mes_example_depth: 4\n---\n# PERSONALITY\nSaved personality.",
+      character: { firstMessage: "Saved primary", alternateGreetings: ["Saved alternate"] },
+    }), { coauthorEditorState: editorState }));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    expect(system).toContain("name: Live editor name");
+    expect(system).toContain("Live personality only.");
+    expect(system).not.toContain("Saved personality.");
+    expect(system).toContain("Live primary");
+    expect(system).toContain("Live alternate");
+    expect(system).not.toContain("Saved primary");
+    expect(system).toContain("# Editor review and save state\n- card buffer: unsaved");
+    expect(system).toContain("- card round `card123`: **applied-partial** (hunks: accepted 1, rejected 2, pending 3; superseded by round `card456`)");
+    expect(system).toContain("- lore round `lore123`: **applied** (items: offered 4, selected 3, applied 2)");
+    expect(system).toContain("- tracker_template round `track123`: **awaiting** (selected: yes)");
+    expect(result.prompt.layers.find((layer) => layer.id === "current_card")?.text).toContain("Live editor name");
+  });
+
+  test("keeps legacy prompt bytes when the editor snapshot is absent and renders explicit empty snapshot state", async () => {
+    const loaders = makeLoaders();
+    const legacy = await assembleCoauthorPrompt(makeInput(loaders));
+    const explicitUndefined = await assembleCoauthorPrompt(makeInput(loaders, { coauthorEditorState: undefined }));
+    const emptyState = {
+      card: { name: "", body: "", greetings: [], cardClean: true },
+      review: { targets: [] },
+    } satisfies CoauthorEditorState;
+    const live = await assembleCoauthorPrompt(makeInput(loaders, { coauthorEditorState: emptyState }));
+    const legacySystem = (legacy.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+    const undefinedSystem = (explicitUndefined.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+    const liveSystem = (live.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    expect(undefinedSystem).toBe(legacySystem);
+    expect(legacySystem).not.toContain("# Editor review and save state");
+    expect(liveSystem).toContain("name: \"\"");
+    expect(liveSystem).toContain("### Greeting PRIMARY (firstMessage)\n(empty)");
+    expect(liveSystem).not.toContain("The opener.");
+    expect(liveSystem).toContain("- card buffer: saved");
+    expect(liveSystem).toContain("no unreviewed proposals and no recorded outcomes");
   });
 
   test("CED-1: model-facing profile exposes the stable three-heading skeleton even when SCENARIO/EXAMPLES are empty", async () => {

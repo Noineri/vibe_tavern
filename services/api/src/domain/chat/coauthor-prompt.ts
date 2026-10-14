@@ -25,6 +25,7 @@ import { brandId, readTrackerTemplate } from "@vibe-tavern/domain";
 import type { AssemblePromptResponse } from "@vibe-tavern/domain";
 import type { ChatModeAssembleInput, ChatModeAssembleResult, CoauthorContextItem, CoauthorBoundResources } from "./chat-mode-strategy.js";
 import { buildCoauthorTools } from "./coauthor-tools.js";
+import { buildCoauthorWorkingDocument } from "./coauthor-working-document.js";
 import { isLoreWorkActive } from "../coauthor/lore/lore-work-trigger.js";
 import { estimateTokens, planHistoryCompaction, setModelHint } from "@vibe-tavern/prompt-pipeline";
 import type { ToolCallPart, ToolResultPart } from "ai";
@@ -104,6 +105,33 @@ function renderTrackerTemplateSection(template: TrackerTemplate | null): string 
     "The tracker-template delegate uses this as the refine base when you call `set_tracker_template` with `action: \"refine\"`. Describe the requested change in the tool input; do not emit template JSON yourself.",
     ...(template === null ? ["none"] : ["```json", JSON.stringify(template, null, 2), "```"]),
   ].join("\n");
+}
+
+/** Render the supplied editor's authoritative review outcomes and card save state. */
+function renderEditorReviewState(editorState: NonNullable<ChatModeAssembleInput["coauthorEditorState"]>): string {
+  const sections = ["# Editor review and save state", `- card buffer: ${editorState.card.cardClean ? "saved" : "unsaved"}`];
+  sections.push("", "## Proposal review outcomes");
+  if (editorState.review.targets.length === 0) {
+    sections.push("no unreviewed proposals and no recorded outcomes");
+  } else {
+    sections.push(...editorState.review.targets.map((target) => {
+      const details: string[] = [];
+      if (target.hunks !== undefined) {
+        details.push(`hunks: accepted ${target.hunks.accepted}, rejected ${target.hunks.rejected}, pending ${target.hunks.pending}`);
+      }
+      if (target.items !== undefined) {
+        details.push(`items: offered ${target.items.offered}, selected ${target.items.selected}, applied ${target.items.applied}`);
+      }
+      if (target.selected !== undefined) {
+        details.push(`selected: ${target.selected ? "yes" : "no"}`);
+      }
+      if (target.supersededByRound !== undefined) {
+        details.push(`superseded by round \`${target.supersededByRound}\``);
+      }
+      return `- ${target.target} round \`${target.roundId}\`: **${target.outcome}**${details.length > 0 ? ` (${details.join("; ")})` : ""}`;
+    }));
+  }
+  return sections.join("\n");
 }
 
 /** Render the chat's pinned Level-1 context entities as read-only reference
@@ -266,13 +294,20 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     ? []
     : await loaders.getCoauthorUserModules();
   const module = await getCoauthorModule(chat.coauthorModuleId, userModules);
-  const [profileMd, contextItems, skillCatalog, branchSummaries, boundResources] = await Promise.all([
+  const [savedProfileMd, contextItems, skillCatalog, branchSummaries, boundResources] = await Promise.all([
     loaders.getProfileMdText(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
     loaders.getCoauthorContextItems(chatId),
     loaders.getSkillCatalog(),
     loaders.getChatSummaries(chatId, input.branchId ?? (chat.activeBranchId as ChatBranchId)),
     loaders.getCoauthorBoundResources(character.id as unknown as import("@vibe-tavern/domain").CharacterId),
   ]);
+  // Snapshot absence intentionally leaves the historical storage bytes and
+  // tool seed unchanged. A supplied editor state is canonicalized once and
+  // shared by the display block and mutation tools.
+  const workingDocument = input.coauthorEditorState === undefined
+    ? { profileMd: savedProfileMd, character }
+    : buildCoauthorWorkingDocument(savedProfileMd, input.coauthorEditorState);
+  const profileMd = workingDocument.profileMd;
   const basePrompt = module.basePrompt;
   // Shared editor preamble (Role + tool mechanics + scope + macros) loaded from
   // coauthor/base.md. This is the universal co-author framing; the module's
@@ -282,7 +317,10 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
   const coauthorBase = input.db
     ? await resolveServicePromptText(input.db, "coauthor_base")
     : await loadPromptAsset("coauthor/base.md");
-  const currentCard = renderCurrentCard(profileMd, character);
+  const currentCard = renderCurrentCard(profileMd, workingDocument.character);
+  const editorReviewBlock = input.coauthorEditorState === undefined
+    ? ""
+    : renderEditorReviewState(input.coauthorEditorState);
   // CT-7a: the current tracker template rides right after the card — but ONLY
   // for modules whose tool set enables `set_tracker_template` (the same gate
   // buildCoauthorTools applies to the tool itself). Tool-off modules omit the
@@ -339,6 +377,9 @@ export async function assembleCoauthorPrompt(input: ChatModeAssembleInput): Prom
     // Omitted entirely when nothing is pinned — the prompt is then
     // unchanged for chats with no context bound.
     sections.push("", contextBlock);
+  }
+  if (editorReviewBlock) {
+    sections.push("", editorReviewBlock);
   }
   const systemContent = sections.join("\n");
 

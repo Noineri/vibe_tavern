@@ -3,6 +3,7 @@ import { serializeProfileMd } from "@vibe-tavern/db";
 import { normalizeTrackerTemplate } from "@vibe-tavern/domain";
 import { trackerTemplateSchema } from "@vibe-tavern/api-contracts";
 import { buildCoauthorTools } from "../src/domain/chat/coauthor-tools.js";
+import { buildCoauthorWorkingDocument } from "../src/domain/chat/coauthor-working-document.js";
 import type { LoreDelegate, LoreDelegateInput, LoreDelegateResult } from "../src/domain/coauthor/lore/lore-delegate.js";
 import type { TrackerDelegateInput } from "../src/domain/coauthor/tracker/tracker-delegate.js";
 
@@ -257,6 +258,57 @@ describe("coauthor-tools: add_alt_greeting", () => {
 });
 
 describe("coauthor-tools: edit_* exact SEARCH/REPLACE (CED-2)", () => {
+  test("uses the supplied live editor document as the mutation base and retains canonical metadata across composed edits", async () => {
+    const working = buildCoauthorWorkingDocument(
+      "---\nname: Saved\ncreator: Server\nvt:\n  storage_id: char_saved\n  mes_example_mode: always\n  mes_example_depth: 4\n  server_flag: keep\n---\n# PERSONALITY\nSaved-only text.\n\n# SCENARIO\nSaved scenario.",
+      {
+        card: {
+          name: "Live",
+          body: "# PERSONALITY\nLive-only text.\n\n# SCENARIO\nLive scenario.\n\n# EXAMPLES\n\n# GREETINGS\nIgnored",
+          greetings: [],
+          cardClean: false,
+        },
+        review: { targets: [] },
+      },
+    );
+    const tools = buildCoauthorTools({ profileMd: working.profileMd });
+
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "Saved-only text.", replace: "x" }], summary: "wrong base" },
+      ctx,
+    )).rejects.toThrow(/not found/);
+    const personality = await tools.edit_personality.execute(
+      { edits: [{ search: "Live-only text.", replace: "Edited live text." }], summary: "edit live" },
+      ctx,
+    );
+    const scenario = await tools.edit_scenario.execute(
+      { edits: [{ search: "Live scenario.", replace: "Edited live scenario." }], summary: "compose" },
+      ctx,
+    );
+
+    expect(JSON.stringify(personality)).toContain("Edited live text.");
+    expect(JSON.stringify(scenario)).toContain("Edited live scenario.");
+    expect(JSON.stringify(scenario)).toContain("creator: Server");
+    expect(JSON.stringify(scenario)).toContain("storage_id: char_saved");
+    expect(JSON.stringify(scenario)).toContain("server_flag: keep");
+  });
+
+  test("does not recover saved content for an explicitly empty live editor section", async () => {
+    const working = buildCoauthorWorkingDocument(
+      sampleProfileMd({ description: "Saved personality." }),
+      {
+        card: { name: "Live", body: "# PERSONALITY\n\n# SCENARIO\nLive scenario.\n\n# EXAMPLES", greetings: [], cardClean: false },
+        review: { targets: [] },
+      },
+    );
+    const tools = buildCoauthorTools({ profileMd: working.profileMd });
+
+    await expect(tools.edit_personality.execute(
+      { edits: [{ search: "Saved personality.", replace: "x" }], summary: "must not recover" },
+      ctx,
+    )).rejects.toThrow(/PERSONALITY section is empty.*write_personality/);
+  });
+
   test("applies a unique exact edit to PERSONALITY and preserves other sections", async () => {
     const tools = buildCoauthorTools({ profileMd: sampleProfileMd() });
     const out = (await tools.edit_personality.execute(

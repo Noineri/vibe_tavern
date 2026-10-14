@@ -26,6 +26,7 @@ import type { CoauthorApplyResponse } from "../../api/contract/session-types.js"
 import { notFound, unprocessable } from "../../shared/errors.js";
 import { findUnsafeMacros } from "../../domain/coauthor/macro-subset.js";
 import type { CharacterRuntime } from "../../domain/character/character-runtime.js";
+import { mapCoauthorProfileToCharacterFields } from "../../domain/chat/coauthor-working-document.js";
 
 /** The SessionRuntime seams the Apply path needs (stores + the character
  *  runtime's dual-write + the post-update chat-order rebuild). */
@@ -73,22 +74,11 @@ export async function applyCoauthorDraft(
 				reason: `Model returned an empty name; restored "${current?.name ?? ""}" from the card.`,
 			});
 		}
-		updateInput.tags = profile.tags;
-		updateInput.creatorNotes = profile.creatorNotes;
-		updateInput.description = profile.description;
-		updateInput.scenario = profile.scenario ?? "";
-		updateInput.mesExample = profile.mesExample;
-		updateInput.mesExampleMode = profile.mesExampleMode;
-		updateInput.mesExampleDepth = profile.mesExampleDepth;
 		// Lossless frontmatter round-trip: creator / character_version live in
 		// `extensions` (not top-level update fields). Merge over current so a
 		// model edit to either is honored; omitting would preserve current.
 		const baseExtensions = (current?.extensions ?? {}) as Record<string, unknown>;
-		updateInput.extensions = {
-			...baseExtensions,
-			...(profile.creator !== null ? { creator: profile.creator } : {}),
-			...(profile.characterVersion !== null ? { character_version: profile.characterVersion } : {}),
-		};
+		Object.assign(updateInput, mapCoauthorProfileToCharacterFields(profile, baseExtensions));
 	}
 
 	if (body.firstMessage !== undefined) {

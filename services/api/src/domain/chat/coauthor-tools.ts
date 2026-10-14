@@ -234,8 +234,9 @@ export function buildCoauthorTools(opts: { toolSet?: Record<string, boolean>; pr
   // Every successful profile mutation in one assembled turn — write_profile,
   // edit_personality/scenario/examples, write_personality/scenario/examples —
   // shares this single working profile and a single serialized, non-poisoning
-  // queue. The working profile starts from the canonical storage profile.md
-  // captured at turn start; each successful call advances it, so a later call
+  // queue. The working profile starts from the canonical turn document
+  // captured at turn start (the supplied editor snapshot when present, storage
+  // otherwise); each successful call advances it, so a later call
   // sees earlier mutations (composition). A rejected call cannot poison the
   // queue or corrupt the working profile — its change is discarded and the next
   // call proceeds against the last good state.

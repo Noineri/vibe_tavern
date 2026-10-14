@@ -10,6 +10,7 @@ import { LiveChatOrchestrator } from "../src/domain/chat/live-chat-orchestrator.
 import type { ProviderProfileService } from "../src/domain/providers/provider-profile-service.js";
 import { nonstreamingProviderExecute } from "../src/infrastructure/ai/nonstreaming-provider-executor.js";
 import { streamProviderExecutor } from "../src/infrastructure/ai/stream-provider-executor.js";
+import type { ProviderExecutionInput } from "../src/infrastructure/ai/provider-execution-types.js";
 import { SessionRuntime } from "../src/runtime/session/session-runtime.js";
 import { createRuntimeStore } from "../src/runtime/session/session-runtime-store.js";
 import { createApp } from "../src/server/app-factory.js";
@@ -40,6 +41,22 @@ const editorState = {
 const emptyEditorState = {
   card: { name: "", body: "", greetings: ["", "hello"], cardClean: false },
   review: { targets: [] },
+} satisfies CoauthorEditorState;
+
+const semanticEditorState = {
+  card: {
+    name: "Live provider name",
+    body: "# PERSONALITY\nLive provider personality.\n\n# SCENARIO\nLive provider scenario.\n\n# EXAMPLES\nLive provider example.\n\n# GREETINGS\nSynthetic view only.",
+    greetings: ["Live provider greeting", "Live provider alternate"],
+    cardClean: false,
+  },
+  review: {
+    targets: [
+      { target: "card", roundId: "abcdef123456", outcome: "applied", hunks: { accepted: 2, rejected: 0, pending: 1 } },
+      { target: "lore", roundId: "123456abcdef", outcome: "rejected", items: { offered: 3, selected: 1, applied: 0 } },
+      { target: "tracker_template", roundId: "fedcba654321", outcome: "awaiting", selected: true },
+    ],
+  },
 } satisfies CoauthorEditorState;
 
 const successNonstreaming: typeof nonstreamingProviderExecute = async () => ({
@@ -82,6 +99,7 @@ async function makeEnvironment() {
   expect((await stores.chats.getById(coauthor.activeChat.id))?.mode).toBe("coauthor");
 
   const seen: Array<CoauthorEditorState | undefined> = [];
+  const providerInputs: ProviderExecutionInput[] = [];
   const resolveStrategy = runtime.resolveChatModeStrategy.bind(runtime);
   runtime.resolveChatModeStrategy = async (chatId) => {
     const strategy = await resolveStrategy(chatId);
@@ -104,7 +122,16 @@ async function makeEnvironment() {
     (chatId) => runtime.resolveChatModeStrategy(chatId),
     undefined,
     undefined,
-    { nonstreaming: successNonstreaming, stream: successStream },
+    {
+      nonstreaming: async (input) => {
+        providerInputs.push(input);
+        return successNonstreaming(input);
+      },
+      stream: async (input) => {
+        providerInputs.push(input);
+        return successStream(input);
+      },
+    },
   );
   const providerProfiles = {
     resolveActiveProviderProfile: async () => null,
@@ -120,7 +147,7 @@ async function makeEnvironment() {
     null as unknown as import("../src/domain/asset/asset-service.js").AssetService,
     null as unknown as import("../src/api/contract/runtime-api.js").SttRuntimeApi["transcribeSttAudio"],
   );
-  return { app: await createApp({ runtime: { chat } as RuntimeApi }), chatId: coauthor.activeChat.id, seen, runtime };
+  return { app: await createApp({ runtime: { chat } as RuntimeApi }), chatId: coauthor.activeChat.id, seen, providerInputs, runtime };
 }
 
 async function post(app: Awaited<ReturnType<typeof createApp>>, path: string, body: object) {
@@ -128,6 +155,30 @@ async function post(app: Awaited<ReturnType<typeof createApp>>, path: string, bo
 }
 
 describe("co-author editor state transport", () => {
+  test("real HTTP send binds the semantic editor snapshot to the provider prompt and mutation tool base", async () => {
+    const env = await makeEnvironment();
+    const response = await post(env.app, `/api/chats/${env.chatId}/messages`, { content: "use live editor", coauthorEditorState: semanticEditorState });
+    expect(response.status).toBe(200);
+    expect(env.providerInputs).toHaveLength(1);
+    const input = env.providerInputs[0]!;
+    const payload = JSON.stringify(input.prompt.finalPayload);
+    expect(payload).toContain("Live provider name");
+    expect(payload).toContain("Live provider personality.");
+    expect(payload).toContain("Live provider greeting");
+    expect(payload).not.toContain("probe");
+    expect(payload).toContain("- card round `abcdef123456`: **applied** (hunks: accepted 2, rejected 0, pending 1)");
+    expect(payload).toContain("- lore round `123456abcdef`: **rejected** (items: offered 3, selected 1, applied 0)");
+    expect(payload).toContain("- tracker_template round `fedcba654321`: **awaiting** (selected: yes)");
+
+    const tool = input.tools?.edit_personality;
+    if (!tool || typeof tool.execute !== "function") throw new Error("Expected provider-bound edit_personality tool");
+    const output = await tool.execute(
+      { edits: [{ search: "Live provider personality.", replace: "Provider-mutated live personality." }], summary: "mutate live base" },
+      { messages: [], toolCallId: "provider-tool", abort: () => {} },
+    );
+    expect(JSON.stringify(output)).toContain("Provider-mutated live personality.");
+  });
+
   test("non-stream co-author send preserves editor state through the user-insert assembly branch", async () => {
     const env = await makeEnvironment();
     const response = await post(env.app, `/api/chats/${env.chatId}/messages`, { content: "draft this", coauthorEditorState: editorState });
