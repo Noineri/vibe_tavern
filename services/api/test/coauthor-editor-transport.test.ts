@@ -155,28 +155,90 @@ async function post(app: Awaited<ReturnType<typeof createApp>>, path: string, bo
 }
 
 describe("co-author editor state transport", () => {
-  test("real HTTP send binds the semantic editor snapshot to the provider prompt and mutation tool base", async () => {
-    const env = await makeEnvironment();
-    const response = await post(env.app, `/api/chats/${env.chatId}/messages`, { content: "use live editor", coauthorEditorState: semanticEditorState });
-    expect(response.status).toBe(200);
-    expect(env.providerInputs).toHaveLength(1);
-    const input = env.providerInputs[0]!;
-    const payload = JSON.stringify(input.prompt.finalPayload);
-    expect(payload).toContain("Live provider name");
-    expect(payload).toContain("Live provider personality.");
-    expect(payload).toContain("Live provider greeting");
-    expect(payload).not.toContain("probe");
-    expect(payload).toContain("- card round `abcdef123456`: **applied** (hunks: accepted 2, rejected 0, pending 1)");
-    expect(payload).toContain("- lore round `123456abcdef`: **rejected** (items: offered 3, selected 1, applied 0)");
-    expect(payload).toContain("- tracker_template round `fedcba654321`: **awaiting** (selected: yes)");
+  test("both HTTP sends bind the semantic editor snapshot to the provider prompt and mutation tool base", async () => {
+    for (const path of ["messages", "messages/stream"]) {
+      const env = await makeEnvironment();
+      const saved = await env.runtime.getSnapshot(env.chatId);
+      const response = await post(env.app, `/api/chats/${env.chatId}/${path}`, { content: "use live editor", coauthorEditorState: semanticEditorState });
+      if (path.endsWith("stream")) {
+        expect(await response.text()).toContain("event: finish");
+      } else {
+        expect(response.status).toBe(200);
+      }
+      expect(env.providerInputs).toHaveLength(1);
+      const input = env.providerInputs[0]!;
+      const payload = JSON.stringify(input.prompt.finalPayload);
+      expect(payload).toContain("Live provider name");
+      expect(payload).toContain("Live provider personality.");
+      expect(payload).toContain("Live provider scenario.");
+      expect(payload).toContain("Live provider greeting");
+      expect(payload).toContain("- card buffer: unsaved");
+      expect(payload).toContain("- card round `abcdef123456`: **applied** (hunks: accepted 2, rejected 0, pending 1)");
+      expect(payload).toContain("- lore round `123456abcdef`: **rejected** (items: offered 3, selected 1, applied 0)");
+      expect(payload).toContain("- tracker_template round `fedcba654321`: **awaiting** (selected: yes)");
 
-    const tool = input.tools?.edit_personality;
-    if (!tool || typeof tool.execute !== "function") throw new Error("Expected provider-bound edit_personality tool");
-    const output = await tool.execute(
-      { edits: [{ search: "Live provider personality.", replace: "Provider-mutated live personality." }], summary: "mutate live base" },
-      { messages: [], toolCallId: "provider-tool", abort: () => {} },
-    );
-    expect(JSON.stringify(output)).toContain("Provider-mutated live personality.");
+      const tool = input.tools?.edit_personality;
+      if (!tool || typeof tool.execute !== "function") throw new Error("Expected provider-bound edit_personality tool");
+      const output = await tool.execute(
+        { edits: [{ search: "Live provider personality.", replace: "Provider-mutated live personality." }], summary: "mutate live base" },
+        { messages: [], toolCallId: "provider-tool", abort: () => {} },
+      );
+      const proposed = JSON.stringify(output);
+      expect(proposed).toContain("Provider-mutated live personality.");
+      expect(proposed).toContain("Live provider scenario.");
+      expect(proposed).toContain("name: Live provider name");
+      const after = await env.runtime.getSnapshot(env.chatId);
+      expect(after.character?.name).toBe(saved.character?.name);
+      expect(after.character?.description).toBe(saved.character?.description);
+      expect(after.character?.firstMessage).toBe(saved.character?.firstMessage);
+      expect(after.character?.alternateGreetings).toEqual(saved.character?.alternateGreetings);
+    }
+  });
+
+  test("both HTTP sends keep explicit empty editor state live, then return to the saved source when omitted", async () => {
+    const emptyLiveState = {
+      card: { name: "", body: "", greetings: [], cardClean: false },
+      review: { targets: [] },
+    } satisfies CoauthorEditorState;
+    for (const path of ["messages", "messages/stream"]) {
+      const env = await makeEnvironment();
+      const saved = await env.runtime.getSnapshot(env.chatId);
+      const emptyResponse = await post(env.app, `/api/chats/${env.chatId}/${path}`, { content: "", coauthorEditorState: emptyLiveState });
+      if (path.endsWith("stream")) {
+        await emptyResponse.text();
+      } else {
+        expect(emptyResponse.status).toBe(200);
+      }
+      expect(env.providerInputs).toHaveLength(1);
+      const liveInput = env.providerInputs[0]!;
+      const livePayload = JSON.stringify(liveInput.prompt.finalPayload);
+      expect(livePayload).toContain("name: \\\"\\\"");
+      expect(livePayload).not.toContain("probe");
+      expect(livePayload).not.toContain("Hello");
+      const tool = liveInput.tools?.edit_personality;
+      if (!tool || typeof tool.execute !== "function") throw new Error("Expected provider-bound edit_personality tool");
+      await expect(tool.execute(
+        { edits: [{ search: "probe", replace: "x" }], summary: "must remain empty" },
+        { messages: [], toolCallId: "empty-provider-tool", abort: () => {} },
+      )).rejects.toThrow(/PERSONALITY section is empty.*write_personality/);
+
+      const legacyResponse = await post(env.app, `/api/chats/${env.chatId}/${path}`, { content: "" });
+      if (path.endsWith("stream")) {
+        await legacyResponse.text();
+      } else {
+        expect(legacyResponse.status).toBe(200);
+      }
+      expect(env.providerInputs).toHaveLength(2);
+      const legacyPayload = JSON.stringify(env.providerInputs[1]!.prompt.finalPayload);
+      expect(legacyPayload).toContain("probe");
+      expect(legacyPayload).toContain("Hello");
+      expect(legacyPayload).not.toContain("# Editor review and save state");
+      const after = await env.runtime.getSnapshot(env.chatId);
+      expect(after.character?.name).toBe(saved.character?.name);
+      expect(after.character?.description).toBe(saved.character?.description);
+      expect(after.character?.firstMessage).toBe(saved.character?.firstMessage);
+      expect(after.character?.alternateGreetings).toEqual(saved.character?.alternateGreetings);
+    }
   });
 
   test("non-stream co-author send preserves editor state through the user-insert assembly branch", async () => {

@@ -1,4 +1,5 @@
 import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { createHash } from "node:crypto";
 import type { ChatModeAssembleInput, ChatModeAssembleLoaders } from "../src/domain/chat/chat-mode-strategy.js";
 import { assembleCoauthorPrompt } from "../src/domain/chat/coauthor-prompt.js";
 import type { Character, Message as DbMessage, Chat as DbChat } from "@vibe-tavern/db";
@@ -21,7 +22,8 @@ function makeLoaders(overrides?: Partial<{
   messages: DbMessage[];
   loreEntries: Array<{ id: string; title: string; content: string }>;
   contextItems: Array<{ type: "character" | "persona" | "lorebook" | "script"; id: string; title: string; content: string }>;
-  boundResources: { lorebooks: Array<{ id: string; name: string; entries: Array<{ id: string; title: string }> }>; scripts: Array<{ id: string; name: string; summary: string }> };
+   boundResources: { lorebooks: Array<{ id: string; name: string; entries: Array<{ id: string; title: string }> }>; scripts: Array<{ id: string; name: string; summary: string }> };
+   branchSummaries: Array<{ includeInContext: boolean; source: string; content: string }>;
   userModules: Array<Omit<import("@vibe-tavern/api-contracts").CoauthorModule, "isBuiltIn">>;
   skillCatalog: import("../src/domain/coauthor/skills/skill-scanner.js").SkillCatalogEntry[];
 }>): ChatModeAssembleLoaders {
@@ -61,7 +63,7 @@ function makeLoaders(overrides?: Partial<{
     getProfileMdText: async () => overrides?.profileMd ?? "---\nname: Test\n---\n# PERSONALITY\nA test character.\n",
     getCoauthorContextItems: async () => overrides?.contextItems ?? (overrides?.loreEntries ?? []).map((e) => ({ type: "lorebook" as const, ...e })),
     getCoauthorBoundResources: async () => overrides?.boundResources ?? { lorebooks: [], scripts: [] },
-    getChatSummaries: async () => [],
+    getChatSummaries: async () => overrides?.branchSummaries ?? [],
     getCoauthorUserModules: async () => overrides?.userModules ?? [],
     getSkillCatalog: async () => overrides?.skillCatalog ?? DEFAULT_MOCK_CATALOG,
   };
@@ -196,6 +198,37 @@ describe("assembleCoauthorPrompt", () => {
     expect(system).toContain("ALT 1");
   });
 
+  test("RO-3b legacy byte pin: parent 8f55583f assembler output stays unchanged without an editor snapshot", async () => {
+    // Captured from git object 8f55583f:services/api/src/domain/chat/coauthor-prompt.ts.
+    // The capture ran that parent source in an approved temp artifact with this
+    // exact fixture; the noncanonical saved profile exercises the no-snapshot
+    // path's byte preservation rather than canonicalizing it through the codec.
+    const profileMd = [
+      "---", "name: Saved Name", "tags: [saved, \"two words\"]", "creator: Server Creator", "character_version: v9",
+      "vt:", "  storage_id: char_saved", "  mes_example_mode: depth", "  mes_example_depth: 6", "  unknown_server_flag: retain",
+      "custom_key: custom-value", "---", "# PERSONALITY", "Saved personality.", "", "# SCENARIO", "Saved scenario.", "", "# EXAMPLES", "Saved example.",
+    ].join("\n");
+    const result = await assembleCoauthorPrompt(makeInput(makeLoaders({
+      profileMd,
+      chat: { id: "chat_legacy", activeBranchId: "branch_legacy", coauthorModuleId: null, summary: "Fallback summary must lose to branch summary." },
+      character: { id: "char_legacy", name: "Saved Name", firstMessage: "Saved primary", alternateGreetings: ["Saved alternate"], extensions: {} },
+      contextItems: [{ type: "lorebook", id: "ctx_1", title: "Pinned lore", content: "Pinned context content." }],
+      boundResources: {
+        lorebooks: [{ id: "lb_1", name: "Bound lore", entries: [{ id: "entry_1", title: "Bound entry" }] }],
+        scripts: [{ id: "script_1", name: "bound.js", summary: "Bound script summary." }],
+      },
+      branchSummaries: [{ includeInContext: true, source: "branch", content: "Branch summary content." }],
+      skillCatalog: [{
+        id: "legacy-skill", source: "builtin", name: "legacy-skill", description: "Legacy catalog entry.",
+        skillDir: "/skills/legacy-skill", manifestPath: "/skills/legacy-skill/SKILL.md", rootRelativeManifestPath: "legacy-skill/SKILL.md", shadowsBuiltin: false,
+      }],
+    })));
+    const system = (result.prompt.finalPayload as { messages: Array<{ content: string }> }).messages[0].content;
+
+    expect(system).toHaveLength(8511);
+    expect(createHash("sha256").update(system).digest("hex")).toBe("17dafc1f03ba1e163a8ebe1faad90e24a0136d308d168c078f9a8679a31b6ca1");
+  });
+
   test("uses a supplied editor document for the current card, tool base, and authoritative review state", async () => {
     const editorState = {
       card: {
@@ -206,9 +239,9 @@ describe("assembleCoauthorPrompt", () => {
       },
       review: {
         targets: [
-          { target: "card", roundId: "card123", outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 3 }, supersededByRound: "card456" },
-          { target: "lore", roundId: "lore123", outcome: "applied", items: { offered: 4, selected: 3, applied: 2 } },
-          { target: "tracker_template", roundId: "track123", outcome: "awaiting", selected: true },
+          { target: "card", roundId: "abcdef123456", outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 3 }, supersededByRound: "fedcba654321" },
+          { target: "lore", roundId: "123456abcdef", outcome: "rejected", items: { offered: 4, selected: 3, applied: 0 } },
+          { target: "tracker_template", roundId: "a1b2c3d4e5f6", outcome: "awaiting", selected: true },
         ],
       },
     } satisfies CoauthorEditorState;
@@ -225,9 +258,9 @@ describe("assembleCoauthorPrompt", () => {
     expect(system).toContain("Live alternate");
     expect(system).not.toContain("Saved primary");
     expect(system).toContain("# Editor review and save state\n- card buffer: unsaved");
-    expect(system).toContain("- card round `card123`: **applied-partial** (hunks: accepted 1, rejected 2, pending 3; superseded by round `card456`)");
-    expect(system).toContain("- lore round `lore123`: **applied** (items: offered 4, selected 3, applied 2)");
-    expect(system).toContain("- tracker_template round `track123`: **awaiting** (selected: yes)");
+    expect(system).toContain("- card round `abcdef123456`: **applied-partial** (hunks: accepted 1, rejected 2, pending 3; superseded by round `fedcba654321`)");
+    expect(system).toContain("- lore round `123456abcdef`: **rejected** (items: offered 4, selected 3, applied 0)");
+    expect(system).toContain("- tracker_template round `a1b2c3d4e5f6`: **awaiting** (selected: yes)");
     expect(result.prompt.layers.find((layer) => layer.id === "current_card")?.text).toContain("Live editor name");
   });
 
