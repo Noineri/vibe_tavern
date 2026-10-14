@@ -1,4 +1,4 @@
-import { createElement, useCallback, useRef, useState, type ReactNode } from "react";
+import { createElement, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ExperienceCopilotLaunchContext } from "@vibe-tavern/api-contracts";
 import type { AgentHostBridge } from "../../../../lib/agent-host-registry.js";
 import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js";
@@ -8,6 +8,7 @@ import { allReviewHunkIds } from "../../../shared/agent-shell/AgentBufferReviewE
 import { buildExperienceCopilotReviewSnapshot, experienceReviewRoundId } from "../../../../lib/experience-copilot-review-snapshot.js";
 import { agentThreadKey, type AgentKind } from "../../../../lib/agent-host-registry.js";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
+import { validateVisualSource } from "../../../../lib/visual-source-validator.js";
 
 /** Cohesive host extraction: turn-local review feedback sent alongside a turn. */
 export function useExperienceCopilotReviewFeedback({
@@ -79,4 +80,38 @@ export function recordExperienceAppliedOutcome({ kind, threadId, target, bufferR
     cancelled,
   }]).targets;
   if (record) useAgentReviewOutcomeStore.getState().record(kind, threadId, record, [...appliedHunkIds]);
+}
+
+/** Binds the host's current thread to successful local application recording. */
+export function useExperienceReviewOutcomeRecorder(kind: AgentKind, threadId: string | null) {
+  return useCallback((target: "rules" | "visual", bufferReview: CopilotBufferReview, accepted: ReadonlySet<number>, dismissed: ReadonlySet<number>, applied: ReadonlySet<number>, cancelled = false) => {
+    if (threadId) recordExperienceAppliedOutcome({ kind, threadId, target, bufferReview, accepted, dismissed, applied, cancelled });
+  }, [kind, threadId]);
+}
+
+/** Validates the effective review document rather than a stale live buffer. */
+export function useExperienceCopilotVisualValidation(review: CopilotBufferReview | null, visualSource: string) {
+  return useMemo(() => validateVisualSource(review ? review.proposed : visualSource), [review, visualSource]);
+}
+
+/** Records a non-application review transition without losing prior local applies. */
+export function recordExperienceReviewOutcome({ kind, threadId, target, bufferReview, accepted, dismissed, cancelled = false }: {
+  kind: AgentKind;
+  threadId: string;
+  target: "rules" | "visual";
+  bufferReview: CopilotBufferReview;
+  accepted: ReadonlySet<number>;
+  dismissed: ReadonlySet<number>;
+  cancelled?: boolean;
+}): void {
+  recordExperienceAppliedOutcome({
+    kind,
+    threadId,
+    target,
+    bufferReview,
+    accepted,
+    dismissed,
+    applied: new Set(),
+    cancelled,
+  });
 }

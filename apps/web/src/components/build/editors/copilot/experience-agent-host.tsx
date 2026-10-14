@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { toast } from "sonner";
 import type { ExperienceCopilotLaunchContext, ReviewTargetRecord } from "@vibe-tavern/api-contracts";
 import { Icons } from "../../../shared/icons.js";
-import { validateVisualSource } from "../../../../lib/visual-source-validator.js";
 import { EmptyState } from "../../../shared/empty-state.js";
 import { SegmentedControl } from "../../../shared/SegmentedControl.js";
 import { ExperiencePlayground } from "../ExperiencePlayground.js";
@@ -41,7 +40,7 @@ import {
 import type { AgentSendOptions } from "../../../shared/agent-shell/use-agent-controller.js";
 import { buildExperienceCopilotReviewSnapshot } from "../../../../lib/experience-copilot-review-snapshot.js";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
-import { recordExperienceAppliedOutcome, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs } from "./use-experience-copilot-review.js";
+import { recordExperienceReviewOutcome, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs, useExperienceCopilotVisualValidation, useExperienceReviewOutcomeRecorder } from "./use-experience-copilot-review.js";
 
 /**
  * The `experience` agent host (AGENT_SHELL_PLAN AS-6b2) — the mini-app
@@ -330,17 +329,12 @@ function ExperienceEditorPane({
     [effVisual, acceptedVisualHunks, dismissedVisualHunks, isSending],
   );
 
-  const recordAppliedOutcome = useCallback((target: "rules" | "visual", bufferReview: CopilotBufferReview, accepted: ReadonlySet<number>, dismissed: ReadonlySet<number>, applied: ReadonlySet<number>, cancelled = false) => {
-    if (threadId) recordExperienceAppliedOutcome({ kind: EXPERIENCE_KIND, threadId, target, bufferReview, accepted, dismissed, applied, cancelled });
-  }, [threadId]);
+  const recordAppliedOutcome = useExperienceReviewOutcomeRecorder(EXPERIENCE_KIND, threadId);
 
   // UX 2026-08-16 remark 6 — static validation of the EFFECTIVE visual document:
   // while a review round is open that is the PROPOSED text (what accept-all
   // would land); otherwise the live buffer.
-  const visualValidation = useMemo(
-    () => validateVisualSource(visualReview ? visualReview.proposed : visualSource),
-    [visualReview, visualSource],
-  );
+  const visualValidation = useExperienceCopilotVisualValidation(visualReview, visualSource);
 
   // CD-8 conflict semantics. Clean path: the buffer is exactly the hybrid the
   // accept flow expects → rebuild from the snapshot base (mergeSelectedBody).
@@ -365,9 +359,9 @@ function ExperienceEditorPane({
       if (!bufferReview.diff) {
         const nextWhole = new Set(prevAccepted);
         for (const id of clickedIds) nextWhole.add(id);
-        setAccepted(nextWhole);
         if (bufferText !== bufferReview.proposed) {
           onChange(bufferReview.proposed);
+          setAccepted(nextWhole);
           recordAppliedOutcome(target, bufferReview, nextWhole, dismissed, nextWhole);
         }
         return;
@@ -383,9 +377,9 @@ function ExperienceEditorPane({
         const applied = clickedIds.filter((id) => !skippedHunkIds.includes(id));
         const next = new Set(prevAccepted);
         for (const id of applied) next.add(id);
-        setAccepted(next);
         if (applied.length > 0) {
           onChange(text);
+          setAccepted(next);
           recordAppliedOutcome(target, bufferReview, next, dismissed, new Set(applied));
         }
         if (skippedHunkIds.length > 0)
@@ -394,8 +388,8 @@ function ExperienceEditorPane({
       }
       const next = new Set(prevAccepted);
       for (const id of clickedIds) next.add(id);
-      setAccepted(next);
       onChange(mergedReviewText(bufferReview, next));
+      setAccepted(next);
       recordAppliedOutcome(target, bufferReview, next, dismissed, new Set(clickedIds));
     },
     [t, recordAppliedOutcome],
@@ -421,9 +415,11 @@ function ExperienceEditorPane({
       const state = useCopilotReviewRoundStore.getState();
       const current = state.roundsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)];
       if (!current) return;
-      state.setDismissedHunks(EXPERIENCE_KIND, threadId, "rules", [...new Set([...current.dismissedRules, hunkId])]);
+      const dismissed = new Set([...current.dismissedRules, hunkId]);
+      state.setDismissedHunks(EXPERIENCE_KIND, threadId, "rules", [...dismissed]);
+      if (rulesReview) recordExperienceReviewOutcome({ kind: EXPERIENCE_KIND, threadId, target: "rules", bufferReview: rulesReview, accepted: new Set(current.acceptedRules), dismissed });
     },
-    [threadId],
+    [threadId, rulesReview],
   );
   const dismissVisualHunk = useCallback(
     (hunkId: number) => {
@@ -431,9 +427,11 @@ function ExperienceEditorPane({
       const state = useCopilotReviewRoundStore.getState();
       const current = state.roundsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)];
       if (!current) return;
-      state.setDismissedHunks(EXPERIENCE_KIND, threadId, "visual", [...new Set([...current.dismissedVisual, hunkId])]);
+      const dismissed = new Set([...current.dismissedVisual, hunkId]);
+      state.setDismissedHunks(EXPERIENCE_KIND, threadId, "visual", [...dismissed]);
+      if (visualReview) recordExperienceReviewOutcome({ kind: EXPERIENCE_KIND, threadId, target: "visual", bufferReview: visualReview, accepted: new Set(current.acceptedVisual), dismissed });
     },
-    [threadId],
+    [threadId, visualReview],
   );
   const acceptVisualHunk = useCallback(
     (hunkId: number) => {
@@ -460,7 +458,9 @@ function ExperienceEditorPane({
     const state = useCopilotReviewRoundStore.getState();
     const current = state.roundsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)];
     if (!current) return;
-    state.setDismissedHunks(EXPERIENCE_KIND, threadId, "rules", [...new Set([...current.dismissedRules, ...pending])]);
+    const dismissed = new Set([...current.dismissedRules, ...pending]);
+    state.setDismissedHunks(EXPERIENCE_KIND, threadId, "rules", [...dismissed]);
+    recordExperienceReviewOutcome({ kind: EXPERIENCE_KIND, threadId, target: "rules", bufferReview: rulesReview, accepted: new Set(current.acceptedRules), dismissed });
   }, [rulesReview, acceptedRulesHunks, dismissedRulesHunks, threadId]);
   const dismissPendingVisual = useCallback(() => {
     if (!visualReview || !threadId) return;
@@ -471,7 +471,9 @@ function ExperienceEditorPane({
     const state = useCopilotReviewRoundStore.getState();
     const current = state.roundsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)];
     if (!current) return;
-    state.setDismissedHunks(EXPERIENCE_KIND, threadId, "visual", [...new Set([...current.dismissedVisual, ...pending])]);
+    const dismissed = new Set([...current.dismissedVisual, ...pending]);
+    state.setDismissedHunks(EXPERIENCE_KIND, threadId, "visual", [...dismissed]);
+    recordExperienceReviewOutcome({ kind: EXPERIENCE_KIND, threadId, target: "visual", bufferReview: visualReview, accepted: new Set(current.acceptedVisual), dismissed });
   }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, threadId]);
 
   // RV-3: "Cancel all" — kill the whole round for THIS buffer: every hunk
@@ -523,11 +525,13 @@ function ExperienceEditorPane({
   const cancelRoundRules = useCallback(() => {
     if (!rulesReview) return;
     cancelRoundHunks(rulesReview, acceptedRulesHunks, dismissedRulesHunks, rulesCode, setDismissedRulesHunks, onRulesChange);
-  }, [rulesReview, acceptedRulesHunks, dismissedRulesHunks, rulesCode, onRulesChange, cancelRoundHunks]);
+    if (threadId) recordExperienceReviewOutcome({ kind: EXPERIENCE_KIND, threadId, target: "rules", bufferReview: rulesReview, accepted: acceptedRulesHunks, dismissed: new Set(allReviewHunkIds(rulesReview)), cancelled: true });
+  }, [rulesReview, acceptedRulesHunks, dismissedRulesHunks, rulesCode, onRulesChange, cancelRoundHunks, threadId]);
   const cancelRoundVisual = useCallback(() => {
     if (!visualReview) return;
     cancelRoundHunks(visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, setDismissedVisualHunks, onVisualChange);
-  }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, onVisualChange, cancelRoundHunks]);
+    if (threadId) recordExperienceReviewOutcome({ kind: EXPERIENCE_KIND, threadId, target: "visual", bufferReview: visualReview, accepted: acceptedVisualHunks, dismissed: new Set(allReviewHunkIds(visualReview)), cancelled: true });
+  }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, onVisualChange, cancelRoundHunks, threadId]);
 
   const handleToolbarRevert = useCallback(() => {
     if (threadId) useCopilotReviewRoundStore.getState().clearDangling(EXPERIENCE_KIND, threadId);
@@ -552,6 +556,14 @@ function ExperienceEditorPane({
       const stored = threadId
         ? useAgentReviewOutcomeStore.getState().outcomesByThread[agentThreadKey(EXPERIENCE_KIND, threadId)]?.[target]
         : undefined;
+      const roundId = buildExperienceCopilotReviewSnapshot([{
+        target,
+        base: effective.base,
+        proposed: effective.proposed,
+        offeredHunkIds: [...allReviewHunkIds(fullReview)],
+        acceptedHunkIds: new Set(),
+        dismissedHunkIds: new Set(),
+      }]).targets[0]?.roundId;
       const [record] = buildExperienceCopilotReviewSnapshot([{
         target,
         base: effective.base,
@@ -559,7 +571,9 @@ function ExperienceEditorPane({
         offeredHunkIds: [...allReviewHunkIds(fullReview)],
         acceptedHunkIds: accepted,
         dismissedHunkIds: dismissed,
-        appliedHunkIds: new Set(stored?.appliedHunkIds ?? []),
+        // Hunk numbers are round-local diff indexes. A new proposal can reuse
+        // an index, but it must never inherit a prior round's local apply.
+        appliedHunkIds: stored?.record.roundId === roundId ? new Set(stored.appliedHunkIds) : new Set(),
       }]).targets;
       return [record!];
     });

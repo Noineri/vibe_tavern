@@ -1425,7 +1425,7 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
 describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
   it("shows the review bar + tab dot after a proposal and accepts all into the buffer", async () => {
     const onRulesChange = mock();
-    const { getByTestId, queryByTestId } = renderShell({ onRulesChange });
+    const { getByTestId, queryByTestId } = renderShell({ onRulesChange, rulesSaved: false, visualSaved: true });
     await flushSessionLoad();
 
     // A real turn (snapshot) against the v1 buffers.
@@ -1465,6 +1465,18 @@ describe("ExperienceCopilotShell — CD-6: inline review flow", () => {
     // Accept-all writes the proposed buffer into the rules draft.
     fireEvent.click(getByTestId("copilot-accept-all"));
     expect(onRulesChange).toHaveBeenCalledWith("// rules buffer v2");
+
+    // The real shell → controller → fetch router path reports the successful
+    // local application before either independent buffer has been saved.
+    fireEvent.change(textarea, { target: { value: "describe the accepted edit" } });
+    fireEvent.click(document.querySelector('[data-testid="copilot-send-btn"]') as HTMLElement);
+    await waitFor(() => expect(streamCalls()).toHaveLength(2));
+    const body = streamCalls()[1]!.body!;
+    expect(body.rulesSaved).toBe(false);
+    expect(body.visualSaved).toBe(true);
+    expect((body.reviewSnapshot as { targets: Array<{ target: string; outcome: string }> }).targets.map(({ target, outcome }) => ({ target, outcome }))).toEqual([
+      { target: "rules", outcome: "applied" },
+    ]);
   });
 
   it("per-hunk dismiss (✕) drops hunks from the round without touching the buffer (RV-2)", async () => {
