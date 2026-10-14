@@ -27,7 +27,7 @@ export function AgentActivityCard({ activity }: { activity: ExperienceCopilotToo
   const streaming = activity.status === "streaming";
   const errored = activity.status === "error";
   const targetText =
-    activity.target === "rules" ? t("experience_copilot_rules") : t("experience_copilot_visual");
+    activity.target === "rules" ? t("agent_rules") : t("agent_visual");
 
   const statusIcon = isRead ? (
     <Icons.FileText />
@@ -85,7 +85,7 @@ export function AgentActivityCard({ activity }: { activity: ExperienceCopilotToo
       </div>
       {errored && (
         <div className="px-3 py-1.5 font-ui text-[11px] text-danger-text">
-          {t("experience_copilot_tool_failed")}
+          {t("agent_tool_failed")}
         </div>
       )}
     </div>

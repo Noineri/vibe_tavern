@@ -517,7 +517,7 @@ describe("ExperienceCopilotShell — session lifecycle", () => {
     await flushSessionLoad();
 
     // MessageList's empty state (thread exists but no messages/activities).
-    expect(getByText("experience_copilot_subtitle")).toBeDefined();
+    expect(getByText("agent_subtitle")).toBeDefined();
     expect(apiCalls("GET", /\/script\/script-1\/active$/)).toHaveLength(1);
     expect(apiCalls("POST", /\/script\/script-1\/session$/)).toHaveLength(1);
     expect(apiCalls("GET", /messages$/)).toHaveLength(0);
@@ -821,7 +821,7 @@ describe("ExperienceCopilotShell — editor sub-tab binding", () => {
 
     // XU-5: a non-empty visual source defaults to the Preview tab — navigate to
     // Code to reach the editor.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
 
     const cmEl = container.querySelector<HTMLElement>(".cm-editor");
     expect(cmEl).not.toBeNull();
@@ -830,7 +830,7 @@ describe("ExperienceCopilotShell — editor sub-tab binding", () => {
     expect(view!.state.doc.toString()).toBe("// rules buffer");
 
     // Switch to the Visual buffer.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     // CodeEditor syncs the external value without clobbering the editor.
     expect(view!.state.doc.toString()).toBe("// visual buffer");
@@ -860,10 +860,10 @@ describe("ExperienceCopilotShell — visual validator (UX 2026-08-16 remark 6)",
     // Banner only exists on the code tab's Visual buffer — preview (the default
     // here, since a visual source exists) has no validator.
     expect(first.queryByTestId("copilot-visual-validator")).toBeNull();
-    fireEvent.click(first.getByRole("radio", { name: "experience_copilot_code" }));
-    fireEvent.click(first.getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(first.getByRole("radio", { name: "agent_code" }));
+    fireEvent.click(first.getByRole("radio", { name: "agent_visual" }));
 
-    expect(first.getByTestId("copilot-visual-validator").textContent).toContain("experience_copilot_visual_problems");
+    expect(first.getByTestId("copilot-visual-validator").textContent).toContain("agent_visual_problems");
     expect(first.getByTestId("copilot-visual-validator").textContent).toContain("script block 1");
     first.unmount();
 
@@ -871,9 +871,9 @@ describe("ExperienceCopilotShell — visual validator (UX 2026-08-16 remark 6)",
     const clean = "<style>.x{c:red}</style>\n<div></div>\n<script>var a = 1;</script>";
     const second = renderShell({ visualSource: clean });
     await flushSessionLoad();
-    fireEvent.click(second.getByRole("radio", { name: "experience_copilot_code" }));
-    fireEvent.click(second.getByRole("radio", { name: "experience_copilot_visual" }));
-    expect(second.getByTestId("copilot-visual-validator").textContent).toContain("experience_copilot_visual_valid");
+    fireEvent.click(second.getByRole("radio", { name: "agent_code" }));
+    fireEvent.click(second.getByRole("radio", { name: "agent_visual" }));
+    expect(second.getByTestId("copilot-visual-validator").textContent).toContain("agent_visual_valid");
   });
 });
 
@@ -887,9 +887,9 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
 
     // XU-6 (quote 10): the 3-position toggle is ALWAYS present — the old
     // "Test it" sandbox button is gone (the Try tab replaces it).
-    expect(getByRole("radio", { name: "experience_copilot_preview" })).toBeDefined();
-    expect(getByRole("radio", { name: "experience_copilot_code" })).toBeDefined();
-    expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_preview" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_code" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
     // XU-5: the preview button is gone — preview is the default editor tab.
     expect(queryByTestId("copilot-toolbar-preview")).toBeNull();
     // XU-6: the sandbox "Test it" button is gone (the Try tab replaces it).
@@ -926,7 +926,7 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
     expect(queryByTestId("experience-frame-stub")).toBeNull();
 
     // Switch to Preview → the empty-state (no frame).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_preview" }));
+    fireEvent.click(getByRole("radio", { name: "agent_preview" }));
     expect(getByText("experience_playground_no_visual")).toBeDefined();
     expect(queryByTestId("experience-frame-stub")).toBeNull();
   });
@@ -935,7 +935,7 @@ describe("ExperienceCopilotShell — toolbar buttons + modals (ER-13b′)", () =
     const { getByRole, getByTestId, queryByTestId } = renderShell();
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
     // XU-6: the shared playground element mounts INLINE on the Try tab — the
     // sandbox modal is gone entirely.
@@ -982,13 +982,13 @@ describe("ExperienceCopilotShell — mobile tabs", () => {
     expect(hasHiddenClass(chatPane)).toBe(false);
     expect(hasHiddenClass(editPane)).toBe(true);
 
-    fireEvent.click(getByRole("tab", { name: "experience_copilot_tab_edit" }));
+    fireEvent.click(getByRole("tab", { name: "agent_tab_edit" }));
     expect(hasHiddenClass(chatPane)).toBe(true);
     expect(hasHiddenClass(editPane)).toBe(false);
 
     // The unified outer toggle lives in the Edit pane: the Try tab is present
     // (XU-6 — the old sandbox "Test it" button is gone).
-    expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
   });
 
   it("guards the whole mobile flex column with min-w-0 (4a: the 844px tablist blow-out)", async () => {
@@ -1055,7 +1055,7 @@ describe("ExperienceCopilotShell — contextual toolbar slots (ER-13c)", () => {
     // Default editorBuffer is rules → the rules slot is rendered.
     expect(getByTestId("rules-toolbar-slot")).toBeDefined();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     expect(queryByTestId("rules-toolbar-slot")).toBeNull();
   });
 
@@ -1068,10 +1068,10 @@ describe("ExperienceCopilotShell — contextual toolbar slots (ER-13c)", () => {
     // Default editorBuffer is rules → the visual slot is absent.
     expect(queryByTestId("visual-toolbar-slot")).toBeNull();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     expect(getByTestId("visual-toolbar-slot")).toBeDefined();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_rules" }));
+    fireEvent.click(getByRole("radio", { name: "agent_rules" }));
     expect(queryByTestId("visual-toolbar-slot")).toBeNull();
   });
 });
@@ -1083,16 +1083,16 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
 
     // Identity i18n: the creation labels resolve through `t` (key-as-string
     // fallback without a LocaleProvider).
-    expect(getByRole("radio", { name: "experience_copilot_preview" })).toBeDefined();
-    expect(getByRole("radio", { name: "experience_copilot_code" })).toBeDefined();
-    expect(getByRole("radio", { name: "experience_copilot_try_it" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_preview" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_code" })).toBeDefined();
+    expect(getByRole("radio", { name: "agent_try_it" })).toBeDefined();
   });
 
   it("try position renders the playground inline and hides the code editor + toolbar buttons", async () => {
     const { container, getByRole, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
     // The shared playground element mounts INLINE.
     expect(queryByTestId("experience-playground")).toBeTruthy();
@@ -1109,7 +1109,7 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     const { getByRole, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     expect(queryByTestId("copilot-sandbox-modal")).toBeNull();
   });
 
@@ -1138,7 +1138,7 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     await flushSessionLoad();
 
     // Default is Code (rules); switch the inner sub-toggle to Visual.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
 
     expect(getByTestId("visual-toolbar-slot")).toBeDefined();
     expect(container.querySelector(".cm-editor")).not.toBeNull();
@@ -1151,7 +1151,7 @@ describe("ExperienceCopilotShell — creation mode (ER-13d-1)", () => {
     const { getByRole, getByText, queryByTestId } = renderShell({ creationMode: true });
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_preview" }));
+    fireEvent.click(getByRole("radio", { name: "agent_preview" }));
     expect(getByText("experience_playground_no_visual")).toBeDefined();
     expect(queryByTestId("copilot-preview-modal")).toBeNull();
     // XU-4: the tester modal is gone entirely.
@@ -1247,7 +1247,7 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
 
     // Switch to the Try tab (inline playground) and open its collapsed
     // diagnostics disclosure; run the absorbed discover ("Validate rules").
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     fireEvent.click(getByText("experience_playground_diagnostics"));
     fireEvent.click(getByText("experience_tester_run"));
     // The playground's auto-derive also POSTs run once on mount, so the explicit
@@ -1267,7 +1267,7 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
 
     // Switch back to the Code tab so the inline playground unmounts (only the
     // chat input textarea remains in the container).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
 
     // The digest text sits in the chat input, prefilled for the user to send.
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
@@ -1293,7 +1293,7 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
     await flushSessionLoad();
 
     // Switch to the Try tab (inline playground) + start a session.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     fireEvent.click(getByText("experience_playground_start"));
     await waitFor(() => expect(apiCalls("POST", /\/api\/experience\/playground\/start$/)).toHaveLength(1));
     // Wait for the session to render (the turn title appears after setSession).
@@ -1310,7 +1310,7 @@ describe("ExperienceCopilotShell — send test feedback to copilot (ER-14)", () 
 
     // Switch back to the Code tab so the inline playground unmounts, then send
     // the prefilled digest manually.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_code" }));
+    fireEvent.click(getByRole("radio", { name: "agent_code" }));
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
     expect(textarea.value.length).toBeGreaterThan(0);
     fireEvent.click(getByTestId("copilot-send-btn"));
@@ -1417,7 +1417,7 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
     );
     expect(queryByTestId("copilot-toolbar-revert")).not.toBeNull();
     // …but the try (sandbox) position has no code editor / review affordances.
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
   });
 });
@@ -1801,13 +1801,13 @@ describe("ExperienceCopilotShell — CD-8: dangling proposal across a new turn",
     });
 
     // The visual round shows on the visual tab…
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_visual" }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
     await waitFor(() => expect(getByTestId("copilot-review-bar")).toBeDefined());
 
     // …while the rules tab stays RESOLVED: no re-lit review bar, no dot. The
     // old combined proposalKey reset BOTH accepted sets on any buffer change,
     // re-lighting hunks the user had already accepted (and saved).
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_rules" }));
+    fireEvent.click(getByRole("radio", { name: "agent_rules" }));
     await waitFor(() => expect(queryByTestId("copilot-review-bar")).toBeNull());
     expect(queryByTestId("copilot-buffer-dot-rules")).toBeNull();
   });
@@ -2187,7 +2187,7 @@ describe("ExperienceCopilotShell — E6 mobile management surfaces (MOBILE_DEFEC
     const { getByTestId, findByRole } = renderShell({ editTabDirty: true });
     await flushSessionLoad();
 
-    const editTab = await findByRole("tab", { name: "experience_copilot_tab_edit" });
+    const editTab = await findByRole("tab", { name: "agent_tab_edit" });
     expect(editTab.querySelector("span[aria-hidden]")).not.toBeNull();
     // Чат stays the visible pane (no auto-switch — the deliberate difference
     // from co-author's CA-14).
@@ -2216,7 +2216,7 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
 
     jest.useFakeTimers();
     try {
-      fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+      fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
       // The shared localized auto-skip state renders (identity i18n — the
       // shared message key verbatim) instead of the discovery-driven no-fields
@@ -2241,7 +2241,7 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
     });
     await flushSessionLoad();
 
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
 
     await waitFor(
       () => expect(apiCalls("POST", /\/api\/experience\/test\/run$/).length).toBeGreaterThanOrEqual(1),
@@ -2256,12 +2256,12 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
       script: { origin: "imported", firstEnabledAt: null },
     });
     await flushSessionLoad();
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     fireEvent.click(getByText("experience_playground_start"));
     await findByTestId("script-safety-findings-modal");
     fireEvent.click(getByText("script_safety_findings_show_in_code"));
 
-    await waitFor(() => expect(getByRole("radio", { name: "experience_copilot_code" }).getAttribute("aria-checked")).toBe("true"));
+    await waitFor(() => expect(getByRole("radio", { name: "agent_code" }).getAttribute("aria-checked")).toBe("true"));
     const firstView = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
     if (!firstView) throw new Error("rules editor missing");
     const findingPosition = firstView.state.doc.line(2).from;
@@ -2269,7 +2269,7 @@ describe("ExperienceCopilotShell — script trust threading (SS-7B2)", () => {
 
     firstView.dispatch({ selection: { anchor: 0 } });
     expect(firstView.state.selection.main.head).toBe(0);
-    fireEvent.click(getByRole("radio", { name: "experience_copilot_try_it" }));
+    fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     fireEvent.click(getByText("experience_playground_start"));
     await findByTestId("script-safety-findings-modal");
     fireEvent.click(getByText("script_safety_findings_show_in_code"));

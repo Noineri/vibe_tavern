@@ -103,7 +103,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
         <div className="flex flex-wrap items-center gap-2">
           <ToolbarSelect
             mobile
-            title={t("experience_copilot_provider")}
+            title={t("agent_provider")}
             items={profiles.map((p) => ({ value: p.id, label: p.name }))}
             value={providerProfileId}
             onSelect={(profileId) => onProviderChange(profileId)}
@@ -115,7 +115,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
                 className="flex h-9 min-w-0 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2"
               >
                 <Icons.Plug className="h-3.5 w-3.5 shrink-0 text-t3" />
-                <span className="max-w-[110px] min-w-0 truncate">{activeProfile?.name ?? t("experience_copilot_provider")}</span>
+                <span className="max-w-[110px] min-w-0 truncate">{activeProfile?.name ?? t("agent_provider")}</span>
                 <Icons.Caret direction="d" className="h-3 w-3 shrink-0" />
               </button>
             }
@@ -124,8 +124,8 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
           <ToolbarSelect
             mobile
             searchable
-            title={t("experience_copilot_model")}
-            emptyText={t("experience_copilot_no_models")}
+            title={t("agent_model")}
+            emptyText={t("agent_no_models")}
             value={model ?? null}
             onSelect={(modelId) => {
               if (providerProfileId) onProviderChange(providerProfileId, modelId);
@@ -155,7 +155,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
                 className="flex h-9 min-w-0 items-center gap-1.5 rounded-md bg-s3 px-2 font-ui text-[calc(var(--ui-fs)-3px)] text-t3 active:bg-s2"
               >
                 <Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />
-                <span className="max-w-[110px] min-w-0 truncate">{activeModelLabel || t("experience_copilot_model")}</span>
+                <span className="max-w-[110px] min-w-0 truncate">{activeModelLabel || t("agent_model")}</span>
                 <Icons.Caret direction="d" className="h-3 w-3 shrink-0" />
               </button>
             }
@@ -173,7 +173,7 @@ export function AgentMobileInputArea(props: AgentInputAreaProps) {
             minRows={1}
             maxRows={6}
             data-testid="copilot-chat-input"
-            placeholder={t("experience_copilot_input_placeholder")}
+            placeholder={t("agent_input_placeholder")}
             value={draft}
             onChange={mention.handleChange}
             onSelect={mention.handleSelect}

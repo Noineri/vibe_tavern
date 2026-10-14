@@ -189,7 +189,7 @@ describe("ExperienceCopilotInputArea", () => {
     const sendBtn = getByTestId("copilot-send-btn") as HTMLButtonElement;
     expect(sendBtn.disabled).toBe(true);
 
-    fireEvent.change(getByPlaceholderText("experience_copilot_input_placeholder"), { target: { value: "propose a twist" } });
+    fireEvent.change(getByPlaceholderText("agent_input_placeholder"), { target: { value: "propose a twist" } });
 
     expect((getByTestId("copilot-send-btn") as HTMLButtonElement).disabled).toBe(false);
   });
@@ -197,11 +197,11 @@ describe("ExperienceCopilotInputArea", () => {
   it("sends the trimmed text and clears the draft", () => {
     const { getByTestId, getByPlaceholderText, props } = renderInput();
 
-    fireEvent.change(getByPlaceholderText("experience_copilot_input_placeholder"), { target: { value: "  make it darker  " } });
+    fireEvent.change(getByPlaceholderText("agent_input_placeholder"), { target: { value: "  make it darker  " } });
     fireEvent.click(getByTestId("copilot-send-btn"));
 
     expect(props.onSend).toHaveBeenCalledWith("make it darker");
-    expect((getByPlaceholderText("experience_copilot_input_placeholder") as HTMLTextAreaElement).value).toBe("");
+    expect((getByPlaceholderText("agent_input_placeholder") as HTMLTextAreaElement).value).toBe("");
   });
 
   it("replaces send with cancel while isSending, and cancel calls onCancel", () => {
@@ -274,7 +274,7 @@ describe("ExperienceCopilotInputArea", () => {
 
   it("prefill replaces the current draft (UX 2026-08-16 remark 6)", () => {
     const { getByPlaceholderText, props, rerender } = renderInput();
-    const textarea = getByPlaceholderText("experience_copilot_input_placeholder") as HTMLTextAreaElement;
+    const textarea = getByPlaceholderText("agent_input_placeholder") as HTMLTextAreaElement;
 
     fireEvent.change(textarea, { target: { value: "hand-typed draft" } });
     expect(textarea.value).toBe("hand-typed draft");

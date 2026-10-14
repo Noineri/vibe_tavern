@@ -407,7 +407,7 @@ export function ExperienceCopilotShell({
       ...(profileId ? { copilotProviderId: profileId } : { copilotProviderId: null }),
       ...(nextModel ? { copilotModelName: nextModel } : { copilotModelName: null }),
     }).catch(() => {
-      toast.error(t("experience_copilot_binding_save_error"));
+      toast.error(t("agent_binding_save_error"));
     });
   }, [t]);
 
@@ -431,7 +431,7 @@ export function ExperienceCopilotShell({
         setMessages([]);
       }
     } catch (error) {
-      setSessionError(error instanceof Error ? error.message : t("experience_copilot_load_session_error"));
+      setSessionError(error instanceof Error ? error.message : t("agent_load_session_error"));
     } finally {
       setSessionLoading(false);
     }
@@ -838,7 +838,7 @@ export function ExperienceCopilotShell({
     (digest: CopilotDigest) => {
       setTestFeedback(digest.feedback);
       setInputPrefill({ text: digest.text });
-      toast.success(t("experience_copilot_result_copied"));
+      toast.success(t("agent_result_copied"));
     },
     [t],
   );
@@ -854,7 +854,7 @@ export function ExperienceCopilotShell({
       try {
         const activated = await activateExperienceCopilotSession(targetThreadId);
         if (!activated) {
-          toast.error(t("experience_copilot_switch_error"));
+          toast.error(t("agent_switch_error"));
           return;
         }
         setThreadId(targetThreadId);
@@ -865,7 +865,7 @@ export function ExperienceCopilotShell({
         await fetchSessions();
       } catch {
         // Best-effort — leave threadId/messages unchanged and surface the error.
-        toast.error(t("experience_copilot_switch_error"));
+        toast.error(t("agent_switch_error"));
       }
     },
     [ctrl.isSending, fetchSessions, t],
@@ -882,7 +882,7 @@ export function ExperienceCopilotShell({
       await fetchSessions();
     } catch {
       // Best-effort — leave threadId/messages unchanged and surface the error.
-      toast.error(t("experience_copilot_new_session_error"));
+      toast.error(t("agent_new_session_error"));
     }
   }, [ctrl.isSending, scriptId, fetchSessions, t]);
 
@@ -896,7 +896,7 @@ export function ExperienceCopilotShell({
       try {
         await renameExperienceCopilotSession(targetThreadId, title);
       } catch {
-        toast.error(t("experience_copilot_rename_error"));
+        toast.error(t("agent_rename_error"));
       } finally {
         await fetchSessions();
       }
@@ -974,7 +974,7 @@ export function ExperienceCopilotShell({
     rulesReview !== null || visualReview !== null
       ? (
         <span className="inline-flex items-center gap-1.5">
-          {t("experience_copilot_code")}
+          {t("agent_code")}
           <span
             data-testid="copilot-outer-dot-code"
             title={t("copilot_review_pending_badge")}
@@ -982,17 +982,17 @@ export function ExperienceCopilotShell({
           />
         </span>
       )
-      : t("experience_copilot_code");
+      : t("agent_code");
 
   const outerBufferOptions = [
-    { value: "preview", label: t("experience_copilot_preview") },
+    { value: "preview", label: t("agent_preview") },
     { value: "code", label: codeTabLabel },
-    { value: "sandbox", label: t("experience_copilot_try_it") },
+    { value: "sandbox", label: t("agent_try_it") },
   ];
 
   const codeBufferOptions = [
-    { value: "rules", label: tabLabel("rules", t("experience_copilot_rules")) },
-    { value: "visual", label: tabLabel("visual", t("experience_copilot_visual")) },
+    { value: "rules", label: tabLabel("rules", t("agent_rules")) },
+    { value: "visual", label: tabLabel("visual", t("agent_visual")) },
   ];
 
   // XU-6: the creation stepper in the parent mirrors the shell's current
@@ -1018,16 +1018,16 @@ export function ExperienceCopilotShell({
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             icon={<Icons.Sparkles className="h-6 w-6 animate-pulse text-t3" />}
-            title={t("experience_copilot_loading")}
+            title={t("agent_loading")}
           />
         </div>
       ) : sessionError ? (
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             icon={<Icons.Close className="h-6 w-6 text-danger-text" />}
-            title={t("experience_copilot_load_error")}
+            title={t("agent_load_error")}
             sub={sessionError}
-            cta={<span>{t("experience_copilot_retry")}</span>}
+            cta={<span>{t("agent_retry")}</span>}
             onCta={() => void loadSession()}
           />
         </div>
@@ -1148,8 +1148,8 @@ export function ExperienceCopilotShell({
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             icon={<Icons.Sparkles className="h-6 w-6 text-t3" />}
-            title={t("experience_copilot_title")}
-            sub={t("experience_copilot_subtitle")}
+            title={t("agent_title")}
+            sub={t("agent_subtitle")}
           />
         </div>
       )}
@@ -1240,13 +1240,13 @@ export function ExperienceCopilotShell({
               {visualValidation.ok ? (
                 <div className="flex items-center gap-1.5 font-ui text-[11px] text-success-text">
                   <Icons.Check className="h-3 w-3 shrink-0" />
-                  <span>{t("experience_copilot_visual_valid")}</span>
+                  <span>{t("agent_visual_valid")}</span>
                 </div>
               ) : (
                 <div className="rounded-md border border-danger bg-danger-dim px-2.5 py-1.5">
                   <div className="flex items-center gap-1.5 font-ui text-[11px] font-medium text-danger-text">
                     <Icons.Alert className="h-3.5 w-3.5 shrink-0" />
-                    <span>{t("experience_copilot_visual_problems")}</span>
+                    <span>{t("agent_visual_problems")}</span>
                   </div>
                   <ul className="mt-1 space-y-0.5">
                     {visualValidation.problems.map((p, i) => (
@@ -1274,7 +1274,7 @@ export function ExperienceCopilotShell({
             onDismissHunk={codeBuffer === "rules" ? dismissRulesHunk : dismissVisualHunk}
             onDismissPending={codeBuffer === "rules" ? dismissPendingRules : dismissPendingVisual}
             onCancelRound={codeBuffer === "rules" ? cancelRoundRules : cancelRoundVisual}
-            fullscreenLabel={codeBuffer === "rules" ? t("experience_copilot_rules") : t("experience_copilot_visual")}
+            fullscreenLabel={codeBuffer === "rules" ? t("agent_rules") : t("agent_visual")}
             scriptKind={codeBuffer === "rules" ? "interactive" : undefined}
             revealLine={codeBuffer === "rules" ? rulesRevealLine : undefined}
           />
@@ -1325,11 +1325,11 @@ export function ExperienceCopilotShell({
           <div
             className="flex min-w-0 flex-1"
             role="tablist"
-            aria-label={t("experience_copilot_editor_aria")}
+            aria-label={t("agent_editor_aria")}
           >
-            <TabButton label={t("experience_copilot_tab_chat")} active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
+            <TabButton label={t("agent_tab_chat")} active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
             <TabButton
-              label={t("experience_copilot_tab_edit")}
+              label={t("agent_tab_edit")}
               active={activeTab === "edit"}
               onClick={() => setActiveTab("edit")}
               badge={editTabDirty && activeTab !== "edit"}

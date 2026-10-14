@@ -710,7 +710,7 @@ describe("ExperiencePlayground", () => {
     // first, then the playground's start button is reachable inside it. (The
     // boundary pinned here is unchanged: the playground still drives the
     // CURRENT UNSAVED rules buffer that the editor owns.)
-    fireEvent.click(getByText("experience_copilot_try_it"));
+    fireEvent.click(getByText("agent_try_it"));
     fireEvent.click(getByText("experience_playground_start"));
 
     await waitFor(() => expect(startExperiencePlayground).toHaveBeenCalledTimes(1));

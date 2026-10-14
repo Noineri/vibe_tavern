@@ -53,7 +53,7 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
     expect(getAllByText("wrote rules")).toHaveLength(1);
     // Identity i18n (no LocaleProvider mounted): useT falls back to the
     // key-as-string default, so the target chip renders its i18n key.
-    expect(getAllByTestId("copilot-activity-target")[0]!.textContent).toBe("experience_copilot_rules");
+    expect(getAllByTestId("copilot-activity-target")[0]!.textContent).toBe("agent_rules");
     // run_test → informational summary.
     expect(getAllByText("2 passed")).toHaveLength(1);
     // The reviewing affordances live in the editor now, not here.
@@ -74,7 +74,7 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
       />,
     );
 
-    expect(getByTestId("copilot-activity-target").textContent).toBe("experience_copilot_visual");
+    expect(getByTestId("copilot-activity-target").textContent).toBe("agent_visual");
   });
 
   it("renders a streaming placeholder and an error row", () => {
@@ -89,7 +89,7 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
       </div>,
     );
     expect(container.querySelectorAll('[data-tool="write_buffer"]').length).toBe(1);
-    expect(getByText("experience_copilot_tool_failed")).toBeDefined();
+    expect(getByText("agent_tool_failed")).toBeDefined();
   });
 
   it("renders a minimal done run_test activity as a card", () => {

@@ -36,7 +36,7 @@ export function AgentToolAccordion({ activities, isSending }: AgentToolAccordion
         onClick={() => setExpanded((open) => !open)}
         className="flex min-h-11 w-full cursor-pointer items-center gap-1.5 px-2 text-left font-ui text-[calc(var(--ui-fs)-3px)] font-medium tracking-[0.03em] text-t2 transition-colors hover:bg-s2/50 hover:text-t1"
       >
-        <span>{t("experience_copilot_tools", { n: activities.length })}</span>
+        <span>{t("agent_tools", { n: activities.length })}</span>
         <span className="ml-auto shrink-0 text-t3">
           <Icons.Caret direction={expanded ? "u" : "d"} />
         </span>

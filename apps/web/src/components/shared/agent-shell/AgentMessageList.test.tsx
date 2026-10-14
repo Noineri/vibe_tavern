@@ -404,7 +404,7 @@ describe("ExperienceCopilotMessageList", () => {
       />,
     );
 
-    expect(getByText("experience_copilot_title")).toBeDefined();
+    expect(getByText("agent_title")).toBeDefined();
   });
 
   it("places a compaction digest card immediately before its anchor message (CM-9)", () => {

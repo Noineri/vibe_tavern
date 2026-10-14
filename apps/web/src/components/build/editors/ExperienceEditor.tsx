@@ -947,10 +947,10 @@ export function ExperienceEditor() {
             const isDone = CREATION_STEP_ORDER.indexOf(activeStep) > index;
             const label =
               step === "rules"
-                ? t("experience_copilot_rules")
+                ? t("agent_rules")
                 : step === "appearance"
                   ? t("experience_editor_step_appearance")
-                  : t("experience_copilot_try_it");
+                  : t("agent_try_it");
             return (
               <div key={step} className="flex items-center gap-1.5">
                 {index > 0 && <span className="text-t4">{Ic.caret("r")}</span>}

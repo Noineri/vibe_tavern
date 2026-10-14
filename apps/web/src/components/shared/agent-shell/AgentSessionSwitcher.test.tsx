@@ -90,7 +90,7 @@ describe("ExperienceSessionSwitcher", () => {
     // No LocaleProvider in this isolated render → `t` is the identity function,
     // so the fallback renders as the raw key (deterministic assertion).
     expect(getByTestId("copilot-session-t1").textContent).toContain("Session one");
-    expect(getByTestId("copilot-session-t2").textContent).toContain("experience_copilot_session");
+    expect(getByTestId("copilot-session-t2").textContent).toContain("agent_session");
   });
 
   it("the active session is not a switch target", () => {
@@ -150,9 +150,9 @@ describe("ExperienceSessionSwitcher", () => {
       session("t3", { title: "", createdAt: "2026-08-01T00:00:00Z" }),
     ];
     const { getByTestId } = renderSwitcher({ sessions });
-    expect(getByTestId("copilot-session-t3").textContent).toContain("experience_copilot_session 1");
-    expect(getByTestId("copilot-session-t1").textContent).toContain("experience_copilot_session 2");
-    expect(getByTestId("copilot-session-t2").textContent).toContain("experience_copilot_session 3");
+    expect(getByTestId("copilot-session-t3").textContent).toContain("agent_session 1");
+    expect(getByTestId("copilot-session-t1").textContent).toContain("agent_session 2");
+    expect(getByTestId("copilot-session-t2").textContent).toContain("agent_session 3");
   });
 
   it("a stored title replaces the number; the active header shows the numbered label too", () => {
@@ -164,7 +164,7 @@ describe("ExperienceSessionSwitcher", () => {
     expect(getByTestId("copilot-session-t2").textContent).toContain("Дурак редизайн");
     // Active = t1 (untitled) → the trigger label carries its number.
     expect(getByTestId("copilot-session-switcher-trigger").textContent).toContain(
-      "experience_copilot_session 1",
+      "agent_session 1",
     );
   });
 
@@ -181,7 +181,7 @@ describe("ExperienceSessionSwitcher", () => {
     // fallback for an untitled session).
     const input = getByTestId("copilot-session-t2").querySelector("input");
     expect(input).not.toBeNull();
-    expect((input as HTMLInputElement).value).toContain("experience_copilot_session");
+    expect((input as HTMLInputElement).value).toContain("agent_session");
   });
 
   it("Enter commits the rename (onRename with trimmed value); Escape cancels without firing", () => {

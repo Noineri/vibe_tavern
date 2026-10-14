@@ -139,7 +139,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
           maxRows={12}
           minRows={3}
           data-testid="copilot-chat-input"
-          placeholder={t("experience_copilot_input_placeholder")}
+          placeholder={t("agent_input_placeholder")}
           value={draft}
           onChange={mention.handleChange}
           onSelect={mention.handleSelect}
@@ -151,8 +151,8 @@ export function AgentInputArea(props: AgentInputAreaProps) {
         <div className="relative flex items-center gap-2 pt-1.5 pb-[9px] pl-3 pr-3">
           {/* Provider picker — controlled via props. */}
           <ToolbarSelect
-            title={t("experience_copilot_provider")}
-            triggerTooltip={t("experience_copilot_provider")}
+            title={t("agent_provider")}
+            triggerTooltip={t("agent_provider")}
             contentWidth={220}
             items={profiles.map((p) => ({ value: p.id, label: p.name }))}
             value={providerProfileId}
@@ -165,7 +165,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
                 className="flex h-8 min-w-0 max-w-[120px] items-center gap-1.5 rounded-[5px] bg-s2 px-2.5 font-ui text-[12.5px] text-t1 transition-colors hover:bg-s3"
               >
                 <Icons.Plug className="h-3.5 w-3.5 shrink-0 text-t3" />
-                <span className="min-w-0 truncate">{activeProfile?.name ?? t("experience_copilot_provider_select")}</span>
+                <span className="min-w-0 truncate">{activeProfile?.name ?? t("agent_provider_select")}</span>
                 <Icons.Caret direction="d" className="h-3 w-3 shrink-0 text-t3" />
               </button>
             }
@@ -182,7 +182,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
             }}
             side="top"
             searchPlaceholder={t("search_models")}
-            placeholder={t("experience_copilot_model_select")}
+            placeholder={t("agent_model_select")}
             triggerTestId="copilot-model-pill"
             contentWidth={320}
             triggerLeading={<Icons.Sparkles className="h-3.5 w-3.5 shrink-0 text-accent-t" />}
@@ -217,19 +217,19 @@ export function AgentInputArea(props: AgentInputAreaProps) {
 
           <div className="ml-auto flex items-center gap-[9px]">
             {isSending ? (
-              <CustomTooltip content={t("experience_copilot_cancel")}>
+              <CustomTooltip content={t("agent_cancel")}>
                 <button
                   type="button"
                   data-testid="copilot-cancel-btn"
                   className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[5px] border border-danger text-danger-text transition-colors duration-150 hover:bg-danger-dim"
                   onClick={onCancel}
-                  aria-label={t("experience_copilot_cancel")}
+                  aria-label={t("agent_cancel")}
                 >
                   <Icons.close />
                 </button>
               </CustomTooltip>
             ) : (
-              <CustomTooltip content={t("experience_copilot_send")}>
+              <CustomTooltip content={t("agent_send")}>
                 <button
                   type="button"
                   data-testid="copilot-send-btn"
@@ -239,7 +239,7 @@ export function AgentInputArea(props: AgentInputAreaProps) {
                   )}
                   disabled={!canSend}
                   onClick={handleSend}
-                  aria-label={t("experience_copilot_send")}
+                  aria-label={t("agent_send")}
                 >
                   <Icons.Caret direction="r" />
                 </button>

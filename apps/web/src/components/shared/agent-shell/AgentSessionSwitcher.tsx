@@ -69,7 +69,7 @@ export function AgentSessionSwitcher({
   const [renamingId, setRenamingId] = useState<string | null>(null);
 
   const activeSession = sessions.find((s) => s.id === activeThreadId) ?? null;
-  const sessionFallback = t("experience_copilot_session");
+  const sessionFallback = t("agent_session");
 
   // Auto-numbering map: 1-based position in createdAt order (the shell lists
   // sessions newest-first, so the number is NOT the array index). ISO strings
@@ -92,7 +92,7 @@ export function AgentSessionSwitcher({
           type="button"
           data-testid="copilot-session-switcher-trigger"
           disabled={disabled}
-          aria-label={t("experience_copilot_switch_session")}
+          aria-label={t("agent_switch_session")}
           className={cn(
             "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left transition-colors",
             "hover:bg-s2 focus-visible:bg-s2",
@@ -150,7 +150,7 @@ export function AgentSessionSwitcher({
                     {isArchived && (
                       <>
                         {date && <span className="shrink-0 text-t4">·</span>}
-                        <span className="shrink-0 text-t4">{t("experience_copilot_archived")}</span>
+                        <span className="shrink-0 text-t4">{t("agent_archived")}</span>
                       </>
                     )}
                   </div>
@@ -166,7 +166,7 @@ export function AgentSessionSwitcher({
                 <button
                   type="button"
                   data-testid={`copilot-session-rename-${session.id}`}
-                  aria-label={t("experience_copilot_rename_session")}
+                  aria-label={t("agent_rename_session")}
                   onClick={(event) => {
                     event.stopPropagation();
                     setRenamingId(session.id);
@@ -230,7 +230,7 @@ export function AgentSessionSwitcher({
             className="flex shrink-0 items-center gap-2 border-t border-border px-2.5 py-2 text-left font-ui text-[12.5px] text-t2 transition-colors hover:bg-s2 hover:text-t1 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
           >
             <Icons.Plus className="h-3.5 w-3.5 shrink-0 text-accent-t" />
-            <span className="truncate">{t("experience_copilot_new_session")}</span>
+            <span className="truncate">{t("agent_new_session")}</span>
           </button>
         </Popover.Content>
       </Popover.Portal>

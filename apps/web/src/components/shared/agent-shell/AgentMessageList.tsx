@@ -278,8 +278,8 @@ export function AgentMessageList({
       <div className="flex flex-1 items-center justify-center">
         <EmptyState
           icon={<Icons.Sparkles className="h-6 w-6 text-t3" />}
-          title={t("experience_copilot_title")}
-          sub={t("experience_copilot_subtitle")}
+          title={t("agent_title")}
+          sub={t("agent_subtitle")}
         />
       </div>
     );
