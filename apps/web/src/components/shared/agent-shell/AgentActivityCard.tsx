@@ -11,7 +11,7 @@ import { useT } from "../../../i18n/context.js";
  * Chrome = status icon (read → FileText, error → Close, streaming → Wrench,
  * done → Check) + title (readPath / summary / target / toolName) + target chip
  * for proposals + streaming ellipsis + an error sub-row. No reviewing
- * affordances — the diff review lives in `ExperienceCopilotEditorPanel`
+ * affordances — the diff review lives in `AgentBufferReviewEditor`
  * (CD-5/CD-6).
  */
 export function AgentActivityCard({ activity }: { activity: ExperienceCopilotToolActivity }) {

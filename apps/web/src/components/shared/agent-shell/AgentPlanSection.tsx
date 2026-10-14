@@ -1,15 +1,15 @@
 import { useState } from "react";
 import type { AgentPlanOwner } from "@vibe-tavern/domain";
-import { useAgentPlan } from "../../../../hooks/use-agent-plan.js";
-import { AgentPlanPanel } from "../../../shared/agent-plan/AgentPlanPanel.js";
-import { AgentPlanEditorModal } from "../../../shared/agent-plan/AgentPlanEditorModal.js";
+import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
+import { AgentPlanPanel } from "../agent-plan/AgentPlanPanel.js";
+import { AgentPlanEditorModal } from "../agent-plan/AgentPlanEditorModal.js";
 
 /**
- * CopilotPlanSection (PM-6, EXPERIENCE_COPILOT_PLAN_MODE_PLAN) — the copilot
- * shell's mount of the shared agent-plan mechanic, extracted from
- * ExperienceCopilotShell when the thread-scoped todo mechanic was removed
- * (arch-gate file ratchet: the shell's line budget shrinks by moving code
- * out, never by growing).
+ * AgentPlanSection (PM-6, EXPERIENCE_COPILOT_PLAN_MODE_PLAN; AS-6b2 moved
+ * from the copilot editors' CopilotPlanSection) — the agent shell's mount of
+ * the shared agent-plan mechanic, extracted from the shell when the
+ * thread-scoped todo mechanic was removed (arch-gate file ratchet: the
+ * shell's line budget shrinks by moving code out, never by growing).
  *
  * Owns ONE `useAgentPlan` subscription for the script — the panel and the
  * editor modal read the SAME owner cache entry the shell's controller writes
@@ -18,10 +18,10 @@ import { AgentPlanEditorModal } from "../../../shared/agent-plan/AgentPlanEditor
  * lock; the model's rewrite and the user's edit can never race.
  *
  * Placement contract (unchanged from the todo-panel era): the caller pins this
- * section DIRECTLY below `ExperienceContextMeter` — it never scrolls with the
+ * section DIRECTLY below `AgentContextMeter` — it never scrolls with the
  * feed. The panel hides itself while the plan is empty.
  */
-export function CopilotPlanSection({ owner, locked }: { owner: AgentPlanOwner; locked: boolean }) {
+export function AgentPlanSection({ owner, locked }: { owner: AgentPlanOwner; locked: boolean }) {
   const { plan } = useAgentPlan(owner);
   const [editorOpen, setEditorOpen] = useState(false);
 

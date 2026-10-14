@@ -1,21 +1,21 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import type { CopilotTodoItem } from "@vibe-tavern/api-contracts";
-import en from "../../../../i18n/locales/en.json";
-import ru from "../../../../i18n/locales/ru.json";
+import en from "../../../i18n/locales/en.json";
+import ru from "../../../i18n/locales/ru.json";
 
 useDomEnv();
 
 // CustomTooltip wraps children in a Radix Tooltip that never anchors under
 // happy-dom (same reason the meter + shell tests mock it). Render children
 // inline — this test pins the panel's render contract, not tooltip internals.
-mock.module("../../../../components/shared/Tooltip.js", () => ({
+mock.module("../../../components/shared/Tooltip.js", () => ({
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 const { render, fireEvent } = await import("@testing-library/react");
-const { CopilotTodoPanel } = await import("./CopilotTodoPanel.js");
+const { AgentTodoPanel } = await import("./AgentTodoPanel.js");
 
 function item(status: CopilotTodoItem["status"], title: string): CopilotTodoItem {
   return { status, title };
@@ -30,7 +30,7 @@ const PLAN: CopilotTodoItem[] = [
 ];
 
 function renderPanel(items: readonly CopilotTodoItem[]) {
-  return render(<CopilotTodoPanel items={items} />);
+  return render(<AgentTodoPanel items={items} />);
 }
 
 describe("CopilotTodoPanel (TAG-8)", () => {

@@ -1,16 +1,16 @@
-import { useT } from "../../../../i18n/context.js";
-import { Icons } from "../../../shared/icons.js";
-import { AgentSessionSwitcher } from "../../../shared/agent-shell/AgentSessionSwitcher.js";
+import { useT } from "../../../i18n/context.js";
+import { Icons } from "../icons.js";
+import { AgentSessionSwitcher } from "./AgentSessionSwitcher.js";
 import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 
 /**
- * CopilotChatHeader — the pinned toolbar row at the top of the copilot chat
- * pane: the session switcher plus the copilot-profile gear button. Extracted
- * from `ExperienceCopilotShell` (PM-7) for the arch-gate file ratchet — the
- * same remedy PM-6 applied with `CopilotPlanSection`; the row is one chrome
- * unit used once, and every callback stays owned by the shell.
+ * AgentChatHeader (AS-6b2, moved from the copilot editors' CopilotChatHeader)
+ * — the pinned toolbar row at the top of the agent chat pane: the session
+ * switcher plus the agent-profile gear button. Extracted from the shell
+ * (PM-7) for the arch-gate file ratchet; the row is one chrome unit used
+ * once, and every callback stays owned by the shell.
  */
-export function CopilotChatHeader({
+export function AgentChatHeader({
   sessions,
   activeThreadId,
   disabled,

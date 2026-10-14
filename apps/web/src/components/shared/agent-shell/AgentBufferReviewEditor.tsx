@@ -1,19 +1,21 @@
 import { useMemo } from "react";
 import type { ScriptKind } from "@vibe-tavern/domain";
-import { buildLineDiff, type TextDiffSummary } from "../../../shared/TextDiffPreview.js";
-import { allHunkIds, groupHunks, mergeSelectedBody, type DiffHunk } from "../../../../lib/coauthor-hunk-merge.js";
-import { cn } from "../../../../lib/cn.js";
-import { scriptSafetyLint } from "../../../../lib/script-safety-lint.js";
-import { CodeEditor } from "../../../shared/CodeEditor.js";
-import { MobileExpandCodeEditor } from "../../../shared/MobileExpandCodeEditor.js";
-import { scriptSafetyRevealLine } from "../script-safety/FindingsWarningModal.js";
-import { useIsMobile } from "../../../../hooks/use-mobile.js";
-import { GeneratingScrim } from "../../../shared/generation-feedback.js";
-import { computeDiffDecorationSpecs, copilotDiffExtensions } from "./CopilotDiffDecorations.js";
-import { useT } from "../../../../i18n/context.js";
+import { buildLineDiff, type TextDiffSummary } from "../TextDiffPreview.js";
+import { allHunkIds, groupHunks, mergeSelectedBody, type DiffHunk } from "../../../lib/coauthor-hunk-merge.js";
+import { cn } from "../../../lib/cn.js";
+import { scriptSafetyLint } from "../../../lib/script-safety-lint.js";
+import { CodeEditor } from "../CodeEditor.js";
+import { MobileExpandCodeEditor } from "../MobileExpandCodeEditor.js";
+import { scriptSafetyRevealLine } from "../../build/editors/script-safety/FindingsWarningModal.js";
+import { useIsMobile } from "../../../hooks/use-mobile.js";
+import { GeneratingScrim } from "../generation-feedback.js";
+import { computeDiffDecorationSpecs, agentDiffExtensions } from "./AgentDiffDecorations.js";
+import { useT } from "../../../i18n/context.js";
 
 /**
- * CD-6: the copilot editor pane's content area in review mode — the inline-diff
+ * AgentBufferReviewEditor (CD-6; AS-6b2 moved from the copilot editors'
+ * ExperienceCopilotEditorPanel) — the per-buffer
+ * review-mode content area used by buffer hosts: the inline-diff
  * document (green hunks + accept buttons, CD-5) plus the review bar
  * ("accept all / N hunks / cancel all unaccepted / cancel all").
  *
@@ -199,7 +201,7 @@ export function revertHunksFromBuffer(
   return { text: lines.join("\n"), skippedHunkIds };
 }
 
-export interface ExperienceCopilotEditorPanelProps {
+export interface AgentBufferReviewEditorProps {
   /** The draft buffer text (the free-mode document). */
   value: string;
   onChange: (value: string) => void;
@@ -233,7 +235,7 @@ export interface ExperienceCopilotEditorPanelProps {
   revealLine?: { line: number } | null;
 }
 
-export function ExperienceCopilotEditorPanel({
+export function AgentBufferReviewEditor({
   value,
   onChange,
   isSending,
@@ -248,7 +250,7 @@ export function ExperienceCopilotEditorPanel({
   fullscreenLabel,
   scriptKind,
   revealLine,
-}: ExperienceCopilotEditorPanelProps) {
+}: AgentBufferReviewEditorProps) {
   const { t } = useT();
   // Mobile (4a follow-up): CodeMirror runs in page-scroll mode on phones —
   // the editor grows to its content and the pane scrolls as one (a narrow
@@ -290,7 +292,7 @@ export function ExperienceCopilotEditorPanel({
   const extensions = useMemo(() => {
     const reviewExtensions =
       review !== null && specs.length > 0
-        ? copilotDiffExtensions({
+        ? agentDiffExtensions({
             specs,
             buttonLabel: t("copilot_review_accept_hunk"),
             buttonAriaLabel: t("copilot_review_accept_hunk"),

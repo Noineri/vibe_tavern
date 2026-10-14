@@ -14,11 +14,15 @@ function descriptor(kind: string): AgentHostDescriptor {
   return {
     kind,
     i18n: {
-      title: `${kind}.title`,
-      placeholder: `${kind}.placeholder`,
-      loading: `${kind}.loading`,
-      emptyTitle: `${kind}.empty`,
-      emptySub: `${kind}.emptySub`,
+      // AS-6b2: the descriptor's i18n fields are the strict generated-key
+      // union, so synthetic `${kind}.*` strings no longer typecheck — the
+      // registry treats the keys as opaque tokens either way; real keys keep
+      // the fixture honest against the locale source.
+      title: "agent_title",
+      placeholder: "agent_input_placeholder",
+      loading: "agent_loading",
+      emptyTitle: "agent_title",
+      emptySub: "agent_subtitle",
     },
     bufferSpecs: [],
     buildSendOptions: () => ({}),

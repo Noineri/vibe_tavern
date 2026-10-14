@@ -1,5 +1,6 @@
 /**
- * ExperienceCopilotEditorPanel — the review-mode editor surface (CD-6).
+ * AgentBufferReviewEditor — the review-mode editor surface (CD-6; AS-6b2
+ * moved from the copilot editors' ExperienceCopilotEditorPanel.test.tsx).
  *
  * Pins the panel contract: the review bar (count + accept-all + revert), the
  * document switching to the proposed text in review mode (read-only), the
@@ -8,19 +9,19 @@
  * mergeSelectedBody boundary.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import {
   allReviewHunkIds,
   applyHunksToBuffer,
   buildBufferReview,
-  ExperienceCopilotEditorPanel,
+  AgentBufferReviewEditor,
   mergedReviewText,
   revertHunksFromBuffer,
   WHOLE_BUFFER_HUNK_ID,
   type CopilotBufferReview,
-} from "./ExperienceCopilotEditorPanel.js";
-import { buildLineDiff } from "../../../shared/TextDiffPreview.js";
-import { groupHunks } from "../../../../lib/coauthor-hunk-merge.js";
+} from "./AgentBufferReviewEditor.js";
+import { buildLineDiff } from "../TextDiffPreview.js";
+import { groupHunks } from "../../../lib/coauthor-hunk-merge.js";
 
 useDomEnv();
 
@@ -45,7 +46,7 @@ function oneHunkReview(): CopilotBufferReview {
   };
 }
 
-function renderPanel(over: Partial<Parameters<typeof ExperienceCopilotEditorPanel>[0]> = {}) {
+function renderPanel(over: Partial<Parameters<typeof AgentBufferReviewEditor>[0]> = {}) {
   const props = {
     value: BASE,
     onChange: mock(),
@@ -60,7 +61,7 @@ function renderPanel(over: Partial<Parameters<typeof ExperienceCopilotEditorPane
     onCancelRound: mock(),
     ...over,
   };
-  return render(<ExperienceCopilotEditorPanel {...props} />);
+  return render(<AgentBufferReviewEditor {...props} />);
 }
 
 describe("buildBufferReview (pure)", () => {
@@ -156,7 +157,7 @@ describe("ExperienceCopilotEditorPanel", () => {
 
     // Review resolved → free mode, writable, value = merged buffer.
     rerender(
-      <ExperienceCopilotEditorPanel
+      <AgentBufferReviewEditor
         value={"a\nB\nc"}
         onChange={() => {}}
         isSending={false}
@@ -296,8 +297,8 @@ describe("revertHunksFromBuffer (pure, RV-3 rollback path)", () => {
 // pins hold at the panel boundary: viewport-driven CodeMirror scroll mode, the
 // growing frame, and the expand → fullscreen session.
 let mobileOverride = false;
-const realMobile = await import("../../../../hooks/use-mobile.js");
-mock.module("../../../../hooks/use-mobile.js", () => ({
+const realMobile = await import("../../../hooks/use-mobile.js");
+mock.module("../../../hooks/use-mobile.js", () => ({
   ...realMobile,
   useIsMobile: () => mobileOverride,
 }));
@@ -378,7 +379,7 @@ describe("SS-7 revealLine (Show in code jump)", () => {
       onDismissPending: mock(),
       onCancelRound: mock(),
     };
-    const view = render(<ExperienceCopilotEditorPanel {...props} revealLine={{ line: 2 }} />);
+    const view = render(<AgentBufferReviewEditor {...props} revealLine={{ line: 2 }} />);
     const find = () => EditorView.findFromDOM(view.container.querySelector<HTMLElement>(".cm-editor")!);
     // The reveal extension fires once installed (a frame later).
     await waitForIt(() => {
@@ -390,7 +391,7 @@ describe("SS-7 revealLine (Show in code jump)", () => {
     // A SECOND fresh request re-jumps to the new line (identity reconfigures
     // the compartment — the closure guard only dedupes re-instantiations of
     // the SAME request).
-    view.rerender(<ExperienceCopilotEditorPanel {...props} revealLine={{ line: 3 }} />);
+    view.rerender(<AgentBufferReviewEditor {...props} revealLine={{ line: 3 }} />);
     await waitForIt(() => {
       const cm = find();
       if (!cm) throw new Error("editor missing");

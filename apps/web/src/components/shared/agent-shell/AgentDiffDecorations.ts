@@ -1,12 +1,13 @@
 import { StateField, type Extension, type Text } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
-import type { TextDiffLine, TextDiffSummary } from "../../../shared/TextDiffPreview.js";
-import type { DiffHunk } from "../../../../lib/coauthor-hunk-merge.js";
-import { groupHunks } from "../../../../lib/coauthor-hunk-merge.js";
-import { annotateHunkLines, type LineSegment } from "../../../../lib/intra-line-diff.js";
+import type { TextDiffLine, TextDiffSummary } from "../TextDiffPreview.js";
+import type { DiffHunk } from "../../../lib/coauthor-hunk-merge.js";
+import { groupHunks } from "../../../lib/coauthor-hunk-merge.js";
+import { annotateHunkLines, type LineSegment } from "../../../lib/intra-line-diff.js";
 
 /**
- * CD-5: inline diff decorations for the copilot editor's review mode.
+ * CD-5: inline diff decorations for the agent buffer-review editor's review
+ * mode (AS-6b2 moved from the copilot editors' CopilotDiffDecorations).
  *
  * RENDER MODEL (see COPILOT_EDITOR_DIFF_PLAN, Wave 3): while a proposal is
  * pending, the CodeEditor's DOCUMENT is the full proposed buffer text. Every
@@ -29,14 +30,14 @@ import { annotateHunkLines, type LineSegment } from "../../../../lib/intra-line-
  *  1. `computeDiffDecorationSpecs` — PURE: diff + hunks + accepted-set → a
  *     positional spec list (0-based document line numbers). Unit-tested
  *     without mounting CodeMirror.
- *  2. `copilotDiffExtensions` — the thin CM6 layer (line decorations + block
+ *  2. `agentDiffExtensions` — the thin CM6 layer (line decorations + block
  *     widgets) that maps the specs onto the live document.
  */
 
 /** A pure, DOM-free description of one decoration. `line` is 0-based in the
  *  document (= proposed text); a `hunk-header` anchored at `line === docLines`
  *  (past EOF) belongs to a hunk whose changes sit at the document tail. */
-export type CopilotDiffSpec =
+export type AgentDiffSpec =
 	| { type: "add-line"; line: number }
 	| { type: "add-delta"; line: number; from: number; to: number }
 	| { type: "hunk-header"; line: number; hunkId: number; removedTexts: string[]; removedSegments: (LineSegment[] | null)[] };
@@ -51,7 +52,7 @@ export function computeDiffDecorationSpecs(
 	diff: TextDiffSummary,
 	hunks: readonly DiffHunk[] = groupHunks(diff),
 	acceptedHunkIds: ReadonlySet<number> = new Set(),
-): CopilotDiffSpec[] {
+): AgentDiffSpec[] {
 	if (diff.tooLarge) return [];
 	// Map each diff line index → its hunk id (null = context), same as
 	// mergeSelectedHunks so specs and merges always agree on hunk membership.
@@ -71,7 +72,7 @@ export function computeDiffDecorationSpecs(
 		});
 	}
 
-	const specs: CopilotDiffSpec[] = [];
+	const specs: AgentDiffSpec[] = [];
 	let docLine = 0; // 0-based line number of the NEXT document (proposed) line
 	let header: {
 		line: number;
@@ -246,8 +247,8 @@ class HunkHeaderWidget extends WidgetType {
 
 function buildDecorations(
 	doc: Text,
-	specs: readonly CopilotDiffSpec[],
-	factory: (spec: Extract<CopilotDiffSpec, { type: "hunk-header" }>) => HunkHeaderWidget,
+	specs: readonly AgentDiffSpec[],
+	factory: (spec: Extract<AgentDiffSpec, { type: "hunk-header" }>) => HunkHeaderWidget,
 ): DecorationSet {
 	const decorations: { from: number; to: number; deco: Decoration; order: number }[] = [];
 	for (const spec of specs) {
@@ -361,9 +362,9 @@ const diffTheme = EditorView.theme({
 	},
 });
 
-export interface CopilotDiffExtensionsOptions {
+export interface AgentDiffExtensionsOptions {
 	/** Decoration specs (see `computeDiffDecorationSpecs`). */
-	specs: readonly CopilotDiffSpec[];
+	specs: readonly AgentDiffSpec[];
 	/** Accept-button label (already i18n-resolved). */
 	buttonLabel: string;
 	/** Accept-button accessible name (already i18n-resolved). */
@@ -385,7 +386,7 @@ export interface CopilotDiffExtensionsOptions {
  *  compartment (CD-4) reconfigure — the field is recreated with the fresh
  *  specs, so an accept (which changes the specs but not the document) is
  *  reflected without any doc change. */
-export function copilotDiffExtensions(options: CopilotDiffExtensionsOptions): Extension[] {
+export function agentDiffExtensions(options: AgentDiffExtensionsOptions): Extension[] {
 	const field = StateField.define<DecorationSet>({
 		create: (state) =>
 			buildDecorations(state.doc, options.specs, (spec) =>

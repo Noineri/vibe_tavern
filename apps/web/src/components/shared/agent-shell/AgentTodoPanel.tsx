@@ -1,5 +1,5 @@
 /**
- * CopilotTodoPanel (TAG-8) — the pinned, expandable session-checklist panel
+ * AgentTodoPanel (TAG-8; AS-6b2 moved from the copilot editors' CopilotTodoPanel) — the pinned, expandable session-checklist panel
  * in the copilot chat tab, mounted DIRECTLY BELOW `ExperienceContextMeter`
  * and DIRECTLY ABOVE `CopilotPlanSection` (PM-7, owner ruling 2026-10-11:
  * todo = the thread's session, plan = the script — both live in the pinned
@@ -32,12 +32,12 @@
  */
 import { useState } from "react";
 import type { CopilotTodoItem } from "@vibe-tavern/api-contracts";
-import { cn } from "../../../../lib/cn.js";
-import { Ic } from "../../../shared/icons.js";
-import { CustomTooltip } from "../../../shared/Tooltip.js";
-import { useT } from "../../../../i18n/context.js";
+import { cn } from "../../../lib/cn.js";
+import { Ic } from "../icons.js";
+import { CustomTooltip } from "../Tooltip.js";
+import { useT } from "../../../i18n/context.js";
 
-export interface CopilotTodoPanelProps {
+export interface AgentTodoPanelProps {
   /** The model's current full step plan for this thread (full-list rewrite
    *  semantics). Empty → the panel renders nothing (pre-first-`todo`-call). */
   items: readonly CopilotTodoItem[];
@@ -106,7 +106,7 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-export function CopilotTodoPanel({ items }: CopilotTodoPanelProps) {
+export function AgentTodoPanel({ items }: AgentTodoPanelProps) {
   const { t } = useT();
   // Per-mount UI toggle only — NOT session data (see the file header).
   const [open, setOpen] = useState(false);

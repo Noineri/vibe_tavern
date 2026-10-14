@@ -4,7 +4,8 @@
  * The SINGLE bridge between the pure domain detector
  * (`analyzeScriptSource`, packages/domain — SS-1) and the two script editors'
  * CodeMirror surfaces (the prompt/dice `ScriptEditor` and the mini-app rules
- * editor inside `ExperienceCopilotShell` → `ExperienceCopilotEditorPanel`).
+ * editor inside the agent shell's buffer review editor
+ * (`ExperienceCopilotShell` → `AgentShell` → `AgentBufferReviewEditor`).
  * Every editor that wants suspicion diagnostics imports THIS module; there is
  * no second derivation of the finding → diagnostic mapping (AGENTS.md §3).
  *

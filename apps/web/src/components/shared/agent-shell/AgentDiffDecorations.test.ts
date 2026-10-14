@@ -1,17 +1,19 @@
 /**
- * CopilotDiffDecorations — pure spec computation for the editor inline diff
+ * AgentDiffDecorations (CD-5; AS-6b2 moved from the copilot editors'
+ * CopilotDiffDecorations) — pure spec computation for
+ * the editor inline diff
  * (CD-5). Pins the mapping from a line diff (document = the PROPOSED buffer)
  * to decoration specs: add-line green positions, one hunk-header per unaccepted
  * hunk (ghost removal texts + button anchor), accepted hunks producing nothing,
  * and the EOF-tail anchoring for hunks whose changes sit at the document end.
  */
 import { describe, expect, it } from "bun:test";
-import { buildLineDiff, type TextDiffSummary } from "../../../shared/TextDiffPreview.js";
-import { computeDiffDecorationSpecs, type CopilotDiffSpec } from "./CopilotDiffDecorations.js";
-import { groupHunks, allHunkIds } from "../../../../lib/coauthor-hunk-merge.js";
+import { buildLineDiff, type TextDiffSummary } from "../TextDiffPreview.js";
+import { computeDiffDecorationSpecs, type AgentDiffSpec } from "./AgentDiffDecorations.js";
+import { groupHunks, allHunkIds } from "../../../lib/coauthor-hunk-merge.js";
 
-type HunkHeaderSpec = Extract<CopilotDiffSpec, { type: "hunk-header" }>;
-type AddDeltaSpec = Extract<CopilotDiffSpec, { type: "add-delta" }>;
+type HunkHeaderSpec = Extract<AgentDiffSpec, { type: "hunk-header" }>;
+type AddDeltaSpec = Extract<AgentDiffSpec, { type: "add-delta" }>;
 
 function spec(input: { base: string; proposed: string }): {
   diff: TextDiffSummary;

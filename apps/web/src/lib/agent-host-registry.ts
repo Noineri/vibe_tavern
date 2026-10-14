@@ -17,6 +17,7 @@
  */
 import type { ComponentType, ReactNode } from "react";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
+import type Resources from "../i18n/resources.js";
 
 /** A host tried to register under a kind that is already taken. */
 export class AgentHostAlreadyRegisteredError extends Error {
@@ -37,20 +38,61 @@ export class UnknownAgentHostError extends Error {
 }
 
 /**
- * The minimal context a host descriptor receives (AS-5). Deliberately narrow:
- * the shell owns the thread/session, the host only needs to know WHOSE
- * script it renders for. Grows in AS-6 (draft handles, send plumbing).
+ * The minimal-plus-live context a host descriptor receives. AS-5 shipped
+ * only { ownerId, scriptId } (deliberately narrow); AS-6b2 grew it with the
+ * live thread/streaming state and the shell↔host bridge the split shell
+ * needs — hosts still receive, they never construct it.
  */
 export interface AgentHostContext {
   ownerId: string;
   scriptId?: string;
+  /** AS-6b2: the live thread the shell renders (null while the session
+   *  loads) — buffer hosts key review rounds and draft persistence by it. */
+  threadId: string | null;
+  /** AS-6b2: true while the host's turn is streaming — freeze/lock
+   *  affordances and the review-enable gate read it. */
+  isSending: boolean;
+  /** AS-6b2: the wrapper's host-specific props, opaque to the shell — the
+   *  host narrows the type at its own boundary (wrapper and host are a
+   *  pair; the shell only forwards). */
+  hostProps?: unknown;
+  /** AS-6b2: the live shell↔host bridge — the host's editor pane registers
+   *  its session handle here, host surfaces prefill the chat input. */
+  bridge: AgentHostBridge;
 }
 
 /** One named buffer the host's editor pane edits (label resolved via i18n). */
 export interface AgentHostBufferSpec {
   id: string;
-  labelKey: string;
+  labelKey: AgentI18nKey;
   language: string;
+}
+
+/**
+ * AS-6b2: the live handle a host's editor pane assigns to
+ * {@link AgentHostBridge.session} every render. `onBeforeSend` runs
+ * synchronously before each dispatched turn (the buffer host captures its
+ * dangling review before the turn store is cleared); `buildSendOptions`
+ * returns the host's per-turn send options. The concrete options type is
+ * transport-owned (`AgentSendOptions` in use-agent-controller.ts) and stays
+ * opaque here until AS-6c parameterizes transport by kind.
+ */
+export interface AgentHostSessionHandle {
+  onBeforeSend: () => void;
+  buildSendOptions: () => unknown;
+}
+
+/**
+ * AS-6b2: the stable mutable bridge the shell owns and hands the host through
+ * {@link AgentHostContext}. The host's editor pane assigns `session` during
+ * its render (latest-render closures — the same ref pattern the shell's
+ * capture-dangling code already used); the shell reads it at send time.
+ * `setInputPrefill` hands text from a host surface (e.g. a "send to
+ * copilot" button) to the chat input — object identity is the trigger.
+ */
+export interface AgentHostBridge {
+  session: AgentHostSessionHandle | null;
+  setInputPrefill: (prefill: { text: string } | null) => void;
 }
 
 /** Props a per-recordType record-proposal renderer receives. */
@@ -58,22 +100,36 @@ export interface RecordProposalCardProps {
   proposal: RecordProposal;
 }
 
+/** A strict i18n key — the generated en-locale union (`i18n/resources`), so a
+ *  typo'd key in a host descriptor is a compile error, same as a literal `t()`
+ *  call. The descriptor fields below carry KEYS, never translated strings. */
+export type AgentI18nKey = keyof Resources["en"];
+
 /** Everything the generic shell needs to host one agent kind. */
 export interface AgentHostDescriptor {
   kind: string;
   /** i18n KEYS (not strings) — the shell resolves them through `useT`. */
   i18n: {
-    title: string;
-    subtitle?: string;
-    placeholder: string;
-    loading: string;
-    emptyTitle: string;
-    emptySub: string;
+    title: AgentI18nKey;
+    subtitle?: AgentI18nKey;
+    placeholder: AgentI18nKey;
+    loading: AgentI18nKey;
+    emptyTitle: AgentI18nKey;
+    emptySub: AgentI18nKey;
+    /** AS-6b2: the mobile tab-row back chevron's aria-label key. Optional —
+     *  a host that omits it renders no chevron even when `onBack` is passed
+     *  (the chevron is folded into the tab-bar row, which a chat-only host
+     *  does not render at all). */
+    mobileBackLabelKey?: AgentI18nKey;
   };
   bufferSpecs: AgentHostBufferSpec[];
   /** Absent = chat-only host (no editor pane). */
   renderEditorPane?: (ctx: AgentHostContext) => ReactNode;
-  buildSendOptions: (ctx: AgentHostContext) => Record<string, unknown>;
+  /** The per-turn send options. AS-6b2: returns `unknown` — the live options
+   *  come from the host session via `ctx.bridge` (the descriptor is a module
+   * constant and cannot close over component state); the shell narrows the
+   * result to the controller's AgentSendOptions at the send seam. */
+  buildSendOptions: (ctx: AgentHostContext) => unknown;
   toolbarSlot?: (ctx: AgentHostContext) => ReactNode;
   mobileEditTabHeader?: (ctx: AgentHostContext) => ReactNode;
   recordProposalRenderers: Record<string, ComponentType<RecordProposalCardProps>>;
