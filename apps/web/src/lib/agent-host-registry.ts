@@ -18,6 +18,7 @@
  */
 import type { ComponentType, ReactNode } from "react";
 import type {
+  AgentReviewSnapshot,
   ExperienceCopilotLaunchContext,
   ExperienceCopilotStep,
   RecordProposal,
@@ -106,6 +107,9 @@ export interface AgentSendOptions {
   testFeedback?: Record<string, unknown> | null;
   /** Latest Try-panel execution context; backend tools use it verbatim. */
   launchContext?: ExperienceCopilotLaunchContext;
+  reviewSnapshot?: AgentReviewSnapshot;
+  rulesSaved?: boolean;
+  visualSaved?: boolean;
 }
 
 /**

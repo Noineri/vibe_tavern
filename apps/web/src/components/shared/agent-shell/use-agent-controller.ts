@@ -405,6 +405,9 @@ export function useAgentController(
             ...(opts?.step ? { step: opts.step } : {}),
             ...(opts?.testFeedback !== undefined ? { testFeedback: opts.testFeedback } : {}),
             ...(opts?.launchContext !== undefined ? { launchContext: opts.launchContext } : {}),
+            ...(opts?.reviewSnapshot !== undefined ? { reviewSnapshot: opts.reviewSnapshot } : {}),
+            ...(opts?.rulesSaved !== undefined ? { rulesSaved: opts.rulesSaved } : {}),
+            ...(opts?.visualSaved !== undefined ? { visualSaved: opts.visualSaved } : {}),
           },
           {
             signal: controller.signal,
@@ -499,6 +502,9 @@ export function useAgentController(
             ...(opts?.step ? { step: opts.step } : {}),
             ...(opts?.testFeedback !== undefined ? { testFeedback: opts.testFeedback } : {}),
             ...(opts?.launchContext !== undefined ? { launchContext: opts.launchContext } : {}),
+            ...(opts?.reviewSnapshot !== undefined ? { reviewSnapshot: opts.reviewSnapshot } : {}),
+            ...(opts?.rulesSaved !== undefined ? { rulesSaved: opts.rulesSaved } : {}),
+            ...(opts?.visualSaved !== undefined ? { visualSaved: opts.visualSaved } : {}),
           },
           {
             signal: controller.signal,

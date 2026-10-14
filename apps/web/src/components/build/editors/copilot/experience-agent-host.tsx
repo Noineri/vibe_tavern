@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import type { ExperienceCopilotLaunchContext } from "@vibe-tavern/api-contracts";
+import type { ExperienceCopilotLaunchContext, ReviewTargetRecord } from "@vibe-tavern/api-contracts";
 import { Icons } from "../../../shared/icons.js";
 import { validateVisualSource } from "../../../../lib/visual-source-validator.js";
 import { EmptyState } from "../../../shared/empty-state.js";
@@ -39,6 +39,9 @@ import {
   type CopilotBufferReview,
 } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
 import type { AgentSendOptions } from "../../../shared/agent-shell/use-agent-controller.js";
+import { buildExperienceCopilotReviewSnapshot } from "../../../../lib/experience-copilot-review-snapshot.js";
+import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
+import { useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs } from "./use-experience-copilot-review.js";
 
 /**
  * The `experience` agent host (AGENT_SHELL_PLAN AS-6b2) — the mini-app
@@ -92,6 +95,8 @@ export interface ExperienceCopilotHostProps {
   /** SS-7: «Show in code» — reveal a finding line in the RULES editor
    *  (fresh object per request; switches to Rules when Visual is active). */
   revealRulesLine?: { line: number } | null;
+  rulesSaved?: boolean;
+  visualSaved?: boolean;
 }
 
 /** Authoring position reported to the parent's creation stepper (XU-6).
@@ -134,6 +139,8 @@ function ExperienceEditorPane({
     visualToolbar,
     onStepChange,
     revealRulesLine = null,
+    rulesSaved,
+    visualSaved,
   } = hostProps;
   const { t } = useT();
 
@@ -162,13 +169,10 @@ function ExperienceEditorPane({
   // panel (set by `handleSendToCopilot`). Carried on EVERY subsequent copilot
   // send as `testFeedback` (survives history compaction as a system-level JSON
   // context section), so a manual follow-up also carries it.
-  const [testFeedback, setTestFeedback] = useState<Record<string, unknown> | undefined>(undefined);
-  // The playground reports its live launch configuration into a ref: changes
-  // never re-render the pane, while every send reads the freshest context.
-  const launchContextRef = useRef<ExperienceCopilotLaunchContext | undefined>(undefined);
-  const handleLaunchContextChange = useCallback((context: ExperienceCopilotLaunchContext) => {
-    launchContextRef.current = context;
-  }, []);
+  const { testFeedback, launchContextRef, handleLaunchContextChange, handleSendToCopilot } = useExperienceCopilotReviewFeedback({
+    bridge,
+    onCopied: () => toast.success(t("agent_result_copied")),
+  });
 
   // Draft envelope rehydration (ER-10): seeds BOTH stores (turn + review
   // round) from the localStorage envelope on mount. Runs BEFORE the shell's
@@ -326,6 +330,28 @@ function ExperienceEditorPane({
     [effVisual, acceptedVisualHunks, dismissedVisualHunks, isSending],
   );
 
+  const recordAppliedOutcome = useCallback((
+    target: "rules" | "visual",
+    bufferReview: CopilotBufferReview,
+    accepted: ReadonlySet<number>,
+    dismissed: ReadonlySet<number>,
+    applied: ReadonlySet<number>,
+    cancelled = false,
+  ) => {
+    if (!threadId) return;
+    const [record] = buildExperienceCopilotReviewSnapshot([{
+      target,
+      base: bufferReview.base,
+      proposed: bufferReview.proposed,
+      offeredHunkIds: [...allReviewHunkIds(bufferReview)],
+      acceptedHunkIds: accepted,
+      dismissedHunkIds: dismissed,
+      appliedHunkIds: applied,
+      cancelled,
+    }]).targets;
+    if (record) useAgentReviewOutcomeStore.getState().record(EXPERIENCE_KIND, threadId, record);
+  }, [threadId]);
+
   // UX 2026-08-16 remark 6 — static validation of the EFFECTIVE visual document:
   // while a review round is open that is the PROPOSED text (what accept-all
   // would land); otherwise the live buffer.
@@ -348,6 +374,8 @@ function ExperienceEditorPane({
       bufferText: string,
       setAccepted: (next: Set<number>) => void,
       onChange: (text: string) => void,
+      target: "rules" | "visual",
+      dismissed: ReadonlySet<number>,
     ) => {
       // tooLarge wholesale (RV-1): no hunk decomposition — accept applies the
       // whole proposal and resolves the sentinel id. (Before this branch the
@@ -356,7 +384,10 @@ function ExperienceEditorPane({
         const nextWhole = new Set(prevAccepted);
         for (const id of clickedIds) nextWhole.add(id);
         setAccepted(nextWhole);
-        if (bufferText !== bufferReview.proposed) onChange(bufferReview.proposed);
+        if (bufferText !== bufferReview.proposed) {
+          onChange(bufferReview.proposed);
+          recordAppliedOutcome(target, bufferReview, nextWhole, dismissed, nextWhole);
+        }
         return;
       }
       const expected = mergedReviewText(bufferReview, prevAccepted);
@@ -371,7 +402,10 @@ function ExperienceEditorPane({
         const next = new Set(prevAccepted);
         for (const id of applied) next.add(id);
         setAccepted(next);
-        if (applied.length > 0) onChange(text);
+        if (applied.length > 0) {
+          onChange(text);
+          recordAppliedOutcome(target, bufferReview, next, dismissed, new Set(applied));
+        }
         if (skippedHunkIds.length > 0)
           toast.warning(t("copilot_review_hunks_skipped", { n: skippedHunkIds.length }));
         return;
@@ -380,22 +414,23 @@ function ExperienceEditorPane({
       for (const id of clickedIds) next.add(id);
       setAccepted(next);
       onChange(mergedReviewText(bufferReview, next));
+      recordAppliedOutcome(target, bufferReview, next, dismissed, new Set(clickedIds));
     },
-    [t],
+    [t, recordAppliedOutcome],
   );
 
   const acceptRulesHunk = useCallback(
     (hunkId: number) => {
       if (!rulesReview) return;
-      acceptHunks(rulesReview, acceptedRulesHunks, [hunkId], rulesCode, setAcceptedRulesHunks, onRulesChange);
+      acceptHunks(rulesReview, acceptedRulesHunks, [hunkId], rulesCode, setAcceptedRulesHunks, onRulesChange, "rules", dismissedRulesHunks);
     },
-    [rulesReview, acceptedRulesHunks, rulesCode, onRulesChange, acceptHunks],
+    [rulesReview, acceptedRulesHunks, rulesCode, onRulesChange, acceptHunks, dismissedRulesHunks],
   );
   const acceptAllRules = useCallback(() => {
     if (!rulesReview) return;
     const pending = [...allReviewHunkIds(rulesReview)].filter((id) => !acceptedRulesHunks.has(id));
-    acceptHunks(rulesReview, acceptedRulesHunks, pending, rulesCode, setAcceptedRulesHunks, onRulesChange);
-  }, [rulesReview, acceptedRulesHunks, rulesCode, onRulesChange, acceptHunks]);
+    acceptHunks(rulesReview, acceptedRulesHunks, pending, rulesCode, setAcceptedRulesHunks, onRulesChange, "rules", dismissedRulesHunks);
+  }, [rulesReview, acceptedRulesHunks, rulesCode, onRulesChange, acceptHunks, dismissedRulesHunks]);
 
   // RV-2: dismiss (✕) — the hunk leaves the round; the buffer is untouched.
   const dismissRulesHunk = useCallback(
@@ -421,15 +456,15 @@ function ExperienceEditorPane({
   const acceptVisualHunk = useCallback(
     (hunkId: number) => {
       if (!visualReview) return;
-      acceptHunks(visualReview, acceptedVisualHunks, [hunkId], visualSource, setAcceptedVisualHunks, onVisualChange);
+      acceptHunks(visualReview, acceptedVisualHunks, [hunkId], visualSource, setAcceptedVisualHunks, onVisualChange, "visual", dismissedVisualHunks);
     },
-    [visualReview, acceptedVisualHunks, visualSource, onVisualChange, acceptHunks],
+    [visualReview, acceptedVisualHunks, visualSource, onVisualChange, acceptHunks, dismissedVisualHunks],
   );
   const acceptAllVisual = useCallback(() => {
     if (!visualReview) return;
     const pending = [...allReviewHunkIds(visualReview)].filter((id) => !acceptedVisualHunks.has(id));
-    acceptHunks(visualReview, acceptedVisualHunks, pending, visualSource, setAcceptedVisualHunks, onVisualChange);
-  }, [visualReview, acceptedVisualHunks, visualSource, onVisualChange, acceptHunks]);
+    acceptHunks(visualReview, acceptedVisualHunks, pending, visualSource, setAcceptedVisualHunks, onVisualChange, "visual", dismissedVisualHunks);
+  }, [visualReview, acceptedVisualHunks, visualSource, onVisualChange, acceptHunks, dismissedVisualHunks]);
 
   // RV-3: "Cancel all unaccepted" — dismiss the PENDING hunks of THIS
   // buffer only (accepted hunks stay accepted, the other buffer and the text
@@ -518,87 +553,45 @@ function ExperienceEditorPane({
     toast.success(t("copilot_review_reverted"));
   }, [review, t, threadId]);
 
-  // ER-14: copy a test/simulate/playground digest into the copilot chat input.
-  // UX 2026-08-16 remark 6: this must NOT dispatch the turn — the button copies
-  // the digest text into the input (through the shell bridge) and the user
-  // sends it themselves. The structured `feedback` is captured now so the next
-  // manual send carries it.
-  const handleSendToCopilot = useCallback(
-    (digest: CopilotDigest) => {
-      setTestFeedback(digest.feedback);
-      bridge.setInputPrefill({ text: digest.text });
-      toast.success(t("agent_result_copied"));
-    },
-    [bridge, t],
-  );
-
   // ── The bridge session handle ────────────────────────────────────────────
   // Assigned every render (the latest-callback-ref pattern the captureDangling
   // refs already use): the shell reads it AT SEND TIME, so a click always sees
   // the last committed render's closures — the same freshness the pre-split
   // shell's inline handlers had.
-  const buildSendOptions = useCallback((): AgentSendOptions => ({
-    rules: rulesCode,
-    visual: visualSource,
-    step: editorBuffer === "sandbox" ? "test" : codeBuffer === "visual" ? "visual" : "rules",
-    ...(testFeedback !== undefined ? { testFeedback } : {}),
-    ...(launchContextRef.current !== undefined
-      ? { launchContext: launchContextRef.current }
-      : {}),
-  }), [rulesCode, visualSource, editorBuffer, codeBuffer, testFeedback]);
+  const buildSendOptions = useCallback((): AgentSendOptions => {
+    const liveTargets = [
+      ["rules", effRules, acceptedRulesHunks, dismissedRulesHunks],
+      ["visual", effVisual, acceptedVisualHunks, dismissedVisualHunks],
+    ] as const;
+    const targets: ReviewTargetRecord[] = liveTargets.flatMap(([target, effective, accepted, dismissed]) => {
+      if (effective.base === undefined || effective.proposed === undefined) return [];
+      const fullReview = buildBufferReview(effective.base, effective.proposed, new Set(), true);
+      if (!fullReview) return [];
+      const [record] = buildExperienceCopilotReviewSnapshot([{
+        target,
+        base: effective.base,
+        proposed: effective.proposed,
+        offeredHunkIds: [...allReviewHunkIds(fullReview)],
+        acceptedHunkIds: accepted,
+        dismissedHunkIds: dismissed,
+      }]).targets;
+      const saved = threadId ? useAgentReviewOutcomeStore.getState().get(EXPERIENCE_KIND, threadId, target) : undefined;
+      return [saved?.roundId === record!.roundId ? saved : record!];
+    });
+    return {
+      rules: rulesCode,
+      visual: visualSource,
+      step: editorBuffer === "sandbox" ? "test" : codeBuffer === "visual" ? "visual" : "rules",
+      ...(testFeedback !== undefined ? { testFeedback } : {}),
+      ...(launchContextRef.current !== undefined ? { launchContext: launchContextRef.current } : {}),
+      reviewSnapshot: { targets },
+      ...(rulesSaved !== undefined ? { rulesSaved } : {}),
+      ...(visualSaved !== undefined ? { visualSaved } : {}),
+    };
+  }, [rulesCode, visualSource, editorBuffer, codeBuffer, testFeedback, effRules, effVisual, acceptedRulesHunks, acceptedVisualHunks, dismissedRulesHunks, dismissedVisualHunks, threadId, rulesSaved, visualSaved]);
   bridge.session = { onBeforeSend: captureDangling, buildSendOptions };
 
-  // ── Editor toggle options (XU-5) ────────────────────────────────────────
-  // The editor pane is now `[Preview | Code (| Try)]` — preview is the default
-  // layer; code is the second layer holding the inner `[Rules | Visual]`
-  // sub-toggle. Creation mode adds the inline `sandbox` position (ER-13d-1),
-  // relabelled "Try". Built here because the creation labels resolve through
-  // `t`.
-  // Buffer-tab labels with the pending-review dot (CD-6): a tab whose buffer
-  // has unaccepted hunks carries an accent dot (per the settled vision: the
-  // OTHER tab must signal pending diffs; showing it on both tabs is harmless
-  // and simpler than hiding the active one's).
-  const tabLabel = (value: "rules" | "visual", label: string) => {
-    const pending = value === "rules" ? rulesReview !== null : visualReview !== null;
-    if (!pending) return label;
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        {label}
-        <span
-          data-testid={`copilot-buffer-dot-${value}`}
-          title={t("copilot_review_pending_badge")}
-          className="h-1.5 w-1.5 rounded-full bg-accent"
-        />
-      </span>
-    );
-  };
-
-  // The OUTER "Code" tab carries a dot when EITHER buffer has pending hunks
-  // (CD-6): the preview layer can't show diffs, so the code layer signals them.
-  const codeTabLabel =
-    rulesReview !== null || visualReview !== null
-      ? (
-        <span className="inline-flex items-center gap-1.5">
-          {t("agent_code")}
-          <span
-            data-testid="copilot-outer-dot-code"
-            title={t("copilot_review_pending_badge")}
-            className="h-1.5 w-1.5 rounded-full bg-accent"
-          />
-        </span>
-      )
-      : t("agent_code");
-
-  const outerBufferOptions = [
-    { value: "preview", label: t("agent_preview") },
-    { value: "code", label: codeTabLabel },
-    { value: "sandbox", label: t("agent_try_it") },
-  ];
-
-  const codeBufferOptions = [
-    { value: "rules", label: tabLabel("rules", t("agent_rules")) },
-    { value: "visual", label: tabLabel("visual", t("agent_visual")) },
-  ];
+  const { outerBufferOptions, codeBufferOptions } = useExperienceCopilotReviewTabs({ rulesReview, visualReview, t });
 
   // XU-6: the creation stepper in the parent mirrors the shell's current
   // authoring position. `appearance` maps to the Visual code buffer; `try` to

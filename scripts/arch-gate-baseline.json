@@ -19,8 +19,7 @@
   ],
   "oversizedFiles": {
     "apps/web/src/components/build/editors/CharacterForm.tsx": 903,
-    "apps/web/src/components/build/editors/copilot/ExperienceCopilotShell.tsx": 1369,
-    "apps/web/src/components/build/editors/ExperienceEditor.tsx": 1326,
+    "apps/web/src/components/build/editors/ExperienceEditor.tsx": 1294,
     "apps/web/src/components/build/editors/ExperiencePlayground.tsx": 2178,
     "apps/web/src/components/build/editors/LorebookAccordion.tsx": 856,
     "apps/web/src/components/build/editors/LorebookEditor.tsx": 953,

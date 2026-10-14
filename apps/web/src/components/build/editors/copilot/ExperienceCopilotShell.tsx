@@ -75,6 +75,9 @@ export interface ExperienceCopilotShellProps {
    *  but deliberately WITHOUT auto-switch — the user just chose to Apply,
    *  yanking them to the edit tab would be noise. */
   editTabDirty?: boolean;
+  /** Optional authoritative save state for the independent live buffers. */
+  rulesSaved?: boolean;
+  visualSaved?: boolean;
   /** SS-7: «Show in code» — reveal a finding line in the RULES editor
    *  (fresh object per request; switches to Rules when Visual is active). */
   revealRulesLine?: { line: number } | null;
@@ -94,6 +97,8 @@ export function ExperienceCopilotShell({
   onBack,
   editTabHeader,
   editTabDirty = false,
+  rulesSaved,
+  visualSaved,
   revealRulesLine = null,
 }: ExperienceCopilotShellProps) {
   const isMobile = useIsMobile();
@@ -109,6 +114,8 @@ export function ExperienceCopilotShell({
     visualToolbar,
     onStepChange,
     revealRulesLine,
+    rulesSaved,
+    visualSaved,
   };
   return (
     <AgentShell

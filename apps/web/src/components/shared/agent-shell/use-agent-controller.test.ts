@@ -322,6 +322,19 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     expect("testFeedback" in (streamExperienceCopilot.mock.calls[0][1] as Record<string, unknown>)).toBe(false);
   });
 
+  test("passes review metadata and independent false saved flags on send and ask answers", async () => {
+    streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
+    answerCopilotAsk.mockResolvedValue({ finishReason: "stop" });
+    const { result } = renderHook(() =>
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
+    );
+    const reviewSnapshot = { targets: [] };
+    await act(async () => { await result.current.handleSend("review", { reviewSnapshot, rulesSaved: false, visualSaved: true }); });
+    expect(streamExperienceCopilot.mock.calls[0]![1]).toMatchObject({ reviewSnapshot, rulesSaved: false, visualSaved: true });
+    await act(async () => { await result.current.handleAnswer("ask-1", { text: "yes" }, { reviewSnapshot, rulesSaved: false, visualSaved: false }); });
+    expect(answerCopilotAsk.mock.calls[0]![1]).toMatchObject({ reviewSnapshot, rulesSaved: false, visualSaved: false });
+  });
+
   test("passes the Try sandbox launch context through to the stream body", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>

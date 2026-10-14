@@ -85,6 +85,7 @@ import {
   VISUAL_API_VERSION,
 } from "./experience-local-helpers.js";
 import { ExperienceCopilotShell, type ExperienceCopilotStep } from "./copilot/ExperienceCopilotShell.js";
+import { ExperienceCreationStepper } from "./experience-creation-stepper.js";
 import { useExperienceRulesValidation } from "./use-experience-rules-validation.js";
 import { ExperienceManagementControls } from "./ExperienceManagementControls.js";
 import { ExperienceVisualBinding } from "./ExperienceVisualBinding.js";
@@ -938,42 +939,7 @@ export function ExperienceEditor() {
           pane. The active step mirrors the shell's current position (reported
           via onStepChange); completed steps get a check. */}
       {creationMode && (
-        <div
-          className="flex shrink-0 items-center gap-1.5 border-b border-border bg-surface px-3 py-1.5"
-          data-testid="experience-creation-stepper"
-        >
-          {CREATION_STEP_ORDER.map((step, index) => {
-            const isActive = activeStep === step;
-            const isDone = CREATION_STEP_ORDER.indexOf(activeStep) > index;
-            const label =
-              step === "rules"
-                ? t("agent_rules")
-                : step === "appearance"
-                  ? t("experience_editor_step_appearance")
-                  : t("agent_try_it");
-            return (
-              <div key={step} className="flex items-center gap-1.5">
-                {index > 0 && <span className="text-t4">{Ic.caret("r")}</span>}
-                <span
-                  className={cn(
-                    "flex items-center gap-1.5 font-ui text-[11px] font-medium",
-                    isActive ? "text-accent-t" : isDone ? "text-t2" : "text-t3",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "flex h-4 w-4 items-center justify-center rounded-full text-[9px]",
-                      isDone ? "bg-accent text-on-accent" : "bg-s3 text-t3",
-                    )}
-                  >
-                    {isDone ? Ic.check() : index + 1}
-                  </span>
-                  {label}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+        <ExperienceCreationStepper activeStep={activeStep} steps={CREATION_STEP_ORDER} />
       )}
 
       {/* Body: the 2-pane copilot shell hosts both editors + top-button modals. */}
@@ -995,6 +961,8 @@ export function ExperienceEditor() {
             ) : undefined
           }
           editTabDirty={scriptDirty}
+          rulesSaved={!scriptDirty}
+          visualSaved={!visualDirty}
           rulesCode={activeScript.code}
           onRulesChange={(code) => updateScriptDraft({ code })}
           revealRulesLine={revealRulesLine}
