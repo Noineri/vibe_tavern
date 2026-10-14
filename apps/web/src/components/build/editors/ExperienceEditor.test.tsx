@@ -31,7 +31,7 @@
  * Runner: bun:test with scoped happy-dom (one file per process —
  * mock.module() is process-global).
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireScript } from "../../../../test/wire-fixtures.js";
 import type { ReactNode } from "react";
 import type { ExperienceTestRunData, ExperienceVisualRow, ScriptRecord } from "../../../api/types.js";
@@ -40,6 +40,7 @@ import { RULES_STARTERS } from "../../../lib/experience-rules-starters.js";
 import { useScriptDraftStore } from "../../../stores/script-draft-store.js";
 import { useExperienceVisualDraftStore } from "../../../stores/experience-authoring-store.js";
 import { useDomEnv } from "../../../../test/dom-env.js";
+import { getAgentHost } from "../../../lib/agent-host-registry.js";
 
 useDomEnv();
 
@@ -288,11 +289,26 @@ let fireEvent: typeof import("@testing-library/react").fireEvent;
 let render: typeof import("@testing-library/react").render;
 let waitFor: typeof import("@testing-library/react").waitFor;
 let EditorView: typeof import("@codemirror/view").EditorView;
+let originalExperiencePane: ReturnType<typeof getAgentHost>["renderEditorPane"];
+const observedExperienceHostProps: unknown[] = [];
 
 beforeAll(async () => {
   ({ act, fireEvent, render, waitFor } = await import("@testing-library/react"));
   ({ EditorView } = await import("@codemirror/view"));
   ({ ExperienceEditor } = await import("./ExperienceEditor.js"));
+  const host = getAgentHost("experience");
+  originalExperiencePane = host.renderEditorPane;
+  if (!originalExperiencePane) throw new Error("experience host has no editor pane");
+  const renderExperiencePane = originalExperiencePane;
+  host.renderEditorPane = (ctx) => {
+    observedExperienceHostProps.push(ctx.hostProps);
+    return renderExperiencePane(ctx);
+  };
+});
+
+afterAll(() => {
+  const host = getAgentHost("experience");
+  host.renderEditorPane = originalExperiencePane;
 });
 
 let serverScripts: ScriptRecord[];
@@ -344,6 +360,7 @@ beforeEach(() => {
   serverVisuals = [];
   createGate = null;
   updateGate = null;
+  observedExperienceHostProps.length = 0;
   listAllScripts.mockImplementation(async () => serverScripts.map((s) => ({ ...s })));
   listExperienceVisuals.mockImplementation(async () => serverVisuals.map((v) => ({ ...v, compatibleManifestIds: [...v.compatibleManifestIds] })));
   createScript.mockImplementation(async (body) => {
@@ -977,6 +994,23 @@ describe("ExperienceEditor", () => {
       expect(updateScript).toHaveBeenCalledWith("srv_1", expect.objectContaining({ code: "// v3" }));
     });
     expect(await findByText("saved_state")).toBeTruthy();
+  });
+
+  it("derives independent copilot saved flags from the real rules and visual drafts", async () => {
+    serverScripts = [{ ...baseScript }];
+    const { container, findByText, getByRole } = render(<ExperienceEditor />);
+    fireEvent.click(await findByText("Existing Rules"));
+    const [rulesView] = await codeViews(container);
+    if (!rulesView) throw new Error("rules editor missing");
+
+    await waitFor(() => expect(observedExperienceHostProps.at(-1)).toMatchObject({ rulesSaved: true, visualSaved: true }));
+    replaceCode(rulesView, "// independently dirty rules");
+    await waitFor(() => expect(observedExperienceHostProps.at(-1)).toMatchObject({ rulesSaved: false, visualSaved: true }));
+    fireEvent.click(getByRole("button", { name: "save" }));
+    await waitFor(() => expect(observedExperienceHostProps.at(-1)).toMatchObject({ rulesSaved: true, visualSaved: true }));
+    fireEvent.click(getByRole("radio", { name: "agent_visual" }));
+    fireEvent.click(await findByText("Choice"));
+    await waitFor(() => expect(observedExperienceHostProps.at(-1)).toMatchObject({ rulesSaved: true, visualSaved: false }));
   });
 
   it("preserves edits made during an in-flight create (duplicate path — the remaining local-id create)", async () => {
