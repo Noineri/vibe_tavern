@@ -1,4 +1,4 @@
-import { createElement, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { createElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ExperienceCopilotLaunchContext } from "@vibe-tavern/api-contracts";
 import type { AgentHostBridge } from "../../../../lib/agent-host-registry.js";
 import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js";
@@ -135,4 +135,23 @@ export function recordExperienceRevertedOutcomes(kind: AgentKind, threadId: stri
       cancelled: true,
     });
   }
+}
+
+/** Cancels a resolved record when no rendered diff remains to reconstruct it. */
+export function cancelStoredExperienceOutcomes(kind: AgentKind, threadId: string): void {
+  const state = useAgentReviewOutcomeStore.getState();
+  const outcomes = state.outcomesByThread[agentThreadKey(kind, threadId)] ?? {};
+  for (const outcome of Object.values(outcomes)) {
+    if (!outcome) continue;
+    state.record(kind, threadId, { ...outcome.record, outcome: "cancelled" }, outcome.appliedHunkIds);
+  }
+}
+
+/** Keeps the parent creation step synchronized with the host's authoring tab. */
+export function useExperienceCopilotStep(editorBuffer: string, codeBuffer: string, onStepChange: ((step: "rules" | "appearance" | "try") => void) | undefined) {
+  const step = editorBuffer === "sandbox" ? "try" : codeBuffer === "visual" ? "appearance" : "rules";
+  useEffect(() => {
+    onStepChange?.(step);
+  }, [step, onStepChange]);
+  return step;
 }

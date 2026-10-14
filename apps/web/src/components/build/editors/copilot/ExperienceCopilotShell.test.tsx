@@ -1,10 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import { wireUiSettings } from "../../../../../test/wire-fixtures.js";
 import type { ReactElement, ReactNode } from "react";
+import { useState } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
 import type { AgentPlan, ExperienceCopilotContextLink, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
+import { experienceCopilotStreamRequestSchema } from "@vibe-tavern/api-contracts";
+import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
 import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
 import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
 import { useExperienceCopilotTurnStore } from "../../../../stores/experience-copilot-turn-store.js";
@@ -341,6 +344,7 @@ let EditorView: typeof import("@codemirror/view").EditorView;
 let EditorState: typeof import("@codemirror/state").EditorState;
 
 const realFetch = globalThis.fetch;
+const outcomesBeforeShellSuite = useAgentReviewOutcomeStore.getState().outcomesByThread;
 beforeAll(async () => {
   globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
   ({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
@@ -350,6 +354,7 @@ beforeAll(async () => {
 });
 afterAll(() => {
   globalThis.fetch = realFetch;
+  useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeShellSuite });
 });
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -1419,6 +1424,87 @@ describe("ExperienceCopilotShell — CD-3: freeze/unfreeze + revert", () => {
     // …but the try (sandbox) position has no code editor / review affordances.
     fireEvent.click(getByRole("radio", { name: "agent_try_it" }));
     expect(queryByTestId("copilot-toolbar-revert")).toBeNull();
+  });
+});
+
+describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP", () => {
+  const BASE = "// rules buffer\nconst keep = 1;\nconst tail = 2.";
+  const PROPOSED = "// RULES v2\nconst keep = 1;\nconst tail = 22.";
+
+  function ControlledShell() {
+    const [rulesCode, setRulesCode] = useState(BASE);
+    return (
+      <ExperienceCopilotShell
+        scriptId="ro4-supervisor-script"
+        rulesCode={rulesCode}
+        onRulesChange={setRulesCode}
+        visualSource=""
+        onVisualChange={() => {}}
+        rulesSaved={rulesCode === BASE}
+        visualSaved={true}
+      />
+    );
+  }
+
+  async function sendFollowup(utils: ReturnType<typeof render>, content: string, count: number) {
+    const textarea = utils.container.querySelector<HTMLTextAreaElement>("textarea")!;
+    fireEvent.change(textarea, { target: { value: content } });
+    fireEvent.click(utils.getByTestId("copilot-send-btn"));
+    await waitFor(() => expect(streamCalls()).toHaveLength(count));
+    await flushSessionLoad();
+    return experienceCopilotStreamRequestSchema.parse(streamCalls()[count - 1]!.body);
+  }
+
+  async function openReview(utils: ReturnType<typeof render>, threadId: string) {
+    await flushSessionLoad();
+    await sendFollowup(utils, "propose changes", 1);
+    await act(async () => {
+      useExperienceCopilotTurnStore.getState().upsertActivity("experience", threadId, {
+        toolCallId: "ro4-supervisor-proposal",
+        toolName: "write_buffer",
+        status: "done",
+        target: "rules",
+        proposed: PROPOSED,
+        summary: "header and tail",
+      });
+    });
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+  }
+
+  it("toolbar revert of a fully accepted round reports cancelled on two following HTTP turns", async () => {
+    const threadId = "ro4-supervisor-full-revert";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    fireEvent.click(utils.getByTestId("copilot-toolbar-revert"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-toolbar-revert")).toBeNull());
+
+    for (const count of [2, 3]) {
+      const body = await sendFollowup(utils, `explain revert ${count}`, count);
+      expect(body.rules).toBe(BASE);
+      expect(body.rulesSaved).toBe(true);
+      expect(body.visualSaved).toBe(true);
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
+    }
+  });
+
+  it("cancel of a partially accepted round retains cancelled rather than recomputing rejected in HTTP", async () => {
+    const threadId = "ro4-supervisor-partial-cancel";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    fireEvent.click(utils.getByTestId("copilot-cancel-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    const body = await sendFollowup(utils, "explain cancelled review", 2);
+    expect(body.rules).toBe(BASE);
+    expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
   });
 });
 

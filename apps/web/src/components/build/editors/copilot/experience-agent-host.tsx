@@ -40,7 +40,7 @@ import {
 import type { AgentSendOptions } from "../../../shared/agent-shell/use-agent-controller.js";
 import { buildExperienceCopilotReviewSnapshot } from "../../../../lib/experience-copilot-review-snapshot.js";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
-import { recordExperienceReviewOutcome, recordExperienceRevertedOutcomes, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs, useExperienceCopilotVisualValidation, useExperienceReviewOutcomeRecorder } from "./use-experience-copilot-review.js";
+import { cancelStoredExperienceOutcomes, recordExperienceReviewOutcome, recordExperienceRevertedOutcomes, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs, useExperienceCopilotStep, useExperienceCopilotVisualValidation, useExperienceReviewOutcomeRecorder } from "./use-experience-copilot-review.js";
 
 /**
  * The `experience` agent host (AGENT_SHELL_PLAN AS-6b2) — the mini-app
@@ -536,6 +536,7 @@ function ExperienceEditorPane({
   const handleToolbarRevert = useCallback(() => {
     if (threadId) {
       recordExperienceRevertedOutcomes(EXPERIENCE_KIND, threadId, [{ target: "rules", review: rulesReview, accepted: acceptedRulesHunks, dismissed: dismissedRulesHunks }, { target: "visual", review: visualReview, accepted: acceptedVisualHunks, dismissed: dismissedVisualHunks }]);
+      cancelStoredExperienceOutcomes(EXPERIENCE_KIND, threadId);
       useCopilotReviewRoundStore.getState().clearDangling(EXPERIENCE_KIND, threadId);
     }
     review.revertLastTurn();
@@ -567,6 +568,7 @@ function ExperienceEditorPane({
         acceptedHunkIds: new Set(),
         dismissedHunkIds: new Set(),
       }]).targets[0]?.roundId;
+      if (stored?.record.roundId === roundId && stored.record.outcome !== "awaiting") return [stored.record];
       const [record] = buildExperienceCopilotReviewSnapshot([{
         target,
         base: effective.base,
@@ -604,13 +606,7 @@ function ExperienceEditorPane({
   // XU-6: the creation stepper in the parent mirrors the shell's current
   // authoring position. `appearance` maps to the Visual code buffer; `try` to
   // the inline sandbox tab; anything else is Rules.
-  const activeStep = useMemo<ExperienceCopilotStep>(
-    () => (editorBuffer === "sandbox" ? "try" : codeBuffer === "visual" ? "appearance" : "rules"),
-    [editorBuffer, codeBuffer],
-  );
-  useEffect(() => {
-    onStepChange?.(activeStep);
-  }, [activeStep, onStepChange]);
+  const activeStep = useExperienceCopilotStep(editorBuffer, codeBuffer, onStepChange);
 
   // IR-90A: exactly one ExperiencePlayground element is shared by the inline
   // Try tab in both modes (the old sandbox modal is gone, XU-6). A single
