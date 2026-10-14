@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { getT, type TFunc } from "../i18n/locale-helpers.js";
+import { getT, type TFunc } from "../../../i18n/locale-helpers.js";
 import {
   answerCopilotAsk,
   streamExperienceCopilot,
   type CopilotAskAnswerInput,
   type CopilotStreamOpts,
-} from "../api/experience-copilot-api.js";
+} from "../../../api/experience-copilot-api.js";
 import {
   useExperienceCopilotTurnStore,
   parseTodoToolResult,
   parseTodoToolArgs,
   parseCopilotAskState,
-} from "../stores/experience-copilot-turn-store.js";
-import { parseAgentPlanToolResult } from "./use-agent-plan.js";
+} from "../../../stores/experience-copilot-turn-store.js";
+import { parseAgentPlanToolResult } from "../../../hooks/use-agent-plan.js";
 import {
   coauthorSkillReadOutputSchema,
   experienceCopilotToolOutputSchema,
@@ -23,7 +23,7 @@ import {
   type ExperienceCopilotContextMetrics,
   type CopilotTodoItem,
 } from "@vibe-tavern/api-contracts";
-import { ProviderStreamError } from "../api/provider-stream-error.js";
+import { ProviderStreamError } from "../../../api/provider-stream-error.js";
 
 /**
  * Experience-Copilot send/stream controller (EXPERIENCE_EDITOR_REFACTOR_PLAN,
@@ -43,7 +43,7 @@ import { ProviderStreamError } from "../api/provider-stream-error.js";
  * refetch persisted messages once a turn settles.
  */
 
-export interface UseExperienceCopilotControllerArgs {
+export interface UseAgentControllerArgs {
   threadId: string | null;
   providerProfileId: string | null;
   model?: string;
@@ -71,7 +71,7 @@ export interface UseExperienceCopilotControllerArgs {
 /** Live draft buffers + active authoring step to send with a copilot message so
  *  the model sees the current (possibly unsaved) source and knows which buffer
  *  the user is editing. */
-export interface ExperienceCopilotSendOptions {
+export interface AgentSendOptions {
   rules?: string;
   visual?: string;
   step?: ExperienceCopilotStep;
@@ -83,7 +83,7 @@ export interface ExperienceCopilotSendOptions {
   launchContext?: ExperienceCopilotLaunchContext;
 }
 
-export interface ExperienceCopilotController {
+export interface AgentController {
   isSending: boolean;
   /** Live assistant text accumulated from text-deltas this turn (cleared on settle). */
   pendingText: string;
@@ -105,16 +105,16 @@ export interface ExperienceCopilotController {
    *  lingering entry is harmless. A PRE-stream failure (validation 400 /
    *  network before the SSE opened) rolls it back: the backend never rewrote
    *  the row, so the card must return to interactive. */
-  pendingAskAnswer: ExperienceCopilotPendingAskAnswer | null;
-  handleSend: (content: string, opts?: ExperienceCopilotSendOptions) => Promise<void>;
+  pendingAskAnswer: AgentPendingAskAnswer | null;
+  handleSend: (content: string, opts?: AgentSendOptions) => Promise<void>;
   /** TAG-9: answer a pending `ask_user` question (style B split-turn) —
    *  streams the continuation with the `answer` body (no new user row). */
-  handleAnswer: (toolCallId: string, answer: CopilotAskAnswerInput, opts?: ExperienceCopilotSendOptions) => Promise<void>;
+  handleAnswer: (toolCallId: string, answer: CopilotAskAnswerInput, opts?: AgentSendOptions) => Promise<void>;
   handleCancel: () => void;
 }
 
 /** TAG-9: the optimistic resolution recorded when an ask card is submitted. */
-export interface ExperienceCopilotPendingAskAnswer {
+export interface AgentPendingAskAnswer {
   toolCallId: string;
   status: "answered" | "skipped";
   /** The answer text — present iff `status === "answered"`. */
@@ -164,9 +164,9 @@ function summarizeToolOutput(output: unknown): string {
   return JSON.stringify(output);
 }
 
-export function useExperienceCopilotController(
-  args: UseExperienceCopilotControllerArgs,
-): ExperienceCopilotController {
+export function useAgentController(
+  args: UseAgentControllerArgs,
+): AgentController {
   const { threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo } = args;
 
   const [isSending, setIsSending] = useState(false);
@@ -179,7 +179,7 @@ export function useExperienceCopilotController(
   const [pendingUserContent, setPendingUserContent] = useState("");
   // TAG-9: the optimistic resolution of the just-answered ask card (see the
   // interface doc for the rollback/convergence contract).
-  const [pendingAskAnswer, setPendingAskAnswer] = useState<ExperienceCopilotPendingAskAnswer | null>(null);
+  const [pendingAskAnswer, setPendingAskAnswer] = useState<AgentPendingAskAnswer | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Synchronous re-entrancy guard: `isSending` state flips on the next render,
   // so a rapid double-send in the same tick would otherwise both pass the
@@ -368,7 +368,7 @@ export function useExperienceCopilotController(
   });
 
   const handleSend = useCallback(
-    async (content: string, opts?: ExperienceCopilotSendOptions): Promise<void> => {
+    async (content: string, opts?: AgentSendOptions): Promise<void> => {
       const trimmed = content.trim();
 
       // Silent guards (no toast): empty content, missing thread, already sending.
@@ -447,7 +447,7 @@ export function useExperienceCopilotController(
   );
 
   const handleAnswer = useCallback(
-    async (toolCallId: string, answer: CopilotAskAnswerInput, opts?: ExperienceCopilotSendOptions): Promise<void> => {
+    async (toolCallId: string, answer: CopilotAskAnswerInput, opts?: AgentSendOptions): Promise<void> => {
       const text = answer.text?.trim();
       const skipped = answer.skipped === true;
 

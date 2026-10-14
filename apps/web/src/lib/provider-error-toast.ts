@@ -2,7 +2,7 @@
  * The RP chat controller's provider-error toast (extracted from
  * hooks/use-chat-controller.ts — the file-size ratchet). The experience
  * copilot controller keeps its own minimal replica (no provider-settings
- * action); see use-experience-copilot-controller.ts.
+ * action); see use-agent-controller.ts.
  */
 import { toast } from "sonner";
 import type { TFunc } from "../i18n/locale-helpers.js";

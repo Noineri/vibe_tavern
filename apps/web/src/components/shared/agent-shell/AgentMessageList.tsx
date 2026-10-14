@@ -9,7 +9,7 @@ import {
   type ExperienceCopilotToolActivity,
 } from "../../../stores/experience-copilot-turn-store.js";
 import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
-import type { ExperienceCopilotPendingAskAnswer } from "../../../hooks/use-experience-copilot-controller.js";
+import type { AgentPendingAskAnswer } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentAskCard } from "./AgentAskCard.js";
@@ -68,7 +68,7 @@ export interface AgentMessageListProps {
   onAnswer?: (toolCallId: string, answer: CopilotAskAnswerInput) => void;
   /** TAG-9: the controller's optimistic resolution of the just-answered ask —
    *  flips the card immediately, before the settle+refetch round-trip. */
-  pendingAskAnswer?: ExperienceCopilotPendingAskAnswer | null;
+  pendingAskAnswer?: AgentPendingAskAnswer | null;
 }
 
 export function AgentMessageList({

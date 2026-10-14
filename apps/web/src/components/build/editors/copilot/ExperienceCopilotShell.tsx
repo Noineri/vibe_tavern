@@ -18,7 +18,7 @@ import { useIsMobile } from "../../../../hooks/use-mobile.js";
 import { useT } from "../../../../i18n/context.js";
 import type { AgentPlanOwner } from "@vibe-tavern/domain";
 import type { CopilotTodoItem } from "@vibe-tavern/api-contracts";
-import { useExperienceCopilotController } from "../../../../hooks/use-experience-copilot-controller.js";
+import { useAgentController } from "../../../shared/agent-shell/use-agent-controller.js";
 import { useAgentPlan } from "../../../../hooks/use-agent-plan.js";
 import { useCopilotContext } from "../../../../hooks/use-copilot-context.js";
 import { useCopilotReviewState } from "../../../../hooks/use-copilot-review-state.js";
@@ -481,7 +481,7 @@ export function ExperienceCopilotShell({
     },
   });
 
-  const ctrl = useExperienceCopilotController({
+  const ctrl = useAgentController({
     threadId,
     providerProfileId,
     model,
