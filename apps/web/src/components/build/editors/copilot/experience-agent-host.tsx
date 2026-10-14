@@ -40,7 +40,7 @@ import {
 import type { AgentSendOptions } from "../../../shared/agent-shell/use-agent-controller.js";
 import { buildExperienceCopilotReviewSnapshot } from "../../../../lib/experience-copilot-review-snapshot.js";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
-import { recordExperienceReviewOutcome, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs, useExperienceCopilotVisualValidation, useExperienceReviewOutcomeRecorder } from "./use-experience-copilot-review.js";
+import { recordExperienceReviewOutcome, recordExperienceRevertedOutcomes, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs, useExperienceCopilotVisualValidation, useExperienceReviewOutcomeRecorder } from "./use-experience-copilot-review.js";
 
 /**
  * The `experience` agent host (AGENT_SHELL_PLAN AS-6b2) — the mini-app
@@ -534,10 +534,13 @@ function ExperienceEditorPane({
   }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, onVisualChange, cancelRoundHunks, threadId]);
 
   const handleToolbarRevert = useCallback(() => {
-    if (threadId) useCopilotReviewRoundStore.getState().clearDangling(EXPERIENCE_KIND, threadId);
+    if (threadId) {
+      recordExperienceRevertedOutcomes(EXPERIENCE_KIND, threadId, [{ target: "rules", review: rulesReview, accepted: acceptedRulesHunks, dismissed: dismissedRulesHunks }, { target: "visual", review: visualReview, accepted: acceptedVisualHunks, dismissed: dismissedVisualHunks }]);
+      useCopilotReviewRoundStore.getState().clearDangling(EXPERIENCE_KIND, threadId);
+    }
     review.revertLastTurn();
     toast.success(t("copilot_review_reverted"));
-  }, [review, t, threadId]);
+  }, [review, t, threadId, rulesReview, visualReview, acceptedRulesHunks, acceptedVisualHunks, dismissedRulesHunks, dismissedVisualHunks]);
 
   // ── The bridge session handle ────────────────────────────────────────────
   // Assigned every render (the latest-callback-ref pattern the captureDangling

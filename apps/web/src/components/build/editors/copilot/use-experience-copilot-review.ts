@@ -115,3 +115,24 @@ export function recordExperienceReviewOutcome({ kind, threadId, target, bufferRe
     cancelled,
   });
 }
+
+/** Marks every active target cancelled before a revert drops its live proposal. */
+export function recordExperienceRevertedOutcomes(kind: AgentKind, threadId: string, targets: ReadonlyArray<{
+  target: "rules" | "visual";
+  review: CopilotBufferReview | null;
+  accepted: ReadonlySet<number>;
+  dismissed: ReadonlySet<number>;
+}>): void {
+  for (const { target, review, accepted, dismissed } of targets) {
+    if (!review) continue;
+    recordExperienceReviewOutcome({
+      kind,
+      threadId,
+      target,
+      bufferReview: review,
+      accepted,
+      dismissed: new Set([...dismissed, ...allReviewHunkIds(review)]),
+      cancelled: true,
+    });
+  }
+}
