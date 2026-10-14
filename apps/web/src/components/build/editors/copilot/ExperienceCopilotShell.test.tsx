@@ -35,6 +35,8 @@ interface RouterState {
   newSession: ExperienceCopilotThreadWire;
   activateReturns: ExperienceCopilotThreadWire | null;
   streamEvents: string[];
+  /** Fail this many following POST stream requests before opening their SSE body. */
+  nextStreamFailures: number;
   /** Per-thread messages override (session-switcher test); falls back to `messages`. */
   messagesFor?: (threadId: string) => ExperienceCopilotMessageWire[];
   /** Hold the SSE stream open (freeze test): no events until `releaseStream()`. */
@@ -125,6 +127,10 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
     return jsonResponse({ digest: makeDigest(threadId), metrics: null });
   }
   if (method === "POST" && /\/api\/experience-copilot\/[^/]+\/stream$/.test(path)) {
+    if (router.nextStreamFailures > 0) {
+      router.nextStreamFailures--;
+      return new Response(JSON.stringify({ error: { message: "pre-stream failure" } }), { status: 400 });
+    }
     if (router.holdStreamOpen) {
       return new Response(
         new ReadableStream<Uint8Array>({
@@ -345,6 +351,7 @@ let EditorState: typeof import("@codemirror/state").EditorState;
 
 const realFetch = globalThis.fetch;
 const outcomesBeforeShellSuite = useAgentReviewOutcomeStore.getState().outcomesByThread;
+const supersededBeforeShellSuite = useAgentReviewOutcomeStore.getState().supersededByThread;
 beforeAll(async () => {
   globalThis.fetch = fetchRouter as unknown as typeof globalThis.fetch;
   ({ render, fireEvent, waitFor, act } = await import("@testing-library/react"));
@@ -354,7 +361,7 @@ beforeAll(async () => {
 });
 afterAll(() => {
   globalThis.fetch = realFetch;
-  useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeShellSuite });
+  useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeShellSuite, supersededByThread: supersededBeforeShellSuite });
 });
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -409,6 +416,7 @@ function hasHiddenClass(el: HTMLElement): boolean {
 beforeEach(() => {
   mobileOverride = false;
   useExperienceCopilotTurnStore.setState({ turnsByThread: {}, todoByThread: {} });
+  useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeShellSuite, supersededByThread: supersededBeforeShellSuite });
   // The review round + the persisted localStorage draft now SURVIVE shell
   // unmounts (the whole point of the round store) — reset both, or a
   // previous test's hanging review leaks into the next mount.
@@ -430,6 +438,7 @@ beforeEach(() => {
     newSession: thread("thread-new"),
     activateReturns: null,
     streamEvents: [FINISH_STOP],
+    nextStreamFailures: 0,
     holdStreamOpen: false,
     releaseStream: null,
     contextLinks: [],
@@ -1471,6 +1480,29 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
   }
 
+  function awaitingAskMessages(threadId: string): ExperienceCopilotMessageWire[] {
+    const toolCallId = "ro4-ask-tool-call";
+    const question = "Which buffer should change?";
+    const options = ["Rules", "Visual"];
+    return [
+      msg({ id: "ro4-ask-user", threadId, role: "user", content: "Please clarify" }),
+      msg({
+        id: "ro4-ask-carrier",
+        threadId,
+        role: "assistant",
+        content: "",
+        toolCallsJson: JSON.stringify([{ type: "tool-call", toolCallId, toolName: "ask_user", input: { question, options, recommended: "Rules" } }]),
+      }),
+      msg({
+        id: "ro4-ask-result",
+        threadId,
+        role: "tool",
+        toolCallId,
+        content: JSON.stringify({ toolName: "ask_user", output: { status: "awaiting_answer", question, options, recommended: "Rules" } }),
+      }),
+    ];
+  }
+
   it("toolbar revert of a fully accepted round reports cancelled on two following HTTP turns", async () => {
     const threadId = "ro4-supervisor-full-revert";
     router.newSession = thread(threadId);
@@ -1570,6 +1602,60 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
       outcome: "superseded",
       supersededByRound: current?.roundId,
     });
+  });
+
+  it("retries a failed normal send with the same partial review snapshot and independent save flags", async () => {
+    const threadId = "ro4-normal-retry";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+
+    router.nextStreamFailures = 1;
+    const failed = await sendFollowup(utils, "retry this review", 2);
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+    const retried = await sendFollowup(utils, "retry this review", 3);
+    const failedReview = failed.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    const retriedReview = retried.reviewSnapshot?.targets.find((target) => target.target === "rules");
+
+    expect(failed).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(retried).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(failedReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
+    expect(retriedReview).toEqual(failedReview);
+    expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1);
+  });
+
+  it("rolls back a failed ask answer and retries its review snapshot through the rendered ask card", async () => {
+    const threadId = "ro4-ask-retry";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+
+    router.messages = awaitingAskMessages(threadId);
+    await sendFollowup(utils, "show the question", 2);
+    await waitFor(() => expect(utils.getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("awaiting"));
+
+    router.nextStreamFailures = 1;
+    fireEvent.click(utils.getByTestId("copilot-ask-chip-0"));
+    await waitFor(() => expect(streamCalls()).toHaveLength(3));
+    await waitFor(() => expect(utils.getByTestId("copilot-ask-card").getAttribute("data-state")).toBe("awaiting"));
+    const failed = experienceCopilotStreamRequestSchema.parse(streamCalls()[2]!.body);
+
+    fireEvent.click(utils.getByTestId("copilot-ask-chip-0"));
+    await waitFor(() => expect(streamCalls()).toHaveLength(4));
+    const retried = experienceCopilotStreamRequestSchema.parse(streamCalls()[3]!.body);
+    const failedReview = failed.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    const retriedReview = retried.reviewSnapshot?.targets.find((target) => target.target === "rules");
+
+    expect(failed.answer).toEqual({ toolCallId: "ro4-ask-tool-call", text: "Rules" });
+    expect(retried.answer).toEqual(failed.answer);
+    expect(failed).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(retried).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(failedReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
+    expect(retriedReview).toEqual(failedReview);
   });
 });
 
