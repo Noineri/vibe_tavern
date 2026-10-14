@@ -14,14 +14,17 @@ export interface ExperienceReviewTargetInput {
   cancelled?: boolean;
 }
 
-/** Browser-safe, deterministic FNV-1a identifier for review content. */
+/** Browser-safe deterministic content identifier over every UTF-16 code unit. */
 export function experienceReviewRoundId(base: string, proposed: string): string {
-  let hash = 0x811c9dc5;
-  for (const char of `${base}\u0000${proposed}`) {
-    hash ^= char.charCodeAt(0);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
+  const input = `${base}\u0000${proposed}`;
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < input.length; index++) {
+    const code = input.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193) >>> 0;
+    second = Math.imul(second ^ (code + index), 0x85ebca6b) >>> 0;
   }
-  return hash.toString(16).padStart(8, "0");
+  return `${first.toString(16).padStart(8, "0")}${(second >>> 16).toString(16).padStart(4, "0")}`;
 }
 
 /**
@@ -66,7 +69,7 @@ function buildTarget(input: ExperienceReviewTargetInput): ReviewTargetRecord {
     ? "cancelled"
     : appliedCount === 0
       ? rejected > 0 && pending === 0 ? "rejected" : "awaiting"
-      : pending === 0 ? "applied" : "applied-partial";
+    : pending === 0 && rejected === 0 ? "applied" : "applied-partial";
 
   return {
     target: input.target,

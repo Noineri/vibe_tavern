@@ -40,4 +40,26 @@ describe("experience copilot review snapshot", () => {
     expect(pending.targets[0]!.hunks).toEqual({ accepted: 0, rejected: 0, pending: 1 });
     expect(applied.targets[0]!.outcome).toBe("applied");
   });
+
+  it("keeps earlier local applications cumulative across successive accepts", () => {
+    const snapshot = buildExperienceCopilotReviewSnapshot([{
+      target: "rules", base: "before", proposed: "after", offeredHunkIds: [0, 1],
+      acceptedHunkIds: new Set([0, 1]), dismissedHunkIds: new Set(), appliedHunkIds: new Set([0, 1]),
+    }]);
+    expect(snapshot.targets[0]).toMatchObject({ outcome: "applied", hunks: { accepted: 2, rejected: 0, pending: 0 } });
+  });
+
+  it("reports an applied-and-rejected resolved round as partial, not fully applied", () => {
+    const snapshot = buildExperienceCopilotReviewSnapshot([{
+      target: "rules", base: "before", proposed: "after", offeredHunkIds: [0, 1],
+      acceptedHunkIds: new Set([0]), dismissedHunkIds: new Set([1]), appliedHunkIds: new Set([0]),
+    }]);
+    expect(snapshot.targets[0]).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 1, pending: 0 } });
+  });
+
+  it("hashes complete unicode content into a twelve-hex round id", () => {
+    expect(experienceReviewRoundId("", "😀")).not.toBe(experienceReviewRoundId("", "😁"));
+    expect(experienceReviewRoundId("base", "next")).not.toBe(experienceReviewRoundId("base!", "next"));
+    expect(experienceReviewRoundId("base", "next")).toMatch(/^[a-f\d]{12}$/);
+  });
 });

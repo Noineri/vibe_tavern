@@ -41,7 +41,7 @@ import {
 import type { AgentSendOptions } from "../../../shared/agent-shell/use-agent-controller.js";
 import { buildExperienceCopilotReviewSnapshot } from "../../../../lib/experience-copilot-review-snapshot.js";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
-import { useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs } from "./use-experience-copilot-review.js";
+import { recordExperienceAppliedOutcome, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs } from "./use-experience-copilot-review.js";
 
 /**
  * The `experience` agent host (AGENT_SHELL_PLAN AS-6b2) — the mini-app
@@ -330,26 +330,8 @@ function ExperienceEditorPane({
     [effVisual, acceptedVisualHunks, dismissedVisualHunks, isSending],
   );
 
-  const recordAppliedOutcome = useCallback((
-    target: "rules" | "visual",
-    bufferReview: CopilotBufferReview,
-    accepted: ReadonlySet<number>,
-    dismissed: ReadonlySet<number>,
-    applied: ReadonlySet<number>,
-    cancelled = false,
-  ) => {
-    if (!threadId) return;
-    const [record] = buildExperienceCopilotReviewSnapshot([{
-      target,
-      base: bufferReview.base,
-      proposed: bufferReview.proposed,
-      offeredHunkIds: [...allReviewHunkIds(bufferReview)],
-      acceptedHunkIds: accepted,
-      dismissedHunkIds: dismissed,
-      appliedHunkIds: applied,
-      cancelled,
-    }]).targets;
-    if (record) useAgentReviewOutcomeStore.getState().record(EXPERIENCE_KIND, threadId, record);
+  const recordAppliedOutcome = useCallback((target: "rules" | "visual", bufferReview: CopilotBufferReview, accepted: ReadonlySet<number>, dismissed: ReadonlySet<number>, applied: ReadonlySet<number>, cancelled = false) => {
+    if (threadId) recordExperienceAppliedOutcome({ kind: EXPERIENCE_KIND, threadId, target, bufferReview, accepted, dismissed, applied, cancelled });
   }, [threadId]);
 
   // UX 2026-08-16 remark 6 — static validation of the EFFECTIVE visual document:
@@ -567,6 +549,9 @@ function ExperienceEditorPane({
       if (effective.base === undefined || effective.proposed === undefined) return [];
       const fullReview = buildBufferReview(effective.base, effective.proposed, new Set(), true);
       if (!fullReview) return [];
+      const stored = threadId
+        ? useAgentReviewOutcomeStore.getState().outcomesByThread[agentThreadKey(EXPERIENCE_KIND, threadId)]?.[target]
+        : undefined;
       const [record] = buildExperienceCopilotReviewSnapshot([{
         target,
         base: effective.base,
@@ -574,10 +559,16 @@ function ExperienceEditorPane({
         offeredHunkIds: [...allReviewHunkIds(fullReview)],
         acceptedHunkIds: accepted,
         dismissedHunkIds: dismissed,
+        appliedHunkIds: new Set(stored?.appliedHunkIds ?? []),
       }]).targets;
-      const saved = threadId ? useAgentReviewOutcomeStore.getState().get(EXPERIENCE_KIND, threadId, target) : undefined;
-      return [saved?.roundId === record!.roundId ? saved : record!];
+      return [record!];
     });
+    if (threadId) {
+      const stored = useAgentReviewOutcomeStore.getState().outcomesByThread[agentThreadKey(EXPERIENCE_KIND, threadId)] ?? {};
+      for (const outcome of Object.values(stored)) {
+        if (outcome && !targets.some((target) => target.target === outcome.record.target)) targets.push(outcome.record);
+      }
+    }
     return {
       rules: rulesCode,
       visual: visualSource,
