@@ -19,22 +19,22 @@
  * is pinned.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
-import { useCopilotProfileStore } from "../../../../stores/copilot-profile-store.js";
-import { useCopilotSkillStore } from "../../../../stores/copilot-skill-store.js";
+import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
+import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import type { CopilotProfile, CopilotProfileCreate, CopilotProfileUpdate } from "@vibe-tavern/api-contracts";
 
 // ── SAFE module mocks (capture real first, spread `...real`) ───────────────
-const realI18nContext = await import("../../../../i18n/context.js");
-const realProfileApi = await import("../../../../api/copilot-profile-api.js");
-const realSkillApi = await import("../../../../api/copilot-skill-api.js");
-const realMasterDetailModal = await import("../../../shared/MasterDetailModal.js");
-const realDestructiveConfirmModal = await import("../../../shared/destructive-confirm-modal.js");
+const realI18nContext = await import("../../../i18n/context.js");
+const realProfileApi = await import("../../../api/copilot-profile-api.js");
+const realSkillApi = await import("../../../api/copilot-skill-api.js");
+const realMasterDetailModal = await import("../MasterDetailModal.js");
+const realDestructiveConfirmModal = await import("../destructive-confirm-modal.js");
 
-mock.module("../../../../i18n/context.js", () => ({
+mock.module("../../../i18n/context.js", () => ({
 	...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
@@ -65,7 +65,7 @@ const updateCopilotProfile = mock(async (_id: string, _input: CopilotProfileUpda
 const deleteCopilotProfile = mock(async (_id: string) => undefined);
 const setCopilotProfile = mock(async (_scriptId: string, _profileId: string | null) => undefined);
 
-mock.module("../../../../api/copilot-profile-api.js", () => ({
+mock.module("../../../api/copilot-profile-api.js", () => ({
 	...realProfileApi,
 	listCopilotProfiles,
 	createCopilotProfile,
@@ -81,7 +81,7 @@ const SKILL_CATALOG = {
 	errors: [],
 };
 const listCopilotSkills = mock(() => Promise.resolve(SKILL_CATALOG));
-mock.module("../../../../api/copilot-skill-api.js", () => ({
+mock.module("../../../api/copilot-skill-api.js", () => ({
 	...realSkillApi,
 	listCopilotSkills,
 	readCopilotSkill: mock(),
@@ -90,7 +90,7 @@ mock.module("../../../../api/copilot-skill-api.js", () => ({
 }));
 
 // MasterDetailModal passthrough (render master + detail + footer + headerActions flat).
-mock.module("../../../shared/MasterDetailModal.js", () => ({
+mock.module("../MasterDetailModal.js", () => ({
 	...realMasterDetailModal,
 	MasterDetailModal: ({ isOpen, onClose, masterContent, detailContent, footer, headerActions }: {
 		isOpen: boolean;
@@ -116,7 +116,7 @@ mock.module("../../../shared/MasterDetailModal.js", () => ({
 	useMasterDetail: () => ({ isMobile: false, isDetailOpen: true, openDetail: () => {}, closeDetail: () => {} }),
 }));
 
-mock.module("../../../shared/destructive-confirm-modal.js", () => ({
+mock.module("../destructive-confirm-modal.js", () => ({
 	...realDestructiveConfirmModal,
 	DestructiveConfirmModal: ({ title, confirmLabel, onConfirm, onCancel }: {
 		title: string; body: React.ReactNode; confirmLabel: string;
@@ -130,9 +130,9 @@ mock.module("../../../shared/destructive-confirm-modal.js", () => ({
 	),
 }));
 
-let CopilotProfileModal: typeof import("./CopilotProfileModal.js").CopilotProfileModal;
+let AgentProfileModal: typeof import("./AgentProfileModal.js").AgentProfileModal;
 beforeAll(async () => {
-	({ CopilotProfileModal } = await import("./CopilotProfileModal.js"));
+	({ AgentProfileModal } = await import("./AgentProfileModal.js"));
 });
 
 beforeEach(() => {
@@ -165,7 +165,7 @@ function renderModal(over: { scriptId?: string; assignedProfileId?: string | nul
 		onClose: mock(),
 		...over,
 	};
-	const utils = render(<CopilotProfileModal {...props} />);
+	const utils = render(<AgentProfileModal {...props} />);
 	return { ...utils, props };
 }
 

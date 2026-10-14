@@ -1,22 +1,22 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
-import { useDomEnv } from "../../../../../test/dom-env.js";
-import type { CopilotAskState } from "../../../../stores/experience-copilot-turn-store.js";
-import type { CopilotAskAnswerInput } from "../../../../api/experience-copilot-api.js";
-import en from "../../../../i18n/locales/en.json";
-import ru from "../../../../i18n/locales/ru.json";
+import { useDomEnv } from "../../../../test/dom-env.js";
+import type { CopilotAskState } from "../../../stores/experience-copilot-turn-store.js";
+import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
+import en from "../../../i18n/locales/en.json";
+import ru from "../../../i18n/locales/ru.json";
 
 useDomEnv();
 
 // CustomTooltip wraps children in a Radix Tooltip that never anchors under
 // happy-dom (same reason the panel + shell tests mock it). Render children
 // inline — this test pins the card's render contract, not tooltip internals.
-mock.module("../../../../components/shared/Tooltip.js", () => ({
+mock.module("../../../components/shared/Tooltip.js", () => ({
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 const { render, fireEvent } = await import("@testing-library/react");
-const { CopilotAskCard } = await import("./CopilotAskCard.js");
+const { AgentAskCard } = await import("./AgentAskCard.js");
 
 function ask(over: Partial<CopilotAskState>): CopilotAskState {
   return {
@@ -32,7 +32,7 @@ function renderCard(askState: CopilotAskState, opts?: { interactive?: boolean; o
   const calls: CopilotAskAnswerInput[] = [];
   const onSubmit = opts?.onSubmit ?? ((a: CopilotAskAnswerInput) => calls.push(a));
   const utils = render(
-    <CopilotAskCard ask={askState} interactive={opts?.interactive ?? true} onSubmit={onSubmit} />,
+    <AgentAskCard ask={askState} interactive={opts?.interactive ?? true} onSubmit={onSubmit} />,
   );
   return { ...utils, calls };
 }

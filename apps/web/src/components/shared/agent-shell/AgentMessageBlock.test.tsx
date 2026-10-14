@@ -5,7 +5,7 @@
  * covered by the message-list test; this file isolates the role-dispatch.
  */
 import { beforeAll, describe, expect, it, mock } from "bun:test";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
@@ -13,19 +13,19 @@ useDomEnv();
 // Markdown is heavy and pinned elsewhere; the digest card renders the raw
 // summary text (not through Markdown), but the block still imports it — stub it
 // so the digest path has a deterministic DOM.
-const realMarkdown = await import("../../../../lib/markdown.js");
-mock.module("../../../../lib/markdown.js", () => ({
+const realMarkdown = await import("../../../lib/markdown.js");
+mock.module("../../../lib/markdown.js", () => ({
   ...realMarkdown,
   Markdown: ({ text }: { text: string }) => <div>{text}</div>,
 }));
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
-let ExperienceCopilotMessageBlock: typeof import("./ExperienceCopilotMessageBlock.js").ExperienceCopilotMessageBlock;
+let AgentMessageBlock: typeof import("./AgentMessageBlock.js").AgentMessageBlock;
 
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
-  ({ ExperienceCopilotMessageBlock } = await import("./ExperienceCopilotMessageBlock.js"));
+  ({ AgentMessageBlock } = await import("./AgentMessageBlock.js"));
 });
 
 function digestMsg(over: Partial<ExperienceCopilotMessageWire> = {}): ExperienceCopilotMessageWire {
@@ -44,7 +44,7 @@ function digestMsg(over: Partial<ExperienceCopilotMessageWire> = {}): Experience
 describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
   it("renders a collapsed digest card by default (summary hidden)", () => {
     const { getByTestId, queryByTestId, getByText } = render(
-      <ExperienceCopilotMessageBlock message={digestMsg()} coveredCount={3} />,
+      <AgentMessageBlock message={digestMsg()} coveredCount={3} />,
     );
 
     expect(getByTestId("copilot-digest-card")).toBeDefined();
@@ -55,7 +55,7 @@ describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
 
   it("expands on click to reveal the summary text and collapses again", () => {
     const { getByTestId, queryByTestId } = render(
-      <ExperienceCopilotMessageBlock message={digestMsg()} coveredCount={3} />,
+      <AgentMessageBlock message={digestMsg()} coveredCount={3} />,
     );
 
     fireEvent.click(getByTestId("copilot-digest-card-toggle"));
@@ -68,7 +68,7 @@ describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
 
   it("carries the covered count on the card for the caption", () => {
     const { getByTestId } = render(
-      <ExperienceCopilotMessageBlock message={digestMsg()} coveredCount={12} />,
+      <AgentMessageBlock message={digestMsg()} coveredCount={12} />,
     );
 
     expect(getByTestId("copilot-digest-card-toggle").getAttribute("data-covered-count")).toBe("12");
@@ -76,7 +76,7 @@ describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
 
   it("renders an assistant bubble for a normal assistant message (no digest chrome)", () => {
     const { queryByTestId, getByText } = render(
-      <ExperienceCopilotMessageBlock
+      <AgentMessageBlock
         message={{ ...digestMsg(), id: "a1", role: "assistant", toolCallId: null }}
       />,
     );
@@ -87,7 +87,7 @@ describe("ExperienceCopilotMessageBlock — digest card (CM-9)", () => {
 
   it("returns nothing for an empty assistant tool-call carrier turn", () => {
     const { container } = render(
-      <ExperienceCopilotMessageBlock
+      <AgentMessageBlock
         message={{ ...digestMsg(), id: "a2", role: "assistant", content: "" }}
       />,
     );

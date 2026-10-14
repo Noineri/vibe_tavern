@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
@@ -21,11 +21,11 @@ mock.module("@radix-ui/react-popover", () => ({
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
-let ExperienceSessionSwitcher: typeof import("./ExperienceSessionSwitcher.js").ExperienceSessionSwitcher;
+let AgentSessionSwitcher: typeof import("./AgentSessionSwitcher.js").AgentSessionSwitcher;
 
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
-  ({ ExperienceSessionSwitcher } = await import("./ExperienceSessionSwitcher.js"));
+  ({ AgentSessionSwitcher } = await import("./AgentSessionSwitcher.js"));
 });
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ const SESSIONS: ExperienceCopilotThreadWire[] = [
   session("t2", { archivedAt: "2026-08-11T10:00:00Z" }),
 ];
 
-function renderSwitcher(over: Partial<Parameters<typeof ExperienceSessionSwitcher>[0]> = {}) {
+function renderSwitcher(over: Partial<Parameters<typeof AgentSessionSwitcher>[0]> = {}) {
   const props = {
     sessions: SESSIONS,
     activeThreadId: "t1",
@@ -63,7 +63,7 @@ function renderSwitcher(over: Partial<Parameters<typeof ExperienceSessionSwitche
     onRename: mock(),
     ...over,
   };
-  const utils = render(<ExperienceSessionSwitcher {...props} />);
+  const utils = render(<AgentSessionSwitcher {...props} />);
   return { ...utils, props };
 }
 

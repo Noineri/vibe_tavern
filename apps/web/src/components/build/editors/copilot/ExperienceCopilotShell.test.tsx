@@ -305,10 +305,10 @@ mock.module("../../../../hooks/use-mobile.js", () => ({
 // The copilot profile modal (opened by the session-line gear) is tested in its
 // own suite — stub it here so the gear test only pins the gear → modal wiring
 // (click sets profileModalOpen → the modal mounts). SAFE: capture real first.
-const realCopilotProfileModal = await import("./CopilotProfileModal.js");
-mock.module("./CopilotProfileModal.js", () => ({
+const realCopilotProfileModal = await import("../../../shared/agent-shell/AgentProfileModal.js");
+mock.module("../../../shared/agent-shell/AgentProfileModal.js", () => ({
   ...realCopilotProfileModal,
-  CopilotProfileModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="copilot-profile-modal-stub" /> : null),
+  AgentProfileModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-testid="copilot-profile-modal-stub" /> : null),
 }));
 
 // Radix Popover.Content never mounts under happy-dom (Popper anchors via a 0x0

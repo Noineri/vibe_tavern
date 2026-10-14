@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, mock } from "bun:test";
 import type { ReactNode } from "react";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
 import type { ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
 
 useDomEnv();
@@ -8,7 +8,7 @@ useDomEnv();
 // CustomTooltip wraps children in a Radix Tooltip that never anchors under
 // happy-dom (same reason the shell test mocks it). Render children inline — the
 // meter test pins the track/segment/control contract, not tooltip internals.
-mock.module("../../../../components/shared/Tooltip.js", () => ({
+mock.module("../../../components/shared/Tooltip.js", () => ({
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
@@ -16,7 +16,7 @@ mock.module("../../../../components/shared/Tooltip.js", () => ({
 // test drives it deterministically without Radix's happy-dom anchoring.
 // (Toggle's own behaviour is pinned in Toggle.test.tsx — a full replacement
 // here cannot leak because apps/web runs each test file in its own process.)
-mock.module("../../../../components/shared/Toggle.js", () => ({
+mock.module("../../../components/shared/Toggle.js", () => ({
   Toggle: ({
     checked,
     onChange,
@@ -38,11 +38,11 @@ mock.module("../../../../components/shared/Toggle.js", () => ({
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
-let ExperienceContextMeter: typeof import("./ExperienceContextMeter.js").ExperienceContextMeter;
+let AgentContextMeter: typeof import("./AgentContextMeter.js").AgentContextMeter;
 
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
-  ({ ExperienceContextMeter } = await import("./ExperienceContextMeter.js"));
+  ({ AgentContextMeter } = await import("./AgentContextMeter.js"));
 });
 
 function metrics(over: Partial<ExperienceCopilotContextMetrics> = {}): ExperienceCopilotContextMetrics {
@@ -60,7 +60,7 @@ function metrics(over: Partial<ExperienceCopilotContextMetrics> = {}): Experienc
   };
 }
 
-function renderMeter(over: Partial<Parameters<typeof ExperienceContextMeter>[0]> = {}) {
+function renderMeter(over: Partial<Parameters<typeof AgentContextMeter>[0]> = {}) {
   const props = {
     metrics: metrics(),
     autoCompact: true,
@@ -70,7 +70,7 @@ function renderMeter(over: Partial<Parameters<typeof ExperienceContextMeter>[0]>
     onToggleAutoCompact: mock(),
     ...over,
   };
-  const utils = render(<ExperienceContextMeter {...props} />);
+  const utils = render(<AgentContextMeter {...props} />);
   return { ...utils, props };
 }
 

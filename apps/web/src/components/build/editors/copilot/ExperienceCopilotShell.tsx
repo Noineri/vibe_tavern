@@ -47,15 +47,15 @@ import type { ScriptRecord } from "../../../../api/types.js";
 import { useSnapshotStore } from "../../../../stores/snapshot-store.js";
 import type { MentionAutocompleteItem } from "../../../shared/mention-autocomplete-query.js";
 import { CopilotChatHeader } from "./CopilotChatHeader.js";
-import { ExperienceContextMeter } from "./ExperienceContextMeter.js";
+import { AgentContextMeter } from "../../../shared/agent-shell/AgentContextMeter.js";
 import { CopilotTodoSection } from "./CopilotTodoSection.js";
 import { CopilotPlanSection } from "./CopilotPlanSection.js";
-import { CopilotProfileModal } from "./CopilotProfileModal.js";
-import { ExperienceCopilotMessageList } from "./ExperienceCopilotMessageList.js";
-import { ExperienceCopilotInputArea } from "./ExperienceCopilotInputArea.js";
-import { ExperienceCopilotMobileInputArea } from "./ExperienceCopilotMobileInputArea.js";
+import { AgentProfileModal } from "../../../shared/agent-shell/AgentProfileModal.js";
+import { AgentMessageList } from "../../../shared/agent-shell/AgentMessageList.js";
+import { AgentInputArea } from "../../../shared/agent-shell/AgentInputArea.js";
+import { AgentMobileInputArea } from "../../../shared/agent-shell/AgentMobileInputArea.js";
 import { TabButton, ToolbarButton } from "./experience-copilot-buttons.js";
-import type { CopilotContextPillItem } from "./CopilotContextPills.js";
+import type { AgentContextPillItem } from "../../../shared/agent-shell/AgentContextPills.js";
 import {
   allReviewHunkIds,
   applyHunksToBuffer,
@@ -268,7 +268,7 @@ export function ExperienceCopilotShell({
 
   // Pills: resolve each link's display label from the catalog; a dangling
   // target (deleted entity) falls back to the raw id.
-  const pinnedContext = useMemo<CopilotContextPillItem[]>(
+  const pinnedContext = useMemo<AgentContextPillItem[]>(
     () =>
       contextLinks.map((l) => ({
         targetType: l.targetType,
@@ -1042,7 +1042,7 @@ export function ExperienceCopilotShell({
             onRename={handleRenameSession}
             onOpenProfile={() => setProfileModalOpen(true)}
           />
-          <ExperienceContextMeter
+          <AgentContextMeter
             metrics={copilotContext.metrics}
             autoCompact={copilotContext.autoCompact}
             isCompacting={copilotContext.isCompacting}
@@ -1071,7 +1071,7 @@ export function ExperienceCopilotShell({
               turn streams. PM-7: todo (the thread's session) ABOVE plan (the
               script's durable document) — each hides itself when empty. */}
           <CopilotPlanSection owner={planOwner} locked={ctrl.isSending} />
-          <ExperienceCopilotMessageList
+          <AgentMessageList
             threadId={threadId}
             messages={messages}
             pendingText={ctrl.pendingText}
@@ -1093,7 +1093,7 @@ export function ExperienceCopilotShell({
             }}
           />
           {isMobile ? (
-            <ExperienceCopilotMobileInputArea
+            <AgentMobileInputArea
               isSending={ctrl.isSending}
               prefill={inputPrefill ?? undefined}
               onSend={(content) => {
@@ -1118,7 +1118,7 @@ export function ExperienceCopilotShell({
               onUnpinContext={handleUnpinContext}
             />
           ) : (
-            <ExperienceCopilotInputArea
+            <AgentInputArea
               isSending={ctrl.isSending}
               prefill={inputPrefill ?? undefined}
               onSend={(content) => {
@@ -1290,7 +1290,7 @@ export function ExperienceCopilotShell({
   // sandbox's diagnostics (XU-4) — so no sandbox modal remains.
   const modals = (
     <>
-      <CopilotProfileModal
+      <AgentProfileModal
         scriptId={scriptId}
         assignedProfileId={assignedProfileId}
         isOpen={profileModalOpen}

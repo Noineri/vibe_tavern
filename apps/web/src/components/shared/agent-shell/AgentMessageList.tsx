@@ -7,17 +7,17 @@ import {
   type CopilotAskState,
   type CopilotFeedEntry,
   type ExperienceCopilotToolActivity,
-} from "../../../../stores/experience-copilot-turn-store.js";
-import type { CopilotAskAnswerInput } from "../../../../api/experience-copilot-api.js";
-import type { ExperienceCopilotPendingAskAnswer } from "../../../../hooks/use-experience-copilot-controller.js";
-import { orderMessagesWithDigests } from "../../../../lib/copilot-context.js";
-import { ExperienceCopilotMessageBlock } from "./ExperienceCopilotMessageBlock.js";
-import { CopilotAskCard } from "./CopilotAskCard.js";
-import { CopilotToolAccordion } from "./CopilotToolAccordion.js";
-import { MessageReasoning } from "../../../chat/MessageReasoning.js";
-import { Icons } from "../../../shared/icons.js";
-import { EmptyState } from "../../../shared/empty-state.js";
-import { useT } from "../../../../i18n/context.js";
+} from "../../../stores/experience-copilot-turn-store.js";
+import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
+import type { ExperienceCopilotPendingAskAnswer } from "../../../hooks/use-experience-copilot-controller.js";
+import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
+import { AgentMessageBlock } from "./AgentMessageBlock.js";
+import { AgentAskCard } from "./AgentAskCard.js";
+import { AgentToolAccordion } from "./AgentToolAccordion.js";
+import { MessageReasoning } from "../../chat/MessageReasoning.js";
+import { Icons } from "../icons.js";
+import { EmptyState } from "../empty-state.js";
+import { useT } from "../../../i18n/context.js";
 
 const EMPTY: ExperienceCopilotToolActivity[] = [];
 const EMPTY_FEED: CopilotFeedEntry[] = [];
@@ -49,7 +49,7 @@ const EMPTY_ITEMS: CopilotTurnAnchorItem[] = [];
  * plain scroll container rather than the chat `MessageScroller` (which is bound
  * to the RP chat stores).
  */
-export interface ExperienceCopilotMessageListProps {
+export interface AgentMessageListProps {
   threadId: string;
   messages: ExperienceCopilotMessageWire[];
   /** Live assistant text accumulated this turn (cleared by the shell on settle). */
@@ -71,7 +71,7 @@ export interface ExperienceCopilotMessageListProps {
   pendingAskAnswer?: ExperienceCopilotPendingAskAnswer | null;
 }
 
-export function ExperienceCopilotMessageList({
+export function AgentMessageList({
   threadId,
   messages,
   pendingText,
@@ -80,7 +80,7 @@ export function ExperienceCopilotMessageList({
   isSending = false,
   onAnswer,
   pendingAskAnswer = null,
-}: ExperienceCopilotMessageListProps) {
+}: AgentMessageListProps) {
   const { t } = useT();
   const activities = useExperienceCopilotTurnStore(
     useShallow((s) => s.turnsByThread[threadId] ?? EMPTY),
@@ -200,7 +200,7 @@ export function ExperienceCopilotMessageList({
           }
         : ask;
     return (
-      <CopilotAskCard
+      <AgentAskCard
         key={activity.toolCallId}
         ask={resolved}
         interactive={
@@ -221,7 +221,7 @@ export function ExperienceCopilotMessageList({
   const renderAnchorItems = (items: readonly CopilotTurnAnchorItem[]) =>
     items.map((item) =>
       item.kind === "accordion" ? (
-        <CopilotToolAccordion
+        <AgentToolAccordion
           key={item.activities[0]!.toolCallId}
           activities={item.activities}
           isSending={false}
@@ -292,7 +292,7 @@ export function ExperienceCopilotMessageList({
           {visibleMessages.map((entry) => (
             <Fragment key={entry.message.id}>
               {renderAnchorItems(anchorItems.get(entry.message.id) ?? EMPTY_ITEMS)}
-              <ExperienceCopilotMessageBlock
+              <AgentMessageBlock
                 message={entry.message}
                 coveredCount={entry.coveredCount}
               />
@@ -302,7 +302,7 @@ export function ExperienceCopilotMessageList({
           {renderAnchorItems(trailingItems)}
 
           {hasPendingUserContent && (
-            <ExperienceCopilotMessageBlock
+            <AgentMessageBlock
               message={{
                 id: "__pending-user",
                 threadId,
@@ -344,7 +344,7 @@ export function ExperienceCopilotMessageList({
                 if (!accordionPlaced) {
                   accordionPlaced = true;
                   rendered.push(
-                    <CopilotToolAccordion
+                    <AgentToolAccordion
                       key={activity.toolCallId}
                       activities={liveToolActivities}
                       isSending
@@ -357,7 +357,7 @@ export function ExperienceCopilotMessageList({
               // is suppressed while refetched history owns the persisted rows.
               if (!hasPendingText) continue;
               rendered.push(
-                <ExperienceCopilotMessageBlock
+                <AgentMessageBlock
                   key={entry.id}
                   message={{
                     id: entry.id,
@@ -375,7 +375,7 @@ export function ExperienceCopilotMessageList({
           })()}
 
           {hasPendingText && feed.length === 0 && (
-            <ExperienceCopilotMessageBlock
+            <AgentMessageBlock
               message={{
                 id: "__pending-assistant",
                 threadId,

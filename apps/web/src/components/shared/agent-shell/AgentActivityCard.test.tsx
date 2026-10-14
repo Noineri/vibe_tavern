@@ -8,17 +8,17 @@
  * the inline diff review lives in ExperienceCopilotEditorPanel (CD-5/CD-6).
  */
 import { beforeAll, describe, expect, it } from "bun:test";
-import { useDomEnv } from "../../../../../test/dom-env.js";
-import type { ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
+import type { ExperienceCopilotToolActivity } from "../../../stores/experience-copilot-turn-store.js";
 
 useDomEnv();
 
 let render: typeof import("@testing-library/react").render;
-let CopilotActivityCard: typeof import("./CopilotActivityCard.js").CopilotActivityCard;
+let AgentActivityCard: typeof import("./AgentActivityCard.js").AgentActivityCard;
 
 beforeAll(async () => {
   ({ render } = await import("@testing-library/react"));
-  ({ CopilotActivityCard } = await import("./CopilotActivityCard.js"));
+  ({ AgentActivityCard } = await import("./AgentActivityCard.js"));
 });
 
 function activity(over: Partial<ExperienceCopilotToolActivity>): ExperienceCopilotToolActivity {
@@ -35,13 +35,13 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
   it("renders read / write_buffer / run_test cards with their copilot shapes", () => {
     const { getAllByText, getAllByTestId, queryByTestId } = render(
       <div>
-        <CopilotActivityCard
+        <AgentActivityCard
           activity={activity({ toolCallId: "read1", toolName: "read_skill_file", status: "done", summary: undefined, readPath: "/skills/combat.md" })}
         />
-        <CopilotActivityCard
+        <AgentActivityCard
           activity={activity({ toolCallId: "write1", toolName: "write_buffer", status: "done", summary: "wrote rules", target: "rules", proposed: "proposed buffer" })}
         />
-        <CopilotActivityCard
+        <AgentActivityCard
           activity={activity({ toolCallId: "run1", toolName: "run_test", status: "done", summary: "2 passed" })}
         />
       </div>,
@@ -69,7 +69,7 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
 
   it("renders a visual-target write_buffer card with a Visual label", () => {
     const { getByTestId } = render(
-      <CopilotActivityCard
+      <AgentActivityCard
         activity={activity({ toolCallId: "v1", toolName: "edit_buffer", status: "done", summary: "tweaked visual", target: "visual", proposed: "new visual" })}
       />,
     );
@@ -80,10 +80,10 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
   it("renders a streaming placeholder and an error row", () => {
     const { getByText, container } = render(
       <div>
-        <CopilotActivityCard
+        <AgentActivityCard
           activity={activity({ toolCallId: "s1", toolName: "write_buffer", status: "streaming", summary: undefined })}
         />
-        <CopilotActivityCard
+        <AgentActivityCard
           activity={activity({ toolCallId: "e1", toolName: "run_test", status: "error", summary: undefined })}
         />
       </div>,
@@ -94,7 +94,7 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
 
   it("renders a minimal done run_test activity as a card", () => {
     const { getByTestId } = render(
-      <CopilotActivityCard
+      <AgentActivityCard
         activity={activity({ toolCallId: "m1", toolName: "run_test", status: "done", summary: "ok" })}
       />,
     );
@@ -106,17 +106,17 @@ describe("CopilotActivityCard — tool activity card (TF-5)", () => {
       <div>
         {/* A done plan rewrite — NO summary (the controller/extraction omit it
             so the i18n label owns the title). */}
-        <CopilotActivityCard
+        <AgentActivityCard
           activity={activity({ toolCallId: "p1", toolName: "plan", status: "done", summary: undefined })}
         />
         {/* A done read_plan — the persisted row carries the whole plan JSON as
             its summary; the label must win over the machine shape. */}
-        <CopilotActivityCard
+        <AgentActivityCard
           activity={activity({ toolCallId: "p2", toolName: "read_plan", status: "done", summary: '{"goal":"…","tasks":[…]}' })}
         />
         {/* A failed plan save — the error card keeps the raw content (the
             write_buffer failure shape), NOT the success label. */}
-        <CopilotActivityCard
+        <AgentActivityCard
           activity={activity({ toolCallId: "p3", toolName: "plan", status: "error", summary: '{"ok":false}' })}
         />
       </div>,

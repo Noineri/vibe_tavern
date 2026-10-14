@@ -2,21 +2,21 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
-import { useDomEnv } from "../../../../../test/dom-env.js";
-import type { ToolbarSelectItem } from "../../../shared/ToolbarSelect.js";
-import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
-import type { ProviderProfileRecord } from "../../../../api/types.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
+import type { ToolbarSelectItem } from "../ToolbarSelect.js";
+import { useProviderDataStore } from "../../../stores/provider-data-store.js";
+import type { ProviderProfileRecord } from "../../../api/types.js";
 
 useDomEnv();
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
-let ExperienceCopilotMobileInputArea: typeof import("./ExperienceCopilotMobileInputArea.js").ExperienceCopilotMobileInputArea;
+let AgentMobileInputArea: typeof import("./AgentMobileInputArea.js").AgentMobileInputArea;
 
 // ── SAFE mock.module stubs (capture real first, spread `...real`) ──
 
-const realTooltip = await import("../../../shared/Tooltip.js");
-mock.module("../../../shared/Tooltip.js", () => ({
+const realTooltip = await import("../Tooltip.js");
+mock.module("../Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -55,8 +55,8 @@ function FakeToolbarSelect(props: FakeToolbarSelectProps) {
   );
 }
 
-const realToolbarSelect = await import("../../../shared/ToolbarSelect.js");
-mock.module("../../../shared/ToolbarSelect.js", () => ({
+const realToolbarSelect = await import("../ToolbarSelect.js");
+mock.module("../ToolbarSelect.js", () => ({
   ...realToolbarSelect,
   ToolbarSelect: FakeToolbarSelect,
 }));
@@ -68,8 +68,8 @@ mock.module("../../../shared/ToolbarSelect.js", () => ({
 // captured first, only the favorites fns overridden — same as the desktop
 // input-area suite). The hook's data path (store read) stays real: tests seed
 // the store directly. No test below asserts favorites UI.
-const realProviderActions = await import("../../../../stores/api-actions/provider-actions.js");
-mock.module("../../../../stores/api-actions/provider-actions.js", () => ({
+const realProviderActions = await import("../../../stores/api-actions/provider-actions.js");
+mock.module("../../../stores/api-actions/provider-actions.js", () => ({
   ...realProviderActions,
   loadFavoriteModelsAction: async () => {},
   toggleFavoriteModelAction: async () => {},
@@ -77,7 +77,7 @@ mock.module("../../../../stores/api-actions/provider-actions.js", () => ({
 
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
-  ({ ExperienceCopilotMobileInputArea } = await import("./ExperienceCopilotMobileInputArea.js"));
+  ({ AgentMobileInputArea } = await import("./AgentMobileInputArea.js"));
 });
 
 // Two profiles; p1 carries one tool-capable cached model so the REAL
@@ -127,7 +127,7 @@ function withIsolatedI18n(node: ReactNode) {
   return <I18nextProvider i18n={makeIsolatedI18n()}>{node}</I18nextProvider>;
 }
 
-function renderMobileInput(over: Partial<Parameters<typeof ExperienceCopilotMobileInputArea>[0]> = {}) {
+function renderMobileInput(over: Partial<Parameters<typeof AgentMobileInputArea>[0]> = {}) {
   const props = {
     isSending: false,
     onSend: mock(),
@@ -137,7 +137,7 @@ function renderMobileInput(over: Partial<Parameters<typeof ExperienceCopilotMobi
     onProviderChange: mock(),
     ...over,
   };
-  const utils = render(withIsolatedI18n(<ExperienceCopilotMobileInputArea {...props} />));
+  const utils = render(withIsolatedI18n(<AgentMobileInputArea {...props} />));
   return { ...utils, props };
 }
 

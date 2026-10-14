@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { cn } from "../../../../lib/cn.js";
-import { composerCls } from "../../../../lib/field-tokens.js";
-import { Icons } from "../../../shared/icons.js";
-import { AutoTextarea } from "../../../shared/auto-textarea.js";
-import { ToolbarSelect } from "../../../shared/ToolbarSelect.js";
-import { DropdownSelect } from "../../../shared/DropdownSelect.js";
-import { CustomTooltip } from "../../../shared/Tooltip.js";
-import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
-import { useProviderModels } from "../../../../hooks/use-provider-models.js";
-import { useCopilotModelFavorites } from "../../../../hooks/use-copilot-model-favorites.js";
-import { useT } from "../../../../i18n/context.js";
-import { useCopilotMention } from "./use-copilot-mention.js";
-import type { MentionAutocompleteItem } from "../../../shared/mention-autocomplete-query.js";
-import { CopilotContextPills, type CopilotContextPillItem } from "./CopilotContextPills.js";
+import { cn } from "../../../lib/cn.js";
+import { composerCls } from "../../../lib/field-tokens.js";
+import { Icons } from "../icons.js";
+import { AutoTextarea } from "../auto-textarea.js";
+import { ToolbarSelect } from "../ToolbarSelect.js";
+import { DropdownSelect } from "../DropdownSelect.js";
+import { CustomTooltip } from "../Tooltip.js";
+import { useProviderDataStore } from "../../../stores/provider-data-store.js";
+import { useProviderModels } from "../../../hooks/use-provider-models.js";
+import { useCopilotModelFavorites } from "../../../hooks/use-copilot-model-favorites.js";
+import { useT } from "../../../i18n/context.js";
+import { useAgentMention } from "./use-agent-mention.js";
+import type { MentionAutocompleteItem } from "../mention-autocomplete-query.js";
+import { AgentContextPills, type AgentContextPillItem } from "./AgentContextPills.js";
 
 /**
  * Experience-copilot input area (ER-11c, desktop). Props-driven and CONTROLLED:
@@ -26,7 +26,7 @@ import { CopilotContextPills, type CopilotContextPillItem } from "./CopilotConte
  * the co-author binding reads), and the MODEL list is `useProviderModels`
  * (all of the provider's models — same source as the co-author picker).
  */
-export interface ExperienceCopilotInputAreaProps {
+export interface AgentInputAreaProps {
   isSending: boolean;
   onSend: (content: string) => void;
   onCancel: () => void;
@@ -43,7 +43,7 @@ export interface ExperienceCopilotInputAreaProps {
   mentionCatalog?: readonly MentionAutocompleteItem[];
   /** CX-6: currently pinned context (rendered as removable pills above the
    *  textarea). Default [] — absent renders no pills. */
-  pinnedContext?: readonly CopilotContextPillItem[];
+  pinnedContext?: readonly AgentContextPillItem[];
   /** CX-6: fired when an item is picked from the @-popover (the @query is
    *  ALREADY stripped from the draft). */
   onPinContext?: (item: MentionAutocompleteItem) => void;
@@ -51,7 +51,7 @@ export interface ExperienceCopilotInputAreaProps {
   onUnpinContext?: (targetType: string, targetId: string) => void;
 }
 
-export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProps) {
+export function AgentInputArea(props: AgentInputAreaProps) {
   const {
     isSending,
     onSend,
@@ -71,7 +71,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
   // AutoTextarea forwards no ref).
   const cardRef = useRef<HTMLDivElement | null>(null);
 
-  const mention = useCopilotMention({
+  const mention = useAgentMention({
     draft,
     setDraft,
     catalog: mentionCatalog ?? [],
@@ -132,7 +132,7 @@ export function ExperienceCopilotInputArea(props: ExperienceCopilotInputAreaProp
   return (
     <div className="relative z-10 shrink-0 border-t border-border bg-surface px-4 pt-2.5 pb-3.5">
       <div ref={cardRef} className="relative rounded-lg border border-border bg-input-bg transition-colors duration-150 focus-within:border-border2">
-        <CopilotContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
+        <AgentContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
         <AutoTextarea
           bare
           className={cn(composerCls, "w-full !min-h-[55px] !px-4 !pt-[13px] !pb-2 !text-[15.5px] !leading-tight")}

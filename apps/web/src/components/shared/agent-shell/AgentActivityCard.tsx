@@ -1,7 +1,7 @@
-import { cn } from "../../../../lib/cn.js";
-import type { ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
-import { Icons } from "../../../shared/icons.js";
-import { useT } from "../../../../i18n/context.js";
+import { cn } from "../../../lib/cn.js";
+import type { ExperienceCopilotToolActivity } from "../../../stores/experience-copilot-turn-store.js";
+import { Icons } from "../icons.js";
+import { useT } from "../../../i18n/context.js";
 
 /**
  * CopilotActivityCard (TF-5): one tool-activity card row — the ex-TurnShell
@@ -14,7 +14,7 @@ import { useT } from "../../../../i18n/context.js";
  * affordances — the diff review lives in `ExperienceCopilotEditorPanel`
  * (CD-5/CD-6).
  */
-export function CopilotActivityCard({ activity }: { activity: ExperienceCopilotToolActivity }) {
+export function AgentActivityCard({ activity }: { activity: ExperienceCopilotToolActivity }) {
   const { t } = useT();
   const isRead = activity.readPath !== undefined;
   // PM-6: plan-tool cards are labelled by i18n, not by their payloads — the

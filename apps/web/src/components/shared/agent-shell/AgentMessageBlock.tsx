@@ -1,9 +1,9 @@
 import { memo, useState } from "react";
-import { cn } from "../../../../lib/cn.js";
-import { Markdown } from "../../../../lib/markdown.js";
-import { Icons } from "../../../shared/icons.js";
-import { useT } from "../../../../i18n/context.js";
-import { formatRelativeTime } from "../../../layout/sidebar-utils.js";
+import { cn } from "../../../lib/cn.js";
+import { Markdown } from "../../../lib/markdown.js";
+import { Icons } from "../icons.js";
+import { useT } from "../../../i18n/context.js";
+import { formatRelativeTime } from "../../layout/sidebar-utils.js";
 import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
 
 /**
@@ -18,7 +18,7 @@ import type { ExperienceCopilotMessageWire } from "@vibe-tavern/api-contracts";
  * from the active chat, macro resolution) have no copilot counterpart, so this
  * block is self-contained rather than delegating to the RP `MessageBlock`.
  */
-export interface ExperienceCopilotMessageBlockProps {
+export interface AgentMessageBlockProps {
   message: ExperienceCopilotMessageWire;
   /** For digest messages: the number of flow messages the digest covers (derived
    *  by the list via `orderMessagesWithDigests`). Null for non-digest messages
@@ -26,10 +26,10 @@ export interface ExperienceCopilotMessageBlockProps {
   coveredCount?: number | null;
 }
 
-export const ExperienceCopilotMessageBlock = memo(function ExperienceCopilotMessageBlock({
+export const AgentMessageBlock = memo(function AgentMessageBlock({
   message,
   coveredCount = null,
-}: ExperienceCopilotMessageBlockProps) {
+}: AgentMessageBlockProps) {
   if (message.role === "digest") {
     return <DigestCard message={message} coveredCount={coveredCount} />;
   }

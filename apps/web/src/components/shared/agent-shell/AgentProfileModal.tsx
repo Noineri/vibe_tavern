@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
-import { MasterDetailModal, MasterDetailMobileDrillDown } from "../../../shared/MasterDetailModal.js";
-import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
-import { EmptyState } from "../../../shared/empty-state.js";
-import { AutoTextarea } from "../../../shared/auto-textarea.js";
-import { Icons } from "../../../shared/icons.js";
-import { TextInput } from "../../../shared/text-input.js";
-import { lblCls } from "../../../../lib/field-tokens.js";
-import { useCopilotProfileStore } from "../../../../stores/copilot-profile-store.js";
-import { setCopilotProfile } from "../../../../api/copilot-profile-api.js";
-import { useT, type TFunc } from "../../../../i18n/context.js";
+import { MasterDetailModal, MasterDetailMobileDrillDown } from "../MasterDetailModal.js";
+import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
+import { EmptyState } from "../empty-state.js";
+import { AutoTextarea } from "../auto-textarea.js";
+import { Icons } from "../icons.js";
+import { TextInput } from "../text-input.js";
+import { lblCls } from "../../../lib/field-tokens.js";
+import { useCopilotProfileStore } from "../../../stores/copilot-profile-store.js";
+import { setCopilotProfile } from "../../../api/copilot-profile-api.js";
+import { useT, type TFunc } from "../../../i18n/context.js";
 import { toast } from "sonner";
-import { cn } from "../../../../lib/cn.js";
+import { cn } from "../../../lib/cn.js";
 import { type CopilotProfile, type CopilotProfileCreate, type CopilotToolSet, COPILOT_TOOL_KEYS } from "@vibe-tavern/api-contracts";
-import { CopilotSkillModal } from "./CopilotSkillModal.js";
+import { AgentSkillModal } from "./AgentSkillModal.js";
 
 /** The read-only built-in seed profile id (EXPERIENCE_COPILOT_PROFILES_PLAN). */
 const BUILTIN_PROFILE_ID = "builtin";
@@ -65,7 +65,7 @@ type DetailMode = "view" | "edit" | "create";
  * CONTROLLED — open/close are props (owned by `ExperienceCopilotShell`), not
  * the global `modal-store` (which is co-author-specific).
  */
-export interface CopilotProfileModalProps {
+export interface AgentProfileModalProps {
 	scriptId: string;
 	/** The profile currently assigned to this experience, or null (built-in seed). */
 	assignedProfileId: string | null;
@@ -73,7 +73,7 @@ export interface CopilotProfileModalProps {
 	onClose: () => void;
 }
 
-export function CopilotProfileModal({ scriptId, assignedProfileId, isOpen, onClose }: CopilotProfileModalProps) {
+export function AgentProfileModal({ scriptId, assignedProfileId, isOpen, onClose }: AgentProfileModalProps) {
 	const { t } = useT();
 
 	// Mirror the resolver's null→builtin fallback so the active row is highlighted
@@ -255,7 +255,7 @@ export function CopilotProfileModal({ scriptId, assignedProfileId, isOpen, onClo
 					onCancel={() => setConfirmDeleteId(null)}
 				/>
 			)}
-			<CopilotSkillModal isOpen={skillManagerOpen} onClose={() => setSkillManagerOpen(false)} />
+			<AgentSkillModal isOpen={skillManagerOpen} onClose={() => setSkillManagerOpen(false)} />
 			<MasterDetailModal
 				isOpen={isOpen}
 				onClose={close}

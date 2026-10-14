@@ -2,21 +2,21 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ReactElement, ReactNode } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
-import { useDomEnv } from "../../../../../test/dom-env.js";
-import type { ToolbarSelectItem } from "../../../shared/ToolbarSelect.js";
-import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
-import type { ProviderProfileRecord } from "../../../../api/types.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
+import type { ToolbarSelectItem } from "../ToolbarSelect.js";
+import { useProviderDataStore } from "../../../stores/provider-data-store.js";
+import type { ProviderProfileRecord } from "../../../api/types.js";
 
 useDomEnv();
 
 let render: typeof import("@testing-library/react").render;
 let fireEvent: typeof import("@testing-library/react").fireEvent;
-let ExperienceCopilotInputArea: typeof import("./ExperienceCopilotInputArea.js").ExperienceCopilotInputArea;
+let AgentInputArea: typeof import("./AgentInputArea.js").AgentInputArea;
 
 // ── SAFE mock.module stubs (capture real first, spread `...real`) ──
 
-const realTooltip = await import("../../../shared/Tooltip.js");
-mock.module("../../../shared/Tooltip.js", () => ({
+const realTooltip = await import("../Tooltip.js");
+mock.module("../Tooltip.js", () => ({
   ...realTooltip,
   CustomTooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -55,8 +55,8 @@ function FakeToolbarSelect(props: FakeToolbarSelectProps) {
   );
 }
 
-const realToolbarSelect = await import("../../../shared/ToolbarSelect.js");
-mock.module("../../../shared/ToolbarSelect.js", () => ({
+const realToolbarSelect = await import("../ToolbarSelect.js");
+mock.module("../ToolbarSelect.js", () => ({
   ...realToolbarSelect,
   ToolbarSelect: FakeToolbarSelect,
 }));
@@ -100,8 +100,8 @@ function FakeDropdownSelect(props: FakeDropdownSelectProps) {
   );
 }
 
-const realDropdownSelect = await import("../../../shared/DropdownSelect.js");
-mock.module("../../../shared/DropdownSelect.js", () => ({
+const realDropdownSelect = await import("../DropdownSelect.js");
+mock.module("../DropdownSelect.js", () => ({
   ...realDropdownSelect,
   DropdownSelect: FakeDropdownSelect,
 }));
@@ -109,8 +109,8 @@ mock.module("../../../shared/DropdownSelect.js", () => ({
 // Favorites actions hit the RPC client — stub them at the module boundary
 // (SAFE: real captured first, only the two favorites fns overridden). The
 // hook's data path (store read) stays real: tests seed the store directly.
-const realProviderActions = await import("../../../../stores/api-actions/provider-actions.js");
-mock.module("../../../../stores/api-actions/provider-actions.js", () => ({
+const realProviderActions = await import("../../../stores/api-actions/provider-actions.js");
+mock.module("../../../stores/api-actions/provider-actions.js", () => ({
   ...realProviderActions,
   loadFavoriteModelsAction: async () => {},
   toggleFavoriteModelAction: async () => {},
@@ -118,7 +118,7 @@ mock.module("../../../../stores/api-actions/provider-actions.js", () => ({
 
 beforeAll(async () => {
   ({ render, fireEvent } = await import("@testing-library/react"));
-  ({ ExperienceCopilotInputArea } = await import("./ExperienceCopilotInputArea.js"));
+  ({ AgentInputArea } = await import("./AgentInputArea.js"));
 });
 
 // Two profiles; p1 carries one tool-capable cached model so the REAL
@@ -168,7 +168,7 @@ function withIsolatedI18n(node: ReactNode) {
   return <I18nextProvider i18n={makeIsolatedI18n()}>{node}</I18nextProvider>;
 }
 
-function renderInput(over: Partial<Parameters<typeof ExperienceCopilotInputArea>[0]> = {}) {
+function renderInput(over: Partial<Parameters<typeof AgentInputArea>[0]> = {}) {
   const props = {
     isSending: false,
     onSend: mock(),
@@ -178,7 +178,7 @@ function renderInput(over: Partial<Parameters<typeof ExperienceCopilotInputArea>
     onProviderChange: mock(),
     ...over,
   };
-  const utils = render(withIsolatedI18n(<ExperienceCopilotInputArea {...props} />));
+  const utils = render(withIsolatedI18n(<AgentInputArea {...props} />));
   return { ...utils, props };
 }
 
@@ -281,7 +281,7 @@ describe("ExperienceCopilotInputArea", () => {
 
     // A prefill object arriving (fresh identity per copy click in the Shell)
     // replaces the draft — the user reviews/edits, then sends manually.
-    rerender(withIsolatedI18n(<ExperienceCopilotInputArea {...props} prefill={{ text: "digest from tester" }} />));
+    rerender(withIsolatedI18n(<AgentInputArea {...props} prefill={{ text: "digest from tester" }} />));
     expect(textarea.value).toBe("digest from tester");
   });
 });

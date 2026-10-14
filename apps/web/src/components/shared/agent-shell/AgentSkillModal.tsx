@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { MasterDetailModal, MasterDetailMobileDrillDown } from "../../../shared/MasterDetailModal.js";
-import { DestructiveConfirmModal } from "../../../shared/destructive-confirm-modal.js";
-import { EmptyState } from "../../../shared/empty-state.js";
-import { Icons } from "../../../shared/icons.js";
-import { useCopilotSkillStore } from "../../../../stores/copilot-skill-store.js";
-import { useT, type TFunc } from "../../../../i18n/context.js";
+import { MasterDetailModal, MasterDetailMobileDrillDown } from "../MasterDetailModal.js";
+import { DestructiveConfirmModal } from "../destructive-confirm-modal.js";
+import { EmptyState } from "../empty-state.js";
+import { Icons } from "../icons.js";
+import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
+import { useT, type TFunc } from "../../../i18n/context.js";
 import { toast } from "sonner";
-import { cn } from "../../../../lib/cn.js";
+import { cn } from "../../../lib/cn.js";
 import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
 
 /**
@@ -20,12 +20,12 @@ import type { SkillCatalogEntryDto } from "@vibe-tavern/api-contracts";
  * `modal-store`), this modal is owned by `CopilotProfileModal` (opened from its
  * "Manage skills" action), so open/close are props.
  */
-export interface CopilotSkillModalProps {
+export interface AgentSkillModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export function CopilotSkillModal({ isOpen, onClose }: CopilotSkillModalProps) {
+export function AgentSkillModal({ isOpen, onClose }: AgentSkillModalProps) {
 	const { t } = useT();
 
 	const entries = useCopilotSkillStore((s) => s.entries);

@@ -1,5 +1,5 @@
-import { Icons } from "../../../shared/icons.js";
-import { useT } from "../../../../i18n/context.js";
+import { Icons } from "../icons.js";
+import { useT } from "../../../i18n/context.js";
 
 /**
  * Removable pills row for the experience-copilot pinned context (CX-6,
@@ -10,7 +10,7 @@ import { useT } from "../../../../i18n/context.js";
  * A dangling target (entity deleted after pinning) is handled by the CALLER
  * passing `label` = the raw targetId — the pill itself does not care.
  */
-export interface CopilotContextPillItem {
+export interface AgentContextPillItem {
   targetType: string;
   targetId: string;
   /** Display label (the shell resolves it from the catalog; falls back to
@@ -18,12 +18,12 @@ export interface CopilotContextPillItem {
   label: string;
 }
 
-export interface CopilotContextPillsProps {
-  items: readonly CopilotContextPillItem[];
+export interface AgentContextPillsProps {
+  items: readonly AgentContextPillItem[];
   onUnpin: (targetType: string, targetId: string) => void;
 }
 
-export function CopilotContextPills({ items, onUnpin }: CopilotContextPillsProps) {
+export function AgentContextPills({ items, onUnpin }: AgentContextPillsProps) {
   const { t } = useT();
   if (items.length === 0) return null;
   return (

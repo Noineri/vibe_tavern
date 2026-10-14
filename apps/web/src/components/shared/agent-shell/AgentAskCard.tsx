@@ -26,15 +26,15 @@
  * optimistic `pendingAskAnswer` override before passing `ask` down.
  */
 import { useState } from "react";
-import type { CopilotAskState } from "../../../../stores/experience-copilot-turn-store.js";
-import type { CopilotAskAnswerInput } from "../../../../api/experience-copilot-api.js";
-import { cn } from "../../../../lib/cn.js";
-import { AutoTextarea } from "../../../shared/auto-textarea.js";
-import { CustomTooltip } from "../../../shared/Tooltip.js";
-import { Ic } from "../../../shared/icons.js";
-import { useT } from "../../../../i18n/context.js";
+import type { CopilotAskState } from "../../../stores/experience-copilot-turn-store.js";
+import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
+import { cn } from "../../../lib/cn.js";
+import { AutoTextarea } from "../auto-textarea.js";
+import { CustomTooltip } from "../Tooltip.js";
+import { Ic } from "../icons.js";
+import { useT } from "../../../i18n/context.js";
 
-export interface CopilotAskCardProps {
+export interface AgentAskCardProps {
   /** The ask state (already resolved through the optimistic override). */
   ask: CopilotAskState;
   /** True only while this is the thread's last activity, still awaiting an
@@ -43,7 +43,7 @@ export interface CopilotAskCardProps {
   onSubmit?: (answer: CopilotAskAnswerInput) => void;
 }
 
-export function CopilotAskCard({ ask, interactive, onSubmit }: CopilotAskCardProps) {
+export function AgentAskCard({ ask, interactive, onSubmit }: AgentAskCardProps) {
   const { t } = useT();
   const [draft, setDraft] = useState("");
   const options = ask.options ?? [];

@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { MentionAutocomplete } from "../../../shared/MentionAutocomplete.js";
+import { MentionAutocomplete } from "../MentionAutocomplete.js";
 import {
   filterMentionItems,
   mentionQueryStart,
   readMentionQuery,
   type MentionAutocompleteItem,
-} from "../../../shared/mention-autocomplete-query.js";
-import { readMacroQuery } from "../../../shared/macro-autocomplete-store.js";
+} from "../mention-autocomplete-query.js";
+import { readMacroQuery } from "../macro-autocomplete-store.js";
 
 /**
  * `@`-mention session machinery for the experience-copilot chat inputs
@@ -32,7 +32,7 @@ import { readMacroQuery } from "../../../shared/macro-autocomplete-store.js";
  * session stays CLOSED (macro wins — both pickers can't sensibly be open
  * at once). Otherwise a word-start `@` opens the mention session.
  */
-export interface UseCopilotMentionConfig {
+export interface UseAgentMentionConfig {
   /** Current draft text (controlled by the caller). */
   draft: string;
   /** Draft setter — the hook's onChange routes through it, and the pick
@@ -49,7 +49,7 @@ export interface UseCopilotMentionConfig {
   anchorEl: HTMLElement | null;
 }
 
-export function useCopilotMention(config: UseCopilotMentionConfig): {
+export function useAgentMention(config: UseAgentMentionConfig): {
   /** The rendered popover (a portal) when a session is open, else null. */
   popover: ReactNode;
   handleChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;

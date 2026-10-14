@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import type { ExperienceCopilotToolActivity } from "../../../../stores/experience-copilot-turn-store.js";
-import { useT } from "../../../../i18n/context.js";
-import { AnimatedDisclosure } from "../../../shared/AnimatedDisclosure.js";
-import { Icons } from "../../../shared/icons.js";
-import { CopilotActivityCard } from "./CopilotActivityCard.js";
+import type { ExperienceCopilotToolActivity } from "../../../stores/experience-copilot-turn-store.js";
+import { useT } from "../../../i18n/context.js";
+import { AnimatedDisclosure } from "../AnimatedDisclosure.js";
+import { Icons } from "../icons.js";
+import { AgentActivityCard } from "./AgentActivityCard.js";
 
-export interface CopilotToolAccordionProps {
+export interface AgentToolAccordionProps {
   activities: readonly ExperienceCopilotToolActivity[];
   /** True only for the controller's active streamed turn. */
   isSending: boolean;
@@ -16,7 +16,7 @@ export interface CopilotToolAccordionProps {
  * stay open as cards arrive; settled and historical groups collapse to their
  * count header until the user opens them locally.
  */
-export function CopilotToolAccordion({ activities, isSending }: CopilotToolAccordionProps) {
+export function AgentToolAccordion({ activities, isSending }: AgentToolAccordionProps) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(isSending);
 
@@ -48,7 +48,7 @@ export function CopilotToolAccordion({ activities, isSending }: CopilotToolAccor
         data-testid="copilot-tool-accordion-body"
       >
         {activities.map((activity) => (
-          <CopilotActivityCard key={activity.toolCallId} activity={activity} />
+          <AgentActivityCard key={activity.toolCallId} activity={activity} />
         ))}
       </AnimatedDisclosure>
     </div>

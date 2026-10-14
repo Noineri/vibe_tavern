@@ -16,16 +16,16 @@
  * running.
  */
 
-import { cn } from "../../../../lib/cn.js";
+import { cn } from "../../../lib/cn.js";
 import type { CSSProperties } from "react";
-import { Icons } from "../../../shared/icons.js";
-import { CustomTooltip } from "../../../shared/Tooltip.js";
-import { Toggle } from "../../../shared/Toggle.js";
-import { useT } from "../../../../i18n/context.js";
+import { Icons } from "../icons.js";
+import { CustomTooltip } from "../Tooltip.js";
+import { Toggle } from "../Toggle.js";
+import { useT } from "../../../i18n/context.js";
 import type { ExperienceCopilotContextMetrics } from "@vibe-tavern/api-contracts";
-import { meterSegments, isMeterUrgent } from "../../../../lib/copilot-context.js";
+import { meterSegments, isMeterUrgent } from "../../../lib/copilot-context.js";
 
-export interface ExperienceContextMeterProps {
+export interface AgentContextMeterProps {
   metrics: ExperienceCopilotContextMetrics | null;
   autoCompact: boolean;
   isCompacting: boolean;
@@ -42,14 +42,14 @@ const RESERVE_STYLE: CSSProperties = {
     "repeating-linear-gradient(45deg, var(--border) 0px, var(--border) 2px, transparent 2px, transparent 5px)",
 };
 
-export function ExperienceContextMeter({
+export function AgentContextMeter({
   metrics,
   autoCompact,
   isCompacting,
   isSending,
   onCompact,
   onToggleAutoCompact,
-}: ExperienceContextMeterProps) {
+}: AgentContextMeterProps) {
   const { t } = useT();
   const segments = meterSegments(metrics);
   const urgent = isMeterUrgent(metrics);

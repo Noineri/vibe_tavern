@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { cn } from "../../../../lib/cn.js";
-import { composerCls } from "../../../../lib/field-tokens.js";
-import { Icons } from "../../../shared/icons.js";
-import { AutoTextarea } from "../../../shared/auto-textarea.js";
-import { ToolbarSelect } from "../../../shared/ToolbarSelect.js";
-import { useProviderDataStore } from "../../../../stores/provider-data-store.js";
-import { useProviderModels } from "../../../../hooks/use-provider-models.js";
-import { useCopilotModelFavorites } from "../../../../hooks/use-copilot-model-favorites.js";
-import { useT } from "../../../../i18n/context.js";
-import { useCopilotMention } from "./use-copilot-mention.js";
-import { CopilotContextPills } from "./CopilotContextPills.js";
-import type { ExperienceCopilotInputAreaProps } from "./ExperienceCopilotInputArea.js";
+import { cn } from "../../../lib/cn.js";
+import { composerCls } from "../../../lib/field-tokens.js";
+import { Icons } from "../icons.js";
+import { AutoTextarea } from "../auto-textarea.js";
+import { ToolbarSelect } from "../ToolbarSelect.js";
+import { useProviderDataStore } from "../../../stores/provider-data-store.js";
+import { useProviderModels } from "../../../hooks/use-provider-models.js";
+import { useCopilotModelFavorites } from "../../../hooks/use-copilot-model-favorites.js";
+import { useT } from "../../../i18n/context.js";
+import { useAgentMention } from "./use-agent-mention.js";
+import { AgentContextPills } from "./AgentContextPills.js";
+import type { AgentInputAreaProps } from "./AgentInputArea.js";
 
 /**
  * Experience-copilot input area (ER-11c, mobile). Same props + controlled
@@ -22,7 +22,7 @@ import type { ExperienceCopilotInputAreaProps } from "./ExperienceCopilotInputAr
  * + manual height adjustment is exactly the §9 pattern this surface must NOT
  * repeat).
  */
-export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAreaProps) {
+export function AgentMobileInputArea(props: AgentInputAreaProps) {
   const {
     isSending,
     onSend,
@@ -42,7 +42,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
   // AutoTextarea forwards no ref).
   const cardRef = useRef<HTMLDivElement | null>(null);
 
-  const mention = useCopilotMention({
+  const mention = useAgentMention({
     draft,
     setDraft,
     catalog: mentionCatalog ?? [],
@@ -163,7 +163,7 @@ export function ExperienceCopilotMobileInputArea(props: ExperienceCopilotInputAr
         </div>
 
         {/* CX-6: pinned-context pills between the toolbar row and the input. */}
-        <CopilotContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
+        <AgentContextPills items={pinnedContext ?? []} onUnpin={(tt, id) => onUnpinContext?.(tt, id)} />
 
         {/* Input row. */}
         <div className="flex items-end gap-2">

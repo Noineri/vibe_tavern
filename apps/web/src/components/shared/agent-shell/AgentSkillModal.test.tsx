@@ -10,19 +10,19 @@
  * `isOpen=true` directly (no global modal store).
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import { useDomEnv } from "../../../../../test/dom-env.js";
+import { useDomEnv } from "../../../../test/dom-env.js";
 
 useDomEnv();
 const { fireEvent, render, waitFor } = await import("@testing-library/react");
-import { useCopilotSkillStore } from "../../../../stores/copilot-skill-store.js";
+import { useCopilotSkillStore } from "../../../stores/copilot-skill-store.js";
 import type { SkillCatalog } from "@vibe-tavern/api-contracts";
 
-const realI18nContext = await import("../../../../i18n/context.js");
-const realSkillApi = await import("../../../../api/copilot-skill-api.js");
-const realMasterDetailModal = await import("../../../shared/MasterDetailModal.js");
-const realDestructiveConfirmModal = await import("../../../shared/destructive-confirm-modal.js");
+const realI18nContext = await import("../../../i18n/context.js");
+const realSkillApi = await import("../../../api/copilot-skill-api.js");
+const realMasterDetailModal = await import("../MasterDetailModal.js");
+const realDestructiveConfirmModal = await import("../destructive-confirm-modal.js");
 
-mock.module("../../../../i18n/context.js", () => ({
+mock.module("../../../i18n/context.js", () => ({
 	...realI18nContext,
 	useT: () => ({ t: (key: string) => key, tDynamic: (key: string) => key, locale: "en", setLocale: () => {}, ready: true }),
 }));
@@ -30,7 +30,7 @@ mock.module("../../../../i18n/context.js", () => ({
 const listSkillsMock = mock();
 const deleteSkillMock = mock();
 const importSkillsMock = mock();
-mock.module("../../../../api/copilot-skill-api.js", () => ({
+mock.module("../../../api/copilot-skill-api.js", () => ({
 	...realSkillApi,
 	listCopilotSkills: listSkillsMock,
 	readCopilotSkill: mock(),
@@ -38,7 +38,7 @@ mock.module("../../../../api/copilot-skill-api.js", () => ({
 	importCopilotSkills: importSkillsMock,
 }));
 
-mock.module("../../../shared/MasterDetailModal.js", () => ({
+mock.module("../MasterDetailModal.js", () => ({
 	...realMasterDetailModal,
 	MasterDetailModal: ({ isOpen, onClose, masterContent, detailContent, footer, headerActions }: {
 		isOpen: boolean;
@@ -64,7 +64,7 @@ mock.module("../../../shared/MasterDetailModal.js", () => ({
 	useMasterDetail: () => ({ isMobile: false, isDetailOpen: true, openDetail: () => {}, closeDetail: () => {} }),
 }));
 
-mock.module("../../../shared/destructive-confirm-modal.js", () => ({
+mock.module("../destructive-confirm-modal.js", () => ({
 	...realDestructiveConfirmModal,
 	DestructiveConfirmModal: ({ title, confirmLabel, onConfirm, onCancel }: {
 		title: string; body: React.ReactNode; confirmLabel: string;
@@ -78,9 +78,9 @@ mock.module("../../../shared/destructive-confirm-modal.js", () => ({
 	),
 }));
 
-let CopilotSkillModal: typeof import("./CopilotSkillModal.js").CopilotSkillModal;
+let AgentSkillModal: typeof import("./AgentSkillModal.js").AgentSkillModal;
 beforeAll(async () => {
-	({ CopilotSkillModal } = await import("./CopilotSkillModal.js"));
+	({ AgentSkillModal } = await import("./AgentSkillModal.js"));
 });
 
 const CATALOG: SkillCatalog = {
@@ -102,7 +102,7 @@ beforeEach(() => {
 });
 
 function renderModal() {
-	return render(<CopilotSkillModal isOpen onClose={mock()} />);
+	return render(<AgentSkillModal isOpen onClose={mock()} />);
 }
 
 describe("CopilotSkillModal — catalog list + read-only built-ins", () => {

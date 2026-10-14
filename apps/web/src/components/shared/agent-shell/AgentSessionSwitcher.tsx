@@ -1,11 +1,11 @@
 import * as Popover from "@radix-ui/react-popover";
 import { useMemo, useState } from "react";
 import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
-import { cn } from "../../../../lib/cn.js";
-import { Icons } from "../../../shared/icons.js";
-import { formatRelativeTime } from "../../../layout/sidebar-utils.js";
-import { SidebarChatRename } from "../../../layout/sections/SidebarChatRename.js";
-import { useT } from "../../../../i18n/context.js";
+import { cn } from "../../../lib/cn.js";
+import { Icons } from "../icons.js";
+import { formatRelativeTime } from "../../layout/sidebar-utils.js";
+import { SidebarChatRename } from "../../layout/sections/SidebarChatRename.js";
+import { useT } from "../../../i18n/context.js";
 
 /**
  * ExperienceSessionSwitcher (ER-12b) — the copilot chat-header session dock.
@@ -34,7 +34,7 @@ import { useT } from "../../../../i18n/context.js";
  * The RENAME pencil stays enabled while streaming: it only touches the title,
  * which races nothing.
  */
-export interface ExperienceSessionSwitcherProps {
+export interface AgentSessionSwitcherProps {
   /** All sessions (active + archived) for the script, newest first. */
   sessions: ExperienceCopilotThreadWire[];
   activeThreadId: string | null;
@@ -57,14 +57,14 @@ function sessionLabel(
   return number !== undefined ? `${fallback} ${number}` : fallback;
 }
 
-export function ExperienceSessionSwitcher({
+export function AgentSessionSwitcher({
   sessions,
   activeThreadId,
   disabled = false,
   onActivate,
   onNew,
   onRename,
-}: ExperienceSessionSwitcherProps) {
+}: AgentSessionSwitcherProps) {
   const { t } = useT();
   const [renamingId, setRenamingId] = useState<string | null>(null);
 

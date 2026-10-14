@@ -1,6 +1,6 @@
 import { useT } from "../../../../i18n/context.js";
 import { Icons } from "../../../shared/icons.js";
-import { ExperienceSessionSwitcher } from "./ExperienceSessionSwitcher.js";
+import { AgentSessionSwitcher } from "../../../shared/agent-shell/AgentSessionSwitcher.js";
 import type { ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 
 /**
@@ -30,7 +30,7 @@ export function CopilotChatHeader({
   const { t } = useT();
   return (
     <div className="flex shrink-0 items-center border-b border-border bg-surface px-2 py-1.5">
-      <ExperienceSessionSwitcher
+      <AgentSessionSwitcher
         sessions={sessions}
         activeThreadId={activeThreadId}
         disabled={disabled}
