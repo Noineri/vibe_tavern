@@ -535,13 +535,16 @@ function ExperienceEditorPane({
 
   const handleToolbarRevert = useCallback(() => {
     if (threadId) {
-      recordExperienceRevertedOutcomes(EXPERIENCE_KIND, threadId, [{ target: "rules", review: rulesReview, accepted: acceptedRulesHunks, dismissed: dismissedRulesHunks }, { target: "visual", review: visualReview, accepted: acceptedVisualHunks, dismissed: dismissedVisualHunks }]);
-      cancelStoredExperienceOutcomes(EXPERIENCE_KIND, threadId);
+      const revertedTargets: Array<"rules" | "visual"> = [];
+      if (review.lastSnapshot && rulesCode !== review.lastSnapshot.rules) revertedTargets.push("rules");
+      if (review.lastSnapshot && visualSource !== review.lastSnapshot.visual) revertedTargets.push("visual");
+      recordExperienceRevertedOutcomes(EXPERIENCE_KIND, threadId, ([{ target: "rules" as const, review: rulesReview, accepted: acceptedRulesHunks, dismissed: dismissedRulesHunks }, { target: "visual" as const, review: visualReview, accepted: acceptedVisualHunks, dismissed: dismissedVisualHunks }]).filter(({ target }) => revertedTargets.includes(target)));
+      cancelStoredExperienceOutcomes(EXPERIENCE_KIND, threadId, revertedTargets);
       useCopilotReviewRoundStore.getState().clearDangling(EXPERIENCE_KIND, threadId);
     }
     review.revertLastTurn();
     toast.success(t("copilot_review_reverted"));
-  }, [review, t, threadId, rulesReview, visualReview, acceptedRulesHunks, acceptedVisualHunks, dismissedRulesHunks, dismissedVisualHunks]);
+  }, [review, t, threadId, rulesReview, visualReview, acceptedRulesHunks, acceptedVisualHunks, dismissedRulesHunks, dismissedVisualHunks, rulesCode, visualSource]);
 
   // ── The bridge session handle ────────────────────────────────────────────
   // Assigned every render (the latest-callback-ref pattern the captureDangling

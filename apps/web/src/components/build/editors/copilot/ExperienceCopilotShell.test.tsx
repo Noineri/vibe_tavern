@@ -1506,6 +1506,39 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(body.rules).toBe(BASE);
     expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
   });
+
+  it("reverting accepted rules preserves a rejected visual outcome that never changed the buffer", async () => {
+    const threadId = "ro4-supervisor-revert-target-isolation";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    await act(async () => {
+      useExperienceCopilotTurnStore.getState().upsertActivity("experience", threadId, {
+        toolCallId: "ro4-supervisor-visual-proposal",
+        toolName: "write_buffer",
+        status: "done",
+        target: "visual",
+        proposed: "<div>proposed visual</div>",
+        summary: "visual proposal",
+      });
+    });
+    fireEvent.click(utils.getByRole("radio", { name: "agent_visual" }));
+    await waitFor(() => expect(utils.getByTestId("copilot-review-bar")).toBeDefined());
+    fireEvent.click(utils.getByTestId("copilot-dismiss-pending"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    fireEvent.click(utils.getByRole("radio", { name: "agent_rules" }));
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    fireEvent.click(utils.getByTestId("copilot-toolbar-revert"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-toolbar-revert")).toBeNull());
+
+    const body = await sendFollowup(utils, "explain rules-only revert", 2);
+    expect(body.rules).toBe(BASE);
+    expect(body.visual).toBe("");
+    expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
+    expect(body.reviewSnapshot?.targets.find((target) => target.target === "visual")).toMatchObject({ outcome: "rejected" });
+  });
 });
 
 describe("ExperienceCopilotShell — CD-6: inline review flow", () => {

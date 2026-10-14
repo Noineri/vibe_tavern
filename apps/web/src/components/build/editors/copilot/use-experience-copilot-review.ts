@@ -138,10 +138,11 @@ export function recordExperienceRevertedOutcomes(kind: AgentKind, threadId: stri
 }
 
 /** Cancels a resolved record when no rendered diff remains to reconstruct it. */
-export function cancelStoredExperienceOutcomes(kind: AgentKind, threadId: string): void {
+export function cancelStoredExperienceOutcomes(kind: AgentKind, threadId: string, targets: readonly ("rules" | "visual")[]): void {
   const state = useAgentReviewOutcomeStore.getState();
   const outcomes = state.outcomesByThread[agentThreadKey(kind, threadId)] ?? {};
-  for (const outcome of Object.values(outcomes)) {
+  for (const target of targets) {
+    const outcome = outcomes[target];
     if (!outcome) continue;
     state.record(kind, threadId, { ...outcome.record, outcome: "cancelled" }, outcome.appliedHunkIds);
   }
