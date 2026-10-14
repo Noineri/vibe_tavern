@@ -40,7 +40,7 @@ import {
 import type { AgentSendOptions } from "../../../shared/agent-shell/use-agent-controller.js";
 import { buildExperienceCopilotReviewSnapshot } from "../../../../lib/experience-copilot-review-snapshot.js";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
-import { cancelStoredExperienceOutcomes, recordExperienceReviewOutcome, recordExperienceRevertedOutcomes, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs, useExperienceCopilotStep, useExperienceCopilotVisualValidation, useExperienceReviewOutcomeRecorder } from "./use-experience-copilot-review.js";
+import { cancelStoredExperienceOutcomes, recordExperienceReviewOutcome, recordExperienceRevertedOutcomes, useExperienceCopilotReviewFeedback, useExperienceCopilotReviewTabs, useExperienceCopilotStep, useExperienceCopilotVisualValidation, useExperienceReviewOutcomeRecorder, useExperienceReviewSupersession } from "./use-experience-copilot-review.js";
 
 /**
  * The `experience` agent host (AGENT_SHELL_PLAN AS-6b2) — the mini-app
@@ -328,6 +328,8 @@ function ExperienceEditorPane({
     () => buildBufferReview(effVisual.base, effVisual.proposed, acceptedVisualHunks, !isSending, dismissedVisualHunks),
     [effVisual, acceptedVisualHunks, dismissedVisualHunks, isSending],
   );
+  useExperienceReviewSupersession(EXPERIENCE_KIND, threadId, "rules", effRules.base, effRules.proposed);
+  useExperienceReviewSupersession(EXPERIENCE_KIND, threadId, "visual", effVisual.base, effVisual.proposed);
 
   const recordAppliedOutcome = useExperienceReviewOutcomeRecorder(EXPERIENCE_KIND, threadId);
 
@@ -590,6 +592,7 @@ function ExperienceEditorPane({
       for (const outcome of Object.values(stored)) {
         if (outcome && !targets.some((target) => target.target === outcome.record.target)) targets.push(outcome.record);
       }
+      targets.push(...(useAgentReviewOutcomeStore.getState().supersededByThread[agentThreadKey(EXPERIENCE_KIND, threadId)] ?? []));
     }
     return {
       rules: rulesCode,
@@ -606,9 +609,6 @@ function ExperienceEditorPane({
 
   const { outerBufferOptions, codeBufferOptions } = useExperienceCopilotReviewTabs({ rulesReview, visualReview, t });
 
-  // XU-6: the creation stepper in the parent mirrors the shell's current
-  // authoring position. `appearance` maps to the Visual code buffer; `try` to
-  // the inline sandbox tab; anything else is Rules.
   const activeStep = useExperienceCopilotStep(editorBuffer, codeBuffer, onStepChange);
 
   // IR-90A: exactly one ExperiencePlayground element is shared by the inline

@@ -1539,6 +1539,38 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
     expect(body.reviewSnapshot?.targets.find((target) => target.target === "visual")).toMatchObject({ outcome: "rejected" });
   });
+
+  it("a replacement proposal reports the superseded round identity without inheriting its applied hunks", async () => {
+    const threadId = "ro4-supervisor-supersession";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+
+    const priorBody = await sendFollowup(utils, "revise the pending proposal", 2);
+    const prior = priorBody.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(prior).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
+    await act(async () => {
+      useExperienceCopilotTurnStore.getState().upsertActivity("experience", threadId, {
+        toolCallId: "ro4-supervisor-replacement-proposal",
+        toolName: "write_buffer",
+        status: "done",
+        target: "rules",
+        proposed: "// RULES v3\nconst keep = 1;\nconst tail = 333.",
+        summary: "revised header and tail",
+      });
+    });
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+
+    const body = await sendFollowup(utils, "explain the replacement", 3);
+    const current = body.reviewSnapshot?.targets.find((target) => target.target === "rules" && target.roundId !== prior?.roundId);
+    expect(current).toMatchObject({ outcome: "awaiting", hunks: { accepted: 0, rejected: 0, pending: 2 } });
+    expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules" && target.roundId === prior?.roundId)).toMatchObject({
+      outcome: "superseded",
+      supersededByRound: current?.roundId,
+    });
+  });
 });
 
 describe("ExperienceCopilotShell — CD-6: inline review flow", () => {

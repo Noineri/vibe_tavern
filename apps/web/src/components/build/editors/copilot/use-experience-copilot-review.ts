@@ -148,11 +148,21 @@ export function cancelStoredExperienceOutcomes(kind: AgentKind, threadId: string
   }
 }
 
-/** Keeps the parent creation step synchronized with the host's authoring tab. */
+/** XU-6: the creation stepper in the parent mirrors the shell's current
+ * authoring position. `appearance` maps to the Visual code buffer; `try` to
+ * the inline sandbox tab; anything else is Rules. */
 export function useExperienceCopilotStep(editorBuffer: string, codeBuffer: string, onStepChange: ((step: "rules" | "appearance" | "try") => void) | undefined) {
   const step = editorBuffer === "sandbox" ? "try" : codeBuffer === "visual" ? "appearance" : "rules";
   useEffect(() => {
     onStepChange?.(step);
   }, [step, onStepChange]);
   return step;
+}
+
+/** Retains one replaced target record so the model can identify supersession. */
+export function useExperienceReviewSupersession(kind: AgentKind, threadId: string | null, target: "rules" | "visual", base: string | undefined, proposed: string | undefined) {
+  useEffect(() => {
+    if (!threadId || base === undefined || proposed === undefined) return;
+    useAgentReviewOutcomeStore.getState().supersede(kind, threadId, target, experienceReviewRoundId(base, proposed));
+  }, [kind, threadId, target, base, proposed]);
 }
