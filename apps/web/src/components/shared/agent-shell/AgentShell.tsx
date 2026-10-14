@@ -12,7 +12,7 @@ import { cn } from "../../../lib/cn.js";
 import { Icons } from "../icons.js";
 import { EmptyState } from "../empty-state.js";
 import { useT } from "../../../i18n/context.js";
-import { getAgentHost, type AgentHostBridge, type AgentHostContext } from "../../../lib/agent-host-registry.js";
+import { agentThreadKey, getAgentHost, type AgentHostBridge, type AgentHostContext, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { useAgentController, type AgentSendOptions } from "./use-agent-controller.js";
 import { useAgentPlan } from "../../../hooks/use-agent-plan.js";
 import { useCopilotContext } from "../../../hooks/use-copilot-context.js";
@@ -61,19 +61,18 @@ import type { AgentContextPillItem } from "./AgentContextPills.js";
  * (threadId / messages / loading / error), the provider/model selection, the
  * UI-only mobile tab selection, and the profile modal open flag.
  *
- * AS-6c SEAMS (what remains for AS-6c-ii): the turn store keeps its
- * `experience-copilot-*` name and keys — this shell's `hasProposal`
- * selector, the controller's store feeding, and the display components
- * (AgentMessageList / AgentTodoSection / activity cards) still read/write it
- * directly — and the transport/wire types stay the experience client's until
- * the kind parameter + type unification land in the controller (with the
- * store key helper + selector migration). The send path itself is now fully
- * behind the descriptor's `transport` (AS-6c-i).
+ * AS-6c SEAMS (remaining for later units): the turn/review stores keep their
+ * `experience-copilot-*` names (AS-10 owns the call-site rename), and the
+ * transport/wire types stay the experience client's (server keys stay bare
+ * threadId — only the in-client store maps re-key through `agentThreadKey`).
+ * AS-6c-ii landed here: the controller takes the host `kind` (required) and
+ * every store read/write keys through the helper; the send path itself is
+ * fully behind the descriptor's `transport` (AS-6c-i).
  */
 
 export interface AgentShellProps {
   /** The registered host kind driving this shell (`getAgentHost(kind)`). */
-  kind: string;
+  kind: AgentKind;
   /** The thread owner's id — today the script the agent threads belong to. */
   ownerId: string;
   /** The owning script when the host is script-owned (plan owner, profile
@@ -402,6 +401,7 @@ export function AgentShell({
   });
 
   const ctrl = useAgentController({
+    kind,
     transport,
     threadId,
     providerProfileId,
@@ -414,10 +414,10 @@ export function AgentShell({
 
   // ── AS-6b2: the dispatch seam (host's dangling-review capture + options) ─
   // Reads the bridge AT CALL TIME (the host pane assigned the latest-render
-  // handle); the descriptor's buildSendOptions forwards to that session. The
-  // `as AgentSendOptions` narrowing is still structurally needed — the
-  // descriptor is kind-generic and returns `unknown` here; AS-6c-ii's kind
-  // parameter + options-type unification is what removes the cast.
+  // handle); the descriptor's buildSendOptions forwards to that session.
+  // AS-6c-ii: the options type lives in the host registry, so the descriptor
+  // returns it directly — no narrowing cast (lib importing components is
+  // banned, which is what forced the old `as AgentSendOptions`).
   const hostCtx: AgentHostContext = {
     ownerId,
     scriptId,
@@ -428,7 +428,7 @@ export function AgentShell({
   };
   const sendWithOptions = (dispatch: (opts?: AgentSendOptions) => void) => {
     bridge.session?.onBeforeSend();
-    dispatch(host.buildSendOptions(hostCtx) as AgentSendOptions);
+    dispatch(host.buildSendOptions(hostCtx));
   };
 
   // ── Session switch / new (ER-12b) ────────────────────────────────────────
@@ -498,7 +498,7 @@ export function AgentShell({
   // mirroring CoauthorMode's `useCoauthorMobileTab`.
   const hasProposal = useExperienceCopilotTurnStore((s) => {
     if (!threadId) return false;
-    const activities = s.turnsByThread[threadId] ?? [];
+    const activities = s.turnsByThread[agentThreadKey(kind, threadId)] ?? [];
     return activities.some(
       (a) => a.status === "done" && a.target !== undefined && a.proposed !== undefined,
     );
@@ -585,13 +585,14 @@ export function AgentShell({
               DIRECTLY below the meter and DIRECTLY ABOVE the plan section
               (never scrolls with the feed); hidden until the model's first
               `todo` call; read-only — the model owns the checklist. */}
-          <AgentTodoSection threadId={threadId} />
+          <AgentTodoSection kind={kind} threadId={threadId} />
           {/* PM-6: the script-owned agent plan sits DIRECTLY below the todo
               section; hidden while the plan is empty; its editor locks while a
               turn streams. PM-7: todo (the thread's session) ABOVE plan (the
               script's durable document) — each hides itself when empty. */}
           <AgentPlanSection owner={planOwner} locked={ctrl.isSending} />
           <AgentMessageList
+            kind={kind}
             threadId={threadId}
             messages={messages}
             pendingText={ctrl.pendingText}

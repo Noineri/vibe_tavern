@@ -11,6 +11,7 @@ import {
 import type { CopilotAskAnswerInput } from "../../../api/experience-copilot-api.js";
 import type { AgentPendingAskAnswer } from "./use-agent-controller.js";
 import { orderMessagesWithDigests } from "../../../lib/copilot-context.js";
+import { agentThreadKey, type AgentKind } from "../../../lib/agent-host-registry.js";
 import { AgentMessageBlock } from "./AgentMessageBlock.js";
 import { AgentAskCard } from "./AgentAskCard.js";
 import { AgentToolAccordion } from "./AgentToolAccordion.js";
@@ -50,6 +51,9 @@ const EMPTY_ITEMS: CopilotTurnAnchorItem[] = [];
  * to the RP chat stores).
  */
 export interface AgentMessageListProps {
+  /** The host kind driving the shell — store keys go through
+   *  `agentThreadKey(kind, threadId)` (AS-6c-ii). */
+  kind: AgentKind;
   threadId: string;
   messages: ExperienceCopilotMessageWire[];
   /** Live assistant text accumulated this turn (cleared by the shell on settle). */
@@ -72,6 +76,7 @@ export interface AgentMessageListProps {
 }
 
 export function AgentMessageList({
+  kind,
   threadId,
   messages,
   pendingText,
@@ -83,10 +88,10 @@ export function AgentMessageList({
 }: AgentMessageListProps) {
   const { t } = useT();
   const activities = useExperienceCopilotTurnStore(
-    useShallow((s) => s.turnsByThread[threadId] ?? EMPTY),
+    useShallow((s) => s.turnsByThread[agentThreadKey(kind, threadId)] ?? EMPTY),
   );
   const feed = useExperienceCopilotTurnStore(
-    useShallow((s) => s.feedByThread[threadId] ?? EMPTY_FEED),
+    useShallow((s) => s.feedByThread[agentThreadKey(kind, threadId)] ?? EMPTY_FEED),
   );
 
   // CD-1 (TF-5 inline form): persisted tool rows render as audit cards at their

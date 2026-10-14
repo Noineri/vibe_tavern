@@ -197,7 +197,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     });
 
     // Seed a prior turn's activity so clearTurn's drop is observable.
-    useExperienceCopilotTurnStore.getState().upsertActivity(THREAD, {
+    useExperienceCopilotTurnStore.getState().upsertActivity("experience", THREAD, {
       toolCallId: "old",
       toolName: "run_test",
       status: "done",
@@ -205,7 +205,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
 
     let pending!: Promise<void>;
@@ -220,7 +220,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     expect(result.current.isSending).toBe(true);
     expect(result.current.pendingText).toBe("");
     // clearTurn dropped the prior turn at start.
-    expect(useExperienceCopilotTurnStore.getState().getActivities(THREAD)).toEqual([]);
+    expect(useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD)).toEqual([]);
 
     // Drive text deltas; pendingText accumulates live.
     await act(async () => {
@@ -269,7 +269,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     expect(result.current.pendingReasoning).toBe("");
     expect(onTurnSettled).toHaveBeenCalledTimes(1);
 
-    const activities = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    const activities = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
     expect(activities).toEqual([
       {
         toolCallId: "tc1",
@@ -288,7 +288,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
   test("passes model through to the stream body", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, model: "m1" }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, model: "m1" }),
     );
 
     await act(async () => {
@@ -303,7 +303,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
   test("passes testFeedback through to the stream body when provided in opts (ER-14)", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     const feedback = { ok: true, status: "active", revision: 3, legalActionTypes: ["score"], stateSummary: "{}", consoleTail: [] };
@@ -325,7 +325,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
   test("passes the Try sandbox launch context through to the stream body", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
     const launchContext = {
       participants: [{ id: "you", label: "You", controller: "human" as const }],
@@ -352,7 +352,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -372,7 +372,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
       await pending;
     });
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toMatchObject({ toolCallId: "tc1", toolName: "write_buffer", status: "error" });
   });
 });
@@ -380,7 +380,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
 describe("useExperienceCopilotController — guards", () => {
   test("empty content → no stream call", async () => {
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -392,7 +392,7 @@ describe("useExperienceCopilotController — guards", () => {
 
   test("null threadId → no stream call", async () => {
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: null, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: null, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -404,7 +404,7 @@ describe("useExperienceCopilotController — guards", () => {
 
   test("null providerProfileId → toast + no stream call", async () => {
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: null }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: null }),
     );
 
     await act(async () => {
@@ -424,7 +424,7 @@ describe("useExperienceCopilotController — cancel and error", () => {
     streamExperienceCopilot.mockImplementation(() => held.promise);
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
 
     let pending!: Promise<void>;
@@ -450,7 +450,7 @@ describe("useExperienceCopilotController — cancel and error", () => {
     streamExperienceCopilot.mockRejectedValue(new ProviderStreamError("boom", "server_error"));
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
 
     await act(async () => {
@@ -474,7 +474,7 @@ describe("feed wiring (TF-4)", () => {
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -507,7 +507,7 @@ describe("feed wiring (TF-4)", () => {
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -537,11 +537,11 @@ describe("feed wiring (TF-4)", () => {
   test("handleSend clears the prior turn's feed (clearTurn at start)", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     // Seed a prior turn's feed.
-    useExperienceCopilotTurnStore.getState().appendTextDelta(THREAD, "old text");
+    useExperienceCopilotTurnStore.getState().appendTextDelta("experience", THREAD, "old text");
     expect(useExperienceCopilotTurnStore.getState().feedByThread[THREAD]).toHaveLength(1);
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -605,7 +605,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -618,7 +618,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     await act(async () => {
       captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
     });
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
 
     await act(async () => {
       captured.onToolResult!({ toolCallId: "tc_todo", toolName: "todo", output: TODO_ENVELOPE, isError: false });
@@ -626,7 +626,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
       await pending;
     });
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toEqual({
       toolCallId: "tc_todo",
       toolName: "todo",
@@ -635,7 +635,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
       todo: { items: TODO_ITEMS, remaining: 2, activeTitle: "Write the visual header" },
     });
     // The panel still shows the confirmed list after the envelope.
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
   });
 
   test("a failed todo save (ok:false) renders the error card and leaves the panel at the optimistic args value", async () => {
@@ -647,7 +647,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -668,11 +668,11 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
       await pending;
     });
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toMatchObject({ toolCallId: "tc_todo", toolName: "todo", status: "error" });
     expect(activity!.todo).toBeUndefined();
     // Optimistic panel value retained — the model retries the rewrite next step.
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
   });
 
   test("threadTodo seeds/resets the panel state from the persisted wire; omitted leaves the store untouched", async () => {
@@ -683,31 +683,31 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     // threadTodo is threaded through initialProps to make re-seeding drivable.
     const initial = renderHook(
       ({ todo }: { todo: readonly CopilotTodoItem[] }) =>
-        useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, threadTodo: todo }),
+        useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, threadTodo: todo }),
       { initialProps: { todo: TODO_ITEMS } },
     );
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
 
     // A refetch producing a new wire todo re-seeds (new array identity).
     const rewritten: CopilotTodoItem[] = [{ title: "Fresh plan", status: "active" }];
     await act(async () => {
       initial.rerender({ todo: rewritten });
     });
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(rewritten);
+    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(rewritten);
 
     // The empty wire todo clears the panel (thread switch to a plan-less thread).
     await act(async () => {
       initial.rerender({ todo: [] });
     });
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual([]);
+    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual([]);
 
     // Omitted (undefined) — no seeding, the existing state is untouched.
-    useExperienceCopilotTurnStore.getState().setTodo(THREAD, TODO_ITEMS);
+    useExperienceCopilotTurnStore.getState().setTodo("experience", THREAD, TODO_ITEMS);
     initial.unmount();
     const second = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
     second.unmount();
   });
 
@@ -721,7 +721,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     const applyPlanToolResult = mock();
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
     );
 
     let pending!: Promise<void>;
@@ -734,7 +734,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     await act(async () => {
       captured.onToolCall!({ toolCallId: "tc_todo", toolName: "todo", args: { items: TODO_ITEMS } });
     });
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
     // …and the plan call routes its carrier args + envelope to the hook seam.
     await act(async () => {
       captured.onToolCall!({ toolCallId: "tc_plan", toolName: "plan", args: PLAN_ARGS });
@@ -745,9 +745,9 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     });
     expect(applyPlanToolResult).toHaveBeenCalledWith(PLAN_ARGS, PLAN_ENVELOPE);
     // The two states never crossed: the todo envelope confirmed the store list…
-    expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
+    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", THREAD)).toEqual(TODO_ITEMS);
     // …and the plan activity carries no todo payload (and vice versa).
-    const activities = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    const activities = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
     expect(activities.find((a) => a.toolName === "todo")!.todo).toBeDefined();
     expect(activities.find((a) => a.toolName === "plan")!.todo).toBeUndefined();
   });
@@ -764,7 +764,7 @@ describe("useExperienceCopilotController — plan wiring (PM-6)", () => {
     const applyPlanToolResult = mock();
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
     );
 
     let pending!: Promise<void>;
@@ -789,7 +789,7 @@ describe("useExperienceCopilotController — plan wiring (PM-6)", () => {
     // use-agent-plan.test.tsx).
     expect(applyPlanToolResult).toHaveBeenCalledWith(PLAN_ARGS, PLAN_ENVELOPE);
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toEqual({
       toolCallId: "tc_plan",
       toolName: "plan",
@@ -808,7 +808,7 @@ describe("useExperienceCopilotController — plan wiring (PM-6)", () => {
     const applyPlanToolResult = mock();
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
     );
 
     let pending!: Promise<void>;
@@ -833,7 +833,7 @@ describe("useExperienceCopilotController — plan wiring (PM-6)", () => {
     // itself still fires with the same args + envelope pair.
     expect(applyPlanToolResult).toHaveBeenCalledWith(PLAN_ARGS, { ok: false, error: "db down" });
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toMatchObject({ toolCallId: "tc_plan", toolName: "plan", status: "error" });
     expect(activity!.summary).toBe(JSON.stringify({ ok: false, error: "db down" }));
   });
@@ -849,7 +849,7 @@ describe("useExperienceCopilotController — ask wiring (TAG-7)", () => {
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -870,7 +870,7 @@ describe("useExperienceCopilotController — ask wiring (TAG-7)", () => {
       await pending;
     });
 
-    const [activity] = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    const [activity] = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
     expect(activity).toEqual({
       toolCallId: "tc_ask",
       toolName: "ask_user",
@@ -931,7 +931,7 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
       return d.promise;
     });
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -952,7 +952,7 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
       await pending;
     });
 
-    const liveActivities = useExperienceCopilotTurnStore.getState().getActivities(THREAD);
+    const liveActivities = useExperienceCopilotTurnStore.getState().getActivities("experience", THREAD);
 
     // THE parity claim: field-for-field identical activities (plan/ask
     // payloads, args, status) from the two sources. The plan row is the twin
@@ -975,7 +975,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
 
     let pending!: Promise<void>;
@@ -1043,7 +1043,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
       return Promise.resolve({ finishReason: "stop" });
     });
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -1059,7 +1059,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
 
   test("guards: both text+skipped / neither / empty text → no stream call", async () => {
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -1076,7 +1076,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
     const onTurnSettled = mock();
     nextHttpError = { message: "validation 400" };
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
 
     await act(async () => {
@@ -1095,7 +1095,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
       return Promise.reject(new Error("provider died mid-stream"));
     });
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -1113,7 +1113,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
     answerCopilotAsk.mockResolvedValue({ finishReason: "stop" });
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>
-      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, kind: "experience", threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {

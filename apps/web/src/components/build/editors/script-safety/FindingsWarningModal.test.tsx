@@ -18,8 +18,8 @@ const { cleanup, render, fireEvent } = await import("@testing-library/react");
 const {
   FindingsWarningModal,
   blockingFindings,
-  scriptSafetyRevealPosition,
 } = await import("./FindingsWarningModal.js");
+const { scriptSafetyRevealPosition } = await import("../../../../lib/script-safety-reveal.js");
 
 function finding(overrides: Partial<ScriptSafetyFinding> = {}): ScriptSafetyFinding {
   return { ruleId: "unsafe-eval", severity: "critical", line: 1, ...overrides };

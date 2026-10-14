@@ -17,7 +17,11 @@
  * record proposals.
  */
 import type { ComponentType, ReactNode } from "react";
-import type { RecordProposal } from "@vibe-tavern/api-contracts";
+import type {
+  ExperienceCopilotLaunchContext,
+  ExperienceCopilotStep,
+  RecordProposal,
+} from "@vibe-tavern/api-contracts";
 import type Resources from "../i18n/resources.js";
 // AS-6c-i: type-only — the transport members mirror today's experience client
 // fns exactly (the compiler keeps the host's delegation honest), so the
@@ -51,6 +55,57 @@ export class UnknownAgentHostError extends Error {
     super(`No agent host registered under "${kind}".`);
     this.name = "UnknownAgentHostError";
   }
+}
+
+/**
+ * The agent-kind id. Today only `"experience"` is registered (the
+ * experience host in `build/editors/copilot/experience-agent-host.tsx`); a
+ * second kind arrives in AS-7+. A plain string alias — the registry keys
+ * hosts by it, and the agent stores qualify their per-thread map keys
+ * through {@link agentThreadKey}.
+ */
+export type AgentKind = string;
+
+/**
+ * The per-kind store key for an agent thread (AS-6c-ii, decision AS-5/
+ * Option A: the kind parameter lands atomically with this helper and the
+ * selector migration — never in a commit where store keys are still bare).
+ *
+ * PERSISTENCE CONTRACT: neither agent store uses zustand `persist`, but the
+ * experience draft envelope (`lib/experience-copilot-draft.ts`,
+ * `vt:experience-copilot-draft:<threadId>`, v2) persists per-thread review
+ * state in localStorage under the LEGACY BARE threadId. Returning a prefixed
+ * key for `"experience"` would orphan every pre-6c-ii draft (silent data
+ * loss with zero migration code), so the experience kind keeps the bare
+ * threadId and only later kinds are namespaced (`${kind}:${threadId}`).
+ * Server-side keys (API/DB) stay bare always — only the in-client store
+ * maps re-key.
+ *
+ * Single source (DRY): both agent stores and every selector call site key
+ * through this function — no second hand-written derivation.
+ */
+export function agentThreadKey(kind: AgentKind, threadId: string): string {
+  return kind === "experience" ? threadId : `${kind}:${threadId}`;
+}
+
+/**
+ * Live draft buffers + active authoring step to send with an agent message
+ * (AS-6c-ii: moved here from use-agent-controller.ts — lib importing a
+ * components module is banned, which is what forced the shell's
+ * `as AgentSendOptions` cast; the controller re-exports this type for
+ * compatibility). The model sees the current (possibly unsaved) source and
+ * knows which buffer the user is editing.
+ */
+export interface AgentSendOptions {
+  rules?: string;
+  visual?: string;
+  step?: ExperienceCopilotStep;
+  /** The latest test/simulate digest the user sent back from the test panel
+   *  (ER-14). Carried on the body as `testFeedback` and rendered as a JSON
+   *  context section by the backend (surviving history compaction). */
+  testFeedback?: Record<string, unknown> | null;
+  /** Latest Try-panel execution context; backend tools use it verbatim. */
+  launchContext?: ExperienceCopilotLaunchContext;
 }
 
 /**
@@ -89,14 +144,12 @@ export interface AgentHostBufferSpec {
  * {@link AgentHostBridge.session} every render. `onBeforeSend` runs
  * synchronously before each dispatched turn (the buffer host captures its
  * dangling review before the turn store is cleared); `buildSendOptions`
- * returns the host's per-turn send options. The concrete options type is
- * transport-owned (`AgentSendOptions` in use-agent-controller.ts) and stays
- * opaque here until AS-6c-ii's kind parameter unifies it with the transport's
- * wire types.
+ * returns the host's per-turn send options (AS-6c-ii: typed — the options
+ * type lives in this registry now, so no narrowing cast is needed).
  */
 export interface AgentHostSessionHandle {
   onBeforeSend: () => void;
-  buildSendOptions: () => unknown;
+  buildSendOptions: () => AgentSendOptions;
 }
 
 /**
@@ -152,8 +205,8 @@ export interface AgentHostTransport {
 /**
  * AS-6c-i: re-exported so the controller (and any transport consumer) types
  * its stream callbacks and ask answers through the registry instead of the
- * experience client — the single spelling stays the client's until AS-6c-ii
- * unifies the wire types behind the kind parameter.
+ * experience client — the single spelling stays the client's (wire types are
+ * untouched by AS-6c-ii; per-kind wire types arrive with a later unit).
  */
 export type { CopilotAskAnswerInput, CopilotStreamOpts } from "../api/experience-copilot-api.js";
 
@@ -164,7 +217,7 @@ export type AgentI18nKey = keyof Resources["en"];
 
 /** Everything the generic shell needs to host one agent kind. */
 export interface AgentHostDescriptor {
-  kind: string;
+  kind: AgentKind;
   /** i18n KEYS (not strings) — the shell resolves them through `useT`. */
   i18n: {
     title: AgentI18nKey;
@@ -187,11 +240,11 @@ export interface AgentHostDescriptor {
   transport: AgentHostTransport;
   /** Absent = chat-only host (no editor pane). */
   renderEditorPane?: (ctx: AgentHostContext) => ReactNode;
-  /** The per-turn send options. AS-6b2: returns `unknown` — the live options
-   *  come from the host session via `ctx.bridge` (the descriptor is a module
-   * constant and cannot close over component state); the shell narrows the
-   * result to the controller's AgentSendOptions at the send seam. */
-  buildSendOptions: (ctx: AgentHostContext) => unknown;
+  /** The per-turn send options. AS-6b2: the live options come from the host
+   *  session via `ctx.bridge` (the descriptor is a module constant and
+   *  cannot close over component state); AS-6c-ii types them as
+   *  {@link AgentSendOptions} (owned by this registry). */
+  buildSendOptions: (ctx: AgentHostContext) => AgentSendOptions;
   toolbarSlot?: (ctx: AgentHostContext) => ReactNode;
   mobileEditTabHeader?: (ctx: AgentHostContext) => ReactNode;
   recordProposalRenderers: Record<string, ComponentType<RecordProposalCardProps>>;
@@ -217,7 +270,7 @@ export function registerAgentHost(descriptor: AgentHostDescriptor): () => void {
 }
 
 /** The registered host under `kind` — {@link UnknownAgentHostError} if absent. */
-export function getAgentHost(kind: string): AgentHostDescriptor {
+export function getAgentHost(kind: AgentKind): AgentHostDescriptor {
   const host = hosts.get(kind);
   if (host === undefined) throw new UnknownAgentHostError(kind);
   return host;

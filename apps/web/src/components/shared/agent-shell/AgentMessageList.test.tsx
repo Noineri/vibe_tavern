@@ -43,7 +43,7 @@ describe("ExperienceCopilotMessageList", () => {
   it("renders each persisted user/assistant message", () => {
     const { getByText } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[
           message({ id: "u1", role: "user", content: "Make it scarier" }),
           message({ id: "a1", role: "assistant", content: "Here are the rules" }),
@@ -61,7 +61,7 @@ describe("ExperienceCopilotMessageList", () => {
   it("shows the live reasoning block in the co-author pattern when pendingReasoning is non-empty (UX 2026-08-16 remark 4)", () => {
     const { getByTestId, queryByTestId, rerender } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText=""
         pendingReasoning=""
@@ -73,7 +73,7 @@ describe("ExperienceCopilotMessageList", () => {
 
     rerender(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText=""
         pendingReasoning="thinking about the rules"
@@ -92,7 +92,7 @@ describe("ExperienceCopilotMessageList", () => {
   it("shows the live pendingText assistant bubble when non-empty", () => {
     const { getByText } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText="streaming reply…"
         pendingReasoning=""
@@ -109,7 +109,7 @@ describe("ExperienceCopilotMessageList", () => {
     // refetched. This pins the fix for 'I don't see my message while it generates'.
     const { getByText } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText=""
         pendingReasoning=""
@@ -138,7 +138,7 @@ describe("ExperienceCopilotMessageList", () => {
 
     const { getAllByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText=""
         pendingReasoning=""
@@ -155,7 +155,7 @@ describe("ExperienceCopilotMessageList", () => {
   it("persists historical turns' tool cards at their chronological positions (CD-1)", () => {
     const { container, getAllByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[
           message({ id: "u1", role: "user", content: "first request" }),
           message({
@@ -227,7 +227,7 @@ describe("ExperienceCopilotMessageList", () => {
 
     const { getAllByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[
           message({ id: "u1", role: "user", content: "first request" }),
           message({
@@ -283,7 +283,7 @@ describe("ExperienceCopilotMessageList", () => {
 
     const { container } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText="I'll edit the rulesDone"
         pendingReasoning=""
@@ -311,7 +311,7 @@ describe("ExperienceCopilotMessageList", () => {
 
     const { getByText, queryAllByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText="Hello"
         pendingReasoning=""
@@ -341,7 +341,7 @@ describe("ExperienceCopilotMessageList", () => {
 
     const { queryByText, getAllByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText=""
         pendingReasoning=""
@@ -359,7 +359,7 @@ describe("ExperienceCopilotMessageList", () => {
   it("tool rows without a following flow message trail at the list end", () => {
     const { container } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[
           message({ id: "u1", role: "user", content: "first request" }),
           message({
@@ -396,7 +396,7 @@ describe("ExperienceCopilotMessageList", () => {
   it("renders the empty state when there is nothing to show", () => {
     const { getByText } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText=""
         pendingReasoning=""
@@ -410,7 +410,7 @@ describe("ExperienceCopilotMessageList", () => {
   it("places a compaction digest card immediately before its anchor message (CM-9)", () => {
     const { container } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[
           message({ id: "u1", role: "user", content: "First question" }),
           message({ id: "a1", role: "assistant", content: "First answer" }),
@@ -468,7 +468,7 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
     const answers: [string, unknown][] = [];
     const { getByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "plan it" }), askCarrier("a1"), awaitingRow()]}
         pendingText=""
         pendingReasoning=""
@@ -486,7 +486,7 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
   it("a later turn's activity expires the unanswered ask (read-only)", () => {
     const { getByTestId, queryByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[
           message({ id: "u1", role: "user", content: "plan it" }),
           askCarrier("a1"),
@@ -524,7 +524,7 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
   it("a persisted answered ask renders read-only even as the last activity", () => {
     const { getByTestId, queryByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[
           message({ id: "u1", role: "user", content: "plan it" }),
           askCarrier("a1"),
@@ -545,7 +545,7 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
   it("the optimistic pendingAskAnswer override flips an awaiting card immediately", () => {
     const { getByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "plan it" }), askCarrier("a1"), awaitingRow()]}
         pendingText=""
         pendingReasoning=""
@@ -562,7 +562,7 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
   it("isSending blocks interactivity (no double-answer during the continuation stream)", () => {
     const { getByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "plan it" }), askCarrier("a1"), awaitingRow()]}
         pendingText=""
         pendingReasoning=""
@@ -576,17 +576,17 @@ describe("ExperienceCopilotMessageList — ask card (TAG-9)", () => {
   });
 
   it("renders a live-feed awaiting ask as the interactive card", () => {
-    useExperienceCopilotTurnStore.getState().upsertActivity("thread-1", {
+    useExperienceCopilotTurnStore.getState().upsertActivity("experience", "thread-1", {
       toolCallId: "tc-live",
       toolName: "ask_user",
       status: "done",
       ask: { ...ASK_ARGS, status: "awaiting_answer" },
     });
-    useExperienceCopilotTurnStore.getState().appendActivityRef("thread-1", "tc-live");
+    useExperienceCopilotTurnStore.getState().appendActivityRef("experience", "thread-1", "tc-live");
 
     const { getByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[message({ id: "u1", role: "user", content: "plan it" })]}
         pendingText=""
         pendingReasoning=""
@@ -632,7 +632,7 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
   it("history: one turn with text between tool calls renders ONE accordion holding all calls, one per turn", () => {
     const { container, getAllByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[
           message({ id: "u1", role: "user", content: "plan it" }),
           message({ id: "a1", role: "assistant", content: "intro text" }),
@@ -687,7 +687,7 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
   it("history: an ask_user between tool calls stays outside the turn's single accordion", () => {
     const { container, getByTestId, getAllByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[
           message({ id: "u1", role: "user", content: "plan it" }),
           message({ id: "a1", role: "assistant", content: "intro text" }),
@@ -750,7 +750,7 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
 
     const { container, getAllByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText="Step oneStep twoDone"
         pendingReasoning=""
@@ -806,7 +806,7 @@ describe("ExperienceCopilotMessageList — per-turn tool accordion (TA-1)", () =
 
     const { container, getByTestId, getAllByTestId } = render(
       <AgentMessageList
-        threadId="thread-1"
+        kind="experience" threadId="thread-1"
         messages={[]}
         pendingText="ThinkingDone"
         pendingReasoning=""

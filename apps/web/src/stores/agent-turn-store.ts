@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
 import {
   experienceCopilotToolOutputSchema,
   coauthorSkillReadOutputSchema,
@@ -24,14 +25,19 @@ import {
  * stores still prevents a refresh from interrupting in-flight activity and gives
  * the apply aggregator (ER-9) one provider-neutral Apply source.
  *
- * Lifecycle: keyed by threadId → the LATEST turn's activities only (each turn
- * starts fresh). `clearTurn` is called at turn start (controller), on thread
- * switch, and on Apply/Reject (ER-9). Not persisted (no `persist` middleware).
+ * Lifecycle: keyed by `agentThreadKey(kind, threadId)` → the LATEST turn's
+ * activities only (each turn starts fresh). `clearTurn` is called at turn
+ * start (controller), on thread switch, and on Apply/Reject (ER-9). Not
+ * persisted (no `persist` middleware).
  *
- * AS-5 keying: the public API keeps its exact threadId-first signatures and
- * the maps stay keyed by bare threadId — kind-keying deferred to the AS-6/7
- * controller migration (public kind param + shared key helper + selector
- * migration must land atomically).
+ * AS-6c-ii keying (decision AS-5/Option A — the kind parameter lands here
+ * atomically with the shared key helper and the selector migration, never
+ * in a commit where store keys are still bare): every action takes the host
+ * `kind` first and keys its maps through `agentThreadKey(kind, threadId)`
+ * (lib/agent-host-registry.ts — the single source). The experience kind
+ * keeps the LEGACY BARE threadId (the localStorage draft envelope persists
+ * bare keys — see the helper's persistence contract); later kinds namespace
+ * to `${kind}:${threadId}`.
  *
  * TAG-7 adds `todoByThread` — the SESSION-scoped live todo checklist state
  * (NOT turn-scoped), restored in PM-7 (owner ruling 2026-10-11) beside the
@@ -565,25 +571,25 @@ interface AgentTurnState {
    *  lifecycle note). */
   todoByThread: Record<string, CopilotTodoItem[]>;
   /** Insert or merge (by toolCallId) an activity for a thread. */
-  upsertActivity: (threadId: string, activity: AgentToolActivity) => void;
+  upsertActivity: (kind: AgentKind, threadId: string, activity: AgentToolActivity) => void;
   /** Drop the active turn's activities for a thread (turn start / switch / Apply / Reject). */
-  clearTurn: (threadId: string) => void;
+  clearTurn: (kind: AgentKind, threadId: string) => void;
   /** Read the activities for a thread (empty array if none). */
-  getActivities: (threadId: string) => AgentToolActivity[];
+  getActivities: (kind: AgentKind, threadId: string) => AgentToolActivity[];
   /** TAG-7 (restored PM-7): full-rewrite replace of a thread's live todo
    *  checklist state (the newest `todo` call's list IS the state —
    *  Cline-style). The items are shallow-copied to detach them from the
    *  caller's parsed-JSON reference. */
-  setTodo: (threadId: string, items: readonly CopilotTodoItem[]) => void;
+  setTodo: (kind: AgentKind, threadId: string, items: readonly CopilotTodoItem[]) => void;
   /** TAG-7 (restored PM-7): read a thread's live todo checklist state (empty
    *  array if none). */
-  getTodo: (threadId: string) => CopilotTodoItem[];
+  getTodo: (kind: AgentKind, threadId: string) => CopilotTodoItem[];
   /** TF-4: append a text delta into the OPEN text segment (or open one). */
-  appendTextDelta: (threadId: string, delta: string) => void;
+  appendTextDelta: (kind: AgentKind, threadId: string, delta: string) => void;
   /** TF-4: close the OPEN text segment (noop when none is open). */
-  closeTextSegment: (threadId: string) => void;
+  closeTextSegment: (kind: AgentKind, threadId: string) => void;
   /** TF-4: append an activity ref (idempotent per toolCallId). */
-  appendActivityRef: (threadId: string, toolCallId: string) => void;
+  appendActivityRef: (kind: AgentKind, threadId: string, toolCallId: string) => void;
 }
 
 // TF-4: monotonic feed text-segment id. Never reset (clearTurn drops the
@@ -594,9 +600,10 @@ export const useAgentTurnStore = create<AgentTurnState>((set, get) => ({
   turnsByThread: {},
   feedByThread: {},
   todoByThread: {},
-  upsertActivity: (threadId, activity) => {
+  upsertActivity: (kind, threadId, activity) => {
+    const key = agentThreadKey(kind, threadId);
     set((s) => {
-      const list = s.turnsByThread[threadId] ?? [];
+      const list = s.turnsByThread[key] ?? [];
       const idx = list.findIndex((a) => a.toolCallId === activity.toolCallId);
       // Merge by index so a streaming placeholder is finalized in place by the
       // later tool-result event (preserves order; later fields win on conflict).
@@ -604,37 +611,40 @@ export const useAgentTurnStore = create<AgentTurnState>((set, get) => ({
         idx === -1
           ? [...list, activity]
           : list.map((a, i) => (i === idx ? { ...a, ...activity } : a));
-      return { turnsByThread: { ...s.turnsByThread, [threadId]: next } };
+      return { turnsByThread: { ...s.turnsByThread, [key]: next } };
     });
     // ER-10 wires draft persistence (experience-copilot-draft.ts) — not yet available.
   },
-  clearTurn: (threadId) => {
+  clearTurn: (kind, threadId) => {
+    const key = agentThreadKey(kind, threadId);
     set((s) => {
-      const hasActivities = s.turnsByThread[threadId] !== undefined;
-      const hasFeed = s.feedByThread[threadId] !== undefined;
+      const hasActivities = s.turnsByThread[key] !== undefined;
+      const hasFeed = s.feedByThread[key] !== undefined;
       if (!hasActivities && !hasFeed) return s;
       const nextActivities = { ...s.turnsByThread };
-      delete nextActivities[threadId];
+      delete nextActivities[key];
       const nextFeed = { ...s.feedByThread };
-      delete nextFeed[threadId];
+      delete nextFeed[key];
       return { turnsByThread: nextActivities, feedByThread: nextFeed };
     });
     // ER-10 wires draft persistence (experience-copilot-draft.ts) — not yet available.
   },
-  getActivities: (threadId) => get().turnsByThread[threadId] ?? [],
-  setTodo: (threadId, items) => {
-    set((s) => ({ todoByThread: { ...s.todoByThread, [threadId]: [...items] } }));
+  getActivities: (kind, threadId) => get().turnsByThread[agentThreadKey(kind, threadId)] ?? [],
+  setTodo: (kind, threadId, items) => {
+    const key = agentThreadKey(kind, threadId);
+    set((s) => ({ todoByThread: { ...s.todoByThread, [key]: [...items] } }));
   },
-  getTodo: (threadId) => get().todoByThread[threadId] ?? [],
-  appendTextDelta: (threadId, delta) => {
+  getTodo: (kind, threadId) => get().todoByThread[agentThreadKey(kind, threadId)] ?? [],
+  appendTextDelta: (kind, threadId, delta) => {
     if (delta === "") return;
+    const key = agentThreadKey(kind, threadId);
     set((s) => {
-      const feed = s.feedByThread[threadId] ?? [];
+      const feed = s.feedByThread[key] ?? [];
       const last = feed[feed.length - 1];
       if (last !== undefined && last.kind === "text" && !last.closed) {
         const nextEntry: AgentFeedEntry = { ...last, text: last.text + delta };
         const nextFeed = [...feed.slice(0, -1), nextEntry];
-        return { feedByThread: { ...s.feedByThread, [threadId]: nextFeed } };
+        return { feedByThread: { ...s.feedByThread, [key]: nextFeed } };
       }
       const entry: AgentFeedEntry = {
         kind: "text",
@@ -642,25 +652,27 @@ export const useAgentTurnStore = create<AgentTurnState>((set, get) => ({
         text: delta,
         closed: false,
       };
-      return { feedByThread: { ...s.feedByThread, [threadId]: [...feed, entry] } };
+      return { feedByThread: { ...s.feedByThread, [key]: [...feed, entry] } };
     });
   },
-  closeTextSegment: (threadId) => {
+  closeTextSegment: (kind, threadId) => {
+    const key = agentThreadKey(kind, threadId);
     set((s) => {
-      const feed = s.feedByThread[threadId] ?? [];
+      const feed = s.feedByThread[key] ?? [];
       const last = feed[feed.length - 1];
       if (last === undefined || last.kind !== "text" || last.closed) return s;
       const nextEntry: AgentFeedEntry = { ...last, closed: true };
       const nextFeed = [...feed.slice(0, -1), nextEntry];
-      return { feedByThread: { ...s.feedByThread, [threadId]: nextFeed } };
+      return { feedByThread: { ...s.feedByThread, [key]: nextFeed } };
     });
   },
-  appendActivityRef: (threadId, toolCallId) => {
+  appendActivityRef: (kind, threadId, toolCallId) => {
+    const key = agentThreadKey(kind, threadId);
     set((s) => {
-      const feed = s.feedByThread[threadId] ?? [];
+      const feed = s.feedByThread[key] ?? [];
       if (feed.some((e) => e.kind === "activity" && e.id === toolCallId)) return s;
       const entry: AgentFeedEntry = { kind: "activity", id: toolCallId };
-      return { feedByThread: { ...s.feedByThread, [threadId]: [...feed, entry] } };
+      return { feedByThread: { ...s.feedByThread, [key]: [...feed, entry] } };
     });
   },
 }));

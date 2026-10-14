@@ -648,7 +648,7 @@ describe("ExperienceCopilotShell — todo panel (TAG-8, restored PM-7)", () => {
     expect(panel.textContent).toContain("Write the rules buffer");
     expect(panel.textContent).toContain("· 2");
     // The panel state went through the session-scoped store (not local).
-    expect(useExperienceCopilotTurnStore.getState().getTodo("thread-1")).toHaveLength(3);
+    expect(useExperienceCopilotTurnStore.getState().getTodo("experience", "thread-1")).toHaveLength(3);
   });
 
   it("stays hidden when the thread wire todo is empty", async () => {
@@ -671,7 +671,7 @@ describe("ExperienceCopilotShell — todo panel (TAG-8, restored PM-7)", () => {
     expect(queryByTestId("copilot-todo-panel")).toBeNull();
 
     act(() => {
-      useExperienceCopilotTurnStore.getState().setTodo("thread-1", [
+      useExperienceCopilotTurnStore.getState().setTodo("experience", "thread-1", [
         { status: "active", title: "Fresh plan step" },
       ]);
     });

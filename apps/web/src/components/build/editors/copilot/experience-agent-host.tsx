@@ -17,7 +17,7 @@ import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js
 import { useShallow } from "zustand/react/shallow";
 import { mergeSelectedBody } from "../../../../lib/coauthor-hunk-merge.js";
 import { ToolbarButton } from "./experience-copilot-buttons.js";
-import { registerAgentHost, type AgentHostBridge } from "../../../../lib/agent-host-registry.js";
+import { agentThreadKey, registerAgentHost, type AgentHostBridge, type AgentKind } from "../../../../lib/agent-host-registry.js";
 import {
   activateExperienceCopilotSession,
   answerCopilotAsk,
@@ -98,6 +98,11 @@ export interface ExperienceCopilotHostProps {
  *  Re-exported by the `ExperienceCopilotShell` wrapper for its public props. */
 export type ExperienceCopilotStep = "rules" | "appearance" | "try";
 
+/** The kind this host registers under (AS-6c-ii) — the single spelling for
+ *  every store key in this module (`agentThreadKey(EXPERIENCE_KIND,
+ *  threadId)`); the descriptor registration below uses the same const. */
+const EXPERIENCE_KIND: AgentKind = "experience";
+
 /** Stable empty fallback for the turn-store selector (a fresh `[]` per call
  *  would break useShallow's reference equality and re-render every keystroke). */
 const EMPTY_ACTIVITIES: readonly ExperienceCopilotToolActivity[] = [];
@@ -177,7 +182,7 @@ function ExperienceEditorPane({
   // The live turn's activities feed the review hook (proposal aggregation);
   // the SAME store read the MessageList does — never from inside a render.
   const turnActivities = useExperienceCopilotTurnStore(
-    useShallow((s) => (threadId ? s.turnsByThread[threadId] ?? EMPTY_ACTIVITIES : EMPTY_ACTIVITIES)),
+    useShallow((s) => (threadId ? s.turnsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)] ?? EMPTY_ACTIVITIES : EMPTY_ACTIVITIES)),
   );
   const handleRevertBuffers = useCallback(
     (buffers: { rules: string; visual: string }) => {
@@ -189,6 +194,7 @@ function ExperienceEditorPane({
     [rulesCode, visualSource, onRulesChange, onVisualChange],
   );
   const review = useCopilotReviewState({
+    kind: EXPERIENCE_KIND,
     threadId: threadId ?? "",
     isSending,
     rulesCode,
@@ -206,7 +212,7 @@ function ExperienceEditorPane({
   // buffer's sets only when the review key (base+proposed) actually changed,
   // so a remount with the same proposal keeps the progress.
   const round = useCopilotReviewRoundStore(
-    useShallow((s) => (threadId ? s.roundsByThread[threadId] ?? EMPTY_REVIEW_ROUND : EMPTY_REVIEW_ROUND)),
+    useShallow((s) => (threadId ? s.roundsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)] ?? EMPTY_REVIEW_ROUND : EMPTY_REVIEW_ROUND)),
   );
   const acceptedRulesHunks = useMemo(() => new Set(round.acceptedRules), [round.acceptedRules]);
   const acceptedVisualHunks = useMemo(() => new Set(round.acceptedVisual), [round.acceptedVisual]);
@@ -218,25 +224,25 @@ function ExperienceEditorPane({
   // shape the accept/cancel helpers take, writing through to the round store.
   const setAcceptedRulesHunks = useCallback(
     (next: Set<number>) => {
-      if (threadId) useCopilotReviewRoundStore.getState().setAcceptedHunks(threadId, "rules", [...next]);
+      if (threadId) useCopilotReviewRoundStore.getState().setAcceptedHunks(EXPERIENCE_KIND, threadId, "rules", [...next]);
     },
     [threadId],
   );
   const setAcceptedVisualHunks = useCallback(
     (next: Set<number>) => {
-      if (threadId) useCopilotReviewRoundStore.getState().setAcceptedHunks(threadId, "visual", [...next]);
+      if (threadId) useCopilotReviewRoundStore.getState().setAcceptedHunks(EXPERIENCE_KIND, threadId, "visual", [...next]);
     },
     [threadId],
   );
   const setDismissedRulesHunks = useCallback(
     (next: Set<number>) => {
-      if (threadId) useCopilotReviewRoundStore.getState().setDismissedHunks(threadId, "rules", [...next]);
+      if (threadId) useCopilotReviewRoundStore.getState().setDismissedHunks(EXPERIENCE_KIND, threadId, "rules", [...next]);
     },
     [threadId],
   );
   const setDismissedVisualHunks = useCallback(
     (next: Set<number>) => {
-      if (threadId) useCopilotReviewRoundStore.getState().setDismissedHunks(threadId, "visual", [...next]);
+      if (threadId) useCopilotReviewRoundStore.getState().setDismissedHunks(EXPERIENCE_KIND, threadId, "visual", [...next]);
     },
     [threadId],
   );
@@ -254,7 +260,7 @@ function ExperienceEditorPane({
   const captureDangling = useCallback(() => {
     if (!threadId) return;
     if (!proposalRef.current.hasProposal) return;
-    useCopilotReviewRoundStore.getState().captureDangling(threadId, {
+    useCopilotReviewRoundStore.getState().captureDangling(EXPERIENCE_KIND, threadId, {
       rules: proposalRef.current.proposedRules,
       visual: proposalRef.current.proposedVisual,
       baseRules: proposalBaseRef.current?.rules ?? rulesCode,
@@ -297,10 +303,10 @@ function ExperienceEditorPane({
   // isolate threads, and wiping on the "" → threadId transition would destroy
   // the restored round — the exact bug this store exists to fix.
   useEffect(() => {
-    if (threadId) useCopilotReviewRoundStore.getState().ensureReviewKey(threadId, "rules", rulesReviewKey);
+    if (threadId) useCopilotReviewRoundStore.getState().ensureReviewKey(EXPERIENCE_KIND, threadId, "rules", rulesReviewKey);
   }, [threadId, rulesReviewKey]);
   useEffect(() => {
-    if (threadId) useCopilotReviewRoundStore.getState().ensureReviewKey(threadId, "visual", visualReviewKey);
+    if (threadId) useCopilotReviewRoundStore.getState().ensureReviewKey(EXPERIENCE_KIND, threadId, "visual", visualReviewKey);
   }, [threadId, visualReviewKey]);
   // Envelope-v2 persistence (the write side of ER-10): keep the localStorage
   // draft (finalized activities + the round) in sync on every mutation. The
@@ -396,9 +402,9 @@ function ExperienceEditorPane({
     (hunkId: number) => {
       if (!threadId) return;
       const state = useCopilotReviewRoundStore.getState();
-      const current = state.roundsByThread[threadId];
+      const current = state.roundsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)];
       if (!current) return;
-      state.setDismissedHunks(threadId, "rules", [...new Set([...current.dismissedRules, hunkId])]);
+      state.setDismissedHunks(EXPERIENCE_KIND, threadId, "rules", [...new Set([...current.dismissedRules, hunkId])]);
     },
     [threadId],
   );
@@ -406,9 +412,9 @@ function ExperienceEditorPane({
     (hunkId: number) => {
       if (!threadId) return;
       const state = useCopilotReviewRoundStore.getState();
-      const current = state.roundsByThread[threadId];
+      const current = state.roundsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)];
       if (!current) return;
-      state.setDismissedHunks(threadId, "visual", [...new Set([...current.dismissedVisual, hunkId])]);
+      state.setDismissedHunks(EXPERIENCE_KIND, threadId, "visual", [...new Set([...current.dismissedVisual, hunkId])]);
     },
     [threadId],
   );
@@ -435,9 +441,9 @@ function ExperienceEditorPane({
     );
     if (pending.length === 0) return;
     const state = useCopilotReviewRoundStore.getState();
-    const current = state.roundsByThread[threadId];
+    const current = state.roundsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)];
     if (!current) return;
-    state.setDismissedHunks(threadId, "rules", [...new Set([...current.dismissedRules, ...pending])]);
+    state.setDismissedHunks(EXPERIENCE_KIND, threadId, "rules", [...new Set([...current.dismissedRules, ...pending])]);
   }, [rulesReview, acceptedRulesHunks, dismissedRulesHunks, threadId]);
   const dismissPendingVisual = useCallback(() => {
     if (!visualReview || !threadId) return;
@@ -446,9 +452,9 @@ function ExperienceEditorPane({
     );
     if (pending.length === 0) return;
     const state = useCopilotReviewRoundStore.getState();
-    const current = state.roundsByThread[threadId];
+    const current = state.roundsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)];
     if (!current) return;
-    state.setDismissedHunks(threadId, "visual", [...new Set([...current.dismissedVisual, ...pending])]);
+    state.setDismissedHunks(EXPERIENCE_KIND, threadId, "visual", [...new Set([...current.dismissedVisual, ...pending])]);
   }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, threadId]);
 
   // RV-3: "Cancel all" — kill the whole round for THIS buffer: every hunk
@@ -507,7 +513,7 @@ function ExperienceEditorPane({
   }, [visualReview, acceptedVisualHunks, dismissedVisualHunks, visualSource, onVisualChange, cancelRoundHunks]);
 
   const handleToolbarRevert = useCallback(() => {
-    if (threadId) useCopilotReviewRoundStore.getState().clearDangling(threadId);
+    if (threadId) useCopilotReviewRoundStore.getState().clearDangling(EXPERIENCE_KIND, threadId);
     review.revertLastTurn();
     toast.success(t("copilot_review_reverted"));
   }, [review, t, threadId]);
@@ -745,7 +751,7 @@ function ExperienceEditorPane({
  * constant and cannot close over component state.
  */
 registerAgentHost({
-  kind: "experience",
+  kind: EXPERIENCE_KIND,
   i18n: {
     // AS-6b2a renamed the copilot_* keys to agent_*; `experience_editor_back`
     // stays host-flavored — it is the EDITOR's shared back label, and the

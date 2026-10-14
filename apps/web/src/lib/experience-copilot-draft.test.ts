@@ -279,7 +279,7 @@ describe("experience-copilot-draft — store rehydration (the reload contract)",
 		useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
 		useCopilotReviewRoundStore.setState({ roundsByThread: {} });
 		rehydrateExperienceCopilotDrafts();
-		const acts = useExperienceCopilotTurnStore.getState().getActivities("thread_1");
+		const acts = useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1");
 		expect(acts.map((a) => a.toolCallId)).toEqual(["c1", "c2"]);
 		expect(acts[0].proposed).toBe(RULES_A);
 		expect(useCopilotReviewRoundStore.getState().roundsByThread["thread_1"]).toEqual(round);
@@ -298,8 +298,8 @@ describe("experience-copilot-draft — store rehydration (the reload contract)",
 		useExperienceCopilotTurnStore.setState({
 			turnsByThread: { thread_1: [rulesActivity("c1", RULES_A)] },
 		});
-		useCopilotReviewRoundStore.getState().pushSnapshot("thread_1", { rules: RULES_A, visual: VISUAL_A });
-		useCopilotReviewRoundStore.getState().setAcceptedHunks("thread_1", "rules", [0]);
+		useCopilotReviewRoundStore.getState().pushSnapshot("experience", "thread_1", { rules: RULES_A, visual: VISUAL_A });
+		useCopilotReviewRoundStore.getState().setAcceptedHunks("experience", "thread_1", "rules", [0]);
 		syncPersistedCopilotRound("thread_1");
 		const back = loadDraft("thread_1");
 		expect(back?.activities.map((a) => a.toolCallId)).toEqual(["c1"]);
@@ -308,7 +308,7 @@ describe("experience-copilot-draft — store rehydration (the reload contract)",
 
 		// Once both sides resolve (activities cleared, no dangling), the key goes.
 		useExperienceCopilotTurnStore.setState({ turnsByThread: {} });
-		useCopilotReviewRoundStore.getState().resetRound("thread_1");
+		useCopilotReviewRoundStore.getState().resetRound("experience", "thread_1");
 		syncPersistedCopilotRound("thread_1");
 		expect(loadDraft("thread_1")).toBeNull();
 	});

@@ -21,7 +21,8 @@ import {
   scriptSafetyWarningFlow,
   type ScriptSafetyWarningFlow,
 } from "./script-safety/ImportedScriptWarningModal.js";
-import { FindingsWarningModal, scriptSafetyRevealLine } from "./script-safety/FindingsWarningModal.js";
+import { FindingsWarningModal } from "./script-safety/FindingsWarningModal.js";
+import { scriptSafetyRevealLine } from "../../../lib/script-safety-reveal.js";
 import { useScriptSafetySettingsStore } from "../../../stores/script-safety-settings-store.js";
 import { lblCls } from "../../../lib/field-tokens.js";
 import { TextInput } from "../../shared/text-input.js";

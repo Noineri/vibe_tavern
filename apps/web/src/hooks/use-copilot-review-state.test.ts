@@ -29,6 +29,7 @@ const { act, renderHook } = await import("@testing-library/react");
 
 function baseArgs(over: Partial<UseCopilotReviewStateArgs> = {}): UseCopilotReviewStateArgs {
   return {
+    kind: "experience",
     threadId: "thread-1",
     isSending: false,
     rulesCode: "RULES v1",

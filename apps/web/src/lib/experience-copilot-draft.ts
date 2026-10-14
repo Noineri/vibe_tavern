@@ -55,6 +55,14 @@ import type { ExperienceCopilotToolActivity } from "../stores/experience-copilot
 import { useExperienceCopilotTurnStore } from "../stores/experience-copilot-turn-store.js";
 import type { CopilotReviewRound } from "../stores/experience-copilot-review-store.js";
 import { useCopilotReviewRoundStore } from "../stores/experience-copilot-review-store.js";
+import { agentThreadKey } from "./agent-host-registry.js";
+
+/** The draft envelope is experience-scoped (the `vt:experience-copilot-draft:`
+ *  prefix, the store slices below) — its store-map keys go through the shared
+ *  helper with the experience kind (AS-6c-ii: the helper keeps the legacy
+ *  bare threadId for this kind, so boot rehydration keeps hitting the
+ *  pre-6c-ii localStorage entries with zero migration). */
+const DRAFT_KIND = "experience";
 
 const DRAFT_PREFIX = "vt:experience-copilot-draft:";
 const DRAFT_VERSION = 2;
@@ -285,8 +293,9 @@ export function loadAllDrafts(): Record<string, ParsedCopilotDraft> {
  * the stores themselves. Idempotent; no-op without localStorage.
  */
 export function syncPersistedCopilotRound(threadId: string): void {
-  const activities = useExperienceCopilotTurnStore.getState().turnsByThread[threadId] ?? [];
-  const round = useCopilotReviewRoundStore.getState().roundsByThread[threadId] ?? null;
+  const key = agentThreadKey(DRAFT_KIND, threadId);
+  const activities = useExperienceCopilotTurnStore.getState().turnsByThread[key] ?? [];
+  const round = useCopilotReviewRoundStore.getState().roundsByThread[key] ?? null;
   saveDraft(threadId, activities, round);
 }
 
@@ -303,13 +312,15 @@ export function rehydrateExperienceCopilotDrafts(): void {
   useExperienceCopilotTurnStore.setState((s) => ({
     turnsByThread: {
       ...s.turnsByThread,
-      ...Object.fromEntries(Object.entries(drafts).map(([tid, d]) => [tid, d.activities])),
+      ...Object.fromEntries(
+        Object.entries(drafts).map(([tid, d]) => [agentThreadKey(DRAFT_KIND, tid), d.activities]),
+      ),
     },
   }));
   const rounds = Object.fromEntries(
     Object
       .entries(drafts)
-      .flatMap(([tid, d]) => (d.round !== null ? [[tid, d.round] as const] : [])),
+      .flatMap(([tid, d]) => (d.round !== null ? [[agentThreadKey(DRAFT_KIND, tid), d.round] as const] : [])),
   );
   if (Object.keys(rounds).length === 0) return;
   useCopilotReviewRoundStore.setState((s) => ({ roundsByThread: { ...s.roundsByThread, ...rounds } }));

@@ -6,7 +6,7 @@ import { cn } from "../../../lib/cn.js";
 import { scriptSafetyLint } from "../../../lib/script-safety-lint.js";
 import { CodeEditor } from "../CodeEditor.js";
 import { MobileExpandCodeEditor } from "../MobileExpandCodeEditor.js";
-import { scriptSafetyRevealLine } from "../../build/editors/script-safety/FindingsWarningModal.js";
+import { scriptSafetyRevealLine } from "../../../lib/script-safety-reveal.js";
 import { useIsMobile } from "../../../hooks/use-mobile.js";
 import { GeneratingScrim } from "../generation-feedback.js";
 import { computeDiffDecorationSpecs, agentDiffExtensions } from "./AgentDiffDecorations.js";

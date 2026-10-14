@@ -28,28 +28,28 @@ describe("experience-copilot-review-round store", () => {
 
   it("pushes snapshots with monotonic per-thread ids and pops the last one", () => {
     const store = useCopilotReviewRoundStore.getState();
-    store.pushSnapshot("t1", { rules: "r1", visual: "v1" });
-    store.pushSnapshot("t1", { rules: "r2", visual: "v2" });
+    store.pushSnapshot("experience", "t1", { rules: "r1", visual: "v1" });
+    store.pushSnapshot("experience", "t1", { rules: "r2", visual: "v2" });
 
     const round = useCopilotReviewRoundStore.getState().roundsByThread["t1"]!;
     expect(round.snapshots.map((s) => s.id)).toEqual([1, 2]);
     expect(round.snapshots[1]).toMatchObject({ rules: "r2", visual: "v2" });
     expect(round.nextSnapshotId).toBe(3);
 
-    const popped = useCopilotReviewRoundStore.getState().popSnapshot("t1");
+    const popped = useCopilotReviewRoundStore.getState().popSnapshot("experience", "t1");
     expect(popped).toMatchObject({ id: 2, rules: "r2", visual: "v2" });
     expect(useCopilotReviewRoundStore.getState().roundsByThread["t1"]!.snapshots).toHaveLength(1);
   });
 
   it("popSnapshot returns null on an empty stack without creating a slice", () => {
-    expect(useCopilotReviewRoundStore.getState().popSnapshot("t1")).toBeNull();
+    expect(useCopilotReviewRoundStore.getState().popSnapshot("experience", "t1")).toBeNull();
     expect(useCopilotReviewRoundStore.getState().roundsByThread).toEqual({});
   });
 
   it("isolates threads completely (one script's round never leaks into another)", () => {
     const store = useCopilotReviewRoundStore.getState();
-    store.pushSnapshot("t1", { rules: "r1", visual: "v1" });
-    store.setAcceptedHunks("t2", "rules", [0, 1]);
+    store.pushSnapshot("experience", "t1", { rules: "r1", visual: "v1" });
+    store.setAcceptedHunks("experience", "t2", "rules", [0, 1]);
 
     const t1 = useCopilotReviewRoundStore.getState().roundsByThread["t1"]!;
     const t2 = useCopilotReviewRoundStore.getState().roundsByThread["t2"]!;
@@ -61,9 +61,9 @@ describe("experience-copilot-review-round store", () => {
 
   it("replaces (not merges) accepted/dismissed sets per buffer", () => {
     const store = useCopilotReviewRoundStore.getState();
-    store.setAcceptedHunks("t1", "rules", [0]);
-    store.setAcceptedHunks("t1", "rules", [1, 2]);
-    store.setDismissedHunks("t1", "visual", [5]);
+    store.setAcceptedHunks("experience", "t1", "rules", [0]);
+    store.setAcceptedHunks("experience", "t1", "rules", [1, 2]);
+    store.setDismissedHunks("experience", "t1", "visual", [5]);
     const round = useCopilotReviewRoundStore.getState().roundsByThread["t1"]!;
     expect(round.acceptedRules).toEqual([1, 2]);
     expect(round.acceptedVisual).toEqual([]);
@@ -73,28 +73,28 @@ describe("experience-copilot-review-round store", () => {
 
   it("ensureReviewKey resets the buffer's sets ONLY on a real key change", () => {
     const store = useCopilotReviewRoundStore.getState();
-    store.ensureReviewKey("t1", "rules", "key-a");
-    store.setAcceptedHunks("t1", "rules", [0]);
-    store.setDismissedHunks("t1", "rules", [1]);
+    store.ensureReviewKey("experience", "t1", "rules", "key-a");
+    store.setAcceptedHunks("experience", "t1", "rules", [0]);
+    store.setDismissedHunks("experience", "t1", "rules", [1]);
 
     // Same key (e.g. a remount with the same proposal): a NO-OP — the accept /
     // dismiss progress must survive. This is the remount-preservation contract.
-    useCopilotReviewRoundStore.getState().ensureReviewKey("t1", "rules", "key-a");
+    useCopilotReviewRoundStore.getState().ensureReviewKey("experience", "t1", "rules", "key-a");
     let round = useCopilotReviewRoundStore.getState().roundsByThread["t1"]!;
     expect(round.rulesKey).toBe("key-a");
     expect(round.acceptedRules).toEqual([0]);
     expect(round.dismissedRules).toEqual([1]);
 
     // A new proposal (different key) restarts the buffer's sets…
-    useCopilotReviewRoundStore.getState().ensureReviewKey("t1", "rules", "key-b");
+    useCopilotReviewRoundStore.getState().ensureReviewKey("experience", "t1", "rules", "key-b");
     round = useCopilotReviewRoundStore.getState().roundsByThread["t1"]!;
     expect(round.rulesKey).toBe("key-b");
     expect(round.acceptedRules).toEqual([]);
     expect(round.dismissedRules).toEqual([]);
 
     // …including the revert path's null key, and WITHOUT touching the OTHER buffer.
-    store.setAcceptedHunks("t1", "visual", [7]);
-    useCopilotReviewRoundStore.getState().ensureReviewKey("t1", "rules", null);
+    store.setAcceptedHunks("experience", "t1", "visual", [7]);
+    useCopilotReviewRoundStore.getState().ensureReviewKey("experience", "t1", "rules", null);
     round = useCopilotReviewRoundStore.getState().roundsByThread["t1"]!;
     expect(round.rulesKey).toBeNull();
     expect(round.acceptedVisual).toEqual([7]);
@@ -104,10 +104,10 @@ describe("experience-copilot-review-round store", () => {
   it("captures and clears the dangling proposal (CD-8)", () => {
     const store = useCopilotReviewRoundStore.getState();
     const capture = { rules: "R2", baseRules: "R1", baseVisual: "V1" };
-    store.captureDangling("t1", capture);
+    store.captureDangling("experience", "t1", capture);
     expect(useCopilotReviewRoundStore.getState().roundsByThread["t1"]!.dangling).toEqual(capture);
 
-    useCopilotReviewRoundStore.getState().clearDangling("t1");
+    useCopilotReviewRoundStore.getState().clearDangling("experience", "t1");
     expect(useCopilotReviewRoundStore.getState().roundsByThread["t1"]!.dangling).toBeNull();
     // The rest of the round survives the clear (revert clears only dangling).
     expect(useCopilotReviewRoundStore.getState().roundsByThread["t1"]!.snapshots).toEqual([]);
@@ -115,11 +115,11 @@ describe("experience-copilot-review-round store", () => {
 
   it("resetRound drops the whole thread slice and is a no-op for unknown threads", () => {
     const store = useCopilotReviewRoundStore.getState();
-    store.pushSnapshot("t1", { rules: "r", visual: "v" });
-    useCopilotReviewRoundStore.getState().resetRound("t1");
+    store.pushSnapshot("experience", "t1", { rules: "r", visual: "v" });
+    useCopilotReviewRoundStore.getState().resetRound("experience", "t1");
     expect(useCopilotReviewRoundStore.getState().roundsByThread).toEqual({});
 
-    useCopilotReviewRoundStore.getState().resetRound("never");
+    useCopilotReviewRoundStore.getState().resetRound("experience", "never");
     expect(useCopilotReviewRoundStore.getState().roundsByThread).toEqual({});
   });
 

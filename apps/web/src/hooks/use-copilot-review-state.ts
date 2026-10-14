@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
 import {
 	aggregateExperienceCopilotProposal,
 	type ExperienceCopilotProposal,
@@ -58,6 +59,9 @@ import {
 export type { CopilotReviewSnapshot };
 
 export interface UseCopilotReviewStateArgs {
+	/** The host kind owning the thread (AS-6c-ii) — forwarded to every store
+	 *  read/write so slices stay kind-scoped. */
+	kind: AgentKind;
 	/** The copilot thread whose live activities carry the pending proposal
 	 *  (also the review-round store key). */
 	threadId: string;
@@ -97,6 +101,7 @@ export interface CopilotReviewState {
 }
 
 export function useCopilotReviewState({
+	kind,
 	threadId,
 	isSending,
 	rulesCode,
@@ -108,7 +113,7 @@ export function useCopilotReviewState({
 	// of the refactor). useShallow because EMPTY_REVIEW_ROUND is a shared frozen
 	// object — the selector must return it stably when the thread has no round.
 	const round = useCopilotReviewRoundStore(
-		useShallow((s) => s.roundsByThread[threadId] ?? EMPTY_REVIEW_ROUND),
+		useShallow((s) => s.roundsByThread[agentThreadKey(kind, threadId)] ?? EMPTY_REVIEW_ROUND),
 	);
 	const snapshots = round.snapshots;
 
@@ -127,22 +132,22 @@ export function useCopilotReviewState({
 		if (isSending && !was) {
 			useCopilotReviewRoundStore
 				.getState()
-				.pushSnapshot(threadId, { rules: rulesRef.current, visual: visualRef.current });
+				.pushSnapshot(kind, threadId, { rules: rulesRef.current, visual: visualRef.current });
 		}
-	}, [isSending, threadId]);
+	}, [isSending, kind, threadId]);
 
 	const lastSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1]! : null;
 
 	const revertLastTurn = useCallback(() => {
 		// Pop FIRST (the store owns the stack); the popped texts are the revert
 		// target. No-op when the stack is empty.
-		const snapshot = useCopilotReviewRoundStore.getState().popSnapshot(threadId);
+		const snapshot = useCopilotReviewRoundStore.getState().popSnapshot(kind, threadId);
 		if (!snapshot) return;
 		onRevert({ rules: snapshot.rules, visual: snapshot.visual });
 		// Dismiss the pending proposal: it was diffed against the pre-turn
 		// buffers and cannot be meaningfully applied over the reverted text.
-		useExperienceCopilotTurnStore.getState().clearTurn(threadId);
-	}, [onRevert, threadId]);
+		useExperienceCopilotTurnStore.getState().clearTurn(kind, threadId);
+	}, [onRevert, kind, threadId]);
 
 	const proposal = useMemo(
 		() => aggregateExperienceCopilotProposal(activities),

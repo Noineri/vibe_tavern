@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { agentThreadKey, type AgentKind } from "../lib/agent-host-registry.js";
 
 /**
  * Agent review ROUND store (AS-5) — the generic rename of the
@@ -28,10 +29,14 @@ import { create } from "zustand";
  * wired via `syncPersistedCopilotRound` in `experience-copilot-draft.ts`,
  * called from a Shell effect on every round/activity mutation.
  *
- * AS-5 keying: the public API keeps its exact threadId-first signatures and
- * the rounds map stays keyed by bare threadId — kind-keying deferred to the
- * AS-6/7 controller migration (public kind param + shared key helper +
- * selector migration must land atomically).
+ * AS-6c-ii keying (decision AS-5/Option A — the kind parameter lands here
+ * atomically with the shared key helper and the selector migration, never
+ * in a commit where store keys are still bare): every action takes the host
+ * `kind` first and keys its rounds map through `agentThreadKey(kind,
+ * threadId)` (lib/agent-host-registry.ts — the single source). The
+ * experience kind keeps the LEGACY BARE threadId (the localStorage draft
+ * envelope persists bare keys — see the helper's persistence contract);
+ * later kinds namespace to `${kind}:${threadId}`.
  */
 
 /** CD-2 snapshot of one turn's starting buffers — the revert target AND the
@@ -101,97 +106,105 @@ export const EMPTY_REVIEW_ROUND: AgentReviewRound = Object.freeze({
 interface AgentReviewState {
   roundsByThread: Record<string, AgentReviewRound>;
   /** CD-2: push a turn-start snapshot for the thread (rising edge of send). */
-  pushSnapshot: (threadId: string, snapshot: Omit<AgentReviewSnapshot, "id">) => void;
+  pushSnapshot: (kind: AgentKind, threadId: string, snapshot: Omit<AgentReviewSnapshot, "id">) => void;
   /** CD-3: pop and return the LAST snapshot (revert consumes it); null when
    *  the stack is empty. */
-  popSnapshot: (threadId: string) => AgentReviewSnapshot | null;
+  popSnapshot: (kind: AgentKind, threadId: string) => AgentReviewSnapshot | null;
   /** CD-6/RV-2: replace one buffer's accepted-hunk id set. */
-  setAcceptedHunks: (threadId: string, buffer: AgentReviewBuffer, ids: number[]) => void;
+  setAcceptedHunks: (kind: AgentKind, threadId: string, buffer: AgentReviewBuffer, ids: number[]) => void;
   /** RV-2: replace one buffer's dismissed-hunk id set. */
-  setDismissedHunks: (threadId: string, buffer: AgentReviewBuffer, ids: number[]) => void;
+  setDismissedHunks: (kind: AgentKind, threadId: string, buffer: AgentReviewBuffer, ids: number[]) => void;
   /** RV-1: reset the buffer's sets iff the proposal key changed. Passing the
    *  CURRENT key on every render is safe — a matching key is a no-op, so a
    *  remount preserves the accept/dismiss progress. */
-  ensureReviewKey: (threadId: string, buffer: AgentReviewBuffer, key: string | null) => void;
+  ensureReviewKey: (kind: AgentKind, threadId: string, buffer: AgentReviewBuffer, key: string | null) => void;
   /** CD-8: freeze the still-pending proposal before a new turn's send. */
-  captureDangling: (threadId: string, capture: AgentDanglingCapture) => void;
+  captureDangling: (kind: AgentKind, threadId: string, capture: AgentDanglingCapture) => void;
   /** CD-3 toolbar revert: drop the dangling capture. */
-  clearDangling: (threadId: string) => void;
+  clearDangling: (kind: AgentKind, threadId: string) => void;
   /** Drop one thread's round entirely (tests / future thread deletion). */
-  resetRound: (threadId: string) => void;
+  resetRound: (kind: AgentKind, threadId: string) => void;
 }
 
-function roundOf(state: AgentReviewState, threadId: string): AgentReviewRound {
-  return state.roundsByThread[threadId] ?? EMPTY_REVIEW_ROUND;
+function roundOf(state: AgentReviewState, key: string): AgentReviewRound {
+  return state.roundsByThread[key] ?? EMPTY_REVIEW_ROUND;
 }
 
 function writeRound(
   state: AgentReviewState,
-  threadId: string,
+  key: string,
   mutate: (round: AgentReviewRound) => AgentReviewRound,
 ): Partial<AgentReviewState> {
-  const current = roundOf(state, threadId);
+  const current = roundOf(state, key);
   const next = mutate(current);
-  return { roundsByThread: { ...state.roundsByThread, [threadId]: next } };
+  return { roundsByThread: { ...state.roundsByThread, [key]: next } };
 }
 
 export const useAgentReviewRoundStore = create<AgentReviewState>((set, get) => ({
   roundsByThread: {},
-  pushSnapshot: (threadId, snapshot) => {
+  pushSnapshot: (kind, threadId, snapshot) => {
+    const key = agentThreadKey(kind, threadId);
     set((s) =>
-      writeRound(s, threadId, (round) => ({
+      writeRound(s, key, (round) => ({
         ...round,
         snapshots: [...round.snapshots, { ...snapshot, id: round.nextSnapshotId }],
         nextSnapshotId: round.nextSnapshotId + 1,
       })),
     );
   },
-  popSnapshot: (threadId) => {
-    const round = roundOf(get(), threadId);
+  popSnapshot: (kind, threadId) => {
+    const key = agentThreadKey(kind, threadId);
+    const round = roundOf(get(), key);
     const last = round.snapshots[round.snapshots.length - 1];
     if (!last) return null;
     set((s) =>
-      writeRound(s, threadId, (r) => ({ ...r, snapshots: r.snapshots.slice(0, -1) })),
+      writeRound(s, key, (r) => ({ ...r, snapshots: r.snapshots.slice(0, -1) })),
     );
     return last;
   },
-  setAcceptedHunks: (threadId, buffer, ids) => {
+  setAcceptedHunks: (kind, threadId, buffer, ids) => {
+    const key = agentThreadKey(kind, threadId);
     set((s) =>
-      writeRound(s, threadId, (round) =>
+      writeRound(s, key, (round) =>
         buffer === "rules" ? { ...round, acceptedRules: ids } : { ...round, acceptedVisual: ids },
       ),
     );
   },
-  setDismissedHunks: (threadId, buffer, ids) => {
+  setDismissedHunks: (kind, threadId, buffer, ids) => {
+    const key = agentThreadKey(kind, threadId);
     set((s) =>
-      writeRound(s, threadId, (round) =>
+      writeRound(s, key, (round) =>
         buffer === "rules" ? { ...round, dismissedRules: ids } : { ...round, dismissedVisual: ids },
       ),
     );
   },
-  ensureReviewKey: (threadId, buffer, key) => {
-    const round = roundOf(get(), threadId);
+  ensureReviewKey: (kind, threadId, buffer, key) => {
+    const storeKey = agentThreadKey(kind, threadId);
+    const round = roundOf(get(), storeKey);
     const currentKey = buffer === "rules" ? round.rulesKey : round.visualKey;
     if (currentKey === key) return;
     set((s) =>
-      writeRound(s, threadId, (r) =>
+      writeRound(s, storeKey, (r) =>
         buffer === "rules"
           ? { ...r, rulesKey: key, acceptedRules: [], dismissedRules: [] }
           : { ...r, visualKey: key, acceptedVisual: [], dismissedVisual: [] },
       ),
     );
   },
-  captureDangling: (threadId, capture) => {
-    set((s) => writeRound(s, threadId, (round) => ({ ...round, dangling: capture })));
+  captureDangling: (kind, threadId, capture) => {
+    const key = agentThreadKey(kind, threadId);
+    set((s) => writeRound(s, key, (round) => ({ ...round, dangling: capture })));
   },
-  clearDangling: (threadId) => {
-    set((s) => writeRound(s, threadId, (round) => ({ ...round, dangling: null })));
+  clearDangling: (kind, threadId) => {
+    const key = agentThreadKey(kind, threadId);
+    set((s) => writeRound(s, key, (round) => ({ ...round, dangling: null })));
   },
-  resetRound: (threadId) => {
+  resetRound: (kind, threadId) => {
+    const key = agentThreadKey(kind, threadId);
     set((s) => {
-      if (s.roundsByThread[threadId] === undefined) return s;
+      if (s.roundsByThread[key] === undefined) return s;
       const next = { ...s.roundsByThread };
-      delete next[threadId];
+      delete next[key];
       return { roundsByThread: next };
     });
   },

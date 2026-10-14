@@ -220,25 +220,25 @@ describe("useExperienceCopilotTurnStore", () => {
 
   it("inserts a new activity for a thread", () => {
     const store = useExperienceCopilotTurnStore.getState();
-    store.upsertActivity("thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "streaming" });
-    expect(useExperienceCopilotTurnStore.getState().getActivities("thread_1")).toEqual([
+    store.upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "streaming" });
+    expect(useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1")).toEqual([
       { toolCallId: "call_1", toolName: "write_buffer", status: "streaming" },
     ]);
   });
 
   it("accumulates multiple activities for a thread in insertion order", () => {
     const store = useExperienceCopilotTurnStore.getState();
-    store.upsertActivity("thread_1", { toolCallId: "call_a", toolName: "write_buffer", status: "streaming" });
-    store.upsertActivity("thread_1", { toolCallId: "call_b", toolName: "edit_buffer", status: "streaming" });
-    const acts = useExperienceCopilotTurnStore.getState().getActivities("thread_1");
+    store.upsertActivity("experience", "thread_1", { toolCallId: "call_a", toolName: "write_buffer", status: "streaming" });
+    store.upsertActivity("experience", "thread_1", { toolCallId: "call_b", toolName: "edit_buffer", status: "streaming" });
+    const acts = useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1");
     expect(acts.map((a) => a.toolCallId)).toEqual(["call_a", "call_b"]);
   });
 
   it("merges by toolCallId so a streaming placeholder is finalized in place by tool-result", () => {
     // Simulates the real event order: tool-call (streaming) → tool-result (done + proposal).
     const store = useExperienceCopilotTurnStore.getState();
-    store.upsertActivity("thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "streaming" });
-    store.upsertActivity("thread_1", {
+    store.upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "streaming" });
+    store.upsertActivity("experience", "thread_1", {
       toolCallId: "call_1",
       toolName: "write_buffer",
       status: "done",
@@ -246,7 +246,7 @@ describe("useExperienceCopilotTurnStore", () => {
       proposed: "---\n# RULES\nBold.",
       summary: "Made the rules more assertive.",
     });
-    const acts = useExperienceCopilotTurnStore.getState().getActivities("thread_1");
+    const acts = useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1");
     expect(acts).toHaveLength(1);
     expect(acts[0]).toEqual({
       toolCallId: "call_1",
@@ -264,8 +264,8 @@ describe("useExperienceCopilotTurnStore", () => {
     // erase the already-captured input.
     const store = useExperienceCopilotTurnStore.getState();
     const editArgs = { edits: [{ search: "a", replace: "b" }], summary: "s" };
-    store.upsertActivity("thread_1", { toolCallId: "call_1", toolName: "edit_buffer", args: editArgs, status: "streaming" });
-    store.upsertActivity("thread_1", {
+    store.upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "edit_buffer", args: editArgs, status: "streaming" });
+    store.upsertActivity("experience", "thread_1", {
       toolCallId: "call_1",
       toolName: "edit_buffer",
       status: "done",
@@ -273,7 +273,7 @@ describe("useExperienceCopilotTurnStore", () => {
       proposed: "---\n# RULES\nb",
       summary: "s",
     });
-    const acts = useExperienceCopilotTurnStore.getState().getActivities("thread_1");
+    const acts = useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1");
     expect(acts).toHaveLength(1);
     expect(acts[0].args).toStrictEqual(editArgs);
     expect(acts[0].status).toBe("done");
@@ -281,23 +281,23 @@ describe("useExperienceCopilotTurnStore", () => {
 
   it("clearTurn drops the thread's activities", () => {
     const store = useExperienceCopilotTurnStore.getState();
-    store.upsertActivity("thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "done" });
-    store.upsertActivity("thread_2", { toolCallId: "call_2", toolName: "edit_buffer", status: "done" });
-    useExperienceCopilotTurnStore.getState().clearTurn("thread_1");
-    expect(useExperienceCopilotTurnStore.getState().getActivities("thread_1")).toEqual([]);
+    store.upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "done" });
+    store.upsertActivity("experience", "thread_2", { toolCallId: "call_2", toolName: "edit_buffer", status: "done" });
+    useExperienceCopilotTurnStore.getState().clearTurn("experience", "thread_1");
+    expect(useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_1")).toEqual([]);
     // Other threads are untouched.
-    expect(useExperienceCopilotTurnStore.getState().getActivities("thread_2")).toHaveLength(1);
+    expect(useExperienceCopilotTurnStore.getState().getActivities("experience", "thread_2")).toHaveLength(1);
   });
 
   it("clearTurn on a thread with no activities is a no-op (state ref unchanged)", () => {
-    useExperienceCopilotTurnStore.getState().upsertActivity("thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "done" });
+    useExperienceCopilotTurnStore.getState().upsertActivity("experience", "thread_1", { toolCallId: "call_1", toolName: "write_buffer", status: "done" });
     const before = useExperienceCopilotTurnStore.getState().turnsByThread;
-    useExperienceCopilotTurnStore.getState().clearTurn("thread_unknown");
+    useExperienceCopilotTurnStore.getState().clearTurn("experience", "thread_unknown");
     expect(useExperienceCopilotTurnStore.getState().turnsByThread).toBe(before);
   });
 
   it("getActivities returns [] for an unknown thread", () => {
-    expect(useExperienceCopilotTurnStore.getState().getActivities("never")).toEqual([]);
+    expect(useExperienceCopilotTurnStore.getState().getActivities("experience", "never")).toEqual([]);
   });
 });
 
@@ -490,8 +490,8 @@ describe("feed (TF-4)", () => {
 
   it("accumulates deltas into one open text segment (id is a fresh text-N)", () => {
     const { appendTextDelta } = useExperienceCopilotTurnStore.getState();
-    appendTextDelta("t1", "He");
-    appendTextDelta("t1", "llo");
+    appendTextDelta("experience", "t1", "He");
+    appendTextDelta("experience", "t1", "llo");
     const feed = feedOf("t1");
     expect(feed).toHaveLength(1);
     expect(feed[0]).toMatchObject({ kind: "text", text: "Hello", closed: false });
@@ -500,25 +500,25 @@ describe("feed (TF-4)", () => {
 
   it("closeTextSegment closes the open segment; repeat close and close-without-open are noops", () => {
     const s = () => useExperienceCopilotTurnStore.getState();
-    s().closeTextSegment("t1"); // noop — nothing open
+    s().closeTextSegment("experience", "t1"); // noop — nothing open
     expect(feedOf("t1")).toEqual([]);
-    s().appendTextDelta("t1", "Hi");
+    s().appendTextDelta("experience", "t1", "Hi");
     const opened = feedOf("t1")[0]!;
     expect(opened).toMatchObject({ kind: "text", text: "Hi", closed: false });
-    s().closeTextSegment("t1");
+    s().closeTextSegment("experience", "t1");
     expect(feedOf("t1")).toEqual([{ kind: "text", id: opened.id, text: "Hi", closed: true }]);
     // repeat close — noop (nothing open now)
     const before = feedOf("t1");
-    s().closeTextSegment("t1");
+    s().closeTextSegment("experience", "t1");
     expect(feedOf("t1")).toEqual(before);
   });
 
   it("appendActivityRef appends once per toolCallId (idempotent) and adds new ids", () => {
     const s = () => useExperienceCopilotTurnStore.getState();
-    s().appendTextDelta("t1", "a");
-    s().appendActivityRef("t1", "c1");
-    s().appendActivityRef("t1", "c1"); // duplicate — noop
-    s().appendActivityRef("t1", "c2");
+    s().appendTextDelta("experience", "t1", "a");
+    s().appendActivityRef("experience", "t1", "c1");
+    s().appendActivityRef("experience", "t1", "c1"); // duplicate — noop
+    s().appendActivityRef("experience", "t1", "c2");
     const feed = feedOf("t1");
     expect(feed.filter((e) => e.kind === "activity").map((e) => e.id)).toEqual(["c1", "c2"]);
     expect(feed[feed.length - 1]).toEqual({ kind: "activity", id: "c2" });
@@ -526,9 +526,9 @@ describe("feed (TF-4)", () => {
 
   it("text after an activity opens a NEW segment (the old one is not written into)", () => {
     const s = () => useExperienceCopilotTurnStore.getState();
-    s().appendTextDelta("t1", "first");
-    s().appendActivityRef("t1", "c1");
-    s().appendTextDelta("t1", "second");
+    s().appendTextDelta("experience", "t1", "first");
+    s().appendActivityRef("experience", "t1", "c1");
+    s().appendTextDelta("experience", "t1", "second");
     const feed = feedOf("t1");
     expect(feed).toHaveLength(3);
     expect(feed[0]).toMatchObject({ kind: "text", text: "first", closed: false });
@@ -539,20 +539,20 @@ describe("feed (TF-4)", () => {
 
   it("an empty delta is a noop (no empty segment)", () => {
     const s = () => useExperienceCopilotTurnStore.getState();
-    s().appendTextDelta("t1", "");
+    s().appendTextDelta("experience", "t1", "");
     expect(feedOf("t1")).toEqual([]);
-    s().appendTextDelta("t1", "x");
-    s().appendTextDelta("t1", "");
+    s().appendTextDelta("experience", "t1", "x");
+    s().appendTextDelta("experience", "t1", "");
     expect(feedOf("t1")).toHaveLength(1);
     expect(feedOf("t1")[0]).toMatchObject({ kind: "text", text: "x", closed: false });
   });
 
   it("clearTurn drops both feed and activities for one thread only", () => {
     const s = () => useExperienceCopilotTurnStore.getState();
-    s().upsertActivity("t1", { toolCallId: "c1", toolName: "write_buffer", status: "done" });
-    s().appendTextDelta("t1", "text");
-    s().appendTextDelta("t2", "other");
-    s().clearTurn("t1");
+    s().upsertActivity("experience", "t1", { toolCallId: "c1", toolName: "write_buffer", status: "done" });
+    s().appendTextDelta("experience", "t1", "text");
+    s().appendTextDelta("experience", "t2", "other");
+    s().clearTurn("experience", "t1");
     expect(useExperienceCopilotTurnStore.getState().turnsByThread["t1"]).toBeUndefined();
     expect(feedOf("t1")).toEqual([]);
     expect(feedOf("t2")).toHaveLength(1);
@@ -561,8 +561,8 @@ describe("feed (TF-4)", () => {
 
   it("two threads keep independent feeds", () => {
     const s = () => useExperienceCopilotTurnStore.getState();
-    s().appendTextDelta("t1", "one");
-    s().appendTextDelta("t2", "two");
+    s().appendTextDelta("experience", "t1", "one");
+    s().appendTextDelta("experience", "t2", "two");
     expect(feedOf("t1")).toHaveLength(1);
     expect(feedOf("t2")).toHaveLength(1);
     expect(feedOf("t1")[0]).toMatchObject({ kind: "text", text: "one" });
@@ -829,20 +829,20 @@ describe("todoByThread panel state (TAG-7, restored PM-7)", () => {
 
   it("setTodo is a full-rewrite replace (the newest list IS the state)", () => {
     const s = () => useExperienceCopilotTurnStore.getState();
-    s().setTodo("t1", TODO_ITEMS);
-    expect(s().getTodo("t1")).toEqual(TODO_ITEMS);
-    s().setTodo("t1", [{ title: "Only step", status: "active" }]);
-    expect(s().getTodo("t1")).toEqual([{ title: "Only step", status: "active" }]);
+    s().setTodo("experience", "t1", TODO_ITEMS);
+    expect(s().getTodo("experience", "t1")).toEqual(TODO_ITEMS);
+    s().setTodo("experience", "t1", [{ title: "Only step", status: "active" }]);
+    expect(s().getTodo("experience", "t1")).toEqual([{ title: "Only step", status: "active" }]);
     // Seeding the empty list (a wire todo of []) clears the panel state.
-    s().setTodo("t1", []);
-    expect(s().getTodo("t1")).toEqual([]);
+    s().setTodo("experience", "t1", []);
+    expect(s().getTodo("experience", "t1")).toEqual([]);
   });
 
   it("getTodo defaults to [] and threads are isolated", () => {
     const s = () => useExperienceCopilotTurnStore.getState();
-    expect(s().getTodo("unknown")).toEqual([]);
-    s().setTodo("t1", TODO_ITEMS);
-    expect(s().getTodo("t2")).toEqual([]);
+    expect(s().getTodo("experience", "unknown")).toEqual([]);
+    s().setTodo("experience", "t1", TODO_ITEMS);
+    expect(s().getTodo("experience", "t2")).toEqual([]);
   });
 
   it("clearTurn does NOT drop todoByThread (session lifetime, not turn lifetime)", () => {
@@ -850,10 +850,10 @@ describe("todoByThread panel state (TAG-7, restored PM-7)", () => {
     // fires at every turn start; wiping the panel state there would blank the
     // pinned panel during every generation until the settle refetch re-seeds it.
     const s = () => useExperienceCopilotTurnStore.getState();
-    s().setTodo("t1", TODO_ITEMS);
-    s().upsertActivity("t1", { toolCallId: "c1", toolName: "todo", status: "done" });
-    s().clearTurn("t1");
-    expect(s().getActivities("t1")).toEqual([]);
-    expect(s().getTodo("t1")).toEqual(TODO_ITEMS);
+    s().setTodo("experience", "t1", TODO_ITEMS);
+    s().upsertActivity("experience", "t1", { toolCallId: "c1", toolName: "todo", status: "done" });
+    s().clearTurn("experience", "t1");
+    expect(s().getActivities("experience", "t1")).toEqual([]);
+    expect(s().getTodo("experience", "t1")).toEqual(TODO_ITEMS);
   });
 });
