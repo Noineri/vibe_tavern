@@ -120,6 +120,22 @@ const fetchRouter = mock(async (input: RequestInfo | URL, init?: RequestInit): P
 const { useAgentController } = await import("./use-agent-controller.js");
 const { useExperienceCopilotTurnStore } = await import("../../../stores/experience-copilot-turn-store.js");
 const { ProviderStreamError } = await import("../../../api/provider-stream-error.js");
+// AS-6c-i: the controller receives its transport through args — this wires
+// the REAL experience client fns exactly as the experience host's descriptor
+// does, so the stream lifecycle stays observed at the HTTP boundary (the
+// fetch router above); only the sendStream/answerAsk pair is ever called.
+const experienceCopilotApi = await import("../../../api/experience-copilot-api.js");
+const testTransport = {
+  sendStream: experienceCopilotApi.streamExperienceCopilot,
+  answerAsk: experienceCopilotApi.answerCopilotAsk,
+  getActiveThread: experienceCopilotApi.getExperienceCopilotActive,
+  listMessages: experienceCopilotApi.listExperienceCopilotMessages,
+  startSession: experienceCopilotApi.startExperienceCopilotSession,
+  listSessions: experienceCopilotApi.listExperienceCopilotSessions,
+  activateSession: experienceCopilotApi.activateExperienceCopilotSession,
+  renameSession: experienceCopilotApi.renameExperienceCopilotSession,
+  setContextLinks: experienceCopilotApi.setExperienceCopilotContextLinks,
+};
 const { extractPersistedExperienceCopilotActivities, wireToToolSource } = await import(
   "../../../stores/experience-copilot-turn-store.js"
 );
@@ -189,7 +205,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
 
     let pending!: Promise<void>;
@@ -272,7 +288,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
   test("passes model through to the stream body", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER, model: "m1" }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, model: "m1" }),
     );
 
     await act(async () => {
@@ -287,7 +303,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
   test("passes testFeedback through to the stream body when provided in opts (ER-14)", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     const feedback = { ok: true, status: "active", revision: 3, legalActionTypes: ["score"], stateSummary: "{}", consoleTail: [] };
@@ -309,7 +325,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
   test("passes the Try sandbox launch context through to the stream body", async () => {
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
     const launchContext = {
       participants: [{ id: "you", label: "You", controller: "human" as const }],
@@ -336,7 +352,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -364,7 +380,7 @@ describe("useExperienceCopilotController — handleSend stream lifecycle", () =>
 describe("useExperienceCopilotController — guards", () => {
   test("empty content → no stream call", async () => {
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -376,7 +392,7 @@ describe("useExperienceCopilotController — guards", () => {
 
   test("null threadId → no stream call", async () => {
     const { result } = renderHook(() =>
-      useAgentController({ threadId: null, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: null, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -388,7 +404,7 @@ describe("useExperienceCopilotController — guards", () => {
 
   test("null providerProfileId → toast + no stream call", async () => {
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: null }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: null }),
     );
 
     await act(async () => {
@@ -408,7 +424,7 @@ describe("useExperienceCopilotController — cancel and error", () => {
     streamExperienceCopilot.mockImplementation(() => held.promise);
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
 
     let pending!: Promise<void>;
@@ -434,7 +450,7 @@ describe("useExperienceCopilotController — cancel and error", () => {
     streamExperienceCopilot.mockRejectedValue(new ProviderStreamError("boom", "server_error"));
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
 
     await act(async () => {
@@ -458,7 +474,7 @@ describe("feed wiring (TF-4)", () => {
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -491,7 +507,7 @@ describe("feed wiring (TF-4)", () => {
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -525,7 +541,7 @@ describe("feed wiring (TF-4)", () => {
     expect(useExperienceCopilotTurnStore.getState().feedByThread[THREAD]).toHaveLength(1);
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -589,7 +605,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -631,7 +647,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -667,7 +683,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     // threadTodo is threaded through initialProps to make re-seeding drivable.
     const initial = renderHook(
       ({ todo }: { todo: readonly CopilotTodoItem[] }) =>
-        useAgentController({ threadId: THREAD, providerProfileId: PROVIDER, threadTodo: todo }),
+        useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, threadTodo: todo }),
       { initialProps: { todo: TODO_ITEMS } },
     );
     expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
@@ -689,7 +705,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     useExperienceCopilotTurnStore.getState().setTodo(THREAD, TODO_ITEMS);
     initial.unmount();
     const second = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
     expect(useExperienceCopilotTurnStore.getState().getTodo(THREAD)).toEqual(TODO_ITEMS);
     second.unmount();
@@ -705,7 +721,7 @@ describe("useExperienceCopilotController — todo wiring (TAG-7, restored PM-7)"
     const applyPlanToolResult = mock();
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
     );
 
     let pending!: Promise<void>;
@@ -748,7 +764,7 @@ describe("useExperienceCopilotController — plan wiring (PM-6)", () => {
     const applyPlanToolResult = mock();
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
     );
 
     let pending!: Promise<void>;
@@ -792,7 +808,7 @@ describe("useExperienceCopilotController — plan wiring (PM-6)", () => {
     const applyPlanToolResult = mock();
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, applyPlanToolResult }),
     );
 
     let pending!: Promise<void>;
@@ -833,7 +849,7 @@ describe("useExperienceCopilotController — ask wiring (TAG-7)", () => {
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -915,7 +931,7 @@ describe("PARITY: live SSE ingestion === persisted thread-GET hydration (TAG-7 a
       return d.promise;
     });
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     let pending!: Promise<void>;
@@ -959,7 +975,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
     });
 
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
 
     let pending!: Promise<void>;
@@ -1027,7 +1043,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
       return Promise.resolve({ finishReason: "stop" });
     });
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -1043,7 +1059,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
 
   test("guards: both text+skipped / neither / empty text → no stream call", async () => {
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -1060,7 +1076,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
     const onTurnSettled = mock();
     nextHttpError = { message: "validation 400" };
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER, onTurnSettled }),
     );
 
     await act(async () => {
@@ -1079,7 +1095,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
       return Promise.reject(new Error("provider died mid-stream"));
     });
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {
@@ -1097,7 +1113,7 @@ describe("useExperienceCopilotController — handleAnswer (TAG-9 split-turn)", (
     answerCopilotAsk.mockResolvedValue({ finishReason: "stop" });
     streamExperienceCopilot.mockResolvedValue({ finishReason: "stop" });
     const { result } = renderHook(() =>
-      useAgentController({ threadId: THREAD, providerProfileId: PROVIDER }),
+      useAgentController({ transport: testTransport, threadId: THREAD, providerProfileId: PROVIDER }),
     );
 
     await act(async () => {

@@ -9,6 +9,17 @@ import {
   registerAgentHost,
   type AgentHostDescriptor,
 } from "./agent-host-registry.js";
+import {
+  activateExperienceCopilotSession,
+  answerCopilotAsk,
+  getExperienceCopilotActive,
+  listExperienceCopilotMessages,
+  listExperienceCopilotSessions,
+  renameExperienceCopilotSession,
+  setExperienceCopilotContextLinks,
+  startExperienceCopilotSession,
+  streamExperienceCopilot,
+} from "../api/experience-copilot-api.js";
 
 function descriptor(kind: string): AgentHostDescriptor {
   return {
@@ -25,6 +36,21 @@ function descriptor(kind: string): AgentHostDescriptor {
       emptySub: "agent_subtitle",
     },
     bufferSpecs: [],
+    // AS-6c-i: the transport seam — fixture data mirrors the experience
+    // host's delegation to the real client fns (registry-mechanics tests never
+    // CALL these; real signatures keep the fixture honest against the seam's
+    // typeof-mirrored member types).
+    transport: {
+      sendStream: streamExperienceCopilot,
+      answerAsk: answerCopilotAsk,
+      getActiveThread: getExperienceCopilotActive,
+      listMessages: listExperienceCopilotMessages,
+      startSession: startExperienceCopilotSession,
+      listSessions: listExperienceCopilotSessions,
+      activateSession: activateExperienceCopilotSession,
+      renameSession: renameExperienceCopilotSession,
+      setContextLinks: setExperienceCopilotContextLinks,
+    },
     buildSendOptions: () => ({}),
     recordProposalRenderers: {},
   };

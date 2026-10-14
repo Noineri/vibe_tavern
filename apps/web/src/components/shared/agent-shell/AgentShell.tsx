@@ -19,15 +19,6 @@ import { useCopilotContext } from "../../../hooks/use-copilot-context.js";
 import { useProviderDataStore } from "../../../stores/provider-data-store.js";
 import { useProviderModels } from "../../../hooks/use-provider-models.js";
 import { useBootstrapStore, patchUiSettingsAction } from "../../../stores/api-actions/bootstrap-actions.js";
-import {
-  getExperienceCopilotActive,
-  listExperienceCopilotMessages,
-  startExperienceCopilotSession,
-  listExperienceCopilotSessions,
-  activateExperienceCopilotSession,
-  renameExperienceCopilotSession,
-  setExperienceCopilotContextLinks,
-} from "../../../api/experience-copilot-api.js";
 import { listPersonas } from "../../../api/persona-api.js";
 import { listAllLorebooks } from "../../../api/lorebook-api.js";
 import { listAllScripts } from "../../../api/script-api.js";
@@ -70,10 +61,14 @@ import type { AgentContextPillItem } from "./AgentContextPills.js";
  * (threadId / messages / loading / error), the provider/model selection, the
  * UI-only mobile tab selection, and the profile modal open flag.
  *
- * AS-6c SEAMS (transport still experience-only in this unit): the session
- * lifecycle calls the experience-copilot API client directly and the turn
- * store keeps its `experience-copilot-*` name — the kind parameter lands in
- * the controller together with the store key helper + selector migration.
+ * AS-6c SEAMS (what remains for AS-6c-ii): the turn store keeps its
+ * `experience-copilot-*` name and keys — this shell's `hasProposal`
+ * selector, the controller's store feeding, and the display components
+ * (AgentMessageList / AgentTodoSection / activity cards) still read/write it
+ * directly — and the transport/wire types stay the experience client's until
+ * the kind parameter + type unification land in the controller (with the
+ * store key helper + selector migration). The send path itself is now fully
+ * behind the descriptor's `transport` (AS-6c-i).
  */
 
 export interface AgentShellProps {
@@ -123,6 +118,9 @@ export function AgentShell({
   hostProps,
 }: AgentShellProps) {
   const host = getAgentHost(kind);
+  // AS-6c-i: the transport seam — every send/observe API call below goes
+  // through the descriptor, so this shell imports no kind-specific client.
+  const transport = host.transport;
   const { t } = useT();
 
   // ── Session lifecycle state ──────────────────────────────────────────────
@@ -222,12 +220,12 @@ export function AgentShell({
       if (!threadId) return;
       const prev = contextLinks;
       setContextLinks(next);
-      void setExperienceCopilotContextLinks(threadId, next).catch(() => {
+      void transport.setContextLinks(threadId, next).catch(() => {
         setContextLinks(prev);
         toast.error(t("copilot_context_pin_error"));
       });
     },
-    [threadId, contextLinks, t],
+    [threadId, contextLinks, transport, t],
   );
 
   const handlePinContext = useCallback(
@@ -335,15 +333,15 @@ export function AgentShell({
     setSessionLoading(true);
     setSessionError(null);
     try {
-      const active = await getExperienceCopilotActive(ownerId);
+      const active = await transport.getActiveThread(ownerId);
       if (active) {
         setThreadId(active.id);
         setContextLinks(active.contextLinks ?? []); // CX-6: seed the pinned pills
         setThreadTodo(active.todo); // TAG-8 (restored PM-7): seed the checklist panel
-        const msgs = await listExperienceCopilotMessages(active.id);
+        const msgs = await transport.listMessages(active.id);
         setMessages(msgs);
       } else {
-        const thread = await startExperienceCopilotSession(ownerId);
+        const thread = await transport.startSession(ownerId);
         setThreadId(thread.id);
         setContextLinks(thread.contextLinks ?? []); // CX-6: a fresh thread has no pins
         setThreadTodo(thread.todo); // TAG-8 (restored PM-7): a fresh thread has no checklist
@@ -354,20 +352,20 @@ export function AgentShell({
     } finally {
       setSessionLoading(false);
     }
-  }, [ownerId]);
+  }, [ownerId, transport]);
 
   // Session list (active + archived) for the switcher. Fetched in parallel with
   // `loadSession` on mount, then refetched after every switch/new so the active
   // indicator and archived set stay current.
   const fetchSessions = useCallback(async () => {
     try {
-      const list = await listExperienceCopilotSessions(ownerId);
+      const list = await transport.listSessions(ownerId);
       setSessions(list);
     } catch {
       // Best-effort session-list fetch — a transient list failure leaves the
       // switcher with its last-known sessions rather than surfacing an error.
     }
-  }, [ownerId]);
+  }, [ownerId, transport]);
 
   // (The experience host's draft rehydration — rehydrateExperienceCopilotDrafts
   // — runs in the HOST pane's mount effect: child effects run before this one,
@@ -383,13 +381,13 @@ export function AgentShell({
   // is cleared and the persisted assistant message takes over.
   const handleTurnSettled = useCallback(() => {
     if (!threadId) return;
-    listExperienceCopilotMessages(threadId)
+    transport.listMessages(threadId)
       .then(setMessages)
       .catch(() => {
         // Best-effort refetch — swallow so a transient list failure leaves the
         // last-known messages on screen rather than surfacing a spurious error.
       });
-  }, [threadId]);
+  }, [threadId, transport]);
 
   // CM-8: context meter state per thread (metrics / auto-compact / compact).
   // `onCompacted` refetches messages so the newly appended digest message
@@ -404,6 +402,7 @@ export function AgentShell({
   });
 
   const ctrl = useAgentController({
+    transport,
     threadId,
     providerProfileId,
     model,
@@ -416,9 +415,9 @@ export function AgentShell({
   // ── AS-6b2: the dispatch seam (host's dangling-review capture + options) ─
   // Reads the bridge AT CALL TIME (the host pane assigned the latest-render
   // handle); the descriptor's buildSendOptions forwards to that session. The
-  // `as AgentSendOptions` narrowing is the shell↔host boundary — the concrete
-  // options type is the controller's and stays opaque in the registry until
-  // AS-6c parameterizes transport by kind.
+  // `as AgentSendOptions` narrowing is still structurally needed — the
+  // descriptor is kind-generic and returns `unknown` here; AS-6c-ii's kind
+  // parameter + options-type unification is what removes the cast.
   const hostCtx: AgentHostContext = {
     ownerId,
     scriptId,
@@ -441,7 +440,7 @@ export function AgentShell({
     async (targetThreadId: string) => {
       if (ctrl.isSending) return;
       try {
-        const activated = await activateExperienceCopilotSession(targetThreadId);
+        const activated = await transport.activateSession(targetThreadId);
         if (!activated) {
           toast.error(t("agent_switch_error"));
           return;
@@ -449,7 +448,7 @@ export function AgentShell({
         setThreadId(targetThreadId);
         setContextLinks(activated.contextLinks ?? []); // CX-6: switch → that thread's pins
         setThreadTodo(activated.todo); // TAG-8 (restored PM-7): switch → that thread's checklist
-        const msgs = await listExperienceCopilotMessages(targetThreadId);
+        const msgs = await transport.listMessages(targetThreadId);
         setMessages(msgs);
         await fetchSessions();
       } catch {
@@ -457,13 +456,13 @@ export function AgentShell({
         toast.error(t("agent_switch_error"));
       }
     },
-    [ctrl.isSending, fetchSessions, t],
+    [ctrl.isSending, fetchSessions, transport, t],
   );
 
   const handleNewSession = useCallback(async () => {
     if (ctrl.isSending) return;
     try {
-      const thread = await startExperienceCopilotSession(ownerId);
+      const thread = await transport.startSession(ownerId);
       setThreadId(thread.id);
       setContextLinks(thread.contextLinks ?? []); // CX-6: new session → no pins
       setThreadTodo(thread.todo); // TAG-8 (restored PM-7): new session → no checklist
@@ -473,7 +472,7 @@ export function AgentShell({
       // Best-effort — leave threadId/messages unchanged and surface the error.
       toast.error(t("agent_new_session_error"));
     }
-  }, [ctrl.isSending, ownerId, fetchSessions, t]);
+  }, [ctrl.isSending, ownerId, transport, fetchSessions, t]);
 
   // ── Session rename (2026-08-17) ──────────────────────────────────────────
   // Fire-and-refresh: the switcher exits rename mode immediately and the shell
@@ -483,14 +482,14 @@ export function AgentShell({
   const handleRenameSession = useCallback(
     async (targetThreadId: string, title: string) => {
       try {
-        await renameExperienceCopilotSession(targetThreadId, title);
+        await transport.renameSession(targetThreadId, title);
       } catch {
         toast.error(t("agent_rename_error"));
       } finally {
         await fetchSessions();
       }
     },
-    [fetchSessions, t],
+    [fetchSessions, transport, t],
   );
 
   // ── Mobile auto-switch on proposal ───────────────────────────────────────

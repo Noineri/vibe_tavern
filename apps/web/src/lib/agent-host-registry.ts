@@ -10,7 +10,8 @@
  *
  * A host descriptor is everything the generic agent shell needs to render a
  * kind WITHOUT kind-switches: the i18n KEY table (keys, not strings — the
- * shell resolves them through `useT`), the buffer specs, the optional editor
+ * shell resolves them through `useT`), the buffer specs, the transport
+ * (every send/observe API call, AS-6c-i), the optional editor
  * pane (absent = chat-only host), the send-options builder, the optional
  * toolbar/mobile slots, and the per-recordType fallback-card renderers for
  * record proposals.
@@ -18,6 +19,21 @@
 import type { ComponentType, ReactNode } from "react";
 import type { RecordProposal } from "@vibe-tavern/api-contracts";
 import type Resources from "../i18n/resources.js";
+// AS-6c-i: type-only — the transport members mirror today's experience client
+// fns exactly (the compiler keeps the host's delegation honest), so the
+// generic shell/controller never import the kind-specific client. No runtime
+// edge: these imports are erased.
+import type {
+  activateExperienceCopilotSession,
+  answerCopilotAsk,
+  getExperienceCopilotActive,
+  listExperienceCopilotMessages,
+  listExperienceCopilotSessions,
+  renameExperienceCopilotSession,
+  setExperienceCopilotContextLinks,
+  startExperienceCopilotSession,
+  streamExperienceCopilot,
+} from "../api/experience-copilot-api.js";
 
 /** A host tried to register under a kind that is already taken. */
 export class AgentHostAlreadyRegisteredError extends Error {
@@ -75,7 +91,8 @@ export interface AgentHostBufferSpec {
  * dangling review before the turn store is cleared); `buildSendOptions`
  * returns the host's per-turn send options. The concrete options type is
  * transport-owned (`AgentSendOptions` in use-agent-controller.ts) and stays
- * opaque here until AS-6c parameterizes transport by kind.
+ * opaque here until AS-6c-ii's kind parameter unifies it with the transport's
+ * wire types.
  */
 export interface AgentHostSessionHandle {
   onBeforeSend: () => void;
@@ -100,6 +117,46 @@ export interface RecordProposalCardProps {
   proposal: RecordProposal;
 }
 
+/**
+ * AS-6c-i: the TRANSPORT seam — every API call the generic shell and its
+ * controller make to send and observe agent turns, so neither imports a
+ * kind-specific client. Each member's type mirrors the experience client fn
+ * it delegates to today (`api/experience-copilot-api.ts`), which makes the
+ * host's delegation compiler-checked — until AS-6c-ii's kind parameter +
+ * type unification generalize these behind per-kind wire types.
+ */
+export interface AgentHostTransport {
+  /** Stream one agent turn for a thread (the send path). */
+  sendStream: typeof streamExperienceCopilot;
+  /** Answer a pending `ask_user` question — the split-turn continuation
+   *  (no new user row; the answer replaces the awaiting tool-result row). */
+  answerAsk: typeof answerCopilotAsk;
+  /** The single active thread for an owner, or null when none exists. */
+  getActiveThread: typeof getExperienceCopilotActive;
+  /** All messages for a thread, oldest → newest. */
+  listMessages: typeof listExperienceCopilotMessages;
+  /** Archive the current active thread (if any) and start a fresh one. */
+  startSession: typeof startExperienceCopilotSession;
+  /** All sessions (active + archived) for an owner, newest first. */
+  listSessions: typeof listExperienceCopilotSessions;
+  /** Resume an archived session (archiving its active sibling, if any), or
+   *  a no-op when already active. Null when the thread does not exist. */
+  activateSession: typeof activateExperienceCopilotSession;
+  /** Rename a session (empty title clears to the auto-numbered fallback).
+   *  Null when the thread does not exist. */
+  renameSession: typeof renameExperienceCopilotSession;
+  /** Full-replace a thread's pinned-context links (max 64, schema-enforced). */
+  setContextLinks: typeof setExperienceCopilotContextLinks;
+}
+
+/**
+ * AS-6c-i: re-exported so the controller (and any transport consumer) types
+ * its stream callbacks and ask answers through the registry instead of the
+ * experience client — the single spelling stays the client's until AS-6c-ii
+ * unifies the wire types behind the kind parameter.
+ */
+export type { CopilotAskAnswerInput, CopilotStreamOpts } from "../api/experience-copilot-api.js";
+
 /** A strict i18n key — the generated en-locale union (`i18n/resources`), so a
  *  typo'd key in a host descriptor is a compile error, same as a literal `t()`
  *  call. The descriptor fields below carry KEYS, never translated strings. */
@@ -123,6 +180,11 @@ export interface AgentHostDescriptor {
     mobileBackLabelKey?: AgentI18nKey;
   };
   bufferSpecs: AgentHostBufferSpec[];
+  /** AS-6c-i: the transport — the send/observe API seam. Every agent-turn
+   *  call the shell (session load/switch/new/rename, context pins, message
+   *  refetch) and the controller (stream + ask-answer) make goes through
+   *  here, so the generic modules never import a kind-specific client. */
+  transport: AgentHostTransport;
   /** Absent = chat-only host (no editor pane). */
   renderEditorPane?: (ctx: AgentHostContext) => ReactNode;
   /** The per-turn send options. AS-6b2: returns `unknown` — the live options

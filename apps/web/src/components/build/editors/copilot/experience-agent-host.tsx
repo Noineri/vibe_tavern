@@ -19,6 +19,17 @@ import { mergeSelectedBody } from "../../../../lib/coauthor-hunk-merge.js";
 import { ToolbarButton } from "./experience-copilot-buttons.js";
 import { registerAgentHost, type AgentHostBridge } from "../../../../lib/agent-host-registry.js";
 import {
+  activateExperienceCopilotSession,
+  answerCopilotAsk,
+  getExperienceCopilotActive,
+  listExperienceCopilotMessages,
+  listExperienceCopilotSessions,
+  renameExperienceCopilotSession,
+  setExperienceCopilotContextLinks,
+  startExperienceCopilotSession,
+  streamExperienceCopilot,
+} from "../../../../api/experience-copilot-api.js";
+import {
   allReviewHunkIds,
   applyHunksToBuffer,
   buildBufferReview,
@@ -751,6 +762,21 @@ registerAgentHost({
     { id: "rules", labelKey: "agent_rules", language: "javascript" },
     { id: "visual", labelKey: "agent_visual", language: "xml" },
   ],
+  // AS-6c-i: the transport seam — the exact experience client fns the
+  // pre-seam shell/controller called directly (behavior byte-identical, just
+  // re-homed behind the descriptor; the registry's typeof-mirrored member
+  // types keep this delegation compiler-checked).
+  transport: {
+    sendStream: streamExperienceCopilot,
+    answerAsk: answerCopilotAsk,
+    getActiveThread: getExperienceCopilotActive,
+    listMessages: listExperienceCopilotMessages,
+    startSession: startExperienceCopilotSession,
+    listSessions: listExperienceCopilotSessions,
+    activateSession: activateExperienceCopilotSession,
+    renameSession: renameExperienceCopilotSession,
+    setContextLinks: setExperienceCopilotContextLinks,
+  },
   renderEditorPane: (ctx) => (
     <ExperienceEditorPane
       ownerId={ctx.ownerId}

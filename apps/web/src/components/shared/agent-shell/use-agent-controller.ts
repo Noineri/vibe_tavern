@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getT, type TFunc } from "../../../i18n/locale-helpers.js";
-import {
-  answerCopilotAsk,
-  streamExperienceCopilot,
-  type CopilotAskAnswerInput,
-  type CopilotStreamOpts,
-} from "../../../api/experience-copilot-api.js";
+import type {
+  AgentHostTransport,
+  CopilotAskAnswerInput,
+  CopilotStreamOpts,
+} from "../../../lib/agent-host-registry.js";
 import {
   useExperienceCopilotTurnStore,
   parseTodoToolResult,
@@ -29,7 +28,8 @@ import { ProviderStreamError } from "../../../api/provider-stream-error.js";
  * Experience-Copilot send/stream controller (EXPERIENCE_EDITOR_REFACTOR_PLAN,
  * Wave 4 / ER-11b).
  *
- * The copilot has its own transport (`streamExperienceCopilot`, ER-10) and its
+ * The copilot has its own transport (AS-6c-i: injected through args — the
+ * host descriptor's `transport`, mirroring the ER-10 stream client) and its
  * own turn store (`useExperienceCopilotTurnStore`, ER-8), so it cannot reuse
  * the RP-chat `useChatController`. This hook ports the stream half of
  * `executeStreamAction`, retargeted and simplified: the copilot is stream-only,
@@ -44,6 +44,11 @@ import { ProviderStreamError } from "../../../api/provider-stream-error.js";
  */
 
 export interface UseAgentControllerArgs {
+  /** AS-6c-i: the host descriptor's transport — the send path's ONLY API
+   *  seam (stream + ask-answer); the shell passes `getAgentHost(kind).transport`.
+   *  Typed through the registry so this module imports no kind-specific
+   *  client. */
+  transport: AgentHostTransport;
   threadId: string | null;
   providerProfileId: string | null;
   model?: string;
@@ -167,7 +172,7 @@ function summarizeToolOutput(output: unknown): string {
 export function useAgentController(
   args: UseAgentControllerArgs,
 ): AgentController {
-  const { threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo } = args;
+  const { transport, threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult, threadTodo } = args;
 
   const [isSending, setIsSending] = useState(false);
   const [pendingText, setPendingText] = useState("");
@@ -395,7 +400,7 @@ export function useAgentController(
       setPendingUserContent(trimmed);
 
       try {
-        const streamResult = await streamExperienceCopilot(
+        const streamResult = await transport.sendStream(
           threadId,
           {
             content: trimmed,
@@ -443,7 +448,7 @@ export function useAgentController(
         setPendingUserContent("");
       }
     },
-    [threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult],
+    [threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult],
   );
 
   const handleAnswer = useCallback(
@@ -485,7 +490,7 @@ export function useAgentController(
 
       const sawStreamEvent = { current: false };
       try {
-        const streamResult = await answerCopilotAsk(
+        const streamResult = await transport.answerAsk(
           threadId,
           {
             answer: {
@@ -540,7 +545,7 @@ export function useAgentController(
         abortRef.current = null;
       }
     },
-    [threadId, providerProfileId, model, onTurnSettled, onMetrics, applyPlanToolResult],
+    [threadId, providerProfileId, model, transport, onTurnSettled, onMetrics, applyPlanToolResult],
   );
 
   const handleCancel = useCallback((): void => {
