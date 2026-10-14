@@ -5,7 +5,7 @@ import type { CopilotDigest } from "../../../../lib/experience-copilot-digest.js
 import type { CopilotBufferReview } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
 import type { TFunc } from "../../../../i18n/locale-helpers.js";
 import { allReviewHunkIds } from "../../../shared/agent-shell/AgentBufferReviewEditor.js";
-import { buildExperienceCopilotReviewSnapshot } from "../../../../lib/experience-copilot-review-snapshot.js";
+import { buildExperienceCopilotReviewSnapshot, experienceReviewRoundId } from "../../../../lib/experience-copilot-review-snapshot.js";
 import { agentThreadKey, type AgentKind } from "../../../../lib/agent-host-registry.js";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
 
@@ -66,7 +66,8 @@ export function recordExperienceAppliedOutcome({ kind, threadId, target, bufferR
   cancelled?: boolean;
 }): void {
   const prior = useAgentReviewOutcomeStore.getState().outcomesByThread[agentThreadKey(kind, threadId)]?.[target];
-  const appliedHunkIds = new Set([...prior?.appliedHunkIds ?? [], ...applied]);
+  const roundId = experienceReviewRoundId(bufferReview.base, bufferReview.proposed);
+  const appliedHunkIds = new Set([...(prior?.record.roundId === roundId ? prior.appliedHunkIds : []), ...applied]);
   const [record] = buildExperienceCopilotReviewSnapshot([{
     target,
     base: bufferReview.base,
