@@ -1,0 +1,66 @@
+{
+  "surface": "copilot",
+  "scenario": "failed ask_user answer and its retry",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "answer": {
+          "toolCallId": "ro4-ask-tool-call",
+          "text": "Rules"
+        },
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// RULES v2\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 1,
+                "rejected": 0,
+                "pending": 1
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "answer": {
+          "toolCallId": "ro4-ask-tool-call",
+          "text": "Rules"
+        },
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// RULES v2\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 1,
+                "rejected": 0,
+                "pending": 1
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    }
+  ]
+}

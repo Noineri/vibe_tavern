@@ -1,0 +1,43 @@
+{
+  "surface": "copilot",
+  "scenario": "rules revert beside a rejected visual proposal",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain rules-only revert",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// rules buffer\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "visual",
+              "roundId": "4f72251ac55f",
+              "outcome": "rejected",
+              "hunks": {
+                "accepted": 0,
+                "rejected": 1,
+                "pending": 0
+              }
+            },
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "cancelled",
+              "hunks": {
+                "accepted": 2,
+                "rejected": 0,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": true,
+        "visualSaved": true
+      }
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { useDomEnv } from "../../../../../test/dom-env.js";
+import { expectReviewOutcomeFixture, type ReviewOutcomeFixture } from "../../../../../test/review-outcome-fixtures.js";
 import type { AgentPlan, ExperienceCopilotContextLink, ExperienceCopilotMessageWire, ExperienceCopilotThreadWire } from "@vibe-tavern/api-contracts";
 import { experienceCopilotStreamRequestSchema } from "@vibe-tavern/api-contracts";
 import { useAgentReviewOutcomeStore } from "../../../../stores/agent-review-outcome-store.js";
@@ -1474,6 +1475,17 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     return openReviewProposal(utils, threadId, PROPOSED);
   }
 
+  /** RO-6: the raw stream bodies this mounted flow sent (1-based call numbers), pinned
+   *  against the shared fixture the server suite replays into the provider prompt. */
+  function sentCopilotRequests(scenario: string, calls: readonly number[]): ReviewOutcomeFixture {
+    const sent = streamCalls();
+    return {
+      surface: "copilot",
+      scenario,
+      requests: calls.map((call) => ({ mode: "stream" as const, body: sent[call - 1]!.body })),
+    };
+  }
+
   async function openReviewProposal(utils: ReturnType<typeof render>, threadId: string, proposed: string) {
     await flushSessionLoad();
     await sendFollowup(utils, "propose changes", 1);
@@ -1531,6 +1543,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
       expect(body.visualSaved).toBe(true);
       expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
     }
+    await expectReviewOutcomeFixture("copilot-revert-cancelled", sentCopilotRequests("toolbar revert of a fully accepted round, two following turns", [2, 3]));
   });
 
   it("cancel of a partially accepted round retains cancelled rather than recomputing rejected in HTTP", async () => {
@@ -1547,6 +1560,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     const body = await sendFollowup(utils, "explain cancelled review", 2);
     expect(body.rules).toBe(BASE);
     expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
+    await expectReviewOutcomeFixture("copilot-partial-cancel", sentCopilotRequests("cancel of a partially accepted round", [2]));
   });
 
   it("reverting accepted rules preserves a rejected visual outcome that never changed the buffer", async () => {
@@ -1580,6 +1594,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(body.visual).toBe("");
     expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({ outcome: "cancelled" });
     expect(body.reviewSnapshot?.targets.find((target) => target.target === "visual")).toMatchObject({ outcome: "rejected" });
+    await expectReviewOutcomeFixture("copilot-revert-rules-keep-visual-rejection", sentCopilotRequests("rules revert beside a rejected visual proposal", [2]));
   });
 
   it("a replacement proposal reports the superseded round identity without inheriting its applied hunks", async () => {
@@ -1612,6 +1627,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
       outcome: "superseded",
       supersededByRound: current?.roundId,
     });
+    await expectReviewOutcomeFixture("copilot-supersession", sentCopilotRequests("a replacement proposal supersedes a partially applied round", [2, 3]));
   });
 
   it("retries a failed normal send with the same partial review snapshot and independent save flags", async () => {
@@ -1634,6 +1650,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(failedReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
     expect(retriedReview).toEqual(failedReview);
     expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1);
+    await expectReviewOutcomeFixture("copilot-send-error-retry", sentCopilotRequests("failed normal send and its retry", [2, 3]));
   });
 
   it("rolls back a failed ask answer and retries its review snapshot through the rendered ask card", async () => {
@@ -1666,6 +1683,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(retried).toMatchObject({ rulesSaved: false, visualSaved: true });
     expect(failedReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
     expect(retriedReview).toEqual(failedReview);
+    await expectReviewOutcomeFixture("copilot-ask-answer-retry", sentCopilotRequests("failed ask_user answer and its retry", [3, 4]));
   });
 
   it("keeps only cleanly anchored accepted hunks applied across two HTTP turns", async () => {
@@ -1688,6 +1706,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(first).toMatchObject({ rulesSaved: false, visualSaved: true });
     expect(firstReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
     expect(secondReview).toEqual(firstReview);
+    await expectReviewOutcomeFixture("copilot-manual-edit-before-accept", sentCopilotRequests("manual buffer edit, then accept-all applies only anchored hunks", [2, 3]));
   });
 
   it("resolves an explicit tooLarge acceptance when the live parent buffer already equals the proposal", async () => {
@@ -1736,6 +1755,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(first.rules).toContain("C: old");
     expect(firstReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 0 } });
     expect(secondReview).toEqual(firstReview);
+    await expectReviewOutcomeFixture("copilot-cancel-after-manual-edit", sentCopilotRequests("manual edit after a partial accept, then cancel keeps the surviving hunk", [2, 3]));
   });
 
   it("cumulatively applies separately accepted hunks into the controlled parent buffer and HTTP snapshot", async () => {
@@ -1782,19 +1802,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
         hunks: { accepted: 3, rejected: 0, pending: 0 },
       });
     }
-  });
-
-  it("RO-6 bridge: writes the mounted accepted-buffer request for the in-process server proof", async () => {
-    const bridgeOutput = process.env.VT_REVIEW_OUTCOME_BRIDGE_OUTPUT;
-    if (bridgeOutput === undefined) return;
-    const threadId = "ro6-mounted-copilot-bridge";
-    router.newSession = thread(threadId);
-    const utils = render(withIsolatedI18n(<ControlledShell />));
-    await openReview(utils, threadId);
-    fireEvent.click(utils.getByTestId("copilot-accept-all"));
-    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
-    const request = await sendFollowup(utils, "RO-6 mounted copilot bridge", 2);
-    await Bun.write(bridgeOutput, JSON.stringify(request));
+    await expectReviewOutcomeFixture("copilot-partial-then-full-apply", sentCopilotRequests("partial local apply before Save, then full apply over two following turns", [2, 3, 4]));
   });
 
   it("accept-all preserves a previously dismissed hunk in both the live buffer and HTTP outcome", async () => {
@@ -1869,6 +1877,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
         hunks: { accepted: 2, rejected: 1, pending: 0 },
       });
     }
+    await expectReviewOutcomeFixture("copilot-visual-mixed", sentCopilotRequests("visual: dismissed hunk survives accept-all over two turns", [2, 3]));
   });
 
   it("retains an actual accepted-and-dismissed round as partial across two following requests", async () => {
@@ -1891,6 +1900,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
         hunks: { accepted: 1, rejected: 1, pending: 0 },
       });
     }
+    await expectReviewOutcomeFixture("copilot-mixed-accept-reject", sentCopilotRequests("one hunk accepted, the rest rejected, over two turns", [2, 3]));
   });
 
   it("retains an actual full rejection without changing the clean parent buffer", async () => {
@@ -1922,6 +1932,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
       outcome: "rejected",
       hunks: { accepted: 0, rejected: 2, pending: 0 },
     });
+    await expectReviewOutcomeFixture("copilot-full-rejection-remount", sentCopilotRequests("full rejection over two turns and a remount", [2, 3, 4]));
   });
 
   it("keeps a completed local application through review-round reset and shell remount", async () => {
@@ -1974,6 +1985,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
       outcome: "applied",
       hunks: { accepted: 2, rejected: 0, pending: 0 },
     });
+    await expectReviewOutcomeFixture("copilot-completed-review-reset-remount", sentCopilotRequests("completed review through a round reset and a remount", [2, 3, 4]));
   });
 
   it("keeps a pending mixed choice through a normal next turn and remount", async () => {
@@ -2061,6 +2073,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
       outcome: "applied",
       hunks: { accepted: 2, rejected: 0, pending: 0 },
     });
+    await expectReviewOutcomeFixture("copilot-session-switch", sentCopilotRequests("session switch isolates the ledger and the return restores it", [2, 3, 4]));
   });
 
   it("batch acceptance reverses only the surviving applied anchor after independent drift", async () => {
@@ -2101,6 +2114,7 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
       expect(body).toMatchObject({ rulesSaved: false, visualSaved: true });
       expect(review).toMatchObject({ roundId, outcome: "applied-partial", hunks: { accepted: 1, rejected: 2, pending: 0 } });
     }
+    await expectReviewOutcomeFixture("copilot-revert-of-accepted-partial", sentCopilotRequests("accept-all over external drift, then revert of the accepted hunks", [2, 3, 4]));
   });
 });
 

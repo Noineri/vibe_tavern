@@ -1,0 +1,60 @@
+{
+  "surface": "copilot",
+  "scenario": "toolbar revert of a fully accepted round, two following turns",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain revert 2",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// rules buffer\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "cancelled",
+              "hunks": {
+                "accepted": 2,
+                "rejected": 0,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": true,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain revert 3",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// rules buffer\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "cancelled",
+              "hunks": {
+                "accepted": 2,
+                "rejected": 0,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": true,
+        "visualSaved": true
+      }
+    }
+  ]
+}

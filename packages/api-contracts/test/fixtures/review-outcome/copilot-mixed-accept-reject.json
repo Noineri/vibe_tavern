@@ -1,0 +1,60 @@
+{
+  "surface": "copilot",
+  "scenario": "one hunk accepted, the rest rejected, over two turns",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain mixed result 2",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// RULES v2\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 1,
+                "rejected": 1,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain mixed result 3",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// RULES v2\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 1,
+                "rejected": 1,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    }
+  ]
+}

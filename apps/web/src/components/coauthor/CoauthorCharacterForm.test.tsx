@@ -22,6 +22,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { wireCharacter } from "../../../test/wire-fixtures.js";
 import { useDomEnv } from "../../../test/dom-env.js";
+import { expectReviewOutcomeFixture, type ReviewOutcomeFixture, type ReviewOutcomeFixtureRequest } from "../../../test/review-outcome-fixtures.js";
 
 useDomEnv();
 const { act, fireEvent, render, waitFor } = await import("@testing-library/react");
@@ -220,8 +221,22 @@ describe("CoauthorCharacterForm", () => {
 	const originalAppSnapshotState = useSnapshotStore.getState();
 	const originalBootstrapState = useBootstrapStore.getState();
 	const originalTurnState = useCoauthorTurnStore.getState();
+	/** RO-6: raw chat-send bodies with their transport, in send order — the exact
+	 *  wire the server receives, pinned against the shared fixture that the server
+	 *  suite replays into the provider prompt and tool base. */
+	const sentRequests: ReviewOutcomeFixtureRequest[] = [];
+	function recordSend(input: unknown, init: RequestInit | undefined): void {
+		sentRequests.push({
+			mode: String(input).endsWith("/messages/stream") ? "stream" : "nonstream",
+			body: JSON.parse(String(init?.body)),
+		});
+	}
+	function sentCoauthorRequests(scenario: string): ReviewOutcomeFixture {
+		return { surface: "coauthor", scenario, requests: [...sentRequests] };
+	}
 
 	beforeEach(() => {
+		sentRequests.length = 0;
 		clearCoauthorEditorSnapshotStateForTests();
 		globalThis.fetch = realFetch;
 		toast.warning = realToastWarning;
@@ -622,8 +637,9 @@ describe("CoauthorCharacterForm", () => {
 			activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat,
 		});
 		const requests: string[] = [];
-		const fetchMock = mock(async (_url: unknown, init: RequestInit | undefined) => {
+		const fetchMock = mock(async (url: unknown, init: RequestInit | undefined) => {
 			requests.push(String(init?.body ?? ""));
+			recordSend(url, init);
 			if (requests.length === 1) {
 				return new Response(JSON.stringify({ character: makeCharacter(), corrections: [] }), { status: 200 });
 			}
@@ -656,6 +672,7 @@ describe("CoauthorCharacterForm", () => {
 			expect(body.coauthorEditorState.card.cardClean).toBe(false);
 			expect(body.coauthorEditorState.review).toEqual({ targets: [] });
 		}
+		await expectReviewOutcomeFixture("coauthor-live-editor-both-sends", sentCoauthorRequests("unsaved live editor edit on the non-stream and stream sends"));
 	});
 
 	it("RO-5: mounted empty editor values ride the actual non-stream and stream HTTP bodies", async () => {
@@ -664,8 +681,9 @@ describe("CoauthorCharacterForm", () => {
 			activeChat: { id: TEST_CHAT, mode: "coauthor" } as unknown as ActiveChat,
 		});
 		const requests: string[] = [];
-		const fetchMock = mock(async (_url: unknown, init: RequestInit | undefined) => {
+		const fetchMock = mock(async (url: unknown, init: RequestInit | undefined) => {
 			requests.push(String(init?.body ?? ""));
+			recordSend(url, init);
 			if (requests.length === 1) {
 				return new Response(JSON.stringify({ character: makeCharacter(), corrections: [] }), { status: 200 });
 			}
@@ -690,6 +708,7 @@ describe("CoauthorCharacterForm", () => {
 			expect(body.coauthorEditorState.card.cardClean).toBe(true);
 			expect(body.coauthorEditorState.review).toEqual({ targets: [] });
 		}
+		await expectReviewOutcomeFixture("coauthor-empty-editor-both-sends", sentCoauthorRequests("empty editor buffers on the non-stream and stream sends"));
 	});
 
 	// ── CTX-L3: lore proposal reviewing + Apply / Reject ───────────────────────
@@ -824,6 +843,7 @@ describe("CoauthorCharacterForm", () => {
 				applyRequest = coauthorApplySchema.parse(JSON.parse(String(init?.body)));
 				return new Response(JSON.stringify({ character: makeCharacter({ scenario: "A forest cave at dusk." }), corrections: [] }), { status: 200 });
 			}
+			recordSend(input, init);
 			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
 			return new Response(JSON.stringify({ character: makeCharacter() }), { status: 200 });
 		}, { preconnect: realFetch.preconnect });
@@ -865,6 +885,7 @@ describe("CoauthorCharacterForm", () => {
 			expect.objectContaining({ target: "lore", outcome: "applied-partial", items: expect.objectContaining({ applied: 2 }) }),
 			expect.objectContaining({ target: "tracker_template", outcome: "rejected", selected: false }),
 		]));
+		await expectReviewOutcomeFixture("coauthor-selections-remount-apply", sentCoauthorRequests("mixed selections survive clear and remount, then a partial Apply"));
 	});
 
 	it("RO-5: same-character chat scopes isolate selections and reset only a replaced target", async () => {
@@ -905,6 +926,7 @@ describe("CoauthorCharacterForm", () => {
 		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
 		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
 			if (String(input).includes("/coauthor/apply")) return fetchMock();
+			recordSend(input, init);
 			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
 			return new Response(JSON.stringify({}), { status: 200 });
 		}, { preconnect: realFetch.preconnect });
@@ -939,6 +961,7 @@ describe("CoauthorCharacterForm", () => {
 			expect(state?.card.body).toContain("Bold and direct.");
 			expect(state?.card.cardClean).toBe(true);
 		}
+		await expectReviewOutcomeFixture("coauthor-full-apply-after-rpc", sentCoauthorRequests("full Apply of all three targets: awaiting while the RPC is parked, applied on two following turns"));
 	});
 
 	it("RO-5 supervisor: whole Reject preserves terminal outcomes for all targets on later turns", async () => {
@@ -947,7 +970,8 @@ describe("CoauthorCharacterForm", () => {
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
 		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
-		globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			recordSend(input, init);
 			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
 			return new Response(JSON.stringify({}), { status: 200 });
 		}, { preconnect: realFetch.preconnect });
@@ -967,6 +991,7 @@ describe("CoauthorCharacterForm", () => {
 			]);
 			expect(state?.review.targets.map((target) => target.roundId)).toEqual(before?.review.targets.map((target) => target.roundId));
 		}
+		await expectReviewOutcomeFixture("coauthor-whole-reject", sentCoauthorRequests("whole Reject of all three targets over two following turns"));
 	});
 
 	it("RO-5 supervisor: frontmatter-only card Apply publishes its confirmed name and wholesale outcome", async () => {
@@ -1012,6 +1037,7 @@ describe("CoauthorCharacterForm", () => {
 				appliedRequests.push(coauthorApplySchema.parse(JSON.parse(String(init?.body))));
 				return new Promise<Response>((resolve) => { resolveAttempt = resolve; });
 			}
+			recordSend(input, init);
 			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
 			return new Response(JSON.stringify({ character: makeCharacter() }), { status: 200 });
 		}, { preconnect: realFetch.preconnect });
@@ -1079,35 +1105,7 @@ describe("CoauthorCharacterForm", () => {
 		expect(sent.at(-1)?.coauthorEditorState?.card).toMatchObject({ cardClean: false });
 		expect(sent.at(-1)?.coauthorEditorState?.card.body).toContain("Manually refined after Apply.");
 		expect(sent.at(-1)?.coauthorEditorState?.review).toEqual(confirmed);
-	});
-
-	it("RO-6 bridge: writes the mounted partial-Apply request for the in-process server proof", async () => {
-		const bridgeOutput = process.env.VT_REVIEW_OUTCOME_BRIDGE_OUTPUT;
-		if (bridgeOutput === undefined) return;
-		seedReviewing();
-		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
-		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
-		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
-		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
-		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
-			if (String(input).includes("/coauthor/apply")) {
-				return new Response(JSON.stringify({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), { status: 200 });
-			}
-			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
-			return new Response(JSON.stringify({}), { status: 200 });
-		}, { preconnect: realFetch.preconnect });
-		const utils = render(<CoauthorCharacterForm />);
-		await waitFor(() => expect(utils.getAllByRole("checkbox")).toHaveLength(7));
-		const choices = utils.getAllByRole("checkbox");
-		fireEvent.click(choices[1]!);
-		fireEvent.click(choices[2]!);
-		fireEvent.click(choices[3]!);
-		fireEvent.click(utils.getByText("coauthor.review.apply"));
-		await waitFor(() => expect(utils.queryByText("coauthor.review.apply")).toBeNull());
-		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "RO-6 mounted coauthor bridge" });
-		const request = sent[0];
-		if (!request) throw new Error("Expected the mounted co-author action to send a request");
-		await Bun.write(bridgeOutput, JSON.stringify(request));
+		await expectReviewOutcomeFixture("coauthor-apply-error-retry-manual-edit", sentCoauthorRequests("parked mixed Apply fails and stays awaiting, the retry confirms a partial Apply, then a manual edit"));
 	});
 
 	it("RO-5 supervisor: Apply settled in another chat cannot resurrect the completed proposal on return", async () => {

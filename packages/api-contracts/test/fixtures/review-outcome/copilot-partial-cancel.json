@@ -1,0 +1,33 @@
+{
+  "surface": "copilot",
+  "scenario": "cancel of a partially accepted round",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain cancelled review",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// rules buffer\nconst keep = 1;\nconst tail = 2.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "cancelled",
+              "hunks": {
+                "accepted": 0,
+                "rejected": 2,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": true,
+        "visualSaved": true
+      }
+    }
+  ]
+}

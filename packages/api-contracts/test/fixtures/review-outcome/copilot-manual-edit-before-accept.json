@@ -1,0 +1,60 @@
+{
+  "surface": "copilot",
+  "scenario": "manual buffer edit, then accept-all applies only anchored hunks",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain anchored change",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// external header\nconst keep = 1;\nconst tail = 22.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 1,
+                "rejected": 0,
+                "pending": 1
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain anchored change again",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// external header\nconst keep = 1;\nconst tail = 22.",
+        "visual": "",
+        "step": "rules",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "rules",
+              "roundId": "388fa0fd5119",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 1,
+                "rejected": 0,
+                "pending": 1
+              }
+            }
+          ]
+        },
+        "rulesSaved": false,
+        "visualSaved": true
+      }
+    }
+  ]
+}

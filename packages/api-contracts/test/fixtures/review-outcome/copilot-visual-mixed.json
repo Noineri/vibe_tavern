@@ -1,0 +1,60 @@
+{
+  "surface": "copilot",
+  "scenario": "visual: dismissed hunk survives accept-all over two turns",
+  "requests": [
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain preserved visual rejection 2",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// rules buffer\nconst keep = 1;\nconst tail = 2.",
+        "visual": "<main>\nA: new\na-gap-0\na-gap-1\na-gap-2\na-gap-3\na-gap-4\na-gap-5\nB: old\nb-gap-0\nb-gap-1\nb-gap-2\nb-gap-3\nb-gap-4\nb-gap-5\nC: new\n</main>",
+        "step": "visual",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "visual",
+              "roundId": "3b2bf692c74d",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 2,
+                "rejected": 1,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": true,
+        "visualSaved": false
+      }
+    },
+    {
+      "mode": "stream",
+      "body": {
+        "content": "explain preserved visual rejection 3",
+        "providerProfileId": "p1",
+        "model": "m1",
+        "rules": "// rules buffer\nconst keep = 1;\nconst tail = 2.",
+        "visual": "<main>\nA: new\na-gap-0\na-gap-1\na-gap-2\na-gap-3\na-gap-4\na-gap-5\nB: old\nb-gap-0\nb-gap-1\nb-gap-2\nb-gap-3\nb-gap-4\nb-gap-5\nC: new\n</main>",
+        "step": "visual",
+        "reviewSnapshot": {
+          "targets": [
+            {
+              "target": "visual",
+              "roundId": "3b2bf692c74d",
+              "outcome": "applied-partial",
+              "hunks": {
+                "accepted": 2,
+                "rejected": 1,
+                "pending": 0
+              }
+            }
+          ]
+        },
+        "rulesSaved": true,
+        "visualSaved": false
+      }
+    }
+  ]
+}
