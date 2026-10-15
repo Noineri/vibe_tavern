@@ -1784,6 +1784,19 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     }
   });
 
+  it("RO-6 bridge: writes the mounted accepted-buffer request for the in-process server proof", async () => {
+    const bridgeOutput = process.env.VT_REVIEW_OUTCOME_BRIDGE_OUTPUT;
+    if (bridgeOutput === undefined) return;
+    const threadId = "ro6-mounted-copilot-bridge";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    const request = await sendFollowup(utils, "RO-6 mounted copilot bridge", 2);
+    await Bun.write(bridgeOutput, JSON.stringify(request));
+  });
+
   it("accept-all preserves a previously dismissed hunk in both the live buffer and HTTP outcome", async () => {
     const threadId = "ro4-supervisor-dismiss-before-accept-all";
     const base = ["start", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "end"].join("\n");

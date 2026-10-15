@@ -1081,6 +1081,35 @@ describe("CoauthorCharacterForm", () => {
 		expect(sent.at(-1)?.coauthorEditorState?.review).toEqual(confirmed);
 	});
 
+	it("RO-6 bridge: writes the mounted partial-Apply request for the in-process server proof", async () => {
+		const bridgeOutput = process.env.VT_REVIEW_OUTCOME_BRIDGE_OUTPUT;
+		if (bridgeOutput === undefined) return;
+		seedReviewing();
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, twoHunkProfileActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeLoreActivity());
+		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeTrackerTemplateActivity());
+		const sent: ReturnType<typeof sendMessageSchema.parse>[] = [];
+		globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+			if (String(input).includes("/coauthor/apply")) {
+				return new Response(JSON.stringify({ character: makeCharacter({ description: "Bold and direct." }), corrections: [] }), { status: 200 });
+			}
+			sent.push(sendMessageSchema.parse(JSON.parse(String(init?.body))));
+			return new Response(JSON.stringify({}), { status: 200 });
+		}, { preconnect: realFetch.preconnect });
+		const utils = render(<CoauthorCharacterForm />);
+		await waitFor(() => expect(utils.getAllByRole("checkbox")).toHaveLength(7));
+		const choices = utils.getAllByRole("checkbox");
+		fireEvent.click(choices[1]!);
+		fireEvent.click(choices[2]!);
+		fireEvent.click(choices[3]!);
+		fireEvent.click(utils.getByText("coauthor.review.apply"));
+		await waitFor(() => expect(utils.queryByText("coauthor.review.apply")).toBeNull());
+		await sendChatMessage(brandId<ChatId>(TEST_CHAT), { content: "RO-6 mounted coauthor bridge" });
+		const request = sent[0];
+		if (!request) throw new Error("Expected the mounted co-author action to send a request");
+		await Bun.write(bridgeOutput, JSON.stringify(request));
+	});
+
 	it("RO-5 supervisor: Apply settled in another chat cannot resurrect the completed proposal on return", async () => {
 		seedReviewing();
 		useCoauthorTurnStore.getState().upsertActivity(TEST_CHAT, makeProfileActivity("parked-profile", "Confirmed while away."));
