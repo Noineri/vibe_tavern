@@ -49,30 +49,37 @@ export interface ImageGenAutoKeyProviderCandidate {
   name: string;
 }
 
-/** Client-side mirror of the server normalizeEndpoint (image-gen-adapter.ts
- *  — kept local there, mirrored here exactly like stt-form-helpers does for
- *  the stt-adapter one): trim → default https:// scheme → strip trailing
- *  slashes → lowercase. */
-export function normalizeImageGenEndpoint(raw: string): string {
+/** Client-side mirror of the server `imageGenEndpointHost`
+ *  (services/api/src/api/adapters/image-gen-auto-key.ts): trim → default
+ *  https:// scheme → URL host (hostname + port, lowercase); null for an
+ *  empty or unparseable endpoint. */
+function imageGenEndpointHost(raw: string): string | null {
   let value = raw.trim();
+  if (value === "") return null;
   if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
-  return value.replace(/\/+$/, "").toLowerCase();
+  try {
+    const host = new URL(value).host.toLowerCase();
+    return host === "" ? null : host;
+  } catch {
+    // An unparseable endpoint has no host — it never matches.
+    return null;
+  }
 }
 
 /** Vendor host for the OpenRouter backend — mirror of the server
- *  OPENROUTER_API_HOST (image-gen-adapter.ts). */
-const IMAGEGEN_OPENROUTER_API_HOST = "https://openrouter.ai";
+ *  OPENROUTER_VENDOR_HOST (image-gen-auto-key.ts). */
+const IMAGEGEN_OPENROUTER_VENDOR_HOST = "openrouter.ai";
 
-/** Client-side mirror of the server HINT rule (decorateAutoKey in
- *  image-gen-adapter.ts — deliberately NOT the runtime cascade):
- *  - openrouter: the FIRST keyful provider whose endpoint lives on the
- *    vendor host wins (the STT fixed-vendor rule);
- *  - every other endpoint-driven cloud backend: exact normalized-endpoint
- *    match over keyful providers (the MR-3 generalization — the server
- *    matcher's rule verbatim);
- *  - a1111 / comfyui (local, keyless): null — never matches.
- *  Pure: the hook feeds wire lists, the editor feeds the live draft form.
- *  The active-flag never participates — the server rule ignores it too. */
+/** Client-side mirror of the server auto-key rule
+ *  (`findImageGenAutoKeyProvider`, image-gen-auto-key.ts — keep in
+ *  lockstep). Host rule (owner ruling 2026-10-15, match by host): the
+ *  FIRST keyful provider whose endpoint is on the profile's
+ *  host (hostname + port) wins — `host/v1`, bare `host` and any path on it
+ *  match, another host never does; openrouter matches on its vendor host
+ *  whatever the profile endpoint says; a1111 / comfyui (local, keyless)
+ *  never match. Pure: the hook feeds wire lists, the editor feeds the live
+ *  draft form. The active-flag never participates — the server rule
+ *  ignores it too. */
 export function matchImageGenAutoKeyProviderName(
   backend: ImageGenBackendType,
   endpoint: string,
@@ -81,14 +88,10 @@ export function matchImageGenAutoKeyProviderName(
   if (backend === IMAGE_GEN_BACKENDS.A1111 || backend === IMAGE_GEN_BACKENDS.ComfyUI) {
     return null;
   }
-  const keyful = providers.filter((p) => p.hasStoredApiKey);
-  if (backend === IMAGE_GEN_BACKENDS.OpenRouter) {
-    return (
-      keyful.find((p) => normalizeImageGenEndpoint(p.endpoint).startsWith(IMAGEGEN_OPENROUTER_API_HOST))?.name ?? null
-    );
-  }
-  const raw = typeof endpoint === "string" ? endpoint.trim() : "";
-  if (raw === "") return null;
-  const target = normalizeImageGenEndpoint(raw);
-  return keyful.find((p) => normalizeImageGenEndpoint(p.endpoint) === target)?.name ?? null;
+  const target =
+    backend === IMAGE_GEN_BACKENDS.OpenRouter
+      ? IMAGEGEN_OPENROUTER_VENDOR_HOST
+      : imageGenEndpointHost(typeof endpoint === "string" ? endpoint : "");
+  if (target === null) return null;
+  return providers.find((p) => p.hasStoredApiKey && imageGenEndpointHost(p.endpoint) === target)?.name ?? null;
 }

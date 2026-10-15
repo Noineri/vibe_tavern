@@ -540,7 +540,7 @@ describe("image-gen routes — IG-21 auto-key cascade", () => {
     expect(auth).toBe("Bearer sk-own");
   });
 
-  test("keyless profile with no matching provider → today's keyless error (fail-closed)", async () => {
+  test("keyless profile with no matching provider → the named missing-key error (fail-closed)", async () => {
     const { app, stores } = await makeApp(async () => new Response("unused", { status: 200 }));
     await seedProvider(stores, { name: "Elsewhere", endpoint: "https://api.other-vendor.test/v1", apiKey: "sk-provider" });
     const chatId = await makeChat(stores);
@@ -552,10 +552,15 @@ describe("image-gen routes — IG-21 auto-key cascade", () => {
       body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p" }),
     });
     expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toContain("`apiKey` is required");
+    // Behavior change (report step 7): was the dialect's bare "`apiKey` is
+    // required"; now the remedy is named — the dialect message rides along.
+    const error = ((await res.json()) as { error: string }).error;
+    expect(error).toContain("No API key: this profile has no key of its own and no LLM provider profile on");
+    expect(error).toContain("enter a key in the profile or check the endpoint host");
+    expect(error).toContain("`apiKey` is required");
   });
 
-  test("openai-images: exact endpoint match auto-keys; a different endpoint stays keyless", async () => {
+  test("openai-images: same-host match auto-keys (any path on the host); a different host stays keyless", async () => {
     const captured: { init?: RequestInit; calls: number } = { calls: 0 };
     const { app, stores } = await makeApp(async (input, init) => {
       captured.init = init;
@@ -583,8 +588,25 @@ describe("image-gen routes — IG-21 auto-key cascade", () => {
     const auth = (captured.init?.headers as Record<string, string> | undefined)?.["Authorization"];
     expect(auth).toBe("Bearer sk-provider");
 
-    // Same backend, DIFFERENT endpoint — the openai-compat rule is EXACT:
-    // no match, fail closed with the backend's auth config error.
+    // Same HOST, different path shape (bare host, no /v1) — the host rule
+    // (owner 2026-10-15) matches: behavior change from the MR-3 exact rule.
+    captured.init = undefined;
+    const bareHost = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.OpenAiImages,
+      endpoint: "https://api.openai.com",
+      modelId: "gpt-image-2",
+      modeSizePresets: { portrait: { width: 1024, height: 1024 } },
+    });
+    const okBare = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: bareHost, mode: "portrait", prompt: "p" }),
+    });
+    expect(okBare.status).toBe(200);
+    expect((captured.init?.headers as Record<string, string> | undefined)?.["Authorization"]).toBe("Bearer sk-provider");
+
+    // Same backend, DIFFERENT host — no match, fail closed with the named
+    // missing-key error.
     const elsewhere = await seedProfile(app, {
       backend: IMAGE_GEN_BACKENDS.OpenAiImages,
       endpoint: "https://images.other-gateway.test/v1",
@@ -597,7 +619,56 @@ describe("image-gen routes — IG-21 auto-key cascade", () => {
       body: JSON.stringify({ profileId: elsewhere, mode: "portrait", prompt: "p" }),
     });
     expect(denied.status).toBe(400);
-    expect(((await denied.json()) as { error: string }).error).toContain("`apiKey` is required");
+    expect(((await denied.json()) as { error: string }).error).toContain("no LLM provider profile on images.other-gateway.test");
+  });
+
+  test("two keyful providers on one host: the hint and the injected key both name the FIRST provider", async () => {
+    const captured: { init?: RequestInit; calls: number } = { calls: 0 };
+    const { app, stores } = await makeApp(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/images/generations")) {
+        captured.init = init;
+        return new Response(JSON.stringify({ data: [{ b64_json: PNG_B64(0x52) }] }), { status: 200 });
+      }
+      return new Response(PNG_BYTES(0x52), { status: 200, headers: { "Content-Type": "image/png" } });
+    });
+    await seedProvider(stores, { name: "Closer first", endpoint: "https://api.closerouter.dev/v1", apiKey: "sk-first" });
+    await seedProvider(stores, { name: "Closer second", endpoint: "https://api.closerouter.dev", apiKey: "sk-second" });
+    const chatId = await makeChat(stores);
+    const id = await seedProfile(app, {
+      backend: IMAGE_GEN_BACKENDS.OpenAiImages,
+      endpoint: "https://api.closerouter.dev",
+      modelId: "google/gemini-3-pro-image-preview",
+      modeSizePresets: { portrait: { width: 1024, height: 1024 } },
+    });
+
+    const list = (await (await app.request("/api/image-gen/profiles/all")).json()) as Array<{
+      id: string;
+      autoKeyProviderName: string | null;
+    }>;
+    expect(list.find((p) => p.id === id)?.autoKeyProviderName).toBe("Closer first");
+
+    const res = await app.request(`/api/chats/${chatId}/image-gen/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: id, mode: "portrait", prompt: "p" }),
+    });
+    expect(res.status).toBe(200);
+    expect((captured.init?.headers as Record<string, string> | undefined)?.["Authorization"]).toBe("Bearer sk-first");
+  });
+
+  test("wire hint covers every key-taking backend (nanogpt), by host", async () => {
+    // Behavior change: the hint decorator used to name a provider only for
+    // openrouter/openai-images while the execution seam matched every cloud
+    // backend (MR-3) — it now runs the seam's own matcher.
+    const { app, stores } = await makeApp();
+    await seedProvider(stores, { name: "Nano main", endpoint: "https://nano-gpt.com/api/v1", apiKey: "sk-provider" });
+    const nano = await seedProfile(app, { backend: IMAGE_GEN_BACKENDS.NanoGpt, endpoint: "https://nano-gpt.com/api/v1" });
+    const list = (await (await app.request("/api/image-gen/profiles/all")).json()) as Array<{
+      id: string;
+      autoKeyProviderName: string | null;
+    }>;
+    expect(list.find((p) => p.id === nano)?.autoKeyProviderName).toBe("Nano main");
   });
 
   test("wire hint: keyless openrouter profile names the provider; own-key and a1111 stay null", async () => {
@@ -637,7 +708,7 @@ describe("image-gen routes — IG-21 auto-key cascade", () => {
     expect(auth).toBe("Bearer sk-provider");
   });
 
-  test("MR-3: a keyless nanogpt draft auto-matches the provider key by exact endpoint; mismatch stays keyless", async () => {
+  test("MR-3: a keyless nanogpt draft auto-matches the provider key by host; another host stays keyless", async () => {
     // The owner's own case: NanoGPT is a DEDICATED backend (not openrouter/
     // openai-images) — before MR-3 the matcher gated on those two slugs only
     // and every other cloud backend failed closed with "apiKey is required".
@@ -660,7 +731,7 @@ describe("image-gen routes — IG-21 auto-key cascade", () => {
     const auth = (captured.init?.headers as Record<string, string> | undefined)?.["Authorization"];
     expect(auth).toBe("Bearer sk-provider");
 
-    // Different endpoint — the exact-match guard holds (fail closed).
+    // Different host — no match, fail closed with the named error (400).
     const denied = await app.request("/api/image-gen/draft/models", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -670,7 +741,21 @@ describe("image-gen routes — IG-21 auto-key cascade", () => {
       }),
     });
     expect(denied.status).toBe(400);
-    expect(((await denied.json()) as { error: string }).error).toContain("`apiKey` is required");
+    expect(((await denied.json()) as { error: string }).error).toContain("No API key: this profile has no key of its own");
+
+    // The incident shape: the draft carries the bare host, the provider the
+    // /v1 endpoint — same host, so the key is found (owner 2026-10-15).
+    captured.init = undefined;
+    const bare = await app.request("/api/image-gen/draft/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        backend: IMAGE_GEN_BACKENDS.NanoGpt,
+        config: { endpoint: "https://nano-gpt.com" },
+      }),
+    });
+    expect(bare.status).toBe(200);
+    expect((captured.init?.headers as Record<string, string> | undefined)?.["Authorization"]).toBe("Bearer sk-provider");
   });
 });
 

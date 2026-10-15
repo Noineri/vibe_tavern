@@ -45,6 +45,7 @@ import * as schemas from "@vibe-tavern/api-contracts";
 
 import type { ImageGenRuntimeApi } from "../contract/runtime-api.js";
 import { ImageGenNotFoundError, ImageGenTimeoutError, ImageGenValidationError } from "../adapters/image-gen-adapter.js";
+import { ImageGenMissingKeyError } from "../adapters/image-gen-auto-key.js";
 import { ProviderExecutionError } from "../../infrastructure/ai/provider-execution-types.js";
 import { ImageGenBackendNotRegisteredError, ImageGenUnknownBackendError } from "../../domain/imagegen/imagegen-registry.js";
 import {
@@ -81,6 +82,7 @@ function upstreamStatus(status: number | undefined): 400 | 502 {
  *  profile-bound models/samplers routes and the draft/generate routes. */
 function backendErrorResponse(error: unknown): { body: { error: string }; status: 400 | 502 } | null {
   if (
+    error instanceof ImageGenMissingKeyError ||
     error instanceof OpenRouterImageGenConfigError ||
     error instanceof OpenAiImagesConfigError ||
     error instanceof A1111ImageGenConfigError ||
