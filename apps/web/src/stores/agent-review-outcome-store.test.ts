@@ -1,17 +1,21 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it } from "bun:test";
 import { useAgentReviewOutcomeStore } from "./agent-review-outcome-store.js";
 
-beforeEach(() => useAgentReviewOutcomeStore.setState({ outcomesByThread: {} }));
+const outcomesBeforeLedgerSuite = useAgentReviewOutcomeStore.getState().outcomesByThread;
+const supersededBeforeLedgerSuite = useAgentReviewOutcomeStore.getState().supersededByThread;
+
+beforeEach(() => useAgentReviewOutcomeStore.setState({ outcomesByThread: {}, supersededByThread: {} }));
+afterAll(() => useAgentReviewOutcomeStore.setState({ outcomesByThread: outcomesBeforeLedgerSuite, supersededByThread: supersededBeforeLedgerSuite }));
 
 describe("agent review outcome ledger", () => {
   it("isolates kind, thread, and target while retaining a completed outcome independently of rounds", () => {
     const store = useAgentReviewOutcomeStore.getState();
     const rules = { target: "rules" as const, roundId: "abc123", outcome: "applied" as const, hunks: { accepted: 2, rejected: 0, pending: 0 } };
     store.record("experience", "thread-a", rules);
-    store.record("future", "thread-a", { ...rules, target: "visual", roundId: "def456" });
+    store.record("future", "thread-a", { ...rules, roundId: "def456", outcome: "rejected", hunks: { accepted: 0, rejected: 2, pending: 0 } });
     expect(store.get("experience", "thread-a", "rules")).toEqual(rules);
     expect(store.get("experience", "thread-a", "visual")).toBeUndefined();
-    expect(store.get("future", "thread-a", "visual")?.roundId).toBe("def456");
+    expect(store.get("future", "thread-a", "rules")).toMatchObject({ roundId: "def456", outcome: "rejected" });
   });
 
   it("keeps the latest completed or cancelled result through remount-equivalent reads and later turns", () => {

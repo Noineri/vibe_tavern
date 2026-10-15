@@ -140,6 +140,17 @@ function ExperienceEditorPane({
     visualSaved,
   } = hostProps;
   const { t } = useT();
+  // CodeMirror owns hunk-button DOM between extension reconfigurations. A
+  // button can therefore call a prior render's callback; these refs ensure its
+  // local application always starts from the current controlled parent buffer.
+  const rulesCodeRef = useRef(rulesCode);
+  const visualSourceRef = useRef(visualSource);
+  const onRulesChangeRef = useRef(onRulesChange);
+  const onVisualChangeRef = useRef(onVisualChange);
+  rulesCodeRef.current = rulesCode;
+  visualSourceRef.current = visualSource;
+  onRulesChangeRef.current = onRulesChange;
+  onVisualChangeRef.current = onVisualChange;
 
   // ── UI-only editor tab state ─────────────────────────────────────────────
   // XU-5: the editor pane defaults to the live preview when a visual exists,
@@ -283,6 +294,10 @@ function ExperienceEditorPane({
     if (dangling?.visual !== undefined) return { proposed: dangling.visual, base: dangling.baseVisual };
     return {};
   }, [review.proposal.proposedVisual, review.proposalBase, dangling]);
+  const effectiveReviewsRef = useRef({ rules: effRules, visual: effVisual });
+  effectiveReviewsRef.current = { rules: effRules, visual: effVisual };
+  const isSendingRef = useRef(isSending);
+  isSendingRef.current = isSending;
 
   // RV-1: per-buffer review keys (base + proposed of THIS buffer only). The
   // old COMBINED key reset BOTH accepted sets whenever either buffer's
@@ -330,6 +345,22 @@ function ExperienceEditorPane({
   useExperienceReviewSupersession(EXPERIENCE_KIND, threadId, "visual", effVisual.base, effVisual.proposed);
 
   const recordAppliedOutcome = useExperienceReviewOutcomeRecorder(EXPERIENCE_KIND, threadId);
+
+  /** Re-read state at the local-action boundary because a CodeMirror hunk
+   * callback can outlive the render that installed its decoration. */
+  const currentHunkReview = useCallback(
+    (target: "rules" | "visual") => {
+      if (!threadId) return null;
+      const current = useCopilotReviewRoundStore.getState().roundsByThread[agentThreadKey(EXPERIENCE_KIND, threadId)];
+      if (!current) return null;
+      const accepted = new Set(target === "rules" ? current.acceptedRules : current.acceptedVisual);
+      const dismissed = new Set(target === "rules" ? current.dismissedRules : current.dismissedVisual);
+      const effective = effectiveReviewsRef.current[target];
+      const bufferReview = buildBufferReview(effective.base, effective.proposed, accepted, !isSendingRef.current, dismissed);
+      return bufferReview ? { bufferReview, accepted, dismissed } : null;
+    },
+    [threadId],
+  );
 
   // UX 2026-08-16 remark 6 — static validation of the EFFECTIVE visual document:
   // while a review round is open that is the PROPOSED text (what accept-all
@@ -397,16 +428,18 @@ function ExperienceEditorPane({
 
   const acceptRulesHunk = useCallback(
     (hunkId: number) => {
-      if (!rulesReview) return;
-      acceptHunks(rulesReview, acceptedRulesHunks, [hunkId], rulesCode, setAcceptedRulesHunks, onRulesChange, "rules", dismissedRulesHunks);
+      const current = currentHunkReview("rules");
+      if (!current) return;
+      acceptHunks(current.bufferReview, current.accepted, [hunkId], rulesCodeRef.current, setAcceptedRulesHunks, onRulesChangeRef.current, "rules", current.dismissed);
     },
-    [rulesReview, acceptedRulesHunks, rulesCode, onRulesChange, acceptHunks, dismissedRulesHunks],
+    [currentHunkReview, acceptHunks, setAcceptedRulesHunks],
   );
   const acceptAllRules = useCallback(() => {
-    if (!rulesReview) return;
-    const pending = [...allReviewHunkIds(rulesReview)].filter((id) => !acceptedRulesHunks.has(id));
-    acceptHunks(rulesReview, acceptedRulesHunks, pending, rulesCode, setAcceptedRulesHunks, onRulesChange, "rules", dismissedRulesHunks);
-  }, [rulesReview, acceptedRulesHunks, rulesCode, onRulesChange, acceptHunks, dismissedRulesHunks]);
+    const current = currentHunkReview("rules");
+    if (!current) return;
+    const pending = [...allReviewHunkIds(current.bufferReview)].filter((id) => !current.accepted.has(id));
+    acceptHunks(current.bufferReview, current.accepted, pending, rulesCodeRef.current, setAcceptedRulesHunks, onRulesChangeRef.current, "rules", current.dismissed);
+  }, [currentHunkReview, acceptHunks, setAcceptedRulesHunks]);
 
   // RV-2: dismiss (✕) — the hunk leaves the round; the buffer is untouched.
   const dismissRulesHunk = useCallback(
@@ -435,16 +468,18 @@ function ExperienceEditorPane({
   );
   const acceptVisualHunk = useCallback(
     (hunkId: number) => {
-      if (!visualReview) return;
-      acceptHunks(visualReview, acceptedVisualHunks, [hunkId], visualSource, setAcceptedVisualHunks, onVisualChange, "visual", dismissedVisualHunks);
+      const current = currentHunkReview("visual");
+      if (!current) return;
+      acceptHunks(current.bufferReview, current.accepted, [hunkId], visualSourceRef.current, setAcceptedVisualHunks, onVisualChangeRef.current, "visual", current.dismissed);
     },
-    [visualReview, acceptedVisualHunks, visualSource, onVisualChange, acceptHunks, dismissedVisualHunks],
+    [currentHunkReview, acceptHunks, setAcceptedVisualHunks],
   );
   const acceptAllVisual = useCallback(() => {
-    if (!visualReview) return;
-    const pending = [...allReviewHunkIds(visualReview)].filter((id) => !acceptedVisualHunks.has(id));
-    acceptHunks(visualReview, acceptedVisualHunks, pending, visualSource, setAcceptedVisualHunks, onVisualChange, "visual", dismissedVisualHunks);
-  }, [visualReview, acceptedVisualHunks, visualSource, onVisualChange, acceptHunks, dismissedVisualHunks]);
+    const current = currentHunkReview("visual");
+    if (!current) return;
+    const pending = [...allReviewHunkIds(current.bufferReview)].filter((id) => !current.accepted.has(id));
+    acceptHunks(current.bufferReview, current.accepted, pending, visualSourceRef.current, setAcceptedVisualHunks, onVisualChangeRef.current, "visual", current.dismissed);
+  }, [currentHunkReview, acceptHunks, setAcceptedVisualHunks]);
 
   // RV-3: "Cancel all unaccepted" — dismiss the PENDING hunks of THIS
   // buffer only (accepted hunks stay accepted, the other buffer and the text

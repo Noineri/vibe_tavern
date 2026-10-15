@@ -1738,6 +1738,234 @@ describe("ExperienceCopilotShell — RO-4: resolved outcomes through real HTTP",
     expect(secondReview).toEqual(firstReview);
   });
 
+  it("cumulatively applies separately accepted hunks into the controlled parent buffer and HTTP snapshot", async () => {
+    const threadId = "ro4-cumulative-individual-accept";
+    const base = ["start", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "end"].join("\n");
+    const proposed = base.replace("A: old", "A: new").replace("B: old", "B: new").replace("C: old", "C: new");
+    let liveRules = base;
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell initialRules={base} onRulesCode={(rules) => { liveRules = rules; }} />));
+    await openReviewProposal(utils, threadId, proposed);
+
+    const first = utils.container.querySelectorAll<HTMLButtonElement>(".cm-copilotDiffAccept")[0]!;
+    fireEvent.click(first);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(2));
+    expect(liveRules).toContain("A: new");
+    expect(liveRules).toContain("B: old");
+    expect(liveRules).toContain("C: old");
+
+    const second = utils.container.querySelectorAll<HTMLButtonElement>(".cm-copilotDiffAccept")[0]!;
+    fireEvent.click(second);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    expect(liveRules).toContain("A: new");
+    expect(liveRules).toContain("B: new");
+    expect(liveRules).toContain("C: old");
+
+    const partial = await sendFollowup(utils, "explain cumulative partial acceptance", 2);
+    const partialReview = partial.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(partial.rules).toBe(liveRules);
+    expect(partial).toMatchObject({ rulesSaved: false, visualSaved: true });
+    expect(partialReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 2, rejected: 0, pending: 1 } });
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    expect(liveRules).toContain("A: new");
+    expect(liveRules).toContain("B: new");
+    expect(liveRules).toContain("C: new");
+
+    for (const count of [3, 4]) {
+      const body = await sendFollowup(utils, `explain cumulative completion ${count}`, count);
+      expect(body.rules).toBe(liveRules);
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+        roundId: partialReview?.roundId,
+        outcome: "applied",
+        hunks: { accepted: 3, rejected: 0, pending: 0 },
+      });
+    }
+  });
+
+  it("retains an actual accepted-and-dismissed round as partial across two following requests", async () => {
+    const threadId = "ro4-mixed-accept-dismiss";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+    fireEvent.click(utils.getByTestId("copilot-dismiss-pending"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    for (const count of [2, 3]) {
+      const body = await sendFollowup(utils, `explain mixed result ${count}`, count);
+      expect(body.rules).toBe("// RULES v2\nconst keep = 1;\nconst tail = 2.");
+      expect(body).toMatchObject({ rulesSaved: false, visualSaved: true });
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+        outcome: "applied-partial",
+        hunks: { accepted: 1, rejected: 1, pending: 0 },
+      });
+    }
+  });
+
+  it("retains an actual full rejection without changing the clean parent buffer", async () => {
+    const threadId = "ro4-full-rejection";
+    router.newSession = thread(threadId);
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, threadId);
+
+    fireEvent.click(utils.getByTestId("copilot-dismiss-pending"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    for (const count of [2, 3]) {
+      const body = await sendFollowup(utils, `explain rejection ${count}`, count);
+      expect(body.rules).toBe(BASE);
+      expect(body).toMatchObject({ rulesSaved: true, visualSaved: true });
+      expect(body.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+        outcome: "rejected",
+        hunks: { accepted: 0, rejected: 2, pending: 0 },
+      });
+    }
+
+    utils.unmount();
+    const remounted = render(withIsolatedI18n(<ControlledShell />));
+    await flushSessionLoad();
+    const afterRemount = await sendFollowup(remounted, "explain rejection after remount", 4);
+    expect(afterRemount.rules).toBe(BASE);
+    expect(afterRemount).toMatchObject({ rulesSaved: true, visualSaved: true });
+    expect(afterRemount.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      outcome: "rejected",
+      hunks: { accepted: 0, rejected: 2, pending: 0 },
+    });
+  });
+
+  it("keeps a completed local application through review-round reset and shell remount", async () => {
+    const threadId = "ro4-reset-remount";
+    router.newSession = thread(threadId);
+    let setMounted: ((mounted: boolean) => void) | undefined;
+    function PersistentShell() {
+      const [rulesCode, setRulesCode] = useState(BASE);
+      const [mounted, setMountedState] = useState(true);
+      setMounted = setMountedState;
+      return mounted ? (
+        <ExperienceCopilotShell
+          scriptId="ro4-reset-remount-script"
+          rulesCode={rulesCode}
+          onRulesChange={setRulesCode}
+          visualSource=""
+          onVisualChange={() => {}}
+          rulesSaved={rulesCode === BASE}
+          visualSaved={true}
+        />
+      ) : null;
+    }
+    const utils = render(withIsolatedI18n(<PersistentShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+
+    const completed = await sendFollowup(utils, "explain completed review", 2);
+    const completedReview = completed.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(completed.rules).toBe(PROPOSED);
+    expect(completedReview).toMatchObject({ outcome: "applied", hunks: { accepted: 2, rejected: 0, pending: 0 } });
+
+    act(() => useCopilotReviewRoundStore.getState().resetRound("experience", threadId));
+    const afterReset = await sendFollowup(utils, "explain after round reset", 3);
+    expect(afterReset.rules).toBe(PROPOSED);
+    expect(afterReset.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      roundId: completedReview?.roundId,
+      outcome: "applied",
+      hunks: { accepted: 2, rejected: 0, pending: 0 },
+    });
+
+    act(() => setMounted?.(false));
+    await waitFor(() => expect(utils.queryByTestId("copilot-send-btn")).toBeNull());
+    act(() => setMounted?.(true));
+    await flushSessionLoad();
+    const afterRemount = await sendFollowup(utils, "explain after remount", 4);
+    expect(afterRemount.rules).toBe(PROPOSED);
+    expect(afterRemount.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      roundId: completedReview?.roundId,
+      outcome: "applied",
+      hunks: { accepted: 2, rejected: 0, pending: 0 },
+    });
+  });
+
+  it("keeps a pending mixed choice through a normal next turn and remount", async () => {
+    const threadId = "ro4-pending-remount";
+    router.newSession = thread(threadId);
+    let setMounted: ((mounted: boolean) => void) | undefined;
+    function PersistentShell() {
+      const [rulesCode, setRulesCode] = useState(BASE);
+      const [mounted, setMountedState] = useState(true);
+      setMounted = setMountedState;
+      return mounted ? (
+        <ExperienceCopilotShell
+          scriptId="ro4-pending-remount-script"
+          rulesCode={rulesCode}
+          onRulesChange={setRulesCode}
+          visualSource=""
+          onVisualChange={() => {}}
+          rulesSaved={rulesCode === BASE}
+          visualSaved={true}
+        />
+      ) : null;
+    }
+    const utils = render(withIsolatedI18n(<PersistentShell />));
+    await openReview(utils, threadId);
+    fireEvent.click(utils.container.querySelector<HTMLButtonElement>(".cm-copilotDiffAccept")!);
+    await waitFor(() => expect(utils.container.querySelectorAll(".cm-copilotDiffAccept")).toHaveLength(1));
+
+    const afterNextTurn = await sendFollowup(utils, "keep the pending hunk", 2);
+    const partialReview = afterNextTurn.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(afterNextTurn.rules).toBe("// RULES v2\nconst keep = 1;\nconst tail = 2.");
+    expect(partialReview).toMatchObject({ outcome: "applied-partial", hunks: { accepted: 1, rejected: 0, pending: 1 } });
+
+    act(() => setMounted?.(false));
+    await waitFor(() => expect(utils.queryByTestId("copilot-send-btn")).toBeNull());
+    act(() => setMounted?.(true));
+    await flushSessionLoad();
+    const afterRemount = await sendFollowup(utils, "keep it after remount", 3);
+    expect(afterRemount.rules).toBe(afterNextTurn.rules);
+    expect(afterRemount.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      roundId: partialReview?.roundId,
+      outcome: "applied-partial",
+      hunks: { accepted: 1, rejected: 0, pending: 1 },
+    });
+  });
+
+  it("isolates thread ledger records and restores the original buffer and outcome on return", async () => {
+    const firstThread = "ro4-thread-one";
+    const secondThread = "ro4-thread-two";
+    router.activeThread = thread(firstThread);
+    router.sessions = [thread(firstThread), thread(secondThread)];
+    router.messagesFor = () => [];
+    const utils = render(withIsolatedI18n(<ControlledShell />));
+    await openReview(utils, firstThread);
+    fireEvent.click(utils.getByTestId("copilot-accept-all"));
+    await waitFor(() => expect(utils.queryByTestId("copilot-review-bar")).toBeNull());
+    const firstBody = await sendFollowup(utils, "explain first thread", 2);
+    const firstReview = firstBody.reviewSnapshot?.targets.find((target) => target.target === "rules");
+    expect(firstBody.rules).toBe(PROPOSED);
+    expect(firstReview).toMatchObject({ outcome: "applied", hunks: { accepted: 2, rejected: 0, pending: 0 } });
+
+    router.activateReturns = thread(secondThread);
+    fireEvent.click(utils.getByTestId(`copilot-session-${secondThread}`));
+    await flushSessionLoad();
+    const secondBody = await sendFollowup(utils, "explain second thread", 3);
+    expect(secondBody.rules).toBe(PROPOSED);
+    expect(secondBody.reviewSnapshot?.targets).toEqual([]);
+
+    router.activateReturns = thread(firstThread);
+    fireEvent.click(utils.getByTestId(`copilot-session-${firstThread}`));
+    await flushSessionLoad();
+    const returned = await sendFollowup(utils, "explain returned thread", 4);
+    expect(returned.rules).toBe(PROPOSED);
+    expect(returned.reviewSnapshot?.targets.find((target) => target.target === "rules")).toMatchObject({
+      roundId: firstReview?.roundId,
+      outcome: "applied",
+      hunks: { accepted: 2, rejected: 0, pending: 0 },
+    });
+  });
+
   it("batch acceptance reverses only the surviving applied anchor after independent drift", async () => {
     const threadId = "ro4-batch-cancel-partial-reverse";
     const base = ["start", "A: old", ...Array.from({ length: 6 }, (_, index) => `a-gap-${index}`), "B: old", ...Array.from({ length: 6 }, (_, index) => `b-gap-${index}`), "C: old", "end"].join("\n");
